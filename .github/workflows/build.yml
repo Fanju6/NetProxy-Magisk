@@ -36,10 +36,16 @@ jobs:
         working-directory: webui
         run: python build_webui.py
 
+      - name: 读取版本号
+        id: version
+        run: |
+          VERSION=$(grep '^version=' NetProxy-Module/module.prop | cut -d'=' -f2)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
       - name: 上传构建产物
         uses: actions/upload-artifact@v4
         with:
-          name: NetProxy-Module
+          name: NetProxy-${{ steps.version.outputs.version }}-${{ github.ref_name }}
           path: NetProxy-Module/
 
   notify:
