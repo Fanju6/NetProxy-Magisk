@@ -94,7 +94,7 @@ cmd_status() {
         echo "进程 PID: $pid"
         
         # 尝试获取运行时间
-        local uptime=$(ps -o etime= -p "$pid" 2>/dev/null | tr -d ' ' || echo "--")
+        local uptime=$(ps -o etime= -p "$pid" 2>/dev/null | tr -d ' \n' || echo "--")
         echo "运行时间: $uptime"
         
         # 内存占用
@@ -115,6 +115,14 @@ cmd_status() {
             echo "当前配置: $(basename "$config")"
         fi
     fi
+    
+    # 路由模式
+    local routing_mode="rules"
+    if [ -f "$CONFIG_DIR/routing.conf" ]; then
+        routing_mode=$(grep "^MODE=" "$CONFIG_DIR/routing.conf" 2>/dev/null | cut -d'=' -f2)
+        [ -z "$routing_mode" ] && routing_mode="rules"
+    fi
+    echo "路由模式: $routing_mode"
     
     # 代理模式
     local mode="blacklist"
@@ -682,6 +690,35 @@ cmd_proxy() {
 }
 
 #######################################
+# 路由模式管理
+#######################################
+cmd_routing() {
+    local subcmd="${1:-}"
+    shift 2>/dev/null || true
+    
+    case "$subcmd" in
+        mode)
+            local mode="${1:-}"
+            if [ -z "$mode" ]; then
+                # 查看当前模式
+                sh "$SCRIPTS_DIR/network/routing.sh" mode
+            else
+                # 设置模式
+                sh "$SCRIPTS_DIR/network/routing.sh" mode "$mode"
+            fi
+            ;;
+        *)
+            echo "用法: cli routing <命令>"
+            echo ""
+            echo "命令:"
+            echo "  mode              查看路由模式"
+            echo "  mode global       全局代理（所有流量走代理）"
+            echo "  mode rules        规则分流（广告阻断、中国直连等）"
+            ;;
+    esac
+}
+
+#######################################
 # 显示帮助
 #######################################
 show_help() {
@@ -719,6 +756,11 @@ NetProxy CLI - 命令行控制工具
   proxy remove <包名> 从列表移除应用
   proxy reload        重载代理规则
 
+路由模式:
+  routing mode        查看路由模式
+  routing mode global 全局代理（所有流量走代理）
+  routing mode rules  规则分流（广告阻断、中国直连等）
+
 示例:
   # 服务控制
   adb shell su -c "/data/adb/modules/netproxy/scripts/cli status"
@@ -749,6 +791,11 @@ NetProxy CLI - 命令行控制工具
   adb shell su -c "/data/adb/modules/netproxy/scripts/cli proxy add com.google.android.youtube"
   adb shell su -c "/data/adb/modules/netproxy/scripts/cli proxy remove com.google.android.youtube"
   adb shell su -c "/data/adb/modules/netproxy/scripts/cli proxy reload"
+
+  # 路由模式
+  adb shell su -c "/data/adb/modules/netproxy/scripts/cli routing mode"
+  adb shell su -c "/data/adb/modules/netproxy/scripts/cli routing mode global"
+  adb shell su -c "/data/adb/modules/netproxy/scripts/cli routing mode rules"
 
 EOF
 }
@@ -781,6 +828,9 @@ main() {
             ;;
         proxy)
             cmd_proxy "$@"
+            ;;
+        routing)
+            cmd_routing "$@"
             ;;
         -h|--help|help|"")
             show_help

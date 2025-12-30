@@ -829,6 +829,9 @@ export class KSUService {
         const upperKey = key.toUpperCase();
         const numValue = value ? '1' : '0';
         await this.exec(`sed -i 's/${upperKey}=.*/${upperKey}=${numValue}/' ${this.MODULE_PATH}/config/tproxy.conf`);
+        // 重启服务使 iptables 规则生效
+        await this.exec(`sh ${this.MODULE_PATH}/scripts/core/stop.sh`);
+        await this.exec(`sh ${this.MODULE_PATH}/scripts/core/start.sh`);
         return { success: true };
     }
 
