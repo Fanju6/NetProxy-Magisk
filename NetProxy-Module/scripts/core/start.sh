@@ -11,8 +11,8 @@ readonly CONFDIR="$MODDIR/config/xray/confdir"
 readonly OUTBOUNDS_DIR="$MODDIR/config/xray/outbounds"
 
 # 根据运行环境设置 busybox 路径
-# KSU 变量在 KernelSU 环境下为 true
-if [ "${KSU:-false}" = "true" ]; then
+# 判断 /data/adb/ksu/bin/busybox 是否存在
+if [ -f "/data/adb/ksu/bin/busybox" ]; then
     BUSYBOX="/data/adb/ksu/bin/busybox"
 else
     BUSYBOX="/data/adb/magisk/busybox"
