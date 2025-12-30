@@ -67,24 +67,41 @@ set_permissions() {
     set_perm_recursive "$MODPATH/action.sh" 0 0 0755 0755
 }
 
+#######################################
+# 根据 routing.conf 初始化 03_routing.json
+#######################################
+init_routing_config() {
+    local routing_conf="$MODPATH/config/routing.conf"
+    local routing_json="$MODPATH/config/xray/confdir/03_routing.json"
+    local routing_global="$MODPATH/config/routing_xray_global.json"
+    local routing_rules="$MODPATH/config/routing_xray_rules.json"
+    
+    if [ -f "$routing_conf" ]; then
+        local mode=$(grep "^MODE=" "$routing_conf" 2>/dev/null | cut -d'=' -f2)
+        case "$mode" in
+            global)
+                if [ -f "$routing_global" ]; then
+                    ui_print "初始化路由配置: 全局模式"
+                    cp "$routing_global" "$routing_json"
+                fi
+                ;;
+            rules)
+                if [ -f "$routing_rules" ]; then
+                    ui_print "初始化路由配置: 规则模式"
+                    cp "$routing_rules" "$routing_json"
+                fi
+                ;;
+        esac
+    fi
+}
+
 # 主流程
 ui_print "========================================="
 ui_print "   NetProxy - Xray 透明代理模块"
 ui_print "========================================="
 
 if backup_and_restore_config && set_permissions; then
-    # 安装 NetProxy.apk
-    if [ -f "$MODPATH/NetProxy.apk" ]; then
-        ui_print "正在安装 NetProxy 应用..."
-        if pm install -r "$MODPATH/NetProxy.apk" >/dev/null 2>&1; then
-            ui_print "NetProxy 应用安装成功"
-        else
-            ui_print "警告: NetProxy 应用安装失败"
-        fi
-        # 删除 APK 文件
-        rm -f "$MODPATH/NetProxy.apk"
-    fi
-    
+    init_routing_config
     ui_print "安装成功！"
     ui_print "请重启设备以使模块生效"
 else

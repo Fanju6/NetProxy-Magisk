@@ -1,0 +1,32 @@
+{
+    "routing": {
+        "domainStrategy": "AsIs",
+        "rules": [
+            {
+                "type": "field",
+                "ip": ["geoip:private"],
+                "outboundTag": "direct"
+            },
+            {
+                "type": "field",
+                "domain": ["geosite:private"],
+                "outboundTag": "direct"
+            },
+            {
+                "type": "field",
+                "port": "0-65535",
+                "outboundTag": "proxy"
+            },
+            {
+                "type": "field",
+                "inboundTag": ["domestic-dns"],
+                "outboundTag": "direct"
+            },
+            {
+                "type": "field",
+                "inboundTag": ["dns-module"],
+                "outboundTag": "proxy"
+            }
+        ]
+    }
+}

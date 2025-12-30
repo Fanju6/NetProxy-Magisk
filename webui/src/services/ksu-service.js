@@ -874,9 +874,25 @@ export class KSUService {
         }
     }
 
+    // 获取当前路由模式
+    static async getRoutingMode() {
+        try {
+            const output = await this.exec(`cat ${this.MODULE_PATH}/config/routing.conf 2>/dev/null | grep "^MODE=" | cut -d'=' -f2`);
+            return output.trim() || 'rules';
+        } catch (error) {
+            return 'rules';
+        }
+    }
+
     // 应用路由规则（在前端生成 routing.json）
     static async applyRoutingRules(rules) {
         try {
+            // 检查当前路由模式
+            const mode = await this.getRoutingMode();
+            if (mode === 'global') {
+                return { success: false, error: '当前为全局模式，请先切换到规则模式再应用规则' };
+            }
+
             // 构建路由规则数组
             const xrayRules = [];
 
@@ -945,7 +961,10 @@ export class KSUService {
             // 使用 base64 编码写入文件
             const json = JSON.stringify(routingConfig, null, 4);
             const base64 = btoa(unescape(encodeURIComponent(json)));
-            await this.exec(`echo '${base64}' | base64 -d > ${this.MODULE_PATH}/config/xray/confdir/03_routing.json`);
+            // 先写入 routing_xray_rules.json 模板文件
+            await this.exec(`echo '${base64}' | base64 -d > ${this.MODULE_PATH}/config/routing_xray_rules.json`);
+            // 再覆盖到 03_routing.json 使其生效
+            await this.exec(`cp ${this.MODULE_PATH}/config/routing_xray_rules.json ${this.MODULE_PATH}/config/xray/confdir/03_routing.json`);
 
             return { success: true };
         } catch (error) {

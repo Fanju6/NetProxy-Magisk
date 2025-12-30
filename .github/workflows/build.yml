@@ -3,7 +3,7 @@ name: 构建模块与通知
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [ main, custom ]
   release:
     types: [published]
 

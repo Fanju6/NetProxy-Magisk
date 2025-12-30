@@ -333,7 +333,10 @@ export class SettingsPageManager {
     async saveRulesToBackend() {
         try {
             await KSUService.saveRoutingRules(this.routingRules);
-            await KSUService.applyRoutingRules(this.routingRules);
+            const result = await KSUService.applyRoutingRules(this.routingRules);
+            if (!result.success) {
+                toast(result.error || '应用规则失败');
+            }
         } catch (error) {
             console.error('保存规则失败:', error);
             toast('保存失败: ' + error.message);
