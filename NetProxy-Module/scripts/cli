@@ -692,6 +692,72 @@ cmd_proxy() {
 #######################################
 # 路由模式管理
 #######################################
+ROUTING_RULES_FILE="$CONFIG_DIR/routing_rules.json"
+
+# 检查当前是否为全局模式（绕过中国规则被禁用）
+is_global_mode() {
+    # 检查"绕过中国 IP"和"绕过中国域名"规则是否被禁用
+    local cn_ip_enabled=$(grep -A 10 '"name": "绕过中国 IP"' "$ROUTING_RULES_FILE" | grep '"enabled"' | head -1 | grep -o 'true\|false')
+    local cn_domain_enabled=$(grep -A 10 '"name": "绕过中国域名"' "$ROUTING_RULES_FILE" | grep '"enabled"' | head -1 | grep -o 'true\|false')
+    
+    if [ "$cn_ip_enabled" = "false" ] && [ "$cn_domain_enabled" = "false" ]; then
+        return 0  # 是全局模式
+    else
+        return 1  # 是规则模式
+    fi
+}
+
+# 设置路由模式
+set_routing_mode() {
+    local mode="$1"
+    local enabled_value
+    
+    case "$mode" in
+        global)
+            enabled_value="false"
+            ;;
+        rules)
+            enabled_value="true"
+            ;;
+        *)
+            error "无效的模式: $mode (可选: global, rules)"
+            ;;
+    esac
+    
+    # 使用 sed 修改规则的 enabled 状态
+    # 需要修改的规则：绕过中国 IP、绕过中国域名、阻断广告
+    local tmp_file="${ROUTING_RULES_FILE}.tmp"
+    
+    # 使用 awk 来修改 JSON
+    awk -v enabled="$enabled_value" '
+    {
+        # 检测规则名称
+        if (index($0, "\"name\":") > 0) {
+            if (index($0, "绕过中国 IP") > 0 || index($0, "绕过中国域名") > 0 || index($0, "阻断广告") > 0) {
+                in_target_rule = 1
+            } else {
+                in_target_rule = 0
+            }
+        }
+        
+        # 修改目标规则的 enabled 状态
+        if (in_target_rule && index($0, "\"enabled\":") > 0) {
+            gsub(/"enabled": (true|false)/, "\"enabled\": " enabled)
+        }
+        
+        print
+    }
+    ' "$ROUTING_RULES_FILE" > "$tmp_file"
+    
+    mv "$tmp_file" "$ROUTING_RULES_FILE"
+    
+    info "路由模式已设置为: $mode"
+    
+    # 提示用户需要应用规则
+    echo ""
+    warn "请在 WebUI 中点击「应用规则」或重启服务使配置生效"
+}
+
 cmd_routing() {
     local subcmd="${1:-}"
     shift 2>/dev/null || true
@@ -701,10 +767,14 @@ cmd_routing() {
             local mode="${1:-}"
             if [ -z "$mode" ]; then
                 # 查看当前模式
-                sh "$SCRIPTS_DIR/network/routing.sh" mode
+                if is_global_mode; then
+                    echo "当前路由模式: global (全局代理)"
+                else
+                    echo "当前路由模式: rules (规则分流)"
+                fi
             else
                 # 设置模式
-                sh "$SCRIPTS_DIR/network/routing.sh" mode "$mode"
+                set_routing_mode "$mode"
             fi
             ;;
         *)
