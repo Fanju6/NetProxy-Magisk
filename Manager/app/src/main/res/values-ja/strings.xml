@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="app_name" translatable="false">KsuWebUI</string>
+  <string name="enable_webview_debugging">デバッグ</string>
+  <string name="please_grant_root">root 権限を許可してください</string>
+  <string name="no_modules">モジュールがありません</string>
+  <string name="loading">読み込み中 …</string>
+  <string name="author">作者: %s</string>
+  <string name="version">バージョン: %s</string>
+  <string name="show_disabled">無効化済みを表示</string>
+</resources>

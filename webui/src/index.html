@@ -486,73 +486,21 @@
       <div id="routing-page" class="page">
         <div class="container">
           <mdui-card variant="elevated" class="compact-card">
-            <div style="padding: 16px;">
-              <h3 style="margin: 0 0 8px;">路由规则设置</h3>
-              <p style="margin: 0; color: var(--mdui-color-on-surface-variant); font-size: 14px;">
-                开启的规则会被添加到 Xray 路由配置中
-              </p>
+            <div style="padding: 16px; display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <h3 style="margin: 0 0 8px;">路由规则设置</h3>
+                <p style="margin: 0; color: var(--mdui-color-on-surface-variant); font-size: 14px;">
+                  管理 Xray 路由规则
+                </p>
+              </div>
+              <mdui-button id="add-routing-rule-btn" icon="add">添加</mdui-button>
             </div>
           </mdui-card>
 
-          <mdui-list id="routing-list" style="margin-top: 16px;">
+          <mdui-list id="routing-rules-list" style="margin-top: 16px;">
             <mdui-list-item>
-              Google CN 走代理
-              <span slot="description">googleapis.cn, gstatic.com</span>
-              <mdui-switch slot="end-icon" id="route-google_cn"></mdui-switch>
-            </mdui-list-item>
-
-            <mdui-list-item>
-              阻断 UDP 443
-              <span slot="description">阻止 QUIC 协议</span>
-              <mdui-switch slot="end-icon" id="route-block_udp443"></mdui-switch>
-            </mdui-list-item>
-
-            <mdui-list-item>
-              阻断广告
-              <span slot="description">geosite:category-ads-all</span>
-              <mdui-switch slot="end-icon" id="route-block_ads"></mdui-switch>
-            </mdui-list-item>
-
-            <mdui-list-item>
-              绕过局域网 IP
-              <span slot="description">geoip:private</span>
-              <mdui-switch slot="end-icon" id="route-bypass_lan_ip"></mdui-switch>
-            </mdui-list-item>
-
-            <mdui-list-item>
-              绕过局域网域名
-              <span slot="description">geosite:private</span>
-              <mdui-switch slot="end-icon" id="route-bypass_lan_domain"></mdui-switch>
-            </mdui-list-item>
-
-            <mdui-list-item>
-              绕过中国公共 DNS IP
-              <span slot="description">阿里/腾讯/百度等 DNS 服务器 IP</span>
-              <mdui-switch slot="end-icon" id="route-bypass_cn_dns_ip"></mdui-switch>
-            </mdui-list-item>
-
-            <mdui-list-item>
-              绕过中国公共 DNS 域名
-              <span slot="description">alidns.com, doh.pub 等</span>
-              <mdui-switch slot="end-icon" id="route-bypass_cn_dns_domain"></mdui-switch>
-            </mdui-list-item>
-
-            <mdui-list-item>
-              绕过中国 IP
-              <span slot="description">geoip:cn</span>
-              <mdui-switch slot="end-icon" id="route-bypass_cn_ip"></mdui-switch>
-            </mdui-list-item>
-
-            <mdui-list-item>
-              绕过中国域名
-              <span slot="description">geosite:cn</span>
-              <mdui-switch slot="end-icon" id="route-bypass_cn_domain"></mdui-switch>
-            </mdui-list-item>
-
-            <mdui-list-item>
-              最终代理
-              <span slot="description">兜底规则：其他流量走代理</span>
-              <mdui-switch slot="end-icon" id="route-final_proxy"></mdui-switch>
+              <mdui-circular-progress></mdui-circular-progress>
+              <span slot="description">加载中...</span>
             </mdui-list-item>
           </mdui-list>
 
@@ -764,6 +712,37 @@
 
     <mdui-button slot="action" variant="text" id="app-selector-cancel">取消</mdui-button>
     <mdui-button slot="action" variant="filled" id="app-selector-add-selected" disabled>添加选中 (0)</mdui-button>
+  </mdui-dialog>
+
+  <!-- Routing Rule Dialog -->
+  <mdui-dialog id="routing-rule-dialog" headline="路由规则" close-on-overlay-click="false"
+    style="--mdui-dialog-max-width: 500px;">
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <mdui-text-field label="规则名称" id="rule-name" placeholder="自定义规则名称" style="width: 100%;"></mdui-text-field>
+
+      <mdui-text-field label="Domain (域名)" id="rule-domain" placeholder="用逗号(,)隔开，DOMAIN和IP二选一填写"
+        helper="示例: example.com, geosite:cn" style="width: 100%;"></mdui-text-field>
+
+      <mdui-text-field label="IP (地址段)" id="rule-ip" placeholder="用逗号(,)隔开，DOMAIN和IP二选一填写"
+        helper="示例: 192.168.0.0/16, geoip:cn" style="width: 100%;"></mdui-text-field>
+
+      <mdui-text-field label="Port (端口)" id="rule-port" placeholder="单端口或端口范围" helper="示例: 443 或 1-1024"
+        style="width: 100%;"></mdui-text-field>
+
+      <mdui-text-field label="Protocol (协议)" id="rule-protocol" placeholder="http,tls,bittorrent" helper="用逗号隔开多个协议"
+        style="width: 100%;"></mdui-text-field>
+
+      <mdui-text-field label="Network (网络类型)" id="rule-network" placeholder="tcp 或 udp 或 tcp,udp"
+        style="width: 100%;"></mdui-text-field>
+
+      <mdui-select label="OutboundTag (出站)" id="rule-outbound" value="proxy" style="width: 100%;">
+        <mdui-menu-item value="proxy">Proxy (代理)</mdui-menu-item>
+        <mdui-menu-item value="direct">Direct (直连)</mdui-menu-item>
+        <mdui-menu-item value="block">Block (阻断)</mdui-menu-item>
+      </mdui-select>
+    </div>
+    <mdui-button slot="action" variant="text" id="rule-cancel">取消</mdui-button>
+    <mdui-button slot="action" variant="filled" id="rule-save">保存</mdui-button>
   </mdui-dialog>
 
   <script type="module" src="./app.js"></script>

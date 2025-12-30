@@ -1,0 +1,66 @@
+name: Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ master ]
+    tags: [ v* ]
+  pull_request:
+  merge_group:
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: "recursive"
+          fetch-depth: 0
+
+      - name: Write key
+        if: ${{ ( github.event_name != 'pull_request' && github.ref == 'refs/heads/master' ) || github.ref_type == 'tag' }}
+        run: |
+          if [ ! -z "${{ secrets.KEY_STORE }}" ]; then
+            echo storePassword='${{ secrets.KEY_STORE_PASSWORD }}' >> keystore.properties
+            echo keyAlias='${{ secrets.ALIAS }}' >> keystore.properties
+            echo keyPassword='${{ secrets.KEY_PASSWORD }}' >> keystore.properties
+            echo storeFile=$PWD/'key.jks' >> keystore.properties
+            echo '${{ secrets.KEY_STORE }}' | base64 --decode > key.jks
+          fi
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Build with Gradle
+        run: |
+          ./gradlew assemble
+
+      - name: Upload release
+        uses: actions/upload-artifact@v6
+        with:
+          name: "KsuWebUI-release"
+          path: "./app/build/outputs/apk/release/*.apk"
+          compression-level: 9
+
+      - name: Upload release mapping
+        uses: actions/upload-artifact@v6
+        with:
+          name: "KsuWebUI-release-mappings"
+          path: "./app/build/outputs/mapping/release"
+          compression-level: 9
+
+      - name: Upload debug
+        uses: actions/upload-artifact@v6
+        with:
+          name: "KsuWebUI-debug"
+          path: "./app/build/outputs/apk/debug/*.apk"
+          compression-level: 9

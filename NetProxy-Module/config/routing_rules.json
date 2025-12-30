@@ -1,0 +1,90 @@
+[
+    {
+        "name": "Google CN 走代理",
+        "type": "field",
+        "domain": "googleapis.cn,gstatic.com",
+        "ip": "",
+        "port": "",
+        "protocol": "",
+        "network": "",
+        "outboundTag": "proxy",
+        "enabled": true
+    },
+    {
+        "name": "阻断 UDP 443",
+        "type": "field",
+        "domain": "",
+        "ip": "",
+        "port": "443",
+        "protocol": "",
+        "network": "udp",
+        "outboundTag": "block",
+        "enabled": true
+    },
+    {
+        "name": "阻断广告",
+        "type": "field",
+        "domain": "geosite:category-ads-all",
+        "ip": "",
+        "port": "",
+        "protocol": "",
+        "network": "",
+        "outboundTag": "block",
+        "enabled": true
+    },
+    {
+        "name": "绕过局域网 IP",
+        "type": "field",
+        "domain": "",
+        "ip": "geoip:private",
+        "port": "",
+        "protocol": "",
+        "network": "",
+        "outboundTag": "direct",
+        "enabled": true
+    },
+    {
+        "name": "绕过局域网域名",
+        "type": "field",
+        "domain": "geosite:private",
+        "ip": "",
+        "port": "",
+        "protocol": "",
+        "network": "",
+        "outboundTag": "direct",
+        "enabled": true
+    },
+    {
+        "name": "绕过中国 IP",
+        "type": "field",
+        "domain": "",
+        "ip": "geoip:cn",
+        "port": "",
+        "protocol": "",
+        "network": "",
+        "outboundTag": "direct",
+        "enabled": true
+    },
+    {
+        "name": "绕过中国域名",
+        "type": "field",
+        "domain": "geosite:cn",
+        "ip": "",
+        "port": "",
+        "protocol": "",
+        "network": "",
+        "outboundTag": "direct",
+        "enabled": true
+    },
+    {
+        "name": "最终代理",
+        "type": "field",
+        "domain": "",
+        "ip": "",
+        "port": "0-65535",
+        "protocol": "",
+        "network": "",
+        "outboundTag": "proxy",
+        "enabled": true
+    }
+]

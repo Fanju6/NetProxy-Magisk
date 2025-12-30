@@ -246,17 +246,17 @@ parse_trojan() {
             ;;
     esac
     
+    # Trojan 协议默认值（在解析参数前预设，parse_query_params 只会覆盖明确指定的参数）
+    NETWORK="tcp"
+    SECURITY="tls"
+    ALLOW_INSECURE="false"
+    
     # 提取查询参数
     case "$url" in
         *"?"*)
             QUERY="${url##*\?}"
             url="${url%\?*}"
             parse_query_params "$QUERY"
-            ;;
-        *)
-            NETWORK="tcp"
-            SECURITY="tls"
-            ALLOW_INSECURE="false"
             ;;
     esac
     
@@ -269,9 +269,6 @@ parse_trojan() {
         printf '%b' "${RED}错误: 无法解析 Trojan 服务器信息${NC}\n" >&2
         return 1
     fi
-    
-    # Trojan 默认使用 TLS
-    SECURITY="${SECURITY:-tls}"
 }
 
 #############################################################################
@@ -468,7 +465,7 @@ parse_query_params() {
             encryption) ENCRYPTION="$value" ;;
             path) PATH_VALUE="$value" ;;
             host) HOST="$value" ;;
-            sni) SNI="$value" ;;
+            sni|peer) SNI="$value" ;;  # peer 等同于 sni
             alpn) ALPN="$value" ;;
             fp|fingerprint) FINGERPRINT="$value" ;;
             pbk|publicKey) PUBLIC_KEY="$value" ;;
@@ -493,10 +490,10 @@ parse_query_params() {
     # 恢复 IFS
     IFS="$OLD_IFS"
     
-    # 设置默认值
-    NETWORK="${NETWORK:-tcp}"
-    SECURITY="${SECURITY:-none}"
-    ALLOW_INSECURE="${ALLOW_INSECURE:-false}"
+    # 设置默认值（仅当变量未定义时，不覆盖协议解析器预设的值）
+    : "${NETWORK:=tcp}"
+    : "${SECURITY:=none}"
+    : "${ALLOW_INSECURE:=false}"
 }
 
 #############################################################################
@@ -504,32 +501,34 @@ parse_query_params() {
 #############################################################################
 
 generate_stream_settings() {
+    # 构建 TLS settings（如果需要）
+    local tls_settings=""
+    if [ "$SECURITY" = "tls" ]; then
+        tls_settings="\"allowInsecure\": $ALLOW_INSECURE"
+        if [ -n "$SNI" ]; then
+            tls_settings="$tls_settings,
+          \"serverName\": \"$SNI\""
+        fi
+        tls_settings="$tls_settings,
+          \"show\": false"
+    fi
+    
+    # 开始构建 streamSettings
     stream_settings="\"network\": \"$NETWORK\""
     
     # TLS 配置
     if [ "$SECURITY" = "tls" ]; then
         stream_settings="$stream_settings,
-      \"security\": \"tls\",
-      \"tlsSettings\": {"
-        
-        if [ -n "$SNI" ]; then
-            stream_settings="$stream_settings
-        \"serverName\": \"$SNI\","
-        fi
-        
-        if [ -n "$ALPN" ]; then
-            stream_settings="$stream_settings
-        \"alpn\": [\"$ALPN\"],"
-        fi
-        
-        if [ -n "$FINGERPRINT" ]; then
-            stream_settings="$stream_settings
-        \"fingerprint\": \"$FINGERPRINT\","
-        fi
-        
-        stream_settings="$stream_settings
-        \"allowInsecure\": $ALLOW_INSECURE
-      }"
+        \"security\": \"tls\",
+        \"sockopt\": {
+          \"domainStrategy\": \"UseIP\",
+          \"happyEyeballs\": {
+            \"interleave\": 2,
+            \"maxConcurrentTry\": 4,
+            \"prioritizeIPv6\": false,
+            \"tryDelayMs\": 250
+          }
+        }"
     elif [ "$SECURITY" = "reality" ]; then
         # Reality 配置
         stream_settings="$stream_settings,
@@ -587,28 +586,36 @@ generate_stream_settings() {
     # 传输协议配置
     case "$NETWORK" in
         tcp)
-            # 总是添加 tcpSettings (Reality 协议需要)
+            # tcpSettings
             stream_settings="$stream_settings,
-      \"tcpSettings\": {
-        \"header\": {
-          \"type\": \"${HEADER_TYPE:-none}\""
+        \"tcpSettings\": {
+          \"header\": {
+            \"type\": \"${HEADER_TYPE:-none}\""
             
             # 如果有自定义 header 类型且不是 none，添加额外配置
             if [ -n "$HEADER_TYPE" ] && [ "$HEADER_TYPE" != "none" ]; then
                 if [ -n "$HOST" ] || [ -n "$PATH_VALUE" ]; then
                     stream_settings="$stream_settings,
-          \"request\": {
-            \"headers\": {
-              \"Host\": [\"${HOST:-}\"]
-            },
-            \"path\": [\"${PATH_VALUE:-/}\"]
-          }"
+            \"request\": {
+              \"headers\": {
+                \"Host\": [\"${HOST:-}\"]
+              },
+              \"path\": [\"${PATH_VALUE:-/}\"]
+            }"
                 fi
             fi
             
             stream_settings="$stream_settings
-        }
-      }"
+          }
+        }"
+            
+            # TLS 需要添加 tlsSettings
+            if [ "$SECURITY" = "tls" ]; then
+                stream_settings="$stream_settings,
+        \"tlsSettings\": {
+          $tls_settings
+        }"
+            fi
             ;;
         
         ws)
@@ -768,13 +775,17 @@ EOF
         TROJAN)
             cat << EOF
     {
+      "mux": {
+        "concurrency": -1,
+        "enabled": false
+      },
       "protocol": "trojan",
-      "tag": "proxy",
       "settings": {
         "servers": [
           {
             "address": "$SERVER",
             "port": $PORT,
+            "ota": false,
             "password": "$PASSWORD",
             "level": 8$(if [ -n "$FLOW" ]; then echo ",
             \"flow\": \"$FLOW\""; fi)
@@ -783,7 +794,8 @@ EOF
       },
       "streamSettings": {
         $(generate_stream_settings)
-      }
+      },
+      "tag": "proxy"
     }
 EOF
             ;;

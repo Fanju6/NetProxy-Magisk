@@ -1,0 +1,19 @@
+<resources>
+    <string name="app_name" translatable="false">NetProxy</string>
+    <string name="enable_webview_debugging">Debugging</string>
+    <string name="please_grant_root">Please grant root</string>
+    <string name="no_modules">No modules</string>
+    <string name="loading">Loading …</string>
+    <string name="author">Author: %s</string>
+    <string name="version">Version: %s</string>
+    <string name="show_disabled">Show Disabled</string>
+    <string name="retry">Retry</string>
+    <string name="tile_start_proxy">Start Proxy</string>
+    <string name="tile_stop_proxy">Stop Proxy</string>
+    <string name="tile_restart_proxy">Restart Proxy</string>
+    <string name="tile_proxy_status">Proxy Status</string>
+    <string name="tile_proxy_running">Proxy Running</string>
+    <string name="tile_proxy_stopped">Proxy Stopped</string>
+    <string name="tile_tap_to_stop">Tap to stop</string>
+    <string name="tile_tap_to_start">Tap to start</string>
+</resources>

@@ -225,17 +225,12 @@ export class UIDPageManager {
             try {
                 await KSUService.removeProxyApp(packageName);
 
-                // 检查服务是否运行，如果运行则刷新规则
+                // 检查服务状态并给出相应提示
                 const { status } = await KSUService.getStatus();
                 if (status === 'running') {
-                    const result = await KSUService.renewTProxy();
-                    if (result.success) {
-                        toast(`已移除 ${appName} 并即时生效`);
-                    } else {
-                        toast(`已移除 ${appName}，但规则刷新失败`);
-                    }
+                    toast(`已移除 ${appName}，重启服务后生效`);
                 } else {
-                    toast('已移除');
+                    toast(`已移除 ${appName}`);
                 }
 
                 this.update();
@@ -427,33 +422,6 @@ export class UIDPageManager {
         });
     }
 
-    async addApp(app) {
-        try {
-            await KSUService.addProxyApp(app.packageName);
-
-            // 检查服务是否运行，如果运行则刷新规则
-            const { status } = await KSUService.getStatus();
-            if (status === 'running') {
-                const result = await KSUService.renewTProxy();
-                if (result.success) {
-                    toast(`已添加 ${app.appLabel} 并即时生效`);
-                } else {
-                    toast(`已添加 ${app.appLabel}，但规则刷新失败`);
-                }
-            } else {
-                toast(`已添加 ${app.appLabel}`);
-            }
-
-            document.getElementById('app-selector-dialog').open = false;
-            this.update();
-        } catch (error) {
-            if (error.message.includes('已存在')) {
-                toast('该应用已在列表中');
-            } else {
-                toast('添加失败: ' + error.message, true);
-            }
-        }
-    }
 
     filterApps(query) {
         if (!this.allApps) return;

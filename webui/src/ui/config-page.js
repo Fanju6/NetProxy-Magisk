@@ -165,29 +165,38 @@ export class ConfigPageManager {
     renderConfigItem(container, filename, fullPath, info, isCurrent, group) {
         const item = document.createElement('mdui-list-item');
         item.setAttribute('clickable', '');
-        item.classList.add('config-item'); // 添加类以便 CSS 禁用 ripple
-        item.style.paddingLeft = '16px'; // 稍微缩进
+        item.classList.add('config-item');
+        item.style.paddingLeft = '16px';
 
         const displayName = filename.replace(/\.json$/i, '');
         item.setAttribute('headline', displayName);
 
-        // 使用 slot="description" 自定义副文本布局
+        // 使用 slot="description" 自定义多行布局
         const descContainer = document.createElement('div');
         descContainer.slot = 'description';
-        descContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; width: 100%;';
+        descContainer.style.cssText = 'display: flex; flex-direction: column; gap: 2px; width: 100%;';
 
-        // 左侧：协议和地址信息
-        const infoSpan = document.createElement('span');
-        infoSpan.textContent = info.port
-            ? `${info.protocol} • ${info.address}:${info.port}`
-            : `${info.protocol} • ${info.address}`;
-        descContainer.appendChild(infoSpan);
+        // 第一行：协议
+        const protocolLine = document.createElement('div');
+        protocolLine.style.cssText = 'color: var(--mdui-color-primary); font-size: 12px;';
+        protocolLine.textContent = info.protocol || '未知协议';
+        descContainer.appendChild(protocolLine);
 
-        // 右侧容器：当前标签 + 延迟
+        // 第二行：地址+端口 ｜ 延迟 + 当前标识
+        const addressLine = document.createElement('div');
+        addressLine.style.cssText = 'display: flex; justify-content: space-between; align-items: center;';
+
+        // 左侧：地址和端口
+        const addressSpan = document.createElement('span');
+        addressSpan.style.cssText = 'color: var(--mdui-color-on-surface-variant); font-size: 12px;';
+        addressSpan.textContent = info.port ? `${info.address}:${info.port}` : info.address;
+        addressLine.appendChild(addressSpan);
+
+        // 右侧：状态容器（延迟 + 当前标识）
         const statusContainer = document.createElement('span');
         statusContainer.style.cssText = 'display: flex; align-items: center; gap: 6px;';
 
-        // 延迟显示标签
+        // 延迟标签
         const latencyLabel = document.createElement('span');
         latencyLabel.className = 'latency-label';
         latencyLabel.style.cssText = 'font-size: 12px; color: var(--mdui-color-on-surface-variant);';
@@ -201,7 +210,8 @@ export class ConfigPageManager {
             statusContainer.appendChild(currentTag);
         }
 
-        descContainer.appendChild(statusContainer);
+        addressLine.appendChild(statusContainer);
+        descContainer.appendChild(addressLine);
         item.appendChild(descContainer);
 
         // 三点菜单

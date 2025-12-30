@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item
+        android:checkable="true"
+        android:id="@+id/enable_webview_debugging"
+        android:title="@string/enable_webview_debugging"
+        app:showAsAction="never" />
+    <item
+        android:checkable="true"
+        android:id="@+id/show_disabled"
+        android:title="@string/show_disabled"
+        app:showAsAction="never" />
+</menu>

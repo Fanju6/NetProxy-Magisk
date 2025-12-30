@@ -764,39 +764,6 @@ export class KSUService {
         return btoa(binary);
     }
 
-    // ===================== 路由设置 =====================
-
-    // 获取路由设置
-    static async getRoutingSettings() {
-        try {
-            const output = await this.exec(`sh ${this.MODULE_PATH}/scripts/network/routing.sh get`);
-            return JSON.parse(output);
-        } catch (error) {
-            // 返回默认设置
-            return {
-                google_cn: true,
-                block_udp443: true,
-                block_ads: true,
-                bypass_lan_ip: true,
-                bypass_lan_domain: true,
-                bypass_cn_dns_ip: true,
-                bypass_cn_dns_domain: true,
-                bypass_cn_ip: true,
-                bypass_cn_domain: true,
-                final_proxy: true
-            };
-        }
-    }
-
-    // 设置路由选项
-    static async setRoutingSetting(key, value) {
-        const result = await exec(`su -c "sh ${this.MODULE_PATH}/scripts/network/routing.sh set '${key}' '${value}'"`);
-        if (result.errno !== 0) {
-            throw new Error(result.stderr || '设置失败');
-        }
-        return { success: true };
-    }
-
     // ===================== 代理开关设置 =====================
 
     // 获取代理开关设置
@@ -861,5 +828,112 @@ export class KSUService {
         const numValue = value ? '1' : '0';
         await this.exec(`sed -i 's/${upperKey}=.*/${upperKey}=${numValue}/' ${this.MODULE_PATH}/config/module.conf`);
         return { success: true };
+    }
+
+    // ===================== 路由规则管理 =====================
+
+    // 获取路由规则列表
+    static async getRoutingRules() {
+        try {
+            const output = await this.exec(`cat ${this.MODULE_PATH}/config/routing_rules.json`);
+            return JSON.parse(output);
+        } catch (error) {
+            console.error('获取路由规则失败:', error);
+            return [];
+        }
+    }
+
+    // 保存路由规则列表
+    static async saveRoutingRules(rules) {
+        try {
+            const json = JSON.stringify(rules, null, 4);
+            // 使用 base64 编码避免特殊字符问题
+            const base64 = btoa(unescape(encodeURIComponent(json)));
+            await this.exec(`echo '${base64}' | base64 -d > ${this.MODULE_PATH}/config/routing_rules.json`);
+            return { success: true };
+        } catch (error) {
+            console.error('保存路由规则失败:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    // 应用路由规则（在前端生成 routing.json）
+    static async applyRoutingRules(rules) {
+        try {
+            // 构建路由规则数组
+            const xrayRules = [];
+
+            for (const rule of rules) {
+                if (rule.enabled === false) continue;
+
+                const xrayRule = { type: 'field' };
+
+                // 处理 domain
+                if (rule.domain) {
+                    xrayRule.domain = rule.domain.split(',').map(d => {
+                        d = d.trim();
+                        if (d.startsWith('geosite:') || d.startsWith('domain:') || d.startsWith('full:') || d.startsWith('regexp:')) {
+                            return d;
+                        }
+                        return `domain:${d}`;
+                    });
+                }
+
+                // 处理 ip
+                if (rule.ip) {
+                    xrayRule.ip = rule.ip.split(',').map(i => i.trim());
+                }
+
+                // 处理 port
+                if (rule.port) {
+                    xrayRule.port = rule.port.trim();
+                }
+
+                // 处理 protocol
+                if (rule.protocol) {
+                    xrayRule.protocol = rule.protocol.split(',').map(p => p.trim());
+                }
+
+                // 处理 network
+                if (rule.network) {
+                    xrayRule.network = rule.network.trim();
+                }
+
+                // 设置 outboundTag
+                xrayRule.outboundTag = rule.outboundTag || 'proxy';
+
+                xrayRules.push(xrayRule);
+            }
+
+            // 添加固定的内部 DNS 规则
+            xrayRules.push({
+                type: 'field',
+                inboundTag: ['domestic-dns'],
+                outboundTag: 'direct'
+            });
+            xrayRules.push({
+                type: 'field',
+                inboundTag: ['dns-module'],
+                outboundTag: 'proxy'
+            });
+
+            // 构建完整的路由配置
+            const routingConfig = {
+                routing: {
+                    domainStrategy: 'AsIs',
+                    rules: xrayRules
+                }
+            };
+
+            // 使用 base64 编码写入文件
+            const json = JSON.stringify(routingConfig, null, 4);
+            const base64 = btoa(unescape(encodeURIComponent(json)));
+            await this.exec(`echo '${base64}' | base64 -d > ${this.MODULE_PATH}/config/xray/confdir/03_routing.json`);
+
+            return { success: true };
+        } catch (error) {
+            console.error('应用路由规则失败:', error);
+            return { success: false, error: error.message };
+        }
     }
 }

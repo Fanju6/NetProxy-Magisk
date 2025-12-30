@@ -7,18 +7,14 @@ const logoUrl = 'https://ghfast.top/https://raw.githubusercontent.com/Fanju6/Net
 export class SettingsPageManager {
     constructor(ui) {
         this.ui = ui;
-        this.routingKeys = [
-            'google_cn', 'block_udp443', 'block_ads',
-            'bypass_lan_ip', 'bypass_lan_domain',
-            'bypass_cn_dns_ip', 'bypass_cn_dns_domain',
-            'bypass_cn_ip', 'bypass_cn_domain', 'final_proxy'
-        ];
+        this.routingRules = [];
+        this.editingRuleIndex = -1;
         this.proxyKeys = [
             'proxy_mobile', 'proxy_wifi', 'proxy_hotspot', 'proxy_usb',
             'proxy_tcp', 'proxy_udp', 'proxy_ipv6'
         ];
         this.setupEventListeners();
-        this.setupRoutingPage();
+        this.setupRoutingRulesPage();
         this.setupProxySettingsPage();
         this.setupThemePage();
         this.applyStoredTheme();
@@ -46,7 +42,7 @@ export class SettingsPageManager {
         if (routingEntry) {
             routingEntry.addEventListener('click', () => {
                 this.ui.switchPage('routing');
-                this.loadRoutingSettings();
+                this.loadRoutingRules();
             });
         }
 
@@ -121,7 +117,9 @@ export class SettingsPageManager {
         }
     }
 
-    setupRoutingPage() {
+    // ===================== 路由规则管理 =====================
+
+    setupRoutingRulesPage() {
         // 返回按钮
         const backBtn = document.getElementById('routing-back-btn');
         if (backBtn) {
@@ -130,43 +128,215 @@ export class SettingsPageManager {
             });
         }
 
-        // 为每个开关绑定事件
-        for (const key of this.routingKeys) {
-            const switchEl = document.getElementById(`route-${key}`);
-            if (switchEl) {
-                switchEl.addEventListener('change', async (e) => {
-                    const value = e.target.checked;
-                    await this.setRoutingSetting(key, value);
-                });
-            }
+        // 添加规则按钮
+        const addBtn = document.getElementById('add-routing-rule-btn');
+        if (addBtn) {
+            addBtn.addEventListener('click', () => {
+                this.showRuleDialog();
+            });
+        }
+
+        // 规则对话框事件
+        const cancelBtn = document.getElementById('rule-cancel');
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', () => {
+                document.getElementById('routing-rule-dialog').open = false;
+            });
+        }
+
+        const saveBtn = document.getElementById('rule-save');
+        if (saveBtn) {
+            saveBtn.addEventListener('click', () => {
+                this.saveRule();
+            });
         }
     }
 
-    async loadRoutingSettings() {
+    async loadRoutingRules() {
         try {
-            const settings = await KSUService.getRoutingSettings();
-            for (const key of this.routingKeys) {
-                const switchEl = document.getElementById(`route-${key}`);
-                if (switchEl) {
-                    switchEl.checked = settings[key] !== false;
+            this.routingRules = await KSUService.getRoutingRules();
+            this.renderRoutingRules();
+        } catch (error) {
+            console.error('加载路由规则失败:', error);
+            toast('加载路由规则失败');
+        }
+    }
+
+    renderRoutingRules() {
+        const listEl = document.getElementById('routing-rules-list');
+        if (!listEl) return;
+
+        listEl.innerHTML = '';
+
+        if (this.routingRules.length === 0) {
+            listEl.innerHTML = `
+                <mdui-list-item>
+                    <span slot="description">暂无规则，点击右上角添加</span>
+                </mdui-list-item>
+            `;
+            return;
+        }
+
+        this.routingRules.forEach((rule, index) => {
+            const item = document.createElement('mdui-list-item');
+
+            // 构建描述
+            const parts = [];
+            if (rule.domain) parts.push(`域名: ${rule.domain}`);
+            if (rule.ip) parts.push(`IP: ${rule.ip}`);
+            if (rule.port) parts.push(`端口: ${rule.port}`);
+            if (rule.network) parts.push(`网络: ${rule.network}`);
+            if (rule.protocol) parts.push(`协议: ${rule.protocol}`);
+
+            const description = parts.length > 0 ? parts.join(' | ') : '无条件';
+            const outboundLabel = { proxy: '代理', direct: '直连', block: '阻断' }[rule.outboundTag] || rule.outboundTag;
+
+            item.setAttribute('headline', rule.name || `规则 ${index + 1}`);
+
+            // 使用 description slot 显示详情和出站
+            const descDiv = document.createElement('div');
+            descDiv.slot = 'description';
+            descDiv.style.cssText = 'display: flex; justify-content: space-between; width: 100%;';
+
+            const descSpan = document.createElement('span');
+            descSpan.textContent = description;
+            descSpan.style.cssText = 'overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;';
+
+            const outboundSpan = document.createElement('span');
+            outboundSpan.textContent = outboundLabel;
+            outboundSpan.style.cssText = 'margin-left: 8px; padding: 2px 6px; border-radius: 4px; font-size: 11px; background: var(--mdui-color-secondary-container); color: var(--mdui-color-on-secondary-container);';
+
+            descDiv.appendChild(descSpan);
+            descDiv.appendChild(outboundSpan);
+            item.appendChild(descDiv);
+
+            // 右侧容器：开关和菜单
+            const endContainer = document.createElement('div');
+            endContainer.slot = 'end-icon';
+            endContainer.style.cssText = 'display: flex; align-items: center; gap: 4px;';
+
+            // 启用开关
+            const switchEl = document.createElement('mdui-switch');
+            switchEl.checked = rule.enabled !== false;
+            switchEl.addEventListener('change', async (e) => {
+                e.stopPropagation();
+                rule.enabled = e.target.checked;
+                await this.saveRulesToBackend();
+            });
+            endContainer.appendChild(switchEl);
+
+            // 菜单
+            const dropdown = document.createElement('mdui-dropdown');
+            dropdown.setAttribute('placement', 'bottom-end');
+
+            const menuBtn = document.createElement('mdui-button-icon');
+            menuBtn.setAttribute('slot', 'trigger');
+            menuBtn.setAttribute('icon', 'more_vert');
+            menuBtn.addEventListener('click', (e) => e.stopPropagation());
+            dropdown.appendChild(menuBtn);
+
+            const menu = document.createElement('mdui-menu');
+
+            // 编辑
+            const editItem = document.createElement('mdui-menu-item');
+            editItem.innerHTML = '<mdui-icon slot="icon" name="edit"></mdui-icon>编辑';
+            editItem.addEventListener('click', (e) => {
+                e.stopPropagation();
+                dropdown.open = false;
+                this.showRuleDialog(rule, index);
+            });
+            menu.appendChild(editItem);
+
+            // 删除
+            const deleteItem = document.createElement('mdui-menu-item');
+            deleteItem.innerHTML = '<mdui-icon slot="icon" name="delete"></mdui-icon>删除';
+            deleteItem.style.color = 'var(--mdui-color-error)';
+            deleteItem.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                dropdown.open = false;
+                if (await this.ui.confirm(`确定要删除规则 "${rule.name || `规则 ${index + 1}`}" 吗？`)) {
+                    this.routingRules.splice(index, 1);
+                    await this.saveRulesToBackend();
+                    this.renderRoutingRules();
                 }
-            }
-        } catch (error) {
-            console.error('加载路由设置失败:', error);
-        }
+            });
+            menu.appendChild(deleteItem);
+
+            dropdown.appendChild(menu);
+            endContainer.appendChild(dropdown);
+            item.appendChild(endContainer);
+
+            listEl.appendChild(item);
+        });
     }
 
-    async setRoutingSetting(key, value) {
+    showRuleDialog(rule = null, index = -1) {
+        this.editingRuleIndex = index;
+        const dialog = document.getElementById('routing-rule-dialog');
+
+        // 设置标题
+        dialog.headline = rule ? '编辑规则' : '添加规则';
+
+        // 填充表单
+        document.getElementById('rule-name').value = rule?.name || '';
+        document.getElementById('rule-domain').value = rule?.domain || '';
+        document.getElementById('rule-ip').value = rule?.ip || '';
+        document.getElementById('rule-port').value = rule?.port || '';
+        document.getElementById('rule-protocol').value = rule?.protocol || '';
+        document.getElementById('rule-network').value = rule?.network || '';
+        document.getElementById('rule-outbound').value = rule?.outboundTag || 'proxy';
+
+        dialog.open = true;
+    }
+
+    async saveRule() {
+        const name = document.getElementById('rule-name').value.trim();
+        const domain = document.getElementById('rule-domain').value.trim();
+        const ip = document.getElementById('rule-ip').value.trim();
+        const port = document.getElementById('rule-port').value.trim();
+        const protocol = document.getElementById('rule-protocol').value.trim();
+        const network = document.getElementById('rule-network').value.trim();
+        const outboundTag = document.getElementById('rule-outbound').value;
+
+        // 验证
+        if (!domain && !ip && !port && !protocol && !network) {
+            toast('请至少填写一个匹配条件');
+            return;
+        }
+
+        const rule = {
+            name: name || (this.editingRuleIndex >= 0 ? `规则 ${this.editingRuleIndex + 1}` : `规则 ${this.routingRules.length + 1}`),
+            type: 'field',
+            domain,
+            ip,
+            port,
+            protocol,
+            network,
+            outboundTag,
+            enabled: true
+        };
+
+        if (this.editingRuleIndex >= 0) {
+            // 保留原有的 enabled 状态
+            rule.enabled = this.routingRules[this.editingRuleIndex].enabled !== false;
+            this.routingRules[this.editingRuleIndex] = rule;
+        } else {
+            this.routingRules.push(rule);
+        }
+
+        await this.saveRulesToBackend();
+        this.renderRoutingRules();
+        document.getElementById('routing-rule-dialog').open = false;
+        toast(this.editingRuleIndex >= 0 ? '规则已更新' : '规则已添加');
+    }
+
+    async saveRulesToBackend() {
         try {
-            await KSUService.setRoutingSetting(key, value);
-            toast(`已${value ? '启用' : '禁用'}`);
+            await KSUService.saveRoutingRules(this.routingRules);
+            await KSUService.applyRoutingRules(this.routingRules);
         } catch (error) {
-            toast('设置失败: ' + error.message);
-            // 恢复开关状态
-            const switchEl = document.getElementById(`route-${key}`);
-            if (switchEl) {
-                switchEl.checked = !value;
-            }
+            console.error('保存规则失败:', error);
+            toast('保存失败: ' + error.message);
         }
     }
 

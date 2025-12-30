@@ -1,0 +1,4 @@
+<resources>
+    <!-- Base application theme. -->
+    <style name="Theme.KernelSU.WebUI" parent="Theme.KsuWebUI" />
+</resources>
