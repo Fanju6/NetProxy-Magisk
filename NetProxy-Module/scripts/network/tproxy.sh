@@ -1114,16 +1114,14 @@ stop_proxy() {
         log Info "清理 TPROXY 链"
         cleanup_tproxy_chain4
         cleanup_routing4
-        if [ "$PROXY_IPV6" -eq 1 ]; then
-            cleanup_tproxy_chain6
-            cleanup_routing6
-        fi
+        # 无条件清理 IPv6 规则，避免之前开启后关闭时残留规则
+        cleanup_tproxy_chain6
+        cleanup_routing6
     else
         log Info "清理 REDIRECT 链"
         cleanup_redirect_chain4
-        if [ "$PROXY_IPV6" -eq 1 ]; then
-            cleanup_redirect_chain6
-        fi
+        # 无条件清理 IPv6 规则，避免之前开启后关闭时残留规则
+        cleanup_redirect_chain6
     fi
     cleanup_ipset
     log Info "代理已停止"
