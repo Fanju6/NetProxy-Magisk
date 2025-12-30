@@ -8,7 +8,7 @@ class RestartProxyTileService : TileService() {
     override fun onClick() {
         super.onClick()
         // 先停止再启动代理
-        Shell.cmd("/data/adb/modules/netproxy/scripts/stop.sh").exec()
-        Shell.cmd("/data/adb/modules/netproxy/scripts/start.sh").submit()
+        Shell.cmd("/data/adb/modules/netproxy/scripts/core/stop.sh").exec()
+        Shell.cmd("/data/adb/modules/netproxy/scripts/core/start.sh").submit()
     }
 }

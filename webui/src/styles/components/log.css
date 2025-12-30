@@ -7,7 +7,7 @@
 /* ==================== 日志容器 ==================== */
 
 .log-container {
-  background-color: var(--monet-surface-container, var(--mdui-color-surface-container));
+  background-color: var(--mdui-color-surface-container);
   border-radius: 8px;
   padding: 12px;
   max-height: 400px;
@@ -17,12 +17,12 @@
   line-height: 1.5;
   white-space: pre-wrap;
   word-wrap: break-word;
-  color: var(--monet-on-surface, var(--mdui-color-on-surface));
+  color: var(--mdui-color-on-surface);
 }
 
 .log-container:empty::before {
   content: '暂无日志';
-  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+  color: var(--mdui-color-on-surface-variant);
 }
 
 /* ==================== 日志容器滚动条样式 ==================== */
@@ -32,17 +32,17 @@
 }
 
 .log-container::-webkit-scrollbar-track {
-  background: var(--monet-surface, var(--mdui-color-surface));
+  background: var(--mdui-color-surface);
   border-radius: 4px;
 }
 
 .log-container::-webkit-scrollbar-thumb {
-  background: var(--monet-outline, var(--mdui-color-outline));
+  background: var(--mdui-color-outline);
   border-radius: 4px;
 }
 
 .log-container::-webkit-scrollbar-thumb:hover {
-  background: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+  background: var(--mdui-color-on-surface-variant);
 }
 
 /* ==================== 调试日志样式 ==================== */
@@ -50,7 +50,7 @@
 .debug-log-container {
   max-height: 70vh;
   overflow-y: auto;
-  background: var(--monet-surface-container, var(--mdui-color-surface-container));
+  background: var(--mdui-color-surface-container);
   border-radius: 8px;
   padding: 12px;
   font-family: 'Courier New', monospace;
@@ -62,7 +62,7 @@
   margin-bottom: 4px;
   border-radius: 4px;
   border-left: 3px solid;
-  background: var(--monet-surface, var(--mdui-color-surface));
+  background: var(--mdui-color-surface);
 }
 
 .debug-log-item.log {
@@ -80,13 +80,13 @@
 }
 
 .debug-log-time {
-  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+  color: var(--mdui-color-on-surface-variant);
   font-size: 10px;
   margin-right: 8px;
 }
 
 .debug-log-message {
-  color: var(--monet-on-surface, var(--mdui-color-on-surface));
+  color: var(--mdui-color-on-surface);
 }
 
 /* ==================== JSON 语法高亮 ==================== */
@@ -114,4 +114,43 @@
 
 .json-null {
   color: #757575;
+}
+
+/* ==================== Monet 颜色覆盖 ==================== */
+
+.monet-enabled .log-container {
+  background-color: var(--monet-surface-container, var(--mdui-color-surface-container));
+  color: var(--monet-on-surface, var(--mdui-color-on-surface));
+}
+
+.monet-enabled .log-container:empty::before {
+  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+}
+
+.monet-enabled .log-container::-webkit-scrollbar-track {
+  background: var(--monet-surface, var(--mdui-color-surface));
+}
+
+.monet-enabled .log-container::-webkit-scrollbar-thumb {
+  background: var(--monet-outline, var(--mdui-color-outline));
+}
+
+.monet-enabled .log-container::-webkit-scrollbar-thumb:hover {
+  background: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+}
+
+.monet-enabled .debug-log-container {
+  background: var(--monet-surface-container, var(--mdui-color-surface-container));
+}
+
+.monet-enabled .debug-log-item {
+  background: var(--monet-surface, var(--mdui-color-surface));
+}
+
+.monet-enabled .debug-log-time {
+  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+}
+
+.monet-enabled .debug-log-message {
+  color: var(--monet-on-surface, var(--mdui-color-on-surface));
 }

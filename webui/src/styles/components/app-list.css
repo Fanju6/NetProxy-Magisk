@@ -18,7 +18,7 @@
   height: 40px;
   border-radius: 50%;
   object-fit: cover;
-  background: var(--monet-surface-container, var(--mdui-color-surface-container));
+  background: var(--mdui-color-surface-container);
 }
 
 .app-info {
@@ -31,13 +31,37 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--monet-on-surface, var(--mdui-color-on-surface));
+  color: var(--mdui-color-on-surface);
 }
 
 .app-package {
   font-size: 12px;
-  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+  color: var(--mdui-color-on-surface-variant);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ==================== 包名换行样式 ==================== */
+
+.package-name-wrap {
+  word-break: break-all !important;
+  white-space: normal !important;
+  overflow-wrap: break-word !important;
+  line-height: 1.4;
+  display: block;
+}
+
+/* ==================== Monet 颜色覆盖 ==================== */
+
+.monet-enabled .app-icon {
+  background: var(--monet-surface-container, var(--mdui-color-surface-container));
+}
+
+.monet-enabled .app-name {
+  color: var(--monet-on-surface, var(--mdui-color-on-surface));
+}
+
+.monet-enabled .app-package {
+  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
 }

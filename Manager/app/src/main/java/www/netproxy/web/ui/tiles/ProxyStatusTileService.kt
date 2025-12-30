@@ -9,8 +9,8 @@ class ProxyStatusTileService : TileService() {
     
     companion object {
         private const val STATUS_FILE = "/data/adb/modules/netproxy/config/status.conf"
-        private const val START_SCRIPT = "/data/adb/modules/netproxy/scripts/start.sh"
-        private const val STOP_SCRIPT = "/data/adb/modules/netproxy/scripts/stop.sh"
+        private const val START_SCRIPT = "/data/adb/modules/netproxy/scripts/core/start.sh"
+        private const val STOP_SCRIPT = "/data/adb/modules/netproxy/scripts/core/stop.sh"
     }
     
     override fun onStartListening() {

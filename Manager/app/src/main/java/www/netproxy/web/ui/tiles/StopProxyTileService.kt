@@ -8,6 +8,6 @@ class StopProxyTileService : TileService() {
     override fun onClick() {
         super.onClick()
         // 执行关闭代理命令
-        Shell.cmd("/data/adb/modules/netproxy/scripts/stop.sh").submit()
+        Shell.cmd("/data/adb/modules/netproxy/scripts/core/stop.sh").submit()
     }
 }

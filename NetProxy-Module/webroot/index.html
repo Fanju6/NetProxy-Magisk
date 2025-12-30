@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang=zh-CN><link rel=stylesheet href=/webui.5bccf37b.css><meta charset=UTF-8><meta name=viewport content="width=device-width, initial-scale=1.0"><meta http-equiv=Cache-Control content="no-cache, no-store, must-revalidate"><meta http-equiv=Pragma content=no-cache><meta http-equiv=Expires content=0><meta name=app-version content=v1.0.2-20251224><title>NetProxy</title><style>#fouc-overlay{z-index:99999;transition:opacity .15s ease-out;position:fixed;inset:0}#fouc-overlay.fade-out{opacity:0;pointer-events:none}</style><script>!function(){try{var e=localStorage.getItem("theme")||"auto",t=document.documentElement;t.classList.remove("mdui-theme-light","mdui-theme-dark","mdui-theme-auto");var a="dark"===e||"auto"===e&&window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;"light"===e?t.classList.add("mdui-theme-light"):"dark"===e?t.classList.add("mdui-theme-dark"):t.classList.add("mdui-theme-auto");var d=document.createElement("style"),o=a?"#141218":"#fef7ff";"auto"===e?d.textContent="#fouc-overlay { background-color: var(--background, "+o+"); }":d.textContent="#fouc-overlay { background-color: "+o+"; }",document.head.appendChild(d)}catch(e){document.documentElement.classList.add("mdui-theme-auto")}}();</script><link rel=stylesheet href=/webui.425275c0.css><link rel=stylesheet href=https://mui.kernelsu.org/internal/insets.css><link rel=stylesheet href=https://mui.kernelsu.org/internal/colors.css><link rel=stylesheet href=/webui.67ba7ff5.css><link rel=stylesheet href=/webui.95d07d72.css><body>
+<!DOCTYPE html><html lang=zh-CN><link rel=stylesheet href=/webui.5bccf37b.css><meta charset=UTF-8><meta name=viewport content="width=device-width, initial-scale=1.0"><meta http-equiv=Cache-Control content="no-cache, no-store, must-revalidate"><meta http-equiv=Pragma content=no-cache><meta http-equiv=Expires content=0><meta name=app-version content=v1.0.2-20251224><title>NetProxy</title><style>#fouc-overlay{z-index:99999;transition:opacity .15s ease-out;position:fixed;inset:0}#fouc-overlay.fade-out{opacity:0;pointer-events:none}</style><script>!function(){try{var e=localStorage.getItem("theme")||"auto",t=document.documentElement;t.classList.remove("mdui-theme-light","mdui-theme-dark","mdui-theme-auto");var a="dark"===e||"auto"===e&&window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;"light"===e?t.classList.add("mdui-theme-light"):"dark"===e?t.classList.add("mdui-theme-dark"):t.classList.add("mdui-theme-auto");var d=document.createElement("style"),o=a?"#141218":"#fef7ff";"auto"===e?d.textContent="#fouc-overlay { background-color: var(--background, "+o+"); }":d.textContent="#fouc-overlay { background-color: "+o+"; }",document.head.appendChild(d)}catch(e){document.documentElement.classList.add("mdui-theme-auto")}}();</script><link rel=stylesheet href=/webui.2c700163.css><link rel=stylesheet href=https://mui.kernelsu.org/internal/insets.css><link rel=stylesheet href=https://mui.kernelsu.org/internal/colors.css><link rel=stylesheet href=/webui.dcefd828.css><link rel=stylesheet href=/webui.9dc8699d.css><body>
   
   <div id=fouc-overlay></div>
 
@@ -237,7 +237,13 @@
             </mdui-collapse-item>
           </mdui-collapse>
 
-          <div style=text-align:center;padding:16px>
+          <div style=text-align:center;flex-wrap:wrap;justify-content:center;gap:12px;padding:16px;display:flex>
+            <mdui-button variant=tonal id=export-logs-btn icon=folder_zip>
+              保存日志
+            </mdui-button>
+            <mdui-button variant=tonal id=export-all-btn icon=backup>
+              保存日志与配置
+            </mdui-button>
             <mdui-button variant=outlined id=logs-back-btn icon=arrow_back>
               返回设置
             </mdui-button>
@@ -376,6 +382,19 @@
             </div>
           </mdui-card>
 
+          
+          <mdui-list style=margin-top:16px>
+            <mdui-list-item>
+              代理模式
+              <span slot=description id=proxy-mode-desc-settings>设置代理模式</span>
+              <mdui-select slot=end-icon id=proxy-mode-settings value=0 style=width:120px>
+                <mdui-menu-item value=0>自动</mdui-menu-item>
+                <mdui-menu-item value=1>TPROXY</mdui-menu-item>
+                <mdui-menu-item value=2>REDIRECT</mdui-menu-item>
+              </mdui-select>
+            </mdui-list-item>
+          </mdui-list>
+
           <mdui-list id=proxy-settings-list style=margin-top:16px>
             <mdui-list-item>
               移动数据
@@ -452,6 +471,21 @@
 
           
           <mdui-card variant=elevated class=compact-card style=margin-top:16px>
+            <div style=padding:16px>
+              <div style=justify-content:space-between;align-items:center;display:flex>
+                <div style=flex:1>
+                  <h3 style="margin:0 0 4px">莫奈取色</h3>
+                  <p id=monet-description style=color:var(--mdui-color-on-surface-variant);margin:0;font-size:14px>
+                    使用系统壁纸颜色作为主题色（仅自动模式可用）
+                  </p>
+                </div>
+                <mdui-switch id=monet-switch></mdui-switch>
+              </div>
+            </div>
+          </mdui-card>
+
+          
+          <mdui-card variant=elevated class=compact-card style=margin-top:16px id=color-palette-card>
             <div style=padding:16px>
               <h3 style="margin:0 0 8px">主题色</h3>
               <p style="color:var(--mdui-color-on-surface-variant);margin:0 0 16px;font-size:14px">
@@ -586,6 +620,6 @@
     <mdui-button slot=action variant=filled id=rule-save>保存</mdui-button>
   </mdui-dialog>
 
-  <script type=module src=/webui.406bf30e.js></script>
+  <script type=module src=/webui.5b483a16.js></script>
 
 

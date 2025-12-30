@@ -15,14 +15,14 @@
 /* ==================== 全局样式 ==================== */
 
 html {
-  background-color: var(--monet-background, var(--mdui-color-background));
-  color: var(--monet-on-background, var(--mdui-color-on-background));
+  background-color: var(--mdui-color-background);
+  color: var(--mdui-color-on-background);
 }
 
 body {
   font-family: 'Roboto', sans-serif;
-  background-color: var(--monet-background, var(--mdui-color-surface));
-  color: var(--monet-on-surface, var(--mdui-color-on-surface));
+  background-color: var(--mdui-color-surface);
+  color: var(--mdui-color-on-surface);
   overflow-x: hidden;
   margin: 0;
   padding: 0;
@@ -32,11 +32,32 @@ body {
 
 /* 确保所有标题和段落继承正确的颜色 */
 h1, h2, h3, h4, h5, h6 {
-  color: var(--monet-on-surface, var(--mdui-color-on-surface));
+  color: var(--mdui-color-on-surface);
 }
 
 p, span, div {
   color: inherit;
+}
+
+/* ==================== 莫奈取色启用时的全局样式 ==================== */
+
+html.monet-enabled {
+  background-color: var(--monet-background);
+  color: var(--monet-on-background);
+}
+
+html.monet-enabled body {
+  background-color: var(--monet-background);
+  color: var(--monet-on-surface);
+}
+
+html.monet-enabled h1,
+html.monet-enabled h2,
+html.monet-enabled h3,
+html.monet-enabled h4,
+html.monet-enabled h5,
+html.monet-enabled h6 {
+  color: var(--monet-on-surface);
 }
 
 /* ==================== 基础布局 ==================== */

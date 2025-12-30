@@ -10,6 +10,14 @@ readonly XRAY_LOG_FILE="$MODDIR/logs/xray.log"
 readonly CONFDIR="$MODDIR/config/xray/confdir"
 readonly OUTBOUNDS_DIR="$MODDIR/config/xray/outbounds"
 
+# 根据运行环境设置 busybox 路径
+# KSU 变量在 KernelSU 环境下为 true
+if [ "${KSU:-false}" = "true" ]; then
+    BUSYBOX="/data/adb/ksu/bin/busybox"
+else
+    BUSYBOX="/data/adb/magisk/busybox"
+fi
+
 #######################################
 # 记录日志
 # Arguments:
@@ -105,7 +113,7 @@ start_xray() {
     log "INFO" "使用出站配置: $outbound_config"
     
     # 启动 Xray 进程（使用 root:net_admin 运行）
-    nohup busybox setuidgid root:net_admin "$XRAY_BIN" run -confdir "$CONFDIR" -config "$outbound_config" > "$XRAY_LOG_FILE" 2>&1 &
+    nohup "$BUSYBOX" setuidgid root:net_admin "$XRAY_BIN" run -confdir "$CONFDIR" -config "$outbound_config" > "$XRAY_LOG_FILE" 2>&1 &
     local xray_pid=$!
     
     log "INFO" "Xray 进程已启动, PID: $xray_pid"

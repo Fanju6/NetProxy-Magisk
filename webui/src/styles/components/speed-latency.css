@@ -17,16 +17,16 @@
   align-items: center;
   gap: 4px;
   padding: 6px 10px;
-  background: var(--monet-surface-container, var(--mdui-color-surface-container));
+  background: var(--mdui-color-surface-container);
   border-radius: 8px;
   font-size: 14px;
   font-weight: 600;
-  color: var(--monet-on-surface, var(--mdui-color-on-surface));
+  color: var(--mdui-color-on-surface);
 }
 
 .speed-mini-unit {
   font-size: 11px;
-  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+  color: var(--mdui-color-on-surface-variant);
   font-weight: 500;
 }
 
@@ -55,12 +55,12 @@
   gap: 12px;
   padding: 12px;
   border-radius: 12px;
-  background: var(--monet-surface-container, var(--mdui-color-surface-container));
+  background: var(--mdui-color-surface-container);
   transition: all 0.3s ease;
 }
 
 .speed-item:hover {
-  background: var(--monet-surface-container-high, var(--mdui-color-surface-container-high));
+  background: var(--mdui-color-surface-container-high);
   transform: scale(1.02);
 }
 
@@ -81,7 +81,7 @@
   align-items: center;
   justify-content: center;
   border-radius: 10px;
-  background: var(--monet-surface-container-high, var(--mdui-color-surface-container-highest));
+  background: var(--mdui-color-surface-container-highest);
 }
 
 .speed-download .speed-icon {
@@ -98,7 +98,7 @@
 
 .speed-label {
   font-size: 12px;
-  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+  color: var(--mdui-color-on-surface-variant);
   margin-bottom: 2px;
   font-weight: 500;
 }
@@ -112,7 +112,7 @@
 .speed-value {
   font-size: 24px;
   font-weight: 700;
-  color: var(--monet-on-surface, var(--mdui-color-on-surface));
+  color: var(--mdui-color-on-surface);
   font-variant-numeric: tabular-nums;
   letter-spacing: -1px;
   animation: number-fade 0.3s ease;
@@ -130,14 +130,14 @@
 
 .speed-unit {
   font-size: 14px;
-  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+  color: var(--mdui-color-on-surface-variant);
   font-weight: 500;
 }
 
 .speed-divider {
   width: 1px;
   height: 60px;
-  background: var(--monet-outline-variant, var(--mdui-color-outline-variant));
+  background: var(--mdui-color-outline-variant);
 }
 
 /* 响应式 - 速度容器 */
@@ -162,7 +162,7 @@
   display: flex;
   gap: 0;
   justify-content: space-between;
-  background: var(--monet-surface-container, var(--mdui-color-surface-container));
+  background: var(--mdui-color-surface-container);
   border-radius: 16px;
   overflow: hidden;
 }
@@ -179,14 +179,14 @@
 
 .latency-label {
   font-size: 12px;
-  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+  color: var(--mdui-color-on-surface-variant);
   font-weight: 500;
 }
 
 .latency-value-horizontal {
   font-size: 16px;
   font-weight: 700;
-  color: var(--monet-on-surface, var(--mdui-color-on-surface));
+  color: var(--mdui-color-on-surface);
   font-variant-numeric: tabular-nums;
 }
 
@@ -233,12 +233,12 @@
   align-items: center;
   padding: 12px;
   border-radius: 10px;
-  background: var(--monet-surface-container, var(--mdui-color-surface-container));
+  background: var(--mdui-color-surface-container);
   transition: all 0.2s ease;
 }
 
 .latency-item:hover {
-  background: var(--monet-surface-container-high, var(--mdui-color-surface-container-high));
+  background: var(--mdui-color-surface-container-high);
 }
 
 .latency-info {
@@ -248,13 +248,13 @@
 .latency-name {
   font-size: 15px;
   font-weight: 600;
-  color: var(--monet-on-surface, var(--mdui-color-on-surface));
+  color: var(--mdui-color-on-surface);
   margin-bottom: 2px;
 }
 
 .latency-host {
   font-size: 11px;
-  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+  color: var(--mdui-color-on-surface-variant);
   font-family: 'Courier New', monospace;
 }
 
@@ -285,10 +285,82 @@
 }
 
 .latency-badge.unknown {
-  background: var(--monet-surface-container-high, var(--mdui-color-surface-container-highest));
-  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+  background: var(--mdui-color-surface-container-highest);
+  color: var(--mdui-color-on-surface-variant);
 }
 
 .latency-value {
   font-variant-numeric: tabular-nums;
+}
+
+/* ==================== Monet 颜色覆盖 ==================== */
+
+.monet-enabled .speed-mini-item {
+  background: var(--monet-surface-container, var(--mdui-color-surface-container));
+  color: var(--monet-on-surface, var(--mdui-color-on-surface));
+}
+
+.monet-enabled .speed-mini-unit {
+  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+}
+
+.monet-enabled .speed-item {
+  background: var(--monet-surface-container, var(--mdui-color-surface-container));
+}
+
+.monet-enabled .speed-item:hover {
+  background: var(--monet-surface-container-high, var(--mdui-color-surface-container-high));
+}
+
+.monet-enabled .speed-icon {
+  background: var(--monet-surface-container-high, var(--mdui-color-surface-container-highest));
+}
+
+.monet-enabled .speed-label {
+  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+}
+
+.monet-enabled .speed-value {
+  color: var(--monet-on-surface, var(--mdui-color-on-surface));
+}
+
+.monet-enabled .speed-unit {
+  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+}
+
+.monet-enabled .speed-divider {
+  background: var(--monet-outline-variant, var(--mdui-color-outline-variant));
+}
+
+.monet-enabled .latency-row {
+  background: var(--monet-surface-container, var(--mdui-color-surface-container));
+}
+
+.monet-enabled .latency-label {
+  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+}
+
+.monet-enabled .latency-value-horizontal {
+  color: var(--monet-on-surface, var(--mdui-color-on-surface));
+}
+
+.monet-enabled .latency-item {
+  background: var(--monet-surface-container, var(--mdui-color-surface-container));
+}
+
+.monet-enabled .latency-item:hover {
+  background: var(--monet-surface-container-high, var(--mdui-color-surface-container-high));
+}
+
+.monet-enabled .latency-name {
+  color: var(--monet-on-surface, var(--mdui-color-on-surface));
+}
+
+.monet-enabled .latency-host {
+  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+}
+
+.monet-enabled .latency-badge.unknown {
+  background: var(--monet-surface-container-high, var(--mdui-color-surface-container-highest));
+  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
 }

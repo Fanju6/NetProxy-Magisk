@@ -2,6 +2,7 @@
  * 状态卡片样式
  * 
  * 包含重新设计的状态卡片、紧凑状态页面、服务状态卡片等
+ * 默认使用 MDUI 变量，莫奈取色启用时使用 Monet 变量
  */
 
 /* ==================== 重新设计的状态卡片 ==================== */
@@ -17,7 +18,7 @@
   align-items: center;
   margin-bottom: 16px;
   padding-bottom: 12px;
-  border-bottom: 1px solid var(--monet-outline-variant, var(--mdui-color-outline-variant));
+  border-bottom: 1px solid var(--mdui-color-outline-variant);
 }
 
 .status-left {
@@ -29,7 +30,7 @@
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  background: var(--monet-surface-container, var(--mdui-color-surface-container));
+  background: var(--mdui-color-surface-container);
   border-radius: 20px;
   margin-bottom: 6px;
 }
@@ -38,7 +39,7 @@
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: var(--monet-outline, var(--mdui-color-outline));
+  background: var(--mdui-color-outline);
 }
 
 .status-badge-dot.running {
@@ -65,12 +66,12 @@
 .status-badge span {
   font-size: 14px;
   font-weight: 600;
-  color: var(--monet-on-surface, var(--mdui-color-on-surface));
+  color: var(--mdui-color-on-surface);
 }
 
 .status-detail {
   font-size: 12px;
-  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+  color: var(--mdui-color-on-surface-variant);
   margin-left: 12px;
 }
 
@@ -91,7 +92,7 @@
 
 .info-icon {
   font-size: 20px;
-  color: var(--monet-primary, var(--mdui-color-primary));
+  color: var(--mdui-color-primary);
 }
 
 .info-content {
@@ -100,7 +101,7 @@
 
 .info-label {
   font-size: 11px;
-  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+  color: var(--mdui-color-on-surface-variant);
   margin-bottom: 2px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -109,13 +110,13 @@
 .info-value {
   font-size: 14px;
   font-weight: 600;
-  color: var(--monet-on-surface, var(--mdui-color-on-surface));
+  color: var(--mdui-color-on-surface);
 }
 
 .info-divider {
   width: 1px;
   height: 30px;
-  background: var(--monet-outline-variant, var(--mdui-color-outline-variant));
+  background: var(--mdui-color-outline-variant);
 }
 
 /* 响应式 - 新状态卡片 */
@@ -151,7 +152,7 @@
 .card-compact-title {
   font-size: 15px;
   font-weight: 600;
-  color: var(--monet-on-surface, var(--mdui-color-on-surface));
+  color: var(--mdui-color-on-surface);
 }
 
 /* 状态和速度行 */
@@ -177,7 +178,7 @@
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: var(--monet-outline, var(--mdui-color-outline));
+  background: var(--mdui-color-outline);
   transition: all 0.3s ease;
 }
 
@@ -205,12 +206,12 @@
 .status-text {
   font-size: 16px;
   font-weight: 600;
-  color: var(--monet-on-surface, var(--mdui-color-on-surface));
+  color: var(--mdui-color-on-surface);
 }
 
 .status-time {
   font-size: 12px;
-  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+  color: var(--mdui-color-on-surface-variant);
 }
 
 /* 响应式 - 紧凑状态 */
@@ -227,7 +228,7 @@
   text-align: center;
   padding: 20px 16px;
   border-radius: 12px;
-  background: linear-gradient(135deg, var(--monet-primary-container, var(--mdui-color-primary-container)) 0%, var(--monet-surface-container-high, var(--mdui-color-surface-container-high)) 100%);
+  background: linear-gradient(135deg, var(--mdui-color-primary-container) 0%, var(--mdui-color-surface-container-high) 100%);
   margin-bottom: 12px;
 }
 
@@ -239,7 +240,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--monet-surface, var(--mdui-color-surface));
+  background: var(--mdui-color-surface);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   transition: all 0.3s ease;
 }
@@ -277,14 +278,14 @@
   font-size: 24px;
   font-weight: 600;
   margin: 0 0 4px 0;
-  color: var(--monet-on-surface, var(--mdui-color-on-surface));
+  color: var(--mdui-color-on-surface);
   letter-spacing: -0.5px;
 }
 
 .status-subtitle {
   font-size: 14px;
   margin: 0;
-  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+  color: var(--mdui-color-on-surface-variant);
   opacity: 0.8;
 }
 
@@ -314,7 +315,7 @@
   font-size: 18px;
   font-weight: 600;
   margin: 0 0 12px 0;
-  color: var(--monet-on-surface, var(--mdui-color-on-surface));
+  color: var(--mdui-color-on-surface);
 }
 
 .card-header {
@@ -322,4 +323,78 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 12px;
+}
+
+/* ==================== 莫奈取色启用时的样式覆盖 ==================== */
+
+.monet-enabled .status-main {
+  border-bottom-color: var(--monet-outline-variant);
+}
+
+.monet-enabled .status-badge {
+  background: var(--monet-surface-container);
+}
+
+.monet-enabled .status-badge-dot {
+  background: var(--monet-outline);
+}
+
+.monet-enabled .status-badge span {
+  color: var(--monet-on-surface);
+}
+
+.monet-enabled .status-detail {
+  color: var(--monet-on-surface-variant);
+}
+
+.monet-enabled .info-icon {
+  color: var(--monet-primary);
+}
+
+.monet-enabled .info-label {
+  color: var(--monet-on-surface-variant);
+}
+
+.monet-enabled .info-value {
+  color: var(--monet-on-surface);
+}
+
+.monet-enabled .info-divider {
+  background: var(--monet-outline-variant);
+}
+
+.monet-enabled .card-compact-title {
+  color: var(--monet-on-surface);
+}
+
+.monet-enabled .status-dot {
+  background: var(--monet-outline);
+}
+
+.monet-enabled .status-text {
+  color: var(--monet-on-surface);
+}
+
+.monet-enabled .status-time {
+  color: var(--monet-on-surface-variant);
+}
+
+.monet-enabled .status-hero {
+  background: linear-gradient(135deg, var(--monet-primary-container) 0%, var(--monet-surface-container-high) 100%);
+}
+
+.monet-enabled .status-icon-container {
+  background: var(--monet-surface);
+}
+
+.monet-enabled .status-title {
+  color: var(--monet-on-surface);
+}
+
+.monet-enabled .status-subtitle {
+  color: var(--monet-on-surface-variant);
+}
+
+.monet-enabled .card-title {
+  color: var(--monet-on-surface);
 }

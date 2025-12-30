@@ -26,12 +26,20 @@
 
 .skeleton {
   background: linear-gradient(90deg,
-      var(--monet-surface-container, var(--mdui-color-surface-container)) 25%,
-      var(--monet-surface-container-high, var(--mdui-color-surface-container-high)) 50%,
-      var(--monet-surface-container, var(--mdui-color-surface-container)) 75%);
+      var(--mdui-color-surface-container) 25%,
+      var(--mdui-color-surface-container-high) 50%,
+      var(--mdui-color-surface-container) 75%);
   background-size: 200% 100%;
   animation: skeleton-loading 1.5s ease-in-out infinite;
   border-radius: 4px;
+}
+
+/* 莫奈取色启用时的骨架加载 */
+.monet-enabled .skeleton {
+  background: linear-gradient(90deg,
+      var(--monet-surface-container) 25%,
+      var(--monet-surface-container-high) 50%,
+      var(--monet-surface-container) 75%);
 }
 
 .skeleton-circle {

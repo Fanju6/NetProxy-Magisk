@@ -385,7 +385,14 @@
             </mdui-collapse-item>
           </mdui-collapse>
 
-          <div style="padding: 16px; text-align: center;">
+          <div
+            style="padding: 16px; text-align: center; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+            <mdui-button variant="tonal" id="export-logs-btn" icon="folder_zip">
+              保存日志
+            </mdui-button>
+            <mdui-button variant="tonal" id="export-all-btn" icon="backup">
+              保存日志与配置
+            </mdui-button>
             <mdui-button variant="outlined" id="logs-back-btn" icon="arrow_back">
               返回设置
             </mdui-button>
@@ -524,6 +531,19 @@
             </div>
           </mdui-card>
 
+          <!-- 代理模式选择 -->
+          <mdui-list style="margin-top: 16px;">
+            <mdui-list-item>
+              代理模式
+              <span slot="description" id="proxy-mode-desc-settings">设置代理模式</span>
+              <mdui-select slot="end-icon" id="proxy-mode-settings" value="0" style="width: 120px;">
+                <mdui-menu-item value="0">自动</mdui-menu-item>
+                <mdui-menu-item value="1">TPROXY</mdui-menu-item>
+                <mdui-menu-item value="2">REDIRECT</mdui-menu-item>
+              </mdui-select>
+            </mdui-list-item>
+          </mdui-list>
+
           <mdui-list id="proxy-settings-list" style="margin-top: 16px;">
             <mdui-list-item>
               移动数据
@@ -598,8 +618,24 @@
             </div>
           </mdui-card>
 
-          <!-- 主题色设置 -->
+          <!-- 莫奈取色设置 -->
           <mdui-card variant="elevated" class="compact-card" style="margin-top: 16px;">
+            <div style="padding: 16px;">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div style="flex: 1;">
+                  <h3 style="margin: 0 0 4px;">莫奈取色</h3>
+                  <p id="monet-description"
+                    style="margin: 0; color: var(--mdui-color-on-surface-variant); font-size: 14px;">
+                    使用系统壁纸颜色作为主题色（仅自动模式可用）
+                  </p>
+                </div>
+                <mdui-switch id="monet-switch"></mdui-switch>
+              </div>
+            </div>
+          </mdui-card>
+
+          <!-- 主题色设置 -->
+          <mdui-card variant="elevated" class="compact-card" style="margin-top: 16px;" id="color-palette-card">
             <div style="padding: 16px;">
               <h3 style="margin: 0 0 8px;">主题色</h3>
               <p style="margin: 0 0 16px; color: var(--mdui-color-on-surface-variant); font-size: 14px;">
