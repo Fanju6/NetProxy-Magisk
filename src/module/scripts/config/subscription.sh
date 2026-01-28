@@ -198,16 +198,50 @@ update_subscription() {
     
 
     # 使用 proxylink 进行订阅转换
-    # -sub: 订阅链接
-    # -format xray: 输出 xray 格式
-    # -dir: 输出目录 (每个节点单独一个文件)
-    if "$MODDIR/bin/proxylink" -sub "$url" -insecure -dns -format xray -dir "$sub_dir" >> "$LOG_FILE" 2>&1; then
-         log "INFO" "订阅更新完成"
-         echo "已导入节点"
+    # 支持两种情况：
+    # 1) URL 型订阅: 使用 -sub 直接抓取
+    # 2) Base64 内容型: meta 中存储为 BASE64:<content>，需要解码后通过 -file 导入
+    if echo "$url" | grep -q '^BASE64:'; then
+        log "DEBUG" "检测到 BASE64 内容订阅，尝试解码并导入"
+        local b64_content="${url#BASE64:}"
+        local tmpfile
+        tmpfile=$(mktemp) || tmpfile="/tmp/.sub_tmp_$$"
+
+        # 尝试标准 Base64 解码
+        if echo "$b64_content" | base64 -d > "$tmpfile" 2>/dev/null; then
+            if "$MODDIR/bin/proxylink" -file "$tmpfile" -insecure -dns -format xray -dir "$sub_dir" >> "$LOG_FILE" 2>&1; then
+                log "INFO" "订阅更新完成 (Base64 -> file)"
+                echo "已导入节点"
+                rm -f "$tmpfile"
+                return
+            fi
+        fi
+
+        # 尝试 URL-safe Base64 (替换 -/_ -> +/)
+        if echo "$b64_content" | sed 's/-/+/g; s/_/\\//g' | base64 -d > "$tmpfile" 2>/dev/null; then
+            if "$MODDIR/bin/proxylink" -file "$tmpfile" -insecure -dns -format xray -dir "$sub_dir" >> "$LOG_FILE" 2>&1; then
+                log "INFO" "订阅更新完成 (Base64 URL-safe -> file)"
+                echo "已导入节点"
+                rm -f "$tmpfile"
+                return
+            fi
+        fi
+
+        # 失败：记录错误并退出
+        log "ERROR" "Base64 解码或导入失败"
+        echo "错误: 订阅更新失败（Base64 解码或导入失败），请查看日志"
+        rm -f "$tmpfile"
+        exit 1
     else
-         log "ERROR" "订阅更新失败"
-         echo "错误: 订阅更新失败，请查看日志"
-         exit 1
+        # -sub 模式（URL）
+        if "$MODDIR/bin/proxylink" -sub "$url" -insecure -dns -format xray -dir "$sub_dir" >> "$LOG_FILE" 2>&1; then
+             log "INFO" "订阅更新完成"
+             echo "已导入节点"
+        else
+             log "ERROR" "订阅更新失败"
+             echo "错误: 订阅更新失败，请查看日志"
+             exit 1
+        fi
     fi
 }
 

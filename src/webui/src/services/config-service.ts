@@ -192,10 +192,73 @@ EOF
 
     static async addSubscription(name: string, url: string): Promise<OperationResult> {
         try {
+            // 如果输入看起来像 Base64 内容，则本地解码后通过 proxylink -file 导入
+            if (ConfigService.isProbablyBase64(url)) {
+                const safeName = name.replace(/[\/\\:*?"<>| ]/g, '_');
+                const subDir = `${KSU.MODULE_PATH}/config/xray/outbounds/sub_${safeName}`;
+
+                // 创建目录与 _meta.json（保留原始 url 字段以便识别）
+                // 将 meta.url 标记为 BASE64 前缀，便于模块脚本识别并在后续更新中处理
+                const meta = JSON.stringify({ name: name, url: `BASE64:${url}`, updated: new Date().toISOString() });
+                const escapedMeta = meta.replace(/'/g, "'\\''");
+                await KSU.exec(`mkdir -p '${subDir}' && echo '${escapedMeta}' > '${subDir}/_meta.json'`);
+
+                // 解码 Base64 内容并写入临时文件，然后使用 proxylink -file 导入
+                const decoded = ConfigService.decodeBase64(url);
+                if (!decoded) {
+                    throw new Error('Base64 解码失败');
+                }
+                const escapedDecoded = decoded.replace(/'/g, "'\\''");
+                const tmpPath = `${subDir}/.tmp_sub_content`;
+                await KSU.exec(`echo '${escapedDecoded}' > '${tmpPath}'`);
+                await KSU.exec(`chmod +x '${KSU.MODULE_PATH}/bin/proxylink' && '${KSU.MODULE_PATH}/bin/proxylink' -file '${tmpPath}' -insecure -dns -format xray -dir '${subDir}'`);
+                // 清理临时文件
+                await KSU.exec(`rm -f '${tmpPath}'`);
+                return { success: true };
+            }
+
+            // 默认：调用模块脚本按 URL 添加
             await KSU.exec(`sh ${KSU.MODULE_PATH}/scripts/config/subscription.sh add "${name}" "${url}"`);
             return { success: true };
         } catch (error: any) {
             return { success: false, error: error.message };
+        }
+    }
+
+    // 简单判断是否可能为 Base64 编码的订阅内容
+    static isProbablyBase64(s: string): boolean {
+        if (!s) return false;
+        const trimmed = s.trim();
+        // 如果包含 URI scheme，则不是 base64 内容
+        if (trimmed.includes('://')) return false;
+        // 长度和字符集初筛
+        if (trimmed.length < 16) return false;
+        // 允许标准和 URL-safe 的 Base64 字符集及 padding
+        return /^[A-Za-z0-9\\-_+/=]+$/.test(trimmed);
+    }
+
+    // 在浏览器端尝试解码 Base64，兼容 URL-safe 和 padding 缺失情况
+    static decodeBase64(s: string): string {
+        try {
+            let str = s.trim();
+            // URL-safe -> 标准
+            str = str.replace(/-/g, '+').replace(/_/g, '/');
+            // 补齐 padding
+            while (str.length % 4 !== 0) {
+                str += '=';
+            }
+            // atob 返回 binary string，需要尝试解码为 UTF-8
+            try {
+                // decodeURIComponent + escape 用于兼容 UTF-8 字符
+                // eslint-disable-next-line no-undef
+                return decodeURIComponent(escape(atob(str)));
+            } catch (e) {
+                // 回退到直接 atob
+                // eslint-disable-next-line no-undef
+                return atob(str);
+            }
+        } catch (e) {
+            return '';
         }
     }
 
