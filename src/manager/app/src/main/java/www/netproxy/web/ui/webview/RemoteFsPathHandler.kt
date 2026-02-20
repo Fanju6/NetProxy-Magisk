@@ -27,7 +27,7 @@ import java.util.zip.GZIPInputStream
  * @param onInsetsRequestedListener 边距请求监听器
  */
 class RemoteFsPathHandler(
-    context: Context,
+    private val context: Context,
     directory: File,
     private val fs: FileSystemManager,
     private val insetsSupplier: () -> Insets,
@@ -130,7 +130,9 @@ class RemoteFsPathHandler(
         }
         
         if (path == "internal/colors.css") {
-            val css = MonetColorsProvider.getCss()
+            val enableMonet = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+                .getBoolean("enable_monet", true)
+            val css = if (enableMonet) MonetColorsProvider.getColorsCss() else ""
             return WebResourceResponse(
                 "text/css",
                 "utf-8",

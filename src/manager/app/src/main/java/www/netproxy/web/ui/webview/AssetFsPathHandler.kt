@@ -34,7 +34,9 @@ class AssetFsPathHandler(
         }
 
         if (path == "internal/colors.css") {
-            val css = MonetColorsProvider.getCss()
+            val enableMonet = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+                .getBoolean("enable_monet", true)
+            val css = if (enableMonet) MonetColorsProvider.getColorsCss() else ""
             return WebResourceResponse(
                 "text/css",
                 "utf-8",

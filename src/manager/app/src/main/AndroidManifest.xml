@@ -31,10 +31,12 @@
 
         <activity
             android:name="www.netproxy.web.ui.ui.main.MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|uiMode|fontScale"
             android:exported="false" />
             
         <activity
             android:name="www.netproxy.web.ui.ui.software.SoftwareMainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|uiMode|fontScale"
             android:exported="false" />
 
         <!-- 开启代理磁贴 -->

@@ -277,4 +277,14 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    /**
+     * 处理配置变化，包括主题切换
+     * 当系统主题变化时更新莫奈颜色
+     */
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        webView?.settings?.textZoom = (newConfig.fontScale * 100).toInt()
+        MonetColorsProvider.updateCss(this)
+    }
 }

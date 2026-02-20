@@ -10,6 +10,7 @@ import androidx.activity.addCallback
 import androidx.fragment.app.FragmentActivity
 import androidx.webkit.WebViewAssetLoader
 import www.netproxy.web.ui.util.Insets
+import www.netproxy.web.ui.util.MonetColorsProvider
 import www.netproxy.web.ui.webview.AssetFsPathHandler
 import www.netproxy.web.ui.webview.WebViewInterface
 
@@ -25,6 +26,8 @@ class SoftwareMainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        MonetColorsProvider.updateCss(this)
         
         webView = WebView(this)
         setContentView(webView)
@@ -73,5 +76,15 @@ class SoftwareMainActivity : FragmentActivity() {
         
         // 使用自定义域名加载首页
         webView.loadUrl("https://netproxy.local/index.html")
+    }
+
+    /**
+     * 处理配置变化，包括主题切换
+     * 当系统主题变化时更新莫奈颜色
+     */
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        webView.settings.textZoom = (newConfig.fontScale * 100).toInt()
+        MonetColorsProvider.updateCss(this)
     }
 }
