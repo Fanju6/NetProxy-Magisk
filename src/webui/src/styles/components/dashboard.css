@@ -3,432 +3,435 @@
  */
 
 :root {
-    --card-radius: 14px;
-    --card-padding: 12px;
-    --widget-height-1: 76px;
-    --widget-height-2: calc(var(--widget-height-1) * 2 + var(--grid-gap));
-    --grid-gap: 12px;
+  --card-radius: 14px;
+  --card-padding: 12px;
+  --widget-height-1: 76px;
+  --widget-height-2: calc(var(--widget-height-1) * 2 + var(--grid-gap));
+  --grid-gap: 12px;
 }
 
 /* ==================== Dashboard Grid ==================== */
 
 .dashboard-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto auto auto auto;
-    gap: var(--grid-gap);
-    padding: 16px;
-    padding-bottom: 100px;
-    max-width: 560px;
-    margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto auto auto auto;
+  gap: var(--grid-gap);
+  padding: 16px;
+  padding-bottom: 100px;
+  max-width: 560px;
+  margin: 0 auto;
 }
 
 .speed-card {
-    grid-column: 1 / -1;
+  grid-column: 1 / -1;
 }
 
 .mode-card {
-    grid-column: 1;
-    grid-row: 2 / 4;
+  grid-column: 1;
+  grid-row: 2 / 4;
 }
 
 .dashboard-grid > .common-card:nth-child(3) {
-    grid-column: 2;
-    grid-row: 2;
+  grid-column: 2;
+  grid-row: 2;
 }
 
 .dashboard-grid > .common-card:nth-child(4) {
-    grid-column: 1;
-    grid-row: 4;
+  grid-column: 1;
+  grid-row: 4;
 }
 
 .traffic-card {
-    grid-column: 2;
-    grid-row: 3 / 5;
+  grid-column: 2;
+  grid-row: 3 / 5;
 }
 
 /* ==================== CommonCard ==================== */
 
 .common-card {
-    background: var(
-        --monet-surface-container-low,
-        var(--mdui-color-surface-container-low, #f7f2fa)
+  background: var(
+    --monet-surface-container-low,
+    var(--mdui-color-surface-container-low, #f7f2fa)
+  );
+  border-radius: var(--card-radius);
+  border: 1px solid
+    var(
+      --monet-surface-container-highest,
+      var(--mdui-color-surface-container-highest, #e6e0e9)
     );
-    border-radius: var(--card-radius);
-    border: 1px solid
-        var(--monet-surface-container-highest, var(--mdui-color-surface-container-highest, #e6e0e9));
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    transition:
-        border-color 0.2s,
-        transform 0.15s;
-    cursor: pointer;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition:
+    border-color 0.2s,
+    transform 0.15s;
+  cursor: pointer;
 }
 
 .common-card:hover {
-    border-color: var(--monet-primary, var(--mdui-color-primary));
-    transform: translateY(-1px);
+  border-color: var(--monet-primary, var(--mdui-color-primary));
+  transform: translateY(-1px);
 }
 
 .common-card.height-1 {
-    height: var(--widget-height-1);
+  height: var(--widget-height-1);
 }
 
 .common-card.height-2 {
-    height: var(--widget-height-2);
+  height: var(--widget-height-2);
 }
 
 /* ==================== 头部 (覆盖 status-card.css 冲突) ==================== */
 
 .dashboard-grid .card-header {
-    display: flex;
-    flex-direction: row;
-    justify-content: flex-start;
-    align-items: center;
-    gap: 8px;
-    padding: 12px var(--card-padding);
-    padding-bottom: 0;
-    flex-shrink: 0;
-    margin-bottom: 0;
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 8px;
+  padding: 12px var(--card-padding);
+  padding-bottom: 0;
+  flex-shrink: 0;
+  margin-bottom: 0;
 }
 
 .dashboard-grid .card-header .card-icon {
-    font-size: 24px;
-    color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
-    flex-shrink: 0;
+  font-size: 24px;
+  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+  flex-shrink: 0;
 }
 
 .dashboard-grid .card-header .card-title {
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0;
 }
 
 /* ==================== 内容区 ==================== */
 
 .card-content {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    padding: 0 var(--card-padding) 10px var(--card-padding);
-    overflow: hidden;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 var(--card-padding) 10px var(--card-padding);
+  overflow: hidden;
 }
 
 .card-value {
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--monet-on-surface, var(--mdui-color-on-surface));
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    display: flex;
-    align-items: center;
-    gap: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--monet-on-surface, var(--mdui-color-on-surface));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 /* 国旗 Emoji 样式 */
 .card-value .flag {
-    font-size: 1.2em;
-    line-height: 1;
+  font-size: 1.2em;
+  line-height: 1;
 }
 
 /* 网络检测卡片图标位置的国旗样式 */
 .flag-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    line-height: 1;
-    vertical-align: middle;
-    font-size: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  vertical-align: middle;
+  font-size: 20px;
 }
 
 /* ==================== 网络速度卡片 ==================== */
 
 .speed-card {
-    height: 160px;
+  height: 160px;
 }
 
 .speed-card .card-content {
-    padding: 0;
-    position: relative;
-    flex: 1;
+  padding: 0;
+  position: relative;
+  flex: 1;
 }
 
 .speed-card .chart-area {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    top: 8px;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: 8px;
 }
 
 .speed-card .chart-value {
-    position: absolute;
-    top: -20px;
-    right: 12px;
-    font-size: 11px;
-    color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+  position: absolute;
+  top: -20px;
+  right: 12px;
+  font-size: 11px;
+  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
 }
 
 /* ==================== 出站模式卡片 ==================== */
 
 .mode-card .card-content {
-    padding: 4px 8px 8px 8px;
-    justify-content: flex-start;
+  padding: 4px 8px 8px 8px;
+  justify-content: flex-start;
 }
 
 .mode-options {
-    display: flex;
-    flex-direction: column;
+  display: flex;
+  flex-direction: column;
 }
 
 .mode-option {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
 }
 
 .mode-option:hover {
-    background: var(--monet-surface-container-high, rgba(0, 0, 0, 0.04));
+  background: var(--monet-surface-container-high, rgba(0, 0, 0, 0.04));
 }
 
 .mode-option .mode-radio {
-    width: 18px;
-    height: 18px;
-    border: 2px solid var(--monet-outline, var(--mdui-color-outline));
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--monet-outline, var(--mdui-color-outline));
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .mode-option.active .mode-radio {
-    border-color: var(--monet-primary, var(--mdui-color-primary));
+  border-color: var(--monet-primary, var(--mdui-color-primary));
 }
 
 .mode-option.active .mode-radio::after {
-    content: '';
-    width: 9px;
-    height: 9px;
-    background: var(--monet-primary, var(--mdui-color-primary));
-    border-radius: 50%;
+  content: "";
+  width: 9px;
+  height: 9px;
+  background: var(--monet-primary, var(--mdui-color-primary));
+  border-radius: 50%;
 }
 
 .mode-option .mode-label {
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--monet-on-surface, var(--mdui-color-on-surface));
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--monet-on-surface, var(--mdui-color-on-surface));
 }
 
 /* ==================== 流量统计卡片 ==================== */
 
 .traffic-card .card-content {
-    padding: 4px var(--card-padding) 8px var(--card-padding);
-    justify-content: flex-start;
-    gap: 4px;
+  padding: 4px var(--card-padding) 8px var(--card-padding);
+  justify-content: flex-start;
+  gap: 4px;
 }
 
 .traffic-donut-container {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex: 1;
-    min-height: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
 }
 
 .donut-chart-wrapper {
-    width: 50px;
-    height: 50px;
-    flex-shrink: 0;
+  width: 50px;
+  height: 50px;
+  flex-shrink: 0;
 }
 
 .donut-chart-wrapper svg {
-    width: 100%;
-    height: 100%;
+  width: 100%;
+  height: 100%;
 }
 
 .traffic-legend {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
 .legend-item {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 11px;
-    color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
 }
 
 .legend-color {
-    width: 16px;
-    height: 6px;
-    border-radius: 3px;
+  width: 16px;
+  height: 6px;
+  border-radius: 3px;
 }
 
 .legend-color.upload {
-    background: var(--monet-primary, #4caf50);
+  background: var(--monet-primary, #4caf50);
 }
 
 .legend-color.download {
-    background: var(--monet-secondary, #2196f3);
+  background: var(--monet-secondary, #2196f3);
 }
 
 .traffic-stats {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .traffic-stat-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
 }
 
 .traffic-stat-row .stat-label {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    color: var(--monet-on-surface, var(--mdui-color-on-surface));
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--monet-on-surface, var(--mdui-color-on-surface));
 }
 
 .traffic-stat-row .stat-label mdui-icon {
-    font-size: 12px;
+  font-size: 12px;
 }
 
 .traffic-stat-row .stat-value {
-    font-size: 11px;
+  font-size: 11px;
 }
 
 .traffic-stat-row .stat-unit {
-    font-size: 9px;
-    color: var(--monet-on-surface-variant);
-    margin-left: 2px;
+  font-size: 9px;
+  color: var(--monet-on-surface-variant);
+  margin-left: 2px;
 }
 
 /* ==================== FAB ==================== */
 
 .dashboard-fab {
-    position: fixed;
-    right: 24px;
-    bottom: 88px;
-    z-index: 100;
+  position: fixed;
+  right: 24px;
+  bottom: 88px;
+  z-index: 100;
 }
 
 #service-fab {
-    /* 平滑的弹簧动画 */
-    transition:
-        width 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
-        max-width 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
-        min-width 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
-        background-color 0.2s ease,
-        box-shadow 0.2s ease;
-    max-width: 56px;
-    width: 56px;
-    white-space: nowrap;
-    overflow: hidden;
-    justify-content: flex-start;
+  /* 平滑的弹簧动画 */
+  transition:
+    width 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
+    max-width 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
+    min-width 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
+    background-color 0.2s ease,
+    box-shadow 0.2s ease;
+  max-width: 56px;
+  width: 56px;
+  white-space: nowrap;
+  overflow: hidden;
+  justify-content: flex-start;
 }
 
 /* 覆盖 MDUI 内部样式，确保能变宽 */
 #service-fab::part(button) {
-    padding-left: 16px;
-    padding-right: 16px;
-    width: 100%;
-    justify-content: flex-start;
-    transition: padding 0.25s ease;
+  padding-left: 16px;
+  padding-right: 16px;
+  width: 100%;
+  justify-content: flex-start;
+  transition: padding 0.25s ease;
 }
 
 .fab-runtime {
-    display: inline-block;
-    font-size: 14px;
-    font-weight: 500;
-    opacity: 0;
-    transform: translateX(-8px);
-    transition:
-        opacity 0.25s ease 0.1s,
-        transform 0.25s ease 0.1s;
-    white-space: nowrap;
-    margin-left: 0;
-    vertical-align: middle;
+  display: inline-block;
+  font-size: 14px;
+  font-weight: 500;
+  opacity: 0;
+  transform: translateX(-8px);
+  transition:
+    opacity 0.25s ease 0.1s,
+    transform 0.25s ease 0.1s;
+  white-space: nowrap;
+  margin-left: 0;
+  vertical-align: middle;
 }
 
 .dashboard-fab.running #service-fab {
-    max-width: 300px;
-    width: auto;
-    min-width: 140px;
+  max-width: 300px;
+  width: auto;
+  min-width: 140px;
 }
 
 .dashboard-fab.running .fab-runtime {
-    opacity: 1;
-    transform: translateX(0);
-    margin-left: 8px;
-    padding-right: 0;
+  opacity: 1;
+  transform: translateX(0);
+  margin-left: 8px;
+  padding-right: 0;
 }
 
 /* ==================== Charts ==================== */
 .header-speed-text {
-    margin-left: auto;
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
-    font-variant-numeric: tabular-nums;
-    opacity: 0.8;
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
 }
 
 .uplot {
-    font-family: inherit;
+  font-family: inherit;
 }
 
 .u-wrap {
-    margin: 0 auto;
+  margin: 0 auto;
 }
 
 /* ==================== 迁移自 status-card.css ==================== */
 .compact-card {
-    padding: 12px;
-    margin-bottom: 12px;
-    border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 12px;
+  border-radius: 12px;
 }
 
 /* ==================== UI 细节微调 ==================== */
 
 /* 顶部标题稍微下移 */
 mdui-top-app-bar-title {
-    padding-top: 4px;
+  padding-top: 4px;
 }
 
 /* ==================== 加载状态 ==================== */
 
 /* 旋转加载动画 */
 .loading-spinner {
-    display: inline-block;
-    width: 18px;
-    height: 18px;
-    border: 2px solid var(--monet-surface-container-highest, #e0e0e0);
-    border-top-color: var(--monet-primary, #4caf50);
-    border-radius: 50%;
-    animation: spinner-rotate 0.8s linear infinite;
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--monet-surface-container-highest, #e0e0e0);
+  border-top-color: var(--monet-primary, #4caf50);
+  border-radius: 50%;
+  animation: spinner-rotate 0.8s linear infinite;
 }
 
 @keyframes spinner-rotate {
-    to {
-        transform: rotate(360deg);
-    }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ==================== 编辑模式 ==================== */
@@ -436,23 +439,23 @@ mdui-top-app-bar-title {
 /* 编辑模式下的网格 */
 /* 编辑模式下的网格 */
 .dashboard-grid.editing-mode .common-card {
-    /* 虚线边框提示可拖动 */
-    border-style: dashed;
-    border-color: var(--monet-primary, var(--mdui-color-primary));
-    /* 相对定位用于放置删除/拖动手柄（如果有） */
-    position: relative;
-    /* 恢复卡片本身的点击响应用于拖拽 */
-    cursor: grab;
-    /* 这里的 pointer-events: none 之前导致了无法拖拽，必须移除 */
+  /* 虚线边框提示可拖动 */
+  border-style: dashed;
+  border-color: var(--monet-primary, var(--mdui-color-primary));
+  /* 相对定位用于放置删除/拖动手柄（如果有） */
+  position: relative;
+  /* 恢复卡片本身的点击响应用于拖拽 */
+  cursor: grab;
+  /* 这里的 pointer-events: none 之前导致了无法拖拽，必须移除 */
 }
 
 /* 仅禁用卡片内部元素的交互，防止误触按钮，但允许拖拽卡片本身 */
 .dashboard-grid.editing-mode .common-card > * {
-    pointer-events: none;
+  pointer-events: none;
 }
 
 .dashboard-grid.editing-mode .common-card:active {
-    cursor: grabbing;
+  cursor: grabbing;
 }
 
 /* 抖动动画 - 减弱幅度 */
@@ -460,123 +463,126 @@ mdui-top-app-bar-title {
 
 /* 拖拽时的幽灵样式 */
 .sortable-ghost {
-    opacity: 0.4;
-    background: var(--monet-surface-variant, var(--mdui-color-surface-variant));
-    border: 2px dashed var(--monet-primary, var(--mdui-color-primary));
+  opacity: 0.4;
+  background: var(--monet-surface-variant, var(--mdui-color-surface-variant));
+  border: 2px dashed var(--monet-primary, var(--mdui-color-primary));
 }
 
 /* 拖拽中的样式 */
 .sortable-drag {
-    background: var(--monet-surface, var(--mdui-color-surface));
-    opacity: 0.9;
-    transform: scale(1.05) !important;
-    animation: none !important;
-    z-index: 1000;
-    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+  background: var(--monet-surface, var(--mdui-color-surface));
+  opacity: 0.9;
+  transform: scale(1.05) !important;
+  animation: none !important;
+  z-index: 1000;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
 }
 
 /* 隐藏编辑模式下的部分干扰元素 */
 .dashboard-grid.editing-mode .common-card .card-content {
-    opacity: 0.6;
+  opacity: 0.6;
 }
 
 /* 删除按钮 */
 .card-delete-btn {
-    position: absolute;
-    top: -8px;
-    right: -8px;
-    width: 24px;
-    height: 24px;
-    background: var(--monet-error, #b00020);
-    color: var(--monet-on-error, white);
-    border-radius: 50%;
-    display: none;
-    /* 默认隐藏 */
-    align-items: center;
-    justify-content: center;
-    z-index: 10;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-    cursor: pointer;
-    pointer-events: auto !important;
-    /* 确保可点击 */
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 24px;
+  height: 24px;
+  background: var(--monet-error, #b00020);
+  color: var(--monet-on-error, white);
+  border-radius: 50%;
+  display: none;
+  /* 默认隐藏 */
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  pointer-events: auto !important;
+  /* 确保可点击 */
 }
 
 .card-delete-btn mdui-icon {
-    font-size: 16px;
+  font-size: 16px;
 }
 
 .dashboard-grid.editing-mode .common-card .card-delete-btn {
-    display: flex;
-    /* 编辑模式显示 */
-    animation: none;
-    /* 不跟随卡片抖动（相对定位在卡片内，会跟随卡片整体移动，但不单独抖动） */
+  display: flex;
+  /* 编辑模式显示 */
+  animation: none;
+  /* 不跟随卡片抖动（相对定位在卡片内，会跟随卡片整体移动，但不单独抖动） */
 }
 
 /* 添加组件面板 */
 .add-widget-panel {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background: var(--monet-surface, var(--mdui-color-surface));
-    border-top-left-radius: 16px;
-    border-top-right-radius: 16px;
-    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.1);
-    z-index: 200;
-    transform: translateY(100%);
-    transition: transform 0.3s ease-in-out;
-    padding: 16px;
-    padding-bottom: 32px;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--monet-surface, var(--mdui-color-surface));
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.1);
+  z-index: 200;
+  transform: translateY(100%);
+  transition: transform 0.3s ease-in-out;
+  padding: 16px;
+  padding-bottom: 32px;
 }
 
 .add-widget-panel.visible {
-    transform: translateY(0);
+  transform: translateY(0);
 }
 
 .add-widget-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
 }
 
 .add-widget-header .title {
-    font-size: 16px;
-    font-weight: 500;
+  font-size: 16px;
+  font-weight: 500;
 }
 
 .add-widget-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .widget-preview-item {
-    background: var(--monet-surface-container-low, #f7f2fa);
-    border: 1px solid var(--monet-outline, #79747e);
-    border-radius: 12px;
-    padding: 8px 12px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
+  background: var(--monet-surface-container-low, #f7f2fa);
+  border: 1px solid var(--monet-outline, #79747e);
+  border-radius: 12px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
 }
 
 .widget-preview-item mdui-icon {
-    font-size: 18px;
+  font-size: 18px;
 }
 
 .widget-preview-item span {
-    font-size: 13px;
-    font-weight: 500;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 /* 编辑按钮样式 */
 #edit-dashboard-btn {
-    transition: transform 0.2s;
+  transition: transform 0.2s;
 }
 
 #edit-dashboard-btn.active {
-    color: var(--monet-primary, var(--mdui-color-primary));
-    background-color: var(--monet-secondary-container, var(--mdui-color-secondary-container));
+  color: var(--monet-primary, var(--mdui-color-primary));
+  background-color: var(
+    --monet-secondary-container,
+    var(--mdui-color-secondary-container)
+  );
 }

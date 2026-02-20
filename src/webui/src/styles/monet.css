@@ -14,221 +14,221 @@
 
 /* ==================== 浅色模式基础值 ==================== */
 :root {
-    /* 主要颜色 */
-    --monet-primary: #6750a4;
-    --monet-on-primary: #ffffff;
-    --monet-primary-container: #eaddff;
-    --monet-on-primary-container: #21005d;
+  /* 主要颜色 */
+  --monet-primary: #6750a4;
+  --monet-on-primary: #ffffff;
+  --monet-primary-container: #eaddff;
+  --monet-on-primary-container: #21005d;
 
-    /* 次要颜色 */
-    --monet-secondary: #625b71;
-    --monet-on-secondary: #ffffff;
-    --monet-secondary-container: #e8def8;
-    --monet-on-secondary-container: #1d192b;
+  /* 次要颜色 */
+  --monet-secondary: #625b71;
+  --monet-on-secondary: #ffffff;
+  --monet-secondary-container: #e8def8;
+  --monet-on-secondary-container: #1d192b;
 
-    /* 表面颜色 */
-    --monet-surface: #fef7ff;
-    --monet-on-surface: #1d1b20;
-    --monet-surface-variant: #e7e0ec;
-    --monet-on-surface-variant: #49454f;
-    --monet-surface-container: #f3edf7;
-    --monet-surface-container-low: #f7f2fa;
-    --monet-surface-container-high: #ece6f0;
-    --monet-surface-container-highest: #e6e0e9;
+  /* 表面颜色 */
+  --monet-surface: #fef7ff;
+  --monet-on-surface: #1d1b20;
+  --monet-surface-variant: #e7e0ec;
+  --monet-on-surface-variant: #49454f;
+  --monet-surface-container: #f3edf7;
+  --monet-surface-container-low: #f7f2fa;
+  --monet-surface-container-high: #ece6f0;
+  --monet-surface-container-highest: #e6e0e9;
 
-    /* 背景颜色 */
-    --monet-background: #fef7ff;
-    --monet-on-background: #1d1b20;
+  /* 背景颜色 */
+  --monet-background: #fef7ff;
+  --monet-on-background: #1d1b20;
 
-    /* 轮廓颜色 */
-    --monet-outline: #79747e;
-    --monet-outline-variant: #cac4d0;
+  /* 轮廓颜色 */
+  --monet-outline: #79747e;
+  --monet-outline-variant: #cac4d0;
 
-    /* 错误颜色 */
-    --monet-error: #b3261e;
-    --monet-error-container: #f9dedc;
+  /* 错误颜色 */
+  --monet-error: #b3261e;
+  --monet-error-container: #f9dedc;
 
-    /* 反转颜色 */
-    --monet-inverse-surface: #322f35;
-    --monet-inverse-on-surface: #f5eff7;
+  /* 反转颜色 */
+  --monet-inverse-surface: #322f35;
+  --monet-inverse-on-surface: #f5eff7;
 }
 
 /* ==================== 手动深色模式 ==================== */
 /* 用户手动切换到深色模式时，使用硬编码深色值 */
 /* 注意：JS 会用内联样式覆盖这些值（当莫奈取色关闭时） */
 :root.mdui-theme-dark {
-    --monet-primary: #d0bcff;
-    --monet-on-primary: #381e72;
-    --monet-primary-container: #4f378b;
-    --monet-on-primary-container: #eaddff;
+  --monet-primary: #d0bcff;
+  --monet-on-primary: #381e72;
+  --monet-primary-container: #4f378b;
+  --monet-on-primary-container: #eaddff;
 
-    --monet-secondary: #ccc2dc;
-    --monet-on-secondary: #332d41;
-    --monet-secondary-container: #4a4458;
-    --monet-on-secondary-container: #e8def8;
+  --monet-secondary: #ccc2dc;
+  --monet-on-secondary: #332d41;
+  --monet-secondary-container: #4a4458;
+  --monet-on-secondary-container: #e8def8;
 
-    --monet-surface: #141218;
-    --monet-on-surface: #e6e0e9;
-    --monet-surface-variant: #49454f;
-    --monet-on-surface-variant: #cac4d0;
-    --monet-surface-container: #211f26;
-    --monet-surface-container-low: #1d1b20;
-    --monet-surface-container-high: #2b2930;
-    --monet-surface-container-highest: #36343b;
+  --monet-surface: #141218;
+  --monet-on-surface: #e6e0e9;
+  --monet-surface-variant: #49454f;
+  --monet-on-surface-variant: #cac4d0;
+  --monet-surface-container: #211f26;
+  --monet-surface-container-low: #1d1b20;
+  --monet-surface-container-high: #2b2930;
+  --monet-surface-container-highest: #36343b;
 
-    --monet-background: #141218;
-    --monet-on-background: #e6e0e9;
+  --monet-background: #141218;
+  --monet-on-background: #e6e0e9;
 
-    --monet-outline: #938f99;
-    --monet-outline-variant: #49454f;
+  --monet-outline: #938f99;
+  --monet-outline-variant: #49454f;
 
-    --monet-error: #f2b8b5;
-    --monet-error-container: #8c1d18;
+  --monet-error: #f2b8b5;
+  --monet-error-container: #8c1d18;
 
-    --monet-inverse-surface: #e6e0e9;
-    --monet-inverse-on-surface: #322f35;
+  --monet-inverse-surface: #e6e0e9;
+  --monet-inverse-on-surface: #322f35;
 }
 
 /* ==================== 手动浅色模式 ==================== */
 /* 用户手动切换到浅色模式时，使用硬编码浅色值 */
 /* 注意：JS 会用内联样式覆盖这些值（当莫奈取色关闭时） */
 :root.mdui-theme-light {
-    --monet-primary: #6750a4;
-    --monet-on-primary: #ffffff;
-    --monet-primary-container: #eaddff;
-    --monet-on-primary-container: #21005d;
+  --monet-primary: #6750a4;
+  --monet-on-primary: #ffffff;
+  --monet-primary-container: #eaddff;
+  --monet-on-primary-container: #21005d;
 
-    --monet-secondary: #625b71;
-    --monet-on-secondary: #ffffff;
-    --monet-secondary-container: #e8def8;
-    --monet-on-secondary-container: #1d192b;
+  --monet-secondary: #625b71;
+  --monet-on-secondary: #ffffff;
+  --monet-secondary-container: #e8def8;
+  --monet-on-secondary-container: #1d192b;
 
-    --monet-surface: #fef7ff;
-    --monet-on-surface: #1d1b20;
-    --monet-surface-variant: #e7e0ec;
-    --monet-on-surface-variant: #49454f;
-    --monet-surface-container: #f3edf7;
-    --monet-surface-container-low: #f7f2fa;
-    --monet-surface-container-high: #ece6f0;
-    --monet-surface-container-highest: #e6e0e9;
+  --monet-surface: #fef7ff;
+  --monet-on-surface: #1d1b20;
+  --monet-surface-variant: #e7e0ec;
+  --monet-on-surface-variant: #49454f;
+  --monet-surface-container: #f3edf7;
+  --monet-surface-container-low: #f7f2fa;
+  --monet-surface-container-high: #ece6f0;
+  --monet-surface-container-highest: #e6e0e9;
 
-    --monet-background: #fef7ff;
-    --monet-on-background: #1d1b20;
+  --monet-background: #fef7ff;
+  --monet-on-background: #1d1b20;
 
-    --monet-outline: #79747e;
-    --monet-outline-variant: #cac4d0;
+  --monet-outline: #79747e;
+  --monet-outline-variant: #cac4d0;
 
-    --monet-error: #b3261e;
-    --monet-error-container: #f9dedc;
+  --monet-error: #b3261e;
+  --monet-error-container: #f9dedc;
 
-    --monet-inverse-surface: #322f35;
-    --monet-inverse-on-surface: #f5eff7;
+  --monet-inverse-surface: #322f35;
+  --monet-inverse-on-surface: #f5eff7;
 }
 
 /* ==================== 自动模式 - 浅色 ==================== */
 /* 自动模式下使用 KernelSU 注入的 Monet 变量（如有）*/
 :root.mdui-theme-auto {
-    --monet-primary: var(--primary, #6750a4);
-    --monet-on-primary: var(--onPrimary, #ffffff);
-    --monet-primary-container: var(--primaryContainer, #eaddff);
-    --monet-on-primary-container: var(--onPrimaryContainer, #21005d);
+  --monet-primary: var(--primary, #6750a4);
+  --monet-on-primary: var(--onPrimary, #ffffff);
+  --monet-primary-container: var(--primaryContainer, #eaddff);
+  --monet-on-primary-container: var(--onPrimaryContainer, #21005d);
 
-    --monet-secondary: var(--secondary, #625b71);
-    --monet-on-secondary: var(--onSecondary, #ffffff);
-    --monet-secondary-container: var(--secondaryContainer, #e8def8);
-    --monet-on-secondary-container: var(--onSecondaryContainer, #1d192b);
+  --monet-secondary: var(--secondary, #625b71);
+  --monet-on-secondary: var(--onSecondary, #ffffff);
+  --monet-secondary-container: var(--secondaryContainer, #e8def8);
+  --monet-on-secondary-container: var(--onSecondaryContainer, #1d192b);
 
-    --monet-surface: var(--surface, #fef7ff);
-    --monet-on-surface: var(--onSurface, #1d1b20);
-    --monet-surface-variant: var(--surfaceVariant, #e7e0ec);
-    --monet-on-surface-variant: var(--onSurfaceVariant, #49454f);
-    --monet-surface-container: var(--surfaceContainer, #f3edf7);
-    --monet-surface-container-low: var(--surfaceContainerLow, #f7f2fa);
-    --monet-surface-container-high: var(--surfaceContainerHigh, #ece6f0);
-    --monet-surface-container-highest: var(--surfaceContainerHighest, #e6e0e9);
+  --monet-surface: var(--surface, #fef7ff);
+  --monet-on-surface: var(--onSurface, #1d1b20);
+  --monet-surface-variant: var(--surfaceVariant, #e7e0ec);
+  --monet-on-surface-variant: var(--onSurfaceVariant, #49454f);
+  --monet-surface-container: var(--surfaceContainer, #f3edf7);
+  --monet-surface-container-low: var(--surfaceContainerLow, #f7f2fa);
+  --monet-surface-container-high: var(--surfaceContainerHigh, #ece6f0);
+  --monet-surface-container-highest: var(--surfaceContainerHighest, #e6e0e9);
 
-    --monet-background: var(--background, #fef7ff);
-    --monet-on-background: var(--onBackground, #1d1b20);
+  --monet-background: var(--background, #fef7ff);
+  --monet-on-background: var(--onBackground, #1d1b20);
 
-    --monet-outline: var(--outline, #79747e);
-    --monet-outline-variant: var(--outlineVariant, #cac4d0);
+  --monet-outline: var(--outline, #79747e);
+  --monet-outline-variant: var(--outlineVariant, #cac4d0);
 
-    --monet-error: var(--error, #b3261e);
-    --monet-error-container: var(--errorContainer, #f9dedc);
+  --monet-error: var(--error, #b3261e);
+  --monet-error-container: var(--errorContainer, #f9dedc);
 
-    --monet-inverse-surface: var(--inverseSurface, #322f35);
-    --monet-inverse-on-surface: var(--inverseOnSurface, #f5eff7);
+  --monet-inverse-surface: var(--inverseSurface, #322f35);
+  --monet-inverse-on-surface: var(--inverseOnSurface, #f5eff7);
 }
 
 /* ==================== 自动模式 - 深色（系统偏好） ==================== */
 @media (prefers-color-scheme: dark) {
-    :root.mdui-theme-auto {
-        --monet-primary: var(--primary, #d0bcff);
-        --monet-on-primary: var(--onPrimary, #381e72);
-        --monet-primary-container: var(--primaryContainer, #4f378b);
-        --monet-on-primary-container: var(--onPrimaryContainer, #eaddff);
+  :root.mdui-theme-auto {
+    --monet-primary: var(--primary, #d0bcff);
+    --monet-on-primary: var(--onPrimary, #381e72);
+    --monet-primary-container: var(--primaryContainer, #4f378b);
+    --monet-on-primary-container: var(--onPrimaryContainer, #eaddff);
 
-        --monet-secondary: var(--secondary, #ccc2dc);
-        --monet-on-secondary: var(--onSecondary, #332d41);
-        --monet-secondary-container: var(--secondaryContainer, #4a4458);
-        --monet-on-secondary-container: var(--onSecondaryContainer, #e8def8);
+    --monet-secondary: var(--secondary, #ccc2dc);
+    --monet-on-secondary: var(--onSecondary, #332d41);
+    --monet-secondary-container: var(--secondaryContainer, #4a4458);
+    --monet-on-secondary-container: var(--onSecondaryContainer, #e8def8);
 
-        --monet-surface: var(--surface, #141218);
-        --monet-on-surface: var(--onSurface, #e6e0e9);
-        --monet-surface-variant: var(--surfaceVariant, #49454f);
-        --monet-on-surface-variant: var(--onSurfaceVariant, #cac4d0);
-        --monet-surface-container: var(--surfaceContainer, #211f26);
-        --monet-surface-container-low: var(--surfaceContainerLow, #1d1b20);
-        --monet-surface-container-high: var(--surfaceContainerHigh, #2b2930);
-        --monet-surface-container-highest: var(--surfaceContainerHighest, #36343b);
+    --monet-surface: var(--surface, #141218);
+    --monet-on-surface: var(--onSurface, #e6e0e9);
+    --monet-surface-variant: var(--surfaceVariant, #49454f);
+    --monet-on-surface-variant: var(--onSurfaceVariant, #cac4d0);
+    --monet-surface-container: var(--surfaceContainer, #211f26);
+    --monet-surface-container-low: var(--surfaceContainerLow, #1d1b20);
+    --monet-surface-container-high: var(--surfaceContainerHigh, #2b2930);
+    --monet-surface-container-highest: var(--surfaceContainerHighest, #36343b);
 
-        --monet-background: var(--background, #141218);
-        --monet-on-background: var(--onBackground, #e6e0e9);
+    --monet-background: var(--background, #141218);
+    --monet-on-background: var(--onBackground, #e6e0e9);
 
-        --monet-outline: var(--outline, #938f99);
-        --monet-outline-variant: var(--outlineVariant, #49454f);
+    --monet-outline: var(--outline, #938f99);
+    --monet-outline-variant: var(--outlineVariant, #49454f);
 
-        --monet-error: var(--error, #f2b8b5);
-        --monet-error-container: var(--errorContainer, #8c1d18);
+    --monet-error: var(--error, #f2b8b5);
+    --monet-error-container: var(--errorContainer, #8c1d18);
 
-        --monet-inverse-surface: var(--inverseSurface, #e6e0e9);
-        --monet-inverse-on-surface: var(--inverseOnSurface, #322f35);
-    }
+    --monet-inverse-surface: var(--inverseSurface, #e6e0e9);
+    --monet-inverse-on-surface: var(--inverseOnSurface, #322f35);
+  }
 }
 
 /* ==================== 无主题类时的系统偏好检测 ==================== */
 /* 作为后备：当没有任何 mdui-theme-* 类时 */
 @media (prefers-color-scheme: dark) {
-    :root:not(.mdui-theme-light):not(.mdui-theme-dark):not(.mdui-theme-auto) {
-        --monet-primary: var(--primary, #d0bcff);
-        --monet-on-primary: var(--onPrimary, #381e72);
-        --monet-primary-container: var(--primaryContainer, #4f378b);
-        --monet-on-primary-container: var(--onPrimaryContainer, #eaddff);
+  :root:not(.mdui-theme-light):not(.mdui-theme-dark):not(.mdui-theme-auto) {
+    --monet-primary: var(--primary, #d0bcff);
+    --monet-on-primary: var(--onPrimary, #381e72);
+    --monet-primary-container: var(--primaryContainer, #4f378b);
+    --monet-on-primary-container: var(--onPrimaryContainer, #eaddff);
 
-        --monet-secondary: var(--secondary, #ccc2dc);
-        --monet-on-secondary: var(--onSecondary, #332d41);
-        --monet-secondary-container: var(--secondaryContainer, #4a4458);
-        --monet-on-secondary-container: var(--onSecondaryContainer, #e8def8);
+    --monet-secondary: var(--secondary, #ccc2dc);
+    --monet-on-secondary: var(--onSecondary, #332d41);
+    --monet-secondary-container: var(--secondaryContainer, #4a4458);
+    --monet-on-secondary-container: var(--onSecondaryContainer, #e8def8);
 
-        --monet-surface: var(--surface, #141218);
-        --monet-on-surface: var(--onSurface, #e6e0e9);
-        --monet-surface-variant: var(--surfaceVariant, #49454f);
-        --monet-on-surface-variant: var(--onSurfaceVariant, #cac4d0);
-        --monet-surface-container: var(--surfaceContainer, #211f26);
-        --monet-surface-container-low: var(--surfaceContainerLow, #1d1b20);
-        --monet-surface-container-high: var(--surfaceContainerHigh, #2b2930);
-        --monet-surface-container-highest: var(--surfaceContainerHighest, #36343b);
+    --monet-surface: var(--surface, #141218);
+    --monet-on-surface: var(--onSurface, #e6e0e9);
+    --monet-surface-variant: var(--surfaceVariant, #49454f);
+    --monet-on-surface-variant: var(--onSurfaceVariant, #cac4d0);
+    --monet-surface-container: var(--surfaceContainer, #211f26);
+    --monet-surface-container-low: var(--surfaceContainerLow, #1d1b20);
+    --monet-surface-container-high: var(--surfaceContainerHigh, #2b2930);
+    --monet-surface-container-highest: var(--surfaceContainerHighest, #36343b);
 
-        --monet-background: var(--background, #141218);
-        --monet-on-background: var(--onBackground, #e6e0e9);
+    --monet-background: var(--background, #141218);
+    --monet-on-background: var(--onBackground, #e6e0e9);
 
-        --monet-outline: var(--outline, #938f99);
-        --monet-outline-variant: var(--outlineVariant, #49454f);
+    --monet-outline: var(--outline, #938f99);
+    --monet-outline-variant: var(--outlineVariant, #49454f);
 
-        --monet-error: var(--error, #f2b8b5);
-        --monet-error-container: var(--errorContainer, #8c1d18);
+    --monet-error: var(--error, #f2b8b5);
+    --monet-error-container: var(--errorContainer, #8c1d18);
 
-        --monet-inverse-surface: var(--inverseSurface, #e6e0e9);
-        --monet-inverse-on-surface: var(--inverseOnSurface, #322f35);
-    }
+    --monet-inverse-surface: var(--inverseSurface, #e6e0e9);
+    --monet-inverse-on-surface: var(--inverseOnSurface, #322f35);
+  }
 }

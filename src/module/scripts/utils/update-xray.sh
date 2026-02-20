@@ -13,7 +13,7 @@ readonly MIRROR="https://ghfast.top/?q="
 
 # 清理临时文件
 cleanup() {
-    [ -d "$TEMP_DIR" ] && rm -rf "$TEMP_DIR"
+  [ -d "$TEMP_DIR" ] && rm -rf "$TEMP_DIR"
 }
 trap cleanup EXIT
 
@@ -27,29 +27,29 @@ log "获取最新版本..."
 VERSION=$(curl -s "https://api.github.com/repos/$REPO/releases/latest" | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
 
 if [ -z "$VERSION" ]; then
-    log "错误: 无法获取版本信息"
-    exit 1
+  log "错误: 无法获取版本信息"
+  exit 1
 fi
 
 log "最新版本: $VERSION"
 
 # 检查本地版本
 if [ -x "$BIN_DIR/xray" ]; then
-    CURRENT=$("$BIN_DIR/xray" version 2>/dev/null | head -1 | sed 's/Xray \([0-9.]*\).*/\1/')
-    if [ -n "$CURRENT" ]; then
-        log "本地版本: $CURRENT"
-        
-        # 比较版本号（去掉 v 前缀）
-        LATEST_NUM="${VERSION#v}"
-        if [ "$CURRENT" = "$LATEST_NUM" ]; then
-            log "已是最新版本，无需更新"
-            exit 0
-        fi
-        
-        log "准备更新: $CURRENT -> $LATEST_NUM"
+  CURRENT=$("$BIN_DIR/xray" version 2> /dev/null | head -1 | sed 's/Xray \([0-9.]*\).*/\1/')
+  if [ -n "$CURRENT" ]; then
+    log "本地版本: $CURRENT"
+
+    # 比较版本号（去掉 v 前缀）
+    LATEST_NUM="${VERSION#v}"
+    if [ "$CURRENT" = "$LATEST_NUM" ]; then
+      log "已是最新版本，无需更新"
+      exit 0
     fi
+
+    log "准备更新: $CURRENT -> $LATEST_NUM"
+  fi
 else
-    log "未检测到本地安装，开始首次安装"
+  log "未检测到本地安装，开始首次安装"
 fi
 
 # 构建下载 URL
@@ -65,15 +65,15 @@ ZIP_FILE="$TEMP_DIR/$FILENAME"
 
 # 下载文件
 if ! curl -L -o "$ZIP_FILE" "$DOWNLOAD_URL"; then
-    log "错误: 下载失败"
-    exit 1
+  log "错误: 下载失败"
+  exit 1
 fi
 
 # 验证文件大小
-FILE_SIZE=$(stat -c%s "$ZIP_FILE" 2>/dev/null || stat -f%z "$ZIP_FILE" 2>/dev/null || echo "0")
+FILE_SIZE=$(stat -c%s "$ZIP_FILE" 2> /dev/null || stat -f%z "$ZIP_FILE" 2> /dev/null || echo "0")
 if [ "$FILE_SIZE" -lt 1000000 ]; then
-    log "错误: 文件大小异常"
-    exit 1
+  log "错误: 文件大小异常"
+  exit 1
 fi
 
 log "下载完成，大小: $(echo "$FILE_SIZE" | awk '{printf "%.1f MB", $1/1024/1024}')"
@@ -84,9 +84,9 @@ log "下载完成，大小: $(echo "$FILE_SIZE" | awk '{printf "%.1f MB", $1/102
 # 解压
 log "解压文件..."
 if ! unzip -oq "$ZIP_FILE" -d "$TEMP_DIR"; then
-    log "错误: 解压失败"
-    [ -f "$BIN_DIR/xray.bak" ] && mv "$BIN_DIR/xray.bak" "$BIN_DIR/xray"
-    exit 1
+  log "错误: 解压失败"
+  [ -f "$BIN_DIR/xray.bak" ] && mv "$BIN_DIR/xray.bak" "$BIN_DIR/xray"
+  exit 1
 fi
 
 # 安装
@@ -106,12 +106,12 @@ log "========== 更新成功 =========="
 log "下载版本: $VERSION"
 
 if [ -x "$BIN_DIR/xray" ]; then
-    # 提取实际安装的版本号 (格式: Xray 25.12.8 ...)
-    INSTALLED=$("$BIN_DIR/xray" version 2>/dev/null | head -1 | sed 's/Xray \([0-9.]*\).*/\1/')
-    if [ -n "$INSTALLED" ]; then
-        log "安装版本: $INSTALLED"
-    fi
+  # 提取实际安装的版本号 (格式: Xray 25.12.8 ...)
+  INSTALLED=$("$BIN_DIR/xray" version 2> /dev/null | head -1 | sed 's/Xray \([0-9.]*\).*/\1/')
+  if [ -n "$INSTALLED" ]; then
+    log "安装版本: $INSTALLED"
+  fi
 else
-    log "错误: 安装失败"
-    exit 1
+  log "错误: 安装失败"
+  exit 1
 fi

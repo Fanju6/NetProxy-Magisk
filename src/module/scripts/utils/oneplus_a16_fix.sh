@@ -22,61 +22,61 @@ readonly LOG_FILE="$MODDIR/logs/service.log"
 #   $2 - 链名
 #######################################
 remove_reject_from_chain() {
-    local cmd="$1"
-    local chain="$2"
-    local table="filter"
-    
-    # 一次性获取所有 REJECT 规则的行号（倒序，避免删除时行号错位）
-    local line_numbers
-    line_numbers=$(
-        $cmd -t "$table" -nvL "$chain" --line-numbers 2>/dev/null \
-        | awk '/REJECT/ {print $1}' \
-        | sort -rn
-    )
-    
-    if [ -z "$line_numbers" ]; then
-        log "INFO" "$cmd: $chain 链中未发现 REJECT 规则"
-        return 0
+  local cmd="$1"
+  local chain="$2"
+  local table="filter"
+
+  # 一次性获取所有 REJECT 规则的行号（倒序，避免删除时行号错位）
+  local line_numbers
+  line_numbers=$(
+    $cmd -t "$table" -nvL "$chain" --line-numbers 2> /dev/null \
+      | awk '/REJECT/ {print $1}' \
+      | sort -rn
+  )
+
+  if [ -z "$line_numbers" ]; then
+    log "INFO" "$cmd: $chain 链中未发现 REJECT 规则"
+    return 0
+  fi
+
+  # 统计删除数量
+  local count=0
+
+  # 逐行删除（已倒序，从大到小删除不会影响行号）
+  for line_num in $line_numbers; do
+    if $cmd -t "$table" -D "$chain" "$line_num" 2> /dev/null; then
+      log "INFO" "已删除 ($cmd) $chain 第 $line_num 行 REJECT 规则"
+      count=$((count + 1))
+    else
+      log "WARN" "删除失败 ($cmd) $chain 第 $line_num 行"
     fi
-    
-    # 统计删除数量
-    local count=0
-    
-    # 逐行删除（已倒序，从大到小删除不会影响行号）
-    for line_num in $line_numbers; do
-        if $cmd -t "$table" -D "$chain" "$line_num" 2>/dev/null; then
-            log "INFO" "已删除 ($cmd) $chain 第 $line_num 行 REJECT 规则"
-            count=$((count + 1))
-        else
-            log "WARN" "删除失败 ($cmd) $chain 第 $line_num 行"
-        fi
-    done
-    
-    log "INFO" "$cmd: $chain 链共删除 $count 条 REJECT 规则"
+  done
+
+  log "INFO" "$cmd: $chain 链共删除 $count 条 REJECT 规则"
 }
 
 #######################################
 # 主清理函数
 #######################################
 remove_reject_rules() {
-    local chains="fw_INPUT fw_OUTPUT"
-    
-    # 预检查命令是否存在
-    local has_iptables=0
-    local has_ip6tables=0
-    
-    command -v iptables >/dev/null 2>&1 && has_iptables=1
-    command -v ip6tables >/dev/null 2>&1 && has_ip6tables=1
-    
-    if [ "$has_iptables" -eq 0 ] && [ "$has_ip6tables" -eq 0 ]; then
-        log "ERROR" "iptables 和 ip6tables 命令均不存在"
-        return 1
-    fi
-    
-    for chain in $chains; do
-        [ "$has_iptables" -eq 1 ] && remove_reject_from_chain "iptables" "$chain"
-        [ "$has_ip6tables" -eq 1 ] && remove_reject_from_chain "ip6tables" "$chain"
-    done
+  local chains="fw_INPUT fw_OUTPUT"
+
+  # 预检查命令是否存在
+  local has_iptables=0
+  local has_ip6tables=0
+
+  command -v iptables > /dev/null 2>&1 && has_iptables=1
+  command -v ip6tables > /dev/null 2>&1 && has_ip6tables=1
+
+  if [ "$has_iptables" -eq 0 ] && [ "$has_ip6tables" -eq 0 ]; then
+    log "ERROR" "iptables 和 ip6tables 命令均不存在"
+    return 1
+  fi
+
+  for chain in $chains; do
+    [ "$has_iptables" -eq 1 ] && remove_reject_from_chain "iptables" "$chain"
+    [ "$has_ip6tables" -eq 1 ] && remove_reject_from_chain "ip6tables" "$chain"
+  done
 }
 
 #######################################

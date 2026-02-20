@@ -7,47 +7,50 @@
 /* ==================== 应用项目样式 ==================== */
 
 .app-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
 }
 
 .app-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    object-fit: cover;
-    background: var(--monet-surface-container, var(--mdui-color-surface-container));
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(
+    --monet-surface-container,
+    var(--mdui-color-surface-container)
+  );
 }
 
 .app-info {
-    flex: 1;
-    min-width: 0;
+  flex: 1;
+  min-width: 0;
 }
 
 .app-name {
-    font-weight: 500;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--monet-on-surface, var(--mdui-color-on-surface));
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--monet-on-surface, var(--mdui-color-on-surface));
 }
 
 .app-package {
-    font-size: 12px;
-    color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  font-size: 12px;
+  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ==================== 包名换行样式 ==================== */
 
 .package-name-wrap {
-    word-break: break-all !important;
-    white-space: normal !important;
-    overflow-wrap: break-word !important;
-    line-height: 1.4;
-    display: block;
+  word-break: break-all !important;
+  white-space: normal !important;
+  overflow-wrap: break-word !important;
+  line-height: 1.4;
+  display: block;
 }

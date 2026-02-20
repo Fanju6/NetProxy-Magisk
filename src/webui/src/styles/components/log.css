@@ -7,111 +7,120 @@
 /* ==================== 日志容器 ==================== */
 
 .log-container {
-    background-color: var(--monet-surface-container, var(--mdui-color-surface-container));
-    border-radius: 8px;
-    padding: 12px;
-    max-height: 400px;
-    overflow-y: auto;
-    font-family: 'Courier New', monospace;
-    font-size: 12px;
-    line-height: 1.5;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    color: var(--monet-on-surface, var(--mdui-color-on-surface));
+  background-color: var(
+    --monet-surface-container,
+    var(--mdui-color-surface-container)
+  );
+  border-radius: 8px;
+  padding: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+  font-family: "Courier New", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: var(--monet-on-surface, var(--mdui-color-on-surface));
 }
 
 .log-container:empty::before {
-    content: '暂无日志';
-    color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+  content: "暂无日志";
+  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
 }
 
 /* ==================== 日志容器滚动条样式 ==================== */
 
 .log-container::-webkit-scrollbar {
-    width: 8px;
+  width: 8px;
 }
 
 .log-container::-webkit-scrollbar-track {
-    background: var(--monet-surface, var(--mdui-color-surface));
-    border-radius: 4px;
+  background: var(--monet-surface, var(--mdui-color-surface));
+  border-radius: 4px;
 }
 
 .log-container::-webkit-scrollbar-thumb {
-    background: var(--monet-outline, var(--mdui-color-outline));
-    border-radius: 4px;
+  background: var(--monet-outline, var(--mdui-color-outline));
+  border-radius: 4px;
 }
 
 .log-container::-webkit-scrollbar-thumb:hover {
-    background: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+  background: var(
+    --monet-on-surface-variant,
+    var(--mdui-color-on-surface-variant)
+  );
 }
 
 /* ==================== 调试日志样式 ==================== */
 
 .debug-log-container {
-    max-height: 70vh;
-    overflow-y: auto;
-    background: var(--monet-surface-container, var(--mdui-color-surface-container));
-    border-radius: 8px;
-    padding: 12px;
-    font-family: 'Courier New', monospace;
-    font-size: 12px;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(
+    --monet-surface-container,
+    var(--mdui-color-surface-container)
+  );
+  border-radius: 8px;
+  padding: 12px;
+  font-family: "Courier New", monospace;
+  font-size: 12px;
 }
 
 .debug-log-item {
-    padding: 6px 8px;
-    margin-bottom: 4px;
-    border-radius: 4px;
-    border-left: 3px solid;
-    background: var(--monet-surface, var(--mdui-color-surface));
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  border-radius: 4px;
+  border-left: 3px solid;
+  background: var(--monet-surface, var(--mdui-color-surface));
 }
 
 .debug-log-item.log {
-    border-left-color: #2196f3;
+  border-left-color: #2196f3;
 }
 
 .debug-log-item.warn {
-    border-left-color: #ff9800;
-    background: rgba(255, 152, 0, 0.1);
+  border-left-color: #ff9800;
+  background: rgba(255, 152, 0, 0.1);
 }
 
 .debug-log-item.error {
-    border-left-color: #f44336;
-    background: rgba(244, 67, 54, 0.1);
+  border-left-color: #f44336;
+  background: rgba(244, 67, 54, 0.1);
 }
 
 .debug-log-time {
-    color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
-    font-size: 10px;
-    margin-right: 8px;
+  color: var(--monet-on-surface-variant, var(--mdui-color-on-surface-variant));
+  font-size: 10px;
+  margin-right: 8px;
 }
 
 .debug-log-message {
-    color: var(--monet-on-surface, var(--mdui-color-on-surface));
+  color: var(--monet-on-surface, var(--mdui-color-on-surface));
 }
 
 /* ==================== JSON 语法高亮 ==================== */
 
 .json-editor {
-    font-family: 'Courier New', monospace;
-    line-height: 1.5;
+  font-family: "Courier New", monospace;
+  line-height: 1.5;
 }
 
 .json-key {
-    color: #0d47a1;
+  color: #0d47a1;
 }
 
 .json-string {
-    color: #2e7d32;
+  color: #2e7d32;
 }
 
 .json-number {
-    color: #e65100;
+  color: #e65100;
 }
 
 .json-boolean {
-    color: #6a1b9a;
+  color: #6a1b9a;
 }
 
 .json-null {
-    color: #757575;
+  color: #757575;
 }

@@ -16,14 +16,14 @@
  */
 
 /* ==================== 基础样式 ==================== */
-@import './base.css';
+@import "./base.css";
 
 /* ==================== 组件样式 ==================== */
-@import './components/mdui-overrides.css';
+@import "./components/mdui-overrides.css";
 
-@import './components/log.css';
-@import './components/app-list.css';
-@import './components/dashboard.css';
+@import "./components/log.css";
+@import "./components/app-list.css";
+@import "./components/dashboard.css";
 
 /* ==================== 工具类和动画 ==================== */
-@import './utilities.css';
+@import "./utilities.css";

@@ -11,7 +11,7 @@ import {
     moduleInfo,
     listPackages as ksuListPackages,
     getPackagesInfo as ksuGetPackagesInfo,
-} from 'kernelsu';
+} from "kernelsu";
 
 // ==================== 类型定义 ====================
 
@@ -31,15 +31,15 @@ interface ExecResult {
 
 /** Spawn 进程事件流 */
 export interface SpawnStream {
-    on(event: 'data', callback: (data: string) => void): void;
+    on(event: "data", callback: (data: string) => void): void;
 }
 
 /** Spawn 子进程 */
 export interface ChildProcess {
     stdout: SpawnStream;
     stderr?: SpawnStream;
-    on(event: 'exit', callback: (code: number) => void): void;
-    on(event: 'error', callback: (error: Error) => void): void;
+    on(event: "exit", callback: (code: number) => void): void;
+    on(event: "error", callback: (error: Error) => void): void;
 }
 
 /** 包信息 */
@@ -53,7 +53,7 @@ export interface PackageInfo {
 }
 
 /** 包列表类型 */
-export type PackageType = 'user' | 'system' | 'all';
+export type PackageType = "user" | "system" | "all";
 
 // ==================== KernelSU API 封装 ====================
 
@@ -63,7 +63,7 @@ export type PackageType = 'user' | 'system' | 'all';
  */
 export class KSU {
     /** 模块路径常量 */
-    static readonly MODULE_PATH = '/data/adb/modules/netproxy';
+    static readonly MODULE_PATH = "/data/adb/modules/netproxy";
 
     // ==================== Shell 命令 ====================
 
@@ -73,15 +73,21 @@ export class KSU {
      * @param options 执行选项
      * @returns stdout 内容 (已 trim)
      */
-    static async exec(command: string, options: ExecOptions = {}): Promise<string> {
+    static async exec(
+        command: string,
+        options: ExecOptions = {},
+    ): Promise<string> {
         try {
-            const { errno, stdout, stderr } = (await ksuExec(command, options)) as ExecResult;
+            const { errno, stdout, stderr } = (await ksuExec(
+                command,
+                options,
+            )) as ExecResult;
             if (errno !== 0) {
                 throw new Error(stderr || `Command failed with code ${errno}`);
             }
             return stdout.trim();
         } catch (error) {
-            console.error('[KSU.exec]', command, error);
+            console.error("[KSU.exec]", command, error);
             throw error;
         }
     }
@@ -93,10 +99,14 @@ export class KSU {
      * @param options 执行选项
      * @returns ChildProcess 实例
      */
-    static spawn(command: string, args: string[] = [], options: ExecOptions = {}): ChildProcess {
+    static spawn(
+        command: string,
+        args: string[] = [],
+        options: ExecOptions = {},
+    ): ChildProcess {
         // 自定义 spawn 实现，解决 WebViewInterface 在 exit 后发送 error 导致的 ReferenceError 问题
-        const id = Date.now() + '_' + Math.floor(Math.random() * 1000);
-        const callbackName = 'spawn_callback_' + id;
+        const id = Date.now() + "_" + Math.floor(Math.random() * 1000);
+        const callbackName = "spawn_callback_" + id;
 
         // 创建简单的事件发射器
         const createEmitter = () => {
@@ -109,7 +119,7 @@ export class KSU {
                 },
                 emit(event: string, ...data: any[]) {
                     if (listeners[event]) {
-                        listeners[event].forEach(cb => {
+                        listeners[event].forEach((cb) => {
                             try {
                                 cb(...data);
                             } catch (e) {
@@ -145,7 +155,7 @@ export class KSU {
         (window as any)[callbackName] = child;
 
         // 监听 exit 事件，延迟清理以防止 Native 在 exit 后继续发送 error
-        child.on('exit', () => {
+        child.on("exit", () => {
             setTimeout(() => {
                 delete (window as any)[callbackName];
             }, 5000); // 保留 5 秒足够处理后续事件
@@ -155,22 +165,29 @@ export class KSU {
         try {
             const ksu = (window as any).ksu;
             if (ksu && ksu.spawn) {
-                ksu.spawn(command, JSON.stringify(args), JSON.stringify(options), callbackName);
+                ksu.spawn(
+                    command,
+                    JSON.stringify(args),
+                    JSON.stringify(options),
+                    callbackName,
+                );
             } else {
                 console.warn(
-                    '[KSU] Native spawn not found, falling back to kernelsu package if possible or failing',
+                    "[KSU] Native spawn not found, falling back to kernelsu package if possible or failing",
                 );
-                // 如果 window.ksu.spawn 不存在，可能是在非 Manager 环境，此时 fallback 到原版 ksuSpawn?
-                // 但原版 ksuSpawn 也需要 window.ksu...
-                // 这里我们假设这是在 Manager 环境中
+
                 setTimeout(
-                    () => child.emit('error', new Error('Native ksu.spawn interface missing')),
+                    () =>
+                        child.emit(
+                            "error",
+                            new Error("Native ksu.spawn interface missing"),
+                        ),
                     0,
                 );
             }
         } catch (e: any) {
-            console.error('[KSU] Spawn invocation failed', e);
-            setTimeout(() => child.emit('error', e), 0);
+            console.error("[KSU] Spawn invocation failed", e);
+            setTimeout(() => child.emit("error", e), 0);
         }
 
         return child as ChildProcess;
@@ -216,7 +233,7 @@ export class KSU {
      * 列出已安装的包
      * @param type 包类型: 'user' | 'system' | 'all'
      */
-    static listPackages(type: PackageType = 'user'): string[] {
+    static listPackages(type: PackageType = "user"): string[] {
         return ksuListPackages(type) as string[];
     }
 
@@ -243,10 +260,12 @@ export class KSU {
      */
     static async fetchUrl(url: string): Promise<string | null> {
         try {
-            const result = await this.exec(`curl -sL --connect-timeout 10 --max-time 30 '${url}'`);
+            const result = await this.exec(
+                `curl -sL --connect-timeout 10 --max-time 30 '${url}'`,
+            );
             return result.trim() || null;
         } catch (error) {
-            console.error('[KSU.fetchUrl]', url, error);
+            console.error("[KSU.fetchUrl]", url, error);
             return null;
         }
     }
@@ -265,8 +284,8 @@ export class KSU {
         args: string[] = [],
         timeoutMs: number = 5000,
     ): Promise<{ code: number; stdout: string }> {
-        return new Promise(resolve => {
-            let output = '';
+        return new Promise((resolve) => {
+            let output = "";
             let resolved = false;
 
             const timeout = setTimeout(() => {
@@ -279,18 +298,18 @@ export class KSU {
             try {
                 const proc = this.spawn(command, args);
 
-                proc.stdout.on('data', (data: string) => {
+                proc.stdout.on("data", (data: string) => {
                     output += data;
                 });
 
-                proc.on('exit', (code: number) => {
+                proc.on("exit", (code: number) => {
                     if (resolved) return;
                     resolved = true;
                     clearTimeout(timeout);
                     resolve({ code, stdout: output });
                 });
 
-                proc.on('error', () => {
+                proc.on("error", () => {
                     if (resolved) return;
                     resolved = true;
                     clearTimeout(timeout);
@@ -300,7 +319,7 @@ export class KSU {
                 if (!resolved) {
                     resolved = true;
                     clearTimeout(timeout);
-                    resolve({ code: -1, stdout: '' });
+                    resolve({ code: -1, stdout: "" });
                 }
             }
         });

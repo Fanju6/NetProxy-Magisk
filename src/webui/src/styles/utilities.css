@@ -7,123 +7,127 @@
 /* ==================== 页面过渡动画 ==================== */
 
 .page {
-    animation: fadeIn 0.3s ease-in-out;
+  animation: fadeIn 0.3s ease-in-out;
 }
 
 @keyframes fadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
 
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ==================== 骨架加载动画 ==================== */
 
 .skeleton {
-    background: linear-gradient(
-        90deg,
-        var(--monet-surface-container, var(--mdui-color-surface-container)) 25%,
-        var(--monet-surface-container-high, var(--mdui-color-surface-container-high)) 50%,
-        var(--monet-surface-container, var(--mdui-color-surface-container)) 75%
-    );
-    background-size: 200% 100%;
-    animation: skeleton-loading 1.5s ease-in-out infinite;
-    border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--monet-surface-container, var(--mdui-color-surface-container)) 25%,
+    var(
+        --monet-surface-container-high,
+        var(--mdui-color-surface-container-high)
+      )
+      50%,
+    var(--monet-surface-container, var(--mdui-color-surface-container)) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s ease-in-out infinite;
+  border-radius: 4px;
 }
 
 .skeleton-circle {
-    border-radius: 50%;
+  border-radius: 50%;
 }
 
 .skeleton-text {
-    height: 14px;
-    margin: 4px 0;
+  height: 14px;
+  margin: 4px 0;
 }
 
 @keyframes skeleton-loading {
-    0% {
-        background-position: 200% 0;
-    }
+  0% {
+    background-position: 200% 0;
+  }
 
-    100% {
-        background-position: -200% 0;
-    }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 /* ==================== 下拉刷新指示器 ==================== */
 
 .pull-indicator {
-    position: fixed;
-    top: 64px;
-    left: 50%;
-    transform: translateX(-50%) translateY(-100%);
-    transition: transform 0.3s ease;
-    z-index: 1000;
+  position: fixed;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-100%);
+  transition: transform 0.3s ease;
+  z-index: 1000;
 }
 
 .pull-indicator.active {
-    transform: translateX(-50%) translateY(0);
+  transform: translateX(-50%) translateY(0);
 }
 
 /* ==================== 错误抖动动画 ==================== */
 
 @keyframes shake {
-    0%,
-    100% {
-        transform: translateX(0);
-    }
+  0%,
+  100% {
+    transform: translateX(0);
+  }
 
-    10%,
-    30%,
-    50%,
-    70%,
-    90% {
-        transform: translateX(-5px);
-    }
+  10%,
+  30%,
+  50%,
+  70%,
+  90% {
+    transform: translateX(-5px);
+  }
 
-    20%,
-    40%,
-    60%,
-    80% {
-        transform: translateX(5px);
-    }
+  20%,
+  40%,
+  60%,
+  80% {
+    transform: translateX(5px);
+  }
 }
 
 .error-shake {
-    animation: shake 0.5s;
+  animation: shake 0.5s;
 }
 
 /* ==================== 主题颜色选择器 ==================== */
 
 .color-item {
-    width: 100%;
-    aspect-ratio: 1;
-    border-radius: 12px;
-    cursor: pointer;
-    transition:
-        transform 0.2s,
-        box-shadow 0.2s;
-    position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  cursor: pointer;
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
+  position: relative;
 }
 
 .color-item:hover {
-    transform: scale(1.1);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .color-item.selected::after {
-    content: '✓';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    color: white;
-    font-size: 20px;
-    font-weight: bold;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  content: "✓";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-size: 20px;
+  font-weight: bold;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }

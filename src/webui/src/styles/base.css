@@ -7,30 +7,30 @@
 /* ==================== CSS 重置 ==================== */
 
 * {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-    -webkit-tap-highlight-color: transparent;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* ==================== 全局样式 ==================== */
 
 html {
-    background-color: var(--monet-background, var(--mdui-color-background));
-    color: var(--monet-on-background, var(--mdui-color-on-background));
+  background-color: var(--monet-background, var(--mdui-color-background));
+  color: var(--monet-on-background, var(--mdui-color-on-background));
 }
 
 body {
-    font-family: 'Roboto', sans-serif;
-    background-color: var(--monet-background, var(--mdui-color-surface));
-    color: var(--monet-on-surface, var(--mdui-color-on-surface));
-    overflow-x: hidden;
-    margin: 0;
-    padding: 0;
-    /* 避免主题切换时的闪烁 */
-    transition:
-        background-color 0.2s ease,
-        color 0.2s ease;
+  font-family: "Roboto", sans-serif;
+  background-color: var(--monet-background, var(--mdui-color-surface));
+  color: var(--monet-on-surface, var(--mdui-color-on-surface));
+  overflow-x: hidden;
+  margin: 0;
+  padding: 0;
+  /* 避免主题切换时的闪烁 */
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
 }
 
 /* 确保所有标题和段落继承正确的颜色 */
@@ -40,89 +40,89 @@ h3,
 h4,
 h5,
 h6 {
-    color: var(--monet-on-surface, var(--mdui-color-on-surface));
+  color: var(--monet-on-surface, var(--mdui-color-on-surface));
 }
 
 p,
 span,
 div {
-    color: inherit;
+  color: inherit;
 }
 
 /* ==================== 基础布局 ==================== */
 
 mdui-layout {
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 mdui-top-app-bar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: 200;
-    /* KernelSU WebUI 边到边适配：使用系统动态 insets */
-    padding-top: var(--window-inset-top, 0px);
-    padding-left: var(--window-inset-left, 0px);
-    padding-right: var(--window-inset-right, 0px);
-    min-height: calc(56px + var(--window-inset-top, 0px));
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  /* KernelSU WebUI 边到边适配：使用系统动态 insets */
+  padding-top: var(--window-inset-top, 0px);
+  padding-left: var(--window-inset-left, 0px);
+  padding-right: var(--window-inset-right, 0px);
+  min-height: calc(56px + var(--window-inset-top, 0px));
 }
 
 mdui-layout-main {
-    flex: 1;
-    overflow-y: auto;
-    /* KernelSU WebUI 边到边适配：基于系统 insets 的动态内边距 */
-    /* 顶部：应用栏高度 (56px) + 系统 inset */
-    padding-top: calc(56px + var(--window-inset-top, 0px));
-    /* 底部：导航栏高度 (80px) + 系统 inset */
-    padding-bottom: calc(80px + var(--window-inset-bottom, 0px));
-    padding-left: var(--window-inset-left, 0px);
-    padding-right: var(--window-inset-right, 0px);
+  flex: 1;
+  overflow-y: auto;
+  /* KernelSU WebUI 边到边适配：基于系统 insets 的动态内边距 */
+  /* 顶部：应用栏高度 (56px) + 系统 inset */
+  padding-top: calc(56px + var(--window-inset-top, 0px));
+  /* 底部：导航栏高度 (80px) + 系统 inset */
+  padding-bottom: calc(80px + var(--window-inset-bottom, 0px));
+  padding-left: var(--window-inset-left, 0px);
+  padding-right: var(--window-inset-right, 0px);
 }
 
 mdui-navigation-bar {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 100;
-    /* KernelSU WebUI 边到边适配：为导航栏添加系统 insets */
-    padding-bottom: var(--window-inset-bottom, 0px);
-    padding-left: var(--window-inset-left, 0px);
-    padding-right: var(--window-inset-right, 0px);
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  /* KernelSU WebUI 边到边适配：为导航栏添加系统 insets */
+  padding-bottom: var(--window-inset-bottom, 0px);
+  padding-left: var(--window-inset-left, 0px);
+  padding-right: var(--window-inset-right, 0px);
 }
 
 /* ==================== 容器和页面 ==================== */
 
 .container {
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 16px;
-    width: 100%;
-    box-sizing: border-box;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 16px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .page {
-    display: none;
-    min-height: 100%;
+  display: none;
+  min-height: 100%;
 }
 
 .page.active {
-    display: block;
+  display: block;
 }
 
 mdui-card {
-    margin-bottom: 16px;
-    width: 100%;
-    box-sizing: border-box;
+  margin-bottom: 16px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 /* Config tabs horizontal scrolling */
 #config-tabs::part(container) {
-    display: flex;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
