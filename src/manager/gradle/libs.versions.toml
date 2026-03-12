@@ -3,7 +3,7 @@ agp = "9.0.1"
 kotlin = "2.3.10"
 
 core = "1.17.0"
-activity = "1.12.4"
+activity = "1.13.0"
 lifecycle = "2.10.0"
 appcompat = "1.7.1"
 recyclerview = "1.4.0"
