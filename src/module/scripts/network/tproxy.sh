@@ -917,17 +917,19 @@ setup_proxy_chain() {
         safe_chain_create "$family" "$table" "$c"
     done
 
+# 1. 优先建立连接追踪放行，如果是 WAN 回包，直接在这里 ACCEPT 出去，保留 Android netd 原有标记，通过 wlan0 的 Strict RPF 校验
+    if [ "$HAS_CONNTRACK" -eq 1 ]; then
+        $cmd -t "$table" -A "PROXY_PREROUTING$suffix" -m conntrack --ctdir REPLY -j ACCEPT
+        $cmd -t "$table" -A "PROXY_OUTPUT$suffix" -m conntrack --ctdir REPLY -j ACCEPT
+        log Info "Added reply connection direction bypass"
+    fi
+
+    # 2. 只有不是常规回包的流量（比如本地 App 经由 OUTPUT 标记后重定向进入 lo 的 Established 流量），才去走 socket 性能优化
     if [ "$PERFORMANCE_MODE" -eq 1 ] && [ "$HAS_MARK_TG" -eq 1 ] && [ "$HAS_SOCKET" -eq 1 ]; then
         $cmd -t "$table" -A DIVERT$suffix -j MARK --set-mark "$mark"
         $cmd -t "$table" -A DIVERT$suffix -j ACCEPT
 
         $cmd -t "$table" -A "PROXY_PREROUTING$suffix" -p tcp -m socket --transparent -j DIVERT$suffix
-    fi
-
-    if [ "$HAS_CONNTRACK" -eq 1 ]; then
-        $cmd -t "$table" -A "PROXY_PREROUTING$suffix" -m conntrack --ctdir REPLY -j ACCEPT
-        $cmd -t "$table" -A "PROXY_OUTPUT$suffix" -m conntrack --ctdir REPLY -j ACCEPT
-        log Info "Added reply connection direction bypass"
     fi
 
     local bypass_success=0
@@ -1188,21 +1190,24 @@ setup_proxy_chain() {
         fi
     fi
 
-    if [ "$_perf_ct" -eq 1 ]; then
+if [ "$_perf_ct" -eq 1 ]; then
         if [ "$mode" = "tproxy" ]; then
             $cmd -t "$table" -A "PROXY_PREROUTING$suffix" -m conntrack --ctstate NEW,RELATED -j CONNMARK --set-mark "$mark"
-            $cmd -t "$table" -A "PROXY_PREROUTING$suffix" -p tcp -m connmark --mark "$mark" -j TPROXY --on-port "$PROXY_TCP_PORT" --tproxy-mark "$mark"
-            $cmd -t "$table" -A "PROXY_PREROUTING$suffix" -p udp -m connmark --mark "$mark" -j TPROXY --on-port "$PROXY_UDP_PORT" --tproxy-mark "$mark"
+            # 【修复】：PREROUTING 阶段加上 /$mark 掩码识别被 MIUI 染色的连接
+            $cmd -t "$table" -A "PROXY_PREROUTING$suffix" -p tcp -m connmark --mark "$mark/$mark" -j TPROXY --on-port "$PROXY_TCP_PORT" --tproxy-mark "$mark"
+            $cmd -t "$table" -A "PROXY_PREROUTING$suffix" -p udp -m connmark --mark "$mark/$mark" -j TPROXY --on-port "$PROXY_UDP_PORT" --tproxy-mark "$mark"
 
             $cmd -t "$table" -A "PROXY_OUTPUT$suffix" -m conntrack --ctstate NEW,RELATED -j CONNMARK --set-mark "$mark"
-            $cmd -t "$table" -A "PROXY_OUTPUT$suffix" -m connmark --mark "$mark" -j MARK --set-mark "$mark"
+            # 【修复】：OUTPUT 阶段通过 /$mark 掩码抓取包含 ESTABLISHED 在内的后续所有包，并强行洗成干净的 $mark 给策略路由
+            $cmd -t "$table" -A "PROXY_OUTPUT$suffix" -m connmark --mark "$mark/$mark" -j MARK --set-mark "$mark"
             log Info "TPROXY mode rules added"
         else
             $cmd -t "$table" -A "PROXY_PREROUTING$suffix" -m conntrack --ctstate NEW,RELATED -j CONNMARK --set-mark "$mark"
-            $cmd -t "$table" -A "PROXY_PREROUTING$suffix" -m connmark --mark "$mark" -j REDIRECT --to-ports "$PROXY_TCP_PORT"
+            # 【修复】：REDIRECT 模式同理加掩码
+            $cmd -t "$table" -A "PROXY_PREROUTING$suffix" -m connmark --mark "$mark/$mark" -j REDIRECT --to-ports "$PROXY_TCP_PORT"
 
             $cmd -t "$table" -A "PROXY_OUTPUT$suffix" -m conntrack --ctstate NEW,RELATED -j CONNMARK --set-mark "$mark"
-            $cmd -t "$table" -A "PROXY_OUTPUT$suffix" -m connmark --mark "$mark" -j REDIRECT --to-ports "$PROXY_TCP_PORT"
+            $cmd -t "$table" -A "PROXY_OUTPUT$suffix" -m connmark --mark "$mark/$mark" -j REDIRECT --to-ports "$PROXY_TCP_PORT"
             log Info "REDIRECT mode rules added"
         fi
     else
