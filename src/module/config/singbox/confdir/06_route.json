@@ -111,7 +111,8 @@
           "category-games@cn"
         ],
         "action": "route",
-        "outbound": "direct"
+        "outbound": "direct",
+        "clash_mode": "Rule"
       },
       {
         "rule_set": [
@@ -143,7 +144,8 @@
           "cn-domain"
         ],
         "action": "route",
-        "outbound": "direct"
+        "outbound": "direct",
+        "clash_mode": "Rule"
       },
       {
         "action": "resolve",
@@ -154,7 +156,8 @@
       {
         "rule_set": "cn-ip",
         "action": "route",
-        "outbound": "direct"
+        "outbound": "direct",
+        "clash_mode": "Rule"
       },
       {
         "ip_is_private": true,

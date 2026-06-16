@@ -37,7 +37,8 @@
           "category-games@cn"
         ],
         "action": "route",
-        "server": "ali"
+        "server": "ali",
+        "clash_mode": "Rule"
       },
       {
         "rule_set": [
@@ -69,7 +70,8 @@
           "cn-domain"
         ],
         "action": "route",
-        "server": "ali"
+        "server": "ali",
+        "clash_mode": "Rule"
       },
       {
         "query_type": [
