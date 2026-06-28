@@ -1,0 +1,1 @@
+import{aO as o,aP as u,aM as c,aN as i}from"./index-C6lj-lhL.js";const n=async()=>{const{data:r}=await o(),{data:e}=await u();c.value=r.rules.map(t=>{const a=t.proxy,s=a.startsWith("route(")?a.substring(6,a.length-1):a;return{...t,proxy:s}}),i.value=Object.values(e.providers)};export{n as fetchRules};
