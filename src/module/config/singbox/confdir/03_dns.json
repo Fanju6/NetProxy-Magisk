@@ -8,6 +8,18 @@
           "doh.pub": [
             "120.53.53.53",
             "1.12.12.12"
+          ],
+          "cloudflare-dns.com": [
+            "1.1.1.1",
+            "1.0.0.1"
+          ],
+          "dns.google": [
+            "8.8.8.8",
+            "8.8.4.4"
+          ],
+          "dns.alidns.com": [
+            "223.5.5.5",
+            "223.6.6.6"
           ]
         }
       },
@@ -30,19 +42,22 @@
       {
         "tag": "cloudflare",
         "type": "https",
-        "server": "1.1.1.1",
+        "server": "cloudflare-dns.com",
+        "domain_resolver": "hosts",
         "detour": "Proxy"
       },
       {
         "tag": "google",
         "type": "https",
-        "server": "8.8.8.8",
+        "server": "dns.google",
+        "domain_resolver": "hosts",
         "detour": "Proxy"
       },
       {
         "tag": "ali",
         "type": "https",
-        "server": "223.6.6.6"
+        "server": "dns.alidns.com",
+        "domain_resolver": "hosts"
       },
       {
         "tag": "tencent",
