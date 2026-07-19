@@ -1440,11 +1440,12 @@ setup_redirect_chain6() {
 setup_routing4() {
     log Info "Setting up routing rules for IPv4"
 
+    ip_rule del fwmark "$MARK_VALUE" table "$TABLE_ID" pref "$TABLE_ID" 2>/dev/null
     ip_rule add fwmark "$MARK_VALUE" table "$TABLE_ID" pref "$TABLE_ID" || {
         log Error "Failed to add IPv4 routing rule"
         return 1
     }
-    ip_route add local 0.0.0.0/0 dev lo table "$TABLE_ID" || {
+    ip_route replace local 0.0.0.0/0 dev lo table "$TABLE_ID" || {
         log Error "Failed to add IPv4 route"
         return 1
     }
@@ -1458,11 +1459,12 @@ setup_routing4() {
 setup_routing6() {
     log Info "Setting up routing rules for IPv6"
 
+    ip6_rule del fwmark "$MARK_VALUE6" table "$TABLE_ID" pref "$TABLE_ID" 2>/dev/null
     ip6_rule add fwmark "$MARK_VALUE6" table "$TABLE_ID" pref "$TABLE_ID" || {
         log Error "Failed to add IPv6 routing rule"
         return 1
     }
-    ip6_route add local ::/0 dev lo table "$TABLE_ID" || {
+    ip6_route replace local ::/0 dev lo table "$TABLE_ID" || {
         log Error "Failed to add IPv6 route"
         return 1
     }
