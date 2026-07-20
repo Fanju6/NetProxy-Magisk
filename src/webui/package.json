@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@material/web": "^2.4.1",
+    "@material/web": "^2.5.0",
     "kernelsu": "^3.0.2",
     "vue": "^3.5.39",
     "vue-i18n": "^11.4.6",
