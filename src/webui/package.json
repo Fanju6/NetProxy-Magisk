@@ -12,7 +12,7 @@
     "@material/web": "^2.5.0",
     "kernelsu": "^3.0.2",
     "vue": "^3.5.40",
-    "vue-i18n": "^11.4.6",
+    "vue-i18n": "^11.4.8",
     "vue-router": "^5.1.0"
   },
   "devDependencies": {
