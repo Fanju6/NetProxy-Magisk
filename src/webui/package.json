@@ -13,7 +13,7 @@
     "kernelsu": "^3.0.2",
     "vue": "^3.5.40",
     "vue-i18n": "^11.4.8",
-    "vue-router": "^5.1.0"
+    "vue-router": "^5.2.0"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
@@ -21,6 +21,6 @@
     "@vue/tsconfig": "^0.9.1",
     "typescript": "~6.0.3",
     "vite": "^8.1.5",
-    "vue-tsc": "^3.3.7"
+    "vue-tsc": "^3.3.8"
   }
 }
