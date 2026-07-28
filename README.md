@@ -5,8 +5,8 @@
 <h1 align="center">NetProxy</h1>
 
 <p align="center">
-  <strong>Android System-Level sing-box Transparent Proxy Module</strong><br>
-  Supports Android Manager, TPROXY / REDIRECT, TCP / UDP, Clash API, zashboard, per-app proxy, and subscription management
+  <strong>Android 系统级 sing-box 透明代理模块</strong><br>
+  支持 TPROXY / REDIRECT、TCP / UDP、分应用代理、节点订阅与 Clash API
 </p>
 
 <p align="center">
@@ -16,259 +16,239 @@
   <a href="https://github.com/Fanju6/NetProxy-Magisk/releases">
     <img src="https://img.shields.io/github/downloads/Fanju6/NetProxy-Magisk/total?style=flat-square&color=green" alt="Downloads" />
   </a>
-  <img src="https://img.shields.io/badge/sing--box-Core-blueviolet?style=flat-square" alt="sing-box Core" />
+  <img src="https://img.shields.io/badge/Core-sing--box-blueviolet?style=flat-square" alt="sing-box Core" />
 </p>
 
 <p align="center">
-  <a href="README_ZH.md">中文</a> | English
+  <a href="https://github.com/Fanju6/NetProxy-Magisk/releases">下载模块</a> ·
+  <a href="https://www.netproxy.store/">使用文档</a> ·
+  <a href="https://play.google.com/store/apps/details?id=com.fanjv.netproxy">Android 管理器</a> ·
+  <a href="https://t.me/NetProxy_Magisk">Telegram</a>
+</p>
+
+<p align="center">
+  中文 | <a href="README_EN.md">English</a>
 </p>
 
 ---
 
-## Features
+## 项目简介
 
-| Feature | Description |
-|------|------|
-| **Android Manager** | Native Android app with a modern interface for module management |
-| **Clash API / zashboard** | Clash API enabled by default with built-in zashboard |
-| **Transparent Proxy** | Supports TPROXY / REDIRECT with TCP, UDP, and DNS hijacking |
-| **Per-App Proxy** | Blacklist / whitelist modes for precise app-level control |
-| **Routing Rules** | Custom domain, IP, port, and traffic routing rules |
-| **DNS Settings** | Configurable DNS behavior and related proxy DNS options |
-| **Nodes & Subscriptions** | Import from links, files, and subscriptions, then convert to sing-box configs |
-| **Hotspot Sharing** | Proxy Wi-Fi hotspot and USB tethering traffic |
-| **Hot Switching** | Switch nodes without a full module reinstall |
-| **Kernel Compatibility** | Integrated IPSET LKM for wider kernel compatibility |
+NetProxy 是面向已 Root Android 设备的系统级透明代理模块。模块以内置 sing-box 为代理核心，通过 TPROXY 或 REDIRECT 接管系统流量，并提供 Android 管理器、CLI 与 zashboard 三种管理入口。
 
----
+支持 **Magisk、KernelSU 与 APatch**。节点、订阅、路由、DNS 和透明代理配置均保存在模块目录中，不依赖 VPN 模式运行。
 
-## Screenshots
+## 管理入口
+
+| 入口 | 适合场景 |
+|------|----------|
+| [**Android 管理器**](https://play.google.com/store/apps/details?id=com.fanjv.netproxy) | 日常使用，管理服务、节点、订阅、分应用代理、配置与日志 |
+| **CLI** | 终端操作、自动化和故障排查 |
+| **Clash API + zashboard** | 查看代理组、连接与延迟，进行运行时控制 |
+
+Clash API 默认配置：
+
+- Controller：`http://<设备IP>:9999`
+- zashboard：`http://<设备IP>:9999/ui/`
+- Secret：`singbox`
+
+控制器默认监听所有网络接口，请仅在可信网络中使用，并按需修改访问密钥。
+
+## 界面预览
 
 <div align="center">
-  <img src="docs/public/Screenshot.jpg" width="60%" alt="Interface Preview" />
+  <img src="docs/public/Screenshot.jpg" width="60%" alt="NetProxy Android 管理器界面预览" />
 </div>
 
----
+## 核心能力
 
-## Interface & Control Entry Points
+- TPROXY 优先，内核不支持时自动回退到 REDIRECT
+- 透明代理 TCP、UDP 与 DNS 流量
+- 分应用黑名单 / 白名单、热点和 USB 共享代理
+- 单节点链接、节点文件、Clash YAML 与订阅导入
+- 手动节点选择与 URLTest 自动测速
+- Rule、Global、Direct 出站模式
+- 按 WiFi SSID 在基础模式与 Direct 之间自动切换
+- Clash API、zashboard、连接管理与节点测速
+- 订阅定时更新、QUIC 阻断和中国 IP 绕过
+- 集成 IPSET LKM，增强部分设备的内核兼容性
 
-The old built-in module WebUI has been removed. NetProxy is now managed through:
+## 安装
 
-1. **Android Manager**
-2. **CLI**
-3. **Clash API + zashboard**
+1. 从 [Releases](https://github.com/Fanju6/NetProxy-Magisk/releases) 下载最新模块 ZIP。
+2. 在 Magisk、KernelSU 或 APatch 中刷入模块。
+3. 按安装提示选择内置管理器或 Google Play 版本，然后重启设备。
+4. 导入并选择节点，再通过管理器或 CLI 启动服务。
 
-The Android Manager is a separately maintained native Android application that provides dashboard, nodes, subscriptions, per-app proxy, logs, and module configuration management. Install it from Google Play: [`NetProxy`](https://play.google.com/store/apps/details?id=com.fanjv.netproxy)
+模块默认 `AUTO_START=0`。确认节点与配置可用后，可在管理器中启用开机启动，或将 `config/module.conf` 中的 `AUTO_START` 改为 `1`。
 
-There is no public source repository for the manager app.
+## 快速开始
 
-Default control endpoints:
+以下命令均需要 Root 权限。
 
-- Controller: `http://<device-ip>:9999`
-- UI: `http://<device-ip>:9999/ui`
-- Secret: `singbox`
+```sh
+# 查看服务状态
+su -c '/data/adb/modules/netproxy/scripts/cli service status'
 
----
+# 导入单个节点链接
+su -c '/data/adb/modules/netproxy/scripts/cli node add "vless://..."'
 
-## Installation
+# 导入节点文本或 Clash YAML
+su -c '/data/adb/modules/netproxy/scripts/cli node import /sdcard/clash.yaml'
 
-1. Download the latest ZIP from [Releases](https://github.com/Fanju6/NetProxy-Magisk/releases)
-2. Flash the module in **Magisk / KernelSU / APatch**
-3. Reboot your device
-4. Finish configuration through Android Manager, CLI, or zashboard
+# 查看并选择节点
+su -c '/data/adb/modules/netproxy/scripts/cli node list'
+su -c '/data/adb/modules/netproxy/scripts/cli node use 节点名称'
 
----
+# 启动服务
+su -c '/data/adb/modules/netproxy/scripts/cli service start'
 
-## Directory Structure
+# 查看或切换出站模式
+su -c '/data/adb/modules/netproxy/scripts/cli mode'
+su -c '/data/adb/modules/netproxy/scripts/cli mode rule'
+
+# 查看 zashboard 地址
+su -c '/data/adb/modules/netproxy/scripts/cli api ui'
+```
+
+添加订阅：
+
+```sh
+su -c '/data/adb/modules/netproxy/scripts/cli sub add 我的订阅 https://example.com/sub'
+su -c '/data/adb/modules/netproxy/scripts/cli sub update 我的订阅'
+su -c '/data/adb/modules/netproxy/scripts/cli sub auto on'
+```
+
+## 节点配置格式
+
+推荐使用 Android 管理器或 CLI 导入节点。Proxylink 会把单链接、节点文件、Clash YAML 和订阅转换为模块需要的 sing-box 配置片段。
+
+### 手写节点文件
+
+手写节点文件必须是一个完整的 sing-box 配置片段，顶层使用 `outbounds` 数组。不能直接把单个 outbound 对象作为文件根节点。
+
+下面是 SOCKS5 节点示例：
+
+```json
+{
+  "outbounds": [
+    {
+      "type": "socks",
+      "tag": "fr-socks",
+      "server": "proxy.example.com",
+      "server_port": 1080,
+      "version": "5",
+      "username": "user",
+      "password": "password"
+    }
+  ]
+}
+```
+
+将节点文件放在：
 
 ```text
-/data/adb/modules/netproxy/
-├─ bin/
-│  ├─ sing-box                 # sing-box core
-│  ├─ proxylink                # node / subscription conversion tool
-│  ├─ ipset                    # ipset binary
-│  ├─ IPSET-LKM/               # integrated IPSET kernel modules
-│  └─ zashboard/               # built-in control panel
-├─ config/
-│  ├─ module.conf              # module configuration
-│  ├─ tproxy/
-│  │  └─ tproxy.conf           # transparent proxy configuration
-│  └─ singbox/
-│     ├─ confdir/              # common sing-box configuration
-│     ├─ outbounds/            # node directories
-│     │  ├─ default/
-│     │  └─ sub_xxx/
-│     ├─ runtime/              # runtime-generated configuration
-│     └─ source/               # routing rules and rule sets
-├─ logs/
-│  ├─ service.log
-│  ├─ sing-box.log
-│  └─ subscription.log
-├─ scripts/
-│  ├─ cli
-│  ├─ core/
-│  ├─ network/
-│  └─ utils/
-├─ post-fs-data.sh
-└─ service.sh
+/data/adb/modules/netproxy/config/singbox/outbounds/default/fr-socks.json
 ```
 
----
-
-## Quick Start
-
-### 1. Check status
-
-```sh
-su -c /data/adb/modules/netproxy/scripts/cli service status
-```
-
-### 2. Start / stop the service
-
-```sh
-su -c /data/adb/modules/netproxy/scripts/cli service start
-su -c /data/adb/modules/netproxy/scripts/cli service stop
-su -c /data/adb/modules/netproxy/scripts/cli service restart
-```
-
-### 3. Import nodes
-
-Single link:
-
-```sh
-su -c '/data/adb/modules/netproxy/scripts/cli node add "vless://..."'
-```
-
-Import from file:
-
-```sh
-su -c '/data/adb/modules/netproxy/scripts/cli node import /sdcard/clash.yaml'
-```
-
-Add and update subscriptions:
-
-```sh
-su -c '/data/adb/modules/netproxy/scripts/cli sub add MySub https://example.com/sub'
-su -c '/data/adb/modules/netproxy/scripts/cli sub update-all'
-```
-
-### 4. Switch nodes
+然后执行：
 
 ```sh
 su -c '/data/adb/modules/netproxy/scripts/cli node list'
-su -c '/data/adb/modules/netproxy/scripts/cli node use NodeName'
+su -c '/data/adb/modules/netproxy/scripts/cli node use fr-socks'
 ```
 
-### 5. Switch mode
+注意事项：
 
-```sh
-su -c '/data/adb/modules/netproxy/scripts/cli mode'
-su -c '/data/adb/modules/netproxy/scripts/cli mode rule'
-su -c '/data/adb/modules/netproxy/scripts/cli mode global'
-su -c '/data/adb/modules/netproxy/scripts/cli mode direct'
-```
+- sing-box 出站协议字段是 `type`，不是 Xray 配置中的 `protocol`。
+- 建议每个文件只放一个普通节点，并保证 `tag` 在当前目录中唯一。
+- 不要使用 `direct`、`block`、`Proxy` 或 `Auto-Fastest` 作为节点标签。
+- 当前节点目录中的 JSON 文件会共同参与启动；格式错误的文件可能导致核心无法加载。
+- 协议字段请以 [sing-box Outbound 文档](https://sing-box.sagernet.org/configuration/outbound/) 为准。
 
-### 6. Show panel endpoints
-
-```sh
-su -c /data/adb/modules/netproxy/scripts/cli api ui
-```
-
----
-
-## CLI Overview
+## CLI 命令
 
 ```text
-cli service {status|start|stop|restart|logs}
+cli service {status|start|stop|restart|logs|logs-clear}
 cli node {list|current|use|add|import|export|show|remove|delay}
 cli mode [rule|global|direct]
-cli sub {list|add|update|update-all|remove}
+cli sub {list|add|update|update-all|remove|auto}
 cli api {groups|conns|close|close-all|ui}
 cli app {list|mode|add|remove|enable|disable}
 cli tproxy {status|reload|quic|cnip}
+cli wifi {status|on|off|mode|add|del|list|clear|cellular}
 ```
 
-Full help:
+查看完整中文帮助：
 
 ```sh
-su -c /data/adb/modules/netproxy/scripts/cli help
+su -c '/data/adb/modules/netproxy/scripts/cli help'
 ```
 
----
+## 配置与日志
 
-## Default Configuration Notes
-
-Default values in `module.conf`:
-
-- `AUTO_START=1`
-- `OUTBOUND_MODE=rule`
-- `SELECTOR_MODE=urltest`
-- `GMS_FIX=0`
-- `CURRENT_CONFIG=` (empty until a node is selected)
-
-Common defaults in `tproxy.conf`:
-
-- `PROXY_TCP_PORT=1536`
-- `PROXY_UDP_PORT=1536`
-- `DNS_PORT=1536`
-- `PROXY_MODE=0`
-- `BLOCK_QUIC=1`
-- `BYPASS_CN_IP=0`
-- `LOG_TIMESTAMP=0`
-
-Notes:
-
-- `PROXY_MODE=0` means auto-detect TPROXY and fall back to REDIRECT when unavailable
-- `LOG_TIMESTAMP=0` disables timestamp output in transparent proxy script logs by default
-
----
-
-## Compatibility
-
-- Supports **Magisk / KernelSU / APatch**
-- Transparent proxy scripts retain automatic TPROXY detection with REDIRECT fallback
-- Integrated IPSET LKM improves compatibility across more devices and kernel versions
-- Includes compatibility handling for some OnePlus / ColorOS environments
-
----
-
-## Community
-
-<p align="center">
-  <a href="https://t.me/NetProxy_Magisk">
-    <img src="https://img.shields.io/badge/Telegram-Join%20Group-blue?style=for-the-badge&logo=telegram" alt="Telegram Group" />
-  </a>
-</p>
-
----
-
-## Contributing
-
-Contributions are welcome:
-
-- Submit Issues to report problems
-- Suggest new features
-- Submit Pull Requests
-- Star the project to support it
-
----
-
-## Acknowledgments
-
-This project builds on the following open-source projects:
-
-| Project | Description |
+| 路径 | 用途 |
 |------|------|
-| [sing-box](https://github.com/SagerNet/sing-box) | Current core proxy engine |
-| [Proxylink](https://github.com/Fanju6/Proxylink) | Node links, subscriptions, and config conversion |
-| [AndroidTProxyShell](https://github.com/CHIZI-0618/AndroidTProxyShell) | Reference for Android transparent proxy implementation |
-| [IPSET_LKM](https://github.com/TanakaLun/IPSET_LKM) | Reference for IPSET kernel modules and compatibility support |
-| [zashboard](https://github.com/Zephyruso/zashboard) | Frontend panel for Clash API |
-| [v2rayNG](https://github.com/2dust/v2rayNG) | Reference for parts of node parsing logic |
+| `config/module.conf` | 开机启动、出站模式、当前节点、选择模式和订阅调度 |
+| `config/tproxy/tproxy.conf` | 监听端口、透明代理、分应用、QUIC、CN IP 与 WiFi 自动切换 |
+| `config/singbox/confdir/` | 通用 sing-box 配置，包括 DNS、路由和 Clash API |
+| `config/singbox/outbounds/` | 默认节点与订阅节点目录 |
+| `config/singbox/source/` | 本地路由规则与规则集 |
+| `logs/service.log` | 模块服务与透明代理日志 |
+| `logs/sing-box.log` | sing-box 核心日志 |
+| `logs/subscription.log` | 节点和订阅转换日志 |
 
----
+常用默认值：
 
-## License
+| 配置项 | 默认值 | 说明 |
+|--------|--------|------|
+| `AUTO_START` | `0` | 默认不随开机启动 |
+| `OUTBOUND_MODE` | `rule` | 规则分流 |
+| `SELECTOR_MODE` | `urltest` | 自动测速选择 |
+| `CURRENT_CONFIG` | 空 | 需要先导入并选择节点 |
+| `PROXY_TCP_PORT` | `1536` | TCP 透明代理端口 |
+| `PROXY_UDP_PORT` | `1536` | UDP 透明代理端口 |
+| `DNS_PORT` | `1536` | DNS 劫持目标端口 |
+| `PROXY_MODE` | `0` | 自动检测 TPROXY，失败时回退 REDIRECT |
+| `BLOCK_QUIC` | `1` | 默认阻断 QUIC |
+| `BYPASS_CN_IP` | `0` | 默认不启用中国 IP 绕过 |
+| `WIFI_AUTO_SWITCH` | `0` | 默认关闭 WiFi SSID 自动切换 |
+| `LOG_TIMESTAMP` | `0` | 默认关闭 tproxy 日志时间戳 |
+
+## 排障
+
+```sh
+# 服务与核心日志
+su -c '/data/adb/modules/netproxy/scripts/cli service logs service 100'
+su -c '/data/adb/modules/netproxy/scripts/cli service logs core 100'
+
+# 节点和订阅转换日志
+su -c '/data/adb/modules/netproxy/scripts/cli service logs sub 100'
+```
+
+启动失败时优先检查 `sing-box.log`。手写节点无法加载时，重点检查顶层是否为 `outbounds`、协议字段是否为 `type`、JSON 语法是否正确，以及节点标签是否冲突。
+
+更完整的安装、配置和排障说明请访问 [NetProxy 文档](https://www.netproxy.store/)。
+
+## 鸣谢
+
+| 项目 | 用途 |
+|------|------|
+| [reF1nd/sing-box](https://github.com/reF1nd/sing-box) | 当前代理核心 |
+| [SagerNet/sing-box](https://github.com/SagerNet/sing-box) | 上游 sing-box 项目 |
+| [Proxylink](https://github.com/Fanju6/Proxylink) | 节点、订阅与配置转换 |
+| [AndroidTProxyShell](https://github.com/CHIZI-0618/AndroidTProxyShell) | Android 透明代理实现参考 |
+| [IPSET_LKM](https://github.com/TanakaLun/IPSET_LKM) | IPSET 内核模块与兼容性支持 |
+| [zashboard](https://github.com/Zephyruso/zashboard) | Clash API 控制面板 |
+| [v2rayNG](https://github.com/2dust/v2rayNG) | 节点解析实现参考 |
+
+## 交流与贡献
+
+- [Telegram 群组](https://t.me/NetProxy_Magisk)
+- [提交 Issue](https://github.com/Fanju6/NetProxy-Magisk/issues)
+- [提交 Pull Request](https://github.com/Fanju6/NetProxy-Magisk/pulls)
+
+## 许可证
 
 [GPL-3.0 License](LICENSE)
 
