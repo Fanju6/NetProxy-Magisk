@@ -20,7 +20,7 @@ runs:
   using: composite
   steps:
     - name: 配置 Node
-      uses: actions/setup-node@v6
+      uses: actions/setup-node@v7
       with:
         node-version: 24
         cache: npm
