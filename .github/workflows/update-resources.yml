@@ -1,6 +1,6 @@
-name: 每周更新内置资源
+name: 每周更新资源与依赖
 
-# 每周检查内置上游资源（zashboard 仪表盘 + GeoIP/GeoSite/广告规则），
+# 每周检查内置上游资源、npm 依赖与 GitHub Actions，
 # 有更新则汇总到一个 PR（人工 review 合并后由 ci.yml 重建打包）。
 # 资源清单见 .github/resources.json，新增/调整资源只改清单、无需动本文件。
 
@@ -19,11 +19,20 @@ concurrency:
 
 jobs:
   update:
-    name: 检查并更新内置资源
+    name: 检查并更新资源与依赖
     runs-on: ubuntu-latest
     steps:
       - name: 拉取代码
         uses: actions/checkout@v7
+
+      - name: 配置 Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            docs/package-lock.json
+            src/webui/package-lock.json
 
       - name: 更新原始资源文件
         id: raw
@@ -106,6 +115,101 @@ jobs:
             echo "ZASHBOARD_EOF"
           } >> "$GITHUB_OUTPUT"
 
+      - name: 更新 npm 依赖
+        id: npm
+        run: |
+          summary=""
+
+          update_npm_project() {
+            project="$1"
+            label="$2"
+
+            echo "更新 ${label}: ${project}"
+            (
+              cd "$project"
+              npx --yes npm-check-updates@latest --upgrade --target minor
+              npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+            )
+
+            if ! git diff --quiet -- "$project/package.json" "$project/package-lock.json"; then
+              summary="${summary}- ${label}：npm 依赖及锁文件已更新"$'\n'
+            fi
+          }
+
+          update_npm_project "docs" "文档站"
+          update_npm_project "src/webui" "WebUI"
+
+          {
+            echo "summary<<NPM_EOF"
+            printf '%s' "$summary"
+            echo "NPM_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: 更新 GitHub Actions
+        id: actions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          summary=""
+          specs="$(
+            grep -RhoE \
+              --include='*.yml' \
+              --include='*.yaml' \
+              'uses:[[:space:]]+[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@v[0-9]+' \
+              .github | sed -E 's/^uses:[[:space:]]+//' | sort -u || true
+          )"
+
+          while IFS= read -r spec; do
+            [ -n "$spec" ] || continue
+
+            action="${spec%@*}"
+            current="${spec##*@}"
+            current_number="${current#v}"
+
+            latest="$(
+              gh api "repos/${action}/releases/latest" --jq '.tag_name' 2>/dev/null ||
+              gh api --paginate "repos/${action}/tags?per_page=100" --jq '.[].name' 2>/dev/null |
+                grep -E '^v[0-9]+([.][0-9]+){0,2}$' |
+                sort -V |
+                tail -n 1 ||
+              true
+            )"
+            latest_major="$(printf '%s\n' "$latest" | sed -nE 's/^(v[0-9]+).*/\1/p')"
+
+            if [ -z "$latest_major" ]; then
+              echo "::warning::无法确定 ${action} 的最新版本，跳过"
+              continue
+            fi
+
+            latest_number="${latest_major#v}"
+            if [ "$latest_number" -le "$current_number" ]; then
+              continue
+            fi
+
+            echo "更新 ${action}: ${current} → ${latest_major}"
+            escaped_action="${action//./\.}"
+            grep -RlE \
+              --include='*.yml' \
+              --include='*.yaml' \
+              "${escaped_action}@${current}([^0-9]|$)" \
+              .github |
+              xargs -r sed -i -E "s#${escaped_action}@${current}([^0-9]|$)#${action}@${latest_major}\1#g"
+            summary="${summary}- ${action}：${current} → ${latest_major}"$'\n'
+          done <<< "$specs"
+
+          {
+            echo "summary<<ACTIONS_EOF"
+            printf '%s' "$summary"
+            echo "ACTIONS_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: 验证 npm 项目
+        run: |
+          npm ci --prefix docs --no-audit --no-fund
+          npm run build --prefix docs
+          npm ci --prefix src/webui --no-audit --no-fund
+          npm run build --prefix src/webui
+
       - name: 开启 / 更新 Pull Request
         uses: peter-evans/create-pull-request@v8
         with:
@@ -113,18 +217,24 @@ jobs:
           delete-branch: true
           base: main
           labels: resources
-          title: "chore(资源): 更新内置上游资源"
+          title: "chore(维护): 更新资源与依赖"
           commit-message: |
-            chore(资源): 更新内置上游资源
+            chore(维护): 更新资源与依赖
 
-            由「每周更新内置资源」工作流自动检测并同步。
+            由「每周更新资源与依赖」工作流自动检测并同步。
           body: |
-            ## 内置资源自动更新
+            ## 每周自动更新
 
-            本 PR 由[每周更新内置资源](${{ github.server_url }}/${{ github.repository }}/actions/workflows/update-resources.yml)工作流自动生成。
+            本 PR 由[每周更新资源与依赖](${{ github.server_url }}/${{ github.repository }}/actions/workflows/update-resources.yml)工作流自动生成。
 
-            ### 本次更新
+            ### 内置资源
             ${{ steps.raw.outputs.summary }}
             ${{ steps.zashboard.outputs.summary }}
+
+            ### npm 依赖
+            ${{ steps.npm.outputs.summary }}
+
+            ### GitHub Actions
+            ${{ steps.actions.outputs.summary }}
 
             > 合并后将触发 CI 重新构建打包；请先核对 diff 是否符合预期。
