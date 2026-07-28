@@ -79,14 +79,6 @@
         "action": "sniff-override-destination"
       },
       {
-        "ip_cidr": [
-          "198.18.0.0/15",
-          "fc00::/18"
-        ],
-        "action": "route",
-        "outbound": "Proxy"
-      },
-      {
         "type": "logical",
         "mode": "or",
         "rules": [
@@ -103,6 +95,14 @@
         "clash_mode": "Direct",
         "action": "route",
         "outbound": "direct"
+      },
+      {
+        "ip_cidr": [
+          "198.18.0.0/15",
+          "fc00::/18"
+        ],
+        "action": "route",
+        "outbound": "Proxy"
       },
       {
         "rule_set": [

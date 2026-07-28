@@ -1,17 +1,17 @@
 #!/system/bin/sh
 #######################################
 # 文件: netmon.sh
-# 功能: 网络变化监听与「按 WiFi SSID 自动开/关代理」决策。
+# 功能: 网络变化监听与「按 WiFi SSID 自动切换出站模式」决策。
 #       由 inotifyd 监听 /data/misc/net/rt_tables 的写事件触发(网络切换时
-#       Android 会重写该文件)，据当前 SSID + 黑/白名单决定走代理还是绕过，
-#       自行增删 iptables 短路规则 (NETMON_BYPASS 链) 实现热切换，
-#       不重启 sing-box 核心，也不改动 tproxy.sh。
+#       Android 会重写该文件)，据当前 SSID + 黑/白名单决定使用基础模式
+#       或 Direct 模式，通过 Clash API 热切换，不重启 sing-box 核心，
+#       也不改动透明代理规则。
 # 用法:
 #   netmon.sh <events> <dir> [file]   inotifyd 代理(事件触发，含防抖)
-#   netmon.sh eval [--force]          立即评估一次(启动时 / 改配置后)
+#   netmon.sh eval                    立即评估一次(启动时 / 改配置后)
 #   netmon.sh sync                    按配置启停 inotifyd 守护并评估一次
-#   netmon.sh stop                    停止 inotifyd 守护并恢复代理
-# 依赖: common.sh、config.sh、tproxy.sh、cmd、dumpsys、ip、inotifyd(busybox)。
+#   netmon.sh stop                    停止 inotifyd 守护并恢复基础模式
+# 依赖: common.sh、config.sh、api.sh、cmd、dumpsys、ip、inotifyd(busybox)。
 #######################################
 
 set -u  # 引用未定义变量报错
@@ -20,9 +20,11 @@ set -u  # 引用未定义变量报错
 readonly MODDIR="$(cd "$(dirname "$0")/../.." && pwd)"
 readonly TPROXY_DIR="$MODDIR/config/tproxy"
 readonly TPROXY_CONF="$TPROXY_DIR/tproxy.conf"
+readonly MODULE_CONF="$MODDIR/config/module.conf"
 # 运行时临时目录放 tmpfs (/dev)：不磨损 flash、重启自动清空、不污染模块目录
 readonly RUN_DIR="/dev/netproxy"
 readonly LAST_CHECK_FILE="$RUN_DIR/wifi_last_check"  # 防抖时间戳 (跨 inotifyd 进程)
+readonly WIFI_STATE_FILE="$RUN_DIR/wifi_state"       # 当前 WiFi 自动切换决策
 readonly RT_TABLES="/data/misc/net/rt_tables"        # inotifyd 监听目标
 readonly LOG_FILE="$MODDIR/logs/service.log"
 readonly LOG_TAG="netmon"
@@ -30,6 +32,7 @@ readonly DEBOUNCE_SEC=2  # 防抖窗口(秒)，抗 WiFi 抖动
 
 . "$MODDIR/scripts/utils/common.sh"
 . "$MODDIR/scripts/utils/config.sh"
+. "$MODDIR/scripts/utils/api.sh"
 
 export PATH="$MODDIR/bin:$PATH"
 
@@ -140,106 +143,99 @@ ssid_in_list() {
 }
 
 #######################################
-# 在 iptables/ip6tables 上执行变更命令 (失败吞掉)
-# 参数: $@ 完整命令
+# 读取 WiFi 自动切换的当前决策
+# 返回: 标准输出打印 proxying、bypassed 或 unknown
 #######################################
-ipt_run() {
-  "$@" 2> /dev/null || true
+read_wifi_state() {
+  local state
+  state="$(cat "$WIFI_STATE_FILE" 2> /dev/null || true)"
+  case "$state" in
+    proxying | bypassed) printf "%s\n" "$state" ;;
+    *) printf "unknown\n" ;;
+  esac
 }
 
 #######################################
-# WiFi 热切换原语：在代理入口链首插/删 NETMON_BYPASS(ACCEPT)子链，
-# 使流量短路绕过代理而无需重启 sing-box 核心。自含、不依赖 tproxy.sh。
-# 参数: $1  enable=绕过代理  disable=恢复代理
-# 全局: PROXY_IPV6 (是否处理 ip6tables)
-# 返回: 无
-# 说明: 仅对实际存在的链操作 (tproxy=mangle / redirect=nat，含 redirect2 的
-#       NAT_DNS_HIJACK)，IPv4 + (启用时)IPv6 各一遍；幂等。
+# 读取用户配置的基础出站模式
+# 返回: 标准输出打印 rule、global、direct 或 AllowAds
 #######################################
-apply_bypass() {
-  local action="$1"
-  local cmd suffix table chain
+read_base_mode() {
+  local mode
+  mode="$(read_conf "$MODULE_CONF" "OUTBOUND_MODE" "rule")"
+  case "$mode" in
+    rule | global | direct | AllowAds)
+      printf "%s\n" "$mode"
+      ;;
+    *)
+      log "WARN" "基础出站模式无效，已回退为 rule: $mode"
+      printf "rule\n"
+      ;;
+  esac
+}
 
-  for cmd in iptables ip6tables; do
-    if [ "$cmd" = "ip6tables" ]; then
-      [ "${PROXY_IPV6:-0}" = "1" ] || continue
-      suffix="6"
-    else
-      suffix=""
+#######################################
+# 应用目标态
+# 绕过态使用 Direct，代理态恢复 module.conf 中的基础出站模式
+# 参数: $1 目标态 (proxying|bypassed)
+# 返回: 0=成功，非 0=控制接口不可用或切换失败
+#######################################
+apply_state() {
+  local target="$1"
+  local current base_mode desired_mode desired_clash_mode actual_mode
+
+  current="$(read_wifi_state)"
+  base_mode="$(read_base_mode)"
+  if [ "$target" = "bypassed" ]; then
+    desired_mode="direct"
+  else
+    desired_mode="$base_mode"
+  fi
+  desired_clash_mode="$(module_mode_to_clash_mode "$desired_mode")" || return 1
+  actual_mode="$(api_get_mode 2> /dev/null || true)"
+
+  # 决策与实际模式都未变化时无需重复请求或中断连接
+  if [ "$target" = "$current" ] && [ "$desired_clash_mode" = "$actual_mode" ]; then
+    return 0
+  fi
+
+  if [ "$desired_clash_mode" != "$actual_mode" ]; then
+    if ! api_set_mode "$desired_mode"; then
+      log "WARN" "Clash API 不可用，未能切换 WiFi 自动代理状态"
+      return 1
     fi
 
-    for table in mangle nat; do
-      for chain in "PROXY_PREROUTING$suffix" "PROXY_OUTPUT$suffix" "NAT_DNS_HIJACK$suffix"; do
-        # 仅处理该表中确实存在的链
-        $cmd -t "$table" -L "$chain" -n > /dev/null 2>&1 || continue
+    # 已建立连接不会自动迁移到新模式，仅在运行模式变化后主动关闭
+    api_close_all_connections > /dev/null 2>&1 || true
+  fi
 
-        if [ "$action" = "enable" ]; then
-          $cmd -t "$table" -L NETMON_BYPASS -n > /dev/null 2>&1 || ipt_run "$cmd" -t "$table" -N NETMON_BYPASS
-          $cmd -t "$table" -C NETMON_BYPASS -j ACCEPT > /dev/null 2>&1 || ipt_run "$cmd" -t "$table" -A NETMON_BYPASS -j ACCEPT
-          $cmd -t "$table" -C "$chain" -j NETMON_BYPASS > /dev/null 2>&1 || ipt_run "$cmd" -t "$table" -I "$chain" 1 -j NETMON_BYPASS
-        else
-          # 删除该链上所有指向 NETMON_BYPASS 的跳转 (失败即停，防死循环)
-          while $cmd -t "$table" -C "$chain" -j NETMON_BYPASS > /dev/null 2>&1; do
-            $cmd -t "$table" -D "$chain" -j NETMON_BYPASS 2> /dev/null || break
-          done
-        fi
-      done
+  mkdir -p "$RUN_DIR" 2> /dev/null || true
+  printf "%s\n" "$target" > "$WIFI_STATE_FILE"
 
-      # disable：清空并删除已无引用的 NETMON_BYPASS 链
-      if [ "$action" = "disable" ]; then
-        if $cmd -t "$table" -L NETMON_BYPASS -n > /dev/null 2>&1; then
-          ipt_run "$cmd" -t "$table" -F NETMON_BYPASS
-          ipt_run "$cmd" -t "$table" -X NETMON_BYPASS
-        fi
-      fi
-    done
-  done
+  if [ "$target" = "bypassed" ]; then
+    log "INFO" "已切换为: 绕过代理 (Direct)"
+  else
+    log "INFO" "已切换为: 走代理 ($desired_clash_mode)"
+  fi
 }
 
 #######################################
-# 查询当前是否处于「绕过」态 (以 iptables 实际规则为真相源，免状态文件)
-# 探测主代理链(mangle 优先 tproxy，nat 兜底 redirect)上是否存在 NETMON_BYPASS 跳转
-# 返回: 0=绕过中(bypassed)，非 0=走代理(proxying)
+# 恢复基础出站模式并清理 WiFi 决策状态
+# 返回: 0=成功，非 0=控制接口不可用或切换失败
 #######################################
-is_bypassed() {
-  iptables -t mangle -C PROXY_PREROUTING -j NETMON_BYPASS > /dev/null 2>&1 && return 0
-  iptables -t nat -C PROXY_PREROUTING -j NETMON_BYPASS > /dev/null 2>&1 && return 0
+restore_base_mode() {
+  if apply_state "proxying"; then
+    rm -f "$WIFI_STATE_FILE"
+    return 0
+  fi
   return 1
 }
 
 #######################################
-# 应用目标态 (与 iptables 实际态不同或强制时才切换，避免重复操作/日志)
-# 参数: $1 目标态 (proxying|bypassed)  $2 是否强制 (1=强制)
-# 返回: 无
-#######################################
-apply_state() {
-  local target="$1"
-  local force="${2:-0}"
-  local current="proxying"
-
-  is_bypassed && current="bypassed"
-
-  if [ "$target" = "$current" ] && [ "$force" != "1" ]; then
-    return 0
-  fi
-
-  if [ "$target" = "bypassed" ]; then
-    apply_bypass enable
-    log "INFO" "已切换为: 绕过代理 (bypassed)"
-  else
-    apply_bypass disable
-    log "INFO" "已切换为: 走代理 (proxying)"
-  fi
-}
-
-#######################################
 # 根据 当前网络 + 模式 + 名单 计算并应用目标态
-# 参数: $1 是否强制应用 (1=强制)
 # 全局: 由 load_wifi_conf 注入的 WIFI_* / PROXY_ON_CELLULAR
 # 返回: 无
 #######################################
 decide_and_apply() {
-  local force="${1:-0}"
   local net_type ssid target
 
   net_type="$(get_net_type)"
@@ -278,13 +274,13 @@ decide_and_apply() {
     log "DEBUG" "非 WiFi 网络，PROXY_ON_CELLULAR=$PROXY_ON_CELLULAR -> $target"
   fi
 
-  apply_state "$target" "$force"
+  apply_state "$target"
 }
 
 #######################################
 # 读取 WiFi 自动切换相关配置到全局 (带默认值)
 # 全局(写入): WIFI_AUTO_SWITCH WIFI_SSID_MODE WIFI_SSID_LIST
-#             PROXY_ON_CELLULAR WIFI_INTERFACE PROXY_IPV6
+#             PROXY_ON_CELLULAR WIFI_INTERFACE
 # 返回: 无
 #######################################
 load_wifi_conf() {
@@ -293,7 +289,6 @@ load_wifi_conf() {
   WIFI_SSID_LIST="$(read_conf "$TPROXY_CONF" "WIFI_SSID_LIST" "")"
   PROXY_ON_CELLULAR="$(read_conf "$TPROXY_CONF" "PROXY_ON_CELLULAR" "1")"
   WIFI_INTERFACE="$(read_conf "$TPROXY_CONF" "WIFI_INTERFACE" "wlan0")"
-  PROXY_IPV6="$(read_conf "$TPROXY_CONF" "PROXY_IPV6" "0")"
 }
 
 #######################################
@@ -322,32 +317,34 @@ start_watcher() {
 
 #######################################
 # sync：按配置启停守护并立即评估一次
-#   开启 -> 起守护 + 强制评估；关闭 -> 停守护 + 恢复代理
+#   开启 -> 起守护 + 立即评估；关闭 -> 停守护 + 恢复基础模式
 #######################################
 cmd_sync() {
   load_wifi_conf
   if [ "$WIFI_AUTO_SWITCH" = "1" ]; then
     start_watcher
-    decide_and_apply 1
+    decide_and_apply
   else
     stop_watcher
-    # 关闭功能时确保恢复为正常代理 (移除 NETMON_BYPASS)
-    apply_bypass disable
+    restore_base_mode
   fi
 }
 
 #######################################
 # eval：评估一次 (供启动 / CLI 改配置后调用)
-# 参数: $1 可为 --force
 #######################################
 cmd_eval() {
   load_wifi_conf
   [ "$WIFI_AUTO_SWITCH" = "1" ] || return 0
-  if [ "${1:-}" = "--force" ]; then
-    decide_and_apply 1
-  else
-    decide_and_apply 0
-  fi
+  decide_and_apply
+}
+
+#######################################
+# stop：停止守护并恢复基础出站模式
+#######################################
+cmd_stop() {
+  stop_watcher
+  restore_base_mode
 }
 
 #######################################
@@ -377,8 +374,8 @@ main() {
   mkdir -p "$RUN_DIR" 2> /dev/null || true
   case "${1:-}" in
     sync) cmd_sync ;;
-    stop) stop_watcher ;;
-    eval) shift 2> /dev/null || true; cmd_eval "$@" ;;
+    stop) cmd_stop ;;
+    eval) cmd_eval ;;
     # inotifyd 以 "<事件字符> <监听目录> [文件名]" 回调，首参为事件字符
     *) on_inotify_event "${1:-}" ;;
   esac

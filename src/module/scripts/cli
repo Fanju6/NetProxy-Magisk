@@ -241,9 +241,10 @@ show_wifi_help() {
   cli wifi del <SSID>                 从名单移除 SSID
   cli wifi list                       列出名单
   cli wifi clear                      清空名单
-  cli wifi cellular <on|off>          非 WiFi 网络是否走代理
+  cli wifi cellular <on|off>          非 WiFi 使用基础模式 / Direct
 说明:
-  blacklist = 名单内 SSID 关代理、其余开;whitelist = 仅名单内开、其余关
+  blacklist = 名单内 SSID 使用 Direct，其余使用基础模式
+  whitelist = 仅名单内 SSID 使用基础模式，其余使用 Direct
 EOF
 }
 
@@ -612,6 +613,11 @@ cmd_mode() {
   esac
 
   sh "$SWITCH_SCRIPT" mode "$mode"
+
+  # 基础模式变化后重新应用当前 WiFi 策略，避免绕过网络被手动覆盖
+  if is_running && [ "$(read_conf "$TPROXY_CONF" "WIFI_AUTO_SWITCH" "0")" = "1" ]; then
+    sh "$NETMON_SCRIPT" eval > /dev/null 2>&1 || warn "WiFi 自动切换重新应用失败"
+  fi
 }
 
 #######################################
@@ -953,10 +959,11 @@ cmd_tproxy() {
 }
 
 #######################################
-# wifi 命令 (按 SSID 自动开/关代理)
+# wifi 命令 (按 SSID 自动切换出站模式)
 #######################################
 
 readonly NETMON_SCRIPT="$SCRIPTS_DIR/network/netmon.sh"
+readonly WIFI_STATE_FILE="/dev/netproxy/wifi_state"
 
 # 改动配置后应用：运行中则让 netmon 重启守护并即时评估，否则提示下次启动生效
 wifi_apply() {
@@ -1001,21 +1008,31 @@ wifi_list_del() {
 
 # 查看 WiFi 自动切换配置与当前态
 cmd_wifi_status() {
-  local state
+  local state api_mode cellular_mode
   section "WiFi 自动切换"
   printf "自动切换: %s\n" "$(read_conf "$TPROXY_CONF" "WIFI_AUTO_SWITCH" "0")"
   printf "名单模式: %s\n" "$(read_conf "$TPROXY_CONF" "WIFI_SSID_MODE" "blacklist")"
   printf "SSID 名单: %s\n" "$(read_conf "$TPROXY_CONF" "WIFI_SSID_LIST" "")"
-  printf "非WiFi代理: %s\n" "$(read_conf "$TPROXY_CONF" "PROXY_ON_CELLULAR" "1")"
-  # 运行中时按 iptables 实际规则显示当前态
+  cellular_mode="$(read_conf "$TPROXY_CONF" "PROXY_ON_CELLULAR" "1")"
+  if [ "$cellular_mode" = "1" ]; then
+    cellular_mode="基础模式"
+  else
+    cellular_mode="Direct"
+  fi
+  printf "非WiFi模式: %s\n" "$cellular_mode"
+  printf "基础模式: %s\n" "$(read_conf "$MODULE_CONF" "OUTBOUND_MODE" "rule")"
+
   if is_running; then
-    if iptables -t mangle -C PROXY_PREROUTING -j NETMON_BYPASS > /dev/null 2>&1 ||
-      iptables -t nat -C PROXY_PREROUTING -j NETMON_BYPASS > /dev/null 2>&1; then
-      state="bypassed (绕过代理)"
-    else
-      state="proxying (走代理)"
-    fi
+    state="$(cat "$WIFI_STATE_FILE" 2> /dev/null || true)"
+    case "$state" in
+      bypassed) state="bypassed (Direct 直连)" ;;
+      proxying) state="proxying (按基础模式)" ;;
+      *) state="unknown (等待首次评估)" ;;
+    esac
     printf "当前状态: %s\n" "$state"
+
+    api_mode="$(api_get_mode 2> /dev/null || true)"
+    [ -n "$api_mode" ] && printf "运行模式: %s\n" "$api_mode"
   fi
 }
 
@@ -1087,7 +1104,7 @@ cmd_wifi_clear() {
   wifi_apply
 }
 
-# 设置非 WiFi 网络是否走代理。参数: $1 on/off
+# 设置非 WiFi 网络使用基础模式或 Direct。参数: $1 on/off
 cmd_wifi_cellular() {
   local value="${1:-}"
   case "$value" in
@@ -1095,7 +1112,7 @@ cmd_wifi_cellular() {
     off) set_conf "$TPROXY_CONF" "PROXY_ON_CELLULAR" "0" ;;
     *) die_cli "用法: cli wifi cellular <on|off>" ;;
   esac
-  info "非 WiFi 网络代理已更新: $value"
+  info "非 WiFi 网络模式已更新: $value"
   wifi_apply
 }
 
@@ -1183,7 +1200,7 @@ WiFi 自动切换:
   cli wifi mode <blacklist|whitelist> 设置名单模式
   cli wifi add <SSID> | del <SSID>    增删名单 SSID
   cli wifi list | clear               列出 / 清空名单
-  cli wifi cellular <on|off>          非 WiFi 网络是否走代理
+  cli wifi cellular <on|off>          非 WiFi 使用基础模式 / Direct
 EOF
 }
 
