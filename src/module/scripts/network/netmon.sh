@@ -4,14 +4,14 @@
 # 功能: 网络变化监听与「按 WiFi SSID 自动开/关代理」决策。
 #       由 inotifyd 监听 /data/misc/net/rt_tables 的写事件触发(网络切换时
 #       Android 会重写该文件)，据当前 SSID + 黑/白名单决定走代理还是绕过，
-#       据当前 SSID + 黑/白名单决定走代理还是绕过，自行增删 iptables 短路规则
-#       (NETMON_BYPASS 链) 实现热切换，不重启 sing-box 核心，也不改动 tproxy.sh。
+#       自行增删 iptables 短路规则 (NETMON_BYPASS 链) 实现热切换，
+#       不重启 sing-box 核心，也不改动 tproxy.sh。
 # 用法:
 #   netmon.sh <events> <dir> [file]   inotifyd 代理(事件触发，含防抖)
 #   netmon.sh eval [--force]          立即评估一次(启动时 / 改配置后)
 #   netmon.sh sync                    按配置启停 inotifyd 守护并评估一次
 #   netmon.sh stop                    停止 inotifyd 守护并恢复代理
-# 依赖: common.sh、config.sh、tproxy.sh、dumpsys、ip、inotifyd(busybox)。
+# 依赖: common.sh、config.sh、tproxy.sh、cmd、dumpsys、ip、inotifyd(busybox)。
 #######################################
 
 set -u  # 引用未定义变量报错
@@ -33,29 +33,72 @@ readonly DEBOUNCE_SEC=2  # 防抖窗口(秒)，抗 WiFi 抖动
 
 export PATH="$MODDIR/bin:$PATH"
 
-# PLACEHOLDER_NETMON
+#######################################
+# 从 WiFi 状态文本中提取当前 SSID
+# 输入: cmd wifi status 或 dumpsys wifi 的标准输出
+# 返回: 标准输出打印 SSID；无法确定时不输出
+#######################################
+parse_wifi_ssid() {
+  awk '
+    function trim(value) {
+      sub(/^[ \t]+/, "", value)
+      sub(/[ \t]+$/, "", value)
+      return value
+    }
+
+    function emit(value, length_value, normalized) {
+      value = trim(value)
+      sub(/,[ \t]+BSSID:.*/, "", value)
+      value = trim(value)
+
+      length_value = length(value)
+      if (length_value >= 2 &&
+          substr(value, 1, 1) == "\"" &&
+          substr(value, length_value, 1) == "\"") {
+        value = substr(value, 2, length_value - 2)
+      }
+
+      normalized = tolower(value)
+      if (value != "" &&
+          normalized != "<unknown ssid>" &&
+          normalized != "<none>") {
+        print value
+        exit
+      }
+    }
+
+    /Wifi is connected to[ \t]/ {
+      line = $0
+      sub(/^.*Wifi is connected to[ \t]+/, "", line)
+      emit(line)
+    }
+
+    /mWifiInfo|WifiInfo:/ {
+      line = $0
+      if (match(line, /(^|[ \t,=:])SSID:[ \t]*/)) {
+        line = substr(line, RSTART + RLENGTH)
+        emit(line)
+      }
+    }
+  '
+}
 
 #######################################
 # 获取当前连接的 WiFi SSID
 # 返回: 标准输出打印 SSID；无法确定时打印空
 #######################################
 get_current_ssid() {
-  dumpsys wifi 2> /dev/null | awk -F'[":,]' '
-    /mWifiInfo/ {
-      for (i = 1; i <= NF; i++) {
-        if ($i ~ /SSID/) {
-          s = $(i + 1)
-          gsub(/^[ \t]+|[ \t]+$/, "", s)
-          if (s != "" && s != "<unknown ssid>") { print s; exit }
-        }
-      }
-    }
-    /COMPLETED/ {
-      split($0, a, "\"")
-      s = a[2]
-      if (s != "" && s != "<unknown ssid>") { print s; exit }
-    }
-  '
+  local ssid
+
+  # Android 11+ 的稳定接口，输出示例: Wifi is connected to "SSID"
+  ssid="$(cmd wifi status 2> /dev/null | parse_wifi_ssid)"
+  if [ -n "$ssid" ]; then
+    printf "%s\n" "$ssid"
+    return 0
+  fi
+
+  # 部分 ROM 未实现 cmd wifi status，回退解析 dumpsys
+  dumpsys wifi 2> /dev/null | parse_wifi_ssid
 }
 
 #######################################
