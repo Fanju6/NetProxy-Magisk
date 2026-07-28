@@ -115,15 +115,6 @@ readonly DEFAULT_LOG_TIMESTAMP=1
 # Dry-run mode (disabled by default)
 readonly DEFAULT_DRY_RUN=0
 
-# eBPF matcher
-readonly DEFAULT_EBPF_MATCHER_ENABLE=1
-readonly EBPF_MATCHER_BIN="$SCRIPT_DIR/../../bin/ebpf-matcher"
-readonly EBPF_BPF_DIR="/sys/fs/bpf/ebpf-matcher"
-readonly EBPF_OUT_V4="$EBPF_BPF_DIR/xt_output_v4"
-readonly EBPF_OUT_V6="$EBPF_BPF_DIR/xt_output_v6"
-readonly EBPF_PRE_V4="$EBPF_BPF_DIR/xt_prerouting_v4"
-readonly EBPF_PRE_V6="$EBPF_BPF_DIR/xt_prerouting_v6"
-
 log() {
     local level="$1"
     local message="$2"
@@ -232,7 +223,6 @@ load_config() {
     MAC_PROXY_MODE="${MAC_PROXY_MODE:-$DEFAULT_MAC_PROXY_MODE}"
     BLOCK_QUIC="${BLOCK_QUIC:-$DEFAULT_BLOCK_QUIC}"
     LOG_TIMESTAMP="${LOG_TIMESTAMP:-$DEFAULT_LOG_TIMESTAMP}"
-    EBPF_MATCHER_ENABLE="${EBPF_MATCHER_ENABLE:-$DEFAULT_EBPF_MATCHER_ENABLE}"
     SKIP_CHECK_FEATURE="${SKIP_CHECK_FEATURE:-0}"
 
     if [ "$VERBOSE" -eq 1 ]; then
@@ -249,7 +239,7 @@ load_config() {
             APP_PROXY_ENABLE PROXY_APPS_LIST BYPASS_APPS_LIST APP_PROXY_MODE \
             BYPASS_CN_IP CN_IP_FILE CN_IPV6_FILE CN_IP_URL CN_IPV6_URL \
             MAC_FILTER_ENABLE PROXY_MACS_LIST BYPASS_MACS_LIST MAC_PROXY_MODE \
-            BLOCK_QUIC LOG_TIMESTAMP EBPF_MATCHER_ENABLE SKIP_CHECK_FEATURE; do
+            BLOCK_QUIC LOG_TIMESTAMP SKIP_CHECK_FEATURE; do
             eval "log Debug \"$_var: \$$_var\""
         done
     fi
@@ -545,7 +535,6 @@ init_feature_flags() {
         HAS_XT_SET=1
         HAS_NAT6=1
         HAS_REDIRECT6=1
-        HAS_BPF=0
         return 0
     fi
 
@@ -562,21 +551,6 @@ init_feature_flags() {
     check_kernel_feature "NETFILTER_XT_SET" && HAS_XT_SET=1
     check_kernel_feature "IP6_NF_NAT" && HAS_NAT6=1
     check_kernel_feature "IP6_NF_TARGET_REDIRECT" && HAS_REDIRECT6=1
-
-    # eBPF matcher (opt-in: requires explicit enable + kernel support + probe pass)
-    HAS_BPF=0
-    if [ "$EBPF_MATCHER_ENABLE" -eq 1 ]; then
-        if [ ! -x "$EBPF_MATCHER_BIN" ]; then
-            log Warn "ebpf-matcher binary not found or not executable: $EBPF_MATCHER_BIN"
-        elif ! check_kernel_feature "NETFILTER_XT_MATCH_BPF"; then
-            log Warn "Kernel does not support CONFIG_NETFILTER_XT_MATCH_BPF, eBPF disabled"
-        elif ! "$EBPF_MATCHER_BIN" probe >/dev/null 2>&1; then
-            log Warn "ebpf-matcher probe failed, eBPF disabled"
-        else
-            HAS_BPF=1
-            log Info "eBPF matcher available"
-        fi
-    fi
 }
 
 check_tproxy_support() {
@@ -1104,7 +1078,7 @@ setup_proxy_chain() {
         fi
     fi
 
-    if [ "$BYPASS_CN_IP" -eq 1 ] && [ "$HAS_BPF" -eq 0 ]; then
+    if [ "$BYPASS_CN_IP" -eq 1 ]; then
         local ipset_name="cnip"
         if [ "$family" = "6" ]; then
             ipset_name="cnip6"
@@ -1239,7 +1213,7 @@ setup_proxy_chain() {
 
     local uids
     local uid
-    if [ "$APP_PROXY_ENABLE" -eq 1 ] && [ "$HAS_BPF" -eq 0 ]; then
+    if [ "$APP_PROXY_ENABLE" -eq 1 ]; then
         if [ "$HAS_OWNER" -eq 1 ]; then
             log Info "Setting up application filter rules in $APP_PROXY_MODE mode"
             case "$APP_PROXY_MODE" in
@@ -1293,48 +1267,35 @@ setup_proxy_chain() {
         fi
     fi
 
-    # eBPF 门控参数：HAS_BPF=1 时在 TPROXY/MARK/REDIRECT 前加 -m bpf --object-pinned
-    # BPF 匹配 (代理) 才执行重定向/打标记；不匹配 (CN IP 或非目标 UID) 自然绕过
-    local bpf_out="" bpf_pre=""
-    if [ "$HAS_BPF" -eq 1 ]; then
-        if [ "$family" = "6" ]; then
-            bpf_out="-m bpf --object-pinned $EBPF_OUT_V6"
-            bpf_pre="-m bpf --object-pinned $EBPF_PRE_V6"
-        else
-            bpf_out="-m bpf --object-pinned $EBPF_OUT_V4"
-            bpf_pre="-m bpf --object-pinned $EBPF_PRE_V4"
-        fi
-    fi
-
     if [ "$_perf_ct" -eq 1 ]; then
         if [ "$mode" = "tproxy" ]; then
             $cmd -t "$table" -A "PROXY_PREROUTING$suffix" -m conntrack --ctstate NEW,RELATED -j CONNMARK --set-mark "$mark"
             # 【修复】：PREROUTING 阶段加上 /$mark 掩码识别被 MIUI 染色的连接
-            $cmd -t "$table" -A "PROXY_PREROUTING$suffix" -p tcp -m connmark --mark "$mark/0xff" $bpf_pre -j TPROXY --on-port "$PROXY_TCP_PORT" --tproxy-mark "$mark"
-            $cmd -t "$table" -A "PROXY_PREROUTING$suffix" -p udp -m connmark --mark "$mark/0xff" $bpf_pre -j TPROXY --on-port "$PROXY_UDP_PORT" --tproxy-mark "$mark"
+            $cmd -t "$table" -A "PROXY_PREROUTING$suffix" -p tcp -m connmark --mark "$mark/0xff" -j TPROXY --on-port "$PROXY_TCP_PORT" --tproxy-mark "$mark"
+            $cmd -t "$table" -A "PROXY_PREROUTING$suffix" -p udp -m connmark --mark "$mark/0xff" -j TPROXY --on-port "$PROXY_UDP_PORT" --tproxy-mark "$mark"
 
             $cmd -t "$table" -A "PROXY_OUTPUT$suffix" -m conntrack --ctstate NEW,RELATED -j CONNMARK --set-mark "$mark"
             # 【修复】：OUTPUT 阶段通过 /$mark 掩码抓取包含 ESTABLISHED 在内的后续所有包，并强行洗成干净的 $mark 给策略路由
-            $cmd -t "$table" -A "PROXY_OUTPUT$suffix" -m connmark --mark "$mark/0xff" $bpf_out -j MARK --set-mark "$mark"
+            $cmd -t "$table" -A "PROXY_OUTPUT$suffix" -m connmark --mark "$mark/0xff" -j MARK --set-mark "$mark"
             log Info "TPROXY mode rules added"
         else
             $cmd -t "$table" -A "PROXY_PREROUTING$suffix" -m conntrack --ctstate NEW,RELATED -j CONNMARK --set-mark "$mark"
             # 【修复】：REDIRECT 模式同理加掩码
-            $cmd -t "$table" -A "PROXY_PREROUTING$suffix" -m connmark --mark "$mark/0xff" $bpf_pre -j REDIRECT --to-ports "$PROXY_TCP_PORT"
+            $cmd -t "$table" -A "PROXY_PREROUTING$suffix" -m connmark --mark "$mark/0xff" -j REDIRECT --to-ports "$PROXY_TCP_PORT"
 
             $cmd -t "$table" -A "PROXY_OUTPUT$suffix" -m conntrack --ctstate NEW,RELATED -j CONNMARK --set-mark "$mark"
-            $cmd -t "$table" -A "PROXY_OUTPUT$suffix" -m connmark --mark "$mark/0xff" $bpf_out -j REDIRECT --to-ports "$PROXY_TCP_PORT"
+            $cmd -t "$table" -A "PROXY_OUTPUT$suffix" -m connmark --mark "$mark/0xff" -j REDIRECT --to-ports "$PROXY_TCP_PORT"
             log Info "REDIRECT mode rules added"
         fi
     else
         if [ "$mode" = "tproxy" ]; then
-            $cmd -t "$table" -A "PROXY_PREROUTING$suffix" -p tcp $bpf_pre -j TPROXY --on-port "$PROXY_TCP_PORT" --tproxy-mark "$mark"
-            $cmd -t "$table" -A "PROXY_PREROUTING$suffix" -p udp $bpf_pre -j TPROXY --on-port "$PROXY_UDP_PORT" --tproxy-mark "$mark"
-            $cmd -t "$table" -A "PROXY_OUTPUT$suffix" $bpf_out -j MARK --set-mark "$mark"
+            $cmd -t "$table" -A "PROXY_PREROUTING$suffix" -p tcp -j TPROXY --on-port "$PROXY_TCP_PORT" --tproxy-mark "$mark"
+            $cmd -t "$table" -A "PROXY_PREROUTING$suffix" -p udp -j TPROXY --on-port "$PROXY_UDP_PORT" --tproxy-mark "$mark"
+            $cmd -t "$table" -A "PROXY_OUTPUT$suffix" -j MARK --set-mark "$mark"
             log Info "TPROXY mode rules added"
         else
-            $cmd -t "$table" -A "PROXY_PREROUTING$suffix" $bpf_pre -j REDIRECT --to-ports "$PROXY_TCP_PORT"
-            $cmd -t "$table" -A "PROXY_OUTPUT$suffix" $bpf_out -j REDIRECT --to-ports "$PROXY_TCP_PORT"
+            $cmd -t "$table" -A "PROXY_PREROUTING$suffix" -j REDIRECT --to-ports "$PROXY_TCP_PORT"
+            $cmd -t "$table" -A "PROXY_OUTPUT$suffix" -j REDIRECT --to-ports "$PROXY_TCP_PORT"
             log Info "REDIRECT mode rules added"
         fi
     fi
@@ -1625,111 +1586,19 @@ detect_proxy_mode() {
     esac
 }
 
-# ---- eBPF matcher 生命周期 ----
-
-# 生成策略 JSON 并加载 BPF 程序 (含 SELinux 策略应用)。
-# BPF 程序在内核态同时处理 UID 策略 (hash map) 与 CN CIDR 绕过 (LPM trie)，
-# 替代 iptables 的 -m owner 逐 UID 规则与 ipset cnip 规则。
-# 失败时回退 HAS_BPF=0，由调用方继续走 iptables 原生逻辑。
-setup_ebpf_matcher() {
-    [ "$HAS_BPF" -eq 1 ] || return 0
-
-    # 解析策略模式与 UID 列表
-    # mode: 0=blacklist (列表内 UID 绕过), 1=whitelist (仅列表内 UID 代理), 2=global (跳过 UID)
-    local mode=2 uids=""
-    if [ "$APP_PROXY_ENABLE" -eq 1 ]; then
-        case "$APP_PROXY_MODE" in
-            blacklist) mode=0; uids=$(find_packages_uid $BYPASS_APPS_LIST) ;;
-            whitelist) mode=1; uids=$(find_packages_uid $PROXY_APPS_LIST) ;;
-            *)
-                log Warn "Unknown APP_PROXY_MODE '$APP_PROXY_MODE', using global mode"
-                ;;
-        esac
-    fi
-
-    # 构建 uids JSON 数组
-    local uids_json="[]"
-    if [ -n "$uids" ]; then
-        uids_json=$(echo "$uids" | tr ' ' '\n' | awk 'NF{printf "%s,",$0} END{print ""}')
-        uids_json="[${uids_json%,}]"
-    fi
-
-    local enable_ipv6="false"
-    [ "$PROXY_IPV6" -eq 1 ] && enable_ipv6="true"
-
-    # CN CIDR 绕过跟随 BYPASS_CN_IP 配置
-    local bypass_cn="false"
-    [ "$BYPASS_CN_IP" -eq 1 ] && bypass_cn="true"
-
-    local policy_file="$CONFIG_DIR/ebpf_policy.json"
-
-    # 生成策略 JSON (xt*ProgramPath 显式指定 pin 路径，与 iptables 规则一致)
-    cat > "$policy_file" <<EOF
-{
-  "version": 1,
-  "mode": $mode,
-  "uids": $uids_json,
-  "bypassDirectCidrs": $bypass_cn,
-  "enableIpv6": $enable_ipv6,
-  "directCidrPathV4": "$CONFIG_DIR/$CN_IP_FILE",
-  "directCidrPathV6": "$CONFIG_DIR/$CN_IPV6_FILE",
-  "xtOutputV4ProgramPath": "$EBPF_OUT_V4",
-  "xtOutputV6ProgramPath": "$EBPF_OUT_V6",
-  "xtPreroutingV4ProgramPath": "$EBPF_PRE_V4",
-  "xtPreroutingV6ProgramPath": "$EBPF_PRE_V6"
-}
-EOF
-
-    local uid_count=0
-    [ "$uids_json" != "[]" ] && uid_count=$(echo "$uids" | wc -w)
-    log Info "Generated eBPF policy: mode=$mode uids=$uid_count ipv6=$enable_ipv6"
-
-    # 加载 BPF 程序 (内部自动应用 SELinux 策略: allow netd * bpf ...)
-    if [ "$DRY_RUN" -eq 1 ]; then
-        log Debug "[EXEC] $EBPF_MATCHER_BIN start -p $policy_file (skipped, dry-run)"
-        return 0
-    fi
-
-    if ! "$EBPF_MATCHER_BIN" start -p "$policy_file"; then
-        log Error "ebpf-matcher start failed, falling back to iptables-only mode"
-        HAS_BPF=0
-        cleanup_ebpf_matcher
-        return 1
-    fi
-    log Info "eBPF matcher loaded (BPF programs pinned to $EBPF_BPF_DIR/)"
-}
-
-# 卸载 BPF 程序并清理策略 JSON。
-cleanup_ebpf_matcher() {
-    local policy_file="$CONFIG_DIR/ebpf_policy.json"
-
-    if [ "$DRY_RUN" -eq 1 ]; then
-        log Debug "[EXEC] $EBPF_MATCHER_BIN stop (skipped, dry-run)"
-        rm -f "$policy_file" 2> /dev/null
-        return 0
-    fi
-
-    "$EBPF_MATCHER_BIN" stop -p "$policy_file" 2>/dev/null || true
-    rm -f "$policy_file" 2>/dev/null
-    log Info "eBPF matcher unloaded"
-}
-
 start_proxy() {
     log Info "Starting proxy setup..."
     setup_static_bypass_ipset
-    # CN IP 列表下载 (BPF 和 ipset 模式都需要，先下载确保 BPF 加载最新数据)
     if [ "$BYPASS_CN_IP" -eq 1 ]; then
-        download_cn_ip_list || log Warn "Failed to download CN IP list, continuing without it"
-    fi
-    setup_ebpf_matcher
-    # ipset CN 绕过 (仅 eBPF 未启用时作为回退)
-    if [ "$BYPASS_CN_IP" -eq 1 ] && [ "$HAS_BPF" -eq 0 ]; then
         if [ "$HAS_IPSET" -eq 0 ] || [ "$HAS_XT_SET" -eq 0 ]; then
             log Error "Kernel does not support ipset (CONFIG_IP_SET, CONFIG_NETFILTER_XT_SET). Cannot bypass CN IPs"
             BYPASS_CN_IP=0
-        elif ! setup_cn_ipset; then
-            log Error "Failed to setup ipset, CN bypass disabled"
-            BYPASS_CN_IP=0
+        else
+            download_cn_ip_list || log Warn "Failed to download CN IP list, continuing without it"
+            if ! setup_cn_ipset; then
+                log Error "Failed to setup ipset, CN bypass disabled"
+                BYPASS_CN_IP=0
+            fi
         fi
     fi
 
@@ -1779,7 +1648,6 @@ stop_proxy() {
     fi
     cleanup_static_bypass_ipset
     cleanup_ipset
-    cleanup_ebpf_matcher
     log Info "Proxy stopped"
     block_loopback_traffic disable
     block_quic disable
@@ -1808,7 +1676,7 @@ block_quic() {
         enable)
             iptables -N BLOCK_QUIC 2> /dev/null || true
             iptables -F BLOCK_QUIC
-            if [ "$BYPASS_CN_IP" -eq 1 ] && [ "$HAS_BPF" -eq 0 ]; then
+            if [ "$BYPASS_CN_IP" -eq 1 ]; then
                 iptables -A BLOCK_QUIC -p udp --dport 443 -m set ! --match-set cnip dst -j REJECT
             else
                 iptables -A BLOCK_QUIC -p udp --dport 443 -j REJECT
@@ -1820,7 +1688,7 @@ block_quic() {
             if [ "$PROXY_IPV6" -eq 1 ]; then
                 ip6tables -N BLOCK_QUIC6 2> /dev/null || true
                 ip6tables -F BLOCK_QUIC6
-                if [ "$BYPASS_CN_IP" -eq 1 ] && [ "$HAS_BPF" -eq 0 ]; then
+                if [ "$BYPASS_CN_IP" -eq 1 ]; then
                     ip6tables -A BLOCK_QUIC6 -p udp --dport 443 -m set ! --match-set cnip6 dst -j REJECT
                 else
                     ip6tables -A BLOCK_QUIC6 -p udp --dport 443 -j REJECT
