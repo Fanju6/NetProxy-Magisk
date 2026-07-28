@@ -50,7 +50,6 @@ jobs:
           files: |
             ${{ steps.pack.outputs.full_name }}
             ${{ steps.pack.outputs.lite_name }}
-            ${{ steps.pack.outputs.mini_name }}
             update.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -71,8 +70,7 @@ jobs:
 
             **直接下载:**
             [完整包](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.pack.outputs.full_name }})
-            [精简包](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.pack.outputs.lite_name }})
-            [纯脚本包](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.pack.outputs.mini_name }})
+            [Lite 包](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.pack.outputs.lite_name }})
 
       - name: 触发同步到 KernelSU 仓库
         if: github.ref_type == 'tag'

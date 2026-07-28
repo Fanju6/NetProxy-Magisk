@@ -1,5 +1,5 @@
 name: 构建并打包模块
-description: 构建 WebUI、写入 versionCode，并打出 完整 / 精简 / 纯脚本 三个 ZIP 包
+description: 构建 WebUI、写入 versionCode，并打出完整包与 Lite 包
 
 # 被 ci.yml 与 release.yml 复用的共享打包逻辑（调用前需已 checkout，且 fetch-depth: 0 以便统计提交数）
 outputs:
@@ -13,11 +13,8 @@ outputs:
     description: 完整包文件名
     value: ${{ steps.meta.outputs.full_name }}
   lite_name:
-    description: 精简包文件名
+    description: Lite 包文件名
     value: ${{ steps.meta.outputs.lite_name }}
-  mini_name:
-    description: 纯脚本包文件名
-    value: ${{ steps.meta.outputs.mini_name }}
 
 runs:
   using: composite
@@ -48,20 +45,16 @@ runs:
           echo "commit_count=$COMMIT_COUNT"
           echo "full_name=NetProxy_${VERSION}_${COMMIT_COUNT}.zip"
           echo "lite_name=NetProxy_${VERSION}_${COMMIT_COUNT}_lite.zip"
-          echo "mini_name=NetProxy_${VERSION}_${COMMIT_COUNT}_mini.zip"
         } >> "$GITHUB_OUTPUT"
 
-    - name: 打包三件套（完整 / 精简 / 纯脚本）
+    - name: 打包模块（完整 / Lite）
       shell: bash
       working-directory: src/module
       env:
         FULL_NAME: ${{ steps.meta.outputs.full_name }}
         LITE_NAME: ${{ steps.meta.outputs.lite_name }}
-        MINI_NAME: ${{ steps.meta.outputs.mini_name }}
       run: |
         # 完整包（全部组件）
         7z a -tzip -mx=9 "../../$FULL_NAME" .
-        # 精简包（排除 IPSET 驱动，适用于内核已内置 IPSET 的设备）
+        # Lite 包（排除集成 IPSET 驱动与工具，其他组件与完整版一致）
         7z a -tzip -mx=9 "../../$LITE_NAME" . -x!"bin/IPSET-LKM/*"
-        # 纯脚本包（排除所有二进制文件）
-        7z a -tzip -mx=9 "../../$MINI_NAME" . -x!"bin/sing-box" -x!"bin/proxylink" -x!"bin/IPSET-LKM/*" -x!"bin/zashboard/*"

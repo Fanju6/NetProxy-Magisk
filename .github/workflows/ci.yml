@@ -58,8 +58,7 @@ jobs:
             构建时间: ${{ env.TIMESTAMP }}
             提交: \`${{ env.SHORT_HASH }}\`" \
             "${{ steps.pack.outputs.full_name }}" \
-            "${{ steps.pack.outputs.lite_name }}" \
-            "${{ steps.pack.outputs.mini_name }}"
+            "${{ steps.pack.outputs.lite_name }}"
 
       - name: Telegram 构建成功通知
         if: success()

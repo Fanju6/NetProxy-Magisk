@@ -75,6 +75,15 @@ Clash API 默认配置：
 
 ## 安装
 
+Release 页面提供以下两个版本：
+
+| 版本 | 文件名 | 包含内容 | 适用设备 |
+|------|--------|----------|----------|
+| **完整版** | `NetProxy_<版本>_<构建号>.zip` | 包含 sing-box、Proxylink、zashboard、Android 管理器，以及集成的 IPSET LKM 驱动和 `ipset` 工具 | 默认推荐；适合大多数设备，尤其是不确定内核 IPSET 支持情况时 |
+| **Lite 包** | `NetProxy_<版本>_<构建号>_lite.zip` | 不包含 `bin/IPSET-LKM`，其余核心、管理与代理功能和完整版一致 | 适合系统已提供可用 IPSET 内核支持与 `ipset` 工具，或不需要 IPSET 扩展功能的设备 |
+
+如果不确定该选哪个版本，请下载**完整版**。Lite 包不是无核心版本，仍然内置 sing-box、Proxylink 和 zashboard；它只移除了集成的 IPSET 驱动与工具。
+
 1. 从 [Releases](https://github.com/Fanju6/NetProxy-Magisk/releases) 下载最新模块 ZIP。
 2. 在 Magisk、KernelSU 或 APatch 中刷入模块。
 3. 按安装提示选择内置管理器或 Google Play 版本，然后重启设备。

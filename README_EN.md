@@ -76,6 +76,15 @@ The controller listens on all interfaces by default. Use it only on trusted netw
 
 ## Installation
 
+Each release provides two packages:
+
+| Package | Filename | Contents | Recommended for |
+|---------|----------|----------|-----------------|
+| **Full** | `NetProxy_<version>_<build>.zip` | sing-box, Proxylink, zashboard, Android Manager, bundled IPSET LKM drivers, and the `ipset` tool | The default choice for most devices, especially when IPSET support is uncertain |
+| **Lite** | `NetProxy_<version>_<build>_lite.zip` | Everything except `bin/IPSET-LKM`; the proxy core and management features are unchanged | Devices that already provide working kernel IPSET support and an `ipset` command, or do not need IPSET-based features |
+
+Choose the **Full** package when unsure. Lite is not a coreless package: it still includes sing-box, Proxylink, and zashboard, and removes only the bundled IPSET drivers and tool.
+
 1. Download the latest ZIP from [Releases](https://github.com/Fanju6/NetProxy-Magisk/releases).
 2. Flash it with Magisk, KernelSU, or APatch.
 3. Follow the installer prompt for the bundled manager or Google Play version, then reboot.
