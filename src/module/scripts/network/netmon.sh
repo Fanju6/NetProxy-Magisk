@@ -40,20 +40,27 @@ export PATH="$MODDIR/bin:$PATH"
 # 返回: 标准输出打印 SSID；无法确定时打印空
 #######################################
 get_current_ssid() {
-  dumpsys wifi 2> /dev/null | awk -F'[":,]' '
-    /mWifiInfo/ {
-      for (i = 1; i <= NF; i++) {
-        if ($i ~ /SSID/) {
-          s = $(i + 1)
-          gsub(/^[ \t]+|[ \t]+$/, "", s)
-          if (s != "" && s != "<unknown ssid>") { print s; exit }
-        }
+  dumpsys wifi 2> /dev/null | awk '
+    /mWifiInfo[[:space:]]+SSID:/ {
+      s = $0
+
+      # 精确匹配 mWifiInfo SSID，避免误匹配 BSSID
+      sub(/^.*mWifiInfo[[:space:]]+SSID:[[:space:]]*/, "", s)
+
+      # 兼容带引号和不带引号的 SSID
+      if (substr(s, 1, 1) == "\"") {
+        s = substr(s, 2)
+        sub(/".*$/, "", s)
+      } else {
+        sub(/,.*/, "", s)
       }
-    }
-    /COMPLETED/ {
-      split($0, a, "\"")
-      s = a[2]
-      if (s != "" && s != "<unknown ssid>") { print s; exit }
+
+      gsub(/^[ \t]+|[ \t]+$/, "", s)
+
+      if (s != "" && s != "<unknown ssid>") {
+        print s
+        exit
+      }
     }
   '
 }
