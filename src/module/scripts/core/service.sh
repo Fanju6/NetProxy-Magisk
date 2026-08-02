@@ -244,6 +244,37 @@ do_restart() {
 }
 
 #######################################
+# 检查完整 sing-box 配置
+# 参数: 无
+# 返回: 配置有效返回 0，检查失败返回非 0
+#######################################
+do_check() {
+  local runtime_outbounds runtime_ebpf node_path
+
+  verify_environment
+  initialize_runtime_context
+  scan_runtime_nodes "$CUR_OUTBOUND_DIR"
+  write_runtime_outbounds > /dev/null
+  write_runtime_ebpf > /dev/null
+  runtime_outbounds="$RUNTIME_OUTBOUNDS_FILE"
+  runtime_ebpf="$RUNTIME_EBPF_FILE"
+
+  [ "$RUNTIME_NODE_COUNT" -gt 0 ] || die "当前节点目录没有可加载的节点配置: $CUR_OUTBOUND_DIR"
+
+  set -- check -C "$CONFDIR"
+  while IFS= read -r node_path; do
+    [ -n "$node_path" ] || continue
+    set -- "$@" -c "$node_path"
+  done << EOF
+$RUNTIME_NODE_PATHS
+EOF
+  set -- "$@" -c "$runtime_outbounds" -c "$runtime_ebpf"
+
+  cd "$SINGBOX_DIR" || die "无法进入配置目录: $SINGBOX_DIR"
+  "$SING_BOX_BIN" "$@"
+}
+
+#######################################
 # 查看服务运行状态
 # 参数: 无
 # 返回: 运行中返回 0，未运行返回 1
@@ -272,20 +303,21 @@ do_status() {
 #######################################
 show_usage() {
   cat << EOF
-用法: $(basename "$0") {start|stop|restart|status}
+用法: $(basename "$0") {start|stop|restart|status|check}
 
 命令:
   start     启动 sing-box 服务
   stop      停止 sing-box 服务
   restart   重启 sing-box 服务
   status    查看服务状态
+  check     检查完整配置
 EOF
 }
 
 #######################################
 # 主入口：解析命令并分发
 # 参数:
-#   $1  命令 (start/stop/restart/status)
+#   $1  命令 (start/stop/restart/status/check)
 # 返回: 依命令而定
 #######################################
 main() {
@@ -296,6 +328,7 @@ main() {
     stop) do_stop ;;
     restart) do_restart ;;
     status) do_status ;;
+    check) do_check ;;
     -h | --help | help) show_usage ;;
     *)
       show_usage
