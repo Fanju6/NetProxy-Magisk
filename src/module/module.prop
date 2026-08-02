@@ -1,7 +1,7 @@
 id=netproxy
 name=NetProxy
-version=v8.0.0-alpha.1
-versionCode=1
+version=v8.0.0-alpha.2
+versionCode=2
 author=Fanju
 description=基于 sing-box eBPF 入站的 Android 透明代理工具
 updateJson=https://github.com/Fanju6/NetProxy-Magisk/releases/latest/download/update.json
