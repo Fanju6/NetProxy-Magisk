@@ -49,7 +49,7 @@ const settingsState = ref<SettingsState>({
   dnsMode: 'hijack',
   cgroupPath: '',
   ipv6Enabled: true,
-  bypassRuleSets: 'direct cn-ip',
+  bypassRuleSets: 'direct ChinaIP',
   sharedNetworkEnabled: false,
   sharedInterfaces: 'wlan2',
   tcpMapCapacity: '65536',
@@ -185,7 +185,7 @@ const loadSettings = async () => {
     settingsState.value.dnsMode = getValue(ebpfConfig, 'EBPF_DNS_MODE', 'hijack') === 'off' ? 'off' : 'hijack';
     settingsState.value.cgroupPath = getValue(ebpfConfig, 'EBPF_CGROUP_PATH', '');
     settingsState.value.ipv6Enabled = getBool(ebpfConfig, 'EBPF_IPV6', true);
-    settingsState.value.bypassRuleSets = getValue(ebpfConfig, 'EBPF_BYPASS_RULE_SETS', 'direct cn-ip');
+    settingsState.value.bypassRuleSets = getValue(ebpfConfig, 'EBPF_BYPASS_RULE_SETS', 'direct ChinaIP');
     settingsState.value.sharedNetworkEnabled = getBool(ebpfConfig, 'EBPF_SHARED_NETWORK', false);
     settingsState.value.sharedInterfaces = getValue(ebpfConfig, 'EBPF_SHARED_INTERFACES', 'wlan2');
     settingsState.value.tcpMapCapacity = getValue(ebpfConfig, 'EBPF_TCP_MAP_CAPACITY', '65536');

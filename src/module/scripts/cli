@@ -907,7 +907,7 @@ cmd_ebpf_status() {
   printf "UDP 超时: %s\n" "$(read_conf "$EBPF_CONF" "EBPF_UDP_TIMEOUT" "5m")"
   printf "DNS 模式: %s\n" "$(read_conf "$EBPF_CONF" "EBPF_DNS_MODE" "hijack")"
   printf "IPv6 代理: %s\n" "$(read_conf "$EBPF_CONF" "EBPF_IPV6" "1")"
-  printf "内核绕过规则集: %s\n" "$(read_conf "$EBPF_CONF" "EBPF_BYPASS_RULE_SETS" "direct cn-ip")"
+  printf "内核绕过规则集: %s\n" "$(read_conf "$EBPF_CONF" "EBPF_BYPASS_RULE_SETS" "direct ChinaIP")"
   printf "共享网络代理: %s\n" "$(read_conf "$EBPF_CONF" "EBPF_SHARED_NETWORK" "0")"
   printf "共享网络接口: %s\n" "$(read_conf "$EBPF_CONF" "EBPF_SHARED_INTERFACES" "wlan2")"
   printf "TCP 映射容量: %s\n" "$(read_conf "$EBPF_CONF" "EBPF_TCP_MAP_CAPACITY" "65536")"

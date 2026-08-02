@@ -119,7 +119,7 @@ write_runtime_ebpf() {
   dns_mode="$(read_conf "$EBPF_CONF" "EBPF_DNS_MODE" "hijack")"
   cgroup_path="$(read_conf "$EBPF_CONF" "EBPF_CGROUP_PATH" "")"
   ipv6="$(read_conf "$EBPF_CONF" "EBPF_IPV6" "1")"
-  bypass_rules="$(read_conf "$EBPF_CONF" "EBPF_BYPASS_RULE_SETS" "direct cn-ip")"
+  bypass_rules="$(read_conf "$EBPF_CONF" "EBPF_BYPASS_RULE_SETS" "direct ChinaIP")"
 
   case "$network" in
     "" | tcp | udp) ;;

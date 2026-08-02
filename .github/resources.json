@@ -1,28 +1,24 @@
 {
   "raw": [
     {
-      "path": "src/module/config/singbox/source/AWAvenue.json",
-      "url": "https://raw.githubusercontent.com/TG-Twilight/AWAvenue-Ads-Rule/refs/heads/main/Filters/AWAvenue-Ads-Rule-Singbox.json"
+      "path": "src/module/config/singbox/source/Ads_AWAvenue.srs",
+      "url": "https://raw.githubusercontent.com/Repcz/Tool/X/sing-box/Rules/Ads_AWAvenue.srs"
     },
     {
-      "path": "src/module/config/singbox/source/category-ads-all.srs",
-      "url": "https://raw.githubusercontent.com/CHIZI-0618/v2ray-rules-dat/release/singbox_rule_set/geosite-category-ads-all.srs"
+      "path": "src/module/config/singbox/source/AppleCN.srs",
+      "url": "https://raw.githubusercontent.com/Repcz/Tool/X/sing-box/Rules/AppleCN.srs"
     },
     {
-      "path": "src/module/config/singbox/source/alibaba.srs",
-      "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-alibaba.srs"
+      "path": "src/module/config/singbox/source/ChinaDomain.srs",
+      "url": "https://raw.githubusercontent.com/Repcz/Tool/X/sing-box/Rules/ChinaDomain.srs"
     },
     {
-      "path": "src/module/config/singbox/source/category-games@cn.srs",
-      "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-games@cn.srs"
+      "path": "src/module/config/singbox/source/ChinaIP.srs",
+      "url": "https://raw.githubusercontent.com/Repcz/Tool/X/sing-box/Rules/ChinaIP.srs"
     },
     {
-      "path": "src/module/config/singbox/source/cn.srs",
-      "url": "https://raw.githubusercontent.com/CHIZI-0618/v2ray-rules-dat/release/singbox_rule_set/geosite-cn.srs"
-    },
-    {
-      "path": "src/module/config/singbox/source/cn-ip.srs",
-      "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/cn.srs"
+      "path": "src/module/config/singbox/source/Proxy.srs",
+      "url": "https://raw.githubusercontent.com/Repcz/Tool/X/sing-box/Rules/Proxy.srs"
     }
   ],
   "githubRelease": [

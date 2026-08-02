@@ -20,7 +20,7 @@ eBPF 透明代理主配置位于：
 
 ## 内核提前绕过
 
-`EBPF_BYPASS_RULE_SETS="direct cn-ip"` 会从可用规则集中提取纯 IP CIDR，并在 eBPF 层直接放行。被提前绕过的连接不会进入 sing-box 路由；如需严格 Global 模式，请将该值设为空。
+`EBPF_BYPASS_RULE_SETS="direct ChinaIP"` 会从可用规则集中提取纯 IP CIDR，并在 eBPF 层直接放行。被提前绕过的连接不会进入 sing-box 路由；如需严格 Global 模式，请将该值设为空。
 
 ## 分应用代理
 
