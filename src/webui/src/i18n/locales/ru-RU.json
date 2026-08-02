@@ -226,7 +226,7 @@
     "networkTcp": "Только TCP",
     "networkUdp": "Только UDP",
     "dnsHijack": "Перехват DNS",
-    "dnsHijackDesc": "Перехват TCP и UDP порта 53 для защиты от утечек DNS",
+    "dnsHijackDesc": "Перехват TCP и UDP порта 53",
     "ipv6": "Прозрачный прокси IPv6",
     "ipv6Desc": "Разрешить eBPF перехватывать трафик IPv6",
     "udpTimeout": "Тайм-аут сессии UDP",

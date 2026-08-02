@@ -226,7 +226,7 @@
     "networkTcp": "TCP only",
     "networkUdp": "UDP only",
     "dnsHijack": "DNS hijack",
-    "dnsHijackDesc": "Capture TCP and UDP port 53 to prevent DNS leaks",
+    "dnsHijackDesc": "Capture TCP and UDP port 53",
     "ipv6": "IPv6 transparent proxy",
     "ipv6Desc": "Allow eBPF to capture IPv6 traffic",
     "udpTimeout": "UDP session timeout",

@@ -226,7 +226,7 @@
     "networkTcp": "仅 TCP",
     "networkUdp": "仅 UDP",
     "dnsHijack": "DNS 劫持",
-    "dnsHijackDesc": "接管 TCP 与 UDP 53 端口，避免 DNS 泄漏",
+    "dnsHijackDesc": "接管 TCP 与 UDP 53 端口",
     "ipv6": "IPv6 透明代理",
     "ipv6Desc": "允许 eBPF 接管 IPv6 流量",
     "udpTimeout": "UDP 会话超时",
