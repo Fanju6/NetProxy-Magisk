@@ -61,12 +61,15 @@ restart_service_if_allowed() {
 #######################################
 switch_config() {
   local config_file="$1"
-  local target_tag node_name
+  local target_tag node_name current_config current_dir target_dir
 
   require_file "$MODULE_CONF" "模块配置文件不存在: $MODULE_CONF"
   require_file "$config_file" "节点配置文件不存在: $config_file"
 
   node_name="${config_file##*/}"
+  target_dir="${config_file%/*}"
+  current_config="$(read_conf "$MODULE_CONF" "CURRENT_CONFIG" "")"
+  current_dir="${current_config%/*}"
   log "INFO" "切换节点: $node_name"
 
   # 持久化当前节点路径并读取其出站标签
@@ -79,8 +82,11 @@ switch_config() {
     return 0
   fi
 
-  # 有标签时优先通过控制接口热切换
-  if [ -n "$target_tag" ]; then
+  # 当前实例只加载当前节点目录；跨目录切换无需尝试必然失败的控制接口请求
+  if [ -n "$current_config" ] && [ "$current_dir" != "$target_dir" ]; then
+    log "INFO" "节点目录发生变化，直接重启服务加载目标目录"
+  elif [ -n "$target_tag" ]; then
+    # 同目录节点已被当前实例加载，优先通过控制接口热切换
     if api_select_proxy "$target_tag"; then
       log "INFO" "节点切换完成: $target_tag"
       return 0

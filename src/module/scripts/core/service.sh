@@ -239,7 +239,6 @@ do_restart() {
   log_service_action "重启"
 
   do_stop
-  sleep 1
   do_start
 }
 
