@@ -4,22 +4,14 @@
     "default_http_client": "rule-set-download",
     "rule_set": [
       {
-        "tag": "block",
+        "tag": [
+          "block",
+          "direct",
+          "proxy"
+        ],
         "type": "local",
         "format": "source",
-        "path": "./source/block.json"
-      },
-      {
-        "tag": "direct",
-        "type": "local",
-        "format": "source",
-        "path": "./source/direct.json"
-      },
-      {
-        "tag": "proxy",
-        "type": "local",
-        "format": "source",
-        "path": "./source/proxy.json"
+        "path": "./source/{tag}.json"
       },
       {
         "tag": "AWAvenue",
@@ -38,20 +30,15 @@
         "initial_path": "./source/category-ads-all.srs"
       },
       {
-        "tag": "alibaba",
+        "tag": [
+          "alibaba",
+          "category-games@cn"
+        ],
         "type": "remote",
         "format": "binary",
-        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-alibaba.srs",
+        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-{tag}.srs",
         "update_interval": "24h",
-        "initial_path": "./source/alibaba.srs"
-      },
-      {
-        "tag": "category-games@cn",
-        "type": "remote",
-        "format": "binary",
-        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-games@cn.srs",
-        "update_interval": "24h",
-        "initial_path": "./source/category-games@cn.srs"
+        "initial_path": "./source/{tag}.srs"
       },
       {
         "tag": "cn-domain",
