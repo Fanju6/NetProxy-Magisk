@@ -138,10 +138,10 @@ export const runCli = async (subCommand: string, opts: { detach?: boolean } = {}
     console.warn(`[KSU Mock CLI] Executing: sh ./scripts/cli ${subCommand}`);
     // 模拟各命令的返回，便于浏览器调试
     if (subCommand.includes('service status')) {
-      return `服务状态:\n运行状态: \x1b[0;32m运行中\x1b[0m\n进程 PID: 12345\n运行时间: 3600 秒\n当前节点: Proxy-HK-01.json\n出站模式: rule\n透明代理端口: TCP=1536 UDP=1536 DNS=1536\n运行模式: Rule\n内核版本: sing-box version 1.10.0`;
+      return `服务状态:\n运行状态: \x1b[0;32m运行中\x1b[0m\n进程 PID: 12345\n运行时间: 3600 秒\n当前节点: Proxy-HK-01.json\n出站模式: rule\n透明代理: eBPF (DNS=hijack IPv6=1 共享网络=0)\n运行模式: Rule\n内核版本: sing-box version 1.14.0`;
     }
-    if (subCommand.includes('tproxy status')) {
-      return `透明代理配置:\nTCP 端口: 1536\nUDP 端口: 1536\nDNS 端口: 1536\n代理模式: 0\n分应用代理: 1\n阻断 QUIC: 1\n绕过中国 IP: 1`;
+    if (subCommand.includes('ebpf status')) {
+      return `eBPF 入站配置:\n代理协议: TCP+UDP\nDNS 模式: hijack\nIPv6: 1\n共享网络: 0\n分应用代理: 1`;
     }
     if (subCommand.includes('app list')) {
       return `分应用代理: 1\n应用模式: blacklist\n代理列表: com.google.android.youtube com.twitter.android\n绕过列表: com.tencent.mm com.eg.android.Alipay`;
@@ -313,13 +313,19 @@ export const getAppPackagesList = async (filter: 'user' | 'system' | 'all' = 'al
 };
 
 // ===================================================================
-// 六、tproxy.conf 配置读写
+// 六、ebpf.conf 配置读写
 // ===================================================================
 
 /** 按需为配置值补引号（含空格或为空时强制加引号）。 */
 const formatValue = (value: string, forceQuotes: boolean): string => {
   const needsQuotes = forceQuotes || value.includes(' ') || value === '';
-  return needsQuotes ? `"${value}"` : value;
+  if (!needsQuotes) return value;
+  const escaped = value
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\$/g, '\\$')
+    .replace(/`/g, '\\`');
+  return `"${escaped}"`;
 };
 
 const updateContent = (content: string, key: string, formattedValue: string): string => {
@@ -345,15 +351,15 @@ const updateContent = (content: string, key: string, formattedValue: string): st
 };
 
 /**
- * 写入 tproxy.conf 的单个键值（保留行尾注释；键不存在则追加）。
- * 仅写文件，不触发规则重载——改动在下次服务启动/重启时生效。
+ * 写入 ebpf.conf 的单个键值（保留行尾注释；键不存在则追加）。
+ * 仅写文件，不触发核心重启，便于连续修改后一次性应用。
  * @param key  配置键，如 'APP_PROXY_ENABLE'
  * @param value  值
  * @param forceQuotes  是否强制加引号（列表 / 含空格值用）
  */
-export const writeTProxyValue = async (key: string, value: string, forceQuotes: boolean = false): Promise<void> => {
+export const writeEbpfValue = async (key: string, value: string, forceQuotes: boolean = false): Promise<void> => {
   if (!isKsuEnv()) {
-    console.log(`[KSU Mock WriteTProxyValue] Key: ${key}, Value: ${value}, forceQuotes: ${forceQuotes}`);
+    console.log(`[KSU Mock WriteEbpfValue] Key: ${key}, Value: ${value}, forceQuotes: ${forceQuotes}`);
     if (key === 'APP_PROXY_ENABLE') {
       localStorage.setItem('mock_proxy_enabled', value === '1' ? 'true' : 'false');
     } else if (key === 'APP_PROXY_MODE') {
@@ -361,29 +367,24 @@ export const writeTProxyValue = async (key: string, value: string, forceQuotes: 
     }
     return;
   }
-  const filePath = '/data/adb/modules/netproxy/config/tproxy/tproxy.conf';
-  let content = '';
-  try {
-    content = await readFileContent(filePath);
-  } catch (err) {
-    content = '';
-  }
+  const filePath = '/data/adb/modules/netproxy/config/ebpf/ebpf.conf';
+  const content = await readFileContent(filePath);
   const formattedValue = formatValue(value, forceQuotes);
   const updatedContent = updateContent(content, key, formattedValue);
   await writeFileContent(filePath, updatedContent);
 };
 
-export interface TProxyConfigState {
+export interface EbpfConfigState {
   appProxyEnabled: boolean;
   appProxyMode: 'blacklist' | 'whitelist';
   proxiedAppItems: string[];
 }
 
 /**
- * 解析 tproxy.conf，返回分应用代理的状态。
+ * 解析 ebpf.conf，返回分应用代理的状态。
  * @returns 启用状态 / 模式 / 当前模式对应的应用列表（whitelist→代理列表，否则绕过列表）
  */
-export const getTProxyConfigState = async (): Promise<TProxyConfigState> => {
+export const getEbpfConfigState = async (): Promise<EbpfConfigState> => {
   if (!isKsuEnv()) {
     const enabled = localStorage.getItem('mock_proxy_enabled') !== 'false';
     const mode = (localStorage.getItem('mock_proxy_mode') || 'blacklist') as 'blacklist' | 'whitelist';
@@ -396,13 +397,8 @@ export const getTProxyConfigState = async (): Promise<TProxyConfigState> => {
     };
   }
 
-  const filePath = '/data/adb/modules/netproxy/config/tproxy/tproxy.conf';
-  let content = '';
-  try {
-    content = await readFileContent(filePath);
-  } catch (err) {
-    content = '';
-  }
+  const filePath = '/data/adb/modules/netproxy/config/ebpf/ebpf.conf';
+  const content = await readFileContent(filePath);
 
   const lines = content.split('\n');
   let enabled = false;
@@ -469,14 +465,14 @@ export const addProxyApp = async (packageName: string, userId: string = '0'): Pr
     }
     return;
   }
-  const state = await getTProxyConfigState();
+  const state = await getEbpfConfigState();
   const currentApps = state.proxiedAppItems;
   const newItem = `${userId}:${packageName}`;
   if (currentApps.includes(newItem)) return;
 
   const listKey = state.appProxyMode === 'blacklist' ? 'BYPASS_APPS_LIST' : 'PROXY_APPS_LIST';
   const newList = currentApps.length === 0 ? newItem : [...currentApps, newItem].join(' ');
-  await writeTProxyValue(listKey, newList, true);
+  await writeEbpfValue(listKey, newList, true);
 };
 
 /**
@@ -492,14 +488,14 @@ export const removeProxyApp = async (packageName: string, userId: string = '0'):
     localStorage.setItem('mock_checked_apps', JSON.stringify(newList));
     return;
   }
-  const state = await getTProxyConfigState();
+  const state = await getEbpfConfigState();
   const currentApps = state.proxiedAppItems;
   const target = `${userId}:${packageName}`;
   if (!currentApps.includes(target) && !currentApps.includes(packageName)) return;
 
   const listKey = state.appProxyMode === 'blacklist' ? 'BYPASS_APPS_LIST' : 'PROXY_APPS_LIST';
   const newList = currentApps.filter(item => item !== target && item !== packageName).join(' ');
-  await writeTProxyValue(listKey, newList, true);
+  await writeEbpfValue(listKey, newList, true);
 };
 
 // ===================================================================

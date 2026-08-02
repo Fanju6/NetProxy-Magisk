@@ -2,12 +2,22 @@
 /**
  * @file AppsScreen.vue
  * @description 应用页：分应用代理（关闭/黑名单/白名单）管理。列出已安装应用、搜索/过滤/排序、
- *   勾选加入名单（写 tproxy.conf）、下拉刷新；长列表用自建虚拟滚动（复用父级 .page-scroller）。
+ *   勾选加入名单（写 ebpf.conf）、下拉刷新；长列表用自建虚拟滚动（复用父级 .page-scroller）。
  *   非真机环境用 mock 数据（含约 300 条用于验证虚拟滚动）。
  */
 import { ref, computed, onMounted, onActivated, onDeactivated, onUnmounted, nextTick, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { showToast, getAppPackagesList, getAppIconUrl, isKsuEnv, writeTProxyValue, addProxyApp, removeProxyApp, getTProxyConfigState } from '../utils/ksu';
+import {
+  showToast,
+  getAppPackagesList,
+  getAppIconUrl,
+  isKsuEnv,
+  writeEbpfValue,
+  addProxyApp,
+  removeProxyApp,
+  getEbpfConfigState,
+  runCli
+} from '../utils/ksu';
 import { useBackDismiss } from '../composables/useBackDismiss';
 
 const { t } = useI18n();
@@ -41,6 +51,7 @@ const onIconError = (packageName: string) => {
 // 分应用代理偏好状态
 const isAppProxyEnabled = ref(false);
 const appProxyMode = ref<'blacklist' | 'whitelist'>('blacklist');
+const isApplyingConfig = ref(false);
 
 // 展示过滤选项（持久化到 localStorage）
 const showSystemApps = ref(localStorage.getItem('np_show_system_apps') === 'true');
@@ -133,10 +144,10 @@ const proxyModeIndex = computed(() => {
 // 配置加载 / 应用列表加载
 // ===================================================================
 
-/** 经共享 tproxy.conf 读取器加载分应用代理配置（真机/mock 双轨），并据名单标记勾选态。 */
+/** 经共享 ebpf.conf 读取器加载分应用代理配置（真机/mock 双轨），并据名单标记勾选态。 */
 const loadAppConfig = async () => {
   try {
-    const state = await getTProxyConfigState();
+    const state = await getEbpfConfigState();
     isAppProxyEnabled.value = state.appProxyEnabled;
     appProxyMode.value = state.appProxyMode;
 
@@ -148,7 +159,7 @@ const loadAppConfig = async () => {
       app.checked = checkedSet.has(targetWithUser) || checkedSet.has(app.packageName);
     });
   } catch (e) {
-    console.error('Failed to load tproxy config:', e);
+    console.error('Failed to load eBPF config:', e);
   }
 };
 
@@ -289,7 +300,7 @@ const handleTouchEnd = async () => {
 // ===================================================================
 
 /**
- * 代理模式下拉变更（0=关闭 1=黑名单 2=白名单）：写 tproxy.conf 并刷新配置。
+ * 代理模式下拉变更（0=关闭 1=黑名单 2=白名单）：写 ebpf.conf 并刷新配置。
  * @param e  select 的 change 事件
  */
 const handleProxyModeIndexChange = async (e: Event) => {
@@ -298,14 +309,14 @@ const handleProxyModeIndexChange = async (e: Event) => {
   try {
     if (isKsuEnv()) {
       if (index === 0) {
-        await writeTProxyValue('APP_PROXY_ENABLE', '0');
+        await writeEbpfValue('APP_PROXY_ENABLE', '0');
         isAppProxyEnabled.value = false;
         showToast(t('apps.proxyDisabled'));
       } else {
-        await writeTProxyValue('APP_PROXY_ENABLE', '1');
+        await writeEbpfValue('APP_PROXY_ENABLE', '1');
         isAppProxyEnabled.value = true;
         const mode = index === 1 ? 'blacklist' : 'whitelist';
-        await writeTProxyValue('APP_PROXY_MODE', mode, true);
+        await writeEbpfValue('APP_PROXY_MODE', mode, true);
         appProxyMode.value = mode;
         showToast(t('apps.modeChanged', { mode: mode === 'blacklist' ? t('apps.blacklist') : t('apps.whitelist') }));
       }
@@ -327,6 +338,20 @@ const handleProxyModeIndexChange = async (e: Event) => {
     }
   } catch (err: any) {
     showToast(t('apps.switchProxyFailed', { msg: err.message || err }));
+  }
+};
+
+/** 重启 sing-box，使连续修改的分应用名单一次性生效。 */
+const applyAppProxyConfig = async () => {
+  if (isApplyingConfig.value) return;
+  isApplyingConfig.value = true;
+  try {
+    await runCli('service restart', { detach: true });
+    showToast(t('apps.applySuccess'));
+  } catch (err: any) {
+    showToast(t('apps.applyFailed', { msg: err?.message || String(err) }));
+  } finally {
+    isApplyingConfig.value = false;
   }
 };
 
@@ -553,6 +578,16 @@ defineExpose({
           <option :value="1">{{ t('apps.modeBlacklist') }}</option>
           <option :value="2">{{ t('apps.modeWhitelist') }}</option>
         </select>
+      </div>
+      <div class="app-pref-divider"></div>
+      <div class="pref-row apply-pref-row">
+        <div class="pref-text">
+          <span class="pref-title">{{ t('apps.applyChanges') }}</span>
+          <span class="pref-summary">{{ t('apps.applyChangesDesc') }}</span>
+        </div>
+        <md-filled-button :disabled="isApplyingConfig" @click="applyAppProxyConfig">
+          {{ isApplyingConfig ? t('apps.applying') : t('apps.applyChanges') }}
+        </md-filled-button>
       </div>
     </div>
 
@@ -790,6 +825,7 @@ defineExpose({
 /* 偏好卡片样式 */
 .app-pref-card {
   margin-bottom: 14px;
+  gap: 0;
 }
 
 .pref-row {
@@ -797,6 +833,20 @@ defineExpose({
   justify-content: space-between;
   align-items: center;
   width: 100%;
+}
+
+.apply-pref-row {
+  padding-top: 14px;
+}
+
+.apply-pref-row md-filled-button {
+  flex-shrink: 0;
+}
+
+.app-pref-divider {
+  height: 1px;
+  margin: 14px 0 0;
+  background-color: var(--md-sys-color-outline-variant);
 }
 
 .pref-text {
