@@ -27,7 +27,7 @@
         "format": "source",
         "url": "https://raw.githubusercontent.com/TG-Twilight/AWAvenue-Ads-Rule/refs/heads/main/Filters/AWAvenue-Ads-Rule-Singbox.json",
         "update_interval": "24h",
-        "path": "./source/AWAvenue.json"
+        "initial_path": "./source/AWAvenue.json"
       },
       {
         "tag": "category-ads-all",
@@ -35,7 +35,7 @@
         "format": "binary",
         "url": "https://raw.githubusercontent.com/CHIZI-0618/v2ray-rules-dat/release/singbox_rule_set/geosite-category-ads-all.srs",
         "update_interval": "24h",
-        "path": "./source/category-ads-all.srs"
+        "initial_path": "./source/category-ads-all.srs"
       },
       {
         "tag": "alibaba",
@@ -43,7 +43,7 @@
         "format": "binary",
         "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-alibaba.srs",
         "update_interval": "24h",
-        "path": "./source/alibaba.srs"
+        "initial_path": "./source/alibaba.srs"
       },
       {
         "tag": "category-games@cn",
@@ -51,7 +51,7 @@
         "format": "binary",
         "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-games@cn.srs",
         "update_interval": "24h",
-        "path": "./source/category-games@cn.srs"
+        "initial_path": "./source/category-games@cn.srs"
       },
       {
         "tag": "cn-domain",
@@ -59,7 +59,7 @@
         "format": "binary",
         "url": "https://raw.githubusercontent.com/CHIZI-0618/v2ray-rules-dat/release/singbox_rule_set/geosite-cn.srs",
         "update_interval": "24h",
-        "path": "./source/cn.srs"
+        "initial_path": "./source/cn.srs"
       },
       {
         "tag": "cn-ip",
@@ -67,7 +67,7 @@
         "format": "binary",
         "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/cn.srs",
         "update_interval": "10d",
-        "path": "./source/cn-ip.srs"
+        "initial_path": "./source/cn-ip.srs"
       }
     ],
     "rules": [
