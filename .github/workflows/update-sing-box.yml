@@ -5,7 +5,7 @@ name: 自动更新 sing-box eBPF 内核
 
 on:
   schedule:
-    - cron: '3,13,23,33,43,53 * * * *'
+    - cron: '*/10 * * * *'
   workflow_dispatch:
     inputs:
       force:
