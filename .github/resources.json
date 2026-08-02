@@ -1,14 +1,6 @@
 {
   "raw": [
     {
-      "path": "src/module/config/tproxy/cn.zone",
-      "url": "https://raw.githubusercontent.com/Hackl0us/GeoIP2-CN/release/CN-ip-cidr.txt"
-    },
-    {
-      "path": "src/module/config/tproxy/cn_ipv6.zone",
-      "url": "https://ispip.clang.cn/all_cn_ipv6.txt"
-    },
-    {
       "path": "src/module/config/singbox/source/AWAvenue.json",
       "url": "https://raw.githubusercontent.com/TG-Twilight/AWAvenue-Ads-Rule/refs/heads/main/Filters/AWAvenue-Ads-Rule-Singbox.json"
     },

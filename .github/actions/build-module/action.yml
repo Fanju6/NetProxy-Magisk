@@ -56,5 +56,5 @@ runs:
       run: |
         # 完整包（全部组件）
         7z a -tzip -mx=9 "../../$FULL_NAME" .
-        # Lite 包（排除集成 IPSET 驱动与工具，其他组件与完整版一致）
-        7z a -tzip -mx=9 "../../$LITE_NAME" . -x!"bin/IPSET-LKM/*"
+        # Lite 包（不内置 Android 管理器 APK，代理与管理能力保持完整）
+        7z a -tzip -mx=9 "../../$LITE_NAME" . -x!"NetProxy.apk"
