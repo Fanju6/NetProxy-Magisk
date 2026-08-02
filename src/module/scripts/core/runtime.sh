@@ -198,6 +198,7 @@ write_runtime_ebpf() {
     {
       "type": "ebpf",
       "tag": "ebpf-in",
+      "cgroup_enabled": true,
 ${network_field}      "udp_timeout": "$(json_escape "$udp_timeout")",
       "dns_mode": "$dns_mode",
       "cgroup_path": "$(json_escape "$cgroup_path")",
