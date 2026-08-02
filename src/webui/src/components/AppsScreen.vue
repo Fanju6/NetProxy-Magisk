@@ -608,7 +608,7 @@ defineExpose({
         <div class="apps-virtual-inner" :style="{ transform: `translateY(${visibleRange.offsetY}px)` }">
           <div
             v-for="app in visibleApps"
-            :key="app.packageName + app.uid"
+            :key="`${app.userId}:${app.packageName}`"
             class="app-item-card"
             @click="toggleAppProxy(app)">
 

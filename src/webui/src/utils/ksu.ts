@@ -116,6 +116,31 @@ export interface PackagesInfo {
   uid: number;           // 应用 UID
 }
 
+const ANDROID_UID_PER_USER = 100000;
+
+/**
+ * 合并 KernelSU 在应用分身场景下返回的重复记录。
+ * 同一包名在不同 Android 用户中仍分别保留，与 userId:packageName 配置格式一致。
+ */
+const normalizePackagesInfo = (infos: PackagesInfo[]): PackagesInfo[] => {
+  const unique = new Map<string, PackagesInfo>();
+
+  infos.forEach(info => {
+    if (!info || typeof info.packageName !== 'string' || !Number.isInteger(info.uid) || info.uid < 0) return;
+
+    const packageName = info.packageName.trim();
+    if (!packageName) return;
+
+    const userId = Math.floor(info.uid / ANDROID_UID_PER_USER);
+    const key = `${userId}:${packageName}`;
+    if (!unique.has(key)) {
+      unique.set(key, { ...info, packageName });
+    }
+  });
+
+  return Array.from(unique.values());
+};
+
 // ===================================================================
 // 三、模块 CLI 调用
 // ===================================================================
@@ -278,7 +303,7 @@ export const getAppIconUrl = (packageName: string): string => {
 /**
  * 获取已安装应用列表（含名称 / 版本 / UID / 是否系统应用）。
  * 真机直接走 KernelSU 原生 listPackages + getPackagesInfo（无 pm fork、有类型）。
- * 注：原生 API 仅返回主用户应用；不含工作资料 / 应用分身等多用户条目。
+ * KernelSU 在部分应用分身环境中可能返回重复条目，结果会按用户与包名归一化。
  * 非真机环境返回 mock 列表。
  * @param filter  'user' | 'system' | 'all'（默认 'all'）
  * @returns Promise<PackagesInfo[]>
@@ -304,8 +329,8 @@ export const getAppPackagesList = async (filter: 'user' | 'system' | 'all' = 'al
     const infos = getPackagesInfo(names) as PackagesInfo[];
     if (!infos) return [];
 
-    // 3. 过滤掉无效条目（getPackagesInfo 对找不到的包返回 {packageName, error}）
-    return infos.filter(info => info && info.packageName && typeof info.uid === 'number');
+    // 3. 过滤无效条目，并合并同一用户下重复的应用分身记录
+    return normalizePackagesInfo(infos);
   } catch (err) {
     console.error('Failed to query apps via KernelSU listPackages/getPackagesInfo:', err);
     return [];
