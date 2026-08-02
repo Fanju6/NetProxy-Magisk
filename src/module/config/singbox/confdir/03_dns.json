@@ -93,11 +93,10 @@
       {
         "rule_set": [
           "direct",
-          "alibaba",
-          "category-games@cn"
+          "AppleCN"
         ],
         "action": "route",
-        "server": "ali"
+        "server": "dns-direct"
       },
       {
         "rule_set": [
@@ -117,8 +116,7 @@
           {
             "rule_set": [
               "block",
-              "AWAvenue",
-              "category-ads-all"
+              "Ads_AWAvenue"
             ]
           }
         ],
@@ -126,7 +124,7 @@
       },
       {
         "rule_set": [
-          "cn-domain"
+          "ChinaDomain"
         ],
         "action": "route",
         "server": "dns-direct"

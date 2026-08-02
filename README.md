@@ -221,7 +221,7 @@ su -c '/data/adb/modules/netproxy/scripts/cli help'
 | `EBPF_NETWORK` | 空 | 同时接管 TCP 与 UDP |
 | `EBPF_DNS_MODE` | `hijack` | 在 eBPF 入站劫持 TCP / UDP 53 |
 | `EBPF_IPV6` | `1` | 启用 IPv6 透明代理 |
-| `EBPF_BYPASS_RULE_SETS` | `direct cn-ip` | 在内核侧提前绕过可提取 CIDR 的规则集 |
+| `EBPF_BYPASS_RULE_SETS` | `direct ChinaIP` | 在内核侧提前绕过可提取 CIDR 的规则集 |
 | `EBPF_SHARED_NETWORK` | `0` | 默认关闭热点与共享网络代理 |
 | `WIFI_AUTO_SWITCH` | `0` | 默认关闭 WiFi SSID 自动切换 |
 

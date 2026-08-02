@@ -14,47 +14,18 @@
         "path": "./source/{tag}.json"
       },
       {
-        "tag": "AWAvenue",
-        "type": "remote",
-        "format": "source",
-        "url": "https://raw.githubusercontent.com/TG-Twilight/AWAvenue-Ads-Rule/refs/heads/main/Filters/AWAvenue-Ads-Rule-Singbox.json",
-        "update_interval": "24h",
-        "path": "./source/AWAvenue.json"
-      },
-      {
-        "tag": "category-ads-all",
-        "type": "remote",
-        "format": "binary",
-        "url": "https://raw.githubusercontent.com/CHIZI-0618/v2ray-rules-dat/release/singbox_rule_set/geosite-category-ads-all.srs",
-        "update_interval": "24h",
-        "path": "./source/category-ads-all.srs"
-      },
-      {
         "tag": [
-          "alibaba",
-          "category-games@cn"
+          "Ads_AWAvenue",
+          "AppleCN",
+          "ChinaDomain",
+          "ChinaIP",
+          "Proxy"
         ],
         "type": "remote",
         "format": "binary",
-        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-{tag}.srs",
+        "url": "https://raw.githubusercontent.com/Repcz/Tool/X/sing-box/Rules/{tag}.srs",
         "update_interval": "24h",
         "path": "./source/{tag}.srs"
-      },
-      {
-        "tag": "cn-domain",
-        "type": "remote",
-        "format": "binary",
-        "url": "https://raw.githubusercontent.com/CHIZI-0618/v2ray-rules-dat/release/singbox_rule_set/geosite-cn.srs",
-        "update_interval": "24h",
-        "path": "./source/cn.srs"
-      },
-      {
-        "tag": "cn-ip",
-        "type": "remote",
-        "format": "binary",
-        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/cn.srs",
-        "update_interval": "10d",
-        "path": "./source/cn-ip.srs"
       }
     ],
     "rules": [
@@ -99,8 +70,7 @@
       {
         "rule_set": [
           "direct",
-          "alibaba",
-          "category-games@cn"
+          "AppleCN"
         ],
         "action": "route",
         "outbound": "direct"
@@ -123,8 +93,7 @@
           {
             "rule_set": [
               "block",
-              "AWAvenue",
-              "category-ads-all"
+              "Ads_AWAvenue"
             ]
           }
         ],
@@ -132,10 +101,17 @@
       },
       {
         "rule_set": [
-          "cn-domain"
+          "ChinaDomain"
         ],
         "action": "route",
         "outbound": "direct"
+      },
+      {
+        "rule_set": [
+          "Proxy"
+        ],
+        "action": "route",
+        "outbound": "Proxy"
       },
       {
         "action": "resolve",
@@ -144,7 +120,7 @@
         "server": "cloudflare"
       },
       {
-        "rule_set": "cn-ip",
+        "rule_set": "ChinaIP",
         "action": "route",
         "outbound": "direct"
       },

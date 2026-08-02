@@ -213,7 +213,7 @@ Key defaults:
 - `EBPF_NETWORK=""` (TCP and UDP)
 - `EBPF_DNS_MODE=hijack`
 - `EBPF_IPV6=1`
-- `EBPF_BYPASS_RULE_SETS="direct cn-ip"`
+- `EBPF_BYPASS_RULE_SETS="direct ChinaIP"`
 - `EBPF_SHARED_NETWORK=0`
 - `WIFI_AUTO_SWITCH=0`
 
