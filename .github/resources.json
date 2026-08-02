@@ -26,7 +26,7 @@
       "path": "src/module/bin/zashboard",
       "repo": "Zephyruso/zashboard",
       "assetPattern": "dist-no-fonts.zip",
-      "currentVersion": "v3.16.0"
+      "currentVersion": "v3.16.1"
     }
   ]
 }
