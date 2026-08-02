@@ -1,9 +1,8 @@
 <script setup lang="ts">
 /**
  * @file ProxySettingsScreen.vue
- * @description 代理设置子页：透明代理(tproxy)的全部可调项——核心端口/DNS、网络开关、协议、
- *   路由 mark、IP 名单、QUIC/性能、CN-IP 绕过、网卡接口、MAC 过滤。所有状态与写入动作由父级
- *   SettingsLayout 经 provide 注入，本组件只渲染表单并转发；改动写入 tproxy.conf，下次启动/重启生效。
+ * @description eBPF 透明代理设置页。配置写入 ebpf.conf 与 module.conf，
+ *   用户确认后统一重启服务，避免每次修改都重建 eBPF 入站。
  */
 import { inject } from 'vue';
 import type { Ref } from 'vue';
@@ -11,18 +10,30 @@ import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import type { SettingsState } from './SettingsLayout.vue';
 
+type SettingsKey = keyof SettingsState;
+
 const router = useRouter();
 const { t } = useI18n();
-
-// 由 SettingsLayout 注入：设置状态 + 布尔开关/下拉/编辑弹窗的处理器
 const settingsState = inject<Ref<SettingsState>>('settingsState')!;
-const toggleTProxyBool = inject<(key: keyof SettingsState) => Promise<void>>('toggleTProxyBool')!;
-const handleDropdownChange = inject<(key: keyof SettingsState, confKey: string, e: Event) => Promise<void>>('handleDropdownChange')!;
-const openEditPreference = inject<(key: keyof SettingsState, title: string, label: string, type?: 'text' | 'number') => void>('openEditPreference')!;
+const toggleEbpfBool = inject<(key: SettingsKey) => Promise<void>>('toggleEbpfBool')!;
+const toggleModuleBool = inject<(key: SettingsKey) => Promise<void>>('toggleModuleBool')!;
+const setEbpfValue = inject<(key: SettingsKey, value: string | boolean) => Promise<void>>('setEbpfValue')!;
+const setModuleValue = inject<(key: SettingsKey, value: string | boolean) => Promise<void>>('setModuleValue')!;
+const openEditPreference = inject<(
+  key: SettingsKey,
+  title: string,
+  label: string,
+  type?: 'text' | 'number'
+) => void>('openEditPreference')!;
+const applyEbpfConfig = inject<() => Promise<void>>('applyEbpfConfig')!;
+const isApplying = inject<Ref<boolean>>('isApplyingEbpfConfig')!;
 
-/** 返回上一页（子页顶栏返回箭头）。 */
-const handleBack = () => {
-  router.back();
+const handleEbpfSelect = (key: SettingsKey, event: Event) => {
+  void setEbpfValue(key, (event.target as HTMLSelectElement).value);
+};
+
+const handleModuleSelect = (key: SettingsKey, event: Event) => {
+  void setModuleValue(key, (event.target as HTMLSelectElement).value);
 };
 </script>
 
@@ -31,7 +42,7 @@ const handleBack = () => {
     <div class="sub-screen-overlay scroll-container">
       <header class="sub-top-bar">
         <div class="sub-top-bar-left">
-          <md-icon-button @click="handleBack" class="sub-back-btn">
+          <md-icon-button @click="router.back()" class="sub-back-btn">
             <md-icon>
               <svg viewBox="0 0 24 24">
                 <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" fill="currentColor"/>
@@ -44,360 +55,178 @@ const handleBack = () => {
 
       <div class="sub-screen-content">
         <div class="settings-lazy-column">
-          <!-- 核心配置：代理模式 / 端口 / DNS -->
           <div class="small-title">{{ t('proxy.coreConfig') }}</div>
           <div class="config-card">
-            <!-- 代理模式下拉（0 自动 / 1 强制 TPROXY / 2 强制 REDIRECT） -->
             <div class="dropdown-pref-row">
               <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.proxyMode') }}</span>
+                <span class="pref-title">{{ t('proxy.network') }}</span>
               </div>
-              <select :value="settingsState.proxyMode" @change="handleDropdownChange('proxyMode', 'PROXY_MODE', $event)" class="pref-dropdown">
-                <option :value="0">{{ t('proxy.modeAuto') }}</option>
-                <option :value="1">{{ t('proxy.modeForceTproxy') }}</option>
-                <option :value="2">{{ t('proxy.modeForceRedirect') }}</option>
+              <select :value="settingsState.network" @change="handleEbpfSelect('network', $event)" class="pref-dropdown">
+                <option value="">{{ t('proxy.networkAll') }}</option>
+                <option value="tcp">{{ t('proxy.networkTcp') }}</option>
+                <option value="udp">{{ t('proxy.networkUdp') }}</option>
               </select>
             </div>
 
             <div class="pref-inner-divider"></div>
 
-            <div class="arrow-pref-row" @click="openEditPreference('tcpPort', t('proxy.tcpPort'), t('proxy.tcpPortLabel'), 'number')">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.tcpPort') }}</span>
-                <span class="pref-summary">{{ settingsState.tcpPort || t('common.notSet') }}</span>
-              </div>
-            </div>
-
-            <div class="pref-inner-divider"></div>
-
-            <div class="arrow-pref-row" @click="openEditPreference('udpPort', t('proxy.udpPort'), t('proxy.udpPortLabel'), 'number')">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.udpPort') }}</span>
-                <span class="pref-summary">{{ settingsState.udpPort || t('common.notSet') }}</span>
-              </div>
-            </div>
-
-            <div class="pref-inner-divider"></div>
-
-            <div class="switch-pref-row" @click="toggleTProxyBool('dnsHijackEnabled')">
+            <div class="switch-pref-row" @click="setEbpfValue('dnsMode', settingsState.dnsMode === 'hijack' ? 'off' : 'hijack')">
               <div class="pref-text">
                 <span class="pref-title">{{ t('proxy.dnsHijack') }}</span>
+                <span class="pref-summary">{{ t('proxy.dnsHijackDesc') }}</span>
               </div>
-              <md-switch icons :selected="settingsState.dnsHijackEnabled" @click.stop="toggleTProxyBool('dnsHijackEnabled')"></md-switch>
+              <md-switch
+                icons
+                :selected="settingsState.dnsMode === 'hijack'"
+                @click.stop="setEbpfValue('dnsMode', settingsState.dnsMode === 'hijack' ? 'off' : 'hijack')">
+              </md-switch>
             </div>
 
             <div class="pref-inner-divider"></div>
 
-            <div class="arrow-pref-row" @click="openEditPreference('dnsPort', t('proxy.dnsPort'), t('proxy.dnsPortLabel'), 'number')">
+            <div class="switch-pref-row" @click="toggleEbpfBool('ipv6Enabled')">
               <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.dnsPort') }}</span>
-                <span class="pref-summary">{{ settingsState.dnsPort || t('common.notSet') }}</span>
+                <span class="pref-title">{{ t('proxy.ipv6') }}</span>
+                <span class="pref-summary">{{ t('proxy.ipv6Desc') }}</span>
+              </div>
+              <md-switch icons :selected="settingsState.ipv6Enabled" @click.stop="toggleEbpfBool('ipv6Enabled')"></md-switch>
+            </div>
+
+            <div class="pref-inner-divider"></div>
+
+            <div class="arrow-pref-row" @click="openEditPreference('udpTimeout', t('proxy.udpTimeout'), t('proxy.udpTimeoutLabel'))">
+              <div class="pref-text">
+                <span class="pref-title">{{ t('proxy.udpTimeout') }}</span>
+                <span class="pref-summary">{{ settingsState.udpTimeout }}</span>
+              </div>
+            </div>
+
+            <div class="pref-inner-divider"></div>
+
+            <div class="arrow-pref-row" @click="openEditPreference('cgroupPath', t('proxy.cgroupPath'), t('proxy.cgroupPathLabel'))">
+              <div class="pref-text">
+                <span class="pref-title">{{ t('proxy.cgroupPath') }}</span>
+                <span class="pref-summary text-ellipsis">{{ settingsState.cgroupPath || t('proxy.cgroupAuto') }}</span>
               </div>
             </div>
           </div>
 
-          <!-- 网络开关：移动数据 / WiFi / IPv6 -->
-          <div class="small-title">{{ t('proxy.networkToggles') }}</div>
+          <div class="small-title">{{ t('proxy.bypassConfig') }}</div>
           <div class="config-card">
-            <div class="switch-pref-row" @click="toggleTProxyBool('proxyMobile')">
+            <div class="arrow-pref-row" @click="openEditPreference('bypassRuleSets', t('proxy.bypassRuleSets'), t('proxy.bypassRuleSetsLabel'))">
               <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.proxyMobile') }}</span>
+                <span class="pref-title">{{ t('proxy.bypassRuleSets') }}</span>
+                <span class="pref-summary text-ellipsis">{{ settingsState.bypassRuleSets || t('common.notSet') }}</span>
               </div>
-              <md-switch icons :selected="settingsState.proxyMobile" @click.stop="toggleTProxyBool('proxyMobile')"></md-switch>
+            </div>
+          </div>
+
+          <div class="small-title">{{ t('proxy.sharedConfig') }}</div>
+          <div class="config-card">
+            <div class="switch-pref-row" @click="toggleEbpfBool('sharedNetworkEnabled')">
+              <div class="pref-text">
+                <span class="pref-title">{{ t('proxy.sharedEnable') }}</span>
+                <span class="pref-summary">{{ t('proxy.sharedEnableDesc') }}</span>
+              </div>
+              <md-switch
+                icons
+                :selected="settingsState.sharedNetworkEnabled"
+                @click.stop="toggleEbpfBool('sharedNetworkEnabled')">
+              </md-switch>
             </div>
 
             <div class="pref-inner-divider"></div>
 
-            <div class="switch-pref-row" @click="toggleTProxyBool('proxyWifi')">
+            <div class="arrow-pref-row" @click="openEditPreference('sharedInterfaces', t('proxy.sharedInterfaces'), t('proxy.sharedInterfacesLabel'))">
               <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.proxyWifi') }}</span>
+                <span class="pref-title">{{ t('proxy.sharedInterfaces') }}</span>
+                <span class="pref-summary text-ellipsis">{{ settingsState.sharedInterfaces || t('common.notSet') }}</span>
               </div>
-              <md-switch icons :selected="settingsState.proxyWifi" @click.stop="toggleTProxyBool('proxyWifi')"></md-switch>
             </div>
+          </div>
 
+          <div class="small-title">{{ t('proxy.mapConfig') }}</div>
+          <div class="config-card">
+            <div class="arrow-pref-row" @click="openEditPreference('tcpMapCapacity', t('proxy.tcpMap'), t('proxy.mapCapacityLabel'), 'number')">
+              <div class="pref-text">
+                <span class="pref-title">{{ t('proxy.tcpMap') }}</span>
+                <span class="pref-summary">{{ settingsState.tcpMapCapacity }}</span>
+              </div>
+            </div>
             <div class="pref-inner-divider"></div>
+            <div class="arrow-pref-row" @click="openEditPreference('udpMapCapacity', t('proxy.udpMap'), t('proxy.mapCapacityLabel'), 'number')">
+              <div class="pref-text">
+                <span class="pref-title">{{ t('proxy.udpMap') }}</span>
+                <span class="pref-summary">{{ settingsState.udpMapCapacity }}</span>
+              </div>
+            </div>
+            <div class="pref-inner-divider"></div>
+            <div class="arrow-pref-row" @click="openEditPreference('socketMapCapacity', t('proxy.socketMap'), t('proxy.mapCapacityLabel'), 'number')">
+              <div class="pref-text">
+                <span class="pref-title">{{ t('proxy.socketMap') }}</span>
+                <span class="pref-summary">{{ settingsState.socketMapCapacity }}</span>
+              </div>
+            </div>
+            <div class="pref-inner-divider"></div>
+            <div class="arrow-pref-row" @click="openEditPreference('sharedMapCapacity', t('proxy.sharedMap'), t('proxy.mapCapacityLabel'), 'number')">
+              <div class="pref-text">
+                <span class="pref-title">{{ t('proxy.sharedMap') }}</span>
+                <span class="pref-summary">{{ settingsState.sharedMapCapacity }}</span>
+              </div>
+            </div>
+          </div>
 
+          <div class="small-title">{{ t('proxy.wifiConfig') }}</div>
+          <div class="config-card">
+            <div class="switch-pref-row" @click="toggleModuleBool('wifiAutoSwitch')">
+              <div class="pref-text">
+                <span class="pref-title">{{ t('proxy.wifiAutoSwitch') }}</span>
+                <span class="pref-summary">{{ t('proxy.wifiAutoSwitchDesc') }}</span>
+              </div>
+              <md-switch icons :selected="settingsState.wifiAutoSwitch" @click.stop="toggleModuleBool('wifiAutoSwitch')"></md-switch>
+            </div>
+            <div class="pref-inner-divider"></div>
             <div class="dropdown-pref-row">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.proxyIpv6') }}</span>
-              </div>
-              <select :value="settingsState.proxyIpv6" @change="handleDropdownChange('proxyIpv6', 'PROXY_IPV6', $event)" class="pref-dropdown">
-                <option :value="0">{{ t('proxy.ipv6Disable') }}</option>
-                <option :value="1">{{ t('proxy.ipv6Proxy') }}</option>
-                <option :value="-1">{{ t('proxy.ipv6DisableStack') }}</option>
+              <div class="pref-text"><span class="pref-title">{{ t('proxy.wifiSsidMode') }}</span></div>
+              <select :value="settingsState.wifiSsidMode" @change="handleModuleSelect('wifiSsidMode', $event)" class="pref-dropdown">
+                <option value="blacklist">{{ t('proxy.wifiBlacklist') }}</option>
+                <option value="whitelist">{{ t('proxy.wifiWhitelist') }}</option>
               </select>
             </div>
-          </div>
-
-          <!-- 网络协议：TCP / UDP / 热点 / USB 共享 -->
-          <div class="small-title">{{ t('proxy.networkProtocols') }}</div>
-          <div class="config-card">
-            <div class="switch-pref-row" @click="toggleTProxyBool('proxyTcp')">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.proxyTcp') }}</span>
-              </div>
-              <md-switch icons :selected="settingsState.proxyTcp" @click.stop="toggleTProxyBool('proxyTcp')"></md-switch>
-            </div>
-
             <div class="pref-inner-divider"></div>
-
-            <div class="switch-pref-row" @click="toggleTProxyBool('proxyUdp')">
+            <div class="arrow-pref-row" @click="openEditPreference('wifiSsidList', t('proxy.wifiSsidList'), t('proxy.wifiSsidListLabel'))">
               <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.proxyUdp') }}</span>
+                <span class="pref-title">{{ t('proxy.wifiSsidList') }}</span>
+                <span class="pref-summary text-ellipsis">{{ settingsState.wifiSsidList || t('common.notSet') }}</span>
               </div>
-              <md-switch icons :selected="settingsState.proxyUdp" @click.stop="toggleTProxyBool('proxyUdp')"></md-switch>
             </div>
-
             <div class="pref-inner-divider"></div>
-
-            <div class="switch-pref-row" @click="toggleTProxyBool('proxyHotspot')">
+            <div class="switch-pref-row" @click="toggleModuleBool('proxyOnCellular')">
               <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.proxyHotspot') }}</span>
+                <span class="pref-title">{{ t('proxy.proxyOnCellular') }}</span>
+                <span class="pref-summary">{{ t('proxy.proxyOnCellularDesc') }}</span>
               </div>
-              <md-switch icons :selected="settingsState.proxyHotspot" @click.stop="toggleTProxyBool('proxyHotspot')"></md-switch>
+              <md-switch icons :selected="settingsState.proxyOnCellular" @click.stop="toggleModuleBool('proxyOnCellular')"></md-switch>
             </div>
-
             <div class="pref-inner-divider"></div>
-
-            <div class="switch-pref-row" @click="toggleTProxyBool('proxyUsb')">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.proxyUsb') }}</span>
-              </div>
-              <md-switch icons :selected="settingsState.proxyUsb" @click.stop="toggleTProxyBool('proxyUsb')"></md-switch>
-            </div>
-          </div>
-
-          <!-- 路由设置：fwmark 与路由表 ID -->
-          <div class="small-title">{{ t('proxy.routingSettings') }}</div>
-          <div class="config-card">
-            <div class="arrow-pref-row" @click="openEditPreference('routingMark', t('proxy.routingMark'), t('proxy.routingMarkLabel'), 'number')">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.routingMark') }}</span>
-                <span class="pref-summary">{{ settingsState.routingMark || t('common.notSet') }}</span>
-              </div>
-            </div>
-
-            <div class="pref-inner-divider"></div>
-
-            <div class="arrow-pref-row" @click="openEditPreference('markValue', t('proxy.markValue'), t('proxy.markValueLabel'), 'number')">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.markValue') }}</span>
-                <span class="pref-summary">{{ settingsState.markValue || t('common.notSet') }}</span>
-              </div>
-            </div>
-
-            <div class="pref-inner-divider"></div>
-
-            <div class="arrow-pref-row" @click="openEditPreference('markValue6', t('proxy.markValue6'), t('proxy.markValue6Label'), 'number')">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.markValue6') }}</span>
-                <span class="pref-summary">{{ settingsState.markValue6 || t('common.notSet') }}</span>
-              </div>
-            </div>
-
-            <div class="pref-inner-divider"></div>
-
-            <div class="arrow-pref-row" @click="openEditPreference('tableId', t('proxy.tableId'), t('proxy.tableIdLabel'), 'number')">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.tableId') }}</span>
-                <span class="pref-summary">{{ settingsState.tableId || t('common.notSet') }}</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- IP 名单：绕过 / 代理（IPv4 与 IPv6） -->
-          <div class="small-title">{{ t('proxy.ipLists') }}</div>
-          <div class="config-card">
-            <div class="arrow-pref-row" @click="openEditPreference('bypassIpv4List', t('proxy.bypassIpv4'), t('proxy.bypassIpv4Label'))">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.bypassIpv4') }}</span>
-                <span class="pref-summary text-ellipsis">{{ settingsState.bypassIpv4List || t('common.notSet') }}</span>
-              </div>
-            </div>
-
-            <div class="pref-inner-divider"></div>
-
-            <div class="arrow-pref-row" @click="openEditPreference('bypassIpv6List', t('proxy.bypassIpv6'), t('proxy.bypassIpv6Label'))">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.bypassIpv6') }}</span>
-                <span class="pref-summary text-ellipsis">{{ settingsState.bypassIpv6List || t('common.notSet') }}</span>
-              </div>
-            </div>
-
-            <div class="pref-inner-divider"></div>
-
-            <div class="arrow-pref-row" @click="openEditPreference('proxyIpv4List', t('proxy.proxyIpv4'), t('proxy.proxyIpv4Label'))">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.proxyIpv4') }}</span>
-                <span class="pref-summary text-ellipsis">{{ settingsState.proxyIpv4List || t('common.notSet') }}</span>
-              </div>
-            </div>
-
-            <div class="pref-inner-divider"></div>
-
-            <div class="arrow-pref-row" @click="openEditPreference('proxyIpv6List', t('proxy.proxyIpv6'), t('proxy.proxyIpv6Label'))">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.proxyIpv6') }}</span>
-                <span class="pref-summary text-ellipsis">{{ settingsState.proxyIpv6List || t('common.notSet') }}</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- 高级：QUIC 阻断 / 性能模式 / 强制 mark 绕过 -->
-          <div class="small-title">{{ t('proxy.advanced') }}</div>
-          <div class="config-card">
-            <div class="switch-pref-row" @click="toggleTProxyBool('blockQuic')">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.blockQuic') }}</span>
-              </div>
-              <md-switch icons :selected="settingsState.blockQuic" @click.stop="toggleTProxyBool('blockQuic')"></md-switch>
-            </div>
-
-            <div class="pref-inner-divider"></div>
-
-            <div class="switch-pref-row" @click="toggleTProxyBool('compatibilityMode')">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.performanceMode') }}</span>
-              </div>
-              <md-switch icons :selected="settingsState.compatibilityMode" @click.stop="toggleTProxyBool('compatibilityMode')"></md-switch>
-            </div>
-
-            <div class="pref-inner-divider"></div>
-
-            <div class="switch-pref-row" @click="toggleTProxyBool('forceMarkBypass')">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.forceMarkBypass') }}</span>
-              </div>
-              <md-switch icons :selected="settingsState.forceMarkBypass" @click.stop="toggleTProxyBool('forceMarkBypass')"></md-switch>
-            </div>
-          </div>
-
-          <!-- CN-IP（中国大陆 IP）绕过及其数据源 -->
-          <div class="small-title">{{ t('proxy.geoBypass') }}</div>
-          <div class="config-card">
-            <div class="switch-pref-row" @click="toggleTProxyBool('bypassCnIp')">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.bypassCnIp') }}</span>
-              </div>
-              <md-switch icons :selected="settingsState.bypassCnIp" @click.stop="toggleTProxyBool('bypassCnIp')"></md-switch>
-            </div>
-
-            <div class="pref-inner-divider"></div>
-
-            <div class="arrow-pref-row" @click="openEditPreference('cnIpUrl', t('proxy.cnIpUrl'), t('proxy.cnIpUrlLabel'))">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.cnIpUrl') }}</span>
-                <span class="pref-summary text-ellipsis">{{ settingsState.cnIpUrl || t('common.default') }}</span>
-              </div>
-            </div>
-
-            <div class="pref-inner-divider"></div>
-
-            <div class="arrow-pref-row" @click="openEditPreference('cnIpv6Url', t('proxy.cnIpv6Url'), t('proxy.cnIpv6UrlLabel'))">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.cnIpv6Url') }}</span>
-                <span class="pref-summary text-ellipsis">{{ settingsState.cnIpv6Url || t('common.default') }}</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- 网卡接口配置：移动 / WiFi / 热点 / USB / 其他 -->
-          <div class="small-title">{{ t('proxy.interfaceConfig') }}</div>
-          <div class="config-card">
-            <div class="arrow-pref-row" @click="openEditPreference('mobileInterface', t('proxy.mobileInterface'), t('proxy.mobileInterfaceLabel'))">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.mobileInterface') }}</span>
-                <span class="pref-summary">{{ settingsState.mobileInterface }}</span>
-              </div>
-            </div>
-
-            <div class="pref-inner-divider"></div>
-
             <div class="arrow-pref-row" @click="openEditPreference('wifiInterface', t('proxy.wifiInterface'), t('proxy.wifiInterfaceLabel'))">
               <div class="pref-text">
                 <span class="pref-title">{{ t('proxy.wifiInterface') }}</span>
                 <span class="pref-summary">{{ settingsState.wifiInterface }}</span>
               </div>
             </div>
-
-            <div class="pref-inner-divider"></div>
-
-            <div class="arrow-pref-row" @click="openEditPreference('hotspotInterface', t('proxy.hotspotInterface'), t('proxy.hotspotInterfaceLabel'))">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.hotspotInterface') }}</span>
-                <span class="pref-summary">{{ settingsState.hotspotInterface }}</span>
-              </div>
-            </div>
-
-            <div class="pref-inner-divider"></div>
-
-            <div class="arrow-pref-row" @click="openEditPreference('usbInterface', t('proxy.usbInterface'), t('proxy.usbInterfaceLabel'))">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.usbInterface') }}</span>
-                <span class="pref-summary">{{ settingsState.usbInterface }}</span>
-              </div>
-            </div>
-
-            <div class="pref-inner-divider"></div>
-
-            <div class="arrow-pref-row" @click="openEditPreference('otherProxyInterfaces', t('proxy.otherProxyInterfaces'), t('proxy.otherProxyInterfacesLabel'))">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.otherProxyInterfaces') }}</span>
-                <span class="pref-summary text-ellipsis">{{ settingsState.otherProxyInterfaces || t('common.notSet') }}</span>
-              </div>
-            </div>
-
-            <div class="pref-inner-divider"></div>
-
-            <div class="arrow-pref-row" @click="openEditPreference('otherBypassInterfaces', t('proxy.otherBypassInterfaces'), t('proxy.otherBypassInterfacesLabel'))">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.otherBypassInterfaces') }}</span>
-                <span class="pref-summary text-ellipsis">{{ settingsState.otherBypassInterfaces || t('common.notSet') }}</span>
-              </div>
-            </div>
           </div>
 
-          <!-- MAC 地址过滤：开关 / 模式 / 名单 -->
-          <div class="small-title">{{ t('proxy.macFiltering') }}</div>
-          <div class="config-card">
-            <div class="switch-pref-row" @click="toggleTProxyBool('macFilterEnable')">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.macFilterEnable') }}</span>
-              </div>
-              <md-switch icons :selected="settingsState.macFilterEnable" @click.stop="toggleTProxyBool('macFilterEnable')"></md-switch>
+          <div class="config-card apply-card">
+            <div class="pref-text">
+              <span class="pref-title">{{ t('proxy.applyConfig') }}</span>
+              <span class="pref-summary">{{ t('proxy.applyConfigDesc') }}</span>
             </div>
-
-            <div class="pref-inner-divider"></div>
-
-            <div class="dropdown-pref-row">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.filterMode') }}</span>
-              </div>
-              <select :value="settingsState.macProxyMode" @change="handleDropdownChange('macProxyMode', 'MAC_PROXY_MODE', $event)" class="pref-dropdown">
-                <option value="blacklist">{{ t('proxy.filterBlacklist') }}</option>
-                <option value="whitelist">{{ t('proxy.filterWhitelist') }}</option>
-              </select>
-            </div>
-
-            <div class="pref-inner-divider"></div>
-
-            <div class="arrow-pref-row" @click="openEditPreference('proxyMacsList', t('proxy.proxyMacs'), t('proxy.proxyMacsLabel'))">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.proxyMacs') }}</span>
-                <span class="pref-summary text-ellipsis">{{ settingsState.proxyMacsList || t('common.notSet') }}</span>
-              </div>
-            </div>
-
-            <div class="pref-inner-divider"></div>
-
-            <div class="arrow-pref-row" @click="openEditPreference('bypassMacsList', t('proxy.bypassMacs'), t('proxy.bypassMacsLabel'))">
-              <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.bypassMacs') }}</span>
-                <span class="pref-summary text-ellipsis">{{ settingsState.bypassMacsList || t('common.notSet') }}</span>
-              </div>
-            </div>
+            <md-filled-button :disabled="isApplying" @click="applyEbpfConfig">
+              {{ isApplying ? t('proxy.applying') : t('proxy.applyConfig') }}
+            </md-filled-button>
           </div>
-          
+
           <div class="bottom-padding-spacer"></div>
         </div>
       </div>
@@ -406,13 +235,9 @@ const handleBack = () => {
 </template>
 
 <style scoped>
-/* 子页覆盖层与顶栏（与原 SettingsScreen 一致的层叠样式） */
 .sub-screen-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   width: 100vw;
   height: 100vh;
   background-color: var(--md-sys-color-background);
@@ -425,14 +250,8 @@ const handleBack = () => {
 }
 
 @keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(30px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .sub-top-bar {
@@ -441,9 +260,7 @@ const handleBack = () => {
   align-items: center;
   justify-content: space-between;
   height: calc(64px + var(--top-inset));
-  padding-top: var(--top-inset);
-  padding-left: 16px;
-  padding-right: 16px;
+  padding: var(--top-inset) 16px 0;
   color: var(--md-sys-color-on-background);
   background-color: var(--md-sys-color-background);
   border-bottom: 1px solid var(--md-sys-color-outline-variant);
@@ -473,8 +290,7 @@ const handleBack = () => {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 16px;
-  padding-bottom: calc(24px + var(--bottom-inset));
+  padding: 16px calc(16px + env(safe-area-inset-right)) calc(24px + var(--bottom-inset)) calc(16px + env(safe-area-inset-left));
   box-sizing: border-box;
   width: 100%;
 }
@@ -488,7 +304,7 @@ const handleBack = () => {
   margin: 0 auto;
 }
 
-.settings-lazy-column .config-card {
+.config-card {
   padding: 0;
   gap: 0;
   overflow: hidden;
@@ -499,53 +315,19 @@ const handleBack = () => {
   flex-direction: column;
 }
 
-.bottom-padding-spacer {
-  height: 40px;
-}
+.bottom-padding-spacer { height: 40px; }
 
-/* 分组小标题 */
 .small-title {
   font-size: 13.5px;
   font-weight: 600;
   color: var(--md-sys-color-primary);
-  margin-top: 14px;
-  margin-bottom: 4px;
+  margin: 14px 0 4px;
   padding-left: 12px;
   text-transform: uppercase;
 }
 
-.arrow-pref-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-  gap: 14px;
-  padding: 14px 16px;
-  cursor: pointer;
-  box-sizing: border-box;
-  transition: background-color 0.2s;
-}
-
-.arrow-pref-row:hover {
-  background-color: var(--md-sys-color-surface-container-high);
-}
-
-.switch-pref-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-  gap: 14px;
-  padding: 14px 16px;
-  cursor: pointer;
-  box-sizing: border-box;
-  transition: background-color 0.2s;
-}
-
-.switch-pref-row:hover {
-  background-color: var(--md-sys-color-surface-container-high);
-}
-
+.arrow-pref-row,
+.switch-pref-row,
 .dropdown-pref-row {
   display: flex;
   justify-content: space-between;
@@ -554,6 +336,17 @@ const handleBack = () => {
   gap: 14px;
   padding: 14px 16px;
   box-sizing: border-box;
+}
+
+.arrow-pref-row,
+.switch-pref-row {
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.arrow-pref-row:hover,
+.switch-pref-row:hover {
+  background-color: var(--md-sys-color-surface-container-high);
 }
 
 .pref-text {
@@ -582,6 +375,7 @@ const handleBack = () => {
 }
 
 .pref-dropdown {
+  max-width: 45%;
   background-color: var(--md-sys-color-surface-container-high);
   color: var(--md-sys-color-on-surface);
   border: 1px solid var(--md-sys-color-outline-variant);
@@ -591,10 +385,19 @@ const handleBack = () => {
   font-size: 13.5px;
   font-weight: 500;
   cursor: pointer;
-  appearance: none;
 }
 
-.pref-inner-divider {
-  display: none;
+.pref-inner-divider { display: none; }
+
+.apply-card {
+  margin-top: 14px;
+  padding: 16px;
+  flex-direction: row;
+  align-items: center;
+  gap: 16px;
+}
+
+.apply-card md-filled-button {
+  flex-shrink: 0;
 }
 </style>

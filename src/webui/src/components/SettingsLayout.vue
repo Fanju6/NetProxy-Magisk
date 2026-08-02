@@ -1,423 +1,302 @@
 <script setup lang="ts">
 /**
  * @file SettingsLayout.vue
- * @description 设置页布局兼「控制器」：持有聚合设置状态(SettingsState)，负责读写 module.conf 与
- *   tproxy.conf，并把状态与各类切换/编辑动作经 provide 下发给子页（SettingsMain / ProxySettings 等）。
- *   自身只渲染 router-view 与一个通用文本编辑弹窗。非真机环境用 localStorage 模拟持久化。
+ * @description 设置页共享控制器：统一加载与写入 module.conf、ebpf.conf，
+ *   并向设置子页提供状态、编辑动作和 eBPF 配置应用入口。
  */
 import { ref, provide, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { showToast, readFileContent, writeFileContent, isKsuEnv } from '../utils/ksu';
+import { showToast, readFileContent, writeFileContent, isKsuEnv, runCli } from '../utils/ksu';
 import { useBackDismiss } from '../composables/useBackDismiss';
 
 const { t } = useI18n();
 
-/** 设置页聚合状态：module.conf（自启/选择器/GMS）+ tproxy.conf（透明代理全部可调项）的镜像。 */
+const MODULE_CONF = '/data/adb/modules/netproxy/config/module.conf';
+const EBPF_CONF = '/data/adb/modules/netproxy/config/ebpf/ebpf.conf';
+
+/** 设置页聚合状态：模块设置、eBPF 入站和 Wi-Fi 自动切换。 */
 export interface SettingsState {
   autoStartEnabled: boolean;
   selectorUrlTestEnabled: boolean;
   gmsFixEnabled: boolean;
-  
-  proxyMode: number;
-  tcpPort: string;
-  udpPort: string;
-  dnsHijackEnabled: boolean;
-  dnsPort: string;
-  proxyMobile: boolean;
-  proxyWifi: boolean;
-  proxyIpv6: number;
-  proxyTcp: boolean;
-  proxyUdp: boolean;
-  proxyHotspot: boolean;
-  proxyUsb: boolean;
-  routingMark: string;
-  markValue: string;
-  markValue6: string;
-  tableId: string;
-  bypassIpv4List: string;
-  bypassIpv6List: string;
-  proxyIpv4List: string;
-  proxyIpv6List: string;
-  blockQuic: boolean;
-  compatibilityMode: boolean; // PERFORMANCE_MODE
-  forceMarkBypass: boolean;
-  bypassCnIp: boolean;
-  cnIpUrl: string;
-  cnIpv6Url: string;
-  mobileInterface: string;
+  network: string;
+  udpTimeout: string;
+  dnsMode: 'hijack' | 'off';
+  cgroupPath: string;
+  ipv6Enabled: boolean;
+  bypassRuleSets: string;
+  sharedNetworkEnabled: boolean;
+  sharedInterfaces: string;
+  tcpMapCapacity: string;
+  udpMapCapacity: string;
+  socketMapCapacity: string;
+  sharedMapCapacity: string;
+  wifiAutoSwitch: boolean;
+  wifiSsidMode: 'blacklist' | 'whitelist';
+  wifiSsidList: string;
+  proxyOnCellular: boolean;
   wifiInterface: string;
-  hotspotInterface: string;
-  usbInterface: string;
-  otherProxyInterfaces: string;
-  otherBypassInterfaces: string;
-  macFilterEnable: boolean;
-  macProxyMode: string;
-  proxyMacsList: string;
-  bypassMacsList: string;
 }
 
-// 设置状态（含默认值），onMounted 后由 loadSettings 用配置文件实际值覆盖
+type SettingsKey = keyof SettingsState;
+
 const settingsState = ref<SettingsState>({
   autoStartEnabled: false,
-  selectorUrlTestEnabled: false,
+  selectorUrlTestEnabled: true,
   gmsFixEnabled: false,
-  
-  proxyMode: 0,
-  tcpPort: '12345',
-  udpPort: '12345',
-  dnsHijackEnabled: false,
-  dnsPort: '1053',
-  proxyMobile: false,
-  proxyWifi: false,
-  proxyIpv6: 0,
-  proxyTcp: false,
-  proxyUdp: false,
-  proxyHotspot: false,
-  proxyUsb: false,
-  routingMark: '',
-  markValue: '20',
-  markValue6: '25',
-  tableId: '2025',
-  bypassIpv4List: '',
-  bypassIpv6List: '',
-  proxyIpv4List: '',
-  proxyIpv6List: '',
-  blockQuic: false,
-  compatibilityMode: false,
-  forceMarkBypass: false,
-  bypassCnIp: false,
-  cnIpUrl: '',
-  cnIpv6Url: '',
-  mobileInterface: 'rmnet_data+',
-  wifiInterface: 'wlan0',
-  hotspotInterface: 'wlan2',
-  usbInterface: 'rndis+',
-  otherProxyInterfaces: '',
-  otherBypassInterfaces: '',
-  macFilterEnable: false,
-  macProxyMode: 'blacklist',
-  proxyMacsList: '',
-  bypassMacsList: ''
+  network: '',
+  udpTimeout: '5m',
+  dnsMode: 'hijack',
+  cgroupPath: '',
+  ipv6Enabled: true,
+  bypassRuleSets: 'direct cn-ip',
+  sharedNetworkEnabled: false,
+  sharedInterfaces: 'wlan2',
+  tcpMapCapacity: '65536',
+  udpMapCapacity: '65536',
+  socketMapCapacity: '65536',
+  sharedMapCapacity: '65536',
+  wifiAutoSwitch: false,
+  wifiSsidMode: 'blacklist',
+  wifiSsidList: '',
+  proxyOnCellular: true,
+  wifiInterface: 'wlan0'
 });
 
-// 通用编辑输入框弹窗状态（被各设置子页的「编辑」项复用）
+const ebpfFieldMap: Partial<Record<SettingsKey, string>> = {
+  network: 'EBPF_NETWORK',
+  udpTimeout: 'EBPF_UDP_TIMEOUT',
+  dnsMode: 'EBPF_DNS_MODE',
+  cgroupPath: 'EBPF_CGROUP_PATH',
+  ipv6Enabled: 'EBPF_IPV6',
+  bypassRuleSets: 'EBPF_BYPASS_RULE_SETS',
+  sharedNetworkEnabled: 'EBPF_SHARED_NETWORK',
+  sharedInterfaces: 'EBPF_SHARED_INTERFACES',
+  tcpMapCapacity: 'EBPF_TCP_MAP_CAPACITY',
+  udpMapCapacity: 'EBPF_UDP_MAP_CAPACITY',
+  socketMapCapacity: 'EBPF_SOCKET_MAP_CAPACITY',
+  sharedMapCapacity: 'EBPF_SHARED_MAP_CAPACITY'
+};
+
+const moduleFieldMap: Partial<Record<SettingsKey, string>> = {
+  wifiAutoSwitch: 'WIFI_AUTO_SWITCH',
+  wifiSsidMode: 'WIFI_SSID_MODE',
+  wifiSsidList: 'WIFI_SSID_LIST',
+  proxyOnCellular: 'PROXY_ON_CELLULAR',
+  wifiInterface: 'WIFI_INTERFACE'
+};
+
+const quotedFields = new Set<SettingsKey>([
+  'network',
+  'udpTimeout',
+  'dnsMode',
+  'cgroupPath',
+  'bypassRuleSets',
+  'sharedInterfaces',
+  'wifiSsidMode',
+  'wifiSsidList',
+  'wifiInterface'
+]);
+
 const showEditDialog = ref(false);
-const editKey = ref('');
+const editKey = ref<SettingsKey>('udpTimeout');
 const editTitle = ref('');
 const editLabel = ref('');
 const editValue = ref('');
 const editType = ref<'text' | 'number'>('text');
+const isApplying = ref(false);
 
-// 手势返回优先关闭编辑输入框对话框（覆盖各设置子页的输入框）
 useBackDismiss(
   () => showEditDialog.value,
   () => { showEditDialog.value = false; }
 );
 
 // ===================================================================
-// 配置文件解析 / 写入
+// 配置文件解析与写入
 // ===================================================================
 
-/**
- * 解析 KEY=value 配置文件为对象（跳过空行与 # 注释，去除值两侧引号）。
- * @param content  配置文件全文
- * @returns 键值对象
- */
 const parseConfigFile = (content: string): Record<string, string> => {
   const result: Record<string, string> = {};
-  const lines = content.split('\n');
-  for (const line of lines) {
+  for (const line of content.replace(/\r\n/g, '\n').split('\n')) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
-    const eqIdx = trimmed.indexOf('=');
-    if (eqIdx === -1) continue;
-    const key = trimmed.substring(0, eqIdx).trim();
-    let val = trimmed.substring(eqIdx + 1).trim();
-    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-      val = val.substring(1, val.length - 1);
+    const eqIndex = trimmed.indexOf('=');
+    if (eqIndex < 1) continue;
+
+    const key = trimmed.substring(0, eqIndex).trim();
+    let value = trimmed.substring(eqIndex + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.substring(1, value.length - 1);
     }
-    result[key] = val;
+    result[key] = value;
   }
   return result;
 };
 
-/**
- * 在配置全文中就地改写某个键的值（键不存在则追加），保留其余行不动。
- * @param content      配置文件全文
- * @param key          目标键
- * @param value        新值
- * @param forceQuotes  是否给值加双引号（含空格的列表/字符串用）
- * @returns 改写后的全文
- */
 const writeConfigValue = (content: string, key: string, value: string, forceQuotes = false): string => {
-  const lines = content.split('\n');
+  const lines = content.replace(/\r\n/g, '\n').split('\n');
+  const escaped = value
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\$/g, '\\$')
+    .replace(/`/g, '\\`');
+  const formatted = forceQuotes ? `"${escaped}"` : value;
   let found = false;
-  const newValue = forceQuotes ? `"${value}"` : value;
-  
-  const newLines = lines.map(line => {
+
+  const updated = lines.map(line => {
     const trimmed = line.trim();
-    if (trimmed.startsWith('#')) return line;
-    const eqIdx = trimmed.indexOf('=');
-    if (eqIdx === -1) return line;
-    const currentKey = trimmed.substring(0, eqIdx).trim();
-    if (currentKey === key) {
-      found = true;
-      return `${key}=${newValue}`;
-    }
-    return line;
+    if (!trimmed || trimmed.startsWith('#')) return line;
+    const eqIndex = trimmed.indexOf('=');
+    if (eqIndex < 1 || trimmed.substring(0, eqIndex).trim() !== key) return line;
+    found = true;
+    return `${key}=${formatted}`;
   });
-  
-  if (!found) {
-    newLines.push(`${key}=${newValue}`);
-  }
-  return newLines.join('\n');
+
+  if (!found) updated.push(`${key}=${formatted}`);
+  return updated.join('\n');
 };
 
-/**
- * 把驼峰状态键映射为 tproxy.conf 的下划线大写键（少数特例硬编码）。
- * @param key  SettingsState 字段名
- * @returns 配置文件键名
- */
-const stateKeyToConfKey = (key: string): string => {
-  if (key === 'tcpPort') return 'PROXY_TCP_PORT';
-  if (key === 'udpPort') return 'PROXY_UDP_PORT';
-  if (key === 'dnsPort') return 'DNS_PORT';
-  if (key === 'compatibilityMode') return 'PERFORMANCE_MODE';
-  return key.replace(/([A-Z])/g, "_$1").toUpperCase();
-};
+const getValue = (config: Record<string, string>, key: string, fallback: string): string =>
+  config[key] === undefined ? fallback : config[key];
 
-// ===================================================================
-// 加载设置 / 写入设置
-// ===================================================================
+const getBool = (config: Record<string, string>, key: string, fallback: boolean): boolean =>
+  config[key] === undefined ? fallback : config[key] === '1';
 
-/** 从 module.conf 与 tproxy.conf 读取全部设置填入状态；真机读取失败时回退 localStorage mock。 */
 const loadSettings = async () => {
   try {
-    // 1. 读取 module.conf（模块侧：自启 / 选择器模式 / GMS 修复）
-    const moduleConfContent = await readFileContent('/data/adb/modules/netproxy/config/module.conf');
-    const moduleConf = parseConfigFile(moduleConfContent);
-    settingsState.value.autoStartEnabled = moduleConf['AUTO_START'] !== '0';
-    settingsState.value.selectorUrlTestEnabled = moduleConf['SELECTOR_MODE'] !== 'manual';
-    settingsState.value.gmsFixEnabled = moduleConf['GMS_FIX'] === '1';
+    const [moduleContent, ebpfContent] = await Promise.all([
+      readFileContent(MODULE_CONF),
+      readFileContent(EBPF_CONF)
+    ]);
+    const moduleConfig = parseConfigFile(moduleContent);
+    const ebpfConfig = parseConfigFile(ebpfContent);
 
-    // 2. 读取 tproxy.conf（网络侧：透明代理全部参数）
-    const tproxyConfContent = await readFileContent('/data/adb/modules/netproxy/config/tproxy/tproxy.conf');
-    const tproxyConf = parseConfigFile(tproxyConfContent);
-    
-    const getBool = (key: string) => tproxyConf[key] === '1';
-    const getInt = (key: string, def = 0) => parseInt(tproxyConf[key] || String(def)) || def;
-    const getVal = (key: string, def = '') => tproxyConf[key] !== undefined ? tproxyConf[key] : def;
+    settingsState.value.autoStartEnabled = getBool(moduleConfig, 'AUTO_START', false);
+    settingsState.value.selectorUrlTestEnabled = getValue(moduleConfig, 'SELECTOR_MODE', 'urltest') !== 'manual';
+    settingsState.value.gmsFixEnabled = getBool(moduleConfig, 'GMS_FIX', false);
+    settingsState.value.wifiAutoSwitch = getBool(moduleConfig, 'WIFI_AUTO_SWITCH', false);
+    settingsState.value.wifiSsidMode = getValue(moduleConfig, 'WIFI_SSID_MODE', 'blacklist') === 'whitelist' ? 'whitelist' : 'blacklist';
+    settingsState.value.wifiSsidList = getValue(moduleConfig, 'WIFI_SSID_LIST', '');
+    settingsState.value.proxyOnCellular = getBool(moduleConfig, 'PROXY_ON_CELLULAR', true);
+    settingsState.value.wifiInterface = getValue(moduleConfig, 'WIFI_INTERFACE', 'wlan0');
 
-    settingsState.value.proxyMode = getInt('PROXY_MODE', 0);
-    settingsState.value.tcpPort = getVal('PROXY_TCP_PORT', '12345');
-    settingsState.value.udpPort = getVal('PROXY_UDP_PORT', '12345');
-    settingsState.value.dnsHijackEnabled = getBool('DNS_HIJACK_ENABLE');
-    settingsState.value.dnsPort = getVal('DNS_PORT', '1053');
-    settingsState.value.proxyMobile = getBool('PROXY_MOBILE');
-    settingsState.value.proxyWifi = getBool('PROXY_WIFI');
-    settingsState.value.proxyIpv6 = getInt('PROXY_IPV6', 0);
-    settingsState.value.proxyTcp = getBool('PROXY_TCP');
-    settingsState.value.proxyUdp = getBool('PROXY_UDP');
-    settingsState.value.proxyHotspot = getBool('PROXY_HOTSPOT');
-    settingsState.value.proxyUsb = getBool('PROXY_USB');
-    settingsState.value.routingMark = getVal('ROUTING_MARK', '');
-    settingsState.value.markValue = getVal('MARK_VALUE', '20');
-    settingsState.value.markValue6 = getVal('MARK_VALUE6', '25');
-    settingsState.value.tableId = getVal('TABLE_ID', '2025');
-    settingsState.value.bypassIpv4List = getVal('BYPASS_IPv4_LIST', '');
-    settingsState.value.bypassIpv6List = getVal('BYPASS_IPv6_LIST', '');
-    settingsState.value.proxyIpv4List = getVal('PROXY_IPv4_LIST', '');
-    settingsState.value.proxyIpv6List = getVal('PROXY_IPv6_LIST', '');
-    settingsState.value.blockQuic = getBool('BLOCK_QUIC');
-    settingsState.value.compatibilityMode = getBool('PERFORMANCE_MODE');
-    settingsState.value.forceMarkBypass = getBool('FORCE_MARK_BYPASS');
-    settingsState.value.bypassCnIp = getBool('BYPASS_CN_IP');
-    settingsState.value.cnIpUrl = getVal('CN_IP_URL', '');
-    settingsState.value.cnIpv6Url = getVal('CN_IPV6_URL', '');
-    settingsState.value.mobileInterface = getVal('MOBILE_INTERFACE', 'rmnet_data+');
-    settingsState.value.wifiInterface = getVal('WIFI_INTERFACE', 'wlan0');
-    settingsState.value.hotspotInterface = getVal('HOTSPOT_INTERFACE', 'wlan2');
-    settingsState.value.usbInterface = getVal('USB_INTERFACE', 'rndis+');
-    settingsState.value.otherProxyInterfaces = getVal('OTHER_PROXY_INTERFACES', '');
-    settingsState.value.otherBypassInterfaces = getVal('OTHER_BYPASS_INTERFACES', '');
-    settingsState.value.macFilterEnable = getBool('MAC_FILTER_ENABLE');
-    settingsState.value.macProxyMode = getVal('MAC_PROXY_MODE', 'blacklist');
-    settingsState.value.proxyMacsList = getVal('PROXY_MACS_LIST', '');
-    settingsState.value.bypassMacsList = getVal('BYPASS_MACS_LIST', '');
-
-  } catch (e) {
-    console.warn('Failed to load native configs, using mock persistence:', e);
-    const getMockBool = (key: string, def = false) => localStorage.getItem(`mock_settings_${key}`) === 'true' || (localStorage.getItem(`mock_settings_${key}`) === null && def);
-    const getMockInt = (key: string, def = 0) => parseInt(localStorage.getItem(`mock_settings_${key}`) || String(def));
-    const getMockVal = (key: string, def = '') => localStorage.getItem(`mock_settings_${key}`) !== null ? localStorage.getItem(`mock_settings_${key}`) as string : def;
-
-    settingsState.value.autoStartEnabled = getMockBool('autoStartEnabled');
-    settingsState.value.selectorUrlTestEnabled = getMockBool('selectorUrlTestEnabled');
-    settingsState.value.gmsFixEnabled = getMockBool('gmsFixEnabled');
-    settingsState.value.proxyMode = getMockInt('proxyMode', 0);
-    settingsState.value.tcpPort = getMockVal('tcpPort', '12345');
-    settingsState.value.udpPort = getMockVal('udpPort', '12345');
-    settingsState.value.dnsHijackEnabled = getMockBool('dnsHijackEnabled', true);
-    settingsState.value.dnsPort = getMockVal('dnsPort', '1053');
-    settingsState.value.proxyMobile = getMockBool('proxyMobile');
-    settingsState.value.proxyWifi = getMockBool('proxyWifi', true);
-    settingsState.value.proxyIpv6 = getMockInt('proxyIpv6', 0);
-    settingsState.value.proxyTcp = getMockBool('proxyTcp', true);
-    settingsState.value.proxyUdp = getMockBool('proxyUdp', true);
-    settingsState.value.proxyHotspot = getMockBool('proxyHotspot');
-    settingsState.value.proxyUsb = getMockBool('proxyUsb');
-    settingsState.value.routingMark = getMockVal('routingMark', '80');
-    settingsState.value.markValue = getMockVal('markValue', '20');
-    settingsState.value.markValue6 = getMockVal('markValue6', '25');
-    settingsState.value.tableId = getMockVal('tableId', '2025');
-    settingsState.value.bypassIpv4List = getMockVal('bypassIpv4List', '192.168.0.0/16,10.0.0.0/8');
-    settingsState.value.bypassIpv6List = getMockVal('bypassIpv6List', 'fe80::/10');
-    settingsState.value.proxyIpv4List = getMockVal('proxyIpv4List', '');
-    settingsState.value.proxyIpv6List = getMockVal('proxyIpv6List', '');
-    settingsState.value.blockQuic = getMockBool('blockQuic', true);
-    settingsState.value.compatibilityMode = getMockBool('compatibilityMode');
-    settingsState.value.forceMarkBypass = getMockBool('forceMarkBypass', true);
-    settingsState.value.bypassCnIp = getMockBool('bypassCnIp', true);
-    settingsState.value.cnIpUrl = getMockVal('cnIpUrl', '');
-    settingsState.value.cnIpv6Url = getMockVal('cnIpv6Url', '');
-    settingsState.value.mobileInterface = getMockVal('mobileInterface', 'rmnet_data+');
-    settingsState.value.wifiInterface = getMockVal('wifiInterface', 'wlan0');
-    settingsState.value.hotspotInterface = getMockVal('hotspotInterface', 'wlan2');
-    settingsState.value.usbInterface = getMockVal('usbInterface', 'rndis+');
-    settingsState.value.otherProxyInterfaces = getMockVal('otherProxyInterfaces', '');
-    settingsState.value.otherBypassInterfaces = getMockVal('otherBypassInterfaces', '');
-    settingsState.value.macFilterEnable = getMockBool('macFilterEnable');
-    settingsState.value.macProxyMode = getMockVal('macProxyMode', 'blacklist');
-    settingsState.value.proxyMacsList = getMockVal('proxyMacsList', '');
-    settingsState.value.bypassMacsList = getMockVal('bypassMacsList', '');
-  }
-};
-
-/**
- * 写入 module.conf 的单个键（真机改文件，mock 写 localStorage）。
- * @param key    配置键（AUTO_START / SELECTOR_MODE / GMS_FIX）
- * @param value  新值
- */
-const updateModuleSetting = async (key: string, value: string) => {
-  if (isKsuEnv()) {
-    const path = '/data/adb/modules/netproxy/config/module.conf';
-    try {
-      const content = await readFileContent(path);
-      const newContent = writeConfigValue(content, key, value);
-      await writeFileContent(path, newContent);
-    } catch (e) {
-      console.error(`Failed to update ${key} in module.conf:`, e);
-      showToast(t('settings.updateModuleFailed'));
-    }
-  } else {
-    const map: Record<string, string> = {
-      'AUTO_START': 'autoStartEnabled',
-      'SELECTOR_MODE': 'selectorUrlTestEnabled',
-      'GMS_FIX': 'gmsFixEnabled'
-    };
-    const stateKey = map[key];
-    if (stateKey) {
-      const boolVal = key === 'SELECTOR_MODE' ? value === 'urltest' : value === '1';
-      localStorage.setItem(`mock_settings_${stateKey}`, String(boolVal));
+    settingsState.value.network = getValue(ebpfConfig, 'EBPF_NETWORK', '');
+    settingsState.value.udpTimeout = getValue(ebpfConfig, 'EBPF_UDP_TIMEOUT', '5m');
+    settingsState.value.dnsMode = getValue(ebpfConfig, 'EBPF_DNS_MODE', 'hijack') === 'off' ? 'off' : 'hijack';
+    settingsState.value.cgroupPath = getValue(ebpfConfig, 'EBPF_CGROUP_PATH', '');
+    settingsState.value.ipv6Enabled = getBool(ebpfConfig, 'EBPF_IPV6', true);
+    settingsState.value.bypassRuleSets = getValue(ebpfConfig, 'EBPF_BYPASS_RULE_SETS', 'direct cn-ip');
+    settingsState.value.sharedNetworkEnabled = getBool(ebpfConfig, 'EBPF_SHARED_NETWORK', false);
+    settingsState.value.sharedInterfaces = getValue(ebpfConfig, 'EBPF_SHARED_INTERFACES', 'wlan2');
+    settingsState.value.tcpMapCapacity = getValue(ebpfConfig, 'EBPF_TCP_MAP_CAPACITY', '65536');
+    settingsState.value.udpMapCapacity = getValue(ebpfConfig, 'EBPF_UDP_MAP_CAPACITY', '65536');
+    settingsState.value.socketMapCapacity = getValue(ebpfConfig, 'EBPF_SOCKET_MAP_CAPACITY', '65536');
+    settingsState.value.sharedMapCapacity = getValue(ebpfConfig, 'EBPF_SHARED_MAP_CAPACITY', '65536');
+  } catch (error) {
+    console.warn('Failed to load native configs, using mock persistence:', error);
+    for (const key of Object.keys(settingsState.value) as SettingsKey[]) {
+      const stored = localStorage.getItem(`mock_settings_${key}`);
+      if (stored === null) continue;
+      const current = settingsState.value[key];
+      (settingsState.value as any)[key] = typeof current === 'boolean' ? stored === 'true' : stored;
     }
   }
 };
 
-/**
- * 写入 tproxy.conf 的单个键（真机改文件，mock 写 localStorage）。只写文件、不重载规则，下次启动/重启生效。
- * @param key          配置键
- * @param value        新值
- * @param forceQuotes  是否给值加双引号
- */
-const updateTProxySetting = async (key: string, value: string, forceQuotes = false) => {
-  if (isKsuEnv()) {
-    const path = '/data/adb/modules/netproxy/config/tproxy/tproxy.conf';
-    try {
-      const content = await readFileContent(path);
-      const newContent = writeConfigValue(content, key, value, forceQuotes);
-      await writeFileContent(path, newContent);
-      // 仅写入配置文件，不触发 tproxy 规则重载；改动将在下次服务启动/重启时生效
-    } catch (e) {
-      console.error(`Failed to update ${key} in tproxy.conf:`, e);
-      showToast(t('settings.updateTproxyFailed'));
-    }
-  } else {
-    let stateKey = '';
-    const keys = Object.keys(settingsState.value);
-    for (const k of keys) {
-      if (stateKeyToConfKey(k) === key) {
-        stateKey = k;
-        break;
-      }
-    }
-    if (stateKey) {
-      localStorage.setItem(`mock_settings_${stateKey}`, value);
-    }
+const writeSetting = async (
+  path: string,
+  configKey: string,
+  value: string,
+  forceQuotes: boolean,
+  stateKey: SettingsKey
+) => {
+  if (!isKsuEnv()) {
+    localStorage.setItem(`mock_settings_${stateKey}`, String(settingsState.value[stateKey]));
+    return;
+  }
+
+  const content = await readFileContent(path);
+  await writeFileContent(path, writeConfigValue(content, configKey, value, forceQuotes));
+};
+
+const setEbpfValue = async (key: SettingsKey, value: string | boolean) => {
+  const configKey = ebpfFieldMap[key];
+  if (!configKey) return;
+  const previous = settingsState.value[key];
+  (settingsState.value as any)[key] = value;
+  try {
+    await writeSetting(EBPF_CONF, configKey, typeof value === 'boolean' ? (value ? '1' : '0') : value, quotedFields.has(key), key);
+    showToast(t('settings.prefUpdated'));
+  } catch (error) {
+    (settingsState.value as any)[key] = previous;
+    console.error(`Failed to update ${configKey} in ebpf.conf:`, error);
+    showToast(t('settings.updateEbpfFailed'));
+  }
+};
+
+const setModuleValue = async (key: SettingsKey, value: string | boolean) => {
+  const configKey = moduleFieldMap[key];
+  if (!configKey) return;
+  const previous = settingsState.value[key];
+  (settingsState.value as any)[key] = value;
+  try {
+    await writeSetting(MODULE_CONF, configKey, typeof value === 'boolean' ? (value ? '1' : '0') : value, quotedFields.has(key), key);
+    showToast(t('settings.prefUpdated'));
+  } catch (error) {
+    (settingsState.value as any)[key] = previous;
+    console.error(`Failed to update ${configKey} in module.conf:`, error);
+    showToast(t('settings.updateModuleFailed'));
+  }
+};
+
+const updateGlobalModuleSetting = async (key: string, value: string, stateKey: SettingsKey) => {
+  try {
+    await writeSetting(MODULE_CONF, key, value, false, stateKey);
+  } catch (error) {
+    console.error(`Failed to update ${key} in module.conf:`, error);
+    showToast(t('settings.updateModuleFailed'));
   }
 };
 
 // ===================================================================
-// 开关 / 下拉 / 编辑等动作（经 provide 下发给子页）
+// 设置动作
 // ===================================================================
 
-/** 切换「开机自启」并写入 module.conf。 */
 const toggleAutoStart = async () => {
-  const val = !settingsState.value.autoStartEnabled;
-  settingsState.value.autoStartEnabled = val;
-  await updateModuleSetting('AUTO_START', val ? '1' : '0');
-  showToast(val ? t('settings.autoStartOn') : t('settings.autoStartOff'));
+  const value = !settingsState.value.autoStartEnabled;
+  settingsState.value.autoStartEnabled = value;
+  await updateGlobalModuleSetting('AUTO_START', value ? '1' : '0', 'autoStartEnabled');
+  showToast(value ? t('settings.autoStartOn') : t('settings.autoStartOff'));
 };
 
-/** 切换选择器模式（urltest 自动测速 / manual 手动）并写入 module.conf。 */
 const toggleSelectorUrlTest = async () => {
-  const val = !settingsState.value.selectorUrlTestEnabled;
-  settingsState.value.selectorUrlTestEnabled = val;
-  await updateModuleSetting('SELECTOR_MODE', val ? 'urltest' : 'manual');
-  showToast(val ? t('settings.urltestOn') : t('settings.urltestOff'));
+  const value = !settingsState.value.selectorUrlTestEnabled;
+  settingsState.value.selectorUrlTestEnabled = value;
+  await updateGlobalModuleSetting('SELECTOR_MODE', value ? 'urltest' : 'manual', 'selectorUrlTestEnabled');
+  showToast(value ? t('settings.urltestOn') : t('settings.urltestOff'));
 };
 
-/** 切换「GMS 修复」并写入 module.conf。 */
 const toggleGmsFix = async () => {
-  const val = !settingsState.value.gmsFixEnabled;
-  settingsState.value.gmsFixEnabled = val;
-  await updateModuleSetting('GMS_FIX', val ? '1' : '0');
-  showToast(val ? t('settings.gmsFixOn') : t('settings.gmsFixOff'));
+  const value = !settingsState.value.gmsFixEnabled;
+  settingsState.value.gmsFixEnabled = value;
+  await updateGlobalModuleSetting('GMS_FIX', value ? '1' : '0', 'gmsFixEnabled');
+  showToast(value ? t('settings.gmsFixOn') : t('settings.gmsFixOff'));
 };
 
-/**
- * 切换某个 tproxy 布尔项（取反 → 写 1/0）。
- * @param key  SettingsState 中的布尔字段
- */
-const toggleTProxyBool = async (key: keyof SettingsState) => {
-  const val = !settingsState.value[key];
-  (settingsState.value as any)[key] = val;
-  const confKey = stateKeyToConfKey(key);
-  await updateTProxySetting(confKey, val ? '1' : '0');
-  showToast(t('settings.prefUpdated'));
+const toggleEbpfBool = async (key: SettingsKey) => {
+  await setEbpfValue(key, !Boolean(settingsState.value[key]));
 };
 
-/**
- * 下拉选择变更：更新状态并写入对应 tproxy 键（数值串自动转 number）。
- * @param key      SettingsState 字段
- * @param confKey  对应 tproxy.conf 键
- * @param e        select 的 change 事件
- */
-const handleDropdownChange = async (key: keyof SettingsState, confKey: string, e: Event) => {
-  const select = e.target as HTMLSelectElement;
-  const val = select.value;
-  (settingsState.value as any)[key] = isNaN(Number(val)) ? val : Number(val);
-  await updateTProxySetting(confKey, val);
-  showToast(t('settings.prefUpdated'));
+const toggleModuleBool = async (key: SettingsKey) => {
+  await setModuleValue(key, !Boolean(settingsState.value[key]));
 };
 
-/**
- * 打开通用文本编辑弹窗，载入指定项的当前值。
- * @param key    SettingsState 字段
- * @param title  弹窗标题
- * @param label  输入框标签
- * @param type   输入类型（text / number）
- */
-const openEditPreference = (key: keyof SettingsState, title: string, label: string, type: 'text' | 'number' = 'text') => {
+const openEditPreference = (
+  key: SettingsKey,
+  title: string,
+  label: string,
+  type: 'text' | 'number' = 'text'
+) => {
   editKey.value = key;
   editTitle.value = title;
   editLabel.value = label;
@@ -426,43 +305,56 @@ const openEditPreference = (key: keyof SettingsState, title: string, label: stri
   showEditDialog.value = true;
 };
 
-/** 保存编辑弹窗的值：写回状态并写入 tproxy.conf（端口/列表/接口等键强制加引号）。 */
 const handleSaveEdit = async () => {
-  const key = editKey.value as keyof SettingsState;
-  const val = editValue.value.trim();
-  
-  (settingsState.value as any)[key] = val;
-  const confKey = stateKeyToConfKey(key);
-  const forceQuotes = ['PORT', 'MARK', 'ID', 'LIST', 'INTERFACE', 'URL'].some(keyword => confKey.toUpperCase().includes(keyword));
-  
-  await updateTProxySetting(confKey, val, forceQuotes);
+  const key = editKey.value;
+  const value = editValue.value.trim();
+  if (editType.value === 'number' && (!/^\d+$/.test(value) || Number(value) < 1)) {
+    showToast(t('settings.invalidNumber'));
+    return;
+  }
+  if (ebpfFieldMap[key]) {
+    await setEbpfValue(key, value);
+  } else if (moduleFieldMap[key]) {
+    await setModuleValue(key, value);
+  }
   showEditDialog.value = false;
-  showToast(t('settings.savedItem', { title: editTitle.value }));
 };
 
-onMounted(() => {
-  loadSettings();
-});
+const applyEbpfConfig = async () => {
+  if (isApplying.value) return;
+  isApplying.value = true;
+  try {
+    await runCli('service restart', { detach: true });
+    showToast(t('proxy.applySuccess'));
+  } catch (error: any) {
+    console.error('Failed to apply eBPF config:', error);
+    showToast(t('proxy.applyFailed', { msg: error?.message || String(error) }));
+  } finally {
+    isApplying.value = false;
+  }
+};
 
-// 向设置子页（router-view 子组件）下发状态与处理函数
+onMounted(loadSettings);
+
 provide('settingsState', settingsState);
 provide('toggleAutoStart', toggleAutoStart);
 provide('toggleSelectorUrlTest', toggleSelectorUrlTest);
 provide('toggleGmsFix', toggleGmsFix);
-provide('toggleTProxyBool', toggleTProxyBool);
-provide('handleDropdownChange', handleDropdownChange);
+provide('toggleEbpfBool', toggleEbpfBool);
+provide('toggleModuleBool', toggleModuleBool);
+provide('setEbpfValue', setEbpfValue);
+provide('setModuleValue', setModuleValue);
 provide('openEditPreference', openEditPreference);
-provide('updateTProxySetting', updateTProxySetting);
+provide('applyEbpfConfig', applyEbpfConfig);
+provide('isApplyingEbpfConfig', isApplying);
 </script>
 
 <template>
   <div class="settings-layout-wrapper">
-    <!-- 渲染设置子页 -->
     <router-view v-slot="{ Component }">
       <component :is="Component" />
     </router-view>
 
-    <!-- 通用文本设置项编辑弹窗 -->
     <md-dialog :open="showEditDialog" @close="showEditDialog = false" class="transparent-scrim">
       <div slot="headline">{{ editTitle }}</div>
       <div slot="content" class="display-dialog-content">
