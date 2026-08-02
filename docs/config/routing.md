@@ -4,7 +4,7 @@ NetProxy 的分流行为由三层共同决定：
 
 1. `OUTBOUND_MODE`
 2. sing-box 路由规则与规则集
-3. 透明代理层的 IP / 接口 / 分应用代理过滤
+3. eBPF 入站的规则集与 UID 提前绕过
 
 ## 出站模式
 
@@ -31,27 +31,23 @@ NetProxy 的分流行为由三层共同决定：
 
 ## 与透明代理层的关系
 
-透明代理层先决定“哪些流量会进入代理链”，sing-box 再决定“进入后的流量如何分流”。
+eBPF 入站先在内核侧判断需要提前绕过的 CIDR 与 UID，sing-box 再决定其余流量如何分流。
 
 典型例子：
 
 - `APP_PROXY_ENABLE` 控制是否启用分应用代理
-- `BYPASS_CN_IP` 控制是否在透明代理层直接绕过中国大陆 IP
-- `PROXY_IPv4_LIST / PROXY_IPv6_LIST` 可强制指定流量进入代理
-- `BYPASS_IPv4_LIST / BYPASS_IPv6_LIST` 可强制绕过
+- `APP_PROXY_MODE` 决定应用名单是黑名单还是白名单
+- `EBPF_BYPASS_RULE_SETS` 指定可提取 IP CIDR 并在内核侧提前绕过的规则集
+
+提前绕过的流量不会进入 sing-box，因此也不会再经过 Clash 模式和普通路由规则。需要严格 Global 行为时，应清空 `EBPF_BYPASS_RULE_SETS` 后重启服务。
 
 ## DNS 相关
 
-`tproxy.conf` 中的：
-
-- `DNS_HIJACK_ENABLE`
-- `DNS_PORT`
-
-决定透明代理层是否接管 DNS 流量；而 sing-box 侧的 DNS 行为由 `confdir/` 中的通用配置控制。
+`ebpf.conf` 中的 `EBPF_DNS_MODE` 决定 eBPF 入站是否优先接管 TCP / UDP 53；sing-box 侧的解析和分流行为仍由 `confdir/` 中的 DNS 配置控制。
 
 如果出现域名能解析但分流异常，请同时检查：
 
 1. 当前 `OUTBOUND_MODE`
 2. `source/` 中的规则集是否正确
-3. DNS 劫持开关与端口
+3. `EBPF_DNS_MODE` 与 sing-box DNS 配置
 4. 当前节点和代理组是否正常

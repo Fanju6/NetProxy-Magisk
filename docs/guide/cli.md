@@ -21,7 +21,8 @@ cli mode [rule|global|direct]
 cli sub {list|add|update|update-all|remove}
 cli api {groups|conns|close|close-all|ui}
 cli app {list|mode|add|remove|enable|disable}
-cli tproxy {status|reload|quic|cnip}
+cli ebpf {status|reload|dns|ipv6|shared|interface}
+cli wifi {status|on|off|mode|add|del|list|clear|cellular}
 ```
 
 ## service
@@ -107,11 +108,13 @@ su -c '/data/adb/modules/netproxy/scripts/cli app add com.example.app'
 su -c '/data/adb/modules/netproxy/scripts/cli app enable'
 ```
 
-## tproxy
+## eBPF
 
 ```sh
-su -c '/data/adb/modules/netproxy/scripts/cli tproxy status'
-su -c '/data/adb/modules/netproxy/scripts/cli tproxy reload'
-su -c '/data/adb/modules/netproxy/scripts/cli tproxy quic off'
-su -c '/data/adb/modules/netproxy/scripts/cli tproxy cnip on'
+su -c '/data/adb/modules/netproxy/scripts/cli ebpf status'
+su -c '/data/adb/modules/netproxy/scripts/cli ebpf reload'
+su -c '/data/adb/modules/netproxy/scripts/cli ebpf dns hijack'
+su -c '/data/adb/modules/netproxy/scripts/cli ebpf ipv6 on'
+su -c '/data/adb/modules/netproxy/scripts/cli ebpf shared on'
+su -c '/data/adb/modules/netproxy/scripts/cli ebpf interface add wlan2'
 ```

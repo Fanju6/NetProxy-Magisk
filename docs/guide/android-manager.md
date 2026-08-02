@@ -17,7 +17,7 @@ Android 管理器是 NetProxy 的图形化主入口，目前通过 Google Play �
 - 节点导入、订阅管理、测速、导出链接
 - 分应用代理与黑白名单
 - 自动启动、动态测速、GMS 修复等常用开关
-- sing-box / tproxy / JSON 配置编辑
+- sing-box / eBPF / JSON 配置编辑
 - 日志查看、导出与基础排障
 
 ## 推荐使用流程
@@ -59,7 +59,7 @@ Android 管理器是 NetProxy 的图形化主入口，目前通过 Google Play �
 - 应用列表
 - 是否启用分应用代理
 
-这部分最终会写入模块的 `tproxy.conf`。
+这部分最终会写入模块的 `ebpf.conf`，并由服务重启重新生成 eBPF 入站。
 
 ### 5. 配置与日志
 
@@ -68,7 +68,7 @@ Android 管理器是 NetProxy 的图形化主入口，目前通过 Google Play �
 - 服务日志
 - sing-box 日志
 - 当前 JSON 配置
-- tproxy / sing-box 常用参数
+- eBPF / sing-box 常用参数
 
 ## 与 CLI、Clash API 的关系
 

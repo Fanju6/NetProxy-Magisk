@@ -1,93 +1,61 @@
-# 透明代理与分应用代理
+# eBPF 透明代理与分应用代理
 
-NetProxy 的透明代理层由 `tproxy.sh` 与 `tproxy.conf` 驱动，目标是在尽量少打扰用户的前提下，把需要代理的流量送进 sing-box。
+NetProxy 使用 sing-box 的实验性 eBPF 入站接管流量。它通过 cgroup eBPF 处理本机连接，通过 TC eBPF 处理热点或 USB 下游流量，不创建 TUN 设备，也不维护 iptables、nftables 或策略路由规则。
 
-## 两种代理方式
+## 本机流量
 
-### TPROXY
-
-- 能力更完整
-- 更适合 TCP / UDP / DNS 全量接管
-- 是首选方案
-
-### REDIRECT
-
-- 用于不支持 TPROXY 的环境回退
-- 适合作为兼容模式
-
-默认情况下：
+默认同时接管 TCP 与 UDP，并在 eBPF 入站优先劫持 TCP / UDP 53：
 
 ```text
-PROXY_MODE=0
+EBPF_NETWORK=""
+EBPF_DNS_MODE="hijack"
+EBPF_IPV6=1
 ```
 
-含义是自动检测 TPROXY，并在不支持时回退到 REDIRECT。
-
-## 默认端口
-
-当前默认端口都为 `1536`：
-
-- `PROXY_TCP_PORT=1536`
-- `PROXY_UDP_PORT=1536`
-- `DNS_PORT=1536`
-
-如果你修改了这些端口，透明代理与 sing-box 运行时配置都必须保持一致。
+`EBPF_NETWORK` 可设为 `tcp` 或 `udp`，留空表示两者都处理。DNS 劫持依赖 UDP；将网络限制为 `tcp` 时不应同时用于需要 UDP DNS 的共享网络。
 
 ## 分应用代理
 
-当前分应用代理由 `tproxy.conf` 控制，核心项有：
+分应用配置位于 `config/ebpf/ebpf.conf`：
 
-- `APP_PROXY_ENABLE`
-- `APP_PROXY_MODE`
-- `PROXY_APPS_LIST`
-- `BYPASS_APPS_LIST`
+- `APP_PROXY_ENABLE=1`：按应用名单过滤
+- `APP_PROXY_MODE="blacklist"`：名单内应用绕过
+- `APP_PROXY_MODE="whitelist"`：仅名单内应用进入代理
+- `PROXY_APPS_LIST`：白名单应用
+- `BYPASS_APPS_LIST`：黑名单应用
 
-模式说明：
+服务启动时会把包名解析为 Android UID，并写入 eBPF 入站的 `include_uid` 或 `exclude_uid`。名单支持 `user:package` 格式，例如 `10:com.example.app`。
 
-- `blacklist`：默认代理，列表中的应用绕过
-- `whitelist`：默认不代理，列表中的应用走代理
+## 规则集提前绕过
 
-## 接口与协议开关
+默认值：
 
-常见开关包括：
+```text
+EBPF_BYPASS_RULE_SETS="direct cn-ip"
+```
 
-- `PROXY_MOBILE`
-- `PROXY_WIFI`
-- `PROXY_HOTSPOT`
-- `PROXY_USB`
-- `PROXY_TCP`
-- `PROXY_UDP`
-- `PROXY_IPV6`
+命中的 IP CIDR 会在内核侧直接放行，不再进入 sing-box。这样可以降低常见直连流量开销，但也会绕过 Global 模式。需要严格全局代理时应清空该项并重启服务。
 
-这部分决定哪些接口和协议会进入透明代理链。
+## 热点与共享网络
 
-## 常用增强项
+```text
+EBPF_SHARED_NETWORK=0
+EBPF_SHARED_INTERFACES="wlan2"
+```
 
-### `BLOCK_QUIC`
+启用后，sing-box 会向指定下游接口挂载 TC eBPF。接口暂时不存在不会阻止核心启动，热点开启后会自动尝试挂载。不同 ROM 的热点或 USB 接口名可能不同，必须填写实际接收下游流量的接口。
 
-- 默认值：`1`
-- 作用：拦截 QUIC（UDP 443）
+## Map 容量
 
-### `BYPASS_CN_IP`
+TCP、UDP、套接字绕过和共享网络 Map 默认容量均为 `65536`；只有在日志明确提示容量不足时才需要调整。
 
-- 默认值：`0`
-- 作用：是否绕过中国大陆 IP 段
+## 内核要求
 
-### `LOG_TIMESTAMP`
+本版本没有 TPROXY / REDIRECT 回退。内核至少需要：
 
-- 默认值：`0`
-- 作用：是否给透明代理脚本日志附加时间戳
+- BPF 与 cgroup v2
+- cgroup socket address / sock create 等挂载能力
+- Root 及所需 BPF 权限
+- 共享网络场景所需的 TC eBPF 能力
 
-### `GMS_FIX`
-
-位于 `module.conf`，主要用于部分设备上的 Google Play / GMS 联网兼容性修复。
-
-## 什么时候优先看这部分
-
-如果你遇到下面这些问题，优先检查透明代理层：
-
-- 某些应用不走代理
-- Wi-Fi 与移动网络表现不一致
-- 热点共享代理异常
-- 某些 UDP / DNS 请求行为异常
-- 只有部分浏览器或系统组件访问异常
+停止服务时会先发送 SIGTERM，让 sing-box 清理 eBPF 程序、Map 与 TC 挂载。若进程无法在超时时间内退出才会使用 SIGKILL。

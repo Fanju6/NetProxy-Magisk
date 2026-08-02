@@ -12,8 +12,11 @@
 
 - `CURRENT_CONFIG` 指向的节点文件存在
 - `config/singbox/outbounds/` 下至少有一个可用节点
-- `PROXY_TCP_PORT / PROXY_UDP_PORT / DNS_PORT` 未与其他服务冲突
+- 当前内核支持 BPF、cgroup v2 与 cgroup socket attach
+- `config/ebpf/ebpf.conf` 中的网络、DNS、接口和 Map 容量合法
 - 当前节点或订阅生成的 sing-box 配置没有语法错误
+
+若 `sing-box.log` 出现 eBPF 加载或挂载错误，说明内核能力、权限或配置不满足要求。本版本不提供 TPROXY / REDIRECT 回退。
 
 ## 打不开 zashboard
 
@@ -57,7 +60,6 @@
 部分 ROM、浏览器和安全 DNS 组合会影响表现。常见排查方向：
 
 - 检查是否启用了 `GMS_FIX`
-- 观察 `BLOCK_QUIC` 是否影响目标应用
 - 临时切换 `rule / global / direct` 对比行为
 - 在 Android 管理器或控制面板里检查当前实际节点和代理组
 

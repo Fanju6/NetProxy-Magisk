@@ -26,8 +26,8 @@ features:
     details: 原生 Android 管理器负责仪表盘、节点、订阅、分应用代理、日志和常用配置编辑。
   - title: CLI + Clash API
     details: 命令行分组命令与 Clash API / zashboard 并存，既适合日常操作，也方便自动化和排障。
-  - title: TPROXY / REDIRECT
-    details: 保留透明代理自动检测与 REDIRECT 回退能力，覆盖 TCP、UDP、DNS 和分应用代理场景。
+  - title: eBPF 透明代理
+    details: 通过 cgroup 与 TC eBPF 接管本机及共享网络流量，无需 TUN 设备或防火墙重定向规则。
   - title: 节点与订阅
     details: 支持单链接、文件和订阅三种导入方式，统一转为 sing-box 节点配置。
   - title: 兼容与排障
