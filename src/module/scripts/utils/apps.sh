@@ -20,17 +20,17 @@ resolve_package_uids() {
   awk -v tokens="$packages" '
     BEGIN {
       count = split(tokens, items, " ")
-      for (index = 1; index <= count; index++) {
-        token = items[index]
+      for (i = 1; i <= count; i++) {
+        token = items[i]
         if (token ~ /:/) {
           split(token, parts, ":")
-          users[index] = parts[1]
-          names[index] = parts[2]
+          users[i] = parts[1]
+          names[i] = parts[2]
         } else {
-          users[index] = 0
-          names[index] = token
+          users[i] = 0
+          names[i] = token
         }
-        wanted[names[index]] = 1
+        wanted[names[i]] = 1
       }
     }
     ($1 in wanted) {
@@ -41,10 +41,10 @@ resolve_package_uids() {
     }
     END {
       output = ""
-      for (index = 1; index <= count; index++) {
-        name = names[index]
+      for (i = 1; i <= count; i++) {
+        name = names[i]
         if (!(name in base_uid)) continue
-        uid = users[index] * 100000 + base_uid[name]
+        uid = users[i] * 100000 + base_uid[name]
         if (seen[uid]) continue
         seen[uid] = 1
         output = output == "" ? uid : output " " uid
