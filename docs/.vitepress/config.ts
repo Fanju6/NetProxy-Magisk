@@ -68,7 +68,7 @@ export default defineConfig({
           items: [
             { text: 'module.conf', link: '/config/module' },
             { text: 'sing-box 配置', link: '/config/singbox' },
-            { text: 'tproxy.conf', link: '/config/tproxy' },
+            { text: 'ebpf.conf', link: '/config/ebpf' },
             { text: '路由与 DNS', link: '/config/routing' }
           ]
         }

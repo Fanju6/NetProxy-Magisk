@@ -4,11 +4,14 @@
 
 - 设备已具备 Root 环境
 - 已安装 **Magisk / KernelSU / APatch** 之一
+- 内核支持 BPF、cgroup v2 与 cgroup socket attach；共享网络还需要 TC eBPF
 - 已准备可用节点或订阅
 
 如果你准备使用 Android 管理器，可通过 Google Play 安装：[`NetProxy`](https://play.google.com/store/apps/details?id=com.fanjv.netproxy)。当前应用包名为 `com.fanjv.netproxy`，`minSdk` 为 **31**。
 
 ## 安装模块
+
+Release 提供两个代理能力相同的包：完整版内置 Android 管理器 APK，Lite 不内置 APK。已从 Google Play 安装管理器或只使用 CLI / zashboard 时可选择 Lite。
 
 1. 从 [NetProxy Releases](https://github.com/Fanju6/NetProxy-Magisk/releases) 下载最新模块 ZIP
 2. 在 **Magisk / KernelSU / APatch** 中刷入模块

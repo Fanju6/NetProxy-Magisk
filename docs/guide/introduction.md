@@ -36,7 +36,7 @@ NetProxy 现在有三种正式入口：
 
 - `bin/sing-box`：核心进程
 - `config/module.conf`：模块级默认项
-- `config/tproxy/tproxy.conf`：透明代理与分应用代理配置
+- `config/ebpf/ebpf.conf`：eBPF 入站、分应用与共享网络配置
 - `config/singbox/confdir/`：通用 sing-box 配置片段
 - `config/singbox/outbounds/`：节点与订阅目录
 - `config/singbox/runtime/`：运行时生成配置
@@ -55,7 +55,7 @@ Android 管理器下载地址：[`NetProxy - Google Play`](https://play.google.c
 - 节点 / 订阅导入、切换、测速、导出
 - 分应用代理开关与黑白名单
 - GMS 修复、自动启动、动态测速等常用项
-- sing-box / tproxy / JSON 配置编辑
+- sing-box / eBPF / JSON 配置编辑
 - 日志查看与导出
 
 ## 推荐使用路径

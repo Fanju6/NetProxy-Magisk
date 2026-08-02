@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>System-wide sing-box transparent proxy module for Android</strong><br>
-  TPROXY / REDIRECT, TCP / UDP, per-app routing, subscriptions, and Clash API
+  eBPF, TCP / UDP, per-app routing, subscriptions, and Clash API
 </p>
 
 <p align="center">
@@ -34,7 +34,7 @@
 
 ## Overview
 
-NetProxy is a system-wide transparent proxy module for rooted Android devices. It runs an embedded sing-box core, redirects device traffic through TPROXY or REDIRECT, and can be managed through the Android app, CLI, or zashboard.
+NetProxy is a system-wide transparent proxy module for rooted Android devices. Its embedded sing-box core captures local and shared-network traffic through cgroup and TC eBPF, and can be managed through the Android app, CLI, or zashboard.
 
 Supported root environments: **Magisk, KernelSU, and APatch**.
 
@@ -62,8 +62,8 @@ The controller listens on all interfaces by default. Use it only on trusted netw
 
 ## Features
 
-- TPROXY with automatic REDIRECT fallback
-- TCP, UDP, and DNS transparent proxying
+- cgroup eBPF interception for local TCP, UDP, and DNS traffic
+- No TUN device, iptables/nftables rules, or policy routing
 - Per-app blacklist / whitelist routing
 - Wi-Fi hotspot and USB tethering support
 - Node links, node files, Clash YAML, and subscriptions
@@ -71,8 +71,8 @@ The controller listens on all interfaces by default. Use it only on trusted netw
 - Rule, Global, and Direct modes
 - Wi-Fi SSID based switching between the configured mode and Direct
 - Clash API, zashboard, connection control, and delay tests
-- Scheduled subscription updates, QUIC blocking, and CN IP bypass
-- Integrated IPSET LKM for additional kernel compatibility
+- Scheduled subscription updates and rule-set bypass
+- Automatic cleanup of eBPF programs, maps, and TC attachments
 
 ## Installation
 
@@ -80,10 +80,13 @@ Each release provides two packages:
 
 | Package | Filename | Contents | Recommended for |
 |---------|----------|----------|-----------------|
-| **Full** | `NetProxy_<version>_<build>.zip` | sing-box, Proxylink, zashboard, Android Manager, bundled IPSET LKM drivers, and the `ipset` tool | The default choice for most devices, especially when IPSET support is uncertain |
-| **Lite** | `NetProxy_<version>_<build>_lite.zip` | Everything except `bin/IPSET-LKM`; the proxy core and management features are unchanged | Devices that already provide working kernel IPSET support and an `ipset` command, or do not need IPSET-based features |
+| **Full** | `NetProxy_<version>_<build>.zip` | sing-box, Proxylink, zashboard, and the Android Manager APK | The default choice when the manager should be installed with the module |
+| **Lite** | `NetProxy_<version>_<build>_lite.zip` | The same core, CLI, eBPF, and zashboard features, without the Android Manager APK | Users who install the manager from Google Play or only use CLI / zashboard |
 
-Choose the **Full** package when unsure. Lite is not a coreless package: it still includes sing-box, Proxylink, and zashboard, and removes only the bundled IPSET drivers and tool.
+Both packages have identical proxy capabilities. Choose **Full** to bundle the manager installer; Lite users can still install the manager from Google Play.
+
+> [!IMPORTANT]
+> The eBPF inbound requires kernel BPF support, cgroup v2, and cgroup socket attachment. Shared-network proxying additionally requires usable TC eBPF support. Unsupported kernels cannot start this version.
 
 1. Download the latest ZIP from [Releases](https://github.com/Fanju6/NetProxy-Magisk/releases).
 2. Flash it with Magisk, KernelSU, or APatch.
@@ -180,7 +183,7 @@ cli mode [rule|global|direct]
 cli sub {list|add|update|update-all|remove|auto}
 cli api {groups|conns|close|close-all|ui}
 cli app {list|mode|add|remove|enable|disable}
-cli tproxy {status|reload|quic|cnip}
+cli ebpf {status|reload|dns|ipv6|shared|interface}
 cli wifi {status|on|off|mode|add|del|list|clear|cellular}
 ```
 
@@ -193,7 +196,7 @@ su -c '/data/adb/modules/netproxy/scripts/cli help'
 | Path | Purpose |
 |------|---------|
 | `config/module.conf` | Startup, mode, selected node, selector, and subscription scheduling |
-| `config/tproxy/tproxy.conf` | Ports, transparent proxy, per-app rules, QUIC, CN bypass, and Wi-Fi switching |
+| `config/ebpf/ebpf.conf` | eBPF inbound, per-app rules, shared networks, and map capacities |
 | `config/singbox/confdir/` | Shared sing-box DNS, route, and Clash API configuration |
 | `config/singbox/outbounds/` | Local and subscription node directories |
 | `config/singbox/source/` | Local route rules and rule sets |
@@ -207,14 +210,12 @@ Key defaults:
 - `OUTBOUND_MODE=rule`
 - `SELECTOR_MODE=urltest`
 - `CURRENT_CONFIG=""`
-- `PROXY_TCP_PORT=1536`
-- `PROXY_UDP_PORT=1536`
-- `DNS_PORT=1536`
-- `PROXY_MODE=0` (TPROXY auto-detection with REDIRECT fallback)
-- `BLOCK_QUIC=1`
-- `BYPASS_CN_IP=0`
+- `EBPF_NETWORK=""` (TCP and UDP)
+- `EBPF_DNS_MODE=hijack`
+- `EBPF_IPV6=1`
+- `EBPF_BYPASS_RULE_SETS="direct cn-ip"`
+- `EBPF_SHARED_NETWORK=0`
 - `WIFI_AUTO_SWITCH=0`
-- `LOG_TIMESTAMP=0`
 
 For startup failures, inspect the core log first:
 
@@ -228,11 +229,10 @@ See the [NetProxy documentation](https://www.netproxy.store/) for complete insta
 
 | Project | Role |
 |---------|------|
-| [reF1nd/sing-box](https://github.com/reF1nd/sing-box) | Current proxy core |
+| [CHIZI-0618/sing-box](https://github.com/CHIZI-0618/sing-box) | eBPF inbound and current proxy core |
 | [SagerNet/sing-box](https://github.com/SagerNet/sing-box) | Upstream sing-box project |
 | [Proxylink](https://github.com/Fanju6/Proxylink) | Node, subscription, and configuration conversion |
-| [AndroidTProxyShell](https://github.com/CHIZI-0618/AndroidTProxyShell) | Android transparent proxy reference |
-| [IPSET_LKM](https://github.com/TanakaLun/IPSET_LKM) | IPSET kernel module and compatibility support |
+| [AsteriskNG](https://github.com/Asterisk4Magisk/AsteriskNG) | Android eBPF implementation reference |
 | [zashboard](https://github.com/Zephyruso/zashboard) | Clash API dashboard |
 | [v2rayNG](https://github.com/2dust/v2rayNG) | Node parsing reference |
 

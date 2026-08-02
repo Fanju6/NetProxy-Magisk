@@ -47,7 +47,10 @@ NetProxy 会在服务启动时，根据：
 - `SELECTOR_MODE`
 - 当前出站模式
 
-生成运行时需要的选择器 / 测速组等配置文件。
+生成运行时需要的选择器、测速组与 eBPF 入站：
+
+- `runtime/outbounds.json`
+- `runtime/ebpf.json`
 
 ### `source/`
 
@@ -60,7 +63,7 @@ NetProxy 会在服务启动时，根据：
 1. `confdir/` 中的公共配置
 2. 当前节点目录里已加载的节点文件
 3. `runtime/` 中动态生成的出站配置
-4. 当前 `CURRENT_CONFIG` 指向的目标节点
+4. `runtime/ebpf.json` 中的透明代理入站
 
 所以出现问题时，通常要分清楚是：
 

@@ -12,7 +12,7 @@
 
 ### `AUTO_START`
 
-- 默认值：`1`
+- 默认值：`0`
 - 作用：是否在系统启动后自动拉起 NetProxy 服务
 
 ### `OUTBOUND_MODE`
@@ -65,3 +65,13 @@ CURRENT_CONFIG=""
 3. 手动编辑配置文件
 
 如果你手动修改了 `module.conf`，建议随后重启服务，确保运行时状态和持久化配置一致。
+
+## WiFi 自动切换
+
+WiFi 自动切换也由 `module.conf` 管理：
+
+- `WIFI_AUTO_SWITCH=0`：默认关闭
+- `WIFI_SSID_MODE="blacklist"`：名单内使用 Direct
+- `WIFI_SSID_LIST=""`：SSID 名单，英文逗号分隔
+- `PROXY_ON_CELLULAR=1`：非 WiFi 网络使用基础模式
+- `WIFI_INTERFACE="wlan0"`：用于读取当前 SSID 的接口
