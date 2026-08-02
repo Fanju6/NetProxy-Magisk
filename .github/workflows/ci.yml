@@ -28,14 +28,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: 设置构建元信息
+        run: |
+          echo "TIMESTAMP=$(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S')" >> "$GITHUB_ENV"
+          echo "SHORT_HASH=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+          echo "COMMIT_MESSAGE=$(git log -1 --format=%s "$GITHUB_SHA")" >> "$GITHUB_ENV"
+
       - name: 构建并打包模块
         id: pack
         uses: ./.github/actions/build-module
-
-      - name: 设置构建元信息
-        run: |
-          echo "TIMESTAMP=$(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S')" >> $GITHUB_ENV
-          echo "SHORT_HASH=${GITHUB_SHA::7}" >> $GITHUB_ENV
 
       - name: 发布 Pre-release 到 GitHub Release
         env:
@@ -72,7 +73,7 @@ jobs:
             **持续集成构建成功**
 
             版本: `${{ steps.pack.outputs.version }}` (build ${{ steps.pack.outputs.commit_count }})
-            说明: ${{ github.event.head_commit.message }}
+            说明: ${{ env.COMMIT_MESSAGE }}
 
             [下载开发包](${{ github.server_url }}/${{ github.repository }}/releases/tag/nightly)
             [提交记录](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})
@@ -90,6 +91,6 @@ jobs:
             **持续集成失败！**
 
             提交: `${{ github.sha }}`
-            说明: ${{ github.event.head_commit.message }}
+            说明: ${{ env.COMMIT_MESSAGE }}
 
             [点击查看构建日志](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
