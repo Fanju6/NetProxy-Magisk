@@ -3,6 +3,6 @@ name=NetProxy
 version=v7.2.0
 versionCode=1
 author=Fanju
-description=基于 sing-box 内核的透明代理工具
+description=基于 sing-box eBPF 入站的 Android 透明代理工具
 updateJson=https://github.com/Fanju6/NetProxy-Magisk/releases/latest/download/update.json
 webuiIcon=webroot/favicon.svg

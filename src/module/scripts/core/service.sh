@@ -1,11 +1,10 @@
 #!/system/bin/sh
 #######################################
 # 文件: service.sh
-# 功能: NetProxy sing-box 服务管理脚本，负责启动/停止/重启 sing-box
-#       进程，同步运行模式与节点配置，并加载/清理透明代理规则。
-# 用法: service.sh {start|stop|restart|status} [core]
-#       (附加 core 表示仅操作核心进程，跳过透明代理规则)
-# 依赖: common.sh、config.sh、api.sh、nodes.sh、runtime.sh。
+# 功能: NetProxy sing-box 服务管理脚本，负责构建运行时配置、
+#       启动/停止核心，并随核心管理 eBPF 入站的生命周期。
+# 用法: service.sh {start|stop|restart|status}
+# 依赖: common.sh、config.sh、api.sh、nodes.sh、apps.sh、runtime.sh。
 #######################################
 
 set -u  # 引用未定义变量报错
@@ -15,22 +14,22 @@ readonly MODDIR="$(cd "$(dirname "$0")/../.." && pwd)"
 readonly LOG_FILE="$MODDIR/logs/service.log"          # 服务日志
 readonly SING_BOX_BIN="$MODDIR/bin/sing-box"          # sing-box 二进制
 readonly MODULE_CONF="$MODDIR/config/module.conf"     # 模块配置
-readonly TPROXY_CONF_DIR="$MODDIR/config/tproxy"      # 透明代理配置目录
+readonly EBPF_CONF="$MODDIR/config/ebpf/ebpf.conf"    # eBPF 配置
 readonly SINGBOX_LOG_FILE="$MODDIR/logs/sing-box.log" # sing-box 运行日志
 readonly SINGBOX_DIR="$MODDIR/config/singbox"         # sing-box 配置根目录
 readonly CONFDIR="$SINGBOX_DIR/confdir"               # 通用配置目录
 readonly RUNTIME_DIR="$SINGBOX_DIR/runtime"           # 运行时生成目录
 readonly SWITCH_SCRIPT="$MODDIR/scripts/core/switch.sh"     # 模式/节点切换脚本
-readonly TPROXY_SCRIPT="$MODDIR/scripts/network/tproxy.sh"  # 透明代理脚本
 readonly NETMON_SCRIPT="$MODDIR/scripts/network/netmon.sh"  # WiFi 自动切换监听脚本
 readonly SUBSCHED_SCRIPT="$MODDIR/scripts/core/subsched.sh" # 订阅定时更新调度脚本
-readonly KILL_TIMEOUT=5                               # 等待进程退出的秒数上限
+readonly KILL_TIMEOUT=10                              # 等待 sing-box 优雅退出的秒数上限
 readonly LOG_TAG="service"                            # 日志组件标签
 
 . "$MODDIR/scripts/utils/common.sh"
 . "$MODDIR/scripts/utils/config.sh"
 . "$MODDIR/scripts/utils/api.sh"
 . "$MODDIR/scripts/utils/nodes.sh"
+. "$MODDIR/scripts/utils/apps.sh"
 . "$MODDIR/scripts/core/runtime.sh"
 
 # 将模块 bin 目录加入 PATH，便于调用自带二进制
@@ -50,7 +49,7 @@ verify_environment() {
   # 关键文件与目录检查
   require_file "$SING_BOX_BIN" "sing-box 二进制不存在: $SING_BOX_BIN"
   require_file "$MODULE_CONF" "模块配置文件不存在: $MODULE_CONF"
-  require_file "$TPROXY_CONF_DIR/tproxy.conf" "透明代理配置文件不存在: $TPROXY_CONF_DIR/tproxy.conf"
+  require_file "$EBPF_CONF" "eBPF 配置文件不存在: $EBPF_CONF"
   require_dir "$SINGBOX_DIR" "sing-box 配置目录不存在: $SINGBOX_DIR"
   require_dir "$CONFDIR" "通用配置目录不存在: $CONFDIR"
 
@@ -65,22 +64,20 @@ verify_environment() {
 # 返回: 无
 #######################################
 cleanup_runtime_files() {
-  rm -f "$RUNTIME_DIR/outbounds.json" 2> /dev/null || true
+  rm -f \
+    "$RUNTIME_DIR/outbounds.json" \
+    "$RUNTIME_DIR/ebpf.json" \
+    2> /dev/null || true
 }
 
 #######################################
-# 打印服务动作横幅 (按是否跳过 tproxy 区分级别与措辞)
+# 打印服务动作横幅
 # 参数:
 #   $1  动作动词 (启动/停止/重启)
-#   $2  是否仅核心 (1=跳过 tproxy，记 DEBUG；否则记 INFO)
 # 返回: 无
 #######################################
 log_service_action() {
-  if [ "$2" = "1" ]; then
-    log "DEBUG" "$1 sing-box 核心服务 (跳过 tproxy)"
-  else
-    log "INFO" "$1 sing-box 服务"
-  fi
+  log "INFO" "$1 sing-box 服务"
 }
 
 #######################################
@@ -98,16 +95,14 @@ is_manual_selector() {
 
 #######################################
 # 启动 sing-box 服务
-# 参数:
-#   $1  是否跳过透明代理 (1=跳过，仅启动核心，默认 0)
+# 参数: 无
 # 返回: 成功返回 0，启动失败则退出
 #######################################
 do_start() {
-  local skip_tproxy="${1:-0}"
-  local pid runtime_outbounds new_pid
+  local pid runtime_outbounds runtime_ebpf new_pid count
   local node_path
 
-  log_service_action "启动" "$skip_tproxy"
+  log_service_action "启动"
   verify_environment
 
   # 已在运行则直接返回，保证幂等
@@ -121,14 +116,16 @@ do_start() {
   initialize_runtime_context
   scan_runtime_nodes "$CUR_OUTBOUND_DIR"
   write_runtime_outbounds > /dev/null
+  write_runtime_ebpf > /dev/null
   runtime_outbounds="$RUNTIME_OUTBOUNDS_FILE"
+  runtime_ebpf="$RUNTIME_EBPF_FILE"
 
   [ "$RUNTIME_NODE_COUNT" -gt 0 ] || die "当前节点目录没有可加载的节点配置: $CUR_OUTBOUND_DIR"
 
   # 节点与模式概要 (单行)
   log "INFO" "节点目录=$CUR_OUTBOUND_DIR 模式=$CUR_OUTBOUND_MODE 选择=$CUR_SELECTOR_MODE 已加载=$RUNTIME_NODE_COUNT 跳过=$RUNTIME_SKIPPED_COUNT"
 
-  # 构造启动参数：先基础参数，再逐个追加节点配置，最后追加运行时出站
+  # 构造启动参数：基础配置、节点配置、运行时出站与 eBPF 入站
   set -- run -C "$CONFDIR"
   while IFS= read -r node_path; do
     [ -n "$node_path" ] || continue
@@ -136,7 +133,7 @@ do_start() {
   done << EOF
 $RUNTIME_NODE_PATHS
 EOF
-  set -- "$@" -c "$runtime_outbounds"
+  set -- "$@" -c "$runtime_outbounds" -c "$runtime_ebpf"
 
   # 以 root:net_admin 身份后台启动进程
   log "DEBUG" "正在启动 sing-box 进程..."
@@ -153,54 +150,49 @@ EOF
     die "sing-box 启动失败，请检查日志: $SINGBOX_LOG_FILE"
   fi
 
-  # 等待控制接口就绪后同步运行模式与节点 (尽力而为：失败仅告警，不中止启动)
-  if api_wait_available 30 1; then
-    LOG_STDERR=0 LOG_LEVEL=WARN SWITCH_ALLOW_RESTART=0 sh "$SWITCH_SCRIPT" mode "$CUR_OUTBOUND_MODE" \
-      || log "WARN" "运行模式同步失败，将沿用配置默认模式"
-    # 手动选择模式下额外同步当前节点
-    if is_manual_selector "$CUR_SELECTOR_MODE"; then
-      LOG_STDERR=0 LOG_LEVEL=WARN SWITCH_ALLOW_RESTART=0 sh "$SWITCH_SCRIPT" config "$CUR_OUTBOUND_CONFIG" \
-        || log "WARN" "节点配置同步失败，将沿用配置默认节点"
-    fi
-  else
-    log "WARN" "控制接口在超时时间内未就绪，跳过模式/节点同步"
+  # 控制接口就绪代表 sing-box 与 eBPF 入站均已完成启动
+  if ! api_wait_available 30 1; then
+    log "ERROR" "控制接口未就绪，sing-box 服务启动失败"
+    kill "$new_pid" 2> /dev/null || true
+    count=0
+    while kill -0 "$new_pid" 2> /dev/null && [ "$count" -lt "$KILL_TIMEOUT" ]; do
+      sleep 1
+      count=$((count + 1))
+    done
+    kill -9 "$new_pid" 2> /dev/null || true
+    cleanup_runtime_files
+    die "请检查 sing-box 启动日志: $SINGBOX_LOG_FILE"
   fi
 
-  # 非跳过模式下加载透明代理规则
-  if [ "$skip_tproxy" != "1" ]; then
-    log "DEBUG" "正在加载透明代理规则..."
-    "$TPROXY_SCRIPT" start -d "$TPROXY_CONF_DIR" >> "$LOG_FILE" 2>&1 || die "透明代理规则加载失败"
-    # WiFi 自动切换：按配置启停监听守护并做初始决策 (失败不影响主流程)
-    sh "$NETMON_SCRIPT" sync > /dev/null 2>&1 || log "WARN" "WiFi 自动切换初始化失败"
-    # 订阅定时更新：按配置启停 crond 守护
-    sh "$SUBSCHED_SCRIPT" sync > /dev/null 2>&1 || log "WARN" "订阅定时更新初始化失败"
+  LOG_STDERR=0 LOG_LEVEL=WARN SWITCH_ALLOW_RESTART=0 sh "$SWITCH_SCRIPT" mode "$CUR_OUTBOUND_MODE" \
+    || log "WARN" "运行模式同步失败，将沿用配置默认模式"
+  # 手动选择模式下额外同步当前节点
+  if is_manual_selector "$CUR_SELECTOR_MODE"; then
+    LOG_STDERR=0 LOG_LEVEL=WARN SWITCH_ALLOW_RESTART=0 sh "$SWITCH_SCRIPT" config "$CUR_OUTBOUND_CONFIG" \
+      || log "WARN" "节点配置同步失败，将沿用配置默认节点"
   fi
+
+  # WiFi 自动切换与订阅调度不属于透明数据面，按各自配置独立启动
+  sh "$NETMON_SCRIPT" sync > /dev/null 2>&1 || log "WARN" "WiFi 自动切换初始化失败"
+  sh "$SUBSCHED_SCRIPT" sync > /dev/null 2>&1 || log "WARN" "订阅定时更新初始化失败"
 
   log "INFO" "sing-box 服务启动完成"
 }
 
 #######################################
 # 停止 sing-box 服务
-# 参数:
-#   $1  是否跳过透明代理清理 (1=跳过，默认 0)
+# 参数: 无
 # 返回: 无
 #######################################
 do_stop() {
-  local skip_tproxy="${1:-0}"
   local pid count
 
-  log_service_action "停止" "$skip_tproxy"
+  log_service_action "停止"
   verify_environment
 
-  # 先清理透明代理规则 (非跳过模式)
-  if [ "$skip_tproxy" != "1" ]; then
-    # 先停掉 WiFi 自动切换监听守护，避免其在清理期间误触发切换
-    sh "$NETMON_SCRIPT" stop > /dev/null 2>&1 || true
-    # 停掉订阅定时更新 crond 守护
-    sh "$SUBSCHED_SCRIPT" stop > /dev/null 2>&1 || true
-    log "DEBUG" "正在清理透明代理规则..."
-    "$TPROXY_SCRIPT" stop -d "$TPROXY_CONF_DIR" >> "$LOG_FILE" 2>&1 || true
-  fi
+  # 先停止外围守护，避免停机期间触发模式或订阅操作
+  sh "$NETMON_SCRIPT" stop > /dev/null 2>&1 || true
+  sh "$SUBSCHED_SCRIPT" stop > /dev/null 2>&1 || true
 
   # 进程不存在则清理运行时文件后返回，保证幂等
   pid="$(get_pid "$SING_BOX_BIN")"
@@ -221,7 +213,7 @@ do_stop() {
     done
 
     if kill -0 "$pid" 2> /dev/null; then
-      log "WARN" "进程未响应 SIGTERM，改用 SIGKILL"
+      log "WARN" "进程未完成 eBPF 清理，改用 SIGKILL；下次启动将接管残留挂载"
       kill -9 "$pid" 2> /dev/null || true
       # 给 SIGKILL 留出回收时间
       sleep 1
@@ -240,18 +232,15 @@ do_stop() {
 
 #######################################
 # 重启 sing-box 服务
-# 参数:
-#   $1  是否跳过透明代理 (1=仅核心，默认 0)
+# 参数: 无
 # 返回: 无
 #######################################
 do_restart() {
-  local skip_tproxy="${1:-0}"
+  log_service_action "重启"
 
-  log_service_action "重启" "$skip_tproxy"
-
-  do_stop "$skip_tproxy"
+  do_stop
   sleep 1
-  do_start "$skip_tproxy"
+  do_start
 }
 
 #######################################
@@ -297,19 +286,15 @@ EOF
 # 主入口：解析命令并分发
 # 参数:
 #   $1  命令 (start/stop/restart/status)
-#   $2  可选目标 (core=仅操作核心，跳过透明代理)
 # 返回: 依命令而定
 #######################################
 main() {
   local cmd="${1:-}"
-  # 第二参数为 core 时仅操作核心进程
-  local skip=0
-  [ "${2:-}" = "core" ] && skip=1
 
   case "$cmd" in
-    start) do_start "$skip" ;;
-    stop) do_stop "$skip" ;;
-    restart) do_restart "$skip" ;;
+    start) do_start ;;
+    stop) do_stop ;;
+    restart) do_restart ;;
     status) do_status ;;
     -h | --help | help) show_usage ;;
     *)

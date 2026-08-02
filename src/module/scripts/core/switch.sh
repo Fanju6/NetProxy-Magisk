@@ -43,9 +43,9 @@ is_service_running() {
 #######################################
 restart_service_if_allowed() {
   if [ "$SWITCH_ALLOW_RESTART" = "1" ]; then
-    log "DEBUG" "回退方式：重启核心服务以应用配置"
+    log "DEBUG" "回退方式：重启 sing-box 服务以应用配置"
     # su 包裹：让重启拉起的 sing-box 迁出冻结 cgroup (LOG_* 写入命令串内)
-    su -c "LOG_STDERR=0 LOG_LEVEL=WARN sh \"$SERVICE_SCRIPT\" restart core" || die "重启 sing-box 服务失败"
+    su -c "LOG_STDERR=0 LOG_LEVEL=WARN sh \"$SERVICE_SCRIPT\" restart" || die "重启 sing-box 服务失败"
   else
     log "WARN" "当前阶段不允许通过重启应用配置"
     return 1

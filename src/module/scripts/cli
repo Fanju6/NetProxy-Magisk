@@ -2,9 +2,9 @@
 #######################################
 # 文件: cli
 # 功能: NetProxy 命令行工具，统一管理服务、节点、模式、订阅、
-#       控制接口、分应用代理与透明代理等操作。
+#       控制接口、分应用代理与 eBPF 透明代理等操作。
 # 用法: cli <命令组> <子命令> [参数]，详见 show_help。
-#       命令组: service / node / mode / sub / api / app / tproxy / wifi
+#       命令组: service / node / mode / sub / api / app / ebpf / wifi
 # 依赖: common.sh、config.sh、api.sh、nodes.sh 及 core/network 下脚本。
 #######################################
 
@@ -16,8 +16,8 @@ readonly MODDIR="$(cd "$(dirname "$0")/.." && pwd)"
 readonly SCRIPTS_DIR="$MODDIR/scripts"
 readonly CONFIG_DIR="$MODDIR/config"
 readonly MODULE_CONF="$CONFIG_DIR/module.conf"              # 模块配置
-readonly TPROXY_DIR="$CONFIG_DIR/tproxy"                    # 透明代理配置目录
-readonly TPROXY_CONF="$TPROXY_DIR/tproxy.conf"             # 透明代理配置文件
+readonly EBPF_DIR="$CONFIG_DIR/ebpf"                        # eBPF 配置目录
+readonly EBPF_CONF="$EBPF_DIR/ebpf.conf"                   # eBPF 配置文件
 readonly SINGBOX_DIR="$CONFIG_DIR/singbox"                 # sing-box 配置根目录
 readonly SINGBOX_OUTBOUNDS_DIR="$SINGBOX_DIR/outbounds"    # 出站节点根目录
 readonly DEFAULT_NODES_DIR="$SINGBOX_OUTBOUNDS_DIR/default" # 默认节点目录
@@ -34,7 +34,6 @@ readonly SING_BOX_BIN="$MODDIR/bin/sing-box"
 readonly SERVICE_SCRIPT="$SCRIPTS_DIR/core/service.sh"
 readonly SWITCH_SCRIPT="$SCRIPTS_DIR/core/switch.sh"
 readonly SUB_SCRIPT="$SCRIPTS_DIR/core/subscription.sh"
-readonly TPROXY_SCRIPT="$SCRIPTS_DIR/network/tproxy.sh"
 
 # 控制接口相关常量 (供 api.sh 读取)
 readonly CLASH_API="127.0.0.1:9999"     # 控制器地址
@@ -248,14 +247,18 @@ show_wifi_help() {
 EOF
 }
 
-# 显示 tproxy 命令组帮助
-show_tproxy_help() {
+# 显示 ebpf 命令组帮助
+show_ebpf_help() {
   cat << EOF
 用法:
-  cli tproxy status                   查看透明代理配置
-  cli tproxy reload                   重载透明代理规则
-  cli tproxy quic <on|off>            开关 QUIC 阻断
-  cli tproxy cnip <on|off>            开关中国 IP 绕过
+  cli ebpf status                     查看 eBPF 配置
+  cli ebpf reload                     重新加载 eBPF 入站
+  cli ebpf dns <hijack|off>           设置 DNS 处理模式
+  cli ebpf ipv6 <on|off>              开关 IPv6 透明代理
+  cli ebpf shared <on|off>            开关热点与共享网络代理
+  cli ebpf interface list             查看共享网络接口
+  cli ebpf interface add <接口>       添加共享网络接口
+  cli ebpf interface remove <接口>    移除共享网络接口
 EOF
 }
 
@@ -263,9 +266,9 @@ EOF
 # service 命令
 #######################################
 
-# 显示服务状态：运行状态、PID、当前节点、模式与端口等
+# 显示服务状态：运行状态、PID、当前节点、模式与 eBPF 配置
 cmd_service_status() {
-  local pid current mode version api_mode tcp_port udp_port dns_port
+  local pid current mode version api_mode dns_mode ipv6 shared
 
   section "服务状态"
   pid="$(get_pid "$SING_BOX_BIN")"
@@ -279,16 +282,16 @@ cmd_service_status() {
     printf "运行状态: %s未运行%s\n" "$RED" "$NC"
   fi
 
-  # 读取持久化的节点/模式/端口配置
+  # 读取持久化的节点、模式与 eBPF 配置
   current="$(read_conf "$MODULE_CONF" "CURRENT_CONFIG" "")"
   mode="$(read_conf "$MODULE_CONF" "OUTBOUND_MODE" "rule")"
-  tcp_port="$(read_conf "$TPROXY_CONF" "PROXY_TCP_PORT" "-")"
-  udp_port="$(read_conf "$TPROXY_CONF" "PROXY_UDP_PORT" "-")"
-  dns_port="$(read_conf "$TPROXY_CONF" "DNS_PORT" "-")"
+  dns_mode="$(read_conf "$EBPF_CONF" "EBPF_DNS_MODE" "hijack")"
+  ipv6="$(read_conf "$EBPF_CONF" "EBPF_IPV6" "1")"
+  shared="$(read_conf "$EBPF_CONF" "EBPF_SHARED_NETWORK" "0")"
 
   [ -n "$current" ] && printf "当前节点: %s\n" "${current##*/}"
   printf "出站模式: %s\n" "$mode"
-  printf "透明代理端口: TCP=%s UDP=%s DNS=%s\n" "$tcp_port" "$udp_port" "$dns_port"
+  printf "透明代理: eBPF (DNS=%s IPv6=%s 共享网络=%s)\n" "$dns_mode" "$ipv6" "$shared"
 
   # 运行中时查询控制接口的实时模式
   if [ -n "$pid" ]; then
@@ -615,7 +618,7 @@ cmd_mode() {
   sh "$SWITCH_SCRIPT" mode "$mode"
 
   # 基础模式变化后重新应用当前 WiFi 策略，避免绕过网络被手动覆盖
-  if is_running && [ "$(read_conf "$TPROXY_CONF" "WIFI_AUTO_SWITCH" "0")" = "1" ]; then
+  if is_running && [ "$(read_conf "$MODULE_CONF" "WIFI_AUTO_SWITCH" "0")" = "1" ]; then
     sh "$NETMON_SCRIPT" eval > /dev/null 2>&1 || warn "WiFi 自动切换重新应用失败"
   fi
 }
@@ -787,12 +790,11 @@ cmd_api() {
 # app 命令
 #######################################
 
-# 服务运行中时重载透明代理规则，否则提示下次启动生效
-reload_tproxy_if_running() {
+# 服务运行中时重启 sing-box 以重建 eBPF 入站，否则提示下次启动生效
+apply_ebpf_config() {
   if is_running; then
-    info "正在重载透明代理规则..."
-    sh "$TPROXY_SCRIPT" restart -d "$TPROXY_DIR" > /dev/null 2>&1 || die_cli "透明代理规则重载失败"
-    info "透明代理规则已重载"
+    info "正在重启 sing-box 服务以应用 eBPF 入站配置..."
+    sh "$SERVICE_SCRIPT" restart || die_cli "sing-box 服务重启失败"
   else
     info "服务未运行，配置将在下次启动时生效"
   fi
@@ -800,10 +802,10 @@ reload_tproxy_if_running() {
 
 # 查看分应用代理配置
 cmd_app_list() {
-  printf "分应用代理: %s\n" "$(read_conf "$TPROXY_CONF" "APP_PROXY_ENABLE" "0")"
-  printf "应用模式: %s\n" "$(read_conf "$TPROXY_CONF" "APP_PROXY_MODE" "blacklist")"
-  printf "代理列表: %s\n" "$(read_conf "$TPROXY_CONF" "PROXY_APPS_LIST" "")"
-  printf "绕过列表: %s\n" "$(read_conf "$TPROXY_CONF" "BYPASS_APPS_LIST" "")"
+  printf "分应用代理: %s\n" "$(read_conf "$EBPF_CONF" "APP_PROXY_ENABLE" "1")"
+  printf "应用模式: %s\n" "$(read_conf "$EBPF_CONF" "APP_PROXY_MODE" "blacklist")"
+  printf "代理列表: %s\n" "$(read_conf "$EBPF_CONF" "PROXY_APPS_LIST" "")"
+  printf "绕过列表: %s\n" "$(read_conf "$EBPF_CONF" "BYPASS_APPS_LIST" "")"
 }
 
 # 设置分应用模式并启用。参数: $1 blacklist/whitelist
@@ -815,10 +817,10 @@ cmd_app_mode() {
     *) die_cli "用法: cli app mode <blacklist|whitelist>" ;;
   esac
 
-  set_conf "$TPROXY_CONF" "APP_PROXY_ENABLE" "1"
-  set_conf "$TPROXY_CONF" "APP_PROXY_MODE" "$(quote_conf "$mode")"
+  set_conf "$EBPF_CONF" "APP_PROXY_ENABLE" "1"
+  set_conf "$EBPF_CONF" "APP_PROXY_MODE" "$(quote_conf "$mode")"
   info "应用模式已设置为: $mode"
-  reload_tproxy_if_running
+  apply_ebpf_config
 }
 
 # 添加应用到当前模式对应的列表。参数: $1 包名
@@ -828,22 +830,22 @@ cmd_app_add() {
 
   [ -n "$package" ] || die_cli "用法: cli app add <包名>"
 
-  set_conf "$TPROXY_CONF" "APP_PROXY_ENABLE" "1"
-  mode="$(read_conf "$TPROXY_CONF" "APP_PROXY_MODE" "blacklist")"
+  set_conf "$EBPF_CONF" "APP_PROXY_ENABLE" "1"
+  mode="$(read_conf "$EBPF_CONF" "APP_PROXY_MODE" "blacklist")"
 
   # 白名单模式加入代理列表，黑名单模式加入绕过列表
   if [ "$mode" = "whitelist" ]; then
-    current_list="$(read_conf "$TPROXY_CONF" "PROXY_APPS_LIST" "")"
+    current_list="$(read_conf "$EBPF_CONF" "PROXY_APPS_LIST" "")"
     new_list="$(list_add "$current_list" "$package")"
-    set_conf "$TPROXY_CONF" "PROXY_APPS_LIST" "$(quote_conf "$new_list")"
+    set_conf "$EBPF_CONF" "PROXY_APPS_LIST" "$(quote_conf "$new_list")"
   else
-    current_list="$(read_conf "$TPROXY_CONF" "BYPASS_APPS_LIST" "")"
+    current_list="$(read_conf "$EBPF_CONF" "BYPASS_APPS_LIST" "")"
     new_list="$(list_add "$current_list" "$package")"
-    set_conf "$TPROXY_CONF" "BYPASS_APPS_LIST" "$(quote_conf "$new_list")"
+    set_conf "$EBPF_CONF" "BYPASS_APPS_LIST" "$(quote_conf "$new_list")"
   fi
 
   info "已添加应用: $package"
-  reload_tproxy_if_running
+  apply_ebpf_config
 }
 
 # 从代理与绕过列表中移除应用。参数: $1 包名
@@ -854,27 +856,27 @@ cmd_app_remove() {
   [ -n "$package" ] || die_cli "用法: cli app remove <包名>"
 
   # 同时从两个列表中移除
-  proxy_list="$(list_remove "$(read_conf "$TPROXY_CONF" "PROXY_APPS_LIST" "")" "$package")"
-  bypass_list="$(list_remove "$(read_conf "$TPROXY_CONF" "BYPASS_APPS_LIST" "")" "$package")"
-  set_conf "$TPROXY_CONF" "PROXY_APPS_LIST" "$(quote_conf "$proxy_list")"
-  set_conf "$TPROXY_CONF" "BYPASS_APPS_LIST" "$(quote_conf "$bypass_list")"
+  proxy_list="$(list_remove "$(read_conf "$EBPF_CONF" "PROXY_APPS_LIST" "")" "$package")"
+  bypass_list="$(list_remove "$(read_conf "$EBPF_CONF" "BYPASS_APPS_LIST" "")" "$package")"
+  set_conf "$EBPF_CONF" "PROXY_APPS_LIST" "$(quote_conf "$proxy_list")"
+  set_conf "$EBPF_CONF" "BYPASS_APPS_LIST" "$(quote_conf "$bypass_list")"
 
   info "已移除应用: $package"
-  reload_tproxy_if_running
+  apply_ebpf_config
 }
 
 # 启用分应用代理
 cmd_app_enable() {
-  set_conf "$TPROXY_CONF" "APP_PROXY_ENABLE" "1"
+  set_conf "$EBPF_CONF" "APP_PROXY_ENABLE" "1"
   info "分应用代理已启用"
-  reload_tproxy_if_running
+  apply_ebpf_config
 }
 
 # 禁用分应用代理
 cmd_app_disable() {
-  set_conf "$TPROXY_CONF" "APP_PROXY_ENABLE" "0"
+  set_conf "$EBPF_CONF" "APP_PROXY_ENABLE" "0"
   info "分应用代理已禁用"
-  reload_tproxy_if_running
+  apply_ebpf_config
 }
 
 # app 命令组分发
@@ -895,66 +897,114 @@ cmd_app() {
 }
 
 #######################################
-# tproxy 命令
+# ebpf 命令
 #######################################
 
-# 查看透明代理配置
-cmd_tproxy_status() {
-  section "透明代理配置"
-  printf "TCP 端口: %s\n" "$(read_conf "$TPROXY_CONF" "PROXY_TCP_PORT" "-")"
-  printf "UDP 端口: %s\n" "$(read_conf "$TPROXY_CONF" "PROXY_UDP_PORT" "-")"
-  printf "DNS 端口: %s\n" "$(read_conf "$TPROXY_CONF" "DNS_PORT" "-")"
-  printf "代理模式: %s\n" "$(read_conf "$TPROXY_CONF" "PROXY_MODE" "0")"
-  printf "分应用代理: %s\n" "$(read_conf "$TPROXY_CONF" "APP_PROXY_ENABLE" "0")"
-  printf "阻断 QUIC: %s\n" "$(read_conf "$TPROXY_CONF" "BLOCK_QUIC" "0")"
-  printf "绕过中国 IP: %s\n" "$(read_conf "$TPROXY_CONF" "BYPASS_CN_IP" "0")"
+# 查看 eBPF 入站配置
+cmd_ebpf_status() {
+  section "eBPF 入站配置"
+  printf "网络类型: %s\n" "$(read_conf "$EBPF_CONF" "EBPF_NETWORK" "")"
+  printf "UDP 超时: %s\n" "$(read_conf "$EBPF_CONF" "EBPF_UDP_TIMEOUT" "5m")"
+  printf "DNS 模式: %s\n" "$(read_conf "$EBPF_CONF" "EBPF_DNS_MODE" "hijack")"
+  printf "IPv6 代理: %s\n" "$(read_conf "$EBPF_CONF" "EBPF_IPV6" "1")"
+  printf "内核绕过规则集: %s\n" "$(read_conf "$EBPF_CONF" "EBPF_BYPASS_RULE_SETS" "direct cn-ip")"
+  printf "共享网络代理: %s\n" "$(read_conf "$EBPF_CONF" "EBPF_SHARED_NETWORK" "0")"
+  printf "共享网络接口: %s\n" "$(read_conf "$EBPF_CONF" "EBPF_SHARED_INTERFACES" "wlan2")"
+  printf "TCP 映射容量: %s\n" "$(read_conf "$EBPF_CONF" "EBPF_TCP_MAP_CAPACITY" "65536")"
+  printf "UDP 映射容量: %s\n" "$(read_conf "$EBPF_CONF" "EBPF_UDP_MAP_CAPACITY" "65536")"
+  printf "套接字绕过容量: %s\n" "$(read_conf "$EBPF_CONF" "EBPF_SOCKET_MAP_CAPACITY" "65536")"
+  printf "共享网络容量: %s\n" "$(read_conf "$EBPF_CONF" "EBPF_SHARED_MAP_CAPACITY" "65536")"
 }
 
-# 重载透明代理规则
-cmd_tproxy_reload() {
-  reload_tproxy_if_running
+# 重建运行时配置并重新加载 eBPF 入站
+cmd_ebpf_reload() {
+  apply_ebpf_config
 }
 
-# 开关 QUIC 阻断。参数: $1 on/off
-cmd_tproxy_quic() {
+# 设置 DNS 处理模式。参数: $1 hijack/off
+cmd_ebpf_dns() {
   local value="${1:-}"
 
   case "$value" in
-    on) set_conf "$TPROXY_CONF" "BLOCK_QUIC" "1" ;;
-    off) set_conf "$TPROXY_CONF" "BLOCK_QUIC" "0" ;;
-    *) die_cli "用法: cli tproxy quic <on|off>" ;;
+    hijack | off) set_conf "$EBPF_CONF" "EBPF_DNS_MODE" "$(quote_conf "$value")" ;;
+    *) die_cli "用法: cli ebpf dns <hijack|off>" ;;
   esac
 
-  info "QUIC 设置已更新: $value"
-  reload_tproxy_if_running
+  info "DNS 模式已更新: $value"
+  apply_ebpf_config
 }
 
-# 开关中国 IP 绕过。参数: $1 on/off
-cmd_tproxy_cnip() {
-  local value="${1:-}"
+# 修改布尔配置并应用。参数: $1 配置键 $2 on/off $3 名称
+set_ebpf_switch() {
+  local key="$1"
+  local value="$2"
+  local name="$3"
 
   case "$value" in
-    on) set_conf "$TPROXY_CONF" "BYPASS_CN_IP" "1" ;;
-    off) set_conf "$TPROXY_CONF" "BYPASS_CN_IP" "0" ;;
-    *) die_cli "用法: cli tproxy cnip <on|off>" ;;
+    on) set_conf "$EBPF_CONF" "$key" "1" ;;
+    off) set_conf "$EBPF_CONF" "$key" "0" ;;
+    *) die_cli "$name 只能设置为 on 或 off" ;;
   esac
 
-  info "中国 IP 绕过已更新: $value"
-  reload_tproxy_if_running
+  info "$name 已更新: $value"
+  apply_ebpf_config
 }
 
-# tproxy 命令组分发
-cmd_tproxy() {
+# 开关 IPv6 透明代理。参数: $1 on/off
+cmd_ebpf_ipv6() {
+  [ -n "${1:-}" ] || die_cli "用法: cli ebpf ipv6 <on|off>"
+  set_ebpf_switch "EBPF_IPV6" "$1" "IPv6 透明代理"
+}
+
+# 开关共享网络代理。参数: $1 on/off
+cmd_ebpf_shared() {
+  [ -n "${1:-}" ] || die_cli "用法: cli ebpf shared <on|off>"
+  set_ebpf_switch "EBPF_SHARED_NETWORK" "$1" "共享网络代理"
+}
+
+# 管理共享网络接口。参数: $1 list/add/remove $2 接口名
+cmd_ebpf_interface() {
+  local action="${1:-list}"
+  local interface="${2:-}"
+  local interfaces
+
+  interfaces="$(read_conf "$EBPF_CONF" "EBPF_SHARED_INTERFACES" "wlan2")"
+  case "$action" in
+    list)
+      for interface in $interfaces; do
+        printf "  - %s\n" "$interface"
+      done
+      ;;
+    add)
+      [ -n "$interface" ] || die_cli "用法: cli ebpf interface add <接口>"
+      set_conf "$EBPF_CONF" "EBPF_SHARED_INTERFACES" "$(quote_conf "$(list_add "$interfaces" "$interface")")"
+      info "已添加共享网络接口: $interface"
+      apply_ebpf_config
+      ;;
+    remove | rm)
+      [ -n "$interface" ] || die_cli "用法: cli ebpf interface remove <接口>"
+      set_conf "$EBPF_CONF" "EBPF_SHARED_INTERFACES" "$(quote_conf "$(list_remove "$interfaces" "$interface")")"
+      info "已移除共享网络接口: $interface"
+      apply_ebpf_config
+      ;;
+    *) die_cli "用法: cli ebpf interface <list|add|remove> [接口]" ;;
+  esac
+}
+
+# ebpf 命令组分发
+cmd_ebpf() {
   local subcmd="${1:-status}"
   shift 2> /dev/null || true
 
   case "$subcmd" in
-    status) cmd_tproxy_status "$@" ;;
-    reload | restart) cmd_tproxy_reload "$@" ;;
-    quic) cmd_tproxy_quic "$@" ;;
-    cnip) cmd_tproxy_cnip "$@" ;;
-    help | -h | --help) show_tproxy_help ;;
-    *) die_cli "用法错误，使用 cli tproxy help 查看帮助" ;;
+    status) cmd_ebpf_status "$@" ;;
+    reload | restart) cmd_ebpf_reload "$@" ;;
+    dns) cmd_ebpf_dns "$@" ;;
+    ipv6) cmd_ebpf_ipv6 "$@" ;;
+    shared) cmd_ebpf_shared "$@" ;;
+    interface) cmd_ebpf_interface "$@" ;;
+    help | -h | --help) show_ebpf_help ;;
+    *) die_cli "用法错误，使用 cli ebpf help 查看帮助" ;;
   esac
 }
 
@@ -1010,10 +1060,10 @@ wifi_list_del() {
 cmd_wifi_status() {
   local state api_mode cellular_mode
   section "WiFi 自动切换"
-  printf "自动切换: %s\n" "$(read_conf "$TPROXY_CONF" "WIFI_AUTO_SWITCH" "0")"
-  printf "名单模式: %s\n" "$(read_conf "$TPROXY_CONF" "WIFI_SSID_MODE" "blacklist")"
-  printf "SSID 名单: %s\n" "$(read_conf "$TPROXY_CONF" "WIFI_SSID_LIST" "")"
-  cellular_mode="$(read_conf "$TPROXY_CONF" "PROXY_ON_CELLULAR" "1")"
+  printf "自动切换: %s\n" "$(read_conf "$MODULE_CONF" "WIFI_AUTO_SWITCH" "0")"
+  printf "名单模式: %s\n" "$(read_conf "$MODULE_CONF" "WIFI_SSID_MODE" "blacklist")"
+  printf "SSID 名单: %s\n" "$(read_conf "$MODULE_CONF" "WIFI_SSID_LIST" "")"
+  cellular_mode="$(read_conf "$MODULE_CONF" "PROXY_ON_CELLULAR" "1")"
   if [ "$cellular_mode" = "1" ]; then
     cellular_mode="基础模式"
   else
@@ -1038,14 +1088,14 @@ cmd_wifi_status() {
 
 # 启用 WiFi 自动切换
 cmd_wifi_on() {
-  set_conf "$TPROXY_CONF" "WIFI_AUTO_SWITCH" "1"
+  set_conf "$MODULE_CONF" "WIFI_AUTO_SWITCH" "1"
   info "WiFi 自动切换已启用"
   wifi_apply
 }
 
 # 禁用 WiFi 自动切换
 cmd_wifi_off() {
-  set_conf "$TPROXY_CONF" "WIFI_AUTO_SWITCH" "0"
+  set_conf "$MODULE_CONF" "WIFI_AUTO_SWITCH" "0"
   info "WiFi 自动切换已禁用"
   wifi_apply
 }
@@ -1057,7 +1107,7 @@ cmd_wifi_mode() {
     blacklist | whitelist) ;;
     *) die_cli "用法: cli wifi mode <blacklist|whitelist>" ;;
   esac
-  set_conf "$TPROXY_CONF" "WIFI_SSID_MODE" "$(quote_conf "$mode")"
+  set_conf "$MODULE_CONF" "WIFI_SSID_MODE" "$(quote_conf "$mode")"
   info "名单模式已设置为: $mode"
   wifi_apply
 }
@@ -1067,8 +1117,8 @@ cmd_wifi_add() {
   local ssid="${1:-}"
   local new_list
   [ -n "$ssid" ] || die_cli "用法: cli wifi add <SSID>"
-  new_list="$(wifi_list_add "$(read_conf "$TPROXY_CONF" "WIFI_SSID_LIST" "")" "$ssid")"
-  set_conf "$TPROXY_CONF" "WIFI_SSID_LIST" "$(quote_conf "$new_list")"
+  new_list="$(wifi_list_add "$(read_conf "$MODULE_CONF" "WIFI_SSID_LIST" "")" "$ssid")"
+  set_conf "$MODULE_CONF" "WIFI_SSID_LIST" "$(quote_conf "$new_list")"
   info "已添加 SSID: $ssid"
   wifi_apply
 }
@@ -1078,8 +1128,8 @@ cmd_wifi_del() {
   local ssid="${1:-}"
   local new_list
   [ -n "$ssid" ] || die_cli "用法: cli wifi del <SSID>"
-  new_list="$(wifi_list_del "$(read_conf "$TPROXY_CONF" "WIFI_SSID_LIST" "")" "$ssid")"
-  set_conf "$TPROXY_CONF" "WIFI_SSID_LIST" "$(quote_conf "$new_list")"
+  new_list="$(wifi_list_del "$(read_conf "$MODULE_CONF" "WIFI_SSID_LIST" "")" "$ssid")"
+  set_conf "$MODULE_CONF" "WIFI_SSID_LIST" "$(quote_conf "$new_list")"
   info "已移除 SSID: $ssid"
   wifi_apply
 }
@@ -1087,7 +1137,7 @@ cmd_wifi_del() {
 # 列出名单
 cmd_wifi_list() {
   local list
-  list="$(read_conf "$TPROXY_CONF" "WIFI_SSID_LIST" "")"
+  list="$(read_conf "$MODULE_CONF" "WIFI_SSID_LIST" "")"
   if [ -z "$list" ]; then
     printf "名单为空\n"
     return 0
@@ -1099,7 +1149,7 @@ cmd_wifi_list() {
 
 # 清空名单
 cmd_wifi_clear() {
-  set_conf "$TPROXY_CONF" "WIFI_SSID_LIST" "$(quote_conf "")"
+  set_conf "$MODULE_CONF" "WIFI_SSID_LIST" "$(quote_conf "")"
   info "名单已清空"
   wifi_apply
 }
@@ -1108,8 +1158,8 @@ cmd_wifi_clear() {
 cmd_wifi_cellular() {
   local value="${1:-}"
   case "$value" in
-    on) set_conf "$TPROXY_CONF" "PROXY_ON_CELLULAR" "1" ;;
-    off) set_conf "$TPROXY_CONF" "PROXY_ON_CELLULAR" "0" ;;
+    on) set_conf "$MODULE_CONF" "PROXY_ON_CELLULAR" "1" ;;
+    off) set_conf "$MODULE_CONF" "PROXY_ON_CELLULAR" "0" ;;
     *) die_cli "用法: cli wifi cellular <on|off>" ;;
   esac
   info "非 WiFi 网络模式已更新: $value"
@@ -1188,11 +1238,13 @@ NetProxy CLI
   cli app enable                      启用分应用代理
   cli app disable                     禁用分应用代理
 
-透明代理:
-  cli tproxy status                   查看透明代理配置
-  cli tproxy reload                   重载透明代理规则
-  cli tproxy quic <on|off>            开关 QUIC 阻断
-  cli tproxy cnip <on|off>            开关中国 IP 绕过
+eBPF 透明代理:
+  cli ebpf status                     查看 eBPF 配置
+  cli ebpf reload                     重新加载 eBPF 入站
+  cli ebpf dns <hijack|off>           设置 DNS 处理模式
+  cli ebpf ipv6 <on|off>              开关 IPv6 透明代理
+  cli ebpf shared <on|off>            开关热点与共享网络代理
+  cli ebpf interface <list|add|remove> 管理共享网络接口
 
 WiFi 自动切换:
   cli wifi status                     查看 WiFi 自动切换配置
@@ -1207,7 +1259,7 @@ EOF
 #######################################
 # 主入口：解析命令组并分发到对应处理函数
 # 参数:
-#   $1  命令组 (service/node/mode/sub/api/app/tproxy/help)
+#   $1  命令组 (service/node/mode/sub/api/app/ebpf/wifi/help)
 #   $@  传递给命令组的子命令与参数
 # 返回: 依命令组而定
 #######################################
@@ -1226,7 +1278,7 @@ main() {
     sub) cmd_sub "$@" ;;
     api) cmd_api "$@" ;;
     app) cmd_app "$@" ;;
-    tproxy) cmd_tproxy "$@" ;;
+    ebpf) cmd_ebpf "$@" ;;
     wifi) cmd_wifi "$@" ;;
     help | -h | --help) show_help ;;
     *) die_cli "未知命令组: $group，使用 cli help 查看帮助" ;;

@@ -18,8 +18,6 @@ set -u  # 引用未定义变量报错
 
 # 模块根目录与关键路径
 readonly MODDIR="$(cd "$(dirname "$0")/../.." && pwd)"
-readonly TPROXY_DIR="$MODDIR/config/tproxy"
-readonly TPROXY_CONF="$TPROXY_DIR/tproxy.conf"
 readonly MODULE_CONF="$MODDIR/config/module.conf"
 # 运行时临时目录放 tmpfs (/dev)：不磨损 flash、重启自动清空、不污染模块目录
 readonly RUN_DIR="/dev/netproxy"
@@ -284,11 +282,11 @@ decide_and_apply() {
 # 返回: 无
 #######################################
 load_wifi_conf() {
-  WIFI_AUTO_SWITCH="$(read_conf "$TPROXY_CONF" "WIFI_AUTO_SWITCH" "0")"
-  WIFI_SSID_MODE="$(read_conf "$TPROXY_CONF" "WIFI_SSID_MODE" "blacklist")"
-  WIFI_SSID_LIST="$(read_conf "$TPROXY_CONF" "WIFI_SSID_LIST" "")"
-  PROXY_ON_CELLULAR="$(read_conf "$TPROXY_CONF" "PROXY_ON_CELLULAR" "1")"
-  WIFI_INTERFACE="$(read_conf "$TPROXY_CONF" "WIFI_INTERFACE" "wlan0")"
+  WIFI_AUTO_SWITCH="$(read_conf "$MODULE_CONF" "WIFI_AUTO_SWITCH" "0")"
+  WIFI_SSID_MODE="$(read_conf "$MODULE_CONF" "WIFI_SSID_MODE" "blacklist")"
+  WIFI_SSID_LIST="$(read_conf "$MODULE_CONF" "WIFI_SSID_LIST" "")"
+  PROXY_ON_CELLULAR="$(read_conf "$MODULE_CONF" "PROXY_ON_CELLULAR" "1")"
+  WIFI_INTERFACE="$(read_conf "$MODULE_CONF" "WIFI_INTERFACE" "wlan0")"
 }
 
 #######################################
@@ -382,6 +380,5 @@ main() {
 }
 
 main "$@"
-
 
 
