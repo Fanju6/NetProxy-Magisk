@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f4f7f6" />
+    <link rel="icon" type="image/svg+xml" href="./netproxy/favicon.svg" />
+    <link rel="stylesheet" href="https://mui.kernelsu.org/internal/insets.css" />
+    <title>NetProxy</title>
+    <script>
+      if (location.port === "9999" || location.port === "9090") {
+        document.documentElement.classList.add("panel-mode");
+      }
+    </script>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #f4f7f6;
+        color: #17201d;
+      }
+
+      * {
+        box-sizing: border-box;
+        letter-spacing: 0;
+      }
+
+      body {
+        min-width: 280px;
+        min-height: 100vh;
+        margin: 0;
+        background: #f4f7f6;
+      }
+
+      html.panel-mode,
+      html.panel-mode body {
+        width: 100%;
+        height: 100%;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+        background: #000000;
+      }
+
+      html.panel-mode main {
+        display: none;
+      }
+
+      .panel-frame {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        background: #000000;
+      }
+
+      main {
+        width: min(100%, 720px);
+        margin: 0 auto;
+        padding:
+          max(clamp(48px, 12vh, 108px), var(--safe-area-inset-top, env(safe-area-inset-top)))
+          max(20px, var(--safe-area-inset-right, env(safe-area-inset-right)))
+          max(28px, var(--safe-area-inset-bottom, env(safe-area-inset-bottom)))
+          max(20px, var(--safe-area-inset-left, env(safe-area-inset-left)));
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 30px;
+      }
+
+      .brand-icon {
+        width: 54px;
+        height: 54px;
+        flex: 0 0 54px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 28px;
+        line-height: 1.2;
+        font-weight: 720;
+      }
+
+      .subtitle {
+        margin: 5px 0 0;
+        color: #52615c;
+        font-size: 14px;
+        line-height: 1.45;
+      }
+
+      .entries {
+        display: grid;
+        gap: 12px;
+      }
+
+      .entry {
+        display: grid;
+        grid-template-columns: 48px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 14px;
+        min-height: 88px;
+        padding: 16px;
+        color: inherit;
+        text-decoration: none;
+        background: #ffffff;
+        border: 1px solid #d8e0dd;
+        border-radius: 8px;
+        transition: border-color 150ms ease, background-color 150ms ease, transform 150ms ease;
+      }
+
+      .entry:hover,
+      .entry:focus-visible {
+        background: #f9fffc;
+        border-color: #168a66;
+        outline: none;
+        transform: translateY(-1px);
+      }
+
+      .entry:active {
+        transform: translateY(0);
+      }
+
+      .entry-icon {
+        width: 48px;
+        height: 48px;
+        object-fit: contain;
+        border-radius: 8px;
+      }
+
+      .entry-title {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 17px;
+        line-height: 1.3;
+        font-weight: 680;
+      }
+
+      .entry-description {
+        display: block;
+        color: #5c6965;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .entry-action {
+        min-width: 54px;
+        color: #087a58;
+        font-size: 14px;
+        font-weight: 650;
+        text-align: right;
+      }
+
+      footer {
+        margin-top: 22px;
+        color: #687570;
+        font-size: 12px;
+        line-height: 1.5;
+        text-align: center;
+      }
+
+      @media (max-width: 440px) {
+        main {
+          padding-right: max(14px, var(--safe-area-inset-right, env(safe-area-inset-right)));
+          padding-left: max(14px, var(--safe-area-inset-left, env(safe-area-inset-left)));
+        }
+
+        .entry {
+          grid-template-columns: 42px minmax(0, 1fr);
+          gap: 12px;
+          padding: 14px;
+        }
+
+        .entry-icon {
+          width: 42px;
+          height: 42px;
+        }
+
+        .entry-action {
+          display: none;
+        }
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root,
+        body {
+          background: #151a18;
+          color: #edf4f1;
+        }
+
+        .subtitle,
+        .entry-description,
+        footer {
+          color: #aab6b1;
+        }
+
+        .entry {
+          background: #202724;
+          border-color: #39443f;
+        }
+
+        .entry:hover,
+        .entry:focus-visible {
+          background: #25302c;
+          border-color: #4ec9a0;
+        }
+
+        .entry-action {
+          color: #72dbb6;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <img class="brand-icon" src="./netproxy/favicon.svg" alt="" />
+        <div>
+          <h1>NetProxy</h1>
+          <p class="subtitle">选择管理界面</p>
+        </div>
+      </header>
+
+      <nav class="entries" aria-label="管理界面">
+        <a class="entry" href="./netproxy/index.html#/dashboard">
+          <img class="entry-icon" src="./netproxy/favicon.svg" alt="" />
+          <span>
+            <span class="entry-title">NetProxy WebUI</span>
+            <span class="entry-description">管理服务、节点、应用与模块设置</span>
+          </span>
+          <span class="entry-action">打开</span>
+        </a>
+
+        <a class="entry" href="http://127.0.0.1:9999/ui/">
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="./zashboard/favicon-dark.svg" />
+            <img class="entry-icon" src="./zashboard/favicon.svg" alt="" />
+          </picture>
+          <span>
+            <span class="entry-title">zashboard</span>
+            <span class="entry-description">查看代理组、连接、规则与实时流量</span>
+          </span>
+          <span class="entry-action">打开</span>
+        </a>
+
+        <a class="entry" href="http://127.0.0.1:9090/dashboard/">
+          <img class="entry-icon" src="./sing-box-dashboard/favicon.svg" alt="" />
+          <span>
+            <span class="entry-title">sing-box Dashboard</span>
+            <span class="entry-description">查看内核状态、日志、连接与网络测试</span>
+          </span>
+          <span class="entry-action">打开</span>
+        </a>
+      </nav>
+
+      <footer>控制面板需要 sing-box 服务运行</footer>
+    </main>
+    <script>
+      (function () {
+        var port = location.port;
+        var frame;
+
+        function createFrame(src, title, onLoad) {
+          frame = document.createElement("iframe");
+          frame.className = "panel-frame";
+          frame.title = title;
+          frame.allow = "clipboard-read; clipboard-write; fullscreen";
+          frame.allowFullscreen = true;
+          if (onLoad) {
+            frame.addEventListener("load", onLoad);
+          }
+          frame.src = src;
+          document.body.appendChild(frame);
+        }
+
+        function syncPanelInsets(styleId, styleText) {
+          var frameDocument;
+          var frameRoot;
+          var parentStyle;
+          var insetNames = [
+            "--safe-area-inset-top",
+            "--safe-area-inset-right",
+            "--safe-area-inset-bottom",
+            "--safe-area-inset-left"
+          ];
+
+          try {
+            frameDocument = frame.contentDocument;
+            frameRoot = frameDocument.documentElement;
+            parentStyle = getComputedStyle(document.documentElement);
+
+            insetNames.forEach(function (name) {
+              var value = parentStyle.getPropertyValue(name).trim();
+              if (value) {
+                frameRoot.style.setProperty(name, value);
+              }
+            });
+
+            if (!frameDocument.getElementById("netproxy-insets")) {
+              var link = frameDocument.createElement("link");
+              link.id = "netproxy-insets";
+              link.rel = "stylesheet";
+              link.href = "https://mui.kernelsu.org/internal/insets.css";
+              frameDocument.head.appendChild(link);
+            }
+
+            if (!frameDocument.getElementById(styleId)) {
+              var style = frameDocument.createElement("style");
+              style.id = styleId;
+              style.textContent = styleText;
+              frameDocument.head.appendChild(style);
+            }
+          } catch (_) {
+            // 面板尚未完成加载时由下一次 load 事件重试。
+          }
+        }
+
+        function syncZashboardInsets() {
+          syncPanelInsets(
+            "netproxy-zashboard-style",
+            "@media (max-width: 1023px) {" +
+            "#app-content .need-blur.fixed.top-0 {" +
+            "padding-top: max(36px, var(--safe-area-inset-top, 0px), env(safe-area-inset-top, 0px));" +
+            "}" +
+            "}"
+          );
+        }
+
+        function syncServiceDashboardInsets() {
+          syncPanelInsets(
+            "netproxy-service-dashboard-style",
+            "@media (max-width: 720px) {" +
+            "header[class*='_mobile-topbar_'] {" +
+            "padding-top: calc(var(--space-6) + max(36px, var(--safe-area-inset-top, 0px), env(safe-area-inset-top, 0px))) !important;" +
+            "}" +
+            "nav[class*='_sidebar_'] {" +
+            "padding-top: calc(var(--space-20) + max(36px, var(--safe-area-inset-top, 0px), env(safe-area-inset-top, 0px))) !important;" +
+            "}" +
+            "}"
+          );
+        }
+
+        function configureServiceDashboard() {
+          var storageKey = "sing-box-dashboard.servers";
+          var localServer = {
+            id: "netproxy-service-api",
+            name: "NetProxy",
+            url: "127.0.0.1:9090",
+            secret: "singbox"
+          };
+          var servers = [];
+
+          try {
+            var saved = JSON.parse(localStorage.getItem(storageKey) || "null");
+            if (saved && Array.isArray(saved.servers)) {
+              servers = saved.servers.filter(function (server) {
+                var url = String(server && server.url || "")
+                  .replace(/^https?:\/\//i, "")
+                  .replace(/\/+$/, "");
+                return server &&
+                  server.id !== localServer.id &&
+                  url !== "127.0.0.1:9090" &&
+                  url !== "127.0.0.1:9999";
+              });
+            }
+
+            localStorage.setItem(storageKey, JSON.stringify({
+              servers: [localServer].concat(servers),
+              activeId: localServer.id
+            }));
+          } catch (_) {
+            localStorage.setItem(storageKey, JSON.stringify({
+              servers: [localServer],
+              activeId: localServer.id
+            }));
+          }
+        }
+
+        if (port === "9999") {
+          document.title = "zashboard";
+          createFrame(
+            "./zashboard/index.html#/setup?hostname=127.0.0.1&port=9999&secret=singbox",
+            "zashboard",
+            syncZashboardInsets
+          );
+        } else if (port === "9090") {
+          document.title = "sing-box Dashboard";
+          configureServiceDashboard();
+          createFrame(
+            "./sing-box-dashboard/index.html#/",
+            "sing-box Dashboard",
+            syncServiceDashboardInsets
+          );
+        }
+      })();
+    </script>
+  </body>
+</html>

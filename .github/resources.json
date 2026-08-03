@@ -23,10 +23,18 @@
   ],
   "githubRelease": [
     {
-      "path": "src/module/bin/zashboard",
+      "path": "src/module/webroot/zashboard",
       "repo": "Zephyruso/zashboard",
       "assetPattern": "dist-no-fonts.zip",
       "currentVersion": "v3.16.1"
+    }
+  ],
+  "githubArchive": [
+    {
+      "path": "src/module/webroot/sing-box-dashboard",
+      "repo": "SagerNet/sing-box-dashboard",
+      "ref": "gh-pages",
+      "currentCommit": "4254b9c42e70b622953dca6c79bf3451bc50a489"
     }
   ]
 }

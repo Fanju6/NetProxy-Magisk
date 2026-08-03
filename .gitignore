@@ -7,5 +7,5 @@
 # Claude Code 本地项目指引 (不纳入仓库)
 CLAUDE.md
 
-# WebUI 构建产物 (由 src/webui 构建生成，不纳入仓库)
-src/module/webroot/
+# NetProxy WebUI 构建产物（由 src/webui 构建生成，不纳入仓库）
+src/module/webroot/netproxy/

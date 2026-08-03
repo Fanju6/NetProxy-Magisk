@@ -26,7 +26,7 @@ runs:
         cache: npm
         cache-dependency-path: src/webui/package-lock.json
 
-    - name: 构建 WebUI（产物 → src/module/webroot）
+    - name: 构建 WebUI（产物 → src/module/webroot/netproxy）
       shell: bash
       working-directory: src/webui
       run: |

@@ -758,16 +758,18 @@ cmd_api_close_all() {
   info "全部连接已关闭"
 }
 
-# 显示控制器与面板访问地址及密钥
+# 显示控制接口与面板访问地址及密钥
 cmd_api_ui() {
   local ip
 
   ip="$(detect_primary_ipv4)"
   [ -n "$ip" ] || ip="<设备IP>"
 
-  printf "控制地址: http://%s:9999\n" "$ip"
-  printf "面板地址: http://%s:9999/ui\n" "$ip"
-  printf "密钥: %s\n" "$(api_secret)"
+  printf "Clash API: http://%s:9999\n" "$ip"
+  printf "zashboard: http://%s:9999/ui/\n" "$ip"
+  printf "Service API: http://%s:9090\n" "$ip"
+  printf "sing-box Dashboard: http://%s:9090/dashboard/\n" "$ip"
+  printf "控制密钥: %s\n" "$(api_secret)"
 }
 
 # api 命令组分发

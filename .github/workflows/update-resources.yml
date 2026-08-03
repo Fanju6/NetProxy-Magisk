@@ -115,6 +115,60 @@ jobs:
             echo "ZASHBOARD_EOF"
           } >> "$GITHUB_OUTPUT"
 
+      - name: 更新 sing-box Dashboard
+        id: singbox_dashboard
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          repo="$(jq -r '.githubArchive[0].repo' .github/resources.json)"
+          ref="$(jq -r '.githubArchive[0].ref' .github/resources.json)"
+          dest="$(jq -r '.githubArchive[0].path' .github/resources.json)"
+          current="$(jq -r '.githubArchive[0].currentCommit' .github/resources.json)"
+          latest="$(gh api "repos/${repo}/commits/${ref}" --jq '.sha')"
+
+          echo "sing-box Dashboard 当前: '${current:-无}'，最新: '$latest'"
+
+          summary=""
+          if [ "$latest" != "$current" ]; then
+            echo "发现上游更新，开始同步..."
+            rm -rf tmp-sing-box-dashboard
+            mkdir -p tmp-sing-box-dashboard/extract
+
+            if curl -fsSL --retry 3 --connect-timeout 15 \
+              "https://github.com/${repo}/archive/${latest}.zip" \
+              -o tmp-sing-box-dashboard/dashboard.zip; then
+              unzip -q tmp-sing-box-dashboard/dashboard.zip -d tmp-sing-box-dashboard/extract
+              srcdir="$(find tmp-sing-box-dashboard/extract -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+
+              if [ -n "$srcdir" ] && [ -f "$srcdir/index.html" ]; then
+                rm -rf "$dest"
+                mkdir -p "$dest"
+                cp -r "$srcdir"/. "$dest"/
+
+                tmpjson="$(mktemp)"
+                jq --arg commit "$latest" \
+                  '.githubArchive[0].currentCommit = $commit' \
+                  .github/resources.json > "$tmpjson"
+                mv "$tmpjson" .github/resources.json
+                summary="- ${dest}：sing-box Dashboard ${current:0:7} → ${latest:0:7}"
+              else
+                echo "::warning::归档中没有找到 Dashboard 入口文件，跳过更新"
+              fi
+            else
+              echo "::warning::下载 sing-box Dashboard 失败，跳过更新"
+            fi
+
+            rm -rf tmp-sing-box-dashboard
+          else
+            echo "已是最新，跳过"
+          fi
+
+          {
+            echo "summary<<SING_BOX_DASHBOARD_EOF"
+            printf '%s\n' "$summary"
+            echo "SING_BOX_DASHBOARD_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: 更新 npm 依赖
         id: npm
         run: |
@@ -230,6 +284,7 @@ jobs:
             ### 内置资源
             ${{ steps.raw.outputs.summary }}
             ${{ steps.zashboard.outputs.summary }}
+            ${{ steps.singbox_dashboard.outputs.summary }}
 
             ### npm 依赖
             ${{ steps.npm.outputs.summary }}
