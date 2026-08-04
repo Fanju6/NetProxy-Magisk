@@ -25,6 +25,14 @@ jobs:
       - name: 拉取代码
         uses: actions/checkout@v7
 
+      - name: 初始化更新报告
+        shell: bash
+        run: |
+          report_dir="$RUNNER_TEMP/netproxy-update-report"
+          rm -rf "$report_dir"
+          mkdir -p "$report_dir"
+          echo "UPDATE_REPORT_DIR=$report_dir" >> "$GITHUB_ENV"
+
       - name: 检查 sing-box 内核
         id: singbox_check
         env:
@@ -94,6 +102,7 @@ jobs:
         if: steps.singbox_check.outputs.changed == 'true'
         id: singbox
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAGS: ${{ steps.singbox_check.outputs.build_tags }}
           CGO_ENABLED: '1'
           GOOS: android
@@ -106,6 +115,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          old_size=0
+          if [ -f "$SING_BOX_TARGET" ]; then
+            old_size="$(stat -c '%s' "$SING_BOX_TARGET")"
+          fi
 
           make -C .sing-box-source build
           test -s .sing-box-source/sing-box
@@ -120,14 +134,48 @@ jobs:
             '.singBox.currentVersion = $version' \
             .github/resources.json > "$tmpjson"
           mv "$tmpjson" .github/resources.json
-          sha256sum "$SING_BOX_TARGET"
-          rm -rf .sing-box-source
+          new_size="$(stat -c '%s' "$SING_BOX_TARGET")"
+          binary_sha256="$(sha256sum "$SING_BOX_TARGET" | cut -d ' ' -f 1)"
+          release_json="$(gh api "repos/${{ steps.singbox_check.outputs.repo }}/releases/tags/${LATEST_VERSION}" 2>/dev/null || printf '{}')"
+          release_url="$(jq -r '.html_url // empty' <<< "$release_json")"
+          release_notes="$(jq -r '.body // empty' <<< "$release_json")"
+          published_at="$(jq -r '.published_at // empty' <<< "$release_json")"
+          compare_url="https://github.com/${{ steps.singbox_check.outputs.repo }}/compare/${CURRENT_VERSION}...${LATEST_VERSION}"
+          build_tags="$(jq -c '.singBox.buildTags' .github/resources.json)"
 
-          {
-            echo "summary<<SING_BOX_EOF"
-            echo "- ${SING_BOX_TARGET}：reF1nd sing-box ${CURRENT_VERSION} → ${LATEST_VERSION}"
-            echo "SING_BOX_EOF"
-          } >> "$GITHUB_OUTPUT"
+          jq -n \
+            --arg name "sing-box 内核" \
+            --arg repo "${{ steps.singbox_check.outputs.repo }}" \
+            --arg path "$SING_BOX_TARGET" \
+            --arg currentVersion "$CURRENT_VERSION" \
+            --arg latestVersion "$LATEST_VERSION" \
+            --arg releaseUrl "$release_url" \
+            --arg compareUrl "$compare_url" \
+            --arg releaseNotes "$release_notes" \
+            --arg publishedAt "$published_at" \
+            --arg sha256 "$binary_sha256" \
+            --argjson oldSize "$old_size" \
+            --argjson newSize "$new_size" \
+            --argjson buildTags "$build_tags" \
+            '{
+              name: $name,
+              repo: $repo,
+              path: $path,
+              currentVersion: $currentVersion,
+              latestVersion: $latestVersion,
+              releaseUrl: $releaseUrl,
+              compareUrl: $compareUrl,
+              releaseNotes: $releaseNotes,
+              publishedAt: $publishedAt,
+              oldSize: $oldSize,
+              newSize: $newSize,
+              sha256: $sha256,
+              buildTags: $buildTags,
+              checks: ["ARM64 架构", "版本信息匹配", "包含 eBPF", "包含 Tailscale"]
+            }' > "$UPDATE_REPORT_DIR/sing-box.json"
+
+          echo "sing-box SHA-256: $binary_sha256"
+          rm -rf .sing-box-source
 
       - name: 配置 Node.js
         uses: actions/setup-node@v7
@@ -140,56 +188,151 @@ jobs:
 
       - name: 更新原始资源文件
         id: raw
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
-          changed=""
-          # 逐条读取清单 raw 数组（path<TAB>url）
-          while IFS=$'\t' read -r path url; do
-            [ -n "$path" ] || continue
+          set -euo pipefail
+
+          report='[]'
+
+          count_rules() {
+            repo="$1"
+            commit="$2"
+            metadata_path="$3"
+
+            [ -n "$repo" ] && [ -n "$commit" ] && [ -n "$metadata_path" ] || return 0
+            curl -fsSL --retry 2 --connect-timeout 10 \
+              "https://raw.githubusercontent.com/${repo}/${commit}/${metadata_path}" 2>/dev/null |
+              jq '[.rules[]? | to_entries[] | select(.value | type == "array") | (.value | length)] | add // 0' 2>/dev/null || true
+          }
+
+          while IFS= read -r encoded; do
+            [ -n "$encoded" ] || continue
+            item="$(base64 -d <<< "$encoded")"
+            name="$(jq -r '.name' <<< "$item")"
+            path="$(jq -r '.path' <<< "$item")"
+            url="$(jq -r '.url' <<< "$item")"
+            repo="$(jq -r '.repo' <<< "$item")"
+            ref="$(jq -r '.ref' <<< "$item")"
+            source_path="$(jq -r '.sourcePath' <<< "$item")"
+            metadata_path="$(jq -r '.metadataPath // empty' <<< "$item")"
+            current_commit="$(jq -r '.currentCommit // empty' <<< "$item")"
+
             echo "检查: $path ← $url"
             tmp="$(mktemp)"
             if ! curl -fsSL --retry 3 --connect-timeout 15 "$url" -o "$tmp"; then
               echo "::warning::下载失败，跳过: $url"
-              rm -f "$tmp"; continue
+              rm -f "$tmp"
+              continue
             fi
             if [ ! -s "$tmp" ]; then
               echo "::warning::内容为空，跳过: $url"
-              rm -f "$tmp"; continue
+              rm -f "$tmp"
+              continue
             fi
+
             if [ ! -f "$path" ] || ! cmp -s "$tmp" "$path"; then
+              old_size=0
+              old_sha256=""
+              if [ -f "$path" ]; then
+                old_size="$(stat -c '%s' "$path")"
+                old_sha256="$(sha256sum "$path" | cut -d ' ' -f 1)"
+              fi
+
+              commit_json="$(gh api "repos/${repo}/commits?path=${source_path}&sha=${ref}&per_page=1" 2>/dev/null || printf '[]')"
+              latest_commit="$(jq -r '.[0].sha // empty' <<< "$commit_json")"
+              commit_message="$(jq -r '.[0].commit.message // empty' <<< "$commit_json")"
+              commit_date="$(jq -r '.[0].commit.committer.date // empty' <<< "$commit_json")"
+              commit_url="$(jq -r '.[0].html_url // empty' <<< "$commit_json")"
+
               mkdir -p "$(dirname "$path")"
               mv "$tmp" "$path"
+              new_size="$(stat -c '%s' "$path")"
+              new_sha256="$(sha256sum "$path" | cut -d ' ' -f 1)"
+              old_rule_count="$(count_rules "$repo" "$current_commit" "$metadata_path")"
+              new_rule_count="$(count_rules "$repo" "$latest_commit" "$metadata_path")"
+              compare_url=""
+              if [ -n "$current_commit" ] && [ -n "$latest_commit" ] && [ "$current_commit" != "$latest_commit" ]; then
+                compare_url="https://github.com/${repo}/compare/${current_commit}...${latest_commit}"
+              fi
+
+              entry="$(jq -n \
+                --arg name "$name" \
+                --arg path "$path" \
+                --arg repo "$repo" \
+                --arg currentCommit "$current_commit" \
+                --arg latestCommit "$latest_commit" \
+                --arg commitMessage "$commit_message" \
+                --arg commitDate "$commit_date" \
+                --arg commitUrl "$commit_url" \
+                --arg compareUrl "$compare_url" \
+                --arg oldSha256 "$old_sha256" \
+                --arg newSha256 "$new_sha256" \
+                --arg oldRuleCount "$old_rule_count" \
+                --arg newRuleCount "$new_rule_count" \
+                --argjson oldSize "$old_size" \
+                --argjson newSize "$new_size" \
+                '{
+                  name: $name,
+                  path: $path,
+                  repo: $repo,
+                  currentCommit: $currentCommit,
+                  latestCommit: $latestCommit,
+                  commitMessage: $commitMessage,
+                  commitDate: $commitDate,
+                  commitUrl: $commitUrl,
+                  compareUrl: $compareUrl,
+                  oldSize: $oldSize,
+                  newSize: $newSize,
+                  oldSha256: $oldSha256,
+                  newSha256: $newSha256,
+                  oldRuleCount: (if $oldRuleCount == "" then null else ($oldRuleCount | tonumber) end),
+                  newRuleCount: (if $newRuleCount == "" then null else ($newRuleCount | tonumber) end)
+                }')"
+              report="$(jq --argjson entry "$entry" '. + [$entry]' <<< "$report")"
+
+              if [ -n "$latest_commit" ]; then
+                tmpjson="$(mktemp)"
+                jq --arg path "$path" --arg commit "$latest_commit" \
+                  '(.raw[] | select(.path == $path).currentCommit) = $commit' \
+                  .github/resources.json > "$tmpjson"
+                mv "$tmpjson" .github/resources.json
+              fi
+
               echo "  → 已更新"
-              changed="${changed}- ${path}（上游内容变化）"$'\n'
             else
               rm -f "$tmp"
               echo "  → 无变化"
             fi
-          done < <(jq -r '.raw[] | [.path, .url] | @tsv' .github/resources.json)
+          done < <(jq -r '.raw[] | @base64' .github/resources.json)
 
-          {
-            echo "summary<<RESOURCES_EOF"
-            printf '%s' "$changed"
-            echo "RESOURCES_EOF"
-          } >> "$GITHUB_OUTPUT"
+          jq . <<< "$report" > "$UPDATE_REPORT_DIR/rules.json"
 
       - name: 更新 zashboard 仪表盘
         id: zashboard
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
+          set -euo pipefail
+
           repo="$(jq -r '.githubRelease[0].repo' .github/resources.json)"
           dest="$(jq -r '.githubRelease[0].path' .github/resources.json)"
           pattern="$(jq -r '.githubRelease[0].assetPattern' .github/resources.json)"
           current="$(jq -r '.githubRelease[0].currentVersion' .github/resources.json)"
 
-          latest="$(gh release view --repo "$repo" --json tagName -q .tagName)"
+          release_json="$(gh release view --repo "$repo" --json tagName,name,publishedAt,url,body)"
+          latest="$(jq -r '.tagName' <<< "$release_json")"
           echo "zashboard 当前: '${current:-无}'，最新: '$latest'"
 
-          summary=""
           if [ "$latest" != "$current" ]; then
             echo "发现新版本，开始更新..."
             rm -rf tmp-zashboard && mkdir -p tmp-zashboard
             if gh release download "$latest" --repo "$repo" --pattern "$pattern" --dir tmp-zashboard; then
+              asset="$(find tmp-zashboard -maxdepth 1 -type f | head -n 1)"
+              asset_size="$(stat -c '%s' "$asset")"
+              asset_sha256="$(sha256sum "$asset" | cut -d ' ' -f 1)"
               unzip -q tmp-zashboard/*.zip -d tmp-zashboard/extract
               # 若解压出单个顶层目录（dist/ 或 dist-no-fonts/ 等），进入它；否则用解压根
               srcdir="tmp-zashboard/extract"
@@ -204,7 +347,34 @@ jobs:
               tmpjson="$(mktemp)"
               jq --arg v "$latest" '.githubRelease[0].currentVersion = $v' .github/resources.json > "$tmpjson"
               mv "$tmpjson" .github/resources.json
-              summary="- ${dest}：zashboard ${current:-初始} → ${latest}"
+
+              jq -n \
+                --arg name "zashboard" \
+                --arg repo "$repo" \
+                --arg path "$dest" \
+                --arg currentVersion "$current" \
+                --arg latestVersion "$latest" \
+                --arg releaseName "$(jq -r '.name // empty' <<< "$release_json")" \
+                --arg publishedAt "$(jq -r '.publishedAt // empty' <<< "$release_json")" \
+                --arg releaseUrl "$(jq -r '.url // empty' <<< "$release_json")" \
+                --arg releaseNotes "$(jq -r '.body // empty' <<< "$release_json")" \
+                --arg assetPattern "$pattern" \
+                --arg assetSha256 "$asset_sha256" \
+                --argjson assetSize "$asset_size" \
+                '{
+                  name: $name,
+                  repo: $repo,
+                  path: $path,
+                  currentVersion: $currentVersion,
+                  latestVersion: $latestVersion,
+                  releaseName: $releaseName,
+                  publishedAt: $publishedAt,
+                  releaseUrl: $releaseUrl,
+                  releaseNotes: $releaseNotes,
+                  assetPattern: $assetPattern,
+                  assetSize: $assetSize,
+                  assetSha256: $assetSha256
+                }' > "$UPDATE_REPORT_DIR/zashboard.json"
             else
               echo "::warning::未找到资产 '$pattern'，跳过 zashboard 更新（请核对 assetPattern）"
             fi
@@ -213,26 +383,25 @@ jobs:
             echo "已是最新，跳过"
           fi
 
-          {
-            echo "summary<<ZASHBOARD_EOF"
-            printf '%s\n' "$summary"
-            echo "ZASHBOARD_EOF"
-          } >> "$GITHUB_OUTPUT"
-
       - name: 更新 sing-box Dashboard
         id: singbox_dashboard
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
+          set -euo pipefail
+
           repo="$(jq -r '.githubArchive[0].repo' .github/resources.json)"
           ref="$(jq -r '.githubArchive[0].ref' .github/resources.json)"
           dest="$(jq -r '.githubArchive[0].path' .github/resources.json)"
           current="$(jq -r '.githubArchive[0].currentCommit' .github/resources.json)"
-          latest="$(gh api "repos/${repo}/commits/${ref}" --jq '.sha')"
+          current_source="$(jq -r '.githubArchive[0].currentSourceCommit // empty' .github/resources.json)"
+          latest_json="$(gh api "repos/${repo}/commits/${ref}")"
+          latest="$(jq -r '.sha' <<< "$latest_json")"
+          latest_source="$(jq -r '.commit.message' <<< "$latest_json" | sed -nE 's/^Deploy ([0-9a-f]{40}).*/\1/p')"
 
           echo "sing-box Dashboard 当前: '${current:-无}'，最新: '$latest'"
 
-          summary=""
           if [ "$latest" != "$current" ]; then
             echo "发现上游更新，开始同步..."
             rm -rf tmp-sing-box-dashboard
@@ -250,11 +419,60 @@ jobs:
                 cp -r "$srcdir"/. "$dest"/
 
                 tmpjson="$(mktemp)"
-                jq --arg commit "$latest" \
-                  '.githubArchive[0].currentCommit = $commit' \
+                jq --arg commit "$latest" --arg sourceCommit "$latest_source" \
+                  '.githubArchive[0].currentCommit = $commit |
+                   if $sourceCommit != ""
+                   then .githubArchive[0].currentSourceCommit = $sourceCommit
+                   else .
+                   end' \
                   .github/resources.json > "$tmpjson"
                 mv "$tmpjson" .github/resources.json
-                summary="- ${dest}：sing-box Dashboard ${current:0:7} → ${latest:0:7}"
+
+                compare_json='{}'
+                if [ -n "$current_source" ] && [ -n "$latest_source" ] && [ "$current_source" != "$latest_source" ]; then
+                  compare_json="$(gh api "repos/${repo}/compare/${current_source}...${latest_source}" 2>/dev/null || printf '{}')"
+                fi
+
+                commits="$(jq -c '[.commits[]? | {
+                  sha: .sha,
+                  message: .commit.message,
+                  date: .commit.committer.date,
+                  url: .html_url
+                }]' <<< "$compare_json")"
+                file_count="$(jq '[.files[]?] | length' <<< "$compare_json")"
+                additions="$(jq '[.files[]?.additions] | add // 0' <<< "$compare_json")"
+                deletions="$(jq '[.files[]?.deletions] | add // 0' <<< "$compare_json")"
+                compare_url="$(jq -r '.html_url // empty' <<< "$compare_json")"
+
+                jq -n \
+                  --arg name "sing-box Dashboard" \
+                  --arg repo "$repo" \
+                  --arg path "$dest" \
+                  --arg currentCommit "$current" \
+                  --arg latestCommit "$latest" \
+                  --arg currentSourceCommit "$current_source" \
+                  --arg latestSourceCommit "$latest_source" \
+                  --arg deployCommitUrl "$(jq -r '.html_url // empty' <<< "$latest_json")" \
+                  --arg compareUrl "$compare_url" \
+                  --argjson fileCount "$file_count" \
+                  --argjson additions "$additions" \
+                  --argjson deletions "$deletions" \
+                  --argjson commits "$commits" \
+                  '{
+                    name: $name,
+                    repo: $repo,
+                    path: $path,
+                    currentCommit: $currentCommit,
+                    latestCommit: $latestCommit,
+                    currentSourceCommit: $currentSourceCommit,
+                    latestSourceCommit: $latestSourceCommit,
+                    deployCommitUrl: $deployCommitUrl,
+                    compareUrl: $compareUrl,
+                    fileCount: $fileCount,
+                    additions: $additions,
+                    deletions: $deletions,
+                    commits: $commits
+                  }' > "$UPDATE_REPORT_DIR/sing-box-dashboard.json"
               else
                 echo "::warning::归档中没有找到 Dashboard 入口文件，跳过更新"
               fi
@@ -267,20 +485,21 @@ jobs:
             echo "已是最新，跳过"
           fi
 
-          {
-            echo "summary<<SING_BOX_DASHBOARD_EOF"
-            printf '%s\n' "$summary"
-            echo "SING_BOX_DASHBOARD_EOF"
-          } >> "$GITHUB_OUTPUT"
-
       - name: 更新 npm 依赖
         id: npm
+        shell: bash
         run: |
-          summary=""
+          set -euo pipefail
+
+          report='[]'
 
           update_npm_project() {
             project="$1"
             label="$2"
+            before_package="$(mktemp)"
+            before_lock="$(mktemp)"
+            cp "$project/package.json" "$before_package"
+            cp "$project/package-lock.json" "$before_lock"
 
             echo "更新 ${label}: ${project}"
             (
@@ -290,25 +509,77 @@ jobs:
             )
 
             if ! git diff --quiet -- "$project/package.json" "$project/package-lock.json"; then
-              summary="${summary}- ${label}：npm 依赖及锁文件已更新"$'\n'
+              direct_changes="$(jq -n \
+                --slurpfile before "$before_package" \
+                --slurpfile after "$project/package.json" '
+                  [
+                    ("dependencies", "devDependencies") as $type |
+                    (((($before[0][$type] // {}) + ($after[0][$type] // {})) | keys[])) as $name |
+                    select(($before[0][$type][$name] // null) != ($after[0][$type][$name] // null)) |
+                    {
+                      name: $name,
+                      from: ($before[0][$type][$name] // "未安装"),
+                      to: ($after[0][$type][$name] // "已移除"),
+                      type: $type
+                    }
+                  ]')"
+
+              lock_changes="$(jq -n \
+                --slurpfile before "$before_lock" \
+                --slurpfile after "$project/package-lock.json" '
+                  def versions($document):
+                    reduce (($document.packages // {}) | to_entries[]) as $item ({};
+                      if ($item.value.version // null) != null
+                      then .[$item.key] = $item.value.version
+                      else .
+                      end
+                    );
+                  (versions($before[0])) as $old |
+                  (versions($after[0])) as $new |
+                  [
+                    (($old + $new) | keys[]) as $key |
+                    select(($old[$key] // null) != ($new[$key] // null)) |
+                    {
+                      path: $key,
+                      from: ($old[$key] // "未安装"),
+                      to: ($new[$key] // "已移除")
+                    }
+                  ]')"
+              lock_change_count="$(jq 'length' <<< "$lock_changes")"
+              lock_preview="$(jq '.[0:20]' <<< "$lock_changes")"
+              project_report="$(jq -n \
+                --arg path "$project" \
+                --arg label "$label" \
+                --argjson changes "$direct_changes" \
+                --argjson lockfileChanges "$lock_preview" \
+                --argjson lockfileChangeCount "$lock_change_count" \
+                '{
+                  path: $path,
+                  label: $label,
+                  changes: $changes,
+                  lockfileChanges: $lockfileChanges,
+                  lockfileChangeCount: $lockfileChangeCount
+                }')"
+              report="$(jq --argjson project "$project_report" '. + [$project]' <<< "$report")"
             fi
+
+            rm -f "$before_package" "$before_lock"
           }
 
           update_npm_project "docs" "文档站"
           update_npm_project "src/webui" "WebUI"
 
-          {
-            echo "summary<<NPM_EOF"
-            printf '%s' "$summary"
-            echo "NPM_EOF"
-          } >> "$GITHUB_OUTPUT"
+          jq . <<< "$report" > "$UPDATE_REPORT_DIR/npm.json"
 
       - name: 更新 GitHub Actions
         id: actions
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
-          summary=""
+          set -euo pipefail
+
+          report='[]'
           specs="$(
             grep -RhoE \
               --include='*.yml' \
@@ -324,14 +595,15 @@ jobs:
             current="${spec##*@}"
             current_number="${current#v}"
 
-            latest="$(
-              gh api "repos/${action}/releases/latest" --jq '.tag_name' 2>/dev/null ||
-              gh api --paginate "repos/${action}/tags?per_page=100" --jq '.[].name' 2>/dev/null |
+            release_json="$(gh api "repos/${action}/releases/latest" 2>/dev/null || printf '{}')"
+            latest="$(jq -r '.tag_name // empty' <<< "$release_json")"
+            if [ -z "$latest" ]; then
+              latest="$(gh api --paginate "repos/${action}/tags?per_page=100" --jq '.[].name' 2>/dev/null |
                 grep -E '^v[0-9]+([.][0-9]+){0,2}$' |
                 sort -V |
                 tail -n 1 ||
-              true
-            )"
+                true)"
+            fi
             latest_major="$(printf '%s\n' "$latest" | sed -nE 's/^(v[0-9]+).*/\1/p')"
 
             if [ -z "$latest_major" ]; then
@@ -352,21 +624,65 @@ jobs:
               "${escaped_action}@${current}([^0-9]|$)" \
               .github |
               xargs -r sed -i -E "s#${escaped_action}@${current}([^0-9]|$)#${action}@${latest_major}\1#g"
-            summary="${summary}- ${action}：${current} → ${latest_major}"$'\n'
+
+            release_url="$(jq -r '.html_url // empty' <<< "$release_json")"
+            if [ -z "$release_url" ]; then
+              release_url="https://github.com/${action}/releases/tag/${latest}"
+            fi
+            entry="$(jq -n \
+              --arg name "$action" \
+              --arg current "$current" \
+              --arg latestMajor "$latest_major" \
+              --arg latestRelease "$latest" \
+              --arg releaseName "$(jq -r '.name // empty' <<< "$release_json")" \
+              --arg publishedAt "$(jq -r '.published_at // empty' <<< "$release_json")" \
+              --arg releaseUrl "$release_url" \
+              --arg repositoryUrl "https://github.com/${action}" \
+              '{
+                name: $name,
+                current: $current,
+                latestMajor: $latestMajor,
+                latestRelease: $latestRelease,
+                releaseName: $releaseName,
+                publishedAt: $publishedAt,
+                releaseUrl: $releaseUrl,
+                repositoryUrl: $repositoryUrl
+              }')"
+            report="$(jq --argjson entry "$entry" '. + [$entry]' <<< "$report")"
           done <<< "$specs"
 
-          {
-            echo "summary<<ACTIONS_EOF"
-            printf '%s' "$summary"
-            echo "ACTIONS_EOF"
-          } >> "$GITHUB_OUTPUT"
+          jq . <<< "$report" > "$UPDATE_REPORT_DIR/actions.json"
 
       - name: 验证 npm 项目
         run: |
+          set -euo pipefail
+
           npm ci --prefix docs --no-audit --no-fund
           npm run build --prefix docs
           npm ci --prefix src/webui --no-audit --no-fund
           npm run build --prefix src/webui
+          git diff --check
+          node --check .github/scripts/render-update-report.mjs
+
+          jq -n '[
+            "文档站构建通过",
+            "WebUI 构建通过",
+            "Git 差异检查通过",
+            "PR 更新报告脚本检查通过"
+          ]' > "$UPDATE_REPORT_DIR/verification.json"
+
+      - name: 生成 Pull Request 说明
+        id: update_report
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          body_path="$RUNNER_TEMP/update-resources-pr.md"
+          node .github/scripts/render-update-report.mjs \
+            --report-dir "$UPDATE_REPORT_DIR" \
+            --body "$body_path" \
+            --output "$GITHUB_OUTPUT"
+          cat "$body_path" >> "$GITHUB_STEP_SUMMARY"
 
       - name: 开启 / 更新 Pull Request
         uses: peter-evans/create-pull-request@v8
@@ -375,28 +691,6 @@ jobs:
           delete-branch: true
           base: main
           labels: resources
-          title: "chore(维护): 更新资源、内核与依赖"
-          commit-message: |
-            chore(维护): 更新资源、内核与依赖
-
-            由「每周更新资源、内核与依赖」工作流自动检测并同步。
-          body: |
-            ## 每周自动更新
-
-            本 PR 由[每周更新资源、内核与依赖](${{ github.server_url }}/${{ github.repository }}/actions/workflows/update-resources.yml)工作流自动生成。
-
-            ### 内置资源
-            ${{ steps.raw.outputs.summary }}
-            ${{ steps.zashboard.outputs.summary }}
-            ${{ steps.singbox_dashboard.outputs.summary }}
-
-            ### sing-box 内核
-            ${{ steps.singbox.outputs.summary }}
-
-            ### npm 依赖
-            ${{ steps.npm.outputs.summary }}
-
-            ### GitHub Actions
-            ${{ steps.actions.outputs.summary }}
-
-            > 合并后将触发 CI 重新构建打包；请先核对 diff 是否符合预期。
+          title: ${{ steps.update_report.outputs.title }}
+          commit-message: ${{ steps.update_report.outputs.title }}
+          body-path: ${{ steps.update_report.outputs.body_path }}
