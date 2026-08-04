@@ -229,7 +229,7 @@ See the [NetProxy documentation](https://www.netproxy.store/) for complete insta
 
 | Project | Role |
 |---------|------|
-| [CHIZI-0618/sing-box](https://github.com/CHIZI-0618/sing-box) | eBPF inbound and current proxy core |
+| [reF1nd/sing-box](https://github.com/reF1nd/sing-box) | eBPF inbound and current proxy core |
 | [SagerNet/sing-box](https://github.com/SagerNet/sing-box) | Upstream sing-box project |
 | [Proxylink](https://github.com/Fanju6/Proxylink) | Node, subscription, and configuration conversion |
 | [AsteriskNG](https://github.com/Asterisk4Magisk/AsteriskNG) | Android eBPF implementation reference |

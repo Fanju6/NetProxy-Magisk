@@ -244,7 +244,7 @@ su -c '/data/adb/modules/netproxy/scripts/cli service logs sub 100'
 
 | 项目 | 用途 |
 |------|------|
-| [CHIZI-0618/sing-box](https://github.com/CHIZI-0618/sing-box) | eBPF 入站与当前代理核心 |
+| [reF1nd/sing-box](https://github.com/reF1nd/sing-box) | eBPF 入站与当前代理核心 |
 | [SagerNet/sing-box](https://github.com/SagerNet/sing-box) | 上游 sing-box 项目 |
 | [Proxylink](https://github.com/Fanju6/Proxylink) | 节点、订阅与配置转换 |
 | [AsteriskNG](https://github.com/Asterisk4Magisk/AsteriskNG) | Android eBPF 实现参考 |

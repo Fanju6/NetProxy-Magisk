@@ -21,6 +21,26 @@
       "url": "https://raw.githubusercontent.com/Repcz/Tool/X/sing-box/Rules/Proxy.srs"
     }
   ],
+  "singBox": {
+    "path": "src/module/bin/sing-box",
+    "repo": "reF1nd/sing-box",
+    "tagPattern": "^v[0-9].*-reF1nd$",
+    "currentVersion": "v1.14.0-beta.5-reF1nd",
+    "goVersion": "1.25.12",
+    "ndkVersion": "r25c",
+    "buildTags": [
+      "with_gvisor",
+      "with_quic",
+      "with_dhcp",
+      "with_utls",
+      "with_clash_api",
+      "with_tailscale",
+      "badlinkname",
+      "tfogo_checklinkname0",
+      "with_provider",
+      "with_ebpf"
+    ]
+  },
   "githubRelease": [
     {
       "path": "src/module/webroot/zashboard",

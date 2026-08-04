@@ -1,6 +1,6 @@
-name: 每周更新资源与依赖
+name: 每周更新资源、内核与依赖
 
-# 每周检查内置上游资源、npm 依赖与 GitHub Actions，
+# 每周检查内置上游资源、sing-box 内核、npm 依赖与 GitHub Actions，
 # 有更新则汇总到一个 PR（人工 review 合并后由 ci.yml 重建打包）。
 # 资源清单见 .github/resources.json，新增/调整资源只改清单、无需动本文件。
 
@@ -19,11 +19,115 @@ concurrency:
 
 jobs:
   update:
-    name: 检查并更新资源与依赖
+    name: 检查并更新资源、内核与依赖
     runs-on: ubuntu-latest
     steps:
       - name: 拉取代码
         uses: actions/checkout@v7
+
+      - name: 检查 sing-box 内核
+        id: singbox_check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          repo="$(jq -r '.singBox.repo' .github/resources.json)"
+          pattern="$(jq -r '.singBox.tagPattern' .github/resources.json)"
+          current="$(jq -r '.singBox.currentVersion' .github/resources.json)"
+          target="$(jq -r '.singBox.path' .github/resources.json)"
+          go_version="$(jq -r '.singBox.goVersion' .github/resources.json)"
+          ndk_version="$(jq -r '.singBox.ndkVersion' .github/resources.json)"
+          build_tags="$(jq -r '.singBox.buildTags | join(",")' .github/resources.json)"
+          latest="$({
+            gh api --paginate "repos/${repo}/tags?per_page=100" --jq '.[].name' |
+              grep -E "$pattern" |
+              sort -V |
+              tail -n 1
+          } || true)"
+
+          if [ -z "$latest" ]; then
+            echo "::error::未找到匹配的 reF1nd sing-box 版本标签"
+            exit 1
+          fi
+
+          changed=false
+          if [ "$latest" != "$current" ]; then
+            changed=true
+          fi
+
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          echo "repo=$repo" >> "$GITHUB_OUTPUT"
+          echo "current_version=$current" >> "$GITHUB_OUTPUT"
+          echo "latest_version=$latest" >> "$GITHUB_OUTPUT"
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+          echo "go_version=$go_version" >> "$GITHUB_OUTPUT"
+          echo "ndk_version=$ndk_version" >> "$GITHUB_OUTPUT"
+          echo "build_tags=$build_tags" >> "$GITHUB_OUTPUT"
+
+      - name: 拉取 sing-box 上游源码
+        if: steps.singbox_check.outputs.changed == 'true'
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.singbox_check.outputs.repo }}
+          ref: ${{ steps.singbox_check.outputs.latest_version }}
+          fetch-depth: 0
+          persist-credentials: false
+          path: .sing-box-source
+
+      - name: 配置 sing-box Go 环境
+        if: steps.singbox_check.outputs.changed == 'true'
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ steps.singbox_check.outputs.go_version }}
+          cache-dependency-path: .sing-box-source/go.sum
+
+      - name: 配置 Android NDK
+        if: steps.singbox_check.outputs.changed == 'true'
+        id: setup_singbox_ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: ${{ steps.singbox_check.outputs.ndk_version }}
+
+      - name: 更新 sing-box eBPF 内核
+        if: steps.singbox_check.outputs.changed == 'true'
+        id: singbox
+        env:
+          TAGS: ${{ steps.singbox_check.outputs.build_tags }}
+          CGO_ENABLED: '1'
+          GOOS: android
+          GOARCH: arm64
+          CC: ${{ steps.setup_singbox_ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang
+          BPF_CLANG: ${{ steps.setup_singbox_ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang
+          SING_BOX_TARGET: ${{ steps.singbox_check.outputs.target }}
+          CURRENT_VERSION: ${{ steps.singbox_check.outputs.current_version }}
+          LATEST_VERSION: ${{ steps.singbox_check.outputs.latest_version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          make -C .sing-box-source build
+          test -s .sing-box-source/sing-box
+          file .sing-box-source/sing-box | grep -q 'ARM aarch64'
+          go version -m .sing-box-source/sing-box | grep -q "${LATEST_VERSION#v}"
+          go version -m .sing-box-source/sing-box | grep -q 'with_ebpf'
+          go version -m .sing-box-source/sing-box | grep -q 'with_tailscale'
+
+          install -m 0755 .sing-box-source/sing-box "$SING_BOX_TARGET"
+          tmpjson="$(mktemp)"
+          jq --arg version "$LATEST_VERSION" \
+            '.singBox.currentVersion = $version' \
+            .github/resources.json > "$tmpjson"
+          mv "$tmpjson" .github/resources.json
+          sha256sum "$SING_BOX_TARGET"
+          rm -rf .sing-box-source
+
+          {
+            echo "summary<<SING_BOX_EOF"
+            echo "- ${SING_BOX_TARGET}：reF1nd sing-box ${CURRENT_VERSION} → ${LATEST_VERSION}"
+            echo "SING_BOX_EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: 配置 Node.js
         uses: actions/setup-node@v7
@@ -271,20 +375,23 @@ jobs:
           delete-branch: true
           base: main
           labels: resources
-          title: "chore(维护): 更新资源与依赖"
+          title: "chore(维护): 更新资源、内核与依赖"
           commit-message: |
-            chore(维护): 更新资源与依赖
+            chore(维护): 更新资源、内核与依赖
 
-            由「每周更新资源与依赖」工作流自动检测并同步。
+            由「每周更新资源、内核与依赖」工作流自动检测并同步。
           body: |
             ## 每周自动更新
 
-            本 PR 由[每周更新资源与依赖](${{ github.server_url }}/${{ github.repository }}/actions/workflows/update-resources.yml)工作流自动生成。
+            本 PR 由[每周更新资源、内核与依赖](${{ github.server_url }}/${{ github.repository }}/actions/workflows/update-resources.yml)工作流自动生成。
 
             ### 内置资源
             ${{ steps.raw.outputs.summary }}
             ${{ steps.zashboard.outputs.summary }}
             ${{ steps.singbox_dashboard.outputs.summary }}
+
+            ### sing-box 内核
+            ${{ steps.singbox.outputs.summary }}
 
             ### npm 依赖
             ${{ steps.npm.outputs.summary }}
