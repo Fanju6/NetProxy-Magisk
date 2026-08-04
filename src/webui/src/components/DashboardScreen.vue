@@ -17,6 +17,7 @@ const { t } = useI18n();
 const stats = ref({
   isRunning: false,
   mode: 1, // 0=直连 1=规则 2=全局 3=去广告
+  isWifiDirect: false,
   currentNode: '',
   downloadSpeed: 0,
   uploadSpeed: 0,
@@ -93,6 +94,12 @@ const modeDescriptions = computed(() => [
   t('dashboard.modeGlobalDesc'),
   t('dashboard.modeAllowAdsDesc')
 ]);
+const currentModeLabel = computed(() => (
+  stats.value.isWifiDirect ? t('dashboard.modeWifiDirect') : modes.value[stats.value.mode]
+));
+const currentModeDescription = computed(() => (
+  stats.value.isWifiDirect ? t('dashboard.wifiDirectAutoHint') : t('dashboard.outboundModeDesc')
+));
 
 /**
  * 把字节数格式化为带单位的可读字符串（B/KB/MB/GB/TB）。
@@ -319,7 +326,11 @@ const updateMetaStats = async () => {
     try {
       const data = JSON.parse(configRaw);
       if (data.mode) {
-        stats.value.mode = modeStringToNumber(data.mode);
+        const runtimeMode = String(data.mode);
+        stats.value.isWifiDirect = runtimeMode.toLowerCase() === 'wifidirect';
+        if (!stats.value.isWifiDirect) {
+          stats.value.mode = modeStringToNumber(runtimeMode);
+        }
       }
     } catch (e) {
       console.warn('Failed to parse configs data:', e);
@@ -460,6 +471,7 @@ const updateStats = async () => {
     stats.value.isRunning = isRunning;
 
     if (!isRunning) {
+      stats.value.isWifiDirect = false;
       stats.value.uptime = '服务未开启';
       stats.value.cpuUsage = 0;
       stats.value.memUsage = 0;
@@ -581,6 +593,7 @@ const handleModeChange = async (modeIndex: number) => {
       showToast(t('dashboard.modeSwitched', { mode: modes.value[modeIndex] }));
     } else {
       setTimeout(() => {
+        stats.value.isWifiDirect = false;
         stats.value.mode = modeIndex;
         showToast(t('dashboard.modeSwitched', { mode: modes.value[modeIndex] }));
         isPending.value = false;
@@ -963,11 +976,17 @@ watch(() => stats.value.isRunning, (newVal) => {
           </div>
           <div class="pref-text-container">
             <span class="pref-title">{{ t('dashboard.outboundMode') }}</span>
-            <span class="pref-desc">{{ t('dashboard.outboundModeDesc') }}</span>
+            <span
+              class="pref-desc"
+              :class="{ 'wifi-direct-hint': stats.isWifiDirect }"
+              :role="stats.isWifiDirect ? 'status' : undefined">
+              <span v-if="stats.isWifiDirect" class="status-dot" aria-hidden="true"></span>
+              {{ currentModeDescription }}
+            </span>
           </div>
         </div>
         <div class="pref-right">
-          <span class="pref-value">{{ modes[stats.mode] }}</span>
+          <span class="pref-value" :class="{ 'wifi-direct-value': stats.isWifiDirect }">{{ currentModeLabel }}</span>
           <div class="pref-arrow-icon">
             <md-icon>
               <svg viewBox="0 0 24 24">
@@ -1013,6 +1032,13 @@ watch(() => stats.value.isRunning, (newVal) => {
       <md-dialog :open="showModeDialog" @close="showModeDialog = false" class="transparent-scrim">
         <div slot="headline">{{ t('dashboard.outboundMode') }}</div>
         <div slot="content" class="dialog-list-container">
+          <div v-if="stats.isWifiDirect" class="wifi-direct-dialog-notice">
+            <span class="status-dot" aria-hidden="true"></span>
+            <div>
+              <div class="wifi-direct-dialog-title">{{ t('dashboard.wifiDirectActive') }}</div>
+              <div class="wifi-direct-dialog-desc">{{ t('dashboard.wifiDirectAutoHint') }}</div>
+            </div>
+          </div>
           <md-list>
             <md-list-item
               v-for="(name, index) in modes"
@@ -1022,7 +1048,7 @@ watch(() => stats.value.isRunning, (newVal) => {
               @click="selectMode(index)">
               <div slot="headline">{{ name }}</div>
               <div slot="supporting-text">{{ modeDescriptions[index] }}</div>
-              <md-icon slot="end" v-if="stats.mode === index" class="dialog-check-icon">
+              <md-icon slot="end" v-if="!stats.isWifiDirect && stats.mode === index" class="dialog-check-icon">
                 <svg viewBox="0 0 24 24">
                   <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
                 </svg>
@@ -1118,6 +1144,23 @@ watch(() => stats.value.isRunning, (newVal) => {
   line-height: 1.35;
 }
 
+.wifi-direct-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--md-sys-color-primary);
+  font-weight: 500;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background-color: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 14%, transparent);
+}
+
 .running-desc {
   color: var(--md-sys-color-primary);
   font-weight: 500;
@@ -1133,6 +1176,16 @@ watch(() => stats.value.isRunning, (newVal) => {
 .pref-value {
   font-size: 14px;
   color: var(--md-sys-color-on-surface-variant);
+}
+
+.wifi-direct-value {
+  padding: 4px 9px;
+  border-radius: 999px;
+  color: var(--md-sys-color-primary);
+  background-color: var(--md-sys-color-primary-container);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .pref-arrow-icon {
@@ -1294,6 +1347,34 @@ watch(() => stats.value.isRunning, (newVal) => {
 .dialog-list-container {
   padding: 0 !important;
   min-width: 280px;
+}
+
+.wifi-direct-dialog-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  color: var(--md-sys-color-on-primary-container);
+  background-color: var(--md-sys-color-primary-container);
+}
+
+.wifi-direct-dialog-notice .status-dot {
+  margin-top: 6px;
+}
+
+.wifi-direct-dialog-title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.wifi-direct-dialog-desc {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.4;
+  opacity: 0.82;
 }
 
 md-list {

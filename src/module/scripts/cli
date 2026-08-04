@@ -242,8 +242,8 @@ show_wifi_help() {
   cli wifi clear                      清空名单
   cli wifi cellular <on|off>          非 WiFi 使用基础模式 / Direct
 说明:
-  blacklist = 名单内 SSID 使用 Direct，其余使用基础模式
-  whitelist = 仅名单内 SSID 使用基础模式，其余使用 Direct
+  blacklist = 名单内 SSID 使用 WiFiDirect，其余使用基础模式
+  whitelist = 仅名单内 SSID 使用基础模式，其余使用 WiFiDirect
 EOF
 }
 
@@ -1077,6 +1077,7 @@ cmd_wifi_status() {
   if is_running; then
     state="$(cat "$WIFI_STATE_FILE" 2> /dev/null || true)"
     case "$state" in
+      wifi_bypassed) state="wifi_bypassed (WiFiDirect：业务与 DNS 交给网关)" ;;
       bypassed) state="bypassed (Direct 直连)" ;;
       proxying) state="proxying (按基础模式)" ;;
       *) state="unknown (等待首次评估)" ;;

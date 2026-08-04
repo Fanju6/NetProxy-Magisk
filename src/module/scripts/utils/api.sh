@@ -167,7 +167,7 @@ api_wait_available() {
 #######################################
 # 将模块出站模式转换为 Clash 模式名
 # 参数:
-#   $1  模块模式 (rule/global/direct/AllowAds)
+#   $1  模块模式 (rule/global/direct/wifi_direct/AllowAds)
 # 返回: 标准输出打印 Clash 模式名；未知模式返回非 0
 #######################################
 module_mode_to_clash_mode() {
@@ -175,6 +175,7 @@ module_mode_to_clash_mode() {
     rule) printf "%s" "Rule" ;;
     global) printf "%s" "Global" ;;
     direct) printf "%s" "Direct" ;;
+    wifi_direct) printf "%s" "WiFiDirect" ;;
     AllowAds) printf "%s" "AllowAds" ;;
     *) return 1 ;;
   esac
@@ -195,7 +196,7 @@ api_get_mode() {
 #######################################
 # 设置控制器运行模式
 # 参数:
-#   $1  模块模式 (rule/global/direct/AllowAds)
+#   $1  模块模式 (rule/global/direct/wifi_direct/AllowAds)
 # 返回: 成功返回 0，模式非法或请求失败返回非 0
 #######################################
 api_set_mode() {

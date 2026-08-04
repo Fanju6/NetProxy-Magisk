@@ -71,7 +71,7 @@ CURRENT_CONFIG=""
 WiFi 自动切换也由 `module.conf` 管理：
 
 - `WIFI_AUTO_SWITCH=0`：默认关闭
-- `WIFI_SSID_MODE="blacklist"`：名单内使用 Direct
+- `WIFI_SSID_MODE="blacklist"`：名单内使用 WiFiDirect（业务和 DNS 交给当前 WiFi 网关）
 - `WIFI_SSID_LIST=""`：SSID 名单，英文逗号分隔
-- `PROXY_ON_CELLULAR=1`：非 WiFi 网络使用基础模式
+- `PROXY_ON_CELLULAR=1`：非 WiFi 网络使用基础模式；设为 `0` 时使用 Direct
 - `WIFI_INTERFACE="wlan0"`：用于读取当前 SSID 的接口

@@ -68,7 +68,7 @@ Clash API 默认配置：
 - 单节点链接、节点文件、Clash YAML 与订阅导入
 - 手动节点选择与 URLTest 自动测速
 - Rule、Global、Direct 出站模式
-- 按 WiFi SSID 在基础模式与 Direct 之间自动切换
+- 按 WiFi SSID 在基础模式与 WiFiDirect（业务和 DNS 交给当前网关）之间自动切换
 - Clash API、zashboard、连接管理与节点测速
 - 订阅定时更新和规则集提前绕过
 - 自动清理 eBPF 程序、Map 与 TC 挂载

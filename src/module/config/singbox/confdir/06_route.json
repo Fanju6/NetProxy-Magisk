@@ -30,6 +30,11 @@
     ],
     "rules": [
       {
+        "clash_mode": "WiFiDirect",
+        "action": "route",
+        "outbound": "wifi-direct"
+      },
+      {
         "action": "sniff",
         "timeout": "1s"
       },

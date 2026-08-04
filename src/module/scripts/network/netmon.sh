@@ -4,7 +4,8 @@
 # 功能: 网络变化监听与「按 WiFi SSID 自动切换出站模式」决策。
 #       由 inotifyd 监听 /data/misc/net/rt_tables 的写事件触发(网络切换时
 #       Android 会重写该文件)，据当前 SSID + 黑/白名单决定使用基础模式
-#       或 Direct 模式，通过 Clash API 热切换，不重启 sing-box 核心，
+#       或 WiFiDirect 模式（业务直连、DNS 交给 WiFi 网关），通过 Clash API 热切换，
+#       不重启 sing-box 核心，
 #       也不改动透明代理规则。
 # 用法:
 #   netmon.sh <events> <dir> [file]   inotifyd 代理(事件触发，含防抖)
@@ -142,13 +143,13 @@ ssid_in_list() {
 
 #######################################
 # 读取 WiFi 自动切换的当前决策
-# 返回: 标准输出打印 proxying、bypassed 或 unknown
+# 返回: 标准输出打印 proxying、wifi_bypassed、bypassed 或 unknown
 #######################################
 read_wifi_state() {
   local state
   state="$(cat "$WIFI_STATE_FILE" 2> /dev/null || true)"
   case "$state" in
-    proxying | bypassed) printf "%s\n" "$state" ;;
+    proxying | wifi_bypassed | bypassed) printf "%s\n" "$state" ;;
     *) printf "unknown\n" ;;
   esac
 }
@@ -173,8 +174,8 @@ read_base_mode() {
 
 #######################################
 # 应用目标态
-# 绕过态使用 Direct，代理态恢复 module.conf 中的基础出站模式
-# 参数: $1 目标态 (proxying|bypassed)
+# WiFi 绕过态使用 WiFiDirect（业务和 DNS 交给网关），非 WiFi 绕过态使用 Direct
+# 参数: $1 目标态 (proxying|wifi_bypassed|bypassed)
 # 返回: 0=成功，非 0=控制接口不可用或切换失败
 #######################################
 apply_state() {
@@ -183,11 +184,11 @@ apply_state() {
 
   current="$(read_wifi_state)"
   base_mode="$(read_base_mode)"
-  if [ "$target" = "bypassed" ]; then
-    desired_mode="direct"
-  else
-    desired_mode="$base_mode"
-  fi
+  case "$target" in
+    wifi_bypassed) desired_mode="wifi_direct" ;;
+    bypassed) desired_mode="direct" ;;
+    *) desired_mode="$base_mode" ;;
+  esac
   desired_clash_mode="$(module_mode_to_clash_mode "$desired_mode")" || return 1
   actual_mode="$(api_get_mode 2> /dev/null || true)"
 
@@ -209,11 +210,17 @@ apply_state() {
   mkdir -p "$RUN_DIR" 2> /dev/null || true
   printf "%s\n" "$target" > "$WIFI_STATE_FILE"
 
-  if [ "$target" = "bypassed" ]; then
-    log "INFO" "已切换为: 绕过代理 (Direct)"
-  else
-    log "INFO" "已切换为: 走代理 ($desired_clash_mode)"
-  fi
+  case "$target" in
+    wifi_bypassed)
+      log "INFO" "已切换为: WiFi 绕过 (WiFiDirect，业务与 DNS 交给网关)"
+      ;;
+    bypassed)
+      log "INFO" "已切换为: 非 WiFi 绕过 (Direct)"
+      ;;
+    *)
+      log "INFO" "已切换为: 走代理 ($desired_clash_mode)"
+      ;;
+  esac
 }
 
 #######################################
@@ -251,12 +258,12 @@ decide_and_apply() {
       if ssid_in_list "$ssid" "$WIFI_SSID_LIST"; then
         target="proxying"
       else
-        target="bypassed"
+        target="wifi_bypassed"
       fi
     else
       # 黑名单：名单内 SSID 绕过
       if ssid_in_list "$ssid" "$WIFI_SSID_LIST"; then
-        target="bypassed"
+        target="wifi_bypassed"
       else
         target="proxying"
       fi
@@ -380,5 +387,3 @@ main() {
 }
 
 main "$@"
-
-

@@ -350,6 +350,10 @@ write_runtime_outbounds() {
       "type": "direct"
     },
     {
+      "tag": "wifi-direct",
+      "type": "direct"
+    },
+    {
       "tag": "block",
       "type": "block"
     },
@@ -385,6 +389,10 @@ EOF
   "outbounds": [
     {
       "tag": "direct",
+      "type": "direct"
+    },
+    {
+      "tag": "wifi-direct",
       "type": "direct"
     },
     {

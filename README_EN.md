@@ -69,7 +69,7 @@ The controller listens on all interfaces by default. Use it only on trusted netw
 - Node links, node files, Clash YAML, and subscriptions
 - Manual selector and URLTest automatic selection
 - Rule, Global, and Direct modes
-- Wi-Fi SSID based switching between the configured mode and Direct
+- Wi-Fi SSID based switching between the configured mode and WiFiDirect (traffic and DNS delegated to the current gateway)
 - Clash API, zashboard, connection control, and delay tests
 - Scheduled subscription updates and rule-set bypass
 - Automatic cleanup of eBPF programs, maps, and TC attachments
