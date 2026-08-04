@@ -90,7 +90,7 @@ jobs:
         with:
           ndk-version: ${{ steps.singbox_check.outputs.ndk_version }}
 
-      - name: 更新 sing-box eBPF 内核
+      - name: 更新 sing-box 内核
         if: steps.singbox_check.outputs.changed == 'true'
         id: singbox
         env:

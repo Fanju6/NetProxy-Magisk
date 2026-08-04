@@ -244,12 +244,26 @@ su -c '/data/adb/modules/netproxy/scripts/cli service logs sub 100'
 
 | 项目 | 用途 |
 |------|------|
-| [reF1nd/sing-box](https://github.com/reF1nd/sing-box) | eBPF 入站与当前代理核心 |
+| [reF1nd/sing-box](https://github.com/reF1nd/sing-box) | 当前代理核心 |
 | [SagerNet/sing-box](https://github.com/SagerNet/sing-box) | 上游 sing-box 项目 |
 | [Proxylink](https://github.com/Fanju6/Proxylink) | 节点、订阅与配置转换 |
 | [AsteriskNG](https://github.com/Asterisk4Magisk/AsteriskNG) | Android eBPF 实现参考 |
 | [zashboard](https://github.com/Zephyruso/zashboard) | Clash API 控制面板 |
 | [v2rayNG](https://github.com/2dust/v2rayNG) | 节点解析实现参考 |
+
+---
+
+### 历史鸣谢
+
+以下项目曾为 NetProxy 的早期版本提供核心能力或实现参考。
+
+| 项目 | 历史用途 |
+|------|----------|
+| ~~[CHIZI-0618/sing-box](https://github.com/CHIZI-0618/sing-box)~~ | 曾使用的 sing-box 分支 |
+| ~~[Xray-core](https://github.com/XTLS/Xray-core)~~ | 曾使用的代理核心 |
+| ~~[AndroidTProxyShell](https://github.com/CHIZI-0618/AndroidTProxyShell)~~ | TPROXY / REDIRECT 透明代理实现参考 |
+| ~~[IPSET_LKM](https://github.com/TanakaLun/IPSET_LKM)~~ | IPSET 内核模块与兼容性支持 |
+| ~~[KsuWebUIStandalone](https://github.com/KOWX712/KsuWebUIStandalone)~~ | WebUI 独立运行方案参考 |
 
 ## 交流与贡献
 
