@@ -23,6 +23,7 @@
   <a href="https://github.com/Fanju6/NetProxy-Magisk/releases">下载模块</a> ·
   <a href="https://www.netproxy.store/">使用文档</a> ·
   <a href="https://play.google.com/store/apps/details?id=com.fanjv.netproxy">Android 管理器</a> ·
+  <a href="src/android/">管理器源码</a> ·
   <a href="https://t.me/NetProxy_Magisk">Telegram</a>
 </p>
 
@@ -38,11 +39,22 @@ NetProxy 是面向已 Root Android 设备的系统级透明代理模块。模块
 
 支持 **Magisk、KernelSU 与 APatch**。节点、订阅、路由、DNS 和透明代理配置均保存在模块目录中，不依赖 VPN 模式运行。
 
+## 源码结构
+
+```text
+src/module/          模块安装与运行文件
+src/native/netproxy/ 节点、订阅与 Catalog 原生组件
+src/webui/           模块 WebUI
+src/android/         Android 管理器
+```
+
+Android 管理器与模块共用 `netproxyctl` JSON 契约，但保持独立的本地构建流程。仓库 CI 不编译或发布管理器，正式版本通过 Google Play 分发；完整版模块仍内置带广告的管理器 APK，供无法使用 Google Play 的设备安装。Android 构建说明见 [管理器源码](src/android/)。
+
 ## 管理入口
 
 | 入口 | 适合场景 |
 |------|----------|
-| [**Android 管理器**](https://play.google.com/store/apps/details?id=com.fanjv.netproxy) | 日常使用，管理服务、节点、订阅、分应用代理、配置与日志 |
+| [**Android 管理器**](https://play.google.com/store/apps/details?id=com.fanjv.netproxy)（[源码](src/android/)） | 日常使用，管理服务、节点、订阅、分应用代理、配置与日志 |
 | **CLI** | 终端操作、自动化和故障排查 |
 | **Clash API + zashboard** | 查看代理组、连接与延迟，进行运行时控制 |
 

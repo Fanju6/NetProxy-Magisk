@@ -23,6 +23,7 @@
   <a href="https://github.com/Fanju6/NetProxy-Magisk/releases">Releases</a> ·
   <a href="https://www.netproxy.store/">Documentation</a> ·
   <a href="https://play.google.com/store/apps/details?id=com.fanjv.netproxy">Android Manager</a> ·
+  <a href="src/android/">Manager Source</a> ·
   <a href="https://t.me/NetProxy_Magisk">Telegram</a>
 </p>
 
@@ -38,11 +39,22 @@ NetProxy is a system-wide transparent proxy module for rooted Android devices. I
 
 Supported root environments: **Magisk, KernelSU, and APatch**.
 
+## Source Layout
+
+```text
+src/module/          Module installation and runtime files
+src/native/netproxy/ Native node, subscription, and Catalog component
+src/webui/           Module WebUI
+src/android/         Android Manager
+```
+
+The Android Manager and module share the `netproxyctl` JSON contract while keeping separate local build workflows. Repository CI does not build or publish the manager; official releases are distributed through Google Play. The Full module package still bundles the ad-supported manager APK for devices without Google Play access. See the [manager source](src/android/) for local build instructions.
+
 ## Management
 
 | Interface | Purpose |
 |-----------|---------|
-| [**Android Manager**](https://play.google.com/store/apps/details?id=com.fanjv.netproxy) | Service, nodes, subscriptions, per-app rules, configuration, and logs |
+| [**Android Manager**](https://play.google.com/store/apps/details?id=com.fanjv.netproxy) ([source](src/android/)) | Service, nodes, subscriptions, per-app rules, configuration, and logs |
 | **CLI** | Terminal management, automation, and diagnostics |
 | **Clash API + zashboard** | Runtime groups, connections, delay tests, and mode control |
 

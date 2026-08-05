@@ -1,14 +1,24 @@
 *.zip
 
-# IDE 配置
+# IDE 与本地工具
 .idea/
 *.iml
-
-# Claude Code 本地项目指引 (不纳入仓库)
 CLAUDE.md
 
-# NetProxy WebUI 构建产物（由 src/webui 构建生成，不纳入仓库）
+# NetProxy WebUI 构建产物
 src/module/webroot/netproxy/
 
 # 本地构建的 NetProxy 原生组件
 src/module/bin/netproxy-native
+
+# Android 管理器本地配置与构建产物
+src/android/**/.gradle/
+src/android/**/.kotlin/
+src/android/**/build/
+src/android/**/local.properties
+src/android/captures/
+src/android/.externalNativeBuild/
+src/android/.cxx/
+src/android/**/*.jks
+src/android/**/*.keystore
+src/android/**/keystore.properties

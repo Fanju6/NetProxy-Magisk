@@ -1,0 +1,236 @@
+<resources>
+
+    <!-- General -->
+    <string name="app_name">NetProxy</string>
+    <string name="alpha_expired_title">测试版本已过期</string>
+    <string name="alpha_expired_message">此 Alpha 测试版本已于 2026 年 8 月 10 日到期，请安装最新版本后继续使用。</string>
+    <string name="alpha_expired_exit">退出应用</string>
+    <string name="settings">设置</string>
+    <string name="about">关于</string>
+    <string name="save_text">保存</string>
+    <string name="not_set">未设置</string>
+    <string name="value_label">值</string>
+    <string name="modify_label">修改 %1$s</string>
+    <string name="read_only">只读</string>
+
+    <!-- Dashboard -->
+    <string name="dashboard">仪表盘</string>
+    <string name="service_status">服务状态</string>
+    <string name="service_stopped">服务未开启</string>
+    <string name="service_starting">正在启动服务…</string>
+    <string name="service_stopping">正在停止服务…</string>
+    <string name="cpu_usage">CPU 占用</string>
+    <string name="mem_usage">内存占用</string>
+    <string name="collecting_data">正在收集数据…</string>
+
+    <!-- Nodes & Subscription -->
+    <string name="nodes">节点</string>
+    <string name="subscriptions">订阅</string>
+    <string name="latency_testing">测试中…</string>
+    <string name="latency_failed">测试失败</string>
+    <string name="latency_timeout">超时</string>
+
+    <!-- Node Display Settings -->
+
+    <!-- Apps Control -->
+    <string name="apps">应用</string>
+    <string name="proxy_apps">分应用代理</string>
+    <string name="no_apps_found">未找到应用</string>
+    <string name="show_system_apps">显示系统应用</string>
+    <string name="proxy_mode_summary">选择如何过滤需要走代理的应用</string>
+    <string name="app_proxy_mode_blacklist">黑名单模式</string>
+    <string name="app_proxy_mode_whitelist">白名单模式</string>
+    <string name="proxy_mode_off">关闭</string>
+    <string name="app_selected_first">选中优先</string>
+    <string name="app_reverse_sort">逆向排序</string>
+    <string name="app_show_package_name">显示包名</string>
+
+    <!-- Main Settings -->
+    <string name="proxy_settings">代理设置</string>
+    <string name="proxy_settings_summary">配置端口、路由标记、接口和过滤规则</string>
+    <string name="auto_start">开机自启</string>
+    <string name="auto_start_summary">系统启动时自动开启服务</string>
+    <string name="gms_fix">GMS 修复</string>
+    <string name="gms_fix_summary">修复部分设备 GMS 网络问题</string>
+    <string name="send_log">发送日志</string>
+    <string name="save_log">保存日志</string>
+    <string name="log_saved">日志已保存</string>
+    <string name="logs">日志</string>
+    <string name="service_logs">运行日志</string>
+    <string name="subscription_logs">订阅日志</string>
+    <string name="kernel_logs">内核日志</string>
+    <string name="raw_view">原始视图</string>
+    <string name="card_view">卡片视图</string>
+    <string name="scroll_to_top">滚动到顶部</string>
+    <string name="scroll_to_bottom">滚动到底部</string>
+    <string name="clear_logs_now">立即清空日志</string>
+    <string name="clear_logs_success">日志已成功清空</string>
+    <string name="clear_logs_failed">清空日志失败</string>
+    <string name="no_logs">暂无日志内容</string>
+    <string name="no_root_title">未获取 Root 权限</string>
+    <string name="no_root_summary">请先授予应用 Root 权限以使用全部功能</string>
+    <string name="no_module_title">未检测到核心模块</string>
+    <string name="no_module_summary">未检测到 NetProxy 模块，请先在 Magisk/KernelSU 中安装并启用该模块</string>
+    <string name="about_source_code">在 %1$s 查看源码&lt;br/&gt;加入我们的 %2$s 频道</string>
+
+    <!-- Theme & UI -->
+    <string name="settings_theme">主题设置</string>
+    <string name="settings_theme_summary">自定义更多主题选项</string>
+    <string name="settings_theme_mode_system">跟随系统</string>
+    <string name="settings_theme_mode_light">浅色</string>
+    <string name="settings_theme_mode_dark">深色</string>
+    <string name="settings_key_color">强调色</string>
+    <string name="settings_key_color_default">默认</string>
+    <string name="color_blue">蓝色</string>
+    <string name="color_red">红色</string>
+    <string name="color_green">绿色</string>
+    <string name="color_purple">紫色</string>
+    <string name="color_orange">橙色</string>
+    <string name="color_teal">鸭蓝</string>
+    <string name="color_pink">粉色</string>
+    <string name="color_brown">棕色</string>
+    <string name="color_deep_purple">深紫色</string>
+    <string name="color_indigo">靛蓝色</string>
+    <string name="color_cyan">青色</string>
+    <string name="color_yellow">黄色</string>
+    <string name="color_amber">琥珀色</string>
+    <string name="color_blue_grey">蓝灰色</string>
+    <string name="color_sakura">樱花色</string>
+    <string name="settings_monet">Monet 配色</string>
+    <string name="settings_color_style">调色风格</string>
+    <string name="settings_color_spec">配色规格</string>
+    <string name="settings_enable_blur">启用页面模糊</string>
+    <string name="settings_enable_blur_summary">控制顶部模糊和页面毛玻璃效果</string>
+    <string name="settings_floating_bottom_bar">悬浮底栏</string>
+    <string name="settings_floating_bottom_bar_summary">使用 Apple 风格的悬浮底栏</string>
+    <string name="settings_enable_glass">悬浮底栏玻璃效果</string>
+    <string name="settings_enable_glass_summary">为悬浮底栏启用模糊与玻璃材质</string>
+    <string name="settings_smooth_corner">平滑圆角</string>
+    <string name="settings_smooth_corner_summary">为界面启用 Miuix 平滑圆角效果</string>
+    <string name="settings_enable_predictive_back">预测性返回手势</string>
+    <string name="settings_enable_predictive_back_summary">启用 Android 14 及以上的预测性返回动画</string>
+    <string name="settings_page_scale">界面缩放</string>
+    <string name="settings_page_scale_summary">调整整个应用的界面缩放比例</string>
+    <string name="refresh_pulling">下拉可以刷新</string>
+    <string name="refresh_release">释放开始刷新</string>
+    <string name="refresh_refresh">正在刷新</string>
+    <string name="refresh_complete">刷新完成</string>
+
+    <!-- Kernel Settings -->
+    <string name="kernel_settings">内核设置</string>
+    <string name="kernel_settings_summary">编辑与检查 sing-box 配置文件</string>
+    <string name="singbox_common_configs">常用配置</string>
+    <string name="singbox_advanced_configs">高级配置</string>
+    <string name="singbox_rule_files">规则文件</string>
+    <string name="singbox_runtime_configs">运行时配置</string>
+    <string name="singbox_check_all">检查全部配置</string>
+    <string name="singbox_check_success">全部配置有效</string>
+    <string name="singbox_check_failed">配置检查失败，请查看核心日志</string>
+    <string name="singbox_documents_load_failed">无法读取 sing-box 配置文件</string>
+    <string name="singbox_documents_empty">没有找到可编辑的 sing-box 配置文件</string>
+    <string name="singbox_document_log">日志</string>
+    <string name="singbox_document_log_summary">日志等级与输出位置</string>
+    <string name="singbox_document_experimental">实验功能</string>
+    <string name="singbox_document_experimental_summary">缓存与 Clash API</string>
+    <string name="singbox_document_dns">DNS</string>
+    <string name="singbox_document_dns_summary">DNS 服务器、分流与缓存</string>
+    <string name="singbox_document_inbounds">入站</string>
+    <string name="singbox_document_inbounds_summary">额外的 mixed、SOCKS、HTTP 等入站</string>
+    <string name="singbox_document_providers">Provider</string>
+    <string name="singbox_document_providers_summary">动态出站与订阅 Provider</string>
+    <string name="singbox_document_route">路由</string>
+    <string name="singbox_document_route_summary">路由规则、规则集与默认出站</string>
+    <string name="singbox_document_http_clients">HTTP 客户端</string>
+    <string name="singbox_document_http_clients_summary">远程资源使用的 HTTP 客户端</string>
+    <string name="singbox_document_services">Service API</string>
+    <string name="singbox_document_services_summary">Service API 与 Dashboard</string>
+    <string name="singbox_document_source_summary">本地规则集源文件</string>
+    <string name="singbox_document_runtime_summary">由模块启动时自动生成</string>
+    <string name="singbox_document_custom_summary">自定义配置片段</string>
+    <string name="json_format_short">格式</string>
+    <string name="json_format_error">JSON 格式错误，无法格式化</string>
+    <string name="json_syntax_error">JSON 语法错误</string>
+    <string name="json_save_failed">保存失败</string>
+    <string name="json_save_failed_summary">配置文件未保存，当前编辑内容已保留。</string>
+    <string name="json_save_rolled_back">完整配置检查未通过，配置文件未保存，当前编辑内容已保留。</string>
+    <string name="json_discard_and_exit">放弃并退出</string>
+    <string name="json_saved">配置已保存</string>
+    <string name="json_checking">正在检查配置…</string>
+    <string name="json_valid">配置有效</string>
+    <string name="json_valid_read_only">配置有效 · 只读</string>
+    <string name="json_load_failed">配置读取失败</string>
+    <string name="json_schema_invalid">sing-box 配置校验失败，共 %1$d 项</string>
+    <string name="json_schema_unavailable">内置 sing-box Schema 加载失败：%1$s</string>
+    <string name="json_schema_error_position">第 %1$d 行，第 %2$d 列</string>
+    <string name="json_view_issues">查看</string>
+    <string name="json_schema_issues_title">配置问题（%1$d）</string>
+    <string name="json_schema_issues_summary">点击问题可跳转到对应位置</string>
+    <string name="json_undo">撤销</string>
+    <string name="json_redo">重做</string>
+    <string name="json_find">查找</string>
+    <string name="json_replace_short">替换</string>
+    <string name="json_goto_line_short">跳行</string>
+    <string name="json_completion_short">补全</string>
+    <string name="json_soft_wrap_short">换行</string>
+    <string name="json_unsaved_title">放弃未保存的更改？</string>
+    <string name="json_unsaved_summary">退出后，本次编辑的内容将不会保存。</string>
+    <string name="json_continue_editing">继续编辑</string>
+    <string name="json_discard_changes">放弃更改</string>
+
+    <!-- SingBox DNS Settings -->
+
+    <!-- SingBox Route Settings -->
+
+    <!-- SingBox Inbound Settings -->
+
+    <!-- SingBox Node Edit -->
+
+    <!-- Rule Match -->
+
+    <!-- Placeholders -->
+
+    <!-- 订阅定时更新 (subsched.sh) -->
+
+    <!-- WiFi SSID 自动切换代理 (netmon.sh) -->
+    <string name="wifi_auto_switch_title">WiFi 自动切换</string>
+    <string name="wifi_auto_switch">按 WiFi 自动切换</string>
+    <string name="wifi_auto_switch_summary">根据当前 WiFi 名称自动开启或关闭代理</string>
+    <string name="wifi_ssid_mode">名单模式</string>
+    <string name="wifi_ssid_mode_blacklist">黑名单（名单内不代理）</string>
+    <string name="wifi_ssid_mode_whitelist">白名单（仅名单内代理）</string>
+    <string name="wifi_ssid_list">SSID 名单</string>
+    <string name="proxy_on_cellular">非 WiFi 网络走代理</string>
+    <string name="proxy_on_cellular_summary">移动数据等非 WiFi 网络是否使用代理</string>
+
+    <!-- eBPF 透明代理 -->
+    <string name="ebpf_core_settings">eBPF 入站</string>
+    <string name="ebpf_network">代理协议</string>
+    <string name="ebpf_network_all">TCP + UDP</string>
+    <string name="ebpf_network_tcp">仅 TCP</string>
+    <string name="ebpf_network_udp">仅 UDP</string>
+    <string name="ebpf_udp_timeout">UDP 会话超时</string>
+    <string name="ebpf_dns_hijack">DNS 劫持</string>
+    <string name="ebpf_dns_hijack_summary">接管 TCP 与 UDP 53 端口</string>
+    <string name="ebpf_ipv6">IPv6 透明代理</string>
+    <string name="ebpf_ipv6_summary">允许 eBPF 接管 IPv6 流量</string>
+    <string name="ebpf_cgroup_path">cgroup v2 路径</string>
+    <string name="ebpf_cgroup_auto">自动发现</string>
+    <string name="ebpf_bypass_settings">规则集提前绕过</string>
+    <string name="ebpf_bypass_rule_sets">绕过规则集</string>
+    <string name="ebpf_shared_settings">热点与共享网络</string>
+    <string name="ebpf_shared_enable">共享网络代理</string>
+    <string name="ebpf_shared_enable_summary">接管热点或 USB 共享的下游流量</string>
+    <string name="ebpf_shared_interfaces">下游接口</string>
+    <string name="ebpf_map_settings">eBPF Map 容量</string>
+    <string name="ebpf_tcp_map">TCP 重定向 Map</string>
+    <string name="ebpf_udp_map">UDP 重定向 Map</string>
+    <string name="ebpf_socket_map">Socket 绕过 Map</string>
+    <string name="ebpf_shared_map">共享网络 Map</string>
+    <string name="ebpf_restart_service">重启服务</string>
+
+    <string name="more_options">更多选项</string>
+    <string name="source_label">来源</string>
+    <string name="destination_label">目标</string>
+    <string name="app_user_label">用户 %1$s</string>
+    <string name="percentage_value">%1$d%%</string>
+</resources>

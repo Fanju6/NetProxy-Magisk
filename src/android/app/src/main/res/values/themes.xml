@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="Theme.NetProxy" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <style name="Theme.NetProxy.Starting" parent="Theme.NetProxy">
+        <item name="android:windowSplashScreenBackground">@android:color/system_neutral1_100</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+    </style>
+</resources>
