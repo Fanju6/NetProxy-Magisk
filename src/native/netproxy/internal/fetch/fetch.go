@@ -19,6 +19,18 @@ import (
 
 const maxSubscriptionSize = 20 << 20
 
+// Android may leave resolv.conf pointing at a loopback DNS listener owned by the stopped core.
+var fallbackDNSServers = []string{
+	"223.5.5.5:53",
+	"119.29.29.29:53",
+	"1.1.1.1:53",
+	"8.8.8.8:53",
+}
+
+type ipResolver interface {
+	LookupIPAddr(context.Context, string) ([]net.IPAddr, error)
+}
+
 type Request struct {
 	URL           string
 	UserAgent     string
@@ -68,11 +80,8 @@ func Subscription(ctx context.Context, request Request) (Response, error) {
 		request.UserAgent = "NetProxy/8.0"
 	}
 	transport := &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		DialContext: (&net.Dialer{
-			Timeout:   15 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
+		Proxy:                 http.ProxyFromEnvironment,
+		DialContext:           subscriptionDialContext,
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          16,
 		IdleConnTimeout:       90 * time.Second,
@@ -138,6 +147,67 @@ func Subscription(ctx context.Context, request Request) (Response, error) {
 		return Response{Metadata: metadata}, fmt.Errorf("subscription content exceeds %d bytes", maxSubscriptionSize)
 	}
 	return Response{Body: body, Metadata: metadata}, nil
+}
+
+func subscriptionDialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	dialer := &net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}
+	host, port, err := net.SplitHostPort(address)
+	if err != nil || net.ParseIP(host) != nil {
+		return dialer.DialContext(ctx, network, address)
+	}
+
+	addresses, err := lookupIPAddresses(ctx, host, subscriptionResolvers())
+	if err != nil {
+		return nil, err
+	}
+	var lastError error
+	for _, resolved := range addresses {
+		conn, dialError := dialer.DialContext(ctx, network, net.JoinHostPort(resolved.IP.String(), port))
+		if dialError == nil {
+			return conn, nil
+		}
+		lastError = dialError
+	}
+	if lastError == nil {
+		lastError = errors.New("DNS returned no usable address")
+	}
+	return nil, lastError
+}
+
+func subscriptionResolvers() []ipResolver {
+	resolvers := []ipResolver{net.DefaultResolver}
+	for _, server := range fallbackDNSServers {
+		server := server
+		resolvers = append(resolvers, &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
+				return (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, network, server)
+			},
+		})
+	}
+	return resolvers
+}
+
+func lookupIPAddresses(ctx context.Context, host string, resolvers []ipResolver) ([]net.IPAddr, error) {
+	var lastError error
+	for _, resolver := range resolvers {
+		lookupContext, cancel := context.WithTimeout(ctx, 3*time.Second)
+		addresses, err := resolver.LookupIPAddr(lookupContext, host)
+		cancel()
+		if err == nil && len(addresses) > 0 {
+			return addresses, nil
+		}
+		if err != nil {
+			lastError = err
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+	}
+	if lastError == nil {
+		lastError = errors.New("DNS returned no address")
+	}
+	return nil, fmt.Errorf("lookup %s: %w", host, lastError)
 }
 
 func parseMetadata(response *http.Response) Metadata {
