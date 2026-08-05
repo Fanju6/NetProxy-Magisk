@@ -15,6 +15,14 @@ internal class AppPolicyRepository(
         client.execute("app", "mode", mode)
     }
 
+    suspend fun setUsers(userIds: Collection<String>) {
+        if (userIds.isEmpty()) {
+            client.execute("app", "users", "all")
+        } else {
+            client.execute("app", "users", *userIds.toTypedArray())
+        }
+    }
+
     suspend fun add(id: String) {
         client.execute("app", "add", id)
     }

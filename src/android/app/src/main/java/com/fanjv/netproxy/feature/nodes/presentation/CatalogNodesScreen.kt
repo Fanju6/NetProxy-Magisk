@@ -60,20 +60,18 @@ import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.EmptyCatalog
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
+import com.fanjv.netproxy.core.ui.component.TopBarMenuAction
+import com.fanjv.netproxy.core.ui.component.TopBarMoreMenu
 import com.fanjv.netproxy.feature.catalog.model.CatalogNode
 import com.fanjv.netproxy.feature.catalog.model.CatalogNodeGroup
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
-import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
-import top.yukonga.miuix.kmp.basic.ListPopupColumn
-import top.yukonga.miuix.kmp.basic.ListPopupDefaults
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
-import top.yukonga.miuix.kmp.basic.PopupPositionProvider
 import top.yukonga.miuix.kmp.basic.PullToRefresh
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.TabRow
@@ -88,11 +86,9 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.ExpandLess
 import top.yukonga.miuix.kmp.icon.extended.ExpandMore
-import top.yukonga.miuix.kmp.icon.extended.MoreCircle
 import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
-import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
@@ -188,47 +184,25 @@ internal fun CatalogNodesScreen(
                                     tint = colorScheme.onSurface
                                 )
                             }
-                            OverlayListPopup(
-                                show = showMoreMenu,
-                                popupPositionProvider = ListPopupDefaults.ContextMenuPositionProvider,
-                                alignment = PopupPositionProvider.Align.TopEnd,
-                                onDismissRequest = { showMoreMenu = false }
-                            ) {
-                                ListPopupColumn {
-                                    DropdownImpl(
+                            TopBarMoreMenu(
+                                expanded = showMoreMenu,
+                                onExpandedChange = { showMoreMenu = it },
+                                actions = listOf(
+                                    TopBarMenuAction(
                                         text = "测试当前分组延迟",
-                                        optionSize = 2,
-                                        isSelected = false,
-                                        index = 0,
                                         enabled = selectedGroup?.nodes?.isNotEmpty() == true &&
                                             state.operation.isEmpty(),
-                                        onSelectedIndexChange = {
-                                            showMoreMenu = false
+                                        onClick = {
                                             selectedGroup?.group?.id?.let(viewModel::testGroupDelay)
                                         }
-                                    )
-                                    DropdownImpl(
+                                    ),
+                                    TopBarMenuAction(
                                         text = "节点显示设置",
-                                        optionSize = 2,
-                                        isSelected = false,
-                                        index = 1,
-                                        onSelectedIndexChange = {
-                                            showMoreMenu = false
-                                            showDisplaySettings = true
-                                        }
+                                        onClick = { showDisplaySettings = true }
                                     )
-                                }
-                            }
-                            IconButton(
-                                onClick = { showMoreMenu = true },
-                                holdDownState = showMoreMenu
-                            ) {
-                                Icon(
-                                    imageVector = MiuixIcons.MoreCircle,
-                                    contentDescription = "更多操作",
-                                    tint = colorScheme.onSurface
-                                )
-                            }
+                                ),
+                                contentDescription = stringResource(R.string.more_actions)
+                            )
                         }
                     )
                     if (state.groups.isNotEmpty() && layoutStyle == 0) {

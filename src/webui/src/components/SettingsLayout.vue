@@ -19,11 +19,15 @@ export interface SettingsState {
   network: string;
   udpTimeout: string;
   dnsMode: 'hijack' | 'off';
+  cgroupEnabled: boolean;
   cgroupPath: string;
-  ipv6Enabled: boolean;
+  ipv6Mode: 'disabled' | 'auto' | 'always' | 'shared';
   bypassRuleSets: string;
   sharedNetworkEnabled: boolean;
   sharedInterfaces: string;
+  sharedIncludeSourceCidrs: string;
+  sharedExcludeSourceCidrs: string;
+  sharedTcPriority: string;
   tcpMapCapacity: string;
   udpMapCapacity: string;
   socketMapCapacity: string;
@@ -43,11 +47,15 @@ const settingsState = ref<SettingsState>({
   network: '',
   udpTimeout: '5m',
   dnsMode: 'hijack',
+  cgroupEnabled: true,
   cgroupPath: '',
-  ipv6Enabled: true,
+  ipv6Mode: 'auto',
   bypassRuleSets: 'direct ChinaIP',
   sharedNetworkEnabled: false,
   sharedInterfaces: 'wlan2',
+  sharedIncludeSourceCidrs: '',
+  sharedExcludeSourceCidrs: '',
+  sharedTcPriority: '1',
   tcpMapCapacity: '65536',
   udpMapCapacity: '65536',
   socketMapCapacity: '65536',
@@ -63,11 +71,15 @@ const ebpfFieldMap: Partial<Record<SettingsKey, string>> = {
   network: 'EBPF_NETWORK',
   udpTimeout: 'EBPF_UDP_TIMEOUT',
   dnsMode: 'EBPF_DNS_MODE',
+  cgroupEnabled: 'EBPF_CGROUP_ENABLED',
   cgroupPath: 'EBPF_CGROUP_PATH',
-  ipv6Enabled: 'EBPF_IPV6',
+  ipv6Mode: 'EBPF_IPV6_MODE',
   bypassRuleSets: 'EBPF_BYPASS_RULE_SETS',
   sharedNetworkEnabled: 'EBPF_SHARED_NETWORK',
   sharedInterfaces: 'EBPF_SHARED_INTERFACES',
+  sharedIncludeSourceCidrs: 'EBPF_SHARED_INCLUDE_SOURCE_CIDRS',
+  sharedExcludeSourceCidrs: 'EBPF_SHARED_EXCLUDE_SOURCE_CIDRS',
+  sharedTcPriority: 'EBPF_SHARED_TC_PRIORITY',
   tcpMapCapacity: 'EBPF_TCP_MAP_CAPACITY',
   udpMapCapacity: 'EBPF_UDP_MAP_CAPACITY',
   socketMapCapacity: 'EBPF_SOCKET_MAP_CAPACITY',
@@ -87,8 +99,11 @@ const quotedFields = new Set<SettingsKey>([
   'udpTimeout',
   'dnsMode',
   'cgroupPath',
+  'ipv6Mode',
   'bypassRuleSets',
   'sharedInterfaces',
+  'sharedIncludeSourceCidrs',
+  'sharedExcludeSourceCidrs',
   'wifiSsidMode',
   'wifiSsidList',
   'wifiInterface'
@@ -101,10 +116,18 @@ const editLabel = ref('');
 const editValue = ref('');
 const editType = ref<'text' | 'number'>('text');
 const isApplying = ref(false);
+const isDiagnosing = ref(false);
+const showDiagnosticDialog = ref(false);
+const diagnosticText = ref('');
+const configWriteQueues = new Map<ConfigTarget, Promise<void>>();
 
 useBackDismiss(
   () => showEditDialog.value,
   () => { showEditDialog.value = false; }
+);
+useBackDismiss(
+  () => showDiagnosticDialog.value,
+  () => { showDiagnosticDialog.value = false; }
 );
 
 // ===================================================================
@@ -178,11 +201,18 @@ const loadSettings = async () => {
     settingsState.value.network = getValue(ebpfConfig, 'EBPF_NETWORK', '');
     settingsState.value.udpTimeout = getValue(ebpfConfig, 'EBPF_UDP_TIMEOUT', '5m');
     settingsState.value.dnsMode = getValue(ebpfConfig, 'EBPF_DNS_MODE', 'hijack') === 'off' ? 'off' : 'hijack';
+    settingsState.value.cgroupEnabled = getBool(ebpfConfig, 'EBPF_CGROUP_ENABLED', true);
     settingsState.value.cgroupPath = getValue(ebpfConfig, 'EBPF_CGROUP_PATH', '');
-    settingsState.value.ipv6Enabled = getBool(ebpfConfig, 'EBPF_IPV6', true);
+    const ipv6Mode = getValue(ebpfConfig, 'EBPF_IPV6_MODE', 'auto');
+    settingsState.value.ipv6Mode = ['disabled', 'auto', 'always', 'shared'].includes(ipv6Mode)
+      ? ipv6Mode as SettingsState['ipv6Mode']
+      : 'auto';
     settingsState.value.bypassRuleSets = getValue(ebpfConfig, 'EBPF_BYPASS_RULE_SETS', 'direct ChinaIP');
     settingsState.value.sharedNetworkEnabled = getBool(ebpfConfig, 'EBPF_SHARED_NETWORK', false);
     settingsState.value.sharedInterfaces = getValue(ebpfConfig, 'EBPF_SHARED_INTERFACES', 'wlan2');
+    settingsState.value.sharedIncludeSourceCidrs = getValue(ebpfConfig, 'EBPF_SHARED_INCLUDE_SOURCE_CIDRS', '');
+    settingsState.value.sharedExcludeSourceCidrs = getValue(ebpfConfig, 'EBPF_SHARED_EXCLUDE_SOURCE_CIDRS', '');
+    settingsState.value.sharedTcPriority = getValue(ebpfConfig, 'EBPF_SHARED_TC_PRIORITY', '1');
     settingsState.value.tcpMapCapacity = getValue(ebpfConfig, 'EBPF_TCP_MAP_CAPACITY', '65536');
     settingsState.value.udpMapCapacity = getValue(ebpfConfig, 'EBPF_UDP_MAP_CAPACITY', '65536');
     settingsState.value.socketMapCapacity = getValue(ebpfConfig, 'EBPF_SOCKET_MAP_CAPACITY', '65536');
@@ -198,30 +228,72 @@ const loadSettings = async () => {
   }
 };
 
-const writeSetting = async (
+type ConfigWrite = { key: string; value: string; forceQuotes: boolean };
+
+const writeSettings = async (
   target: ConfigTarget,
-  configKey: string,
-  value: string,
-  forceQuotes: boolean
+  updates: ConfigWrite[]
 ) => {
-  const content = await moduleClient.readConfig(target);
-  await moduleClient.applyConfig(target, writeConfigValue(content, configKey, value, forceQuotes));
+  const previous = configWriteQueues.get(target) ?? Promise.resolve();
+  const current = previous.catch(() => undefined).then(async () => {
+    const content = updates.reduce(
+      (currentContent, update) => writeConfigValue(
+        currentContent,
+        update.key,
+        update.value,
+        update.forceQuotes
+      ),
+      await moduleClient.readConfig(target)
+    );
+    await moduleClient.applyConfig(target, content);
+  });
+  configWriteQueues.set(target, current);
+  try {
+    await current;
+  } finally {
+    if (configWriteQueues.get(target) === current) configWriteQueues.delete(target);
+  }
 };
 
-const setEbpfValue = async (key: SettingsKey, value: string | boolean) => {
-  const configKey = ebpfFieldMap[key];
-  if (!configKey) return;
-  const previous = settingsState.value[key];
-  (settingsState.value as any)[key] = value;
+const writeSetting = (
+  target: ConfigTarget,
+  key: string,
+  value: string,
+  forceQuotes: boolean
+) => writeSettings(target, [{ key, value, forceQuotes }]);
+
+const setEbpfValues = async (updates: Partial<SettingsState>) => {
+  const entries = Object.entries(updates) as Array<[SettingsKey, string | boolean]>;
+  const previous = new Map<SettingsKey, string | boolean>();
+  const writes: ConfigWrite[] = [];
+  for (const [key, value] of entries) {
+    const configKey = ebpfFieldMap[key];
+    if (!configKey) continue;
+    previous.set(key, settingsState.value[key]);
+    (settingsState.value as any)[key] = value;
+    writes.push({
+      key: configKey,
+      value: typeof value === 'boolean' ? (value ? '1' : '0') : value,
+      forceQuotes: quotedFields.has(key)
+    });
+  }
+  if (!writes.length) return;
   try {
-    await writeSetting('ebpf', configKey, typeof value === 'boolean' ? (value ? '1' : '0') : value, quotedFields.has(key));
+    await writeSettings('ebpf', writes);
     showToast(t('settings.prefUpdated'));
   } catch (error) {
-    (settingsState.value as any)[key] = previous;
-    console.error(`Failed to update ${configKey} in ebpf.conf:`, error);
+    for (const [key, value] of entries) {
+      if (settingsState.value[key] === value && previous.has(key)) {
+        (settingsState.value as any)[key] = previous.get(key);
+      }
+    }
+    console.error('Failed to update ebpf.conf:', error);
     showToast(t('settings.updateEbpfFailed'));
   }
 };
+
+const setEbpfValue = (key: SettingsKey, value: string | boolean) =>
+  setEbpfValues({ [key]: value } as Partial<SettingsState>);
 
 const setModuleValue = async (key: SettingsKey, value: string | boolean) => {
   const configKey = moduleFieldMap[key];
@@ -232,7 +304,7 @@ const setModuleValue = async (key: SettingsKey, value: string | boolean) => {
     await writeSetting('module', configKey, typeof value === 'boolean' ? (value ? '1' : '0') : value, quotedFields.has(key));
     showToast(t('settings.prefUpdated'));
   } catch (error) {
-    (settingsState.value as any)[key] = previous;
+    if (settingsState.value[key] === value) (settingsState.value as any)[key] = previous;
     console.error(`Failed to update ${configKey} in module.conf:`, error);
     showToast(t('settings.updateModuleFailed'));
   }
@@ -263,10 +335,6 @@ const toggleGmsFix = async () => {
   settingsState.value.gmsFixEnabled = value;
   await updateGlobalModuleSetting('GMS_FIX', value ? '1' : '0');
   showToast(value ? t('settings.gmsFixOn') : t('settings.gmsFixOff'));
-};
-
-const toggleEbpfBool = async (key: SettingsKey) => {
-  await setEbpfValue(key, !Boolean(settingsState.value[key]));
 };
 
 const toggleModuleBool = async (key: SettingsKey) => {
@@ -316,18 +384,33 @@ const applyEbpfConfig = async () => {
   }
 };
 
+const diagnoseEbpf = async () => {
+  if (isDiagnosing.value) return;
+  isDiagnosing.value = true;
+  try {
+    diagnosticText.value = (await moduleClient.ebpfStatus('configured')).content;
+  } catch (error: any) {
+    diagnosticText.value = error?.data?.content || error?.message || String(error);
+  } finally {
+    isDiagnosing.value = false;
+    showDiagnosticDialog.value = true;
+  }
+};
+
 onMounted(loadSettings);
 
 provide('settingsState', settingsState);
 provide('toggleAutoStart', toggleAutoStart);
 provide('toggleGmsFix', toggleGmsFix);
-provide('toggleEbpfBool', toggleEbpfBool);
 provide('toggleModuleBool', toggleModuleBool);
 provide('setEbpfValue', setEbpfValue);
+provide('setEbpfValues', setEbpfValues);
 provide('setModuleValue', setModuleValue);
 provide('openEditPreference', openEditPreference);
 provide('applyEbpfConfig', applyEbpfConfig);
 provide('isApplyingEbpfConfig', isApplying);
+provide('diagnoseEbpf', diagnoseEbpf);
+provide('isDiagnosingEbpf', isDiagnosing);
 </script>
 
 <template>
@@ -352,6 +435,14 @@ provide('isApplyingEbpfConfig', isApplying);
         <md-text-button @click="handleSaveEdit">{{ t('common.save') }}</md-text-button>
       </div>
     </md-dialog>
+
+    <md-dialog :open="showDiagnosticDialog" @close="showDiagnosticDialog = false" class="transparent-scrim">
+      <div slot="headline">{{ t('proxy.diagnostics') }}</div>
+      <pre slot="content" class="diagnostic-output">{{ diagnosticText }}</pre>
+      <div slot="actions">
+        <md-text-button @click="showDiagnosticDialog = false">{{ t('common.done') }}</md-text-button>
+      </div>
+    </md-dialog>
   </div>
 </template>
 
@@ -370,6 +461,15 @@ provide('isApplyingEbpfConfig', isApplying);
 
 .edit-text-field {
   width: 100%;
+}
+
+.diagnostic-output {
+  max-height: 56vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .transparent-scrim {

@@ -9,6 +9,7 @@ data class AppInfoModel(
     val label: String,
     val isProxied: Boolean,
     val userId: String = "0",
+    val userIds: List<String> = listOf(userId),
     val isSystem: Boolean = false
 )
 
@@ -16,6 +17,7 @@ data class AppInfoModel(
 data class AppsUiState(
     val appProxyEnabled: Boolean = true,
     val appProxyMode: String = "blacklist",
+    val appAndroidUsers: Set<String> = emptySet(),
     val proxiedApps: Set<String> = emptySet(),
     val allApps: List<AppInfoModel> = emptyList(),
     val masterAppList: List<AppInfoModel> = emptyList(),

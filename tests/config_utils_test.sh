@@ -40,4 +40,9 @@ set_conf "$CONF" FOUR '4'
 [ "$(read_conf "$CONF" FOUR "")" = "4" ]
 [ ! -e "$CONF.lock" ]
 
+validate_android_package_list "com.android.chrome org.telegram.messenger" "apps"
+! validate_android_package_list "0:com.android.chrome" "apps"
+validate_android_user_list "0 10 999" "users"
+! validate_android_user_list "0 owner" "users"
+
 printf '%s\n' "config utils test passed"

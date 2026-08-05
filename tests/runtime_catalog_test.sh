@@ -15,10 +15,11 @@ RUNTIME_DIR="$TMP_ROOT/runtime"
 LOG_FILE="$TMP_ROOT/test.log"
 LOG_STDERR=0
 LOG_TAG="runtime-test"
-EBPF_CONF="$MODDIR/config/ebpf/ebpf.conf"
+EBPF_CONF="$TMP_ROOT/ebpf.conf"
 
 mkdir -p "$CATALOG_DIR/default" "$CATALOG_DIR/secondary" "$CATALOG_DIR/staging" "$RUNTIME_DIR"
 cp "$MODDIR/config/module.conf" "$MODULE_CONF"
+cp "$MODDIR/config/ebpf/ebpf.conf" "$EBPF_CONF"
 cp "$MODDIR/config/catalog/default/meta.json" "$CATALOG_DIR/default/meta.json"
 cp "$MODDIR/config/catalog/default/meta.json" "$CATALOG_DIR/secondary/meta.json"
 sed -i 's/"node_count": 0/"node_count": 1/' \
@@ -36,7 +37,6 @@ sed -i 's/"id": "default"/"id": "secondary"/; s/"name": "本地配置"/"name": "
 . "$MODDIR/scripts/utils/common.sh"
 . "$MODDIR/scripts/utils/config.sh"
 . "$MODDIR/scripts/utils/catalog.sh"
-. "$MODDIR/scripts/utils/apps.sh"
 . "$MODDIR/scripts/core/runtime.sh"
 . "$MODDIR/scripts/core/ebpf.sh"
 
@@ -56,6 +56,63 @@ grep -q '"external_controller": "0.0.0.0:9999"' "$CONFDIR/02_experimental.json"
 grep -q '"listen": "0.0.0.0"' "$CONFDIR/08_services.json"
 grep -q '"secret": "singbox"' "$CONFDIR/02_experimental.json"
 grep -q '"secret": "singbox"' "$CONFDIR/08_services.json"
+grep -q '"cgroup_enabled": true' "$RUNTIME_EBPF_FILE"
+grep -q '"cgroup_ipv6_mode": "auto"' "$RUNTIME_EBPF_FILE"
+grep -q '"include_package": \[\]' "$RUNTIME_EBPF_FILE"
+grep -q '"exclude_package": \[\]' "$RUNTIME_EBPF_FILE"
+grep -q '"include_android_user": \[\]' "$RUNTIME_EBPF_FILE"
+grep -q '"tc_priority": 1' "$RUNTIME_EBPF_FILE"
+
+set_conf_values "$EBPF_CONF" \
+  "APP_PROXY_MODE" '"blacklist"' \
+  "APP_ANDROID_USERS" '"0 999"' \
+  "BYPASS_APPS_LIST" '"com.android.chrome org.telegram.messenger"' \
+  "EBPF_SHARED_INCLUDE_SOURCE_CIDRS" '"192.168.43.0/24 fd00::/64"' \
+  "EBPF_SHARED_EXCLUDE_SOURCE_CIDRS" '"192.168.43.10/32"' \
+  "EBPF_SHARED_TC_PRIORITY" "7"
+write_runtime_ebpf > /dev/null
+grep -q '"include_android_user": \[0, 999\]' "$RUNTIME_EBPF_FILE"
+grep -q '"exclude_package": \["com.android.chrome", "org.telegram.messenger"\]' "$RUNTIME_EBPF_FILE"
+grep -q '"include_source_cidr": \["192.168.43.0/24", "fd00::/64"\]' "$RUNTIME_EBPF_FILE"
+grep -q '"exclude_source_cidr": \["192.168.43.10/32"\]' "$RUNTIME_EBPF_FILE"
+grep -q '"tc_priority": 7' "$RUNTIME_EBPF_FILE"
+
+set_conf_values "$EBPF_CONF" \
+  "APP_PROXY_MODE" '"whitelist"' \
+  "PROXY_APPS_LIST" '""' \
+  "BYPASS_APPS_LIST" '""'
+write_runtime_ebpf > /dev/null
+grep -q '"include_uid": \[4294967295\]' "$RUNTIME_EBPF_FILE"
+grep -q '"include_package": \[\]' "$RUNTIME_EBPF_FILE"
+
+set_conf_values "$EBPF_CONF" \
+  "PROXY_APPS_LIST" '"com.google.android.youtube"' \
+  "EBPF_IPV6_MODE" '"disabled"'
+write_runtime_ebpf > /dev/null
+grep -q '"include_uid": \[\]' "$RUNTIME_EBPF_FILE"
+grep -q '"include_package": \["com.google.android.youtube"\]' "$RUNTIME_EBPF_FILE"
+grep -q '"cgroup_ipv6_mode": "off"' "$RUNTIME_EBPF_FILE"
+! grep -q 'fd53:696e:672d:626f::/64' "$RUNTIME_EBPF_FILE"
+
+set_conf "$EBPF_CONF" "EBPF_IPV6_MODE" '"shared"'
+write_runtime_ebpf > /dev/null
+grep -q '"cgroup_ipv6_mode": "off"' "$RUNTIME_EBPF_FILE"
+grep -q 'fd53:696e:672d:626f::/64' "$RUNTIME_EBPF_FILE"
+
+set_conf "$EBPF_CONF" "EBPF_IPV6_MODE" '"always"'
+write_runtime_ebpf > /dev/null
+grep -q '"cgroup_ipv6_mode": "always"' "$RUNTIME_EBPF_FILE"
+grep -q 'fd53:696e:672d:626f::/64' "$RUNTIME_EBPF_FILE"
+
+set_conf_values "$EBPF_CONF" \
+  "EBPF_CGROUP_ENABLED" "0" \
+  "EBPF_SHARED_NETWORK" "1" \
+  "EBPF_SHARED_INTERFACES" '"wlan2"'
+write_runtime_ebpf > /dev/null
+grep -q '"cgroup_enabled": false' "$RUNTIME_EBPF_FILE"
+! grep -q '"cgroup_path"' "$RUNTIME_EBPF_FILE"
+! grep -q '"include_package"' "$RUNTIME_EBPF_FILE"
+grep -q '"map_capacity": 65536' "$RUNTIME_EBPF_FILE"
 
 sed -i 's/"name": "备用配置"/"name": "本地配置"/' "$CATALOG_DIR/secondary/meta.json"
 [ "$(catalog_runtime_group_tag default)" = "本地配置 [default]" ]

@@ -45,6 +45,21 @@ grep -q '^OUTBOUND_MODE=AllowAds$' "$MODULE/config/module.conf"
 result="$(sh "$MODULE/scripts/netproxyctl" --json mode rule)"
 run_json "$result"
 
+result="$(sh "$MODULE/scripts/netproxyctl" --json app list)"
+run_json "$result"
+printf '%s' "$result" | grep -q '"android_users":""'
+result="$(sh "$MODULE/scripts/netproxyctl" --json app users 0 999)"
+run_json "$result"
+grep -q '^APP_ANDROID_USERS="0 999"$' "$MODULE/config/ebpf/ebpf.conf"
+result="$(sh "$MODULE/scripts/netproxyctl" --json app add com.android.chrome)"
+run_json "$result"
+grep -q '^BYPASS_APPS_LIST="com.android.chrome"$' "$MODULE/config/ebpf/ebpf.conf"
+if result="$(sh "$MODULE/scripts/netproxyctl" --json app add 0:com.android.chrome 2> /dev/null)"; then
+  printf '%s\n' 'legacy user:package syntax should fail' >&2
+  exit 1
+fi
+printf '%s' "$result" | grep -q '"code":"app.package_invalid"'
+
 cp "$MODULE/config/module.conf" "$TMP_ROOT/module.candidate"
 original_auto_start="$(sed -n 's/^AUTO_START=//p' "$MODULE/config/module.conf")"
 if [ "$original_auto_start" = "1" ]; then

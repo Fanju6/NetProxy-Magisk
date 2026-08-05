@@ -129,6 +129,8 @@ jobs:
           go version -m .sing-box-source/sing-box | grep -q 'with_tailscale'
 
           install -m 0755 .sing-box-source/sing-box "$SING_BOX_TARGET"
+          install -m 0644 .sing-box-source/docs/schema.json \
+            src/android/app/src/main/assets/sing-box.schema.json
           tmpjson="$(mktemp)"
           jq --arg version "$LATEST_VERSION" \
             '.singBox.currentVersion = $version' \
@@ -171,7 +173,7 @@ jobs:
               newSize: $newSize,
               sha256: $sha256,
               buildTags: $buildTags,
-              checks: ["ARM64 架构", "版本信息匹配", "包含 eBPF", "包含 Tailscale"]
+              checks: ["ARM64 架构", "版本信息匹配", "包含 eBPF", "包含 Tailscale", "已同步 JSON Schema"]
             }' > "$UPDATE_REPORT_DIR/sing-box.json"
 
           echo "sing-box SHA-256: $binary_sha256"

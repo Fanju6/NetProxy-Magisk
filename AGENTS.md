@@ -21,6 +21,8 @@
 - Provider 的运行时显示标签来自分组名称；名称冲突时才附加分组 ID。用户界面不得直接显示 UUID 代替可读名称。
 - 自动选择必须落到 `Auto/<group>`，Provider/selector 的默认值绝不能静默回退到 `direct`。
 - eBPF 是 sing-box 的入站实现，不是独立代理核心。服务、模式和节点切换文案继续使用“服务”或“sing-box”，不要泛化为“eBPF 服务”。
+- 分应用策略持久化包名与 Android 用户范围，运行时直接生成 `include_package` / `exclude_package` / `include_android_user`；不得恢复模块侧包名转 UID 或 `user:package` 格式。
+- `EBPF_CGROUP_ENABLED=0` 时只允许 shared-network 数据路径，运行时不得输出 cgroup 路径、IPv6 模式、应用/UID 策略或本机 Map 配置。
 - Service API 与 Clash API 的固定监听和密钥位于 `02_experimental.json`、`08_services.json`。不要重新引入运行时随机 bootstrap，现有 WebUI 依赖固定入口。
 - 服务状态只允许 `stopped/preparing/starting/ready/stopping/failed`。`ready_at` 只能在 sing-box API 与 eBPF 入站均就绪后写入。
 

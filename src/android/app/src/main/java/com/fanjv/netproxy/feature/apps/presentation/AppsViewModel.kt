@@ -19,6 +19,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 
@@ -36,6 +38,7 @@ internal class AppsViewModel(
     private var loadJob: Job? = null
     private var modelJob: Job? = null
     private var searchJob: Job? = null
+    private val policyMutationMutex = Mutex()
     private var loaded = false
 
     fun load(force: Boolean = false) {
@@ -54,7 +57,7 @@ internal class AppsViewModel(
                 }
             }.onSuccess { (config, users) ->
                 val selected = activeItems(config).toSet()
-                resolveLabels(selected.map(::splitAppId))
+                resolveLabels(selected.map { it to "0" })
                 val master = withContext(Dispatchers.IO) {
                     users.map { user ->
                         async {
@@ -67,12 +70,19 @@ internal class AppsViewModel(
                             }
                         }
                     }.awaitAll().flatten()
+                }.groupBy(AppInfoModel::packageName).map { (_, entries) ->
+                    val primary = entries.firstOrNull { it.userId == "0" } ?: entries.first()
+                    primary.copy(
+                        userIds = entries.map(AppInfoModel::userId).distinct().sorted(),
+                        isSystem = entries.all(AppInfoModel::isSystem)
+                    )
                 }
                 loaded = true
                 _state.update {
                     it.copy(
                         appProxyEnabled = config.enabled,
                         appProxyMode = config.mode,
+                        appAndroidUsers = parseAndroidUsers(config),
                         proxiedApps = selected,
                         masterAppList = master,
                         users = users,
@@ -95,27 +105,70 @@ internal class AppsViewModel(
     }
 
     fun setProxySettings(enabled: Boolean, mode: String? = null) {
+        val previous = _state.value
+        _state.update {
+            it.copy(
+                appProxyEnabled = enabled,
+                appProxyMode = mode ?: it.appProxyMode,
+                error = ""
+            )
+        }
         viewModelScope.launch {
-            runCatching {
-                repository.setEnabled(enabled)
-                if (enabled && mode != null) repository.setMode(mode)
-            }.onSuccess { refreshConfig() }
-                .onFailure { error -> _state.update { it.copy(error = error.userMessage()) } }
+            policyMutationMutex.withLock {
+                runCatching {
+                    repository.setEnabled(enabled)
+                    if (enabled && mode != null) repository.setMode(mode)
+                }.onFailure { error ->
+                    _state.update {
+                        it.copy(
+                            appProxyEnabled = previous.appProxyEnabled,
+                            appProxyMode = previous.appProxyMode,
+                            error = error.userMessage()
+                        )
+                    }
+                    refreshConfig()
+                }
+            }
         }
     }
 
-    fun toggle(packageName: String, userId: String = "0") {
-        viewModelScope.launch {
-            val id = if (userId == "0") packageName else "$userId:$packageName"
-            runCatching {
-                if (isSelected(_state.value.proxiedApps, packageName, userId)) {
-                    repository.remove(id)
-                } else {
-                    repository.add(id)
-                }
-            }.onSuccess { refreshConfig() }
-                .onFailure { error -> _state.update { it.copy(error = error.userMessage()) } }
+    fun toggle(packageName: String) {
+        val wasSelected = _state.value.proxiedApps.contains(packageName)
+        _state.update {
+            val updated = if (wasSelected) {
+                it.proxiedApps - packageName
+            } else {
+                it.proxiedApps + packageName
+            }
+            it.copy(proxiedApps = updated, error = "")
         }
+        applyFilterAndSort()
+        viewModelScope.launch {
+            policyMutationMutex.withLock {
+                runCatching {
+                    if (wasSelected) repository.remove(packageName) else repository.add(packageName)
+                }.onFailure { error ->
+                    _state.update { it.copy(error = error.userMessage()) }
+                    refreshConfig()
+                }
+            }
+        }
+    }
+
+    fun selectAllAndroidUsers() {
+        updateAndroidUsers(emptySet())
+    }
+
+    fun toggleAndroidUser(userId: String) {
+        val current = _state.value.appAndroidUsers
+        val updated = if (current.isEmpty()) {
+            setOf(userId)
+        } else if (userId in current) {
+            current - userId
+        } else {
+            current + userId
+        }
+        updateAndroidUsers(updated)
     }
 
     fun setShowSystemApps(show: Boolean) {
@@ -167,11 +220,12 @@ internal class AppsViewModel(
             runCatching { repository.config() }
                 .onSuccess { config ->
                     val selected = activeItems(config).toSet()
-                    resolveLabels(selected.map(::splitAppId))
+                    resolveLabels(selected.map { it to "0" })
                     _state.update {
                         it.copy(
                             appProxyEnabled = config.enabled,
                             appProxyMode = config.mode,
+                            appAndroidUsers = parseAndroidUsers(config),
                             proxiedApps = selected,
                             error = ""
                         )
@@ -191,11 +245,7 @@ internal class AppsViewModel(
                 .filter { snapshot.showSystemApps || !it.isSystem }
                 .map { app ->
                     app.copy(
-                        isProxied = isSelected(
-                            snapshot.proxiedApps,
-                            app.packageName,
-                            app.userId
-                        ),
+                        isProxied = snapshot.proxiedApps.contains(app.packageName),
                         label = labels["${app.userId}:${app.packageName}"] ?: app.label
                     )
                 }
@@ -237,6 +287,7 @@ internal class AppsViewModel(
             label = labels["$userId:$packageName"] ?: packageName,
             isProxied = false,
             userId = userId,
+            userIds = listOf(userId),
             isSystem = isSystem
         )
 
@@ -245,10 +296,19 @@ internal class AppsViewModel(
             .split(' ')
             .filter(String::isNotBlank)
 
-    private fun splitAppId(id: String): Pair<String, String> =
-        if (':' in id) id.substringAfter(':') to id.substringBefore(':') else id to "0"
+    private fun parseAndroidUsers(config: AppProxyConfig): Set<String> =
+        config.androidUsers.split(' ').filter(String::isNotBlank).toSet()
 
-    private fun isSelected(selected: Set<String>, packageName: String, userId: String): Boolean =
-        selected.contains(if (userId == "0") packageName else "$userId:$packageName") ||
-            selected.contains("$userId:$packageName")
+    private fun updateAndroidUsers(userIds: Set<String>) {
+        _state.update { it.copy(appAndroidUsers = userIds, error = "") }
+        viewModelScope.launch {
+            policyMutationMutex.withLock {
+                runCatching { repository.setUsers(userIds.sorted()) }
+                    .onFailure { error ->
+                        _state.update { it.copy(error = error.userMessage()) }
+                        refreshConfig()
+                    }
+            }
+        }
+    }
 }

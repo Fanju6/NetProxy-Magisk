@@ -31,6 +31,7 @@ interface AppItem {
   checked: boolean;
   iconColor: string;     // 预计算的头像底色 (避免每渲染哈希)
   userId: string;        // 预计算的用户 ID
+  userIds: string[];     // 同一包名所在的 Android 用户
   showUserBadge: boolean; // 是否显示 USER 徽章 (userId !== '0')
 }
 
@@ -49,6 +50,10 @@ const onIconError = (packageName: string) => {
 // 分应用代理偏好状态
 const isAppProxyEnabled = ref(false);
 const appProxyMode = ref<'blacklist' | 'whitelist'>('blacklist');
+const appAndroidUsers = ref<Set<string>>(new Set());
+const availableAndroidUsers = computed(() =>
+  [...new Set(apps.value.flatMap(app => app.userIds))].sort((a, b) => Number(a) - Number(b))
+);
 
 // 展示过滤选项（持久化到 localStorage）
 const showSystemApps = ref(localStorage.getItem('np_show_system_apps') === 'true');
@@ -147,13 +152,12 @@ const loadAppConfig = async () => {
     const state = await moduleClient.appState();
     isAppProxyEnabled.value = state.enabled;
     appProxyMode.value = state.mode;
+    appAndroidUsers.value = new Set(state.android_users.split(/\s+/).filter(Boolean));
 
     const configured = state.mode === 'whitelist' ? state.proxy_apps : state.bypass_apps;
     const checkedSet = new Set(configured.split(/\s+/).filter(Boolean));
     apps.value.forEach(app => {
-      const userId = getUserId(app.uid);
-      const targetWithUser = `${userId}:${app.packageName}`;
-      app.checked = checkedSet.has(targetWithUser) || checkedSet.has(app.packageName);
+      app.checked = checkedSet.has(app.packageName);
     });
   } catch (e) {
     console.error('Failed to load eBPF config:', e);
@@ -166,7 +170,7 @@ const loadPackages = async () => {
   try {
     const pkgs = await getAppPackagesList('all');
     if (pkgs && pkgs.length > 0) {
-      apps.value = pkgs.map(pkg => {
+      const packageItems = pkgs.map(pkg => {
         const userId = getUserId(pkg.uid);
         return {
           packageName: pkg.packageName,
@@ -179,9 +183,28 @@ const loadPackages = async () => {
           checked: false,
           iconColor: getIconColor(pkg.packageName),
           userId,
+          userIds: [userId],
           showUserBadge: userId !== '0'
         };
       });
+      const grouped = new Map<string, AppItem>();
+      for (const item of packageItems) {
+        const existing = grouped.get(item.packageName);
+        if (!existing) {
+          grouped.set(item.packageName, item);
+          continue;
+        }
+        existing.userIds = [...new Set([...existing.userIds, ...item.userIds])]
+          .sort((a, b) => Number(a) - Number(b));
+        existing.showUserBadge = existing.userIds.length > 1 || existing.userIds[0] !== '0';
+        existing.isSystem = existing.isSystem && item.isSystem;
+        if (item.userId === '0') {
+          existing.uid = item.uid;
+          existing.userId = item.userId;
+          existing.appLabel = item.appLabel;
+        }
+      }
+      apps.value = [...grouped.values()];
     } else {
       throw new Error('Empty packages returned');
     }
@@ -222,6 +245,7 @@ const loadPackages = async () => {
         checked: m.checked,
         iconColor: getIconColor(m.packageName),
         userId,
+        userIds: [userId],
         showUserBadge: userId !== '0'
       };
     });
@@ -326,15 +350,12 @@ const toggleAppProxy = async (app: AppItem) => {
   const originalState = app.checked;
   app.checked = !originalState;
   
-  const userId = getUserId(app.uid);
-  
   try {
-    const appId = `${userId}:${app.packageName}`;
     if (originalState) {
-      await moduleClient.removeApp(appId);
+      await moduleClient.removeApp(app.packageName);
       showToast(t('apps.removedFromList', { label: app.appLabel }));
     } else {
-      await moduleClient.addApp(appId);
+      await moduleClient.addApp(app.packageName);
       showToast(t('apps.addedToList', { label: app.appLabel }));
     }
     await loadAppConfig();
@@ -342,6 +363,28 @@ const toggleAppProxy = async (app: AppItem) => {
     // 出错时回滚勾选态
     app.checked = originalState;
     showToast(t('apps.updateConfigFailed', { msg: err.message || err }));
+  }
+};
+
+const selectAllAndroidUsers = async () => {
+  try {
+    await moduleClient.setAppUsers([]);
+    await loadAppConfig();
+  } catch (err: any) {
+    showToast(t('apps.updateUsersFailed', { msg: err.message || err }));
+  }
+};
+
+const toggleAndroidUser = async (userId: string) => {
+  const next = new Set(appAndroidUsers.value);
+  if (next.size === 0) next.add(userId);
+  else if (next.has(userId)) next.delete(userId);
+  else next.add(userId);
+  try {
+    await moduleClient.setAppUsers([...next].sort((a, b) => Number(a) - Number(b)));
+    await loadAppConfig();
+  } catch (err: any) {
+    showToast(t('apps.updateUsersFailed', { msg: err.message || err }));
   }
 };
 
@@ -564,7 +607,7 @@ defineExpose({
         <div class="apps-virtual-inner" :style="{ transform: `translateY(${visibleRange.offsetY}px)` }">
           <div
             v-for="app in visibleApps"
-            :key="`${app.userId}:${app.packageName}`"
+            :key="app.packageName"
             class="app-item-card"
             @click="toggleAppProxy(app)">
 
@@ -592,7 +635,7 @@ defineExpose({
 
             <div class="app-item-end">
               <div v-if="app.showUserBadge" class="user-id-badge">
-                USER {{ app.userId }}
+                USER {{ app.userIds.join(', ') }}
               </div>
               <md-checkbox
                 :checked="app.checked"
@@ -613,6 +656,24 @@ defineExpose({
                接管初始焦点，避免第一个开关出现 focus-visible 选中圈 -->
           <span tabindex="-1" autofocus aria-hidden="true" class="focus-sink"></span>
           <div class="preference-group-card">
+            <div class="switch-pref-row" @click="selectAllAndroidUsers">
+              <div class="dropdown-text">
+                <span class="dropdown-title">{{ t('apps.allAndroidUsers') }}</span>
+              </div>
+              <md-switch :selected="appAndroidUsers.size === 0" @click.stop="selectAllAndroidUsers"></md-switch>
+            </div>
+
+            <template v-for="userId in availableAndroidUsers" :key="userId">
+              <div class="pref-inner-divider"></div>
+              <div class="switch-pref-row" @click="toggleAndroidUser(userId)">
+                <div class="dropdown-text">
+                  <span class="dropdown-title">{{ t('apps.androidUser', { id: userId }) }}</span>
+                </div>
+                <md-switch :selected="appAndroidUsers.has(userId)" @click.stop="toggleAndroidUser(userId)"></md-switch>
+              </div>
+            </template>
+
+            <div class="pref-inner-divider"></div>
             
             <div class="switch-pref-row" @click="setShowSystemApps(!showSystemApps)">
               <div class="dropdown-text">

@@ -119,6 +119,10 @@ stopped -> preparing -> starting -> ready -> stopping -> stopped
 
 eBPF 只负责透明代理入站。停止服务由 sing-box 关闭并清理其 eBPF 程序、Map 和 TC 挂载；项目不再维护 TPROXY/IPSET 兼容路径。
 
+分应用配置保存包名和可选 Android 用户范围，`ebpf.sh` 直接生成 `include_package`、`exclude_package` 与 `include_android_user`，包名到 UID 的解析由 sing-box 在入站启动时完成。应用安装、重装、UID 变化或用户范围变化后，通过配置 reload 重新解析，不维护模块侧 UID 缓存。
+
+本机 cgroup 与热点 shared-network 是可独立启用的数据路径。关闭本机 cgroup 时，运行时配置省略 cgroup 路径、原生 IPv6 策略、应用/UID 策略和本机 Map 字段；本机与共享网络同时关闭属于无效配置。
+
 ## sing-box 配置组合
 
 `service.sh` 通过 `-C config/singbox/confdir` 加载静态配置，并追加运行时文件：

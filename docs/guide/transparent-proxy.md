@@ -9,10 +9,13 @@ NetProxy 使用 sing-box 的实验性 eBPF 入站接管流量。它通过 cgroup
 ```text
 EBPF_NETWORK=""
 EBPF_DNS_MODE="hijack"
-EBPF_IPV6=1
+EBPF_CGROUP_ENABLED=1
+EBPF_IPV6_MODE="auto"
 ```
 
 `EBPF_NETWORK` 可设为 `tcp` 或 `udp`，留空表示两者都处理。DNS 劫持依赖 UDP；将网络限制为 `tcp` 时不应同时用于需要 UDP DNS 的共享网络。
+
+`EBPF_IPV6_MODE` 可设为 `disabled`、`auto`、`always` 或 `shared`。`shared` 只接管热点与 USB 共享网络的 IPv6 流量，本机应用 IPv6 保持直连。
 
 ## 分应用代理
 
@@ -21,10 +24,11 @@ EBPF_IPV6=1
 - `APP_PROXY_ENABLE=1`：按应用名单过滤
 - `APP_PROXY_MODE="blacklist"`：名单内应用绕过
 - `APP_PROXY_MODE="whitelist"`：仅名单内应用进入代理
+- `APP_ANDROID_USERS`：限制策略生效的 Android 用户，留空表示全部用户
 - `PROXY_APPS_LIST`：白名单应用
 - `BYPASS_APPS_LIST`：黑名单应用
 
-服务启动时会把包名解析为 Android UID，并写入 eBPF 入站的 `include_uid` 或 `exclude_uid`。名单支持 `user:package` 格式，例如 `10:com.example.app`。
+模块把包名和 Android 用户范围直接写入 eBPF 入站，sing-box 在启动时通过 Android PackageManager 解析对应 UID。应用安装、重装、UID 变化或新增 Android 用户后，需要重新加载服务。
 
 ## 规则集提前绕过
 
@@ -41,6 +45,9 @@ EBPF_BYPASS_RULE_SETS="direct ChinaIP"
 ```text
 EBPF_SHARED_NETWORK=0
 EBPF_SHARED_INTERFACES="wlan2"
+EBPF_SHARED_INCLUDE_SOURCE_CIDRS=""
+EBPF_SHARED_EXCLUDE_SOURCE_CIDRS=""
+EBPF_SHARED_TC_PRIORITY=1
 ```
 
 启用后，sing-box 会向指定下游接口挂载 TC eBPF。接口暂时不存在不会阻止核心启动，热点开启后会自动尝试挂载。不同 ROM 的热点或 USB 接口名可能不同，必须填写实际接收下游流量的接口。

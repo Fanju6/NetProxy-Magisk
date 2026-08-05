@@ -268,3 +268,45 @@ list_remove() {
 
   printf "%s" "$output"
 }
+
+#######################################
+# 校验 Android 应用包名列表
+# 参数:
+#   $1  空格分隔的包名
+#   $2  配置键名
+# 返回: 合法返回 0，否则返回非 0
+#######################################
+validate_android_package_list() {
+  local values="${1:-}"
+  local key="${2:-应用列表}"
+  local value
+
+  for value in $values; do
+    case "$value" in
+      "" | *[!A-Za-z0-9._]*) return 1 ;;
+    esac
+  done
+
+  return 0
+}
+
+#######################################
+# 校验 Android 用户 ID 列表
+# 参数:
+#   $1  空格分隔的用户 ID
+#   $2  配置键名
+# 返回: 合法返回 0，否则返回非 0
+#######################################
+validate_android_user_list() {
+  local values="${1:-}"
+  local key="${2:-Android 用户列表}"
+  local value
+
+  for value in $values; do
+    case "$value" in
+      "" | *[!0-9]*) return 1 ;;
+    esac
+  done
+
+  return 0
+}

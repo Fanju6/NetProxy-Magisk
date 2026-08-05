@@ -10,10 +10,13 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.runtime.Composable
@@ -27,9 +30,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.R
@@ -38,23 +43,19 @@ import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.CardItem
 import com.fanjv.netproxy.core.ui.component.groupedCardSection
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
+import com.fanjv.netproxy.core.ui.component.TopBarMenuAction
+import com.fanjv.netproxy.core.ui.component.TopBarMoreMenu
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
-import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.ListPopupColumn
-import top.yukonga.miuix.kmp.basic.ListPopupDefaults
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
-import top.yukonga.miuix.kmp.basic.PopupPositionProvider
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
-import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
@@ -90,7 +91,7 @@ internal fun ProxySettingsScreen(
         showTextEditDialog.value = true
     }
 
-    LaunchedEffect(Unit) { viewModel.refresh() }
+    LaunchedEffect(Unit) { viewModel.ensureLoaded() }
 
     Scaffold(
         topBar = {
@@ -109,36 +110,23 @@ internal fun ProxySettingsScreen(
                         }
                     },
                     actions = {
-                        val showRestartPopup = remember { mutableStateOf(false) }
-                        OverlayListPopup(
-                            show = showRestartPopup.value,
-                            popupPositionProvider = ListPopupDefaults.ContextMenuPositionProvider,
-                            alignment = PopupPositionProvider.Align.TopEnd,
-                            onDismissRequest = { showRestartPopup.value = false }
-                        ) {
-                            ListPopupColumn {
-                                DropdownImpl(
+                        var showMoreMenu by remember { mutableStateOf(false) }
+                        TopBarMoreMenu(
+                            expanded = showMoreMenu,
+                            onExpandedChange = { showMoreMenu = it },
+                            actions = listOf(
+                                TopBarMenuAction(
                                     text = stringResource(R.string.ebpf_restart_service),
-                                    isSelected = false,
-                                    optionSize = 1,
-                                    index = 0,
-                                    onSelectedIndexChange = {
-                                        showRestartPopup.value = false
-                                        viewModel.restartService()
-                                    }
+                                    onClick = viewModel::restartService
+                                ),
+                                TopBarMenuAction(
+                                    text = stringResource(R.string.ebpf_diagnostics),
+                                    enabled = !settingsUi.isDiagnosingEbpf,
+                                    onClick = viewModel::diagnoseEbpf
                                 )
-                            }
-                        }
-                        IconButton(
-                            onClick = { showRestartPopup.value = true },
-                            holdDownState = showRestartPopup.value
-                        ) {
-                            Icon(
-                                imageVector = MiuixIcons.Refresh,
-                                contentDescription = stringResource(R.string.ebpf_restart_service),
-                                tint = colorScheme.onSurface
-                            )
-                        }
+                            ),
+                            contentDescription = stringResource(R.string.more_actions)
+                        )
                     }
                 )
             }
@@ -172,7 +160,7 @@ internal fun ProxySettingsScreen(
                                 items = labels,
                                 selectedIndex = values.indexOf(settings.network).coerceAtLeast(0),
                                 onSelectedIndexChange = {
-                                    viewModel.updateProxySetting("EBPF_NETWORK", values[it])
+                                    viewModel.setNetwork(values[it])
                                 }
                             )
                         },
@@ -184,13 +172,31 @@ internal fun ProxySettingsScreen(
                                 onCheckedChange = { viewModel.setDnsHijackEnabled(it) }
                             )
                         },
-                        CardItem("ipv6") {
+                        CardItem("cgroup_enabled") {
                             SwitchPreference(
-                                title = stringResource(R.string.ebpf_ipv6),
-                                summary = stringResource(R.string.ebpf_ipv6_summary),
-                                checked = settings.ipv6Enabled,
-                                onCheckedChange = {
-                                    viewModel.updateProxySetting("EBPF_IPV6", if (it) "1" else "0")
+                                title = stringResource(R.string.ebpf_cgroup_enable),
+                                summary = stringResource(R.string.ebpf_cgroup_enable_summary),
+                                checked = settings.cgroupEnabled,
+                                onCheckedChange = viewModel::setCgroupEnabled
+                            )
+                        },
+                        CardItem("ipv6_mode") {
+                            val values = listOf("disabled", "auto", "always", "shared")
+                            OverlayDropdownPreference(
+                                title = stringResource(R.string.ebpf_ipv6_mode),
+                                items = listOf(
+                                    stringResource(R.string.ebpf_ipv6_mode_disabled),
+                                    stringResource(R.string.ebpf_ipv6_mode_auto),
+                                    stringResource(R.string.ebpf_ipv6_mode_always),
+                                    stringResource(R.string.ebpf_ipv6_mode_shared)
+                                ),
+                                selectedIndex = values.indexOf(settings.ipv6Mode)
+                                    .coerceAtLeast(0),
+                                onSelectedIndexChange = {
+                                    viewModel.updateProxySetting(
+                                        "EBPF_IPV6_MODE",
+                                        values[it]
+                                    )
                                 }
                             )
                         },
@@ -247,12 +253,7 @@ internal fun ProxySettingsScreen(
                                 title = stringResource(R.string.ebpf_shared_enable),
                                 summary = stringResource(R.string.ebpf_shared_enable_summary),
                                 checked = settings.sharedNetworkEnabled,
-                                onCheckedChange = {
-                                    viewModel.updateProxySetting(
-                                        "EBPF_SHARED_NETWORK",
-                                        if (it) "1" else "0"
-                                    )
-                                }
+                                onCheckedChange = viewModel::setSharedNetworkEnabled
                             )
                         },
                         CardItem("interfaces") {
@@ -265,6 +266,52 @@ internal fun ProxySettingsScreen(
                                         "EBPF_SHARED_INTERFACES",
                                         label,
                                         settings.sharedInterfaces
+                                    )
+                                }
+                            )
+                        },
+                        CardItem("include_source_cidrs") {
+                            val label = stringResource(R.string.ebpf_shared_include_source_cidrs)
+                            ArrowPreference(
+                                title = label,
+                                summary = settings.sharedIncludeSourceCidrs.ifBlank {
+                                    stringResource(R.string.not_set)
+                                },
+                                onClick = {
+                                    editValue(
+                                        "EBPF_SHARED_INCLUDE_SOURCE_CIDRS",
+                                        label,
+                                        settings.sharedIncludeSourceCidrs
+                                    )
+                                }
+                            )
+                        },
+                        CardItem("exclude_source_cidrs") {
+                            val label = stringResource(R.string.ebpf_shared_exclude_source_cidrs)
+                            ArrowPreference(
+                                title = label,
+                                summary = settings.sharedExcludeSourceCidrs.ifBlank {
+                                    stringResource(R.string.not_set)
+                                },
+                                onClick = {
+                                    editValue(
+                                        "EBPF_SHARED_EXCLUDE_SOURCE_CIDRS",
+                                        label,
+                                        settings.sharedExcludeSourceCidrs
+                                    )
+                                }
+                            )
+                        },
+                        CardItem("tc_priority") {
+                            val label = stringResource(R.string.ebpf_shared_tc_priority)
+                            ArrowPreference(
+                                title = label,
+                                summary = settings.sharedTcPriority,
+                                onClick = {
+                                    editValue(
+                                        "EBPF_SHARED_TC_PRIORITY",
+                                        label,
+                                        settings.sharedTcPriority
                                     )
                                 }
                             )
@@ -437,6 +484,41 @@ internal fun ProxySettingsScreen(
                     )
                 }
             }
+        }
+    }
+
+    OverlayDialog(
+        show = settingsUi.ebpfDiagnostic != null,
+        insideMargin = DpSize(0.dp, 0.dp),
+        onDismissRequest = viewModel::dismissEbpfDiagnostic
+    ) {
+        Column(modifier = Modifier.padding(24.dp)) {
+            Text(
+                text = stringResource(R.string.ebpf_diagnostics),
+                modifier = Modifier.fillMaxWidth(),
+                fontSize = MiuixTheme.textStyles.title4.fontSize,
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center,
+                color = colorScheme.onSurface
+            )
+            Text(
+                text = settingsUi.ebpfDiagnostic.orEmpty(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(vertical = 20.dp),
+                color = colorScheme.onSurfaceVariantSummary,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                lineHeight = 17.sp
+            )
+            TextButton(
+                text = stringResource(android.R.string.ok),
+                onClick = viewModel::dismissEbpfDiagnostic,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.textButtonColorsPrimary()
+            )
         }
     }
 }

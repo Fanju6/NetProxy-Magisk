@@ -211,8 +211,13 @@
     <string name="ebpf_udp_timeout">UDP 会话超时</string>
     <string name="ebpf_dns_hijack">DNS 劫持</string>
     <string name="ebpf_dns_hijack_summary">接管 TCP 与 UDP 53 端口</string>
-    <string name="ebpf_ipv6">IPv6 透明代理</string>
-    <string name="ebpf_ipv6_summary">允许 eBPF 接管 IPv6 流量</string>
+    <string name="ebpf_cgroup_enable">本机透明代理</string>
+    <string name="ebpf_cgroup_enable_summary">通过 cgroup 接管本机应用流量</string>
+    <string name="ebpf_ipv6_mode">IPv6 接管策略</string>
+    <string name="ebpf_ipv6_mode_disabled">关闭</string>
+    <string name="ebpf_ipv6_mode_auto">自动判断（推荐）</string>
+    <string name="ebpf_ipv6_mode_always">始终接管</string>
+    <string name="ebpf_ipv6_mode_shared">仅共享网络</string>
     <string name="ebpf_cgroup_path">cgroup v2 路径</string>
     <string name="ebpf_cgroup_auto">自动发现</string>
     <string name="ebpf_bypass_settings">规则集提前绕过</string>
@@ -221,16 +226,24 @@
     <string name="ebpf_shared_enable">共享网络代理</string>
     <string name="ebpf_shared_enable_summary">接管热点或 USB 共享的下游流量</string>
     <string name="ebpf_shared_interfaces">下游接口</string>
+    <string name="ebpf_shared_include_source_cidrs">允许来源 CIDR</string>
+    <string name="ebpf_shared_exclude_source_cidrs">排除来源 CIDR</string>
+    <string name="ebpf_shared_tc_priority">TC 优先级</string>
     <string name="ebpf_map_settings">eBPF Map 容量</string>
     <string name="ebpf_tcp_map">TCP 重定向 Map</string>
     <string name="ebpf_udp_map">UDP 重定向 Map</string>
     <string name="ebpf_socket_map">Socket 绕过 Map</string>
     <string name="ebpf_shared_map">共享网络 Map</string>
     <string name="ebpf_restart_service">重启服务</string>
+    <string name="ebpf_diagnostics">eBPF 诊断</string>
+    <string name="more_actions">更多操作</string>
 
     <string name="more_options">更多选项</string>
     <string name="source_label">来源</string>
     <string name="destination_label">目标</string>
     <string name="app_user_label">用户 %1$s</string>
+    <string name="app_users_label">用户 %1$s</string>
+    <string name="app_all_android_users">全部 Android 用户</string>
+    <string name="app_android_user_scope">%1$s（用户 %2$s）</string>
     <string name="percentage_value">%1$d%%</string>
 </resources>

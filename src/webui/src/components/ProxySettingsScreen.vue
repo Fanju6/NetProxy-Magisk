@@ -15,9 +15,9 @@ type SettingsKey = keyof SettingsState;
 const router = useRouter();
 const { t } = useI18n();
 const settingsState = inject<Ref<SettingsState>>('settingsState')!;
-const toggleEbpfBool = inject<(key: SettingsKey) => Promise<void>>('toggleEbpfBool')!;
 const toggleModuleBool = inject<(key: SettingsKey) => Promise<void>>('toggleModuleBool')!;
 const setEbpfValue = inject<(key: SettingsKey, value: string | boolean) => Promise<void>>('setEbpfValue')!;
+const setEbpfValues = inject<(updates: Partial<SettingsState>) => Promise<void>>('setEbpfValues')!;
 const setModuleValue = inject<(key: SettingsKey, value: string | boolean) => Promise<void>>('setModuleValue')!;
 const openEditPreference = inject<(
   key: SettingsKey,
@@ -27,9 +27,43 @@ const openEditPreference = inject<(
 ) => void>('openEditPreference')!;
 const applyEbpfConfig = inject<() => Promise<void>>('applyEbpfConfig')!;
 const isApplying = inject<Ref<boolean>>('isApplyingEbpfConfig')!;
+const diagnoseEbpf = inject<() => Promise<void>>('diagnoseEbpf')!;
+const isDiagnosing = inject<Ref<boolean>>('isDiagnosingEbpf')!;
+
+const handleNetworkSelect = (event: Event) => {
+  const network = (event.target as HTMLSelectElement).value;
+  const updates: Partial<SettingsState> = { network };
+  if (network === 'tcp' && settingsState.value.sharedNetworkEnabled && settingsState.value.dnsMode === 'hijack') {
+    updates.dnsMode = 'off';
+  }
+  void setEbpfValues(updates);
+};
 
 const handleEbpfSelect = (key: SettingsKey, event: Event) => {
   void setEbpfValue(key, (event.target as HTMLSelectElement).value);
+};
+
+const setDnsHijackEnabled = (enabled: boolean) => {
+  const updates: Partial<SettingsState> = { dnsMode: enabled ? 'hijack' : 'off' };
+  if (enabled && settingsState.value.sharedNetworkEnabled && settingsState.value.network === 'tcp') {
+    updates.network = '';
+  }
+  void setEbpfValues(updates);
+};
+
+const setCgroupEnabled = (enabled: boolean) => {
+  const updates: Partial<SettingsState> = { cgroupEnabled: enabled };
+  if (!enabled && !settingsState.value.sharedNetworkEnabled) updates.sharedNetworkEnabled = true;
+  void setEbpfValues(updates);
+};
+
+const setSharedNetworkEnabled = (enabled: boolean) => {
+  const updates: Partial<SettingsState> = { sharedNetworkEnabled: enabled };
+  if (enabled && settingsState.value.dnsMode === 'hijack' && settingsState.value.network === 'tcp') {
+    updates.network = '';
+  }
+  if (!enabled && !settingsState.value.cgroupEnabled) updates.cgroupEnabled = true;
+  void setEbpfValues(updates);
 };
 
 const handleModuleSelect = (key: SettingsKey, event: Event) => {
@@ -61,7 +95,7 @@ const handleModuleSelect = (key: SettingsKey, event: Event) => {
               <div class="pref-text">
                 <span class="pref-title">{{ t('proxy.network') }}</span>
               </div>
-              <select :value="settingsState.network" @change="handleEbpfSelect('network', $event)" class="pref-dropdown">
+              <select :value="settingsState.network" @change="handleNetworkSelect" class="pref-dropdown">
                 <option value="">{{ t('proxy.networkAll') }}</option>
                 <option value="tcp">{{ t('proxy.networkTcp') }}</option>
                 <option value="udp">{{ t('proxy.networkUdp') }}</option>
@@ -70,7 +104,7 @@ const handleModuleSelect = (key: SettingsKey, event: Event) => {
 
             <div class="pref-inner-divider"></div>
 
-            <div class="switch-pref-row" @click="setEbpfValue('dnsMode', settingsState.dnsMode === 'hijack' ? 'off' : 'hijack')">
+            <div class="switch-pref-row" @click="setDnsHijackEnabled(settingsState.dnsMode !== 'hijack')">
               <div class="pref-text">
                 <span class="pref-title">{{ t('proxy.dnsHijack') }}</span>
                 <span class="pref-summary">{{ t('proxy.dnsHijackDesc') }}</span>
@@ -78,18 +112,32 @@ const handleModuleSelect = (key: SettingsKey, event: Event) => {
               <md-switch
                 icons
                 :selected="settingsState.dnsMode === 'hijack'"
-                @click.stop="setEbpfValue('dnsMode', settingsState.dnsMode === 'hijack' ? 'off' : 'hijack')">
+                @click.stop="setDnsHijackEnabled(settingsState.dnsMode !== 'hijack')">
               </md-switch>
             </div>
 
             <div class="pref-inner-divider"></div>
 
-            <div class="switch-pref-row" @click="toggleEbpfBool('ipv6Enabled')">
+            <div class="switch-pref-row" @click="setCgroupEnabled(!settingsState.cgroupEnabled)">
               <div class="pref-text">
-                <span class="pref-title">{{ t('proxy.ipv6') }}</span>
-                <span class="pref-summary">{{ t('proxy.ipv6Desc') }}</span>
+                <span class="pref-title">{{ t('proxy.cgroupEnable') }}</span>
+                <span class="pref-summary">{{ t('proxy.cgroupEnableDesc') }}</span>
               </div>
-              <md-switch icons :selected="settingsState.ipv6Enabled" @click.stop="toggleEbpfBool('ipv6Enabled')"></md-switch>
+              <md-switch icons :selected="settingsState.cgroupEnabled" @click.stop="setCgroupEnabled(!settingsState.cgroupEnabled)"></md-switch>
+            </div>
+
+            <div class="pref-inner-divider"></div>
+
+            <div class="dropdown-pref-row">
+              <div class="pref-text">
+                <span class="pref-title">{{ t('proxy.ipv6Mode') }}</span>
+              </div>
+              <select :value="settingsState.ipv6Mode" @change="handleEbpfSelect('ipv6Mode', $event)" class="pref-dropdown">
+                <option value="disabled">{{ t('proxy.ipv6ModeDisabled') }}</option>
+                <option value="auto">{{ t('proxy.ipv6ModeAuto') }}</option>
+                <option value="always">{{ t('proxy.ipv6ModeAlways') }}</option>
+                <option value="shared">{{ t('proxy.ipv6ModeShared') }}</option>
+              </select>
             </div>
 
             <div class="pref-inner-divider"></div>
@@ -123,7 +171,7 @@ const handleModuleSelect = (key: SettingsKey, event: Event) => {
 
           <div class="small-title">{{ t('proxy.sharedConfig') }}</div>
           <div class="config-card">
-            <div class="switch-pref-row" @click="toggleEbpfBool('sharedNetworkEnabled')">
+            <div class="switch-pref-row" @click="setSharedNetworkEnabled(!settingsState.sharedNetworkEnabled)">
               <div class="pref-text">
                 <span class="pref-title">{{ t('proxy.sharedEnable') }}</span>
                 <span class="pref-summary">{{ t('proxy.sharedEnableDesc') }}</span>
@@ -131,7 +179,7 @@ const handleModuleSelect = (key: SettingsKey, event: Event) => {
               <md-switch
                 icons
                 :selected="settingsState.sharedNetworkEnabled"
-                @click.stop="toggleEbpfBool('sharedNetworkEnabled')">
+                @click.stop="setSharedNetworkEnabled(!settingsState.sharedNetworkEnabled)">
               </md-switch>
             </div>
 
@@ -141,6 +189,33 @@ const handleModuleSelect = (key: SettingsKey, event: Event) => {
               <div class="pref-text">
                 <span class="pref-title">{{ t('proxy.sharedInterfaces') }}</span>
                 <span class="pref-summary text-ellipsis">{{ settingsState.sharedInterfaces || t('common.notSet') }}</span>
+              </div>
+            </div>
+
+            <div class="pref-inner-divider"></div>
+
+            <div class="arrow-pref-row" @click="openEditPreference('sharedIncludeSourceCidrs', t('proxy.sharedIncludeSourceCidrs'), t('proxy.sharedSourceCidrsLabel'))">
+              <div class="pref-text">
+                <span class="pref-title">{{ t('proxy.sharedIncludeSourceCidrs') }}</span>
+                <span class="pref-summary text-ellipsis">{{ settingsState.sharedIncludeSourceCidrs || t('common.notSet') }}</span>
+              </div>
+            </div>
+
+            <div class="pref-inner-divider"></div>
+
+            <div class="arrow-pref-row" @click="openEditPreference('sharedExcludeSourceCidrs', t('proxy.sharedExcludeSourceCidrs'), t('proxy.sharedSourceCidrsLabel'))">
+              <div class="pref-text">
+                <span class="pref-title">{{ t('proxy.sharedExcludeSourceCidrs') }}</span>
+                <span class="pref-summary text-ellipsis">{{ settingsState.sharedExcludeSourceCidrs || t('common.notSet') }}</span>
+              </div>
+            </div>
+
+            <div class="pref-inner-divider"></div>
+
+            <div class="arrow-pref-row" @click="openEditPreference('sharedTcPriority', t('proxy.sharedTcPriority'), t('proxy.sharedTcPriorityLabel'), 'number')">
+              <div class="pref-text">
+                <span class="pref-title">{{ t('proxy.sharedTcPriority') }}</span>
+                <span class="pref-summary">{{ settingsState.sharedTcPriority }}</span>
               </div>
             </div>
           </div>
@@ -222,9 +297,14 @@ const handleModuleSelect = (key: SettingsKey, event: Event) => {
               <span class="pref-title">{{ t('proxy.applyConfig') }}</span>
               <span class="pref-summary">{{ t('proxy.applyConfigDesc') }}</span>
             </div>
-            <md-filled-button :disabled="isApplying" @click="applyEbpfConfig">
-              {{ isApplying ? t('proxy.applying') : t('proxy.applyConfig') }}
-            </md-filled-button>
+            <div class="apply-actions">
+              <md-text-button :disabled="isDiagnosing" @click="diagnoseEbpf">
+                {{ isDiagnosing ? t('proxy.diagnosing') : t('proxy.diagnostics') }}
+              </md-text-button>
+              <md-filled-button :disabled="isApplying" @click="applyEbpfConfig">
+                {{ isApplying ? t('proxy.applying') : t('proxy.applyConfig') }}
+              </md-filled-button>
+            </div>
           </div>
 
           <div class="bottom-padding-spacer"></div>
@@ -398,6 +478,13 @@ const handleModuleSelect = (key: SettingsKey, event: Event) => {
 }
 
 .apply-card md-filled-button {
+  flex-shrink: 0;
+}
+
+.apply-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex-shrink: 0;
 }
 </style>

@@ -858,33 +858,26 @@ command_mode() {
 }
 
 #######################################
-# 应用 eBPF 设置
-# 参数: 无
-# 返回: 成功返回 0
-#######################################
-apply_ebpf_settings() {
-  if service_is_running; then
-    sh "$SERVICE_SCRIPT" reload >&2
-  fi
-}
-
-#######################################
 # 分应用代理命令组
 #######################################
 command_app() {
-  local action="${1:-list}" value="${2:-}"
-  local mode proxy_list bypass_list current new_list
+  local action="${1:-list}" value mode proxy_list bypass_list app_users current new_list
+
+  [ "$#" -eq 0 ] || shift
+  value="${1:-}"
 
   case "$action" in
     list)
       mode="$(read_conf "$EBPF_CONF" "APP_PROXY_MODE" "blacklist")"
       proxy_list="$(read_conf "$EBPF_CONF" "PROXY_APPS_LIST" "")"
       bypass_list="$(read_conf "$EBPF_CONF" "BYPASS_APPS_LIST" "")"
+      app_users="$(read_conf "$EBPF_CONF" "APP_ANDROID_USERS" "")"
       if [ "$OUTPUT_JSON" = "1" ]; then
         emit_success "app.list" "分应用代理配置" \
-          "{\"enabled\":$( [ "$(read_conf "$EBPF_CONF" "APP_PROXY_ENABLE" "1")" = "1" ] && printf true || printf false),\"mode\":\"$(json_escape "$mode")\",\"proxy_apps\":\"$(json_escape "$proxy_list")\",\"bypass_apps\":\"$(json_escape "$bypass_list")\"}"
+          "{\"enabled\":$( [ "$(read_conf "$EBPF_CONF" "APP_PROXY_ENABLE" "1")" = "1" ] && printf true || printf false),\"mode\":\"$(json_escape "$mode")\",\"android_users\":\"$(json_escape "$app_users")\",\"proxy_apps\":\"$(json_escape "$proxy_list")\",\"bypass_apps\":\"$(json_escape "$bypass_list")\"}"
       else
-        printf "模式: %s\n代理列表: %s\n绕过列表: %s\n" "$mode" "$proxy_list" "$bypass_list"
+        printf "模式: %s\nAndroid 用户: %s\n代理列表: %s\n绕过列表: %s\n" \
+          "$mode" "${app_users:-全部}" "$proxy_list" "$bypass_list"
       fi
       ;;
     mode)
@@ -892,12 +885,24 @@ command_app() {
       set_conf_values "$EBPF_CONF" \
         "APP_PROXY_ENABLE" "1" \
         "APP_PROXY_MODE" "$(quote_conf "$value")"
-      apply_ebpf_settings || emit_error "app.apply_failed" "应用设置失败"
       emit_write_success "app.mode_changed" "分应用模式已更新" "{\"mode\":\"$value\"}"
       ;;
+    users)
+      if [ "$#" -eq 0 ] || [ "$value" = "all" ]; then
+        app_users=""
+      else
+        app_users="$*"
+        validate_android_user_list "$app_users" "APP_ANDROID_USERS" \
+          || emit_error "app.users_invalid" "Android 用户 ID 只能是非负整数" 2
+      fi
+      set_conf "$EBPF_CONF" "APP_ANDROID_USERS" "$(quote_conf "$app_users")"
+      emit_write_success "app.users_changed" "应用生效用户已更新" \
+        "{\"android_users\":\"$(json_escape "$app_users")\"}"
+      ;;
     add)
-      [ -n "$value" ] || emit_error "usage.invalid" "用法: netproxyctl app add <user:包名|包名>" 2
-      case "$value" in *[!A-Za-z0-9._:-]*) emit_error "app.package_invalid" "应用标识格式无效" ;; esac
+      [ -n "$value" ] || emit_error "usage.invalid" "用法: netproxyctl app add <包名>" 2
+      validate_android_package_list "$value" "应用包名" \
+        || emit_error "app.package_invalid" "应用包名格式无效" 2
       mode="$(read_conf "$EBPF_CONF" "APP_PROXY_MODE" "blacklist")"
       if [ "$mode" = "whitelist" ]; then
         current="$(read_conf "$EBPF_CONF" "PROXY_APPS_LIST" "")"
@@ -912,7 +917,6 @@ command_app() {
           "APP_PROXY_ENABLE" "1" \
           "BYPASS_APPS_LIST" "$(quote_conf "$new_list")"
       fi
-      apply_ebpf_settings || emit_error "app.apply_failed" "应用设置失败"
       emit_write_success "app.added" "应用已加入名单" "{}"
       ;;
     remove | rm)
@@ -922,17 +926,173 @@ command_app() {
       set_conf_values "$EBPF_CONF" \
         "PROXY_APPS_LIST" "$(quote_conf "$proxy_list")" \
         "BYPASS_APPS_LIST" "$(quote_conf "$bypass_list")"
-      apply_ebpf_settings || emit_error "app.apply_failed" "应用设置失败"
       emit_write_success "app.removed" "应用已从名单移除" "{}"
       ;;
     enable | disable)
       [ "$action" = "enable" ] && value=1 || value=0
       set_conf "$EBPF_CONF" "APP_PROXY_ENABLE" "$value"
-      apply_ebpf_settings || emit_error "app.apply_failed" "应用设置失败"
       emit_write_success "app.$action" "分应用代理设置已更新" "{}"
       ;;
-    *) emit_error "usage.invalid" "用法: netproxyctl app list|mode|add|remove|enable|disable" 2 ;;
+    *) emit_error "usage.invalid" "用法: netproxyctl app list|mode|users|add|remove|enable|disable" 2 ;;
   esac
+}
+
+#######################################
+# 生成人类可读的中文 eBPF 诊断摘要
+# 参数:
+#   $1  核心原始诊断文件
+#   $2  中文摘要输出文件
+#   $3  实际检测模式
+#   $4  核心诊断退出码
+# 返回: 无
+#######################################
+format_ebpf_diagnostic() {
+  local source="$1" destination="$2" core_mode="$3" probe_status="$4"
+  local summary pass_count=0 warn_count=0 fail_count=0 unknown_count=0
+  local scope kernel architecture conclusion ready=0
+  local common_fail=0 local_fail=0 shared_fail=0
+
+  summary="$(sed -n 's/^Summary: PASS=\([0-9][0-9]*\) WARN=\([0-9][0-9]*\) FAIL=\([0-9][0-9]*\) UNKNOWN=\([0-9][0-9]*\)$/\1 \2 \3 \4/p' "$source" | head -n 1)"
+  if [ -n "$summary" ]; then
+    set -- $summary
+    pass_count="$1"
+    warn_count="$2"
+    fail_count="$3"
+    unknown_count="$4"
+  fi
+
+  kernel="$(sed -n 's/^Platform:.*kernel: \([^;]*\);.*$/\1/p' "$source" | head -n 1)"
+  architecture="$(sed -n 's/^Platform:.*architecture: \([^;]*\);.*$/\1/p' "$source" | head -n 1)"
+  case "$core_mode" in
+    local) scope="本机应用流量" ;;
+    shared-network) scope="热点与共享网络" ;;
+    all) scope="本机应用流量、热点与共享网络" ;;
+    *) scope="$core_mode" ;;
+  esac
+
+  if service_is_running && [ "$(service_state_get_string state stopped)" = "ready" ]; then
+    ready=1
+  fi
+  if [ "$probe_status" -ne 0 ] || [ "$fail_count" -gt 0 ]; then
+    conclusion="未通过"
+  elif [ "$ready" = "1" ]; then
+    conclusion="可用，当前服务已成功加载 eBPF 入站"
+  elif [ "$warn_count" -gt 0 ]; then
+    conclusion="发现兼容性警告，建议启动服务进行最终验证"
+  else
+    conclusion="未发现明确问题，启动服务后可完成最终验证"
+  fi
+
+  common_fail="$(grep -c '^FAIL.*\[common' "$source" 2> /dev/null || true)"
+  local_fail="$(grep -c '^FAIL.*\[local' "$source" 2> /dev/null || true)"
+  shared_fail="$(grep -c '^FAIL.*\[shared-network' "$source" 2> /dev/null || true)"
+  common_fail="${common_fail:-0}"
+  local_fail="${local_fail:-0}"
+  shared_fail="${shared_fail:-0}"
+
+  {
+    printf '结论: %s\n' "$conclusion"
+    printf '检测范围: %s\n' "$scope"
+    [ -z "$kernel" ] || printf '内核版本: %s\n' "$kernel"
+    [ -z "$architecture" ] || printf '设备架构: %s\n' "$architecture"
+    printf '\n检查统计:\n'
+    printf '  通过: %s 项\n' "$pass_count"
+    printf '  警告: %s 项\n' "$warn_count"
+    printf '  失败: %s 项\n' "$fail_count"
+    printf '  无法静态确认: %s 项\n' "$unknown_count"
+
+    if [ "$fail_count" -gt 0 ]; then
+      printf '\n问题定位:\n'
+      [ "$common_fail" -eq 0 ] || printf '  - 基础 eBPF 权限或内核能力不满足。\n'
+      [ "$local_fail" -eq 0 ] || printf '  - 本机 cgroup eBPF 能力不满足。\n'
+      [ "$shared_fail" -eq 0 ] || printf '  - 热点接口或 TC eBPF 能力不满足。\n'
+      printf '\n建议先检查 Root 授权、内核 eBPF 配置和服务日志。\n'
+    elif [ "$unknown_count" -gt 0 ]; then
+      printf '\n说明:\n'
+      printf '  “无法静态确认”不代表失败。设备未安装 bpftool 时，部分能力只能在 sing-box 实际启动时验证。\n'
+      if [ "$ready" = "1" ]; then
+        printf '  当前服务已经成功启动，因此这些项目不影响当前使用。\n'
+      else
+        printf '  请启动服务；能正常进入就绪状态即可确认当前配置可用。\n'
+      fi
+    fi
+
+    if [ "$core_mode" = "local" ]; then
+      printf '\n当前未启用共享网络，本次没有检测热点接口。\n'
+    fi
+  } > "$destination"
+}
+
+#######################################
+# eBPF 诊断命令组
+#######################################
+command_ebpf() {
+  local action="${1:-status}" mode="${2:-configured}" detail="${3:-}" core_mode
+  local cgroup_enabled shared_enabled cgroup_path interfaces interface
+  local probe_output report_output status content is_raw=false
+
+  [ "$action" = "status" ] \
+    || emit_error "usage.invalid" "用法: netproxyctl ebpf status [configured|all|local|shared] [--raw]" 2
+  cgroup_enabled="$(read_conf "$EBPF_CONF" "EBPF_CGROUP_ENABLED" "1")"
+  shared_enabled="$(read_conf "$EBPF_CONF" "EBPF_SHARED_NETWORK" "0")"
+  case "$mode" in
+    configured)
+      if [ "$cgroup_enabled" = "1" ] && [ "$shared_enabled" = "1" ]; then
+        core_mode="all"
+      elif [ "$shared_enabled" = "1" ]; then
+        core_mode="shared-network"
+      else
+        core_mode="local"
+      fi
+      ;;
+    all | local) core_mode="$mode" ;;
+    shared) core_mode="shared-network" ;;
+    *) emit_error "ebpf.mode_invalid" "诊断模式应为 configured、all、local 或 shared" 2 ;;
+  esac
+  case "$detail" in
+    "") ;;
+    --raw) is_raw=true ;;
+    *) emit_error "usage.invalid" "用法: netproxyctl ebpf status [configured|all|local|shared] [--raw]" 2 ;;
+  esac
+  require_file "$SING_BOX_BIN" "sing-box 二进制不存在"
+  cgroup_path="$(read_conf "$EBPF_CONF" "EBPF_CGROUP_PATH" "")"
+  interfaces="$(read_conf "$EBPF_CONF" "EBPF_SHARED_INTERFACES" "")"
+  interface="${interfaces%% *}"
+  ensure_dir /dev/netproxy "无法创建 eBPF 诊断目录"
+  probe_output="/dev/netproxy/ebpf-status.$$.raw"
+  report_output="/dev/netproxy/ebpf-status.$$.txt"
+
+  status=0
+  if [ "$core_mode" = "all" ] && [ -n "$cgroup_path" ] && [ -n "$interface" ]; then
+    "$SING_BOX_BIN" tools ebpf status --mode "$core_mode" \
+      --cgroup "$cgroup_path" --interface "$interface" > "$probe_output" 2>&1 || status=$?
+  elif [ "$core_mode" != "shared-network" ] && [ -n "$cgroup_path" ]; then
+    "$SING_BOX_BIN" tools ebpf status --mode "$core_mode" \
+      --cgroup "$cgroup_path" > "$probe_output" 2>&1 || status=$?
+  elif [ "$core_mode" != "local" ] && [ -n "$interface" ]; then
+    "$SING_BOX_BIN" tools ebpf status --mode "$core_mode" \
+      --interface "$interface" > "$probe_output" 2>&1 || status=$?
+  else
+    "$SING_BOX_BIN" tools ebpf status --mode "$core_mode" > "$probe_output" 2>&1 || status=$?
+  fi
+
+  if [ "$is_raw" = "true" ]; then
+    cp "$probe_output" "$report_output"
+  else
+    format_ebpf_diagnostic "$probe_output" "$report_output" "$core_mode" "$status"
+  fi
+
+  if [ "$OUTPUT_JSON" = "1" ]; then
+    content="$(file_to_json_string "$report_output")"
+    rm -f "$probe_output" "$report_output"
+    [ "$status" -eq 0 ] \
+      && emit_success "ebpf.status" "eBPF 诊断完成" "{\"mode\":\"$mode\",\"raw\":$is_raw,\"content\":\"$content\"}" \
+      || emit_error "ebpf.unsupported" "eBPF 诊断发现不满足项" "$status" "{\"mode\":\"$mode\",\"raw\":$is_raw,\"content\":\"$content\"}"
+  else
+    cat "$report_output"
+    rm -f "$probe_output" "$report_output"
+    return "$status"
+  fi
 }
 
 #######################################
@@ -1054,7 +1214,7 @@ validate_config_candidate() {
 #######################################
 command_config_transaction() {
   local action="$1" target="$2" source="$3"
-  local destination backup candidate had_original=0 success_message
+  local destination candidate success_message
 
   destination="$(resolve_managed_config "$target")" || emit_error "config.target_invalid" "不支持的配置目标"
   case "$target" in singbox/runtime/*) emit_error "config.read_only" "运行时配置只读" ;; esac
@@ -1062,7 +1222,6 @@ command_config_transaction() {
   case "$target" in module | ebpf) validate_assignment_config "$source" || emit_error "config.syntax_invalid" "配置包含非法语句" ;; esac
   mkdir -p "$CATALOG_STAGING_DIR" || emit_error "config.write_failed" "无法创建配置事务目录"
   acquire_conf_lock "$CATALOG_STAGING_DIR/config" || emit_error "config.busy" "已有配置事务正在进行"
-  backup="$destination.backup.$$"
   candidate="$destination.candidate.$$"
   mkdir -p "${destination%/*}" || { release_conf_lock; emit_error "config.write_failed" "无法创建配置目录"; }
   cp "$source" "$candidate" || { release_conf_lock; emit_error "config.write_failed" "无法写入候选配置"; }
@@ -1080,32 +1239,11 @@ command_config_transaction() {
     return 0
   fi
 
-  if [ -f "$destination" ]; then
-    cp "$destination" "$backup" || {
-      rm -f "$candidate"
-      release_conf_lock
-      emit_error "config.backup_failed" "配置备份失败"
-    }
-    had_original=1
-  fi
   if ! mv -f "$candidate" "$destination"; then
-    rm -f "$candidate" "$backup"
+    rm -f "$candidate"
     release_conf_lock
     emit_error "config.write_failed" "无法应用候选配置"
   fi
-
-  if service_is_running && ! sh "$SERVICE_SCRIPT" reload >&2; then
-    if [ "$had_original" = "1" ]; then
-      mv -f "$backup" "$destination" 2> /dev/null || true
-    else
-      rm -f "$destination"
-    fi
-    sh "$SERVICE_SCRIPT" reload > /dev/null 2>&1 || true
-    release_conf_lock
-    emit_error "config.reload_failed" "服务重新加载失败，配置已恢复为保存前内容"
-  fi
-
-  rm -f "$backup"
   release_conf_lock
   success_message="配置已保存"
   emit_write_success "config.$action" "$success_message" "{\"target\":\"$(json_escape "$target")\"}"
@@ -1231,7 +1369,8 @@ NetProxy 管理命令
   netproxyctl [--json] node list|current|show|add|import|copy|edit|remove|use|delay [节点|auto [分组]|all]
   netproxyctl [--json] sub list|show|add|edit|update|update-all|activate|remove|history|cancel
   netproxyctl [--json] mode [rule|global|direct|AllowAds]
-  netproxyctl [--json] app list|mode|add|remove|enable|disable
+  netproxyctl [--json] app list|mode|users|add|remove|enable|disable
+  netproxyctl [--json] ebpf status [configured|all|local|shared] [--raw]
   netproxyctl [--json] config list|read|check|validate|apply
   netproxyctl [--json] logs show|clear|export
 
@@ -1250,6 +1389,7 @@ case "${1:-help}" in
   sub) shift; command_sub "$@" ;;
   mode) shift; command_mode "$@" ;;
   app) shift; command_app "$@" ;;
+  ebpf) shift; command_ebpf "$@" ;;
   config) shift; command_config "$@" ;;
   logs) shift; command_logs "$@" ;;
   help | -h | --help) show_help ;;

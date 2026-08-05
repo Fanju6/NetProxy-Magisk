@@ -31,7 +31,6 @@ readonly SERVICE_LOCK_DIR="/dev/netproxy/service.lock"
 . "$MODDIR/scripts/utils/api.sh"
 . "$MODDIR/scripts/utils/state.sh"
 . "$MODDIR/scripts/utils/catalog.sh"
-. "$MODDIR/scripts/utils/apps.sh"
 . "$MODDIR/scripts/core/runtime.sh"
 . "$MODDIR/scripts/core/ebpf.sh"
 

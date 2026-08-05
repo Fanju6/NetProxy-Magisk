@@ -3564,6 +3564,37 @@
             }
           ]
         },
+        "include_source_cidr": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "exclude_source_cidr": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "tc_priority": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
         "map_capacity": {
           "type": "integer",
           "minimum": 1,
@@ -6250,6 +6281,14 @@
                 "off"
               ]
             },
+            "cgroup_ipv6_mode": {
+              "type": "string",
+              "enum": [
+                "always",
+                "auto",
+                "off"
+              ]
+            },
             "redirect_address": {
               "anyOf": [
                 {
@@ -6334,6 +6373,45 @@
               ]
             },
             "exclude_uid_range": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            "include_android_user": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "integer"
+                  }
+                }
+              ]
+            },
+            "include_package": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            "exclude_package": {
               "anyOf": [
                 {
                   "type": "string"
@@ -11431,9 +11509,6 @@
             "password": {
               "type": "string"
             },
-            "client_name": {
-              "type": "string"
-            },
             "idle_session_check_interval": {
               "$ref": "#/$defs/Duration"
             },
@@ -11442,6 +11517,9 @@
             },
             "min_idle_session": {
               "type": "integer"
+            },
+            "client_metadata": {
+              "type": "string"
             },
             "disable_reuse": {
               "type": "boolean"
@@ -12275,6 +12353,9 @@
               ]
             },
             "brutal_debug": {
+              "type": "boolean"
+            },
+            "disable_chrome_parrot": {
               "type": "boolean"
             },
             "realm": {
@@ -15634,6 +15715,18 @@
       },
       "additionalProperties": false
     },
+    "OverrideAnyTLSOptions": {
+      "type": "object",
+      "properties": {
+        "client_metadata": {
+          "type": "string"
+        },
+        "disable_reuse": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
     "OverrideDialerOptions": {
       "type": "object",
       "properties": {
@@ -16037,6 +16130,9 @@
             },
             "override_tls": {
               "$ref": "#/$defs/OverrideTLSOptions"
+            },
+            "override_anytls": {
+              "$ref": "#/$defs/OverrideAnyTLSOptions"
             }
           },
           "required": [
@@ -16081,6 +16177,9 @@
                 },
                 "override_tls": {
                   "$ref": "#/$defs/OverrideTLSOptions"
+                },
+                "override_anytls": {
+                  "$ref": "#/$defs/OverrideAnyTLSOptions"
                 }
               },
               "required": [
@@ -16126,6 +16225,9 @@
                 },
                 "override_tls": {
                   "$ref": "#/$defs/OverrideTLSOptions"
+                },
+                "override_anytls": {
+                  "$ref": "#/$defs/OverrideAnyTLSOptions"
                 }
               },
               "required": [
@@ -16172,6 +16274,9 @@
                 },
                 "override_tls": {
                   "$ref": "#/$defs/OverrideTLSOptions"
+                },
+                "override_anytls": {
+                  "$ref": "#/$defs/OverrideAnyTLSOptions"
                 }
               },
               "required": [

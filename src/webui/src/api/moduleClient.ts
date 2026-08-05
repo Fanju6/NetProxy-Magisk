@@ -125,8 +125,14 @@ export interface SubscriptionHistoryEntry {
 export interface AppProxyState {
   enabled: boolean;
   mode: 'blacklist' | 'whitelist';
+  android_users: string;
   proxy_apps: string;
   bypass_apps: string;
+}
+
+export interface EbpfStatus {
+  mode: 'all' | 'local' | 'shared';
+  content: string;
 }
 
 export type ConfigTarget = 'module' | 'ebpf' | `singbox/${string}`;
@@ -226,11 +232,16 @@ const mockConfigDefaults: Record<'module' | 'ebpf', string> = {
     'EBPF_NETWORK=""',
     'EBPF_UDP_TIMEOUT="5m"',
     'EBPF_DNS_MODE="hijack"',
+    'EBPF_CGROUP_ENABLED=1',
     'EBPF_CGROUP_PATH=""',
-    'EBPF_IPV6=1',
+    'EBPF_IPV6_MODE="auto"',
     'EBPF_BYPASS_RULE_SETS="direct ChinaIP"',
+    'APP_ANDROID_USERS=""',
     'EBPF_SHARED_NETWORK=0',
     'EBPF_SHARED_INTERFACES="wlan2"',
+    'EBPF_SHARED_INCLUDE_SOURCE_CIDRS=""',
+    'EBPF_SHARED_EXCLUDE_SOURCE_CIDRS=""',
+    'EBPF_SHARED_TC_PRIORITY=1',
     'EBPF_TCP_MAP_CAPACITY=65536',
     'EBPF_UDP_MAP_CAPACITY=65536',
     'EBPF_SOCKET_MAP_CAPACITY=65536',
@@ -282,7 +293,10 @@ const mockCall = <T>(args: string[]): T => {
     } as T;
   }
   if (command === 'app list') {
-    return { enabled: true, mode: 'blacklist', proxy_apps: '', bypass_apps: '' } as T;
+    return { enabled: true, mode: 'blacklist', android_users: '', proxy_apps: '', bypass_apps: '' } as T;
+  }
+  if (command.startsWith('ebpf status')) {
+    return { mode: 'configured', content: 'eBPF diagnostic mock: PASS' } as T;
   }
   return {} as T;
 };
@@ -339,9 +353,12 @@ class ModuleClient {
   setMode = (mode: 'rule' | 'global' | 'direct') => this.call(['mode', mode]);
   appState = () => this.call<AppProxyState>(['app', 'list']);
   setAppMode = (mode: 'blacklist' | 'whitelist') => this.call(['app', 'mode', mode]);
+  setAppUsers = (userIds: string[]) => this.call(['app', 'users', ...(userIds.length ? userIds : ['all'])]);
   setAppsEnabled = (enabled: boolean) => this.call(['app', enabled ? 'enable' : 'disable']);
-  addApp = (id: string) => this.call(['app', 'add', id]);
-  removeApp = (id: string) => this.call(['app', 'remove', id]);
+  addApp = (packageName: string) => this.call(['app', 'add', packageName]);
+  removeApp = (packageName: string) => this.call(['app', 'remove', packageName]);
+  ebpfStatus = (mode: 'configured' | 'all' | 'local' | 'shared' = 'configured') =>
+    this.call<EbpfStatus>(['ebpf', 'status', mode]);
 
   async readConfig(target: ConfigTarget): Promise<string> {
     if (!isKsuEnv()) {

@@ -175,14 +175,40 @@ internal fun AppsScreen(
                                 ) {
                                     ListPopupColumn {
                                         DropdownImpl(
+                                            text = stringResource(R.string.app_all_android_users),
+                                            isSelected = apps.appAndroidUsers.isEmpty(),
+                                            onSelectedIndexChange = {
+                                                viewModel.selectAllAndroidUsers()
+                                                showTopPopup.value = false
+                                            },
+                                            optionSize = 5 + apps.users.size,
+                                            index = 0
+                                        )
+                                        apps.users.forEachIndexed { index, user ->
+                                            DropdownImpl(
+                                                text = stringResource(
+                                                    R.string.app_android_user_scope,
+                                                    user.name,
+                                                    user.id
+                                                ),
+                                                isSelected = user.id in apps.appAndroidUsers,
+                                                onSelectedIndexChange = {
+                                                    viewModel.toggleAndroidUser(user.id)
+                                                    showTopPopup.value = false
+                                                },
+                                                optionSize = 5 + apps.users.size,
+                                                index = index + 1
+                                            )
+                                        }
+                                        DropdownImpl(
                                             text = stringResource(R.string.show_system_apps),
                                             isSelected = apps.showSystemApps,
                                             onSelectedIndexChange = {
                                                 viewModel.setShowSystemApps(!apps.showSystemApps)
                                                 showTopPopup.value = false
                                             },
-                                            optionSize = 4,
-                                            index = 0
+                                            optionSize = 5 + apps.users.size,
+                                            index = apps.users.size + 1
                                         )
                                         DropdownImpl(
                                             text = stringResource(R.string.app_selected_first),
@@ -191,8 +217,8 @@ internal fun AppsScreen(
                                                 viewModel.setSelectedFirst(!apps.appSelectedFirst)
                                                 showTopPopup.value = false
                                             },
-                                            optionSize = 4,
-                                            index = 1
+                                            optionSize = 5 + apps.users.size,
+                                            index = apps.users.size + 2
                                         )
                                         DropdownImpl(
                                             text = stringResource(R.string.app_reverse_sort),
@@ -201,8 +227,8 @@ internal fun AppsScreen(
                                                 viewModel.setReverseSort(!apps.appReverseSort)
                                                 showTopPopup.value = false
                                             },
-                                            optionSize = 4,
-                                            index = 2
+                                            optionSize = 5 + apps.users.size,
+                                            index = apps.users.size + 3
                                         )
                                         DropdownImpl(
                                             text = stringResource(R.string.app_show_package_name),
@@ -211,8 +237,8 @@ internal fun AppsScreen(
                                                 viewModel.setShowPackageName(!apps.appShowPackageName)
                                                 showTopPopup.value = false
                                             },
-                                            optionSize = 4,
-                                            index = 3
+                                            optionSize = 5 + apps.users.size,
+                                            index = apps.users.size + 4
                                         )
                                     }
                                 }
@@ -358,7 +384,7 @@ internal fun AppsScreen(
                                     }
                                 }
 
-                                items(allApps, key = { "${it.userId}:${it.packageName}" }) { app ->
+                                items(allApps, key = AppInfoModel::packageName) { app ->
                                     AppItem(
                                         app,
                                         apps.appShowPackageName,
@@ -382,7 +408,7 @@ internal fun AppsScreen(
             defaultResult = { },
             searchBarTopPadding = dynamicTopPadding,
         ) {
-            items(apps.searchResults, key = { "${it.userId}:${it.packageName}" }) { app ->
+            items(apps.searchResults, key = AppInfoModel::packageName) { app ->
                 AppItem(app, apps.appShowPackageName, app.isProxied, spacing, viewModel)
             }
         }
@@ -420,7 +446,7 @@ private fun AppItem(
     ) {
         BasicComponent(
             onClick = {
-                viewModel.toggle(app.packageName, app.userId)
+                viewModel.toggle(app.packageName)
             },
             startAction = {
                 Box(
@@ -436,9 +462,12 @@ private fun AppItem(
                 }
             },
             endActions = {
-                if (app.userId != "0") {
+                if (app.userIds.size > 1 || app.userIds.firstOrNull() != "0") {
                     StatusTag(
-                        label = stringResource(R.string.app_user_label, app.userId),
+                        label = stringResource(
+                            R.string.app_users_label,
+                            app.userIds.joinToString(", ")
+                        ),
                         backgroundColor = colorScheme.secondaryContainer.copy(alpha = 0.8f),
                         contentColor = colorScheme.onSecondaryContainer,
                         modifier = Modifier.padding(end = 12.dp)
@@ -448,10 +477,7 @@ private fun AppItem(
                     modifier = Modifier.padding(end = 12.dp),
                     state = androidx.compose.ui.state.ToggleableState(isProxied),
                     onClick = {
-                        viewModel.toggle(
-                            app.packageName,
-                            app.userId
-                        )
+                        viewModel.toggle(app.packageName)
                     }
                 )
             }
