@@ -4,11 +4,12 @@
 # 功能: 网络变化监听与「按 WiFi SSID 自动切换出站模式」决策。
 #       由 inotifyd 监听 /data/misc/net/rt_tables 的写事件触发(网络切换时
 #       Android 会重写该文件)，据当前 SSID + 黑/白名单决定使用基础模式
-#       或 Direct 模式，通过 Clash API 热切换，不重启 sing-box 核心，
+#       或 Direct 模式，通过 Service API 热切换，不重启 sing-box 核心，
 #       也不改动透明代理规则。
 # 用法:
 #   netmon.sh <events> <dir> [file]   inotifyd 代理(事件触发，含防抖)
 #   netmon.sh eval                    立即评估一次(启动时 / 改配置后)
+#   netmon.sh startup                 核心启动后初始化，不重复恢复基础模式
 #   netmon.sh sync                    按配置启停 inotifyd 守护并评估一次
 #   netmon.sh stop                    停止 inotifyd 守护并恢复基础模式
 # 依赖: common.sh、config.sh、api.sh、cmd、dumpsys、ip、inotifyd(busybox)。
@@ -189,7 +190,7 @@ apply_state() {
     desired_mode="$base_mode"
   fi
   desired_clash_mode="$(module_mode_to_clash_mode "$desired_mode")" || return 1
-  actual_mode="$(api_get_mode 2> /dev/null || true)"
+  actual_mode="$(service_api_get_mode 2> /dev/null || true)"
 
   # 决策与实际模式都未变化时无需重复请求或中断连接
   if [ "$target" = "$current" ] && [ "$desired_clash_mode" = "$actual_mode" ]; then
@@ -197,8 +198,8 @@ apply_state() {
   fi
 
   if [ "$desired_clash_mode" != "$actual_mode" ]; then
-    if ! api_set_mode "$desired_mode"; then
-      log "WARN" "Clash API 不可用，未能切换 WiFi 自动代理状态"
+    if ! service_api_set_mode "$desired_mode"; then
+      log "WARN" "Service API 不可用，未能切换 WiFi 自动代理状态"
       return 1
     fi
 
@@ -329,6 +330,20 @@ cmd_sync() {
 }
 
 #######################################
+# startup：核心启动后的轻量初始化
+#   开启 -> 起守护 + 立即评估；关闭 -> 仅清理残留守护
+#######################################
+cmd_startup() {
+  load_wifi_conf
+  if [ "$WIFI_AUTO_SWITCH" = "1" ]; then
+    start_watcher
+    decide_and_apply
+  else
+    stop_watcher
+  fi
+}
+
+#######################################
 # eval：评估一次 (供启动 / CLI 改配置后调用)
 #######################################
 cmd_eval() {
@@ -371,6 +386,7 @@ on_inotify_event() {
 main() {
   mkdir -p "$RUN_DIR" 2> /dev/null || true
   case "${1:-}" in
+    startup) cmd_startup ;;
     sync) cmd_sync ;;
     stop) cmd_stop ;;
     eval) cmd_eval ;;
@@ -380,5 +396,3 @@ main() {
 }
 
 main "$@"
-
-

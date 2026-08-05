@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * @file ProxySettingsScreen.vue
- * @description eBPF 透明代理设置页。配置写入 ebpf.conf 与 module.conf，
+ * @description eBPF 透明代理设置页。配置通过 netproxyctl 校验并原子保存，
  *   用户确认后统一重启服务，避免每次修改都重建 eBPF 入站。
  */
 import { inject } from 'vue';

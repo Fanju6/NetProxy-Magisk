@@ -19,6 +19,35 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: 配置 Go
+      uses: actions/setup-go@v7
+      with:
+        go-version-file: src/native/netproxy/go.mod
+        cache-dependency-path: src/native/netproxy/go.sum
+
+    - name: 构建 NetProxy 原生组件
+      shell: bash
+      working-directory: src/native/netproxy
+      run: |
+        set -euo pipefail
+        go test ./...
+
+        version="$(sed -n 's/^version=//p' ../../module/module.prop | head -n 1)"
+        commit="$(git -C ../../.. rev-parse --short HEAD)"
+        output="../../module/bin/netproxy-native"
+
+        CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build \
+          -trimpath \
+          -buildvcs=false \
+          -ldflags="-s -w -buildid= -X main.version=${version} -X main.commit=${commit}" \
+          -o "$output" \
+          ./cmd/netproxy-native
+
+        test -s "$output"
+        chmod 0755 "$output"
+        file "$output" | grep -q 'ARM aarch64'
+        go version -m "$output" | grep -q 'github.com/reF1nd/sing-box'
+
     - name: 配置 Node
       uses: actions/setup-node@v7
       with:

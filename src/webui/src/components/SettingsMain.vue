@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * @file SettingsMain.vue
- * @description 设置主页：代理设置入口、若干开关（开机自启 / urltest / GMS 修复）、语言切换、
+ * @description 设置主页：代理与分应用入口、开机自启、GMS 修复、语言切换、
  *   日志与关于入口。开关状态与切换动作由父级 SettingsLayout 经 provide 注入，本组件只做展示与转发。
  */
 import { inject, computed } from 'vue';
@@ -17,7 +17,6 @@ const { t, locale, messages } = useI18n();
 // 由 SettingsLayout 注入：设置状态 + 各开关的切换动作
 const settingsState = inject<Ref<SettingsState>>('settingsState')!;
 const toggleAutoStart = inject<() => Promise<void>>('toggleAutoStart')!;
-const toggleSelectorUrlTest = inject<() => Promise<void>>('toggleSelectorUrlTest')!;
 const toggleGmsFix = inject<() => Promise<void>>('toggleGmsFix')!;
 
 /** 跳转到指定子页路由。 */
@@ -63,9 +62,20 @@ const onLocaleChange = (e: Event) => {
           </svg>
         </div>
       </div>
+      <div class="pref-inner-divider"></div>
+      <div class="arrow-pref-row" @click="navigateTo('/settings/apps')">
+        <div class="pref-icon-container">
+          <svg viewBox="0 0 24 24"><path d="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z" fill="currentColor" /></svg>
+        </div>
+        <div class="pref-text">
+          <span class="pref-title">{{ t('settings.apps') }}</span>
+          <span class="pref-summary">{{ t('settings.appsDesc') }}</span>
+        </div>
+        <div class="pref-arrow-icon"><svg viewBox="0 0 24 24"><path d="M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" fill="currentColor" /></svg></div>
+      </div>
     </div>
 
-    <!-- 二、开关项：开机自启 / urltest / GMS 修复 -->
+    <!-- 二、开关项：开机自启 / GMS 修复 -->
     <div class="config-card">
       <!-- 开机自启 -->
       <div class="switch-pref-row" @click="toggleAutoStart">
@@ -80,24 +90,6 @@ const onLocaleChange = (e: Event) => {
         </div>
         <md-switch icons :selected="settingsState.autoStartEnabled" @click.stop="toggleAutoStart"></md-switch>
       </div>
-
-      <div class="pref-inner-divider"></div>
-
-      <!-- urltest 自动测速模式 -->
-      <div class="switch-pref-row" @click="toggleSelectorUrlTest">
-        <div class="pref-icon-container">
-          <svg viewBox="0 0 24 24">
-            <path d="M20.38 8.57l-1.23 1.85a8 8 0 0 1-.22 7.58H5.07A8 8 0 0 1 15.58 6.85l1.85-1.23A10 10 0 0 0 3.35 19a2 2 0 0 0 1.72 1h13.85a2 2 0 0 0 1.74-1 10 10 0 0 0-.27-10.44zm-9.79 6.84a2 2 0 0 0 2.83 0l5.66-8.49-8.49 5.66a2 2 0 0 0 0 2.83z" fill="currentColor"/>
-          </svg>
-        </div>
-        <div class="pref-text">
-          <span class="pref-title">{{ t('settings.urltest') }}</span>
-          <span class="pref-summary">{{ t('settings.urltestDesc') }}</span>
-        </div>
-        <md-switch icons :selected="settingsState.selectorUrlTestEnabled" @click.stop="toggleSelectorUrlTest"></md-switch>
-      </div>
-
-      <div class="pref-inner-divider"></div>
 
       <!-- GMS（Google 服务）修复 -->
       <div class="switch-pref-row" @click="toggleGmsFix">

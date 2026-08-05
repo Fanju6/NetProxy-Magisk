@@ -9,3 +9,6 @@ CLAUDE.md
 
 # NetProxy WebUI 构建产物（由 src/webui 构建生成，不纳入仓库）
 src/module/webroot/netproxy/
+
+# 本地构建的 NetProxy 原生组件
+src/module/bin/netproxy-native

@@ -79,7 +79,7 @@ Release 页面提供以下两个版本：
 
 | 版本 | 文件名 | 包含内容 | 适用设备 |
 |------|--------|----------|----------|
-| **完整版** | `NetProxy_<版本>_<构建号>.zip` | sing-box、Proxylink、zashboard 与 Android 管理器 APK | 默认推荐，可在刷入时安装配套管理器 |
+| **完整版** | `NetProxy_<版本>_<构建号>.zip` | sing-box、NetProxy 原生组件、zashboard 与 Android 管理器 APK | 默认推荐，可在刷入时安装配套管理器 |
 | **Lite 包** | `NetProxy_<版本>_<构建号>_lite.zip` | 与完整版相同的代理核心、CLI、eBPF 和 zashboard，不内置 Android 管理器 APK | 已从 Google Play 安装管理器，或只使用 CLI / zashboard 的用户 |
 
 两个版本的代理能力完全一致。如果希望刷入模块时一并安装管理器，请选择**完整版**；Lite 用户仍可从 Google Play 安装管理器。
@@ -133,7 +133,7 @@ su -c '/data/adb/modules/netproxy/scripts/cli sub auto on'
 
 ## 节点配置格式
 
-推荐使用 Android 管理器或 CLI 导入节点。Proxylink 会把单链接、节点文件、Clash YAML 和订阅转换为模块需要的 sing-box 配置片段。
+推荐使用 Android 管理器或 CLI 导入节点。模块内置的原生组件会把单链接、节点文件、Clash YAML 和订阅转换为模块需要的 sing-box Provider。
 
 ### 手写节点文件
 
@@ -246,7 +246,7 @@ su -c '/data/adb/modules/netproxy/scripts/cli service logs sub 100'
 |------|------|
 | [reF1nd/sing-box](https://github.com/reF1nd/sing-box) | 当前代理核心 |
 | [SagerNet/sing-box](https://github.com/SagerNet/sing-box) | 上游 sing-box 项目 |
-| [Proxylink](https://github.com/Fanju6/Proxylink) | 节点、订阅与配置转换 |
+| [Proxylink](https://github.com/Fanju6/Proxylink) | NetProxy 内部节点转换能力的原始项目 |
 | [AsteriskNG](https://github.com/Asterisk4Magisk/AsteriskNG) | Android eBPF 实现参考 |
 | [zashboard](https://github.com/Zephyruso/zashboard) | Clash API 控制面板 |
 | [v2rayNG](https://github.com/2dust/v2rayNG) | 节点解析实现参考 |

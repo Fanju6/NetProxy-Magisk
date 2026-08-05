@@ -1,16 +1,20 @@
 #!/system/bin/sh
 #######################################
 # 文件: api.sh
-# 功能: Clash API 辅助函数库，通过 busybox nc 直接发起 HTTP 请求，
-#       封装控制器读写：运行模式、代理组、节点切换、连接管理、延迟测试等。
+# 功能: 统一 Service API 与 Clash API 调用。核心控制优先使用固定 proto 的
+#       Service API；Clash API 仅保留兼容面板、连接与延迟查询能力。
 # 用法: 由其他脚本通过 . "$MODDIR/scripts/utils/api.sh" 引入。
-#       依赖 common.sh 的 detect_busybox/json_escape，并读取调用方定义的
-#       CLASH_API / CLASH_SECRET / SELECTOR_GROUP / DELAY_URL 常量。
+#       依赖 common.sh，并允许调用方覆盖 SERVICE_API、SERVICE_SECRET、
+#       CLASH_API、CLASH_SECRET、SELECTOR_GROUP 与 DELAY_URL。
 #######################################
 
 # busybox 路径：引入时探测一次并缓存 (沿用调用方已有的 BUSYBOX)，
 # 供 api_request 反复调用 nc 时复用，避免每次请求重复探测
 API_BUSYBOX="${BUSYBOX:-$(detect_busybox)}"
+SERVICE_API="${SERVICE_API:-127.0.0.1:9090}"
+SERVICE_SECRET="${SERVICE_SECRET:-singbox}"
+CLASH_API="${CLASH_API:-127.0.0.1:9999}"
+CLASH_SECRET="${CLASH_SECRET:-singbox}"
 
 #######################################
 # 读取控制器地址 (host:port)
@@ -18,16 +22,166 @@ API_BUSYBOX="${BUSYBOX:-$(detect_busybox)}"
 # 返回: 标准输出打印控制器地址 (缺省 127.0.0.1:9999)
 #######################################
 api_controller() {
-  printf "%s" "${CLASH_API:-127.0.0.1:9999}"
+  printf "%s" "$CLASH_API"
 }
 
 #######################################
 # 读取控制器访问密钥
 # 参数: 无
-# 返回: 标准输出打印密钥 (缺省 singbox)
+# 返回: 标准输出打印固定的 Clash API 密钥
 #######################################
 api_secret() {
-  printf "%s" "${CLASH_SECRET:-singbox}"
+  printf "%s" "$CLASH_SECRET"
+}
+
+#######################################
+# 调用 reF1nd Service API
+# 参数:
+#   $@  service 子命令及参数
+# 返回: 成功打印 NetProxy 原生组件统一 JSON，失败返回非 0
+#######################################
+service_api_call() {
+  local action="$1"
+  shift
+
+  "${NETPROXY_NATIVE_BIN:-$MODDIR/bin/netproxy-native}" service "$action" \
+    --address "$SERVICE_API" \
+    --secret "$SERVICE_SECRET" \
+    "$@"
+}
+
+#######################################
+# 判断 Service API 与核心实例是否完整就绪
+# 参数: 无
+# 返回: 0=就绪，非 0=未就绪
+#######################################
+service_api_is_ready() {
+  service_api_call ready --timeout 2s > /dev/null 2>&1
+}
+
+#######################################
+# 轮询等待 Service API 就绪
+# 参数:
+#   $1  最大重试次数 (默认 30)
+#   $2  间隔秒数 (默认 1)
+# 返回: 就绪返回 0，超时返回 1
+#######################################
+service_api_wait_ready() {
+  local retries="${1:-30}"
+  local delay="${2:-1}"
+  local count=0
+
+  while [ "$count" -lt "$retries" ]; do
+    service_api_is_ready && return 0
+    sleep "$delay"
+    count=$((count + 1))
+  done
+  return 1
+}
+
+#######################################
+# 读取 Service API 的核心启动时间 (毫秒)
+# 参数: 无
+# 返回: 标准输出打印 Unix 毫秒时间戳
+#######################################
+service_api_started_at() {
+  local result
+
+  result="$(service_api_call started-at --timeout 2s 2> /dev/null)" || return 1
+  printf "%s" "$result" | sed -n 's/.*"unix_milli"[^0-9]*\([0-9][0-9]*\).*/\1/p'
+}
+
+#######################################
+# 将 Unix 毫秒时间戳转换为秒
+# 参数:
+#   $1  Unix 毫秒时间戳
+# 返回: 标准输出打印 Unix 秒时间戳
+# 说明: 使用字符串截断，避免 Android mksh 的 32 位整数溢出。
+#######################################
+unix_millis_to_seconds() {
+  local value="${1:-}"
+
+  case "$value" in "" | *[!0-9]*) return 1 ;; esac
+  [ "${#value}" -gt 3 ] || { printf "0\n"; return 0; }
+  printf "%s\n" "${value%???}"
+}
+
+#######################################
+# 获取 Service API 节点组快照
+# 参数: 无
+# 返回: 标准输出打印统一 JSON
+#######################################
+service_api_groups() {
+  service_api_call groups --timeout 5s
+}
+
+#######################################
+# 获取核心状态与主选择器快照
+# 参数:
+#   $1  选择器标签 (默认 Proxy)
+# 返回: 标准输出打印统一 JSON
+#######################################
+service_api_snapshot() {
+  service_api_call snapshot --group "${1:-Proxy}" --timeout 3s
+}
+
+#######################################
+# 读取指定 selector 当前出站
+# 参数:
+#   $1  selector 标签
+# 返回: 标准输出打印当前出站标签
+#######################################
+service_api_selected() {
+  local result
+
+  result="$(service_api_call selected --group "$1" --timeout 5s 2> /dev/null)" || return 1
+  printf "%s" "$result" | sed -n 's/.*"outbound":"\([^"]*\)".*/\1/p'
+}
+
+#######################################
+# 通过 Service API 切换 selector
+# 参数:
+#   $1  selector 标签
+#   $2  出站标签
+# 返回: 成功返回 0，否则返回非 0
+#######################################
+service_api_select() {
+  service_api_call select --group "$1" --outbound "$2" --timeout 5s > /dev/null 2>&1
+}
+
+#######################################
+# 通过 Service API 设置出站模式
+# 参数:
+#   $1  module.conf 模式名
+# 返回: 成功返回 0，否则返回非 0
+#######################################
+service_api_set_mode() {
+  local mode
+
+  mode="$(module_mode_to_clash_mode "$1")" || return 1
+  service_api_call mode --mode "$mode" --timeout 5s > /dev/null 2>&1
+}
+
+#######################################
+# 读取 Service API 当前出站模式
+# 参数: 无
+# 返回: 标准输出打印模式名称
+#######################################
+service_api_get_mode() {
+  local result
+
+  result="$(service_api_call mode --timeout 5s 2> /dev/null)" || return 1
+  printf "%s" "$result" | sed -n 's/.*"current":"\([^"]*\)".*/\1/p'
+}
+
+#######################################
+# 通过 Service API 触发节点或组测速
+# 参数:
+#   $1  出站标签
+# 返回: 请求受理返回 0，否则返回非 0
+#######################################
+service_api_url_test() {
+  service_api_call urltest --outbound "$1" --timeout 8s > /dev/null 2>&1
 }
 
 #######################################
@@ -289,7 +443,7 @@ api_select_proxy() {
   local payload
 
   # 组装请求体并对组名做 URL 编码
-  payload="{\"name\":\"$tag\"}"
+  payload="{\"name\":\"$(json_escape "$tag")\"}"
   api_request PUT "/proxies/$(url_encode_simple "$group")" "$payload" > /dev/null 2>&1
 }
 

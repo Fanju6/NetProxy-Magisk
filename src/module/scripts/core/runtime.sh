@@ -1,415 +1,316 @@
 #!/system/bin/sh
 #######################################
 # 文件: runtime.sh
-# 功能: sing-box 运行时配置辅助函数，负责读取模块配置、扫描
-#       当前节点目录，并生成出站与 eBPF 入站配置。
-# 用法: 由 service.sh 等通过 . "$MODDIR/scripts/core/runtime.sh" 引入。
-#       依赖 common.sh (NL/TAB/die)、config.sh (read_conf)、nodes.sh。
+# 功能: 根据 Catalog 生成 sing-box Local Provider 与分组选择器配置。
+# 用法: 由 service.sh 通过 . "$MODDIR/scripts/core/runtime.sh" 引入。
+# 依赖: common.sh、config.sh、catalog.sh 与 metadata.sh。
 #######################################
 
-# 当前出站上下文 (由 initialize_runtime_context 填充)
-CUR_OUTBOUND_CONFIG=""   # 当前节点配置文件路径
-CUR_OUTBOUND_DIR=""      # 当前节点所在目录
-CUR_OUTBOUND_MODE=""     # 出站模式 (rule/global/direct)
-CUR_SELECTOR_MODE=""     # 节点选择模式 (urltest/manual)
-CUR_CURRENT_TAG=""       # 当前节点的出站标签
+. "$MODDIR/scripts/utils/metadata.sh"
 
-# 节点扫描结果 (由 scan_runtime_nodes 填充)
-RUNTIME_OUTBOUNDS_FILE=""   # 运行时出站配置输出路径
-RUNTIME_NODE_PATHS=""       # 扫描到的节点文件路径列表 (换行分隔)
-RUNTIME_NODE_TAGS_JSON=""   # 节点标签的 JSON 数组片段
-RUNTIME_NODE_COUNT=0        # 有效节点数
-RUNTIME_SKIPPED_COUNT=0     # 跳过 (无 tag) 的文件数
-RUNTIME_EBPF_FILE=""        # eBPF 入站配置输出路径
+# 当前运行上下文
+CUR_ACTIVE_GROUP_ID=""    # 当前活动分组 ID
+CUR_OUTBOUND_MODE=""      # 出站模式 (rule/global/direct)
+CUR_SELECTOR_MODE=""      # 节点选择模式 (urltest/manual)
+CUR_SELECTED_NODE_REF=""  # 手动节点引用 (<group-id>/<tag>)
+CUR_ACTIVE_GROUP_TAG=""   # 当前活动分组的运行时显示标签
+
+# Catalog 投影结果
+RUNTIME_GROUP_IDS=""        # 非空分组 ID (换行分隔)
+RUNTIME_GROUP_RECORDS=""    # 分组 ID 与运行时标签 (制表符分隔)
+RUNTIME_GROUP_COUNT=0       # 非空分组数
+RUNTIME_NODE_COUNT=0        # 全部分组节点总数
+RUNTIME_PROVIDER_ENTRIES="" # Provider JSON 对象片段
+RUNTIME_BUILD_ERROR=""      # 最近一次运行时投影失败原因
+
+# 运行时配置输出路径
+RUNTIME_PROVIDERS_FILE=""
+RUNTIME_OUTBOUNDS_FILE=""
+RUNTIME_EBPF_FILE=""
 
 #######################################
 # 初始化运行时上下文
-# 从模块配置读取当前节点/模式，并校验相关文件与目录。
 # 参数: 无
-# 全局: 读取 MODULE_CONF/SINGBOX_DIR/CONFDIR/RUNTIME_DIR；填充 CUR_* 与 RUNTIME_OUTBOUNDS_FILE
-# 返回: 成功返回 0，校验失败则退出
+# 全局: 读取模块配置并填充 CUR_* 与运行时配置路径
+# 返回: 成功返回 0，配置非法则退出
 #######################################
 initialize_runtime_context() {
-  # 校验必需的配置文件与目录
   require_file "${MODULE_CONF:-}" "模块配置文件不存在: ${MODULE_CONF:-未定义}"
   require_dir "${SINGBOX_DIR:-}" "sing-box 配置目录不存在: ${SINGBOX_DIR:-未定义}"
   require_dir "${CONFDIR:-}" "通用配置目录不存在: ${CONFDIR:-未定义}"
   require_dir "${RUNTIME_DIR:-}" "运行时目录不存在: ${RUNTIME_DIR:-未定义}"
+  require_dir "${CATALOG_DIR:-}" "Catalog 目录不存在: ${CATALOG_DIR:-未定义}"
 
-  # 读取当前节点路径与运行模式
-  CUR_OUTBOUND_CONFIG="$(read_conf "$MODULE_CONF" "CURRENT_CONFIG" "")"
-  CUR_OUTBOUND_MODE="$(read_conf "$MODULE_CONF" "OUTBOUND_MODE" "rule")"
-  CUR_SELECTOR_MODE="$(read_conf "$MODULE_CONF" "SELECTOR_MODE" "urltest")"
+  # module.conf 本身采用 Shell 赋值格式；运行时一次加载可避免逐键创建子进程。
+  ACTIVE_GROUP_ID="default"
+  OUTBOUND_MODE="rule"
+  SELECTOR_MODE="urltest"
+  SELECTED_NODE_REF=""
+  . "$MODULE_CONF"
+  CUR_ACTIVE_GROUP_ID="${ACTIVE_GROUP_ID:-default}"
+  CUR_OUTBOUND_MODE="${OUTBOUND_MODE:-rule}"
+  CUR_SELECTOR_MODE="${SELECTOR_MODE:-urltest}"
+  CUR_SELECTED_NODE_REF="${SELECTED_NODE_REF:-}"
 
-  # 必须已选择节点且文件存在
-  [ -n "$CUR_OUTBOUND_CONFIG" ] || die "CURRENT_CONFIG 未定义，请先选择节点"
-  require_file "$CUR_OUTBOUND_CONFIG" "当前节点配置文件不存在: $CUR_OUTBOUND_CONFIG"
+  catalog_validate_group_id "$CUR_ACTIVE_GROUP_ID" \
+    || die "ACTIVE_GROUP_ID 非法: $CUR_ACTIVE_GROUP_ID"
+  case "$CUR_OUTBOUND_MODE" in
+    rule | global | direct | AllowAds) ;;
+    *) die "未知出站模式: $CUR_OUTBOUND_MODE" ;;
+  esac
+  case "$CUR_SELECTOR_MODE" in
+    urltest | auto | manual | selector) ;;
+    *) die "未知节点选择模式: $CUR_SELECTOR_MODE" ;;
+  esac
 
-  # 解析节点所在目录
-  CUR_OUTBOUND_DIR="${CUR_OUTBOUND_CONFIG%/*}"
-  [ "$CUR_OUTBOUND_DIR" != "$CUR_OUTBOUND_CONFIG" ] || die "无法解析当前节点目录: $CUR_OUTBOUND_CONFIG"
-  require_dir "$CUR_OUTBOUND_DIR" "当前节点目录不存在: $CUR_OUTBOUND_DIR"
-
-  # 读取当前节点标签
-  CUR_CURRENT_TAG="$(detect_outbound_tag "$CUR_OUTBOUND_CONFIG" || true)"
-  [ -n "$CUR_CURRENT_TAG" ] || die "无法读取当前节点标签: $CUR_OUTBOUND_CONFIG"
-
+  RUNTIME_PROVIDERS_FILE="$RUNTIME_DIR/providers.json"
   RUNTIME_OUTBOUNDS_FILE="$RUNTIME_DIR/outbounds.json"
   RUNTIME_EBPF_FILE="$RUNTIME_DIR/ebpf.json"
 }
 
 #######################################
-# 将空格分隔的文本转换为 JSON 字符串数组片段
-# 参数:
-#   $1  空格分隔列表
-# 返回: 标准输出打印逗号分隔的 JSON 字符串
-#######################################
-word_list_to_json() {
-  local values="${1:-}"
-  local value escaped output=""
-
-  for value in $values; do
-    escaped="$(json_escape "$value")"
-    if [ -n "$output" ]; then
-      output="$output, \"$escaped\""
-    else
-      output="\"$escaped\""
-    fi
-  done
-
-  printf "%s" "$output"
-}
-
-#######################################
-# 校验并返回 eBPF Map 容量
-# 参数:
-#   $1  配置值
-#   $2  配置键名
-# 返回: 标准输出打印合法容量
-#######################################
-validate_map_capacity() {
-  local value="$1"
-  local key="$2"
-
-  case "$value" in
-    "" | *[!0-9]*) die "$key 必须是 1 到 1048576 之间的整数" ;;
-  esac
-  [ "$value" -ge 1 ] && [ "$value" -le 1048576 ] \
-    || die "$key 必须是 1 到 1048576 之间的整数"
-  printf "%s" "$value"
-}
-
-#######################################
-# 生成 eBPF 入站运行时配置
-# 参数: 无
-# 全局: 读取 EBPF_CONF，写入 RUNTIME_EBPF_FILE
-# 返回: 标准输出打印输出文件路径
-#######################################
-write_runtime_ebpf() {
-  local network network_field udp_timeout dns_mode cgroup_path ipv6
-  local bypass_rules bypass_json app_enabled app_mode package_list uids
-  local include_uid_json="" exclude_uid_json=""
-  local shared_enabled shared_interfaces shared_interfaces_json shared_json_enabled
-  local tcp_capacity udp_capacity socket_capacity shared_capacity redirect_json
-
-  require_file "${EBPF_CONF:-}" "eBPF 配置文件不存在: ${EBPF_CONF:-未定义}"
-
-  network="$(read_conf "$EBPF_CONF" "EBPF_NETWORK" "")"
-  udp_timeout="$(read_conf "$EBPF_CONF" "EBPF_UDP_TIMEOUT" "5m")"
-  dns_mode="$(read_conf "$EBPF_CONF" "EBPF_DNS_MODE" "hijack")"
-  cgroup_path="$(read_conf "$EBPF_CONF" "EBPF_CGROUP_PATH" "")"
-  ipv6="$(read_conf "$EBPF_CONF" "EBPF_IPV6" "1")"
-  bypass_rules="$(read_conf "$EBPF_CONF" "EBPF_BYPASS_RULE_SETS" "direct ChinaIP")"
-
-  case "$network" in
-    "" | tcp | udp) ;;
-    *) die "未知 eBPF 网络类型: $network" ;;
-  esac
-  case "$dns_mode" in
-    hijack | off) ;;
-    *) die "未知 eBPF DNS 模式: $dns_mode" ;;
-  esac
-  case "$ipv6" in
-    0 | 1) ;;
-    *) die "EBPF_IPV6 只能为 0 或 1" ;;
-  esac
-
-  tcp_capacity="$(validate_map_capacity "$(read_conf "$EBPF_CONF" "EBPF_TCP_MAP_CAPACITY" "65536")" "EBPF_TCP_MAP_CAPACITY")" || exit 1
-  udp_capacity="$(validate_map_capacity "$(read_conf "$EBPF_CONF" "EBPF_UDP_MAP_CAPACITY" "65536")" "EBPF_UDP_MAP_CAPACITY")" || exit 1
-  socket_capacity="$(validate_map_capacity "$(read_conf "$EBPF_CONF" "EBPF_SOCKET_MAP_CAPACITY" "65536")" "EBPF_SOCKET_MAP_CAPACITY")" || exit 1
-  shared_capacity="$(validate_map_capacity "$(read_conf "$EBPF_CONF" "EBPF_SHARED_MAP_CAPACITY" "65536")" "EBPF_SHARED_MAP_CAPACITY")" || exit 1
-
-  # 将应用包名转换为 eBPF 可直接使用的 UID 策略
-  app_enabled="$(read_conf "$EBPF_CONF" "APP_PROXY_ENABLE" "1")"
-  app_mode="$(read_conf "$EBPF_CONF" "APP_PROXY_MODE" "blacklist")"
-  if [ "$app_enabled" = "1" ]; then
-    case "$app_mode" in
-      blacklist)
-        package_list="$(read_conf "$EBPF_CONF" "BYPASS_APPS_LIST" "")"
-        uids="$(resolve_package_uids "$package_list")"
-        exclude_uid_json="$(uid_list_to_json "$uids")"
-        [ -z "$package_list" ] || [ -n "$exclude_uid_json" ] \
-          || log "WARN" "未能解析应用绕过名单中的任何 UID"
-        ;;
-      whitelist)
-        package_list="$(read_conf "$EBPF_CONF" "PROXY_APPS_LIST" "")"
-        uids="$(resolve_package_uids "$package_list")"
-        include_uid_json="$(uid_list_to_json "$uids")"
-        # 空白名单必须匹配不到任何应用，不能使用空数组回退为代理全部 UID
-        if [ -z "$include_uid_json" ]; then
-          include_uid_json="4294967295"
-          [ -z "$package_list" ] || log "WARN" "未能解析应用代理名单中的任何 UID"
-        fi
-        ;;
-      *) die "未知分应用代理模式: $app_mode" ;;
-    esac
-  fi
-
-  # shared_network 使用精确接口名，接口可在 sing-box 启动后出现
-  shared_enabled="$(read_conf "$EBPF_CONF" "EBPF_SHARED_NETWORK" "0")"
-  shared_interfaces="$(read_conf "$EBPF_CONF" "EBPF_SHARED_INTERFACES" "wlan2")"
-  shared_interfaces_json="$(word_list_to_json "$shared_interfaces")"
-  case "$shared_enabled" in
-    0) shared_json_enabled=false ;;
-    1)
-      [ -n "$shared_interfaces_json" ] || die "启用共享网络时必须配置 EBPF_SHARED_INTERFACES"
-      [ "$dns_mode" != "hijack" ] || [ "$network" != "tcp" ] \
-        || die "共享网络启用 DNS 劫持时必须代理 UDP"
-      shared_json_enabled=true
-      ;;
-    *) die "EBPF_SHARED_NETWORK 只能为 0 或 1" ;;
-  esac
-
-  redirect_json='"127.128.0.0/9"'
-  [ "$ipv6" = "1" ] && redirect_json="$redirect_json, \"fd53:696e:672d:626f::/64\""
-  bypass_json="$(word_list_to_json "$bypass_rules")"
-
-  # network 留空表示同时代理 TCP 与 UDP。当前核心只在字段省略时应用默认值，
-  # 若写入空字符串会被配置解码器判定为未知网络类型。
-  network_field=""
-  if [ -n "$network" ]; then
-    network_field="      \"network\": \"$(json_escape "$network")\",
-"
-  fi
-
-  cat > "$RUNTIME_EBPF_FILE" << EOF
-{
-  "inbounds": [
-    {
-      "type": "ebpf",
-      "tag": "ebpf-in",
-      "cgroup_enabled": true,
-${network_field}      "udp_timeout": "$(json_escape "$udp_timeout")",
-      "dns_mode": "$dns_mode",
-      "cgroup_path": "$(json_escape "$cgroup_path")",
-      "redirect_address": [$redirect_json],
-      "bypass_rule_set": [$bypass_json],
-      "include_uid": [$include_uid_json],
-      "include_uid_range": [],
-      "exclude_uid": [$exclude_uid_json],
-      "exclude_uid_range": [],
-      "map_capacity": {
-        "tcp_redirect": $tcp_capacity,
-        "udp_redirect": $udp_capacity,
-        "socket_bypass": $socket_capacity
-      },
-      "shared_network": {
-        "enabled": $shared_json_enabled,
-        "include_interface": [$shared_interfaces_json],
-        "map_capacity": $shared_capacity
-      }
-    }
-  ]
-}
-EOF
-
-  printf "%s\n" "$RUNTIME_EBPF_FILE"
-}
-
-#######################################
-# 清空节点扫描结果缓存
+# 清空 Catalog 投影结果
 # 参数: 无
 # 返回: 无
 #######################################
-reset_runtime_nodes() {
-  RUNTIME_NODE_PATHS=""
-  RUNTIME_NODE_TAGS_JSON=""
+reset_catalog_projection() {
+  RUNTIME_GROUP_IDS=""
+  RUNTIME_GROUP_RECORDS=""
+  RUNTIME_GROUP_COUNT=0
   RUNTIME_NODE_COUNT=0
-  RUNTIME_SKIPPED_COUNT=0
+  RUNTIME_PROVIDER_ENTRIES=""
 }
 
 #######################################
-# 扫描节点目录，收集节点路径与标签
+# 将分组加入运行时 Provider 投影
 # 参数:
-#   $1  节点目录 (默认 CUR_OUTBOUND_DIR)
-# 全局: 填充 RUNTIME_NODE_PATHS/RUNTIME_NODE_TAGS_JSON/RUNTIME_NODE_COUNT/RUNTIME_SKIPPED_COUNT
+#   $1  分组 ID
+#   $2  运行时标签
+#   $3  provider.json 路径
+#   $4  节点数
 # 返回: 无
 #######################################
-scan_runtime_nodes() {
-  local current_dir="${1:-$CUR_OUTBOUND_DIR}"
-  require_dir "$current_dir" "节点目录不存在: $current_dir"
-  reset_runtime_nodes
+append_runtime_provider() {
+  local group_id="$1"
+  local runtime_tag="$2"
+  local provider_file="$3"
+  local node_count="$4"
+  local entry escaped_runtime_tag
 
-  local parsed_data
-  # 用 awk 提取每个文件的首个 tag，输出 "文件名<TAB>标签"
-  # (依赖 awk 的 nextfile 扩展)
-  parsed_data=$(awk -F'"' '
-    # 每个新文件开始时重置标志位
-    FNR == 1 { found = 0 }
+  escaped_runtime_tag="$(json_escape "$runtime_tag")"
 
-    # 匹配含有 "tag": "xxx" 的行
-    !found && /"tag"[ \t]*:/ {
-        tag = $4
+  entry="    {
+      \"type\": \"local\",
+      \"tag\": \"$escaped_runtime_tag\",
+      \"path\": \"$(json_escape "$provider_file")\",
+      \"health_check\": {
+        \"enabled\": true,
+        \"url\": \"https://www.gstatic.com/generate_204\",
+        \"interval\": \"10m\",
+        \"timeout\": \"5s\"
+      }
+    }"
 
-        # 输出 文件名[TAB]标签
-        printf "%s\t%s\n", FILENAME, tag
+  if [ -n "$RUNTIME_PROVIDER_ENTRIES" ]; then
+    RUNTIME_PROVIDER_ENTRIES="$RUNTIME_PROVIDER_ENTRIES,$NL$entry"
+    RUNTIME_GROUP_IDS="$RUNTIME_GROUP_IDS$NL$group_id"
+    RUNTIME_GROUP_RECORDS="$RUNTIME_GROUP_RECORDS$NL$group_id$TAB$runtime_tag"
+  else
+    RUNTIME_PROVIDER_ENTRIES="$entry"
+    RUNTIME_GROUP_IDS="$group_id"
+    RUNTIME_GROUP_RECORDS="$group_id$TAB$runtime_tag"
+  fi
+  RUNTIME_GROUP_COUNT=$((RUNTIME_GROUP_COUNT + 1))
+  RUNTIME_NODE_COUNT=$((RUNTIME_NODE_COUNT + node_count))
+}
 
-        # 标记已找到，跳过该文件后续行
-        found = 1
-        nextfile
-    }
-  ' "$current_dir"/*.json 2>/dev/null)
+#######################################
+# 规范化活动分组与节点选择状态
+# 参数: 无
+# 全局: 读取 RUNTIME_GROUP_IDS，并按需更新 module.conf
+# 返回: 无
+#######################################
+normalize_runtime_selection() {
+  local fallback_group selected_group selected_tag provider_file
 
-  # 未解析到任何数据则直接返回
-  [ -z "$parsed_data" ] && return
+  # 活动分组已被删除或为空时，切换到第一个非空分组。
+  if ! catalog_group_list_contains "$RUNTIME_GROUP_IDS" "$CUR_ACTIVE_GROUP_ID"; then
+    fallback_group="$(printf "%s\n" "$RUNTIME_GROUP_IDS" | sed -n '1p')"
+    [ -n "$fallback_group" ] || die "Catalog 中没有可用节点组"
+    log "WARN" "活动分组不可用，切换到: $fallback_group"
+    CUR_ACTIVE_GROUP_ID="$fallback_group"
+    set_conf "$MODULE_CONF" "ACTIVE_GROUP_ID" "$(quote_conf "$CUR_ACTIVE_GROUP_ID")"
+  fi
 
-  # 逐行读取 awk 结果，累积节点路径与标签
-  local file tag
-  while IFS="$TAB" read -r file tag; do
-    # 标签为空的记录计入跳过
-    if [ -z "$tag" ]; then
-      RUNTIME_SKIPPED_COUNT=$((RUNTIME_SKIPPED_COUNT + 1))
+  case "$CUR_SELECTOR_MODE" in
+    urltest | auto)
+      CUR_SELECTOR_MODE="urltest"
+      if [ -n "$CUR_SELECTED_NODE_REF" ]; then
+        CUR_SELECTED_NODE_REF=""
+        set_conf "$MODULE_CONF" "SELECTED_NODE_REF" '""'
+      fi
+      set_conf "$MODULE_CONF" "SELECTOR_MODE" "urltest"
+      ;;
+    manual | selector)
+      CUR_SELECTOR_MODE="manual"
+      selected_group="${CUR_SELECTED_NODE_REF%%/*}"
+      selected_tag="${CUR_SELECTED_NODE_REF#*/}"
+      provider_file="$(catalog_provider_path "$CUR_ACTIVE_GROUP_ID")" || provider_file=""
+
+      if [ -z "$CUR_SELECTED_NODE_REF" ] \
+        || [ "$selected_group" = "$CUR_SELECTED_NODE_REF" ] \
+        || [ "$selected_group" != "$CUR_ACTIVE_GROUP_ID" ] \
+        || [ -z "$selected_tag" ] \
+        || ! catalog_provider_contains_tag "$provider_file" "$selected_tag"; then
+        log "WARN" "手动节点不可用，回退到活动分组自动测速"
+        CUR_SELECTOR_MODE="urltest"
+        CUR_SELECTED_NODE_REF=""
+        set_conf "$MODULE_CONF" "SELECTOR_MODE" "urltest"
+        set_conf "$MODULE_CONF" "SELECTED_NODE_REF" '""'
+      else
+        set_conf "$MODULE_CONF" "SELECTOR_MODE" "manual"
+      fi
+      ;;
+  esac
+
+  CUR_ACTIVE_GROUP_TAG="$(catalog_runtime_group_tag "$CUR_ACTIVE_GROUP_ID")" \
+    || die "无法读取活动分组名称: $CUR_ACTIVE_GROUP_ID"
+}
+
+#######################################
+# 扫描 Catalog 中全部非空节点组
+# 参数: 无
+# 全局: 填充 RUNTIME_GROUP_*、RUNTIME_NODE_COUNT 与 Provider 片段
+# 返回: 无可用节点或 Provider 非法时退出
+#######################################
+scan_catalog_groups() {
+  local mode="${1:-strict}"
+  local group_dir group_id provider_file meta_file node_count runtime_tag
+
+  reset_catalog_projection
+  for group_dir in "$CATALOG_DIR"/*; do
+    [ -d "$group_dir" ] || continue
+    group_id="${group_dir##*/}"
+    [ "$group_id" != "staging" ] || continue
+    if ! catalog_validate_group_id "$group_id"; then
+      log "WARN" "跳过非法 Catalog 分组目录: $group_id"
       continue
     fi
 
-    # 追加节点路径，并将非保留标签拼入 JSON 数组片段
-    if [ -n "$RUNTIME_NODE_PATHS" ]; then
-      RUNTIME_NODE_PATHS="${RUNTIME_NODE_PATHS}${NL}${file}"
-
-      if ! is_reserved_outbound_tag "$tag"; then
-        RUNTIME_NODE_TAGS_JSON="${RUNTIME_NODE_TAGS_JSON}, \"$tag\""
-      fi
-    else
-      RUNTIME_NODE_PATHS="$file"
-
-      if ! is_reserved_outbound_tag "$tag"; then
-        RUNTIME_NODE_TAGS_JSON="\"$tag\""
-      fi
-    fi
-
-    RUNTIME_NODE_COUNT=$((RUNTIME_NODE_COUNT + 1))
-  done << EOF
-$parsed_data
-EOF
-
-  # 统计目录内文件总数，反推被跳过 (无 tag) 的数量
-  local total_files=0 _f
-  for _f in "$current_dir"/*.json; do
-    [ -e "$_f" ] && total_files=$((total_files + 1))
+    provider_file="$group_dir/provider.json"
+    meta_file="$group_dir/meta.json"
+    catalog_provider_has_nodes "$provider_file" || continue
+    require_file "$meta_file" "Catalog 分组缺少 meta.json: $group_id"
+    # 节点数由 Catalog 事务与 Provider 同步提交；启动只读取所需字段。
+    node_count="$(meta_get_raw "$meta_file" "node_count" "0")" \
+      || die "Catalog 分组元数据无效: $group_id"
+    case "$node_count" in
+      "" | *[!0-9]*) die "Catalog Provider 节点数非法: $provider_file" ;;
+      0) continue ;;
+    esac
+    runtime_tag="$(catalog_runtime_group_tag "$group_id")" \
+      || die "无法读取 Catalog 分组名称: $group_id"
+    append_runtime_provider "$group_id" "$runtime_tag" "$provider_file" "$node_count"
   done
-  RUNTIME_SKIPPED_COUNT=$((total_files - RUNTIME_NODE_COUNT))
+
+  if [ "$RUNTIME_GROUP_COUNT" -le 0 ]; then
+    RUNTIME_BUILD_ERROR="Catalog 中没有可用节点，请先导入单节点、文件或订阅"
+    [ "$mode" = "allow-empty" ] && return 2
+    log "ERROR" "$RUNTIME_BUILD_ERROR"
+    return 1
+  fi
+  RUNTIME_BUILD_ERROR=""
+  normalize_runtime_selection
 }
 
 #######################################
-# 生成运行时出站配置文件 (outbounds.json)
-# 参数:
-#   $1  当前节点配置路径 (默认 CUR_OUTBOUND_CONFIG)
-#   $2  选择模式 (默认 CUR_SELECTOR_MODE)
-# 返回: 标准输出打印输出文件路径；无可用标签或未知模式则退出
+# 生成 Local Provider 运行时配置
+# 参数: 无
+# 返回: 标准输出打印生成文件路径
+#######################################
+write_runtime_providers() {
+  [ -n "$RUNTIME_PROVIDER_ENTRIES" ] || scan_catalog_groups || return 1
+
+  cat > "$RUNTIME_PROVIDERS_FILE" << EOF
+{
+  "providers": [
+$RUNTIME_PROVIDER_ENTRIES
+  ]
+}
+EOF
+
+  printf "%s\n" "$RUNTIME_PROVIDERS_FILE"
+}
+
+#######################################
+# 生成分组选择器运行时配置
+# 参数: 无
+# 返回: 标准输出打印生成文件路径
 #######################################
 write_runtime_outbounds() {
-  local current_config="${1:-$CUR_OUTBOUND_CONFIG}"
-  local selector_mode="${2:-$CUR_SELECTOR_MODE}"
-  local tags="$RUNTIME_NODE_TAGS_JSON"
+  local group_id runtime_tag escaped_runtime_tag group_entries="" proxy_options=""
+  local entry top_default
 
-  [ -n "$current_config" ] || die "当前节点配置未初始化"
-  [ -n "$selector_mode" ] || selector_mode="urltest"
+  [ "$RUNTIME_GROUP_COUNT" -gt 0 ] || scan_catalog_groups || return 1
 
-  # 尚未扫描节点时先执行一次扫描
-  if [ "$RUNTIME_NODE_COUNT" -eq 0 ] && [ -z "$RUNTIME_NODE_PATHS" ]; then
-    scan_runtime_nodes "$CUR_OUTBOUND_DIR"
-    tags="$RUNTIME_NODE_TAGS_JSON"
-  fi
-
-  # 扫描无标签时，回退使用当前节点标签 (非保留标签)
-  if [ -z "$tags" ] && ! is_reserved_outbound_tag "$CUR_CURRENT_TAG"; then
-    tags="\"$CUR_CURRENT_TAG\""
-  fi
-
-  [ -n "$tags" ] || die "当前节点目录没有可用的出站标签: $CUR_OUTBOUND_DIR"
-
-  # 按选择模式生成对应结构的出站配置
-  case "$selector_mode" in
-    urltest | auto | 动态测速)
-      # 动态测速模式：额外生成 Auto-Fastest 自动测速组
-      cat > "$RUNTIME_OUTBOUNDS_FILE" << EOF
-{
-  "outbounds": [
-    {
-      "tag": "direct",
-      "type": "direct"
+  while IFS="$TAB" read -r group_id runtime_tag; do
+    [ -n "$group_id" ] || continue
+    escaped_runtime_tag="$(json_escape "$runtime_tag")"
+    entry="    {
+      \"type\": \"urltest\",
+      \"tag\": \"Auto/$escaped_runtime_tag\",
+      \"providers\": [\"$escaped_runtime_tag\"],
+      \"url\": \"https://www.gstatic.com/generate_204\",
+      \"interval\": \"3m\",
+      \"tolerance\": 50,
+      \"interrupt_exist_connections\": true
     },
     {
-      "tag": "block",
-      "type": "block"
-    },
-    {
-      "tag": "Proxy",
-      "type": "selector",
-      "outbounds": [
-        "Auto-Fastest",
-        "direct",
-        $tags
-      ],
-      "default": "Auto-Fastest",
-      "interrupt_exist_connections": true
-    },
-    {
-      "tag": "Auto-Fastest",
-      "type": "urltest",
-      "outbounds": [
-        $tags
-      ],
-      "url": "https://www.gstatic.com/generate_204",
-      "interval": "3m",
-      "tolerance": 50
-    }
-  ]
-}
+      \"type\": \"selector\",
+      \"tag\": \"Select/$escaped_runtime_tag\",
+      \"providers\": [\"$escaped_runtime_tag\"],
+      \"interrupt_exist_connections\": true
+    }"
+
+    if [ -n "$group_entries" ]; then
+      group_entries="$group_entries,$NL$entry"
+      proxy_options="$proxy_options, \"Auto/$escaped_runtime_tag\", \"Select/$escaped_runtime_tag\""
+    else
+      group_entries="$entry"
+      proxy_options="\"Auto/$escaped_runtime_tag\", \"Select/$escaped_runtime_tag\""
+    fi
+  done << EOF
+$RUNTIME_GROUP_RECORDS
 EOF
-      ;;
-    manual | selector | 手动选择 | 手动)
-      # 手动选择模式：仅生成 selector，默认指向当前节点
-      cat > "$RUNTIME_OUTBOUNDS_FILE" << EOF
+
+  if [ "$CUR_SELECTOR_MODE" = "manual" ]; then
+    top_default="Select/$(json_escape "$CUR_ACTIVE_GROUP_TAG")"
+  else
+    top_default="Auto/$(json_escape "$CUR_ACTIVE_GROUP_TAG")"
+  fi
+
+  cat > "$RUNTIME_OUTBOUNDS_FILE" << EOF
 {
   "outbounds": [
     {
-      "tag": "direct",
-      "type": "direct"
+      "type": "direct",
+      "tag": "direct"
     },
     {
-      "tag": "block",
-      "type": "block"
+      "type": "block",
+      "tag": "block"
     },
+$group_entries,
     {
-      "tag": "Proxy",
       "type": "selector",
-      "outbounds": [
-        "direct",
-        $tags
-      ],
-      "default": "$CUR_CURRENT_TAG",
+      "tag": "Proxy",
+      "outbounds": [$proxy_options],
+      "default": "$top_default",
       "interrupt_exist_connections": true
     }
   ]
 }
 EOF
-      ;;
-    *)
-      die "未知节点选择模式: $selector_mode"
-      ;;
-  esac
 
-  # 输出生成的配置文件路径
   printf "%s\n" "$RUNTIME_OUTBOUNDS_FILE"
 }

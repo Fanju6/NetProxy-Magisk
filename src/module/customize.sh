@@ -23,12 +23,13 @@ readonly LEGACY_WEB_DIR_NAME="web""root"            # 旧版 WebUI 目录名
 
 # 全局状态: 安装前代理服务是否处于运行状态
 PROXY_WAS_RUNNING=false
+RESET_LEGACY_CONFIG=false
 
 # 需要保留的配置文件/目录 (相对于 config/)
 readonly PRESERVE_CONFIGS="
     module.conf
     ebpf/ebpf.conf
-    singbox/outbounds/
+    catalog/
     singbox/source/direct.json
     singbox/source/proxy.json
     singbox/source/block.json
@@ -37,16 +38,21 @@ readonly PRESERVE_CONFIGS="
 # 需要设置可执行权限的文件
 readonly EXECUTABLE_FILES="
     bin/sing-box
-    bin/proxylink
+    bin/netproxy-native
     action.sh
+    netproxyctl
     uninstall.sh
-    scripts/cli
+    scripts/netproxyctl
     scripts/core/service.sh
+    scripts/core/ebpf.sh
     scripts/core/switch.sh
     scripts/network/netmon.sh
     scripts/core/subscription.sh
-    scripts/core/subsched.sh
+    scripts/core/subworker.sh
+    scripts/utils/state.sh
+    scripts/utils/metadata.sh
     scripts/utils/gms_fix.sh
+    scripts/utils/catalog.sh
 "
 
 ################################################################################
@@ -138,7 +144,15 @@ backup_config() {
     return 0
   fi
 
-  print_step "备份现有配置..."
+  # 8.x Catalog 存在时按正常升级处理，只暂存当前版本仍受支持的配置。
+  if [ ! -f "$CONFIG_DIR/catalog/default/meta.json" ] \
+    || [ ! -f "$CONFIG_DIR/catalog/default/provider.json" ]; then
+    RESET_LEGACY_CONFIG=true
+    print_warn "检测到非 Catalog 配置，将直接初始化全新配置"
+    return 0
+  fi
+
+  print_step "备份当前 Catalog 配置..."
   mkdir -p "$BACKUP_DIR"
 
   # 逐项备份需保留的配置
@@ -228,6 +242,13 @@ stop_proxy_if_running() {
     return 0
   fi
 
+  # 订阅 worker 与代理核心独立运行，安装前单独停止旧实例。
+  if [ -f "$LIVE_DIR/scripts/core/subworker.sh" ]; then
+    sh "$LIVE_DIR/scripts/core/subworker.sh" stop > /dev/null 2>&1 || true
+  elif [ -f "$LIVE_DIR/scripts/core/subsched.sh" ]; then
+    sh "$LIVE_DIR/scripts/core/subsched.sh" stop > /dev/null 2>&1 || true
+  fi
+
   # 检测当前或旧版内核进程
   if pidof -s "$LIVE_DIR/bin/sing-box" > /dev/null 2>&1 || pidof -s "$LIVE_DIR/bin/$LEGACY_CORE_NAME" > /dev/null 2>&1; then
     PROXY_WAS_RUNNING=true
@@ -258,6 +279,7 @@ cleanup_legacy_dataplane() {
     2> /dev/null || true
   rm -f "$LIVE_DIR/scripts/network/tproxy.sh" \
     "$LIVE_DIR/scripts/utils/ipset.sh" \
+    "$LIVE_DIR/scripts/core/subsched.sh" \
     "$LIVE_DIR/post-fs-data.sh" \
     "/data/adb/ksu/bin/ipset" \
     "/data/adb/ap/bin/ipset" \
@@ -282,8 +304,22 @@ sync_to_live() {
     return 0
   fi
 
+  # API 地址与密钥已固定在 sing-box 配置中，不再保留旧凭据目录。
+  rm -rf "$LIVE_DIR/config/api" 2> /dev/null || true
+
+  # 非 Catalog 配置不迁移，运行目录直接改用全新配置。
+  if [ "$RESET_LEGACY_CONFIG" = true ]; then
+    rm -rf "$LIVE_DIR/config" 2> /dev/null || true
+    if cp -r "$MODPATH/config" "$LIVE_DIR/config" 2> /dev/null; then
+      print_ok "已初始化全新 Catalog 配置"
+    else
+      print_error "初始化 Catalog 配置失败"
+      return 1
+    fi
+  fi
+
   # 同步程序文件与脚本，以及需要更新的内置资源 (整目录/文件覆盖)
-  local sync_dirs="bin scripts action.sh service.sh uninstall.sh module.prop config/ebpf config/singbox/confdir config/singbox/source"
+  local sync_dirs="bin scripts netproxyctl action.sh service.sh uninstall.sh module.prop config/ebpf config/singbox/confdir config/singbox/source"
 
   for item in $sync_dirs; do
     local src="$MODPATH/$item"
@@ -317,11 +353,19 @@ sync_to_live() {
 # 返回: 0
 #######################################
 restart_proxy_if_needed() {
+  # 热更新安装无需等待重启设备，先拉起新版独立订阅 worker。
+  if [ -f "$LIVE_DIR/scripts/core/subworker.sh" ]; then
+    sh "$LIVE_DIR/scripts/core/subworker.sh" start > /dev/null 2>&1 || true
+  fi
+
   if [ "$PROXY_WAS_RUNNING" = true ]; then
     print_step "重新启动代理服务..."
     # su 包裹：经管理器刷入时让 sing-box 迁出冻结 cgroup，避免切后台断网
-    su -c "sh \"$LIVE_DIR/scripts/core/service.sh\" start" > /dev/null 2>&1
-    print_ok "服务已启动"
+    if su -c "sh \"$LIVE_DIR/scripts/core/service.sh\" start" > /dev/null 2>&1; then
+      print_ok "服务已启动"
+    else
+      print_warn "服务未启动，请先导入可用节点"
+    fi
   fi
 
   return 0
@@ -348,6 +392,16 @@ set_permissions() {
 
   # 递归设置整个模块目录的默认属主与权限
   set_perm_recursive "$MODPATH" 0 0 0755 0755
+
+  # Catalog 中包含节点凭据、订阅地址与自定义请求头，仅允许 root 读取。
+  [ ! -d "$MODPATH/config/catalog" ] \
+    || set_perm_recursive "$MODPATH/config/catalog" 0 0 0700 0600
+  [ ! -d "$LIVE_DIR/config/catalog" ] \
+    || set_perm_recursive "$LIVE_DIR/config/catalog" 0 0 0700 0600
+  [ ! -d "$MODPATH/config/runtime" ] \
+    || set_perm_recursive "$MODPATH/config/runtime" 0 0 0700 0600
+  [ ! -d "$LIVE_DIR/config/runtime" ] \
+    || set_perm_recursive "$LIVE_DIR/config/runtime" 0 0 0700 0600
 
   print_ok "权限设置完成"
   return 0

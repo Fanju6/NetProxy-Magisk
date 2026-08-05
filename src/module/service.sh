@@ -12,6 +12,7 @@ set -e  # 命令失败立即退出
 # 模块根目录与关键路径
 readonly MODDIR="${0%/*}"                          # 模块根目录 (脚本所在目录)
 readonly MODULE_CONF="$MODDIR/config/module.conf"  # 模块配置
+readonly SUBWORKER_SCRIPT="$MODDIR/scripts/core/subworker.sh"  # 订阅更新 worker
 readonly LOG_FILE="$MODDIR/logs/service.log"       # 服务日志
 readonly LOG_TAG="boot"                            # 日志组件标签
 
@@ -72,6 +73,20 @@ check_device_specific() {
 }
 
 #######################################
+# 启动独立订阅更新 worker
+# worker 不依赖 sing-box 是否启用，启动失败也不阻断代理服务。
+# 参数: 无
+# 返回: 无
+#######################################
+start_subscription_worker() {
+  if sh "$SUBWORKER_SCRIPT" start; then
+    log "DEBUG" "订阅自动更新 worker 已就绪"
+  else
+    log "WARN" "订阅自动更新 worker 启动失败，可稍后手动重试"
+  fi
+}
+
+#######################################
 # 记录运行环境信息 (Root 方案、版本、模块版本等)
 # 参数: 无
 # 返回: 无
@@ -123,6 +138,9 @@ log_env_info
 load_module_config
 
 wait_for_boot
+
+# 订阅调度与代理核心解耦，即使禁用开机代理也保持订阅按期更新。
+start_subscription_worker
 
 # 按配置决定是否开机自启服务
 if [ "$AUTO_START" = "1" ]; then

@@ -7,7 +7,8 @@
 import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
-import { runCli, showToast, isKsuEnv } from '../utils/ksu';
+import { showToast } from '../utils/ksu';
+import { moduleClient, type LogKind } from '../api/moduleClient';
 import { useBackDismiss } from '../composables/useBackDismiss';
 
 const router = useRouter();
@@ -20,7 +21,7 @@ const darkMql = typeof window !== 'undefined' && window.matchMedia
 const isDark = ref(darkMql ? darkMql.matches : false);
 const onSchemeChange = (e: MediaQueryListEvent) => { isDark.value = e.matches; };
 
-type LogType = 'service' | 'sub' | 'core';
+type LogType = LogKind;
 const activeLogType = ref<LogType>('service');
 const logLineCount = ref(100);
 const isLogsLoading = ref(false);
@@ -91,41 +92,6 @@ const scrollToLogsBottom = () => {
 const handleBack = () => {
   router.back();
 };
-
-// 浏览器(mock)环境下用于展示界面的假日志数据
-const serviceMockLogs = [
-  "[2026-06-04 16:00:00] [INFO] netproxy service daemon running (pid 24151)...",
-  "[2026-06-04 16:00:01] [INFO] system outbound mode set to [rule] by user call",
-  "[2026-06-04 16:00:02] [INFO] bypass rule checked: uid 10243 (Telegram) -> match [Proxy]",
-  "[2026-06-04 16:00:02] [INFO] bypass rule checked: uid 10241 (WeChat) -> match [Direct]",
-  "[2026-06-04 16:00:03] [INFO] TProxy transparent redirection enabled on table 100",
-  "[2026-06-04 16:00:03] [INFO] nf_tables ipv4 redirect rule applied successfully",
-  "[2026-06-04 16:00:04] [INFO] UDP DNS redirection hook loaded (port 1536)",
-  "[2026-06-04 16:01:00] [WARN] WARNING: low kernel memory warning in proxy socket buffer",
-  "[2026-06-04 16:02:00] [INFO] checking subscription update timestamps...",
-  "[2026-06-04 16:03:00] [INFO] daemon status check: sing-box process is healthy",
-  "[2026-06-04 16:04:00] [INFO] connection routed: local -> 127.0.0.1:4012 -> github.com:443 [Proxy]",
-  "[2026-06-04 16:05:00] [INFO] connection routed: local -> 127.0.0.1:4013 -> doubleclick.net:443 [Blocked]",
-  "[2026-06-04 16:06:00] [INFO] connection routed: local -> 127.0.0.1:4014 -> baidu.com:80 [Direct]"
-];
-
-const coreMockLogs = [
-  "2026-06-04 16:00:00 INFO sing-box parameter initialization complete",
-  "2026-06-04 16:00:01 INFO inbound/tproxy-in: listen on :::1536",
-  "2026-06-04 16:00:02 INFO inbound/mixed-in: listen on 127.0.0.1:7890",
-  "2026-06-04 16:00:03 INFO dns: exchange google.com. A: success (8.8.8.8)",
-  "2026-06-04 16:00:04 INFO dns: exchange baidu.com. A: success (223.5.5.5)",
-  "2026-06-04 16:01:00 INFO outbound/proxy[0]: connection routed: local -> google.com:443 [Proxy]",
-  "2026-06-04 16:02:00 INFO outbound/direct[0]: connection routed: local -> taobao.com:443 [Direct]",
-  "2026-06-04 16:03:00 INFO outbound/block[0]: connection blocked: doubleclick.net:443",
-  "2026-06-04 16:04:00 ERROR ERROR: outbound connection reset by peer (HK-02-Premium:443)",
-  "2026-06-04 16:05:00 INFO outbound/proxy[0]: fallback detour selected: SG-01-HighSpeed:443",
-  "2026-06-04 16:06:00 INFO dns: cache hit for youtube.com. AAAA",
-  "2026-06-04 16:07:00 INFO experimental/clash_api: external controller listening on 127.0.0.1:9090"
-];
-
-const subMockLogs: string[] = [];
-
 
 // ===================================================================
 // 日志解析与格式化
@@ -494,12 +460,7 @@ const loadLogs = async (showLoader = false) => {
     lastRawLogs = ' '; // 强制本次重新解析
   }
   try {
-    let raw = '';
-    if (isKsuEnv()) {
-      raw = await runCli(`service logs ${activeLogType.value} ${logLineCount.value}`);
-    } else {
-      raw = (activeLogType.value === 'service' ? serviceMockLogs : activeLogType.value === 'core' ? coreMockLogs : subMockLogs).join('\n');
-    }
+    const raw = await moduleClient.readLogs(activeLogType.value, logLineCount.value);
 
     // 原始输出未变化则跳过重解析/重渲染，避免静默期每 2.5s churn
     if (raw === lastRawLogs) {
@@ -528,12 +489,8 @@ const loadLogs = async (showLoader = false) => {
 /** 清空当前类型的日志文件（真机经 CLI），并清空界面、收起菜单。 */
 const handleClearLogs = async () => {
   try {
-    if (isKsuEnv()) {
-      await runCli(`service logs-clear ${activeLogType.value}`);
-      showToast(t('logs.cleared'));
-    } else {
-      showToast(t('logs.clearedMock'));
-    }
+    await moduleClient.clearLogs(activeLogType.value);
+    showToast(t('logs.cleared'));
     logsItems.value = [];
   } catch (err: any) {
     showToast(t('logs.clearFailed', { msg: err.message || err }));

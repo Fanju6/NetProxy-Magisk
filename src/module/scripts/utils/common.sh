@@ -175,7 +175,12 @@ ensure_dir() {
 # 返回: 标准输出打印转义后的字符串
 #######################################
 json_escape() {
-  printf "%s" "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+  local value="$1"
+
+  # Android mksh 与 BusyBox ash 均支持该替换语法，可避免为每个字段启动 sed。
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  printf "%s" "$value"
 }
 
 #######################################

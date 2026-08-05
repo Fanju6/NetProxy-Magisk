@@ -177,6 +177,19 @@ jobs:
           echo "sing-box SHA-256: $binary_sha256"
           rm -rf .sing-box-source
 
+      - name: 同步 NetProxy 原生组件依赖
+        if: steps.singbox_check.outputs.changed == 'true'
+        working-directory: src/native/netproxy
+        env:
+          SING_BOX_VERSION: ${{ steps.singbox_check.outputs.latest_version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          go mod edit -require="github.com/sagernet/sing-box@${SING_BOX_VERSION}"
+          go mod edit -replace="github.com/sagernet/sing-box=github.com/reF1nd/sing-box@${SING_BOX_VERSION}"
+          go mod tidy
+          go test ./...
+
       - name: 配置 Node.js
         uses: actions/setup-node@v7
         with:

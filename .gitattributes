@@ -23,7 +23,7 @@ CNAME text eol=lf
 
 # Native binaries and packed assets
 src/module/bin/IPSET-LKM/ipset -text
-src/module/bin/proxylink -text
+src/module/bin/netproxy-native -text
 src/module/bin/sing-box -text
 *.db -text
 *.dat -text

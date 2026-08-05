@@ -1,533 +1,1034 @@
 #!/system/bin/sh
 #######################################
 # 文件: subscription.sh
-# 功能: sing-box 节点与订阅管理脚本，封装 proxylink 完成节点链接/
-#       文件/订阅的导入导出，以及订阅的增删改查与更新。
-# 用法: subscription.sh <命令> [参数] [选项]，详见 show_help。
-# 依赖: common.sh、nodes.sh、bin/proxylink。
+# 功能: Catalog 节点与订阅事务层，负责分组锁、staging、Provider 原子替换、
+#       HTTP 元数据、更新历史与取消控制。
+# 用法: 由 netproxyctl 与 subworker.sh 引入；也可执行 update/update-all/cancel。
+# 依赖: common.sh、config.sh、catalog.sh、metadata.sh 与 NetProxy 原生组件。
 #######################################
 
-set -e  # 命令失败立即退出
-set -u  # 引用未定义变量报错
-
-# 模块根目录与关键路径
-readonly MODDIR="$(cd "$(dirname "$0")/../.." && pwd)"
-readonly OUTBOUNDS_DIR="$MODDIR/config/singbox/outbounds"  # 出站节点根目录
-readonly DEFAULT_DIR="$OUTBOUNDS_DIR/default"              # 默认节点目录
-readonly PROXYLINK_BIN="$MODDIR/bin/proxylink"            # proxylink 二进制
-readonly LOG_FILE="$MODDIR/logs/subscription.log"         # 订阅日志文件
-readonly LOG_TAG="sub"                                    # 日志组件标签
+if [ -z "${MODDIR:-}" ]; then
+  MODDIR="$(cd "$(dirname "$0")/../.." && pwd)"
+fi
+[ -n "${MODULE_CONF:-}" ] || MODULE_CONF="$MODDIR/config/module.conf"
+[ -n "${CATALOG_DIR:-}" ] || CATALOG_DIR="$MODDIR/config/catalog"
+[ -n "${CATALOG_STAGING_DIR:-}" ] || CATALOG_STAGING_DIR="$CATALOG_DIR/staging"
+[ -n "${NETPROXY_NATIVE_BIN:-}" ] || NETPROXY_NATIVE_BIN="$MODDIR/bin/netproxy-native"
+[ -n "${SERVICE_SCRIPT:-}" ] || SERVICE_SCRIPT="$MODDIR/scripts/core/service.sh"
+[ -n "${SWITCH_SCRIPT:-}" ] || SWITCH_SCRIPT="$MODDIR/scripts/core/switch.sh"
+[ -n "${SING_BOX_BIN:-}" ] || SING_BOX_BIN="$MODDIR/bin/sing-box"
+[ -n "${SUB_RUNTIME_DIR:-}" ] || SUB_RUNTIME_DIR="/dev/netproxy/subscriptions"
+[ -n "${LOG_FILE:-}" ] || LOG_FILE="$MODDIR/logs/subscription.log"
+[ -n "${LOG_TAG:-}" ] || LOG_TAG="subscription"
 
 . "$MODDIR/scripts/utils/common.sh"
-. "$MODDIR/scripts/utils/nodes.sh"
+. "$MODDIR/scripts/utils/config.sh"
+. "$MODDIR/scripts/utils/api.sh"
+. "$MODDIR/scripts/utils/catalog.sh"
+. "$MODDIR/scripts/utils/metadata.sh"
 
-# 订阅请求参数 (由命令行 -ua / -hwid 选项设置)
-SUB_UA=""    # 订阅请求 User-Agent
-SUB_HWID=""  # 订阅请求 HWID 设备标识
-
-# 本进程创建的临时目录列表，供退出时统一清理
-SUB_TMP_DIRS=""
+SUB_LOCK_DIR=""
+SUB_STAGE_DIR=""
 
 #######################################
-# 清理本进程创建的所有临时目录
+# 初始化 Catalog 事务目录
 # 参数: 无
-# 返回: 无 (由 trap 在退出/中断时自动调用)
+# 返回: 成功返回 0，否则返回 1
 #######################################
-cleanup_sub_tmp() {
-  local d
-  for d in $SUB_TMP_DIRS; do
-    [ -n "$d" ] && rm -rf "$d" 2> /dev/null
-  done
-}
-# 注册退出与中断信号的兜底清理
-trap cleanup_sub_tmp EXIT INT TERM
+initialize_catalog_storage() {
+  mkdir -p "$CATALOG_DIR/default" "$CATALOG_STAGING_DIR/locks" "$SUB_RUNTIME_DIR" \
+    "$MODDIR/logs" || return 1
+  chmod 0700 "$CATALOG_DIR" "$CATALOG_STAGING_DIR" "$CATALOG_STAGING_DIR/locks" \
+    "$SUB_RUNTIME_DIR" 2> /dev/null || true
 
-#######################################
-# 显示帮助信息
-# 参数: 无
-# 返回: 无 (打印用法说明)
-#######################################
-show_help() {
-  cat << EOF
-用法: $(basename "$0") <命令> [参数] [选项]
-
-节点导入:
-  parse <节点链接> [目录]        单个链接转 sing-box 节点
-  file <文件> [目录]            文件节点或 Clash YAML 转 sing-box 节点
-  stdin [目录]                  从标准输入读取节点并转 sing-box 节点
-  sub <订阅链接> [目录]         订阅转 sing-box 节点，每个节点一个文件
-  convert <节点文件>            sing-box 节点转链接
-
-订阅管理:
-  add <名称> <订阅链接>         添加订阅并导入节点
-  update <名称>                 更新指定订阅
-  update-all                    更新全部订阅
-  remove <名称>                 删除订阅
-  list                          列出订阅
-
-订阅选项 (适用于 sub / add / update / update-all):
-  -ua <value>                   指定订阅请求 User-Agent；留空时自动处理
-  -hwid <value>                 指定订阅请求 HWID 设备标识 (X-HWID 请求头)
-
-示例:
-  $(basename "$0") parse "vless://..."
-  $(basename "$0") file "/sdcard/clash.yaml"
-  $(basename "$0") sub "https://example.com/sub" "$OUTBOUNDS_DIR/sub_demo"
-  $(basename "$0") sub "https://example.com/sub" -ua "ClashMeta" -hwid "abc123"
-  $(basename "$0") convert "$OUTBOUNDS_DIR/default/example.json"
-EOF
+  if [ ! -f "$CATALOG_DIR/default/provider.json" ]; then
+    printf '{\n  "outbounds": []\n}\n' > "$CATALOG_DIR/default/provider.json" || return 1
+    chmod 0600 "$CATALOG_DIR/default/provider.json" 2> /dev/null || true
+  fi
+  if [ ! -f "$CATALOG_DIR/default/meta.json" ]; then
+    initialize_local_meta "default" "本地配置" "local"
+    SUB_ACTIVE=true
+    write_catalog_meta "$CATALOG_DIR/default/meta.json" || return 1
+  fi
 }
 
 #######################################
-# 检查 proxylink 二进制可用性
-# 参数: 无
-# 返回: 可用返回 0，否则退出
-#######################################
-check_proxylink() {
-  require_file "$PROXYLINK_BIN" "proxylink 不存在: $PROXYLINK_BIN"
-  [ -x "$PROXYLINK_BIN" ] || die "proxylink 不可执行: $PROXYLINK_BIN"
-}
-
-#######################################
-# 准备输出目录 (不存在则创建)
+# 检查用户文本不含换行或控制分隔符
 # 参数:
-#   $1  目标目录 (默认 DEFAULT_DIR)
-# 返回: 标准输出打印目录路径
+#   $1  文本
+# 返回: 合法返回 0，否则返回 1
 #######################################
-prepare_output_dir() {
-  local target_dir="${1:-$DEFAULT_DIR}"
+validate_user_text() {
+  local value="$1"
 
-  ensure_dir "$target_dir" "无法创建输出目录: $target_dir"
-  printf "%s\n" "$target_dir"
-}
-
-#######################################
-# 统一调用 proxylink 执行各类转换
-# 参数:
-#   $1  操作类型 (parse/file/stdin/sub/convert)
-#   $2  操作对象 (链接/文件/订阅链接/节点文件)
-#   $3  输出目录 (部分操作需要)
-# 全局: 读取 SUB_UA/SUB_HWID 拼接订阅请求参数
-# 返回: proxylink 退出码；未知操作则退出
-#######################################
-run_proxylink() {
-  local action="$1"
-  local value="$2"
-  local target_dir="${3:-}"
-
-  check_proxylink
-
-  # 按操作类型组装并执行 proxylink 命令
-  case "$action" in
-    parse)
-      # 单链接解析：在目标目录内执行，自动命名
-      (
-        cd "$target_dir" || exit 1
-        "$PROXYLINK_BIN" -parse "$value" -insecure -format singbox -auto
-      ) >> "$LOG_FILE" 2>&1
-      ;;
-    file)
-      # 文件 (节点列表 / Clash YAML) 转换
-      "$PROXYLINK_BIN" -file "$value" -insecure -format singbox -dir "$target_dir" >> "$LOG_FILE" 2>&1
-      ;;
-    stdin)
-      # 从标准输入读取节点
-      "$PROXYLINK_BIN" -insecure -format singbox -dir "$target_dir" >> "$LOG_FILE" 2>&1
-      ;;
-    sub)
-      # 订阅转换：按需附加 UA / HWID 请求头参数
-      set -- -sub "$value" -insecure -format singbox -dir "$target_dir"
-      [ -n "$SUB_UA" ] && set -- "$@" -ua "$SUB_UA"
-      [ -n "$SUB_HWID" ] && set -- "$@" -hwid "$SUB_HWID"
-      "$PROXYLINK_BIN" "$@" >> "$LOG_FILE" 2>&1
-      ;;
-    convert)
-      # sing-box 节点反向转为分享链接
-      "$PROXYLINK_BIN" -singbox "$value" -format uri
-      ;;
-    *)
-      die "未知 proxylink 操作: $action"
-      ;;
+  case "$value" in
+    *"$NL"* | *"$CR"* | *"$TAB"*) return 1 ;;
+    *) return 0 ;;
   esac
 }
 
 #######################################
-# 导入单个节点链接
-# 参数:
-#   $1  节点链接
-#   $2  输出目录 (可选)
-# 返回: 成功返回 0，失败则退出
+# 生成随机稳定的订阅分组 UUID
+# 参数: 无
+# 返回: 标准输出打印 UUID
 #######################################
-import_parse() {
-  local link="$1"
-  local target_dir
+new_subscription_id() {
+  local value attempt=0
 
-  [ -n "$link" ] || die "用法: $(basename "$0") parse <节点链接> [目录]"
-  target_dir="$(prepare_output_dir "${2:-}")"
-
-  log "INFO" "开始导入单个节点: $target_dir"
-  run_proxylink parse "$link" "$target_dir" || die "单个节点导入失败"
-  log "INFO" "单个节点导入完成"
+  while [ "$attempt" -lt 8 ]; do
+    if [ -r /proc/sys/kernel/random/uuid ]; then
+      value="$(sed -n '1p' /proc/sys/kernel/random/uuid 2> /dev/null)"
+    else
+      value="$(printf '%08x-%04x-%04x-%04x-%012x' \
+        "$(date +%s)" "$$" "${RANDOM:-0}" "$attempt" "$(date +%s)" 2> /dev/null)"
+    fi
+    if catalog_validate_group_id "$value" && [ ! -e "$CATALOG_DIR/$value" ]; then
+      printf "%s\n" "$value"
+      return 0
+    fi
+    attempt=$((attempt + 1))
+  done
+  return 1
 }
 
 #######################################
-# 从文件导入节点 (节点列表 / Clash YAML)
+# 将文件名转换为本地分组 ID
 # 参数:
 #   $1  文件路径
-#   $2  输出目录 (可选)
-# 返回: 成功返回 0，失败则退出
+# 返回: 标准输出打印不冲突的分组 ID
 #######################################
-import_file() {
-  local file="$1"
-  local target_dir
+local_group_id_from_file() {
+  local name base candidate suffix=2
 
-  [ -n "$file" ] || die "用法: $(basename "$0") file <文件> [目录]"
-  require_file "$file" "文件不存在: $file"
-  target_dir="$(prepare_output_dir "${2:-}")"
-
-  log "INFO" "开始导入文件节点: $target_dir"
-  run_proxylink file "$file" "$target_dir" || die "文件节点导入失败"
-  log "INFO" "文件节点导入完成"
+  name="${1##*/}"
+  base="${name%.*}"
+  base="$(printf "%s" "$base" | tr '[:upper:]' '[:lower:]' \
+    | sed 's/[^a-z0-9._-]/-/g; s/--*/-/g; s/^[.-]*//; s/[.-]*$//')"
+  [ -n "$base" ] || base="$(date +%s)"
+  candidate="local-$base"
+  while [ -e "$CATALOG_DIR/$candidate" ]; do
+    candidate="local-$base-$suffix"
+    suffix=$((suffix + 1))
+  done
+  printf "%s\n" "$candidate"
 }
 
 #######################################
-# 从标准输入导入节点
+# 按 ID 或唯一名称解析分组
 # 参数:
-#   $1  输出目录 (可选)
-# 返回: 成功返回 0，失败则退出
+#   $1  分组 ID 或显示名称
+# 返回: 标准输出打印分组 ID；多重匹配返回 2
 #######################################
-import_stdin() {
-  local target_dir
-  target_dir="$(prepare_output_dir "${1:-}")"
+resolve_catalog_group() {
+  local query="$1"
+  local group_dir group_id name match="" count=0
 
-  log "INFO" "开始导入标准输入节点: $target_dir"
-  run_proxylink stdin "" "$target_dir" || die "标准输入节点导入失败"
-  log "INFO" "标准输入节点导入完成"
+  if catalog_validate_group_id "$query" && [ -d "$CATALOG_DIR/$query" ]; then
+    printf "%s\n" "$query"
+    return 0
+  fi
+
+  for group_dir in "$CATALOG_DIR"/*; do
+    [ -d "$group_dir" ] || continue
+    group_id="${group_dir##*/}"
+    [ "$group_id" != "staging" ] || continue
+    name="$(meta_get_string "$group_dir/meta.json" "name" "")"
+    [ "$name" = "$query" ] || continue
+    match="$group_id"
+    count=$((count + 1))
+  done
+  [ "$count" -eq 1 ] || { [ "$count" -gt 1 ] && return 2; return 1; }
+  printf "%s\n" "$match"
 }
 
 #######################################
-# 从订阅链接导入节点
+# 获取分组事务锁
 # 参数:
-#   $1  订阅链接
-#   $2  输出目录 (可选)
-# 返回: 成功返回 0，失败则退出
+#   $1  分组 ID
+# 返回: 成功返回 0，已有有效任务返回 1
 #######################################
-import_sub() {
-  local url="$1"
-  local target_dir
+acquire_catalog_lock() {
+  local group_id="$1"
+  local lock_dir pid
 
-  [ -n "$url" ] || die "用法: $(basename "$0") sub <订阅链接> [目录]"
-  target_dir="$(prepare_output_dir "${2:-}")"
-
-  log "INFO" "开始导入订阅节点: $target_dir"
-  run_proxylink sub "$url" "$target_dir" || die "订阅节点导入失败"
-  log "INFO" "订阅节点导入完成"
+  catalog_validate_group_id "$group_id" || return 1
+  lock_dir="$CATALOG_STAGING_DIR/locks/$group_id.lock"
+  if ! mkdir "$lock_dir" 2> /dev/null; then
+    pid="$(sed -n '1p' "$lock_dir/pid" 2> /dev/null || true)"
+    if [ -n "$pid" ] && kill -0 "$pid" 2> /dev/null; then
+      return 1
+    fi
+    rm -rf "$lock_dir" 2> /dev/null || return 1
+    mkdir "$lock_dir" 2> /dev/null || return 1
+  fi
+  printf '%s\n' "$$" > "$lock_dir/pid"
+  printf '%s\n' "$(date +%s)" > "$lock_dir/created_at"
+  chmod 0700 "$lock_dir" 2> /dev/null || true
+  SUB_LOCK_DIR="$lock_dir"
 }
 
 #######################################
-# 将 sing-box 节点转为分享链接
-# 参数:
-#   $1  节点文件路径
-# 返回: 标准输出打印链接；文件不存在则退出
-#######################################
-export_link() {
-  local file="$1"
-
-  [ -n "$file" ] || die "用法: $(basename "$0") convert <节点文件>"
-  require_file "$file" "节点文件不存在: $file"
-  check_proxylink
-  run_proxylink convert "$file"
-}
-
-#######################################
-# 清空订阅目录内的节点文件 (保留元数据)
-# 参数:
-#   $1  订阅目录
+# 释放当前分组事务锁与 staging
+# 参数: 无
 # 返回: 无
 #######################################
-clear_subscription_nodes() {
-  local sub_dir="$1"
-  local file
+release_catalog_lock() {
+  [ -z "$SUB_STAGE_DIR" ] || rm -rf "$SUB_STAGE_DIR" 2> /dev/null || true
+  [ -z "$SUB_LOCK_DIR" ] || rm -rf "$SUB_LOCK_DIR" 2> /dev/null || true
+  SUB_STAGE_DIR=""
+  SUB_LOCK_DIR=""
+}
 
-  # 仅删除节点文件，跳过 _meta.json
-  for file in "$sub_dir"/*.json; do
-    is_node_config_file "$file" || continue
-    rm -f "$file"
+#######################################
+# 创建当前事务 staging 目录
+# 参数:
+#   $1  分组 ID
+# 返回: 标准输出打印目录路径
+#######################################
+create_catalog_stage() {
+  local group_id="$1"
+
+  SUB_STAGE_DIR="$CATALOG_STAGING_DIR/$group_id.$$.$(date +%s)"
+  mkdir -p "$SUB_STAGE_DIR" || return 1
+  chmod 0700 "$SUB_STAGE_DIR" 2> /dev/null || true
+  printf "%s\n" "$SUB_STAGE_DIR"
+}
+
+#######################################
+# 写入订阅任务进度
+# 参数:
+#   $1  分组 ID
+#   $2  阶段 (download/convert/validate/apply)
+#   $3  中文说明
+# 返回: 无
+#######################################
+write_subscription_progress() {
+  local group_id="$1"
+  local stage="$2"
+  local message="$3"
+  local target="$SUB_RUNTIME_DIR/$group_id.progress.json"
+  local tmp="$target.tmp.$$"
+
+  mkdir -p "$SUB_RUNTIME_DIR" 2> /dev/null || return 0
+  cat > "$tmp" << EOF
+{"schema":1,"group_id":"$(json_escape "$group_id")","stage":"$(json_escape "$stage")","message":"$(json_escape "$message")","updated_at":"$(format_epoch_utc "$(date +%s)")"}
+EOF
+  chmod 0600 "$tmp" 2> /dev/null || true
+  mv -f "$tmp" "$target" 2> /dev/null || true
+}
+
+#######################################
+# 清理订阅任务运行时进度
+# 参数:
+#   $1  分组 ID
+# 返回: 无
+#######################################
+clear_subscription_progress() {
+  rm -f "$SUB_RUNTIME_DIR/$1.progress.json"
+}
+
+#######################################
+# 读取 JSON 文件并压缩为单行
+# 参数:
+#   $1  文件路径
+#   $2  默认 JSON
+# 返回: 标准输出打印 JSON
+#######################################
+read_compact_json_file() {
+  local file="$1"
+  local default="${2:-null}"
+  local value
+
+  [ -f "$file" ] || { printf "%s" "$default"; return 1; }
+  value="$(tr -d '\r\n' < "$file" 2> /dev/null)"
+  [ -n "$value" ] || value="$default"
+  printf "%s" "$value"
+}
+
+#######################################
+# 追加一条脱敏更新历史并只保留最近 20 条
+# 参数:
+#   $1  分组目录
+#   $2  单行 JSON 记录
+# 返回: 无
+#######################################
+append_subscription_history() {
+  local group_dir="$1"
+  local record="$2"
+  local history="$group_dir/history.jsonl"
+  local tmp="$history.tmp.$$"
+
+  if [ -f "$history" ]; then
+    tail -n 19 "$history" > "$tmp" 2> /dev/null || : > "$tmp"
+  else
+    : > "$tmp"
+  fi
+  printf '%s\n' "$record" >> "$tmp"
+  chmod 0600 "$tmp" 2> /dev/null || true
+  mv -f "$tmp" "$history"
+}
+
+#######################################
+# 从原生组件 HTTP 元数据更新当前 SUB_* 变量
+# 参数:
+#   $1  metadata.json 路径
+#   $2  modified 或 not_modified
+# 返回: 无
+#######################################
+apply_http_metadata() {
+  local file="$1"
+  local response_kind="$2"
+  local raw value
+
+  [ -f "$file" ] || return 0
+  raw="$(compact_json_get_raw "$file" "status_code" "0")" || raw=0
+  case "$raw" in "" | *[!0-9]*) raw=0 ;; esac
+  SUB_LAST_STATUS_CODE="$raw"
+
+  value="$(compact_json_get_string "$file" "etag" "")" || true
+  [ -z "$value" ] || SUB_ETAG="$value"
+  value="$(compact_json_get_string "$file" "last_modified" "")" || true
+  [ -z "$value" ] || SUB_LAST_MODIFIED="$value"
+  value="$(compact_json_get_string "$file" "profile_title" "")" || true
+  [ -z "$value" ] || SUB_PROFILE_TITLE="$value"
+  value="$(compact_json_get_string "$file" "profile_web_page_url" "")" || true
+  [ -z "$value" ] || SUB_PROFILE_WEB_PAGE_URL="$value"
+  value="$(compact_json_get_string "$file" "content_disposition" "")" || true
+  [ -z "$value" ] || SUB_CONTENT_DISPOSITION="$value"
+  value="$(compact_json_get_string "$file" "file_name" "")" || true
+  [ -z "$value" ] || SUB_FILE_NAME="$value"
+
+  raw="$(compact_json_get_raw "$file" "usage" "__missing__")" || true
+  if [ "$raw" != "__missing__" ]; then
+    SUB_USAGE="$raw"
+  elif [ "$response_kind" = "modified" ]; then
+    SUB_USAGE=null
+  fi
+
+  raw="$(compact_json_get_raw "$file" "update_interval_seconds" "")" || true
+  case "$raw" in
+    "" | *[!0-9]*) ;;
+    *)
+      case "$SUB_INTERVAL_SOURCE" in
+        default | profile)
+          if [ "$raw" -ge 900 ]; then
+            SUB_UPDATE_INTERVAL="$raw"
+            SUB_INTERVAL_SOURCE="profile"
+          fi
+          ;;
+      esac
+      ;;
+  esac
+
+  raw="$(compact_json_get_raw "$file" "diagnostics" "[]")" || raw="[]"
+  SUB_LAST_DIAGNOSTICS="$raw"
+}
+
+#######################################
+# 将指定分组设为活动组并同步各组 active 字段
+# 参数:
+#   $1  分组 ID；空值表示清空活动状态
+# 返回: 成功返回 0，否则返回 1
+#######################################
+set_active_catalog_group() {
+  local target="$1"
+  local group_dir group_id meta_file
+
+  if [ -n "$target" ]; then
+    catalog_validate_group_id "$target" || return 1
+    catalog_provider_has_nodes "$CATALOG_DIR/$target/provider.json" || return 1
+  fi
+
+  set_conf "$MODULE_CONF" "ACTIVE_GROUP_ID" "$(quote_conf "$target")"
+  if [ -z "$target" ]; then
+    set_conf "$MODULE_CONF" "SELECTOR_MODE" "urltest"
+    set_conf "$MODULE_CONF" "SELECTED_NODE_REF" '""'
+  fi
+
+  for group_dir in "$CATALOG_DIR"/*; do
+    [ -d "$group_dir" ] || continue
+    group_id="${group_dir##*/}"
+    [ "$group_id" != "staging" ] || continue
+    meta_file="$group_dir/meta.json"
+    load_catalog_meta "$meta_file" || continue
+    if [ "$group_id" = "$target" ]; then
+      SUB_ACTIVE=true
+    else
+      SUB_ACTIVE=false
+    fi
+    write_catalog_meta "$meta_file" || return 1
   done
 }
 
 #######################################
-# 拉取订阅节点并替换旧节点
-# 先下载到临时目录，成功后再替换，失败则保留旧节点。
+# 在当前没有有效活动组时启用指定非空分组
 # 参数:
-#   $1  订阅名
-#   $2  订阅链接
-#   $3  订阅目录
-#   $4  请求 UA (默认 SUB_UA)
-#   $5  请求 HWID (默认 SUB_HWID)
-# 返回: 成功返回 0，拉取失败返回 1
+#   $1  分组 ID
+# 返回: 本次发生启用返回 0，否则返回 1
 #######################################
-refresh_subscription_dir() {
-  local name="$1"
-  local url="$2"
-  local sub_dir="$3"
-  local ua="${4:-$SUB_UA}"
-  local hwid_val="${5:-$SUB_HWID}"
-  # 临时目录带 PID 后缀，避免并发更新同一订阅时命名冲突
-  local tmp_dir="$sub_dir/_tmp.$$"
+activate_group_if_needed() {
+  local candidate="$1"
+  local current current_provider
 
-  # 登记到兜底清理列表
-  SUB_TMP_DIRS="$SUB_TMP_DIRS $tmp_dir"
+  current="$(read_conf "$MODULE_CONF" "ACTIVE_GROUP_ID" "")"
+  current_provider="$(catalog_provider_path "$current" 2> /dev/null || true)"
+  if [ -n "$current" ] && catalog_provider_has_nodes "$current_provider"; then
+    return 1
+  fi
+  set_active_catalog_group "$candidate" || return 1
+  set_conf "$MODULE_CONF" "SELECTOR_MODE" "urltest"
+  set_conf "$MODULE_CONF" "SELECTED_NODE_REF" '""'
+}
 
-  # 先拉取到临时目录，失败则保留旧节点
-  # UA/HWID 仅在子 shell 内生效，避免污染全局 (update-all 跨订阅复用)
-  ensure_dir "$tmp_dir" "无法创建临时目录: $tmp_dir"
-  if ! ( SUB_UA="$ua"; SUB_HWID="$hwid_val"; import_sub "$url" "$tmp_dir" ); then
-    log "ERROR" "订阅拉取失败，保留旧节点: $name"
-    rm -rf "$tmp_dir"
+#######################################
+# 在运行中重新投影 Catalog 分组结构
+# 参数: 无
+# 返回: 始终返回 0；重新加载失败仅记录警告，不回滚已提交的 Catalog
+#######################################
+reload_catalog_structure_if_running() {
+  [ -n "$(get_pid "$SING_BOX_BIN")" ] || return 0
+  log "INFO" "Catalog 分组结构已变化，重新加载 sing-box 配置"
+  if ! sh "$SERVICE_SCRIPT" reload > /dev/null 2>&1; then
+    log "WARN" "Catalog 已保存，但运行时结构重新加载失败"
+  fi
+  return 0
+}
+
+#######################################
+# 手动节点消失时回退当前分组 Auto
+# 参数:
+#   $1  发生变更的分组 ID
+# 返回: 始终返回 0；运行时切换失败仅记录警告
+#######################################
+fallback_missing_selected_node() {
+  local group_id="$1"
+  local selector selected selected_group selected_tag provider_file runtime_tag
+
+  selector="$(read_conf "$MODULE_CONF" "SELECTOR_MODE" "urltest")"
+  selected="$(read_conf "$MODULE_CONF" "SELECTED_NODE_REF" "")"
+  [ "$selector" = "manual" ] && [ -n "$selected" ] || return 0
+  selected_group="${selected%%/*}"
+  selected_tag="${selected#*/}"
+  [ "$selected_group" = "$group_id" ] || return 0
+  provider_file="$CATALOG_DIR/$group_id/provider.json"
+  catalog_provider_contains_tag "$provider_file" "$selected_tag" && return 0
+
+  runtime_tag="$(catalog_runtime_group_tag "$group_id" 2> /dev/null || printf "%s" "$group_id")"
+  log "WARN" "手动节点已从 Provider 移除，回退到 Auto/$runtime_tag"
+  set_conf "$MODULE_CONF" "SELECTOR_MODE" "urltest"
+  set_conf "$MODULE_CONF" "SELECTED_NODE_REF" '""'
+  [ -n "$(get_pid "$SING_BOX_BIN")" ] || return 0
+  if ! sh "$SWITCH_SCRIPT" node auto "$group_id" > /dev/null 2>&1; then
+    log "WARN" "选择状态已回退到 Auto/$runtime_tag，但运行实例同步失败"
+  fi
+  return 0
+}
+
+#######################################
+# 判断当前订阅任务是否收到取消请求
+# 参数:
+#   $1  分组 ID
+# 返回: 已取消返回 0，否则返回 1
+#######################################
+subscription_cancel_requested() {
+  [ -f "$SUB_RUNTIME_DIR/$1.cancel" ]
+}
+
+#######################################
+# 取消正在进行的订阅更新
+# 参数:
+#   $1  分组 ID
+# 返回: 成功标记返回 0
+#######################################
+cancel_subscription_update() {
+  local group_id="$1"
+  local pid_file="$SUB_RUNTIME_DIR/$group_id.child.pid"
+  local pid
+
+  catalog_validate_group_id "$group_id" || return 1
+  mkdir -p "$SUB_RUNTIME_DIR" 2> /dev/null || return 1
+  : > "$SUB_RUNTIME_DIR/$group_id.cancel"
+  pid="$(sed -n '1p' "$pid_file" 2> /dev/null || true)"
+  [ -z "$pid" ] || kill "$pid" 2> /dev/null || true
+  clear_subscription_progress "$group_id"
+}
+
+#######################################
+# 根据订阅配置决定下载代理地址
+# 参数: 无
+# 全局: 读取 SUB_UPDATE_VIA_PROXY
+# 返回: 标准输出打印代理 URL；直连时为空
+#######################################
+subscription_proxy_url() {
+  case "$SUB_UPDATE_VIA_PROXY" in
+    always) printf "%s" "http://127.0.0.1:7080" ;;
+    never) printf "%s" "" ;;
+    auto)
+      if [ -n "$(get_pid "$SING_BOX_BIN")" ] && service_api_is_ready; then
+        printf "%s" "http://127.0.0.1:7080"
+      fi
+      ;;
+    *) printf "%s" "" ;;
+  esac
+}
+
+#######################################
+# 运行一次原生组件订阅转换
+# 参数:
+#   $1  输出 Provider
+#   $2  HTTP 元数据文件
+#   $3  diagnostics 文件
+#   $4  stdout 结果文件
+#   $5  stderr 错误文件
+# 返回: 原生组件退出码
+#######################################
+run_subscription_conversion() {
+  local output="$1"
+  local metadata_file="$2"
+  local diagnostics_file="$3"
+  local result_file="$4"
+  local error_file="$5"
+  local headers_file="$SUB_STAGE_DIR/headers.json"
+  local proxy_url child_pid status
+
+  printf '%s\n' "$SUB_CUSTOM_HEADERS" > "$headers_file"
+  chmod 0600 "$headers_file" 2> /dev/null || true
+  proxy_url="$(subscription_proxy_url)"
+
+  set -- "$NETPROXY_NATIVE_BIN" convert subscription \
+    --url "$SUB_URL" \
+    --output "$output" \
+    --metadata-output "$metadata_file" \
+    --diagnostics-output "$diagnostics_file" \
+    --headers-file "$headers_file" \
+    --timeout "${SUB_TIMEOUT}s"
+  [ -z "$SUB_USER_AGENT" ] || set -- "$@" --user-agent "$SUB_USER_AGENT"
+  [ -z "$SUB_HWID" ] || set -- "$@" --hwid "$SUB_HWID"
+  [ -z "$SUB_ETAG" ] || set -- "$@" --etag "$SUB_ETAG"
+  [ -z "$SUB_LAST_MODIFIED" ] || set -- "$@" --last-modified "$SUB_LAST_MODIFIED"
+  [ -z "$SUB_INCLUDE" ] || set -- "$@" --include "$SUB_INCLUDE"
+  [ -z "$SUB_EXCLUDE" ] || set -- "$@" --exclude "$SUB_EXCLUDE"
+  [ "$SUB_ALLOW_INSECURE" != "true" ] || set -- "$@" --allow-insecure
+  [ -z "$proxy_url" ] || set -- "$@" --proxy "$proxy_url"
+
+  "$@" > "$result_file" 2> "$error_file" &
+  child_pid=$!
+  printf '%s\n' "$child_pid" > "$SUB_RUNTIME_DIR/$SUB_ID.child.pid"
+  wait "$child_pid"
+  status=$?
+  rm -f "$SUB_RUNTIME_DIR/$SUB_ID.child.pid"
+  return "$status"
+}
+
+#######################################
+# 记录订阅更新失败并保留上一版 Provider
+# 参数:
+#   $1  分组目录
+#   $2  错误代码
+#   $3  安全错误说明
+#   $4  开始 epoch 秒
+# 返回: 始终返回 1
+#######################################
+record_subscription_failure() {
+  local group_dir="$1"
+  local code="$2"
+  local message="$3"
+  local started_at="$4"
+  local now now_text duration
+
+  now="$(date +%s)"
+  now_text="$(format_epoch_utc "$now")"
+  duration=$((now - started_at))
+  SUB_LAST_ATTEMPT_AT="$now_text"
+  SUB_UPDATED_AT="$now_text"
+  SUB_LAST_ERROR="$message"
+  schedule_next_update "$now"
+  write_catalog_meta "$group_dir/meta.json" || true
+  append_subscription_history "$group_dir" \
+    "{\"at\":\"$now_text\",\"ok\":false,\"code\":\"$(json_escape "$code")\",\"message\":\"$(json_escape "$message")\",\"duration_seconds\":$duration}"
+  clear_subscription_progress "$SUB_ID"
+  log "ERROR" "订阅更新失败: $SUB_ID ($code)"
+  release_catalog_lock
+  return 1
+}
+
+#######################################
+# 更新指定 URL 订阅
+# 参数:
+#   $1  分组 ID 或唯一名称
+# 返回: 更新成功或 304 返回 0，失败返回 1
+#######################################
+update_subscription() {
+  local query="$1"
+  local group_id group_dir meta_file provider_file
+  local metadata_file diagnostics_file result_file error_file
+  local started_at now now_text response_kind result_code node_count diagnostics duration
+  local had_nodes=0 has_nodes=0
+
+  initialize_catalog_storage || return 1
+  group_id="$(resolve_catalog_group "$query")" || return $?
+  group_dir="$CATALOG_DIR/$group_id"
+  meta_file="$group_dir/meta.json"
+  provider_file="$group_dir/provider.json"
+  load_catalog_meta "$meta_file" || return 1
+  [ "$SUB_TYPE" = "subscription" ] || return 1
+  [ -n "$SUB_URL" ] || return 1
+  catalog_provider_has_nodes "$provider_file" && had_nodes=1
+  acquire_catalog_lock "$group_id" || { log "WARN" "订阅已有更新任务: $group_id"; return 1; }
+  create_catalog_stage "$group_id" > /dev/null || { release_catalog_lock; return 1; }
+
+  started_at="$(date +%s)"
+  rm -f "$SUB_RUNTIME_DIR/$group_id.cancel"
+  metadata_file="$SUB_STAGE_DIR/http-metadata.json"
+  diagnostics_file="$SUB_STAGE_DIR/diagnostics.json"
+  result_file="$SUB_STAGE_DIR/result.json"
+  error_file="$SUB_STAGE_DIR/error.json"
+
+  write_subscription_progress "$group_id" "download" "正在下载订阅"
+  if ! run_subscription_conversion "$SUB_STAGE_DIR/provider.json" "$metadata_file" \
+    "$diagnostics_file" "$result_file" "$error_file"; then
+    if subscription_cancel_requested "$group_id"; then
+      rm -f "$SUB_RUNTIME_DIR/$group_id.cancel"
+      record_subscription_failure "$group_dir" "subscription.cancelled" "订阅更新已取消" "$started_at"
+      return 1
+    fi
+    apply_http_metadata "$metadata_file" "modified"
+    record_subscription_failure "$group_dir" "subscription.convert_failed" \
+      "订阅下载、转换或校验失败" "$started_at"
     return 1
   fi
 
-  # 拉取成功：清空旧节点并移入新节点
-  clear_subscription_nodes "$sub_dir"
-  mv "$tmp_dir"/*.json "$sub_dir/" 2> /dev/null || true
-  rm -rf "$tmp_dir"
+  result_code="$(compact_json_get_string "$result_file" "code" "")" || true
+  if [ "$result_code" = "subscription.not_modified" ]; then
+    response_kind="not_modified"
+  else
+    response_kind="modified"
+  fi
+  apply_http_metadata "$metadata_file" "$response_kind"
+  diagnostics="$(read_compact_json_file "$diagnostics_file" "[]")" || diagnostics="[]"
+  SUB_LAST_DIAGNOSTICS="$diagnostics"
 
-  # 更新订阅元数据
-  write_subscription_meta "$sub_dir" "$name" "$url" "$ua" "$hwid_val"
+  if subscription_cancel_requested "$group_id"; then
+    rm -f "$SUB_RUNTIME_DIR/$group_id.cancel"
+    record_subscription_failure "$group_dir" "subscription.cancelled" "订阅更新已取消" "$started_at"
+    return 1
+  fi
+
+  if [ "$response_kind" = "modified" ]; then
+    write_subscription_progress "$group_id" "validate" "正在校验节点配置"
+    # 原生组件转换成功时已完成 Provider 校验和原子写入，直接复用转换结果。
+    node_count="$(sed -n 's/.*"node_count":\([0-9][0-9]*\).*/\1/p' "$result_file")"
+    case "$node_count" in
+      "" | *[!0-9]* | 0)
+        record_subscription_failure "$group_dir" "provider.empty" "订阅中没有可用节点" "$started_at"
+        return 1
+        ;;
+    esac
+    SUB_NODE_COUNT="$node_count"
+    SUB_REVISION=$((SUB_REVISION + 1))
+  fi
+
+  # 从这里进入不可取消的提交阶段。
+  write_subscription_progress "$group_id" "apply" "正在应用订阅更新"
+  now="$(date +%s)"
+  now_text="$(format_epoch_utc "$now")"
+  duration=$((now - started_at))
+  SUB_LAST_ATTEMPT_AT="$now_text"
+  SUB_LAST_SUCCESS_AT="$now_text"
+  SUB_UPDATED_AT="$now_text"
+  SUB_LAST_ERROR=""
+  schedule_next_update "$now"
+  write_catalog_meta "$SUB_STAGE_DIR/meta.json" \
+    || { record_subscription_failure "$group_dir" "metadata.write_failed" "订阅元数据写入失败" "$started_at"; return 1; }
+
+  if [ "$response_kind" = "modified" ]; then
+    chmod 0600 "$SUB_STAGE_DIR/provider.json" 2> /dev/null || true
+    cp "$provider_file" "$SUB_STAGE_DIR/provider.previous.json" 2> /dev/null || true
+    mv -f "$SUB_STAGE_DIR/provider.json" "$provider_file" \
+      || { record_subscription_failure "$group_dir" "provider.commit_failed" "订阅 Provider 提交失败" "$started_at"; return 1; }
+  fi
+  if ! mv -f "$SUB_STAGE_DIR/meta.json" "$meta_file"; then
+    if [ "$response_kind" = "modified" ] && [ -f "$SUB_STAGE_DIR/provider.previous.json" ]; then
+      mv -f "$SUB_STAGE_DIR/provider.previous.json" "$provider_file" 2> /dev/null || true
+    fi
+    record_subscription_failure "$group_dir" "metadata.commit_failed" "订阅元数据提交失败" "$started_at"
+    return 1
+  fi
+
+  append_subscription_history "$group_dir" \
+    "{\"at\":\"$now_text\",\"ok\":true,\"code\":\"$result_code\",\"node_count\":$SUB_NODE_COUNT,\"revision\":$SUB_REVISION,\"duration_seconds\":$duration,\"diagnostics\":$SUB_LAST_DIAGNOSTICS}"
+  activate_group_if_needed "$group_id" || true
+  rm -f "$SUB_RUNTIME_DIR/$group_id.cancel"
+  clear_subscription_progress "$group_id"
+  log "INFO" "订阅更新完成: $group_id，节点: $SUB_NODE_COUNT"
+  release_catalog_lock
+  if [ "$response_kind" = "modified" ]; then
+    fallback_missing_selected_node "$group_id"
+    catalog_provider_has_nodes "$provider_file" && has_nodes=1
+    if [ "$had_nodes" != "$has_nodes" ]; then
+      reload_catalog_structure_if_running
+    fi
+  fi
+  return 0
 }
 
 #######################################
-# 从订阅目录的元数据读取信息并刷新该订阅
-# 读取 name/url 及历史 ua/hwid，命令行 SUB_UA/SUB_HWID 优先。
-# 参数:
-#   $1  订阅目录
-# 返回: 刷新成功返回 0；元数据缺失或拉取失败返回 1
+# 顺序更新全部 URL 订阅
+# 参数: 无
+# 返回: 全部成功返回 0，任一失败返回 1
 #######################################
-refresh_subscription_from_meta() {
-  local sub_dir="$1"
-  local meta_file="$sub_dir/_meta.json"
-  local name url saved_ua saved_hwid use_ua use_hwid
+update_all_subscriptions() {
+  local group_dir group_id failed=0
 
-  # 元数据缺失则跳过该订阅
-  [ -f "$meta_file" ] || return 1
-
-  name="$(read_subscription_meta_value "$meta_file" "name" || true)"
-  url="$(read_subscription_meta_value "$meta_file" "url" || true)"
-  [ -n "$url" ] || return 1
-  [ -n "$name" ] || name="${sub_dir##*/}"
-
-  # 命令行参数优先，缺省时回退到各订阅持久化值
-  saved_ua="$(read_subscription_meta_value "$meta_file" "ua" || true)"
-  saved_hwid="$(read_subscription_meta_value "$meta_file" "hwid" || true)"
-  use_ua="${SUB_UA:-$saved_ua}"
-  use_hwid="${SUB_HWID:-$saved_hwid}"
-
-  refresh_subscription_dir "$name" "$url" "$sub_dir" "$use_ua" "$use_hwid"
+  initialize_catalog_storage || return 1
+  for group_dir in "$CATALOG_DIR"/*; do
+    [ -d "$group_dir" ] || continue
+    group_id="${group_dir##*/}"
+    [ "$group_id" != "staging" ] || continue
+    [ "$(meta_get_string "$group_dir/meta.json" "type" "")" = "subscription" ] || continue
+    update_subscription "$group_id" || failed=1
+  done
+  return "$failed"
 }
 
 #######################################
-# 添加订阅并首次导入节点
+# 添加 URL 订阅并立即验证
 # 参数:
-#   $1  订阅名
-#   $2  订阅链接
-# 返回: 成功返回 0，已存在或失败则退出
+#   $1  名称
+#   $2  URL
+# 返回: 标准输出打印新分组 ID
 #######################################
 add_subscription() {
   local name="$1"
   local url="$2"
-  local sub_dir
+  local group_id group_dir
 
-  [ -n "$name" ] || die "用法: $(basename "$0") add <名称> <订阅链接> [-ua <UA>] [-hwid <HWID>]"
-  [ -n "$url" ] || die "用法: $(basename "$0") add <名称> <订阅链接> [-ua <UA>] [-hwid <HWID>]"
+  validate_user_text "$name" && validate_user_text "$url" || return 1
+  [ -n "$name" ] && [ -n "$url" ] || return 1
+  initialize_catalog_storage || return 1
+  group_id="$(new_subscription_id)" || return 1
+  group_dir="$CATALOG_DIR/$group_id"
+  mkdir -p "$group_dir" || return 1
+  chmod 0700 "$group_dir" 2> /dev/null || true
+  initialize_subscription_meta "$group_id" "$name" "$url"
+  [ -z "${SUB_ADD_USER_AGENT:-}" ] || SUB_USER_AGENT="$SUB_ADD_USER_AGENT"
+  [ -z "${SUB_ADD_HWID:-}" ] || SUB_HWID="$SUB_ADD_HWID"
+  [ -z "${SUB_ADD_CUSTOM_HEADERS:-}" ] || SUB_CUSTOM_HEADERS="$SUB_ADD_CUSTOM_HEADERS"
+  [ -z "${SUB_ADD_UPDATE_INTERVAL:-}" ] || {
+    SUB_UPDATE_INTERVAL="$SUB_ADD_UPDATE_INTERVAL"
+    SUB_INTERVAL_SOURCE="user"
+    schedule_next_update
+  }
+  [ -z "${SUB_ADD_UPDATE_VIA_PROXY:-}" ] || SUB_UPDATE_VIA_PROXY="$SUB_ADD_UPDATE_VIA_PROXY"
+  [ -z "${SUB_ADD_INCLUDE:-}" ] || SUB_INCLUDE="$SUB_ADD_INCLUDE"
+  [ -z "${SUB_ADD_EXCLUDE:-}" ] || SUB_EXCLUDE="$SUB_ADD_EXCLUDE"
+  [ -z "${SUB_ADD_ALLOW_INSECURE:-}" ] || SUB_ALLOW_INSECURE="$SUB_ADD_ALLOW_INSECURE"
+  [ -z "${SUB_ADD_TIMEOUT:-}" ] || SUB_TIMEOUT="$SUB_ADD_TIMEOUT"
+  [ -z "${SUB_ADD_AUTO_UPDATE:-}" ] || SUB_AUTO_UPDATE="$SUB_ADD_AUTO_UPDATE"
+  write_catalog_meta "$group_dir/meta.json" || { rm -rf "$group_dir"; return 1; }
+  printf '{\n  "outbounds": []\n}\n' > "$group_dir/provider.json"
+  chmod 0600 "$group_dir/provider.json" 2> /dev/null || true
 
-  sub_dir="$(subscription_dir_from_name "$OUTBOUNDS_DIR" "$name")"
-  [ ! -d "$sub_dir" ] || die "订阅已存在: $name"
-
-  # 首次拉取失败则回滚 (删除新建的订阅目录)
-  ensure_dir "$sub_dir" "无法创建订阅目录: $sub_dir"
-  if ! ( refresh_subscription_dir "$name" "$url" "$sub_dir" "$SUB_UA" "$SUB_HWID" ); then
-    log "ERROR" "订阅添加失败，清理目录: $sub_dir"
-    rm -rf "$sub_dir"
-    exit 1
+  if ! update_subscription "$group_id"; then
+    printf "%s\n" "$group_id"
+    return 1
   fi
-  log "INFO" "订阅添加完成: $name"
+  printf "%s\n" "$group_id"
 }
 
 #######################################
-# 更新指定订阅
+# 从本地文件创建独立本地分组
 # 参数:
-#   $1  订阅名
-# 全局: SUB_UA/SUB_HWID 命令行值优先，否则用元数据中的持久化值
-# 返回: 成功返回 0，订阅不存在则退出
+#   $1  输入文件
+#   $2  显示名称 (可选)
+# 返回: 标准输出打印新分组 ID
 #######################################
-update_subscription() {
-  local name="$1"
-  local sub_dir
+import_local_file_group() {
+  local input="$1"
+  local display_name="${2:-${input##*/}}"
+  local group_id group_dir stage node_count now
 
-  [ -n "$name" ] || die "用法: $(basename "$0") update <名称> [-ua <UA>] [-hwid <HWID>]"
+  [ -f "$input" ] || return 1
+  validate_user_text "$display_name" || return 1
+  initialize_catalog_storage || return 1
+  group_id="$(local_group_id_from_file "$input")" || return 1
+  acquire_catalog_lock "$group_id" || return 1
+  create_catalog_stage "$group_id" > /dev/null || { release_catalog_lock; return 1; }
+  stage="$SUB_STAGE_DIR"
+  if ! "$NETPROXY_NATIVE_BIN" convert file --input "$input" --output "$stage/provider.json" \
+    > "$stage/result.json" 2> "$stage/error.json"; then
+    release_catalog_lock
+    return 1
+  fi
+  node_count="$(sed -n 's/.*"node_count":\([0-9][0-9]*\).*/\1/p' "$stage/result.json")"
+  [ "$node_count" -gt 0 ] 2> /dev/null || { release_catalog_lock; return 1; }
 
-  sub_dir="$(subscription_dir_from_name "$OUTBOUNDS_DIR" "$name")"
-  require_file "$sub_dir/_meta.json" "订阅不存在: $name"
-
-  refresh_subscription_from_meta "$sub_dir" || die "订阅更新失败: $name"
-  log "INFO" "订阅更新完成: $name"
+  group_dir="$CATALOG_DIR/$group_id"
+  mkdir -p "$group_dir" || { release_catalog_lock; return 1; }
+  initialize_local_meta "$group_id" "$display_name" "file"
+  SUB_NODE_COUNT="$node_count"
+  SUB_REVISION=1
+  now="$(date +%s)"
+  SUB_UPDATED_AT="$(format_epoch_utc "$now")"
+  write_catalog_meta "$stage/meta.json" || { release_catalog_lock; return 1; }
+  mv -f "$stage/provider.json" "$group_dir/provider.json" || { release_catalog_lock; return 1; }
+  mv -f "$stage/meta.json" "$group_dir/meta.json" || { release_catalog_lock; return 1; }
+  chmod 0700 "$group_dir" 2> /dev/null || true
+  chmod 0600 "$group_dir"/*.json 2> /dev/null || true
+  activate_group_if_needed "$group_id" || true
+  release_catalog_lock
+  reload_catalog_structure_if_running
+  printf "%s\n" "$group_id"
 }
 
 #######################################
-# 更新全部订阅
-# 单个订阅失败时记 WARN 并跳过，继续更新其余订阅。
-# 参数: 无
-# 返回: 无 (汇总成功/失败数)
-#######################################
-update_all_subscriptions() {
-  local sub_dir name ok=0 failed=0
-
-  # 遍历所有订阅目录
-  for sub_dir in "$OUTBOUNDS_DIR"/sub_*; do
-    [ -d "$sub_dir" ] || continue
-    [ -f "$sub_dir/_meta.json" ] || continue
-
-    name="${sub_dir##*/}"
-    # 容错：单订阅失败不中断整体
-    if refresh_subscription_from_meta "$sub_dir"; then
-      ok=$((ok + 1))
-    else
-      failed=$((failed + 1))
-      log "WARN" "订阅更新失败，已跳过: $name"
-    fi
-  done
-
-  log "INFO" "全部订阅更新完成，成功 $ok 个，失败 $failed 个"
-}
-
-#######################################
-# 删除指定订阅
+# 向本地分组追加节点链接或文件
 # 参数:
-#   $1  订阅名
-# 返回: 成功返回 0，订阅不存在则退出
+#   $1  分组 ID
+#   $2  节点链接或文件
+# 返回: 成功返回 0
+#######################################
+append_local_node() {
+  local group_id="$1"
+  local input="$2"
+  local group_dir provider_file stage node_count now had_nodes=0
+
+  [ "$group_id" = "default" ] || {
+    [ "$(meta_get_string "$CATALOG_DIR/$group_id/meta.json" "type" "")" != "subscription" ] || return 1
+  }
+  group_dir="$CATALOG_DIR/$group_id"
+  provider_file="$group_dir/provider.json"
+  [ -f "$provider_file" ] || return 1
+  catalog_provider_has_nodes "$provider_file" && had_nodes=1
+  acquire_catalog_lock "$group_id" || return 1
+  create_catalog_stage "$group_id" > /dev/null || { release_catalog_lock; return 1; }
+  stage="$SUB_STAGE_DIR"
+  cp "$provider_file" "$stage/provider.json" || { release_catalog_lock; return 1; }
+  if ! "$NETPROXY_NATIVE_BIN" provider append --target "$stage/provider.json" --input "$input" \
+    > "$stage/result.json" 2> "$stage/error.json"; then
+    release_catalog_lock
+    return 1
+  fi
+  node_count="$(grep -o '"protocol"' "$stage/result.json" | wc -l | tr -d '[:space:]')"
+  load_catalog_meta "$group_dir/meta.json" || initialize_local_meta "$group_id" "$group_id" "local"
+  SUB_NODE_COUNT="$node_count"
+  SUB_REVISION=$((SUB_REVISION + 1))
+  now="$(date +%s)"
+  SUB_UPDATED_AT="$(format_epoch_utc "$now")"
+  write_catalog_meta "$stage/meta.json" || { release_catalog_lock; return 1; }
+  mv -f "$stage/provider.json" "$provider_file" || { release_catalog_lock; return 1; }
+  mv -f "$stage/meta.json" "$group_dir/meta.json" || { release_catalog_lock; return 1; }
+  activate_group_if_needed "$group_id" || true
+  release_catalog_lock
+  [ "$had_nodes" = "1" ] || reload_catalog_structure_if_running
+}
+
+#######################################
+# 从任意分组复制节点到本地分组
+# 参数:
+#   $1  源节点引用 (<group-id>/<tag>)
+#   $2  目标本地分组 ID (默认 default)
+# 返回: 成功返回 0
+#######################################
+copy_node_to_local() {
+  local source_ref="$1"
+  local target_group="${2:-default}"
+  local source_group tag source_provider target_dir target_provider stage node_count now had_nodes=0
+
+  source_group="${source_ref%%/*}"
+  tag="${source_ref#*/}"
+  [ "$source_group" != "$source_ref" ] && [ -n "$tag" ] || return 1
+  source_provider="$(catalog_provider_path "$source_group")" || return 1
+  catalog_provider_contains_tag "$source_provider" "$tag" || return 1
+  [ "$(meta_get_string "$CATALOG_DIR/$target_group/meta.json" "type" "")" != "subscription" ] || return 1
+  target_dir="$CATALOG_DIR/$target_group"
+  target_provider="$target_dir/provider.json"
+  [ -f "$target_provider" ] || return 1
+  catalog_provider_has_nodes "$target_provider" && had_nodes=1
+
+  acquire_catalog_lock "$target_group" || return 1
+  create_catalog_stage "$target_group" > /dev/null || { release_catalog_lock; return 1; }
+  stage="$SUB_STAGE_DIR"
+  cp "$target_provider" "$stage/provider.json" || { release_catalog_lock; return 1; }
+  if ! "$NETPROXY_NATIVE_BIN" provider append --target "$stage/provider.json" \
+    --input "$source_provider" --tag "$tag" > "$stage/result.json" 2> "$stage/error.json"; then
+    release_catalog_lock
+    return 1
+  fi
+  node_count="$(grep -o '"protocol"' "$stage/result.json" | wc -l | tr -d '[:space:]')"
+  load_catalog_meta "$target_dir/meta.json" || initialize_local_meta "$target_group" "$target_group" "local"
+  SUB_NODE_COUNT="$node_count"
+  SUB_REVISION=$((SUB_REVISION + 1))
+  now="$(date +%s)"
+  SUB_UPDATED_AT="$(format_epoch_utc "$now")"
+  write_catalog_meta "$stage/meta.json" || { release_catalog_lock; return 1; }
+  mv -f "$stage/provider.json" "$target_provider" || { release_catalog_lock; return 1; }
+  mv -f "$stage/meta.json" "$target_dir/meta.json" || { release_catalog_lock; return 1; }
+  release_catalog_lock
+  [ "$had_nodes" = "1" ] || reload_catalog_structure_if_running
+}
+
+#######################################
+# 从本地分组删除节点
+# 参数:
+#   $1  节点引用 (<group-id>/<tag>)
+# 返回: 成功返回 0
+#######################################
+remove_local_node() {
+  local node_ref="$1"
+  local group_id tag group_dir provider_file stage node_count now
+
+  group_id="${node_ref%%/*}"
+  tag="${node_ref#*/}"
+  [ "$group_id" != "$node_ref" ] && [ -n "$tag" ] || return 1
+  group_dir="$CATALOG_DIR/$group_id"
+  [ "$(meta_get_string "$group_dir/meta.json" "type" "")" != "subscription" ] || return 1
+  provider_file="$group_dir/provider.json"
+  catalog_provider_contains_tag "$provider_file" "$tag" || return 1
+  acquire_catalog_lock "$group_id" || return 1
+  create_catalog_stage "$group_id" > /dev/null || { release_catalog_lock; return 1; }
+  stage="$SUB_STAGE_DIR"
+  cp "$provider_file" "$stage/provider.json" || { release_catalog_lock; return 1; }
+  if ! "$NETPROXY_NATIVE_BIN" provider remove --target "$stage/provider.json" --tag "$tag" \
+    > "$stage/result.json" 2> "$stage/error.json"; then
+    release_catalog_lock
+    return 1
+  fi
+  node_count="$(grep -o '"protocol"' "$stage/result.json" | wc -l | tr -d '[:space:]')"
+  node_count="${node_count:-0}"
+  load_catalog_meta "$group_dir/meta.json" || { release_catalog_lock; return 1; }
+  SUB_NODE_COUNT="$node_count"
+  SUB_REVISION=$((SUB_REVISION + 1))
+  now="$(date +%s)"
+  SUB_UPDATED_AT="$(format_epoch_utc "$now")"
+  write_catalog_meta "$stage/meta.json" || { release_catalog_lock; return 1; }
+  mv -f "$stage/provider.json" "$provider_file" || { release_catalog_lock; return 1; }
+  mv -f "$stage/meta.json" "$group_dir/meta.json" || { release_catalog_lock; return 1; }
+
+  release_catalog_lock
+  fallback_missing_selected_node "$group_id"
+  [ "$node_count" -gt 0 ] 2> /dev/null || reload_catalog_structure_if_running
+}
+
+#######################################
+# 原子替换本地分组中的一个节点
+# 参数:
+#   $1  旧节点引用 (<group-id>/<tag>)
+#   $2  新节点链接或文件
+# 返回: 成功返回 0
+#######################################
+edit_local_node() {
+  local node_ref="$1"
+  local input="$2"
+  local group_id tag group_dir provider_file stage node_count now
+
+  group_id="${node_ref%%/*}"
+  tag="${node_ref#*/}"
+  [ "$group_id" != "$node_ref" ] && [ -n "$tag" ] || return 1
+  group_dir="$CATALOG_DIR/$group_id"
+  [ "$(meta_get_string "$group_dir/meta.json" "type" "")" != "subscription" ] || return 1
+  provider_file="$group_dir/provider.json"
+  catalog_provider_contains_tag "$provider_file" "$tag" || return 1
+  acquire_catalog_lock "$group_id" || return 1
+  create_catalog_stage "$group_id" > /dev/null || { release_catalog_lock; return 1; }
+  stage="$SUB_STAGE_DIR"
+  cp "$provider_file" "$stage/provider.json" || { release_catalog_lock; return 1; }
+  "$NETPROXY_NATIVE_BIN" provider remove --target "$stage/provider.json" --tag "$tag" \
+    > "$stage/remove-result.json" 2> "$stage/error.json" \
+    || { release_catalog_lock; return 1; }
+  "$NETPROXY_NATIVE_BIN" provider append --target "$stage/provider.json" --input "$input" \
+    > "$stage/append-result.json" 2> "$stage/error.json" \
+    || { release_catalog_lock; return 1; }
+  node_count="$(grep -o '"protocol"' "$stage/append-result.json" | wc -l | tr -d '[:space:]')"
+  load_catalog_meta "$group_dir/meta.json" || { release_catalog_lock; return 1; }
+  SUB_NODE_COUNT="$node_count"
+  SUB_REVISION=$((SUB_REVISION + 1))
+  now="$(date +%s)"
+  SUB_UPDATED_AT="$(format_epoch_utc "$now")"
+  write_catalog_meta "$stage/meta.json" || { release_catalog_lock; return 1; }
+  mv -f "$stage/provider.json" "$provider_file" || { release_catalog_lock; return 1; }
+  mv -f "$stage/meta.json" "$group_dir/meta.json" || { release_catalog_lock; return 1; }
+
+  release_catalog_lock
+  fallback_missing_selected_node "$group_id"
+}
+
+#######################################
+# 删除订阅分组
+# 参数:
+#   $1  分组 ID 或唯一名称
+#   $2  替代活动组 ID (可选)
+# 返回: 成功返回 0
 #######################################
 remove_subscription() {
-  local name="$1"
-  local sub_dir
+  local query="$1"
+  local replacement="${2:-}"
+  local group_id group_dir current candidate candidate_dir
 
-  [ -n "$name" ] || die "用法: $(basename "$0") remove <名称>"
+  group_id="$(resolve_catalog_group "$query")" || return $?
+  group_dir="$CATALOG_DIR/$group_id"
+  [ "$(meta_get_string "$group_dir/meta.json" "type" "")" = "subscription" ] || return 1
+  current="$(read_conf "$MODULE_CONF" "ACTIVE_GROUP_ID" "")"
 
-  sub_dir="$(subscription_dir_from_name "$OUTBOUNDS_DIR" "$name")"
-  [ -d "$sub_dir" ] || die "订阅不存在: $name"
+  if [ "$current" = "$group_id" ]; then
+    if [ -n "$replacement" ]; then
+      replacement="$(resolve_catalog_group "$replacement")" || return 1
+      [ "$replacement" != "$group_id" ] || return 1
+      catalog_provider_has_nodes "$CATALOG_DIR/$replacement/provider.json" || return 1
+    else
+      for candidate_dir in "$CATALOG_DIR"/*; do
+        [ -d "$candidate_dir" ] || continue
+        candidate="${candidate_dir##*/}"
+        [ "$candidate" != "staging" ] && [ "$candidate" != "$group_id" ] || continue
+        if catalog_provider_has_nodes "$candidate_dir/provider.json"; then
+          replacement="$candidate"
+          break
+        fi
+      done
+    fi
+    set_active_catalog_group "$replacement" || [ -z "$replacement" ] || return 1
+    if [ -z "$replacement" ]; then
+      set_active_catalog_group "" || return 1
+      if [ -n "$(get_pid "$SING_BOX_BIN")" ]; then
+        sh "$SERVICE_SCRIPT" stop > /dev/null 2>&1 || true
+      fi
+    fi
+  fi
 
-  rm -rf "$sub_dir"
-  log "INFO" "订阅已删除: $name"
+  cancel_subscription_update "$group_id" 2> /dev/null || true
+  acquire_catalog_lock "$group_id" || return 1
+  rm -rf "$group_dir" || { release_catalog_lock; return 1; }
+  release_catalog_lock
+  reload_catalog_structure_if_running
 }
 
 #######################################
-# 列出所有订阅及其节点数与更新时间
+# 显示低层脚本用法
 # 参数: 无
-# 返回: 无 (打印订阅列表)
+# 返回: 无
 #######################################
-list_subscriptions() {
-  local sub_dir meta_file name updated node_count file count=0
-
-  printf "订阅列表:\n"
-
-  # 遍历订阅目录，统计节点数并输出
-  for sub_dir in "$OUTBOUNDS_DIR"/sub_*; do
-    [ -d "$sub_dir" ] || continue
-    meta_file="$sub_dir/_meta.json"
-    [ -f "$meta_file" ] || continue
-
-    name="$(read_subscription_meta_value "$meta_file" "name" || true)"
-    updated="$(read_subscription_meta_value "$meta_file" "updated" || true)"
-    [ -n "$name" ] || name="${sub_dir##*/}"
-
-    # 统计该订阅下的有效节点数
-    node_count=0
-    for file in "$sub_dir"/*.json; do
-      is_node_config_file "$file" || continue
-      node_count=$((node_count + 1))
-    done
-
-    printf "  - %s (%s 个节点，更新于 %s)\n" "$name" "$node_count" "${updated:-未知}"
-    count=$((count + 1))
-  done
-
-  [ "$count" -gt 0 ] || printf "  暂无订阅\n"
+show_subscription_usage() {
+  cat << EOF
+用法:
+  $(basename "$0") update <订阅 ID|名称>
+  $(basename "$0") update-all
+  $(basename "$0") cancel <订阅 ID>
+EOF
 }
 
 #######################################
-# 主入口：解析全局选项并分发子命令
-# 参数:
-#   $1   子命令
-#   $@   子命令参数与 -ua/-hwid 选项
-# 返回: 依子命令而定
+# 低层脚本入口
 #######################################
-main() {
-  local command="${1:-}"
-  shift 2> /dev/null || true
-
-  # 先提取 -ua / -hwid 全局选项，其余位置参数按原序保留
-  # (将非选项参数从队首取出再追加回队尾，循环 remaining 次即复位顺序)
-  local remaining=$#
-  while [ "$remaining" -gt 0 ]; do
-    case "$1" in
-      -ua)
-        SUB_UA="${2:-}"
-        shift 2 2> /dev/null || shift
-        remaining=$((remaining - 2))
-        ;;
-      -hwid)
-        SUB_HWID="${2:-}"
-        shift 2 2> /dev/null || shift
-        remaining=$((remaining - 2))
-        ;;
-      *)
-        set -- "$@" "$1"
-        shift
-        remaining=$((remaining - 1))
-        ;;
-    esac
-  done
-
-  # 按子命令分发
-  case "$command" in
-    parse)
-      import_parse "${1:-}" "${2:-}"
-      ;;
-    file | import)
-      import_file "${1:-}" "${2:-}"
-      ;;
-    stdin)
-      import_stdin "${1:-}"
-      ;;
-    sub)
-      import_sub "${1:-}" "${2:-}"
-      ;;
-    convert)
-      export_link "${1:-}"
-      ;;
-    add)
-      add_subscription "${1:-}" "${2:-}"
-      ;;
-    update)
-      update_subscription "${1:-}"
-      ;;
-    update-all)
-      update_all_subscriptions
-      ;;
-    remove | rm)
-      remove_subscription "${1:-}"
-      ;;
-    list)
-      list_subscriptions
-      ;;
-    -h | --help | help | "")
-      show_help
-      ;;
-    *)
-      show_help
-      exit 1
-      ;;
+subscription_main() {
+  case "${1:-}" in
+    update) [ -n "${2:-}" ] && update_subscription "$2" ;;
+    update-all) update_all_subscriptions ;;
+    cancel) [ -n "${2:-}" ] && cancel_subscription_update "$2" ;;
+    help | -h | --help) show_subscription_usage ;;
+    *) show_subscription_usage; return 1 ;;
   esac
 }
 
-main "$@"
+if [ "${SUBSCRIPTION_LIBRARY_ONLY:-0}" != "1" ]; then
+  subscription_main "$@"
+fi

@@ -1,23 +1,20 @@
 <script setup lang="ts">
 /**
  * @file SettingsLayout.vue
- * @description 设置页共享控制器：统一加载与写入 module.conf、ebpf.conf，
- *   并向设置子页提供状态、编辑动作和 eBPF 配置应用入口。
+ * @description 设置页共享控制器：通过 netproxyctl 配置事务统一加载和保存设置，
+ *   并向设置子页提供状态、编辑动作和服务重启入口。
  */
 import { ref, provide, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { showToast, readFileContent, writeFileContent, isKsuEnv, runCli } from '../utils/ksu';
+import { showToast } from '../utils/ksu';
+import { moduleClient, type ConfigTarget } from '../api/moduleClient';
 import { useBackDismiss } from '../composables/useBackDismiss';
 
 const { t } = useI18n();
 
-const MODULE_CONF = '/data/adb/modules/netproxy/config/module.conf';
-const EBPF_CONF = '/data/adb/modules/netproxy/config/ebpf/ebpf.conf';
-
 /** 设置页聚合状态：模块设置、eBPF 入站和 Wi-Fi 自动切换。 */
 export interface SettingsState {
   autoStartEnabled: boolean;
-  selectorUrlTestEnabled: boolean;
   gmsFixEnabled: boolean;
   network: string;
   udpTimeout: string;
@@ -42,7 +39,6 @@ type SettingsKey = keyof SettingsState;
 
 const settingsState = ref<SettingsState>({
   autoStartEnabled: false,
-  selectorUrlTestEnabled: true,
   gmsFixEnabled: false,
   network: '',
   udpTimeout: '5m',
@@ -165,14 +161,13 @@ const getBool = (config: Record<string, string>, key: string, fallback: boolean)
 const loadSettings = async () => {
   try {
     const [moduleContent, ebpfContent] = await Promise.all([
-      readFileContent(MODULE_CONF),
-      readFileContent(EBPF_CONF)
+      moduleClient.readConfig('module'),
+      moduleClient.readConfig('ebpf')
     ]);
     const moduleConfig = parseConfigFile(moduleContent);
     const ebpfConfig = parseConfigFile(ebpfContent);
 
     settingsState.value.autoStartEnabled = getBool(moduleConfig, 'AUTO_START', false);
-    settingsState.value.selectorUrlTestEnabled = getValue(moduleConfig, 'SELECTOR_MODE', 'urltest') !== 'manual';
     settingsState.value.gmsFixEnabled = getBool(moduleConfig, 'GMS_FIX', false);
     settingsState.value.wifiAutoSwitch = getBool(moduleConfig, 'WIFI_AUTO_SWITCH', false);
     settingsState.value.wifiSsidMode = getValue(moduleConfig, 'WIFI_SSID_MODE', 'blacklist') === 'whitelist' ? 'whitelist' : 'blacklist';
@@ -204,19 +199,13 @@ const loadSettings = async () => {
 };
 
 const writeSetting = async (
-  path: string,
+  target: ConfigTarget,
   configKey: string,
   value: string,
-  forceQuotes: boolean,
-  stateKey: SettingsKey
+  forceQuotes: boolean
 ) => {
-  if (!isKsuEnv()) {
-    localStorage.setItem(`mock_settings_${stateKey}`, String(settingsState.value[stateKey]));
-    return;
-  }
-
-  const content = await readFileContent(path);
-  await writeFileContent(path, writeConfigValue(content, configKey, value, forceQuotes));
+  const content = await moduleClient.readConfig(target);
+  await moduleClient.applyConfig(target, writeConfigValue(content, configKey, value, forceQuotes));
 };
 
 const setEbpfValue = async (key: SettingsKey, value: string | boolean) => {
@@ -225,7 +214,7 @@ const setEbpfValue = async (key: SettingsKey, value: string | boolean) => {
   const previous = settingsState.value[key];
   (settingsState.value as any)[key] = value;
   try {
-    await writeSetting(EBPF_CONF, configKey, typeof value === 'boolean' ? (value ? '1' : '0') : value, quotedFields.has(key), key);
+    await writeSetting('ebpf', configKey, typeof value === 'boolean' ? (value ? '1' : '0') : value, quotedFields.has(key));
     showToast(t('settings.prefUpdated'));
   } catch (error) {
     (settingsState.value as any)[key] = previous;
@@ -240,7 +229,7 @@ const setModuleValue = async (key: SettingsKey, value: string | boolean) => {
   const previous = settingsState.value[key];
   (settingsState.value as any)[key] = value;
   try {
-    await writeSetting(MODULE_CONF, configKey, typeof value === 'boolean' ? (value ? '1' : '0') : value, quotedFields.has(key), key);
+    await writeSetting('module', configKey, typeof value === 'boolean' ? (value ? '1' : '0') : value, quotedFields.has(key));
     showToast(t('settings.prefUpdated'));
   } catch (error) {
     (settingsState.value as any)[key] = previous;
@@ -249,9 +238,9 @@ const setModuleValue = async (key: SettingsKey, value: string | boolean) => {
   }
 };
 
-const updateGlobalModuleSetting = async (key: string, value: string, stateKey: SettingsKey) => {
+const updateGlobalModuleSetting = async (key: string, value: string) => {
   try {
-    await writeSetting(MODULE_CONF, key, value, false, stateKey);
+    await writeSetting('module', key, value, false);
   } catch (error) {
     console.error(`Failed to update ${key} in module.conf:`, error);
     showToast(t('settings.updateModuleFailed'));
@@ -265,21 +254,14 @@ const updateGlobalModuleSetting = async (key: string, value: string, stateKey: S
 const toggleAutoStart = async () => {
   const value = !settingsState.value.autoStartEnabled;
   settingsState.value.autoStartEnabled = value;
-  await updateGlobalModuleSetting('AUTO_START', value ? '1' : '0', 'autoStartEnabled');
+  await updateGlobalModuleSetting('AUTO_START', value ? '1' : '0');
   showToast(value ? t('settings.autoStartOn') : t('settings.autoStartOff'));
-};
-
-const toggleSelectorUrlTest = async () => {
-  const value = !settingsState.value.selectorUrlTestEnabled;
-  settingsState.value.selectorUrlTestEnabled = value;
-  await updateGlobalModuleSetting('SELECTOR_MODE', value ? 'urltest' : 'manual', 'selectorUrlTestEnabled');
-  showToast(value ? t('settings.urltestOn') : t('settings.urltestOff'));
 };
 
 const toggleGmsFix = async () => {
   const value = !settingsState.value.gmsFixEnabled;
   settingsState.value.gmsFixEnabled = value;
-  await updateGlobalModuleSetting('GMS_FIX', value ? '1' : '0', 'gmsFixEnabled');
+  await updateGlobalModuleSetting('GMS_FIX', value ? '1' : '0');
   showToast(value ? t('settings.gmsFixOn') : t('settings.gmsFixOff'));
 };
 
@@ -324,7 +306,7 @@ const applyEbpfConfig = async () => {
   if (isApplying.value) return;
   isApplying.value = true;
   try {
-    await runCli('service restart', { detach: true });
+    await moduleClient.serviceAction('restart');
     showToast(t('proxy.applySuccess'));
   } catch (error: any) {
     console.error('Failed to apply eBPF config:', error);
@@ -338,7 +320,6 @@ onMounted(loadSettings);
 
 provide('settingsState', settingsState);
 provide('toggleAutoStart', toggleAutoStart);
-provide('toggleSelectorUrlTest', toggleSelectorUrlTest);
 provide('toggleGmsFix', toggleGmsFix);
 provide('toggleEbpfBool', toggleEbpfBool);
 provide('toggleModuleBool', toggleModuleBool);

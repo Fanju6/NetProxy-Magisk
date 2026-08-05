@@ -44,7 +44,7 @@
 - 链接本身是否完整
 - 订阅地址是否返回有效内容
 - 导入文件是否为标准 Clash YAML 或节点列表
-- `proxylink` 生成的配置是否包含 sing-box 所需字段
+- NetProxy 原生组件生成的 Provider 是否包含 sing-box 所需字段
 
 ## 切换节点后没有立刻生效
 

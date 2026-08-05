@@ -2,16 +2,16 @@
 /**
  * @file AboutScreen.vue
  * @description 关于页：展示 Logo / 应用名 / 版本号，并提供「查看源码」「加入 Telegram」外链入口。
- *   版本号从 module.prop 读取，外链经 ksu 的系统 Intent 打开。子页形态（带返回顶栏）。
+ *   版本号从 KernelSU 模块信息读取，外链经系统 Intent 打开。子页形态（带返回顶栏）。
  */
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
-import { readFileContent, openExternalUrl } from '../utils/ksu';
+import { getModuleInfo, openExternalUrl } from '../utils/ksu';
 
 const router = useRouter();
 const { t } = useI18n();
-const appVersion = ref('v7.0.5'); // 版本号，挂载后由 loadVersion 用 module.prop 实际值覆盖
+const appVersion = ref('v8.0.0-alpha.2');
 
 /** 返回上一页（子页顶栏返回箭头）。 */
 const handleBack = () => {
@@ -26,19 +26,11 @@ const openLink = (url: string) => {
   openExternalUrl(url);
 };
 
-/** 读取 module.prop 的 version= 字段刷新版本号显示；读取失败则保留默认值。 */
-const loadVersion = async () => {
-  try {
-    const propContent = await readFileContent('/data/adb/modules/netproxy/module.prop');
-    const lines = propContent.split('\n');
-    for (const line of lines) {
-      if (line.trim().startsWith('version=')) {
-        appVersion.value = line.substring(line.indexOf('=') + 1).trim();
-        break;
-      }
-    }
-  } catch (e) {
-    console.warn('Failed to read module.prop version:', e);
+/** 使用管理器提供的模块元数据刷新版本号。 */
+const loadVersion = () => {
+  const info = getModuleInfo();
+  if (typeof info?.version === 'string' && info.version.trim()) {
+    appVersion.value = info.version.trim();
   }
 };
 

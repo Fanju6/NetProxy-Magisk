@@ -2,25 +2,23 @@
 /**
  * @file AppsScreen.vue
  * @description 应用页：分应用代理（关闭/黑名单/白名单）管理。列出已安装应用、搜索/过滤/排序、
- *   勾选加入名单（写 ebpf.conf）、下拉刷新；长列表用自建虚拟滚动（复用父级 .page-scroller）。
+ *   勾选加入名单（通过 netproxyctl 应用）、下拉刷新；长列表用自建虚拟滚动（复用父级 .page-scroller）。
  *   非真机环境用 mock 数据（含约 300 条用于验证虚拟滚动）。
  */
 import { ref, computed, onMounted, onActivated, onDeactivated, onUnmounted, nextTick, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useRouter } from 'vue-router';
 import {
   showToast,
   getAppPackagesList,
   getAppIconUrl,
-  isKsuEnv,
-  writeEbpfValue,
-  addProxyApp,
-  removeProxyApp,
-  getEbpfConfigState,
-  runCli
+  isKsuEnv
 } from '../utils/ksu';
+import { moduleClient } from '../api/moduleClient';
 import { useBackDismiss } from '../composables/useBackDismiss';
 
 const { t } = useI18n();
+const router = useRouter();
 
 interface AppItem {
   packageName: string;
@@ -51,7 +49,6 @@ const onIconError = (packageName: string) => {
 // 分应用代理偏好状态
 const isAppProxyEnabled = ref(false);
 const appProxyMode = ref<'blacklist' | 'whitelist'>('blacklist');
-const isApplyingConfig = ref(false);
 
 // 展示过滤选项（持久化到 localStorage）
 const showSystemApps = ref(localStorage.getItem('np_show_system_apps') === 'true');
@@ -144,15 +141,15 @@ const proxyModeIndex = computed(() => {
 // 配置加载 / 应用列表加载
 // ===================================================================
 
-/** 经共享 ebpf.conf 读取器加载分应用代理配置（真机/mock 双轨），并据名单标记勾选态。 */
+/** 通过模块管理契约加载分应用代理配置，并据名单标记勾选态。 */
 const loadAppConfig = async () => {
   try {
-    const state = await getEbpfConfigState();
-    isAppProxyEnabled.value = state.appProxyEnabled;
-    appProxyMode.value = state.appProxyMode;
+    const state = await moduleClient.appState();
+    isAppProxyEnabled.value = state.enabled;
+    appProxyMode.value = state.mode;
 
-    // proxiedAppItems 已是当前模式对应的列表，按 userId:packageName 或裸包名匹配选中态
-    const checkedSet = new Set(state.proxiedAppItems);
+    const configured = state.mode === 'whitelist' ? state.proxy_apps : state.bypass_apps;
+    const checkedSet = new Set(configured.split(/\s+/).filter(Boolean));
     apps.value.forEach(app => {
       const userId = getUserId(app.uid);
       const targetWithUser = `${userId}:${app.packageName}`;
@@ -300,58 +297,24 @@ const handleTouchEnd = async () => {
 // ===================================================================
 
 /**
- * 代理模式下拉变更（0=关闭 1=黑名单 2=白名单）：写 ebpf.conf 并刷新配置。
+ * 代理模式下拉变更（0=关闭 1=黑名单 2=白名单）：通过 netproxyctl 更新并应用配置。
  * @param e  select 的 change 事件
  */
 const handleProxyModeIndexChange = async (e: Event) => {
   const select = e.target as HTMLSelectElement;
   const index = parseInt(select.value);
   try {
-    if (isKsuEnv()) {
-      if (index === 0) {
-        await writeEbpfValue('APP_PROXY_ENABLE', '0');
-        isAppProxyEnabled.value = false;
-        showToast(t('apps.proxyDisabled'));
-      } else {
-        await writeEbpfValue('APP_PROXY_ENABLE', '1');
-        isAppProxyEnabled.value = true;
-        const mode = index === 1 ? 'blacklist' : 'whitelist';
-        await writeEbpfValue('APP_PROXY_MODE', mode, true);
-        appProxyMode.value = mode;
-        showToast(t('apps.modeChanged', { mode: mode === 'blacklist' ? t('apps.blacklist') : t('apps.whitelist') }));
-      }
-      await loadAppConfig();
+    if (index === 0) {
+      await moduleClient.setAppsEnabled(false);
+      showToast(t('apps.proxyDisabled'));
     } else {
-      // mock 环境持久化
-      if (index === 0) {
-        isAppProxyEnabled.value = false;
-        localStorage.setItem('mock_proxy_enabled', 'false');
-        showToast(t('apps.proxyDisabled'));
-      } else {
-        isAppProxyEnabled.value = true;
-        localStorage.setItem('mock_proxy_enabled', 'true');
-        const mode = index === 1 ? 'blacklist' : 'whitelist';
-        appProxyMode.value = mode;
-        localStorage.setItem('mock_proxy_mode', mode);
-        showToast(t('apps.modeChanged', { mode: mode === 'blacklist' ? t('apps.blacklist') : t('apps.whitelist') }));
-      }
+      const mode = index === 1 ? 'blacklist' : 'whitelist';
+      await moduleClient.setAppMode(mode);
+      showToast(t('apps.modeChanged', { mode: mode === 'blacklist' ? t('apps.blacklist') : t('apps.whitelist') }));
     }
+    await loadAppConfig();
   } catch (err: any) {
     showToast(t('apps.switchProxyFailed', { msg: err.message || err }));
-  }
-};
-
-/** 重启 sing-box，使连续修改的分应用名单一次性生效。 */
-const applyAppProxyConfig = async () => {
-  if (isApplyingConfig.value) return;
-  isApplyingConfig.value = true;
-  try {
-    await runCli('service restart', { detach: true });
-    showToast(t('apps.applySuccess'));
-  } catch (err: any) {
-    showToast(t('apps.applyFailed', { msg: err?.message || String(err) }));
-  } finally {
-    isApplyingConfig.value = false;
   }
 };
 
@@ -366,21 +329,15 @@ const toggleAppProxy = async (app: AppItem) => {
   const userId = getUserId(app.uid);
   
   try {
-    if (isKsuEnv()) {
-      if (originalState) {
-        await removeProxyApp(app.packageName, userId);
-        showToast(t('apps.removedFromList', { label: app.appLabel }));
-      } else {
-        await addProxyApp(app.packageName, userId);
-        showToast(t('apps.addedToList', { label: app.appLabel }));
-      }
-      await loadAppConfig();
+    const appId = `${userId}:${app.packageName}`;
+    if (originalState) {
+      await moduleClient.removeApp(appId);
+      showToast(t('apps.removedFromList', { label: app.appLabel }));
     } else {
-      // mock：保存勾选态到 localStorage
-      const checkedApps = apps.value.filter(a => a.checked).map(a => a.packageName);
-      localStorage.setItem('mock_checked_apps', JSON.stringify(checkedApps));
-      showToast(app.checked ? t('apps.addedToList', { label: app.appLabel }) : t('apps.removedFromList', { label: app.appLabel }));
+      await moduleClient.addApp(appId);
+      showToast(t('apps.addedToList', { label: app.appLabel }));
     }
+    await loadAppConfig();
   } catch (err: any) {
     // 出错时回滚勾选态
     app.checked = originalState;
@@ -535,6 +492,15 @@ defineExpose({
     @touchmove="handleTouchMove"
     @touchend="handleTouchEnd"
   >
+    <header class="apps-top-bar">
+      <md-icon-button @click="router.back()">
+        <md-icon><svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.42-1.41L7.83 13H20z" /></svg></md-icon>
+      </md-icon-button>
+      <h1>{{ t('apps.appProxy') }}</h1>
+      <md-icon-button @click="openAppsMenu">
+        <md-icon><svg viewBox="0 0 24 24"><path d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm0 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" /></svg></md-icon>
+      </md-icon-button>
+    </header>
     <!-- 下拉刷新指示器 -->
     <div 
       class="pull-to-refresh-indicator" 
@@ -578,16 +544,6 @@ defineExpose({
           <option :value="1">{{ t('apps.modeBlacklist') }}</option>
           <option :value="2">{{ t('apps.modeWhitelist') }}</option>
         </select>
-      </div>
-      <div class="app-pref-divider"></div>
-      <div class="pref-row apply-pref-row">
-        <div class="pref-text">
-          <span class="pref-title">{{ t('apps.applyChanges') }}</span>
-          <span class="pref-summary">{{ t('apps.applyChangesDesc') }}</span>
-        </div>
-        <md-filled-button :disabled="isApplyingConfig" @click="applyAppProxyConfig">
-          {{ isApplyingConfig ? t('apps.applying') : t('apps.applyChanges') }}
-        </md-filled-button>
       </div>
     </div>
 
@@ -703,6 +659,29 @@ defineExpose({
 </template>
 
 <style scoped>
+.apps-top-bar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  height: calc(64px + var(--top-inset));
+  padding: var(--top-inset) 8px 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  background: var(--md-sys-color-background);
+}
+
+.apps-top-bar h1 {
+  flex: 1;
+  margin: 0 8px;
+  font-size: 21px;
+}
+
+.apps-top-bar svg {
+  width: 22px;
+  fill: currentColor;
+}
+
 .page-container {
   display: flex;
   flex-direction: column;
@@ -833,20 +812,6 @@ defineExpose({
   justify-content: space-between;
   align-items: center;
   width: 100%;
-}
-
-.apply-pref-row {
-  padding-top: 14px;
-}
-
-.apply-pref-row md-filled-button {
-  flex-shrink: 0;
-}
-
-.app-pref-divider {
-  height: 1px;
-  margin: 14px 0 0;
-  background-color: var(--md-sys-color-outline-variant);
 }
 
 .pref-text {

@@ -36,14 +36,17 @@ read_conf() {
   local default="${3:-}"
   local line value
 
-  # 文件存在时按行首 KEY= 匹配首个键值
+  # 配置文件很小，使用 Shell 内建逐行读取可避免每个键都启动 grep 进程。
   if [ -f "$file" ]; then
-    line="$(grep -m 1 "^${key}=" "$file" 2> /dev/null || true)"
-    if [ -n "$line" ]; then
-      value="${line#*=}"      # 截取等号后的值部分
-      strip_quotes "$value"
-      return 0
-    fi
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in
+        "$key"=*)
+          value="${line#*=}"
+          strip_quotes "$value"
+          return 0
+          ;;
+      esac
+    done < "$file"
   fi
 
   # 未命中则返回默认值

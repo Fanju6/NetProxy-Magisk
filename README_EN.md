@@ -80,7 +80,7 @@ Each release provides two packages:
 
 | Package | Filename | Contents | Recommended for |
 |---------|----------|----------|-----------------|
-| **Full** | `NetProxy_<version>_<build>.zip` | sing-box, Proxylink, zashboard, and the Android Manager APK | The default choice when the manager should be installed with the module |
+| **Full** | `NetProxy_<version>_<build>.zip` | sing-box, the NetProxy native component, zashboard, and the Android Manager APK | The default choice when the manager should be installed with the module |
 | **Lite** | `NetProxy_<version>_<build>_lite.zip` | The same core, CLI, eBPF, and zashboard features, without the Android Manager APK | Users who install the manager from Google Play or only use CLI / zashboard |
 
 Both packages have identical proxy capabilities. Choose **Full** to bundle the manager installer; Lite users can still install the manager from Google Play.
@@ -129,7 +129,7 @@ su -c '/data/adb/modules/netproxy/scripts/cli sub auto on'
 
 ## Node Configuration Format
 
-Using the Android Manager or CLI importer is recommended. Proxylink converts node links, text files, Clash YAML, and subscriptions into the sing-box fragments expected by NetProxy.
+Using the Android Manager or CLI importer is recommended. NetProxy's bundled native component converts node links, text files, Clash YAML, and subscriptions into sing-box Providers.
 
 ### Manually written node files
 
@@ -231,7 +231,7 @@ See the [NetProxy documentation](https://www.netproxy.store/) for complete insta
 |---------|------|
 | [reF1nd/sing-box](https://github.com/reF1nd/sing-box) | Current proxy core |
 | [SagerNet/sing-box](https://github.com/SagerNet/sing-box) | Upstream sing-box project |
-| [Proxylink](https://github.com/Fanju6/Proxylink) | Node, subscription, and configuration conversion |
+| [Proxylink](https://github.com/Fanju6/Proxylink) | Original project behind NetProxy's internal node conversion support |
 | [AsteriskNG](https://github.com/Asterisk4Magisk/AsteriskNG) | Android eBPF implementation reference |
 | [zashboard](https://github.com/Zephyruso/zashboard) | Clash API dashboard |
 | [v2rayNG](https://github.com/2dust/v2rayNG) | Node parsing reference |
