@@ -1,6 +1,6 @@
 name: 每周更新资源、内核与依赖
 
-# 每周检查内置上游资源、sing-box 内核、npm 依赖与 GitHub Actions，
+# 每周检查内置上游资源、sing-box 内核、npm / Android 依赖与 GitHub Actions，
 # 有更新则汇总到一个 PR（人工 review 合并后由 ci.yml 重建打包）。
 # 资源清单见 .github/resources.json，新增/调整资源只改清单、无需动本文件。
 
@@ -584,6 +584,43 @@ jobs:
 
           jq . <<< "$report" > "$UPDATE_REPORT_DIR/npm.json"
 
+      - name: 更新 Android 依赖
+        id: android
+        shell: bash
+        run: |
+          set -euo pipefail
+          node .github/scripts/update-android-dependencies.mjs \
+            --report "$UPDATE_REPORT_DIR/android.json" \
+            --output "$GITHUB_OUTPUT"
+
+      - name: 配置 Android 验证 JDK
+        if: steps.android.outputs.changed == 'true'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: 配置 Android 验证 Gradle
+        if: steps.android.outputs.changed == 'true'
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: 配置 Android SDK
+        if: steps.android.outputs.changed == 'true'
+        uses: android-actions/setup-android@v3
+
+      - name: 安装 Android SDK 37
+        if: steps.android.outputs.changed == 'true'
+        shell: bash
+        run: sdkmanager 'platforms;android-37' 'build-tools;37.0.0'
+
+      - name: 验证 Android 依赖更新
+        if: steps.android.outputs.changed == 'true'
+        working-directory: src/android
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew testDebugUnitTest lintDebug --no-daemon
+
       - name: 更新 GitHub Actions
         id: actions
         env:
@@ -666,7 +703,7 @@ jobs:
 
           jq . <<< "$report" > "$UPDATE_REPORT_DIR/actions.json"
 
-      - name: 验证 npm 项目
+      - name: 验证项目与更新脚本
         run: |
           set -euo pipefail
 
@@ -676,13 +713,22 @@ jobs:
           npm run build --prefix src/webui
           git diff --check
           node --check .github/scripts/render-update-report.mjs
+          node --check .github/scripts/update-android-dependencies.mjs
+          node --test .github/scripts/*.test.mjs
 
-          jq -n '[
-            "文档站构建通过",
-            "WebUI 构建通过",
-            "Git 差异检查通过",
-            "PR 更新报告脚本检查通过"
-          ]' > "$UPDATE_REPORT_DIR/verification.json"
+          jq -n --arg android "${{ steps.android.outputs.changed }}" '
+            [
+              "文档站构建通过",
+              "WebUI 构建通过",
+              "Git 差异检查通过",
+              "依赖与 PR 报告脚本检查通过"
+            ] + (
+              if $android == "true"
+              then ["Android 单元测试与 Lint 通过（未构建或发布 APK）"]
+              else []
+              end
+            )
+          ' > "$UPDATE_REPORT_DIR/verification.json"
 
       - name: 生成 Pull Request 说明
         id: update_report

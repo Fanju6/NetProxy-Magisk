@@ -8,6 +8,7 @@ const REPORT_FILES = {
   dashboard: 'sing-box-dashboard.json',
   singBox: 'sing-box.json',
   npm: 'npm.json',
+  android: 'android.json',
   actions: 'actions.json',
   verification: 'verification.json',
 }
@@ -186,6 +187,47 @@ function renderNpm(lines, projects) {
   }
 }
 
+function renderAndroid(lines, report) {
+  if (!report) return
+  const updated = Array.isArray(report.updated) ? report.updated : []
+  const manual = Array.isArray(report.manual) ? report.manual : []
+  const diagnostics = Array.isArray(report.diagnostics) ? report.diagnostics : []
+  if (updated.length === 0 && manual.length === 0 && diagnostics.length === 0) return
+
+  lines.push('#### Android 依赖', '')
+  if (updated.length > 0) {
+    lines.push('##### 自动更新', '')
+    for (const dependency of updated) {
+      const name = markdownLink(dependency.name, dependency.sourceUrl)
+      lines.push(`- ${name}：\`${dependency.from}\` → \`${dependency.to}\``)
+      if (dependency.latest && dependency.latest !== dependency.to) {
+        lines.push(`  - 最新稳定版：\`${dependency.latest}\`，超出自动更新范围`)
+      }
+      if (Array.isArray(dependency.files) && dependency.files.length > 0) {
+        lines.push(`  - 版本目录：${[...new Set(dependency.files)].map((file) => `\`${file}\``).join('、')}`)
+      }
+    }
+    lines.push('')
+  }
+
+  if (manual.length > 0) {
+    lines.push('##### 待人工升级', '')
+    for (const dependency of manual) {
+      const name = markdownLink(dependency.name, dependency.sourceUrl)
+      lines.push(`- ${name}：\`${dependency.current}\` → \`${dependency.latest}\`（${dependency.reason}）`)
+    }
+    lines.push('')
+  }
+
+  if (diagnostics.length > 0) {
+    lines.push('##### 检查警告', '')
+    for (const diagnostic of diagnostics) {
+      lines.push(`- ${diagnostic.name}：${diagnostic.message}`)
+    }
+    lines.push('')
+  }
+}
+
 function renderActions(lines, actions) {
   if (actions.length === 0) return
   lines.push('#### GitHub Actions', '')
@@ -209,6 +251,10 @@ export function buildReport(data, context = {}) {
   const npmDirectChanges = npmProjects.reduce((total, project) => total + (project.changes?.length || 0), 0)
   const npmLockChanges = npmProjects.reduce((total, project) => total + (project.lockfileChangeCount || 0), 0)
   const actions = Array.isArray(data.actions) ? data.actions : []
+  const android = data.android || {}
+  const androidUpdated = Array.isArray(android.updated) ? android.updated : []
+  const androidManual = Array.isArray(android.manual) ? android.manual : []
+  const androidDiagnostics = Array.isArray(android.diagnostics) ? android.diagnostics : []
 
   const categories = [
     { id: 'rules', label: '规则资源', changed: rules.length > 0, result: `${rules.length} 个文件` },
@@ -220,12 +266,25 @@ export function buildReport(data, context = {}) {
       changed: npmProjects.length > 0,
       result: `${npmProjects.length} 个项目，${npmDirectChanges} 项直接依赖、${npmLockChanges} 项锁文件变化`,
     },
+    {
+      id: 'android',
+      label: 'Android 依赖',
+      changed: androidUpdated.length > 0,
+      result: androidUpdated.length > 0
+        ? `${androidUpdated.length} 项自动更新${androidManual.length > 0 ? `，${androidManual.length} 项待人工` : ''}`
+        : androidManual.length > 0
+          ? `无自动更新，${androidManual.length} 项待人工`
+          : androidDiagnostics.length > 0
+            ? `${androidDiagnostics.length} 项检查警告`
+            : '无更新',
+      showResultWhenUnchanged: androidManual.length > 0 || androidDiagnostics.length > 0,
+    },
     { id: 'actions', label: 'GitHub Actions', changed: actions.length > 0, result: `${actions.length} 个 Action` },
   ]
 
   const changedCategories = categories.filter((category) => category.changed)
   const npmItemCount = npmDirectChanges > 0 ? npmDirectChanges : npmProjects.length
-  const itemCount = rules.length + dashboards.length + (data.singBox ? 1 : 0) + npmItemCount + actions.length
+  const itemCount = rules.length + dashboards.length + (data.singBox ? 1 : 0) + npmItemCount + androidUpdated.length + actions.length
   const titleParts = []
 
   if (rules.length === 1) titleParts.push(`${rules[0].name || path.basename(rules[0].path, '.srs')} 规则`)
@@ -234,6 +293,7 @@ export function buildReport(data, context = {}) {
   else if (dashboards.length > 1) titleParts.push('Web 面板')
   if (data.singBox) titleParts.push('sing-box 内核')
   if (npmProjects.length > 0) titleParts.push('npm 依赖')
+  if (androidUpdated.length > 0) titleParts.push('Android 依赖')
   if (actions.length > 0) titleParts.push('GitHub Actions')
 
   let title = `chore(维护): 更新 ${joinChinese(titleParts)}`
@@ -257,7 +317,7 @@ export function buildReport(data, context = {}) {
     '',
     '| 分类 | 更新结果 |',
     '| --- | --- |',
-    ...categories.map((category) => `| ${category.label} | ${category.changed ? category.result : '无更新'} |`),
+    ...categories.map((category) => `| ${category.label} | ${category.changed || category.showResultWhenUnchanged ? category.result : '无更新'} |`),
     '',
   ]
 
@@ -271,7 +331,11 @@ export function buildReport(data, context = {}) {
     }
     renderSingBox(lines, data.singBox)
     renderNpm(lines, npmProjects)
+    renderAndroid(lines, android)
     renderActions(lines, actions)
+  } else if (androidManual.length > 0 || androidDiagnostics.length > 0) {
+    lines.push('### 检查详情', '')
+    renderAndroid(lines, android)
   }
 
   if (Array.isArray(data.verification) && data.verification.length > 0) {
@@ -291,6 +355,7 @@ export function loadReport(reportDir) {
     dashboard: readJson(reportDir, 'dashboard', null),
     singBox: readJson(reportDir, 'singBox', null),
     npm: readJson(reportDir, 'npm', []),
+    android: readJson(reportDir, 'android', null),
     actions: readJson(reportDir, 'actions', []),
     verification: readJson(reportDir, 'verification', []),
   }
