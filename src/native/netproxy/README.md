@@ -2,6 +2,8 @@
 
 `netproxy-native` 是 NetProxy 模块内部使用的原生组件，不作为独立通用工具发布。
 
+跨组件职责、Catalog/Provider 状态和公开接口边界见仓库根目录的 [ARCHITECTURE.md](../../../ARCHITECTURE.md)。
+
 初始代码从 `Fanju6/Proxylink@4812c95` 的 NetProxy 专属分支迁入，并包含迁移时尚未提交的 Service API 快照能力；后续只在本仓库维护。公共 Proxylink 继续保留通用转换工具定位。
 
 它负责以下需要类型化配置、HTTP 或 Protobuf 的能力：

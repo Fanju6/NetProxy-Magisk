@@ -264,6 +264,9 @@ The following projects powered or inspired earlier NetProxy releases. Their cont
 
 ## Community and Contributing
 
+- [Contributing guide](CONTRIBUTING.md)
+- [Architecture](ARCHITECTURE.md)
+- [Coding agent guide](AGENTS.md)
 - [Telegram group](https://t.me/NetProxy_Magisk)
 - [Issues](https://github.com/Fanju6/NetProxy-Magisk/issues)
 - [Pull requests](https://github.com/Fanju6/NetProxy-Magisk/pulls)

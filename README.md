@@ -279,6 +279,9 @@ su -c '/data/adb/modules/netproxy/scripts/cli service logs sub 100'
 
 ## 交流与贡献
 
+- [贡献指南](CONTRIBUTING.md)
+- [架构说明](ARCHITECTURE.md)
+- [编码代理约束](AGENTS.md)
 - [Telegram 群组](https://t.me/NetProxy_Magisk)
 - [提交 Issue](https://github.com/Fanju6/NetProxy-Magisk/issues)
 - [提交 Pull Request](https://github.com/Fanju6/NetProxy-Magisk/pulls)
