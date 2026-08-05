@@ -12,7 +12,7 @@
 #   netmon.sh startup                 核心启动后初始化，不重复恢复基础模式
 #   netmon.sh sync                    按配置启停 inotifyd 守护并评估一次
 #   netmon.sh stop                    停止 inotifyd 守护并恢复基础模式
-# 依赖: common.sh、config.sh、api.sh、cmd、dumpsys、ip、inotifyd(busybox)。
+# 依赖: common.sh、config.sh、api.sh、cmd、dumpsys、inotifyd(busybox)。
 #######################################
 
 set -u  # 引用未定义变量报错
@@ -36,19 +36,31 @@ readonly DEBOUNCE_SEC=2  # 防抖窗口(秒)，抗 WiFi 抖动
 export PATH="$MODDIR/bin:$PATH"
 
 #######################################
-# 从 WiFi 状态文本中提取当前 SSID
-# 输入: cmd wifi status 或 dumpsys wifi 的标准输出
-# 返回: 标准输出打印 SSID；无法确定时不输出
+# 获取 WiFi 连接类型与当前 SSID
+# 参数: 无
+# 返回: 标准输出打印 <wifi|not_wifi><TAB><SSID>
 #######################################
-parse_wifi_ssid() {
-  awk '
+get_wifi_snapshot() {
+  local status fallback
+
+  status="$(cmd wifi status 2> /dev/null || true)"
+  case "$status" in
+    *"Wifi is disabled"* | *"Wifi is connected to"*) ;;
+    *)
+      fallback="$(dumpsys wifi 2> /dev/null || true)"
+      if [ -n "$fallback" ]; then
+        status="$status$NL$fallback"
+      fi
+      ;;
+  esac
+  printf '%s\n' "$status" | awk '
     function trim(value) {
       sub(/^[ \t]+/, "", value)
       sub(/[ \t]+$/, "", value)
       return value
     }
 
-    function emit(value, length_value, normalized) {
+    function parse_ssid(value, length_value, normalized) {
       value = trim(value)
       sub(/,[ \t]+BSSID:.*/, "", value)
       value = trim(value)
@@ -64,59 +76,34 @@ parse_wifi_ssid() {
       if (value != "" &&
           normalized != "<unknown ssid>" &&
           normalized != "<none>") {
-        print value
-        exit
+        ssid = value
+        connected = 1
       }
     }
 
     /Wifi is connected to[ \t]/ {
+      connected = 1
       line = $0
       sub(/^.*Wifi is connected to[ \t]+/, "", line)
-      emit(line)
+      parse_ssid(line)
     }
 
     /mWifiInfo|WifiInfo:/ {
       line = $0
       if (match(line, /(^|[ \t,=:])SSID:[ \t]*/)) {
         line = substr(line, RSTART + RLENGTH)
-        emit(line)
+        parse_ssid(line)
       }
     }
+
+    /state:[ \t]*CONNECTED|detailed state:[ \t]*CONNECTED/ { connected = 1 }
+    /Wifi is disabled/ { disabled = 1 }
+
+    END {
+      if (connected && !disabled) printf "wifi\t%s\n", ssid
+      else print "not_wifi\t"
+    }
   '
-}
-
-#######################################
-# 获取当前连接的 WiFi SSID
-# 返回: 标准输出打印 SSID；无法确定时打印空
-#######################################
-get_current_ssid() {
-  local ssid
-
-  # Android 11+ 的稳定接口，输出示例: Wifi is connected to "SSID"
-  ssid="$(cmd wifi status 2> /dev/null | parse_wifi_ssid)"
-  if [ -n "$ssid" ]; then
-    printf "%s\n" "$ssid"
-    return 0
-  fi
-
-  # 部分 ROM 未实现 cmd wifi status，回退解析 dumpsys
-  dumpsys wifi 2> /dev/null | parse_wifi_ssid
-}
-
-#######################################
-# 判断当前是否为 WiFi 连接 (WiFi 已启用且 wlan0 有 IPv4)
-# 全局: WIFI_INTERFACE (网卡名)
-# 返回: 标准输出 "wifi" 或 "not_wifi"
-#######################################
-get_net_type() {
-  local enabled ip4
-  enabled="$(dumpsys wifi 2> /dev/null | awk '/Wi-Fi is enabled/ {print 1; exit}')"
-  ip4="$(ip -4 addr show "$WIFI_INTERFACE" 2> /dev/null | awk '/inet / {sub(/\/.*/, "", $2); print $2; exit}')"
-  if [ -n "$enabled" ] && [ -n "$ip4" ]; then
-    printf "wifi"
-  else
-    printf "not_wifi"
-  fi
 }
 
 #######################################
@@ -126,19 +113,20 @@ get_net_type() {
 #######################################
 ssid_in_list() {
   local ssid="$1"
-  local list
-  list="$(printf "%s" "$2" | sed 's/，/,/g')"
-  printf "%s" "$list" | awk -v target="$ssid" -F',' '
-    BEGIN { rc = 1 }
-    {
-      for (i = 1; i <= NF; i++) {
-        s = $i
+  local list="$2"
+
+  awk -v target="$ssid" -v values="$list" '
+    BEGIN {
+      gsub(/，/, ",", values)
+      count = split(values, items, ",")
+      for (i = 1; i <= count; i++) {
+        s = items[i]
         sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s)
-        if (s != "" && s == target) { rc = 0; exit }
+        if (s != "" && s == target) exit 0
       }
+      exit 1
     }
-    END { exit rc }
-  '
+  ' < /dev/null
 }
 
 #######################################
@@ -180,7 +168,7 @@ read_base_mode() {
 #######################################
 apply_state() {
   local target="$1"
-  local current base_mode desired_mode desired_clash_mode actual_mode
+  local current base_mode desired_mode desired_runtime_mode actual_mode
 
   current="$(read_wifi_state)"
   base_mode="$(read_base_mode)"
@@ -189,22 +177,22 @@ apply_state() {
   else
     desired_mode="$base_mode"
   fi
-  desired_clash_mode="$(module_mode_to_clash_mode "$desired_mode")" || return 1
+  desired_runtime_mode="$(module_mode_to_service_mode "$desired_mode")" || return 1
   actual_mode="$(service_api_get_mode 2> /dev/null || true)"
 
   # 决策与实际模式都未变化时无需重复请求或中断连接
-  if [ "$target" = "$current" ] && [ "$desired_clash_mode" = "$actual_mode" ]; then
+  if [ "$target" = "$current" ] && [ "$desired_runtime_mode" = "$actual_mode" ]; then
     return 0
   fi
 
-  if [ "$desired_clash_mode" != "$actual_mode" ]; then
+  if [ "$desired_runtime_mode" != "$actual_mode" ]; then
     if ! service_api_set_mode "$desired_mode"; then
       log "WARN" "Service API 不可用，未能切换 WiFi 自动代理状态"
       return 1
     fi
 
     # 已建立连接不会自动迁移到新模式，仅在运行模式变化后主动关闭
-    api_close_all_connections > /dev/null 2>&1 || true
+    service_api_close_all_connections > /dev/null 2>&1 || true
   fi
 
   mkdir -p "$RUN_DIR" 2> /dev/null || true
@@ -213,7 +201,7 @@ apply_state() {
   if [ "$target" = "bypassed" ]; then
     log "INFO" "已切换为: 绕过代理 (Direct)"
   else
-    log "INFO" "已切换为: 走代理 ($desired_clash_mode)"
+    log "INFO" "已切换为: 走代理 ($desired_runtime_mode)"
   fi
 }
 
@@ -235,12 +223,17 @@ restore_base_mode() {
 # 返回: 无
 #######################################
 decide_and_apply() {
-  local net_type ssid target
+  local snapshot net_type ssid target
 
-  net_type="$(get_net_type)"
+  snapshot="$(get_wifi_snapshot)"
+  net_type="${snapshot%%"$TAB"*}"
+  if [ "$snapshot" = "$net_type" ]; then
+    ssid=""
+  else
+    ssid="${snapshot#*"$TAB"}"
+  fi
 
   if [ "$net_type" = "wifi" ]; then
-    ssid="$(get_current_ssid)"
     # SSID 暂不可读时不贸然切换，避免误判
     if [ -z "$ssid" ]; then
       log "DEBUG" "WiFi 已连接但 SSID 暂不可读，跳过本次决策"
@@ -278,8 +271,7 @@ decide_and_apply() {
 
 #######################################
 # 读取 WiFi 自动切换相关配置到全局 (带默认值)
-# 全局(写入): WIFI_AUTO_SWITCH WIFI_SSID_MODE WIFI_SSID_LIST
-#             PROXY_ON_CELLULAR WIFI_INTERFACE
+# 全局(写入): WIFI_AUTO_SWITCH WIFI_SSID_MODE WIFI_SSID_LIST PROXY_ON_CELLULAR
 # 返回: 无
 #######################################
 load_wifi_conf() {
@@ -287,7 +279,6 @@ load_wifi_conf() {
   WIFI_SSID_MODE="$(read_conf "$MODULE_CONF" "WIFI_SSID_MODE" "blacklist")"
   WIFI_SSID_LIST="$(read_conf "$MODULE_CONF" "WIFI_SSID_LIST" "")"
   PROXY_ON_CELLULAR="$(read_conf "$MODULE_CONF" "PROXY_ON_CELLULAR" "1")"
-  WIFI_INTERFACE="$(read_conf "$MODULE_CONF" "WIFI_INTERFACE" "wlan0")"
 }
 
 #######################################

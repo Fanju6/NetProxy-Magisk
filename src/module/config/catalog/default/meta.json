@@ -3,7 +3,6 @@
   "id": "default",
   "name": "本地配置",
   "type": "local",
-  "active": true,
   "url": "",
   "user_agent": "",
   "hwid": "",

@@ -54,45 +54,143 @@ read_conf() {
 }
 
 #######################################
-# 写入配置值 (原子写)
-# 存在同名键则整行替换，否则追加到文件末尾。
+# 获取配置文件写锁
+# 参数:
+#   $1  配置文件路径
+# 返回: 成功返回 0，超时返回 1
+#######################################
+acquire_conf_lock() {
+  local file="$1"
+  local lock="${file}.lock"
+  local pid owner_start current_start attempts=0
+
+  while [ "$attempts" -lt 50 ]; do
+    if mkdir "$lock" 2> /dev/null; then
+      printf '%s\n' "$$" > "$lock/pid"
+      awk '{print $22}' "/proc/$$/stat" > "$lock/start" 2> /dev/null || true
+      CONF_LOCK_DIR="$lock"
+      return 0
+    fi
+    pid="$(sed -n '1p' "$lock/pid" 2> /dev/null || true)"
+    owner_start="$(sed -n '1p' "$lock/start" 2> /dev/null || true)"
+    current_start="$(awk '{print $22}' "/proc/$pid/stat" 2> /dev/null || true)"
+    if [ -z "$pid" ] || [ -z "$owner_start" ] || [ "$owner_start" != "$current_start" ] \
+      || ! kill -0 "$pid" 2> /dev/null; then
+      rm -rf "$lock" 2> /dev/null || true
+      continue
+    fi
+    sleep 0.1
+    attempts=$((attempts + 1))
+  done
+  return 1
+}
+
+#######################################
+# 释放配置文件写锁
+# 参数: 无
+# 返回: 无
+#######################################
+release_conf_lock() {
+  [ -z "${CONF_LOCK_DIR:-}" ] || rm -rf "$CONF_LOCK_DIR" 2> /dev/null || true
+  CONF_LOCK_DIR=""
+}
+
+#######################################
+# 批量写入配置值
+# 参数:
+#   $1      配置文件路径
+#   $2...   键和值交替排列
+# 返回: 成功返回 0，写入失败则退出
+# 说明: 一次锁定、一次重写和一次 rename，避免客户端读到部分状态。
+#######################################
+set_conf_values() {
+  local file="$1"
+  local updates tmp key value
+
+  shift
+  require_file "$file" "配置文件不存在: $file"
+  [ "$#" -gt 0 ] && [ $(( $# % 2 )) -eq 0 ] || die "批量配置参数不完整"
+  acquire_conf_lock "$file" || die "配置文件正忙: $file"
+
+  updates="$file.updates.$$"
+  tmp="$file.tmp.$$"
+  : > "$updates" || { release_conf_lock; die "无法创建配置更新文件: $file"; }
+  while [ "$#" -gt 0 ]; do
+    key="$1"
+    value="$2"
+    shift 2
+    case "$key" in
+      "" | *[!A-Z0-9_]*)
+        rm -f "$updates"
+        release_conf_lock
+        die "配置键名非法: $key"
+        ;;
+    esac
+    case "$value" in
+      *"$NL"* | *"$CR"* | *"$TAB"*)
+        rm -f "$updates"
+        release_conf_lock
+        die "配置值不能包含换行或制表符: $key"
+        ;;
+    esac
+    printf '%s\t%s\n' "$key" "$value" >> "$updates" || {
+      rm -f "$updates"
+      release_conf_lock
+      die "无法写入配置更新文件: $file"
+    }
+  done
+
+  if awk -F '\t' '
+    NR == FNR {
+      key = $1
+      value = $0
+      sub(/^[^\t]*\t/, "", value)
+      if (!(key in values)) order[++count] = key
+      values[key] = value
+      next
+    }
+    {
+      position = index($0, "=")
+      key = position > 1 ? substr($0, 1, position - 1) : ""
+      if (key in values) {
+        if (!written[key]) print key "=" values[key]
+        written[key] = 1
+      } else {
+        print
+      }
+    }
+    END {
+      for (index_value = 1; index_value <= count; index_value++) {
+        key = order[index_value]
+        if (!written[key]) print key "=" values[key]
+      }
+    }
+  ' "$updates" "$file" > "$tmp"; then
+    chmod 0600 "$tmp" 2> /dev/null || true
+    if ! mv -f "$tmp" "$file"; then
+      rm -f "$tmp" "$updates"
+      release_conf_lock
+      die "写入配置失败: $file"
+    fi
+  else
+    rm -f "$tmp" "$updates"
+    release_conf_lock
+    die "写入配置失败: $file"
+  fi
+  rm -f "$updates"
+  release_conf_lock
+}
+
+#######################################
+# 写入单个配置值
 # 参数:
 #   $1  配置文件路径
 #   $2  配置键名
 #   $3  配置值
 # 返回: 成功返回 0，写入失败则退出
-# 说明: 通过临时文件 + rename 完成原子替换，键值经环境变量传入。
 #######################################
 set_conf() {
-  local file="$1"
-  local key="$2"
-  local value="$3"
-  local tmp
-
-  require_file "$file" "配置文件不存在: $file"
-
-  # 临时文件带 PID 后缀，避免并发写入互相覆盖
-  tmp="$file.tmp.$$"
-  # 用 awk 重写整个文件：命中键则替换，文件末尾补齐缺失键
-  if SC_KEY="$key" SC_VAL="$value" awk '
-    BEGIN { key = ENVIRON["SC_KEY"]; val = ENVIRON["SC_VAL"]; found = 0 }
-    {
-      # 行首匹配到目标键则整行替换
-      if (index($0, key "=") == 1) {
-        print key "=" val
-        found = 1
-      } else {
-        print
-      }
-    }
-    # 全文未出现该键则追加
-    END { if (!found) print key "=" val }
-  ' "$file" > "$tmp"; then
-    mv -f "$tmp" "$file"   # 原子覆盖原文件
-  else
-    rm -f "$tmp"           # 失败时清理临时文件
-    die "写入配置失败: $file"
-  fi
+  set_conf_values "$1" "$2" "$3"
 }
 
 #######################################

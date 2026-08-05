@@ -28,15 +28,3 @@ internal data class ServiceStatusSnapshot(
     @SerialName("subscription_worker") val subscriptionWorker: String = "stopped",
     @SerialName("subscription_worker_pid") val subscriptionWorkerPid: Int? = null
 )
-
-@Serializable
-internal data class ApiBootstrap(
-    @SerialName("service_api") val serviceApi: ApiEndpoint,
-    @SerialName("clash_api") val clashApi: ApiEndpoint
-)
-
-@Serializable
-internal data class ApiEndpoint(
-    val url: String,
-    val secret: String
-)

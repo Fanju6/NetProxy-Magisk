@@ -12,7 +12,11 @@ cp -R "$ROOT/src/module/scripts" "$MODULE/"
 cp -R "$ROOT/src/module/config" "$MODULE/"
 cp "$ROOT/src/module/netproxyctl" "$MODULE/netproxyctl"
 cp "$REAL_NETPROXY_NATIVE" "$MODULE/bin/netproxy-native"
-chmod +x "$MODULE/bin/netproxy-native" "$MODULE/netproxyctl" "$MODULE/scripts/netproxyctl"
+cat > "$MODULE/bin/sing-box" << 'EOF'
+#!/usr/bin/env sh
+[ "${1:-}" = "check" ]
+EOF
+chmod +x "$MODULE/bin/netproxy-native" "$MODULE/bin/sing-box" "$MODULE/netproxyctl" "$MODULE/scripts/netproxyctl"
 SUB_RUNTIME_DIR="$TMP_ROOT/runtime/subscriptions"
 export SUB_RUNTIME_DIR
 mkdir -p "$SUB_RUNTIME_DIR"
@@ -40,6 +44,21 @@ printf '%s' "$result" | grep -q '"mode":"AllowAds"'
 grep -q '^OUTBOUND_MODE=AllowAds$' "$MODULE/config/module.conf"
 result="$(sh "$MODULE/scripts/netproxyctl" --json mode rule)"
 run_json "$result"
+
+cp "$MODULE/config/module.conf" "$TMP_ROOT/module.candidate"
+original_auto_start="$(sed -n 's/^AUTO_START=//p' "$MODULE/config/module.conf")"
+if [ "$original_auto_start" = "1" ]; then
+  candidate_auto_start=0
+else
+  candidate_auto_start=1
+fi
+sed -i "s/^AUTO_START=.*/AUTO_START=$candidate_auto_start/" "$TMP_ROOT/module.candidate"
+result="$(sh "$MODULE/scripts/netproxyctl" --json config validate module "$TMP_ROOT/module.candidate")"
+run_json "$result"
+grep -q "^AUTO_START=$original_auto_start$" "$MODULE/config/module.conf"
+result="$(sh "$MODULE/scripts/netproxyctl" --json config apply module "$TMP_ROOT/module.candidate")"
+run_json "$result"
+grep -q "^AUTO_START=$candidate_auto_start$" "$MODULE/config/module.conf"
 
 result="$(sh "$MODULE/scripts/netproxyctl" --json node add 'socks://example.com:1080#CLI')"
 run_json "$result"
@@ -106,12 +125,6 @@ printf '%s' "$result" | grep -q '"active_group_node_count":0'
 printf '%s' "$result" | grep -q '"process_cpu_ticks":0'
 printf '%s' "$result" | grep -q '"system_cpu_ticks":'
 printf '%s' "$result" | grep -q '"cpu_count":'
-
-result="$(sh "$MODULE/scripts/netproxyctl" --json api bootstrap)"
-run_json "$result"
-printf '%s' "$result" | grep -q '"service_api":{"url":"http://127.0.0.1:9090"'
-printf '%s' "$result" | grep -q '"clash_api":{"url":"http://127.0.0.1:9999"'
-printf '%s' "$result" | grep -q '"secret":"singbox"'
 
 if result="$(sh "$MODULE/scripts/netproxyctl" --json unknown 2> /dev/null)"; then
   printf '%s\n' 'unknown command should fail' >&2

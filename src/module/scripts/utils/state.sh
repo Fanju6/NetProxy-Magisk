@@ -9,6 +9,47 @@
 [ -n "${SERVICE_STATE_DIR:-}" ] || SERVICE_STATE_DIR="${MODDIR:-}/config/runtime"
 [ -n "${SERVICE_STATE_FILE:-}" ] || SERVICE_STATE_FILE="$SERVICE_STATE_DIR/service.json"
 
+SERVICE_STATE_VALUE="stopped"
+SERVICE_STATE_PID_VALUE=0
+SERVICE_STATE_STARTED_AT_VALUE=0
+SERVICE_STATE_READY_AT_VALUE=0
+SERVICE_STATE_ERROR_VALUE=""
+
+#######################################
+# 一次性读取服务状态
+# 参数: 无
+# 全局: 写入 SERVICE_STATE_*_VALUE
+# 返回: 状态文件有效返回 0，否则返回 1 并保留默认值
+#######################################
+load_service_state() {
+  local line value
+
+  SERVICE_STATE_VALUE="stopped"
+  SERVICE_STATE_PID_VALUE=0
+  SERVICE_STATE_STARTED_AT_VALUE=0
+  SERVICE_STATE_READY_AT_VALUE=0
+  SERVICE_STATE_ERROR_VALUE=""
+  [ -f "$SERVICE_STATE_FILE" ] || return 1
+  IFS= read -r line < "$SERVICE_STATE_FILE" || return 1
+  case "$line" in *'"state":"'*'","pid":'*'"started_at":'*'"ready_at":'*'"error":"'*) ;; *) return 1 ;; esac
+
+  value="${line#*\"state\":\"}"
+  SERVICE_STATE_VALUE="${value%%\",\"pid\":*}"
+  value="${line#*\"pid\":}"
+  SERVICE_STATE_PID_VALUE="${value%%,*}"
+  value="${line#*\"started_at\":}"
+  SERVICE_STATE_STARTED_AT_VALUE="${value%%,*}"
+  value="${line#*\"ready_at\":}"
+  SERVICE_STATE_READY_AT_VALUE="${value%%,*}"
+  value="${line#*\"error\":\"}"
+  SERVICE_STATE_ERROR_VALUE="${value%%\",\"updated_at\":*}"
+
+  case "$SERVICE_STATE_PID_VALUE:$SERVICE_STATE_STARTED_AT_VALUE:$SERVICE_STATE_READY_AT_VALUE" in
+    *[!0-9:]*) return 1 ;;
+  esac
+  return 0
+}
+
 #######################################
 # 写入服务状态
 # 参数:

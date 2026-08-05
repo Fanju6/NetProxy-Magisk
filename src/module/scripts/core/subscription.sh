@@ -41,6 +41,7 @@ initialize_catalog_storage() {
     "$MODDIR/logs" || return 1
   chmod 0700 "$CATALOG_DIR" "$CATALOG_STAGING_DIR" "$CATALOG_STAGING_DIR/locks" \
     "$SUB_RUNTIME_DIR" 2> /dev/null || true
+  cleanup_stale_catalog_transactions
 
   if [ ! -f "$CATALOG_DIR/default/provider.json" ]; then
     printf '{\n  "outbounds": []\n}\n' > "$CATALOG_DIR/default/provider.json" || return 1
@@ -48,7 +49,6 @@ initialize_catalog_storage() {
   fi
   if [ ! -f "$CATALOG_DIR/default/meta.json" ]; then
     initialize_local_meta "default" "本地配置" "local"
-    SUB_ACTIVE=true
     write_catalog_meta "$CATALOG_DIR/default/meta.json" || return 1
   fi
 }
@@ -143,6 +143,32 @@ resolve_catalog_group() {
 }
 
 #######################################
+# 清理异常退出遗留的 Catalog 事务
+# 参数: 无
+# 返回: 无
+#######################################
+cleanup_stale_catalog_transactions() {
+  local lock_dir group_id pid owner_start current_start stage
+
+  for lock_dir in "$CATALOG_STAGING_DIR/locks"/*.lock; do
+    [ -d "$lock_dir" ] || continue
+    pid="$(sed -n '1p' "$lock_dir/pid" 2> /dev/null || true)"
+    owner_start="$(sed -n '1p' "$lock_dir/start" 2> /dev/null || true)"
+    current_start="$(awk '{print $22}' "/proc/$pid/stat" 2> /dev/null || true)"
+    if [ -n "$pid" ] && [ -n "$owner_start" ] && [ "$owner_start" = "$current_start" ] \
+      && kill -0 "$pid" 2> /dev/null; then
+      continue
+    fi
+    stage="$(sed -n '1p' "$lock_dir/stage" 2> /dev/null || true)"
+    case "$stage" in "$CATALOG_STAGING_DIR"/*) rm -rf "$stage" 2> /dev/null || true ;; esac
+    group_id="${lock_dir##*/}"
+    group_id="${group_id%.lock}"
+    rm -f "$SUB_RUNTIME_DIR/$group_id.progress.json" "$SUB_RUNTIME_DIR/$group_id.cancel" 2> /dev/null || true
+    rm -rf "$lock_dir" 2> /dev/null || true
+  done
+}
+
+#######################################
 # 获取分组事务锁
 # 参数:
 #   $1  分组 ID
@@ -150,19 +176,23 @@ resolve_catalog_group() {
 #######################################
 acquire_catalog_lock() {
   local group_id="$1"
-  local lock_dir pid
+  local lock_dir pid owner_start current_start
 
   catalog_validate_group_id "$group_id" || return 1
   lock_dir="$CATALOG_STAGING_DIR/locks/$group_id.lock"
   if ! mkdir "$lock_dir" 2> /dev/null; then
     pid="$(sed -n '1p' "$lock_dir/pid" 2> /dev/null || true)"
-    if [ -n "$pid" ] && kill -0 "$pid" 2> /dev/null; then
+    owner_start="$(sed -n '1p' "$lock_dir/start" 2> /dev/null || true)"
+    current_start="$(awk '{print $22}' "/proc/$pid/stat" 2> /dev/null || true)"
+    if [ -n "$pid" ] && [ -n "$owner_start" ] && [ "$owner_start" = "$current_start" ] \
+      && kill -0 "$pid" 2> /dev/null; then
       return 1
     fi
     rm -rf "$lock_dir" 2> /dev/null || return 1
     mkdir "$lock_dir" 2> /dev/null || return 1
   fi
   printf '%s\n' "$$" > "$lock_dir/pid"
+  awk '{print $22}' "/proc/$$/stat" > "$lock_dir/start" 2> /dev/null || true
   printf '%s\n' "$(date +%s)" > "$lock_dir/created_at"
   chmod 0700 "$lock_dir" 2> /dev/null || true
   SUB_LOCK_DIR="$lock_dir"
@@ -191,6 +221,7 @@ create_catalog_stage() {
 
   SUB_STAGE_DIR="$CATALOG_STAGING_DIR/$group_id.$$.$(date +%s)"
   mkdir -p "$SUB_STAGE_DIR" || return 1
+  [ -z "$SUB_LOCK_DIR" ] || printf '%s\n' "$SUB_STAGE_DIR" > "$SUB_LOCK_DIR/stage"
   chmod 0700 "$SUB_STAGE_DIR" 2> /dev/null || true
   printf "%s\n" "$SUB_STAGE_DIR"
 }
@@ -326,39 +357,23 @@ apply_http_metadata() {
 }
 
 #######################################
-# 将指定分组设为活动组并同步各组 active 字段
+# 将指定分组设为活动组
 # 参数:
 #   $1  分组 ID；空值表示清空活动状态
 # 返回: 成功返回 0，否则返回 1
 #######################################
 set_active_catalog_group() {
   local target="$1"
-  local group_dir group_id meta_file
 
   if [ -n "$target" ]; then
     catalog_validate_group_id "$target" || return 1
     catalog_provider_has_nodes "$CATALOG_DIR/$target/provider.json" || return 1
   fi
 
-  set_conf "$MODULE_CONF" "ACTIVE_GROUP_ID" "$(quote_conf "$target")"
-  if [ -z "$target" ]; then
-    set_conf "$MODULE_CONF" "SELECTOR_MODE" "urltest"
-    set_conf "$MODULE_CONF" "SELECTED_NODE_REF" '""'
-  fi
-
-  for group_dir in "$CATALOG_DIR"/*; do
-    [ -d "$group_dir" ] || continue
-    group_id="${group_dir##*/}"
-    [ "$group_id" != "staging" ] || continue
-    meta_file="$group_dir/meta.json"
-    load_catalog_meta "$meta_file" || continue
-    if [ "$group_id" = "$target" ]; then
-      SUB_ACTIVE=true
-    else
-      SUB_ACTIVE=false
-    fi
-    write_catalog_meta "$meta_file" || return 1
-  done
+  set_conf_values "$MODULE_CONF" \
+    "ACTIVE_GROUP_ID" "$(quote_conf "$target")" \
+    "SELECTOR_MODE" "urltest" \
+    "SELECTED_NODE_REF" '""'
 }
 
 #######################################
@@ -377,8 +392,6 @@ activate_group_if_needed() {
     return 1
   fi
   set_active_catalog_group "$candidate" || return 1
-  set_conf "$MODULE_CONF" "SELECTOR_MODE" "urltest"
-  set_conf "$MODULE_CONF" "SELECTED_NODE_REF" '""'
 }
 
 #######################################
@@ -416,8 +429,9 @@ fallback_missing_selected_node() {
 
   runtime_tag="$(catalog_runtime_group_tag "$group_id" 2> /dev/null || printf "%s" "$group_id")"
   log "WARN" "手动节点已从 Provider 移除，回退到 Auto/$runtime_tag"
-  set_conf "$MODULE_CONF" "SELECTOR_MODE" "urltest"
-  set_conf "$MODULE_CONF" "SELECTED_NODE_REF" '""'
+  set_conf_values "$MODULE_CONF" \
+    "SELECTOR_MODE" "urltest" \
+    "SELECTED_NODE_REF" '""'
   [ -n "$(get_pid "$SING_BOX_BIN")" ] || return 0
   if ! sh "$SWITCH_SCRIPT" node auto "$group_id" > /dev/null 2>&1; then
     log "WARN" "选择状态已回退到 Auto/$runtime_tag，但运行实例同步失败"
@@ -701,16 +715,17 @@ update_subscription() {
 # 返回: 全部成功返回 0，任一失败返回 1
 #######################################
 update_all_subscriptions() {
-  local group_dir group_id failed=0
+  local group_ids group_id failed=0
 
   initialize_catalog_storage || return 1
-  for group_dir in "$CATALOG_DIR"/*; do
-    [ -d "$group_dir" ] || continue
-    group_id="${group_dir##*/}"
-    [ "$group_id" != "staging" ] || continue
-    [ "$(meta_get_string "$group_dir/meta.json" "type" "")" = "subscription" ] || continue
+  group_ids="$("$NETPROXY_NATIVE_BIN" catalog ids \
+    --root "$CATALOG_DIR" --type subscription --format raw)" || return 1
+  while IFS= read -r group_id; do
+    [ -n "$group_id" ] || continue
     update_subscription "$group_id" || failed=1
-  done
+  done << EOF
+$group_ids
+EOF
   return "$failed"
 }
 
@@ -1009,9 +1024,8 @@ remove_subscription() {
         fi
       done
     fi
-    set_active_catalog_group "$replacement" || [ -z "$replacement" ] || return 1
+    set_active_catalog_group "$replacement" || return 1
     if [ -z "$replacement" ]; then
-      set_active_catalog_group "" || return 1
       if [ -n "$(get_pid "$SING_BOX_BIN")" ]; then
         sh "$SERVICE_SCRIPT" stop > /dev/null 2>&1 || true
       fi

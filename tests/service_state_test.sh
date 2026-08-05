@@ -28,6 +28,11 @@ write_service_state ready 123 1700000000 1700000005 ""
 [ "$(service_state_get_number pid 0)" -eq 123 ]
 [ "$(service_state_get_number started_at 0)" -eq 1700000000 ]
 [ "$(service_state_get_number ready_at 0)" -eq 1700000005 ]
+load_service_state
+[ "$SERVICE_STATE_VALUE" = "ready" ]
+[ "$SERVICE_STATE_PID_VALUE" -eq 123 ]
+[ "$SERVICE_STATE_STARTED_AT_VALUE" -eq 1700000000 ]
+[ "$SERVICE_STATE_READY_AT_VALUE" -eq 1700000005 ]
 
 write_service_state failed 0 0 0 "核心启动失败"
 [ "$(service_state_get_string state stopped)" = "failed" ]

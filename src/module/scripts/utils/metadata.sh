@@ -290,10 +290,9 @@ load_catalog_meta() {
       return output
     }
     BEGIN {
-      count = split("id name type active url user_agent hwid custom_headers auto_update update_interval interval_source update_via_proxy include exclude allow_insecure timeout usage node_count revision etag last_modified profile_title profile_web_page_url content_disposition file_name last_status_code last_diagnostics last_attempt_at last_success_at next_update_at next_update_epoch last_error created_at updated_at", order, " ")
+      count = split("id name type url user_agent hwid custom_headers auto_update update_interval interval_source update_via_proxy include exclude allow_insecure timeout usage node_count revision etag last_modified profile_title profile_web_page_url content_disposition file_name last_status_code last_diagnostics last_attempt_at last_success_at next_update_at next_update_epoch last_error created_at updated_at", order, " ")
       string_fields = " id name type url user_agent hwid interval_source update_via_proxy include exclude etag last_modified profile_title profile_web_page_url content_disposition file_name last_attempt_at last_success_at next_update_at last_error created_at updated_at "
       defaults["type"] = "\"local\""
-      defaults["active"] = "false"
       defaults["custom_headers"] = "{}"
       defaults["auto_update"] = "false"
       defaults["update_interval"] = "86400"
@@ -332,7 +331,7 @@ load_catalog_meta() {
 
   old_ifs="$IFS"
   IFS="$separator"
-  read -r SUB_ID SUB_NAME SUB_TYPE SUB_ACTIVE SUB_URL SUB_USER_AGENT SUB_HWID \
+  read -r SUB_ID SUB_NAME SUB_TYPE SUB_URL SUB_USER_AGENT SUB_HWID \
     SUB_CUSTOM_HEADERS SUB_AUTO_UPDATE SUB_UPDATE_INTERVAL SUB_INTERVAL_SOURCE \
     SUB_UPDATE_VIA_PROXY SUB_INCLUDE SUB_EXCLUDE SUB_ALLOW_INSECURE SUB_TIMEOUT \
     SUB_USAGE SUB_NODE_COUNT SUB_REVISION SUB_ETAG SUB_LAST_MODIFIED \
@@ -362,7 +361,6 @@ write_catalog_meta() {
   "id": "$(json_escape "$SUB_ID")",
   "name": "$(json_escape "$SUB_NAME")",
   "type": "$(json_escape "$SUB_TYPE")",
-  "active": $SUB_ACTIVE,
   "url": "$(json_escape "$SUB_URL")",
   "user_agent": "$(json_escape "$SUB_USER_AGENT")",
   "hwid": "$(json_escape "$SUB_HWID")",
@@ -415,7 +413,6 @@ initialize_catalog_meta() {
   SUB_ID="$1"
   SUB_NAME="$2"
   SUB_TYPE="${3:-local}"
-  SUB_ACTIVE=false
   SUB_URL=""
   SUB_USER_AGENT=""
   SUB_HWID=""

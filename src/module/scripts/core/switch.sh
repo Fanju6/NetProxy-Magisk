@@ -29,7 +29,6 @@ REQUIRED_PROVIDER_TAG=""
 . "$MODDIR/scripts/utils/config.sh"
 . "$MODDIR/scripts/utils/api.sh"
 . "$MODDIR/scripts/utils/catalog.sh"
-. "$MODDIR/scripts/utils/metadata.sh"
 
 #######################################
 # 判断 sing-box 是否正在运行
@@ -91,9 +90,10 @@ switch_auto_group() {
   local group_id="$1"
 
   require_catalog_group "$group_id"
-  set_conf "$MODULE_CONF" "ACTIVE_GROUP_ID" "$(quote_conf "$group_id")"
-  set_conf "$MODULE_CONF" "SELECTOR_MODE" "urltest"
-  set_conf "$MODULE_CONF" "SELECTED_NODE_REF" '""'
+  set_conf_values "$MODULE_CONF" \
+    "ACTIVE_GROUP_ID" "$(quote_conf "$group_id")" \
+    "SELECTOR_MODE" "urltest" \
+    "SELECTED_NODE_REF" '""'
 
   if ! is_service_running; then
     log "INFO" "已选择自动测速分组: $group_id，将在下次启动时生效"
@@ -123,7 +123,7 @@ switch_manual_node() {
   [ "$group_id" != "$node_ref" ] && [ -n "$tag" ] \
     || die "节点引用格式应为 <group-id>/<tag>"
   case "$node_ref" in
-    *\"* | *\\* | *\$* | *\`* | *"$NL"* | *"$CR"*)
+    *\"* | *\\* | *\$* | *\`* | *"$NL"* | *"$CR"* | *"$TAB"*)
       die "节点标签包含无法安全持久化的字符"
       ;;
   esac
@@ -133,9 +133,10 @@ switch_manual_node() {
     || die "节点不存在: $node_ref"
   runtime_node_ref="$REQUIRED_PROVIDER_TAG/$tag"
 
-  set_conf "$MODULE_CONF" "ACTIVE_GROUP_ID" "$(quote_conf "$group_id")"
-  set_conf "$MODULE_CONF" "SELECTOR_MODE" "manual"
-  set_conf "$MODULE_CONF" "SELECTED_NODE_REF" "$(quote_conf "$node_ref")"
+  set_conf_values "$MODULE_CONF" \
+    "ACTIVE_GROUP_ID" "$(quote_conf "$group_id")" \
+    "SELECTOR_MODE" "manual" \
+    "SELECTED_NODE_REF" "$(quote_conf "$node_ref")"
 
   if ! is_service_running; then
     log "INFO" "已选择手动节点: $node_ref，将在下次启动时生效"

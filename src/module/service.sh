@@ -40,7 +40,7 @@ load_module_config() {
 
 #######################################
 # 等待系统启动完成
-# 阻塞至系统开机完成且外部存储挂载就绪。
+# 阻塞至系统开机完成。
 # 参数: 无
 # 返回: 无
 #######################################
@@ -51,11 +51,6 @@ wait_for_boot() {
   resetprop -w sys.boot_completed
   log "INFO" "系统启动完成"
 
-  # 等待外部存储挂载完成
-  while [ ! -d "/sdcard/Android" ]; do
-    sleep 1
-  done
-  log "INFO" "存储挂载完成"
 }
 
 #######################################
@@ -139,15 +134,17 @@ load_module_config
 
 wait_for_boot
 
-# 订阅调度与代理核心解耦，即使禁用开机代理也保持订阅按期更新。
-start_subscription_worker
-
 # 按配置决定是否开机自启服务
 if [ "$AUTO_START" = "1" ]; then
-  su -c "sh \"$MODDIR/scripts/core/service.sh\" start"
+  if ! su -c "sh \"$MODDIR/scripts/core/service.sh\" start"; then
+    log "WARN" "代理服务开机启动失败，可在导入节点或修正配置后手动启动"
+  fi
 else
   log "INFO" "开机自启已禁用，跳过启动"
 fi
+
+# 订阅调度与代理核心解耦；放在核心启动之后，避免 worker 确认阻塞代理就绪。
+start_subscription_worker
 
 # 执行设备兼容性修复
 check_device_specific

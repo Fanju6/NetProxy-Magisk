@@ -1,21 +1,26 @@
 <script setup lang="ts">
 import { computed, onActivated, onDeactivated, onMounted, onUnmounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { moduleClient, type ServiceStatus, type TrafficSnapshot } from '../api/moduleClient';
+import { moduleClient, type ServiceStatus } from '../api/moduleClient';
 import { showToast } from '../utils/ksu';
 
 const emit = defineEmits<{ navigate: [tab: 'nodes'] }>();
 const { t } = useI18n();
 
 const status = ref<ServiceStatus | null>(null);
-const traffic = ref<TrafficSnapshot>({ upload: 0, download: 0 });
+interface TrafficTotals {
+  upload: number;
+  download: number;
+}
+
+const traffic = ref<TrafficTotals>({ upload: 0, download: 0 });
 const uploadSpeed = ref(0);
 const downloadSpeed = ref(0);
 const loading = ref(true);
 const operating = ref(false);
 const modeDialog = ref(false);
 let timer: number | null = null;
-let previousTraffic: TrafficSnapshot | null = null;
+let previousTraffic: TrafficTotals | null = null;
 let previousAt = 0;
 
 const isRunning = computed(() => status.value?.state === 'ready');
@@ -58,7 +63,10 @@ const refresh = async () => {
     const next = await moduleClient.serviceStatus();
     status.value = next;
     if (next.state === 'ready') {
-      const snapshot = await moduleClient.trafficSnapshot();
+      const snapshot = {
+        upload: next.upload_total ?? 0,
+        download: next.download_total ?? 0
+      };
       const now = Date.now();
       if (previousTraffic && previousAt > 0) {
         const seconds = Math.max((now - previousAt) / 1000, 0.2);

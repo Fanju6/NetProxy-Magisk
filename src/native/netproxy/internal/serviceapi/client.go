@@ -17,14 +17,15 @@ import (
 )
 
 const (
-	methodGetVersion         = "/daemon.StartedService/GetVersion"
-	methodGetStartedAt       = "/daemon.StartedService/GetStartedAt"
-	methodSubscribeStatus    = "/daemon.StartedService/SubscribeStatus"
-	methodGetClashModeStatus = "/daemon.StartedService/GetClashModeStatus"
-	methodSetClashMode       = "/daemon.StartedService/SetClashMode"
-	methodSelectOutbound     = "/daemon.StartedService/SelectOutbound"
-	methodURLTest            = "/daemon.StartedService/URLTest"
-	methodSubscribeGroups    = "/daemon.StartedService/SubscribeGroups"
+	methodGetVersion          = "/daemon.StartedService/GetVersion"
+	methodGetStartedAt        = "/daemon.StartedService/GetStartedAt"
+	methodSubscribeStatus     = "/daemon.StartedService/SubscribeStatus"
+	methodGetClashModeStatus  = "/daemon.StartedService/GetClashModeStatus"
+	methodSetClashMode        = "/daemon.StartedService/SetClashMode"
+	methodSelectOutbound      = "/daemon.StartedService/SelectOutbound"
+	methodURLTest             = "/daemon.StartedService/URLTest"
+	methodSubscribeGroups     = "/daemon.StartedService/SubscribeGroups"
+	methodCloseAllConnections = "/daemon.StartedService/CloseAllConnections"
 )
 
 // Client is the minimal native Service API bridge used by the NetProxy shell
@@ -86,11 +87,11 @@ type versionResponse struct {
 type startedAtResponse struct{ UnixMilli int64 }
 type statusRequest struct{ Interval int64 }
 type statusResponse Status
-type clashModeStatusResponse struct {
+type modeStatusResponse struct {
 	Available []string
 	Current   string
 }
-type clashModeRequest struct{ Mode string }
+type modeRequest struct{ Mode string }
 type selectOutboundRequest struct {
 	Group    string
 	Outbound string
@@ -151,8 +152,7 @@ func (c *Client) Version(ctx context.Context) (Version, error) {
 	return Version{Version: response.Version, APIVersion: response.APIVersion}, nil
 }
 
-// Ready verifies that StartedService is attached to a running sing-box
-// instance and that Clash mode control is available.
+// Ready verifies that StartedService is attached to a running sing-box instance.
 func (c *Client) Ready(ctx context.Context) (StartedAt, error) {
 	startedAt, err := c.StartedAt(ctx)
 	if err != nil {
@@ -160,9 +160,6 @@ func (c *Client) Ready(ctx context.Context) (StartedAt, error) {
 	}
 	if startedAt.UnixMilli <= 0 {
 		return StartedAt{}, errors.New("Service API has no active sing-box instance")
-	}
-	if _, err = c.Mode(ctx); err != nil {
-		return StartedAt{}, err
 	}
 	return startedAt, nil
 }
@@ -192,7 +189,7 @@ func (c *Client) Status(ctx context.Context) (Status, error) {
 }
 
 func (c *Client) Mode(ctx context.Context) (Mode, error) {
-	var response clashModeStatusResponse
+	var response modeStatusResponse
 	if err := c.invoke(ctx, methodGetClashModeStatus, &emptyMessage{}, &response); err != nil {
 		return Mode{}, err
 	}
@@ -200,7 +197,7 @@ func (c *Client) Mode(ctx context.Context) (Mode, error) {
 }
 
 func (c *Client) SetMode(ctx context.Context, mode string) error {
-	return c.invoke(ctx, methodSetClashMode, &clashModeRequest{Mode: mode}, &emptyMessage{})
+	return c.invoke(ctx, methodSetClashMode, &modeRequest{Mode: mode}, &emptyMessage{})
 }
 
 func (c *Client) Select(ctx context.Context, group string, outbound string) error {
@@ -209,6 +206,10 @@ func (c *Client) Select(ctx context.Context, group string, outbound string) erro
 
 func (c *Client) URLTest(ctx context.Context, outbound string) error {
 	return c.invoke(ctx, methodURLTest, &urlTestRequest{Outbound: outbound}, &emptyMessage{})
+}
+
+func (c *Client) CloseAllConnections(ctx context.Context) error {
+	return c.invoke(ctx, methodCloseAllConnections, &emptyMessage{}, &emptyMessage{})
 }
 
 func (c *Client) Groups(ctx context.Context) ([]Group, error) {
@@ -332,7 +333,7 @@ func (wireCodec) Marshal(value any) ([]byte, error) {
 	switch message := value.(type) {
 	case *emptyMessage:
 		return nil, nil
-	case *clashModeRequest:
+	case *modeRequest:
 		output = appendString(output, 3, message.Mode)
 	case *selectOutboundRequest:
 		output = appendString(output, 1, message.Group)
@@ -357,7 +358,7 @@ func (wireCodec) Unmarshal(content []byte, value any) error {
 		return decodeStartedAt(content, message)
 	case *statusResponse:
 		return decodeStatus(content, message)
-	case *clashModeStatusResponse:
+	case *modeStatusResponse:
 		return decodeMode(content, message)
 	case *groupsResponse:
 		return decodeGroups(content, message)
@@ -495,7 +496,7 @@ func decodeStatus(content []byte, message *statusResponse) error {
 	})
 }
 
-func decodeMode(content []byte, message *clashModeStatusResponse) error {
+func decodeMode(content []byte, message *modeStatusResponse) error {
 	return consumeFields(content, func(number protowire.Number, wireType protowire.Type, field []byte) (int, error) {
 		if number != 1 && number != 2 {
 			return 0, nil

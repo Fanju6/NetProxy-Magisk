@@ -41,18 +41,15 @@ readonly EXECUTABLE_FILES="
     bin/netproxy-native
     action.sh
     netproxyctl
+    service.sh
     uninstall.sh
     scripts/netproxyctl
     scripts/core/service.sh
-    scripts/core/ebpf.sh
     scripts/core/switch.sh
     scripts/network/netmon.sh
     scripts/core/subscription.sh
     scripts/core/subworker.sh
-    scripts/utils/state.sh
-    scripts/utils/metadata.sh
     scripts/utils/gms_fix.sh
-    scripts/utils/catalog.sh
 "
 
 ################################################################################
@@ -380,7 +377,9 @@ restart_proxy_if_needed() {
 set_permissions() {
   print_step "设置文件权限..."
 
-  # 为可执行文件设置 0755 (同时同步运行目录中的同名文件)
+  # 先设置默认权限，再单独放开真正需要执行的入口。
+  set_perm_recursive "$MODPATH" 0 0 0755 0644
+
   local file
   for file in $EXECUTABLE_FILES; do
     local path="$MODPATH/$file"
@@ -390,10 +389,11 @@ set_permissions() {
     fi
   done
 
-  # 递归设置整个模块目录的默认属主与权限
-  set_perm_recursive "$MODPATH" 0 0 0755 0755
-
-  # Catalog 中包含节点凭据、订阅地址与自定义请求头，仅允许 root 读取。
+  # 用户配置与 Catalog 包含节点凭据、订阅地址和应用名单，仅允许 root 读取。
+  [ ! -f "$MODPATH/config/module.conf" ] || chmod 0600 "$MODPATH/config/module.conf" 2> /dev/null
+  [ ! -f "$MODPATH/config/ebpf/ebpf.conf" ] || chmod 0600 "$MODPATH/config/ebpf/ebpf.conf" 2> /dev/null
+  [ ! -f "$LIVE_DIR/config/module.conf" ] || chmod 0600 "$LIVE_DIR/config/module.conf" 2> /dev/null
+  [ ! -f "$LIVE_DIR/config/ebpf/ebpf.conf" ] || chmod 0600 "$LIVE_DIR/config/ebpf/ebpf.conf" 2> /dev/null
   [ ! -d "$MODPATH/config/catalog" ] \
     || set_perm_recursive "$MODPATH/config/catalog" 0 0 0700 0600
   [ ! -d "$LIVE_DIR/config/catalog" ] \

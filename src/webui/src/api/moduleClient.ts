@@ -76,6 +76,8 @@ export interface ServiceStatus {
   active_group_node_count: number;
   selected_node_ref: string;
   runtime_selected: string;
+  upload_total: number;
+  download_total: number;
   subscription_worker: string;
   subscription_worker_pid: number | null;
 }
@@ -125,16 +127,6 @@ export interface AppProxyState {
   mode: 'blacklist' | 'whitelist';
   proxy_apps: string;
   bypass_apps: string;
-}
-
-export interface ApiBootstrap {
-  service_api: { url: string; secret: string };
-  clash_api: { url: string; secret: string };
-}
-
-export interface TrafficSnapshot {
-  upload: number;
-  download: number;
 }
 
 export type ConfigTarget = 'module' | 'ebpf' | `singbox/${string}`;
@@ -228,8 +220,7 @@ const mockConfigDefaults: Record<'module' | 'ebpf', string> = {
     'WIFI_AUTO_SWITCH=0',
     'WIFI_SSID_MODE="blacklist"',
     'WIFI_SSID_LIST=""',
-    'PROXY_ON_CELLULAR=1',
-    'WIFI_INTERFACE="wlan0"'
+    'PROXY_ON_CELLULAR=1'
   ].join('\n'),
   ebpf: [
     'EBPF_NETWORK=""',
@@ -286,24 +277,17 @@ const mockCall = <T>(args: string[]): T => {
       state: 'ready', pid: 1234, started_at: 0, ready_at: Math.floor(Date.now() / 1000) - 120,
       uptime_seconds: 120, error: '', outbound_mode: 'rule', selector_mode: 'urltest',
       active_group_id: 'default', active_group_node_count: 2, selected_node_ref: '', runtime_selected: 'Tokyo',
+      upload_total: 12_582_912, download_total: 98_713_600,
       subscription_worker: 'running', subscription_worker_pid: 1235
     } as T;
   }
   if (command === 'app list') {
     return { enabled: true, mode: 'blacklist', proxy_apps: '', bypass_apps: '' } as T;
   }
-  if (command === 'api bootstrap') {
-    return {
-      service_api: { url: 'http://127.0.0.1:9090', secret: 'mock' },
-      clash_api: { url: 'http://127.0.0.1:9999', secret: 'mock' }
-    } as T;
-  }
   return {} as T;
 };
 
 class ModuleClient {
-  private bootstrap: Promise<ApiBootstrap> | null = null;
-
   async call<T>(args: string[], options: { detach?: boolean } = {}): Promise<T> {
     if (!isKsuEnv()) return mockCall<T>(args);
     const raw = [NETPROXYCTL, '--json', ...args].map(shellQuote).join(' ');
@@ -353,16 +337,6 @@ class ModuleClient {
   serviceAction = (action: 'start' | 'stop' | 'restart' | 'reload') =>
     this.call(['service', action], { detach: action === 'start' || action === 'restart' });
   setMode = (mode: 'rule' | 'global' | 'direct') => this.call(['mode', mode]);
-  apiBootstrap = () => {
-    if (!this.bootstrap) {
-      this.bootstrap = this.call<ApiBootstrap>(['api', 'bootstrap'])
-        .catch(error => {
-          this.bootstrap = null;
-          throw error;
-        });
-    }
-    return this.bootstrap;
-  };
   appState = () => this.call<AppProxyState>(['app', 'list']);
   setAppMode = (mode: 'blacklist' | 'whitelist') => this.call(['app', 'mode', mode]);
   setAppsEnabled = (enabled: boolean) => this.call(['app', enabled ? 'enable' : 'disable']);
@@ -442,23 +416,6 @@ class ModuleClient {
       }
       if (args.length > 3) await this.call(args);
     }, true);
-  }
-
-  async trafficSnapshot(): Promise<TrafficSnapshot> {
-    if (!isKsuEnv()) return { upload: 12_582_912, download: 98_713_600 };
-    const bootstrap = await this.apiBootstrap();
-    const response = await fetch(`${bootstrap.clash_api.url}/connections`, {
-      headers: { Authorization: `Bearer ${bootstrap.clash_api.secret}` },
-      cache: 'no-store'
-    });
-    if (!response.ok) {
-      throw new ModuleClientError('clash.request_failed', `控制接口返回 ${response.status}`);
-    }
-    const payload = await response.json() as { uploadTotal?: number; downloadTotal?: number };
-    return {
-      upload: payload.uploadTotal ?? 0,
-      download: payload.downloadTotal ?? 0
-    };
   }
 
   async importContent(content: string, groupName = ''): Promise<void> {

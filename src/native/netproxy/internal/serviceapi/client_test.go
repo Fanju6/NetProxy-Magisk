@@ -99,6 +99,32 @@ func TestStatusOverGRPCWeb(t *testing.T) {
 	}
 }
 
+func TestCloseAllConnectionsOverGRPCWeb(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != methodCloseAllConnections {
+			http.Error(writer, "unexpected method", http.StatusNotFound)
+			return
+		}
+		requestFrame, err := io.ReadAll(request.Body)
+		if err != nil || len(requestFrame) != 5 || binary.BigEndian.Uint32(requestFrame[1:]) != 0 {
+			http.Error(writer, "invalid request frame", http.StatusBadRequest)
+			return
+		}
+		writeTestFrame(t, writer, 0, nil)
+		writeTestFrame(t, writer, 0x80, []byte("grpc-status: 0\r\n"))
+	}))
+	defer server.Close()
+
+	client, err := New(server.URL, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if err = client.CloseAllConnections(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func writeTestFrame(t *testing.T, writer io.Writer, flag byte, payload []byte) {
 	t.Helper()
 	header := []byte{flag, 0, 0, 0, 0}

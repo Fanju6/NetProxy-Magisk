@@ -13,17 +13,18 @@ readonly LOG_FILE="$MODDIR/logs/service.log"
 readonly LOG_TAG="service"
 readonly SING_BOX_BIN="$MODDIR/bin/sing-box"
 readonly NETPROXY_NATIVE_BIN="$MODDIR/bin/netproxy-native"
-readonly MODULE_CONF="$MODDIR/config/module.conf"
-readonly EBPF_CONF="$MODDIR/config/ebpf/ebpf.conf"
-readonly CATALOG_DIR="$MODDIR/config/catalog"
+readonly MODULE_CONF="${NETPROXY_MODULE_CONF:-$MODDIR/config/module.conf}"
+readonly EBPF_CONF="${NETPROXY_EBPF_CONF:-$MODDIR/config/ebpf/ebpf.conf}"
+readonly CATALOG_DIR="${NETPROXY_CATALOG_DIR:-$MODDIR/config/catalog}"
 readonly SERVICE_STATE_DIR="$MODDIR/config/runtime"
 readonly SINGBOX_LOG_FILE="$MODDIR/logs/sing-box.log"
-readonly SINGBOX_DIR="$MODDIR/config/singbox"
+readonly SINGBOX_DIR="${NETPROXY_SINGBOX_DIR:-$MODDIR/config/singbox}"
 readonly CONFDIR="$SINGBOX_DIR/confdir"
 readonly RUNTIME_DIR="$SINGBOX_DIR/runtime"
 readonly SWITCH_SCRIPT="$MODDIR/scripts/core/switch.sh"
 readonly NETMON_SCRIPT="$MODDIR/scripts/network/netmon.sh"
 readonly KILL_TIMEOUT=10
+readonly SERVICE_LOCK_DIR="/dev/netproxy/service.lock"
 
 . "$MODDIR/scripts/utils/common.sh"
 . "$MODDIR/scripts/utils/config.sh"
@@ -44,6 +45,57 @@ SERVICE_STATE_ERROR="服务操作失败"
 SERVICE_STATE_FINALIZED=0
 SERVICE_STATE_TRACK_FAILURE=0
 VALIDATION_RUNTIME_DIR=""
+SERVICE_LOCK_HELD=0
+
+#######################################
+# 获取服务生命周期操作锁
+# 参数:
+#   $1  当前操作名称
+# 返回: 成功返回 0，已有操作执行时返回 1
+#######################################
+acquire_service_lock() {
+  local action="$1"
+  local owner="" owner_start="" current_start=""
+
+  mkdir -p "${SERVICE_LOCK_DIR%/*}" || return 1
+  if mkdir "$SERVICE_LOCK_DIR" 2> /dev/null; then
+    printf '%s\n' "$$" > "$SERVICE_LOCK_DIR/pid"
+    awk '{print $22}' "/proc/$$/stat" > "$SERVICE_LOCK_DIR/start" 2> /dev/null || true
+    printf '%s\n' "$action" > "$SERVICE_LOCK_DIR/action"
+    SERVICE_LOCK_HELD=1
+    return 0
+  fi
+
+  owner="$(sed -n '1p' "$SERVICE_LOCK_DIR/pid" 2> /dev/null || true)"
+  owner_start="$(sed -n '1p' "$SERVICE_LOCK_DIR/start" 2> /dev/null || true)"
+  current_start="$(awk '{print $22}' "/proc/$owner/stat" 2> /dev/null || true)"
+  if [ -z "$owner" ] || [ -z "$owner_start" ] || [ "$owner_start" != "$current_start" ] \
+    || ! kill -0 "$owner" 2> /dev/null; then
+    rm -rf "$SERVICE_LOCK_DIR" 2> /dev/null || return 1
+    mkdir "$SERVICE_LOCK_DIR" 2> /dev/null || return 1
+    printf '%s\n' "$$" > "$SERVICE_LOCK_DIR/pid"
+    awk '{print $22}' "/proc/$$/stat" > "$SERVICE_LOCK_DIR/start" 2> /dev/null || true
+    printf '%s\n' "$action" > "$SERVICE_LOCK_DIR/action"
+    SERVICE_LOCK_HELD=1
+    return 0
+  fi
+
+  log "WARN" "已有服务操作正在执行: $(sed -n '1p' "$SERVICE_LOCK_DIR/action" 2> /dev/null || printf 'unknown')"
+  return 1
+}
+
+#######################################
+# 释放服务生命周期操作锁
+# 参数: 无
+# 返回: 无
+#######################################
+release_service_lock() {
+  [ "$SERVICE_LOCK_HELD" = "1" ] || return 0
+  if [ "$(sed -n '1p' "$SERVICE_LOCK_DIR/pid" 2> /dev/null || true)" = "$$" ]; then
+    rm -rf "$SERVICE_LOCK_DIR" 2> /dev/null || true
+  fi
+  SERVICE_LOCK_HELD=0
+}
 
 #######################################
 # 异常退出时收敛服务状态
@@ -62,6 +114,7 @@ service_exit_handler() {
         ;;
     esac
   fi
+  release_service_lock
 }
 
 trap 'service_exit_handler $?' 0
@@ -96,6 +149,7 @@ cleanup_runtime_files() {
     "$RUNTIME_DIR/providers.json" \
     "$RUNTIME_DIR/outbounds.json" \
     "$RUNTIME_DIR/ebpf.json" \
+    "$RUNTIME_DIR/catalog.state" \
     2> /dev/null || true
 }
 
@@ -110,8 +164,6 @@ build_runtime_configuration() {
     [ -z "$RUNTIME_BUILD_ERROR" ] || SERVICE_STATE_ERROR="$RUNTIME_BUILD_ERROR"
     return 1
   fi
-  write_runtime_providers > /dev/null
-  write_runtime_outbounds > /dev/null
   write_runtime_ebpf > /dev/null
 }
 
@@ -122,8 +174,6 @@ build_runtime_configuration() {
 # 说明: 空 Catalog 使用临时直连占位出站，只参与 sing-box check，绝不用于启动。
 #######################################
 build_validation_configuration() {
-  local scan_status=0
-
   initialize_runtime_context
   VALIDATION_RUNTIME_DIR="/dev/netproxy/config-check.$$"
   rm -rf "$VALIDATION_RUNTIME_DIR" 2> /dev/null || true
@@ -131,41 +181,9 @@ build_validation_configuration() {
   RUNTIME_PROVIDERS_FILE="$VALIDATION_RUNTIME_DIR/providers.json"
   RUNTIME_OUTBOUNDS_FILE="$VALIDATION_RUNTIME_DIR/outbounds.json"
   RUNTIME_EBPF_FILE="$VALIDATION_RUNTIME_DIR/ebpf.json"
+  RUNTIME_CATALOG_STATE_FILE="$VALIDATION_RUNTIME_DIR/catalog.state"
 
-  scan_catalog_groups allow-empty || scan_status=$?
-  case "$scan_status" in
-    0)
-      write_runtime_providers > /dev/null || return 1
-      write_runtime_outbounds > /dev/null || return 1
-      ;;
-    2)
-      cat > "$RUNTIME_PROVIDERS_FILE" << 'EOF'
-{
-  "providers": []
-}
-EOF
-      cat > "$RUNTIME_OUTBOUNDS_FILE" << 'EOF'
-{
-  "outbounds": [
-    {
-      "type": "direct",
-      "tag": "direct"
-    },
-    {
-      "type": "block",
-      "tag": "block"
-    },
-    {
-      "type": "direct",
-      "tag": "Proxy"
-    }
-  ]
-}
-EOF
-      ;;
-    *) return 1 ;;
-  esac
-
+  scan_catalog_groups allow-empty || return 1
   write_runtime_ebpf > /dev/null || return 1
 }
 
@@ -193,13 +211,13 @@ check_runtime_configuration() {
 }
 
 #######################################
-# 等待两套控制接口与核心实例就绪
+# 等待 Service API 与核心实例就绪
 # 参数:
 #   $1  最大等待秒数
 #   $2  sing-box 进程 PID
 # 返回: 全部就绪返回 0，超时返回 1，进程提前退出返回 2
 #######################################
-wait_control_planes_ready() {
+wait_control_plane_ready() {
   local timeout="${1:-30}"
   local pid="${2:-}"
   local max_checks=$((timeout * 5))
@@ -209,7 +227,7 @@ wait_control_planes_ready() {
     if [ -n "$pid" ] && ! kill -0 "$pid" 2> /dev/null; then
       return 2
     fi
-    if service_api_is_ready && api_is_available; then
+    if service_api_is_ready; then
       return 0
     fi
     sleep 0.2
@@ -277,7 +295,7 @@ do_start() {
 
   pid="$(get_pid "$SING_BOX_BIN")"
   if [ -n "$pid" ]; then
-    if service_api_is_ready && api_is_available; then
+    if service_api_is_ready; then
       started_millis="$(service_api_started_at 2> /dev/null || true)"
       started_seconds="$(unix_millis_to_seconds "$started_millis" 2> /dev/null || true)"
       case "$started_seconds" in
@@ -316,7 +334,7 @@ do_start() {
   write_service_state starting "$new_pid" "$SERVICE_STATE_STARTED_AT" 0 ""
 
   SERVICE_STATE_ERROR="核心或控制接口未在限定时间内就绪"
-  wait_control_planes_ready 30 "$new_pid" || wait_status=$?
+  wait_control_plane_ready 30 "$new_pid" || wait_status=$?
   if [ "$wait_status" -ne 0 ]; then
     [ "$wait_status" -ne 2 ] || SERVICE_STATE_ERROR="sing-box 进程启动失败"
     log "ERROR" "$SERVICE_STATE_ERROR"
@@ -423,7 +441,7 @@ do_reload() {
     new_started="$(service_api_started_at 2> /dev/null || true)"
     case "$new_started" in "" | *[!0-9]*) new_started="" ;; esac
     if [ -n "$new_started" ] && [ "$new_started" != "$old_started" ] \
-      && service_api_is_ready && api_is_available; then
+      && service_api_is_ready; then
       started_seconds="$(unix_millis_to_seconds "$new_started" 2> /dev/null || true)"
       case "$started_seconds" in "" | 0 | *[!0-9]*) sleep 1; count=$((count + 1)); continue ;; esac
       SERVICE_STATE_STARTED_AT="$started_seconds"
@@ -444,7 +462,7 @@ do_reload() {
     count=$((count + 1))
   done
 
-  if kill -0 "$pid" 2> /dev/null && service_api_is_ready && api_is_available; then
+  if kill -0 "$pid" 2> /dev/null && service_api_is_ready; then
     new_started="$(service_api_started_at 2> /dev/null || true)"
     case "$new_started" in
       "" | *[!0-9]*) ;;
@@ -535,6 +553,11 @@ EOF
 #######################################
 main() {
   SERVICE_ACTION="${1:-}"
+  case "$SERVICE_ACTION" in
+    start | stop | restart | reload)
+      acquire_service_lock "$SERVICE_ACTION" || return 1
+      ;;
+  esac
   case "$SERVICE_ACTION" in
     start) do_start ;;
     stop) do_stop ;;

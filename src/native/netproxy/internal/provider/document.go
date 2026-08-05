@@ -225,6 +225,9 @@ func validateTag(tag string, seen map[string]struct{}) error {
 	if tag == "" {
 		return errors.New("missing tag")
 	}
+	if strings.ContainsAny(tag, "\r\n\t") {
+		return errors.New("tag contains control characters")
+	}
 	if _, exists := seen[tag]; exists {
 		return fmt.Errorf("duplicate tag %q", tag)
 	}

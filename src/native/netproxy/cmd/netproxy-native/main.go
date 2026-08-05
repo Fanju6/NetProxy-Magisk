@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/convert"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/fetch"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
@@ -49,6 +50,19 @@ type convertOptions struct {
 	allowInsecure   bool
 	include         string
 	exclude         string
+}
+
+type serviceSnapshot struct {
+	Memory           uint64 `json:"memory"`
+	Goroutines       int32  `json:"goroutines"`
+	ConnectionsIn    int32  `json:"connections_in"`
+	ConnectionsOut   int32  `json:"connections_out"`
+	TrafficAvailable bool   `json:"traffic_available"`
+	Uplink           int64  `json:"uplink"`
+	Downlink         int64  `json:"downlink"`
+	UplinkTotal      int64  `json:"uplink_total"`
+	DownlinkTotal    int64  `json:"downlink_total"`
+	Selected         string `json:"selected"`
 }
 
 type headerFlags map[string]string
@@ -92,6 +106,8 @@ func run(ctx context.Context, args []string) error {
 		return runConvert(ctx, args[1:])
 	case "provider":
 		return runProvider(ctx, args[1:])
+	case "catalog":
+		return runCatalog(ctx, args[1:])
 	case "service":
 		return runService(ctx, args[1:])
 	case "version":
@@ -103,6 +119,129 @@ func run(ctx context.Context, args []string) error {
 		return nil
 	default:
 		return fmt.Errorf("未知命令 %q", args[0])
+	}
+}
+
+func runCatalog(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("缺少 Catalog 操作")
+	}
+	action := args[0]
+	flags := newFlagSet("catalog " + action)
+	root := flags.String("root", "", "Catalog 根目录")
+	active := flags.String("active", "", "活动分组 ID")
+	progressDir := flags.String("progress-dir", "", "订阅更新进度目录")
+	groupType := flags.String("type", "all", "分组类型筛选")
+	groupID := flags.String("group", "", "指定分组 ID")
+	providersOutput := flags.String("providers-output", "", "运行时 Provider 配置输出")
+	outboundsOutput := flags.String("outbounds-output", "", "运行时出站配置输出")
+	stateOutput := flags.String("state-output", "", "运行时状态输出")
+	selector := flags.String("selector", "urltest", "选择模式")
+	selected := flags.String("selected", "", "手动节点引用")
+	allowEmpty := flags.Bool("allow-empty", false, "允许空 Catalog")
+	now := flags.Int64("now", time.Now().Unix(), "当前 Unix 时间")
+	format := flags.String("format", "json", "输出格式")
+	if err := flags.Parse(args[1:]); err != nil {
+		return err
+	}
+	if *root == "" {
+		return errors.New("Catalog 操作需要 --root")
+	}
+
+	switch action {
+	case "groups", "snapshot", "group", "show":
+		if (action == "group" || action == "show") && *groupID == "" {
+			return fmt.Errorf("Catalog %s 需要 --group", action)
+		}
+		groups, err := catalog.Scan(ctx, catalog.ScanOptions{
+			Root: *root, ActiveGroup: *active, ProgressDir: *progressDir,
+			Type: *groupType, WithNodes: action == "snapshot" || action == "show", GroupID: *groupID,
+		})
+		if err != nil {
+			return err
+		}
+		if action == "group" || action == "show" {
+			if len(groups) == 0 {
+				return fmt.Errorf("Catalog 分组不存在: %s", *groupID)
+			}
+			data := any(groups[0])
+			if action == "group" {
+				data = groups[0].Group
+			}
+			writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "catalog." + action, Message: "Catalog 分组快照", Data: data})
+		} else if action == "groups" {
+			summaries := make([]catalog.GroupSummary, 0, len(groups))
+			for _, group := range groups {
+				summaries = append(summaries, group.Group)
+			}
+			writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "catalog.groups", Message: "Catalog 分组快照", Data: summaries})
+		} else {
+			writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "catalog.snapshot", Message: "Catalog 节点快照", Data: groups})
+		}
+		return nil
+	case "runtime":
+		data, err := catalog.BuildRuntime(ctx, catalog.RuntimeOptions{
+			Root: *root, ProvidersOutput: *providersOutput, OutboundsOutput: *outboundsOutput, StateOutput: *stateOutput,
+			ActiveGroup: *active, SelectorMode: *selector, SelectedNodeRef: *selected,
+			AllowEmpty: *allowEmpty,
+		})
+		if err != nil {
+			return err
+		}
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "catalog.runtime", Message: "Catalog 运行时配置已生成", Data: data})
+		return nil
+	case "schedule":
+		data, err := catalog.Schedule(*root, *now)
+		if err != nil {
+			return err
+		}
+		if *format == "tsv" {
+			fmt.Printf("nearest\t%d\n", data.Nearest)
+			for _, group := range data.Due {
+				fmt.Printf("due\t%s\n", group)
+			}
+			return nil
+		}
+		if *format != "json" {
+			return fmt.Errorf("Catalog schedule 不支持输出格式 %q", *format)
+		}
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "catalog.schedule", Message: "订阅调度快照", Data: data})
+		return nil
+	case "tag":
+		if *groupID == "" {
+			return errors.New("Catalog tag 需要 --group")
+		}
+		tag, err := catalog.RuntimeTag(*root, *groupID)
+		if err != nil {
+			return err
+		}
+		if *format == "raw" {
+			fmt.Println(tag)
+			return nil
+		}
+		if *format != "json" {
+			return fmt.Errorf("Catalog tag 不支持输出格式 %q", *format)
+		}
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "catalog.tag", Message: "Catalog 运行时标签", Data: map[string]string{"tag": tag}})
+		return nil
+	case "ids":
+		ids, err := catalog.GroupIDs(*root, *groupType)
+		if err != nil {
+			return err
+		}
+		if *format == "raw" {
+			for _, id := range ids {
+				fmt.Println(id)
+			}
+			return nil
+		}
+		if *format != "json" {
+			return fmt.Errorf("Catalog ids 不支持输出格式 %q", *format)
+		}
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "catalog.ids", Message: "Catalog 分组 ID", Data: ids})
+		return nil
+	default:
+		return fmt.Errorf("未知 Catalog 操作 %q", action)
 	}
 }
 
@@ -118,7 +257,8 @@ func runService(ctx context.Context, args []string) error {
 	timeout := flags.Duration("timeout", 8*time.Second, "请求超时")
 	group := flags.String("group", "", "选择器标签")
 	outbound := flags.String("outbound", "", "出站标签")
-	mode := flags.String("mode", "", "Clash 模式")
+	mode := flags.String("mode", "", "出站模式")
+	format := flags.String("format", "json", "输出格式")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -173,17 +313,17 @@ func runService(ctx context.Context, args []string) error {
 				break
 			}
 		}
-		data = map[string]any{
-			"memory":            status.Memory,
-			"goroutines":        status.Goroutines,
-			"connections_in":    status.ConnectionsIn,
-			"connections_out":   status.ConnectionsOut,
-			"traffic_available": status.TrafficAvailable,
-			"uplink":            status.Uplink,
-			"downlink":          status.Downlink,
-			"uplink_total":      status.UplinkTotal,
-			"downlink_total":    status.DownlinkTotal,
-			"selected":          selected,
+		data = serviceSnapshot{
+			Memory:           status.Memory,
+			Goroutines:       status.Goroutines,
+			ConnectionsIn:    status.ConnectionsIn,
+			ConnectionsOut:   status.ConnectionsOut,
+			TrafficAvailable: status.TrafficAvailable,
+			Uplink:           status.Uplink,
+			Downlink:         status.Downlink,
+			UplinkTotal:      status.UplinkTotal,
+			DownlinkTotal:    status.DownlinkTotal,
+			Selected:         selected,
 		}
 	case "groups":
 		data, err = client.Groups(requestContext)
@@ -225,11 +365,24 @@ func runService(ctx context.Context, args []string) error {
 		}
 		err = client.URLTest(requestContext, *outbound)
 		data = map[string]string{"outbound": *outbound}
+	case "close-all":
+		err = client.CloseAllConnections(requestContext)
+		data = map[string]bool{"closed": err == nil}
 	default:
 		return fmt.Errorf("未知 Service API 操作 %q", action)
 	}
 	if err != nil {
 		return fmt.Errorf("Service API %s: %w", action, err)
+	}
+	if action == "snapshot" && *format == "tsv" {
+		snapshot := data.(serviceSnapshot)
+		fmt.Printf("selected\t%s\nmemory\t%d\nconnections_in\t%d\nconnections_out\t%d\nuplink_total\t%d\ndownlink_total\t%d\n",
+			snapshot.Selected, snapshot.Memory, snapshot.ConnectionsIn, snapshot.ConnectionsOut,
+			snapshot.UplinkTotal, snapshot.DownlinkTotal)
+		return nil
+	}
+	if *format != "json" {
+		return fmt.Errorf("操作 %s 不支持输出格式 %q", action, *format)
 	}
 	writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "service." + action, Message: "Service API 操作完成", Data: data})
 	return nil
@@ -544,7 +697,8 @@ func showUsage() {
   %s provider remove --target <provider.json> --tag <标签>
   %s provider inspect --input <provider.json> --format json
   %s provider validate --input <provider.json>
-  %s service <ready|status|snapshot|groups|selected|mode|select|urltest>
+  %s catalog <groups|snapshot|runtime> --root <catalog>
+  %s service <ready|status|snapshot|groups|selected|mode|select|urltest|close-all>
   %s version
 
 转换选项：
@@ -563,5 +717,5 @@ func showUsage() {
   --last-modified <值>          发送 If-Modified-Since
   --proxy <URL>                 通过 HTTP 代理下载
   --timeout <时长>              下载超时，默认 60s
-`, executable, executable, executable, executable, executable, executable, executable, executable, executable, executable)
+`, executable, executable, executable, executable, executable, executable, executable, executable, executable, executable, executable)
 }

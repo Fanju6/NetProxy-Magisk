@@ -4,7 +4,7 @@
 # 功能: 独立订阅调度 worker，按各订阅 next_update_epoch 顺序更新到期任务。
 #       worker 与 sing-box 生命周期解耦，不依赖 crond。
 # 用法: subworker.sh {start|stop|restart|wake|run|once|status}
-# 依赖: common.sh、metadata.sh 与 subscription.sh。
+# 依赖: common.sh 与 subscription.sh。
 #######################################
 
 MODDIR="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -22,7 +22,6 @@ LOG_TAG="subworker"
 SUBSCRIPTION_LIBRARY_ONLY=1
 
 . "$MODDIR/scripts/utils/common.sh"
-. "$MODDIR/scripts/utils/metadata.sh"
 . "$MODDIR/scripts/core/subscription.sh"
 
 BUSYBOX="$(detect_busybox)"
@@ -39,6 +38,8 @@ worker_pid() {
 
   pid="$(sed -n '1p' "$WORKER_PID_FILE" 2> /dev/null || true)"
   [ -n "$pid" ] && kill -0 "$pid" 2> /dev/null || return 1
+  [ -r "/proc/$pid/cmdline" ] || return 1
+  tr '\0' ' ' < "/proc/$pid/cmdline" | grep -F -q "$0" || return 1
   printf "%s\n" "$pid"
 }
 
@@ -69,22 +70,16 @@ stop_worker_loop() {
 #######################################
 find_nearest_update_epoch() {
   local now="$1"
-  local group_dir meta_file type enabled epoch nearest=0
+  local snapshot key value nearest=0
 
-  for group_dir in "$CATALOG_DIR"/*; do
-    [ -d "$group_dir" ] || continue
-    [ "${group_dir##*/}" != "staging" ] || continue
-    meta_file="$group_dir/meta.json"
-    type="$(meta_get_string "$meta_file" "type" "")"
-    enabled="$(meta_get_raw "$meta_file" "auto_update" "false")"
-    [ "$type" = "subscription" ] && [ "$enabled" = "true" ] || continue
-    epoch="$(meta_get_raw "$meta_file" "next_update_epoch" "0")"
-    case "$epoch" in "" | *[!0-9]*) epoch=0 ;; esac
-    [ "$epoch" -gt 0 ] || epoch="$now"
-    if [ "$nearest" -eq 0 ] || [ "$epoch" -lt "$nearest" ]; then
-      nearest="$epoch"
-    fi
-  done
+  snapshot="$("$NETPROXY_NATIVE_BIN" catalog schedule \
+    --root "$CATALOG_DIR" --now "$now" --format tsv 2> /dev/null)" || snapshot=""
+  while IFS="$TAB" read -r key value; do
+    [ "$key" != "nearest" ] || nearest="$value"
+  done << EOF
+$snapshot
+EOF
+  case "$nearest" in "" | *[!0-9]*) nearest=0 ;; esac
   printf "%s\n" "$nearest"
 }
 
@@ -96,23 +91,21 @@ find_nearest_update_epoch() {
 #######################################
 update_due_subscriptions() {
   local now="$1"
-  local group_dir group_id meta_file type enabled epoch
+  local snapshot key group_id
 
-  for group_dir in "$CATALOG_DIR"/*; do
+  snapshot="$("$NETPROXY_NATIVE_BIN" catalog schedule \
+    --root "$CATALOG_DIR" --now "$now" --format tsv 2> /dev/null)" || {
+      log "WARN" "读取订阅调度状态失败"
+      return 0
+    }
+  while IFS="$TAB" read -r key group_id; do
     [ "$WORKER_STOP" = "0" ] || return 0
-    [ -d "$group_dir" ] || continue
-    group_id="${group_dir##*/}"
-    [ "$group_id" != "staging" ] || continue
-    meta_file="$group_dir/meta.json"
-    type="$(meta_get_string "$meta_file" "type" "")"
-    enabled="$(meta_get_raw "$meta_file" "auto_update" "false")"
-    [ "$type" = "subscription" ] && [ "$enabled" = "true" ] || continue
-    epoch="$(meta_get_raw "$meta_file" "next_update_epoch" "0")"
-    case "$epoch" in "" | *[!0-9]*) epoch=0 ;; esac
-    [ "$epoch" -le "$now" ] || continue
+    [ "$key" = "due" ] && [ -n "$group_id" ] || continue
     log "INFO" "自动更新到期订阅: $group_id"
     update_subscription "$group_id" || true
-  done
+  done << EOF
+$snapshot
+EOF
 }
 
 #######################################
@@ -162,7 +155,7 @@ run_worker() {
 # 返回: 启动成功返回 0
 #######################################
 start_worker() {
-  local pid
+  local pid count=0
 
   if pid="$(worker_pid)"; then
     log "DEBUG" "订阅 worker 已在运行 (PID: $pid)"
@@ -171,10 +164,12 @@ start_worker() {
   mkdir -p "${WORKER_PID_FILE%/*}" "$MODDIR/logs" || return 1
   "$BUSYBOX" nohup sh "$0" run > /dev/null 2>&1 < /dev/null &
   pid=$!
-  sleep 1
-  if kill -0 "$pid" 2> /dev/null || worker_pid > /dev/null 2>&1; then
-    return 0
-  fi
+  while [ "$count" -lt 10 ]; do
+    worker_pid > /dev/null 2>&1 && return 0
+    kill -0 "$pid" 2> /dev/null || break
+    sleep 0.1
+    count=$((count + 1))
+  done
   log "ERROR" "订阅自动更新 worker 启动失败"
   return 1
 }

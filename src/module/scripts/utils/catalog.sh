@@ -4,7 +4,7 @@
 # 功能: Catalog 节点目录辅助函数，负责校验分组 ID、读取 Provider
 #       安全摘要，以及检查节点引用是否存在。
 # 用法: 由 core 与 CLI 脚本通过 . "$MODDIR/scripts/utils/catalog.sh" 引入。
-# 依赖: common.sh、metadata.sh；调用方可定义 CATALOG_DIR 与 NETPROXY_NATIVE_BIN。
+# 依赖: common.sh 与 netproxy-native；调用方可定义 CATALOG_DIR 与 NETPROXY_NATIVE_BIN。
 #######################################
 
 #######################################
@@ -56,27 +56,11 @@ catalog_provider_path() {
 #######################################
 catalog_runtime_group_tag() {
   local group_id="$1"
-  local group_dir name other_dir other_id other_name duplicate_count=0
+  local native="${NETPROXY_NATIVE_BIN:-$MODDIR/bin/netproxy-native}"
 
-  group_dir="$(catalog_group_dir "$group_id")" || return 1
-  [ -d "$group_dir" ] || return 1
-  name="$(meta_get_string "$group_dir/meta.json" "name" "$group_id")" || name="$group_id"
-  [ -n "$name" ] || name="$group_id"
-
-  for other_dir in "$CATALOG_DIR"/*; do
-    [ -d "$other_dir" ] || continue
-    other_id="${other_dir##*/}"
-    [ "$other_id" != "staging" ] || continue
-    other_name="$(meta_get_string "$other_dir/meta.json" "name" "$other_id")" || other_name="$other_id"
-    [ -n "$other_name" ] || other_name="$other_id"
-    [ "$other_name" = "$name" ] && duplicate_count=$((duplicate_count + 1))
-  done
-
-  if [ "$duplicate_count" -gt 1 ]; then
-    printf "%s [%s]\n" "$name" "$group_id"
-  else
-    printf "%s\n" "$name"
-  fi
+  catalog_validate_group_id "$group_id" || return 1
+  [ -x "$native" ] || return 1
+  "$native" catalog tag --root "$CATALOG_DIR" --group "$group_id" --format raw
 }
 
 #######################################

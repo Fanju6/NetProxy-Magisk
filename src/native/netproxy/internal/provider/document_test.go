@@ -67,6 +67,19 @@ func TestLoadAllowEmpty(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsControlCharactersInTag(t *testing.T) {
+	document := provider.Document{Outbounds: []option.Outbound{{
+		Type: C.TypeSOCKS,
+		Tag:  "invalid\ttag",
+		Options: &option.SOCKSOutboundOptions{
+			ServerOptions: option.ServerOptions{Server: "example.com", ServerPort: 1080},
+		},
+	}}}
+	if err := provider.Validate(document); err == nil {
+		t.Fatal("expected tag validation failure")
+	}
+}
+
 func TestRemoveLastNodeWritesEmptyProvider(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "provider.json")
 	document := provider.Document{Outbounds: []option.Outbound{{
