@@ -29,6 +29,7 @@ fi
 
 SUB_LOCK_DIR=""
 SUB_STAGE_DIR=""
+SUB_CONVERSION_USED_PROXY=0
 
 #######################################
 # 初始化 Catalog 事务目录
@@ -488,12 +489,19 @@ run_subscription_conversion() {
   local diagnostics_file="$3"
   local result_file="$4"
   local error_file="$5"
+  local force_direct="${6:-0}"
   local headers_file="$SUB_STAGE_DIR/headers.json"
   local proxy_url child_pid status
 
   printf '%s\n' "$SUB_CUSTOM_HEADERS" > "$headers_file"
   chmod 0600 "$headers_file" 2> /dev/null || true
-  proxy_url="$(subscription_proxy_url)"
+  SUB_CONVERSION_USED_PROXY=0
+  if [ "$force_direct" = "1" ]; then
+    proxy_url=""
+  else
+    proxy_url="$(subscription_proxy_url)"
+    [ -z "$proxy_url" ] || SUB_CONVERSION_USED_PROXY=1
+  fi
 
   set -- "$NETPROXY_NATIVE_BIN" convert subscription \
     --url "$SUB_URL" \
@@ -563,7 +571,7 @@ update_subscription() {
   local group_id group_dir meta_file provider_file
   local metadata_file diagnostics_file result_file error_file
   local started_at now now_text response_kind result_code node_count diagnostics duration
-  local had_nodes=0 has_nodes=0
+  local had_nodes=0 has_nodes=0 conversion_ok=0
 
   initialize_catalog_storage || return 1
   group_id="$(resolve_catalog_group "$query")" || return $?
@@ -585,8 +593,23 @@ update_subscription() {
   error_file="$SUB_STAGE_DIR/error.json"
 
   write_subscription_progress "$group_id" "download" "正在下载订阅"
-  if ! run_subscription_conversion "$SUB_STAGE_DIR/provider.json" "$metadata_file" \
+  if run_subscription_conversion "$SUB_STAGE_DIR/provider.json" "$metadata_file" \
     "$diagnostics_file" "$result_file" "$error_file"; then
+    conversion_ok=1
+  elif [ "$SUB_UPDATE_VIA_PROXY" = "auto" ] \
+    && [ "$SUB_CONVERSION_USED_PROXY" = "1" ] \
+    && ! subscription_cancel_requested "$group_id"; then
+    log "WARN" "订阅代理下载失败，尝试直连: $group_id"
+    write_subscription_progress "$group_id" "download" "代理下载失败，正在尝试直连"
+    rm -f "$SUB_STAGE_DIR/provider.json" "$metadata_file" "$diagnostics_file" \
+      "$result_file" "$error_file"
+    if run_subscription_conversion "$SUB_STAGE_DIR/provider.json" "$metadata_file" \
+      "$diagnostics_file" "$result_file" "$error_file" 1; then
+      conversion_ok=1
+    fi
+  fi
+
+  if [ "$conversion_ok" != "1" ]; then
     if subscription_cancel_requested "$group_id"; then
       rm -f "$SUB_RUNTIME_DIR/$group_id.cancel"
       record_subscription_failure "$group_dir" "subscription.cancelled" "订阅更新已取消" "$started_at"

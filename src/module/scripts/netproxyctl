@@ -497,10 +497,12 @@ command_node_read() {
 # 测试节点延迟
 # 参数:
 #   $1  节点引用、auto 或 all
+#   $2  auto 模式使用的分组 ID（可选）
 # 返回: 无
 #######################################
 command_node_delay() {
   local target="${1:-}"
+  local requested_group="${2:-}"
   local active active_runtime_tag selector selected result groups
 
   service_is_running || emit_error "service.not_ready" "服务未运行"
@@ -516,6 +518,9 @@ command_node_delay() {
         || emit_error "node.ref_invalid" "当前节点引用无效"
     fi
   elif [ "$target" = "auto" ]; then
+    [ -n "$requested_group" ] || requested_group="$active"
+    active_runtime_tag="$(catalog_runtime_group_tag "$requested_group" 2> /dev/null)" \
+      || emit_error "catalog.not_found" "节点分组不存在"
     target="Auto/$active_runtime_tag"
   elif [ "$target" != "all" ]; then
     target="$(catalog_runtime_node_ref "$target")" \
@@ -591,7 +596,7 @@ command_node() {
       fi
       emit_write_success "node.selected" "节点选择已更新" "{}"
       ;;
-    delay) command_node_delay "$target" ;;
+    delay) command_node_delay "$target" "$group" ;;
     *) emit_error "usage.invalid" "用法: netproxyctl node list|snapshot|current|use|add|import|copy|edit|remove|delay" 2 ;;
   esac
 }
@@ -1169,14 +1174,14 @@ NetProxy 管理命令
   netproxyctl [--json] service status|start|stop|restart|reload
   netproxyctl [--json] api bootstrap
   netproxyctl [--json] catalog list|show <分组>
-  netproxyctl [--json] node list|current|show|add|import|copy|edit|remove|use|delay
+  netproxyctl [--json] node list|current|show|add|import|copy|edit|remove|use|delay [节点|auto [分组]|all]
   netproxyctl [--json] sub list|show|add|edit|update|update-all|activate|remove|history|cancel
   netproxyctl [--json] mode [rule|global|direct|AllowAds]
   netproxyctl [--json] app list|mode|add|remove|enable|disable
   netproxyctl [--json] config list|read|check|validate|apply
   netproxyctl [--json] logs show|clear|export
 
-节点引用固定为 <group-id>/<tag>。自动模式使用 node use auto [分组]。
+节点引用固定为 <group-id>/<tag>。自动模式使用 node use auto [分组]，分组测速使用 node delay auto [分组]。
 JSON 输出 schema 固定为 1；stdout 只包含结果，运行日志写入 stderr。
 EOF
 }

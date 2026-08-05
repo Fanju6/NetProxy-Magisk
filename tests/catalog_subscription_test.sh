@@ -39,17 +39,25 @@ if [ "${1:-}" = "convert" ] && [ "${2:-}" = "subscription" ]; then
   output=""
   metadata=""
   diagnostics=""
+  proxy=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --url) url="$2"; shift 2 ;;
       --output) output="$2"; shift 2 ;;
       --metadata-output) metadata="$2"; shift 2 ;;
       --diagnostics-output) diagnostics="$2"; shift 2 ;;
-      --headers-file | --timeout | --user-agent | --hwid | --etag | --last-modified | --include | --exclude | --proxy) shift 2 ;;
+      --proxy) proxy="$2"; shift 2 ;;
+      --headers-file | --timeout | --user-agent | --hwid | --etag | --last-modified | --include | --exclude) shift 2 ;;
       --allow-insecure) shift ;;
       *) shift ;;
     esac
   done
+  if [ -n "$proxy" ] && [ "${MOCK_FAIL_PROXY:-0}" = "1" ]; then
+    printf '%s\n' '{"status_code":502,"not_modified":false}' > "$metadata"
+    printf '%s\n' '[]' > "$diagnostics"
+    printf '%s\n' '{"schema":1,"ok":false,"code":"command.failed","message":"proxy request failed"}' >&2
+    exit 1
+  fi
   case "$url" in
     */304)
       printf '%s\n' '{"status_code":304,"not_modified":true,"etag":"etag-1"}' > "$metadata"
@@ -85,6 +93,13 @@ export MOCK_PROVIDER="$TMP_ROOT/subscription-provider.json"
 . "$MODDIR/scripts/utils/metadata.sh"
 . "$MODDIR/scripts/core/subscription.sh"
 
+subscription_proxy_url() {
+  if [ "${MOCK_USE_PROXY:-0}" = "1" ]; then
+    printf '%s' 'http://127.0.0.1:7080'
+  fi
+  return 0
+}
+
 group_id="$(add_subscription "测试订阅" "https://example.test/ok")"
 group_dir="$CATALOG_DIR/$group_id"
 [ -f "$group_dir/provider.json" ]
@@ -95,12 +110,18 @@ group_dir="$CATALOG_DIR/$group_id"
 [ "$(meta_get_raw "$group_dir/meta.json" usage null)" != "null" ]
 [ "$(read_conf "$MODULE_CONF" ACTIVE_GROUP_ID '')" = "$group_id" ]
 
+export MOCK_USE_PROXY=1 MOCK_FAIL_PROXY=1
+update_subscription "$group_id"
+unset MOCK_USE_PROXY MOCK_FAIL_PROXY
+[ "$(meta_get_string "$group_dir/meta.json" last_error '')" = "" ]
+[ "$(meta_get_raw "$group_dir/meta.json" revision 0)" -eq 2 ]
+
 load_catalog_meta "$group_dir/meta.json"
 SUB_URL="https://example.test/304"
 write_catalog_meta "$group_dir/meta.json"
 update_subscription "$group_id"
-[ "$(meta_get_raw "$group_dir/meta.json" revision 0)" -eq 1 ]
-[ "$(wc -l < "$group_dir/history.jsonl" | tr -d ' ')" -eq 2 ]
+[ "$(meta_get_raw "$group_dir/meta.json" revision 0)" -eq 2 ]
+[ "$(wc -l < "$group_dir/history.jsonl" | tr -d ' ')" -eq 3 ]
 
 before="$(cksum "$group_dir/provider.json")"
 load_catalog_meta "$group_dir/meta.json"
