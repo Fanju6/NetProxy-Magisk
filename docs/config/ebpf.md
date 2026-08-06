@@ -63,3 +63,13 @@ su -c '/data/adb/modules/netproxy/netproxyctl service reload'
 ```
 
 该命令会重启 sing-box，以卸载旧 eBPF 实例并应用新配置。
+
+## 运行诊断
+
+模块内置 Android arm64 `bpftool`，可结合 sing-box 检查内核能力、已加载程序、Map 与 cgroup 挂载状态：
+
+```sh
+su -c '/data/adb/modules/netproxy/netproxyctl ebpf status configured'
+```
+
+需要查看核心原始输出时，在命令末尾添加 `--raw`。

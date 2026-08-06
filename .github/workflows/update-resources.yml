@@ -232,6 +232,7 @@ jobs:
             ref="$(jq -r '.ref' <<< "$item")"
             source_path="$(jq -r '.sourcePath' <<< "$item")"
             metadata_path="$(jq -r '.metadataPath // empty' <<< "$item")"
+            kind="$(jq -r '.kind // "data"' <<< "$item")"
             current_commit="$(jq -r '.currentCommit // empty' <<< "$item")"
 
             echo "检查: $path ← $url"
@@ -245,6 +246,14 @@ jobs:
               echo "::warning::内容为空，跳过: $url"
               rm -f "$tmp"
               continue
+            fi
+            if [ "$kind" = "android-arm64-executable" ]; then
+              if ! file "$tmp" | grep -q 'ELF 64-bit.*ARM aarch64'; then
+                echo "::warning::目标不是 Android arm64 ELF，跳过: $url"
+                rm -f "$tmp"
+                continue
+              fi
+              chmod 0755 "$tmp"
             fi
 
             if [ ! -f "$path" ] || ! cmp -s "$tmp" "$path"; then
@@ -263,6 +272,7 @@ jobs:
 
               mkdir -p "$(dirname "$path")"
               mv "$tmp" "$path"
+              [ "$kind" != "android-arm64-executable" ] || chmod 0755 "$path"
               new_size="$(stat -c '%s' "$path")"
               new_sha256="$(sha256sum "$path" | cut -d ' ' -f 1)"
               old_rule_count="$(count_rules "$repo" "$current_commit" "$metadata_path")"
@@ -275,6 +285,7 @@ jobs:
               entry="$(jq -n \
                 --arg name "$name" \
                 --arg path "$path" \
+                --arg kind "$kind" \
                 --arg repo "$repo" \
                 --arg currentCommit "$current_commit" \
                 --arg latestCommit "$latest_commit" \
@@ -291,6 +302,7 @@ jobs:
                 '{
                   name: $name,
                   path: $path,
+                  kind: $kind,
                   repo: $repo,
                   currentCommit: $currentCommit,
                   latestCommit: $latestCommit,
@@ -309,8 +321,9 @@ jobs:
 
               if [ -n "$latest_commit" ]; then
                 tmpjson="$(mktemp)"
-                jq --arg path "$path" --arg commit "$latest_commit" \
-                  '(.raw[] | select(.path == $path).currentCommit) = $commit' \
+                jq --arg path "$path" --arg commit "$latest_commit" --arg sha256 "$new_sha256" \
+                  '(.raw[] | select(.path == $path).currentCommit) = $commit
+                   | (.raw[] | select(.path == $path).currentSha256) = $sha256' \
                   .github/resources.json > "$tmpjson"
                 mv "$tmpjson" .github/resources.json
               fi

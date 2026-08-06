@@ -58,9 +58,6 @@ internal class SettingsViewModel(
     fun setAutoStartEnabled(enabled: Boolean) =
         updateModuleSetting("AUTO_START", if (enabled) "1" else "0")
 
-    fun setGmsFixEnabled(enabled: Boolean) =
-        updateModuleSetting("GMS_FIX", if (enabled) "1" else "0")
-
     fun setWifiAutoSwitch(enabled: Boolean) =
         updateModuleSetting("WIFI_AUTO_SWITCH", if (enabled) "1" else "0")
 
@@ -199,7 +196,6 @@ internal class SettingsViewModel(
         val ebpf = ShellConfigFile.parse(ebpfContent.await())
         SettingsUiState(
             autoStartEnabled = module["AUTO_START"] == "1",
-            gmsFixEnabled = module["GMS_FIX"] == "1",
             proxySettings = parseProxySettings(module, ebpf),
             isLoading = false
         )
@@ -210,7 +206,6 @@ internal class SettingsViewModel(
             val settings = current.proxySettings
             when (key) {
                 "AUTO_START" -> current.copy(autoStartEnabled = value == "1")
-                "GMS_FIX" -> current.copy(gmsFixEnabled = value == "1")
                 "EBPF_NETWORK" -> current.copy(proxySettings = settings.copy(network = value))
                 "EBPF_UDP_TIMEOUT" -> current.copy(proxySettings = settings.copy(udpTimeout = value))
                 "EBPF_DNS_MODE" -> current.copy(proxySettings = settings.copy(dnsMode = value))

@@ -49,6 +49,17 @@
       "sourcePath": "sing-box/Rules/Proxy.srs",
       "metadataPath": "sing-box/Rules/Proxy.json",
       "currentCommit": "2602ff2dd69c4ff9bb204f5af3c18e419747f30e"
+    },
+    {
+      "name": "bpftool 5.16.0",
+      "path": "src/module/bin/bpftool",
+      "url": "https://raw.githubusercontent.com/bnsmb/binaries-for-Android/main/binaries/bpftool_static_5.16.0",
+      "repo": "bnsmb/binaries-for-Android",
+      "ref": "main",
+      "sourcePath": "binaries/bpftool_static_5.16.0",
+      "kind": "android-arm64-executable",
+      "currentCommit": "e5a6d28cccb6e38afd91460e0e23ef85731fe0bb",
+      "currentSha256": "fef6ee1c65fac265743040abb70841cc46dc903e026a8396d95dd1687d1ffb4f"
     }
   ],
   "singBox": {

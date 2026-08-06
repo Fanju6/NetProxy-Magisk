@@ -49,7 +49,7 @@ readonly EXECUTABLE_FILES="
     scripts/network/netmon.sh
     scripts/core/subscription.sh
     scripts/core/subworker.sh
-    scripts/utils/gms_fix.sh
+    bin/bpftool
 "
 
 ################################################################################

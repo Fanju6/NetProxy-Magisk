@@ -247,6 +247,7 @@ See the [NetProxy documentation](https://www.netproxy.store/) for complete insta
 | [AsteriskNG](https://github.com/Asterisk4Magisk/AsteriskNG) | Android eBPF implementation reference |
 | [zashboard](https://github.com/Zephyruso/zashboard) | Clash API dashboard |
 | [v2rayNG](https://github.com/2dust/v2rayNG) | Node parsing reference |
+| [binaries-for-Android](https://github.com/bnsmb/binaries-for-Android) | Android arm64 bpftool binary |
 
 ---
 

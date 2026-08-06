@@ -409,6 +409,22 @@ reload_catalog_structure_if_running() {
 }
 
 #######################################
+# 在后台重新投影 Catalog 分组结构
+# 删除分组已经完成后无需阻塞调用方等待核心 reload；子进程忽略 HUP，
+# 即使 Android/WebUI 关闭命令通道也会继续完成运行时同步。
+# 参数: 无
+# 返回: 始终返回 0
+#######################################
+reload_catalog_structure_async_if_running() {
+  [ -n "$(get_pid "$SING_BOX_BIN")" ] || return 0
+  (
+    trap '' HUP
+    sh "$SERVICE_SCRIPT" reload > /dev/null 2>&1
+  ) < /dev/null > /dev/null 2>&1 &
+  return 0
+}
+
+#######################################
 # 手动节点消失时回退当前分组 Auto
 # 参数:
 #   $1  发生变更的分组 ID
@@ -1036,7 +1052,7 @@ remove_subscription() {
   acquire_catalog_lock "$group_id" || return 1
   rm -rf "$group_dir" || { release_catalog_lock; return 1; }
   release_catalog_lock
-  reload_catalog_structure_if_running
+  reload_catalog_structure_async_if_running
 }
 
 #######################################

@@ -50,8 +50,6 @@
     <string name="proxy_settings_summary">配置端口、路由标记、接口和过滤规则</string>
     <string name="auto_start">开机自启</string>
     <string name="auto_start_summary">系统启动时自动开启服务</string>
-    <string name="gms_fix">GMS 修复</string>
-    <string name="gms_fix_summary">修复部分设备 GMS 网络问题</string>
     <string name="send_log">发送日志</string>
     <string name="save_log">保存日志</string>
     <string name="log_saved">日志已保存</string>

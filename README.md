@@ -262,6 +262,7 @@ su -c '/data/adb/modules/netproxy/scripts/cli service logs sub 100'
 | [AsteriskNG](https://github.com/Asterisk4Magisk/AsteriskNG) | Android eBPF 实现参考 |
 | [zashboard](https://github.com/Zephyruso/zashboard) | Clash API 控制面板 |
 | [v2rayNG](https://github.com/2dust/v2rayNG) | 节点解析实现参考 |
+| [binaries-for-Android](https://github.com/bnsmb/binaries-for-Android) | Android arm64 bpftool 二进制 |
 
 ---
 

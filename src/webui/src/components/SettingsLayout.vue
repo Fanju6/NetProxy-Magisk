@@ -15,7 +15,6 @@ const { t } = useI18n();
 /** 设置页聚合状态：模块设置、eBPF 入站和 Wi-Fi 自动切换。 */
 export interface SettingsState {
   autoStartEnabled: boolean;
-  gmsFixEnabled: boolean;
   network: string;
   udpTimeout: string;
   dnsMode: 'hijack' | 'off';
@@ -43,7 +42,6 @@ type SettingsKey = keyof SettingsState;
 
 const settingsState = ref<SettingsState>({
   autoStartEnabled: false,
-  gmsFixEnabled: false,
   network: '',
   udpTimeout: '5m',
   dnsMode: 'hijack',
@@ -191,7 +189,6 @@ const loadSettings = async () => {
     const ebpfConfig = parseConfigFile(ebpfContent);
 
     settingsState.value.autoStartEnabled = getBool(moduleConfig, 'AUTO_START', false);
-    settingsState.value.gmsFixEnabled = getBool(moduleConfig, 'GMS_FIX', false);
     settingsState.value.wifiAutoSwitch = getBool(moduleConfig, 'WIFI_AUTO_SWITCH', false);
     settingsState.value.wifiSsidMode = getValue(moduleConfig, 'WIFI_SSID_MODE', 'blacklist') === 'whitelist' ? 'whitelist' : 'blacklist';
     settingsState.value.wifiSsidList = getValue(moduleConfig, 'WIFI_SSID_LIST', '');
@@ -330,13 +327,6 @@ const toggleAutoStart = async () => {
   showToast(value ? t('settings.autoStartOn') : t('settings.autoStartOff'));
 };
 
-const toggleGmsFix = async () => {
-  const value = !settingsState.value.gmsFixEnabled;
-  settingsState.value.gmsFixEnabled = value;
-  await updateGlobalModuleSetting('GMS_FIX', value ? '1' : '0');
-  showToast(value ? t('settings.gmsFixOn') : t('settings.gmsFixOff'));
-};
-
 const toggleModuleBool = async (key: SettingsKey) => {
   await setModuleValue(key, !Boolean(settingsState.value[key]));
 };
@@ -401,7 +391,6 @@ onMounted(loadSettings);
 
 provide('settingsState', settingsState);
 provide('toggleAutoStart', toggleAutoStart);
-provide('toggleGmsFix', toggleGmsFix);
 provide('toggleModuleBool', toggleModuleBool);
 provide('setEbpfValue', setEbpfValue);
 provide('setEbpfValues', setEbpfValues);

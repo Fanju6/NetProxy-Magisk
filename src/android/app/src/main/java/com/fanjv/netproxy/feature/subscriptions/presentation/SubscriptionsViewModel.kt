@@ -64,7 +64,7 @@ internal class SubscriptionsViewModel(
 
     fun activate(id: String) = runOperation("activate", id) {
         repository.activate(id)
-        "已启用该订阅"
+        "已启用该配置"
     }
 
     fun remove(id: String, replacement: String = "") = runOperation("remove", id) {

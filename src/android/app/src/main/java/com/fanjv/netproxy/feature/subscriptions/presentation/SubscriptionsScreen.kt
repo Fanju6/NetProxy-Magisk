@@ -120,7 +120,7 @@ internal fun SubscriptionsScreen(
                     title = "订阅",
                     scrollBehavior = scrollBehavior,
                     actions = {
-                        if (state.groups.isNotEmpty()) {
+                        if (state.groups.any { it.type == "subscription" }) {
                             IconButton(
                                 enabled = state.operation.isEmpty(),
                                 onClick = viewModel::updateAll
@@ -177,14 +177,14 @@ internal fun SubscriptionsScreen(
                     ),
                     overscrollEffect = null
                 ) {
-                    items(state.groups, key = CatalogGroupSummary::id) { subscription ->
-                        SubscriptionCard(
-                            subscription = subscription,
+                    items(state.groups, key = CatalogGroupSummary::id) { group ->
+                        CatalogGroupCard(
+                            group = group,
                             busy = state.operation.isNotEmpty(),
-                            onSelect = { viewModel.activate(subscription.id) },
-                            onUpdate = { viewModel.updateSubscription(subscription.id) },
-                            onDelete = { viewModel.remove(subscription.id) },
-                            onEdit = { navigator.push(Route.SubscriptionDetails(subscription.id)) }
+                            onSelect = { viewModel.activate(group.id) },
+                            onUpdate = { viewModel.updateSubscription(group.id) },
+                            onDelete = { viewModel.remove(group.id) },
+                            onEdit = { navigator.push(Route.SubscriptionDetails(group.id)) }
                         )
                     }
                 }
@@ -196,8 +196,8 @@ internal fun SubscriptionsScreen(
 }
 
 @Composable
-private fun SubscriptionCard(
-    subscription: CatalogGroupSummary,
+private fun CatalogGroupCard(
+    group: CatalogGroupSummary,
     busy: Boolean,
     onSelect: () -> Unit,
     onUpdate: () -> Unit,
@@ -205,10 +205,11 @@ private fun SubscriptionCard(
     onEdit: () -> Unit
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
-    val usage = subscription.usage
+    val isSubscription = group.type == "subscription"
+    val usage = group.usage
     val used = (usage?.upload ?: 0L) + (usage?.download ?: 0L)
     val total = usage?.total ?: 0L
-    val updatedAt = subscription.lastSuccessAt.ifBlank { subscription.updatedAt }
+    val updatedAt = group.lastSuccessAt.ifBlank { group.updatedAt }
 
     Card(
         modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
@@ -222,7 +223,7 @@ private fun SubscriptionCard(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = subscription.name,
+                text = group.name,
                 modifier = Modifier.weight(1f),
                 fontSize = 17.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -230,7 +231,7 @@ private fun SubscriptionCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            if (subscription.active) {
+            if (group.active) {
                 val activeColor = Color(0xFF32A852)
                 Text(
                     text = "使用中",
@@ -249,7 +250,9 @@ private fun SubscriptionCard(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column {
                 Text(
-                    text = if (total > 0) {
+                    text = if (!isSubscription) {
+                        "${group.nodeCount} 个节点"
+                    } else if (total > 0) {
                         "已用 ${formatBytes(used)} / ${formatBytes(total)}"
                     } else {
                         "暂无流量信息"
@@ -261,9 +264,9 @@ private fun SubscriptionCard(
                 Spacer(Modifier.weight(1f))
                 Text(
                     text = if (updatedAt.isNotBlank()) {
-                        "更新于 ${formatDate(updatedAt)}"
+                        "${if (isSubscription) "更新" else "修改"}于 ${formatDate(updatedAt)}"
                     } else {
-                        "尚未更新"
+                        if (isSubscription) "尚未更新" else "暂无修改时间"
                     },
                     modifier = Modifier.padding(top = 2.dp),
                     fontSize = 12.sp,
@@ -282,50 +285,52 @@ private fun SubscriptionCard(
                 Icon(
                     modifier = Modifier.size(20.dp),
                     imageVector = MiuixIcons.MoreCircle,
-                    contentDescription = "订阅详情",
+                    contentDescription = if (isSubscription) "订阅详情" else "本地配置详情",
                     tint = colorScheme.onSurfaceVariantSummary
                 )
             }
-            Spacer(Modifier.width(8.dp))
-            IconButton(
-                onClick = onUpdate,
-                enabled = !busy,
-                minHeight = 35.dp,
-                minWidth = 35.dp,
-                backgroundColor = colorScheme.secondaryContainer
-            ) {
-                Icon(
-                    modifier = Modifier.size(20.dp),
-                    imageVector = MiuixIcons.Refresh,
-                    contentDescription = "更新订阅",
-                    tint = colorScheme.onSurfaceVariantSummary
-                )
-            }
-            Spacer(Modifier.width(8.dp))
-            IconButton(
-                onClick = { showDeleteDialog = true },
-                enabled = !busy,
-                minHeight = 35.dp,
-                minWidth = 35.dp,
-                backgroundColor = colorScheme.secondaryContainer
-            ) {
-                Icon(
-                    modifier = Modifier.size(20.dp),
-                    imageVector = MiuixIcons.Delete,
-                    contentDescription = "删除订阅",
-                    tint = colorScheme.onSurfaceVariantSummary
-                )
+            if (isSubscription) {
+                Spacer(Modifier.width(8.dp))
+                IconButton(
+                    onClick = onUpdate,
+                    enabled = !busy,
+                    minHeight = 35.dp,
+                    minWidth = 35.dp,
+                    backgroundColor = colorScheme.secondaryContainer
+                ) {
+                    Icon(
+                        modifier = Modifier.size(20.dp),
+                        imageVector = MiuixIcons.Refresh,
+                        contentDescription = "更新订阅",
+                        tint = colorScheme.onSurfaceVariantSummary
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                IconButton(
+                    onClick = { showDeleteDialog = true },
+                    enabled = !busy,
+                    minHeight = 35.dp,
+                    minWidth = 35.dp,
+                    backgroundColor = colorScheme.secondaryContainer
+                ) {
+                    Icon(
+                        modifier = Modifier.size(20.dp),
+                        imageVector = MiuixIcons.Delete,
+                        contentDescription = "删除订阅",
+                        tint = colorScheme.onSurfaceVariantSummary
+                    )
+                }
             }
         }
     }
 
     OverlayDialog(
-        show = showDeleteDialog,
+        show = isSubscription && showDeleteDialog,
         title = "删除订阅？",
         onDismissRequest = { showDeleteDialog = false }
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("将删除 ${subscription.name} 的节点与更新记录，此操作无法撤销。")
+            Text("将删除 ${group.name} 的节点与更新记录，此操作无法撤销。")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(
                     text = "取消",
@@ -375,7 +380,7 @@ internal fun SubscriptionDetailsScreen(
             BlurredBar(backdrop) {
                 TopAppBar(
                     color = barColor,
-                    title = "订阅详情",
+                    title = if (state.details?.group?.type == "local") "本地配置详情" else "订阅详情",
                     scrollBehavior = scrollBehavior,
                     navigationIcon = { BackIconButton(onClick = onBack) },
                     actions = {
@@ -717,6 +722,7 @@ private fun SubscriptionSummaryCard(
     subscription: CatalogGroupSummary,
     onActivate: () -> Unit
 ) {
+    val isSubscription = subscription.type == "subscription"
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -733,7 +739,11 @@ private fun SubscriptionSummaryCard(
                 )
             }
             Text(
-                text = "${subscription.nodeCount} 个节点 · 每 ${formatDuration(subscription.updateInterval)} 更新",
+                text = if (isSubscription) {
+                    "${subscription.nodeCount} 个节点 · 每 ${formatDuration(subscription.updateInterval)} 更新"
+                } else {
+                    "${subscription.nodeCount} 个节点 · 本地配置"
+                },
                 color = colorScheme.onSurfaceVariantSummary,
                 fontSize = 13.sp
             )
@@ -742,7 +752,7 @@ private fun SubscriptionSummaryCard(
             }
             if (!subscription.active) {
                 TextButton(
-                    text = "设为活动订阅",
+                    text = if (isSubscription) "设为活动订阅" else "设为活动配置",
                     onClick = onActivate,
                     colors = ButtonDefaults.textButtonColorsPrimary(),
                     modifier = Modifier.fillMaxWidth()

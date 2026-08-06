@@ -29,7 +29,6 @@ data class ProxySettings(
 @Immutable
 data class SettingsUiState(
     val autoStartEnabled: Boolean = false,
-    val gmsFixEnabled: Boolean = false,
     val proxySettings: ProxySettings = ProxySettings(),
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,

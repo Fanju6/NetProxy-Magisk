@@ -1,10 +1,10 @@
 #!/system/bin/sh
 #######################################
 # 文件: service.sh
-# 功能: Magisk service 阶段入口，在系统启动完成后执行：记录运行环境、
-#       加载模块配置，按需开机自启 sing-box 服务并执行设备兼容性修复。
+# 功能: Magisk service 阶段入口，在系统启动完成后记录运行环境，
+#       加载模块配置并按需开机自启 sing-box 服务。
 # 用法: 由 Magisk/KernelSU/APatch 在 service 阶段自动调用。
-# 依赖: common.sh、scripts/core/service.sh、scripts/utils/gms_fix.sh。
+# 依赖: common.sh、scripts/core/service.sh。
 #######################################
 
 set -e  # 命令失败立即退出
@@ -22,13 +22,12 @@ readonly LOG_TAG="boot"                            # 日志组件标签
 # 加载模块配置
 # 先设默认值，再用配置文件覆盖 (文件不存在时沿用默认)。
 # 参数: 无
-# 全局: 设置 AUTO_START / GMS_FIX
+# 全局: 设置 AUTO_START
 # 返回: 无
 #######################################
 load_module_config() {
   # 开机服务相关默认值
   AUTO_START=1
-  GMS_FIX=1
 
   if [ -f "$MODULE_CONF" ]; then
     . "$MODULE_CONF"
@@ -51,20 +50,6 @@ wait_for_boot() {
   resetprop -w sys.boot_completed
   log "INFO" "系统启动完成"
 
-}
-
-#######################################
-# 执行设备兼容性修复
-# 参数: 无
-# 全局: GMS_FIX 为 1 时才执行
-# 返回: 无
-#######################################
-check_device_specific() {
-  # 启用时执行设备兼容性修复脚本
-  if [ "$GMS_FIX" = "1" ]; then
-    log "INFO" "GMS 修复已启用，执行修复脚本"
-    sh "$MODDIR/scripts/utils/gms_fix.sh"
-  fi
 }
 
 #######################################
@@ -145,8 +130,5 @@ fi
 
 # 订阅调度与代理核心解耦；放在核心启动之后，避免 worker 确认阻塞代理就绪。
 start_subscription_worker
-
-# 执行设备兼容性修复
-check_device_specific
 
 log "INFO" "开机服务流程结束"

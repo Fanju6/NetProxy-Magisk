@@ -27,6 +27,11 @@ Third-party components and adapted code include:
   https://github.com/Zephyruso/zashboard
   Distributed under its respective license.
 
+- binaries-for-Android / bpftool
+  https://github.com/bnsmb/binaries-for-Android
+  Provides the prebuilt Android arm64 bpftool used by eBPF diagnostics.
+  The repository and upstream bpftool retain their respective licenses.
+
 Additional build and runtime dependencies retain their respective copyrights
 and licenses. Dependency coordinates are declared in the Go modules, npm
 manifests, and src/android/gradle/libs.versions.toml.

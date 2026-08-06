@@ -21,7 +21,7 @@ internal class SubscriptionRepository(
     private val commandFiles: CommandFileStore
 ) {
     suspend fun list(): List<CatalogGroupSummary> =
-        client.json.decodeFromJsonElement(client.execute("sub", "list").data)
+        client.json.decodeFromJsonElement(client.execute("catalog", "list").data)
 
     suspend fun details(id: String): CatalogNodeGroup =
         client.json.decodeFromJsonElement(client.execute("catalog", "show", id).data)
@@ -87,7 +87,7 @@ internal class SubscriptionRepository(
     }
 
     suspend fun activate(id: String) {
-        client.execute("sub", "activate", id)
+        client.execute("node", "use", "auto", id)
     }
 
     suspend fun remove(id: String, replacementGroupId: String = "") {

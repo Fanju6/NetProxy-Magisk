@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * @file SettingsMain.vue
- * @description 设置主页：代理与分应用入口、开机自启、GMS 修复、语言切换、
+ * @description 设置主页：代理与分应用入口、开机自启、语言切换、
  *   日志与关于入口。开关状态与切换动作由父级 SettingsLayout 经 provide 注入，本组件只做展示与转发。
  */
 import { inject, computed } from 'vue';
@@ -17,7 +17,6 @@ const { t, locale, messages } = useI18n();
 // 由 SettingsLayout 注入：设置状态 + 各开关的切换动作
 const settingsState = inject<Ref<SettingsState>>('settingsState')!;
 const toggleAutoStart = inject<() => Promise<void>>('toggleAutoStart')!;
-const toggleGmsFix = inject<() => Promise<void>>('toggleGmsFix')!;
 
 /** 跳转到指定子页路由。 */
 const navigateTo = (path: string) => {
@@ -75,7 +74,7 @@ const onLocaleChange = (e: Event) => {
       </div>
     </div>
 
-    <!-- 二、开关项：开机自启 / GMS 修复 -->
+    <!-- 二、开机自启 -->
     <div class="config-card">
       <!-- 开机自启 -->
       <div class="switch-pref-row" @click="toggleAutoStart">
@@ -89,20 +88,6 @@ const onLocaleChange = (e: Event) => {
           <span class="pref-summary">{{ t('settings.autoStartDesc') }}</span>
         </div>
         <md-switch icons :selected="settingsState.autoStartEnabled" @click.stop="toggleAutoStart"></md-switch>
-      </div>
-
-      <!-- GMS（Google 服务）修复 -->
-      <div class="switch-pref-row" @click="toggleGmsFix">
-        <div class="pref-icon-container">
-          <svg viewBox="0 0 24 24">
-            <path d="M7.5 5.6L10 7L8.6 4.5L10 2L7.5 3.4L5 2L6.4 4.5L5 7L7.5 5.6zm12 9.8L17 14l1.4 2.5L17 19l2.5-1.4L22 19l-1.4-2.5L22 14l-2.5 1.4zM22 2l-2.5 1.4L17 2l1.4 2.5L17 7l2.5-1.4L22 7l-1.4-2.5L22 2zM14.07 8.43L2.69 19.8c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0L15.48 9.84l-1.41-1.41z" fill="currentColor"/>
-          </svg>
-        </div>
-        <div class="pref-text">
-          <span class="pref-title">{{ t('settings.gmsFix') }}</span>
-          <span class="pref-summary">{{ t('settings.gmsFixDesc') }}</span>
-        </div>
-        <md-switch icons :selected="settingsState.gmsFixEnabled" @click.stop="toggleGmsFix"></md-switch>
       </div>
     </div>
 

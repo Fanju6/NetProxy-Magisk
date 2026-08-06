@@ -21,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
@@ -34,22 +35,17 @@ import com.fanjv.netproxy.core.ui.component.AdaptiveTopAppBar
 import com.fanjv.netproxy.core.ui.component.BackIconButton
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.CardItem
+import com.fanjv.netproxy.core.ui.component.TopBarMenuAction
+import com.fanjv.netproxy.core.ui.component.TopBarMoreMenu
 import com.fanjv.netproxy.core.ui.component.groupedCardSection
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.Route
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.DropdownImpl
-import top.yukonga.miuix.kmp.basic.ListPopupColumn
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
-import top.yukonga.miuix.kmp.basic.PopupPositionProvider
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Refresh
-import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
@@ -95,53 +91,30 @@ internal fun SingBoxKernelSettingsScreen(
                     navigationIcon = { BackIconButton(onClick = onBack) },
                     scrollBehavior = scrollBehavior,
                     actions = {
-                        val showRestartPopup = remember { mutableStateOf(false) }
-                        Box {
-                            IconButton(
-                                onClick = { showRestartPopup.value = true },
-                                holdDownState = showRestartPopup.value,
-                            ) {
-                                Icon(
-                                    imageVector = MiuixIcons.Refresh,
-                                    contentDescription = stringResource(R.string.ebpf_restart_service),
-                                    tint = colorScheme.onSurface,
-                                )
-                            }
-                            OverlayListPopup(
-                                show = showRestartPopup.value,
-                                alignment = PopupPositionProvider.Align.TopEnd,
-                                onDismissRequest = { showRestartPopup.value = false },
-                            ) {
-                                ListPopupColumn {
-                                    DropdownImpl(
-                                        text = stringResource(R.string.singbox_check_all),
-                                        optionSize = 2,
-                                        isSelected = false,
-                                        index = 0,
-                                        onSelectedIndexChange = {
-                                            showRestartPopup.value = false
-                                            viewModel.checkConfig { success ->
-                                                Toast.makeText(
-                                                    context,
-                                                    if (success) checkSuccess else checkFailed,
-                                                    Toast.LENGTH_SHORT,
-                                                ).show()
-                                            }
-                                        },
-                                    )
-                                    DropdownImpl(
-                                        text = stringResource(R.string.ebpf_restart_service),
-                                        optionSize = 2,
-                                        isSelected = false,
-                                        index = 1,
-                                        onSelectedIndexChange = {
-                                            showRestartPopup.value = false
-                                            viewModel.restartService()
-                                        },
-                                    )
-                                }
-                            }
-                        }
+                        var showMoreMenu by remember { mutableStateOf(false) }
+                        TopBarMoreMenu(
+                            expanded = showMoreMenu,
+                            onExpandedChange = { showMoreMenu = it },
+                            actions = listOf(
+                                TopBarMenuAction(
+                                    text = stringResource(R.string.singbox_check_all),
+                                    onClick = {
+                                        viewModel.checkConfig { success ->
+                                            Toast.makeText(
+                                                context,
+                                                if (success) checkSuccess else checkFailed,
+                                                Toast.LENGTH_SHORT,
+                                            ).show()
+                                        }
+                                    },
+                                ),
+                                TopBarMenuAction(
+                                    text = stringResource(R.string.ebpf_restart_service),
+                                    onClick = viewModel::restartService,
+                                ),
+                            ),
+                            contentDescription = stringResource(R.string.more_actions),
+                        )
                     },
                 )
             }

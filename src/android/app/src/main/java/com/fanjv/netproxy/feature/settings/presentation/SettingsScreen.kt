@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.AppRegistration
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.ContactPage
@@ -117,21 +116,6 @@ internal fun SettingsScreen(
                             onClick = { navigator.push(Route.ProxySettings) }
                         )
                         },
-                        CardItem("apps") {
-                        ArrowPreference(
-                            title = stringResource(R.string.proxy_apps),
-                            summary = stringResource(R.string.proxy_mode_summary),
-                            startAction = {
-                                Icon(
-                                    imageVector = Icons.Rounded.AppRegistration,
-                                    contentDescription = null,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            onClick = { navigator.push(Route.Apps) }
-                        )
-                        },
                         CardItem("kernel") {
                         ArrowPreference(
                             title = stringResource(R.string.kernel_settings),
@@ -145,6 +129,21 @@ internal fun SettingsScreen(
                                 )
                             },
                             onClick = { navigator.push(Route.KernelSettings) }
+                        )
+                        },
+                        CardItem("apps") {
+                        ArrowPreference(
+                            title = stringResource(R.string.proxy_apps),
+                            summary = stringResource(R.string.proxy_mode_summary),
+                            startAction = {
+                                Icon(
+                                    imageVector = Icons.Rounded.AppRegistration,
+                                    contentDescription = null,
+                                    modifier = Modifier.padding(end = 6.dp),
+                                    tint = colorScheme.onBackground
+                                )
+                            },
+                            onClick = { navigator.push(Route.Apps) }
                         )
                         },
                     ),
@@ -168,22 +167,6 @@ internal fun SettingsScreen(
                             },
                             checked = settings.autoStartEnabled,
                             onCheckedChange = { viewModel.setAutoStartEnabled(it) }
-                        )
-                        },
-                        CardItem("gmsFix") {
-                        SwitchPreference(
-                            title = stringResource(R.string.gms_fix),
-                            summary = stringResource(R.string.gms_fix_summary),
-                            startAction = {
-                                Icon(
-                                    imageVector = Icons.Rounded.AutoFixHigh,
-                                    contentDescription = null,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            checked = settings.gmsFixEnabled,
-                            onCheckedChange = { viewModel.setGmsFixEnabled(it) }
                         )
                         },
                     ),

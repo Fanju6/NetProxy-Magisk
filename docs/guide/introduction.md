@@ -54,7 +54,7 @@ Android 管理器下载地址：[`NetProxy - Google Play`](https://play.google.c
 - 当前节点与出站模式
 - 节点 / 订阅导入、切换、测速、导出
 - 分应用代理开关与黑白名单
-- GMS 修复、自动启动、动态测速等常用项
+- 自动启动、动态测速等常用项
 - sing-box / eBPF / JSON 配置编辑
 - 日志查看与导出
 

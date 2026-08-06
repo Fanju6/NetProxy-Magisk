@@ -18,6 +18,7 @@ readonly CATALOG_STAGING_DIR="$CATALOG_DIR/staging"
 readonly SERVICE_STATE_DIR="$CONFIG_DIR/runtime"
 readonly NETPROXY_NATIVE_BIN="$MODDIR/bin/netproxy-native"
 readonly SING_BOX_BIN="$MODDIR/bin/sing-box"
+readonly BPFTOOL_BIN="$MODDIR/bin/bpftool"
 readonly SERVICE_SCRIPT="$MODDIR/scripts/core/service.sh"
 readonly SWITCH_SCRIPT="$MODDIR/scripts/core/switch.sh"
 readonly SUBWORKER_SCRIPT="$MODDIR/scripts/core/subworker.sh"
@@ -949,7 +950,7 @@ command_app() {
 format_ebpf_diagnostic() {
   local source="$1" destination="$2" core_mode="$3" probe_status="$4"
   local summary pass_count=0 warn_count=0 fail_count=0 unknown_count=0
-  local scope kernel architecture conclusion ready=0
+  local scope kernel architecture runtime_probe conclusion ready=0
   local common_fail=0 local_fail=0 shared_fail=0
 
   summary="$(sed -n 's/^Summary: PASS=\([0-9][0-9]*\) WARN=\([0-9][0-9]*\) FAIL=\([0-9][0-9]*\) UNKNOWN=\([0-9][0-9]*\)$/\1 \2 \3 \4/p' "$source" | head -n 1)"
@@ -963,6 +964,7 @@ format_ebpf_diagnostic() {
 
   kernel="$(sed -n 's/^Platform:.*kernel: \([^;]*\);.*$/\1/p' "$source" | head -n 1)"
   architecture="$(sed -n 's/^Platform:.*architecture: \([^;]*\);.*$/\1/p' "$source" | head -n 1)"
+  runtime_probe="$(sed -n 's/^Runtime feature probe: //p' "$source" | head -n 1)"
   case "$core_mode" in
     local) scope="本机应用流量" ;;
     shared-network) scope="热点与共享网络" ;;
@@ -1009,7 +1011,11 @@ format_ebpf_diagnostic() {
       printf '\n建议先检查 Root 授权、内核 eBPF 配置和服务日志。\n'
     elif [ "$unknown_count" -gt 0 ]; then
       printf '\n说明:\n'
-      printf '  “无法静态确认”不代表失败。设备未安装 bpftool 时，部分能力只能在 sing-box 实际启动时验证。\n'
+      if [ "$runtime_probe" = "bpftool" ]; then
+        printf '  “无法静态确认”不代表失败。部分挂载类型无法由 bpftool 安全区分，需由 sing-box 启动时最终验证。\n'
+      else
+        printf '  bpftool 未能完成运行时探测，部分能力需由 sing-box 启动时最终验证。\n'
+      fi
       if [ "$ready" = "1" ]; then
         printf '  当前服务已经成功启动，因此这些项目不影响当前使用。\n'
       else
@@ -1055,6 +1061,7 @@ command_ebpf() {
     *) emit_error "usage.invalid" "用法: netproxyctl ebpf status [configured|all|local|shared] [--raw]" 2 ;;
   esac
   require_file "$SING_BOX_BIN" "sing-box 二进制不存在"
+  require_file "$BPFTOOL_BIN" "bpftool 二进制不存在，请重新安装模块"
   cgroup_path="$(read_conf "$EBPF_CONF" "EBPF_CGROUP_PATH" "")"
   interfaces="$(read_conf "$EBPF_CONF" "EBPF_SHARED_INTERFACES" "")"
   interface="${interfaces%% *}"
@@ -1064,16 +1071,16 @@ command_ebpf() {
 
   status=0
   if [ "$core_mode" = "all" ] && [ -n "$cgroup_path" ] && [ -n "$interface" ]; then
-    "$SING_BOX_BIN" tools ebpf status --mode "$core_mode" \
+    PATH="$MODDIR/bin:$PATH" "$SING_BOX_BIN" tools ebpf status --mode "$core_mode" \
       --cgroup "$cgroup_path" --interface "$interface" > "$probe_output" 2>&1 || status=$?
   elif [ "$core_mode" != "shared-network" ] && [ -n "$cgroup_path" ]; then
-    "$SING_BOX_BIN" tools ebpf status --mode "$core_mode" \
+    PATH="$MODDIR/bin:$PATH" "$SING_BOX_BIN" tools ebpf status --mode "$core_mode" \
       --cgroup "$cgroup_path" > "$probe_output" 2>&1 || status=$?
   elif [ "$core_mode" != "local" ] && [ -n "$interface" ]; then
-    "$SING_BOX_BIN" tools ebpf status --mode "$core_mode" \
+    PATH="$MODDIR/bin:$PATH" "$SING_BOX_BIN" tools ebpf status --mode "$core_mode" \
       --interface "$interface" > "$probe_output" 2>&1 || status=$?
   else
-    "$SING_BOX_BIN" tools ebpf status --mode "$core_mode" > "$probe_output" 2>&1 || status=$?
+    PATH="$MODDIR/bin:$PATH" "$SING_BOX_BIN" tools ebpf status --mode "$core_mode" > "$probe_output" 2>&1 || status=$?
   fi
 
   if [ "$is_raw" = "true" ]; then

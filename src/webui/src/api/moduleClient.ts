@@ -222,7 +222,6 @@ const mockSubscriptionGroup = (): CatalogNodeGroup => ({
 const mockConfigDefaults: Record<'module' | 'ebpf', string> = {
   module: [
     'AUTO_START=0',
-    'GMS_FIX=0',
     'WIFI_AUTO_SWITCH=0',
     'WIFI_SSID_MODE="blacklist"',
     'WIFI_SSID_LIST=""',
