@@ -6,7 +6,7 @@
 
 - `src/module/`：Magisk、KernelSU 与 APatch 模块，包含生命周期脚本、`netproxyctl`、sing-box 配置、资源和打包内容。
 - `src/native/netproxy/`：模块专用 Go 组件，负责节点转换、Provider、订阅 HTTP 元数据和 Service API 客户端。
-- `src/webui/`：Vue 3 + TypeScript WebUI，构建产物写入 `src/module/webroot/netproxy/`。
+- `src/webui/`：React + TypeScript 终端式 WebUI，构建产物写入 `src/module/webroot/netproxy/`。
 - `src/android/`：Android 管理器，使用 Compose、miuix、Navigation3 和内置 Scripta 源码快照。
 - `docs/`：VitePress 用户文档；`tests/`：Shell 契约与运行时回归测试。
 
@@ -55,9 +55,9 @@
 
 ## WebUI
 
-- 模块命令统一经 `src/webui/src/api/moduleClient.ts`，KernelSU/WebView 平台能力统一经 `src/webui/src/utils/ksu.ts`；页面不得自行拼接 Root 命令。
+- 当前 WebUI 是终端式界面：所有 Root 命令统一经 `src/webui/src/exec.ts` 调用 `netproxyctl`，其他模块不得自行拼接 Root 命令。
 - 持久节点和订阅在核心停止时也必须可读，数据来自 `netproxyctl`；运行时延迟、流量和选择状态再与 sing-box API 合并。
-- 用户可见文案同步维护中文、英文和俄文资源。不要把错误、加载状态或内部 UUID直接暴露为界面主信息。
+- 不要把错误、加载状态或内部 UUID 直接暴露为界面主信息。
 - 修改 WebUI 后必须构建并检查 `src/module/webroot/netproxy/` 产物路径，但不要手工编辑该生成目录。
 
 ## 安全与生成物
