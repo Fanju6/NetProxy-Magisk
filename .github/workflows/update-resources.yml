@@ -124,8 +124,8 @@ jobs:
           CGO_ENABLED: '1'
           GOOS: android
           GOARCH: arm64
-          CC: ${{ steps.setup_singbox_ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang
-          BPF_CLANG: ${{ steps.setup_singbox_ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android33-clang
+          CC: ${{ steps.setup_singbox_ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android35-clang
+          BPF_CLANG: ${{ steps.setup_singbox_ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android35-clang
           SING_BOX_TARGET: ${{ steps.singbox_check.outputs.target }}
           CURRENT_VERSION: ${{ steps.singbox_check.outputs.current_version }}
           LATEST_VERSION: ${{ steps.singbox_check.outputs.latest_version }}
