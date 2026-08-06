@@ -70,7 +70,7 @@
     "path": "src/module/bin/sing-box",
     "repo": "reF1nd/sing-box",
     "tagPattern": "^v[0-9].*-reF1nd$",
-    "currentVersion": "v1.14.0-beta.7-reF1nd",
+    "currentVersion": "v1.14.0-beta.8-reF1nd",
     "ndkVersion": "r29",
     "buildTags": [
       "with_gvisor",
