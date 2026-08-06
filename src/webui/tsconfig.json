@@ -1,8 +1,0 @@
-// 根配置：仅做 project references，把类型检查拆为 app（src 应用代码）与 node（构建脚本）两套
-{
-  "files": [],
-  "references": [
-    { "path": "./tsconfig.app.json" },
-    { "path": "./tsconfig.node.json" }
-  ]
-}
