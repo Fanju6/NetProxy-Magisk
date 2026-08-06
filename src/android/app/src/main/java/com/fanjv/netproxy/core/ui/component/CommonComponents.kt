@@ -117,8 +117,10 @@ fun StatusTag(
             modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
             text = label,
             color = contentColor,
-            fontSize = 9.sp,
-            fontWeight = FontWeight(750),
+            style = MiuixTheme.textStyles.footnote2.copy(
+                fontSize = 9.sp,
+                fontWeight = FontWeight(750)
+            ),
             maxLines = 1,
             softWrap = false
         )
@@ -157,7 +159,7 @@ fun WarningCard(
             Text(
                 text = message,
                 color = if (isDynamicColor) colorScheme.onErrorContainer else Color(0xFFF72727),
-                fontSize = 14.sp,
+                style = MiuixTheme.textStyles.body2,
                 modifier = Modifier.weight(1f)
             )
             action?.invoke()
