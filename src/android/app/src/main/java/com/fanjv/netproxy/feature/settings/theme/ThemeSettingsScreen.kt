@@ -41,7 +41,6 @@ import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.runtime.Composable
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -64,7 +63,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.R
+import com.fanjv.netproxy.core.ui.component.AdaptiveTopAppBar
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.CardItem
 import com.fanjv.netproxy.core.ui.component.groupedCardItems
@@ -79,7 +80,6 @@ import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.SliderDefaults
 import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.Text
-import com.fanjv.netproxy.core.ui.component.AdaptiveTopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
@@ -167,19 +167,19 @@ internal fun ThemeSettingsScreen(
                     outerTopPadding = 12.dp,
                     items = buildList {
                         add(CardItem("enabled") {
-                        SwitchPreference(
-                            title = stringResource(R.string.settings_monet),
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.Wallpaper,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = null,
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            checked = theme.miuixMonet,
-                            onCheckedChange = viewModel::setMiuixMonet
-                        )
+                            SwitchPreference(
+                                title = stringResource(R.string.settings_monet),
+                                startAction = {
+                                    Icon(
+                                        Icons.Rounded.Wallpaper,
+                                        modifier = Modifier.padding(end = 6.dp),
+                                        contentDescription = null,
+                                        tint = colorScheme.onBackground
+                                    )
+                                },
+                                checked = theme.miuixMonet,
+                                onCheckedChange = viewModel::setMiuixMonet
+                            )
                         })
                         if (theme.miuixMonet) {
                             add(CardItem("keyColor") {
@@ -222,44 +222,44 @@ internal fun ThemeSettingsScreen(
                             })
                             if (theme.keyColor != 0) {
                                 add(CardItem("colorStyle") {
-                                        val styles = ThemePaletteStyle.entries
-                                        OverlayDropdownPreference(
-                                            title = stringResource(R.string.settings_color_style),
-                                            items = styles.map { it.name },
-                                            startAction = {
-                                                Icon(
-                                                    Icons.Rounded.Style,
-                                                    modifier = Modifier.padding(end = 6.dp),
-                                                    contentDescription = null,
-                                                    tint = colorScheme.onBackground
-                                                )
-                                            },
-                                            selectedIndex = styles.indexOfFirst { it.name == theme.colorStyle }
-                                                .coerceAtLeast(0),
-                                            onSelectedIndexChange = { index ->
-                                                viewModel.setColorStyle(styles[index].name)
-                                            }
-                                        )
+                                    val styles = ThemePaletteStyle.entries
+                                    OverlayDropdownPreference(
+                                        title = stringResource(R.string.settings_color_style),
+                                        items = styles.map { it.name },
+                                        startAction = {
+                                            Icon(
+                                                Icons.Rounded.Style,
+                                                modifier = Modifier.padding(end = 6.dp),
+                                                contentDescription = null,
+                                                tint = colorScheme.onBackground
+                                            )
+                                        },
+                                        selectedIndex = styles.indexOfFirst { it.name == theme.colorStyle }
+                                            .coerceAtLeast(0),
+                                        onSelectedIndexChange = { index ->
+                                            viewModel.setColorStyle(styles[index].name)
+                                        }
+                                    )
                                 })
                                 add(CardItem("colorSpec") {
-                                        val specs = ThemeColorSpec.entries
-                                        OverlayDropdownPreference(
-                                            title = stringResource(R.string.settings_color_spec),
-                                            items = specs.map { it.name },
-                                            startAction = {
-                                                Icon(
-                                                    Icons.Rounded.Palette,
-                                                    modifier = Modifier.padding(end = 6.dp),
-                                                    contentDescription = null,
-                                                    tint = colorScheme.onBackground
-                                                )
-                                            },
-                                            selectedIndex = specs.indexOfFirst { it.name == theme.colorSpec }
-                                                .coerceAtLeast(0),
-                                            onSelectedIndexChange = { index ->
-                                                viewModel.setColorSpec(specs[index].name)
-                                            }
-                                        )
+                                    val specs = ThemeColorSpec.entries
+                                    OverlayDropdownPreference(
+                                        title = stringResource(R.string.settings_color_spec),
+                                        items = specs.map { it.name },
+                                        startAction = {
+                                            Icon(
+                                                Icons.Rounded.Palette,
+                                                modifier = Modifier.padding(end = 6.dp),
+                                                contentDescription = null,
+                                                tint = colorScheme.onBackground
+                                            )
+                                        },
+                                        selectedIndex = specs.indexOfFirst { it.name == theme.colorSpec }
+                                            .coerceAtLeast(0),
+                                        onSelectedIndexChange = { index ->
+                                            viewModel.setColorSpec(specs[index].name)
+                                        }
+                                    )
                                 })
                             }
                         }
@@ -272,73 +272,73 @@ internal fun ThemeSettingsScreen(
                     items = buildList {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                             add(CardItem("blur") {
+                                SwitchPreference(
+                                    title = stringResource(R.string.settings_enable_blur),
+                                    summary = stringResource(R.string.settings_enable_blur_summary),
+                                    startAction = {
+                                        Icon(
+                                            Icons.Rounded.BlurOn,
+                                            modifier = Modifier.padding(end = 6.dp),
+                                            contentDescription = null,
+                                            tint = colorScheme.onBackground
+                                        )
+                                    },
+                                    checked = theme.enableBlur,
+                                    onCheckedChange = viewModel::setEnableBlur
+                                )
+                            })
+                        }
+                        add(CardItem("floatingBottomBar") {
                             SwitchPreference(
-                                title = stringResource(R.string.settings_enable_blur),
-                                summary = stringResource(R.string.settings_enable_blur_summary),
+                                title = stringResource(R.string.settings_floating_bottom_bar),
+                                summary = stringResource(R.string.settings_floating_bottom_bar_summary),
                                 startAction = {
                                     Icon(
-                                        Icons.Rounded.BlurOn,
+                                        Icons.Rounded.CallToAction,
                                         modifier = Modifier.padding(end = 6.dp),
                                         contentDescription = null,
                                         tint = colorScheme.onBackground
                                     )
                                 },
-                                checked = theme.enableBlur,
-                                onCheckedChange = viewModel::setEnableBlur
+                                checked = theme.enableFloatingBottomBar,
+                                onCheckedChange = viewModel::setEnableFloatingBottomBar
                             )
-                            })
-                        }
-                        add(CardItem("floatingBottomBar") {
-                        SwitchPreference(
-                            title = stringResource(R.string.settings_floating_bottom_bar),
-                            summary = stringResource(R.string.settings_floating_bottom_bar_summary),
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.CallToAction,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = null,
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            checked = theme.enableFloatingBottomBar,
-                            onCheckedChange = viewModel::setEnableFloatingBottomBar
-                        )
                         })
                         if (theme.enableFloatingBottomBar &&
                             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
                         ) {
                             add(CardItem("glass") {
+                                SwitchPreference(
+                                    title = stringResource(R.string.settings_enable_glass),
+                                    summary = stringResource(R.string.settings_enable_glass_summary),
+                                    startAction = {
+                                        Icon(
+                                            Icons.Rounded.WaterDrop,
+                                            modifier = Modifier.padding(end = 6.dp),
+                                            contentDescription = null,
+                                            tint = colorScheme.onBackground
+                                        )
+                                    },
+                                    checked = theme.enableFloatingBottomBarBlur,
+                                    onCheckedChange = viewModel::setEnableFloatingBottomBarBlur
+                                )
+                            })
+                        }
+                        add(CardItem("smoothCorner") {
                             SwitchPreference(
-                                title = stringResource(R.string.settings_enable_glass),
-                                summary = stringResource(R.string.settings_enable_glass_summary),
+                                title = stringResource(R.string.settings_smooth_corner),
+                                summary = stringResource(R.string.settings_smooth_corner_summary),
                                 startAction = {
                                     Icon(
-                                        Icons.Rounded.WaterDrop,
+                                        Icons.Rounded.RoundedCorner,
                                         modifier = Modifier.padding(end = 6.dp),
                                         contentDescription = null,
                                         tint = colorScheme.onBackground
                                     )
                                 },
-                                checked = theme.enableFloatingBottomBarBlur,
-                                onCheckedChange = viewModel::setEnableFloatingBottomBarBlur
+                                checked = theme.enableSmoothCorner,
+                                onCheckedChange = viewModel::setEnableSmoothCorner
                             )
-                            })
-                        }
-                        add(CardItem("smoothCorner") {
-                        SwitchPreference(
-                            title = stringResource(R.string.settings_smooth_corner),
-                            summary = stringResource(R.string.settings_smooth_corner_summary),
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.RoundedCorner,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = null,
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            checked = theme.enableSmoothCorner,
-                            onCheckedChange = viewModel::setEnableSmoothCorner
-                        )
                         })
                     },
                 )
@@ -349,71 +349,71 @@ internal fun ThemeSettingsScreen(
                     items = buildList {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                             add(CardItem("predictiveBack") {
-                            SwitchPreference(
-                                title = stringResource(R.string.settings_enable_predictive_back),
-                                summary = stringResource(R.string.settings_enable_predictive_back_summary),
+                                SwitchPreference(
+                                    title = stringResource(R.string.settings_enable_predictive_back),
+                                    summary = stringResource(R.string.settings_enable_predictive_back_summary),
+                                    startAction = {
+                                        Icon(
+                                            Icons.AutoMirrored.Rounded.MenuOpen,
+                                            modifier = Modifier.padding(end = 6.dp),
+                                            contentDescription = null,
+                                            tint = colorScheme.onBackground
+                                        )
+                                    },
+                                    checked = theme.enablePredictiveBack,
+                                    onCheckedChange = { enabled ->
+                                        viewModel.setEnablePredictiveBack(enabled)
+                                        com.fanjv.netproxy.NetProxyApplication.setEnableOnBackInvokedCallback(
+                                            context.applicationInfo,
+                                            enabled
+                                        )
+                                        activity?.recreate()
+                                    }
+                                )
+                            })
+                        }
+                        add(CardItem("pageScale") {
+                            var sliderValue by remember(theme.pageScale) { mutableFloatStateOf(theme.pageScale) }
+                            val showPageScalePanel = rememberSaveable { mutableStateOf(false) }
+                            ArrowPreference(
+                                title = stringResource(R.string.settings_page_scale),
+                                summary = stringResource(R.string.settings_page_scale_summary),
                                 startAction = {
                                     Icon(
-                                        Icons.AutoMirrored.Rounded.MenuOpen,
+                                        Icons.Rounded.AspectRatio,
                                         modifier = Modifier.padding(end = 6.dp),
                                         contentDescription = null,
                                         tint = colorScheme.onBackground
                                     )
                                 },
-                                checked = theme.enablePredictiveBack,
-                                onCheckedChange = { enabled ->
-                                    viewModel.setEnablePredictiveBack(enabled)
-                                    com.fanjv.netproxy.NetProxyApplication.setEnableOnBackInvokedCallback(
-                                        context.applicationInfo,
-                                        enabled
+                                endActions = {
+                                    Text(
+                                        text = stringResource(
+                                            R.string.percentage_value,
+                                            (sliderValue * 100).toInt(),
+                                        ),
+                                        color = colorScheme.onSurfaceVariantActions,
                                     )
-                                    activity?.recreate()
-                                }
+                                },
+                                onClick = { showPageScalePanel.value = !showPageScalePanel.value },
+                                holdDownState = showPageScalePanel.value,
+                                bottomAction = {
+                                    Slider(
+                                        value = sliderValue,
+                                        onValueChange = {
+                                            sliderValue = it
+                                        },
+                                        onValueChangeFinished = {
+                                            viewModel.setPageScale(sliderValue)
+                                        },
+                                        valueRange = 0.8f..1.1f,
+                                        showKeyPoints = true,
+                                        keyPoints = listOf(0.8f, 0.9f, 1f, 1.1f),
+                                        magnetThreshold = 0.01f,
+                                        hapticEffect = SliderDefaults.SliderHapticEffect.Step,
+                                    )
+                                },
                             )
-                            })
-                        }
-                        add(CardItem("pageScale") {
-                        var sliderValue by remember(theme.pageScale) { mutableFloatStateOf(theme.pageScale) }
-                        val showPageScalePanel = rememberSaveable { mutableStateOf(false) }
-                        ArrowPreference(
-                            title = stringResource(R.string.settings_page_scale),
-                            summary = stringResource(R.string.settings_page_scale_summary),
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.AspectRatio,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = null,
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            endActions = {
-                                Text(
-                                    text = stringResource(
-                                        R.string.percentage_value,
-                                        (sliderValue * 100).toInt(),
-                                    ),
-                                    color = colorScheme.onSurfaceVariantActions,
-                                )
-                            },
-                            onClick = { showPageScalePanel.value = !showPageScalePanel.value },
-                            holdDownState = showPageScalePanel.value,
-                            bottomAction = {
-                                Slider(
-                                    value = sliderValue,
-                                    onValueChange = {
-                                        sliderValue = it
-                                    },
-                                    onValueChangeFinished = {
-                                        viewModel.setPageScale(sliderValue)
-                                    },
-                                    valueRange = 0.8f..1.1f,
-                                    showKeyPoints = true,
-                                    keyPoints = listOf(0.8f, 0.9f, 1f, 1.1f),
-                                    magnetThreshold = 0.01f,
-                                    hapticEffect = SliderDefaults.SliderHapticEffect.Step,
-                                )
-                            },
-                        )
                         })
                     },
                 )

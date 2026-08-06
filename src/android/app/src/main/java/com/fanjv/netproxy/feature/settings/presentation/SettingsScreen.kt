@@ -18,12 +18,8 @@ import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Router
-import androidx.compose.material.icons.rounded.Speed
-import androidx.compose.material.icons.rounded.Sync
-import androidx.compose.material.icons.rounded.Update
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -32,8 +28,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import com.fanjv.netproxy.core.di.netProxyViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.R
+import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.CardItem
 import com.fanjv.netproxy.core.ui.component.groupedCardItems
@@ -102,49 +99,49 @@ internal fun SettingsScreen(
                     outerTopPadding = 12.dp,
                     items = listOf(
                         CardItem("proxy") {
-                        ArrowPreference(
-                            title = stringResource(R.string.proxy_settings),
-                            summary = stringResource(R.string.proxy_settings_summary),
-                            startAction = {
-                                Icon(
-                                    imageVector = Icons.Rounded.Router,
-                                    contentDescription = null,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            onClick = { navigator.push(Route.ProxySettings) }
-                        )
+                            ArrowPreference(
+                                title = stringResource(R.string.proxy_settings),
+                                summary = stringResource(R.string.proxy_settings_summary),
+                                startAction = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Router,
+                                        contentDescription = null,
+                                        modifier = Modifier.padding(end = 6.dp),
+                                        tint = colorScheme.onBackground
+                                    )
+                                },
+                                onClick = { navigator.push(Route.ProxySettings) }
+                            )
                         },
                         CardItem("kernel") {
-                        ArrowPreference(
-                            title = stringResource(R.string.kernel_settings),
-                            summary = stringResource(R.string.kernel_settings_summary),
-                            startAction = {
-                                Icon(
-                                    imageVector = Icons.Rounded.Memory,
-                                    contentDescription = null,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            onClick = { navigator.push(Route.KernelSettings) }
-                        )
+                            ArrowPreference(
+                                title = stringResource(R.string.kernel_settings),
+                                summary = stringResource(R.string.kernel_settings_summary),
+                                startAction = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Memory,
+                                        contentDescription = null,
+                                        modifier = Modifier.padding(end = 6.dp),
+                                        tint = colorScheme.onBackground
+                                    )
+                                },
+                                onClick = { navigator.push(Route.KernelSettings) }
+                            )
                         },
                         CardItem("apps") {
-                        ArrowPreference(
-                            title = stringResource(R.string.proxy_apps),
-                            summary = stringResource(R.string.proxy_mode_summary),
-                            startAction = {
-                                Icon(
-                                    imageVector = Icons.Rounded.AppRegistration,
-                                    contentDescription = null,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            onClick = { navigator.push(Route.Apps) }
-                        )
+                            ArrowPreference(
+                                title = stringResource(R.string.proxy_apps),
+                                summary = stringResource(R.string.proxy_mode_summary),
+                                startAction = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.AppRegistration,
+                                        contentDescription = null,
+                                        modifier = Modifier.padding(end = 6.dp),
+                                        tint = colorScheme.onBackground
+                                    )
+                                },
+                                onClick = { navigator.push(Route.Apps) }
+                            )
                         },
                     ),
                 )
@@ -154,20 +151,20 @@ internal fun SettingsScreen(
                     outerTopPadding = 12.dp,
                     items = listOf(
                         CardItem("autoStart") {
-                        SwitchPreference(
-                            title = stringResource(R.string.auto_start),
-                            summary = stringResource(R.string.auto_start_summary),
-                            startAction = {
-                                Icon(
-                                    imageVector = Icons.Rounded.PowerSettingsNew,
-                                    contentDescription = null,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            checked = settings.autoStartEnabled,
-                            onCheckedChange = { viewModel.setAutoStartEnabled(it) }
-                        )
+                            SwitchPreference(
+                                title = stringResource(R.string.auto_start),
+                                summary = stringResource(R.string.auto_start_summary),
+                                startAction = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.PowerSettingsNew,
+                                        contentDescription = null,
+                                        modifier = Modifier.padding(end = 6.dp),
+                                        tint = colorScheme.onBackground
+                                    )
+                                },
+                                checked = settings.autoStartEnabled,
+                                onCheckedChange = { viewModel.setAutoStartEnabled(it) }
+                            )
                         },
                     ),
                 )
@@ -177,19 +174,19 @@ internal fun SettingsScreen(
                     outerTopPadding = 12.dp,
                     items = listOf(
                         CardItem("theme") {
-                        ArrowPreference(
-                            title = stringResource(R.string.settings_theme),
-                            summary = stringResource(R.string.settings_theme_summary),
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.Palette,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = null,
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            onClick = { navigator.push(Route.ThemeSettings) }
-                        )
+                            ArrowPreference(
+                                title = stringResource(R.string.settings_theme),
+                                summary = stringResource(R.string.settings_theme_summary),
+                                startAction = {
+                                    Icon(
+                                        Icons.Rounded.Palette,
+                                        modifier = Modifier.padding(end = 6.dp),
+                                        contentDescription = null,
+                                        tint = colorScheme.onBackground
+                                    )
+                                },
+                                onClick = { navigator.push(Route.ThemeSettings) }
+                            )
                         },
                     ),
                 )
@@ -200,32 +197,32 @@ internal fun SettingsScreen(
                     outerBottomPadding = 12.dp,
                     items = listOf(
                         CardItem("logs") {
-                        ArrowPreference(
-                            title = stringResource(R.string.logs),
-                            startAction = {
-                                Icon(
-                                    imageVector = Icons.Rounded.BugReport,
-                                    contentDescription = null,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            onClick = { navigator.push(Route.Logs) }
-                        )
+                            ArrowPreference(
+                                title = stringResource(R.string.logs),
+                                startAction = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.BugReport,
+                                        contentDescription = null,
+                                        modifier = Modifier.padding(end = 6.dp),
+                                        tint = colorScheme.onBackground
+                                    )
+                                },
+                                onClick = { navigator.push(Route.Logs) }
+                            )
                         },
                         CardItem("about") {
-                        ArrowPreference(
-                            title = stringResource(R.string.about),
-                            startAction = {
-                                Icon(
-                                    imageVector = Icons.Rounded.ContactPage,
-                                    contentDescription = null,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            onClick = { navigator.push(Route.About) }
-                        )
+                            ArrowPreference(
+                                title = stringResource(R.string.about),
+                                startAction = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.ContactPage,
+                                        contentDescription = null,
+                                        modifier = Modifier.padding(end = 6.dp),
+                                        tint = colorScheme.onBackground
+                                    )
+                                },
+                                onClick = { navigator.push(Route.About) }
+                            )
                         },
                     ),
                 )

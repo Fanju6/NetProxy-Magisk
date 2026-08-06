@@ -68,6 +68,7 @@ import androidx.core.graphics.createBitmap
 import androidx.lifecycle.compose.dropUnlessResumed
 import com.fanjv.netproxy.BuildConfig
 import com.fanjv.netproxy.R
+import com.fanjv.netproxy.core.ui.component.AdaptiveTopAppBar
 import com.fanjv.netproxy.core.ui.component.BackIconButton
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
@@ -83,7 +84,6 @@ import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
-import com.fanjv.netproxy.core.ui.component.AdaptiveTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
 import top.yukonga.miuix.kmp.blur.BlurBlendMode

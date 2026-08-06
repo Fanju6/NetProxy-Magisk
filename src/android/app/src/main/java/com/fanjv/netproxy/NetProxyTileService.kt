@@ -82,7 +82,7 @@ class NetProxyTileService : TileService() {
         }
         return try {
             val isRunning = repository.status().state in
-                setOf("preparing", "starting", "ready")
+                    setOf("preparing", "starting", "ready")
             lastKnownRunning = isRunning
             applyTileState(isRunning)
             isRunning

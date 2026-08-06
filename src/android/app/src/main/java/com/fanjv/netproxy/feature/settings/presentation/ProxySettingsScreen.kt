@@ -29,22 +29,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.R
+import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.core.ui.component.AdaptiveTopAppBar
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.CardItem
-import com.fanjv.netproxy.core.ui.component.groupedCardSection
-import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import com.fanjv.netproxy.core.ui.component.TopBarMenuAction
 import com.fanjv.netproxy.core.ui.component.TopBarMoreMenu
+import com.fanjv.netproxy.core.ui.component.groupedCardSection
+import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -54,7 +54,6 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
@@ -237,7 +236,11 @@ internal fun ProxySettingsScreen(
                                     stringResource(R.string.not_set)
                                 },
                                 onClick = {
-                                    editValue("EBPF_BYPASS_RULE_SETS", label, settings.bypassRuleSets)
+                                    editValue(
+                                        "EBPF_BYPASS_RULE_SETS",
+                                        label,
+                                        settings.bypassRuleSets
+                                    )
                                 }
                             )
                         }
@@ -329,7 +332,11 @@ internal fun ProxySettingsScreen(
                                 title = label,
                                 summary = settings.tcpMapCapacity,
                                 onClick = {
-                                    editValue("EBPF_TCP_MAP_CAPACITY", label, settings.tcpMapCapacity)
+                                    editValue(
+                                        "EBPF_TCP_MAP_CAPACITY",
+                                        label,
+                                        settings.tcpMapCapacity
+                                    )
                                 }
                             )
                         },
@@ -339,7 +346,11 @@ internal fun ProxySettingsScreen(
                                 title = label,
                                 summary = settings.udpMapCapacity,
                                 onClick = {
-                                    editValue("EBPF_UDP_MAP_CAPACITY", label, settings.udpMapCapacity)
+                                    editValue(
+                                        "EBPF_UDP_MAP_CAPACITY",
+                                        label,
+                                        settings.udpMapCapacity
+                                    )
                                 }
                             )
                         },
@@ -394,7 +405,8 @@ internal fun ProxySettingsScreen(
                                     stringResource(R.string.wifi_ssid_mode_blacklist),
                                     stringResource(R.string.wifi_ssid_mode_whitelist)
                                 ),
-                                selectedIndex = modes.indexOf(settings.wifiSsidMode).coerceAtLeast(0),
+                                selectedIndex = modes.indexOf(settings.wifiSsidMode)
+                                    .coerceAtLeast(0),
                                 onSelectedIndexChange = { viewModel.setWifiSsidMode(modes[it]) }
                             )
                         },

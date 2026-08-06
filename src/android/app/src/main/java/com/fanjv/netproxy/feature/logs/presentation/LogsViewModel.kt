@@ -46,6 +46,7 @@ internal class LogsViewModel(
                             LogType.SERVICE -> state.copy(serviceLogs = emptyList(), error = "")
                             LogType.SUBSCRIPTION ->
                                 state.copy(subscriptionLogs = emptyList(), error = "")
+
                             LogType.KERNEL -> state.copy(kernelLogs = emptyList(), error = "")
                         }
                     }

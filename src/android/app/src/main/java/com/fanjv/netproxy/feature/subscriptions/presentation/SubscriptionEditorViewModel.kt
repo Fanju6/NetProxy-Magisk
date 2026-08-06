@@ -76,7 +76,12 @@ internal class SubscriptionEditorViewModel(
             val snapshot = _state.value
             val draft = runCatching { validate(snapshot.draft, snapshot.headersText) }
                 .getOrElse { error ->
-                    _state.update { it.copy(error = error.userMessage(), noticeId = it.noticeId + 1) }
+                    _state.update {
+                        it.copy(
+                            error = error.userMessage(),
+                            noticeId = it.noticeId + 1
+                        )
+                    }
                     return@launch
                 }
             _state.update { it.copy(saving = true, error = "", saved = false) }

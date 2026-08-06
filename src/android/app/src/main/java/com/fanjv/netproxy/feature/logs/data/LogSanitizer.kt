@@ -62,10 +62,10 @@ internal object LogSanitizer {
     private fun isSensitiveConfigKey(key: String): Boolean {
         val upper = key.uppercase()
         return upper in sensitiveConfigKeys ||
-            upper.contains("SECRET") ||
-            upper.contains("TOKEN") ||
-            upper.contains("PASSWORD") ||
-            upper.contains("HWID")
+                upper.contains("SECRET") ||
+                upper.contains("TOKEN") ||
+                upper.contains("PASSWORD") ||
+                upper.contains("HWID")
     }
 
     private fun sanitizeJsonElement(element: JsonElement): JsonElement = when (element) {
@@ -89,13 +89,13 @@ internal object LogSanitizer {
     private fun isSensitiveJsonKey(key: String): Boolean {
         val normalized = normalizeJsonKey(key)
         return normalized in sensitiveJsonKeys ||
-            normalized.contains("password") ||
-            normalized.contains("secret") ||
-            normalized.contains("token") ||
-            normalized.contains("private_key") ||
-            normalized.contains("pre_shared_key") ||
-            normalized.contains("authorization") ||
-            normalized.contains("cookie") ||
-            normalized.contains("hwid")
+                normalized.contains("password") ||
+                normalized.contains("secret") ||
+                normalized.contains("token") ||
+                normalized.contains("private_key") ||
+                normalized.contains("pre_shared_key") ||
+                normalized.contains("authorization") ||
+                normalized.contains("cookie") ||
+                normalized.contains("hwid")
     }
 }

@@ -51,7 +51,12 @@ object AppIconCache {
                 val baseIcon = packageManager.getApplicationIcon(info)
                 val drawable = userId.toIntOrNull()
                     ?.takeIf { it != 0 }
-                    ?.let { packageManager.getUserBadgedIcon(baseIcon, UserHandle.getUserHandleForUid(it * 100_000)) }
+                    ?.let {
+                        packageManager.getUserBadgedIcon(
+                            baseIcon,
+                            UserHandle.getUserHandleForUid(it * 100_000)
+                        )
+                    }
                     ?: baseIcon
                 val imageBitmap = drawable.toBitmap().asImageBitmap()
                 lruCache.put(key, imageBitmap)

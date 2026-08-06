@@ -2,12 +2,12 @@ package com.fanjv.netproxy.feature.settings.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.fanjv.netproxy.core.module.ServiceRepository
 import com.fanjv.netproxy.core.command.NetProxyCtlException
-import com.fanjv.netproxy.core.ui.userMessage
 import com.fanjv.netproxy.core.command.ShellConfigFile
-import com.fanjv.netproxy.feature.settings.data.ConfigValueUpdate
+import com.fanjv.netproxy.core.module.ServiceRepository
+import com.fanjv.netproxy.core.ui.userMessage
 import com.fanjv.netproxy.feature.settings.data.ConfigRepository
+import com.fanjv.netproxy.feature.settings.data.ConfigValueUpdate
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,13 +41,13 @@ internal class SettingsViewModel(
                     hasLoaded = true
                     _state.value = loaded.copy(isSaving = pendingSaves > 0)
                 }.onFailure { error ->
-                _state.update {
-                    it.copy(
-                        isLoading = false,
-                        error = error.userMessage()
-                    )
+                    _state.update {
+                        it.copy(
+                            isLoading = false,
+                            error = error.userMessage()
+                        )
+                    }
                 }
-            }
         }
     }
 
@@ -212,50 +212,65 @@ internal class SettingsViewModel(
                 "EBPF_CGROUP_ENABLED" -> current.copy(
                     proxySettings = settings.copy(cgroupEnabled = value == "1")
                 )
+
                 "EBPF_CGROUP_PATH" -> current.copy(proxySettings = settings.copy(cgroupPath = value))
                 "EBPF_IPV6_MODE" -> current.copy(proxySettings = settings.copy(ipv6Mode = value))
                 "EBPF_BYPASS_RULE_SETS" -> current.copy(
                     proxySettings = settings.copy(bypassRuleSets = value)
                 )
+
                 "EBPF_SHARED_NETWORK" -> current.copy(
                     proxySettings = settings.copy(sharedNetworkEnabled = value == "1")
                 )
+
                 "EBPF_SHARED_INTERFACES" -> current.copy(
                     proxySettings = settings.copy(sharedInterfaces = value)
                 )
+
                 "EBPF_SHARED_INCLUDE_SOURCE_CIDRS" -> current.copy(
                     proxySettings = settings.copy(sharedIncludeSourceCidrs = value)
                 )
+
                 "EBPF_SHARED_EXCLUDE_SOURCE_CIDRS" -> current.copy(
                     proxySettings = settings.copy(sharedExcludeSourceCidrs = value)
                 )
+
                 "EBPF_SHARED_TC_PRIORITY" -> current.copy(
                     proxySettings = settings.copy(sharedTcPriority = value)
                 )
+
                 "EBPF_TCP_MAP_CAPACITY" -> current.copy(
                     proxySettings = settings.copy(tcpMapCapacity = value)
                 )
+
                 "EBPF_UDP_MAP_CAPACITY" -> current.copy(
                     proxySettings = settings.copy(udpMapCapacity = value)
                 )
+
                 "EBPF_SOCKET_MAP_CAPACITY" -> current.copy(
                     proxySettings = settings.copy(socketMapCapacity = value)
                 )
+
                 "EBPF_SHARED_MAP_CAPACITY" -> current.copy(
                     proxySettings = settings.copy(sharedMapCapacity = value)
                 )
+
                 "WIFI_AUTO_SWITCH" -> current.copy(
                     proxySettings = settings.copy(wifiAutoSwitch = value == "1")
                 )
+
                 "WIFI_SSID_MODE" -> current.copy(
                     proxySettings = settings.copy(wifiSsidMode = value)
                 )
+
                 "WIFI_SSID_LIST" -> current.copy(
                     proxySettings = settings.copy(wifiSsidList = value)
                 )
+
                 "PROXY_ON_CELLULAR" -> current.copy(
                     proxySettings = settings.copy(proxyOnCellular = value == "1")
                 )
+
                 else -> current
             }
         }

@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -49,21 +48,20 @@ import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.EmptyCatalog
 import com.fanjv.netproxy.core.ui.component.SnackbarNoticeEffect
 import com.fanjv.netproxy.core.ui.component.StatusTag
-import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
+import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import com.fanjv.netproxy.feature.catalog.model.CatalogGroupSummary
 import com.fanjv.netproxy.feature.catalog.model.CatalogNode
-import com.fanjv.netproxy.feature.subscriptions.model.SubscriptionDraft
 import com.fanjv.netproxy.feature.subscriptions.model.SubscriptionHistoryEntry
 import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.Route
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
-import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
@@ -82,7 +80,6 @@ import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.squircle.squircleBackground
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.PressFeedbackType
 import top.yukonga.miuix.kmp.utils.overScrollVertical
@@ -171,7 +168,9 @@ internal fun SubscriptionsScreen(
                 state.groups.isEmpty() -> EmptyCatalog(
                     text = "暂无订阅",
                     onRefresh = null,
-                    modifier = Modifier.align(Alignment.Center).padding(horizontal = 24.dp)
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(horizontal = 24.dp)
                 )
 
                 else -> LazyColumn(
@@ -223,7 +222,9 @@ private fun CatalogGroupCard(
     val updatedAt = group.lastSuccessAt.ifBlank { group.updatedAt }
 
     Card(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 12.dp),
         insideMargin = PaddingValues(16.dp),
         pressFeedbackType = PressFeedbackType.Sink,
         showIndication = true,
@@ -429,7 +430,9 @@ internal fun SubscriptionDetailsScreen(
     ) { innerPadding ->
         val details = state.details
         if (state.loading && details == null) {
-            Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
+            Box(Modifier
+                .fillMaxSize()
+                .padding(innerPadding), contentAlignment = Alignment.Center) {
                 InfiniteProgressIndicator()
             }
         } else if (details != null) {
@@ -530,7 +533,9 @@ internal fun SubscriptionDetailsScreen(
         onDismissRequest = { actionNode = null }
     ) {
         if (selectedNode != null) {
-            Card(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+            Card(modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp)) {
                 BasicComponent(
                     title = "测试延迟",
                     startAction = { DetailActionIcon(Icons.Rounded.NetworkPing) },
@@ -674,7 +679,9 @@ internal fun SubscriptionEditorScreen(
         contentWindowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Horizontal)
     ) { innerPadding ->
         if (state.loading) {
-            Box(Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
+            Box(Modifier
+                .fillMaxSize()
+                .padding(innerPadding), contentAlignment = Alignment.Center) {
                 InfiniteProgressIndicator()
             }
         } else {
@@ -719,12 +726,22 @@ internal fun SubscriptionEditorScreen(
                 }
                 item {
                     Card(modifier = Modifier.fillMaxWidth()) {
-                        val intervals = listOf(900L, 3600L, 21600L, 43200L, 86400L, 259200L, 604800L)
-                        val intervalLabels = listOf("15 分钟", "1 小时", "6 小时", "12 小时", "24 小时", "3 天", "7 天")
+                        val intervals =
+                            listOf(900L, 3600L, 21600L, 43200L, 86400L, 259200L, 604800L)
+                        val intervalLabels = listOf(
+                            "15 分钟",
+                            "1 小时",
+                            "6 小时",
+                            "12 小时",
+                            "24 小时",
+                            "3 天",
+                            "7 天"
+                        )
                         OverlayDropdownPreference(
                             title = "自动更新周期",
                             items = intervalLabels,
-                            selectedIndex = intervals.indexOf(draft.updateIntervalSeconds).coerceAtLeast(4),
+                            selectedIndex = intervals.indexOf(draft.updateIntervalSeconds)
+                                .coerceAtLeast(4),
                             onSelectedIndexChange = { index ->
                                 viewModel.update {
                                     it.copy(updateIntervalSeconds = intervals[index])
@@ -743,7 +760,8 @@ internal fun SubscriptionEditorScreen(
                         OverlayDropdownPreference(
                             title = "更新网络",
                             items = listOf("自动", "始终通过代理", "始终直连"),
-                            selectedIndex = viaValues.indexOf(draft.updateViaProxy).coerceAtLeast(0),
+                            selectedIndex = viaValues.indexOf(draft.updateViaProxy)
+                                .coerceAtLeast(0),
                             onSelectedIndexChange = { index ->
                                 viewModel.update {
                                     it.copy(updateViaProxy = viaValues[index])
@@ -854,7 +872,10 @@ private fun SubscriptionSummaryCard(
 ) {
     val isSubscription = subscription.type == "subscription"
     Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = subscription.name,
@@ -922,7 +943,9 @@ private fun SubscriptionUpdateSheet(operation: String) {
         onDismissRequest = {}
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             InfiniteProgressIndicator(modifier = Modifier.size(28.dp))
@@ -949,9 +972,18 @@ private fun subscriptionStatus(subscription: CatalogGroupSummary): SubscriptionS
     return when {
         subscription.progress?.stage?.let(activeProgressStages::contains) == true ->
             SubscriptionStatus("更新中", colorScheme.primary)
+
         subscription.lastError.isNotBlank() -> SubscriptionStatus("更新失败", colorScheme.error)
-        expire > 0 && expire <= Instant.now().epochSecond -> SubscriptionStatus("已过期", colorScheme.error)
-        subscription.lastSuccessAt.isBlank() -> SubscriptionStatus("从未更新", colorScheme.onSurfaceVariantSummary)
+        expire > 0 && expire <= Instant.now().epochSecond -> SubscriptionStatus(
+            "已过期",
+            colorScheme.error
+        )
+
+        subscription.lastSuccessAt.isBlank() -> SubscriptionStatus(
+            "从未更新",
+            colorScheme.onSurfaceVariantSummary
+        )
+
         else -> SubscriptionStatus("正常", colorScheme.primary)
     }
 }

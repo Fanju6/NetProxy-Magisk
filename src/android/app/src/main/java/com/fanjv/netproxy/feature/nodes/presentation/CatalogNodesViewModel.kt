@@ -294,6 +294,7 @@ internal class CatalogNodesViewModel(
             tag == "Select/$runtimeGroupTag" -> "Select/$persistentGroupId"
             tag.startsWith("$runtimeGroupTag/") ->
                 "$persistentGroupId/${tag.removePrefix("$runtimeGroupTag/")}"
+
             else -> tag
         }
     }

@@ -1,10 +1,10 @@
 package com.fanjv.netproxy.feature.settings.singbox
 
-import java.io.File
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class SingBoxSchemaValidatorTest {
     private val validator = SingBoxSchemaValidator(TEST_SCHEMA)

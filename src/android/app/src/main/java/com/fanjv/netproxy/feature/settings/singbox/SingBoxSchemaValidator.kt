@@ -45,32 +45,37 @@ class SingBoxSchemaValidator private constructor(
         }.getSchema(schemaProvider(), InputFormat.JSON)
     }
 
-    suspend fun validate(rawJson: String): SingBoxSchemaValidationResult = withContext(Dispatchers.IO) {
-        runCatching {
-            val issues = schema.validate(rawJson, InputFormat.JSON)
-                .map { error ->
-                    val location = error.instanceNode?.let(JsonNodes::tokenStreamLocationOf)
-                    SingBoxSchemaIssue(
-                        message = error.message,
-                        instancePath = error.instanceLocation.toString(),
-                        line = location?.lineNr?.takeIf { it > 0 },
-                        column = location?.columnNr?.takeIf { it > 0 },
+    suspend fun validate(rawJson: String): SingBoxSchemaValidationResult =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val issues = schema.validate(rawJson, InputFormat.JSON)
+                    .map { error ->
+                        val location = error.instanceNode?.let(JsonNodes::tokenStreamLocationOf)
+                        SingBoxSchemaIssue(
+                            message = error.message,
+                            instancePath = error.instanceLocation.toString(),
+                            line = location?.lineNr?.takeIf { it > 0 },
+                            column = location?.columnNr?.takeIf { it > 0 },
+                        )
+                    }
+                    .sortedWith(
+                        compareBy(
+                            { it.line ?: Int.MAX_VALUE },
+                            { it.column ?: Int.MAX_VALUE })
                     )
-                }
-                .sortedWith(compareBy({ it.line ?: Int.MAX_VALUE }, { it.column ?: Int.MAX_VALUE }))
-                .compactSchemaIssues()
+                    .compactSchemaIssues()
 
-            if (issues.isEmpty()) {
-                SingBoxSchemaValidationResult.Valid
-            } else {
-                SingBoxSchemaValidationResult.Invalid(issues)
+                if (issues.isEmpty()) {
+                    SingBoxSchemaValidationResult.Valid
+                } else {
+                    SingBoxSchemaValidationResult.Invalid(issues)
+                }
+            }.getOrElse { error ->
+                SingBoxSchemaValidationResult.Unavailable(
+                    reason = error.message ?: error.javaClass.simpleName,
+                )
             }
-        }.getOrElse { error ->
-            SingBoxSchemaValidationResult.Unavailable(
-                reason = error.message ?: error.javaClass.simpleName,
-            )
         }
-    }
 
     private companion object {
         const val SCHEMA_ASSET = "sing-box.schema.json"
@@ -98,7 +103,7 @@ private fun List<SingBoxSchemaIssue>.compactSchemaIssues(): List<SingBoxSchemaIs
 private fun String.isBranchSummary(): Boolean {
     val value = lowercase()
     return "oneof" in value || "anyof" in value || "exactly one" in value ||
-        "一个且仅一个" in this || "子架构" in this
+            "一个且仅一个" in this || "子架构" in this
 }
 
 private const val MAX_ISSUES_PER_PATH = 3

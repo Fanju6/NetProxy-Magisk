@@ -1,8 +1,7 @@
 package com.fanjv.netproxy.feature.dashboard.presentation
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -31,14 +30,14 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.R
+import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.SnackbarNoticeEffect
 import com.fanjv.netproxy.core.ui.component.WarningCard
-import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
+import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
@@ -67,8 +66,10 @@ internal fun CatalogDashboardScreen(
     val scrollBehavior = MiuixScrollBehavior()
     val backdrop = rememberBlurBackdrop()
     val barColor = if (backdrop != null) Color.Transparent else colorScheme.surface
-    val noRootMessage = "${stringResource(R.string.no_root_title)}\n${stringResource(R.string.no_root_summary)}"
-    val noModuleMessage = "${stringResource(R.string.no_module_title)}\n${stringResource(R.string.no_module_summary)}"
+    val noRootMessage =
+        "${stringResource(R.string.no_root_title)}\n${stringResource(R.string.no_root_summary)}"
+    val noModuleMessage =
+        "${stringResource(R.string.no_module_title)}\n${stringResource(R.string.no_module_summary)}"
 
     DisposableEffect(isActive) {
         viewModel.setVisible(isActive)
@@ -261,7 +262,9 @@ private fun ResourceUsageCard(
 private fun DashboardWarning(message: String) {
     WarningCard(
         message = message,
-        modifier = Modifier.padding(top = 12.dp).fillMaxWidth(),
+        modifier = Modifier
+            .padding(top = 12.dp)
+            .fillMaxWidth(),
         action = {
             Icon(
                 Icons.Rounded.ErrorOutline,

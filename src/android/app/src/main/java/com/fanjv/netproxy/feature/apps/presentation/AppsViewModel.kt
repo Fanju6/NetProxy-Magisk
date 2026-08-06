@@ -203,7 +203,7 @@ internal class AppsViewModel(
             _searchStatus.value.resultStatus = SearchStatus.ResultStatus.LOAD
             val result = _state.value.allApps.filter {
                 it.label.contains(query, ignoreCase = true) ||
-                    it.packageName.contains(query, ignoreCase = true)
+                        it.packageName.contains(query, ignoreCase = true)
             }
             if (_state.value.appSearchQuery != query) return@launch
             _state.update { it.copy(searchResults = result) }

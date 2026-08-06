@@ -30,7 +30,10 @@ class NetProxyCtlCodecTest {
             codec.decode(
                 NetProxyCtlOutput(
                     successful = true,
-                    stdout = listOf("unexpected log", "{\"schema\":1,\"ok\":true,\"code\":\"ok\",\"message\":\"\",\"data\":{}}"),
+                    stdout = listOf(
+                        "unexpected log",
+                        "{\"schema\":1,\"ok\":true,\"code\":\"ok\",\"message\":\"\",\"data\":{}}"
+                    ),
                     stderr = emptyList()
                 )
             )

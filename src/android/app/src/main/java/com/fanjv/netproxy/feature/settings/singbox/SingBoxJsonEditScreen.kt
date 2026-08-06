@@ -54,15 +54,15 @@ import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BackIconButton
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.JsonSyntaxHighlighter
-import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
+import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import com.fanjv.netproxy.core.ui.theme.LocalEnableBlur
 import com.fanjv.netproxy.core.ui.theme.isInDarkTheme
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
 import top.yukonga.miuix.kmp.basic.Icon
@@ -122,7 +122,7 @@ internal fun SingBoxJsonEditScreen(
     val displayFilename = document?.filename ?: documentId.substringAfterLast('/')
     val isEditable = document?.editable ?: !documentId.startsWith("singbox/runtime/")
     val usesRootSchema = document?.category != SingBoxDocumentCategory.Source &&
-        !documentId.startsWith("singbox/source/")
+            !documentId.startsWith("singbox/source/")
 
     LaunchedEffect(documentId) {
         if (configState.documents.isEmpty()) viewModel.refreshDocuments()
@@ -148,7 +148,7 @@ internal fun SingBoxJsonEditScreen(
     val syntaxError = stringResource(R.string.json_syntax_error)
     val savedMessage = stringResource(R.string.json_saved)
     val canSave = isEditable && hasLoaded && controller.isModified &&
-        !controller.isComposing && !isSaving
+            !controller.isComposing && !isSaving
 
     val documentVersion = controller.documentVersion
     val caret = controller.caret
@@ -187,6 +187,7 @@ internal fun SingBoxJsonEditScreen(
             SingBoxSchemaValidationResult.Valid -> {
                 validationState = EditorValidationState.Valid
             }
+
             is SingBoxSchemaValidationResult.Invalid -> {
                 schemaIssues = result.issues
                 errorText = resources.getString(
@@ -195,6 +196,7 @@ internal fun SingBoxJsonEditScreen(
                 )
                 validationState = EditorValidationState.Invalid
             }
+
             is SingBoxSchemaValidationResult.Unavailable -> {
                 errorText = resources.getString(
                     R.string.json_schema_unavailable,
@@ -258,7 +260,7 @@ internal fun SingBoxJsonEditScreen(
             }
             when (val result = validationResult) {
                 SingBoxSchemaValidationResult.Valid -> {
-                viewModel.saveDocument(
+                    viewModel.saveDocument(
                         documentId,
                         singBoxJsonPretty.encodeToString(parsed),
                         onComplete,
@@ -357,10 +359,13 @@ internal fun SingBoxJsonEditScreen(
                 saveErrorText.isNotEmpty() -> saveErrorText
                 validationState == EditorValidationState.Checking ->
                     stringResource(R.string.json_checking)
+
                 validationState == EditorValidationState.Valid && !isEditable ->
                     stringResource(R.string.json_valid_read_only)
+
                 validationState == EditorValidationState.Valid ->
                     stringResource(R.string.json_valid)
+
                 else -> errorText
             }
             Column(
@@ -554,6 +559,7 @@ internal fun SingBoxJsonEditScreen(
                         issue.line,
                         issue.column,
                     )
+
                     issue.instancePath.isNotBlank() -> issue.instancePath
                     else -> null
                 }

@@ -47,26 +47,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.content.edit
 import androidx.compose.ui.unit.sp
+import androidx.core.content.edit
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.R
+import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.EmptyCatalog
 import com.fanjv.netproxy.core.ui.component.SnackbarNoticeEffect
-import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
-import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
 import com.fanjv.netproxy.core.ui.component.TopBarMenuAction
 import com.fanjv.netproxy.core.ui.component.TopBarMoreMenu
+import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
+import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import com.fanjv.netproxy.feature.catalog.model.CatalogNode
 import com.fanjv.netproxy.feature.catalog.model.CatalogNodeGroup
 import top.yukonga.miuix.kmp.basic.BasicComponent
@@ -159,9 +159,10 @@ internal fun CatalogNodesScreen(
         onDispose { if (isActive) viewModel.setVisible(false) }
     }
 
-    val fileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
-        uri: Uri? -> uri?.let { viewModel.importFile(it) }
-    }
+    val fileLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+            uri?.let { viewModel.importFile(it) }
+        }
 
     val noticeText = state.error.ifBlank { state.notice }
     SnackbarNoticeEffect(
@@ -220,7 +221,7 @@ internal fun CatalogNodesScreen(
                                     TopBarMenuAction(
                                         text = "测试当前分组延迟",
                                         enabled = selectedGroup?.nodes?.isNotEmpty() == true &&
-                                            state.operation.isEmpty(),
+                                                state.operation.isEmpty(),
                                         onClick = {
                                             selectedGroup?.group?.id?.let(viewModel::testGroupDelay)
                                         }
@@ -237,7 +238,8 @@ internal fun CatalogNodesScreen(
                     if (state.groups.isNotEmpty() && layoutStyle == 0) {
                         TabRow(
                             tabs = state.groups.map {
-                                val name = if (it.group.id == "default") "本地配置" else it.group.name
+                                val name =
+                                    if (it.group.id == "default") "本地配置" else it.group.name
                                 "$name (${it.nodes.size})"
                             },
                             selectedTabIndex = selectedIndex,
@@ -406,7 +408,9 @@ internal fun CatalogNodesScreen(
         title = "添加节点",
         onDismissRequest = { showAddSheet = false }
     ) {
-        Card(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+        Card(modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp)) {
             BasicComponent(
                 title = "单节点链接",
                 summary = "VLESS、VMess、SS、Trojan 等链接",
@@ -512,7 +516,9 @@ internal fun CatalogNodesScreen(
     ) {
         if (selectedAction != null) {
             val (group, node) = selectedAction
-            Card(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+            Card(modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp)) {
                 BasicComponent(
                     title = "测试延迟",
                     startAction = { SheetIcon(Icons.Rounded.NetworkPing) },
@@ -568,7 +574,7 @@ private fun CatalogNodeGrid(
     nestedScrollConnection: NestedScrollConnection
 ) {
     val automaticSelected = selectorMode == "urltest" &&
-        selectedRef == "Auto/${group.group.id}"
+            selectedRef == "Auto/${group.group.id}"
     val sortedNodes = remember(group.nodes, sortMode, latencies) {
         sortCatalogNodes(group.nodes, sortMode, group.group.id, latencies)
     }
@@ -609,7 +615,7 @@ private fun CatalogNodeGrid(
                 protocol = node.protocol.uppercase().ifBlank { "NODE" },
                 latency = latencies["${group.group.id}/${node.tag}"],
                 selected = selectorMode == "manual" &&
-                    selectedRef == "${group.group.id}/${node.tag}",
+                        selectedRef == "${group.group.id}/${node.tag}",
                 enabled = !busy,
                 itemSize = itemSize,
                 onClick = { onNode(node) },
@@ -621,7 +627,9 @@ private fun CatalogNodeGrid(
                 EmptyCatalog(
                     text = "该分组暂时没有节点",
                     onRefresh = null,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 64.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 64.dp)
                 )
             }
         }
@@ -691,7 +699,7 @@ private fun CatalogGroupList(
                                             protocol = "AUTO",
                                             latency = latencies["Auto/$groupId"],
                                             selected = selectorMode == "urltest" &&
-                                                selectedRef == "Auto/$groupId",
+                                                    selectedRef == "Auto/$groupId",
                                             enabled = !busy && group.nodes.isNotEmpty(),
                                             itemSize = itemSize,
                                             icon = MiuixIcons.Refresh,
@@ -704,7 +712,7 @@ private fun CatalogGroupList(
                                             protocol = node.protocol.uppercase().ifBlank { "NODE" },
                                             latency = latencies["$groupId/${node.tag}"],
                                             selected = selectorMode == "manual" &&
-                                                selectedRef == "$groupId/${node.tag}",
+                                                    selectedRef == "$groupId/${node.tag}",
                                             enabled = !busy,
                                             itemSize = itemSize,
                                             onClick = { onNode(group, node) },
@@ -812,13 +820,17 @@ private fun NodeCard(
         pressFeedbackType = PressFeedbackType.Sink,
         showIndication = true
     ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(innerPadding)) {
+        Column(modifier = Modifier
+            .fillMaxWidth()
+            .padding(innerPadding)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (icon != null) {
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        modifier = Modifier.padding(end = 8.dp).size(18.dp),
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .size(18.dp),
                         tint = colorScheme.primary
                     )
                 }
@@ -870,7 +882,9 @@ private fun NodeCard(
                 } else {
                     Text(
                         text = summary,
-                        modifier = Modifier.padding(start = 8.dp).weight(1f),
+                        modifier = Modifier
+                            .padding(start = 8.dp)
+                            .weight(1f),
                         color = colorScheme.onSurfaceVariantSummary,
                         style = MiuixTheme.textStyles.body2.copy(
                             fontSize = when (itemSize) {
@@ -900,6 +914,7 @@ private fun sortCatalogNodes(
         3 -> nodes.sortedBy { node ->
             latencies["$groupId/${node.tag}"]?.toIntOrNull() ?: Int.MAX_VALUE
         }
+
         else -> nodes
     }
 
@@ -932,7 +947,9 @@ private fun SheetIcon(vector: androidx.compose.ui.graphics.vector.ImageVector) {
     Icon(
         imageVector = vector,
         contentDescription = null,
-        modifier = Modifier.padding(end = 12.dp).size(24.dp),
+        modifier = Modifier
+            .padding(end = 12.dp)
+            .size(24.dp),
         tint = colorScheme.onSurface
     )
 }

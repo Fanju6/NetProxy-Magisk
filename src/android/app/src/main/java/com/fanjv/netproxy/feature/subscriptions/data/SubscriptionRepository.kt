@@ -7,7 +7,6 @@ import com.fanjv.netproxy.feature.catalog.model.CatalogNodeGroup
 import com.fanjv.netproxy.feature.subscriptions.model.SubscriptionDraft
 import com.fanjv.netproxy.feature.subscriptions.model.SubscriptionEditorState
 import com.fanjv.netproxy.feature.subscriptions.model.SubscriptionHistoryEntry
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromJsonElement

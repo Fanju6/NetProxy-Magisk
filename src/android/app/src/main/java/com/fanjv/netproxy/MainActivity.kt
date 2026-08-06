@@ -18,7 +18,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
@@ -41,10 +41,10 @@ import androidx.navigation3.ui.NavDisplay
 import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
+import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.core.ui.theme.AppThemeSettings
 import com.fanjv.netproxy.core.ui.theme.ColorMode
 import com.fanjv.netproxy.core.ui.theme.NetProxyTheme
-import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.feature.about.presentation.AboutScreen
 import com.fanjv.netproxy.feature.apps.presentation.AppsScreen
 import com.fanjv.netproxy.feature.dashboard.presentation.CatalogDashboardScreen
@@ -61,8 +61,8 @@ import com.fanjv.netproxy.feature.subscriptions.presentation.SubscriptionEditorS
 import com.fanjv.netproxy.feature.subscriptions.presentation.SubscriptionsScreen
 import com.fanjv.netproxy.navigation.AppDestination
 import com.fanjv.netproxy.navigation.LocalNavigator
-import com.fanjv.netproxy.navigation.MainPagerState
 import com.fanjv.netproxy.navigation.MainBottomBar
+import com.fanjv.netproxy.navigation.MainPagerState
 import com.fanjv.netproxy.navigation.Route.About
 import com.fanjv.netproxy.navigation.Route.Apps
 import com.fanjv.netproxy.navigation.Route.JsonEdit
@@ -353,10 +353,12 @@ internal fun MainScreen(themeViewModel: ThemeViewModel) {
                         bottomPadding = bottomPadding,
                         isActive = mainPagerState.selectedPage == pageIndex
                     )
+
                     AppDestination.Subscriptions -> SubscriptionsScreen(
                         bottomPadding = bottomPadding,
                         isActive = mainPagerState.selectedPage == pageIndex
                     )
+
                     AppDestination.Settings -> SettingsScreen(
                         bottomPadding = bottomPadding,
                         isActive = mainPagerState.selectedPage == pageIndex

@@ -24,7 +24,7 @@ internal object ShellConfigFile {
             var value = line.substring(separator + 1).trim()
             if (value.length >= 2 &&
                 ((value.first() == '"' && value.last() == '"') ||
-                    (value.first() == '\'' && value.last() == '\''))
+                        (value.first() == '\'' && value.last() == '\''))
             ) {
                 value = value.substring(1, value.lastIndex)
             }

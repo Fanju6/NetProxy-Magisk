@@ -99,7 +99,8 @@ internal class SubscriptionDetailsViewModel(
                     _state.update {
                         it.copy(
                             operation = "",
-                            latencies = it.latencies + (nodeRef to (delay?.toString() ?: "timeout")),
+                            latencies = it.latencies + (nodeRef to (delay?.toString()
+                                ?: "timeout")),
                             notice = if (delay != null) "节点延迟：${delay} ms" else "节点测速超时",
                             noticeId = it.noticeId + 1
                         )

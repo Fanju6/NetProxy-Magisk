@@ -10,7 +10,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import top.yukonga.scripta.editor.completion.CompletionItem
@@ -43,7 +42,8 @@ class SingBoxSchemaCompletionProvider private constructor(
 
     override suspend fun complete(request: CompletionRequest): CompletionResult? =
         withContext(Dispatchers.Default) {
-            val context = JsonCursorAnalyzer.analyze(request.text, request.caret) ?: return@withContext null
+            val context =
+                JsonCursorAnalyzer.analyze(request.text, request.caret) ?: return@withContext null
             if (!request.explicit && !context.quoted && context.kind == CursorKind.Property) {
                 return@withContext null
             }
@@ -99,7 +99,12 @@ class SingBoxSchemaCompletionProvider private constructor(
             .filter { field -> field.name !in context.existingKeys }
             .filter { field -> field.name.contains(context.prefix, ignoreCase = true) }
             .sortedWith(
-                compareByDescending<SchemaField> { it.name.startsWith(context.prefix, ignoreCase = true) }
+                compareByDescending<SchemaField> {
+                    it.name.startsWith(
+                        context.prefix,
+                        ignoreCase = true
+                    )
+                }
                     .thenByDescending { it.required }
                     .thenBy { it.name },
             )
@@ -670,7 +675,14 @@ private class SchemaNavigator(private val root: JsonObject) {
             value.asObject()?.let { properties.getOrPut(name) { mutableListOf() } += it }
         }
         referencedSchema(schema, visitedRefs)?.let { (ref, target) ->
-            collectProperties(target, discriminator, properties, required, visitedRefs + ref, depth + 1)
+            collectProperties(
+                target,
+                discriminator,
+                properties,
+                required,
+                visitedRefs + ref,
+                depth + 1
+            )
         }
         schema["allOf"]?.asArray()?.forEach { child ->
             child.asObject()?.let {
@@ -766,6 +778,7 @@ private class SchemaNavigator(private val root: JsonObject) {
             is JsonArray -> type.forEach {
                 it.asPrimitive()?.contentOrNull?.let { raw -> result += localizedType(raw) }
             }
+
             else -> Unit
         }
         schema["const"]?.let { result += valueTypeLabel(it) }
@@ -793,7 +806,8 @@ private class SchemaNavigator(private val root: JsonObject) {
         depth: Int = 0,
     ) {
         if (depth > MAX_SCHEMA_DEPTH) return
-        schema["description"]?.asPrimitive()?.contentOrNull?.takeIf(String::isNotBlank)?.let(parts::add)
+        schema["description"]?.asPrimitive()?.contentOrNull?.takeIf(String::isNotBlank)
+            ?.let(parts::add)
         schema["default"]?.let { parts += "默认值：$it。" }
         schema["enum"]?.asArray()?.takeIf { it.isNotEmpty() }?.let { values ->
             parts += "可选值：${values.joinToString { valueLabel(it) }}。"
@@ -929,7 +943,8 @@ private fun JsonElement.asObject(): JsonObject? = this as? JsonObject
 private fun JsonElement.asArray(): JsonArray? = this as? JsonArray
 private fun JsonElement.asPrimitive(): JsonPrimitive? = this as? JsonPrimitive
 
-private fun Char.isJsonDelimiter(): Boolean = isWhitespace() || this == ',' || this == '}' || this == ']'
+private fun Char.isJsonDelimiter(): Boolean =
+    isWhitespace() || this == ',' || this == '}' || this == ']'
 
 private fun decodeLooseJsonString(raw: String): String = runCatching {
     completionJson.parseToJsonElement("\"$raw\"").jsonPrimitive.content

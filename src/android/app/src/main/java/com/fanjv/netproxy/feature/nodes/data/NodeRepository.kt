@@ -3,10 +3,10 @@ package com.fanjv.netproxy.feature.nodes.data
 import com.fanjv.netproxy.core.command.NetProxyCtlClient
 import com.fanjv.netproxy.feature.catalog.model.CatalogNodesSnapshot
 import com.fanjv.netproxy.feature.catalog.model.NodeDelayResult
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.Serializable
 
 @Serializable
 internal data class ExportedNodeLink(

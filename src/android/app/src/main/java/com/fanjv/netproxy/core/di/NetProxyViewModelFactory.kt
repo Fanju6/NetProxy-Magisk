@@ -29,31 +29,39 @@ internal class NetProxyViewModelFactory(
                 container.serviceRepository,
                 container.moduleEnvironment
             )
+
             CatalogNodesViewModel::class.java -> CatalogNodesViewModel(
                 container.nodeRepository,
                 container.nodeImportStore
             )
+
             SubscriptionsViewModel::class.java ->
                 SubscriptionsViewModel(container.subscriptionRepository)
+
             SubscriptionDetailsViewModel::class.java ->
                 SubscriptionDetailsViewModel(
                     container.subscriptionRepository,
                     container.nodeRepository
                 )
+
             SubscriptionEditorViewModel::class.java ->
                 SubscriptionEditorViewModel(container.subscriptionRepository)
+
             AppsViewModel::class.java -> AppsViewModel(
                 container.appPolicyRepository,
                 container.appPackageRepository
             )
+
             SettingsViewModel::class.java -> SettingsViewModel(
                 container.configRepository,
                 container.serviceRepository
             )
+
             SingBoxConfigViewModel::class.java -> SingBoxConfigViewModel(
                 container.configRepository,
                 container.serviceRepository
             )
+
             LogsViewModel::class.java -> LogsViewModel(container.logRepository)
             ThemeViewModel::class.java -> ThemeViewModel(container.themeManager)
             else -> error("不支持的 ViewModel: ${modelClass.name}")
