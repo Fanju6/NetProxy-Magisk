@@ -380,7 +380,7 @@ const parseLatencyMs = (duration: string): number => {
 // ===================================================================
 
 /**
- * 按延迟高低返回徽章配色（<150ms 绿 / <500ms 橙 / 否则红），区分明暗主题。
+ * 按延迟高低返回徽章配色（<800ms 绿 / <1500ms 橙 / 否则红），区分明暗主题。
  * @param latency  延迟文本，空则返回空样式
  * @returns 内联样式对象
  */
@@ -388,12 +388,12 @@ const getLatencyBadgeStyle = (latency: string | null): Record<string, string> =>
   if (!latency) return {};
   const ms = parseLatencyMs(latency);
   const dark = isDark.value;
-  if (ms < 150) {
+  if (ms < 800) {
     return {
       backgroundColor: dark ? 'rgba(27, 94, 32, 0.3)' : '#e8f5e9',
       color: dark ? '#81c784' : '#2e7d32'
     };
-  } else if (ms < 500) {
+  } else if (ms < 1500) {
     return {
       backgroundColor: dark ? 'rgba(230, 81, 0, 0.3)' : '#fff3e0',
       color: dark ? '#ffb74d' : '#e65100'

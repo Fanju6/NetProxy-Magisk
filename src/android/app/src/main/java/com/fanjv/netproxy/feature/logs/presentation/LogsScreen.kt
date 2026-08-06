@@ -507,11 +507,11 @@ fun LatencyBadge(latency: String) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     val ms = parseLatencyMs(latency)
     val (backgroundColor, textColor) = when {
-        ms < 150 -> if (isDark) Color(0xFF1B5E20).copy(alpha = 0.3f) to Color(0xFF81C784) else Color(
+        ms < 800 -> if (isDark) Color(0xFF1B5E20).copy(alpha = 0.3f) to Color(0xFF81C784) else Color(
             0xFFE8F5E9
         ) to Color(0xFF2E7D32)
 
-        ms < 500 -> if (isDark) Color(0xFFE65100).copy(alpha = 0.3f) to Color(0xFFFFB74D) else Color(
+        ms < 1500 -> if (isDark) Color(0xFFE65100).copy(alpha = 0.3f) to Color(0xFFFFB74D) else Color(
             0xFFFFF3E0
         ) to Color(0xFFE65100)
 
@@ -527,8 +527,10 @@ fun LatencyBadge(latency: String) {
     ) {
         Text(
             text = latency,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
+            style = top.yukonga.miuix.kmp.theme.MiuixTheme.textStyles.footnote2.copy(
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold
+            ),
             color = textColor
         )
     }

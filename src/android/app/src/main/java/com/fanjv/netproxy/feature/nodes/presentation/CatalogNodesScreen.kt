@@ -839,11 +839,11 @@ private fun latencyLabel(value: String): String = when (value) {
 @Composable
 private fun latencyColor(value: String): Color = when (value) {
     "testing..." -> colorScheme.primary
-    "failed", "timeout" -> Color(0xFFF72727)
+    "failed", "timeout" -> if (MiuixTheme.isDynamicColor) colorScheme.error else Color(0xFFF72727)
     else -> when (value.toIntOrNull() ?: Int.MAX_VALUE) {
-        in 0..199 -> Color(0xFF32A852)
-        in 200..499 -> Color(0xFFE39A20)
-        else -> Color(0xFFF05252)
+        in 0..799 -> Color(0xFF32A852)
+        in 800..1499 -> Color(0xFFE39A20)
+        else -> if (MiuixTheme.isDynamicColor) colorScheme.error else Color(0xFFF05252)
     }
 }
 
