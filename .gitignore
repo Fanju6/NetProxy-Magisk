@@ -11,6 +11,9 @@ src/module/webroot/netproxy/
 # 本地构建的 NetProxy 原生组件
 src/module/bin/netproxy-native
 
+# 测试用临时目录（AGENTS.md 验证流程中的 netproxy-native 测试二进制）
+.tmp/
+
 # Android 管理器本地配置与构建产物
 src/android/**/.gradle/
 src/android/**/.kotlin/
