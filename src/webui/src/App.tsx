@@ -61,7 +61,7 @@ export default function App() {
     requestAnimationFrame(async () => {
       try {
         let out = '', err = '', code = 0
-        if (cmd === 'clear' || cmd === 'cls') { setLines([]); setBusy(false); return }
+        if (cmd === 'clear') { setLines([]); setBusy(false); return }
         if (cmd === 'exit') { err = 'WebView 中无法退出，请关闭页面' }
         else if (cmd === 'help') { append({ t: 'h', text: getHelp() }) }
         else if (cmd.startsWith('help ')) { append({ t: 'h', text: getHelp(cmd.slice(5).trim()) }) }

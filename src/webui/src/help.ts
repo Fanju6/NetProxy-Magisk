@@ -11,6 +11,8 @@ const MAIN = `
   logs <cmd>       日志 (show/clear)
   config <cmd>     配置 (list/read/check)
   ebpf <cmd>       eBPF 诊断
+  ! <命令>         执行任意 Shell 命令 (Root 权限)
+  clear            清屏
 
 快捷键:
   Tab              自动补全
@@ -18,13 +20,15 @@ const MAIN = `
   Enter            执行
 
 帮助:
-  help <主题>      查看详细帮助 (service/node/mode/sub/app/logs/config/ebpf)
+  help <主题>      查看详细帮助 (service/node/mode/sub/app/logs/config/ebpf/shell)
   help all         查看完整文档
 
 示例:
   service start && node use auto && mode rule
   sub update-all
   node list
+  ! ls /data/adb/modules/netproxy/config/
+  ! ps -A | grep sing-box
 `
 
 const TOPICS: Record<string, string> = {
@@ -99,6 +103,20 @@ ebpf - eBPF 诊断
 
   ebpf status             查看当前 eBPF 模式
   ebpf status all         检测所有支持模式
+`,
+  shell: `
+shell - 执行任意 Shell 命令 (! 前缀)
+
+  前缀加 ! 可直接执行任意 Android Shell 命令，拥有 Root 权限。
+  支持管道、重定向、逻辑运算符等标准 Shell 语法。
+
+  ! <命令>               执行命令
+
+示例:
+  ! ls /data/adb/modules/netproxy/config/
+  ! ps -A | grep sing-box
+  ! cat /data/adb/modules/netproxy/config/tproxy.conf
+  ! netstat -tlnp
 `
 }
 
