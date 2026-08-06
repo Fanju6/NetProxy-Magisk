@@ -638,7 +638,7 @@ jobs:
 
       - name: 配置 Android SDK
         if: steps.android.outputs.changed == 'true'
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: 安装 Android SDK 37
         if: steps.android.outputs.changed == 'true'
