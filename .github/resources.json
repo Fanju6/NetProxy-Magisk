@@ -18,7 +18,8 @@
       "ref": "X",
       "sourcePath": "sing-box/Rules/AppleCN.srs",
       "metadataPath": "sing-box/Rules/AppleCN.json",
-      "currentCommit": "f90ff980209e9b75aef68a449c1eed3771eee0fc"
+      "currentCommit": "8e0987c5e1894a70cc2c4c3e2ffbfbcf0a36aeac",
+      "currentSha256": "c2f4c5bc86bb1faaf14f0ce692b0af8ad4765c6a36785da80066ade328ecf724"
     },
     {
       "name": "ChinaDomain",
@@ -28,7 +29,8 @@
       "ref": "X",
       "sourcePath": "sing-box/Rules/ChinaDomain.srs",
       "metadataPath": "sing-box/Rules/ChinaDomain.json",
-      "currentCommit": "f90ff980209e9b75aef68a449c1eed3771eee0fc"
+      "currentCommit": "8e0987c5e1894a70cc2c4c3e2ffbfbcf0a36aeac",
+      "currentSha256": "45c67bd6edb6cde6bea06039f2ff70824ac3f29488a739f01ac6e05ed3518a43"
     },
     {
       "name": "ChinaIP",
@@ -38,7 +40,8 @@
       "ref": "X",
       "sourcePath": "sing-box/Rules/ChinaIP.srs",
       "metadataPath": "sing-box/Rules/ChinaIP.json",
-      "currentCommit": "a5c75a33c19b0db0d852dc679b20942e45b33662"
+      "currentCommit": "4e2cc228aec1154688a2d75051eaa8225dcde175",
+      "currentSha256": "157f2395e81e46c27e7dfdcd7b076f932f941f7b974759f28102964b8614edfa"
     },
     {
       "name": "Proxy",
@@ -48,7 +51,8 @@
       "ref": "X",
       "sourcePath": "sing-box/Rules/Proxy.srs",
       "metadataPath": "sing-box/Rules/Proxy.json",
-      "currentCommit": "2602ff2dd69c4ff9bb204f5af3c18e419747f30e"
+      "currentCommit": "8e0987c5e1894a70cc2c4c3e2ffbfbcf0a36aeac",
+      "currentSha256": "d2397b031e1761373fdabdc86193a21de14a253cdf937019855fe09888582061"
     },
     {
       "name": "bpftool 5.16.0",
@@ -66,7 +70,7 @@
     "path": "src/module/bin/sing-box",
     "repo": "reF1nd/sing-box",
     "tagPattern": "^v[0-9].*-reF1nd$",
-    "currentVersion": "v1.14.0-beta.7-reF1nd",
+    "currentVersion": "v1.14.0-beta.8-reF1nd",
     "ndkVersion": "r25c",
     "buildTags": [
       "with_gvisor",

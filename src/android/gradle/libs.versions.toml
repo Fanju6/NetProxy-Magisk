@@ -18,7 +18,7 @@ composeBom = "2026.06.01"
 libsu = "6.0.0"
 miuix = "0.9.3"
 hiddenapibypass = "6.1"
-jsonSchemaValidator = "2.0.1"
+jsonSchemaValidator = "2.0.4"
 junit = "4.13.2"
 
 [libraries]
