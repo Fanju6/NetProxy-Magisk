@@ -434,10 +434,9 @@ command_node_read() {
   local action="$1"
   local group_query="${2:-}"
   local group_id groups_json
-  local active active_runtime_tag selector selected node_count=0
+  local active selector selected node_count=0
 
   active="$(read_conf "$MODULE_CONF" "ACTIVE_GROUP_ID" "")"
-  active_runtime_tag="$(catalog_runtime_group_tag "$active" 2> /dev/null || true)"
   selector="$(read_conf "$MODULE_CONF" "SELECTOR_MODE" "urltest")"
   selected="$(read_conf "$MODULE_CONF" "SELECTED_NODE_REF" "")"
   if [ "$action" = "current" ]; then
@@ -448,7 +447,7 @@ command_node_read() {
     if [ "$node_count" -le 0 ]; then
       selected=""
     elif [ "$selector" = "urltest" ]; then
-      selected="Auto/$active_runtime_tag"
+      selected="Auto/$active"
     fi
     emit_success "node.current" "当前节点选择" \
       "{\"active_group_id\":\"$(json_escape "$active")\",\"selector_mode\":\"$(json_escape "$selector")\",\"selected\":\"$(json_escape "$selected")\"}"
@@ -471,7 +470,7 @@ command_node_read() {
     if [ "$node_count" -le 0 ]; then
       selected=""
     elif [ "$selector" = "urltest" ]; then
-      selected="Auto/$active_runtime_tag"
+      selected="Auto/$active"
     fi
     emit_success "node.snapshot" "节点快照" \
       "{\"groups\":$groups_json,\"selection\":{\"active_group_id\":\"$(json_escape "$active")\",\"selector_mode\":\"$(json_escape "$selector")\",\"selected\":\"$(json_escape "$selected")\"}}"

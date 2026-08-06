@@ -89,6 +89,7 @@ run_json "$result"
 printf '%s' "$result" | grep -q '"code":"node.snapshot"'
 printf '%s' "$result" | grep -q '"groups":\['
 printf '%s' "$result" | grep -q '"selection":{"active_group_id":"default"'
+printf '%s' "$result" | grep -q '"selected":"Auto/default"'
 
 result="$(sh "$MODULE/scripts/netproxyctl" --json node remove 'default/CLI')"
 run_json "$result"
