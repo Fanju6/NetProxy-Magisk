@@ -263,7 +263,7 @@ service_is_running() {
 #######################################
 command_service_status() {
   local pid state uptime=0 mode selector active selected runtime_selected=""
-  local runtime_group="Proxy" active_runtime_tag=""
+  local runtime_group="Proxy" active_runtime_tag="" active_group_name=""
   local ready_at started_at state_pid state_error now
   local active_node_count=0
   local worker_state="stopped" worker_pid=""
@@ -287,7 +287,9 @@ command_service_status() {
   [ -z "$active" ] || active_runtime_tag="$(catalog_runtime_group_tag "$active" 2> /dev/null || true)"
   if [ -n "$active" ] && load_catalog_meta "$CATALOG_DIR/$active/meta.json"; then
     active_node_count="$SUB_NODE_COUNT"
+    active_group_name="$SUB_NAME"
   fi
+  [ -n "$active_group_name" ] || active_group_name="$active"
   case "$active_node_count" in "" | *[!0-9]*) active_node_count=0 ;; esac
   if [ -z "$pid" ]; then
     case "$state" in preparing | starting | ready | stopping) state="failed"; state_error="sing-box 进程已退出" ;; esac
@@ -361,12 +363,12 @@ EOF
 
   if [ "$OUTPUT_JSON" = "1" ]; then
     emit_success "service.status" "服务状态" \
-      "{\"state\":\"$state\",\"pid\":${pid:-null},\"started_at\":$started_at,\"ready_at\":$ready_at,\"uptime_seconds\":$uptime,\"error\":\"$(json_escape "$state_error")\",\"outbound_mode\":\"$(json_escape "$mode")\",\"selector_mode\":\"$(json_escape "$selector")\",\"active_group_id\":\"$(json_escape "$active")\",\"active_group_node_count\":$active_node_count,\"selected_node_ref\":\"$(json_escape "$selected")\",\"runtime_selected\":\"$(json_escape "$runtime_selected")\",\"memory_bytes\":$memory,\"process_cpu_ticks\":$process_cpu_ticks,\"system_cpu_ticks\":$system_cpu_ticks,\"cpu_count\":$cpu_count,\"connections_in\":$connections_in,\"connections_out\":$connections_out,\"upload_total\":$upload_total,\"download_total\":$download_total,\"subscription_worker\":\"$worker_state\",\"subscription_worker_pid\":${worker_pid:-null}}"
+      "{\"state\":\"$state\",\"pid\":${pid:-null},\"started_at\":$started_at,\"ready_at\":$ready_at,\"uptime_seconds\":$uptime,\"error\":\"$(json_escape "$state_error")\",\"outbound_mode\":\"$(json_escape "$mode")\",\"selector_mode\":\"$(json_escape "$selector")\",\"active_group_id\":\"$(json_escape "$active")\",\"active_group_name\":\"$(json_escape "$active_group_name")\",\"active_group_node_count\":$active_node_count,\"selected_node_ref\":\"$(json_escape "$selected")\",\"runtime_selected\":\"$(json_escape "$runtime_selected")\",\"memory_bytes\":$memory,\"process_cpu_ticks\":$process_cpu_ticks,\"system_cpu_ticks\":$system_cpu_ticks,\"cpu_count\":$cpu_count,\"connections_in\":$connections_in,\"connections_out\":$connections_out,\"upload_total\":$upload_total,\"download_total\":$download_total,\"subscription_worker\":\"$worker_state\",\"subscription_worker_pid\":${worker_pid:-null}}"
   else
     printf "服务状态: %s\n" "$state"
     printf "运行时间: %s 秒\n" "$uptime"
     printf "路由模式: %s\n" "$mode"
-    printf "活动分组: %s\n" "${active:-无}"
+    printf "活动分组: %s\n" "${active_group_name:-无}"
     if [ "$selector" = "urltest" ]; then
       printf "节点选择: Auto/%s\n" "${active:-无}"
     else

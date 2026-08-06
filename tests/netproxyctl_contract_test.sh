@@ -137,6 +137,7 @@ printf '%s' "$result" | grep -q '"progress":{"schema":1,"group_id":"test-sub","s
 result="$(sh "$MODULE/scripts/netproxyctl" --json service status)"
 run_json "$result"
 printf '%s' "$result" | grep -q '"state":"stopped"'
+printf '%s' "$result" | grep -q '"active_group_name":"本地配置"'
 printf '%s' "$result" | grep -q '"active_group_node_count":0'
 printf '%s' "$result" | grep -q '"process_cpu_ticks":0'
 printf '%s' "$result" | grep -q '"system_cpu_ticks":'

@@ -254,22 +254,18 @@ internal fun shouldApplyDashboardSnapshot(
     operation: String
 ): Boolean = requestRevision == currentRevision && operation != "start" && operation != "stop"
 
-/** 将 Service API 的运行引用转换为适合仪表盘展示的叶子节点名。 */
+/** 将持久选择状态转换为适合仪表盘展示的节点名称。 */
 internal fun dashboardNodeName(service: ServiceStatusSnapshot): String {
     if (service.activeGroupNodeCount <= 0) return ""
 
+    val groupName = service.activeGroupName.ifBlank { service.activeGroupId }
     val automatic = service.selectorMode == "urltest" || service.selectorMode == "auto"
-    val runtimeGroup = if (automatic) {
-        "Auto/${service.activeGroupId}"
-    } else {
-        "Select/${service.activeGroupId}"
-    }
-    val runtimeNode = service.runtimeSelected.takeUnless { it == runtimeGroup }.orEmpty()
-    if (runtimeNode.isNotBlank()) return runtimeNode
-
-    return if (automatic) {
+    val nodeName = if (automatic) {
         "Auto-Fastest"
     } else {
-        service.selectedNodeRef.substringAfter('/', service.selectedNodeRef)
+        service.selectedNodeRef
+            .substringAfter('/', service.selectedNodeRef)
+            .ifBlank { service.runtimeSelected.substringAfter('/', service.runtimeSelected) }
     }
+    return listOf(groupName, nodeName).filter(String::isNotBlank).joinToString("/")
 }

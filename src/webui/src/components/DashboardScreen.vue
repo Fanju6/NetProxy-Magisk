@@ -31,7 +31,11 @@ const statusText = computed(() => {
 });
 const nodeText = computed(() => {
   if (!status.value || status.value.active_group_node_count <= 0) return t('dashboard.nodeUnselected');
-  return status.value.runtime_selected || status.value.selected_node_ref || `Auto/${status.value.active_group_id}`;
+  const group = status.value.active_group_name || status.value.active_group_id;
+  if (status.value.selector_mode === 'urltest') return `${group}/Auto-Fastest`;
+  const selected = status.value.selected_node_ref || status.value.runtime_selected;
+  const node = selected.includes('/') ? selected.slice(selected.indexOf('/') + 1) : selected;
+  return [group, node].filter(Boolean).join('/');
 });
 const uptimeText = computed(() => formatDuration(status.value?.uptime_seconds ?? 0));
 

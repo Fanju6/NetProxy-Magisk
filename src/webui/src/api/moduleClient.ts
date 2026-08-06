@@ -73,6 +73,7 @@ export interface ServiceStatus {
   outbound_mode: 'rule' | 'global' | 'direct';
   selector_mode: 'urltest' | 'manual';
   active_group_id: string;
+  active_group_name: string;
   active_group_node_count: number;
   selected_node_ref: string;
   runtime_selected: string;
@@ -286,7 +287,8 @@ const mockCall = <T>(args: string[]): T => {
     return {
       state: 'ready', pid: 1234, started_at: 0, ready_at: Math.floor(Date.now() / 1000) - 120,
       uptime_seconds: 120, error: '', outbound_mode: 'rule', selector_mode: 'urltest',
-      active_group_id: 'default', active_group_node_count: 2, selected_node_ref: '', runtime_selected: 'Tokyo',
+      active_group_id: 'default', active_group_name: '本地配置', active_group_node_count: 2,
+      selected_node_ref: '', runtime_selected: 'Tokyo',
       upload_total: 12_582_912, download_total: 98_713_600,
       subscription_worker: 'running', subscription_worker_pid: 1235
     } as T;

@@ -43,17 +43,17 @@ class CatalogDashboardNodeNameTest {
             runtimeSelected = "Auto/group-id"
         )
 
-        assertEquals("Auto-Fastest", dashboardNodeName(status))
+        assertEquals("测试订阅/Auto-Fastest", dashboardNodeName(status))
     }
 
     @Test
-    fun `automatic mode displays runtime node tag`() {
+    fun `automatic mode hides internal runtime node`() {
         val status = status(
             selectorMode = "urltest",
             runtimeSelected = "香港 01"
         )
 
-        assertEquals("香港 01", dashboardNodeName(status))
+        assertEquals("测试订阅/Auto-Fastest", dashboardNodeName(status))
     }
 
     @Test
@@ -64,7 +64,7 @@ class CatalogDashboardNodeNameTest {
             selectedNodeRef = "group-id/日本 02"
         )
 
-        assertEquals("日本 02", dashboardNodeName(status))
+        assertEquals("测试订阅/日本 02", dashboardNodeName(status))
     }
 
     private fun status(
@@ -75,6 +75,7 @@ class CatalogDashboardNodeNameTest {
         state = "ready",
         selectorMode = selectorMode,
         activeGroupId = "group-id",
+        activeGroupName = "测试订阅",
         activeGroupNodeCount = 2,
         selectedNodeRef = selectedNodeRef,
         runtimeSelected = runtimeSelected

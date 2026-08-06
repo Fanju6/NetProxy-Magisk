@@ -14,6 +14,7 @@ internal data class ServiceStatusSnapshot(
     @SerialName("outbound_mode") val outboundMode: String = "rule",
     @SerialName("selector_mode") val selectorMode: String = "urltest",
     @SerialName("active_group_id") val activeGroupId: String = "",
+    @SerialName("active_group_name") val activeGroupName: String = "",
     @SerialName("active_group_node_count") val activeGroupNodeCount: Int = 0,
     @SerialName("selected_node_ref") val selectedNodeRef: String = "",
     @SerialName("runtime_selected") val runtimeSelected: String = "",
