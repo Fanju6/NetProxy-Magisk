@@ -143,6 +143,7 @@ jobs:
           file .sing-box-source/sing-box | grep -q 'ARM aarch64'
           go version -m .sing-box-source/sing-box | grep -q "${LATEST_VERSION#v}"
           go version -m .sing-box-source/sing-box | grep -q 'with_ebpf'
+          go version -m .sing-box-source/sing-box | grep -q 'with_gvisor'
           go version -m .sing-box-source/sing-box | grep -q 'with_tailscale'
 
           install -m 0755 .sing-box-source/sing-box "$SING_BOX_TARGET"

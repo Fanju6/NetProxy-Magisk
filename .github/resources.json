@@ -73,6 +73,7 @@
     "currentVersion": "v1.14.0-beta.7-reF1nd",
     "ndkVersion": "r29",
     "buildTags": [
+      "with_gvisor",
       "with_quic",
       "with_utls",
       "with_clash_api",
