@@ -878,57 +878,12 @@ append_local_node() {
 }
 
 #######################################
-# 从任意分组复制节点到本地分组
-# 参数:
-#   $1  源节点引用 (<group-id>/<tag>)
-#   $2  目标本地分组 ID (默认 default)
-# 返回: 成功返回 0
-#######################################
-copy_node_to_local() {
-  local source_ref="$1"
-  local target_group="${2:-default}"
-  local source_group tag source_provider target_dir target_provider stage node_count now had_nodes=0
-
-  source_group="${source_ref%%/*}"
-  tag="${source_ref#*/}"
-  [ "$source_group" != "$source_ref" ] && [ -n "$tag" ] || return 1
-  source_provider="$(catalog_provider_path "$source_group")" || return 1
-  catalog_provider_contains_tag "$source_provider" "$tag" || return 1
-  [ "$(meta_get_string "$CATALOG_DIR/$target_group/meta.json" "type" "")" != "subscription" ] || return 1
-  target_dir="$CATALOG_DIR/$target_group"
-  target_provider="$target_dir/provider.json"
-  [ -f "$target_provider" ] || return 1
-  catalog_provider_has_nodes "$target_provider" && had_nodes=1
-
-  acquire_catalog_lock "$target_group" || return 1
-  create_catalog_stage "$target_group" > /dev/null || { release_catalog_lock; return 1; }
-  stage="$SUB_STAGE_DIR"
-  cp "$target_provider" "$stage/provider.json" || { release_catalog_lock; return 1; }
-  if ! "$NETPROXY_NATIVE_BIN" provider append --target "$stage/provider.json" \
-    --input "$source_provider" --tag "$tag" > "$stage/result.json" 2> "$stage/error.json"; then
-    release_catalog_lock
-    return 1
-  fi
-  node_count="$(grep -o '"protocol"' "$stage/result.json" | wc -l | tr -d '[:space:]')"
-  load_catalog_meta "$target_dir/meta.json" || initialize_local_meta "$target_group" "$target_group" "local"
-  SUB_NODE_COUNT="$node_count"
-  SUB_REVISION=$((SUB_REVISION + 1))
-  now="$(date +%s)"
-  SUB_UPDATED_AT="$(format_epoch_utc "$now")"
-  write_catalog_meta "$stage/meta.json" || { release_catalog_lock; return 1; }
-  mv -f "$stage/provider.json" "$target_provider" || { release_catalog_lock; return 1; }
-  mv -f "$stage/meta.json" "$target_dir/meta.json" || { release_catalog_lock; return 1; }
-  release_catalog_lock
-  [ "$had_nodes" = "1" ] || reload_catalog_structure_if_running
-}
-
-#######################################
-# 从本地分组删除节点
+# 从 Catalog 分组删除节点
 # 参数:
 #   $1  节点引用 (<group-id>/<tag>)
 # 返回: 成功返回 0
 #######################################
-remove_local_node() {
+remove_catalog_node() {
   local node_ref="$1"
   local group_id tag group_dir provider_file stage node_count now
 
@@ -936,7 +891,6 @@ remove_local_node() {
   tag="${node_ref#*/}"
   [ "$group_id" != "$node_ref" ] && [ -n "$tag" ] || return 1
   group_dir="$CATALOG_DIR/$group_id"
-  [ "$(meta_get_string "$group_dir/meta.json" "type" "")" != "subscription" ] || return 1
   provider_file="$group_dir/provider.json"
   catalog_provider_contains_tag "$provider_file" "$tag" || return 1
   acquire_catalog_lock "$group_id" || return 1
@@ -965,13 +919,13 @@ remove_local_node() {
 }
 
 #######################################
-# 原子替换本地分组中的一个节点
+# 原子替换 Catalog 分组中的一个节点
 # 参数:
 #   $1  旧节点引用 (<group-id>/<tag>)
 #   $2  新节点链接或文件
 # 返回: 成功返回 0
 #######################################
-edit_local_node() {
+edit_catalog_node() {
   local node_ref="$1"
   local input="$2"
   local group_id tag group_dir provider_file stage node_count now
@@ -980,7 +934,6 @@ edit_local_node() {
   tag="${node_ref#*/}"
   [ "$group_id" != "$node_ref" ] && [ -n "$tag" ] || return 1
   group_dir="$CATALOG_DIR/$group_id"
-  [ "$(meta_get_string "$group_dir/meta.json" "type" "")" != "subscription" ] || return 1
   provider_file="$group_dir/provider.json"
   catalog_provider_contains_tag "$provider_file" "$tag" || return 1
   acquire_catalog_lock "$group_id" || return 1

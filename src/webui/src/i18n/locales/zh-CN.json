@@ -65,8 +65,8 @@
   "nodes": {
     "autoSelected": "已切换到自动测速",
     "autoDescription": "自动选择当前分组延迟更低的节点",
-    "copyToLocal": "复制到本地配置",
-    "copiedToLocal": "节点已复制到本地配置",
+    "subscriptionEditWarning": "修改只影响当前订阅节点，下次更新订阅时会被远端内容覆盖",
+    "localEditHint": "修改后将更新本地配置中的节点",
     "testComplete": "节点测速已完成",
     "emptyGroupsDesc": "请添加单节点、导入文件或添加 URL 订阅",
     "pullToRefresh": "下拉可以刷新",

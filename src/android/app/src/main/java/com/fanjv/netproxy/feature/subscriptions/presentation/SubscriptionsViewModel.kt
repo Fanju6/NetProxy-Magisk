@@ -47,7 +47,13 @@ internal class SubscriptionsViewModel(
                     loaded = true
                 }
                 .onFailure { error ->
-                    _state.update { it.copy(loading = false, error = error.userMessage()) }
+                    _state.update {
+                        it.copy(
+                            loading = false,
+                            error = error.userMessage(),
+                            noticeId = it.noticeId + 1
+                        )
+                    }
                 }
         }
     }

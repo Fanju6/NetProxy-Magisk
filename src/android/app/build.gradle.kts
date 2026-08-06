@@ -15,8 +15,8 @@ android {
         applicationId = "com.fanjv.netproxy"
         minSdk = 31
         targetSdk = 37
-        versionCode = 27
-        versionName = "8.0.0-alpha.2"
+        versionCode = 28
+        versionName = "8.0.0-alpha.4"
         buildConfigField("long", "ALPHA_EXPIRES_AT_MILLIS", "1786291200000L")
         ndk {
             abiFilters += "arm64-v8a"

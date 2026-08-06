@@ -65,8 +65,8 @@
   "nodes": {
     "autoSelected": "Automatic testing selected",
     "autoDescription": "Automatically use the lower-latency node in this group",
-    "copyToLocal": "Copy to local configuration",
-    "copiedToLocal": "Node copied to local configuration",
+    "subscriptionEditWarning": "This changes the current subscription node only. The next subscription update will replace it with remote content.",
+    "localEditHint": "Saving updates this node in the local configuration.",
     "testComplete": "Latency test completed",
     "emptyGroupsDesc": "Add a node, import a file, or add a URL subscription",
     "pullToRefresh": "Pull to refresh",

@@ -1,6 +1,5 @@
 package com.fanjv.netproxy.feature.settings.singbox
 
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.LocalOverscrollFactory
@@ -51,10 +50,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.R
+import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BackIconButton
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.JsonSyntaxHighlighter
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
+import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
 import com.fanjv.netproxy.core.ui.theme.LocalEnableBlur
 import com.fanjv.netproxy.core.ui.theme.isInDarkTheme
 import kotlinx.serialization.json.Json
@@ -95,6 +96,7 @@ internal fun SingBoxJsonEditScreen(
     val controller = rememberSaveableCodeEditorController()
     val highlighter = remember { JsonSyntaxHighlighter() }
     val context = LocalContext.current
+    val snackbarHostState = rememberAppSnackbarHostState()
     val resources = LocalResources.current
     val schemaValidator = remember(context) { SingBoxSchemaValidator(context.applicationContext) }
     val completionProvider = remember(context) {
@@ -231,7 +233,9 @@ internal fun SingBoxJsonEditScreen(
             isSaving = false
             if (result.success) {
                 controller.markSaved(version)
-                Toast.makeText(context, savedMessage, Toast.LENGTH_SHORT).show()
+                coroutineScope.launch {
+                    snackbarHostState.showSnackbar(savedMessage)
+                }
             } else {
                 saveErrorText = if (result.restored) {
                     resources.getString(R.string.json_save_rolled_back)
@@ -310,6 +314,7 @@ internal fun SingBoxJsonEditScreen(
     val layoutDirection = LocalLayoutDirection.current
 
     Scaffold(
+        snackbarHost = { AppSnackbarHost(snackbarHostState) },
         topBar = {
             BlurredBar(backdrop) {
                 SmallTopAppBar(

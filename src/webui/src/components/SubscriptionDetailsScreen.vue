@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import {
   moduleClient,
+  type CatalogNode,
   type CatalogNodeGroup,
   type SubscriptionHistoryEntry
 } from '../api/moduleClient';
@@ -17,6 +18,10 @@ const history = ref<SubscriptionHistoryEntry[]>([]);
 const loading = ref(true);
 const operating = ref(false);
 const deleteDialog = ref(false);
+const actionDialog = ref(false);
+const editDialog = ref(false);
+const actionNode = ref<CatalogNode | null>(null);
+const editedLink = ref('');
 
 const load = async () => {
   loading.value = true;
@@ -57,6 +62,66 @@ const remove = async () => {
   }
 };
 
+const nodeRef = () => actionNode.value ? `${props.id}/${actionNode.value.tag}` : '';
+
+const openNodeActions = (node: CatalogNode) => {
+  actionNode.value = node;
+  actionDialog.value = true;
+};
+
+const testNode = async () => {
+  const ref = nodeRef();
+  if (!ref) return;
+  actionDialog.value = false;
+  await run(() => moduleClient.testDelay(ref), t('nodes.testComplete'));
+};
+
+const openNodeEditor = async () => {
+  const ref = nodeRef();
+  if (!ref || operating.value) return;
+  actionDialog.value = false;
+  operating.value = true;
+  try {
+    editedLink.value = (await moduleClient.exportNode(ref)).link;
+    editDialog.value = true;
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error));
+  } finally {
+    operating.value = false;
+  }
+};
+
+const saveNode = async () => {
+  const ref = nodeRef();
+  const source = editedLink.value.trim();
+  if (!ref || !source) return;
+  editDialog.value = false;
+  await run(() => moduleClient.editNode(ref, source), t('nodes.nodeSaved'));
+};
+
+const exportNode = async () => {
+  const ref = nodeRef();
+  if (!ref || operating.value) return;
+  actionDialog.value = false;
+  operating.value = true;
+  try {
+    const exported = await moduleClient.exportNode(ref);
+    await navigator.clipboard.writeText(exported.link);
+    showToast(t('nodes.nodeLinkCopied'));
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error));
+  } finally {
+    operating.value = false;
+  }
+};
+
+const removeNode = async () => {
+  const ref = nodeRef();
+  if (!ref) return;
+  actionDialog.value = false;
+  await run(() => moduleClient.removeNode(ref), t('nodes.nodeDeleted'));
+};
+
 const formatTime = (value: string): string => {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
@@ -92,10 +157,10 @@ onMounted(load);
 
         <section class="section">
           <h2>{{ t('subscriptions.nodes') }}</h2>
-          <div class="node-row" v-for="node in details.nodes" :key="node.tag">
+          <button class="node-row" v-for="node in details.nodes" :key="node.tag" type="button" @click="openNodeActions(node)">
             <span class="node-icon">{{ (node.protocol || '?')[0].toUpperCase() }}</span>
             <span><strong>{{ node.tag }}</strong><small>{{ node.protocol.toUpperCase() }} · {{ node.server }}:{{ node.port }}</small></span>
-          </div>
+          </button>
           <p v-if="details.nodes.length === 0" class="empty-copy">{{ t('nodes.emptyGroup') }}</p>
         </section>
 
@@ -119,6 +184,35 @@ onMounted(load);
         <md-filled-button @click="remove">{{ t('common.delete') }}</md-filled-button>
       </div>
     </md-dialog>
+
+    <md-dialog :open="actionDialog" @close="actionDialog = false">
+      <div slot="headline">{{ actionNode?.tag }}</div>
+      <div slot="content" class="action-list">
+        <button type="button" @click="testNode">{{ t('nodes.latencyTest') }}</button>
+        <button type="button" @click="openNodeEditor">{{ t('nodes.edit') }}</button>
+        <button type="button" @click="exportNode">{{ t('nodes.export') }}</button>
+        <button class="danger" type="button" @click="removeNode">{{ t('common.delete') }}</button>
+      </div>
+      <div slot="actions"><md-text-button @click="actionDialog = false">{{ t('common.cancel') }}</md-text-button></div>
+    </md-dialog>
+
+    <md-dialog :open="editDialog" @close="editDialog = false">
+      <div slot="headline">{{ t('nodes.edit') }}</div>
+      <div slot="content" class="edit-content">
+        <md-outlined-text-field
+          :value="editedLink"
+          type="textarea"
+          rows="5"
+          :label="t('nodes.importLink')"
+          @input="editedLink = ($event.target as HTMLInputElement).value"
+        ></md-outlined-text-field>
+        <small>{{ details?.group.type === 'subscription' ? t('nodes.subscriptionEditWarning') : t('nodes.localEditHint') }}</small>
+      </div>
+      <div slot="actions">
+        <md-text-button @click="editDialog = false">{{ t('common.cancel') }}</md-text-button>
+        <md-filled-button :disabled="!editedLink.trim()" @click="saveNode">{{ t('common.save') }}</md-filled-button>
+      </div>
+    </md-dialog>
   </div>
 </template>
 
@@ -138,6 +232,7 @@ onMounted(load);
 .section { margin-top: 22px; }
 .section h2 { margin: 0 4px 8px; font-size: 13px; color: var(--md-sys-color-primary); }
 .node-row, .history-row { min-height: 64px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--md-sys-color-outline-variant); }
+.node-row { width: 100%; padding: 0; text-align: left; color: inherit; background: transparent; border-top: 0; border-left: 0; border-right: 0; }
 .node-icon { width: 36px; height: 36px; border-radius: 8px; display: grid; place-items: center; font-weight: 700; background: var(--md-sys-color-secondary-container); }
 .node-row > span:last-child, .history-row > span:last-child { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 3px; }
 .node-row strong, .node-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -146,4 +241,9 @@ onMounted(load);
 .history-dot.failed, .history-dot.error { background: var(--md-sys-color-error); }
 .delete-button { width: 100%; margin-top: 14px; }
 .center-state { min-height: 60vh; display: grid; place-items: center; }
+.action-list { min-width: min(320px, 72vw); }
+.action-list button { width: 100%; border: 0; padding: 14px 4px; text-align: left; color: inherit; background: transparent; }
+.action-list .danger { color: var(--md-sys-color-error); }
+.edit-content { display: flex; min-width: min(360px, 78vw); flex-direction: column; gap: 12px; }
+.edit-content small { color: var(--md-sys-color-on-surface-variant); line-height: 1.45; }
 </style>

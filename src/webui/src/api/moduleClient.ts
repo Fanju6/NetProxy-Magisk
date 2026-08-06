@@ -63,6 +63,12 @@ export interface NodeSelection {
   selected: string;
 }
 
+export interface ExportedNodeLink {
+  tag: string;
+  protocol: string;
+  link: string;
+}
+
 export interface ServiceStatus {
   state: 'stopped' | 'preparing' | 'starting' | 'ready' | 'stopping' | 'failed';
   pid: number | null;
@@ -332,7 +338,8 @@ class ModuleClient {
   selectAuto = (groupId: string) => this.call(['node', 'use', 'auto', groupId]);
   selectNode = (groupId: string, tag: string) => this.call(['node', 'use', `${groupId}/${tag}`]);
   addNode = (link: string) => this.call(['node', 'add', link]);
-  copyNode = (ref: string) => this.call(['node', 'copy', ref, 'default']);
+  editNode = (ref: string, source: string) => this.call(['node', 'edit', ref, source]);
+  exportNode = (ref: string) => this.call<ExportedNodeLink>(['node', 'export', ref]);
   removeNode = (ref: string) => this.call(['node', 'remove', ref]);
   testDelay = (target = '') => this.call(['node', 'delay', ...(target ? [target] : [])]);
 

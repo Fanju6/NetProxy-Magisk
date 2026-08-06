@@ -150,6 +150,8 @@ func parseLink(link string) (option.Outbound, error) {
 	}
 	scheme := strings.ToLower(link[:schemeEnd])
 	switch scheme {
+	case "ss":
+		return parseShadowsocks(link)
 	case "socks", "socks5":
 		return parseSOCKS(link)
 	case "http", "https":
@@ -157,6 +159,41 @@ func parseLink(link string) (option.Outbound, error) {
 	default:
 		return providerparser.ParseSubscriptionLink(link)
 	}
+}
+
+func parseShadowsocks(link string) (option.Outbound, error) {
+	u, err := url.Parse(link)
+	if err != nil {
+		return option.Outbound{}, fmt.Errorf("invalid Shadowsocks link: %w", err)
+	}
+	if u.Hostname() == "" || u.User == nil {
+		return option.Outbound{}, errors.New("Shadowsocks link requires credentials and a server")
+	}
+	method := u.User.Username()
+	password, hasPassword := u.User.Password()
+	if !hasPassword {
+		decoded, ok := decodeBase64(method)
+		if !ok {
+			return option.Outbound{}, errors.New("invalid Shadowsocks credentials")
+		}
+		method, password, hasPassword = strings.Cut(decoded, ":")
+	}
+	if method == "" || !hasPassword || password == "" {
+		return option.Outbound{}, errors.New("invalid Shadowsocks credentials")
+	}
+	port, err := parsePort(u.Port())
+	if err != nil {
+		return option.Outbound{}, err
+	}
+	options := &option.ShadowsocksOutboundOptions{
+		ServerOptions: option.ServerOptions{Server: u.Hostname(), ServerPort: port},
+		Method:        method,
+		Password:      password,
+	}
+	if plugin := u.Query().Get("plugin"); plugin != "" {
+		options.Plugin, options.PluginOptions, _ = strings.Cut(plugin, ";")
+	}
+	return option.Outbound{Type: C.TypeShadowsocks, Tag: u.Fragment, Options: options}, nil
 }
 
 func parseSOCKS(link string) (option.Outbound, error) {

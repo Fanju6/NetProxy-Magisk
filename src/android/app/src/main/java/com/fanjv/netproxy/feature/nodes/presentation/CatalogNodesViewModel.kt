@@ -24,7 +24,11 @@ internal data class CatalogNodesUiState(
     val operation: String = "",
     val error: String = "",
     val notice: String = "",
-    val noticeId: Long = 0
+    val noticeId: Long = 0,
+    val editingNodeRef: String = "",
+    val editingNodeLink: String = "",
+    val exportedNodeLink: String = "",
+    val exportedNodeLinkId: Long = 0
 )
 
 internal class CatalogNodesViewModel(
@@ -62,7 +66,13 @@ internal class CatalogNodesViewModel(
                 }
                 loaded = true
             }.onFailure { error ->
-                _state.update { it.copy(loading = false, error = error.userMessage()) }
+                _state.update {
+                    it.copy(
+                        loading = false,
+                        error = error.userMessage(),
+                        noticeId = it.noticeId + 1
+                    )
+                }
             }
         }
     }
@@ -99,14 +109,72 @@ internal class CatalogNodesViewModel(
         "节点已加入本地配置"
     }
 
-    fun copyNode(groupId: String, tag: String) = runOperation("copy") {
-        repository.copy("$groupId/$tag")
-        "节点已复制到本地配置"
-    }
-
     fun removeNode(groupId: String, tag: String) = runOperation("remove") {
         repository.remove("$groupId/$tag")
         "节点已删除"
+    }
+
+    fun editNode(groupId: String, tag: String) {
+        if (_state.value.operation.isNotEmpty()) return
+        val nodeRef = "$groupId/$tag"
+        viewModelScope.launch {
+            _state.update { it.copy(operation = "export", error = "") }
+            runCatching { repository.export(nodeRef) }
+                .onSuccess { exported ->
+                    _state.update {
+                        it.copy(
+                            operation = "",
+                            editingNodeRef = nodeRef,
+                            editingNodeLink = exported.link
+                        )
+                    }
+                }
+                .onFailure(::publishError)
+        }
+    }
+
+    fun saveEditedNode(link: String) {
+        val nodeRef = _state.value.editingNodeRef
+        if (nodeRef.isBlank()) return
+        runOperation("edit") {
+            require(link.isNotBlank()) { "节点链接不能为空" }
+            repository.edit(nodeRef, link.trim())
+            _state.update { it.copy(editingNodeRef = "", editingNodeLink = "") }
+            "节点已更新"
+        }
+    }
+
+    fun dismissNodeEditor() {
+        if (_state.value.operation == "edit") return
+        _state.update { it.copy(editingNodeRef = "", editingNodeLink = "") }
+    }
+
+    fun exportNode(groupId: String, tag: String) {
+        if (_state.value.operation.isNotEmpty()) return
+        viewModelScope.launch {
+            _state.update { it.copy(operation = "export", error = "") }
+            runCatching { repository.export("$groupId/$tag") }
+                .onSuccess { exported ->
+                    _state.update {
+                        it.copy(
+                            operation = "",
+                            exportedNodeLink = exported.link,
+                            exportedNodeLinkId = it.exportedNodeLinkId + 1
+                        )
+                    }
+                }
+                .onFailure(::publishError)
+        }
+    }
+
+    fun nodeLinkCopied() {
+        _state.update {
+            it.copy(
+                exportedNodeLink = "",
+                notice = "节点链接已复制到剪贴板",
+                noticeId = it.noticeId + 1
+            )
+        }
     }
 
     fun testDelay(target: String) {
@@ -136,6 +204,16 @@ internal class CatalogNodesViewModel(
 
     fun clearNotice() {
         _state.update { it.copy(notice = "", error = "") }
+    }
+
+    private fun publishError(error: Throwable) {
+        _state.update {
+            it.copy(
+                operation = "",
+                error = error.userMessage(),
+                noticeId = it.noticeId + 1
+            )
+        }
     }
 
     private fun testDelays(

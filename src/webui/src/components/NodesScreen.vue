@@ -12,7 +12,9 @@ const loading = ref(true);
 const operating = ref(false);
 const addDialog = ref(false);
 const actionDialog = ref(false);
+const editDialog = ref(false);
 const link = ref('');
+const editedLink = ref('');
 const actionNode = ref<{ group: CatalogNodeGroup; node: CatalogNode } | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
 
@@ -93,19 +95,60 @@ const openNodeActions = (group: CatalogNodeGroup, node: CatalogNode) => {
   actionDialog.value = true;
 };
 
-const copyNode = async () => {
+const actionNodeRef = () => {
   const current = actionNode.value;
-  if (!current) return;
+  return current ? `${current.group.group.id}/${current.node.tag}` : '';
+};
+
+const testNode = async () => {
+  const ref = actionNodeRef();
+  if (!ref) return;
   actionDialog.value = false;
-  await run(
-    () => moduleClient.copyNode(`${current.group.group.id}/${current.node.tag}`),
-    t('nodes.copiedToLocal')
-  );
+  await run(() => moduleClient.testDelay(ref), t('nodes.testComplete'));
+};
+
+const openNodeEditor = async () => {
+  const ref = actionNodeRef();
+  if (!ref || operating.value) return;
+  actionDialog.value = false;
+  operating.value = true;
+  try {
+    editedLink.value = (await moduleClient.exportNode(ref)).link;
+    editDialog.value = true;
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error));
+  } finally {
+    operating.value = false;
+  }
+};
+
+const saveNode = async () => {
+  const ref = actionNodeRef();
+  const source = editedLink.value.trim();
+  if (!ref || !source) return;
+  editDialog.value = false;
+  await run(() => moduleClient.editNode(ref, source), t('nodes.nodeSaved'));
+};
+
+const exportNode = async () => {
+  const ref = actionNodeRef();
+  if (!ref || operating.value) return;
+  actionDialog.value = false;
+  operating.value = true;
+  try {
+    const exported = await moduleClient.exportNode(ref);
+    await navigator.clipboard.writeText(exported.link);
+    showToast(t('nodes.nodeLinkCopied'));
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : String(error));
+  } finally {
+    operating.value = false;
+  }
 };
 
 const removeNode = async () => {
   const current = actionNode.value;
-  if (!current || current.group.group.type !== 'local') return;
+  if (!current) return;
   actionDialog.value = false;
   await run(
     () => moduleClient.removeNode(`${current.group.group.id}/${current.node.tag}`),
@@ -210,10 +253,32 @@ onActivated(load);
     <md-dialog :open="actionDialog" @close="actionDialog = false">
       <div slot="headline">{{ actionNode?.node.tag }}</div>
       <div slot="content" class="action-list">
-        <button v-if="actionNode?.group.group.type === 'subscription'" type="button" @click="copyNode">{{ t('nodes.copyToLocal') }}</button>
-        <button v-else class="danger" type="button" @click="removeNode">{{ t('common.delete') }}</button>
+        <button type="button" @click="testNode">{{ t('nodes.latencyTest') }}</button>
+        <button type="button" @click="openNodeEditor">{{ t('nodes.edit') }}</button>
+        <button type="button" @click="exportNode">{{ t('nodes.export') }}</button>
+        <button class="danger" type="button" @click="removeNode">{{ t('common.delete') }}</button>
       </div>
       <div slot="actions"><md-text-button @click="actionDialog = false">{{ t('common.cancel') }}</md-text-button></div>
+    </md-dialog>
+
+    <md-dialog :open="editDialog" @close="editDialog = false">
+      <div slot="headline">{{ t('nodes.edit') }}</div>
+      <div slot="content" class="add-content">
+        <md-outlined-text-field
+          :value="editedLink"
+          type="textarea"
+          rows="5"
+          :label="t('nodes.importLink')"
+          @input="editedLink = ($event.target as HTMLInputElement).value"
+        ></md-outlined-text-field>
+        <small class="edit-hint">
+          {{ actionNode?.group.group.type === 'subscription' ? t('nodes.subscriptionEditWarning') : t('nodes.localEditHint') }}
+        </small>
+      </div>
+      <div slot="actions">
+        <md-text-button @click="editDialog = false">{{ t('common.cancel') }}</md-text-button>
+        <md-filled-button :disabled="!editedLink.trim()" @click="saveNode">{{ t('common.save') }}</md-filled-button>
+      </div>
     </md-dialog>
   </div>
 </template>
@@ -243,4 +308,5 @@ onActivated(load);
 .action-list { min-width: min(320px, 72vw); }
 .action-list button { width: 100%; border: 0; padding: 14px 4px; text-align: left; color: inherit; background: transparent; }
 .action-list .danger { color: var(--md-sys-color-error); }
+.edit-hint { color: var(--md-sys-color-on-surface-variant); line-height: 1.45; }
 </style>

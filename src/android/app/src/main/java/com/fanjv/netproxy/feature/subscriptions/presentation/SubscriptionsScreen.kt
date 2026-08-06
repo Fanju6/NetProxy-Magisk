@@ -1,6 +1,7 @@
 package com.fanjv.netproxy.feature.subscriptions.presentation
 
-import android.widget.Toast
+import android.content.ClipData
+import android.content.ClipboardManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +23,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.NetworkPing
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -40,12 +43,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.core.di.netProxyViewModel
+import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BackIconButton
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.EmptyCatalog
+import com.fanjv.netproxy.core.ui.component.SnackbarNoticeEffect
 import com.fanjv.netproxy.core.ui.component.StatusTag
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
+import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
 import com.fanjv.netproxy.feature.catalog.model.CatalogGroupSummary
+import com.fanjv.netproxy.feature.catalog.model.CatalogNode
 import com.fanjv.netproxy.feature.subscriptions.model.SubscriptionDraft
 import com.fanjv.netproxy.feature.subscriptions.model.SubscriptionHistoryEntry
 import com.fanjv.netproxy.navigation.LocalNavigator
@@ -94,7 +101,7 @@ internal fun SubscriptionsScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val navigator = LocalNavigator.current
-    val context = LocalContext.current
+    val snackbarHostState = rememberAppSnackbarHostState()
     val scrollBehavior = MiuixScrollBehavior()
     val backdrop = rememberBlurBackdrop()
     val barColor = if (backdrop != null) Color.Transparent else colorScheme.surface
@@ -104,15 +111,19 @@ internal fun SubscriptionsScreen(
         onDispose { if (isActive) viewModel.setVisible(false) }
     }
 
-    LaunchedEffect(state.noticeId) {
-        val text = state.error.ifBlank { state.notice }
-        if (text.isNotBlank()) {
-            Toast.makeText(context, text, Toast.LENGTH_LONG).show()
-            viewModel.clearNotice()
-        }
-    }
+    val noticeText = state.error.ifBlank { state.notice }
+    SnackbarNoticeEffect(
+        eventId = state.noticeId,
+        message = noticeText,
+        isError = state.error.isNotBlank(),
+        hostState = snackbarHostState,
+        onConsumed = viewModel::clearNotice
+    )
 
     Scaffold(
+        snackbarHost = {
+            AppSnackbarHost(snackbarHostState, Modifier.padding(bottom = bottomPadding))
+        },
         topBar = {
             BlurredBar(backdrop) {
                 TopAppBar(
@@ -361,21 +372,36 @@ internal fun SubscriptionDetailsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val navigator = LocalNavigator.current
     val context = LocalContext.current
+    val snackbarHostState = rememberAppSnackbarHostState()
     val backdrop = rememberBlurBackdrop()
     val scrollBehavior = MiuixScrollBehavior()
     val barColor = if (backdrop != null) Color.Transparent else colorScheme.surface
     var showDelete by remember { mutableStateOf(false) }
+    var actionNode by remember { mutableStateOf<CatalogNode?>(null) }
+    var editedNodeLink by remember { mutableStateOf("") }
 
     LaunchedEffect(id) { viewModel.load(id) }
-    LaunchedEffect(state.noticeId) {
-        val text = state.error.ifBlank { state.notice }
-        if (text.isNotBlank()) {
-            Toast.makeText(context, text, Toast.LENGTH_LONG).show()
-            viewModel.clearNotice()
-        }
+    LaunchedEffect(state.editingNodeRef, state.editingNodeLink) {
+        if (state.editingNodeRef.isNotBlank()) editedNodeLink = state.editingNodeLink
     }
+    LaunchedEffect(state.exportedNodeLinkId) {
+        val link = state.exportedNodeLink
+        if (link.isBlank()) return@LaunchedEffect
+        context.getSystemService(ClipboardManager::class.java)
+            ?.setPrimaryClip(ClipData.newPlainText("NetProxy node", link))
+        viewModel.nodeLinkCopied()
+    }
+    val noticeText = state.error.ifBlank { state.notice }
+    SnackbarNoticeEffect(
+        eventId = state.noticeId,
+        message = noticeText,
+        isError = state.error.isNotBlank(),
+        hostState = snackbarHostState,
+        onConsumed = viewModel::clearNotice
+    )
 
     Scaffold(
+        snackbarHost = { AppSnackbarHost(snackbarHostState) },
         topBar = {
             BlurredBar(backdrop) {
                 TopAppBar(
@@ -434,7 +460,14 @@ internal fun SubscriptionDetailsScreen(
                     Card(modifier = Modifier.fillMaxWidth()) {
                         BasicComponent(
                             title = node.tag,
-                            summary = "${node.protocol.uppercase()} · ${node.server}:${node.port}"
+                            summary = buildString {
+                                append("${node.protocol.uppercase()} · ${node.server}:${node.port}")
+                                state.latencies["${details.group.id}/${node.tag}"]?.let { latency ->
+                                    append(" · ")
+                                    append(if (latency.all(Char::isDigit)) "$latency ms" else latency)
+                                }
+                            },
+                            onClick = { actionNode = node }
                         )
                     }
                 }
@@ -490,7 +523,102 @@ internal fun SubscriptionDetailsScreen(
         }
     }
 
+    val selectedNode = actionNode
+    OverlayBottomSheet(
+        show = selectedNode != null,
+        title = selectedNode?.tag.orEmpty(),
+        onDismissRequest = { actionNode = null }
+    ) {
+        if (selectedNode != null) {
+            Card(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                BasicComponent(
+                    title = "测试延迟",
+                    startAction = { DetailActionIcon(Icons.Rounded.NetworkPing) },
+                    onClick = {
+                        viewModel.testNode(id, selectedNode.tag)
+                        actionNode = null
+                    }
+                )
+                BasicComponent(
+                    title = "编辑节点",
+                    startAction = { DetailActionIcon(Icons.Rounded.Edit) },
+                    onClick = {
+                        viewModel.editNode(id, selectedNode.tag)
+                        actionNode = null
+                    }
+                )
+                BasicComponent(
+                    title = "导出节点",
+                    startAction = { DetailActionIcon(Icons.Rounded.Share) },
+                    onClick = {
+                        viewModel.exportNode(id, selectedNode.tag)
+                        actionNode = null
+                    }
+                )
+                BasicComponent(
+                    title = "删除节点",
+                    startAction = { DetailActionIcon(MiuixIcons.Delete) },
+                    onClick = {
+                        viewModel.removeNode(id, selectedNode.tag)
+                        actionNode = null
+                    }
+                )
+            }
+        }
+    }
+
+    OverlayDialog(
+        show = state.editingNodeRef.isNotBlank(),
+        title = "编辑节点",
+        onDismissRequest = viewModel::dismissNodeEditor
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            TextField(
+                value = editedNodeLink,
+                onValueChange = { editedNodeLink = it },
+                label = "节点链接",
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3,
+                maxLines = 8
+            )
+            Text(
+                text = if (state.details?.group?.type == "subscription") {
+                    "修改只影响当前订阅节点，下次更新订阅时会被远端内容覆盖"
+                } else {
+                    "修改后将更新本地配置中的节点"
+                },
+                color = colorScheme.onSurfaceVariantSummary,
+                fontSize = 13.sp
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                TextButton(
+                    text = "取消",
+                    modifier = Modifier.weight(1f),
+                    enabled = state.operation != "edit",
+                    onClick = viewModel::dismissNodeEditor
+                )
+                TextButton(
+                    text = "保存",
+                    modifier = Modifier.weight(1f),
+                    enabled = editedNodeLink.isNotBlank() && state.operation != "edit",
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                    onClick = { viewModel.saveEditedNode(editedNodeLink) }
+                )
+            }
+        }
+    }
+
     SubscriptionUpdateSheet(state.operation)
+}
+
+@Composable
+private fun DetailActionIcon(imageVector: androidx.compose.ui.graphics.vector.ImageVector) {
+    Icon(
+        imageVector = imageVector,
+        modifier = Modifier.size(22.dp),
+        tint = colorScheme.onSurfaceVariantSummary,
+        contentDescription = null
+    )
 }
 
 /** 新增/编辑 URL 订阅。敏感字段只通过 root CLI 的私有契约读取。 */
@@ -502,7 +630,7 @@ internal fun SubscriptionEditorScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val draft = state.draft
-    val context = LocalContext.current
+    val snackbarHostState = rememberAppSnackbarHostState()
     val backdrop = rememberBlurBackdrop()
     val scrollBehavior = MiuixScrollBehavior()
     val barColor = if (backdrop != null) Color.Transparent else colorScheme.surface
@@ -511,14 +639,16 @@ internal fun SubscriptionEditorScreen(
     LaunchedEffect(state.saved) {
         if (state.saved) onBack()
     }
-    LaunchedEffect(state.noticeId) {
-        if (state.error.isNotBlank()) {
-            Toast.makeText(context, state.error, Toast.LENGTH_LONG).show()
-            viewModel.clearError()
-        }
-    }
+    SnackbarNoticeEffect(
+        eventId = state.noticeId,
+        message = state.error,
+        isError = true,
+        hostState = snackbarHostState,
+        onConsumed = viewModel::clearError
+    )
 
     Scaffold(
+        snackbarHost = { AppSnackbarHost(snackbarHostState) },
         topBar = {
             BlurredBar(backdrop) {
                 TopAppBar(

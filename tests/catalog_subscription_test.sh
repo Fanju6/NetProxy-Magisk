@@ -137,15 +137,20 @@ after="$(cksum "$group_dir/provider.json")"
 
 append_local_node default 'http://example.net:8080#LOCAL'
 [ "$(meta_get_raw "$CATALOG_DIR/default/meta.json" node_count 0)" -eq 1 ]
-copy_node_to_local "$group_id/SOCKS" default
-[ "$(meta_get_raw "$CATALOG_DIR/default/meta.json" node_count 0)" -eq 2 ]
-remove_local_node 'default/LOCAL'
-[ "$(meta_get_raw "$CATALOG_DIR/default/meta.json" node_count 0)" -eq 1 ]
+remove_catalog_node 'default/LOCAL'
+[ "$(meta_get_raw "$CATALOG_DIR/default/meta.json" node_count 0)" -eq 0 ]
 
-if remove_local_node "$group_id/SOCKS"; then
-  printf '%s\n' 'subscription nodes must be read-only' >&2
-  exit 1
-fi
+edit_catalog_node "$group_id/SOCKS" 'http://example.org:8080#EDITED'
+catalog_provider_contains_tag "$group_dir/provider.json" EDITED
+[ "$(meta_get_raw "$group_dir/meta.json" node_count 0)" -eq 1 ]
+remove_catalog_node "$group_id/EDITED"
+[ "$(meta_get_raw "$group_dir/meta.json" node_count 0)" -eq 0 ]
+
+load_catalog_meta "$group_dir/meta.json"
+SUB_URL="https://example.test/ok"
+write_catalog_meta "$group_dir/meta.json"
+update_subscription "$group_id"
+catalog_provider_contains_tag "$group_dir/provider.json" SOCKS
 
 if command -v python3 > /dev/null 2>&1; then
   python3 -m json.tool "$group_dir/meta.json" > /dev/null

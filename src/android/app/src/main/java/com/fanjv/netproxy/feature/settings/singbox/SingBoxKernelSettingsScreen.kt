@@ -1,6 +1,5 @@
 package com.fanjv.netproxy.feature.settings.singbox
 
-import android.widget.Toast
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -21,17 +20,18 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.ui.component.AdaptiveTopAppBar
+import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BackIconButton
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.CardItem
@@ -39,18 +39,21 @@ import com.fanjv.netproxy.core.ui.component.TopBarMenuAction
 import com.fanjv.netproxy.core.ui.component.TopBarMoreMenu
 import com.fanjv.netproxy.core.ui.component.groupedCardSection
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
+import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
 import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.Route
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.SnackbarDuration
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import kotlinx.coroutines.launch
 
 /** sing-box 配置工作台：配置文件是唯一编辑入口。 */
 @Composable
@@ -59,7 +62,8 @@ internal fun SingBoxKernelSettingsScreen(
     onBack: () -> Unit,
 ) {
     val navigator = LocalNavigator.current
-    val context = LocalContext.current
+    val snackbarHostState = rememberAppSnackbarHostState()
+    val coroutineScope = rememberCoroutineScope()
     val state by viewModel.state.collectAsStateWithLifecycle()
     val scrollBehavior = MiuixScrollBehavior()
     val backdrop = rememberBlurBackdrop()
@@ -83,6 +87,7 @@ internal fun SingBoxKernelSettingsScreen(
     val checkFailed = stringResource(R.string.singbox_check_failed)
 
     Scaffold(
+        snackbarHost = { AppSnackbarHost(snackbarHostState) },
         topBar = {
             BlurredBar(backdrop) {
                 AdaptiveTopAppBar(
@@ -100,11 +105,17 @@ internal fun SingBoxKernelSettingsScreen(
                                     text = stringResource(R.string.singbox_check_all),
                                     onClick = {
                                         viewModel.checkConfig { success ->
-                                            Toast.makeText(
-                                                context,
-                                                if (success) checkSuccess else checkFailed,
-                                                Toast.LENGTH_SHORT,
-                                            ).show()
+                                            coroutineScope.launch {
+                                                snackbarHostState.showSnackbar(
+                                                    message = if (success) checkSuccess else checkFailed,
+                                                    withDismissAction = !success,
+                                                    duration = if (success) {
+                                                        SnackbarDuration.Short
+                                                    } else {
+                                                        SnackbarDuration.Long
+                                                    }
+                                                )
+                                            }
                                         }
                                     },
                                 ),

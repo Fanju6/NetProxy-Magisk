@@ -2,7 +2,6 @@ package com.fanjv.netproxy.feature.logs.presentation
 
 import android.content.Intent
 import android.net.Uri
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -53,9 +52,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import com.fanjv.netproxy.R
+import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BackIconButton
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
+import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
 import com.fanjv.netproxy.core.ui.theme.LocalEnableBlur
 import com.fanjv.netproxy.feature.logs.data.LogItem
 import com.fanjv.netproxy.feature.logs.data.LogLevel
@@ -63,7 +64,6 @@ import com.fanjv.netproxy.feature.logs.data.LogType
 import com.fanjv.netproxy.feature.logs.data.OutboundFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
@@ -72,6 +72,7 @@ import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.ListPopupColumn
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.SnackbarDuration
 import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.TabRowDefaults
 import top.yukonga.miuix.kmp.basic.Text
@@ -95,8 +96,22 @@ internal fun LogsScreen(
     val logsState by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val snackbarHostState = rememberAppSnackbarHostState()
     val listState = rememberLazyListState()
     val sendLogTitle = stringResource(R.string.send_log)
+    val logSavedMessage = stringResource(R.string.log_saved)
+    val clearSuccessMessage = stringResource(R.string.clear_logs_success)
+    val clearFailedMessage = stringResource(R.string.clear_logs_failed)
+
+    fun showMessage(message: String, isError: Boolean = false) {
+        scope.launch {
+            snackbarHostState.showSnackbar(
+                message = message,
+                withDismissAction = isError,
+                duration = if (isError) SnackbarDuration.Long else SnackbarDuration.Short
+            )
+        }
+    }
 
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     var isCardView by remember { mutableStateOf(true) }
@@ -138,13 +153,9 @@ internal fun LogsScreen(
                 context.contentResolver.openOutputStream(uri)?.use { output ->
                     logFile.inputStream().use { it.copyTo(output) }
                 }
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, R.string.log_saved, Toast.LENGTH_SHORT).show()
-                }
+                showMessage(logSavedMessage)
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
-                }
+                showMessage("Error: ${e.message}", isError = true)
             } finally {
             }
         }
@@ -163,6 +174,7 @@ internal fun LogsScreen(
     val barColor = if (blurActive) Color.Transparent else MiuixTheme.colorScheme.surface
 
     Scaffold(
+        snackbarHost = { AppSnackbarHost(snackbarHostState) },
         topBar = {
             BlurredBar(backdrop) {
                 Column(modifier = Modifier.background(barColor)) {
@@ -194,13 +206,7 @@ internal fun LogsScreen(
                                             )
                                         )
                                     } catch (e: Exception) {
-                                        withContext(Dispatchers.Main) {
-                                            Toast.makeText(
-                                                context,
-                                                "Error: ${e.message}",
-                                                Toast.LENGTH_LONG
-                                            ).show()
-                                        }
+                                        showMessage("Error: ${e.message}", isError = true)
                                     } finally {
                                     }
                                 }
@@ -218,11 +224,7 @@ internal fun LogsScreen(
                                             .format(java.time.LocalDateTime.now())
                                     exportLauncher.launch("NetProxy_Logs_$timestamp.tar.gz")
                                 } catch (e: Exception) {
-                                    Toast.makeText(
-                                        context,
-                                        "Error: ${e.message}",
-                                        Toast.LENGTH_LONG
-                                    ).show()
+                                    showMessage("Error: ${e.message}", isError = true)
                                 }
                             }) {
                                 Icon(
@@ -303,10 +305,10 @@ internal fun LogsScreen(
                                             index = 3,
                                             onSelectedIndexChange = {
                                         viewModel.clear(currentType) { success ->
-                                                    val msg =
-                                                        if (success) R.string.clear_logs_success else R.string.clear_logs_failed
-                                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT)
-                                                        .show()
+                                                    showMessage(
+                                                        if (success) clearSuccessMessage else clearFailedMessage,
+                                                        isError = !success
+                                                    )
                                                 }
                                                 showMoreMenu = false
                                             }

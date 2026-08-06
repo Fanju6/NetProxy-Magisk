@@ -36,7 +36,10 @@ internal class NetProxyViewModelFactory(
             SubscriptionsViewModel::class.java ->
                 SubscriptionsViewModel(container.subscriptionRepository)
             SubscriptionDetailsViewModel::class.java ->
-                SubscriptionDetailsViewModel(container.subscriptionRepository)
+                SubscriptionDetailsViewModel(
+                    container.subscriptionRepository,
+                    container.nodeRepository
+                )
             SubscriptionEditorViewModel::class.java ->
                 SubscriptionEditorViewModel(container.subscriptionRepository)
             AppsViewModel::class.java -> AppsViewModel(

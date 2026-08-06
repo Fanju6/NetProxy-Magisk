@@ -1,7 +1,8 @@
 package com.fanjv.netproxy.feature.nodes.presentation
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.net.Uri
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -28,11 +29,12 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FileOpen
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.NetworkPing
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -57,9 +59,12 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.R
+import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.EmptyCatalog
+import com.fanjv.netproxy.core.ui.component.SnackbarNoticeEffect
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
+import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
 import com.fanjv.netproxy.core.ui.component.TopBarMenuAction
 import com.fanjv.netproxy.core.ui.component.TopBarMoreMenu
 import com.fanjv.netproxy.feature.catalog.model.CatalogNode
@@ -113,6 +118,7 @@ internal fun CatalogNodesScreen(
     var showDisplaySettings by remember { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
     var nodeLink by remember { mutableStateOf("") }
+    var editedNodeLink by remember { mutableStateOf("") }
     var actionNode by remember { mutableStateOf<Pair<CatalogNodeGroup, CatalogNode>?>(null) }
     val displayPreferences = remember(context) {
         context.getSharedPreferences("node_display", android.content.Context.MODE_PRIVATE)
@@ -140,6 +146,7 @@ internal fun CatalogNodesScreen(
         )
     }
     val pullToRefreshState = rememberPullToRefreshState()
+    val snackbarHostState = rememberAppSnackbarHostState()
     val refreshTexts = listOf(
         stringResource(R.string.refresh_pulling),
         stringResource(R.string.refresh_release),
@@ -156,19 +163,41 @@ internal fun CatalogNodesScreen(
         uri: Uri? -> uri?.let { viewModel.importFile(it) }
     }
 
-    LaunchedEffect(state.noticeId) {
-        val text = state.error.ifBlank { state.notice }
-        if (text.isNotBlank()) {
-            Toast.makeText(context, text, Toast.LENGTH_LONG).show()
-            viewModel.clearNotice()
+    val noticeText = state.error.ifBlank { state.notice }
+    SnackbarNoticeEffect(
+        eventId = state.noticeId,
+        message = noticeText,
+        isError = state.error.isNotBlank(),
+        hostState = snackbarHostState,
+        onConsumed = viewModel::clearNotice
+    )
+
+    LaunchedEffect(state.exportedNodeLinkId) {
+        val link = state.exportedNodeLink
+        if (link.isBlank()) return@LaunchedEffect
+        val clipboard = context.getSystemService(ClipboardManager::class.java)
+        clipboard?.setPrimaryClip(ClipData.newPlainText("NetProxy node", link))
+        viewModel.nodeLinkCopied()
+    }
+
+    LaunchedEffect(state.editingNodeRef, state.editingNodeLink) {
+        if (state.editingNodeRef.isNotBlank()) {
+            editedNodeLink = state.editingNodeLink
         }
     }
 
     val selectedIndex = state.groups.indexOfFirst { it.group.id == state.selectedGroupId }
         .coerceAtLeast(0)
     val selectedGroup = state.groups.getOrNull(selectedIndex)
+    val editingGroupId = state.editingNodeRef.substringBefore('/', missingDelimiterValue = "")
+    val editingSubscription = state.groups.any {
+        it.group.id == editingGroupId && it.group.type == "subscription"
+    }
 
     Scaffold(
+        snackbarHost = {
+            AppSnackbarHost(snackbarHostState, Modifier.padding(bottom = bottomPadding))
+        },
         topBar = {
             BlurredBar(backdrop) {
                 Column {
@@ -434,6 +463,47 @@ internal fun CatalogNodesScreen(
         }
     }
 
+    OverlayDialog(
+        show = state.editingNodeRef.isNotBlank(),
+        title = "编辑节点",
+        onDismissRequest = viewModel::dismissNodeEditor
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            TextField(
+                value = editedNodeLink,
+                onValueChange = { editedNodeLink = it },
+                label = "节点链接",
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3,
+                maxLines = 8
+            )
+            Text(
+                text = if (editingSubscription) {
+                    "修改只影响当前订阅节点，下次更新订阅时会被远端内容覆盖"
+                } else {
+                    "修改后将更新本地配置中的节点"
+                },
+                color = colorScheme.onSurfaceVariantSummary,
+                fontSize = 13.sp
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                TextButton(
+                    text = "取消",
+                    modifier = Modifier.weight(1f),
+                    enabled = state.operation != "edit",
+                    onClick = viewModel::dismissNodeEditor
+                )
+                TextButton(
+                    text = "保存",
+                    modifier = Modifier.weight(1f),
+                    enabled = editedNodeLink.isNotBlank() && state.operation != "edit",
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                    onClick = { viewModel.saveEditedNode(editedNodeLink) }
+                )
+            }
+        }
+    }
+
     val selectedAction = actionNode
     OverlayBottomSheet(
         show = selectedAction != null,
@@ -451,25 +521,30 @@ internal fun CatalogNodesScreen(
                         actionNode = null
                     }
                 )
-                if (group.group.type == "subscription") {
-                    BasicComponent(
-                        title = "复制到本地配置",
-                        startAction = { SheetIcon(Icons.Rounded.ContentCopy) },
-                        onClick = {
-                            viewModel.copyNode(group.group.id, node.tag)
-                            actionNode = null
-                        }
-                    )
-                } else {
-                    BasicComponent(
-                        title = "删除节点",
-                        startAction = { SheetIcon(Icons.Rounded.Delete) },
-                        onClick = {
-                            viewModel.removeNode(group.group.id, node.tag)
-                            actionNode = null
-                        }
-                    )
-                }
+                BasicComponent(
+                    title = "编辑节点",
+                    startAction = { SheetIcon(Icons.Rounded.Edit) },
+                    onClick = {
+                        viewModel.editNode(group.group.id, node.tag)
+                        actionNode = null
+                    }
+                )
+                BasicComponent(
+                    title = "导出节点",
+                    startAction = { SheetIcon(Icons.Rounded.Share) },
+                    onClick = {
+                        viewModel.exportNode(group.group.id, node.tag)
+                        actionNode = null
+                    }
+                )
+                BasicComponent(
+                    title = "删除节点",
+                    startAction = { SheetIcon(Icons.Rounded.Delete) },
+                    onClick = {
+                        viewModel.removeNode(group.group.id, node.tag)
+                        actionNode = null
+                    }
+                )
             }
         }
     }

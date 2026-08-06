@@ -6,6 +6,14 @@ import com.fanjv.netproxy.feature.catalog.model.NodeDelayResult
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.Serializable
+
+@Serializable
+internal data class ExportedNodeLink(
+    val tag: String,
+    val protocol: String,
+    val link: String
+)
 
 /** 节点 Catalog、选择与测速的数据入口。 */
 internal class NodeRepository(
@@ -25,13 +33,12 @@ internal class NodeRepository(
             .let { element -> element.jsonObject["group_id"]?.jsonPrimitive?.content.orEmpty() }
     }
 
-    suspend fun copy(nodeRef: String, targetGroupId: String = "default") {
-        client.execute("node", "copy", nodeRef, targetGroupId)
-    }
-
     suspend fun edit(nodeRef: String, source: String) {
         client.execute("node", "edit", nodeRef, source)
     }
+
+    suspend fun export(nodeRef: String): ExportedNodeLink =
+        client.json.decodeFromJsonElement(client.execute("node", "export", nodeRef).data)
 
     suspend fun remove(nodeRef: String) {
         client.execute("node", "remove", nodeRef)

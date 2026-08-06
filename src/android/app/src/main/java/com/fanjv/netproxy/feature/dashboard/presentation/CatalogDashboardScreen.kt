@@ -1,6 +1,5 @@
 package com.fanjv.netproxy.feature.dashboard.presentation
 
-import android.widget.Toast
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -25,20 +24,21 @@ import androidx.compose.material.icons.rounded.Router
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.R
+import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BlurredBar
+import com.fanjv.netproxy.core.ui.component.SnackbarNoticeEffect
 import com.fanjv.netproxy.core.ui.component.WarningCard
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
+import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
@@ -63,7 +63,7 @@ internal fun CatalogDashboardScreen(
     viewModel: CatalogDashboardViewModel = netProxyViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val context = LocalContext.current
+    val snackbarHostState = rememberAppSnackbarHostState()
     val scrollBehavior = MiuixScrollBehavior()
     val backdrop = rememberBlurBackdrop()
     val barColor = if (backdrop != null) Color.Transparent else colorScheme.surface
@@ -75,14 +75,18 @@ internal fun CatalogDashboardScreen(
         onDispose { if (isActive) viewModel.setVisible(false) }
     }
 
-    LaunchedEffect(state.noticeId) {
-        if (state.notice.isNotBlank()) {
-            Toast.makeText(context, state.notice, Toast.LENGTH_SHORT).show()
-            viewModel.clearNotice()
-        }
-    }
+    SnackbarNoticeEffect(
+        eventId = state.noticeId,
+        message = state.notice,
+        isError = false,
+        hostState = snackbarHostState,
+        onConsumed = viewModel::clearNotice
+    )
 
     Scaffold(
+        snackbarHost = {
+            AppSnackbarHost(snackbarHostState, Modifier.padding(bottom = bottomPadding))
+        },
         topBar = {
             BlurredBar(backdrop) {
                 TopAppBar(

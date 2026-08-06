@@ -533,7 +533,7 @@ command_node_delay() {
 command_node() {
   local action="${1:-list}"
   shift 2> /dev/null || true
-  local target="${1:-}" group="${2:-}" group_id
+  local target="${1:-}" group="${2:-}" group_id tag provider_file result data
 
   case "$action" in
     list) command_node_read list "$target" ;;
@@ -559,21 +559,30 @@ command_node() {
       sh "$SUBWORKER_SCRIPT" wake > /dev/null 2>&1 || true
       emit_write_success "node.imported" "文件节点已导入" "{\"group_id\":\"$(json_escape "$group_id")\"}"
       ;;
-    copy)
-      [ -n "$target" ] || emit_error "usage.invalid" "用法: netproxyctl node copy <group/tag> [本地组]" 2
-      copy_node_to_local "$target" "${group:-default}" \
-        || emit_error "node.copy_failed" "复制节点失败"
-      emit_write_success "node.copied" "节点已复制到本地配置" "{}"
+    export)
+      [ -n "$target" ] || emit_error "usage.invalid" "用法: netproxyctl node export <group/tag>" 2
+      group_id="${target%%/*}"
+      tag="${target#*/}"
+      [ "$group_id" != "$target" ] && [ -n "$tag" ] \
+        || emit_error "node.ref_invalid" "节点引用格式应为 <group-id>/<tag>"
+      provider_file="$(catalog_provider_path "$group_id")" \
+        || emit_error "catalog.not_found" "节点分组不存在"
+      [ -f "$provider_file" ] || emit_error "catalog.not_found" "节点分组不存在"
+      result="$("$NETPROXY_NATIVE_BIN" provider export --input "$provider_file" --tag "$tag")" \
+        || emit_error "node.export_failed" "节点分享链接生成失败"
+      data="$(extract_result_data "$result")" \
+        || emit_error "node.export_failed" "节点分享链接结果格式无效"
+      emit_success "node.exported" "节点分享链接已生成" "$data"
       ;;
     edit)
       [ -n "$target" ] && [ -n "$group" ] \
         || emit_error "usage.invalid" "用法: netproxyctl node edit <group/tag> <节点链接|文件>" 2
-      edit_local_node "$target" "$group" || emit_error "node.edit_failed" "节点编辑失败"
+      edit_catalog_node "$target" "$group" || emit_error "node.edit_failed" "节点编辑失败"
       emit_write_success "node.edited" "节点已更新" "{}"
       ;;
     remove | rm)
       [ -n "$target" ] || emit_error "usage.invalid" "用法: netproxyctl node remove <group/tag>" 2
-      remove_local_node "$target" || emit_error "node.remove_failed" "节点删除失败；订阅节点请先复制到本地"
+      remove_catalog_node "$target" || emit_error "node.remove_failed" "节点删除失败"
       emit_write_success "node.removed" "节点已删除" "{}"
       ;;
     use)
@@ -587,7 +596,7 @@ command_node() {
       emit_write_success "node.selected" "节点选择已更新" "{}"
       ;;
     delay) command_node_delay "$target" "$group" ;;
-    *) emit_error "usage.invalid" "用法: netproxyctl node list|snapshot|current|use|add|import|copy|edit|remove|delay" 2 ;;
+    *) emit_error "usage.invalid" "用法: netproxyctl node list|snapshot|current|use|add|import|export|edit|remove|delay" 2 ;;
   esac
 }
 
@@ -1374,7 +1383,7 @@ NetProxy 管理命令
 用法:
   netproxyctl [--json] service status|start|stop|restart|reload
   netproxyctl [--json] catalog list|show <分组>
-  netproxyctl [--json] node list|current|show|add|import|copy|edit|remove|use|delay [节点|auto [分组]|all]
+  netproxyctl [--json] node list|current|show|add|import|export|edit|remove|use|delay [节点|auto [分组]|all]
   netproxyctl [--json] sub list|show|add|edit|update|update-all|activate|remove|history|cancel
   netproxyctl [--json] mode [rule|global|direct|AllowAds]
   netproxyctl [--json] app list|mode|users|add|remove|enable|disable

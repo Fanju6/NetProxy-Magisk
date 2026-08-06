@@ -18,6 +18,7 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/fetch"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/sharelink"
 )
 
 var (
@@ -493,7 +494,7 @@ func runConvertSubscription(ctx context.Context, args []string) error {
 
 func runProvider(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("缺少 Provider 操作: append、remove、inspect 或 validate")
+		return errors.New("缺少 Provider 操作: append、remove、inspect、export 或 validate")
 	}
 	switch args[0] {
 	case "append":
@@ -573,6 +574,27 @@ func runProvider(ctx context.Context, args []string) error {
 			return err
 		}
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "provider.inspected", Message: "Provider 摘要", Data: provider.Inspect(document)})
+		return nil
+
+	case "export":
+		flags := newFlagSet("provider export")
+		input := flags.String("input", "", "provider.json")
+		tag := flags.String("tag", "", "节点标签")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *input == "" || *tag == "" {
+			return errors.New("provider export 需要 --input 和 --tag")
+		}
+		document, err := provider.Load(ctx, *input)
+		if err != nil {
+			return err
+		}
+		exported, err := sharelink.Export(document, *tag)
+		if err != nil {
+			return err
+		}
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "provider.exported", Message: "节点分享链接已生成", Data: exported})
 		return nil
 
 	case "validate":
@@ -696,6 +718,7 @@ func showUsage() {
   %s provider append --target <provider.json> --input <链接或文件>
   %s provider remove --target <provider.json> --tag <标签>
   %s provider inspect --input <provider.json> --format json
+  %s provider export --input <provider.json> --tag <标签>
   %s provider validate --input <provider.json>
   %s catalog <groups|snapshot|runtime> --root <catalog>
   %s service <ready|status|snapshot|groups|selected|mode|select|urltest|close-all>
@@ -717,5 +740,5 @@ func showUsage() {
   --last-modified <值>          发送 If-Modified-Since
   --proxy <URL>                 通过 HTTP 代理下载
   --timeout <时长>              下载超时，默认 60s
-`, executable, executable, executable, executable, executable, executable, executable, executable, executable, executable, executable)
+`, executable, executable, executable, executable, executable, executable, executable, executable, executable, executable, executable, executable)
 }

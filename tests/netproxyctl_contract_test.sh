@@ -84,6 +84,11 @@ run_json "$result"
 printf '%s' "$result" | grep -q '"tag":"CLI"'
 printf '%s' "$result" | grep -q '"protocol":"socks"'
 
+result="$(sh "$MODULE/scripts/netproxyctl" --json node export 'default/CLI')"
+run_json "$result"
+printf '%s' "$result" | grep -q '"code":"node.exported"'
+printf '%s' "$result" | grep -q '"link":"socks://example.com:1080#CLI"'
+
 result="$(sh "$MODULE/scripts/netproxyctl" --json node snapshot)"
 run_json "$result"
 printf '%s' "$result" | grep -q '"code":"node.snapshot"'
@@ -115,6 +120,20 @@ sed -i \
   -e 's/"type": "local"/"type": "subscription"/' \
   -e 's#"url": ""#"url": "https://example.test/sub?token=secret"#' \
   "$MODULE/config/catalog/test-sub/meta.json"
+"$MODULE/bin/netproxy-native" provider append \
+  --target "$MODULE/config/catalog/test-sub/provider.json" \
+  --input 'socks://example.com:1080#SUB' > /dev/null
+
+result="$(sh "$MODULE/scripts/netproxyctl" --json node edit 'test-sub/SUB' 'http://example.org:8080#SUB-EDITED')"
+run_json "$result"
+printf '%s' "$result" | grep -q '"code":"node.edited"'
+result="$(sh "$MODULE/scripts/netproxyctl" --json node export 'test-sub/SUB-EDITED')"
+run_json "$result"
+printf '%s' "$result" | grep -q '"link":"http://example.org:8080#SUB-EDITED"'
+result="$(sh "$MODULE/scripts/netproxyctl" --json node remove 'test-sub/SUB-EDITED')"
+run_json "$result"
+printf '%s' "$result" | grep -q '"code":"node.removed"'
+
 result="$(sh "$MODULE/scripts/netproxyctl" --json sub show test-sub --private)"
 run_json "$result"
 printf '%s' "$result" | grep -q '"url":"https://example.test/sub?token=secret"'
