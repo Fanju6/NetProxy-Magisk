@@ -602,8 +602,20 @@ normalize_boolean() {
 command_sub_add() {
   local name="${1:-}" url="${2:-}" interval headers_file value group_id
 
-  [ -n "$name" ] && [ -n "$url" ] || emit_error "usage.invalid" "用法: netproxyctl sub add <名称> <URL> [选项]" 2
-  shift 2
+  # 第一个位置参数是 URL 时视为省略名称，由响应头或主机名自动取名
+  case "$name" in
+    *://*)
+      url="$name"
+      name=""
+      shift
+      ;;
+    *)
+      [ -n "$name" ] && [ -n "$url" ] \
+        || emit_error "usage.invalid" "用法: netproxyctl sub add [名称] <URL> [选项]" 2
+      shift 2
+      ;;
+  esac
+  [ -n "$url" ] || emit_error "usage.invalid" "用法: netproxyctl sub add [名称] <URL> [选项]" 2
   SUB_ADD_USER_AGENT=""
   SUB_ADD_HWID=""
   SUB_ADD_CUSTOM_HEADERS="{}"
@@ -1372,6 +1384,8 @@ NetProxy 管理命令
   netproxyctl [--json] logs show|clear|export
 
 节点引用固定为 <group-id>/<tag>。自动模式使用 node use auto [分组]，分组测速使用 node delay auto [分组]。
+sub add 的名称可省略 (netproxyctl sub add <URL>)，此时按 Profile-Title、
+文件名、URL 主机名的顺序自动取名。
 JSON 输出 schema 固定为 1；stdout 只包含结果，运行日志写入 stderr。
 EOF
 }

@@ -30,7 +30,10 @@ internal class SubscriptionRepository(
 
     suspend fun add(draft: SubscriptionDraft): String =
         withHeadersFile(draft.customHeaders) { headersFile ->
-            val args = mutableListOf("sub", "add", draft.name, draft.url)
+            // 名称为空时整个省略该位置参数，由模块自动取名；传空串会被当作显式空名称
+            val args = mutableListOf("sub", "add")
+            if (draft.name.isNotBlank()) args.add(draft.name)
+            args.add(draft.url)
             appendOptions(args, draft, headersFile, addMode = true)
             client.execute(*args.toTypedArray()).data.jsonObject["id"]
                 ?.jsonPrimitive?.content.orEmpty()

@@ -707,7 +707,7 @@ internal fun SubscriptionEditorScreen(
                         onValueChange = { value ->
                             viewModel.update { it.copy(name = value) }
                         },
-                        label = "订阅名称",
+                        label = if (id.isBlank()) "订阅名称（留空自动获取）" else "订阅名称",
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )

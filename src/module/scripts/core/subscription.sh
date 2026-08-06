@@ -69,6 +69,49 @@ validate_user_text() {
 }
 
 #######################################
+# 从订阅 URL 提取主机名，作为订阅名兜底
+# 参数:
+#   $1  订阅 URL
+# 返回: 标准输出打印主机名；无法提取时无输出
+#######################################
+subscription_host_from_url() {
+  local url="$1"
+  local rest
+
+  rest="${url#*://}"      # 去协议
+  rest="${rest%%/*}"      # 去路径
+  rest="${rest%%\?*}"     # 去查询串
+  rest="${rest##*@}"      # 去 user:pass@
+  rest="${rest%%:*}"      # 去端口
+  case "$rest" in
+    "" | *[!A-Za-z0-9.-]*) return 0 ;;
+  esac
+  printf "%s" "$rest"
+}
+
+#######################################
+# 订阅名留空时按优先级自动取名
+# 优先级: Profile-Title > Content-Disposition 文件名 > URL 主机名 > 默认名
+# 参数:
+#   $1  订阅 URL
+# 返回: 标准输出打印订阅名
+#######################################
+resolve_subscription_display_name() {
+  local url="$1"
+  local candidate
+
+  for candidate in "${SUB_PROFILE_TITLE:-}" "${SUB_FILE_NAME:-}" \
+    "$(subscription_host_from_url "$url")"; do
+    candidate="$(printf "%s" "$candidate" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+    [ -n "$candidate" ] || continue
+    validate_user_text "$candidate" || continue
+    printf "%s" "$candidate"
+    return 0
+  done
+  printf "%s" "订阅"
+}
+
+#######################################
 # 生成随机稳定的订阅分组 UUID
 # 参数: 无
 # 返回: 标准输出打印 UUID
@@ -645,6 +688,10 @@ update_subscription() {
     response_kind="modified"
   fi
   apply_http_metadata "$metadata_file" "$response_kind"
+  # 名称留空的订阅在首次取得响应头后回填显示名
+  if [ -z "${SUB_NAME:-}" ]; then
+    SUB_NAME="$(resolve_subscription_display_name "$SUB_URL")"
+  fi
   diagnostics="$(read_compact_json_file "$diagnostics_file" "[]")" || diagnostics="[]"
   SUB_LAST_DIAGNOSTICS="$diagnostics"
 
@@ -745,7 +792,8 @@ add_subscription() {
   local group_id group_dir
 
   validate_user_text "$name" && validate_user_text "$url" || return 1
-  [ -n "$name" ] && [ -n "$url" ] || return 1
+  # name 允许留空：首次更新取得响应头后由 resolve_subscription_display_name 回填
+  [ -n "$url" ] || return 1
   initialize_catalog_storage || return 1
   group_id="$(new_subscription_id)" || return 1
   group_dir="$CATALOG_DIR/$group_id"
@@ -771,6 +819,11 @@ add_subscription() {
   chmod 0600 "$group_dir/provider.json" 2> /dev/null || true
 
   if ! update_subscription "$group_id"; then
+    # 首次更新失败时仍需保证有可读名称，否则列表出现无名订阅
+    if load_catalog_meta "$group_dir/meta.json" && [ -z "${SUB_NAME:-}" ]; then
+      SUB_NAME="$(resolve_subscription_display_name "$url")"
+      write_catalog_meta "$group_dir/meta.json" || true
+    fi
     printf "%s\n" "$group_id"
     return 1
   fi

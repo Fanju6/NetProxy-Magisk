@@ -74,7 +74,9 @@ internal class SubscriptionEditorViewModel(
         if (_state.value.saving) return
         viewModelScope.launch {
             val snapshot = _state.value
-            val draft = runCatching { validate(snapshot.draft, snapshot.headersText) }
+            val draft = runCatching {
+                validate(snapshot.draft, snapshot.headersText, isNew = snapshot.original == null)
+            }
                 .getOrElse { error ->
                     _state.update {
                         it.copy(
@@ -103,8 +105,14 @@ internal class SubscriptionEditorViewModel(
         _state.update { it.copy(error = "") }
     }
 
-    private fun validate(draft: SubscriptionDraft, headersText: String): SubscriptionDraft {
-        require(draft.name.isNotBlank()) { "订阅名称不能为空" }
+    private fun validate(
+        draft: SubscriptionDraft,
+        headersText: String,
+        isNew: Boolean,
+    ): SubscriptionDraft {
+        // 新增订阅允许留空名称，由模块按 Profile-Title、文件名、主机名顺序自动取名；
+        // 编辑既有订阅时清空名称属于误操作，仍需拒绝
+        require(isNew || draft.name.isNotBlank()) { "订阅名称不能为空" }
         require(draft.url.isNotBlank()) { "订阅链接不能为空" }
         require(draft.updateIntervalSeconds >= 900) { "更新周期不能少于 15 分钟" }
         require(draft.timeoutSeconds > 0) { "下载超时必须大于 0 秒" }

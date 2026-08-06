@@ -341,7 +341,8 @@ load_catalog_meta() {
 $record
 EOF
   IFS="$old_ifs"
-  [ -n "$SUB_NAME" ] || SUB_NAME="$SUB_ID"
+  # 不在此处用 ID 兜底空名称：订阅可能正等待按响应头自动取名，兜底会让该状态丢失。
+  # 展示兜底由 Go 侧 loadMetadata 统一负责 (catalog.go 中 Name 为空时回退为 ID)。
 }
 
 #######################################
