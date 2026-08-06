@@ -118,7 +118,8 @@ write_runtime_ebpf() {
   cgroup_enabled="${EBPF_CGROUP_ENABLED:-1}"
   cgroup_path="${EBPF_CGROUP_PATH:-}"
   ipv6_mode="${EBPF_IPV6_MODE:-auto}"
-  bypass_rules="${EBPF_BYPASS_RULE_SETS:-direct ChinaIP}"
+  # 配置允许显式留空；空值表示不在 eBPF 层提前绕过任何规则集。
+  bypass_rules="$EBPF_BYPASS_RULE_SETS"
 
   case "$network" in
     "" | tcp | udp) ;;

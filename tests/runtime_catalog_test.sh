@@ -63,6 +63,10 @@ grep -q '"exclude_package": \[\]' "$RUNTIME_EBPF_FILE"
 grep -q '"include_android_user": \[\]' "$RUNTIME_EBPF_FILE"
 grep -q '"tc_priority": 1' "$RUNTIME_EBPF_FILE"
 
+set_conf "$EBPF_CONF" "EBPF_BYPASS_RULE_SETS" '""'
+write_runtime_ebpf > /dev/null
+grep -q '"bypass_rule_set": \[\]' "$RUNTIME_EBPF_FILE"
+
 set_conf_values "$EBPF_CONF" \
   "APP_PROXY_MODE" '"blacklist"' \
   "APP_ANDROID_USERS" '"0 999"' \
