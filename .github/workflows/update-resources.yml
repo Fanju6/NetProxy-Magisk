@@ -643,7 +643,7 @@ jobs:
       - name: 安装 Android SDK 37
         if: steps.android.outputs.changed == 'true'
         shell: bash
-        run: sdkmanager 'platforms;android-37' 'build-tools;37.0.0' --channel=1
+        run: sdkmanager 'platforms;android-37.0' 'build-tools;37.0.0' --channel=1
 
       - name: 验证 Android 依赖更新
         if: steps.android.outputs.changed == 'true'
