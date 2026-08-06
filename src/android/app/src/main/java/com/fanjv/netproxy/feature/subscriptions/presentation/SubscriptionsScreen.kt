@@ -740,8 +740,10 @@ internal fun SubscriptionEditorScreen(
                         OverlayDropdownPreference(
                             title = "自动更新周期",
                             items = intervalLabels,
+                            // 未命中候选档位时回退到 24 小时；不可对索引取下限，
+                            // 否则 24 小时以下的档位会被一并抬高到该档
                             selectedIndex = intervals.indexOf(draft.updateIntervalSeconds)
-                                .coerceAtLeast(4),
+                                .takeIf { it >= 0 } ?: intervals.indexOf(86400L),
                             onSelectedIndexChange = { index ->
                                 viewModel.update {
                                     it.copy(updateIntervalSeconds = intervals[index])
