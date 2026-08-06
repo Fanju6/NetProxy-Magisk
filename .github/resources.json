@@ -67,7 +67,6 @@
     "repo": "reF1nd/sing-box",
     "tagPattern": "^v[0-9].*-reF1nd$",
     "currentVersion": "v1.14.0-beta.7-reF1nd",
-    "goVersion": "1.25.12",
     "ndkVersion": "r25c",
     "buildTags": [
       "with_gvisor",

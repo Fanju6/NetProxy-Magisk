@@ -45,7 +45,6 @@ jobs:
           pattern="$(jq -r '.singBox.tagPattern' .github/resources.json)"
           current="$(jq -r '.singBox.currentVersion' .github/resources.json)"
           target="$(jq -r '.singBox.path' .github/resources.json)"
-          go_version="$(jq -r '.singBox.goVersion' .github/resources.json)"
           ndk_version="$(jq -r '.singBox.ndkVersion' .github/resources.json)"
           build_tags="$(jq -r '.singBox.buildTags | join(",")' .github/resources.json)"
           latest="$({
@@ -70,7 +69,6 @@ jobs:
           echo "current_version=$current" >> "$GITHUB_OUTPUT"
           echo "latest_version=$latest" >> "$GITHUB_OUTPUT"
           echo "target=$target" >> "$GITHUB_OUTPUT"
-          echo "go_version=$go_version" >> "$GITHUB_OUTPUT"
           echo "ndk_version=$ndk_version" >> "$GITHUB_OUTPUT"
           echo "build_tags=$build_tags" >> "$GITHUB_OUTPUT"
 
@@ -84,11 +82,30 @@ jobs:
           persist-credentials: false
           path: .sing-box-source
 
+      - name: 确定 Go 工具链版本
+        if: steps.singbox_check.outputs.changed == 'true'
+        id: singbox_go
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          native_version="$(awk '$1 == "go" { print $2; exit }' src/native/netproxy/go.mod)"
+          singbox_version="$(awk '$1 == "go" { print $2; exit }' .sing-box-source/go.mod)"
+          selected_version="$(printf '%s\n%s\n' "$native_version" "$singbox_version" | sort -V | tail -n 1)"
+
+          if [ -z "$native_version" ] || [ -z "$singbox_version" ] || [ -z "$selected_version" ]; then
+            echo "::error::无法从 go.mod 确定 Go 工具链版本"
+            exit 1
+          fi
+
+          echo "version=$selected_version" >> "$GITHUB_OUTPUT"
+          echo "NetProxy 需要 Go $native_version，sing-box 需要 Go $singbox_version，使用 Go $selected_version"
+
       - name: 配置 sing-box Go 环境
         if: steps.singbox_check.outputs.changed == 'true'
         uses: actions/setup-go@v7
         with:
-          go-version: ${{ steps.singbox_check.outputs.go_version }}
+          go-version: ${{ steps.singbox_go.outputs.version }}
           cache-dependency-path: .sing-box-source/go.sum
 
       - name: 配置 Android NDK
