@@ -16,6 +16,15 @@ import (
 
 var validGroupID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
+// isGroupDir 判断 Catalog 根目录下的条目是否为可用分组目录。
+// staging 跳过与路径穿越校验只在此处实现，所有分组扫描都必须经过本函数，
+// 避免多处副本各自演化导致校验漂移。
+func isGroupDir(entry os.DirEntry) bool {
+	name := entry.Name()
+	return entry.IsDir() && name != "staging" && validGroupID.MatchString(name) &&
+		!strings.Contains(name, "..")
+}
+
 type Metadata struct {
 	ID                string          `json:"id"`
 	Name              string          `json:"name"`
@@ -133,7 +142,7 @@ func Schedule(root string, now int64) (ScheduleResult, error) {
 	}
 	result := ScheduleResult{Due: []string{}}
 	for _, entry := range entries {
-		if !entry.IsDir() || entry.Name() == "staging" || !validGroupID.MatchString(entry.Name()) || strings.Contains(entry.Name(), "..") {
+		if !isGroupDir(entry) {
 			continue
 		}
 		metadata, err := loadMetadata(filepath.Join(root, entry.Name(), "meta.json"), entry.Name())
@@ -169,7 +178,7 @@ func RuntimeTag(root, groupID string) (string, error) {
 	duplicateCount := 0
 	names := make(map[string]string, len(entries))
 	for _, entry := range entries {
-		if !entry.IsDir() || entry.Name() == "staging" || !validGroupID.MatchString(entry.Name()) || strings.Contains(entry.Name(), "..") {
+		if !isGroupDir(entry) {
 			continue
 		}
 		metadata, err := loadMetadata(filepath.Join(root, entry.Name(), "meta.json"), entry.Name())
@@ -202,7 +211,7 @@ func GroupIDs(root, groupType string) ([]string, error) {
 	}
 	ids := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		if !entry.IsDir() || entry.Name() == "staging" || !validGroupID.MatchString(entry.Name()) || strings.Contains(entry.Name(), "..") {
+		if !isGroupDir(entry) {
 			continue
 		}
 		metadata, err := loadMetadata(filepath.Join(root, entry.Name(), "meta.json"), entry.Name())
@@ -293,7 +302,7 @@ func loadGroups(ctx context.Context, root string, includeEmpty bool) ([]*loadedG
 	}
 	groups := make([]*loadedGroup, 0, len(entries))
 	for _, entry := range entries {
-		if !entry.IsDir() || entry.Name() == "staging" || !validGroupID.MatchString(entry.Name()) || strings.Contains(entry.Name(), "..") {
+		if !isGroupDir(entry) {
 			continue
 		}
 		groupDir := filepath.Join(root, entry.Name())

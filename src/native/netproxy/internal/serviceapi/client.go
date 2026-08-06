@@ -17,7 +17,6 @@ import (
 )
 
 const (
-	methodGetVersion          = "/daemon.StartedService/GetVersion"
 	methodGetStartedAt        = "/daemon.StartedService/GetStartedAt"
 	methodSubscribeStatus     = "/daemon.StartedService/SubscribeStatus"
 	methodGetClashModeStatus  = "/daemon.StartedService/GetClashModeStatus"
@@ -35,11 +34,6 @@ type Client struct {
 	baseURL    string
 	secret     string
 	httpClient *http.Client
-}
-
-type Version struct {
-	Version    string `json:"version"`
-	APIVersion int32  `json:"api_version"`
 }
 
 type StartedAt struct {
@@ -80,10 +74,6 @@ type Group struct {
 }
 
 type emptyMessage struct{}
-type versionResponse struct {
-	Version    string
-	APIVersion int32
-}
 type startedAtResponse struct{ UnixMilli int64 }
 type statusRequest struct{ Interval int64 }
 type statusResponse Status
@@ -142,14 +132,6 @@ func (c *Client) invoke(ctx context.Context, method string, request any, respons
 		return err
 	}
 	return (wireCodec{}).Unmarshal(content, response)
-}
-
-func (c *Client) Version(ctx context.Context) (Version, error) {
-	var response versionResponse
-	if err := c.invoke(ctx, methodGetVersion, &emptyMessage{}, &response); err != nil {
-		return Version{}, err
-	}
-	return Version{Version: response.Version, APIVersion: response.APIVersion}, nil
 }
 
 // Ready verifies that StartedService is attached to a running sing-box instance.
@@ -352,8 +334,6 @@ func (wireCodec) Unmarshal(content []byte, value any) error {
 	switch message := value.(type) {
 	case *emptyMessage:
 		return nil
-	case *versionResponse:
-		return decodeVersion(content, message)
 	case *startedAtResponse:
 		return decodeStartedAt(content, message)
 	case *statusResponse:
@@ -433,23 +413,6 @@ func consumeBytes(content []byte, wireType protowire.Type) ([]byte, int, error) 
 		return nil, 0, protowire.ParseError(length)
 	}
 	return value, length, nil
-}
-
-func decodeVersion(content []byte, message *versionResponse) error {
-	return consumeFields(content, func(number protowire.Number, wireType protowire.Type, field []byte) (int, error) {
-		switch number {
-		case 1:
-			value, length, err := consumeString(field, wireType)
-			message.Version = value
-			return length, err
-		case 2:
-			value, length, err := consumeVarint(field, wireType)
-			message.APIVersion = int32(value)
-			return length, err
-		default:
-			return 0, nil
-		}
-	})
 }
 
 func decodeStartedAt(content []byte, message *startedAtResponse) error {

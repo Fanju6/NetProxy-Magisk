@@ -54,26 +54,20 @@ SERVICE_LOCK_HELD=0
 #######################################
 acquire_service_lock() {
   local action="$1"
-  local owner="" owner_start="" current_start=""
 
   mkdir -p "${SERVICE_LOCK_DIR%/*}" || return 1
   if mkdir "$SERVICE_LOCK_DIR" 2> /dev/null; then
-    printf '%s\n' "$$" > "$SERVICE_LOCK_DIR/pid"
-    awk '{print $22}' "/proc/$$/stat" > "$SERVICE_LOCK_DIR/start" 2> /dev/null || true
+    lock_write_owner "$SERVICE_LOCK_DIR"
     printf '%s\n' "$action" > "$SERVICE_LOCK_DIR/action"
     SERVICE_LOCK_HELD=1
     return 0
   fi
 
-  owner="$(sed -n '1p' "$SERVICE_LOCK_DIR/pid" 2> /dev/null || true)"
-  owner_start="$(sed -n '1p' "$SERVICE_LOCK_DIR/start" 2> /dev/null || true)"
-  current_start="$(awk '{print $22}' "/proc/$owner/stat" 2> /dev/null || true)"
-  if [ -z "$owner" ] || [ -z "$owner_start" ] || [ "$owner_start" != "$current_start" ] \
-    || ! kill -0 "$owner" 2> /dev/null; then
+  # 持有者已消失则接管残锁
+  if ! lock_owner_alive "$SERVICE_LOCK_DIR"; then
     rm -rf "$SERVICE_LOCK_DIR" 2> /dev/null || return 1
     mkdir "$SERVICE_LOCK_DIR" 2> /dev/null || return 1
-    printf '%s\n' "$$" > "$SERVICE_LOCK_DIR/pid"
-    awk '{print $22}' "/proc/$$/stat" > "$SERVICE_LOCK_DIR/start" 2> /dev/null || true
+    lock_write_owner "$SERVICE_LOCK_DIR"
     printf '%s\n' "$action" > "$SERVICE_LOCK_DIR/action"
     SERVICE_LOCK_HELD=1
     return 0

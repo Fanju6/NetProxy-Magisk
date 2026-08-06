@@ -114,33 +114,6 @@ catalog_provider_inspect() {
 }
 
 #######################################
-# 校验 Provider 文档
-# 参数:
-#   $1  provider.json 路径
-# 返回: 配置有效返回 0，否则返回 1
-#######################################
-catalog_provider_validate() {
-  local provider_file="$1"
-  local native="${NETPROXY_NATIVE_BIN:-$MODDIR/bin/netproxy-native}"
-
-  [ -x "$native" ] || return 1
-  "$native" provider validate --input "$provider_file" > /dev/null
-}
-
-#######################################
-# 统计 Provider 节点数
-# 参数:
-#   $1  provider.json 路径
-# 返回: 标准输出打印节点数
-#######################################
-catalog_provider_node_count() {
-  local summary
-
-  summary="$(catalog_provider_inspect "$1")" || return 1
-  printf "%s" "$summary" | grep -o '"protocol"' | wc -l | tr -d '[:space:]'
-}
-
-#######################################
 # 获取 Provider 第一个节点标签
 # 参数:
 #   $1  provider.json 路径
@@ -168,24 +141,4 @@ catalog_provider_contains_tag() {
   summary="$(catalog_provider_inspect "$provider_file")" || return 1
   escaped="$(json_escape "$tag")"
   printf "%s" "$summary" | grep -F -q "\"tag\":\"$escaped\""
-}
-
-#######################################
-# 判断换行分隔的分组列表是否包含指定 ID
-# 参数:
-#   $1  分组列表
-#   $2  分组 ID
-# 返回: 包含返回 0，否则返回 1
-#######################################
-catalog_group_list_contains() {
-  local groups="$1"
-  local expected="$2"
-  local group_id
-
-  while IFS= read -r group_id; do
-    [ "$group_id" = "$expected" ] && return 0
-  done << EOF
-$groups
-EOF
-  return 1
 }

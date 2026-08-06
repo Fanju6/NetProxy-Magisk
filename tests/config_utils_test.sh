@@ -40,6 +40,20 @@ set_conf "$CONF" FOUR '4'
 [ "$(read_conf "$CONF" FOUR "")" = "4" ]
 [ ! -e "$CONF.lock" ]
 
+# 锁持有者存活判定：自身 PID + 真实启动时刻视为有效
+mkdir "$CONF.lock"
+lock_write_owner "$CONF.lock"
+lock_owner_alive "$CONF.lock"
+# PID 存活但启动时刻不匹配 (PID 被复用) 必须判定为失效，否则残锁永不释放
+printf '1\n' > "$CONF.lock/start"
+! lock_owner_alive "$CONF.lock"
+# 标记缺失同样视为失效
+rm -f "$CONF.lock/pid" "$CONF.lock/start"
+! lock_owner_alive "$CONF.lock"
+set_conf "$CONF" FIVE '5'
+[ "$(read_conf "$CONF" FIVE "")" = "5" ]
+[ ! -e "$CONF.lock" ]
+
 validate_android_package_list "com.android.chrome org.telegram.messenger" "apps"
 ! validate_android_package_list "0:com.android.chrome" "apps"
 validate_android_user_list "0 10 999" "users"

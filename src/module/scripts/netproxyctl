@@ -25,8 +25,6 @@ readonly SUBWORKER_SCRIPT="$MODDIR/scripts/core/subworker.sh"
 readonly LOG_DIR="$MODDIR/logs"
 readonly LOG_FILE="$LOG_DIR/service.log"
 readonly LOG_TAG="netproxyctl"
-readonly SELECTOR_GROUP="Proxy"
-readonly DELAY_URL="https://www.gstatic.com/generate_204"
 readonly SUB_RUNTIME_DIR="/dev/netproxy/subscriptions"
 readonly SUBSCRIPTION_LIBRARY_ONLY=1
 
@@ -139,6 +137,26 @@ extract_result_data() {
 }
 
 #######################################
+# 调用 netproxy-native catalog 子命令并取出 data
+# 参数:
+#   $1   catalog 动作 (group/groups/snapshot/show)
+#   $@   追加的 native 参数，如 --group / --type
+# 返回: 标准输出打印 data JSON
+#######################################
+catalog_native() {
+  local action="$1"
+  local result
+  shift
+
+  result="$("$NETPROXY_NATIVE_BIN" catalog "$action" \
+    --root "$CATALOG_DIR" \
+    --active "$CATALOG_ACTIVE_GROUP" \
+    --progress-dir "$SUB_RUNTIME_DIR" \
+    "$@")" || return 1
+  extract_result_data "$result"
+}
+
+#######################################
 # 返回分组安全摘要 JSON
 # 参数:
 #   $1  分组目录
@@ -146,15 +164,8 @@ extract_result_data() {
 #######################################
 catalog_group_summary_json() {
   local group_dir="$1"
-  local group_id="${group_dir##*/}"
-  local result
 
-  result="$("$NETPROXY_NATIVE_BIN" catalog group \
-    --root "$CATALOG_DIR" \
-    --active "$CATALOG_ACTIVE_GROUP" \
-    --progress-dir "$SUB_RUNTIME_DIR" \
-    --group "$group_id")" || return 1
-  extract_result_data "$result"
+  catalog_native group --group "${group_dir##*/}"
 }
 
 #######################################
@@ -191,15 +202,9 @@ catalog_subscription_private_json() {
 #######################################
 catalog_groups_json() {
   local filter="${1:-all}"
-  local result
 
   initialize_catalog_storage || return 1
-  result="$("$NETPROXY_NATIVE_BIN" catalog groups \
-    --root "$CATALOG_DIR" \
-    --active "$CATALOG_ACTIVE_GROUP" \
-    --progress-dir "$SUB_RUNTIME_DIR" \
-    --type "$filter")" || return 1
-  extract_result_data "$result"
+  catalog_native groups --type "$filter"
 }
 
 #######################################
@@ -210,22 +215,13 @@ catalog_groups_json() {
 #######################################
 catalog_nodes_snapshot_json() {
   local group_id="${1:-}"
-  local result
 
   initialize_catalog_storage || return 1
   if [ -n "$group_id" ]; then
-    result="$("$NETPROXY_NATIVE_BIN" catalog snapshot \
-      --root "$CATALOG_DIR" \
-      --active "$CATALOG_ACTIVE_GROUP" \
-      --progress-dir "$SUB_RUNTIME_DIR" \
-      --group "$group_id")" || return 1
+    catalog_native snapshot --group "$group_id"
   else
-    result="$("$NETPROXY_NATIVE_BIN" catalog snapshot \
-      --root "$CATALOG_DIR" \
-      --active "$CATALOG_ACTIVE_GROUP" \
-      --progress-dir "$SUB_RUNTIME_DIR")" || return 1
+    catalog_native snapshot
   fi
-  extract_result_data "$result"
 }
 
 #######################################
@@ -235,16 +231,7 @@ catalog_nodes_snapshot_json() {
 # 返回: 标准输出打印分组快照 JSON
 #######################################
 catalog_group_snapshot_json() {
-  local group_id="$1"
-  local result data
-
-  result="$("$NETPROXY_NATIVE_BIN" catalog show \
-    --root "$CATALOG_DIR" \
-    --active "$CATALOG_ACTIVE_GROUP" \
-    --progress-dir "$SUB_RUNTIME_DIR" \
-    --group "$group_id")" || return 1
-  data="$(extract_result_data "$result")" || return 1
-  printf "%s" "$data"
+  catalog_native show --group "$1"
 }
 
 #######################################
@@ -441,16 +428,18 @@ command_node_read() {
   active="$(read_conf "$MODULE_CONF" "ACTIVE_GROUP_ID" "")"
   selector="$(read_conf "$MODULE_CONF" "SELECTOR_MODE" "urltest")"
   selected="$(read_conf "$MODULE_CONF" "SELECTED_NODE_REF" "")"
+  # 归一化当前选择：空组显示为未选择，自动模式显示为 Auto/<组>
+  if load_catalog_meta "$CATALOG_DIR/$active/meta.json"; then
+    node_count="$SUB_NODE_COUNT"
+  fi
+  case "$node_count" in "" | *[!0-9]*) node_count=0 ;; esac
+  if [ "$node_count" -le 0 ]; then
+    selected=""
+  elif [ "$selector" = "urltest" ]; then
+    selected="Auto/$active"
+  fi
+
   if [ "$action" = "current" ]; then
-    if load_catalog_meta "$CATALOG_DIR/$active/meta.json"; then
-      node_count="$SUB_NODE_COUNT"
-    fi
-    case "$node_count" in "" | *[!0-9]*) node_count=0 ;; esac
-    if [ "$node_count" -le 0 ]; then
-      selected=""
-    elif [ "$selector" = "urltest" ]; then
-      selected="Auto/$active"
-    fi
     emit_success "node.current" "当前节点选择" \
       "{\"active_group_id\":\"$(json_escape "$active")\",\"selector_mode\":\"$(json_escape "$selector")\",\"selected\":\"$(json_escape "$selected")\"}"
     return 0
@@ -465,15 +454,6 @@ command_node_read() {
       || emit_error "catalog.read_failed" "读取节点快照失败"
   fi
   if [ "$action" = "snapshot" ]; then
-    if load_catalog_meta "$CATALOG_DIR/$active/meta.json"; then
-      node_count="$SUB_NODE_COUNT"
-    fi
-    case "$node_count" in "" | *[!0-9]*) node_count=0 ;; esac
-    if [ "$node_count" -le 0 ]; then
-      selected=""
-    elif [ "$selector" = "urltest" ]; then
-      selected="Auto/$active"
-    fi
     emit_success "node.snapshot" "节点快照" \
       "{\"groups\":$groups_json,\"selection\":{\"active_group_id\":\"$(json_escape "$active")\",\"selector_mode\":\"$(json_escape "$selector")\",\"selected\":\"$(json_escape "$selected")\"}}"
   elif [ "$OUTPUT_JSON" = "1" ]; then

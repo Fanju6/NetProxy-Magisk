@@ -148,17 +148,11 @@ resolve_catalog_group() {
 # 返回: 无
 #######################################
 cleanup_stale_catalog_transactions() {
-  local lock_dir group_id pid owner_start current_start stage
+  local lock_dir group_id stage
 
   for lock_dir in "$CATALOG_STAGING_DIR/locks"/*.lock; do
     [ -d "$lock_dir" ] || continue
-    pid="$(sed -n '1p' "$lock_dir/pid" 2> /dev/null || true)"
-    owner_start="$(sed -n '1p' "$lock_dir/start" 2> /dev/null || true)"
-    current_start="$(awk '{print $22}' "/proc/$pid/stat" 2> /dev/null || true)"
-    if [ -n "$pid" ] && [ -n "$owner_start" ] && [ "$owner_start" = "$current_start" ] \
-      && kill -0 "$pid" 2> /dev/null; then
-      continue
-    fi
+    lock_owner_alive "$lock_dir" && continue
     stage="$(sed -n '1p' "$lock_dir/stage" 2> /dev/null || true)"
     case "$stage" in "$CATALOG_STAGING_DIR"/*) rm -rf "$stage" 2> /dev/null || true ;; esac
     group_id="${lock_dir##*/}"
@@ -176,24 +170,17 @@ cleanup_stale_catalog_transactions() {
 #######################################
 acquire_catalog_lock() {
   local group_id="$1"
-  local lock_dir pid owner_start current_start
+  local lock_dir
 
   catalog_validate_group_id "$group_id" || return 1
   lock_dir="$CATALOG_STAGING_DIR/locks/$group_id.lock"
   if ! mkdir "$lock_dir" 2> /dev/null; then
-    pid="$(sed -n '1p' "$lock_dir/pid" 2> /dev/null || true)"
-    owner_start="$(sed -n '1p' "$lock_dir/start" 2> /dev/null || true)"
-    current_start="$(awk '{print $22}' "/proc/$pid/stat" 2> /dev/null || true)"
-    if [ -n "$pid" ] && [ -n "$owner_start" ] && [ "$owner_start" = "$current_start" ] \
-      && kill -0 "$pid" 2> /dev/null; then
-      return 1
-    fi
+    # 已有存活任务持锁则放弃，否则清理残锁后接管
+    lock_owner_alive "$lock_dir" && return 1
     rm -rf "$lock_dir" 2> /dev/null || return 1
     mkdir "$lock_dir" 2> /dev/null || return 1
   fi
-  printf '%s\n' "$$" > "$lock_dir/pid"
-  awk '{print $22}' "/proc/$$/stat" > "$lock_dir/start" 2> /dev/null || true
-  printf '%s\n' "$(date +%s)" > "$lock_dir/created_at"
+  lock_write_owner "$lock_dir"
   chmod 0700 "$lock_dir" 2> /dev/null || true
   SUB_LOCK_DIR="$lock_dir"
 }

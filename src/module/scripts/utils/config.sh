@@ -62,20 +62,16 @@ read_conf() {
 acquire_conf_lock() {
   local file="$1"
   local lock="${file}.lock"
-  local pid owner_start current_start attempts=0
+  local attempts=0
 
   while [ "$attempts" -lt 50 ]; do
     if mkdir "$lock" 2> /dev/null; then
-      printf '%s\n' "$$" > "$lock/pid"
-      awk '{print $22}' "/proc/$$/stat" > "$lock/start" 2> /dev/null || true
+      lock_write_owner "$lock"
       CONF_LOCK_DIR="$lock"
       return 0
     fi
-    pid="$(sed -n '1p' "$lock/pid" 2> /dev/null || true)"
-    owner_start="$(sed -n '1p' "$lock/start" 2> /dev/null || true)"
-    current_start="$(awk '{print $22}' "/proc/$pid/stat" 2> /dev/null || true)"
-    if [ -z "$pid" ] || [ -z "$owner_start" ] || [ "$owner_start" != "$current_start" ] \
-      || ! kill -0 "$pid" 2> /dev/null; then
+    # 持有者已消失则清理残锁后立即重试
+    if ! lock_owner_alive "$lock"; then
       rm -rf "$lock" 2> /dev/null || true
       continue
     fi

@@ -198,37 +198,32 @@ get_pid() {
 }
 
 #######################################
-# 获取指定 PID 进程已运行的秒数
+# 在锁目录写入当前进程的持有者标记
 # 参数:
-#   $1  进程 PID
-# 返回: 标准输出打印运行秒数；无法获取时打印 0
+#   $1  锁目录
+# 返回: 无
 #######################################
-get_process_uptime() {
-  local pid="$1"
-  local start_time now_ticks
-
-  # PID 为空或进程目录不存在时直接返回 0
-  [ -n "$pid" ] || { printf "0\n"; return 1; }
-  [ -d "/proc/$pid" ] || { printf "0\n"; return 1; }
-
-  # 读取进程启动时刻 (第 22 字段) 与系统当前 tick 数
-  start_time="$(awk '{print $22}' "/proc/$pid/stat" 2> /dev/null || echo 0)"
-  now_ticks="$(awk '{print int($1 * 100)}' /proc/uptime 2> /dev/null || echo 0)"
-
-  # 两者有效时换算为秒 (内核 tick 为 100Hz)
-  if [ "$start_time" -gt 0 ] && [ "$now_ticks" -gt 0 ]; then
-    printf "%s\n" "$(( (now_ticks - start_time) / 100 ))"
-  else
-    printf "0\n"
-  fi
+lock_write_owner() {
+  printf '%s\n' "$$" > "$1/pid"
+  # 记录进程启动时刻 (/proc/pid/stat 第 22 字段)，用于区分 PID 回卷后的新进程
+  awk '{print $22}' "/proc/$$/stat" > "$1/start" 2> /dev/null || true
 }
 
 #######################################
-# 检测设备主要 IPv4 地址
-# 参数: 无
-# 返回: 标准输出打印出口网卡的本机 IPv4 地址
+# 判断锁目录的持有者进程是否仍存活
+# 参数:
+#   $1  锁目录
+# 返回: 持有者存活返回 0，锁已失效返回 1
 #######################################
-detect_primary_ipv4() {
-  # 通过到 1.1.1.1 的路由查询本机源地址
-  ip route get 1.1.1.1 2> /dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1
+lock_owner_alive() {
+  local lock_dir="$1"
+  local pid owner_start current_start
+
+  pid="$(sed -n '1p' "$lock_dir/pid" 2> /dev/null || true)"
+  owner_start="$(sed -n '1p' "$lock_dir/start" 2> /dev/null || true)"
+  current_start="$(awk '{print $22}' "/proc/$pid/stat" 2> /dev/null || true)"
+
+  # PID 或启动时刻缺失、启动时刻不一致 (PID 被复用) 均视为锁已失效
+  [ -n "$pid" ] && [ -n "$owner_start" ] && [ "$owner_start" = "$current_start" ] \
+    && kill -0 "$pid" 2> /dev/null
 }

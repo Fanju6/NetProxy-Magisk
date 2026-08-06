@@ -66,25 +66,6 @@ type serviceSnapshot struct {
 	Selected         string `json:"selected"`
 }
 
-type headerFlags map[string]string
-
-func (h *headerFlags) String() string {
-	return ""
-}
-
-func (h *headerFlags) Set(value string) error {
-	key, headerValue, found := strings.Cut(value, ":")
-	key = strings.TrimSpace(key)
-	if !found || key == "" {
-		return errors.New("请求头格式必须为 名称:值")
-	}
-	if *h == nil {
-		*h = make(map[string]string)
-	}
-	(*h)[key] = strings.TrimSpace(headerValue)
-	return nil
-}
-
 func main() {
 	if err := run(context.Background(), os.Args[1:]); err != nil {
 		var structured *resultError
@@ -254,7 +235,6 @@ func runService(ctx context.Context, args []string) error {
 	flags := newFlagSet("service " + action)
 	address := flags.String("address", "127.0.0.1:9090", "Service API 地址")
 	secretValue := flags.String("secret", "", "Service API 密钥")
-	secretFile := flags.String("secret-file", "", "Service API 密钥文件")
 	timeout := flags.Duration("timeout", 8*time.Second, "请求超时")
 	group := flags.String("group", "", "选择器标签")
 	outbound := flags.String("outbound", "", "出站标签")
@@ -264,16 +244,6 @@ func runService(ctx context.Context, args []string) error {
 		return err
 	}
 	secret := strings.TrimSpace(*secretValue)
-	if *secretFile != "" {
-		if secret != "" {
-			return errors.New("--secret 与 --secret-file 不能同时使用")
-		}
-		content, err := os.ReadFile(*secretFile)
-		if err != nil {
-			return fmt.Errorf("读取 Service API 密钥: %w", err)
-		}
-		secret = strings.TrimSpace(string(content))
-	}
 	requestContext, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
 	client, err := serviceapi.New(*address, secret)
@@ -286,12 +256,8 @@ func runService(ctx context.Context, args []string) error {
 	switch action {
 	case "ready":
 		data, err = client.Ready(requestContext)
-	case "version":
-		data, err = client.Version(requestContext)
 	case "started-at":
 		data, err = client.StartedAt(requestContext)
-	case "status":
-		data, err = client.Status(requestContext)
 	case "snapshot":
 		status, statusErr := client.Status(requestContext)
 		if statusErr != nil {
@@ -328,25 +294,6 @@ func runService(ctx context.Context, args []string) error {
 		}
 	case "groups":
 		data, err = client.Groups(requestContext)
-	case "selected":
-		if *group == "" {
-			return errors.New("selected 需要 --group")
-		}
-		var groups []serviceapi.Group
-		groups, err = client.Groups(requestContext)
-		if err == nil {
-			found := false
-			for _, item := range groups {
-				if item.Tag == *group {
-					data = map[string]string{"group": item.Tag, "outbound": item.Selected}
-					found = true
-					break
-				}
-			}
-			if !found {
-				err = fmt.Errorf("selector %q not found", *group)
-			}
-		}
 	case "mode":
 		if *mode == "" {
 			data, err = client.Mode(requestContext)
@@ -442,28 +389,20 @@ func runConvertSubscription(ctx context.Context, args []string) error {
 	proxyURL := flags.String("proxy", "", "下载代理地址")
 	headersFile := flags.String("headers-file", "", "JSON 格式自定义请求头文件")
 	timeout := flags.Duration("timeout", 60*time.Second, "下载超时")
-	var headers headerFlags
-	flags.Var(&headers, "header", "自定义请求头，可重复")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if *urlValue == "" || options.output == "" {
 		return errors.New("convert subscription 需要 --url 和 --output")
 	}
+	var headers map[string]string
 	if *headersFile != "" {
 		content, err := os.ReadFile(*headersFile)
 		if err != nil {
 			return err
 		}
-		var fileHeaders map[string]string
-		if err := json.Unmarshal(content, &fileHeaders); err != nil {
+		if err := json.Unmarshal(content, &headers); err != nil {
 			return fmt.Errorf("自定义请求头文件无效: %w", err)
-		}
-		if headers == nil {
-			headers = make(map[string]string)
-		}
-		for key, value := range fileHeaders {
-			headers[key] = value
 		}
 	}
 	response, err := fetch.Subscription(ctx, fetch.Request{
@@ -734,7 +673,6 @@ func showUsage() {
 订阅选项：
   --user-agent <值>             自定义 User-Agent
   --hwid <值>                   自定义 X-HWID
-  --header <名称:值>            自定义请求头，可重复
   --headers-file <文件>         从 JSON 对象读取自定义请求头
   --etag <值>                   发送 If-None-Match
   --last-modified <值>          发送 If-Modified-Since

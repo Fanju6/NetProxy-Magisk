@@ -27,10 +27,10 @@ export default function App() {
   const outRef = useRef<HTMLDivElement>(null)
   const inRef = useRef<HTMLInputElement>(null)
 
-  const append = useCallback((...items: Line[]) => {
+  const append = (...items: Line[]) => {
     setLines(p => [...p, ...items])
     requestAnimationFrame(() => { outRef.current && (outRef.current.scrollTop = outRef.current.scrollHeight) })
-  }, [])
+  }
 
   const refresh = useCallback(async () => {
     try { const { groups: g, subs: s } = await fetchCompletions(); setGroups(g); setSubs(s) } catch {}
@@ -52,7 +52,7 @@ export default function App() {
     return () => { stop(); document.removeEventListener('visibilitychange', onVis) }
   }, [pollStatus])
 
-  const run = useCallback((raw: string) => {
+  const run = (raw: string) => {
     const cmd = raw.trim()
     if (!cmd || busy) return
     setHist(p => [...p, cmd]); setHIdx(-1); setTabCnt(0); setInput('')
@@ -82,39 +82,42 @@ export default function App() {
       } catch (e: any) { append({ t: 'e', text: `异常: ${e?.message || e}` }) }
       finally { setBusy(false) }
     })
-  }, [busy, append, refresh, pollStatus])
+  }
 
-  const doComplete = useCallback(() => {
+  const doComplete = () => {
     if (busy) return
     const r = complete(input, groups, subs)
     if (!r.candidates.length) return
     if (r.candidates.length === 1) { setInput(r.completed); setTabCnt(0) }
     else if (tabCnt === 0) { setInput(r.completed); setTabCnt(1) }
     else { append({ t: 'c', text: r.candidates.join('  ') }); setTabCnt(0) }
-  }, [busy, input, groups, subs, tabCnt, append])
+  }
 
-  const onKey = useCallback((e: KeyboardEvent<HTMLInputElement>) => {
+  // 历史导航：上一条 / 下一条，键盘与虚拟按键共用
+  const histPrev = () => {
+    if (busy || !hist.length) return
+    const i = hIdx === -1 ? hist.length - 1 : Math.max(0, hIdx - 1)
+    setHIdx(i); setInput(hist[i]); setTabCnt(0)
+  }
+
+  const histNext = () => {
+    if (busy || hIdx === -1) return
+    const i = hIdx + 1
+    if (i >= hist.length) { setHIdx(-1); setInput('') } else { setHIdx(i); setInput(hist[i]) }
+    setTabCnt(0)
+  }
+
+  const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (busy && e.key === 'Enter') { e.preventDefault(); return }
     if (e.key === 'Enter') { e.preventDefault(); run(input); return }
     if (e.key === 'Tab') { e.preventDefault(); doComplete(); return }
-    if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      if (!hist.length) return
-      const i = hIdx === -1 ? hist.length - 1 : Math.max(0, hIdx - 1)
-      setHIdx(i); setInput(hist[i]); setTabCnt(0); return
-    }
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      if (hIdx === -1) return
-      const i = hIdx + 1
-      if (i >= hist.length) { setHIdx(-1); setInput('') } else { setHIdx(i); setInput(hist[i]) }
-      setTabCnt(0); return
-    }
+    if (e.key === 'ArrowUp') { e.preventDefault(); histPrev(); return }
+    if (e.key === 'ArrowDown') { e.preventDefault(); histNext(); return }
     setTabCnt(0)
-  }, [busy, input, hist, hIdx, doComplete, run])
+  }
 
   const svc = svcState ? STATE_MAP[svcState] || { label: svcState, color: 'var(--text-faint)' } : { label: '检测中', color: 'var(--text-faint)' }
-  const showStatus = useCallback((e: MouseEvent) => { e.stopPropagation(); run('service status') }, [run])
+  const showStatus = (e: MouseEvent) => { e.stopPropagation(); run('service status') }
 
   return (
     <div className="term" onClick={() => inRef.current?.focus()}>
@@ -142,8 +145,8 @@ export default function App() {
       </div>
       <div className="vk">
         <button className="vkbtn" onClick={doComplete} disabled={busy}>Tab</button>
-        <button className="vkbtn" onClick={() => { if (busy || !hist.length) return; const i = hIdx === -1 ? hist.length - 1 : Math.max(0, hIdx - 1); setHIdx(i); setInput(hist[i]); inRef.current?.focus() }} disabled={busy}>↑</button>
-        <button className="vkbtn" onClick={() => { if (busy || hIdx === -1) return; const i = hIdx + 1; if (i >= hist.length) { setHIdx(-1); setInput('') } else { setHIdx(i); setInput(hist[i]) } inRef.current?.focus() }} disabled={busy}>↓</button>
+        <button className="vkbtn" onClick={() => { histPrev(); inRef.current?.focus() }} disabled={busy}>↑</button>
+        <button className="vkbtn" onClick={() => { histNext(); inRef.current?.focus() }} disabled={busy}>↓</button>
         <button className="vkbtn run" onClick={() => run(input)} disabled={busy}>{busy ? '…' : '↵'}</button>
       </div>
       <div className="bar">

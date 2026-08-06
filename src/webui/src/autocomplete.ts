@@ -1,6 +1,6 @@
 export interface CompletionResult { completed: string; candidates: string[] }
 
-const GROUPS = ['service', 'catalog', 'node', 'sub', 'mode', 'app', 'logs', 'config', 'ebpf', 'help', 'clear', 'cls', 'exit']
+const GROUPS = ['service', 'catalog', 'node', 'sub', 'mode', 'app', 'logs', 'config', 'ebpf', 'help', 'clear', 'exit']
 const SUBS: Record<string, string[]> = {
   service: ['status', 'start', 'stop', 'restart', 'reload'],
   catalog: ['list', 'show'],
@@ -42,7 +42,7 @@ export function complete(input: string, knownGroups: string[] = [], knownSubs: s
   } else if (n >= 2) {
     const [cmd, sub] = toks
     if (cmd === 'help' && n === 2) {
-      cands = GROUPS.filter(g => !['help', 'clear', 'cls', 'exit'].includes(g) && g.startsWith(cur))
+      cands = GROUPS.filter(g => !['help', 'clear', 'exit'].includes(g) && g.startsWith(cur))
     } else if (cmd === 'node' && (sub === 'use' || sub === 'delay')) {
       if (n === 2) cands = cur !== 'auto' ? ['auto', ...all].filter(c => c.startsWith(cur)) : all.filter(c => c.startsWith(cur))
       else if (n === 3 && toks[2] === 'auto') cands = knownGroups.filter(c => c.startsWith(cur))
