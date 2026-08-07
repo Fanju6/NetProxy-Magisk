@@ -226,6 +226,8 @@
     <string name="ebpf_shared_interfaces">下游接口</string>
     <string name="ebpf_shared_include_source_cidrs">允许来源 CIDR</string>
     <string name="ebpf_shared_exclude_source_cidrs">排除来源 CIDR</string>
+    <string name="ebpf_shared_include_mac_addresses">允许来源 MAC 地址</string>
+    <string name="ebpf_shared_exclude_mac_addresses">排除来源 MAC 地址</string>
     <string name="ebpf_shared_tc_priority">TC 优先级</string>
     <string name="ebpf_map_settings">eBPF Map 容量</string>
     <string name="ebpf_tcp_map">TCP 重定向 Map</string>

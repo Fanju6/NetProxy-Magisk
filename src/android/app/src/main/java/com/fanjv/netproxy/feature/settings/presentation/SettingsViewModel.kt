@@ -235,6 +235,14 @@ internal class SettingsViewModel(
                     proxySettings = settings.copy(sharedExcludeSourceCidrs = value)
                 )
 
+                "EBPF_SHARED_INCLUDE_MAC_ADDRESSES" -> current.copy(
+                    proxySettings = settings.copy(sharedIncludeMacAddresses = value)
+                )
+
+                "EBPF_SHARED_EXCLUDE_MAC_ADDRESSES" -> current.copy(
+                    proxySettings = settings.copy(sharedExcludeMacAddresses = value)
+                )
+
                 "EBPF_SHARED_TC_PRIORITY" -> current.copy(
                     proxySettings = settings.copy(sharedTcPriority = value)
                 )
@@ -297,6 +305,8 @@ internal class SettingsViewModel(
             sharedInterfaces = value("EBPF_SHARED_INTERFACES", "wlan2"),
             sharedIncludeSourceCidrs = value("EBPF_SHARED_INCLUDE_SOURCE_CIDRS", ""),
             sharedExcludeSourceCidrs = value("EBPF_SHARED_EXCLUDE_SOURCE_CIDRS", ""),
+            sharedIncludeMacAddresses = value("EBPF_SHARED_INCLUDE_MAC_ADDRESSES", ""),
+            sharedExcludeMacAddresses = value("EBPF_SHARED_EXCLUDE_MAC_ADDRESSES", ""),
             sharedTcPriority = value("EBPF_SHARED_TC_PRIORITY", "1"),
             tcpMapCapacity = value("EBPF_TCP_MAP_CAPACITY", "65536"),
             udpMapCapacity = value("EBPF_UDP_MAP_CAPACITY", "65536"),
@@ -319,7 +329,9 @@ internal class SettingsViewModel(
             "EBPF_BYPASS_RULE_SETS",
             "EBPF_SHARED_INTERFACES",
             "EBPF_SHARED_INCLUDE_SOURCE_CIDRS",
-            "EBPF_SHARED_EXCLUDE_SOURCE_CIDRS"
+            "EBPF_SHARED_EXCLUDE_SOURCE_CIDRS",
+            "EBPF_SHARED_INCLUDE_MAC_ADDRESSES",
+            "EBPF_SHARED_EXCLUDE_MAC_ADDRESSES"
         )
         val ipv6Modes = setOf("disabled", "auto", "always", "shared")
     }

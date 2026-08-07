@@ -305,6 +305,38 @@ internal fun ProxySettingsScreen(
                                 }
                             )
                         },
+                        CardItem("include_mac_addresses") {
+                            val label = stringResource(R.string.ebpf_shared_include_mac_addresses)
+                            ArrowPreference(
+                                title = label,
+                                summary = settings.sharedIncludeMacAddresses.ifBlank {
+                                    stringResource(R.string.not_set)
+                                },
+                                onClick = {
+                                    editValue(
+                                        "EBPF_SHARED_INCLUDE_MAC_ADDRESSES",
+                                        label,
+                                        settings.sharedIncludeMacAddresses
+                                    )
+                                }
+                            )
+                        },
+                        CardItem("exclude_mac_addresses") {
+                            val label = stringResource(R.string.ebpf_shared_exclude_mac_addresses)
+                            ArrowPreference(
+                                title = label,
+                                summary = settings.sharedExcludeMacAddresses.ifBlank {
+                                    stringResource(R.string.not_set)
+                                },
+                                onClick = {
+                                    editValue(
+                                        "EBPF_SHARED_EXCLUDE_MAC_ADDRESSES",
+                                        label,
+                                        settings.sharedExcludeMacAddresses
+                                    )
+                                }
+                            )
+                        },
                         CardItem("tc_priority") {
                             val label = stringResource(R.string.ebpf_shared_tc_priority)
                             ArrowPreference(

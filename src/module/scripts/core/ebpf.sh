@@ -71,6 +71,26 @@ validate_map_capacity() {
 }
 
 #######################################
+# 校验共享网络 MAC 地址列表
+# 参数:
+#   $1  空格分隔的 EUI-48 MAC 地址
+# 返回: 合法返回 0，否则返回非 0
+#######################################
+validate_mac_address_list() {
+  local values="${1:-}"
+  local value
+
+  for value in $values; do
+    case "$value" in
+      [0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f][0-9A-Fa-f]) ;;
+      *) return 1 ;;
+    esac
+  done
+
+  return 0
+}
+
+#######################################
 # 生成 eBPF 入站运行时配置
 # 参数: 无
 # 全局: 读取 EBPF_CONF，写入 RUNTIME_EBPF_FILE
@@ -84,6 +104,7 @@ write_runtime_ebpf() {
   local include_uid_json="" exclude_uid_json=""
   local shared_enabled shared_interfaces shared_interfaces_json shared_json_enabled
   local shared_include_cidrs shared_exclude_cidrs shared_include_json shared_exclude_json
+  local shared_include_macs shared_exclude_macs shared_include_macs_json shared_exclude_macs_json
   local shared_tc_priority tcp_capacity udp_capacity socket_capacity shared_capacity redirect_json
 
   require_file "${EBPF_CONF:-}" "eBPF 配置文件不存在: ${EBPF_CONF:-未定义}"
@@ -105,6 +126,8 @@ write_runtime_ebpf() {
   EBPF_SHARED_INTERFACES="wlan2"
   EBPF_SHARED_INCLUDE_SOURCE_CIDRS=""
   EBPF_SHARED_EXCLUDE_SOURCE_CIDRS=""
+  EBPF_SHARED_INCLUDE_MAC_ADDRESSES=""
+  EBPF_SHARED_EXCLUDE_MAC_ADDRESSES=""
   EBPF_SHARED_TC_PRIORITY=1
   EBPF_TCP_MAP_CAPACITY=65536
   EBPF_UDP_MAP_CAPACITY=65536
@@ -194,10 +217,18 @@ write_runtime_ebpf() {
   shared_interfaces="${EBPF_SHARED_INTERFACES:-wlan2}"
   shared_include_cidrs="${EBPF_SHARED_INCLUDE_SOURCE_CIDRS:-}"
   shared_exclude_cidrs="${EBPF_SHARED_EXCLUDE_SOURCE_CIDRS:-}"
+  shared_include_macs="${EBPF_SHARED_INCLUDE_MAC_ADDRESSES:-}"
+  shared_exclude_macs="${EBPF_SHARED_EXCLUDE_MAC_ADDRESSES:-}"
   shared_tc_priority="${EBPF_SHARED_TC_PRIORITY:-1}"
+  validate_mac_address_list "$shared_include_macs" \
+    || die "EBPF_SHARED_INCLUDE_MAC_ADDRESSES 包含无效 MAC 地址"
+  validate_mac_address_list "$shared_exclude_macs" \
+    || die "EBPF_SHARED_EXCLUDE_MAC_ADDRESSES 包含无效 MAC 地址"
   shared_interfaces_json="$(word_list_to_json "$shared_interfaces")"
   shared_include_json="$(word_list_to_json "$shared_include_cidrs")"
   shared_exclude_json="$(word_list_to_json "$shared_exclude_cidrs")"
+  shared_include_macs_json="$(word_list_to_json "$shared_include_macs")"
+  shared_exclude_macs_json="$(word_list_to_json "$shared_exclude_macs")"
   case "$shared_tc_priority" in
     "" | *[!0-9]*) die "EBPF_SHARED_TC_PRIORITY 必须是 1 到 65535 之间的整数" ;;
   esac
@@ -259,6 +290,8 @@ ${cgroup_fields}      "redirect_address": [$redirect_json],
         "include_interface": [$shared_interfaces_json],
         "include_source_cidr": [$shared_include_json],
         "exclude_source_cidr": [$shared_exclude_json],
+        "include_mac_address": [$shared_include_macs_json],
+        "exclude_mac_address": [$shared_exclude_macs_json],
         "tc_priority": $shared_tc_priority,
         "map_capacity": $shared_capacity
       }

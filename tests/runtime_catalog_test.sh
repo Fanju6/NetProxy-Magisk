@@ -73,13 +73,20 @@ set_conf_values "$EBPF_CONF" \
   "BYPASS_APPS_LIST" '"com.android.chrome org.telegram.messenger"' \
   "EBPF_SHARED_INCLUDE_SOURCE_CIDRS" '"192.168.43.0/24 fd00::/64"' \
   "EBPF_SHARED_EXCLUDE_SOURCE_CIDRS" '"192.168.43.10/32"' \
+  "EBPF_SHARED_INCLUDE_MAC_ADDRESSES" '"02:11:22:33:44:55 AA:BB:CC:DD:EE:FF"' \
+  "EBPF_SHARED_EXCLUDE_MAC_ADDRESSES" '"12:34:56:78:9A:BC"' \
   "EBPF_SHARED_TC_PRIORITY" "7"
 write_runtime_ebpf > /dev/null
 grep -q '"include_android_user": \[0, 999\]' "$RUNTIME_EBPF_FILE"
 grep -q '"exclude_package": \["com.android.chrome", "org.telegram.messenger"\]' "$RUNTIME_EBPF_FILE"
 grep -q '"include_source_cidr": \["192.168.43.0/24", "fd00::/64"\]' "$RUNTIME_EBPF_FILE"
 grep -q '"exclude_source_cidr": \["192.168.43.10/32"\]' "$RUNTIME_EBPF_FILE"
+grep -q '"include_mac_address": \["02:11:22:33:44:55", "AA:BB:CC:DD:EE:FF"\]' "$RUNTIME_EBPF_FILE"
+grep -q '"exclude_mac_address": \["12:34:56:78:9A:BC"\]' "$RUNTIME_EBPF_FILE"
 grep -q '"tc_priority": 7' "$RUNTIME_EBPF_FILE"
+
+validate_mac_address_list "02:11:22:33:44:55 AA:BB:CC:DD:EE:FF"
+! validate_mac_address_list "02:11:22:33:44:5G"
 
 set_conf_values "$EBPF_CONF" \
   "APP_PROXY_MODE" '"whitelist"' \
