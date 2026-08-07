@@ -481,6 +481,25 @@ internal fun ProxySettingsScreen(
         onDismissRequest = { showTextEditDialog.value = false }
     ) {
         var value by remember(editingValue) { mutableStateOf(editingValue) }
+        val usesListHint = editingKey in listOf(
+            "EBPF_BYPASS_RULE_SETS",
+            "EBPF_SHARED_INTERFACES",
+            "EBPF_SHARED_INCLUDE_SOURCE_CIDRS",
+            "EBPF_SHARED_EXCLUDE_SOURCE_CIDRS",
+            "EBPF_SHARED_INCLUDE_MAC_ADDRESSES",
+            "EBPF_SHARED_EXCLUDE_MAC_ADDRESSES",
+            "WIFI_SSID_LIST"
+        )
+        val valueHint = when (editingKey) {
+            "EBPF_BYPASS_RULE_SETS" -> stringResource(R.string.settings_hint_rule_sets)
+            "EBPF_SHARED_INTERFACES" -> stringResource(R.string.settings_hint_interfaces)
+            "EBPF_SHARED_INCLUDE_SOURCE_CIDRS",
+            "EBPF_SHARED_EXCLUDE_SOURCE_CIDRS" -> stringResource(R.string.settings_hint_cidrs)
+            "EBPF_SHARED_INCLUDE_MAC_ADDRESSES",
+            "EBPF_SHARED_EXCLUDE_MAC_ADDRESSES" -> stringResource(R.string.settings_hint_macs)
+            "WIFI_SSID_LIST" -> stringResource(R.string.settings_hint_ssids)
+            else -> stringResource(R.string.value_label)
+        }
         Column {
             Text(
                 modifier = Modifier
@@ -499,7 +518,8 @@ internal fun ProxySettingsScreen(
                 TextField(
                     value = value,
                     onValueChange = { value = it },
-                    label = stringResource(R.string.value_label),
+                    label = valueHint,
+                    useLabelAsPlaceholder = usesListHint,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Row(
