@@ -4,12 +4,12 @@ go 1.26.0
 
 require (
 	github.com/sagernet/sing v0.8.13-0.20260804143108-f22b119cc7a2
-	github.com/sagernet/sing-box v1.14.0-beta.8-reF1nd
+	github.com/sagernet/sing-box v1.14.0-beta.9-reF1nd
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-replace github.com/sagernet/sing-box => github.com/reF1nd/sing-box v1.14.0-beta.8-reF1nd
+replace github.com/sagernet/sing-box => github.com/reF1nd/sing-box v1.14.0-beta.9-reF1nd
 
 require (
 	github.com/miekg/dns v1.1.72 // indirect

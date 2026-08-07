@@ -3590,6 +3590,32 @@
             }
           ]
         },
+        "include_mac_address": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "exclude_mac_address": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
         "tc_priority": {
           "type": "integer",
           "minimum": 1,
