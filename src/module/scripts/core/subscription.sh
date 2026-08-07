@@ -1,10 +1,10 @@
 #!/system/bin/sh
 #######################################
 # 文件: subscription.sh
-# 功能: Catalog 节点与订阅事务层，负责分组锁、staging、Provider 原子替换、
-#       HTTP 元数据、更新历史与取消控制。
+# 功能: Catalog 节点编排与订阅入口，负责本地节点变更、运行时 reload、
+#       Go 订阅事务调用与取消控制。
 # 用法: 由 netproxyctl 与 subworker.sh 引入；也可执行 update/update-all/cancel。
-# 依赖: common.sh、config.sh、catalog.sh、metadata.sh 与 NetProxy 原生组件。
+# 依赖: common.sh、config.sh、catalog.sh、metadata.sh 与 netproxy-native。
 #######################################
 
 if [ -z "${MODDIR:-}" ]; then
@@ -29,7 +29,6 @@ fi
 
 SUB_LOCK_DIR=""
 SUB_STAGE_DIR=""
-SUB_CONVERSION_USED_PROXY=0
 
 #######################################
 # 初始化 Catalog 事务目录
@@ -257,29 +256,6 @@ create_catalog_stage() {
 }
 
 #######################################
-# 写入订阅任务进度
-# 参数:
-#   $1  分组 ID
-#   $2  阶段 (download/convert/validate/apply)
-#   $3  中文说明
-# 返回: 无
-#######################################
-write_subscription_progress() {
-  local group_id="$1"
-  local stage="$2"
-  local message="$3"
-  local target="$SUB_RUNTIME_DIR/$group_id.progress.json"
-  local tmp="$target.tmp.$$"
-
-  mkdir -p "$SUB_RUNTIME_DIR" 2> /dev/null || return 0
-  cat > "$tmp" << EOF
-{"schema":1,"group_id":"$(json_escape "$group_id")","stage":"$(json_escape "$stage")","message":"$(json_escape "$message")","updated_at":"$(format_epoch_utc "$(date +%s)")"}
-EOF
-  chmod 0600 "$tmp" 2> /dev/null || true
-  mv -f "$tmp" "$target" 2> /dev/null || true
-}
-
-#######################################
 # 清理订阅任务运行时进度
 # 参数:
 #   $1  分组 ID
@@ -287,103 +263,6 @@ EOF
 #######################################
 clear_subscription_progress() {
   rm -f "$SUB_RUNTIME_DIR/$1.progress.json"
-}
-
-#######################################
-# 读取 JSON 文件并压缩为单行
-# 参数:
-#   $1  文件路径
-#   $2  默认 JSON
-# 返回: 标准输出打印 JSON
-#######################################
-read_compact_json_file() {
-  local file="$1"
-  local default="${2:-null}"
-  local value
-
-  [ -f "$file" ] || { printf "%s" "$default"; return 1; }
-  value="$(tr -d '\r\n' < "$file" 2> /dev/null)"
-  [ -n "$value" ] || value="$default"
-  printf "%s" "$value"
-}
-
-#######################################
-# 追加一条脱敏更新历史并只保留最近 20 条
-# 参数:
-#   $1  分组目录
-#   $2  单行 JSON 记录
-# 返回: 无
-#######################################
-append_subscription_history() {
-  local group_dir="$1"
-  local record="$2"
-  local history="$group_dir/history.jsonl"
-  local tmp="$history.tmp.$$"
-
-  if [ -f "$history" ]; then
-    tail -n 19 "$history" > "$tmp" 2> /dev/null || : > "$tmp"
-  else
-    : > "$tmp"
-  fi
-  printf '%s\n' "$record" >> "$tmp"
-  chmod 0600 "$tmp" 2> /dev/null || true
-  mv -f "$tmp" "$history"
-}
-
-#######################################
-# 从原生组件 HTTP 元数据更新当前 SUB_* 变量
-# 参数:
-#   $1  metadata.json 路径
-#   $2  modified 或 not_modified
-# 返回: 无
-#######################################
-apply_http_metadata() {
-  local file="$1"
-  local response_kind="$2"
-  local raw value
-
-  [ -f "$file" ] || return 0
-  raw="$(compact_json_get_raw "$file" "status_code" "0")" || raw=0
-  case "$raw" in "" | *[!0-9]*) raw=0 ;; esac
-  SUB_LAST_STATUS_CODE="$raw"
-
-  value="$(compact_json_get_string "$file" "etag" "")" || true
-  [ -z "$value" ] || SUB_ETAG="$value"
-  value="$(compact_json_get_string "$file" "last_modified" "")" || true
-  [ -z "$value" ] || SUB_LAST_MODIFIED="$value"
-  value="$(compact_json_get_string "$file" "profile_title" "")" || true
-  [ -z "$value" ] || SUB_PROFILE_TITLE="$value"
-  value="$(compact_json_get_string "$file" "profile_web_page_url" "")" || true
-  [ -z "$value" ] || SUB_PROFILE_WEB_PAGE_URL="$value"
-  value="$(compact_json_get_string "$file" "content_disposition" "")" || true
-  [ -z "$value" ] || SUB_CONTENT_DISPOSITION="$value"
-  value="$(compact_json_get_string "$file" "file_name" "")" || true
-  [ -z "$value" ] || SUB_FILE_NAME="$value"
-
-  raw="$(compact_json_get_raw "$file" "usage" "__missing__")" || true
-  if [ "$raw" != "__missing__" ]; then
-    SUB_USAGE="$raw"
-  elif [ "$response_kind" = "modified" ]; then
-    SUB_USAGE=null
-  fi
-
-  raw="$(compact_json_get_raw "$file" "update_interval_seconds" "")" || true
-  case "$raw" in
-    "" | *[!0-9]*) ;;
-    *)
-      case "$SUB_INTERVAL_SOURCE" in
-        default | profile)
-          if [ "$raw" -ge 900 ]; then
-            SUB_UPDATE_INTERVAL="$raw"
-            SUB_INTERVAL_SOURCE="profile"
-          fi
-          ;;
-      esac
-      ;;
-  esac
-
-  raw="$(compact_json_get_raw "$file" "diagnostics" "[]")" || raw="[]"
-  SUB_LAST_DIAGNOSTICS="$raw"
 }
 
 #######################################
@@ -534,228 +413,51 @@ subscription_proxy_url() {
 }
 
 #######################################
-# 运行一次原生组件订阅转换
-# 参数:
-#   $1  输出 Provider
-#   $2  HTTP 元数据文件
-#   $3  diagnostics 文件
-#   $4  stdout 结果文件
-#   $5  stderr 错误文件
-# 返回: 原生组件退出码
-#######################################
-run_subscription_conversion() {
-  local output="$1"
-  local metadata_file="$2"
-  local diagnostics_file="$3"
-  local result_file="$4"
-  local error_file="$5"
-  local force_direct="${6:-0}"
-  local headers_file="$SUB_STAGE_DIR/headers.json"
-  local proxy_url child_pid status
-
-  printf '%s\n' "$SUB_CUSTOM_HEADERS" > "$headers_file"
-  chmod 0600 "$headers_file" 2> /dev/null || true
-  SUB_CONVERSION_USED_PROXY=0
-  if [ "$force_direct" = "1" ]; then
-    proxy_url=""
-  else
-    proxy_url="$(subscription_proxy_url)"
-    [ -z "$proxy_url" ] || SUB_CONVERSION_USED_PROXY=1
-  fi
-
-  set -- "$NETPROXY_NATIVE_BIN" convert subscription \
-    --url "$SUB_URL" \
-    --output "$output" \
-    --metadata-output "$metadata_file" \
-    --diagnostics-output "$diagnostics_file" \
-    --headers-file "$headers_file" \
-    --timeout "${SUB_TIMEOUT}s"
-  [ -z "$SUB_USER_AGENT" ] || set -- "$@" --user-agent "$SUB_USER_AGENT"
-  [ -z "$SUB_HWID" ] || set -- "$@" --hwid "$SUB_HWID"
-  [ -z "$SUB_ETAG" ] || set -- "$@" --etag "$SUB_ETAG"
-  [ -z "$SUB_LAST_MODIFIED" ] || set -- "$@" --last-modified "$SUB_LAST_MODIFIED"
-  [ -z "$SUB_INCLUDE" ] || set -- "$@" --include "$SUB_INCLUDE"
-  [ -z "$SUB_EXCLUDE" ] || set -- "$@" --exclude "$SUB_EXCLUDE"
-  [ "$SUB_ALLOW_INSECURE" != "true" ] || set -- "$@" --allow-insecure
-  [ -z "$proxy_url" ] || set -- "$@" --proxy "$proxy_url"
-
-  "$@" > "$result_file" 2> "$error_file" &
-  child_pid=$!
-  printf '%s\n' "$child_pid" > "$SUB_RUNTIME_DIR/$SUB_ID.child.pid"
-  wait "$child_pid"
-  status=$?
-  rm -f "$SUB_RUNTIME_DIR/$SUB_ID.child.pid"
-  return "$status"
-}
-
-#######################################
-# 记录订阅更新失败并保留上一版 Provider
-# 参数:
-#   $1  分组目录
-#   $2  错误代码
-#   $3  安全错误说明
-#   $4  开始 epoch 秒
-# 返回: 始终返回 1
-#######################################
-record_subscription_failure() {
-  local group_dir="$1"
-  local code="$2"
-  local message="$3"
-  local started_at="$4"
-  local now now_text duration
-
-  now="$(date +%s)"
-  now_text="$(format_epoch_utc "$now")"
-  duration=$((now - started_at))
-  SUB_LAST_ATTEMPT_AT="$now_text"
-  SUB_UPDATED_AT="$now_text"
-  SUB_LAST_ERROR="$message"
-  schedule_next_update "$now"
-  write_catalog_meta "$group_dir/meta.json" || true
-  append_subscription_history "$group_dir" \
-    "{\"at\":\"$now_text\",\"ok\":false,\"code\":\"$(json_escape "$code")\",\"message\":\"$(json_escape "$message")\",\"duration_seconds\":$duration}"
-  clear_subscription_progress "$SUB_ID"
-  log "ERROR" "订阅更新失败: $SUB_ID ($code)"
-  release_catalog_lock
-  return 1
-}
-
-#######################################
-# 更新指定 URL 订阅
+# 通过 Go 组件执行订阅更新事务
 # 参数:
 #   $1  分组 ID 或唯一名称
 # 返回: 更新成功或 304 返回 0，失败返回 1
 #######################################
 update_subscription() {
   local query="$1"
-  local group_id group_dir meta_file provider_file
-  local metadata_file diagnostics_file result_file error_file
-  local started_at now now_text response_kind result_code node_count diagnostics duration
-  local had_nodes=0 has_nodes=0 conversion_ok=0
+  local group_id group_dir meta_file proxy_url result error_file node_count
 
   initialize_catalog_storage || return 1
   group_id="$(resolve_catalog_group "$query")" || return $?
   group_dir="$CATALOG_DIR/$group_id"
   meta_file="$group_dir/meta.json"
-  provider_file="$group_dir/provider.json"
   load_catalog_meta "$meta_file" || return 1
   [ "$SUB_TYPE" = "subscription" ] || return 1
   [ -n "$SUB_URL" ] || return 1
-  catalog_provider_has_nodes "$provider_file" && had_nodes=1
-  acquire_catalog_lock "$group_id" || { log "WARN" "订阅已有更新任务: $group_id"; return 1; }
-  create_catalog_stage "$group_id" > /dev/null || { release_catalog_lock; return 1; }
 
-  started_at="$(date +%s)"
   rm -f "$SUB_RUNTIME_DIR/$group_id.cancel"
-  metadata_file="$SUB_STAGE_DIR/http-metadata.json"
-  diagnostics_file="$SUB_STAGE_DIR/diagnostics.json"
-  result_file="$SUB_STAGE_DIR/result.json"
-  error_file="$SUB_STAGE_DIR/error.json"
-
-  write_subscription_progress "$group_id" "download" "正在下载订阅"
-  if run_subscription_conversion "$SUB_STAGE_DIR/provider.json" "$metadata_file" \
-    "$diagnostics_file" "$result_file" "$error_file"; then
-    conversion_ok=1
-  elif [ "$SUB_UPDATE_VIA_PROXY" = "auto" ] \
-    && [ "$SUB_CONVERSION_USED_PROXY" = "1" ] \
-    && ! subscription_cancel_requested "$group_id"; then
-    log "WARN" "订阅代理下载失败，尝试直连: $group_id"
-    write_subscription_progress "$group_id" "download" "代理下载失败，正在尝试直连"
-    rm -f "$SUB_STAGE_DIR/provider.json" "$metadata_file" "$diagnostics_file" \
-      "$result_file" "$error_file"
-    if run_subscription_conversion "$SUB_STAGE_DIR/provider.json" "$metadata_file" \
-      "$diagnostics_file" "$result_file" "$error_file" 1; then
-      conversion_ok=1
-    fi
+  proxy_url="$(subscription_proxy_url)"
+  error_file="$SUB_RUNTIME_DIR/$group_id.native.log"
+  set -- "$NETPROXY_NATIVE_BIN" subscription update \
+    --root "$CATALOG_DIR" \
+    --group "$group_id" \
+    --progress-dir "$SUB_RUNTIME_DIR"
+  [ -z "$proxy_url" ] || set -- "$@" --proxy "$proxy_url"
+  if [ "$SUB_UPDATE_VIA_PROXY" = "auto" ] && [ -n "$proxy_url" ]; then
+    set -- "$@" --fallback-direct
   fi
 
-  if [ "$conversion_ok" != "1" ]; then
-    if subscription_cancel_requested "$group_id"; then
-      rm -f "$SUB_RUNTIME_DIR/$group_id.cancel"
-      record_subscription_failure "$group_dir" "subscription.cancelled" "订阅更新已取消" "$started_at"
-      return 1
-    fi
-    apply_http_metadata "$metadata_file" "modified"
-    record_subscription_failure "$group_dir" "subscription.convert_failed" \
-      "订阅下载、转换或校验失败" "$started_at"
+  result="$("$@" 2> "$error_file")" || {
+    log "ERROR" "订阅更新失败: $group_id"
+    rm -f "$SUB_RUNTIME_DIR/$group_id.progress.json" \
+      "$SUB_RUNTIME_DIR/$group_id.child.pid"
+    rm -f "$error_file"
     return 1
-  fi
+  }
+  rm -f "$error_file"
 
-  result_code="$(compact_json_get_string "$result_file" "code" "")" || true
-  if [ "$result_code" = "subscription.not_modified" ]; then
-    response_kind="not_modified"
-  else
-    response_kind="modified"
-  fi
-  apply_http_metadata "$metadata_file" "$response_kind"
-  # 名称留空的订阅在首次取得响应头后回填显示名
-  if [ -z "${SUB_NAME:-}" ]; then
-    SUB_NAME="$(resolve_subscription_display_name "$SUB_URL")"
-  fi
-  diagnostics="$(read_compact_json_file "$diagnostics_file" "[]")" || diagnostics="[]"
-  SUB_LAST_DIAGNOSTICS="$diagnostics"
-
-  if subscription_cancel_requested "$group_id"; then
-    rm -f "$SUB_RUNTIME_DIR/$group_id.cancel"
-    record_subscription_failure "$group_dir" "subscription.cancelled" "订阅更新已取消" "$started_at"
-    return 1
-  fi
-
-  if [ "$response_kind" = "modified" ]; then
-    write_subscription_progress "$group_id" "validate" "正在校验节点配置"
-    # 原生组件转换成功时已完成 Provider 校验和原子写入，直接复用转换结果。
-    node_count="$(sed -n 's/.*"node_count":\([0-9][0-9]*\).*/\1/p' "$result_file")"
-    case "$node_count" in
-      "" | *[!0-9]* | 0)
-        record_subscription_failure "$group_dir" "provider.empty" "订阅中没有可用节点" "$started_at"
-        return 1
-        ;;
-    esac
-    SUB_NODE_COUNT="$node_count"
-    SUB_REVISION=$((SUB_REVISION + 1))
-  fi
-
-  # 从这里进入不可取消的提交阶段。
-  write_subscription_progress "$group_id" "apply" "正在应用订阅更新"
-  now="$(date +%s)"
-  now_text="$(format_epoch_utc "$now")"
-  duration=$((now - started_at))
-  SUB_LAST_ATTEMPT_AT="$now_text"
-  SUB_LAST_SUCCESS_AT="$now_text"
-  SUB_UPDATED_AT="$now_text"
-  SUB_LAST_ERROR=""
-  schedule_next_update "$now"
-  write_catalog_meta "$SUB_STAGE_DIR/meta.json" \
-    || { record_subscription_failure "$group_dir" "metadata.write_failed" "订阅元数据写入失败" "$started_at"; return 1; }
-
-  if [ "$response_kind" = "modified" ]; then
-    chmod 0600 "$SUB_STAGE_DIR/provider.json" 2> /dev/null || true
-    cp "$provider_file" "$SUB_STAGE_DIR/provider.previous.json" 2> /dev/null || true
-    mv -f "$SUB_STAGE_DIR/provider.json" "$provider_file" \
-      || { record_subscription_failure "$group_dir" "provider.commit_failed" "订阅 Provider 提交失败" "$started_at"; return 1; }
-  fi
-  if ! mv -f "$SUB_STAGE_DIR/meta.json" "$meta_file"; then
-    if [ "$response_kind" = "modified" ] && [ -f "$SUB_STAGE_DIR/provider.previous.json" ]; then
-      mv -f "$SUB_STAGE_DIR/provider.previous.json" "$provider_file" 2> /dev/null || true
-    fi
-    record_subscription_failure "$group_dir" "metadata.commit_failed" "订阅元数据提交失败" "$started_at"
-    return 1
-  fi
-
-  append_subscription_history "$group_dir" \
-    "{\"at\":\"$now_text\",\"ok\":true,\"code\":\"$result_code\",\"node_count\":$SUB_NODE_COUNT,\"revision\":$SUB_REVISION,\"duration_seconds\":$duration,\"diagnostics\":$SUB_LAST_DIAGNOSTICS}"
   activate_group_if_needed "$group_id" || true
-  rm -f "$SUB_RUNTIME_DIR/$group_id.cancel"
-  clear_subscription_progress "$group_id"
-  log "INFO" "订阅更新完成: $group_id，节点: $SUB_NODE_COUNT"
-  release_catalog_lock
-  if [ "$response_kind" = "modified" ]; then
-    fallback_missing_selected_node "$group_id"
-    catalog_provider_has_nodes "$provider_file" && has_nodes=1
-    if [ "$had_nodes" != "$has_nodes" ]; then
-      reload_catalog_structure_if_running
-    fi
+  fallback_missing_selected_node "$group_id"
+  if printf "%s" "$result" | grep -q '"structure_changed"[[:space:]]*:[[:space:]]*true'; then
+    reload_catalog_structure_if_running
   fi
+  node_count="$(meta_get_string "$meta_file" "node_count" "0")"
+  log "INFO" "订阅更新完成: $group_id，节点数: $node_count"
   return 0
 }
 

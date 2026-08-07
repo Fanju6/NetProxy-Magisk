@@ -19,6 +19,7 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/sharelink"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 )
 
 var (
@@ -90,6 +91,8 @@ func run(ctx context.Context, args []string) error {
 		return runProvider(ctx, args[1:])
 	case "catalog":
 		return runCatalog(ctx, args[1:])
+	case "subscription":
+		return runSubscription(ctx, args[1:])
 	case "service":
 		return runService(ctx, args[1:])
 	case "version":
@@ -102,6 +105,51 @@ func run(ctx context.Context, args []string) error {
 	default:
 		return fmt.Errorf("未知命令 %q", args[0])
 	}
+}
+
+func runSubscription(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("缺少订阅操作: update")
+	}
+	if args[0] != "update" {
+		return fmt.Errorf("未知订阅操作 %q", args[0])
+	}
+	flags := newFlagSet("subscription update")
+	root := flags.String("root", "", "Catalog 根目录")
+	groupID := flags.String("group", "", "订阅分组 ID")
+	progressDir := flags.String("progress-dir", "", "订阅进度目录")
+	proxyURL := flags.String("proxy", "", "通过 HTTP 代理下载")
+	fallbackDirect := flags.Bool("fallback-direct", false, "代理失败后回退直连")
+	now := flags.Int64("now", time.Now().Unix(), "当前 Unix 时间")
+	if err := flags.Parse(args[1:]); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*root) == "" || strings.TrimSpace(*groupID) == "" {
+		return errors.New("subscription update 需要 --root 和 --group")
+	}
+	updated, err := subscription.Update(ctx, subscription.UpdateOptions{
+		Root:           *root,
+		GroupID:        *groupID,
+		ProgressDir:    *progressDir,
+		ProxyURL:       *proxyURL,
+		FallbackDirect: *fallbackDirect,
+		Now:            time.Unix(*now, 0),
+	})
+	if err != nil {
+		var structured *subscription.Error
+		if errors.As(err, &structured) {
+			return &resultError{Code: structured.Code, Message: structured.Message, Data: structured.Data}
+		}
+		return err
+	}
+	code := "subscription.updated"
+	message := "订阅更新完成"
+	if updated.NotModified {
+		code = "subscription.not_modified"
+		message = "订阅未发生变化"
+	}
+	writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: code, Message: message, Data: updated})
+	return nil
 }
 
 func runCatalog(ctx context.Context, args []string) error {
@@ -685,6 +733,7 @@ func showUsage() {
   %s provider export --input <provider.json> --tag <标签>
   %s provider validate --input <provider.json>
   %s catalog <groups|snapshot|runtime> --root <catalog>
+  %s subscription update --root <catalog> --group <group-id>
   %s service <ready|status|snapshot|groups|selected|mode|select|urltest|close-all>
   %s version
 
@@ -703,5 +752,5 @@ func showUsage() {
   --last-modified <值>          发送 If-Modified-Since
   --proxy <URL>                 通过 HTTP 代理下载
   --timeout <时长>              下载超时，默认 60s
-`, executable, executable, executable, executable, executable, executable, executable, executable, executable, executable, executable, executable)
+`, executable, executable, executable, executable, executable, executable, executable, executable, executable, executable, executable, executable, executable)
 }

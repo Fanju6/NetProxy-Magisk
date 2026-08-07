@@ -80,6 +80,52 @@ if [ "${1:-}" = "convert" ] && [ "${2:-}" = "subscription" ]; then
   exit 0
 fi
 
+if [ "$1" = "subscription" ] && [ "$2" = "update" ]; then
+  shift 2
+  root=""
+  group=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --root) root="$2"; shift 2 ;;
+      --group) group="$2"; shift 2 ;;
+      --proxy) shift 2 ;;
+      --progress-dir | --now) shift 2 ;;
+      --fallback-direct) shift ;;
+      *) shift ;;
+    esac
+  done
+  group_dir="$root/$group"
+  meta="$group_dir/meta.json"
+  provider="$group_dir/provider.json"
+  url="$(sed -n 's/.*"url":[[:space:]]*"\([^"]*\)".*/\1/p' "$meta")"
+  if printf "%s" "$url" | grep -q '/fail$'; then
+    sed -i 's/"last_error":[[:space:]]*"[^"]*"/"last_error": "订阅下载、转换或校验失败"/' "$meta"
+    exit 1
+  fi
+  if printf "%s" "$url" | grep -q '/304$'; then
+    printf '%s\n' '{"at":"fixture","ok":true,"code":"subscription.not_modified"}' >> "$group_dir/history.jsonl"
+    printf '%s\n' '{"schema":1,"ok":true,"code":"subscription.not_modified","message":"订阅未发生变化","data":{"not_modified":true,"node_count":1,"revision":2}}'
+    exit 0
+  fi
+  cp "$MOCK_PROVIDER" "$provider"
+  revision="$(sed -n 's/.*"revision":[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$meta")"
+  [ -n "$revision" ] || revision=0
+  revision=$((revision + 1))
+  sed -i \
+    -e "s/\"node_count\":[[:space:]]*[0-9][0-9]*/\"node_count\": 1/" \
+    -e "s/\"revision\":[[:space:]]*[0-9][0-9]*/\"revision\": $revision/" \
+    -e 's/"update_interval":[[:space:]]*[0-9][0-9]*/"update_interval": 1800/' \
+    -e 's/"interval_source":[[:space:]]*"[^"]*"/"interval_source": "profile"/' \
+    -e 's/"usage":[[:space:]]*null/"usage": {"upload": 10, "download": 20, "total": 100, "expire": 4102444800}/' \
+    -e 's/"last_error":[[:space:]]*"[^"]*"/"last_error": ""/' \
+    "$meta"
+  printf '%s\n' "{\"at\":\"fixture\",\"ok\":true,\"code\":\"subscription.updated\",\"node_count\":1,\"revision\":$revision}" >> "$group_dir/history.jsonl"
+  structure_changed=false
+  [ "$revision" -eq 1 ] && structure_changed=true
+  printf '%s\n' "{\"schema\":1,\"ok\":true,\"code\":\"subscription.updated\",\"message\":\"订阅更新完成\",\"data\":{\"group_id\":\"$group\",\"node_count\":1,\"revision\":$revision,\"structure_changed\":$structure_changed}}"
+  exit 0
+fi
+
 exec "$REAL_NETPROXY_NATIVE" "$@"
 EOF
 chmod +x "$NETPROXY_NATIVE_BIN"
