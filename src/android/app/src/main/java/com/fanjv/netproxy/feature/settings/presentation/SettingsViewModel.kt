@@ -243,10 +243,6 @@ internal class SettingsViewModel(
                     proxySettings = settings.copy(sharedExcludeMacAddresses = value)
                 )
 
-                "EBPF_SHARED_TC_PRIORITY" -> current.copy(
-                    proxySettings = settings.copy(sharedTcPriority = value)
-                )
-
                 "EBPF_TCP_MAP_CAPACITY" -> current.copy(
                     proxySettings = settings.copy(tcpMapCapacity = value)
                 )
@@ -307,7 +303,6 @@ internal class SettingsViewModel(
             sharedExcludeSourceCidrs = value("EBPF_SHARED_EXCLUDE_SOURCE_CIDRS", ""),
             sharedIncludeMacAddresses = value("EBPF_SHARED_INCLUDE_MAC_ADDRESSES", ""),
             sharedExcludeMacAddresses = value("EBPF_SHARED_EXCLUDE_MAC_ADDRESSES", ""),
-            sharedTcPriority = value("EBPF_SHARED_TC_PRIORITY", "1"),
             tcpMapCapacity = value("EBPF_TCP_MAP_CAPACITY", "65536"),
             udpMapCapacity = value("EBPF_UDP_MAP_CAPACITY", "65536"),
             socketMapCapacity = value("EBPF_SOCKET_MAP_CAPACITY", "65536"),

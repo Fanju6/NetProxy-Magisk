@@ -17,7 +17,6 @@ data class ProxySettings(
     val sharedExcludeSourceCidrs: String = "",
     val sharedIncludeMacAddresses: String = "",
     val sharedExcludeMacAddresses: String = "",
-    val sharedTcPriority: String = "1",
     val tcpMapCapacity: String = "65536",
     val udpMapCapacity: String = "65536",
     val socketMapCapacity: String = "65536",

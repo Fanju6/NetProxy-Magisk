@@ -337,20 +337,6 @@ internal fun ProxySettingsScreen(
                                 }
                             )
                         },
-                        CardItem("tc_priority") {
-                            val label = stringResource(R.string.ebpf_shared_tc_priority)
-                            ArrowPreference(
-                                title = label,
-                                summary = settings.sharedTcPriority,
-                                onClick = {
-                                    editValue(
-                                        "EBPF_SHARED_TC_PRIORITY",
-                                        label,
-                                        settings.sharedTcPriority
-                                    )
-                                }
-                            )
-                        }
                     )
                 )
 

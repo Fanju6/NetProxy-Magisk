@@ -105,7 +105,7 @@ write_runtime_ebpf() {
   local shared_enabled shared_interfaces shared_interfaces_json shared_json_enabled
   local shared_include_cidrs shared_exclude_cidrs shared_include_json shared_exclude_json
   local shared_include_macs shared_exclude_macs shared_include_macs_json shared_exclude_macs_json
-  local shared_tc_priority tcp_capacity udp_capacity socket_capacity shared_capacity redirect_json
+  local tcp_capacity udp_capacity socket_capacity shared_capacity redirect_json
 
   require_file "${EBPF_CONF:-}" "eBPF 配置文件不存在: ${EBPF_CONF:-未定义}"
 
@@ -128,7 +128,6 @@ write_runtime_ebpf() {
   EBPF_SHARED_EXCLUDE_SOURCE_CIDRS=""
   EBPF_SHARED_INCLUDE_MAC_ADDRESSES=""
   EBPF_SHARED_EXCLUDE_MAC_ADDRESSES=""
-  EBPF_SHARED_TC_PRIORITY=1
   EBPF_TCP_MAP_CAPACITY=65536
   EBPF_UDP_MAP_CAPACITY=65536
   EBPF_SOCKET_MAP_CAPACITY=65536
@@ -219,7 +218,6 @@ write_runtime_ebpf() {
   shared_exclude_cidrs="${EBPF_SHARED_EXCLUDE_SOURCE_CIDRS:-}"
   shared_include_macs="${EBPF_SHARED_INCLUDE_MAC_ADDRESSES:-}"
   shared_exclude_macs="${EBPF_SHARED_EXCLUDE_MAC_ADDRESSES:-}"
-  shared_tc_priority="${EBPF_SHARED_TC_PRIORITY:-1}"
   validate_mac_address_list "$shared_include_macs" \
     || die "EBPF_SHARED_INCLUDE_MAC_ADDRESSES 包含无效 MAC 地址"
   validate_mac_address_list "$shared_exclude_macs" \
@@ -229,11 +227,6 @@ write_runtime_ebpf() {
   shared_exclude_json="$(word_list_to_json "$shared_exclude_cidrs")"
   shared_include_macs_json="$(word_list_to_json "$shared_include_macs")"
   shared_exclude_macs_json="$(word_list_to_json "$shared_exclude_macs")"
-  case "$shared_tc_priority" in
-    "" | *[!0-9]*) die "EBPF_SHARED_TC_PRIORITY 必须是 1 到 65535 之间的整数" ;;
-  esac
-  [ "$shared_tc_priority" -ge 1 ] && [ "$shared_tc_priority" -le 65535 ] \
-    || die "EBPF_SHARED_TC_PRIORITY 必须是 1 到 65535 之间的整数"
   case "$shared_enabled" in
     0) shared_json_enabled=false ;;
     1)
@@ -292,7 +285,7 @@ ${cgroup_fields}      "redirect_address": [$redirect_json],
         "exclude_source_cidr": [$shared_exclude_json],
         "include_mac_address": [$shared_include_macs_json],
         "exclude_mac_address": [$shared_exclude_macs_json],
-        "tc_priority": $shared_tc_priority,
+        "tc_priority": 1,
         "map_capacity": $shared_capacity
       }
     }
