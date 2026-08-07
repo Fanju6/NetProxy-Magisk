@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 )
 
 var validGroupID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
@@ -25,24 +26,7 @@ func isGroupDir(entry os.DirEntry) bool {
 		!strings.Contains(name, "..")
 }
 
-type Metadata struct {
-	ID                string          `json:"id"`
-	Name              string          `json:"name"`
-	Type              string          `json:"type"`
-	AutoUpdate        bool            `json:"auto_update"`
-	UpdateInterval    int64           `json:"update_interval"`
-	UpdateViaProxy    string          `json:"update_via_proxy"`
-	Usage             json.RawMessage `json:"usage"`
-	Revision          int64           `json:"revision"`
-	ProfileTitle      string          `json:"profile_title"`
-	ProfileWebPageURL string          `json:"profile_web_page_url"`
-	LastAttemptAt     string          `json:"last_attempt_at"`
-	LastSuccessAt     string          `json:"last_success_at"`
-	NextUpdateAt      string          `json:"next_update_at"`
-	NextUpdateEpoch   int64           `json:"next_update_epoch"`
-	LastError         string          `json:"last_error"`
-	UpdatedAt         string          `json:"updated_at"`
-}
+type Metadata = subscription.Metadata
 
 type GroupSummary struct {
 	ID                string          `json:"id"`
@@ -326,30 +310,7 @@ func loadGroups(ctx context.Context, root string, includeEmpty bool) ([]*loadedG
 }
 
 func loadMetadata(path, fallbackID string) (Metadata, error) {
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return Metadata{}, err
-	}
-	var metadata Metadata
-	if err := json.Unmarshal(content, &metadata); err != nil {
-		return Metadata{}, err
-	}
-	if metadata.ID == "" {
-		metadata.ID = fallbackID
-	}
-	if metadata.Name == "" {
-		metadata.Name = metadata.ID
-	}
-	if metadata.Type == "" {
-		metadata.Type = "local"
-	}
-	if metadata.UpdateInterval == 0 {
-		metadata.UpdateInterval = 86400
-	}
-	if metadata.Usage == nil {
-		metadata.Usage = json.RawMessage("null")
-	}
-	return metadata, nil
+	return subscription.LoadMetadata(path, fallbackID)
 }
 
 func summaryFor(group *loadedGroup, activeGroup, progressDir string) GroupSummary {

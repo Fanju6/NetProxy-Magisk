@@ -100,50 +100,18 @@ func LoadMetadata(path, fallbackID string) (Metadata, error) {
 	if err := json.Unmarshal(content, &metadata); err != nil {
 		return Metadata{}, err
 	}
-	if metadata.Schema == 0 {
-		metadata.Schema = 1
-	}
 	if metadata.ID == "" {
 		metadata.ID = fallbackID
 	}
 	if metadata.Name == "" {
 		metadata.Name = metadata.ID
 	}
-	if metadata.Type == "" {
-		metadata.Type = "local"
-	}
-	if metadata.UpdateInterval <= 0 {
-		metadata.UpdateInterval = int64(defaultInterval / time.Second)
-	}
-	if metadata.Timeout <= 0 {
-		metadata.Timeout = 60
-	}
-	if metadata.CustomHeaders == nil {
-		metadata.CustomHeaders = map[string]string{}
-	}
-	if len(metadata.Usage) == 0 {
-		metadata.Usage = json.RawMessage("null")
-	}
-	if metadata.LastDiagnostics == nil {
-		metadata.LastDiagnostics = []provider.Diagnostic{}
-	}
-	return metadata, nil
+	return normalizeMetadata(metadata), nil
 }
 
 // SaveMetadataAtomic 以 0600 权限原子保存 Catalog 元数据。
 func SaveMetadataAtomic(path string, metadata Metadata) error {
-	if metadata.Schema == 0 {
-		metadata.Schema = 1
-	}
-	if metadata.CustomHeaders == nil {
-		metadata.CustomHeaders = map[string]string{}
-	}
-	if len(metadata.Usage) == 0 {
-		metadata.Usage = json.RawMessage("null")
-	}
-	if metadata.LastDiagnostics == nil {
-		metadata.LastDiagnostics = []provider.Diagnostic{}
-	}
+	metadata = normalizeMetadata(metadata)
 	content, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
 		return err

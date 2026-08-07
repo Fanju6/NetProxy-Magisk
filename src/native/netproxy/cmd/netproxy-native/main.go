@@ -158,6 +158,10 @@ func runCatalog(ctx context.Context, args []string) error {
 	}
 	action := args[0]
 	flags := newFlagSet("catalog " + action)
+	input := flags.String("input", "", "元数据文件路径")
+	stateFile := flags.String("state-file", "", "Shell 元数据临时文件")
+	field := flags.String("field", "", "元数据字段名")
+	value := flags.String("value", "", "元数据字段值")
 	root := flags.String("root", "", "Catalog 根目录")
 	active := flags.String("active", "", "活动分组 ID")
 	progressDir := flags.String("progress-dir", "", "订阅更新进度目录")
@@ -173,6 +177,43 @@ func runCatalog(ctx context.Context, args []string) error {
 	format := flags.String("format", "json", "输出格式")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
+	}
+	if strings.HasPrefix(action, "meta-") {
+		return runCatalogMetadata(action, *input, *stateFile, *field, *format)
+	}
+	if action == "duration" {
+		seconds, err := subscription.DurationToSeconds(*value)
+		if err != nil {
+			return err
+		}
+		if *format == "raw" {
+			fmt.Println(seconds)
+			return nil
+		}
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "catalog.duration", Message: "更新周期已解析", Data: map[string]int64{"seconds": seconds}})
+		return nil
+	}
+	if action == "time" {
+		if *format == "raw" {
+			fmt.Println(subscription.FormatEpochUTC(*now))
+			return nil
+		}
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "catalog.time", Message: "时间已格式化", Data: map[string]string{"value": subscription.FormatEpochUTC(*now)}})
+		return nil
+	}
+	if action == "schedule-next" {
+		interval, err := subscription.DurationToSeconds(*value)
+		if err != nil {
+			return err
+		}
+		metadata := subscription.Metadata{UpdateInterval: interval}
+		subscription.ScheduleAt(&metadata, time.Unix(*now, 0))
+		if *format == "tsv" {
+			fmt.Printf("interval\t%d\nnext_update_epoch\t%d\nnext_update_at\t%s\n", metadata.UpdateInterval, metadata.NextUpdateEpoch, metadata.NextUpdateAt)
+			return nil
+		}
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "catalog.schedule_next", Message: "下一次更新时间已计算", Data: map[string]any{"interval": metadata.UpdateInterval, "next_update_epoch": metadata.NextUpdateEpoch, "next_update_at": metadata.NextUpdateAt}})
+		return nil
 	}
 	if *root == "" {
 		return errors.New("Catalog 操作需要 --root")
@@ -272,6 +313,68 @@ func runCatalog(ctx context.Context, args []string) error {
 		return nil
 	default:
 		return fmt.Errorf("未知 Catalog 操作 %q", action)
+	}
+}
+
+func runCatalogMetadata(action, input, stateFile, field, format string) error {
+	if input == "" {
+		return errors.New("Catalog 元数据操作需要 --input")
+	}
+	fallbackID := filepath.Base(filepath.Dir(input))
+	switch action {
+	case "meta-get":
+		metadata, err := subscription.LoadMetadata(input, fallbackID)
+		if err != nil {
+			return err
+		}
+		switch format {
+		case "tsv":
+			state, err := subscription.EncodeMetadataState(metadata)
+			if err != nil {
+				return err
+			}
+			fmt.Print(state)
+		case "raw":
+			if field == "" {
+				return errors.New("Catalog meta-get 需要 --field")
+			}
+			raw, ok := subscription.MetadataRawField(metadata, field)
+			if !ok {
+				return fmt.Errorf("未知元数据字段: %s", field)
+			}
+			fmt.Println(string(raw))
+		case "string":
+			if field == "" {
+				return errors.New("Catalog meta-get 需要 --field")
+			}
+			text, ok := subscription.MetadataStringField(metadata, field)
+			if !ok {
+				return fmt.Errorf("未知字符串元数据字段: %s", field)
+			}
+			fmt.Println(text)
+		default:
+			return fmt.Errorf("Catalog meta-get 不支持输出格式 %q", format)
+		}
+		return nil
+	case "meta-write":
+		if stateFile == "" {
+			return errors.New("Catalog meta-write 需要 --state-file")
+		}
+		content, err := os.ReadFile(stateFile)
+		if err != nil {
+			return err
+		}
+		metadata, err := subscription.DecodeMetadataState(string(content))
+		if err != nil {
+			return err
+		}
+		if err := subscription.SaveMetadataAtomic(input, metadata); err != nil {
+			return err
+		}
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "catalog.metadata_written", Message: "Catalog 元数据已保存", Data: map[string]string{"path": input}})
+		return nil
+	default:
+		return fmt.Errorf("未知 Catalog 元数据操作 %q", action)
 	}
 }
 
