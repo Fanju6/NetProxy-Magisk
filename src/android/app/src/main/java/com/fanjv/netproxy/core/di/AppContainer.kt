@@ -21,7 +21,7 @@ internal class AppContainer(context: Context) {
     private val commandFileStore = CommandFileStore(appContext)
 
     val serviceRepository = ServiceRepository(netProxyCtlClient)
-    val nodeRepository = NodeRepository(netProxyCtlClient)
+    val nodeRepository = NodeRepository(netProxyCtlClient, commandFileStore)
     val subscriptionRepository = SubscriptionRepository(netProxyCtlClient, commandFileStore)
     val appPolicyRepository = AppPolicyRepository(netProxyCtlClient)
     val configRepository = ConfigRepository(netProxyCtlClient, commandFileStore)

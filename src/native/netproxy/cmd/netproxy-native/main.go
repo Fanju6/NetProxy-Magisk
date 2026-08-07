@@ -433,7 +433,7 @@ func runConvertSubscription(ctx context.Context, args []string) error {
 
 func runProvider(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("缺少 Provider 操作: append、remove、inspect、export 或 validate")
+		return errors.New("缺少 Provider 操作: append、remove、inspect、get、export 或 validate")
 	}
 	switch args[0] {
 	case "append":
@@ -513,6 +513,31 @@ func runProvider(ctx context.Context, args []string) error {
 			return err
 		}
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "provider.inspected", Message: "Provider 摘要", Data: provider.Inspect(document)})
+		return nil
+
+	case "get":
+		flags := newFlagSet("provider get")
+		input := flags.String("input", "", "provider.json")
+		tag := flags.String("tag", "", "节点标签")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *input == "" || *tag == "" {
+			return errors.New("provider get 需要 --input 和 --tag")
+		}
+		document, err := provider.Load(ctx, *input)
+		if err != nil {
+			return err
+		}
+		selected, found := provider.Select(document, *tag)
+		if !found {
+			return fmt.Errorf("未找到节点标签 %q", *tag)
+		}
+		content, err := provider.Marshal(ctx, selected)
+		if err != nil {
+			return err
+		}
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "provider.loaded", Message: "节点配置已读取", Data: json.RawMessage(content)})
 		return nil
 
 	case "export":

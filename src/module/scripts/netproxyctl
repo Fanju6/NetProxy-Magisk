@@ -539,6 +539,21 @@ command_node() {
       sh "$SUBWORKER_SCRIPT" wake > /dev/null 2>&1 || true
       emit_write_success "node.imported" "文件节点已导入" "{\"group_id\":\"$(json_escape "$group_id")\"}"
       ;;
+    get)
+      [ -n "$target" ] || emit_error "usage.invalid" "用法: netproxyctl node get <group/tag>" 2
+      group_id="${target%%/*}"
+      tag="${target#*/}"
+      [ "$group_id" != "$target" ] && [ -n "$tag" ] \
+        || emit_error "node.ref_invalid" "节点引用格式应为 <group-id>/<tag>"
+      provider_file="$(catalog_provider_path "$group_id")" \
+        || emit_error "catalog.not_found" "节点分组不存在"
+      [ -f "$provider_file" ] || emit_error "catalog.not_found" "节点分组不存在"
+      result="$("$NETPROXY_NATIVE_BIN" provider get --input "$provider_file" --tag "$tag")" \
+        || emit_error "node.get_failed" "节点配置读取失败"
+      data="$(extract_result_data "$result")" \
+        || emit_error "node.get_failed" "节点配置结果格式无效"
+      emit_success "node.loaded" "节点配置已读取" "$data"
+      ;;
     export)
       [ -n "$target" ] || emit_error "usage.invalid" "用法: netproxyctl node export <group/tag>" 2
       group_id="${target%%/*}"
@@ -576,7 +591,7 @@ command_node() {
       emit_write_success "node.selected" "节点选择已更新" "{}"
       ;;
     delay) command_node_delay "$target" "$group" ;;
-    *) emit_error "usage.invalid" "用法: netproxyctl node list|snapshot|current|use|add|import|export|edit|remove|delay" 2 ;;
+    *) emit_error "usage.invalid" "用法: netproxyctl node list|snapshot|current|use|add|import|get|export|edit|remove|delay" 2 ;;
   esac
 }
 
@@ -1375,7 +1390,7 @@ NetProxy 管理命令
 用法:
   netproxyctl [--json] service status|start|stop|restart|reload
   netproxyctl [--json] catalog list|show <分组>
-  netproxyctl [--json] node list|current|show|add|import|export|edit|remove|use|delay [节点|auto [分组]|all]
+  netproxyctl [--json] node list|current|show|add|import|get|export|edit|remove|use|delay [节点|auto [分组]|all]
   netproxyctl [--json] sub list|show|add|edit|update|update-all|activate|remove|history|cancel
   netproxyctl [--json] mode [rule|global|direct|AllowAds]
   netproxyctl [--json] app list|mode|users|add|remove|enable|disable

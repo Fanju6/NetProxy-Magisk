@@ -84,10 +84,24 @@ run_json "$result"
 printf '%s' "$result" | grep -q '"tag":"CLI"'
 printf '%s' "$result" | grep -q '"protocol":"socks"'
 
+result="$(sh "$MODULE/scripts/netproxyctl" --json node get 'default/CLI')"
+run_json "$result"
+printf '%s' "$result" | grep -q '"code":"node.loaded"'
+printf '%s' "$result" | grep -q '"outbounds":\['
+
 result="$(sh "$MODULE/scripts/netproxyctl" --json node export 'default/CLI')"
 run_json "$result"
 printf '%s' "$result" | grep -q '"code":"node.exported"'
 printf '%s' "$result" | grep -q '"link":"socks://example.com:1080#CLI"'
+
+printf '%s\n' '{"outbounds":[{"type":"socks","tag":"CLI-JSON","server":"example.org","server_port":1081}]}' \
+  > "$TMP_ROOT/node-edit.json"
+result="$(sh "$MODULE/scripts/netproxyctl" --json node edit 'default/CLI' "$TMP_ROOT/node-edit.json")"
+run_json "$result"
+printf '%s' "$result" | grep -q '"code":"node.edited"'
+result="$(sh "$MODULE/scripts/netproxyctl" --json node export 'default/CLI-JSON')"
+run_json "$result"
+printf '%s' "$result" | grep -q '"link":"socks://example.org:1081#CLI-JSON"'
 
 result="$(sh "$MODULE/scripts/netproxyctl" --json node snapshot)"
 run_json "$result"
@@ -96,7 +110,7 @@ printf '%s' "$result" | grep -q '"groups":\['
 printf '%s' "$result" | grep -q '"selection":{"active_group_id":"default"'
 printf '%s' "$result" | grep -q '"selected":"Auto/default"'
 
-result="$(sh "$MODULE/scripts/netproxyctl" --json node remove 'default/CLI')"
+result="$(sh "$MODULE/scripts/netproxyctl" --json node remove 'default/CLI-JSON')"
 run_json "$result"
 
 result="$(sh "$MODULE/scripts/netproxyctl" --json sub list)"

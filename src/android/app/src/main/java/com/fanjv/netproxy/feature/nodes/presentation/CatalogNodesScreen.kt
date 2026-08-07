@@ -69,6 +69,8 @@ import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import com.fanjv.netproxy.feature.catalog.model.CatalogNode
 import com.fanjv.netproxy.feature.catalog.model.CatalogNodeGroup
+import com.fanjv.netproxy.navigation.LocalNavigator
+import com.fanjv.netproxy.navigation.Route.NodeEdit
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
@@ -109,6 +111,7 @@ internal fun CatalogNodesScreen(
     viewModel: CatalogNodesViewModel = netProxyViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val navigator = LocalNavigator.current
     val context = LocalContext.current
     val scrollBehavior = MiuixScrollBehavior()
     val backdrop = rememberBlurBackdrop()
@@ -118,7 +121,6 @@ internal fun CatalogNodesScreen(
     var showDisplaySettings by remember { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
     var nodeLink by remember { mutableStateOf("") }
-    var editedNodeLink by remember { mutableStateOf("") }
     var actionNode by remember { mutableStateOf<Pair<CatalogNodeGroup, CatalogNode>?>(null) }
     val displayPreferences = remember(context) {
         context.getSharedPreferences("node_display", android.content.Context.MODE_PRIVATE)
@@ -181,20 +183,9 @@ internal fun CatalogNodesScreen(
         viewModel.nodeLinkCopied()
     }
 
-    LaunchedEffect(state.editingNodeRef, state.editingNodeLink) {
-        if (state.editingNodeRef.isNotBlank()) {
-            editedNodeLink = state.editingNodeLink
-        }
-    }
-
     val selectedIndex = state.groups.indexOfFirst { it.group.id == state.selectedGroupId }
         .coerceAtLeast(0)
     val selectedGroup = state.groups.getOrNull(selectedIndex)
-    val editingGroupId = state.editingNodeRef.substringBefore('/', missingDelimiterValue = "")
-    val editingSubscription = state.groups.any {
-        it.group.id == editingGroupId && it.group.type == "subscription"
-    }
-
     Scaffold(
         snackbarHost = {
             AppSnackbarHost(snackbarHostState, Modifier.padding(bottom = bottomPadding))
@@ -467,47 +458,6 @@ internal fun CatalogNodesScreen(
         }
     }
 
-    OverlayDialog(
-        show = state.editingNodeRef.isNotBlank(),
-        title = "编辑节点",
-        onDismissRequest = viewModel::dismissNodeEditor
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            TextField(
-                value = editedNodeLink,
-                onValueChange = { editedNodeLink = it },
-                label = "节点链接",
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 3,
-                maxLines = 8
-            )
-            Text(
-                text = if (editingSubscription) {
-                    "修改只影响当前订阅节点，下次更新订阅时会被远端内容覆盖"
-                } else {
-                    "修改后将更新本地配置中的节点"
-                },
-                color = colorScheme.onSurfaceVariantSummary,
-                fontSize = 13.sp
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                TextButton(
-                    text = "取消",
-                    modifier = Modifier.weight(1f),
-                    enabled = state.operation != "edit",
-                    onClick = viewModel::dismissNodeEditor
-                )
-                TextButton(
-                    text = "保存",
-                    modifier = Modifier.weight(1f),
-                    enabled = editedNodeLink.isNotBlank() && state.operation != "edit",
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
-                    onClick = { viewModel.saveEditedNode(editedNodeLink) }
-                )
-            }
-        }
-    }
-
     val selectedAction = actionNode
     OverlayBottomSheet(
         show = selectedAction != null,
@@ -527,14 +477,14 @@ internal fun CatalogNodesScreen(
                         actionNode = null
                     }
                 )
-                BasicComponent(
-                    title = "编辑节点",
-                    startAction = { SheetIcon(Icons.Rounded.Edit) },
-                    onClick = {
-                        viewModel.editNode(group.group.id, node.tag)
-                        actionNode = null
-                    }
-                )
+                    BasicComponent(
+                        title = "编辑节点",
+                        startAction = { SheetIcon(Icons.Rounded.Edit) },
+                        onClick = {
+                            navigator.push(NodeEdit("${group.group.id}/${node.tag}"))
+                            actionNode = null
+                        }
+                    )
                 BasicComponent(
                     title = "导出节点",
                     startAction = { SheetIcon(Icons.Rounded.Share) },

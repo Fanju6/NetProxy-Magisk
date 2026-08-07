@@ -25,8 +25,6 @@ internal data class CatalogNodesUiState(
     val error: String = "",
     val notice: String = "",
     val noticeId: Long = 0,
-    val editingNodeRef: String = "",
-    val editingNodeLink: String = "",
     val exportedNodeLink: String = "",
     val exportedNodeLinkId: Long = 0
 )
@@ -114,39 +112,34 @@ internal class CatalogNodesViewModel(
         "节点已删除"
     }
 
-    fun editNode(groupId: String, tag: String) {
+    suspend fun loadNodeConfigContent(nodeRef: String): String =
+        repository.get(nodeRef)
+
+    fun saveNodeConfigContent(
+        nodeRef: String,
+        content: String,
+        onResult: (Boolean) -> Unit
+    ) {
         if (_state.value.operation.isNotEmpty()) return
-        val nodeRef = "$groupId/$tag"
         viewModelScope.launch {
-            _state.update { it.copy(operation = "export", error = "") }
-            runCatching { repository.export(nodeRef) }
-                .onSuccess { exported ->
+            _state.update { it.copy(operation = "edit", error = "") }
+            runCatching { repository.editJson(nodeRef, content) }
+                .onSuccess {
+                    _state.update { it.copy(operation = "") }
+                    refresh(silent = true)
+                    onResult(true)
+                }
+                .onFailure { error ->
                     _state.update {
                         it.copy(
                             operation = "",
-                            editingNodeRef = nodeRef,
-                            editingNodeLink = exported.link
+                            error = error.userMessage(),
+                            noticeId = it.noticeId + 1
                         )
                     }
+                    onResult(false)
                 }
-                .onFailure(::publishError)
         }
-    }
-
-    fun saveEditedNode(link: String) {
-        val nodeRef = _state.value.editingNodeRef
-        if (nodeRef.isBlank()) return
-        runOperation("edit") {
-            require(link.isNotBlank()) { "节点链接不能为空" }
-            repository.edit(nodeRef, link.trim())
-            _state.update { it.copy(editingNodeRef = "", editingNodeLink = "") }
-            "节点已更新"
-        }
-    }
-
-    fun dismissNodeEditor() {
-        if (_state.value.operation == "edit") return
-        _state.update { it.copy(editingNodeRef = "", editingNodeLink = "") }
     }
 
     fun exportNode(groupId: String, tag: String) {

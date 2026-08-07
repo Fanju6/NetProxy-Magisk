@@ -1,6 +1,7 @@
 package com.fanjv.netproxy.feature.nodes.data
 
 import com.fanjv.netproxy.core.command.NetProxyCtlClient
+import com.fanjv.netproxy.core.command.CommandFileStore
 import com.fanjv.netproxy.feature.catalog.model.CatalogNodesSnapshot
 import com.fanjv.netproxy.feature.catalog.model.NodeDelayResult
 import kotlinx.serialization.Serializable
@@ -17,7 +18,8 @@ internal data class ExportedNodeLink(
 
 /** 节点 Catalog、选择与测速的数据入口。 */
 internal class NodeRepository(
-    private val client: NetProxyCtlClient
+    private val client: NetProxyCtlClient,
+    private val commandFiles: CommandFileStore
 ) {
     suspend fun snapshot(): CatalogNodesSnapshot =
         client.json.decodeFromJsonElement(client.execute("node", "snapshot").data)
@@ -35,6 +37,15 @@ internal class NodeRepository(
 
     suspend fun edit(nodeRef: String, source: String) {
         client.execute("node", "edit", nodeRef, source)
+    }
+
+    suspend fun get(nodeRef: String): String =
+        client.execute("node", "get", nodeRef).data.toString()
+
+    suspend fun editJson(nodeRef: String, content: String) {
+        commandFiles.withTextFile("netproxy-node-", ".json", content) { source ->
+            client.execute("node", "edit", nodeRef, source.absolutePath)
+        }
     }
 
     suspend fun export(nodeRef: String): ExportedNodeLink =

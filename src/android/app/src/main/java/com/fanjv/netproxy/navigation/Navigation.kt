@@ -34,6 +34,10 @@ sealed interface Route : NavKey, Parcelable {
 
     @Parcelize
     @Serializable
+    data class NodeEdit(val nodeRef: String) : Route
+
+    @Parcelize
+    @Serializable
     data object ProxySettings : Route
 
     @Parcelize

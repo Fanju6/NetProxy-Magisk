@@ -50,6 +50,8 @@ import com.fanjv.netproxy.feature.apps.presentation.AppsScreen
 import com.fanjv.netproxy.feature.dashboard.presentation.CatalogDashboardScreen
 import com.fanjv.netproxy.feature.logs.presentation.LogsScreen
 import com.fanjv.netproxy.feature.nodes.presentation.CatalogNodesScreen
+import com.fanjv.netproxy.feature.nodes.presentation.CatalogNodesViewModel
+import com.fanjv.netproxy.feature.nodes.presentation.SingBoxNodeEditScreen
 import com.fanjv.netproxy.feature.settings.presentation.ProxySettingsScreen
 import com.fanjv.netproxy.feature.settings.presentation.SettingsScreen
 import com.fanjv.netproxy.feature.settings.singbox.SingBoxJsonEditScreen
@@ -69,6 +71,7 @@ import com.fanjv.netproxy.navigation.Route.JsonEdit
 import com.fanjv.netproxy.navigation.Route.KernelSettings
 import com.fanjv.netproxy.navigation.Route.Logs
 import com.fanjv.netproxy.navigation.Route.Main
+import com.fanjv.netproxy.navigation.Route.NodeEdit
 import com.fanjv.netproxy.navigation.Route.ProxySettings
 import com.fanjv.netproxy.navigation.Route.SubscriptionDetails
 import com.fanjv.netproxy.navigation.Route.SubscriptionEdit
@@ -205,6 +208,7 @@ private fun AlphaExpiredScreen(onExit: () -> Unit) {
 @Composable
 internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
     val navigator = rememberNavigator(Main)
+    val catalogNodesViewModel: CatalogNodesViewModel = netProxyViewModel()
 
     CompositionLocalProvider(
         LocalNavigator provides navigator
@@ -218,7 +222,7 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
                 ),
                 onBack = { navigator.pop() },
                 entryProvider = entryProvider {
-                    entry<Main> { MainScreen(themeViewModel) }
+                    entry<Main> { MainScreen(themeViewModel, catalogNodesViewModel) }
                     entry<Apps> {
                         AppsScreen(
                             onBack = { navigator.pop() }
@@ -233,6 +237,13 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
                     entry<SubscriptionEdit> {
                         SubscriptionEditorScreen(
                             id = it.id,
+                            onBack = { navigator.pop() }
+                        )
+                    }
+                    entry<NodeEdit> {
+                        SingBoxNodeEditScreen(
+                            viewModel = catalogNodesViewModel,
+                            nodeRef = it.nodeRef,
                             onBack = { navigator.pop() }
                         )
                     }
@@ -268,7 +279,10 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
 }
 
 @Composable
-internal fun MainScreen(themeViewModel: ThemeViewModel) {
+internal fun MainScreen(
+    themeViewModel: ThemeViewModel,
+    catalogNodesViewModel: CatalogNodesViewModel
+) {
     val themeState by themeViewModel.state.collectAsStateWithLifecycle()
     val destinations = AppDestination.entries
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { destinations.size })
@@ -351,7 +365,8 @@ internal fun MainScreen(themeViewModel: ThemeViewModel) {
 
                     AppDestination.Nodes -> CatalogNodesScreen(
                         bottomPadding = bottomPadding,
-                        isActive = mainPagerState.selectedPage == pageIndex
+                        isActive = mainPagerState.selectedPage == pageIndex,
+                        viewModel = catalogNodesViewModel
                     )
 
                     AppDestination.Subscriptions -> SubscriptionsScreen(
