@@ -2,55 +2,21 @@
 
 感谢你为 NetProxy 提交改进。本仓库同时包含模块、原生组件、WebUI 和 Android 管理器，请把修改限制在对应目录，并说明是否改变跨组件契约。
 
-开始修改前请先阅读 [AGENTS.md](AGENTS.md)。跨组件事实源、Catalog、Provider、服务状态和 API 契约见 [ARCHITECTURE.md](ARCHITECTURE.md)；Android 内部分层见 [src/android/ARCHITECTURE.md](src/android/ARCHITECTURE.md)。
-
-## 目录边界
-
-```text
-src/module/          Magisk、KernelSU 与 APatch 模块文件
-src/native/netproxy/ 节点、订阅与 Catalog 原生组件
-src/webui/           模块 WebUI
-src/android/         Android 管理器
-```
+开始修改前请先阅读 [AGENTS.md](AGENTS.md)：目录职责、跨组件契约、各组件编码约定、提交与注释要求，以及按改动范围执行的验证命令都在那里，本文件不重复。Android 内部分层见 [src/android/ARCHITECTURE.md](src/android/ARCHITECTURE.md)；源码结构的概览见 [README](README.md) 的「源码结构」。
 
 Android 管理器通过 `netproxyctl` 的 `schema=1` JSON 契约访问模块。修改命令字段、错误码或状态语义时，必须同步检查原生组件、Shell、WebUI 和 Android 调用方。
 
-## 代码约定
+## 提交前
 
+- 按 AGENTS.md 验证章节列出的检查执行，并在 PR 里说明实际跑了哪些。
 - 使用 UTF-8 和仓库规定的换行格式。
-- 不提交订阅地址、节点凭据、签名文件、设备日志或本地开发配置。
-- Shell 参数必须正确引用；JSON 输出只写 stdout，日志写 stderr。
-- Android 页面只负责展示和事件分发，模块命令与 JSON 解析放在数据层。
+- 不提交订阅地址、节点凭据、签名文件、设备日志或本地开发配置。这类内容一旦进入 Git 历史就很难彻底移除。
 - 修复缺陷时优先补充覆盖回归场景的测试。
-- 不恢复 8.0 已废弃的旧节点目录、TPROXY/IPSET 数据面或旧 CLI；兼容和迁移必须由明确需求驱动。
+- 提交信息格式见 AGENTS.md 的「Git 提交约束」。
 
-## 本地检查
+## Android 管理器
 
-根据改动范围运行对应检查：
-
-```bash
-# 原生组件
-(cd src/native/netproxy && go test ./... && go vet ./...)
-
-# Shell/Catalog 契约
-mkdir -p .tmp
-(cd src/native/netproxy && go build -o ../../../.tmp/netproxy-native ./cmd/netproxy-native)
-sh tests/catalog_subscription_test.sh ./.tmp/netproxy-native
-sh tests/netproxyctl_contract_test.sh ./.tmp/netproxy-native
-sh tests/runtime_catalog_test.sh ./.tmp/netproxy-native
-sh tests/service_state_test.sh
-
-# WebUI
-(cd src/webui && npm ci && npm run build)
-
-# Android 管理器
-(cd src/android && ./gradlew testDebugUnitTest lintDebug assembleDebug)
-
-# 用户文档
-(cd docs && npm ci && npm run build)
-```
-
-Android 管理器不会在普通模块 CI 中自动构建。修改 Android 源码的贡献者需要在提交前完成本地检查；涉及 Root、模块命令、快捷设置磁贴、多用户应用、Navigation 动画或 eBPF 时还需真机验证。
+Android 管理器不会在普通模块 CI 中自动构建，本地检查是唯一防线。修改 Android 源码的贡献者需要在提交前完成本地检查；涉及 Root、模块命令、快捷设置磁贴、多用户与应用分身、Navigation 动画或 eBPF 时还需真机验证。
 
 ## Pull Request
 

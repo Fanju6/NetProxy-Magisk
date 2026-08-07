@@ -3,7 +3,7 @@
 # IDE 与本地工具
 .idea/
 *.iml
-CLAUDE.md
+CLAUDE.local.md
 
 # NetProxy WebUI 构建产物
 src/module/webroot/netproxy/

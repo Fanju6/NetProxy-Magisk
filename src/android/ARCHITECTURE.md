@@ -2,7 +2,7 @@
 
 本文说明 NetProxy Android Manager 的代码边界、数据流和扩展原则。它不是模块实现文档；模块侧命令与 JSON 字段以兼容版本的 `netproxyctl` 契约为准。
 
-跨组件事实源、Catalog、Provider、sing-box 运行时与发布边界见仓库根目录的 [ARCHITECTURE.md](../../ARCHITECTURE.md)，自动化编码约束见 [AGENTS.md](../../AGENTS.md)。
+跨组件事实源、Catalog、Provider、sing-box 运行时与发布边界见仓库根目录的 [AGENTS.md](../../AGENTS.md)，自动化编码约束同样在该文件。
 
 ## 设计目标
 
