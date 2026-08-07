@@ -112,35 +112,32 @@ Release 页面提供以下两个版本：
 
 ```sh
 # 查看服务状态
-su -c '/data/adb/modules/netproxy/scripts/cli service status'
+su -c '/data/adb/modules/netproxy/netproxyctl service status'
 
 # 导入单个节点链接
-su -c '/data/adb/modules/netproxy/scripts/cli node add "vless://..."'
+su -c '/data/adb/modules/netproxy/netproxyctl node add "vless://..."'
 
 # 导入节点文本或 Clash YAML
-su -c '/data/adb/modules/netproxy/scripts/cli node import /sdcard/clash.yaml'
+su -c '/data/adb/modules/netproxy/netproxyctl node import /sdcard/clash.yaml'
 
 # 查看并选择节点
-su -c '/data/adb/modules/netproxy/scripts/cli node list'
-su -c '/data/adb/modules/netproxy/scripts/cli node use 节点名称'
+su -c '/data/adb/modules/netproxy/netproxyctl node list'
+su -c '/data/adb/modules/netproxy/netproxyctl node use <分组 ID>/<节点标签>'
 
 # 启动服务
-su -c '/data/adb/modules/netproxy/scripts/cli service start'
+su -c '/data/adb/modules/netproxy/netproxyctl service start'
 
 # 查看或切换出站模式
-su -c '/data/adb/modules/netproxy/scripts/cli mode'
-su -c '/data/adb/modules/netproxy/scripts/cli mode rule'
-
-# 查看 zashboard 地址
-su -c '/data/adb/modules/netproxy/scripts/cli api ui'
+su -c '/data/adb/modules/netproxy/netproxyctl mode'
+su -c '/data/adb/modules/netproxy/netproxyctl mode rule'
 ```
 
-添加订阅：
+添加订阅（名称可省略，留空时自动获取）：
 
 ```sh
-su -c '/data/adb/modules/netproxy/scripts/cli sub add 我的订阅 https://example.com/sub'
-su -c '/data/adb/modules/netproxy/scripts/cli sub update 我的订阅'
-su -c '/data/adb/modules/netproxy/scripts/cli sub auto on'
+su -c '/data/adb/modules/netproxy/netproxyctl sub add https://example.com/sub'
+su -c '/data/adb/modules/netproxy/netproxyctl sub list'
+su -c '/data/adb/modules/netproxy/netproxyctl sub update <分组 ID>'
 ```
 
 ## 节点配置格式
@@ -169,17 +166,17 @@ su -c '/data/adb/modules/netproxy/scripts/cli sub auto on'
 }
 ```
 
-将节点文件放在：
+将节点文件导入 `default` 分组：
 
-```text
-/data/adb/modules/netproxy/config/singbox/outbounds/default/fr-socks.json
+```sh
+su -c '/data/adb/modules/netproxy/netproxyctl node import /sdcard/fr-socks.json'
 ```
 
 然后执行：
 
 ```sh
-su -c '/data/adb/modules/netproxy/scripts/cli node list'
-su -c '/data/adb/modules/netproxy/scripts/cli node use fr-socks'
+su -c '/data/adb/modules/netproxy/netproxyctl node list'
+su -c '/data/adb/modules/netproxy/netproxyctl node use default/fr-socks'
 ```
 
 注意事项：
@@ -187,26 +184,28 @@ su -c '/data/adb/modules/netproxy/scripts/cli node use fr-socks'
 - sing-box 出站协议字段是 `type`，不是 Xray 配置中的 `protocol`。
 - 建议每个文件只放一个普通节点，并保证 `tag` 在当前目录中唯一。
 - 不要使用 `direct`、`block`、`Proxy` 或 `Auto-Fastest` 作为节点标签。
-- 当前节点目录中的 JSON 文件会共同参与启动；格式错误的文件可能导致核心无法加载。
-- 协议字段请以 [sing-box Outbound 文档](https://sing-box.sagernet.org/configuration/outbound/) 为准。
+- 当前节点目录中的 JSON 文件会共同参与启动；格式错误的文件可能导致核心无法加载。- 协议字段请以 [sing-box Outbound 文档](https://sing-box.sagernet.org/configuration/outbound/) 为准。
 
 ## CLI 命令
 
 ```text
-cli service {status|start|stop|restart|logs|logs-clear}
-cli node {list|current|use|add|import|export|show|remove|delay}
-cli mode [rule|global|direct]
-cli sub {list|add|update|update-all|remove|auto}
-cli api {groups|conns|close|close-all|ui}
-cli app {list|mode|add|remove|enable|disable}
-cli ebpf {status|reload|dns|ipv6|shared|interface}
-cli wifi {status|on|off|mode|add|del|list|clear|cellular}
+netproxyctl [--json] service status|start|stop|restart|reload
+netproxyctl [--json] catalog list|show <分组>
+netproxyctl [--json] node list|current|show|add|import|export|edit|remove|use|delay
+netproxyctl [--json] sub list|show|add|edit|update|update-all|activate|remove|history|cancel
+netproxyctl [--json] mode [rule|global|direct|AllowAds]
+netproxyctl [--json] app list|mode|users|add|remove|enable|disable
+netproxyctl [--json] ebpf status [configured|all|local|shared] [--raw]
+netproxyctl [--json] config list|read|check|validate|apply
+netproxyctl [--json] logs show|clear|export
 ```
+
+节点引用固定为 `<分组 ID>/<节点标签>`。自动模式用 `node use auto [分组]`，分组测速用 `node delay auto [分组]`。`sub add` 可省略名称（`sub add <URL>`），此时按 Profile-Title、文件名、URL 主机名的顺序自动取名。
 
 查看完整中文帮助：
 
 ```sh
-su -c '/data/adb/modules/netproxy/scripts/cli help'
+su -c '/data/adb/modules/netproxy/netproxyctl help'
 ```
 
 ## 配置与日志
@@ -216,7 +215,7 @@ su -c '/data/adb/modules/netproxy/scripts/cli help'
 | `config/module.conf` | 开机启动、出站模式、当前节点、选择模式和订阅调度 |
 | `config/ebpf/ebpf.conf` | eBPF 入站、分应用、共享网络与 Map 容量 |
 | `config/singbox/confdir/` | 通用 sing-box 配置，包括 DNS、路由和 Clash API |
-| `config/singbox/outbounds/` | 默认节点与订阅节点目录 |
+| `config/catalog/<分组 ID>/` | 节点与订阅分组，含 `meta.json` 与 `provider.json` |
 | `config/singbox/source/` | 本地路由规则与规则集 |
 | `logs/service.log` | 模块服务与透明代理日志 |
 | `logs/sing-box.log` | sing-box 核心日志 |
@@ -229,7 +228,7 @@ su -c '/data/adb/modules/netproxy/scripts/cli help'
 | `AUTO_START` | `0` | 默认不随开机启动 |
 | `OUTBOUND_MODE` | `rule` | 规则分流 |
 | `SELECTOR_MODE` | `urltest` | 自动测速选择 |
-| `CURRENT_CONFIG` | 空 | 需要先导入并选择节点 |
+| `ACTIVE_GROUP_ID` | `default` | 当前生效的节点分组 |
 | `EBPF_NETWORK` | 空 | 同时接管 TCP 与 UDP |
 | `EBPF_DNS_MODE` | `hijack` | 在 eBPF 入站劫持 TCP / UDP 53 |
 | `EBPF_IPV6_MODE` | `auto` | IPv6 接管策略，支持关闭、自动、始终和仅共享网络 |
@@ -241,11 +240,11 @@ su -c '/data/adb/modules/netproxy/scripts/cli help'
 
 ```sh
 # 服务与核心日志
-su -c '/data/adb/modules/netproxy/scripts/cli service logs service 100'
-su -c '/data/adb/modules/netproxy/scripts/cli service logs core 100'
+su -c '/data/adb/modules/netproxy/netproxyctl logs show service 100'
+su -c '/data/adb/modules/netproxy/netproxyctl logs show core 100'
 
 # 节点和订阅转换日志
-su -c '/data/adb/modules/netproxy/scripts/cli service logs sub 100'
+su -c '/data/adb/modules/netproxy/netproxyctl logs show sub 100'
 ```
 
 启动失败时优先检查 `sing-box.log`。出现 eBPF 加载错误时，请检查内核 BPF / cgroup 能力、Root 授权与 `ebpf.conf`；手写节点无法加载时，重点检查顶层是否为 `outbounds`、协议字段是否为 `type`、JSON 语法是否正确，以及节点标签是否冲突。
@@ -281,8 +280,7 @@ su -c '/data/adb/modules/netproxy/scripts/cli service logs sub 100'
 ## 交流与贡献
 
 - [贡献指南](CONTRIBUTING.md)
-- [架构说明](ARCHITECTURE.md)
-- [编码代理约束](AGENTS.md)
+- [架构说明与编码代理约束](AGENTS.md)
 - [Telegram 群组](https://t.me/NetProxy_Magisk)
 - [提交 Issue](https://github.com/Fanju6/NetProxy-Magisk/issues)
 - [提交 Pull Request](https://github.com/Fanju6/NetProxy-Magisk/pulls)

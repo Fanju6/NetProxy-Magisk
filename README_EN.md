@@ -113,30 +113,27 @@ All commands require root privileges.
 
 ```sh
 # Import a node link
-su -c '/data/adb/modules/netproxy/scripts/cli node add "vless://..."'
+su -c '/data/adb/modules/netproxy/netproxyctl node add "vless://..."'
 
 # Import a node list or Clash YAML
-su -c '/data/adb/modules/netproxy/scripts/cli node import /sdcard/clash.yaml'
+su -c '/data/adb/modules/netproxy/netproxyctl node import /sdcard/clash.yaml'
 
 # Select a node and start the service
-su -c '/data/adb/modules/netproxy/scripts/cli node list'
-su -c '/data/adb/modules/netproxy/scripts/cli node use NodeName'
-su -c '/data/adb/modules/netproxy/scripts/cli service start'
+su -c '/data/adb/modules/netproxy/netproxyctl node list'
+su -c '/data/adb/modules/netproxy/netproxyctl node use <group-id>/<tag>'
+su -c '/data/adb/modules/netproxy/netproxyctl service start'
 
 # Inspect status and runtime mode
-su -c '/data/adb/modules/netproxy/scripts/cli service status'
-su -c '/data/adb/modules/netproxy/scripts/cli mode'
-
-# Show the zashboard endpoint
-su -c '/data/adb/modules/netproxy/scripts/cli api ui'
+su -c '/data/adb/modules/netproxy/netproxyctl service status'
+su -c '/data/adb/modules/netproxy/netproxyctl mode'
 ```
 
-Subscriptions:
+Subscriptions (the name is optional and derived automatically when omitted):
 
 ```sh
-su -c '/data/adb/modules/netproxy/scripts/cli sub add MySub https://example.com/sub'
-su -c '/data/adb/modules/netproxy/scripts/cli sub update MySub'
-su -c '/data/adb/modules/netproxy/scripts/cli sub auto on'
+su -c '/data/adb/modules/netproxy/netproxyctl sub add https://example.com/sub'
+su -c '/data/adb/modules/netproxy/netproxyctl sub list'
+su -c '/data/adb/modules/netproxy/netproxyctl sub update <group-id>'
 ```
 
 ## Node Configuration Format
@@ -165,17 +162,17 @@ SOCKS5 example:
 }
 ```
 
-Place the file at:
+Import the file into the `default` group:
 
-```text
-/data/adb/modules/netproxy/config/singbox/outbounds/default/fr-socks.json
+```sh
+su -c '/data/adb/modules/netproxy/netproxyctl node import /sdcard/fr-socks.json'
 ```
 
 Then select it:
 
 ```sh
-su -c '/data/adb/modules/netproxy/scripts/cli node list'
-su -c '/data/adb/modules/netproxy/scripts/cli node use fr-socks'
+su -c '/data/adb/modules/netproxy/netproxyctl node list'
+su -c '/data/adb/modules/netproxy/netproxyctl node use default/fr-socks'
 ```
 
 Important rules:
@@ -189,18 +186,21 @@ Important rules:
 ## CLI Overview
 
 ```text
-cli service {status|start|stop|restart|logs|logs-clear}
-cli node {list|current|use|add|import|export|show|remove|delay}
-cli mode [rule|global|direct]
-cli sub {list|add|update|update-all|remove|auto}
-cli api {groups|conns|close|close-all|ui}
-cli app {list|mode|add|remove|enable|disable}
-cli ebpf {status|reload|dns|ipv6|shared|interface}
-cli wifi {status|on|off|mode|add|del|list|clear|cellular}
+netproxyctl [--json] service status|start|stop|restart|reload
+netproxyctl [--json] catalog list|show <group>
+netproxyctl [--json] node list|current|show|add|import|export|edit|remove|use|delay
+netproxyctl [--json] sub list|show|add|edit|update|update-all|activate|remove|history|cancel
+netproxyctl [--json] mode [rule|global|direct|AllowAds]
+netproxyctl [--json] app list|mode|users|add|remove|enable|disable
+netproxyctl [--json] ebpf status [configured|all|local|shared] [--raw]
+netproxyctl [--json] config list|read|check|validate|apply
+netproxyctl [--json] logs show|clear|export
 ```
 
+Node references are always `<group-id>/<tag>`. Use `node use auto [group]` for automatic mode and `node delay auto [group]` for group latency tests. The name argument of `sub add` is optional (`sub add <URL>`); it is then derived from Profile-Title, the response filename, or the URL host.
+
 ```sh
-su -c '/data/adb/modules/netproxy/scripts/cli help'
+su -c '/data/adb/modules/netproxy/netproxyctl help'
 ```
 
 ## Configuration and Logs
@@ -210,7 +210,7 @@ su -c '/data/adb/modules/netproxy/scripts/cli help'
 | `config/module.conf` | Startup, mode, selected node, selector, and subscription scheduling |
 | `config/ebpf/ebpf.conf` | eBPF inbound, per-app rules, shared networks, and map capacities |
 | `config/singbox/confdir/` | Shared sing-box DNS, route, and Clash API configuration |
-| `config/singbox/outbounds/` | Local and subscription node directories |
+| `config/catalog/<group-id>/` | Node and subscription groups (`meta.json` + `provider.json`) |
 | `config/singbox/source/` | Local route rules and rule sets |
 | `logs/service.log` | Module service and transparent proxy logs |
 | `logs/sing-box.log` | sing-box core logs |
@@ -221,7 +221,7 @@ Key defaults:
 - `AUTO_START=0`
 - `OUTBOUND_MODE=rule`
 - `SELECTOR_MODE=urltest`
-- `CURRENT_CONFIG=""`
+- `ACTIVE_GROUP_ID=default`
 - `EBPF_NETWORK=""` (TCP and UDP)
 - `EBPF_DNS_MODE=hijack`
 - `EBPF_IPV6_MODE=auto`
@@ -232,7 +232,7 @@ Key defaults:
 For startup failures, inspect the core log first:
 
 ```sh
-su -c '/data/adb/modules/netproxy/scripts/cli service logs core 100'
+su -c '/data/adb/modules/netproxy/netproxyctl logs show core 100'
 ```
 
 See the [NetProxy documentation](https://www.netproxy.store/) for complete installation, configuration, and troubleshooting guidance.
@@ -266,8 +266,7 @@ The following projects powered or inspired earlier NetProxy releases. Their cont
 ## Community and Contributing
 
 - [Contributing guide](CONTRIBUTING.md)
-- [Architecture](ARCHITECTURE.md)
-- [Coding agent guide](AGENTS.md)
+- [Architecture and coding agent guide](AGENTS.md)
 - [Telegram group](https://t.me/NetProxy_Magisk)
 - [Issues](https://github.com/Fanju6/NetProxy-Magisk/issues)
 - [Pull requests](https://github.com/Fanju6/NetProxy-Magisk/pulls)
