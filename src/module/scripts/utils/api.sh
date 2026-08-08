@@ -73,32 +73,18 @@ service_api_select() {
 }
 
 #######################################
-# 将模块模式转换为 Service API 模式名
-# 参数:
-#   $1  rule、global、direct 或 AllowAds
-# 返回: 标准输出打印模式名
-#######################################
-module_mode_to_service_mode() {
-  case "$1" in
-    rule) printf '%s' 'Rule' ;;
-    global) printf '%s' 'Global' ;;
-    direct) printf '%s' 'Direct' ;;
-    AllowAds) printf '%s' 'AllowAds' ;;
-    *) return 1 ;;
-  esac
-}
-
-#######################################
 # 通过 Service API 设置出站模式
 # 参数:
 #   $1  module.conf 模式名
 # 返回: 成功返回 0，否则返回非 0
 #######################################
 service_api_set_mode() {
-  local mode
-
-  mode="$(module_mode_to_service_mode "$1")" || return 1
-  service_api_call mode --mode "$mode" --timeout 5s > /dev/null 2>&1
+  "${NETPROXY_NATIVE_BIN:-$MODDIR/bin/netproxy-native}" control set-mode \
+    --mode "$1" \
+    --address "$SERVICE_API" \
+    --secret "$SERVICE_SECRET" \
+    --timeout 5s \
+    --format json > /dev/null 2>&1
 }
 
 #######################################
@@ -109,8 +95,12 @@ service_api_set_mode() {
 service_api_get_mode() {
   local result
 
-  result="$(service_api_call mode --timeout 5s 2> /dev/null)" || return 1
-  printf '%s' "$result" | sed -n 's/.*"current":"\([^"]*\)".*/\1/p'
+  result="$("${NETPROXY_NATIVE_BIN:-$MODDIR/bin/netproxy-native}" control runtime-mode \
+    --address "$SERVICE_API" \
+    --secret "$SERVICE_SECRET" \
+    --timeout 5s \
+    --format text 2> /dev/null)" || return 1
+  printf '%s\n' "$result"
 }
 
 #######################################
@@ -120,5 +110,9 @@ service_api_get_mode() {
 # 返回: 请求成功返回 0，否则返回非 0
 #######################################
 service_api_close_all_connections() {
-  service_api_call close-all --timeout 3s > /dev/null 2>&1
+  "${NETPROXY_NATIVE_BIN:-$MODDIR/bin/netproxy-native}" control close-all \
+    --address "$SERVICE_API" \
+    --secret "$SERVICE_SECRET" \
+    --timeout 3s \
+    --format json > /dev/null 2>&1
 }

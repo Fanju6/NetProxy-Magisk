@@ -110,6 +110,20 @@ printf '%s' "$result" | grep -q '"groups":\['
 printf '%s' "$result" | grep -q '"selection":{"active_group_id":"default"'
 printf '%s' "$result" | grep -q '"selected":"Auto/default"'
 
+stderr_file="$TMP_ROOT/node-current.stderr"
+result="$(sh "$MODULE/scripts/netproxyctl" --json node current 2> "$stderr_file")"
+run_json "$result"
+printf '%s' "$result" | grep -q '"code":"node.current"'
+printf '%s' "$result" | grep -q '"selected":"Auto/default"'
+[ ! -s "$stderr_file" ]
+
+stderr_file="$TMP_ROOT/mode.stderr"
+result="$(sh "$MODULE/scripts/netproxyctl" --json mode 2> "$stderr_file")"
+run_json "$result"
+printf '%s' "$result" | grep -q '"code":"mode.current"'
+printf '%s' "$result" | grep -q '"mode":"rule"'
+[ ! -s "$stderr_file" ]
+
 result="$(sh "$MODULE/scripts/netproxyctl" --json node remove 'default/CLI-JSON')"
 run_json "$result"
 

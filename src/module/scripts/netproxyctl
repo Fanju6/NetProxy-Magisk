@@ -173,23 +173,6 @@ catalog_groups_json() {
 }
 
 #######################################
-# 构建 Catalog 节点快照
-# 参数:
-#   $1  指定分组 ID，可为空
-# 返回: 标准输出打印分组与节点数组
-#######################################
-catalog_nodes_snapshot_json() {
-  local group_id="${1:-}"
-
-  initialize_catalog_storage || return 1
-  if [ -n "$group_id" ]; then
-    catalog_native snapshot --group "$group_id"
-  else
-    catalog_native snapshot
-  fi
-}
-
-#######################################
 # 获取单个 Catalog 分组与节点快照
 # 参数:
 #   $1  分组 ID
@@ -283,51 +266,59 @@ command_catalog() {
 command_node_read() {
   local action="$1"
   local group_query="${2:-}"
-  local group_id groups_json
-  local active selector selected node_count=0 group_record group_key group_value
 
-  active="$(read_conf "$MODULE_CONF" "ACTIVE_GROUP_ID" "")"
-  selector="$(read_conf "$MODULE_CONF" "SELECTOR_MODE" "urltest")"
-  selected="$(read_conf "$MODULE_CONF" "SELECTED_NODE_REF" "")"
-  # 归一化当前选择：空组显示为未选择，自动模式显示为 Auto/<组>
-  if [ -n "$active" ]; then
-    group_record="$(catalog_group_summary_tsv "$CATALOG_DIR/$active" 2> /dev/null || true)"
-    while IFS="$TAB" read -r group_key group_value; do
-      [ "$group_key" = "node_count" ] || continue
-      node_count="$group_value"
-    done << EOF
-$group_record
-EOF
-  fi
-  case "$node_count" in "" | *[!0-9]*) node_count=0 ;; esac
-  if [ "$node_count" -le 0 ]; then
-    selected=""
-  elif [ "$selector" = "urltest" ]; then
-    selected="Auto/$active"
-  fi
-
-  if [ "$action" = "current" ]; then
-    emit_success "node.current" "当前节点选择" \
-      "{\"active_group_id\":\"$(json_escape "$active")\",\"selector_mode\":\"$(json_escape "$selector")\",\"selected\":\"$(json_escape "$selected")\"}"
-    return 0
-  fi
-
-  if [ -n "$group_query" ]; then
-    group_id="$(catalog_resolve_group "$group_query")" || emit_error "catalog.not_found" "未找到节点组"
-    groups_json="$(catalog_nodes_snapshot_json "$group_id")" \
-      || emit_error "catalog.read_failed" "读取节点组失败"
-  else
-    groups_json="$(catalog_nodes_snapshot_json)" \
-      || emit_error "catalog.read_failed" "读取节点快照失败"
-  fi
-  if [ "$action" = "snapshot" ]; then
-    emit_success "node.snapshot" "节点快照" \
-      "{\"groups\":$groups_json,\"selection\":{\"active_group_id\":\"$(json_escape "$active")\",\"selector_mode\":\"$(json_escape "$selector")\",\"selected\":\"$(json_escape "$selected")\"}}"
-  elif [ "$OUTPUT_JSON" = "1" ]; then
-    emit_success "node.list" "节点列表" "$groups_json"
-  else
-    printf "%s\n" "$groups_json"
-  fi
+  case "$action" in
+    current)
+      "$NETPROXY_NATIVE_BIN" control selection \
+        --catalog-root "$CATALOG_DIR" \
+        --module-config "$MODULE_CONF" \
+        --progress-dir "$SUB_RUNTIME_DIR" \
+        --address "$SERVICE_API" \
+        --secret "$SERVICE_SECRET" \
+        --format json \
+        || emit_error "node.current_failed" "读取当前节点选择失败"
+      ;;
+    list)
+      if [ -n "$group_query" ]; then
+        "$NETPROXY_NATIVE_BIN" control nodes \
+          --catalog-root "$CATALOG_DIR" \
+          --module-config "$MODULE_CONF" \
+          --progress-dir "$SUB_RUNTIME_DIR" \
+          --group "$group_query" \
+          --format json \
+          || emit_error "catalog.read_failed" "读取节点列表失败"
+      else
+        "$NETPROXY_NATIVE_BIN" control nodes \
+          --catalog-root "$CATALOG_DIR" \
+          --module-config "$MODULE_CONF" \
+          --progress-dir "$SUB_RUNTIME_DIR" \
+          --format json \
+          || emit_error "catalog.read_failed" "读取节点列表失败"
+      fi
+      ;;
+    snapshot)
+      if [ -n "$group_query" ]; then
+        "$NETPROXY_NATIVE_BIN" control snapshot \
+          --catalog-root "$CATALOG_DIR" \
+          --module-config "$MODULE_CONF" \
+          --progress-dir "$SUB_RUNTIME_DIR" \
+          --address "$SERVICE_API" \
+          --secret "$SERVICE_SECRET" \
+          --group "$group_query" \
+          --format json \
+          || emit_error "catalog.read_failed" "读取节点快照失败"
+      else
+        "$NETPROXY_NATIVE_BIN" control snapshot \
+          --catalog-root "$CATALOG_DIR" \
+          --module-config "$MODULE_CONF" \
+          --progress-dir "$SUB_RUNTIME_DIR" \
+          --address "$SERVICE_API" \
+          --secret "$SERVICE_SECRET" \
+          --format json \
+          || emit_error "catalog.read_failed" "读取节点快照失败"
+      fi
+      ;;
+  esac
 }
 
 #######################################
@@ -691,10 +682,14 @@ command_mode() {
   local mode="${1:-}"
 
   if [ -z "$mode" ]; then
-    mode="$(read_conf "$MODULE_CONF" "OUTBOUND_MODE" "rule")"
-    [ "$OUTPUT_JSON" = "1" ] \
-      && emit_success "mode.current" "当前出站模式" "{\"mode\":\"$(json_escape "$mode")\"}" \
-      || printf "%s\n" "$mode"
+    local format="text"
+    [ "$OUTPUT_JSON" = "1" ] && format="json"
+    "$NETPROXY_NATIVE_BIN" control mode \
+      --module-config "$MODULE_CONF" \
+      --address "$SERVICE_API" \
+      --secret "$SERVICE_SECRET" \
+      --format "$format" \
+      || emit_error "mode.read_failed" "读取出站模式失败"
     return 0
   fi
   case "$mode" in rule | global | direct | AllowAds) ;; *) emit_error "mode.invalid" "出站模式应为 rule、global、direct 或 AllowAds" 2 ;; esac

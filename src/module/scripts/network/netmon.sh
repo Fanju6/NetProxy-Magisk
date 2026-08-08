@@ -177,7 +177,7 @@ apply_state() {
   else
     desired_mode="$base_mode"
   fi
-  desired_runtime_mode="$(module_mode_to_service_mode "$desired_mode")" || return 1
+  desired_runtime_mode="$desired_mode"
   actual_mode="$(service_api_get_mode 2> /dev/null || true)"
 
   # 决策与实际模式都未变化时无需重复请求或中断连接

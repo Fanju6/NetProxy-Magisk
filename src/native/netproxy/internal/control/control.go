@@ -63,6 +63,32 @@ type DelayResult struct {
 	Groups []serviceapi.Group `json:"groups"`
 }
 
+// Selection 描述持久化选择与运行时实际选择。
+type Selection struct {
+	ActiveGroupID         string `json:"active_group_id"`
+	ActiveGroupName       string `json:"active_group_name"`
+	ActiveGroupRuntimeTag string `json:"active_group_runtime_tag"`
+	ActiveGroupNodeCount  int    `json:"active_group_node_count"`
+	SelectorMode          string `json:"selector_mode"`
+	SelectedNodeRef       string `json:"selected_node_ref"`
+	Selected              string `json:"selected"`
+	RuntimeSelected       string `json:"runtime_selected"`
+}
+
+// Snapshot 描述持久化节点与运行时节点组的合并快照。
+type Snapshot struct {
+	Groups        []catalog.GroupSnapshot `json:"groups"`
+	Selection     Selection               `json:"selection"`
+	RuntimeGroups []serviceapi.Group      `json:"runtime_groups,omitempty"`
+}
+
+// ModeState 描述持久化出站模式以及核心当前模式。
+type ModeState struct {
+	Mode        string   `json:"mode"`
+	RuntimeMode string   `json:"runtime_mode,omitempty"`
+	Available   []string `json:"available"`
+}
+
 type stateFile struct {
 	State     string `json:"state"`
 	PID       int    `json:"pid"`
@@ -144,6 +170,104 @@ func ReadGroups(ctx context.Context, options Options) ([]serviceapi.Group, error
 	defer cancel()
 	defer client.Close()
 	return client.Groups(requestContext)
+}
+
+// ReadNodes 读取 Catalog 节点组，不依赖 sing-box 是否运行。
+func ReadNodes(ctx context.Context, options Options, groupID string) ([]catalog.GroupSnapshot, error) {
+	options = normalizeOptions(options)
+	if strings.TrimSpace(options.CatalogRoot) == "" {
+		return nil, errors.New("Catalog 根目录不能为空")
+	}
+	if strings.TrimSpace(groupID) != "" {
+		resolved, err := catalog.ResolveGroup(options.CatalogRoot, groupID)
+		if err != nil {
+			return nil, err
+		}
+		groupID = resolved
+	}
+	return catalog.Scan(ctx, catalog.ScanOptions{
+		Root: options.CatalogRoot, GroupID: groupID,
+		ActiveGroup: readConfig(options.ModuleConfig, "ACTIVE_GROUP_ID", ""),
+		ProgressDir: options.ProgressDir, WithNodes: true,
+	})
+}
+
+// ReadSelection 读取当前分组、选择模式和运行时实际节点。
+func ReadSelection(ctx context.Context, options Options) (Selection, error) {
+	options = normalizeOptions(options)
+	groups, err := catalog.Scan(ctx, catalog.ScanOptions{
+		Root:        options.CatalogRoot,
+		ActiveGroup: readConfig(options.ModuleConfig, "ACTIVE_GROUP_ID", ""),
+		ProgressDir: options.ProgressDir, WithNodes: true,
+	})
+	if err != nil {
+		return Selection{}, err
+	}
+	return selectionFromGroups(ctx, options, groups), nil
+}
+
+// ReadSnapshot 读取持久化节点并尽力合并运行时 Service API 状态。
+func ReadSnapshot(ctx context.Context, options Options, groupID string) (Snapshot, error) {
+	options = normalizeOptions(options)
+	allGroups, err := ReadNodes(ctx, options, "")
+	if err != nil {
+		return Snapshot{}, err
+	}
+	runtimeGroups, _ := readRuntimeGroups(ctx, options)
+	selection := selectionFromRuntimeGroups(options, allGroups, runtimeGroups)
+	groups := allGroups
+	if strings.TrimSpace(groupID) != "" {
+		groups, err = ReadNodes(ctx, options, groupID)
+		if err != nil {
+			return Snapshot{}, err
+		}
+	}
+	return Snapshot{Groups: groups, Selection: selection, RuntimeGroups: runtimeGroups}, nil
+}
+
+// ReadMode 读取模块模式，并在核心运行时补充当前 Service API 模式。
+func ReadMode(ctx context.Context, options Options) (ModeState, error) {
+	options = normalizeOptions(options)
+	state := ModeState{
+		Mode:      normalizeModuleMode(readConfig(options.ModuleConfig, "OUTBOUND_MODE", "rule")),
+		Available: []string{"rule", "global", "direct", "AllowAds"},
+	}
+	runtimeMode, err := readRuntimeMode(ctx, options)
+	if err == nil {
+		state.RuntimeMode = runtimeMode
+	}
+	return state, nil
+}
+
+// ReadRuntimeMode 读取 Service API 当前出站模式。
+func ReadRuntimeMode(ctx context.Context, options Options) (string, error) {
+	return readRuntimeMode(ctx, normalizeOptions(options))
+}
+
+// SetMode 将模块模式映射为 Service API 模式并提交。
+func SetMode(ctx context.Context, options Options, mode string) error {
+	runtimeMode, err := moduleModeToServiceMode(mode)
+	if err != nil {
+		return err
+	}
+	client, requestContext, cancel, err := newClient(ctx, options)
+	if err != nil {
+		return err
+	}
+	defer cancel()
+	defer client.Close()
+	return client.SetMode(requestContext, runtimeMode)
+}
+
+// CloseAllConnections 关闭核心当前维护的全部连接。
+func CloseAllConnections(ctx context.Context, options Options) error {
+	client, requestContext, cancel, err := newClient(ctx, options)
+	if err != nil {
+		return err
+	}
+	defer cancel()
+	defer client.Close()
+	return client.CloseAllConnections(requestContext)
 }
 
 // Delay 发起测速并返回最新的节点组状态。
@@ -228,6 +352,125 @@ func readConfig(path, key, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func selectionFromGroups(ctx context.Context, options Options, groups []catalog.GroupSnapshot) Selection {
+	runtimeGroups, _ := readRuntimeGroups(ctx, options)
+	return selectionFromRuntimeGroups(options, groups, runtimeGroups)
+}
+
+func selectionFromRuntimeGroups(options Options, groups []catalog.GroupSnapshot, runtimeGroups []serviceapi.Group) Selection {
+	activeID := readConfig(options.ModuleConfig, "ACTIVE_GROUP_ID", "")
+	selector := normalizeModuleSelector(readConfig(options.ModuleConfig, "SELECTOR_MODE", "urltest"))
+	selection := Selection{
+		ActiveGroupID:   activeID,
+		SelectorMode:    selector,
+		SelectedNodeRef: readConfig(options.ModuleConfig, "SELECTED_NODE_REF", ""),
+	}
+	for _, group := range groups {
+		if group.Group.ID != activeID {
+			continue
+		}
+		selection.ActiveGroupName = group.Group.Name
+		selection.ActiveGroupRuntimeTag = group.Group.RuntimeTag
+		selection.ActiveGroupNodeCount = group.Group.NodeCount
+		if group.Group.NodeCount == 0 {
+			selection.Selected = ""
+		} else if selector == "urltest" {
+			selection.Selected = "Auto/" + activeID
+		} else {
+			selection.Selected = selection.SelectedNodeRef
+		}
+		break
+	}
+	if selection.ActiveGroupName == "" {
+		selection.ActiveGroupName = activeID
+	}
+	if selection.ActiveGroupRuntimeTag != "" {
+		runtimeGroup := "Auto/" + selection.ActiveGroupRuntimeTag
+		if selector == "manual" {
+			runtimeGroup = "Select/" + selection.ActiveGroupRuntimeTag
+		}
+		for _, group := range runtimeGroups {
+			if group.Tag == runtimeGroup {
+				selection.RuntimeSelected = group.Selected
+				break
+			}
+		}
+	}
+	return selection
+}
+
+func readRuntimeGroups(ctx context.Context, options Options) ([]serviceapi.Group, error) {
+	options.RequestTimeout = 500 * time.Millisecond
+	client, requestContext, cancel, err := newClient(ctx, options)
+	if err != nil {
+		return nil, err
+	}
+	defer cancel()
+	defer client.Close()
+	return client.Groups(requestContext)
+}
+
+func readRuntimeMode(ctx context.Context, options Options) (string, error) {
+	options.RequestTimeout = 500 * time.Millisecond
+	client, requestContext, cancel, err := newClient(ctx, options)
+	if err != nil {
+		return "", err
+	}
+	defer cancel()
+	defer client.Close()
+	mode, err := client.Mode(requestContext)
+	if err != nil {
+		return "", err
+	}
+	return serviceModeToModuleMode(mode.Current)
+}
+
+func normalizeModuleSelector(value string) string {
+	if value == "manual" || value == "selector" {
+		return "manual"
+	}
+	return "urltest"
+}
+
+func normalizeModuleMode(value string) string {
+	switch value {
+	case "rule", "global", "direct", "AllowAds":
+		return value
+	default:
+		return "rule"
+	}
+}
+
+func moduleModeToServiceMode(value string) (string, error) {
+	switch value {
+	case "rule":
+		return "Rule", nil
+	case "global":
+		return "Global", nil
+	case "direct":
+		return "Direct", nil
+	case "AllowAds":
+		return "AllowAds", nil
+	default:
+		return "", fmt.Errorf("未知出站模式: %s", value)
+	}
+}
+
+func serviceModeToModuleMode(value string) (string, error) {
+	switch value {
+	case "Rule":
+		return "rule", nil
+	case "Global":
+		return "global", nil
+	case "Direct":
+		return "direct", nil
+	case "AllowAds":
+		return "AllowAds", nil
+	default:
+		return "", fmt.Errorf("未知 Service API 模式: %s", value)
+	}
 }
 
 func readActiveGroup(ctx context.Context, options Options) ([]catalog.GroupSnapshot, *catalog.GroupSnapshot) {
@@ -315,7 +558,11 @@ func resolveDelayTarget(ctx context.Context, options Options, target, group stri
 		if group == "" {
 			group = activeID
 		}
-		runtimeTag, err := catalog.RuntimeTag(options.CatalogRoot, group)
+		resolvedGroup, err := catalog.ResolveGroup(options.CatalogRoot, group)
+		if err != nil {
+			return "", err
+		}
+		runtimeTag, err := catalog.RuntimeTag(options.CatalogRoot, resolvedGroup)
 		if err != nil {
 			return "", err
 		}
