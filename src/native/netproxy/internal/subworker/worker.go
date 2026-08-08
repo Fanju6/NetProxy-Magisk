@@ -19,6 +19,15 @@ import (
 
 const defaultServiceSecret = "singbox"
 
+// Timer 描述 Worker 调度所需的最小定时器接口。
+type Timer interface {
+	C() <-chan time.Time
+	Stop() bool
+}
+
+// TimerFactory 创建 Worker 调度定时器；测试可以用虚拟时钟替换系统时间。
+type TimerFactory func(time.Duration) Timer
+
 // Options 描述订阅 Worker 的运行环境。
 type Options struct {
 	Root           string
@@ -31,6 +40,7 @@ type Options struct {
 	ServiceAddress string
 	ServiceSecret  string
 	Now            func() time.Time
+	NewTimer       TimerFactory
 }
 
 // Summary 是一次调度轮次的结果。
@@ -97,20 +107,45 @@ func Run(ctx context.Context, options Options, wake <-chan struct{}, logger *log
 		if delay < time.Second {
 			delay = time.Second
 		}
-		timer := time.NewTimer(delay)
+		timer := newTimer(options, delay)
 		select {
 		case <-ctx.Done():
-			if !timer.Stop() {
-				<-timer.C
-			}
+			stopTimer(timer)
 			logger.Printf("订阅自动更新 Worker 已停止")
 			return nil
 		case <-wake:
-			if !timer.Stop() {
-				<-timer.C
-			}
-		case <-timer.C:
+			stopTimer(timer)
+		case <-timer.C():
 		}
+	}
+}
+
+type systemTimer struct {
+	timer *time.Timer
+}
+
+func (timer systemTimer) C() <-chan time.Time {
+	return timer.timer.C
+}
+
+func (timer systemTimer) Stop() bool {
+	return timer.timer.Stop()
+}
+
+func newTimer(options Options, duration time.Duration) Timer {
+	if options.NewTimer != nil {
+		return options.NewTimer(duration)
+	}
+	return systemTimer{timer: time.NewTimer(duration)}
+}
+
+func stopTimer(timer Timer) {
+	if timer == nil || timer.Stop() {
+		return
+	}
+	select {
+	case <-timer.C():
+	default:
 	}
 }
 
