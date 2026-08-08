@@ -26,16 +26,16 @@ internal class SubscriptionRepository(
         client.json.decodeFromJsonElement(client.execute("catalog", "show", id).data)
 
     suspend fun readEditor(id: String): SubscriptionEditorState =
-        client.json.decodeFromJsonElement(client.execute("sub", "show", id, "--private").data)
+        client.json.decodeFromJsonElement(client.execute("sub", "show", "--private", id).data)
 
     suspend fun add(draft: SubscriptionDraft): String =
         withHeadersFile(draft.customHeaders) { headersFile ->
             // 名称为空时整个省略该位置参数，由模块自动取名；传空串会被当作显式空名称
             val args = mutableListOf("sub", "add")
+            appendOptions(args, draft, headersFile, addMode = true)
             if (draft.name.isNotBlank()) args.add(draft.name)
             args.add(draft.url)
-            appendOptions(args, draft, headersFile, addMode = true)
-            client.execute(*args.toTypedArray()).data.jsonObject["id"]
+            client.execute(*args.toTypedArray()).data.jsonObject["group_id"]
                 ?.jsonPrimitive?.content.orEmpty()
         }
 
@@ -49,7 +49,7 @@ internal class SubscriptionRepository(
         }
         val headersChanged = originalHeaders != updated.customHeaders
         withHeadersFile(updated.customHeaders, required = headersChanged) { headersFile ->
-            val args = mutableListOf("sub", "edit", id)
+            val args = mutableListOf("sub", "edit")
             if (original.name != updated.name) args += listOf("--name", updated.name)
             if (original.url != updated.url) args += listOf("--url", updated.url)
             if (original.userAgent != updated.userAgent) {
@@ -68,14 +68,15 @@ internal class SubscriptionRepository(
             if (original.include != updated.include) args += listOf("--include", updated.include)
             if (original.exclude != updated.exclude) args += listOf("--exclude", updated.exclude)
             if (original.allowInsecure != updated.allowInsecure) {
-                args += listOf("--allow-insecure", updated.allowInsecure.toString())
+                args += "--allow-insecure=${updated.allowInsecure}"
             }
             if (original.timeout != updated.timeoutSeconds) {
-                args += listOf("--timeout", updated.timeoutSeconds.toString())
+                args += listOf("--download-timeout", updated.timeoutSeconds.toString())
             }
             if (original.autoUpdate != updated.autoUpdate) {
-                args += listOf("--auto-update", updated.autoUpdate.toString())
+                args += "--auto-update=${updated.autoUpdate}"
             }
+            args += id
             if (args.size > 3) client.execute(*args.toTypedArray())
         }
     }
@@ -121,10 +122,10 @@ internal class SubscriptionRepository(
         if (draft.allowInsecure) {
             args += "--allow-insecure"
         } else if (!addMode) {
-            args += listOf("--allow-insecure", "false")
+            args += "--allow-insecure=false"
         }
-        args += listOf("--timeout", draft.timeoutSeconds.toString())
-        args += listOf("--auto-update", draft.autoUpdate.toString())
+        args += listOf("--download-timeout", draft.timeoutSeconds.toString())
+        args += "--auto-update=${draft.autoUpdate}"
     }
 
     private suspend fun <T> withHeadersFile(
