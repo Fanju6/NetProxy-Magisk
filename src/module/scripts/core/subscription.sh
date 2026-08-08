@@ -201,10 +201,10 @@ set_active_catalog_group() {
     catalog_group_has_nodes "$target" || return 1
   fi
 
-  set_conf_values "$MODULE_CONF" \
-    "ACTIVE_GROUP_ID" "$(quote_conf "$target")" \
-    "SELECTOR_MODE" "urltest" \
-    "SELECTED_NODE_REF" '""'
+  set_module_values "$MODULE_CONF" \
+    --set "ACTIVE_GROUP_ID=$(quote_conf "$target")" \
+    --set "SELECTOR_MODE=urltest" \
+    --set 'SELECTED_NODE_REF=""'
 }
 
 #######################################
@@ -217,7 +217,7 @@ activate_group_if_needed() {
   local candidate="$1"
   local current
 
-  current="$(read_conf "$MODULE_CONF" "ACTIVE_GROUP_ID" "")"
+  current="$(read_module_value "$MODULE_CONF" "ACTIVE_GROUP_ID" 2> /dev/null || true)"
   if [ -n "$current" ] && catalog_group_has_nodes "$current"; then
     return 1
   fi
@@ -264,8 +264,8 @@ fallback_missing_selected_node() {
   local group_id="$1"
   local selector selected selected_group selected_tag runtime_tag
 
-  selector="$(read_conf "$MODULE_CONF" "SELECTOR_MODE" "urltest")"
-  selected="$(read_conf "$MODULE_CONF" "SELECTED_NODE_REF" "")"
+  selector="$(read_module_value "$MODULE_CONF" "SELECTOR_MODE" 2> /dev/null || printf "%s" "urltest")"
+  selected="$(read_module_value "$MODULE_CONF" "SELECTED_NODE_REF" 2> /dev/null || true)"
   [ "$selector" = "manual" ] && [ -n "$selected" ] || return 0
   selected_group="${selected%%/*}"
   selected_tag="${selected#*/}"
@@ -274,9 +274,9 @@ fallback_missing_selected_node() {
 
   runtime_tag="$(catalog_runtime_group_tag "$group_id" 2> /dev/null || printf "%s" "$group_id")"
   log "WARN" "手动节点已从 Provider 移除，回退到 Auto/$runtime_tag"
-  set_conf_values "$MODULE_CONF" \
-    "SELECTOR_MODE" "urltest" \
-    "SELECTED_NODE_REF" '""'
+  set_module_values "$MODULE_CONF" \
+    --set "SELECTOR_MODE=urltest" \
+    --set 'SELECTED_NODE_REF=""'
   [ -n "$(get_pid "$SING_BOX_BIN")" ] || return 0
   if ! sh "$SWITCH_SCRIPT" node auto "$group_id" > /dev/null 2>&1; then
     log "WARN" "选择状态已回退到 Auto/$runtime_tag，但运行实例同步失败"
@@ -554,7 +554,7 @@ remove_subscription() {
 
   group_id="$(catalog_resolve_group "$query")" || return $?
   [ "$(catalog_group_type "$group_id")" = "subscription" ] || return 1
-  current="$(read_conf "$MODULE_CONF" "ACTIVE_GROUP_ID" "")"
+  current="$(read_module_value "$MODULE_CONF" "ACTIVE_GROUP_ID" 2> /dev/null || true)"
 
   if [ "$current" = "$group_id" ]; then
     if [ -n "$replacement" ]; then

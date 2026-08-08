@@ -148,7 +148,7 @@ read_wifi_state() {
 #######################################
 read_base_mode() {
   local mode
-  mode="$(read_conf "$MODULE_CONF" "OUTBOUND_MODE" "rule")"
+  mode="$(read_module_value "$MODULE_CONF" "OUTBOUND_MODE" 2> /dev/null || printf "%s" "rule")"
   case "$mode" in
     rule | global | direct | AllowAds)
       printf "%s\n" "$mode"
@@ -275,10 +275,10 @@ decide_and_apply() {
 # 返回: 无
 #######################################
 load_wifi_conf() {
-  WIFI_AUTO_SWITCH="$(read_conf "$MODULE_CONF" "WIFI_AUTO_SWITCH" "0")"
-  WIFI_SSID_MODE="$(read_conf "$MODULE_CONF" "WIFI_SSID_MODE" "blacklist")"
-  WIFI_SSID_LIST="$(read_conf "$MODULE_CONF" "WIFI_SSID_LIST" "")"
-  PROXY_ON_CELLULAR="$(read_conf "$MODULE_CONF" "PROXY_ON_CELLULAR" "1")"
+  WIFI_AUTO_SWITCH="$(read_module_value "$MODULE_CONF" "WIFI_AUTO_SWITCH" 2> /dev/null || printf "%s" "0")"
+  WIFI_SSID_MODE="$(read_module_value "$MODULE_CONF" "WIFI_SSID_MODE" 2> /dev/null || printf "%s" "blacklist")"
+  WIFI_SSID_LIST="$(read_module_value "$MODULE_CONF" "WIFI_SSID_LIST" 2> /dev/null || true)"
+  PROXY_ON_CELLULAR="$(read_module_value "$MODULE_CONF" "PROXY_ON_CELLULAR" 2> /dev/null || printf "%s" "1")"
 }
 
 #######################################

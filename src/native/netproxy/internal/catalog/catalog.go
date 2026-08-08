@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/moduleconfig"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 )
@@ -76,6 +77,7 @@ type runtimeGroup struct {
 
 type RuntimeOptions struct {
 	Root            string
+	ModuleConfig    string
 	ProvidersOutput string
 	OutboundsOutput string
 	StateOutput     string
@@ -90,6 +92,7 @@ type RuntimeResult struct {
 	ActiveGroupTag  string `json:"active_group_tag"`
 	SelectorMode    string `json:"selector_mode"`
 	SelectedNodeRef string `json:"selected_node_ref"`
+	OutboundMode    string `json:"outbound_mode,omitempty"`
 	GroupCount      int    `json:"group_count"`
 	NodeCount       int    `json:"node_count"`
 }
@@ -283,6 +286,17 @@ func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, e
 	if options.Root == "" || options.ProvidersOutput == "" || options.OutboundsOutput == "" {
 		return RuntimeResult{}, errors.New("Catalog 根目录和运行时输出路径不能为空")
 	}
+	outboundMode := ""
+	if options.ModuleConfig != "" {
+		module, err := moduleconfig.LoadModule(options.ModuleConfig)
+		if err != nil {
+			return RuntimeResult{}, fmt.Errorf("读取 module.conf 失败: %w", err)
+		}
+		options.ActiveGroup = module.ActiveGroupID
+		options.SelectorMode = module.SelectorMode
+		options.SelectedNodeRef = module.SelectedNodeRef
+		outboundMode = module.OutboundMode
+	}
 	groups, err := loadGroups(ctx, options.Root, false)
 	if err != nil {
 		return RuntimeResult{}, err
@@ -294,7 +308,7 @@ func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, e
 		if err := writeEmptyRuntime(options); err != nil {
 			return RuntimeResult{}, err
 		}
-		return RuntimeResult{SelectorMode: "urltest"}, nil
+		return RuntimeResult{SelectorMode: "urltest", OutboundMode: outboundMode}, nil
 	}
 
 	assignRuntimeTags(groups)
@@ -330,6 +344,7 @@ func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, e
 		ActiveGroupTag:  groups[activeIndex].RuntimeTag,
 		SelectorMode:    selector,
 		SelectedNodeRef: selected,
+		OutboundMode:    outboundMode,
 		GroupCount:      len(groups),
 		NodeCount:       nodeCount,
 	}
@@ -521,9 +536,9 @@ func writeEmptyRuntime(options RuntimeOptions) error {
 
 func writeRuntimeState(path string, result RuntimeResult) error {
 	content := fmt.Sprintf(
-		"active_group_id\t%s\nactive_group_tag\t%s\nselector_mode\t%s\nselected_node_ref\t%s\ngroup_count\t%d\nnode_count\t%d\n",
+		"active_group_id\t%s\nactive_group_tag\t%s\nselector_mode\t%s\nselected_node_ref\t%s\noutbound_mode\t%s\ngroup_count\t%d\nnode_count\t%d\n",
 		result.ActiveGroup, result.ActiveGroupTag, result.SelectorMode,
-		result.SelectedNodeRef, result.GroupCount, result.NodeCount,
+		result.SelectedNodeRef, result.OutboundMode, result.GroupCount, result.NodeCount,
 	)
 	return provider.WriteAtomic(path, []byte(content), 0o600)
 }

@@ -39,24 +39,11 @@ initialize_runtime_context() {
   require_dir "${RUNTIME_DIR:-}" "运行时目录不存在: ${RUNTIME_DIR:-未定义}"
   require_dir "${CATALOG_DIR:-}" "Catalog 目录不存在: ${CATALOG_DIR:-未定义}"
 
-  ACTIVE_GROUP_ID="default"
-  OUTBOUND_MODE="rule"
-  SELECTOR_MODE="urltest"
-  SELECTED_NODE_REF=""
-  . "$MODULE_CONF"
-  CUR_ACTIVE_GROUP_ID="${ACTIVE_GROUP_ID:-default}"
-  CUR_OUTBOUND_MODE="${OUTBOUND_MODE:-rule}"
-  CUR_SELECTOR_MODE="${SELECTOR_MODE:-urltest}"
-  CUR_SELECTED_NODE_REF="${SELECTED_NODE_REF:-}"
-
-  case "$CUR_OUTBOUND_MODE" in
-    rule | global | direct | AllowAds) ;;
-    *) die "未知出站模式: $CUR_OUTBOUND_MODE" ;;
-  esac
-  case "$CUR_SELECTOR_MODE" in
-    urltest | auto | manual | selector) ;;
-    *) die "未知节点选择模式: $CUR_SELECTOR_MODE" ;;
-  esac
+  # module.conf 由 netproxy-native 按类型读取；这里仅设置配置检查前的安全初值。
+  CUR_ACTIVE_GROUP_ID="default"
+  CUR_OUTBOUND_MODE="rule"
+  CUR_SELECTOR_MODE="urltest"
+  CUR_SELECTED_NODE_REF=""
 
   RUNTIME_PROVIDERS_FILE="$RUNTIME_DIR/providers.json"
   RUNTIME_OUTBOUNDS_FILE="$RUNTIME_DIR/outbounds.json"
@@ -80,6 +67,7 @@ load_runtime_catalog_state() {
       active_group_tag) CUR_ACTIVE_GROUP_TAG="$value" ;;
       selector_mode) CUR_SELECTOR_MODE="$value" ;;
       selected_node_ref) CUR_SELECTED_NODE_REF="$value" ;;
+      outbound_mode) CUR_OUTBOUND_MODE="$value" ;;
       group_count) RUNTIME_GROUP_COUNT="$value" ;;
       node_count) RUNTIME_NODE_COUNT="$value" ;;
     esac
@@ -109,12 +97,10 @@ build_runtime_catalog() {
   if [ "$mode" = "allow-empty" ]; then
     output="$("$NETPROXY_NATIVE_BIN" catalog runtime \
       --root "$CATALOG_DIR" \
+      --module-config "$MODULE_CONF" \
       --providers-output "$RUNTIME_PROVIDERS_FILE" \
       --outbounds-output "$RUNTIME_OUTBOUNDS_FILE" \
       --state-output "$RUNTIME_CATALOG_STATE_FILE" \
-      --active "$CUR_ACTIVE_GROUP_ID" \
-      --selector "$CUR_SELECTOR_MODE" \
-      --selected "$CUR_SELECTED_NODE_REF" \
       --allow-empty 2>&1)" || {
         RUNTIME_BUILD_ERROR="$(printf '%s' "$output" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p')"
         [ -n "$RUNTIME_BUILD_ERROR" ] || RUNTIME_BUILD_ERROR="Catalog 运行时配置生成失败"
@@ -123,12 +109,11 @@ build_runtime_catalog() {
   else
     output="$("$NETPROXY_NATIVE_BIN" catalog runtime \
       --root "$CATALOG_DIR" \
+      --module-config "$MODULE_CONF" \
       --providers-output "$RUNTIME_PROVIDERS_FILE" \
       --outbounds-output "$RUNTIME_OUTBOUNDS_FILE" \
       --state-output "$RUNTIME_CATALOG_STATE_FILE" \
-      --active "$CUR_ACTIVE_GROUP_ID" \
-      --selector "$CUR_SELECTOR_MODE" \
-      --selected "$CUR_SELECTED_NODE_REF" 2>&1)" || {
+      2>&1)" || {
         RUNTIME_BUILD_ERROR="$(printf '%s' "$output" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p')"
         [ -n "$RUNTIME_BUILD_ERROR" ] || RUNTIME_BUILD_ERROR="Catalog 运行时配置生成失败"
         log "ERROR" "$RUNTIME_BUILD_ERROR"
@@ -147,10 +132,10 @@ build_runtime_catalog() {
     && { [ "$CUR_ACTIVE_GROUP_ID" != "$original_group" ] \
       || [ "$CUR_SELECTOR_MODE" != "$original_selector" ] \
       || [ "$CUR_SELECTED_NODE_REF" != "$original_selected" ]; }; then
-    set_conf_values "$MODULE_CONF" \
-      "ACTIVE_GROUP_ID" "$(quote_conf "$CUR_ACTIVE_GROUP_ID")" \
-      "SELECTOR_MODE" "$CUR_SELECTOR_MODE" \
-      "SELECTED_NODE_REF" "$(quote_conf "$CUR_SELECTED_NODE_REF")"
+    set_module_values "$MODULE_CONF" \
+      --set "ACTIVE_GROUP_ID=$(quote_conf "$CUR_ACTIVE_GROUP_ID")" \
+      --set "SELECTOR_MODE=$CUR_SELECTOR_MODE" \
+      --set "SELECTED_NODE_REF=$(quote_conf "$CUR_SELECTED_NODE_REF")"
   fi
 }
 

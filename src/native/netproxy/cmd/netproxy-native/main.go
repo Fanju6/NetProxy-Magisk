@@ -10,13 +10,16 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/control"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/convert"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/ebpf"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/fetch"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/moduleconfig"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/sharelink"
@@ -99,6 +102,10 @@ func run(ctx context.Context, args []string) error {
 		return runService(ctx, args[1:])
 	case "control":
 		return runControl(ctx, args[1:])
+	case "ebpf":
+		return runEBPF(ctx, args[1:])
+	case "config":
+		return runConfig(ctx, args[1:])
 	case "subworker":
 		return runSubworker(ctx, args[1:])
 	case "sub":
@@ -115,6 +122,326 @@ func run(ctx context.Context, args []string) error {
 		return nil
 	default:
 		return fmt.Errorf("未知命令 %q", args[0])
+	}
+}
+
+func runConfig(_ context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("缺少配置操作: module-get|module-set|ebpf-get|ebpf-set")
+	}
+	action := args[0]
+	flags := newFlagSet("config " + action)
+	path := flags.String("path", "", "配置文件路径")
+	key := flags.String("key", "", "读取的配置键")
+	format := flags.String("format", "json", "输出格式")
+	assignments := make([]string, 0)
+	flags.Func("set", "设置 KEY=value，可重复使用", func(value string) error {
+		assignments = append(assignments, value)
+		return nil
+	})
+	if err := flags.Parse(args[1:]); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*path) == "" {
+		return errors.New("配置操作需要 --path")
+	}
+
+	switch action {
+	case "module-get":
+		config, err := moduleconfig.LoadModule(*path)
+		if err != nil {
+			return &resultError{Code: "config.invalid", Message: "module.conf 配置无效", Data: map[string]string{"error": err.Error()}}
+		}
+		if *key != "" {
+			value, err := moduleConfigValue(config, *key)
+			if err != nil {
+				return err
+			}
+			switch *format {
+			case "text":
+				fmt.Fprintln(os.Stdout, value)
+			case "tsv":
+				fmt.Fprintf(os.Stdout, "%s\t%s\n", *key, value)
+			case "json":
+				writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "config.module_read", Message: "模块配置已读取", Data: map[string]string{*key: value}})
+			default:
+				return fmt.Errorf("不支持的配置输出格式: %s", *format)
+			}
+			return nil
+		}
+		if *format == "tsv" {
+			writeModuleConfigTSV(config)
+			return nil
+		}
+		if *format != "json" {
+			return fmt.Errorf("读取完整 module.conf 只支持 json 或 tsv")
+		}
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "config.module_read", Message: "模块配置已读取", Data: config})
+		return nil
+	case "module-set":
+		updates, err := parseAssignments(assignments)
+		if err != nil {
+			return err
+		}
+		if err := moduleconfig.UpdateModule(*path, updates); err != nil {
+			return &resultError{Code: "config.invalid", Message: "module.conf 修改未通过校验", Data: map[string]string{"error": err.Error()}}
+		}
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "config.module_updated", Message: "模块配置已更新", Data: map[string]string{"path": *path}})
+		return nil
+	case "ebpf-get":
+		config, err := ebpf.Load(*path)
+		if err != nil {
+			return &resultError{Code: "config.invalid", Message: "ebpf.conf 配置无效", Data: map[string]string{"error": err.Error()}}
+		}
+		if *key == "" {
+			if *format != "tsv" {
+				return fmt.Errorf("读取完整 ebpf.conf 只支持 tsv")
+			}
+			writeEBPFConfigTSV(config)
+			return nil
+		}
+		value, err := ebpfConfigValue(config, *key)
+		if err != nil {
+			return err
+		}
+		switch *format {
+		case "text":
+			fmt.Fprintln(os.Stdout, value)
+		case "tsv":
+			fmt.Fprintf(os.Stdout, "%s\t%s\n", *key, value)
+		case "json":
+			writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "config.ebpf_read", Message: "eBPF 配置已读取", Data: map[string]string{*key: value}})
+		default:
+			return fmt.Errorf("不支持的配置输出格式: %s", *format)
+		}
+		return nil
+	case "ebpf-set":
+		updates, err := parseAssignments(assignments)
+		if err != nil {
+			return err
+		}
+		err = moduleconfig.UpdateValidated(*path, updates, func(candidate string) error {
+			_, validateErr := ebpf.Load(candidate)
+			return validateErr
+		})
+		if err != nil {
+			return &resultError{Code: "config.invalid", Message: "ebpf.conf 修改未通过校验", Data: map[string]string{"error": err.Error()}}
+		}
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "config.ebpf_updated", Message: "eBPF 配置已更新", Data: map[string]string{"path": *path}})
+		return nil
+	default:
+		return fmt.Errorf("未知配置操作 %q", action)
+	}
+}
+
+func parseAssignments(values []string) (map[string]string, error) {
+	updates := make(map[string]string, len(values))
+	for _, assignment := range values {
+		key, value, ok := strings.Cut(assignment, "=")
+		if !ok || strings.TrimSpace(key) == "" {
+			return nil, fmt.Errorf("配置修改必须使用 KEY=value: %s", assignment)
+		}
+		if _, exists := updates[key]; exists {
+			return nil, fmt.Errorf("配置键重复: %s", key)
+		}
+		updates[key] = value
+	}
+	if len(updates) == 0 {
+		return nil, errors.New("配置修改至少需要一个 --set KEY=value")
+	}
+	return updates, nil
+}
+
+func moduleConfigValue(config moduleconfig.ModuleConfig, key string) (string, error) {
+	switch key {
+	case "AUTO_START":
+		return boolString(config.AutoStart), nil
+	case "OUTBOUND_MODE":
+		return config.OutboundMode, nil
+	case "SELECTOR_MODE":
+		return config.SelectorMode, nil
+	case "ACTIVE_GROUP_ID":
+		return config.ActiveGroupID, nil
+	case "SELECTED_NODE_REF":
+		return config.SelectedNodeRef, nil
+	case "WIFI_AUTO_SWITCH":
+		return boolString(config.WiFiAutoSwitch), nil
+	case "WIFI_SSID_MODE":
+		return config.WiFiSSIDMode, nil
+	case "WIFI_SSID_LIST":
+		return config.WiFiSSIDList, nil
+	case "PROXY_ON_CELLULAR":
+		return boolString(config.ProxyOnCellular), nil
+	default:
+		return "", fmt.Errorf("不支持的 module.conf 配置键: %s", key)
+	}
+}
+
+func boolString(value bool) string {
+	if value {
+		return "1"
+	}
+	return "0"
+}
+
+func writeModuleConfigTSV(config moduleconfig.ModuleConfig) {
+	keys := []string{"AUTO_START", "OUTBOUND_MODE", "SELECTOR_MODE", "ACTIVE_GROUP_ID", "SELECTED_NODE_REF", "WIFI_AUTO_SWITCH", "WIFI_SSID_MODE", "WIFI_SSID_LIST", "PROXY_ON_CELLULAR"}
+	for _, key := range keys {
+		value, _ := moduleConfigValue(config, key)
+		fmt.Fprintf(os.Stdout, "%s\t%s\n", key, value)
+	}
+}
+
+func ebpfConfigValue(config ebpf.Config, key string) (string, error) {
+	switch key {
+	case "EBPF_NETWORK":
+		return config.Network, nil
+	case "EBPF_UDP_TIMEOUT":
+		return config.UDPTimeout, nil
+	case "EBPF_DNS_MODE":
+		return config.DNSMode, nil
+	case "EBPF_CGROUP_ENABLED":
+		return boolString(config.CgroupEnabled), nil
+	case "EBPF_CGROUP_PATH":
+		return config.CgroupPath, nil
+	case "EBPF_IPV6_MODE":
+		return config.IPv6Mode, nil
+	case "EBPF_BYPASS_RULE_SETS":
+		return strings.Join(config.BypassRuleSets, " "), nil
+	case "APP_PROXY_ENABLE":
+		return boolString(config.AppProxyEnable), nil
+	case "APP_PROXY_MODE":
+		return config.AppProxyMode, nil
+	case "APP_ANDROID_USERS":
+		return joinUintValues(config.AndroidUsers), nil
+	case "PROXY_APPS_LIST":
+		return strings.Join(config.ProxyPackages, " "), nil
+	case "BYPASS_APPS_LIST":
+		return strings.Join(config.BypassPackages, " "), nil
+	case "EBPF_SHARED_NETWORK":
+		return boolString(config.SharedNetwork), nil
+	case "EBPF_SHARED_INTERFACES":
+		return strings.Join(config.SharedInterfaces, " "), nil
+	case "EBPF_SHARED_INCLUDE_SOURCE_CIDRS":
+		return strings.Join(config.SharedIncludeSourceCIDRs, " "), nil
+	case "EBPF_SHARED_EXCLUDE_SOURCE_CIDRS":
+		return strings.Join(config.SharedExcludeSourceCIDRs, " "), nil
+	case "EBPF_SHARED_INCLUDE_MAC_ADDRESSES":
+		return strings.Join(config.SharedIncludeMACAddresses, " "), nil
+	case "EBPF_SHARED_EXCLUDE_MAC_ADDRESSES":
+		return strings.Join(config.SharedExcludeMACAddresses, " "), nil
+	case "EBPF_TCP_MAP_CAPACITY":
+		return strconv.FormatUint(config.TCPMapCapacity, 10), nil
+	case "EBPF_UDP_MAP_CAPACITY":
+		return strconv.FormatUint(config.UDPMapCapacity, 10), nil
+	case "EBPF_SOCKET_MAP_CAPACITY":
+		return strconv.FormatUint(config.SocketMapCapacity, 10), nil
+	case "EBPF_SHARED_MAP_CAPACITY":
+		return strconv.FormatUint(config.SharedMapCapacity, 10), nil
+	default:
+		return "", fmt.Errorf("不支持的 ebpf.conf 配置键: %s", key)
+	}
+}
+
+func joinUintValues(values []uint64) string {
+	items := make([]string, 0, len(values))
+	for _, value := range values {
+		items = append(items, strconv.FormatUint(value, 10))
+	}
+	return strings.Join(items, " ")
+}
+
+func writeEBPFConfigTSV(config ebpf.Config) {
+	keys := []string{
+		"EBPF_NETWORK", "EBPF_UDP_TIMEOUT", "EBPF_DNS_MODE", "EBPF_CGROUP_ENABLED",
+		"EBPF_CGROUP_PATH", "EBPF_IPV6_MODE", "EBPF_BYPASS_RULE_SETS", "APP_PROXY_ENABLE",
+		"APP_PROXY_MODE", "APP_ANDROID_USERS", "PROXY_APPS_LIST", "BYPASS_APPS_LIST",
+		"EBPF_SHARED_NETWORK", "EBPF_SHARED_INTERFACES", "EBPF_SHARED_INCLUDE_SOURCE_CIDRS",
+		"EBPF_SHARED_EXCLUDE_SOURCE_CIDRS", "EBPF_SHARED_INCLUDE_MAC_ADDRESSES",
+		"EBPF_SHARED_EXCLUDE_MAC_ADDRESSES", "EBPF_TCP_MAP_CAPACITY", "EBPF_UDP_MAP_CAPACITY",
+		"EBPF_SOCKET_MAP_CAPACITY", "EBPF_SHARED_MAP_CAPACITY",
+	}
+	for _, key := range keys {
+		value, _ := ebpfConfigValue(config, key)
+		fmt.Fprintf(os.Stdout, "%s\t%s\n", key, value)
+	}
+}
+
+func runEBPF(_ context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("缺少 eBPF 操作: runtime|validate|diagnose")
+	}
+	action := args[0]
+	flags := newFlagSet("ebpf " + action)
+	configPath := flags.String("config", "", "ebpf.conf 路径")
+	outputPath := flags.String("output", "", "运行时 JSON 输出路径")
+	format := flags.String("format", "json", "输出格式")
+	if err := flags.Parse(args[1:]); err != nil {
+		return err
+	}
+	if strings.TrimSpace(*configPath) == "" {
+		return errors.New("eBPF 操作需要 --config")
+	}
+	toError := func(err error) error {
+		var validation *ebpf.ValidationError
+		if errors.As(err, &validation) {
+			return &resultError{Code: "ebpf.config_invalid", Message: validation.Error(), Data: map[string]any{"diagnostics": validation.Diagnostics}}
+		}
+		return err
+	}
+	switch action {
+	case "runtime":
+		if strings.TrimSpace(*outputPath) == "" {
+			return errors.New("eBPF runtime 需要 --output")
+		}
+		config, err := ebpf.Load(*configPath)
+		if err != nil {
+			return toError(err)
+		}
+		if err := ebpf.WriteAtomic(*outputPath, config); err != nil {
+			return toError(err)
+		}
+		if *format == "text" {
+			fmt.Fprintln(os.Stdout, *outputPath)
+			return nil
+		}
+		if *format != "json" {
+			return fmt.Errorf("ebpf runtime 不支持输出格式 %q", *format)
+		}
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "ebpf.runtime_generated", Message: "eBPF 运行时配置已生成", Data: map[string]string{"path": *outputPath}})
+		return nil
+	case "validate", "diagnose":
+		report := ebpf.Diagnose(*configPath)
+		if *format == "text" {
+			fmt.Fprintf(os.Stdout, "配置检查: %s\n", map[bool]string{true: "通过", false: "失败"}[report.Valid])
+			for _, diagnostic := range report.Diagnostics {
+				if diagnostic.Field == "" {
+					fmt.Fprintf(os.Stdout, "[%s] %s\n", diagnostic.Level, diagnostic.Message)
+				} else {
+					fmt.Fprintf(os.Stdout, "[%s] %s: %s\n", diagnostic.Field, diagnostic.Code, diagnostic.Message)
+				}
+			}
+			if !report.Valid {
+				return &resultError{Code: "ebpf.config_invalid", Message: "eBPF 配置检查未通过", Data: report}
+			}
+			return nil
+		}
+		if *format != "json" {
+			return fmt.Errorf("ebpf %s 不支持输出格式 %q", action, *format)
+		}
+		if !report.Valid {
+			return &resultError{Code: "ebpf.config_invalid", Message: "eBPF 配置检查未通过", Data: report}
+		}
+		code := "ebpf.config_valid"
+		message := "eBPF 配置有效"
+		if action == "diagnose" {
+			code = "ebpf.diagnosed"
+			message = "eBPF 配置诊断完成"
+		}
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: code, Message: message, Data: report})
+		return nil
+	default:
+		return fmt.Errorf("未知 eBPF 操作 %q", action)
 	}
 }
 
@@ -561,6 +888,7 @@ func runCatalog(ctx context.Context, args []string) error {
 	input := flags.String("input", "", "输入路径或内容")
 	value := flags.String("value", "", "元数据字段值")
 	root := flags.String("root", "", "Catalog 根目录")
+	moduleConfig := flags.String("module-config", "", "module.conf 路径")
 	groupDir := flags.String("group-dir", "", "Catalog 分组目录")
 	active := flags.String("active", "", "活动分组 ID")
 	progressDir := flags.String("progress-dir", "", "订阅更新进度目录")
@@ -901,7 +1229,7 @@ func runCatalog(ctx context.Context, args []string) error {
 		return nil
 	case "runtime":
 		data, err := catalog.BuildRuntime(ctx, catalog.RuntimeOptions{
-			Root: *root, ProvidersOutput: *providersOutput, OutboundsOutput: *outboundsOutput, StateOutput: *stateOutput,
+			Root: *root, ModuleConfig: *moduleConfig, ProvidersOutput: *providersOutput, OutboundsOutput: *outboundsOutput, StateOutput: *stateOutput,
 			ActiveGroup: *active, SelectorMode: *selector, SelectedNodeRef: *selected,
 			AllowEmpty: *allowEmpty,
 		})
@@ -1445,8 +1773,9 @@ func showUsage() {
   %s subscription update|edit --root <catalog> --group <group-id>
   %s service <ready|started-at|snapshot|groups|mode|select|urltest|close-all>
   control <status|nodes|snapshot|selection|groups|mode|runtime-mode|set-mode|delay|close-all> ...
-  subworker <start|stop|restart|wake|status|once|run> --root <catalog> --module-conf <module.conf>
-  %s version
+  netproxy-native ebpf <runtime|validate|diagnose> --config <ebpf.conf> [--output <ebpf.json>]
+  %s subworker <start|stop|restart|wake|status|once|run> --root <catalog> --module-conf <module.conf>
+  netproxy-native version
 
 转换选项：
   --include <正则>              仅保留匹配的节点

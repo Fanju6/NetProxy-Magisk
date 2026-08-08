@@ -54,6 +54,70 @@ read_conf() {
 }
 
 #######################################
+# 读取 Go 类型化的 module.conf 配置值
+# 参数:
+#   $1  module.conf 路径
+#   $2  配置键
+# 返回: 成功打印解码后的值，失败返回非 0
+#######################################
+read_module_value() {
+  local file="$1"
+  local key="$2"
+  local native="${NETPROXY_NATIVE_BIN:-$MODDIR/bin/netproxy-native}"
+
+  "$native" config module-get --path "$file" --key "$key" --format text
+}
+
+#######################################
+# 读取 Go 类型化的 ebpf.conf 配置值
+# 参数:
+#   $1  ebpf.conf 路径
+#   $2  配置键
+# 返回: 成功打印解码后的值，失败返回非 0
+#######################################
+read_ebpf_value() {
+  local file="$1"
+  local key="$2"
+  local native="${NETPROXY_NATIVE_BIN:-$MODDIR/bin/netproxy-native}"
+
+  "$native" config ebpf-get --path "$file" --key "$key" --format text
+}
+
+#######################################
+# 通过 Go 类型模型原子更新 module.conf
+# 参数:
+#   $1  module.conf 路径
+#   $2...  --set KEY=value 更新项
+# 返回: 更新成功返回 0，类型校验失败返回非 0
+#######################################
+set_module_values() {
+  local file="$1"
+  local native="${NETPROXY_NATIVE_BIN:-$MODDIR/bin/netproxy-native}"
+
+  shift
+  [ "$#" -gt 0 ] || return 1
+  set -- "$native" config module-set --path "$file" "$@"
+  "$@" > /dev/null
+}
+
+#######################################
+# 通过 Go 类型模型原子更新 ebpf.conf
+# 参数:
+#   $1  ebpf.conf 路径
+#   $2...  --set KEY=value 更新项
+# 返回: 更新成功返回 0，类型校验失败返回非 0
+#######################################
+set_ebpf_values() {
+  local file="$1"
+  local native="${NETPROXY_NATIVE_BIN:-$MODDIR/bin/netproxy-native}"
+
+  shift
+  [ "$#" -gt 0 ] || return 1
+  set -- "$native" config ebpf-set --path "$file" "$@"
+  "$@" > /dev/null
+}
+
+#######################################
 # 获取配置文件写锁
 # 参数:
 #   $1  配置文件路径

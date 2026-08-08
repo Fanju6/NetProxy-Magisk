@@ -347,11 +347,39 @@ func readConfig(path, key, fallback string) string {
 	if path == "" {
 		return fallback
 	}
-	value, err := moduleconfig.ReadValue(path, key, fallback)
+	config, err := moduleconfig.LoadModule(path)
 	if err != nil {
 		return fallback
 	}
-	return value
+	switch key {
+	case "AUTO_START":
+		return boolString(config.AutoStart)
+	case "OUTBOUND_MODE":
+		return config.OutboundMode
+	case "SELECTOR_MODE":
+		return config.SelectorMode
+	case "ACTIVE_GROUP_ID":
+		return config.ActiveGroupID
+	case "SELECTED_NODE_REF":
+		return config.SelectedNodeRef
+	case "WIFI_AUTO_SWITCH":
+		return boolString(config.WiFiAutoSwitch)
+	case "WIFI_SSID_MODE":
+		return config.WiFiSSIDMode
+	case "WIFI_SSID_LIST":
+		return config.WiFiSSIDList
+	case "PROXY_ON_CELLULAR":
+		return boolString(config.ProxyOnCellular)
+	default:
+		return fallback
+	}
+}
+
+func boolString(value bool) string {
+	if value {
+		return "1"
+	}
+	return "0"
 }
 
 func selectionFromGroups(ctx context.Context, options Options, groups []catalog.GroupSnapshot) Selection {

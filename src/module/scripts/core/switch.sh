@@ -90,10 +90,10 @@ switch_auto_group() {
   local group_id="$1"
 
   require_catalog_group "$group_id"
-  set_conf_values "$MODULE_CONF" \
-    "ACTIVE_GROUP_ID" "$(quote_conf "$group_id")" \
-    "SELECTOR_MODE" "urltest" \
-    "SELECTED_NODE_REF" '""'
+  set_module_values "$MODULE_CONF" \
+    --set "ACTIVE_GROUP_ID=$(quote_conf "$group_id")" \
+    --set "SELECTOR_MODE=urltest" \
+    --set 'SELECTED_NODE_REF=""'
 
   if ! is_service_running; then
     log "INFO" "已选择自动测速分组: $group_id，将在下次启动时生效"
@@ -131,10 +131,10 @@ switch_manual_node() {
   catalog_group_contains_tag "$group_id" "$tag" || die "节点不存在: $node_ref"
   runtime_node_ref="$REQUIRED_PROVIDER_TAG/$tag"
 
-  set_conf_values "$MODULE_CONF" \
-    "ACTIVE_GROUP_ID" "$(quote_conf "$group_id")" \
-    "SELECTOR_MODE" "manual" \
-    "SELECTED_NODE_REF" "$(quote_conf "$node_ref")"
+  set_module_values "$MODULE_CONF" \
+    --set "ACTIVE_GROUP_ID=$(quote_conf "$group_id")" \
+    --set "SELECTOR_MODE=manual" \
+    --set "SELECTED_NODE_REF=$(quote_conf "$node_ref")"
 
   if ! is_service_running; then
     log "INFO" "已选择手动节点: $node_ref，将在下次启动时生效"
@@ -164,7 +164,7 @@ switch_node() {
 
   require_file "$MODULE_CONF" "模块配置文件不存在: $MODULE_CONF"
   if [ "$target" = "auto" ]; then
-    [ -n "$group_id" ] || group_id="$(read_conf "$MODULE_CONF" "ACTIVE_GROUP_ID" "default")"
+    [ -n "$group_id" ] || group_id="$(read_module_value "$MODULE_CONF" "ACTIVE_GROUP_ID")"
     switch_auto_group "$group_id"
   else
     switch_manual_node "$target"
@@ -185,7 +185,7 @@ switch_mode() {
     *) die "未知出站模式: $target_mode" ;;
   esac
   require_file "$MODULE_CONF" "模块配置文件不存在: $MODULE_CONF"
-  set_conf "$MODULE_CONF" "OUTBOUND_MODE" "$target_mode"
+  set_module_values "$MODULE_CONF" --set "OUTBOUND_MODE=$target_mode"
 
   if ! is_service_running; then
     log "INFO" "已保存出站模式: $target_mode，将在下次启动时生效"

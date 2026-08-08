@@ -35,7 +35,7 @@ readonly SUBSCRIPTION_LIBRARY_ONLY=1
 . "$MODDIR/scripts/core/subscription.sh"
 
 OUTPUT_JSON=0
-CATALOG_ACTIVE_GROUP="$(read_conf "$MODULE_CONF" "ACTIVE_GROUP_ID" "")"
+CATALOG_ACTIVE_GROUP="$(read_module_value "$MODULE_CONF" "ACTIVE_GROUP_ID" 2> /dev/null || true)"
 if [ "${1:-}" = "--json" ]; then
   OUTPUT_JSON=1
   shift
@@ -412,7 +412,7 @@ command_node() {
     use)
       [ -n "$target" ] || emit_error "usage.invalid" "用法: netproxyctl node use <group/tag|auto> [分组]" 2
       if [ "$target" = "auto" ]; then
-        sh "$SWITCH_SCRIPT" node auto "${group:-$(read_conf "$MODULE_CONF" "ACTIVE_GROUP_ID" "")}" >&2 \
+        sh "$SWITCH_SCRIPT" node auto "${group:-$(read_module_value "$MODULE_CONF" "ACTIVE_GROUP_ID")}" >&2 \
           || emit_error "node.switch_failed" "自动测速分组切换失败"
       else
         sh "$SWITCH_SCRIPT" node "$target" >&2 || emit_error "node.switch_failed" "节点切换失败"
@@ -708,13 +708,13 @@ command_app() {
 
   case "$action" in
     list)
-      mode="$(read_conf "$EBPF_CONF" "APP_PROXY_MODE" "blacklist")"
-      proxy_list="$(read_conf "$EBPF_CONF" "PROXY_APPS_LIST" "")"
-      bypass_list="$(read_conf "$EBPF_CONF" "BYPASS_APPS_LIST" "")"
-      app_users="$(read_conf "$EBPF_CONF" "APP_ANDROID_USERS" "")"
+      mode="$(read_ebpf_value "$EBPF_CONF" "APP_PROXY_MODE")"
+      proxy_list="$(read_ebpf_value "$EBPF_CONF" "PROXY_APPS_LIST")"
+      bypass_list="$(read_ebpf_value "$EBPF_CONF" "BYPASS_APPS_LIST")"
+      app_users="$(read_ebpf_value "$EBPF_CONF" "APP_ANDROID_USERS")"
       if [ "$OUTPUT_JSON" = "1" ]; then
         emit_success "app.list" "分应用代理配置" \
-          "{\"enabled\":$( [ "$(read_conf "$EBPF_CONF" "APP_PROXY_ENABLE" "1")" = "1" ] && printf true || printf false),\"mode\":\"$(json_escape "$mode")\",\"android_users\":\"$(json_escape "$app_users")\",\"proxy_apps\":\"$(json_escape "$proxy_list")\",\"bypass_apps\":\"$(json_escape "$bypass_list")\"}"
+          "{\"enabled\":$( [ "$(read_ebpf_value "$EBPF_CONF" "APP_PROXY_ENABLE")" = "1" ] && printf true || printf false),\"mode\":\"$(json_escape "$mode")\",\"android_users\":\"$(json_escape "$app_users")\",\"proxy_apps\":\"$(json_escape "$proxy_list")\",\"bypass_apps\":\"$(json_escape "$bypass_list")\"}"
       else
         printf "模式: %s\nAndroid 用户: %s\n代理列表: %s\n绕过列表: %s\n" \
           "$mode" "${app_users:-全部}" "$proxy_list" "$bypass_list"
@@ -722,9 +722,9 @@ command_app() {
       ;;
     mode)
       case "$value" in blacklist | whitelist) ;; *) emit_error "app.mode_invalid" "应用模式应为 blacklist 或 whitelist" 2 ;; esac
-      set_conf_values "$EBPF_CONF" \
-        "APP_PROXY_ENABLE" "1" \
-        "APP_PROXY_MODE" "$(quote_conf "$value")"
+      set_ebpf_values "$EBPF_CONF" \
+        --set "APP_PROXY_ENABLE=1" \
+        --set "APP_PROXY_MODE=$(quote_conf "$value")"
       emit_write_success "app.mode_changed" "分应用模式已更新" "{\"mode\":\"$value\"}"
       ;;
     users)
@@ -735,7 +735,7 @@ command_app() {
         validate_android_user_list "$app_users" "APP_ANDROID_USERS" \
           || emit_error "app.users_invalid" "Android 用户 ID 只能是非负整数" 2
       fi
-      set_conf "$EBPF_CONF" "APP_ANDROID_USERS" "$(quote_conf "$app_users")"
+      set_ebpf_values "$EBPF_CONF" --set "APP_ANDROID_USERS=$(quote_conf "$app_users")"
       emit_write_success "app.users_changed" "应用生效用户已更新" \
         "{\"android_users\":\"$(json_escape "$app_users")\"}"
       ;;
@@ -743,34 +743,34 @@ command_app() {
       [ -n "$value" ] || emit_error "usage.invalid" "用法: netproxyctl app add <包名>" 2
       validate_android_package_list "$value" "应用包名" \
         || emit_error "app.package_invalid" "应用包名格式无效" 2
-      mode="$(read_conf "$EBPF_CONF" "APP_PROXY_MODE" "blacklist")"
+      mode="$(read_ebpf_value "$EBPF_CONF" "APP_PROXY_MODE")"
       if [ "$mode" = "whitelist" ]; then
-        current="$(read_conf "$EBPF_CONF" "PROXY_APPS_LIST" "")"
+        current="$(read_ebpf_value "$EBPF_CONF" "PROXY_APPS_LIST")"
         new_list="$(list_add "$current" "$value")"
-        set_conf_values "$EBPF_CONF" \
-          "APP_PROXY_ENABLE" "1" \
-          "PROXY_APPS_LIST" "$(quote_conf "$new_list")"
+        set_ebpf_values "$EBPF_CONF" \
+          --set "APP_PROXY_ENABLE=1" \
+          --set "PROXY_APPS_LIST=$(quote_conf "$new_list")"
       else
-        current="$(read_conf "$EBPF_CONF" "BYPASS_APPS_LIST" "")"
+        current="$(read_ebpf_value "$EBPF_CONF" "BYPASS_APPS_LIST")"
         new_list="$(list_add "$current" "$value")"
-        set_conf_values "$EBPF_CONF" \
-          "APP_PROXY_ENABLE" "1" \
-          "BYPASS_APPS_LIST" "$(quote_conf "$new_list")"
+        set_ebpf_values "$EBPF_CONF" \
+          --set "APP_PROXY_ENABLE=1" \
+          --set "BYPASS_APPS_LIST=$(quote_conf "$new_list")"
       fi
       emit_write_success "app.added" "应用已加入名单" "{}"
       ;;
     remove | rm)
       [ -n "$value" ] || emit_error "usage.invalid" "用法: netproxyctl app remove <应用>" 2
-      proxy_list="$(list_remove "$(read_conf "$EBPF_CONF" "PROXY_APPS_LIST" "")" "$value")"
-      bypass_list="$(list_remove "$(read_conf "$EBPF_CONF" "BYPASS_APPS_LIST" "")" "$value")"
-      set_conf_values "$EBPF_CONF" \
-        "PROXY_APPS_LIST" "$(quote_conf "$proxy_list")" \
-        "BYPASS_APPS_LIST" "$(quote_conf "$bypass_list")"
+      proxy_list="$(list_remove "$(read_ebpf_value "$EBPF_CONF" "PROXY_APPS_LIST")" "$value")"
+      bypass_list="$(list_remove "$(read_ebpf_value "$EBPF_CONF" "BYPASS_APPS_LIST")" "$value")"
+      set_ebpf_values "$EBPF_CONF" \
+        --set "PROXY_APPS_LIST=$(quote_conf "$proxy_list")" \
+        --set "BYPASS_APPS_LIST=$(quote_conf "$bypass_list")"
       emit_write_success "app.removed" "应用已从名单移除" "{}"
       ;;
     enable | disable)
       [ "$action" = "enable" ] && value=1 || value=0
-      set_conf "$EBPF_CONF" "APP_PROXY_ENABLE" "$value"
+      set_ebpf_values "$EBPF_CONF" --set "APP_PROXY_ENABLE=$value"
       emit_write_success "app.$action" "分应用代理设置已更新" "{}"
       ;;
     *) emit_error "usage.invalid" "用法: netproxyctl app list|mode|users|add|remove|enable|disable" 2 ;;
@@ -876,10 +876,28 @@ command_ebpf() {
   local cgroup_enabled shared_enabled cgroup_path interfaces interface
   local probe_output report_output status content is_raw=false
 
+  # 配置诊断由 Go 类型模型直接完成，避免再次在 Shell 中解析配置和拼接 JSON。
+  case "$action" in
+    diagnose | validate)
+      [ -z "$mode" ] || [ "$mode" = "configured" ] \
+        || emit_error "usage.invalid" "用法: netproxyctl ebpf diagnose" 2
+      if [ "$OUTPUT_JSON" = "1" ]; then
+        local native_output native_status
+        native_status=0
+        native_output="$("$NETPROXY_NATIVE_BIN" ebpf diagnose \
+          --config "$EBPF_CONF" --format json 2>&1)" || native_status=$?
+        printf '%s\n' "$native_output"
+        return "$native_status"
+      fi
+      "$NETPROXY_NATIVE_BIN" ebpf diagnose --config "$EBPF_CONF" --format text
+      return $?
+      ;;
+  esac
+
   [ "$action" = "status" ] \
     || emit_error "usage.invalid" "用法: netproxyctl ebpf status [configured|all|local|shared] [--raw]" 2
-  cgroup_enabled="$(read_conf "$EBPF_CONF" "EBPF_CGROUP_ENABLED" "1")"
-  shared_enabled="$(read_conf "$EBPF_CONF" "EBPF_SHARED_NETWORK" "0")"
+  cgroup_enabled="$(read_ebpf_value "$EBPF_CONF" "EBPF_CGROUP_ENABLED")"
+  shared_enabled="$(read_ebpf_value "$EBPF_CONF" "EBPF_SHARED_NETWORK")"
   case "$mode" in
     configured)
       if [ "$cgroup_enabled" = "1" ] && [ "$shared_enabled" = "1" ]; then
@@ -901,8 +919,8 @@ command_ebpf() {
   esac
   require_file "$SING_BOX_BIN" "sing-box 二进制不存在"
   require_file "$BPFTOOL_BIN" "bpftool 二进制不存在，请重新安装模块"
-  cgroup_path="$(read_conf "$EBPF_CONF" "EBPF_CGROUP_PATH" "")"
-  interfaces="$(read_conf "$EBPF_CONF" "EBPF_SHARED_INTERFACES" "")"
+  cgroup_path="$(read_ebpf_value "$EBPF_CONF" "EBPF_CGROUP_PATH")"
+  interfaces="$(read_ebpf_value "$EBPF_CONF" "EBPF_SHARED_INTERFACES")"
   interface="${interfaces%% *}"
   ensure_dir /dev/netproxy "无法创建 eBPF 诊断目录"
   probe_output="/dev/netproxy/ebpf-status.$$.raw"
@@ -1217,6 +1235,7 @@ NetProxy 管理命令
   netproxyctl [--json] mode [rule|global|direct|AllowAds]
   netproxyctl [--json] app list|mode|users|add|remove|enable|disable
   netproxyctl [--json] ebpf status [configured|all|local|shared] [--raw]
+  netproxyctl [--json] ebpf diagnose
   netproxyctl [--json] config list|read|check|validate|apply
   netproxyctl [--json] logs show|clear|export
 

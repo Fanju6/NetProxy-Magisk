@@ -3,7 +3,7 @@
 # 文件: service.sh
 # 功能: 构建 sing-box 运行时配置，管理核心生命周期、配置检查与就绪状态。
 # 用法: service.sh {start|stop|restart|reload|status|check}
-# 依赖: common.sh、config.sh、api.sh、state.sh、catalog.sh、runtime.sh、ebpf.sh。
+# 依赖: common.sh、config.sh、api.sh、state.sh、catalog.sh、runtime.sh、netproxy-native。
 #######################################
 
 set -u
@@ -32,7 +32,6 @@ readonly SERVICE_LOCK_DIR="/dev/netproxy/service.lock"
 . "$MODDIR/scripts/utils/state.sh"
 . "$MODDIR/scripts/utils/catalog.sh"
 . "$MODDIR/scripts/core/runtime.sh"
-. "$MODDIR/scripts/core/ebpf.sh"
 
 export PATH="$MODDIR/bin:$PATH"
 readonly BUSYBOX="$(detect_busybox)"
@@ -144,6 +143,18 @@ cleanup_runtime_files() {
     "$RUNTIME_DIR/ebpf.json" \
     "$RUNTIME_DIR/catalog.state" \
     2> /dev/null || true
+}
+
+#######################################
+# 生成 eBPF 入站运行时配置
+# 参数: 无
+# 返回: netproxy-native 成功返回 0，否则返回非 0
+#######################################
+write_runtime_ebpf() {
+  "$NETPROXY_NATIVE_BIN" ebpf runtime \
+    --config "$EBPF_CONF" \
+    --output "$RUNTIME_EBPF_FILE" \
+    --format json
 }
 
 #######################################

@@ -193,10 +193,11 @@ func applyUpdateEffects(ctx context.Context, options Options, result subscriptio
 }
 
 func activateGroupIfNeeded(ctx context.Context, options Options, groupID string) (bool, error) {
-	active, err := moduleconfig.ReadValue(options.ModuleConf, "ACTIVE_GROUP_ID", "")
+	module, err := moduleconfig.LoadModule(options.ModuleConf)
 	if err != nil {
 		return false, err
 	}
+	active := module.ActiveGroupID
 	if active != "" {
 		hasNodes, hasErr := catalog.GroupHasNodes(ctx, options.Root, active)
 		if hasErr != nil {
@@ -210,7 +211,7 @@ func activateGroupIfNeeded(ctx context.Context, options Options, groupID string)
 	if err != nil || !hasNodes {
 		return false, err
 	}
-	if err := moduleconfig.Update(options.ModuleConf, map[string]string{
+	if err := moduleconfig.UpdateModule(options.ModuleConf, map[string]string{
 		"ACTIVE_GROUP_ID":   moduleconfig.Quote(groupID),
 		"SELECTOR_MODE":     "urltest",
 		"SELECTED_NODE_REF": moduleconfig.Quote(""),
@@ -221,12 +222,12 @@ func activateGroupIfNeeded(ctx context.Context, options Options, groupID string)
 }
 
 func fallbackMissingNode(ctx context.Context, options Options, groupID string, logger *log.Logger) error {
-	selector, err := moduleconfig.ReadValue(options.ModuleConf, "SELECTOR_MODE", "urltest")
-	if err != nil || selector != "manual" {
+	module, err := moduleconfig.LoadModule(options.ModuleConf)
+	if err != nil || module.SelectorMode != "manual" {
 		return err
 	}
-	selected, err := moduleconfig.ReadValue(options.ModuleConf, "SELECTED_NODE_REF", "")
-	if err != nil || selected == "" {
+	selected := module.SelectedNodeRef
+	if selected == "" {
 		return err
 	}
 	selectedGroup, selectedTag, found := strings.Cut(selected, "/")
@@ -237,7 +238,7 @@ func fallbackMissingNode(ctx context.Context, options Options, groupID string, l
 	if err != nil || present {
 		return err
 	}
-	if err := moduleconfig.Update(options.ModuleConf, map[string]string{
+	if err := moduleconfig.UpdateModule(options.ModuleConf, map[string]string{
 		"SELECTOR_MODE":     "urltest",
 		"SELECTED_NODE_REF": moduleconfig.Quote(""),
 	}); err != nil {

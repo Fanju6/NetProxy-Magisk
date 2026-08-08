@@ -48,6 +48,11 @@ run_json "$result"
 result="$(sh "$MODULE/scripts/netproxyctl" --json app list)"
 run_json "$result"
 printf '%s' "$result" | grep -q '"android_users":""'
+
+result="$(sh "$MODULE/scripts/netproxyctl" --json ebpf diagnose)"
+run_json "$result"
+printf '%s' "$result" | grep -q '"code":"ebpf.diagnosed"'
+
 result="$(sh "$MODULE/scripts/netproxyctl" --json app users 0 999)"
 run_json "$result"
 grep -q '^APP_ANDROID_USERS="0 999"$' "$MODULE/config/ebpf/ebpf.conf"

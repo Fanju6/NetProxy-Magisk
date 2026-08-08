@@ -37,7 +37,7 @@
 - `src/module/netproxyctl` 只是 7 行 shim，实际实现在 `scripts/netproxyctl`（约 1400 行 dispatcher）。改命令行为改后者，shim 只负责定位。
 - 命令组权威清单：`service catalog node sub mode app ebpf config logs`。新增命令组必须同时更新 dispatcher、Android `NetProxyCtlClient`、WebUI `src/exec.ts` 和契约测试。
 - `scripts/utils/`：`common.sh`、`config.sh`（`read_conf` / `set_conf`）、`api.sh`、`state.sh`、`catalog.sh`。
-- `scripts/core/`：`service.sh`、`runtime.sh`、`switch.sh`、`subscription.sh`、`ebpf.sh`。订阅调度由 `netproxy-native subworker` 承担。
+- `scripts/core/`：`service.sh`、`runtime.sh`、`switch.sh`、`subscription.sh`。eBPF 配置生成与订阅调度由 `netproxy-native` 负责。
 - `scripts/network/netmon.sh` 负责网络变化监听。
 - 设备上的调用形式是 `su -c /data/adb/modules/netproxy/netproxyctl [--json] <命令组> <命令>`；文档和排查步骤按此形式给出，不要写成裸 `netproxyctl`，它不在 PATH 里。
 
@@ -281,7 +281,7 @@ stopped -> preparing -> starting -> ready -> stopping -> stopped
 
 eBPF 只负责透明代理入站。停止服务由 sing-box 关闭并清理其 eBPF 程序、Map 和 TC 挂载。
 
-分应用配置保存包名和可选 Android 用户范围，`ebpf.sh` 直接生成 `include_package`、`exclude_package` 与 `include_android_user`，包名到 UID 的解析由 sing-box 在入站启动时完成。应用安装、重装、UID 变化或用户范围变化后，通过配置 reload 重新解析，不维护模块侧 UID 缓存。
+分应用配置保存包名和可选 Android 用户范围，`netproxy-native ebpf runtime` 直接生成 `include_package`、`exclude_package` 与 `include_android_user`，包名到 UID 的解析由 sing-box 在入站启动时完成。应用安装、重装、UID 变化或用户范围变化后，通过配置 reload 重新解析，不维护模块侧 UID 缓存。
 
 本机 cgroup 与热点 shared-network 是可独立启用的数据路径。关闭本机 cgroup 时，运行时配置省略 cgroup 路径、原生 IPv6 策略、应用/UID 策略和本机 Map 字段；本机与共享网络同时关闭属于无效配置。
 
