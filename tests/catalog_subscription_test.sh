@@ -136,14 +136,18 @@ export MOCK_PROVIDER="$TMP_ROOT/subscription-provider.json"
 . "$MODDIR/scripts/utils/config.sh"
 . "$MODDIR/scripts/utils/api.sh"
 . "$MODDIR/scripts/utils/catalog.sh"
-. "$MODDIR/scripts/utils/metadata.sh"
 . "$MODDIR/scripts/core/subscription.sh"
 
-subscription_proxy_url() {
-  if [ "${MOCK_USE_PROXY:-0}" = "1" ]; then
-    printf '%s' 'http://127.0.0.1:7080'
-  fi
-  return 0
+meta_get_raw() {
+  "$NETPROXY_NATIVE_BIN" catalog meta-get --input "$1" --field "$2" --format raw
+}
+
+meta_get_string() {
+  "$NETPROXY_NATIVE_BIN" catalog meta-get --input "$1" --field "$2" --format string
+}
+
+set_test_url() {
+  sed -i "s#\"url\"[[:space:]]*:[[:space:]]*\"[^\"]*\"#\"url\": \"$1\"#" "$group_dir/meta.json"
 }
 
 group_id="$(add_subscription "测试订阅" "https://example.test/ok")"
@@ -162,17 +166,13 @@ unset MOCK_USE_PROXY MOCK_FAIL_PROXY
 [ "$(meta_get_string "$group_dir/meta.json" last_error '')" = "" ]
 [ "$(meta_get_raw "$group_dir/meta.json" revision 0)" -eq 2 ]
 
-load_catalog_meta "$group_dir/meta.json"
-SUB_URL="https://example.test/304"
-write_catalog_meta "$group_dir/meta.json"
+set_test_url "https://example.test/304"
 update_subscription "$group_id"
 [ "$(meta_get_raw "$group_dir/meta.json" revision 0)" -eq 2 ]
 [ "$(wc -l < "$group_dir/history.jsonl" | tr -d ' ')" -eq 3 ]
 
 before="$(cksum "$group_dir/provider.json")"
-load_catalog_meta "$group_dir/meta.json"
-SUB_URL="https://example.test/fail"
-write_catalog_meta "$group_dir/meta.json"
+set_test_url "https://example.test/fail"
 if update_subscription "$group_id"; then
   printf '%s\n' 'expected subscription failure' >&2
   exit 1
@@ -187,16 +187,14 @@ remove_catalog_node 'default/LOCAL'
 [ "$(meta_get_raw "$CATALOG_DIR/default/meta.json" node_count 0)" -eq 0 ]
 
 edit_catalog_node "$group_id/SOCKS" 'http://example.org:8080#EDITED'
-catalog_provider_contains_tag "$group_dir/provider.json" EDITED
+catalog_group_contains_tag "$group_id" EDITED
 [ "$(meta_get_raw "$group_dir/meta.json" node_count 0)" -eq 1 ]
 remove_catalog_node "$group_id/EDITED"
 [ "$(meta_get_raw "$group_dir/meta.json" node_count 0)" -eq 0 ]
 
-load_catalog_meta "$group_dir/meta.json"
-SUB_URL="https://example.test/ok"
-write_catalog_meta "$group_dir/meta.json"
+set_test_url "https://example.test/ok"
 update_subscription "$group_id"
-catalog_provider_contains_tag "$group_dir/provider.json" SOCKS
+catalog_group_contains_tag "$group_id" SOCKS
 
 if command -v python3 > /dev/null 2>&1; then
   python3 -m json.tool "$group_dir/meta.json" > /dev/null

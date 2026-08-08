@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
@@ -207,6 +209,72 @@ func GroupIDs(root, groupType string) ([]string, error) {
 		}
 	}
 	return ids, nil
+}
+
+// NewGroupID 为新订阅或本地文件分组生成不冲突的 ID。
+func NewGroupID(root, kind, source string) (string, error) {
+	if strings.TrimSpace(root) == "" {
+		return "", errors.New("Catalog 根目录不能为空")
+	}
+	switch kind {
+	case "subscription":
+		for attempt := 0; attempt < 16; attempt++ {
+			var raw [16]byte
+			if _, err := rand.Read(raw[:]); err != nil {
+				return "", err
+			}
+			raw[6] = (raw[6] & 0x0f) | 0x40
+			raw[8] = (raw[8] & 0x3f) | 0x80
+			candidate := fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+				raw[0:4], raw[4:6], raw[6:8], raw[8:10], raw[10:16])
+			if _, err := os.Stat(filepath.Join(root, candidate)); err == nil {
+				continue
+			} else if os.IsNotExist(err) {
+				return candidate, nil
+			} else {
+				return "", err
+			}
+		}
+		return "", errors.New("无法生成不冲突的订阅分组 ID")
+	case "file", "local":
+		name := filepath.Base(strings.TrimSpace(source))
+		if name == "." || name == string(filepath.Separator) || name == "" {
+			name = fmt.Sprintf("%d", time.Now().Unix())
+		}
+		if extension := filepath.Ext(name); extension != "" {
+			name = strings.TrimSuffix(name, extension)
+		}
+		var builder strings.Builder
+		lastDash := false
+		for _, char := range strings.ToLower(name) {
+			valid := (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '.' || char == '_' || char == '-'
+			if valid {
+				builder.WriteRune(char)
+				lastDash = false
+			} else if !lastDash {
+				builder.WriteByte('-')
+				lastDash = true
+			}
+		}
+		slug := strings.Trim(builder.String(), ".-")
+		if slug == "" {
+			slug = fmt.Sprintf("%d", time.Now().Unix())
+		}
+		base := "local-" + slug
+		candidate := base
+		for suffix := 2; ; suffix++ {
+			if _, err := os.Stat(filepath.Join(root, candidate)); err == nil {
+				candidate = fmt.Sprintf("%s-%d", base, suffix)
+				continue
+			} else if os.IsNotExist(err) {
+				return candidate, nil
+			} else {
+				return "", err
+			}
+		}
+	default:
+		return "", fmt.Errorf("未知 Catalog 分组 ID 类型: %s", kind)
+	}
 }
 
 func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, error) {

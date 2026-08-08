@@ -33,7 +33,6 @@ readonly SUBSCRIPTION_LIBRARY_ONLY=1
 . "$MODDIR/scripts/utils/api.sh"
 . "$MODDIR/scripts/utils/state.sh"
 . "$MODDIR/scripts/utils/catalog.sh"
-. "$MODDIR/scripts/utils/metadata.sh"
 . "$MODDIR/scripts/core/subscription.sh"
 
 OUTPUT_JSON=0
@@ -118,25 +117,6 @@ file_to_json_string() {
 }
 
 #######################################
-# 从 NetProxy 原生组件统一结果中提取 data
-# 参数:
-#   $1  单行结果 JSON
-# 返回: 标准输出打印 data JSON
-#######################################
-extract_result_data() {
-  local result="$1"
-  local data
-
-  case "$result" in
-    *'"data":'*) ;;
-    *) return 1 ;;
-  esac
-  data="${result#*\"data\":}"
-  data="${data%?}"
-  printf "%s" "$data"
-}
-
-#######################################
 # 调用 netproxy-native catalog 子命令并取出 data
 # 参数:
 #   $1   catalog 动作 (group/groups/snapshot/show)
@@ -169,6 +149,18 @@ catalog_group_summary_json() {
 }
 
 #######################################
+# 返回分组状态 TSV，供 Shell 编排读取少量运行字段
+# 参数: $1 分组目录
+# 返回: 标准输出打印键值行
+#######################################
+catalog_group_summary_tsv() {
+  local group_dir="$1"
+
+  "$NETPROXY_NATIVE_BIN" catalog group --root "$CATALOG_DIR" \
+    --group "${group_dir##*/}" --format tsv
+}
+
+#######################################
 # 返回订阅编辑所需的受保护字段
 # 参数:
 #   $1  订阅分组目录
@@ -177,21 +169,7 @@ catalog_group_summary_json() {
 catalog_subscription_private_json() {
   local group_dir="$1"
 
-  load_catalog_meta "$group_dir/meta.json" || return 1
-  [ "$SUB_TYPE" = "subscription" ] || return 1
-  printf '{"id":"%s","name":"%s","url":"%s","user_agent":"%s","hwid":"%s","custom_headers":%s,"auto_update":%s,"update_interval":%s,"interval_source":"%s","update_via_proxy":"%s","include":"%s","exclude":"%s","allow_insecure":%s,"timeout":%s}' \
-    "$(json_escape "$SUB_ID")" \
-    "$(json_escape "$SUB_NAME")" \
-    "$(json_escape "$SUB_URL")" \
-    "$(json_escape "$SUB_USER_AGENT")" \
-    "$(json_escape "$SUB_HWID")" \
-    "$SUB_CUSTOM_HEADERS" \
-    "$SUB_AUTO_UPDATE" "$SUB_UPDATE_INTERVAL" \
-    "$(json_escape "$SUB_INTERVAL_SOURCE")" \
-    "$(json_escape "$SUB_UPDATE_VIA_PROXY")" \
-    "$(json_escape "$SUB_INCLUDE")" \
-    "$(json_escape "$SUB_EXCLUDE")" \
-    "$SUB_ALLOW_INSECURE" "$SUB_TIMEOUT"
+  catalog_group_private_json "${group_dir##*/}"
 }
 
 #######################################
@@ -256,7 +234,7 @@ command_service_status() {
   local worker_state="stopped" worker_pid=""
   local runtime_status="" memory=0 connections_in=0 connections_out=0
   local upload_total=0 download_total=0
-  local runtime_key runtime_value
+  local runtime_key runtime_value group_key group_value group_record
   local process_stat="" process_cpu_ticks=0 system_cpu_ticks=0 cpu_count=1
   local cpu_name cpu_user cpu_nice cpu_system cpu_idle cpu_iowait cpu_irq cpu_softirq cpu_steal
 
@@ -272,9 +250,16 @@ command_service_status() {
   active="$(read_conf "$MODULE_CONF" "ACTIVE_GROUP_ID" "")"
   selected="$(read_conf "$MODULE_CONF" "SELECTED_NODE_REF" "")"
   [ -z "$active" ] || active_runtime_tag="$(catalog_runtime_group_tag "$active" 2> /dev/null || true)"
-  if [ -n "$active" ] && load_catalog_meta "$CATALOG_DIR/$active/meta.json"; then
-    active_node_count="$SUB_NODE_COUNT"
-    active_group_name="$SUB_NAME"
+  if [ -n "$active" ]; then
+    group_record="$(catalog_group_summary_tsv "$CATALOG_DIR/$active" 2> /dev/null || true)"
+    while IFS="$TAB" read -r group_key group_value; do
+      case "$group_key" in
+        name) active_group_name="$group_value" ;;
+        node_count) active_node_count="$group_value" ;;
+      esac
+    done << EOF
+$group_record
+EOF
   fi
   [ -n "$active_group_name" ] || active_group_name="$active"
   case "$active_node_count" in "" | *[!0-9]*) active_node_count=0 ;; esac
@@ -318,7 +303,7 @@ EOF
       download_total="${download_total:-0}"
     fi
     if [ -z "$runtime_selected" ] && [ "$active_node_count" -eq 1 ] && [ -n "$active" ]; then
-      runtime_selected="$(catalog_provider_first_tag "$CATALOG_DIR/$active/provider.json" 2> /dev/null || true)"
+      runtime_selected="$(catalog_group_first_tag "$active" 2> /dev/null || true)"
       [ -z "$runtime_selected" ] || runtime_selected="$active_runtime_tag/$runtime_selected"
     fi
   fi
@@ -405,7 +390,7 @@ command_catalog() {
       ;;
     show)
       [ -n "$query" ] || emit_error "usage.invalid" "用法: netproxyctl catalog show <分组>" 2
-      group_id="$(resolve_catalog_group "$query")" || emit_error "catalog.not_found" "未找到节点组"
+      group_id="$(catalog_resolve_group "$query")" || emit_error "catalog.not_found" "未找到节点组"
       summary="$(catalog_group_snapshot_json "$group_id")" || emit_error "catalog.read_failed" "读取分组失败"
       emit_success "catalog.show" "Catalog 分组详情" "$summary"
       ;;
@@ -423,14 +408,20 @@ command_node_read() {
   local action="$1"
   local group_query="${2:-}"
   local group_id groups_json
-  local active selector selected node_count=0
+  local active selector selected node_count=0 group_record group_key group_value
 
   active="$(read_conf "$MODULE_CONF" "ACTIVE_GROUP_ID" "")"
   selector="$(read_conf "$MODULE_CONF" "SELECTOR_MODE" "urltest")"
   selected="$(read_conf "$MODULE_CONF" "SELECTED_NODE_REF" "")"
   # 归一化当前选择：空组显示为未选择，自动模式显示为 Auto/<组>
-  if load_catalog_meta "$CATALOG_DIR/$active/meta.json"; then
-    node_count="$SUB_NODE_COUNT"
+  if [ -n "$active" ]; then
+    group_record="$(catalog_group_summary_tsv "$CATALOG_DIR/$active" 2> /dev/null || true)"
+    while IFS="$TAB" read -r group_key group_value; do
+      [ "$group_key" = "node_count" ] || continue
+      node_count="$group_value"
+    done << EOF
+$group_record
+EOF
   fi
   case "$node_count" in "" | *[!0-9]*) node_count=0 ;; esac
   if [ "$node_count" -le 0 ]; then
@@ -446,7 +437,7 @@ command_node_read() {
   fi
 
   if [ -n "$group_query" ]; then
-    group_id="$(resolve_catalog_group "$group_query")" || emit_error "catalog.not_found" "未找到节点组"
+    group_id="$(catalog_resolve_group "$group_query")" || emit_error "catalog.not_found" "未找到节点组"
     groups_json="$(catalog_nodes_snapshot_json "$group_id")" \
       || emit_error "catalog.read_failed" "读取节点组失败"
   else
@@ -513,7 +504,7 @@ command_node_delay() {
 command_node() {
   local action="${1:-list}"
   shift 2> /dev/null || true
-  local target="${1:-}" group="${2:-}" group_id tag provider_file result data
+  local target="${1:-}" group="${2:-}" group_id tag result data
 
   case "$action" in
     list) command_node_read list "$target" ;;
@@ -545,10 +536,8 @@ command_node() {
       tag="${target#*/}"
       [ "$group_id" != "$target" ] && [ -n "$tag" ] \
         || emit_error "node.ref_invalid" "节点引用格式应为 <group-id>/<tag>"
-      provider_file="$(catalog_provider_path "$group_id")" \
-        || emit_error "catalog.not_found" "节点分组不存在"
-      [ -f "$provider_file" ] || emit_error "catalog.not_found" "节点分组不存在"
-      result="$("$NETPROXY_NATIVE_BIN" provider get --input "$provider_file" --tag "$tag")" \
+      result="$("$NETPROXY_NATIVE_BIN" catalog node-get --root "$CATALOG_DIR" \
+        --group "$group_id" --tag "$tag")" \
         || emit_error "node.get_failed" "节点配置读取失败"
       data="$(extract_result_data "$result")" \
         || emit_error "node.get_failed" "节点配置结果格式无效"
@@ -560,10 +549,8 @@ command_node() {
       tag="${target#*/}"
       [ "$group_id" != "$target" ] && [ -n "$tag" ] \
         || emit_error "node.ref_invalid" "节点引用格式应为 <group-id>/<tag>"
-      provider_file="$(catalog_provider_path "$group_id")" \
-        || emit_error "catalog.not_found" "节点分组不存在"
-      [ -f "$provider_file" ] || emit_error "catalog.not_found" "节点分组不存在"
-      result="$("$NETPROXY_NATIVE_BIN" provider export --input "$provider_file" --tag "$tag")" \
+      result="$("$NETPROXY_NATIVE_BIN" catalog node-export --root "$CATALOG_DIR" \
+        --group "$group_id" --tag "$tag")" \
         || emit_error "node.export_failed" "节点分享链接生成失败"
       data="$(extract_result_data "$result")" \
         || emit_error "node.export_failed" "节点分享链接结果格式无效"
@@ -652,7 +639,7 @@ command_sub_add() {
         shift 2
         ;;
       --interval)
-        interval="$(duration_to_seconds "${2:-}")" || emit_error "subscription.interval_invalid" "更新周期无效"
+        interval="$(catalog_duration_to_seconds "${2:-}")" || emit_error "subscription.interval_invalid" "更新周期无效"
         [ "$interval" -ge 900 ] || emit_error "subscription.interval_too_short" "更新周期不能少于 15 分钟"
         SUB_ADD_UPDATE_INTERVAL="$interval"
         shift 2
@@ -697,85 +684,78 @@ command_sub_add() {
 # 返回: 无
 #######################################
 command_sub_edit() {
-  local query="${1:-}" group_id group_dir meta_file backup requires_update=0
-  local interval value headers_file original_name name_changed=0
+  local query="${1:-}" group_id result error_file key value
+  local name_value url_value user_agent_value hwid_value headers_file interval_value
+  local via_proxy_value include_value exclude_value timeout_value
+  local auto_update_value allow_insecure_value
+  local name_set=0 url_set=0 user_agent_set=0 hwid_set=0 headers_set=0 interval_set=0
+  local via_proxy_set=0 include_set=0 exclude_set=0 timeout_set=0 auto_update_set=0 allow_insecure_set=0
+  local name_changed=false structure_changed=false
 
   [ -n "$query" ] || emit_error "usage.invalid" "用法: netproxyctl sub edit <订阅> [选项]" 2
   shift
-  group_id="$(resolve_catalog_group "$query")" || emit_error "subscription.not_found" "订阅不存在"
-  group_dir="$CATALOG_DIR/$group_id"
-  meta_file="$group_dir/meta.json"
-  load_catalog_meta "$meta_file" || emit_error "subscription.read_failed" "读取订阅失败"
-  [ "$SUB_TYPE" = "subscription" ] || emit_error "subscription.read_only" "目标不是 URL 订阅"
-  original_name="$SUB_NAME"
-  backup="$group_dir/meta.json.backup.$$"
-  cp "$meta_file" "$backup" || emit_error "subscription.edit_failed" "无法创建编辑事务"
-
+  group_id="$(catalog_resolve_group "$query")" || emit_error "subscription.not_found" "订阅不存在"
+  [ "$(catalog_group_type "$group_id")" = "subscription" ] || emit_error "subscription.read_only" "目标不是 URL 订阅"
   while [ $# -gt 0 ]; do
     case "$1" in
-      --name) SUB_NAME="${2:-}"; shift 2 ;;
-      --url) SUB_URL="${2:-}"; SUB_ETAG=""; SUB_LAST_MODIFIED=""; requires_update=1; shift 2 ;;
-      --user-agent) SUB_USER_AGENT="${2:-}"; requires_update=1; shift 2 ;;
-      --hwid) SUB_HWID="${2:-}"; requires_update=1; shift 2 ;;
-      --headers-file)
-        headers_file="${2:-}"
-        [ -f "$headers_file" ] || { mv -f "$backup" "$meta_file"; emit_error "subscription.headers_invalid" "自定义请求头文件不存在"; }
-        SUB_CUSTOM_HEADERS="$(tr -d '\r\n' < "$headers_file")"
-        requires_update=1
+      --name) name_set=1; name_value="${2:-}"; shift 2 ;;
+      --url) url_set=1; url_value="${2:-}"; shift 2 ;;
+      --user-agent) user_agent_set=1; user_agent_value="${2:-}"; shift 2 ;;
+      --hwid) hwid_set=1; hwid_value="${2:-}"; shift 2 ;;
+      --headers-file) headers_set=1; headers_file="${2:-}"; shift 2 ;;
+      --interval) interval_set=1; interval_value="${2:-}"; shift 2 ;;
+      --via-proxy) via_proxy_set=1; via_proxy_value="${2:-}"; shift 2 ;;
+      --include) include_set=1; include_value="${2:-}"; shift 2 ;;
+      --exclude) exclude_set=1; exclude_value="${2:-}"; shift 2 ;;
+      --timeout) timeout_set=1; timeout_value="${2:-}"; shift 2 ;;
+      --allow-insecure)
+        allow_insecure_value="$(normalize_boolean "${2:-}")" \
+          || emit_error "usage.invalid" "布尔选项无效: $1" 2
+        allow_insecure_set=1
         shift 2
         ;;
-      --interval)
-        interval="$(duration_to_seconds "${2:-}")" || { mv -f "$backup" "$meta_file"; emit_error "subscription.interval_invalid" "更新周期无效"; }
-        [ "$interval" -ge 900 ] || { mv -f "$backup" "$meta_file"; emit_error "subscription.interval_too_short" "更新周期不能少于 15 分钟"; }
-        SUB_UPDATE_INTERVAL="$interval"
-        SUB_INTERVAL_SOURCE="user"
-        schedule_next_update
+      --auto-update)
+        auto_update_value="$(normalize_boolean "${2:-}")" \
+          || emit_error "usage.invalid" "布尔选项无效: $1" 2
+        auto_update_set=1
         shift 2
         ;;
-      --via-proxy)
-        value="${2:-}"
-        case "$value" in auto | always | never) ;; *) mv -f "$backup" "$meta_file"; emit_error "subscription.proxy_mode_invalid" "代理更新模式无效" ;; esac
-        SUB_UPDATE_VIA_PROXY="$value"
-        requires_update=1
-        shift 2
-        ;;
-      --include) SUB_INCLUDE="${2:-}"; requires_update=1; shift 2 ;;
-      --exclude) SUB_EXCLUDE="${2:-}"; requires_update=1; shift 2 ;;
-      --allow-insecure) SUB_ALLOW_INSECURE="$(normalize_boolean "${2:-}")" || { mv -f "$backup" "$meta_file"; emit_error "subscription.tls_invalid" "TLS 校验开关无效"; }; requires_update=1; shift 2 ;;
-      --timeout)
-        value="${2:-}"
-        case "$value" in "" | *[!0-9]*) mv -f "$backup" "$meta_file"; emit_error "subscription.timeout_invalid" "下载超时必须为秒数" ;; esac
-        SUB_TIMEOUT="$value"
-        requires_update=1
-        shift 2
-        ;;
-      --auto-update) SUB_AUTO_UPDATE="$(normalize_boolean "${2:-}")" || { mv -f "$backup" "$meta_file"; emit_error "subscription.auto_update_invalid" "自动更新开关无效"; }; shift 2 ;;
       --json) shift ;;
-      *) mv -f "$backup" "$meta_file"; emit_error "usage.invalid" "未知订阅选项: $1" 2 ;;
+      *) emit_error "usage.invalid" "未知订阅选项: $1" 2 ;;
     esac
   done
-  for value in "$SUB_NAME" "$SUB_URL" "$SUB_USER_AGENT" "$SUB_HWID" \
-    "$SUB_INCLUDE" "$SUB_EXCLUDE"; do
-    if ! validate_user_text "$value"; then
-      mv -f "$backup" "$meta_file"
-      emit_error "subscription.text_invalid" "订阅设置不能包含制表符或换行"
-    fi
-  done
-  [ -n "$SUB_NAME" ] && [ -n "$SUB_URL" ] || { mv -f "$backup" "$meta_file"; emit_error "subscription.edit_invalid" "订阅名称和 URL 不能为空"; }
-  [ "$SUB_NAME" = "$original_name" ] || name_changed=1
-  SUB_UPDATED_AT="$(format_epoch_utc "$(date +%s)")"
-  write_catalog_meta "$meta_file" || { mv -f "$backup" "$meta_file"; emit_error "subscription.edit_failed" "保存订阅设置失败"; }
-
-  if [ "$requires_update" = "1" ]; then
-    if ! update_subscription "$group_id"; then
-      mv -f "$backup" "$meta_file"
-      emit_error "subscription.validation_failed" "新订阅设置验证失败，已恢复原设置"
-    fi
-  fi
-  rm -f "$backup"
-  if [ "$name_changed" = "1" ] && service_is_running; then
+  set -- "$NETPROXY_NATIVE_BIN" subscription edit \
+    --root "$CATALOG_DIR" --group "$group_id" --progress-dir "$SUB_RUNTIME_DIR" --format kv
+  [ "$name_set" = "1" ] && set -- "$@" --name "$name_value"
+  [ "$url_set" = "1" ] && set -- "$@" --url "$url_value"
+  [ "$user_agent_set" = "1" ] && set -- "$@" --user-agent "$user_agent_value"
+  [ "$hwid_set" = "1" ] && set -- "$@" --hwid "$hwid_value"
+  [ "$headers_set" = "1" ] && set -- "$@" --headers-file "$headers_file"
+  [ "$interval_set" = "1" ] && set -- "$@" --interval "$interval_value"
+  [ "$via_proxy_set" = "1" ] && set -- "$@" --via-proxy "$via_proxy_value"
+  [ "$include_set" = "1" ] && set -- "$@" --include "$include_value"
+  [ "$exclude_set" = "1" ] && set -- "$@" --exclude "$exclude_value"
+  [ "$timeout_set" = "1" ] && set -- "$@" --timeout "$timeout_value"
+  [ "$allow_insecure_set" = "1" ] && set -- "$@" --allow-insecure="$allow_insecure_value"
+  [ "$auto_update_set" = "1" ] && set -- "$@" --auto-update="$auto_update_value"
+  error_file="$SUB_RUNTIME_DIR/sub-edit.$$.log"
+  result="$("$@" 2> "$error_file")" || {
+    rm -f "$error_file"
+    emit_error "subscription.edit_failed" "订阅设置更新失败"
+  }
+  rm -f "$error_file"
+  while IFS="=" read -r key value; do
+    case "$key" in
+      name_changed) name_changed="$value" ;;
+      structure_changed) structure_changed="$value" ;;
+    esac
+  done << EOF
+$result
+EOF
+  fallback_missing_selected_node "$group_id"
+  if { [ "$name_changed" = "true" ] || [ "$structure_changed" = "true" ]; } && service_is_running; then
     sh "$SERVICE_SCRIPT" reload >&2 \
-      || emit_error "subscription.reload_failed" "订阅名称已保存，但运行时重新加载失败"
+      || emit_error "subscription.reload_failed" "订阅设置已保存，但运行时重新加载失败"
   fi
   sh "$SUBWORKER_SCRIPT" wake > /dev/null 2>&1 || true
   emit_write_success "subscription.edited" "订阅设置已更新" "{\"id\":\"$group_id\"}"
@@ -787,7 +767,7 @@ command_sub_edit() {
 command_sub() {
   local action="${1:-list}"
   shift 2> /dev/null || true
-  local query="${1:-}" group_id group_dir data history replacement="${2:-}"
+  local query="${1:-}" group_id group_dir data replacement="${2:-}"
 
   case "$action" in
     list)
@@ -796,9 +776,9 @@ command_sub() {
       ;;
     show)
       [ -n "$query" ] || emit_error "usage.invalid" "用法: netproxyctl sub show <订阅>" 2
-      group_id="$(resolve_catalog_group "$query")" || emit_error "subscription.not_found" "订阅不存在"
+      group_id="$(catalog_resolve_group "$query")" || emit_error "subscription.not_found" "订阅不存在"
       group_dir="$CATALOG_DIR/$group_id"
-      [ "$(meta_get_string "$group_dir/meta.json" "type" "")" = "subscription" ] || emit_error "subscription.not_found" "目标不是 URL 订阅"
+      [ "$(catalog_group_type "$group_id")" = "subscription" ] || emit_error "subscription.not_found" "目标不是 URL 订阅"
       if [ "${2:-}" = "--private" ]; then
         data="$(catalog_subscription_private_json "$group_dir")" \
           || emit_error "subscription.read_failed" "读取订阅编辑设置失败"
@@ -823,7 +803,8 @@ command_sub() {
       ;;
     activate)
       [ -n "$query" ] || emit_error "usage.invalid" "用法: netproxyctl sub activate <订阅>" 2
-      group_id="$(resolve_catalog_group "$query")" || emit_error "subscription.not_found" "订阅不存在"
+      group_id="$(catalog_resolve_group "$query")" || emit_error "subscription.not_found" "订阅不存在"
+      catalog_group_has_nodes "$group_id" || emit_error "subscription.empty" "订阅没有可用节点"
       set_active_catalog_group "$group_id" || emit_error "subscription.empty" "订阅没有可用节点"
       if service_is_running; then
         sh "$SWITCH_SCRIPT" node auto "$group_id" >&2 || emit_error "subscription.activate_failed" "活动订阅切换失败"
@@ -838,18 +819,13 @@ command_sub() {
       ;;
     history)
       [ -n "$query" ] || emit_error "usage.invalid" "用法: netproxyctl sub history <订阅>" 2
-      group_id="$(resolve_catalog_group "$query")" || emit_error "subscription.not_found" "订阅不存在"
-      history="$CATALOG_DIR/$group_id/history.jsonl"
-      if [ -f "$history" ]; then
-        data="$(awk 'BEGIN{printf "["} NF{if(n++)printf ","; printf "%s",$0} END{printf "]"}' "$history")"
-      else
-        data="[]"
-      fi
+      group_id="$(catalog_resolve_group "$query")" || emit_error "subscription.not_found" "订阅不存在"
+      data="$(catalog_history_json "$group_id")" || emit_error "subscription.read_failed" "读取订阅历史失败"
       emit_success "subscription.history" "订阅更新历史" "$data"
       ;;
     cancel)
       [ -n "$query" ] || emit_error "usage.invalid" "用法: netproxyctl sub cancel <订阅>" 2
-      group_id="$(resolve_catalog_group "$query")" || emit_error "subscription.not_found" "订阅不存在"
+      group_id="$(catalog_resolve_group "$query")" || emit_error "subscription.not_found" "订阅不存在"
       cancel_subscription_update "$group_id" || emit_error "subscription.cancel_failed" "取消更新失败"
       emit_write_success "subscription.cancelled" "已请求取消订阅更新" "{}"
       ;;

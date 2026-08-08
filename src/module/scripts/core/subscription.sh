@@ -4,7 +4,7 @@
 # 功能: Catalog 节点编排与订阅入口，负责本地节点变更、运行时 reload、
 #       Go 订阅事务调用与取消控制。
 # 用法: 由 netproxyctl 与 subworker.sh 引入；也可执行 update/update-all/cancel。
-# 依赖: common.sh、config.sh、catalog.sh、metadata.sh 与 netproxy-native。
+# 依赖: common.sh、config.sh、catalog.sh 与 netproxy-native。
 #######################################
 
 if [ -z "${MODDIR:-}" ]; then
@@ -25,10 +25,8 @@ fi
 . "$MODDIR/scripts/utils/config.sh"
 . "$MODDIR/scripts/utils/api.sh"
 . "$MODDIR/scripts/utils/catalog.sh"
-. "$MODDIR/scripts/utils/metadata.sh"
 
 SUB_LOCK_DIR=""
-SUB_STAGE_DIR=""
 
 #######################################
 # 初始化 Catalog 事务目录
@@ -42,14 +40,13 @@ initialize_catalog_storage() {
     "$SUB_RUNTIME_DIR" 2> /dev/null || true
   cleanup_stale_catalog_transactions
 
-  if [ ! -f "$CATALOG_DIR/default/provider.json" ]; then
-    printf '{\n  "outbounds": []\n}\n' > "$CATALOG_DIR/default/provider.json" || return 1
-    chmod 0600 "$CATALOG_DIR/default/provider.json" 2> /dev/null || true
+  acquire_catalog_lock "default" || return 1
+  if ! "$NETPROXY_NATIVE_BIN" catalog group-ensure --root "$CATALOG_DIR" \
+    --group default --name "本地配置" --type local > /dev/null 2> /dev/null; then
+    release_catalog_lock
+    return 1
   fi
-  if [ ! -f "$CATALOG_DIR/default/meta.json" ]; then
-    initialize_local_meta "default" "本地配置" "local"
-    write_catalog_meta "$CATALOG_DIR/default/meta.json" || return 1
-  fi
+  release_catalog_lock
 }
 
 #######################################
@@ -110,81 +107,6 @@ resolve_subscription_display_name() {
   printf "%s" "订阅"
 }
 
-#######################################
-# 生成随机稳定的订阅分组 UUID
-# 参数: 无
-# 返回: 标准输出打印 UUID
-#######################################
-new_subscription_id() {
-  local value attempt=0
-
-  while [ "$attempt" -lt 8 ]; do
-    if [ -r /proc/sys/kernel/random/uuid ]; then
-      value="$(sed -n '1p' /proc/sys/kernel/random/uuid 2> /dev/null)"
-    else
-      value="$(printf '%08x-%04x-%04x-%04x-%012x' \
-        "$(date +%s)" "$$" "${RANDOM:-0}" "$attempt" "$(date +%s)" 2> /dev/null)"
-    fi
-    if catalog_validate_group_id "$value" && [ ! -e "$CATALOG_DIR/$value" ]; then
-      printf "%s\n" "$value"
-      return 0
-    fi
-    attempt=$((attempt + 1))
-  done
-  return 1
-}
-
-#######################################
-# 将文件名转换为本地分组 ID
-# 参数:
-#   $1  文件路径
-# 返回: 标准输出打印不冲突的分组 ID
-#######################################
-local_group_id_from_file() {
-  local name base candidate suffix=2
-
-  name="${1##*/}"
-  base="${name%.*}"
-  base="$(printf "%s" "$base" | tr '[:upper:]' '[:lower:]' \
-    | sed 's/[^a-z0-9._-]/-/g; s/--*/-/g; s/^[.-]*//; s/[.-]*$//')"
-  [ -n "$base" ] || base="$(date +%s)"
-  candidate="local-$base"
-  while [ -e "$CATALOG_DIR/$candidate" ]; do
-    candidate="local-$base-$suffix"
-    suffix=$((suffix + 1))
-  done
-  printf "%s\n" "$candidate"
-}
-
-#######################################
-# 按 ID 或唯一名称解析分组
-# 参数:
-#   $1  分组 ID 或显示名称
-# 返回: 标准输出打印分组 ID；多重匹配返回 2
-#######################################
-resolve_catalog_group() {
-  local query="$1"
-  local group_dir group_id name match="" count=0
-
-  if catalog_validate_group_id "$query" && [ -d "$CATALOG_DIR/$query" ]; then
-    printf "%s\n" "$query"
-    return 0
-  fi
-
-  for group_dir in "$CATALOG_DIR"/*; do
-    [ -d "$group_dir" ] || continue
-    group_id="${group_dir##*/}"
-    [ "$group_id" != "staging" ] || continue
-    name="$(meta_get_string "$group_dir/meta.json" "name" "")"
-    [ "$name" = "$query" ] || continue
-    match="$group_id"
-    count=$((count + 1))
-  done
-  [ "$count" -eq 1 ] || { [ "$count" -gt 1 ] && return 2; return 1; }
-  printf "%s\n" "$match"
-}
-
-#######################################
 # 清理异常退出遗留的 Catalog 事务
 # 参数: 无
 # 返回: 无
@@ -233,26 +155,8 @@ acquire_catalog_lock() {
 # 返回: 无
 #######################################
 release_catalog_lock() {
-  [ -z "$SUB_STAGE_DIR" ] || rm -rf "$SUB_STAGE_DIR" 2> /dev/null || true
   [ -z "$SUB_LOCK_DIR" ] || rm -rf "$SUB_LOCK_DIR" 2> /dev/null || true
-  SUB_STAGE_DIR=""
   SUB_LOCK_DIR=""
-}
-
-#######################################
-# 创建当前事务 staging 目录
-# 参数:
-#   $1  分组 ID
-# 返回: 标准输出打印目录路径
-#######################################
-create_catalog_stage() {
-  local group_id="$1"
-
-  SUB_STAGE_DIR="$CATALOG_STAGING_DIR/$group_id.$$.$(date +%s)"
-  mkdir -p "$SUB_STAGE_DIR" || return 1
-  [ -z "$SUB_LOCK_DIR" ] || printf '%s\n' "$SUB_STAGE_DIR" > "$SUB_LOCK_DIR/stage"
-  chmod 0700 "$SUB_STAGE_DIR" 2> /dev/null || true
-  printf "%s\n" "$SUB_STAGE_DIR"
 }
 
 #######################################
@@ -276,7 +180,7 @@ set_active_catalog_group() {
 
   if [ -n "$target" ]; then
     catalog_validate_group_id "$target" || return 1
-    catalog_provider_has_nodes "$CATALOG_DIR/$target/provider.json" || return 1
+    catalog_group_has_nodes "$target" || return 1
   fi
 
   set_conf_values "$MODULE_CONF" \
@@ -293,11 +197,10 @@ set_active_catalog_group() {
 #######################################
 activate_group_if_needed() {
   local candidate="$1"
-  local current current_provider
+  local current
 
   current="$(read_conf "$MODULE_CONF" "ACTIVE_GROUP_ID" "")"
-  current_provider="$(catalog_provider_path "$current" 2> /dev/null || true)"
-  if [ -n "$current" ] && catalog_provider_has_nodes "$current_provider"; then
+  if [ -n "$current" ] && catalog_group_has_nodes "$current"; then
     return 1
   fi
   set_active_catalog_group "$candidate" || return 1
@@ -341,7 +244,7 @@ reload_catalog_structure_async_if_running() {
 #######################################
 fallback_missing_selected_node() {
   local group_id="$1"
-  local selector selected selected_group selected_tag provider_file runtime_tag
+  local selector selected selected_group selected_tag runtime_tag
 
   selector="$(read_conf "$MODULE_CONF" "SELECTOR_MODE" "urltest")"
   selected="$(read_conf "$MODULE_CONF" "SELECTED_NODE_REF" "")"
@@ -349,8 +252,7 @@ fallback_missing_selected_node() {
   selected_group="${selected%%/*}"
   selected_tag="${selected#*/}"
   [ "$selected_group" = "$group_id" ] || return 0
-  provider_file="$CATALOG_DIR/$group_id/provider.json"
-  catalog_provider_contains_tag "$provider_file" "$selected_tag" && return 0
+  catalog_group_contains_tag "$group_id" "$selected_tag" && return 0
 
   runtime_tag="$(catalog_runtime_group_tag "$group_id" 2> /dev/null || printf "%s" "$group_id")"
   log "WARN" "手动节点已从 Provider 移除，回退到 Auto/$runtime_tag"
@@ -362,16 +264,6 @@ fallback_missing_selected_node() {
     log "WARN" "选择状态已回退到 Auto/$runtime_tag，但运行实例同步失败"
   fi
   return 0
-}
-
-#######################################
-# 判断当前订阅任务是否收到取消请求
-# 参数:
-#   $1  分组 ID
-# 返回: 已取消返回 0，否则返回 1
-#######################################
-subscription_cancel_requested() {
-  [ -f "$SUB_RUNTIME_DIR/$1.cancel" ]
 }
 
 #######################################
@@ -394,25 +286,6 @@ cancel_subscription_update() {
 }
 
 #######################################
-# 根据订阅配置决定下载代理地址
-# 参数: 无
-# 全局: 读取 SUB_UPDATE_VIA_PROXY
-# 返回: 标准输出打印代理 URL；直连时为空
-#######################################
-subscription_proxy_url() {
-  case "$SUB_UPDATE_VIA_PROXY" in
-    always) printf "%s" "http://127.0.0.1:7080" ;;
-    never) printf "%s" "" ;;
-    auto)
-      if [ -n "$(get_pid "$SING_BOX_BIN")" ] && service_api_is_ready; then
-        printf "%s" "http://127.0.0.1:7080"
-      fi
-      ;;
-    *) printf "%s" "" ;;
-  esac
-}
-
-#######################################
 # 通过 Go 组件执行订阅更新事务
 # 参数:
 #   $1  分组 ID 或唯一名称
@@ -420,27 +293,18 @@ subscription_proxy_url() {
 #######################################
 update_subscription() {
   local query="$1"
-  local group_id group_dir meta_file proxy_url result error_file node_count
+  local group_id result error_file key value node_count=0 structure_changed=false
 
   initialize_catalog_storage || return 1
-  group_id="$(resolve_catalog_group "$query")" || return $?
-  group_dir="$CATALOG_DIR/$group_id"
-  meta_file="$group_dir/meta.json"
-  load_catalog_meta "$meta_file" || return 1
-  [ "$SUB_TYPE" = "subscription" ] || return 1
-  [ -n "$SUB_URL" ] || return 1
+  group_id="$(catalog_resolve_group "$query")" || return $?
 
   rm -f "$SUB_RUNTIME_DIR/$group_id.cancel"
-  proxy_url="$(subscription_proxy_url)"
   error_file="$SUB_RUNTIME_DIR/$group_id.native.log"
   set -- "$NETPROXY_NATIVE_BIN" subscription update \
     --root "$CATALOG_DIR" \
     --group "$group_id" \
-    --progress-dir "$SUB_RUNTIME_DIR"
-  [ -z "$proxy_url" ] || set -- "$@" --proxy "$proxy_url"
-  if [ "$SUB_UPDATE_VIA_PROXY" = "auto" ] && [ -n "$proxy_url" ]; then
-    set -- "$@" --fallback-direct
-  fi
+    --progress-dir "$SUB_RUNTIME_DIR" \
+    --format kv
 
   result="$("$@" 2> "$error_file")" || {
     log "ERROR" "订阅更新失败: $group_id"
@@ -451,12 +315,20 @@ update_subscription() {
   }
   rm -f "$error_file"
 
+  while IFS="=" read -r key value; do
+    case "$key" in
+      node_count) node_count="$value" ;;
+      structure_changed) structure_changed="$value" ;;
+    esac
+  done << EOF
+$result
+EOF
+
   activate_group_if_needed "$group_id" || true
   fallback_missing_selected_node "$group_id"
-  if printf "%s" "$result" | grep -q '"structure_changed"[[:space:]]*:[[:space:]]*true'; then
+  if [ "$structure_changed" = "true" ]; then
     reload_catalog_structure_if_running
   fi
-  node_count="$(meta_get_string "$meta_file" "node_count" "0")"
   log "INFO" "订阅更新完成: $group_id，节点数: $node_count"
   return 0
 }
@@ -491,40 +363,44 @@ EOF
 add_subscription() {
   local name="$1"
   local url="$2"
-  local group_id group_dir
+  local group_id group_dir headers_file resolved_name
 
   validate_user_text "$name" && validate_user_text "$url" || return 1
   # name 允许留空：首次更新取得响应头后由 resolve_subscription_display_name 回填
   [ -n "$url" ] || return 1
   initialize_catalog_storage || return 1
-  group_id="$(new_subscription_id)" || return 1
+  group_id="$(catalog_new_group_id subscription)" || return 1
   group_dir="$CATALOG_DIR/$group_id"
-  mkdir -p "$group_dir" || return 1
-  chmod 0700 "$group_dir" 2> /dev/null || true
-  initialize_subscription_meta "$group_id" "$name" "$url"
-  [ -z "${SUB_ADD_USER_AGENT:-}" ] || SUB_USER_AGENT="$SUB_ADD_USER_AGENT"
-  [ -z "${SUB_ADD_HWID:-}" ] || SUB_HWID="$SUB_ADD_HWID"
-  [ -z "${SUB_ADD_CUSTOM_HEADERS:-}" ] || SUB_CUSTOM_HEADERS="$SUB_ADD_CUSTOM_HEADERS"
-  [ -z "${SUB_ADD_UPDATE_INTERVAL:-}" ] || {
-    SUB_UPDATE_INTERVAL="$SUB_ADD_UPDATE_INTERVAL"
-    SUB_INTERVAL_SOURCE="user"
-    schedule_next_update
-  }
-  [ -z "${SUB_ADD_UPDATE_VIA_PROXY:-}" ] || SUB_UPDATE_VIA_PROXY="$SUB_ADD_UPDATE_VIA_PROXY"
-  [ -z "${SUB_ADD_INCLUDE:-}" ] || SUB_INCLUDE="$SUB_ADD_INCLUDE"
-  [ -z "${SUB_ADD_EXCLUDE:-}" ] || SUB_EXCLUDE="$SUB_ADD_EXCLUDE"
-  [ -z "${SUB_ADD_ALLOW_INSECURE:-}" ] || SUB_ALLOW_INSECURE="$SUB_ADD_ALLOW_INSECURE"
-  [ -z "${SUB_ADD_TIMEOUT:-}" ] || SUB_TIMEOUT="$SUB_ADD_TIMEOUT"
-  [ -z "${SUB_ADD_AUTO_UPDATE:-}" ] || SUB_AUTO_UPDATE="$SUB_ADD_AUTO_UPDATE"
-  write_catalog_meta "$group_dir/meta.json" || { rm -rf "$group_dir"; return 1; }
-  printf '{\n  "outbounds": []\n}\n' > "$group_dir/provider.json"
-  chmod 0600 "$group_dir/provider.json" 2> /dev/null || true
+  headers_file="$CATALOG_STAGING_DIR/headers.$$.json"
+  printf "%s\n" "${SUB_ADD_CUSTOM_HEADERS:-{}}" > "$headers_file" || return 1
+  chmod 0600 "$headers_file" 2> /dev/null || true
+  acquire_catalog_lock "$group_id" || { rm -f "$headers_file"; return 1; }
+  set -- "$NETPROXY_NATIVE_BIN" catalog group-init \
+    --root "$CATALOG_DIR" --group "$group_id" --type subscription \
+    --name "$name" --url "$url" --user-agent "${SUB_ADD_USER_AGENT:-}" \
+    --hwid "${SUB_ADD_HWID:-}" --headers-file "$headers_file" \
+    --auto-update "${SUB_ADD_AUTO_UPDATE:-true}" \
+    --update-interval "${SUB_ADD_UPDATE_INTERVAL:-86400}" \
+    --interval-source user --update-via-proxy "${SUB_ADD_UPDATE_VIA_PROXY:-auto}" \
+    --include "${SUB_ADD_INCLUDE:-}" --exclude "${SUB_ADD_EXCLUDE:-}" \
+    --timeout "${SUB_ADD_TIMEOUT:-60}"
+  [ "${SUB_ADD_ALLOW_INSECURE:-false}" = "true" ] && set -- "$@" --allow-insecure
+  if ! "$@" > /dev/null 2> /dev/null; then
+    rm -f "$headers_file"
+    release_catalog_lock
+    return 1
+  fi
+  rm -f "$headers_file"
+  release_catalog_lock
 
   if ! update_subscription "$group_id"; then
     # 首次更新失败时仍需保证有可读名称，否则列表出现无名订阅
-    if load_catalog_meta "$group_dir/meta.json" && [ -z "${SUB_NAME:-}" ]; then
-      SUB_NAME="$(resolve_subscription_display_name "$url")"
-      write_catalog_meta "$group_dir/meta.json" || true
+    resolved_name="$(resolve_subscription_display_name "$url")"
+    if [ -n "$resolved_name" ] && acquire_catalog_lock "$group_id"; then
+      "$NETPROXY_NATIVE_BIN" catalog group-name \
+        --root "$CATALOG_DIR" --group "$group_id" --name "$resolved_name" \
+        --now "$(date +%s)" > /dev/null 2>&1 || true
+      release_catalog_lock
     fi
     printf "%s\n" "$group_id"
     return 1
@@ -542,35 +418,18 @@ add_subscription() {
 import_local_file_group() {
   local input="$1"
   local display_name="${2:-${input##*/}}"
-  local group_id group_dir stage node_count now
+  local group_id
 
   [ -f "$input" ] || return 1
   validate_user_text "$display_name" || return 1
   initialize_catalog_storage || return 1
-  group_id="$(local_group_id_from_file "$input")" || return 1
+  group_id="$(catalog_new_group_id file "$input")" || return 1
   acquire_catalog_lock "$group_id" || return 1
-  create_catalog_stage "$group_id" > /dev/null || { release_catalog_lock; return 1; }
-  stage="$SUB_STAGE_DIR"
-  if ! "$NETPROXY_NATIVE_BIN" convert file --input "$input" --output "$stage/provider.json" \
-    > "$stage/result.json" 2> "$stage/error.json"; then
+  if ! "$NETPROXY_NATIVE_BIN" catalog group-import --root "$CATALOG_DIR" --group "$group_id" \
+    --name "$display_name" --input "$input" > /dev/null 2> /dev/null; then
     release_catalog_lock
     return 1
   fi
-  node_count="$(sed -n 's/.*"node_count":\([0-9][0-9]*\).*/\1/p' "$stage/result.json")"
-  [ "$node_count" -gt 0 ] 2> /dev/null || { release_catalog_lock; return 1; }
-
-  group_dir="$CATALOG_DIR/$group_id"
-  mkdir -p "$group_dir" || { release_catalog_lock; return 1; }
-  initialize_local_meta "$group_id" "$display_name" "file"
-  SUB_NODE_COUNT="$node_count"
-  SUB_REVISION=1
-  now="$(date +%s)"
-  SUB_UPDATED_AT="$(format_epoch_utc "$now")"
-  write_catalog_meta "$stage/meta.json" || { release_catalog_lock; return 1; }
-  mv -f "$stage/provider.json" "$group_dir/provider.json" || { release_catalog_lock; return 1; }
-  mv -f "$stage/meta.json" "$group_dir/meta.json" || { release_catalog_lock; return 1; }
-  chmod 0700 "$group_dir" 2> /dev/null || true
-  chmod 0600 "$group_dir"/*.json 2> /dev/null || true
   activate_group_if_needed "$group_id" || true
   release_catalog_lock
   reload_catalog_structure_if_running
@@ -587,36 +446,24 @@ import_local_file_group() {
 append_local_node() {
   local group_id="$1"
   local input="$2"
-  local group_dir provider_file stage node_count now had_nodes=0
+  local group_dir mutation
 
   [ "$group_id" = "default" ] || {
-    [ "$(meta_get_string "$CATALOG_DIR/$group_id/meta.json" "type" "")" != "subscription" ] || return 1
+    [ "$(catalog_group_type "$group_id")" != "subscription" ] || return 1
   }
   group_dir="$CATALOG_DIR/$group_id"
-  provider_file="$group_dir/provider.json"
-  [ -f "$provider_file" ] || return 1
-  catalog_provider_has_nodes "$provider_file" && had_nodes=1
+  [ -d "$group_dir" ] || return 1
   acquire_catalog_lock "$group_id" || return 1
-  create_catalog_stage "$group_id" > /dev/null || { release_catalog_lock; return 1; }
-  stage="$SUB_STAGE_DIR"
-  cp "$provider_file" "$stage/provider.json" || { release_catalog_lock; return 1; }
-  if ! "$NETPROXY_NATIVE_BIN" provider append --target "$stage/provider.json" --input "$input" \
-    > "$stage/result.json" 2> "$stage/error.json"; then
+  if ! mutation="$("$NETPROXY_NATIVE_BIN" catalog node-append --group-dir "$group_dir" --group "$group_id" \
+    --input "$input" --format kv 2> /dev/null)"; then
     release_catalog_lock
     return 1
   fi
-  node_count="$(grep -o '"protocol"' "$stage/result.json" | wc -l | tr -d '[:space:]')"
-  load_catalog_meta "$group_dir/meta.json" || initialize_local_meta "$group_id" "$group_id" "local"
-  SUB_NODE_COUNT="$node_count"
-  SUB_REVISION=$((SUB_REVISION + 1))
-  now="$(date +%s)"
-  SUB_UPDATED_AT="$(format_epoch_utc "$now")"
-  write_catalog_meta "$stage/meta.json" || { release_catalog_lock; return 1; }
-  mv -f "$stage/provider.json" "$provider_file" || { release_catalog_lock; return 1; }
-  mv -f "$stage/meta.json" "$group_dir/meta.json" || { release_catalog_lock; return 1; }
   activate_group_if_needed "$group_id" || true
   release_catalog_lock
-  [ "$had_nodes" = "1" ] || reload_catalog_structure_if_running
+  case "$mutation" in
+    *structure_changed=true*) reload_catalog_structure_if_running ;;
+  esac
 }
 
 #######################################
@@ -627,37 +474,24 @@ append_local_node() {
 #######################################
 remove_catalog_node() {
   local node_ref="$1"
-  local group_id tag group_dir provider_file stage node_count now
+  local group_id tag group_dir mutation
 
   group_id="${node_ref%%/*}"
   tag="${node_ref#*/}"
   [ "$group_id" != "$node_ref" ] && [ -n "$tag" ] || return 1
   group_dir="$CATALOG_DIR/$group_id"
-  provider_file="$group_dir/provider.json"
-  catalog_provider_contains_tag "$provider_file" "$tag" || return 1
+  [ -d "$group_dir" ] || return 1
   acquire_catalog_lock "$group_id" || return 1
-  create_catalog_stage "$group_id" > /dev/null || { release_catalog_lock; return 1; }
-  stage="$SUB_STAGE_DIR"
-  cp "$provider_file" "$stage/provider.json" || { release_catalog_lock; return 1; }
-  if ! "$NETPROXY_NATIVE_BIN" provider remove --target "$stage/provider.json" --tag "$tag" \
-    > "$stage/result.json" 2> "$stage/error.json"; then
+  if ! mutation="$("$NETPROXY_NATIVE_BIN" catalog node-remove --group-dir "$group_dir" --group "$group_id" \
+    --tag "$tag" --format kv 2> /dev/null)"; then
     release_catalog_lock
     return 1
   fi
-  node_count="$(grep -o '"protocol"' "$stage/result.json" | wc -l | tr -d '[:space:]')"
-  node_count="${node_count:-0}"
-  load_catalog_meta "$group_dir/meta.json" || { release_catalog_lock; return 1; }
-  SUB_NODE_COUNT="$node_count"
-  SUB_REVISION=$((SUB_REVISION + 1))
-  now="$(date +%s)"
-  SUB_UPDATED_AT="$(format_epoch_utc "$now")"
-  write_catalog_meta "$stage/meta.json" || { release_catalog_lock; return 1; }
-  mv -f "$stage/provider.json" "$provider_file" || { release_catalog_lock; return 1; }
-  mv -f "$stage/meta.json" "$group_dir/meta.json" || { release_catalog_lock; return 1; }
-
   release_catalog_lock
   fallback_missing_selected_node "$group_id"
-  [ "$node_count" -gt 0 ] 2> /dev/null || reload_catalog_structure_if_running
+  case "$mutation" in
+    *structure_changed=true*) reload_catalog_structure_if_running ;;
+  esac
 }
 
 #######################################
@@ -670,34 +504,19 @@ remove_catalog_node() {
 edit_catalog_node() {
   local node_ref="$1"
   local input="$2"
-  local group_id tag group_dir provider_file stage node_count now
+  local group_id tag group_dir
 
   group_id="${node_ref%%/*}"
   tag="${node_ref#*/}"
   [ "$group_id" != "$node_ref" ] && [ -n "$tag" ] || return 1
   group_dir="$CATALOG_DIR/$group_id"
-  provider_file="$group_dir/provider.json"
-  catalog_provider_contains_tag "$provider_file" "$tag" || return 1
+  [ -d "$group_dir" ] || return 1
   acquire_catalog_lock "$group_id" || return 1
-  create_catalog_stage "$group_id" > /dev/null || { release_catalog_lock; return 1; }
-  stage="$SUB_STAGE_DIR"
-  cp "$provider_file" "$stage/provider.json" || { release_catalog_lock; return 1; }
-  "$NETPROXY_NATIVE_BIN" provider remove --target "$stage/provider.json" --tag "$tag" \
-    > "$stage/remove-result.json" 2> "$stage/error.json" \
-    || { release_catalog_lock; return 1; }
-  "$NETPROXY_NATIVE_BIN" provider append --target "$stage/provider.json" --input "$input" \
-    > "$stage/append-result.json" 2> "$stage/error.json" \
-    || { release_catalog_lock; return 1; }
-  node_count="$(grep -o '"protocol"' "$stage/append-result.json" | wc -l | tr -d '[:space:]')"
-  load_catalog_meta "$group_dir/meta.json" || { release_catalog_lock; return 1; }
-  SUB_NODE_COUNT="$node_count"
-  SUB_REVISION=$((SUB_REVISION + 1))
-  now="$(date +%s)"
-  SUB_UPDATED_AT="$(format_epoch_utc "$now")"
-  write_catalog_meta "$stage/meta.json" || { release_catalog_lock; return 1; }
-  mv -f "$stage/provider.json" "$provider_file" || { release_catalog_lock; return 1; }
-  mv -f "$stage/meta.json" "$group_dir/meta.json" || { release_catalog_lock; return 1; }
-
+  if ! "$NETPROXY_NATIVE_BIN" catalog node-edit --group-dir "$group_dir" --group "$group_id" \
+    --tag "$tag" --input "$input" > /dev/null 2> /dev/null; then
+    release_catalog_lock
+    return 1
+  fi
   release_catalog_lock
   fallback_missing_selected_node "$group_id"
 }
@@ -712,28 +531,19 @@ edit_catalog_node() {
 remove_subscription() {
   local query="$1"
   local replacement="${2:-}"
-  local group_id group_dir current candidate candidate_dir
+  local group_id current
 
-  group_id="$(resolve_catalog_group "$query")" || return $?
-  group_dir="$CATALOG_DIR/$group_id"
-  [ "$(meta_get_string "$group_dir/meta.json" "type" "")" = "subscription" ] || return 1
+  group_id="$(catalog_resolve_group "$query")" || return $?
+  [ "$(catalog_group_type "$group_id")" = "subscription" ] || return 1
   current="$(read_conf "$MODULE_CONF" "ACTIVE_GROUP_ID" "")"
 
   if [ "$current" = "$group_id" ]; then
     if [ -n "$replacement" ]; then
-      replacement="$(resolve_catalog_group "$replacement")" || return 1
+      replacement="$(catalog_resolve_group "$replacement")" || return 1
       [ "$replacement" != "$group_id" ] || return 1
-      catalog_provider_has_nodes "$CATALOG_DIR/$replacement/provider.json" || return 1
+      catalog_group_has_nodes "$replacement" || return 1
     else
-      for candidate_dir in "$CATALOG_DIR"/*; do
-        [ -d "$candidate_dir" ] || continue
-        candidate="${candidate_dir##*/}"
-        [ "$candidate" != "staging" ] && [ "$candidate" != "$group_id" ] || continue
-        if catalog_provider_has_nodes "$candidate_dir/provider.json"; then
-          replacement="$candidate"
-          break
-        fi
-      done
+      replacement="$(catalog_first_nonempty_group "$group_id")"
     fi
     set_active_catalog_group "$replacement" || return 1
     if [ -z "$replacement" ]; then
@@ -745,7 +555,10 @@ remove_subscription() {
 
   cancel_subscription_update "$group_id" 2> /dev/null || true
   acquire_catalog_lock "$group_id" || return 1
-  rm -rf "$group_dir" || { release_catalog_lock; return 1; }
+  if ! "$NETPROXY_NATIVE_BIN" catalog group-delete --root "$CATALOG_DIR" --group "$group_id" > /dev/null 2>&1; then
+    release_catalog_lock
+    return 1
+  fi
   release_catalog_lock
   reload_catalog_structure_async_if_running
 }

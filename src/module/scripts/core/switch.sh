@@ -21,8 +21,6 @@ readonly LOG_FILE="$MODDIR/logs/service.log"
 readonly LOG_TAG="switch"
 readonly SWITCH_ALLOW_RESTART="${SWITCH_ALLOW_RESTART:-1}"
 
-REQUIRED_PROVIDER_FILE=""
-REQUIRED_PROVIDER_SUMMARY=""
 REQUIRED_PROVIDER_TAG=""
 
 . "$MODDIR/scripts/utils/common.sh"
@@ -63,19 +61,14 @@ reload_service_if_allowed() {
 # 校验非空 Catalog 分组
 # 参数:
 #   $1  分组 ID
-# 全局: 设置 REQUIRED_PROVIDER_FILE、REQUIRED_PROVIDER_SUMMARY 与 REQUIRED_PROVIDER_TAG
+# 全局: 设置 REQUIRED_PROVIDER_TAG
 # 返回: 成功返回 0，否则退出
 #######################################
 require_catalog_group() {
   local group_id="$1"
 
   catalog_validate_group_id "$group_id" || die "非法分组 ID: $group_id"
-  REQUIRED_PROVIDER_FILE="$(catalog_provider_path "$group_id")" \
-    || die "无法解析分组路径: $group_id"
-  require_file "$REQUIRED_PROVIDER_FILE" "节点组不存在: $group_id"
-  catalog_provider_has_nodes "$REQUIRED_PROVIDER_FILE" || die "节点组为空: $group_id"
-  REQUIRED_PROVIDER_SUMMARY="$(catalog_provider_inspect "$REQUIRED_PROVIDER_FILE")" \
-    || die "节点组 Provider 配置无效: $group_id"
+  catalog_group_has_nodes "$group_id" || die "节点组为空: $group_id"
   REQUIRED_PROVIDER_TAG="$(catalog_runtime_group_tag "$group_id")" \
     || die "无法读取节点组名称: $group_id"
 }
@@ -116,7 +109,7 @@ switch_auto_group() {
 #######################################
 switch_manual_node() {
   local node_ref="$1"
-  local group_id tag escaped_tag runtime_node_ref
+  local group_id tag runtime_node_ref
 
   group_id="${node_ref%%/*}"
   tag="${node_ref#*/}"
@@ -128,9 +121,7 @@ switch_manual_node() {
       ;;
   esac
   require_catalog_group "$group_id"
-  escaped_tag="$(json_escape "$tag")"
-  printf "%s" "$REQUIRED_PROVIDER_SUMMARY" | grep -F -q "\"tag\":\"$escaped_tag\"" \
-    || die "节点不存在: $node_ref"
+  catalog_group_contains_tag "$group_id" "$tag" || die "节点不存在: $node_ref"
   runtime_node_ref="$REQUIRED_PROVIDER_TAG/$tag"
 
   set_conf_values "$MODULE_CONF" \

@@ -63,12 +63,13 @@ type Metadata struct {
 
 // UpdateOptions 定义一次订阅更新的运行上下文。
 type UpdateOptions struct {
-	Root           string
-	GroupID        string
-	ProgressDir    string
-	ProxyURL       string
-	FallbackDirect bool
-	Now            time.Time
+	Root               string
+	GroupID            string
+	ProgressDir        string
+	ProxyURL           string
+	UseConfiguredProxy bool
+	FallbackDirect     bool
+	Now                time.Time
 }
 
 // Result 是订阅更新对 Shell 暴露的最小结构化结果。
@@ -141,6 +142,17 @@ func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 	if metadata.Type != "subscription" || strings.TrimSpace(metadata.URL) == "" {
 		return Result{}, &Error{Code: "subscription.invalid_target", Message: "目标不是有效的 URL 订阅"}
 	}
+	if options.UseConfiguredProxy && options.ProxyURL == "" {
+		switch metadata.UpdateViaProxy {
+		case "always", "auto":
+			options.ProxyURL = "http://127.0.0.1:7080"
+			if metadata.UpdateViaProxy == "auto" {
+				options.FallbackDirect = true
+			}
+		case "never":
+			// 明确直连，不设置代理地址。
+		}
+	}
 	if cancelled(ctx, options.ProgressDir, options.GroupID) {
 		return Result{}, &Error{Code: "subscription.cancelled", Message: "订阅更新已取消"}
 	}
@@ -181,8 +193,7 @@ func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 		metadata.LastAttemptAt = formatTime(options.Now)
 		metadata.LastSuccessAt = metadata.LastAttemptAt
 		metadata.LastError = ""
-		metadata.NextUpdateEpoch = nextUpdateEpoch(metadata, options.Now)
-		metadata.NextUpdateAt = formatEpoch(metadata.NextUpdateEpoch)
+		scheduleMetadata(&metadata, options.Now)
 		metadata.UpdatedAt = metadata.LastAttemptAt
 		if err := SaveMetadataAtomic(metaPath, metadata); err != nil {
 			return Result{}, &Error{Code: "metadata.commit_failed", Message: "订阅元数据提交失败", Data: err.Error()}
@@ -229,8 +240,7 @@ func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 	metadata.LastAttemptAt = formatTime(options.Now)
 	metadata.LastSuccessAt = metadata.LastAttemptAt
 	metadata.LastError = ""
-	metadata.NextUpdateEpoch = nextUpdateEpoch(metadata, options.Now)
-	metadata.NextUpdateAt = formatEpoch(metadata.NextUpdateEpoch)
+	scheduleMetadata(&metadata, options.Now)
 	metadata.UpdatedAt = metadata.LastAttemptAt
 	metadataPath := filepath.Join(stageDir, "meta.json")
 	if err := SaveMetadataAtomic(metadataPath, metadata); err != nil {
@@ -294,8 +304,7 @@ func updateFailure(options UpdateOptions, metadata Metadata, groupDir string, st
 	metadata = applyResponseMetadata(metadata, response.Metadata, now)
 	metadata.LastAttemptAt = formatTime(now)
 	metadata.LastError = message
-	metadata.NextUpdateEpoch = nextUpdateEpoch(metadata, now)
-	metadata.NextUpdateAt = formatEpoch(metadata.NextUpdateEpoch)
+	scheduleMetadata(&metadata, now)
 	metadata.UpdatedAt = formatTime(now)
 	_ = SaveMetadataAtomic(filepath.Join(groupDir, "meta.json"), metadata)
 	appendHistory(groupDir, map[string]any{
@@ -365,16 +374,13 @@ func hostName(rawURL string) string {
 	return u.Hostname()
 }
 
-func nextUpdateEpoch(metadata Metadata, now time.Time) int64 {
-	interval := metadata.UpdateInterval
-	if interval <= 0 {
-		interval = int64(defaultInterval / time.Second)
+func scheduleMetadata(metadata *Metadata, now time.Time) {
+	if metadata.AutoUpdate {
+		ScheduleAt(metadata, now)
+		return
 	}
-	minimum := int64(minimumInterval / time.Second)
-	if interval < minimum {
-		interval = minimum
-	}
-	return now.Unix() + interval
+	metadata.NextUpdateEpoch = 0
+	metadata.NextUpdateAt = ""
 }
 
 func appendHistory(groupDir string, value map[string]any) {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 
@@ -44,6 +45,21 @@ func Link(ctx context.Context, link string, allowInsecure bool) (provider.ParseR
 		return provider.ParseResult{Diagnostics: []provider.Diagnostic{diagnostic}}, &DiagnosticsError{Diagnostics: []provider.Diagnostic{diagnostic}}
 	}
 	return provider.ParseResult{Document: document}, nil
+}
+
+// Input 按链接或文件内容解析节点输入。
+func Input(ctx context.Context, input string, allowInsecure bool) (provider.ParseResult, error) {
+	if info, err := os.Stat(input); err == nil && !info.IsDir() {
+		content, err := os.ReadFile(input)
+		if err != nil {
+			return provider.ParseResult{}, err
+		}
+		return Content(ctx, string(content), allowInsecure)
+	}
+	if strings.Contains(input, "://") && !strings.Contains(input, "\n") {
+		return Link(ctx, input, allowInsecure)
+	}
+	return Content(ctx, input, allowInsecure)
 }
 
 func Content(ctx context.Context, content string, allowInsecure bool) (provider.ParseResult, error) {
