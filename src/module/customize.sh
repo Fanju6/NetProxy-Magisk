@@ -39,6 +39,7 @@ readonly PRESERVE_CONFIGS="
 readonly EXECUTABLE_FILES="
     bin/sing-box
     bin/netproxy-native
+    bin/netproxyctl
     action.sh
     netproxyctl
     service.sh

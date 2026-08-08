@@ -1,8 +1,8 @@
 #!/system/bin/sh
 #######################################
 # 文件: netproxyctl
-# 功能: NetProxy 唯一管理入口；业务由 netproxy-native 负责，Shell 只保留
-#       Android 生命周期适配、参数转发和固定输出契约。
+# 功能: 阶段 7 删除前的内部过渡适配脚本；公共入口是 ../netproxyctl -> bin/netproxyctl。
+#       仅保留旧生命周期调用方需要的兼容实现，不作为 Android/WebUI 公共入口。
 # 用法: netproxyctl [--json] <命令组> <命令> [参数]
 # 依赖: common.sh、netproxy-native、core/service.sh。
 #######################################

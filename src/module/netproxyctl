@@ -1,7 +1,9 @@
 #!/system/bin/sh
 #######################################
 # 文件: netproxyctl
-# 功能: NetProxy 管理命令入口。
+# 功能: NetProxy 公共管理入口，实际实现位于 bin/netproxyctl。
+# 用法: netproxyctl [--json] <命令组> <命令> [参数]
+# 依赖: bin/netproxyctl。
 #######################################
 
-exec sh "${0%/*}/scripts/netproxyctl" "$@"
+exec "${0%/*}/bin/netproxyctl" "$@"

@@ -34,19 +34,29 @@ runs:
 
         version="$(sed -n 's/^version=//p' ../../module/module.prop | head -n 1)"
         commit="$(git -C ../../.. rev-parse --short HEAD)"
-        output="../../module/bin/netproxy-native"
+        output_native="../../module/bin/netproxy-native"
+        output_cli="../../module/bin/netproxyctl"
 
         CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build \
           -trimpath \
           -buildvcs=false \
           -ldflags="-s -w -buildid= -X main.version=${version} -X main.commit=${commit}" \
-          -o "$output" \
+          -o "$output_native" \
           ./cmd/netproxy-native
 
-        test -s "$output"
-        chmod 0755 "$output"
-        file "$output" | grep -q 'ARM aarch64'
-        go version -m "$output" | grep -q 'github.com/reF1nd/sing-box'
+        CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build \
+          -trimpath \
+          -buildvcs=false \
+          -ldflags="-s -w -buildid= -X main.version=${version} -X main.commit=${commit}" \
+          -o "$output_cli" \
+          ./cmd/netproxyctl
+
+        for output in "$output_native" "$output_cli"; do
+          test -s "$output"
+          chmod 0755 "$output"
+          file "$output" | grep -q 'ARM aarch64'
+        done
+        go version -m "$output_native" | grep -q 'github.com/reF1nd/sing-box'
 
     - name: 配置 Node
       uses: actions/setup-node@v7

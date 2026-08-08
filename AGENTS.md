@@ -34,7 +34,7 @@
 
 ## 命令入口与脚本布局
 
-- `src/module/netproxyctl` 只是 7 行 shim，实际实现在 `scripts/netproxyctl`（约 1400 行 dispatcher）。改命令行为改后者，shim 只负责定位。
+- `src/module/netproxyctl` 只负责定位 `bin/netproxyctl`；公共实现位于 `src/native/netproxy/cmd/netproxyctl`。`scripts/netproxyctl` 仅是阶段 7 删除前的内部过渡脚本，不得作为 Android/WebUI 入口。
 - 命令组权威清单：`service catalog node sub mode app ebpf config logs`。新增命令组必须同时更新 dispatcher、Android `NetProxyCtlClient`、WebUI `src/exec.ts` 和契约测试。
 - `scripts/utils/`：`common.sh`、`config.sh`（`read_conf` / `set_conf`）、`api.sh`、`state.sh`、`catalog.sh`。
 - `scripts/core/`：`service.sh`、`runtime.sh`、`switch.sh`、`subscription.sh`。eBPF 配置生成与订阅调度由 `netproxy-native` 负责。
@@ -92,9 +92,9 @@
 
 # Shell/Catalog 契约（先准备 netproxy-native 测试二进制）
 mkdir -p .tmp
-(cd src/native/netproxy && go build -o ../../../.tmp/netproxy-native ./cmd/netproxy-native)
+(cd src/native/netproxy && go build -o ../../../.tmp/netproxy-native ./cmd/netproxy-native && go build -o ../../../.tmp/netproxyctl ./cmd/netproxyctl)
 sh tests/catalog_subscription_test.sh ./.tmp/netproxy-native
-sh tests/netproxyctl_contract_test.sh ./.tmp/netproxy-native
+sh tests/netproxyctl_contract_test.sh ./.tmp/netproxyctl ./.tmp/netproxy-native
 sh tests/runtime_catalog_test.sh ./.tmp/netproxy-native
 sh tests/config_utils_test.sh ./.tmp/netproxy-native
 sh tests/service_state_test.sh
