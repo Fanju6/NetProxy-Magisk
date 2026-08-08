@@ -113,9 +113,7 @@ func LoadModule(path string) (ModuleConfig, error) {
 	}
 	config.ActiveGroupID = valueOr(values, "ACTIVE_GROUP_ID", config.ActiveGroupID)
 	config.SelectedNodeRef = valueOr(values, "SELECTED_NODE_REF", "")
-	if config.ActiveGroupID == "" {
-		return ModuleConfig{}, errors.New("ACTIVE_GROUP_ID 不能为空")
-	}
+	// 没有任何 Catalog 分组时允许为空；下一次导入非空分组时由应用服务重新设置。
 	if config.WiFiAutoSwitch, err = boolValue(values, "WIFI_AUTO_SWITCH", config.WiFiAutoSwitch); err != nil {
 		return ModuleConfig{}, err
 	}

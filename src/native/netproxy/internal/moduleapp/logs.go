@@ -1,0 +1,174 @@
+package moduleapp
+
+import (
+	"archive/tar"
+	"compress/gzip"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+)
+
+var (
+	urlCredentialPattern = regexp.MustCompile(`(https?://)[^/@\s]+@`)
+	querySecretPattern   = regexp.MustCompile(`(?i)([?&](?:token|key|secret|password|auth|uuid|hwid)=)[^&\s]+`)
+)
+
+// LogFile 返回用户可见日志类型对应的文件。
+func LogFile(options Options, kind string) (string, error) {
+	name := map[string]string{"service": "service.log", "core": "sing-box.log", "sub": "subscription.log"}[kind]
+	if name == "" {
+		return "", fmt.Errorf("未知日志类型: %s", kind)
+	}
+	return filepath.Join(options.LogDir, name), nil
+}
+
+// ShowLog 返回末尾日志，并对订阅地址和凭据做脱敏。
+func ShowLog(options Options, kind string, lines int) (string, error) {
+	path, err := LogFile(options, kind)
+	if err != nil {
+		return "", err
+	}
+	if lines <= 0 {
+		lines = 200
+	}
+	content, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	items := strings.Split(strings.ReplaceAll(string(content), "\r\n", "\n"), "\n")
+	if len(items) > lines+1 {
+		items = items[len(items)-lines-1:]
+	}
+	return redactText(strings.Join(items, "\n")), nil
+}
+
+// ClearLog 清空指定日志。
+func ClearLog(options Options, kind string) error {
+	path, err := LogFile(options, kind)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	return file.Close()
+}
+
+// ExportLogs 生成不包含节点凭据和订阅鉴权信息的诊断包。
+func ExportLogs(options Options, destination string) error {
+	if strings.TrimSpace(destination) == "" {
+		return fmt.Errorf("诊断包路径不能为空")
+	}
+	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+		return err
+	}
+	file, err := os.OpenFile(destination, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	archive := gzip.NewWriter(file)
+	defer archive.Close()
+	tarWriter := tar.NewWriter(archive)
+	defer tarWriter.Close()
+	files := make([]struct{ source, name string }, 0)
+	for _, kind := range []string{"service", "core", "sub"} {
+		path, _ := LogFile(options, kind)
+		files = append(files, struct{ source, name string }{path, "logs/" + filepath.Base(path)})
+	}
+	files = append(files,
+		struct{ source, name string }{options.ModuleConfig, "config/module.conf"},
+		struct{ source, name string }{options.EBPFConfig, "config/ebpf.conf"},
+	)
+	for _, directory := range []struct{ path, name string }{
+		{filepath.Join(options.SingBoxDir, "confdir"), "config/singbox/confdir"},
+		{filepath.Join(options.SingBoxDir, "source"), "config/singbox/source"},
+		{filepath.Join(options.SingBoxDir, "runtime"), "config/singbox/runtime"},
+		{options.CatalogRoot, "config/catalog"},
+	} {
+		appendDirectoryFiles(&files, directory.path, directory.name, directory.path == options.CatalogRoot)
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].name < files[j].name })
+	for _, item := range files {
+		content, err := os.ReadFile(item.source)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		content = []byte(redactText(string(content)))
+		if err := writeTarFile(tarWriter, item.name, content); err != nil {
+			return err
+		}
+	}
+	return writeTarFile(tarWriter, "README.txt", []byte(fmt.Sprintf("NetProxy 诊断包\n生成时间: %s\n敏感信息已脱敏。\n", time.Now().Format(time.RFC3339))))
+}
+
+func writeTarFile(writer *tar.Writer, name string, content []byte) error {
+	header := &tar.Header{Name: filepath.ToSlash(name), Mode: 0o600, Size: int64(len(content)), ModTime: time.Now()}
+	if err := writer.WriteHeader(header); err != nil {
+		return err
+	}
+	_, err := writer.Write(content)
+	return err
+}
+
+func appendDirectoryFiles(files *[]struct{ source, name string }, root, archiveRoot string, skipStaging bool) {
+	_ = filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil || info == nil || info.IsDir() {
+			if skipStaging && info != nil && info.IsDir() && info.Name() == "staging" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		relative, err := filepath.Rel(root, path)
+		if err == nil {
+			*files = append(*files, struct{ source, name string }{path, filepath.ToSlash(filepath.Join(archiveRoot, relative))})
+		}
+		return nil
+	})
+}
+
+func redactText(value string) string {
+	value = urlCredentialPattern.ReplaceAllString(value, `$1***@`)
+	value = querySecretPattern.ReplaceAllString(value, `${1}***`)
+	var object map[string]any
+	if json.Unmarshal([]byte(value), &object) == nil {
+		redactJSON(object)
+		if encoded, err := json.MarshalIndent(object, "", "  "); err == nil {
+			return string(encoded) + "\n"
+		}
+	}
+	return value
+}
+
+func redactJSON(value any) {
+	switch item := value.(type) {
+	case map[string]any:
+		for key, child := range item {
+			lower := strings.ToLower(key)
+			if lower == "url" || lower == "hwid" || lower == "user_agent" || lower == "custom_headers" || lower == "headers" || lower == "authorization" || lower == "proxy_authorization" || lower == "uuid" || lower == "password" || lower == "token" || lower == "secret" || lower == "private_key" || lower == "public_key" || lower == "short_id" {
+				item[key] = "***"
+				continue
+			}
+			redactJSON(child)
+		}
+	case []any:
+		for _, child := range item {
+			redactJSON(child)
+		}
+	}
+}

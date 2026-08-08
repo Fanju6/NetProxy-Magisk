@@ -41,10 +41,7 @@ service_api_is_ready() {
 # 返回: 标准输出打印 Unix 毫秒时间戳
 #######################################
 service_api_started_at() {
-  local result
-
-  result="$(service_api_call started-at --timeout 2s 2> /dev/null)" || return 1
-  printf '%s' "$result" | sed -n 's/.*"unix_milli"[^0-9]*\([0-9][0-9]*\).*/\1/p'
+  service_api_call started-at --timeout 2s --format raw 2> /dev/null
 }
 
 #######################################

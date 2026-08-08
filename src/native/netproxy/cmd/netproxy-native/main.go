@@ -106,6 +106,8 @@ func run(ctx context.Context, args []string) error {
 		return runEBPF(ctx, args[1:])
 	case "config":
 		return runConfig(ctx, args[1:])
+	case "module":
+		return runModule(ctx, args[1:])
 	case "subworker":
 		return runSubworker(ctx, args[1:])
 	case "sub":
@@ -1059,7 +1061,7 @@ func runCatalog(ctx context.Context, args []string) error {
 			if err != nil {
 				return err
 			}
-			writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "catalog.node_loaded", Message: "节点配置已读取", Data: json.RawMessage(content)})
+			writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "node.loaded", Message: "节点配置已读取", Data: json.RawMessage(content)})
 		case "node-export":
 			if *tag == "" {
 				return errors.New("Catalog node-export 需要 --tag")
@@ -1068,7 +1070,7 @@ func runCatalog(ctx context.Context, args []string) error {
 			if err != nil {
 				return err
 			}
-			writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "catalog.node_exported", Message: "节点分享链接已生成", Data: exported})
+			writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "node.exported", Message: "节点分享链接已生成", Data: exported})
 		case "group-private":
 			metadata, err := catalog.PrivateMetadata(*root, *groupID)
 			if err != nil {
@@ -1196,8 +1198,16 @@ func runCatalog(ctx context.Context, args []string) error {
 		if (action == "group" || action == "show") && *groupID == "" {
 			return fmt.Errorf("Catalog %s 需要 --group", action)
 		}
+		activeGroup := *active
+		if activeGroup == "" && *moduleConfig != "" {
+			module, err := moduleconfig.LoadModule(*moduleConfig)
+			if err != nil {
+				return err
+			}
+			activeGroup = module.ActiveGroupID
+		}
 		groups, err := catalog.Scan(ctx, catalog.ScanOptions{
-			Root: *root, ActiveGroup: *active, ProgressDir: *progressDir,
+			Root: *root, ActiveGroup: activeGroup, ProgressDir: *progressDir,
 			Type: *groupType, WithNodes: action == "snapshot" || action == "show", GroupID: *groupID,
 		})
 		if err != nil {
@@ -1393,6 +1403,11 @@ func runService(ctx context.Context, args []string) error {
 		fmt.Printf("selected\t%s\nmemory\t%d\nconnections_in\t%d\nconnections_out\t%d\nuplink_total\t%d\ndownlink_total\t%d\n",
 			snapshot.Selected, snapshot.Memory, snapshot.ConnectionsIn, snapshot.ConnectionsOut,
 			snapshot.UplinkTotal, snapshot.DownlinkTotal)
+		return nil
+	}
+	if action == "started-at" && *format == "raw" {
+		startedAt := data.(serviceapi.StartedAt)
+		fmt.Printf("%d\n", startedAt.UnixMilli)
 		return nil
 	}
 	if *format != "json" {
@@ -1772,6 +1787,7 @@ func showUsage() {
   %s catalog <groups|snapshot|group|show|runtime|schedule> --root <catalog>
   %s subscription update|edit --root <catalog> --group <group-id>
   %s service <ready|started-at|snapshot|groups|mode|select|urltest|close-all>
+  netproxy-native module <prepare|sync|select|mode|app|node|sub|config|logs|state|service> ...
   control <status|nodes|snapshot|selection|groups|mode|runtime-mode|set-mode|delay|close-all> ...
   netproxy-native ebpf <runtime|validate|diagnose> --config <ebpf.conf> [--output <ebpf.json>]
   %s subworker <start|stop|restart|wake|status|once|run> --root <catalog> --module-conf <module.conf>

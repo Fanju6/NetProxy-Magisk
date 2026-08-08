@@ -246,7 +246,9 @@ func (c *Client) doRequest(ctx context.Context, method string, payload []byte, f
 		var header [5]byte
 		if _, err = io.ReadFull(response.Body, header[:]); err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				if firstDataFrameOnly && firstData != nil {
+				// reF1nd 的部分 unary RPC 只发送完整数据帧，不附带 trailer。
+				// 数据帧已经完整读取时可以安全解码；明确的 gRPC 错误帧仍在上方处理。
+				if firstData != nil {
 					return firstData, nil
 				}
 				return nil, errors.New("Service API response ended without gRPC status")

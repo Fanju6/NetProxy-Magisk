@@ -3,7 +3,7 @@
 # 文件: service.sh
 # 功能: 构建 sing-box 运行时配置，管理核心生命周期、配置检查与就绪状态。
 # 用法: service.sh {start|stop|restart|reload|status|check}
-# 依赖: common.sh、config.sh、api.sh、state.sh、catalog.sh、runtime.sh、netproxy-native。
+# 依赖: common.sh、api.sh、state.sh、runtime.sh、netproxy-native。
 #######################################
 
 set -u
@@ -21,16 +21,13 @@ readonly SINGBOX_LOG_FILE="$MODDIR/logs/sing-box.log"
 readonly SINGBOX_DIR="${NETPROXY_SINGBOX_DIR:-$MODDIR/config/singbox}"
 readonly CONFDIR="$SINGBOX_DIR/confdir"
 readonly RUNTIME_DIR="$SINGBOX_DIR/runtime"
-readonly SWITCH_SCRIPT="$MODDIR/scripts/core/switch.sh"
 readonly NETMON_SCRIPT="$MODDIR/scripts/network/netmon.sh"
 readonly KILL_TIMEOUT=10
 readonly SERVICE_LOCK_DIR="/dev/netproxy/service.lock"
 
 . "$MODDIR/scripts/utils/common.sh"
-. "$MODDIR/scripts/utils/config.sh"
 . "$MODDIR/scripts/utils/api.sh"
 . "$MODDIR/scripts/utils/state.sh"
-. "$MODDIR/scripts/utils/catalog.sh"
 . "$MODDIR/scripts/core/runtime.sh"
 
 export PATH="$MODDIR/bin:$PATH"
@@ -146,29 +143,16 @@ cleanup_runtime_files() {
 }
 
 #######################################
-# 生成 eBPF 入站运行时配置
-# 参数: 无
-# 返回: netproxy-native 成功返回 0，否则返回非 0
-#######################################
-write_runtime_ebpf() {
-  "$NETPROXY_NATIVE_BIN" ebpf runtime \
-    --config "$EBPF_CONF" \
-    --output "$RUNTIME_EBPF_FILE" \
-    --format json
-}
-
-#######################################
 # 生成完整运行时配置
 # 参数: 无
 # 返回: 成功返回 0，失败则退出
 #######################################
 build_runtime_configuration() {
   initialize_runtime_context
-  if ! scan_catalog_groups; then
+  if ! build_runtime_catalog; then
     [ -z "$RUNTIME_BUILD_ERROR" ] || SERVICE_STATE_ERROR="$RUNTIME_BUILD_ERROR"
     return 1
   fi
-  write_runtime_ebpf > /dev/null
 }
 
 #######################################
@@ -187,8 +171,10 @@ build_validation_configuration() {
   RUNTIME_EBPF_FILE="$VALIDATION_RUNTIME_DIR/ebpf.json"
   RUNTIME_CATALOG_STATE_FILE="$VALIDATION_RUNTIME_DIR/catalog.state"
 
-  scan_catalog_groups allow-empty || return 1
-  write_runtime_ebpf > /dev/null || return 1
+  if ! build_runtime_catalog allow-empty; then
+    SERVICE_STATE_ERROR="$RUNTIME_BUILD_ERROR"
+    return 1
+  fi
 }
 
 #######################################
@@ -241,23 +227,13 @@ wait_control_plane_ready() {
 }
 
 #######################################
-# 同步 Catalog 节点选择到运行实例
+# 让 Go 读取持久状态并同步运行时模式和节点选择
 # 参数: 无
-# 返回: 全部选择生效返回 0，否则返回 1
-# 说明: sing-box 缓存可能恢复上次选择，因此每次启动或重新加载后都必须
-#       用 module.conf 中的活动分组与选择模式覆盖缓存状态。
+# 返回: 同步成功返回 0，否则返回 1
 #######################################
 sync_runtime_selection() {
-  local selected_tag runtime_node_ref
-
-  if [ "$CUR_SELECTOR_MODE" = "manual" ]; then
-    selected_tag="${CUR_SELECTED_NODE_REF#*/}"
-    runtime_node_ref="$CUR_ACTIVE_GROUP_TAG/$selected_tag"
-    service_api_select "Select/$CUR_ACTIVE_GROUP_TAG" "$runtime_node_ref" \
-      && service_api_select "Proxy" "Select/$CUR_ACTIVE_GROUP_TAG"
-  else
-    service_api_select "Proxy" "Auto/$CUR_ACTIVE_GROUP_TAG"
-  fi
+  "$NETPROXY_NATIVE_BIN" module sync --module-dir "$MODDIR" \
+    --skip-service-adapter > /dev/null
 }
 
 #######################################
@@ -323,7 +299,7 @@ do_start() {
   write_service_state preparing 0 0 0 ""
   SERVICE_STATE_ERROR="运行时配置生成失败"
   build_runtime_configuration || return 1
-  log "INFO" "活动分组=$CUR_ACTIVE_GROUP_ID 分组=$RUNTIME_GROUP_COUNT 节点=$RUNTIME_NODE_COUNT 模式=$CUR_OUTBOUND_MODE 选择=$CUR_SELECTOR_MODE"
+  log "INFO" "运行时配置准备完成"
 
   SERVICE_STATE_ERROR="sing-box 进程启动失败"
   cd "$SINGBOX_DIR" || die "无法进入配置目录: $SINGBOX_DIR"
@@ -352,8 +328,6 @@ do_start() {
   started_seconds="$(unix_millis_to_seconds "$started_millis" 2> /dev/null || true)"
   case "$started_seconds" in "" | 0 | *[!0-9]*) ;; *) SERVICE_STATE_STARTED_AT="$started_seconds" ;; esac
   [ "$SERVICE_STATE_STARTED_AT" -gt 0 ] || SERVICE_STATE_STARTED_AT="$(date +%s)"
-  service_api_set_mode "$CUR_OUTBOUND_MODE" \
-    || log "WARN" "运行模式同步失败，将沿用配置默认模式"
   SERVICE_STATE_ERROR="运行时节点选择同步失败"
   if ! sync_runtime_selection; then
     log "ERROR" "$SERVICE_STATE_ERROR"
@@ -449,8 +423,6 @@ do_reload() {
       started_seconds="$(unix_millis_to_seconds "$new_started" 2> /dev/null || true)"
       case "$started_seconds" in "" | 0 | *[!0-9]*) sleep 1; count=$((count + 1)); continue ;; esac
       SERVICE_STATE_STARTED_AT="$started_seconds"
-      service_api_set_mode "$CUR_OUTBOUND_MODE" \
-        || log "WARN" "重新加载后运行模式同步失败"
       if ! sync_runtime_selection; then
         SERVICE_STATE_ERROR="重新加载后节点选择同步失败"
         log "ERROR" "$SERVICE_STATE_ERROR"

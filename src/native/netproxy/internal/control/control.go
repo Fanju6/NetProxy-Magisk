@@ -405,7 +405,7 @@ func selectionFromRuntimeGroups(options Options, groups []catalog.GroupSnapshot,
 		if group.Group.NodeCount == 0 {
 			selection.Selected = ""
 		} else if selector == "urltest" {
-			selection.Selected = "Auto/" + activeID
+			selection.Selected = "Auto/" + group.Group.RuntimeTag
 		} else {
 			selection.Selected = selection.SelectedNodeRef
 		}
@@ -648,6 +648,11 @@ func findProcess(executable string, statePID int) int {
 		}
 	}
 	return 0
+}
+
+// ProcessRunning 判断指定可执行文件是否正在运行。
+func ProcessRunning(executable string) bool {
+	return findProcess(executable, 0) > 0
 }
 
 func processExists(pid int) bool {

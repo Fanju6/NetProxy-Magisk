@@ -48,6 +48,32 @@ func TestStartedAtOverGRPCWeb(t *testing.T) {
 	}
 }
 
+func TestStartedAtWithoutGRPCStatusFrame(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != methodGetStartedAt {
+			http.Error(writer, "unexpected method", http.StatusNotFound)
+			return
+		}
+		payload := protowire.AppendTag(nil, 1, protowire.VarintType)
+		payload = protowire.AppendVarint(payload, 654321)
+		writeTestFrame(t, writer, 0, payload)
+	}))
+	defer server.Close()
+
+	client, err := New(server.URL, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	startedAt, err := client.StartedAt(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if startedAt.UnixMilli != 654321 {
+		t.Fatalf("unexpected startedAt: %d", startedAt.UnixMilli)
+	}
+}
+
 func TestStatusOverGRPCWeb(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != methodSubscribeStatus {

@@ -12,7 +12,7 @@
 #   netmon.sh startup                 核心启动后初始化，不重复恢复基础模式
 #   netmon.sh sync                    按配置启停 inotifyd 守护并评估一次
 #   netmon.sh stop                    停止 inotifyd 守护并恢复基础模式
-# 依赖: common.sh、config.sh、api.sh、cmd、dumpsys、inotifyd(busybox)。
+# 依赖: common.sh、config.sh、api.sh、netproxy-native、cmd、dumpsys、inotifyd(busybox)。
 #######################################
 
 set -u  # 引用未定义变量报错
@@ -148,7 +148,7 @@ read_wifi_state() {
 #######################################
 read_base_mode() {
   local mode
-  mode="$(read_module_value "$MODULE_CONF" "OUTBOUND_MODE" 2> /dev/null || printf "%s" "rule")"
+  mode="$($MODDIR/bin/netproxy-native module mode --module-dir "$MODDIR" --format raw 2> /dev/null || printf "%s" "rule")"
   case "$mode" in
     rule | global | direct | AllowAds)
       printf "%s\n" "$mode"
@@ -186,8 +186,8 @@ apply_state() {
   fi
 
   if [ "$desired_runtime_mode" != "$actual_mode" ]; then
-    if ! service_api_set_mode "$desired_mode"; then
-      log "WARN" "Service API 不可用，未能切换 WiFi 自动代理状态"
+    if ! "$MODDIR/bin/netproxy-native" module mode --module-dir "$MODDIR" "$desired_mode" > /dev/null 2>&1; then
+      log "WARN" "出站模式切换失败，未能应用 WiFi 自动代理状态"
       return 1
     fi
 

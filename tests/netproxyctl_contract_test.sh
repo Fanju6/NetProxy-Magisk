@@ -113,13 +113,13 @@ run_json "$result"
 printf '%s' "$result" | grep -q '"code":"node.snapshot"'
 printf '%s' "$result" | grep -q '"groups":\['
 printf '%s' "$result" | grep -q '"selection":{"active_group_id":"default"'
-printf '%s' "$result" | grep -q '"selected":"Auto/default"'
+printf '%s' "$result" | grep -q '"selected":"Auto/本地配置"'
 
 stderr_file="$TMP_ROOT/node-current.stderr"
 result="$(sh "$MODULE/scripts/netproxyctl" --json node current 2> "$stderr_file")"
 run_json "$result"
 printf '%s' "$result" | grep -q '"code":"node.current"'
-printf '%s' "$result" | grep -q '"selected":"Auto/default"'
+printf '%s' "$result" | grep -q '"selected":"Auto/本地配置"'
 [ ! -s "$stderr_file" ]
 
 stderr_file="$TMP_ROOT/mode.stderr"

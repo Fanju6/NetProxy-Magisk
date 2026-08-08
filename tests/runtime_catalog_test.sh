@@ -63,8 +63,9 @@ write_runtime_providers > /dev/null
 write_runtime_outbounds > /dev/null
 write_runtime_ebpf > /dev/null
 
-[ "$RUNTIME_GROUP_COUNT" -eq 2 ]
-[ "$RUNTIME_NODE_COUNT" -eq 2 ]
+[ -s "$RUNTIME_CATALOG_STATE_FILE" ]
+grep -q '^group_count[[:space:]]*2' "$RUNTIME_CATALOG_STATE_FILE"
+grep -q '^node_count[[:space:]]*2' "$RUNTIME_CATALOG_STATE_FILE"
 grep -q '"tag": "本地配置"' "$RUNTIME_PROVIDERS_FILE"
 grep -q '"tag": "备用配置"' "$RUNTIME_PROVIDERS_FILE"
 grep -q '"default": "Auto/本地配置"' "$RUNTIME_OUTBOUNDS_FILE"

@@ -91,7 +91,7 @@ func TestReadSelectionAndSnapshotWithoutService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if selection.Selected != "Auto/default" || selection.ActiveGroupName != "本地配置" || selection.ActiveGroupNodeCount != 1 {
+	if selection.Selected != "Auto/本地配置" || selection.ActiveGroupName != "本地配置" || selection.ActiveGroupNodeCount != 1 {
 		t.Fatalf("unexpected automatic selection: %#v", selection)
 	}
 	if err := os.WriteFile(moduleConfig, []byte("OUTBOUND_MODE=global\nSELECTOR_MODE=manual\nACTIVE_GROUP_ID=default\nSELECTED_NODE_REF=\"default/NODE\"\n"), 0o600); err != nil {

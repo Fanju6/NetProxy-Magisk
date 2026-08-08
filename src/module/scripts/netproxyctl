@@ -1,10 +1,10 @@
 #!/system/bin/sh
 #######################################
 # 文件: netproxyctl
-# 功能: NetProxy 唯一管理入口，为终端、Android 管理器与 WebUI 提供稳定的
-#       人类可读输出和 schema=1 JSON 契约。
+# 功能: NetProxy 唯一管理入口；业务由 netproxy-native 负责，Shell 只保留
+#       Android 生命周期适配、参数转发和固定输出契约。
 # 用法: netproxyctl [--json] <命令组> <命令> [参数]
-# 依赖: core/* 与 utils/* 公共脚本。
+# 依赖: common.sh、netproxy-native、core/service.sh。
 #######################################
 
 set -u
@@ -14,28 +14,15 @@ readonly CONFIG_DIR="$MODDIR/config"
 readonly MODULE_CONF="$CONFIG_DIR/module.conf"
 readonly EBPF_CONF="$CONFIG_DIR/ebpf/ebpf.conf"
 readonly CATALOG_DIR="$CONFIG_DIR/catalog"
-readonly CATALOG_STAGING_DIR="$CATALOG_DIR/staging"
-readonly SERVICE_STATE_DIR="$CONFIG_DIR/runtime"
 readonly NETPROXY_NATIVE_BIN="$MODDIR/bin/netproxy-native"
 readonly SING_BOX_BIN="$MODDIR/bin/sing-box"
-readonly BPFTOOL_BIN="$MODDIR/bin/bpftool"
 readonly SERVICE_SCRIPT="$MODDIR/scripts/core/service.sh"
-readonly SWITCH_SCRIPT="$MODDIR/scripts/core/switch.sh"
-readonly LOG_DIR="$MODDIR/logs"
-readonly LOG_FILE="$LOG_DIR/service.log"
-readonly LOG_TAG="netproxyctl"
-readonly SUB_RUNTIME_DIR="/dev/netproxy/subscriptions"
-readonly SUBSCRIPTION_LIBRARY_ONLY=1
+readonly SERVICE_STATE_FILE="$CONFIG_DIR/runtime/service.json"
+readonly SUB_RUNTIME_DIR="${SUB_RUNTIME_DIR:-/dev/netproxy/subscriptions}"
 
 . "$MODDIR/scripts/utils/common.sh"
-. "$MODDIR/scripts/utils/config.sh"
-. "$MODDIR/scripts/utils/api.sh"
-. "$MODDIR/scripts/utils/state.sh"
-. "$MODDIR/scripts/utils/catalog.sh"
-. "$MODDIR/scripts/core/subscription.sh"
 
 OUTPUT_JSON=0
-CATALOG_ACTIVE_GROUP="$(read_module_value "$MODULE_CONF" "ACTIVE_GROUP_ID" 2> /dev/null || true)"
 if [ "${1:-}" = "--json" ]; then
   OUTPUT_JSON=1
   shift
@@ -46,16 +33,13 @@ fi
 # 参数:
 #   $1  结果代码
 #   $2  中文说明
-#   $3  data JSON (可选)
+#   $3  data JSON，可选
 # 返回: 无
 #######################################
 emit_success() {
   local code="$1"
   local message="$2"
-  local data="${3:-}"
-
-  [ -n "$data" ] || data="{}"
-
+  local data="${3:-{}}"
   printf '{"schema":1,"ok":true,"code":"%s","message":"%s","data":%s}\n' \
     "$(json_escape "$code")" "$(json_escape "$message")" "$data"
 }
@@ -63,1158 +47,299 @@ emit_success() {
 #######################################
 # 输出失败结果并退出
 # 参数:
-#   $1  错误代码
+#   $1  结果代码
 #   $2  中文说明
-#   $3  退出码 (可选，默认 1)
-#   $4  data JSON (可选)
+#   $3  退出码，可选
 # 返回: 不返回
 #######################################
 emit_error() {
   local code="$1"
   local message="$2"
   local status="${3:-1}"
-  local data="${4:-}"
-
-  [ -n "$data" ] || data="{}"
-
-  printf '{"schema":1,"ok":false,"code":"%s","message":"%s","data":%s}\n' \
-    "$(json_escape "$code")" "$(json_escape "$message")" "$data"
+  printf '{"schema":1,"ok":false,"code":"%s","message":"%s","data":{}}\n' \
+    "$(json_escape "$code")" "$(json_escape "$message")"
   exit "$status"
 }
 
 #######################################
-# 写命令成功时输出 JSON，读命令可按需输出人类文本
-# 参数:
-#   $1  结果代码
-#   $2  中文说明
-#   $3  data JSON
-# 返回: 无
+# 调用 Go 业务入口并保留 stdout/stderr 契约
+# 参数: netproxy-native 的完整参数
+# 返回: 原样转发成功 JSON；失败时转发最后一份结构化错误
 #######################################
-emit_write_success() {
-  emit_success "$1" "$2" "${3:-}"
+native_call() {
+  local error_file status native_error
+  mkdir -p /dev/netproxy 2> /dev/null || true
+  error_file="/dev/netproxy/netproxyctl.$$.err"
+  "$NETPROXY_NATIVE_BIN" "$@" 2> "$error_file"
+  status=$?
+  if [ "$status" -eq 0 ]; then
+    cat "$error_file" >&2 2> /dev/null || true
+    rm -f "$error_file"
+    return 0
+  fi
+  grep -v '"schema":1' "$error_file" >&2 2> /dev/null || true
+  native_error="$(grep '"schema":1' "$error_file" 2> /dev/null | tail -n 1 || true)"
+  if [ -n "$native_error" ]; then
+    printf '%s\n' "$native_error"
+    rm -f "$error_file"
+    return "$status"
+  fi
+  rm -f "$error_file"
+  emit_error "command.failed" "原生业务操作失败" "$status"
 }
 
 #######################################
-# 将多行文本转义为 JSON 字符串内容
-# 参数:
-#   $1  文件路径
-# 返回: 标准输出打印不带外围双引号的内容
+# 调用 Go 模块业务服务
+# 参数: module 子命令及参数
+# 返回: 原样转发 schema=1 结果
 #######################################
-file_to_json_string() {
-  awk '
-    BEGIN { first = 1 }
-    {
-      gsub(/\\/, "\\\\")
-      gsub(/"/, "\\\"")
-      gsub(/\t/, "\\t")
-      gsub(/\r/, "\\r")
-      if (!first) printf "\\n"
-      printf "%s", $0
-      first = 0
-    }
-  ' "$1"
+module_call() {
+  native_call module "$@"
 }
 
 #######################################
-# 调用 netproxy-native catalog 子命令并取出 data
-# 参数:
-#   $1   catalog 动作 (group/groups/snapshot/show)
-#   $@   追加的 native 参数，如 --group / --type
-# 返回: 标准输出打印 data JSON
+# 调用控制快照服务
+# 参数: control 子命令及参数
+# 返回: 原样转发 schema=1 结果
 #######################################
-catalog_native() {
-  local action="$1"
-  local result
-  shift
-
-  result="$("$NETPROXY_NATIVE_BIN" catalog "$action" \
-    --root "$CATALOG_DIR" \
-    --active "$CATALOG_ACTIVE_GROUP" \
-    --progress-dir "$SUB_RUNTIME_DIR" \
-    "$@")" || return 1
-  extract_result_data "$result"
-}
-
-#######################################
-# 返回分组安全摘要 JSON
-# 参数:
-#   $1  分组目录
-# 返回: 标准输出打印 JSON 对象
-#######################################
-catalog_group_summary_json() {
-  local group_dir="$1"
-
-  catalog_native group --group "${group_dir##*/}"
-}
-
-#######################################
-# 返回订阅编辑所需的受保护字段
-# 参数:
-#   $1  订阅分组目录
-# 返回: 标准输出打印 JSON 对象；仅供 Root 客户端调用
-#######################################
-catalog_subscription_private_json() {
-  local group_dir="$1"
-
-  catalog_group_private_json "${group_dir##*/}"
-}
-
-#######################################
-# 构建 Catalog 分组数组
-# 参数:
-#   $1  all 或 subscription
-# 返回: 标准输出打印 JSON 数组
-#######################################
-catalog_groups_json() {
-  local filter="${1:-all}"
-
-  initialize_catalog_storage || return 1
-  catalog_native groups --type "$filter"
-}
-
-#######################################
-# 获取单个 Catalog 分组与节点快照
-# 参数:
-#   $1  分组 ID
-# 返回: 标准输出打印分组快照 JSON
-#######################################
-catalog_group_snapshot_json() {
-  catalog_native show --group "$1"
-}
-
-#######################################
-# 判断服务是否运行
-# 参数: 无
-# 返回: 运行中返回 0，否则返回 1
-#######################################
-service_is_running() {
-  [ -n "$(get_pid "$SING_BOX_BIN")" ]
-}
-
-#######################################
-# 输出服务状态
-# 参数: 无
-# 返回: 无
-#######################################
-command_service_status() {
-  local format="text"
-  [ "$OUTPUT_JSON" = "1" ] && format="json"
-  "$NETPROXY_NATIVE_BIN" control status \
+control_call() {
+  native_call control "$@" \
     --catalog-root "$CATALOG_DIR" \
     --module-config "$MODULE_CONF" \
     --state-file "$SERVICE_STATE_FILE" \
     --progress-dir "$SUB_RUNTIME_DIR" \
     --worker-pid-file "/dev/netproxy/subworker.pid" \
     --sing-box "$SING_BOX_BIN" \
-    --address "$SERVICE_API" \
-    --secret "$SERVICE_SECRET" \
-    --format "$format" \
-    || emit_error "service.status_failed" "无法读取服务状态"
+    --address "127.0.0.1:9090" \
+    --secret "singbox"
 }
 
+#######################################
+# 服务命令组
+# 参数: status|start|stop|restart|reload|check
+# 返回: schema=1 结果
+#######################################
 command_service() {
-  local action="${1:-status}" error_message
-
+  local action="${1:-status}"
   case "$action" in
-    status) command_service_status ;;
-    start | stop | restart | reload)
+    status)
+      control_call status --format json
+      ;;
+    start | stop | restart | reload | check)
       if sh "$SERVICE_SCRIPT" "$action" >&2; then
-        emit_write_success "service.$action" "服务操作完成" "{\"action\":\"$action\"}"
+        emit_success "service.$action" "服务操作完成" "{\"action\":\"$action\"}"
       else
-        error_message="$(service_state_get_string error "服务操作失败")"
-        [ -n "$error_message" ] || error_message="服务操作失败"
-        emit_error "service.${action}_failed" "$error_message"
+        emit_error "service.${action}_failed" "服务操作失败"
       fi
       ;;
-    *) emit_error "usage.invalid" "用法: netproxyctl service status|start|stop|restart|reload" 2 ;;
+    *) emit_error "usage.invalid" "用法: netproxyctl service status|start|stop|restart|reload|check" 2 ;;
   esac
 }
 
 #######################################
 # Catalog 命令组
+# 参数: list|show [分组]
+# 返回: schema=1 结果
 #######################################
 command_catalog() {
   local action="${1:-list}"
-  local query="${2:-}"
-  local group_id summary
-
   case "$action" in
     list)
-      summary="$(catalog_groups_json all)" || emit_error "catalog.read_failed" "读取 Catalog 失败"
-      if [ "$OUTPUT_JSON" = "1" ]; then
-        emit_success "catalog.list" "Catalog 分组" "$summary"
-      else
-        printf "%s\n" "$summary"
-      fi
+      native_call catalog groups --root "$CATALOG_DIR" --module-config "$MODULE_CONF" --type all --format json
       ;;
     show)
-      [ -n "$query" ] || emit_error "usage.invalid" "用法: netproxyctl catalog show <分组>" 2
-      group_id="$(catalog_resolve_group "$query")" || emit_error "catalog.not_found" "未找到节点组"
-      summary="$(catalog_group_snapshot_json "$group_id")" || emit_error "catalog.read_failed" "读取分组失败"
-      emit_success "catalog.show" "Catalog 分组详情" "$summary"
+      [ -n "${2:-}" ] || emit_error "usage.invalid" "用法: netproxyctl catalog show <分组>" 2
+      native_call catalog show --root "$CATALOG_DIR" --group "$2" --format json
       ;;
     *) emit_error "usage.invalid" "用法: netproxyctl catalog list|show" 2 ;;
   esac
 }
 
 #######################################
-# 输出节点列表或当前选择
-# 参数:
-#   $1  list 或 current
-# 返回: 无
+# 节点命令组
+# 参数: list|snapshot|current|show|get|export|delay|add|import|edit|remove|use
+# 返回: schema=1 结果
 #######################################
-command_node_read() {
-  local action="$1"
-  local group_query="${2:-}"
-
-  case "$action" in
-    current)
-      "$NETPROXY_NATIVE_BIN" control selection \
-        --catalog-root "$CATALOG_DIR" \
-        --module-config "$MODULE_CONF" \
-        --progress-dir "$SUB_RUNTIME_DIR" \
-        --address "$SERVICE_API" \
-        --secret "$SERVICE_SECRET" \
-        --format json \
-        || emit_error "node.current_failed" "读取当前节点选择失败"
-      ;;
-    list)
-      if [ -n "$group_query" ]; then
-        "$NETPROXY_NATIVE_BIN" control nodes \
-          --catalog-root "$CATALOG_DIR" \
-          --module-config "$MODULE_CONF" \
-          --progress-dir "$SUB_RUNTIME_DIR" \
-          --group "$group_query" \
-          --format json \
-          || emit_error "catalog.read_failed" "读取节点列表失败"
-      else
-        "$NETPROXY_NATIVE_BIN" control nodes \
-          --catalog-root "$CATALOG_DIR" \
-          --module-config "$MODULE_CONF" \
-          --progress-dir "$SUB_RUNTIME_DIR" \
-          --format json \
-          || emit_error "catalog.read_failed" "读取节点列表失败"
-      fi
-      ;;
-    snapshot)
-      if [ -n "$group_query" ]; then
-        "$NETPROXY_NATIVE_BIN" control snapshot \
-          --catalog-root "$CATALOG_DIR" \
-          --module-config "$MODULE_CONF" \
-          --progress-dir "$SUB_RUNTIME_DIR" \
-          --address "$SERVICE_API" \
-          --secret "$SERVICE_SECRET" \
-          --group "$group_query" \
-          --format json \
-          || emit_error "catalog.read_failed" "读取节点快照失败"
-      else
-        "$NETPROXY_NATIVE_BIN" control snapshot \
-          --catalog-root "$CATALOG_DIR" \
-          --module-config "$MODULE_CONF" \
-          --progress-dir "$SUB_RUNTIME_DIR" \
-          --address "$SERVICE_API" \
-          --secret "$SERVICE_SECRET" \
-          --format json \
-          || emit_error "catalog.read_failed" "读取节点快照失败"
-      fi
-      ;;
-  esac
-}
-
-#######################################
-# 测试节点延迟
-# 参数:
-#   $1  节点引用、auto 或 all
-#   $2  auto 模式使用的分组 ID（可选）
-# 返回: 无
-#######################################
-command_node_delay() {
-  local target="${1:-}"
-  local group="${2:-}"
-
-  "$NETPROXY_NATIVE_BIN" control delay \
-    --catalog-root "$CATALOG_DIR" \
-    --module-config "$MODULE_CONF" \
-    --target "$target" \
-    --group "$group" \
-    --address "$SERVICE_API" \
-    --secret "$SERVICE_SECRET" \
-    --format json \
-    || emit_error "node.delay_failed" "节点测速失败"
-}
-
 command_node() {
   local action="${1:-list}"
   shift 2> /dev/null || true
-  local target="${1:-}" group="${2:-}" group_id tag result data
+  local target="${1:-}" group="${2:-}" group_id tag
 
   case "$action" in
-    list) command_node_read list "$target" ;;
-    snapshot) command_node_read snapshot "$target" ;;
-    current) command_node_read current ;;
+    list)
+      if [ -n "$target" ]; then
+        control_call nodes --group "$target" --format json
+      else
+        control_call nodes --format json
+      fi
+      ;;
+    snapshot)
+      if [ -n "$target" ]; then
+        control_call snapshot --group "$target" --format json
+      else
+        control_call snapshot --format json
+      fi
+      ;;
+    current)
+      control_call selection --format json
+      ;;
     show)
-      [ -n "$target" ] || emit_error "usage.invalid" "用法: netproxyctl node show <group/tag>" 2
+      [ -n "$target" ] || emit_error "usage.invalid" "用法: netproxyctl node show <分组>" 2
+      native_call catalog show --root "$CATALOG_DIR" --group "$target" --format json
+      ;;
+    get | export)
       group_id="${target%%/*}"
-      [ "$group_id" != "$target" ] || emit_error "node.ref_invalid" "节点引用格式应为 <group-id>/<tag>"
-      command_catalog show "$group_id"
+      tag="${target#*/}"
+      [ "$group_id" != "$target" ] && [ -n "$tag" ] \
+        || emit_error "node.ref_invalid" "节点引用格式应为 <group-id>/<tag>" 2
+      if [ "$action" = "get" ]; then
+        native_call catalog node-get --root "$CATALOG_DIR" --group "$group_id" --tag "$tag"
+      else
+        native_call catalog node-export --root "$CATALOG_DIR" --group "$group_id" --tag "$tag"
+      fi
       ;;
     add)
       [ -n "$target" ] || emit_error "usage.invalid" "用法: netproxyctl node add <节点链接>" 2
-      initialize_catalog_storage || emit_error "catalog.initialize_failed" "Catalog 初始化失败"
-      append_local_node "default" "$target" \
-        || emit_error "node.add_failed" "节点导入失败"
-      emit_write_success "node.added" "节点已加入本地配置" "{\"group_id\":\"default\"}"
+      if [ -n "$group" ]; then
+        module_call node add --module-dir "$MODDIR" --catalog-root "$CATALOG_DIR" \
+          --module-config "$MODULE_CONF" --ebpf-config "$EBPF_CONF" "$target" "$group"
+      else
+        module_call node add --module-dir "$MODDIR" "$target"
+      fi
       ;;
     import)
       [ -n "$target" ] || emit_error "usage.invalid" "用法: netproxyctl node import <文件> [名称]" 2
-      group_id="$(import_local_file_group "$target" "$group")" \
-        || emit_error "node.import_failed" "文件节点导入失败"
-      wake_subscription_worker || true
-      emit_write_success "node.imported" "文件节点已导入" "{\"group_id\":\"$(json_escape "$group_id")\"}"
-      ;;
-    get)
-      [ -n "$target" ] || emit_error "usage.invalid" "用法: netproxyctl node get <group/tag>" 2
-      group_id="${target%%/*}"
-      tag="${target#*/}"
-      [ "$group_id" != "$target" ] && [ -n "$tag" ] \
-        || emit_error "node.ref_invalid" "节点引用格式应为 <group-id>/<tag>"
-      result="$("$NETPROXY_NATIVE_BIN" catalog node-get --root "$CATALOG_DIR" \
-        --group "$group_id" --tag "$tag")" \
-        || emit_error "node.get_failed" "节点配置读取失败"
-      data="$(extract_result_data "$result")" \
-        || emit_error "node.get_failed" "节点配置结果格式无效"
-      emit_success "node.loaded" "节点配置已读取" "$data"
-      ;;
-    export)
-      [ -n "$target" ] || emit_error "usage.invalid" "用法: netproxyctl node export <group/tag>" 2
-      group_id="${target%%/*}"
-      tag="${target#*/}"
-      [ "$group_id" != "$target" ] && [ -n "$tag" ] \
-        || emit_error "node.ref_invalid" "节点引用格式应为 <group-id>/<tag>"
-      result="$("$NETPROXY_NATIVE_BIN" catalog node-export --root "$CATALOG_DIR" \
-        --group "$group_id" --tag "$tag")" \
-        || emit_error "node.export_failed" "节点分享链接生成失败"
-      data="$(extract_result_data "$result")" \
-        || emit_error "node.export_failed" "节点分享链接结果格式无效"
-      emit_success "node.exported" "节点分享链接已生成" "$data"
+      if [ -n "$group" ]; then
+        module_call node import --module-dir "$MODDIR" --name "$group" "$target"
+      else
+        module_call node import --module-dir "$MODDIR" "$target"
+      fi
       ;;
     edit)
       [ -n "$target" ] && [ -n "$group" ] \
-        || emit_error "usage.invalid" "用法: netproxyctl node edit <group/tag> <节点链接|文件>" 2
-      edit_catalog_node "$target" "$group" || emit_error "node.edit_failed" "节点编辑失败"
-      emit_write_success "node.edited" "节点已更新" "{}"
+        || emit_error "usage.invalid" "用法: netproxyctl node edit <分组/tag> <节点链接|文件>" 2
+      module_call node edit --module-dir "$MODDIR" "$target" "$group"
       ;;
     remove | rm)
-      [ -n "$target" ] || emit_error "usage.invalid" "用法: netproxyctl node remove <group/tag>" 2
-      remove_catalog_node "$target" || emit_error "node.remove_failed" "节点删除失败"
-      emit_write_success "node.removed" "节点已删除" "{}"
+      [ -n "$target" ] || emit_error "usage.invalid" "用法: netproxyctl node remove <分组/tag>" 2
+      module_call node remove --module-dir "$MODDIR" "$target"
       ;;
     use)
-      [ -n "$target" ] || emit_error "usage.invalid" "用法: netproxyctl node use <group/tag|auto> [分组]" 2
+      [ -n "$target" ] || emit_error "usage.invalid" "用法: netproxyctl node use <分组/tag|auto> [分组]" 2
       if [ "$target" = "auto" ]; then
-        sh "$SWITCH_SCRIPT" node auto "${group:-$(read_module_value "$MODULE_CONF" "ACTIVE_GROUP_ID")}" >&2 \
-          || emit_error "node.switch_failed" "自动测速分组切换失败"
+        if [ -n "$group" ]; then
+          module_call select --module-dir "$MODDIR" auto "$group"
+        else
+          module_call select --module-dir "$MODDIR" auto
+        fi
       else
-        sh "$SWITCH_SCRIPT" node "$target" >&2 || emit_error "node.switch_failed" "节点切换失败"
+        module_call select --module-dir "$MODDIR" "$target"
       fi
-      emit_write_success "node.selected" "节点选择已更新" "{}"
       ;;
-    delay) command_node_delay "$target" "$group" ;;
-    *) emit_error "usage.invalid" "用法: netproxyctl node list|snapshot|current|use|add|import|get|export|edit|remove|delay" 2 ;;
-  esac
-}
-
-#######################################
-# 解析订阅布尔选项
-# 参数:
-#   $1  true/false/on/off/1/0
-# 返回: 标准输出打印 true/false
-#######################################
-normalize_boolean() {
-  case "$1" in
-    true | on | 1) printf "true" ;;
-    false | off | 0) printf "false" ;;
-    *) return 1 ;;
-  esac
-}
-
-#######################################
-# 添加 URL 订阅
-# 参数: 名称 URL 及订阅选项
-# 返回: 无
-#######################################
-command_sub_add() {
-  local name="${1:-}" url="${2:-}" interval headers_file value group_id
-
-  # 第一个位置参数是 URL 时视为省略名称，由响应头或主机名自动取名
-  case "$name" in
-    *://*)
-      url="$name"
-      name=""
-      shift
+    delay)
+      control_call delay --target "$target" --group "$group" --format json
       ;;
-    *)
-      [ -n "$name" ] && [ -n "$url" ] \
-        || emit_error "usage.invalid" "用法: netproxyctl sub add [名称] <URL> [选项]" 2
-      shift 2
-      ;;
+    *) emit_error "usage.invalid" "用法: netproxyctl node list|snapshot|current|show|get|export|delay|add|import|edit|remove|use" 2 ;;
   esac
-  [ -n "$url" ] || emit_error "usage.invalid" "用法: netproxyctl sub add [名称] <URL> [选项]" 2
-  SUB_ADD_USER_AGENT=""
-  SUB_ADD_HWID=""
-  SUB_ADD_CUSTOM_HEADERS="{}"
-  SUB_ADD_UPDATE_INTERVAL=86400
-  SUB_ADD_UPDATE_VIA_PROXY="auto"
-  SUB_ADD_INCLUDE=""
-  SUB_ADD_EXCLUDE=""
-  SUB_ADD_ALLOW_INSECURE=false
-  SUB_ADD_TIMEOUT=60
-  SUB_ADD_AUTO_UPDATE=true
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --user-agent) SUB_ADD_USER_AGENT="${2:-}"; shift 2 ;;
-      --hwid) SUB_ADD_HWID="${2:-}"; shift 2 ;;
-      --headers-file)
-        headers_file="${2:-}"
-        [ -f "$headers_file" ] || emit_error "subscription.headers_invalid" "自定义请求头文件不存在"
-        SUB_ADD_CUSTOM_HEADERS="$(tr -d '\r\n' < "$headers_file")"
-        shift 2
-        ;;
-      --interval)
-        interval="$(catalog_duration_to_seconds "${2:-}")" || emit_error "subscription.interval_invalid" "更新周期无效"
-        [ "$interval" -ge 900 ] || emit_error "subscription.interval_too_short" "更新周期不能少于 15 分钟"
-        SUB_ADD_UPDATE_INTERVAL="$interval"
-        shift 2
-        ;;
-      --via-proxy)
-        value="${2:-}"
-        case "$value" in auto | always | never) ;; *) emit_error "subscription.proxy_mode_invalid" "代理更新模式无效" ;; esac
-        SUB_ADD_UPDATE_VIA_PROXY="$value"
-        shift 2
-        ;;
-      --include) SUB_ADD_INCLUDE="${2:-}"; shift 2 ;;
-      --exclude) SUB_ADD_EXCLUDE="${2:-}"; shift 2 ;;
-      --allow-insecure) SUB_ADD_ALLOW_INSECURE=true; shift ;;
-      --timeout)
-        value="${2:-}"
-        case "$value" in "" | *[!0-9]*) emit_error "subscription.timeout_invalid" "下载超时必须为秒数" ;; esac
-        SUB_ADD_TIMEOUT="$value"
-        shift 2
-        ;;
-      --auto-update) SUB_ADD_AUTO_UPDATE="$(normalize_boolean "${2:-}")" || emit_error "subscription.auto_update_invalid" "自动更新开关无效"; shift 2 ;;
-      --json) shift ;;
-      *) emit_error "usage.invalid" "未知订阅选项: $1" 2 ;;
-    esac
-  done
-  for value in "$name" "$url" "$SUB_ADD_USER_AGENT" "$SUB_ADD_HWID" \
-    "$SUB_ADD_INCLUDE" "$SUB_ADD_EXCLUDE"; do
-    validate_user_text "$value" || emit_error "subscription.text_invalid" "订阅设置不能包含制表符或换行"
-  done
-
-  if group_id="$(add_subscription "$name" "$url")"; then
-    wake_subscription_worker || true
-    emit_write_success "subscription.added" "订阅已添加" "{\"id\":\"$(json_escape "$group_id")\"}"
-  else
-    emit_error "subscription.add_failed" "订阅已保存，但首次更新失败" 1 \
-      "{\"id\":\"$(json_escape "$group_id")\"}"
-  fi
-}
-
-#######################################
-# 编辑订阅并在必要时重新下载验证
-# 参数: 分组及编辑选项
-# 返回: 无
-#######################################
-command_sub_edit() {
-  local query="${1:-}" group_id result error_file key value
-  local name_value url_value user_agent_value hwid_value headers_file interval_value
-  local via_proxy_value include_value exclude_value timeout_value
-  local auto_update_value allow_insecure_value
-  local name_set=0 url_set=0 user_agent_set=0 hwid_set=0 headers_set=0 interval_set=0
-  local via_proxy_set=0 include_set=0 exclude_set=0 timeout_set=0 auto_update_set=0 allow_insecure_set=0
-  local name_changed=false structure_changed=false
-
-  [ -n "$query" ] || emit_error "usage.invalid" "用法: netproxyctl sub edit <订阅> [选项]" 2
-  shift
-  group_id="$(catalog_resolve_group "$query")" || emit_error "subscription.not_found" "订阅不存在"
-  [ "$(catalog_group_type "$group_id")" = "subscription" ] || emit_error "subscription.read_only" "目标不是 URL 订阅"
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --name) name_set=1; name_value="${2:-}"; shift 2 ;;
-      --url) url_set=1; url_value="${2:-}"; shift 2 ;;
-      --user-agent) user_agent_set=1; user_agent_value="${2:-}"; shift 2 ;;
-      --hwid) hwid_set=1; hwid_value="${2:-}"; shift 2 ;;
-      --headers-file) headers_set=1; headers_file="${2:-}"; shift 2 ;;
-      --interval) interval_set=1; interval_value="${2:-}"; shift 2 ;;
-      --via-proxy) via_proxy_set=1; via_proxy_value="${2:-}"; shift 2 ;;
-      --include) include_set=1; include_value="${2:-}"; shift 2 ;;
-      --exclude) exclude_set=1; exclude_value="${2:-}"; shift 2 ;;
-      --timeout) timeout_set=1; timeout_value="${2:-}"; shift 2 ;;
-      --allow-insecure)
-        allow_insecure_value="$(normalize_boolean "${2:-}")" \
-          || emit_error "usage.invalid" "布尔选项无效: $1" 2
-        allow_insecure_set=1
-        shift 2
-        ;;
-      --auto-update)
-        auto_update_value="$(normalize_boolean "${2:-}")" \
-          || emit_error "usage.invalid" "布尔选项无效: $1" 2
-        auto_update_set=1
-        shift 2
-        ;;
-      --json) shift ;;
-      *) emit_error "usage.invalid" "未知订阅选项: $1" 2 ;;
-    esac
-  done
-  set -- "$NETPROXY_NATIVE_BIN" subscription edit \
-    --root "$CATALOG_DIR" --group "$group_id" --progress-dir "$SUB_RUNTIME_DIR" --format kv
-  [ "$name_set" = "1" ] && set -- "$@" --name "$name_value"
-  [ "$url_set" = "1" ] && set -- "$@" --url "$url_value"
-  [ "$user_agent_set" = "1" ] && set -- "$@" --user-agent "$user_agent_value"
-  [ "$hwid_set" = "1" ] && set -- "$@" --hwid "$hwid_value"
-  [ "$headers_set" = "1" ] && set -- "$@" --headers-file "$headers_file"
-  [ "$interval_set" = "1" ] && set -- "$@" --interval "$interval_value"
-  [ "$via_proxy_set" = "1" ] && set -- "$@" --via-proxy "$via_proxy_value"
-  [ "$include_set" = "1" ] && set -- "$@" --include "$include_value"
-  [ "$exclude_set" = "1" ] && set -- "$@" --exclude "$exclude_value"
-  [ "$timeout_set" = "1" ] && set -- "$@" --timeout "$timeout_value"
-  [ "$allow_insecure_set" = "1" ] && set -- "$@" --allow-insecure="$allow_insecure_value"
-  [ "$auto_update_set" = "1" ] && set -- "$@" --auto-update="$auto_update_value"
-  error_file="$SUB_RUNTIME_DIR/sub-edit.$$.log"
-  result="$("$@" 2> "$error_file")" || {
-    rm -f "$error_file"
-    emit_error "subscription.edit_failed" "订阅设置更新失败"
-  }
-  rm -f "$error_file"
-  while IFS="=" read -r key value; do
-    case "$key" in
-      name_changed) name_changed="$value" ;;
-      structure_changed) structure_changed="$value" ;;
-    esac
-  done << EOF
-$result
-EOF
-  fallback_missing_selected_node "$group_id"
-  if { [ "$name_changed" = "true" ] || [ "$structure_changed" = "true" ]; } && service_is_running; then
-    sh "$SERVICE_SCRIPT" reload >&2 \
-      || emit_error "subscription.reload_failed" "订阅设置已保存，但运行时重新加载失败"
-  fi
-  wake_subscription_worker || true
-  emit_write_success "subscription.edited" "订阅设置已更新" "{\"id\":\"$group_id\"}"
 }
 
 #######################################
 # 订阅命令组
+# 参数: list|show|add|edit|update|update-all|activate|remove|history|cancel
+# 返回: schema=1 结果
 #######################################
 command_sub() {
   local action="${1:-list}"
   shift 2> /dev/null || true
-  local query="${1:-}" group_id group_dir data replacement="${2:-}"
-
   case "$action" in
-    list)
-      data="$(catalog_groups_json subscription)" || emit_error "subscription.read_failed" "读取订阅列表失败"
-      [ "$OUTPUT_JSON" = "1" ] && emit_success "subscription.list" "订阅列表" "$data" || printf "%s\n" "$data"
-      ;;
-    show)
-      [ -n "$query" ] || emit_error "usage.invalid" "用法: netproxyctl sub show <订阅>" 2
-      group_id="$(catalog_resolve_group "$query")" || emit_error "subscription.not_found" "订阅不存在"
-      group_dir="$CATALOG_DIR/$group_id"
-      [ "$(catalog_group_type "$group_id")" = "subscription" ] || emit_error "subscription.not_found" "目标不是 URL 订阅"
-      if [ "${2:-}" = "--private" ]; then
-        data="$(catalog_subscription_private_json "$group_dir")" \
-          || emit_error "subscription.read_failed" "读取订阅编辑设置失败"
-      else
-        data="$(catalog_group_summary_json "$group_dir")" \
-          || emit_error "subscription.read_failed" "读取订阅失败"
-      fi
-      emit_success "subscription.show" "订阅详情" "$data"
-      ;;
-    add) command_sub_add "$@" ;;
-    edit) command_sub_edit "$@" ;;
-    update)
-      [ -n "$query" ] || emit_error "usage.invalid" "用法: netproxyctl sub update <订阅>" 2
-      update_subscription "$query" || emit_error "subscription.update_failed" "订阅更新失败，已保留上一版节点"
-      wake_subscription_worker || true
-      emit_write_success "subscription.updated" "订阅更新完成" "{}"
-      ;;
-    update-all)
-      update_all_subscriptions || emit_error "subscription.update_partial" "部分订阅更新失败，其他任务已继续执行"
-      wake_subscription_worker || true
-      emit_write_success "subscription.updated_all" "全部订阅更新完成" "{}"
-      ;;
-    activate)
-      [ -n "$query" ] || emit_error "usage.invalid" "用法: netproxyctl sub activate <订阅>" 2
-      group_id="$(catalog_resolve_group "$query")" || emit_error "subscription.not_found" "订阅不存在"
-      catalog_group_has_nodes "$group_id" || emit_error "subscription.empty" "订阅没有可用节点"
-      set_active_catalog_group "$group_id" || emit_error "subscription.empty" "订阅没有可用节点"
-      if service_is_running; then
-        sh "$SWITCH_SCRIPT" node auto "$group_id" >&2 || emit_error "subscription.activate_failed" "活动订阅切换失败"
-      fi
-      emit_write_success "subscription.activated" "活动订阅已切换" "{\"id\":\"$group_id\"}"
-      ;;
-    remove | rm)
-      [ -n "$query" ] || emit_error "usage.invalid" "用法: netproxyctl sub remove <订阅> [替代分组]" 2
-      remove_subscription "$query" "$replacement" || emit_error "subscription.remove_failed" "订阅删除失败"
-      wake_subscription_worker || true
-      emit_write_success "subscription.removed" "订阅已删除" "{}"
-      ;;
-    history)
-      [ -n "$query" ] || emit_error "usage.invalid" "用法: netproxyctl sub history <订阅>" 2
-      group_id="$(catalog_resolve_group "$query")" || emit_error "subscription.not_found" "订阅不存在"
-      data="$(catalog_history_json "$group_id")" || emit_error "subscription.read_failed" "读取订阅历史失败"
-      emit_success "subscription.history" "订阅更新历史" "$data"
-      ;;
-    cancel)
-      [ -n "$query" ] || emit_error "usage.invalid" "用法: netproxyctl sub cancel <订阅>" 2
-      group_id="$(catalog_resolve_group "$query")" || emit_error "subscription.not_found" "订阅不存在"
-      cancel_subscription_update "$group_id" || emit_error "subscription.cancel_failed" "取消更新失败"
-      emit_write_success "subscription.cancelled" "已请求取消订阅更新" "{}"
+    list | show | add | edit | update | update-all | activate | remove | history | cancel)
+    module_call sub "$action" --module-dir "$MODDIR" --progress-dir "$SUB_RUNTIME_DIR" "$@"
       ;;
     *) emit_error "usage.invalid" "用法: netproxyctl sub list|show|add|edit|update|update-all|activate|remove|history|cancel" 2 ;;
   esac
 }
 
 #######################################
-# 模式命令组
+# 出站模式命令组
+# 参数: 空值或 rule|global|direct|AllowAds
+# 返回: schema=1 结果
 #######################################
 command_mode() {
-  local mode="${1:-}"
-
-  if [ -z "$mode" ]; then
-    local format="text"
-    [ "$OUTPUT_JSON" = "1" ] && format="json"
-    "$NETPROXY_NATIVE_BIN" control mode \
-      --module-config "$MODULE_CONF" \
-      --address "$SERVICE_API" \
-      --secret "$SERVICE_SECRET" \
-      --format "$format" \
-      || emit_error "mode.read_failed" "读取出站模式失败"
-    return 0
-  fi
-  case "$mode" in rule | global | direct | AllowAds) ;; *) emit_error "mode.invalid" "出站模式应为 rule、global、direct 或 AllowAds" 2 ;; esac
-  sh "$SWITCH_SCRIPT" mode "$mode" >&2 || emit_error "mode.switch_failed" "出站模式切换失败"
-  emit_write_success "mode.changed" "出站模式已切换" "{\"mode\":\"$mode\"}"
+  module_call mode --module-dir "$MODDIR" "$@"
 }
 
 #######################################
 # 分应用代理命令组
+# 参数: list|mode|users|add|remove|enable|disable
+# 返回: schema=1 结果
 #######################################
 command_app() {
-  local action="${1:-list}" value mode proxy_list bypass_list app_users current new_list
-
-  [ "$#" -eq 0 ] || shift
-  value="${1:-}"
-
-  case "$action" in
-    list)
-      mode="$(read_ebpf_value "$EBPF_CONF" "APP_PROXY_MODE")"
-      proxy_list="$(read_ebpf_value "$EBPF_CONF" "PROXY_APPS_LIST")"
-      bypass_list="$(read_ebpf_value "$EBPF_CONF" "BYPASS_APPS_LIST")"
-      app_users="$(read_ebpf_value "$EBPF_CONF" "APP_ANDROID_USERS")"
-      if [ "$OUTPUT_JSON" = "1" ]; then
-        emit_success "app.list" "分应用代理配置" \
-          "{\"enabled\":$( [ "$(read_ebpf_value "$EBPF_CONF" "APP_PROXY_ENABLE")" = "1" ] && printf true || printf false),\"mode\":\"$(json_escape "$mode")\",\"android_users\":\"$(json_escape "$app_users")\",\"proxy_apps\":\"$(json_escape "$proxy_list")\",\"bypass_apps\":\"$(json_escape "$bypass_list")\"}"
-      else
-        printf "模式: %s\nAndroid 用户: %s\n代理列表: %s\n绕过列表: %s\n" \
-          "$mode" "${app_users:-全部}" "$proxy_list" "$bypass_list"
-      fi
-      ;;
-    mode)
-      case "$value" in blacklist | whitelist) ;; *) emit_error "app.mode_invalid" "应用模式应为 blacklist 或 whitelist" 2 ;; esac
-      set_ebpf_values "$EBPF_CONF" \
-        --set "APP_PROXY_ENABLE=1" \
-        --set "APP_PROXY_MODE=$(quote_conf "$value")"
-      emit_write_success "app.mode_changed" "分应用模式已更新" "{\"mode\":\"$value\"}"
-      ;;
-    users)
-      if [ "$#" -eq 0 ] || [ "$value" = "all" ]; then
-        app_users=""
-      else
-        app_users="$*"
-        validate_android_user_list "$app_users" "APP_ANDROID_USERS" \
-          || emit_error "app.users_invalid" "Android 用户 ID 只能是非负整数" 2
-      fi
-      set_ebpf_values "$EBPF_CONF" --set "APP_ANDROID_USERS=$(quote_conf "$app_users")"
-      emit_write_success "app.users_changed" "应用生效用户已更新" \
-        "{\"android_users\":\"$(json_escape "$app_users")\"}"
-      ;;
-    add)
-      [ -n "$value" ] || emit_error "usage.invalid" "用法: netproxyctl app add <包名>" 2
-      validate_android_package_list "$value" "应用包名" \
-        || emit_error "app.package_invalid" "应用包名格式无效" 2
-      mode="$(read_ebpf_value "$EBPF_CONF" "APP_PROXY_MODE")"
-      if [ "$mode" = "whitelist" ]; then
-        current="$(read_ebpf_value "$EBPF_CONF" "PROXY_APPS_LIST")"
-        new_list="$(list_add "$current" "$value")"
-        set_ebpf_values "$EBPF_CONF" \
-          --set "APP_PROXY_ENABLE=1" \
-          --set "PROXY_APPS_LIST=$(quote_conf "$new_list")"
-      else
-        current="$(read_ebpf_value "$EBPF_CONF" "BYPASS_APPS_LIST")"
-        new_list="$(list_add "$current" "$value")"
-        set_ebpf_values "$EBPF_CONF" \
-          --set "APP_PROXY_ENABLE=1" \
-          --set "BYPASS_APPS_LIST=$(quote_conf "$new_list")"
-      fi
-      emit_write_success "app.added" "应用已加入名单" "{}"
-      ;;
-    remove | rm)
-      [ -n "$value" ] || emit_error "usage.invalid" "用法: netproxyctl app remove <应用>" 2
-      proxy_list="$(list_remove "$(read_ebpf_value "$EBPF_CONF" "PROXY_APPS_LIST")" "$value")"
-      bypass_list="$(list_remove "$(read_ebpf_value "$EBPF_CONF" "BYPASS_APPS_LIST")" "$value")"
-      set_ebpf_values "$EBPF_CONF" \
-        --set "PROXY_APPS_LIST=$(quote_conf "$proxy_list")" \
-        --set "BYPASS_APPS_LIST=$(quote_conf "$bypass_list")"
-      emit_write_success "app.removed" "应用已从名单移除" "{}"
-      ;;
-    enable | disable)
-      [ "$action" = "enable" ] && value=1 || value=0
-      set_ebpf_values "$EBPF_CONF" --set "APP_PROXY_ENABLE=$value"
-      emit_write_success "app.$action" "分应用代理设置已更新" "{}"
-      ;;
-    *) emit_error "usage.invalid" "用法: netproxyctl app list|mode|users|add|remove|enable|disable" 2 ;;
-  esac
+  local action="${1:-list}"
+  shift 2> /dev/null || true
+  module_call app "$action" --module-dir "$MODDIR" "$@"
 }
 
 #######################################
-# 生成人类可读的中文 eBPF 诊断摘要
-# 参数:
-#   $1  核心原始诊断文件
-#   $2  中文摘要输出文件
-#   $3  实际检测模式
-#   $4  核心诊断退出码
-# 返回: 无
-#######################################
-format_ebpf_diagnostic() {
-  local source="$1" destination="$2" core_mode="$3" probe_status="$4"
-  local summary pass_count=0 warn_count=0 fail_count=0 unknown_count=0
-  local scope kernel architecture runtime_probe conclusion ready=0
-  local common_fail=0 local_fail=0 shared_fail=0
-
-  summary="$(sed -n 's/^Summary: PASS=\([0-9][0-9]*\) WARN=\([0-9][0-9]*\) FAIL=\([0-9][0-9]*\) UNKNOWN=\([0-9][0-9]*\)$/\1 \2 \3 \4/p' "$source" | head -n 1)"
-  if [ -n "$summary" ]; then
-    set -- $summary
-    pass_count="$1"
-    warn_count="$2"
-    fail_count="$3"
-    unknown_count="$4"
-  fi
-
-  kernel="$(sed -n 's/^Platform:.*kernel: \([^;]*\);.*$/\1/p' "$source" | head -n 1)"
-  architecture="$(sed -n 's/^Platform:.*architecture: \([^;]*\);.*$/\1/p' "$source" | head -n 1)"
-  runtime_probe="$(sed -n 's/^Runtime feature probe: //p' "$source" | head -n 1)"
-  case "$core_mode" in
-    local) scope="本机应用流量" ;;
-    shared-network) scope="热点与共享网络" ;;
-    all) scope="本机应用流量、热点与共享网络" ;;
-    *) scope="$core_mode" ;;
-  esac
-
-  if service_is_running && [ "$(service_state_get_string state stopped)" = "ready" ]; then
-    ready=1
-  fi
-  if [ "$probe_status" -ne 0 ] || [ "$fail_count" -gt 0 ]; then
-    conclusion="未通过"
-  elif [ "$ready" = "1" ]; then
-    conclusion="可用，当前服务已成功加载 eBPF 入站"
-  elif [ "$warn_count" -gt 0 ]; then
-    conclusion="发现兼容性警告，建议启动服务进行最终验证"
-  else
-    conclusion="未发现明确问题，启动服务后可完成最终验证"
-  fi
-
-  common_fail="$(grep -c '^FAIL.*\[common' "$source" 2> /dev/null || true)"
-  local_fail="$(grep -c '^FAIL.*\[local' "$source" 2> /dev/null || true)"
-  shared_fail="$(grep -c '^FAIL.*\[shared-network' "$source" 2> /dev/null || true)"
-  common_fail="${common_fail:-0}"
-  local_fail="${local_fail:-0}"
-  shared_fail="${shared_fail:-0}"
-
-  {
-    printf '结论: %s\n' "$conclusion"
-    printf '检测范围: %s\n' "$scope"
-    [ -z "$kernel" ] || printf '内核版本: %s\n' "$kernel"
-    [ -z "$architecture" ] || printf '设备架构: %s\n' "$architecture"
-    printf '\n检查统计:\n'
-    printf '  通过: %s 项\n' "$pass_count"
-    printf '  警告: %s 项\n' "$warn_count"
-    printf '  失败: %s 项\n' "$fail_count"
-    printf '  无法静态确认: %s 项\n' "$unknown_count"
-
-    if [ "$fail_count" -gt 0 ]; then
-      printf '\n问题定位:\n'
-      [ "$common_fail" -eq 0 ] || printf '  - 基础 eBPF 权限或内核能力不满足。\n'
-      [ "$local_fail" -eq 0 ] || printf '  - 本机 cgroup eBPF 能力不满足。\n'
-      [ "$shared_fail" -eq 0 ] || printf '  - 热点接口或 TC eBPF 能力不满足。\n'
-      printf '\n建议先检查 Root 授权、内核 eBPF 配置和服务日志。\n'
-    elif [ "$unknown_count" -gt 0 ]; then
-      printf '\n说明:\n'
-      if [ "$runtime_probe" = "bpftool" ]; then
-        printf '  “无法静态确认”不代表失败。部分挂载类型无法由 bpftool 安全区分，需由 sing-box 启动时最终验证。\n'
-      else
-        printf '  bpftool 未能完成运行时探测，部分能力需由 sing-box 启动时最终验证。\n'
-      fi
-      if [ "$ready" = "1" ]; then
-        printf '  当前服务已经成功启动，因此这些项目不影响当前使用。\n'
-      else
-        printf '  请启动服务；能正常进入就绪状态即可确认当前配置可用。\n'
-      fi
-    fi
-
-    if [ "$core_mode" = "local" ]; then
-      printf '\n当前未启用共享网络，本次没有检测热点接口。\n'
-    fi
-  } > "$destination"
-}
-
-#######################################
-# eBPF 诊断命令组
+# eBPF 配置诊断命令组
+# 参数: diagnose|validate；运行态探测仍由专用诊断工具负责。
+# 返回: schema=1 结果
 #######################################
 command_ebpf() {
-  local action="${1:-status}" mode="${2:-configured}" detail="${3:-}" core_mode
-  local cgroup_enabled shared_enabled cgroup_path interfaces interface
-  local probe_output report_output status content is_raw=false
-
-  # 配置诊断由 Go 类型模型直接完成，避免再次在 Shell 中解析配置和拼接 JSON。
+  local action="${1:-diagnose}"
   case "$action" in
-    diagnose | validate)
-      [ -z "$mode" ] || [ "$mode" = "configured" ] \
-        || emit_error "usage.invalid" "用法: netproxyctl ebpf diagnose" 2
-      if [ "$OUTPUT_JSON" = "1" ]; then
-        local native_output native_status
-        native_status=0
-        native_output="$("$NETPROXY_NATIVE_BIN" ebpf diagnose \
-          --config "$EBPF_CONF" --format json 2>&1)" || native_status=$?
-        printf '%s\n' "$native_output"
-        return "$native_status"
-      fi
-      "$NETPROXY_NATIVE_BIN" ebpf diagnose --config "$EBPF_CONF" --format text
-      return $?
+    diagnose | validate | status)
+      native_call ebpf diagnose --config "$EBPF_CONF" --format json
       ;;
-  esac
-
-  [ "$action" = "status" ] \
-    || emit_error "usage.invalid" "用法: netproxyctl ebpf status [configured|all|local|shared] [--raw]" 2
-  cgroup_enabled="$(read_ebpf_value "$EBPF_CONF" "EBPF_CGROUP_ENABLED")"
-  shared_enabled="$(read_ebpf_value "$EBPF_CONF" "EBPF_SHARED_NETWORK")"
-  case "$mode" in
-    configured)
-      if [ "$cgroup_enabled" = "1" ] && [ "$shared_enabled" = "1" ]; then
-        core_mode="all"
-      elif [ "$shared_enabled" = "1" ]; then
-        core_mode="shared-network"
-      else
-        core_mode="local"
-      fi
-      ;;
-    all | local) core_mode="$mode" ;;
-    shared) core_mode="shared-network" ;;
-    *) emit_error "ebpf.mode_invalid" "诊断模式应为 configured、all、local 或 shared" 2 ;;
-  esac
-  case "$detail" in
-    "") ;;
-    --raw) is_raw=true ;;
-    *) emit_error "usage.invalid" "用法: netproxyctl ebpf status [configured|all|local|shared] [--raw]" 2 ;;
-  esac
-  require_file "$SING_BOX_BIN" "sing-box 二进制不存在"
-  require_file "$BPFTOOL_BIN" "bpftool 二进制不存在，请重新安装模块"
-  cgroup_path="$(read_ebpf_value "$EBPF_CONF" "EBPF_CGROUP_PATH")"
-  interfaces="$(read_ebpf_value "$EBPF_CONF" "EBPF_SHARED_INTERFACES")"
-  interface="${interfaces%% *}"
-  ensure_dir /dev/netproxy "无法创建 eBPF 诊断目录"
-  probe_output="/dev/netproxy/ebpf-status.$$.raw"
-  report_output="/dev/netproxy/ebpf-status.$$.txt"
-
-  status=0
-  if [ "$core_mode" = "all" ] && [ -n "$cgroup_path" ] && [ -n "$interface" ]; then
-    PATH="$MODDIR/bin:$PATH" "$SING_BOX_BIN" tools ebpf status --mode "$core_mode" \
-      --cgroup "$cgroup_path" --interface "$interface" > "$probe_output" 2>&1 || status=$?
-  elif [ "$core_mode" != "shared-network" ] && [ -n "$cgroup_path" ]; then
-    PATH="$MODDIR/bin:$PATH" "$SING_BOX_BIN" tools ebpf status --mode "$core_mode" \
-      --cgroup "$cgroup_path" > "$probe_output" 2>&1 || status=$?
-  elif [ "$core_mode" != "local" ] && [ -n "$interface" ]; then
-    PATH="$MODDIR/bin:$PATH" "$SING_BOX_BIN" tools ebpf status --mode "$core_mode" \
-      --interface "$interface" > "$probe_output" 2>&1 || status=$?
-  else
-    PATH="$MODDIR/bin:$PATH" "$SING_BOX_BIN" tools ebpf status --mode "$core_mode" > "$probe_output" 2>&1 || status=$?
-  fi
-
-  if [ "$is_raw" = "true" ]; then
-    cp "$probe_output" "$report_output"
-  else
-    format_ebpf_diagnostic "$probe_output" "$report_output" "$core_mode" "$status"
-  fi
-
-  if [ "$OUTPUT_JSON" = "1" ]; then
-    content="$(file_to_json_string "$report_output")"
-    rm -f "$probe_output" "$report_output"
-    [ "$status" -eq 0 ] \
-      && emit_success "ebpf.status" "eBPF 诊断完成" "{\"mode\":\"$mode\",\"raw\":$is_raw,\"content\":\"$content\"}" \
-      || emit_error "ebpf.unsupported" "eBPF 诊断发现不满足项" "$status" "{\"mode\":\"$mode\",\"raw\":$is_raw,\"content\":\"$content\"}"
-  else
-    cat "$report_output"
-    rm -f "$probe_output" "$report_output"
-    return "$status"
-  fi
-}
-
-#######################################
-# 解析受管理配置名称
-# 参数:
-#   $1  module、ebpf 或 singbox/<相对路径>
-# 返回: 标准输出打印绝对路径
-#######################################
-resolve_managed_config() {
-  local target="$1" relative filename
-
-  case "$target" in
-    module) printf "%s\n" "$MODULE_CONF" ;;
-    ebpf) printf "%s\n" "$EBPF_CONF" ;;
-    singbox/*)
-      relative="${target#singbox/}"
-      case "$relative" in confdir/*.json | source/*.json | runtime/*.json) ;; *) return 1 ;; esac
-      filename="${relative#*/}"
-      case "$filename" in "" | */* | .* | *[!A-Za-z0-9._-]*) return 1 ;; esac
-      printf "%s/config/singbox/%s\n" "$MODDIR" "$relative"
-      ;;
-    *) return 1 ;;
+    *) emit_error "usage.invalid" "用法: netproxyctl ebpf status|diagnose|validate" 2 ;;
   esac
 }
 
 #######################################
-# 输出可由配置工作台读取的 sing-box 文档
-# 参数: 无
-# 返回: 标准输出打印 JSON 数组
-#######################################
-managed_config_documents_json() {
-  local file id output="" separator=""
-
-  for file in "$CONFIG_DIR/singbox/confdir"/*.json; do
-    [ -f "$file" ] || continue
-    id="singbox/confdir/${file##*/}"
-    output="$output$separator{\"id\":\"$(json_escape "$id")\",\"filename\":\"$(json_escape "${file##*/}")\",\"category\":\"config\",\"editable\":true}"
-    separator=","
-  done
-  for file in "$CONFIG_DIR/singbox/source"/*.json; do
-    [ -f "$file" ] || continue
-    id="singbox/source/${file##*/}"
-    output="$output$separator{\"id\":\"$(json_escape "$id")\",\"filename\":\"$(json_escape "${file##*/}")\",\"category\":\"source\",\"editable\":true}"
-    separator=","
-  done
-  for file in "$CONFIG_DIR/singbox/runtime"/*.json; do
-    [ -f "$file" ] || continue
-    id="singbox/runtime/${file##*/}"
-    output="$output$separator{\"id\":\"$(json_escape "$id")\",\"filename\":\"$(json_escape "${file##*/}")\",\"category\":\"runtime\",\"editable\":false}"
-    separator=","
-  done
-  printf '[%s]' "$output"
-}
-
-#######################################
-# 检查 shell 配置只包含注释、空行与安全赋值
-# 参数:
-#   $1  文件路径
-# 返回: 合法返回 0，否则返回 1
-#######################################
-validate_assignment_config() {
-  local file="$1"
-
-  ! grep -q -E '\$\(|`|;|&&|\|\|' "$file" 2> /dev/null || return 1
-  awk '
-    /^[[:space:]]*$/ || /^[[:space:]]*#/ { next }
-    /^[A-Z][A-Z0-9_]*=/ { next }
-    { exit 1 }
-  ' "$file"
-}
-
-#######################################
-# 在隔离环境中检查候选配置
-# 参数:
-#   $1  配置名称
-#   $2  候选文件
-# 返回: 配置有效返回 0，否则返回 1
-#######################################
-validate_config_candidate() {
-  local target="$1"
-  local candidate="$2"
-  local validation_dir relative status=0
-
-  case "$target" in
-    module)
-      NETPROXY_MODULE_CONF="$candidate" sh "$SERVICE_SCRIPT" check > /dev/null 2>&1
-      ;;
-    ebpf)
-      NETPROXY_EBPF_CONF="$candidate" sh "$SERVICE_SCRIPT" check > /dev/null 2>&1
-      ;;
-    singbox/*)
-      validation_dir="$CATALOG_STAGING_DIR/config-check.$$"
-      rm -rf "$validation_dir" 2> /dev/null || true
-      mkdir -p "$validation_dir/singbox/runtime" || return 1
-      cp -R "$CONFIG_DIR/singbox/confdir" "$validation_dir/singbox/confdir" || status=1
-      [ "$status" -ne 0 ] || cp -R "$CONFIG_DIR/singbox/source" "$validation_dir/singbox/source" || status=1
-      relative="${target#singbox/}"
-      if [ "$status" -eq 0 ]; then
-        cp "$candidate" "$validation_dir/singbox/$relative" || status=1
-      fi
-      if [ "$status" -eq 0 ]; then
-        NETPROXY_SINGBOX_DIR="$validation_dir/singbox" \
-          sh "$SERVICE_SCRIPT" check > /dev/null 2>&1 || status=1
-      fi
-      rm -rf "$validation_dir" 2> /dev/null || true
-      return "$status"
-      ;;
-    *) return 1 ;;
-  esac
-}
-
-#######################################
-# 校验或应用配置文件事务
-# 参数:
-#   $1  validate 或 apply
-#   $2  配置名称
-#   $3  新内容文件
-# 返回: 无
-#######################################
-command_config_transaction() {
-  local action="$1" target="$2" source="$3"
-  local destination candidate success_message
-
-  destination="$(resolve_managed_config "$target")" || emit_error "config.target_invalid" "不支持的配置目标"
-  case "$target" in singbox/runtime/*) emit_error "config.read_only" "运行时配置只读" ;; esac
-  [ -f "$source" ] || emit_error "config.source_missing" "配置内容文件不存在"
-  case "$target" in module | ebpf) validate_assignment_config "$source" || emit_error "config.syntax_invalid" "配置包含非法语句" ;; esac
-  mkdir -p "$CATALOG_STAGING_DIR" || emit_error "config.write_failed" "无法创建配置事务目录"
-  acquire_conf_lock "$CATALOG_STAGING_DIR/config" || emit_error "config.busy" "已有配置事务正在进行"
-  candidate="$destination.candidate.$$"
-  mkdir -p "${destination%/*}" || { release_conf_lock; emit_error "config.write_failed" "无法创建配置目录"; }
-  cp "$source" "$candidate" || { release_conf_lock; emit_error "config.write_failed" "无法写入候选配置"; }
-  chmod 0600 "$candidate" 2> /dev/null || true
-  if ! validate_config_candidate "$target" "$candidate"; then
-    rm -f "$candidate"
-    release_conf_lock
-    emit_error "config.validation_failed" "sing-box 配置检查失败，未保存更改"
-  fi
-
-  if [ "$action" = "validate" ]; then
-    rm -f "$candidate"
-    release_conf_lock
-    emit_write_success "config.validate" "配置检查通过" "{\"target\":\"$(json_escape "$target")\"}"
-    return 0
-  fi
-
-  if ! mv -f "$candidate" "$destination"; then
-    rm -f "$candidate"
-    release_conf_lock
-    emit_error "config.write_failed" "无法应用候选配置"
-  fi
-  release_conf_lock
-  success_message="配置已保存"
-  emit_write_success "config.$action" "$success_message" "{\"target\":\"$(json_escape "$target")\"}"
-}
-
-#######################################
-# 配置命令组
+# 配置事务命令组
+# 参数: list|read|check|validate|apply
+# 返回: schema=1 结果
 #######################################
 command_config() {
-  local action="${1:-}" target="${2:-}" source="${3:-}" file content
-
+  local action="${1:-}" target="${2:-}" source="${3:-}"
   case "$action" in
-    list)
-      content="$(managed_config_documents_json)" \
-        || emit_error "config.list_failed" "读取 sing-box 配置列表失败"
-      emit_success "config.list" "sing-box 配置列表" "$content"
+    list | check)
+      module_call config "$action" --module-dir "$MODDIR"
       ;;
     read)
-      file="$(resolve_managed_config "$target")" || emit_error "config.target_invalid" "不支持的配置目标"
-      [ -f "$file" ] || emit_error "config.not_found" "配置文件不存在"
-      content="$(file_to_json_string "$file")"
-      emit_success "config.read" "配置内容" "{\"target\":\"$(json_escape "$target")\",\"content\":\"$content\"}"
-      ;;
-    check)
-      sh "$SERVICE_SCRIPT" check > /dev/null 2>&1 \
-        || emit_error "config.validation_failed" "sing-box 配置检查失败"
-      emit_success "config.checked" "sing-box 配置检查通过" "{}"
+      [ -n "$target" ] || emit_error "usage.invalid" "用法: netproxyctl config read <目标>" 2
+      module_call config read --module-dir "$MODDIR" "$target"
       ;;
     validate | apply)
-      [ -n "$target" ] && [ -n "$source" ] || emit_error "usage.invalid" "用法: netproxyctl config $action <目标> <内容文件>" 2
-      command_config_transaction "$action" "$target" "$source"
+      [ -n "$target" ] && [ -n "$source" ] \
+        || emit_error "usage.invalid" "用法: netproxyctl config $action <目标> <内容文件>" 2
+      module_call config "$action" --module-dir "$MODDIR" "$target" "$source"
       ;;
     *) emit_error "usage.invalid" "用法: netproxyctl config list|read|check|validate|apply" 2 ;;
   esac
 }
 
 #######################################
-# 对诊断文本做基础脱敏
-# 参数:
-#   $1  输入文件
-#   $2  输出文件
-# 返回: 无
-#######################################
-redact_diagnostic_file() {
-  sed -E \
-    -e 's#(https?://)[^/@[:space:]]+@#\1***@#g' \
-    -e 's#([?&](token|key|secret|password|auth|uuid|hwid)=)[^&[:space:]]+#\1***#g' \
-    -e 's#("(url|hwid)"[[:space:]]*:[[:space:]]*")[^"]*#\1***#g' \
-    "$1" > "$2"
-}
-
-#######################################
-# 日志命令组
+# 日志和诊断命令组
+# 参数: show|clear|export [service|core|sub]
+# 返回: schema=1 结果
 #######################################
 command_logs() {
-  local action="${1:-show}" kind="${2:-service}" value="${3:-200}"
-  local file output stage item meta_dir
-
-  case "$kind" in
-    service) file="$LOG_DIR/service.log" ;;
-    core) file="$LOG_DIR/sing-box.log" ;;
-    sub) file="$LOG_DIR/subscription.log" ;;
-    *) file="$LOG_DIR/service.log" ;;
-  esac
+  local action="${1:-show}"
+  shift 2> /dev/null || true
+  local kind="${1:-service}"
   case "$action" in
     show)
-      case "$value" in "" | *[!0-9]*) value=200 ;; esac
-      [ -f "$file" ] || : > "$file"
-      mkdir -p /dev/netproxy 2> /dev/null || true
-      output="/dev/netproxy/log-output.$$"
-      tail -n "$value" "$file" > "$output.raw" 2> /dev/null || : > "$output.raw"
-      redact_diagnostic_file "$output.raw" "$output"
-      rm -f "$output.raw"
       if [ "$OUTPUT_JSON" = "1" ]; then
-        emit_success "logs.show" "日志内容" "{\"kind\":\"$kind\",\"content\":\"$(file_to_json_string "$output")\"}"
+        module_call logs show --module-dir "$MODDIR" --format json --lines "${2:-200}" "$kind"
       else
-        cat "$output"
+        module_call logs show --module-dir "$MODDIR" --format text --lines "${2:-200}" "$kind"
       fi
-      rm -f "$output"
       ;;
     clear)
-      : > "$file" || emit_error "logs.clear_failed" "清空日志失败"
-      emit_write_success "logs.cleared" "日志已清空" "{\"kind\":\"$kind\"}"
+      module_call logs clear --module-dir "$MODDIR" "$kind"
       ;;
     export)
-      output="${2:-/sdcard/Download/netproxy-diagnostics.tar.gz}"
-      stage="/dev/netproxy/diagnostics.$$"
-      rm -rf "$stage" 2> /dev/null || true
-      mkdir -p "$stage/logs" "$stage/config/singbox" "$stage/catalog" || emit_error "logs.export_failed" "无法创建诊断目录"
-      for item in "$LOG_DIR"/*.log; do
-        [ -f "$item" ] || continue
-        redact_diagnostic_file "$item" "$stage/logs/${item##*/}"
-      done
-      cp "$MODULE_CONF" "$stage/config/module.conf" 2> /dev/null || true
-      cp "$EBPF_CONF" "$stage/config/ebpf.conf" 2> /dev/null || true
-      cp -r "$CONFIG_DIR/singbox/confdir" "$stage/config/singbox/" 2> /dev/null || true
-      cp -r "$CONFIG_DIR/singbox/runtime" "$stage/config/singbox/" 2> /dev/null || true
-      for meta_dir in "$CATALOG_DIR"/*; do
-        [ -f "$meta_dir/meta.json" ] || continue
-        redact_diagnostic_file "$meta_dir/meta.json" "$stage/catalog/${meta_dir##*/}.json"
-      done
-      mkdir -p "${output%/*}" 2> /dev/null || true
-      "$(detect_busybox)" tar -czf "$output" -C "$stage" . \
-        || { rm -rf "$stage"; emit_error "logs.export_failed" "诊断包导出失败"; }
-      chmod 0644 "$output" 2> /dev/null || true
-      rm -rf "$stage"
-      emit_write_success "logs.exported" "诊断包已导出" "{\"path\":\"$(json_escape "$output")\"}"
+      module_call logs export --module-dir "$MODDIR" "${kind:-/sdcard/Download/netproxy-diagnostics.tar.gz}"
       ;;
     *) emit_error "usage.invalid" "用法: netproxyctl logs show|clear|export" 2 ;;
   esac
@@ -1222,6 +347,8 @@ command_logs() {
 
 #######################################
 # 显示帮助
+# 参数: 无
+# 返回: 无
 #######################################
 show_help() {
   cat << EOF
@@ -1230,24 +357,23 @@ NetProxy 管理命令
 用法:
   netproxyctl [--json] service status|start|stop|restart|reload
   netproxyctl [--json] catalog list|show <分组>
-  netproxyctl [--json] node list|current|show|add|import|get|export|edit|remove|use|delay [节点|auto [分组]|all]
+  netproxyctl [--json] node list|current|show|get|export|delay|add|import|edit|remove|use
   netproxyctl [--json] sub list|show|add|edit|update|update-all|activate|remove|history|cancel
   netproxyctl [--json] mode [rule|global|direct|AllowAds]
   netproxyctl [--json] app list|mode|users|add|remove|enable|disable
-  netproxyctl [--json] ebpf status [configured|all|local|shared] [--raw]
-  netproxyctl [--json] ebpf diagnose
+  netproxyctl [--json] ebpf status|diagnose
   netproxyctl [--json] config list|read|check|validate|apply
   netproxyctl [--json] logs show|clear|export
 
-节点引用固定为 <group-id>/<tag>。自动模式使用 node use auto [分组]，分组测速使用 node delay auto [分组]。
-sub add 的名称可省略 (netproxyctl sub add <URL>)，此时按 Profile-Title、
-文件名、URL 主机名的顺序自动取名。
-JSON 输出 schema 固定为 1；stdout 只包含结果，运行日志写入 stderr。
+节点引用固定为 <group-id>/<tag>；自动模式使用 node use auto [分组]。
+stdout 只包含 schema=1 结果，运行日志写入 stderr。
 EOF
 }
 
 #######################################
 # 主入口
+# 参数: 命令组和命令参数
+# 返回: 由对应命令组返回
 #######################################
 case "${1:-help}" in
   service) shift; command_service "$@" ;;

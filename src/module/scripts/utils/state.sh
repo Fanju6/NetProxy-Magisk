@@ -64,6 +64,19 @@ write_service_state() {
   local error_message="${5:-}"
   local temporary="$SERVICE_STATE_FILE.tmp.$$"
 
+  # 正式服务路径由 Go 原子写入；独立契约测试没有 native 时保留最小文件回退。
+  if [ -n "${NETPROXY_NATIVE_BIN:-}" ] && [ -x "$NETPROXY_NATIVE_BIN" ]; then
+    "$NETPROXY_NATIVE_BIN" module state \
+      --module-dir "${MODDIR:-$(dirname "$NETPROXY_NATIVE_BIN")/..}" \
+      --state-file "$SERVICE_STATE_FILE" \
+      --state "$status" \
+      --pid "${2:-0}" \
+      --started-at "${3:-0}" \
+      --ready-at "${4:-0}" \
+      --error "${5:-}" > /dev/null 2>&1
+    return $?
+  fi
+
   case "$pid" in "" | *[!0-9]*) pid=0 ;; esac
   case "$started_at" in "" | *[!0-9]*) started_at=0 ;; esac
   case "$ready_at" in "" | *[!0-9]*) ready_at=0 ;; esac
