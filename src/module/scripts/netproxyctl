@@ -214,139 +214,21 @@ service_is_running() {
 # 返回: 无
 #######################################
 command_service_status() {
-  local pid state uptime=0 mode selector active selected runtime_selected=""
-  local runtime_group="Proxy" active_runtime_tag="" active_group_name=""
-  local ready_at started_at state_pid state_error now
-  local active_node_count=0
-  local worker_state="stopped" worker_pid="" worker_status="" worker_key worker_value
-  local runtime_status="" memory=0 connections_in=0 connections_out=0
-  local upload_total=0 download_total=0
-  local runtime_key runtime_value group_key group_value group_record
-  local process_stat="" process_cpu_ticks=0 system_cpu_ticks=0 cpu_count=1
-  local cpu_name cpu_user cpu_nice cpu_system cpu_idle cpu_iowait cpu_irq cpu_softirq cpu_steal
-
-  pid="$(get_pid "$SING_BOX_BIN")"
-  load_service_state 2> /dev/null || true
-  state="$SERVICE_STATE_VALUE"
-  state_pid="$SERVICE_STATE_PID_VALUE"
-  started_at="$SERVICE_STATE_STARTED_AT_VALUE"
-  ready_at="$SERVICE_STATE_READY_AT_VALUE"
-  state_error="$SERVICE_STATE_ERROR_VALUE"
-  mode="$(read_conf "$MODULE_CONF" "OUTBOUND_MODE" "rule")"
-  selector="$(read_conf "$MODULE_CONF" "SELECTOR_MODE" "urltest")"
-  active="$(read_conf "$MODULE_CONF" "ACTIVE_GROUP_ID" "")"
-  selected="$(read_conf "$MODULE_CONF" "SELECTED_NODE_REF" "")"
-  if [ -n "$active" ]; then
-    group_record="$(catalog_group_summary_tsv "$CATALOG_DIR/$active" 2> /dev/null || true)"
-    while IFS="$TAB" read -r group_key group_value; do
-      case "$group_key" in
-        name) active_group_name="$group_value" ;;
-        runtime_tag) active_runtime_tag="$group_value" ;;
-        node_count) active_node_count="$group_value" ;;
-      esac
-    done << EOF
-$group_record
-EOF
-  fi
-  [ -n "$active_group_name" ] || active_group_name="$active"
-  case "$active_node_count" in "" | *[!0-9]*) active_node_count=0 ;; esac
-  if [ -z "$pid" ]; then
-    case "$state" in preparing | starting | ready | stopping) state="failed"; state_error="sing-box 进程已退出" ;; esac
-    state_pid=0
-  elif [ "$state" = "stopped" ] || [ "$state_pid" -ne "$pid" ]; then
-    state="starting"
-    state_pid="$pid"
-  fi
-  if [ "$state" = "ready" ]; then
-    if [ "$ready_at" -gt 0 ]; then
-      now="$(date +%s)"
-      [ "$now" -ge "$ready_at" ] && uptime=$((now - ready_at))
-    fi
-    if [ -n "$active" ]; then
-      if [ "$selector" = "urltest" ] || [ "$selector" = "auto" ]; then
-        runtime_group="Auto/$active_runtime_tag"
-      else
-        runtime_group="Select/$active_runtime_tag"
-      fi
-    fi
-    runtime_status="$(service_api_snapshot "$runtime_group" tsv 2> /dev/null || true)"
-    if [ -n "$runtime_status" ]; then
-      while IFS="$TAB" read -r runtime_key runtime_value; do
-        case "$runtime_key" in
-          selected) runtime_selected="$runtime_value" ;;
-          memory) memory="$runtime_value" ;;
-          connections_in) connections_in="$runtime_value" ;;
-          connections_out) connections_out="$runtime_value" ;;
-          uplink_total) upload_total="$runtime_value" ;;
-          downlink_total) download_total="$runtime_value" ;;
-        esac
-      done << EOF
-$runtime_status
-EOF
-      memory="${memory:-0}"
-      connections_in="${connections_in:-0}"
-      connections_out="${connections_out:-0}"
-      upload_total="${upload_total:-0}"
-      download_total="${download_total:-0}"
-    fi
-    if [ -z "$runtime_selected" ] && [ "$active_node_count" -eq 1 ] && [ -n "$active" ]; then
-      runtime_selected="$(catalog_group_first_tag "$active" 2> /dev/null || true)"
-      [ -z "$runtime_selected" ] || runtime_selected="$active_runtime_tag/$runtime_selected"
-    fi
-  fi
-  if [ -n "$pid" ] && [ -r "/proc/$pid/stat" ]; then
-    IFS= read -r process_stat < "/proc/$pid/stat" || process_stat=""
-    if [ -n "$process_stat" ]; then
-      set -- $process_stat
-      process_cpu_ticks=$((${14:-0} + ${15:-0}))
-    fi
-  fi
-  if [ -r /proc/stat ]; then
-    read -r cpu_name cpu_user cpu_nice cpu_system cpu_idle cpu_iowait \
-      cpu_irq cpu_softirq cpu_steal _ < /proc/stat || true
-    system_cpu_ticks=$((${cpu_user:-0} + ${cpu_nice:-0} + ${cpu_system:-0} + \
-      ${cpu_idle:-0} + ${cpu_iowait:-0} + ${cpu_irq:-0} + ${cpu_softirq:-0} + \
-      ${cpu_steal:-0}))
-    cpu_count=0
-    while read -r cpu_name _; do
-      case "$cpu_name" in cpu[0-9]*) cpu_count=$((cpu_count + 1)) ;; esac
-    done < /proc/stat
-    [ "$cpu_count" -gt 0 ] || cpu_count=1
-  fi
-  worker_status="$("$NETPROXY_NATIVE_BIN" subworker status \
-    --root "$CATALOG_DIR" --progress-dir "$SUB_RUNTIME_DIR" \
-    --pid-file "/dev/netproxy/subworker.pid" --module-conf "$MODULE_CONF" \
-    --format tsv 2> /dev/null || true)"
-  while IFS="$TAB" read -r worker_key worker_value; do
-    case "$worker_key" in
-      state) worker_state="$worker_value" ;;
-      pid) worker_pid="$worker_value" ;;
-    esac
-  done << EOF
-$worker_status
-EOF
-  [ "$worker_state" = "running" ] || worker_pid=""
-
-  if [ "$OUTPUT_JSON" = "1" ]; then
-    emit_success "service.status" "服务状态" \
-      "{\"state\":\"$state\",\"pid\":${pid:-null},\"started_at\":$started_at,\"ready_at\":$ready_at,\"uptime_seconds\":$uptime,\"error\":\"$(json_escape "$state_error")\",\"outbound_mode\":\"$(json_escape "$mode")\",\"selector_mode\":\"$(json_escape "$selector")\",\"active_group_id\":\"$(json_escape "$active")\",\"active_group_name\":\"$(json_escape "$active_group_name")\",\"active_group_node_count\":$active_node_count,\"selected_node_ref\":\"$(json_escape "$selected")\",\"runtime_selected\":\"$(json_escape "$runtime_selected")\",\"memory_bytes\":$memory,\"process_cpu_ticks\":$process_cpu_ticks,\"system_cpu_ticks\":$system_cpu_ticks,\"cpu_count\":$cpu_count,\"connections_in\":$connections_in,\"connections_out\":$connections_out,\"upload_total\":$upload_total,\"download_total\":$download_total,\"subscription_worker\":\"$worker_state\",\"subscription_worker_pid\":${worker_pid:-null}}"
-  else
-    printf "服务状态: %s\n" "$state"
-    printf "运行时间: %s 秒\n" "$uptime"
-    printf "路由模式: %s\n" "$mode"
-    printf "活动分组: %s\n" "${active_group_name:-无}"
-    if [ "$selector" = "urltest" ]; then
-      printf "节点选择: Auto/%s\n" "${active:-无}"
-    else
-      printf "节点选择: %s\n" "${selected:-无}"
-    fi
-    printf "订阅更新: %s\n" "$worker_state"
-  fi
+  local format="text"
+  [ "$OUTPUT_JSON" = "1" ] && format="json"
+  "$NETPROXY_NATIVE_BIN" control status \
+    --catalog-root "$CATALOG_DIR" \
+    --module-config "$MODULE_CONF" \
+    --state-file "$SERVICE_STATE_FILE" \
+    --progress-dir "$SUB_RUNTIME_DIR" \
+    --worker-pid-file "/dev/netproxy/subworker.pid" \
+    --sing-box "$SING_BOX_BIN" \
+    --address "$SERVICE_API" \
+    --secret "$SERVICE_SECRET" \
+    --format "$format" \
+    || emit_error "service.status_failed" "无法读取服务状态"
 }
 
-#######################################
-# 服务命令组
-#######################################
 command_service() {
   local action="${1:-status}" error_message
 
@@ -457,44 +339,19 @@ EOF
 #######################################
 command_node_delay() {
   local target="${1:-}"
-  local requested_group="${2:-}"
-  local active active_runtime_tag selector selected result groups
+  local group="${2:-}"
 
-  service_is_running || emit_error "service.not_ready" "服务未运行"
-  active="$(read_conf "$MODULE_CONF" "ACTIVE_GROUP_ID" "")"
-  active_runtime_tag="$(catalog_runtime_group_tag "$active" 2> /dev/null || true)"
-  selector="$(read_conf "$MODULE_CONF" "SELECTOR_MODE" "urltest")"
-  selected="$(read_conf "$MODULE_CONF" "SELECTED_NODE_REF" "")"
-  if [ -z "$target" ]; then
-    if [ "$selector" = "urltest" ]; then
-      target="Auto/$active_runtime_tag"
-    else
-      target="$(catalog_runtime_node_ref "$selected")" \
-        || emit_error "node.ref_invalid" "当前节点引用无效"
-    fi
-  elif [ "$target" = "auto" ]; then
-    [ -n "$requested_group" ] || requested_group="$active"
-    active_runtime_tag="$(catalog_runtime_group_tag "$requested_group" 2> /dev/null)" \
-      || emit_error "catalog.not_found" "节点分组不存在"
-    target="Auto/$active_runtime_tag"
-  elif [ "$target" != "all" ]; then
-    target="$(catalog_runtime_node_ref "$target")" \
-      || emit_error "node.ref_invalid" "节点引用格式应为 <group-id>/<tag>"
-  fi
-
-  if [ "$target" = "all" ]; then
-    target="Auto/$active_runtime_tag"
-  fi
-  service_api_url_test "$target" || emit_error "node.delay_failed" "Service API 未接受测速请求"
-  sleep 1
-  result="$(service_api_groups 2> /dev/null)" || emit_error "node.delay_failed" "无法读取测速结果"
-  groups="$(extract_result_data "$result")" || emit_error "node.delay_failed" "测速结果格式无效"
-  emit_success "node.delay" "节点测速已完成" "{\"target\":\"$(json_escape "$target")\",\"groups\":$groups}"
+  "$NETPROXY_NATIVE_BIN" control delay \
+    --catalog-root "$CATALOG_DIR" \
+    --module-config "$MODULE_CONF" \
+    --target "$target" \
+    --group "$group" \
+    --address "$SERVICE_API" \
+    --secret "$SERVICE_SECRET" \
+    --format json \
+    || emit_error "node.delay_failed" "节点测速失败"
 }
 
-#######################################
-# 节点命令组
-#######################################
 command_node() {
   local action="${1:-list}"
   shift 2> /dev/null || true

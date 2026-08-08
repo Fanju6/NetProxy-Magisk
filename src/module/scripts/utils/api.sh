@@ -62,31 +62,11 @@ unix_millis_to_seconds() {
 }
 
 #######################################
-# 获取 Service API 节点组快照
-# 参数: 无
-# 返回: 标准输出打印统一 JSON
-#######################################
-service_api_groups() {
-  service_api_call groups --timeout 5s
-}
-
-#######################################
-# 获取核心状态与选择器快照
+# 通过 Service API 切换节点组中的出站
 # 参数:
-#   $1  选择器标签，默认 Proxy
-#   $2  输出格式，json 或 tsv
-# 返回: 标准输出打印快照
-#######################################
-service_api_snapshot() {
-  service_api_call snapshot --group "${1:-Proxy}" --format "${2:-json}" --timeout 3s
-}
-
-#######################################
-# 通过 Service API 切换 selector
-# 参数:
-#   $1  selector 标签
+#   $1  运行时节点组标签
 #   $2  出站标签
-# 返回: 成功返回 0，否则返回非 0
+# 返回: 请求成功返回 0，否则返回非 0
 #######################################
 service_api_select() {
   service_api_call select --group "$1" --outbound "$2" --timeout 5s > /dev/null 2>&1
@@ -134,19 +114,10 @@ service_api_get_mode() {
 }
 
 #######################################
-# 通过 Service API 触发节点或组测速
+# 通过 Service API 关闭全部连接
 # 参数:
-#   $1  出站标签
-# 返回: 请求受理返回 0，否则返回非 0
-#######################################
-service_api_url_test() {
-  service_api_call urltest --outbound "$1" --timeout 8s > /dev/null 2>&1
-}
-
-#######################################
-# 通过 Service API 关闭全部现有连接
-# 参数: 无
-# 返回: 成功返回 0，否则返回非 0
+#   无
+# 返回: 请求成功返回 0，否则返回非 0
 #######################################
 service_api_close_all_connections() {
   service_api_call close-all --timeout 3s > /dev/null 2>&1

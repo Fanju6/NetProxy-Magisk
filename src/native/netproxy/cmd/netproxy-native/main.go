@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/control"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/convert"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/fetch"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
@@ -96,6 +97,8 @@ func run(ctx context.Context, args []string) error {
 		return runSubscription(ctx, args[1:])
 	case "service":
 		return runService(ctx, args[1:])
+	case "control":
+		return runControl(ctx, args[1:])
 	case "subworker":
 		return runSubworker(ctx, args[1:])
 	case "sub":
@@ -112,6 +115,74 @@ func run(ctx context.Context, args []string) error {
 		return nil
 	default:
 		return fmt.Errorf("未知命令 %q", args[0])
+	}
+}
+
+func runControl(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("缺少控制面操作: status|groups|delay")
+	}
+	action := args[0]
+	flags := newFlagSet("control " + action)
+	catalogRoot := flags.String("catalog-root", "", "Catalog 根目录")
+	moduleConfig := flags.String("module-config", "", "模块配置文件")
+	stateFile := flags.String("state-file", "", "服务状态文件")
+	progressDir := flags.String("progress-dir", "/dev/netproxy/subscriptions", "订阅进度目录")
+	workerPIDFile := flags.String("worker-pid-file", "/dev/netproxy/subworker.pid", "订阅 Worker PID 文件")
+	singBox := flags.String("sing-box", "", "sing-box 二进制路径")
+	address := flags.String("address", "127.0.0.1:9090", "Service API 地址")
+	secret := flags.String("secret", "singbox", "Service API 密钥")
+	timeout := flags.Duration("timeout", 8*time.Second, "Service API 请求超时")
+	target := flags.String("target", "", "测速目标")
+	group := flags.String("group", "", "测速分组")
+	format := flags.String("format", "json", "输出格式")
+	if err := flags.Parse(args[1:]); err != nil {
+		return err
+	}
+	options := control.Options{
+		CatalogRoot: *catalogRoot, ModuleConfig: *moduleConfig, StateFile: *stateFile,
+		ProgressDir: *progressDir, WorkerPIDFile: *workerPIDFile, SingBoxPath: *singBox,
+		ServiceAddress: *address, ServiceSecret: *secret, RequestTimeout: *timeout,
+	}
+	switch action {
+	case "status":
+		status, err := control.ReadStatus(ctx, options)
+		if err != nil {
+			return err
+		}
+		if *format == "text" {
+			fmt.Fprintf(os.Stdout, "服务状态: %s\n运行时间: %d 秒\n出站模式: %s\n活动分组: %s\n节点选择: %s\n订阅更新: %s\n",
+				status.State, status.UptimeSeconds, status.OutboundMode, status.ActiveGroupName,
+				status.RuntimeSelected, status.SubscriptionWorker)
+			return nil
+		}
+		if *format != "json" {
+			return fmt.Errorf("control status 不支持输出格式 %q", *format)
+		}
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "service.status", Message: "服务状态", Data: status})
+		return nil
+	case "groups":
+		groups, err := control.ReadGroups(ctx, options)
+		if err != nil {
+			return err
+		}
+		if *format != "json" {
+			return fmt.Errorf("control groups 不支持输出格式 %q", *format)
+		}
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "service.groups", Message: "节点组状态", Data: groups})
+		return nil
+	case "delay":
+		delay, err := control.Delay(ctx, options, *target, *group)
+		if err != nil {
+			return err
+		}
+		if *format != "json" {
+			return fmt.Errorf("control delay 不支持输出格式 %q", *format)
+		}
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "node.delay", Message: "节点测速完成", Data: delay})
+		return nil
+	default:
+		return fmt.Errorf("未知控制面操作 %q", action)
 	}
 }
 
@@ -1299,6 +1370,7 @@ func showUsage() {
   %s catalog <groups|snapshot|group|show|runtime|schedule> --root <catalog>
   %s subscription update|edit --root <catalog> --group <group-id>
   %s service <ready|started-at|snapshot|groups|mode|select|urltest|close-all>
+  control <status|groups|delay> --catalog-root <catalog> --module-config <module.conf>
   subworker <start|stop|restart|wake|status|once|run> --root <catalog> --module-conf <module.conf>
   %s version
 
