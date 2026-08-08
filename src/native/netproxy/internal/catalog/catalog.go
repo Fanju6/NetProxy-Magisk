@@ -33,6 +33,7 @@ type Metadata = subscription.Metadata
 type GroupSummary struct {
 	ID                string          `json:"id"`
 	Name              string          `json:"name"`
+	RuntimeTag        string          `json:"runtime_tag"`
 	Type              string          `json:"type"`
 	Active            bool            `json:"active"`
 	NodeCount         int             `json:"node_count"`
@@ -103,6 +104,7 @@ func Scan(ctx context.Context, options ScanOptions) ([]GroupSnapshot, error) {
 	if err != nil {
 		return nil, err
 	}
+	assignRuntimeTags(groups)
 	result := make([]GroupSnapshot, 0, len(groups))
 	for _, group := range groups {
 		if options.Type != "" && options.Type != "all" && group.Metadata.Type != options.Type {
@@ -398,7 +400,7 @@ func summaryFor(group *loadedGroup, activeGroup, progressDir string) GroupSummar
 		}
 	}
 	return GroupSummary{
-		ID: metadata.ID, Name: metadata.Name, Type: metadata.Type,
+		ID: metadata.ID, Name: metadata.Name, RuntimeTag: group.RuntimeTag, Type: metadata.Type,
 		Active: group.ID == activeGroup, NodeCount: len(group.Nodes), Revision: metadata.Revision,
 		AutoUpdate: metadata.AutoUpdate, UpdateInterval: metadata.UpdateInterval,
 		UpdateViaProxy: metadata.UpdateViaProxy, Usage: metadata.Usage,

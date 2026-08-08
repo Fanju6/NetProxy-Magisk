@@ -116,7 +116,8 @@ Android Root、开机启动、模块命令、快捷设置磁贴、eBPF、热点�
 - 提交信息使用 Conventional Commits：`<type>(<scope>): <中文主题>`。type 只用仓库在用的六个：`feat`、`fix`、`refactor`、`docs`、`ci`、`chore`。不要引入 `style`、`perf`、`test` 等本仓未使用的类型。
 - scope 用英文小写，取组件或功能域，例如 `module`、`native`、`webui`、`android`、`sub`、`catalog`、`ebpf`、`agents`。跨多个组件时省略 scope，不要写成 `a,b` 列表。
 - 主题用中文，描述行为变化而非文件变化，不加句号，整行不超过 72 字符。例：`feat(sub): 订阅名称留空时自动获取`、`fix(android): 修复自动更新周期选择器卡在 24 小时`。
-- body 只写 diff 里看不出来的信息：触发缺陷的时序或设备条件、为什么不用更直接的写法、已知的遗留影响。不要逐文件复述改了什么。没有这类信息就不写 body。
+- 涉及多个文件或层级、包含多个行为变化，或单一主题但改动量、运行时影响或回滚风险较大的提交，必须写 body；即使主题本身单一，也不能只留下标题。body 至少说明主要行为变化、影响范围和验证结果，必要时补充触发条件、实现取舍、迁移约束或已知影响。
+- body 只写 diff 里看不出来的信息，不要逐文件复述改了什么；真正微小且标题已经完整表达意图的提交才可以省略 body。
 - 改动 `schema=1` JSON 字段、错误码或状态语义时，body 必须列出需要同步的调用方（Shell / Go / Android / WebUI / tests）。
 - 除非用户在当前请求中明确授权，不执行 `git add`、`git commit`、`git commit --amend`、`git rebase`、`git push`、发布或创建 PR。授权只在提出它的那一轮请求内有效，不延续到后续轮次。
 - 保留用户已有的未提交改动。不要用 `git reset --hard`、破坏性 checkout 或批量清理来整理工作区。

@@ -66,11 +66,18 @@ reload_service_if_allowed() {
 #######################################
 require_catalog_group() {
   local group_id="$1"
+  local summary node_count runtime_tag
 
   catalog_validate_group_id "$group_id" || die "非法分组 ID: $group_id"
-  catalog_group_has_nodes "$group_id" || die "节点组为空: $group_id"
-  REQUIRED_PROVIDER_TAG="$(catalog_runtime_group_tag "$group_id")" \
-    || die "无法读取节点组名称: $group_id"
+  summary="$(catalog_group_summary_tsv "$group_id")" \
+    || die "无法读取节点组摘要: $group_id"
+  node_count="$(catalog_summary_value "$summary" node_count 2> /dev/null || true)"
+  case "$node_count" in
+    '' | *[!0-9]* | 0) die "节点组为空: $group_id" ;;
+  esac
+  runtime_tag="$(catalog_summary_value "$summary" runtime_tag 2> /dev/null || true)"
+  [ -n "$runtime_tag" ] || die "无法读取节点组名称: $group_id"
+  REQUIRED_PROVIDER_TAG="$runtime_tag"
 }
 
 #######################################

@@ -149,18 +149,6 @@ catalog_group_summary_json() {
 }
 
 #######################################
-# 返回分组状态 TSV，供 Shell 编排读取少量运行字段
-# 参数: $1 分组目录
-# 返回: 标准输出打印键值行
-#######################################
-catalog_group_summary_tsv() {
-  local group_dir="$1"
-
-  "$NETPROXY_NATIVE_BIN" catalog group --root "$CATALOG_DIR" \
-    --group "${group_dir##*/}" --format tsv
-}
-
-#######################################
 # 返回订阅编辑所需的受保护字段
 # 参数:
 #   $1  订阅分组目录
@@ -249,12 +237,12 @@ command_service_status() {
   selector="$(read_conf "$MODULE_CONF" "SELECTOR_MODE" "urltest")"
   active="$(read_conf "$MODULE_CONF" "ACTIVE_GROUP_ID" "")"
   selected="$(read_conf "$MODULE_CONF" "SELECTED_NODE_REF" "")"
-  [ -z "$active" ] || active_runtime_tag="$(catalog_runtime_group_tag "$active" 2> /dev/null || true)"
   if [ -n "$active" ]; then
     group_record="$(catalog_group_summary_tsv "$CATALOG_DIR/$active" 2> /dev/null || true)"
     while IFS="$TAB" read -r group_key group_value; do
       case "$group_key" in
         name) active_group_name="$group_value" ;;
+        runtime_tag) active_runtime_tag="$group_value" ;;
         node_count) active_node_count="$group_value" ;;
       esac
     done << EOF

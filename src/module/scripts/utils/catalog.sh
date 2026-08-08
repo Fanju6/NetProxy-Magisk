@@ -52,7 +52,46 @@ catalog_new_group_id() {
 }
 
 #######################################
-# 通过 Go 组件检查分组是否有节点
+# 通过一次 native 调用读取分组安全摘要
+# 参数:
+#   $1  分组 ID 或分组目录
+# 返回: 输出键值摘要；读取失败返回 1
+#######################################
+catalog_group_summary_tsv() {
+  local group_id="$1"
+  local native="${NETPROXY_NATIVE_BIN:-$MODDIR/bin/netproxy-native}"
+
+  group_id="${group_id##*/}"
+  catalog_validate_group_id "$group_id" || return 1
+  [ -x "$native" ] || return 1
+  "$native" catalog group --root "$CATALOG_DIR" --group "$group_id" --format tsv
+}
+
+#######################################
+# 从分组 TSV 摘要读取字段
+# 参数:
+#   $1  TSV 摘要
+#   $2  字段名
+# 返回: 输出字段值；字段不存在返回 1
+#######################################
+catalog_summary_value() {
+  local summary="$1"
+  local field="$2"
+  local key value
+
+  while IFS="$TAB" read -r key value; do
+    if [ "$key" = "$field" ]; then
+      printf '%s\n' "$value"
+      return 0
+    fi
+  done << EOF
+$summary
+EOF
+  return 1
+}
+
+#######################################
+# 通过摘要检查分组是否有节点
 # 参数:
 #   $1  分组 ID
 # 返回: 有节点返回 0，否则返回 1

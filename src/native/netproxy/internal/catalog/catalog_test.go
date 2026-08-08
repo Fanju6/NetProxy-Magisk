@@ -30,6 +30,9 @@ func TestScanAndBuildRuntime(t *testing.T) {
 	if len(groups) != 2 || len(groups[0].Nodes) != 1 || !groups[1].Group.Active {
 		t.Fatalf("unexpected groups: %#v", groups)
 	}
+	if groups[0].Group.RuntimeTag != "同名分组 [default]" || groups[1].Group.RuntimeTag != "同名分组 [remote]" {
+		t.Fatalf("unexpected runtime tags: %#v", groups)
+	}
 	if string(groups[1].Group.Progress) != `{"stage":"convert","current":1}` {
 		t.Fatalf("unexpected progress: %s", groups[1].Group.Progress)
 	}

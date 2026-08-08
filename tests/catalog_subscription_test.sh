@@ -138,12 +138,42 @@ export MOCK_PROVIDER="$TMP_ROOT/subscription-provider.json"
 . "$MODDIR/scripts/utils/catalog.sh"
 . "$MODDIR/scripts/core/subscription.sh"
 
+meta_data() {
+  local meta_path="$1"
+  local group_dir="${meta_path%/meta.json}"
+  local group_id="${group_dir##*/}"
+
+  catalog_group_private_json "$group_id"
+}
+
 meta_get_raw() {
-  "$NETPROXY_NATIVE_BIN" catalog meta-get --input "$1" --field "$2" --format raw
+  local data value
+
+  data="$(meta_data "$1")" || {
+    printf '%s\n' "${3:-}"
+    return 0
+  }
+  if [ "$2" = "usage" ]; then
+    if printf '%s' "$data" | grep -q '"usage":null'; then
+      printf '%s\n' "null"
+    else
+      printf '%s\n' '{}'
+    fi
+    return 0
+  fi
+  value="$(printf '%s' "$data" | sed -n "s/.*\"$2\":[[:space:]]*\([-0-9][0-9]*\).*/\1/p")"
+  printf '%s\n' "${value:-${3:-}}"
 }
 
 meta_get_string() {
-  "$NETPROXY_NATIVE_BIN" catalog meta-get --input "$1" --field "$2" --format string
+  local data value
+
+  data="$(meta_data "$1")" || {
+    printf '%s\n' "${3:-}"
+    return 0
+  }
+  value="$(printf '%s' "$data" | sed -n "s/.*\"$2\":[[:space:]]*\"\([^\"]*\)\".*/\1/p")"
+  printf '%s\n' "${value:-${3:-}}"
 }
 
 set_test_url() {
