@@ -56,6 +56,18 @@ func TestReadStatusWithoutService(t *testing.T) {
 	}
 }
 
+func TestProcessMatchingDoesNotMatchControlCommand(t *testing.T) {
+	if processMatches(os.Getpid(), "sing-box") {
+		t.Fatal("当前 netproxy-native 进程不应被识别为 sing-box")
+	}
+	if executableMatches("/data/adb/modules/netproxy/bin/sing-box", "/data/adb/modules/netproxy/bin/sing-box") != true {
+		t.Fatal("相同的可执行文件路径应匹配")
+	}
+	if executableMatches("/data/adb/modules/netproxy/bin/netproxy-native", "/data/adb/modules/netproxy/bin/sing-box") {
+		t.Fatal("不同的可执行文件不应匹配")
+	}
+}
+
 func TestReadGroupsUnavailable(t *testing.T) {
 	_, err := ReadGroups(context.Background(), Options{
 		ServiceAddress: "127.0.0.1:1",

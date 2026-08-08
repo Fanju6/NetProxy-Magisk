@@ -627,7 +627,8 @@ func readWorkerStatus(options Options) (subworker.Status, error) {
 }
 
 func findProcess(executable string, statePID int) int {
-	if statePID > 0 && processExists(statePID) && (executable == "" || processMatches(statePID, executable)) {
+	selfPID := os.Getpid()
+	if statePID > 0 && statePID != selfPID && processExists(statePID) && (executable == "" || processMatches(statePID, executable)) {
 		return statePID
 	}
 	if executable == "" {
@@ -637,14 +638,12 @@ func findProcess(executable string, statePID int) int {
 	if err != nil {
 		return 0
 	}
-	name := filepath.Base(executable)
 	for _, entry := range entries {
 		pid, err := strconv.Atoi(entry.Name())
-		if err != nil || pid <= 0 {
+		if err != nil || pid <= 0 || pid == selfPID {
 			continue
 		}
-		content, err := os.ReadFile(filepath.Join("/proc", entry.Name(), "cmdline"))
-		if err == nil && strings.Contains(string(content), name) {
+		if processMatches(pid, executable) {
 			return pid
 		}
 	}
@@ -657,11 +656,32 @@ func processExists(pid int) bool {
 }
 
 func processMatches(pid int, executable string) bool {
-	content, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "cmdline"))
+	if pid <= 0 || pid == os.Getpid() || executable == "" {
+		return false
+	}
+	procPath := filepath.Join("/proc", strconv.Itoa(pid))
+	if target, err := os.Readlink(filepath.Join(procPath, "exe")); err == nil {
+		return executableMatches(target, executable)
+	}
+	content, err := os.ReadFile(filepath.Join(procPath, "cmdline"))
 	if err != nil {
 		return false
 	}
-	return strings.Contains(string(content), filepath.Base(executable))
+	command := strings.SplitN(string(content), "\x00", 2)[0]
+	return executableMatches(command, executable)
+}
+
+func executableMatches(candidate, target string) bool {
+	candidate = strings.TrimSuffix(candidate, " (deleted)")
+	candidate = filepath.Clean(candidate)
+	target = filepath.Clean(target)
+	if candidate == "." || target == "." || candidate == "" || target == "" {
+		return false
+	}
+	if candidate == target {
+		return true
+	}
+	return filepath.Base(candidate) == filepath.Base(target)
 }
 
 func processCPUTicks(pid int) uint64 {
