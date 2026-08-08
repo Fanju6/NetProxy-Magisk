@@ -16,13 +16,18 @@ export async function ctl(args: string[]) { return run([CTL, ...args].map(shq).j
 
 export async function ctlJson<T>(args: string[]): Promise<T | null> {
   const r = await run([CTL, '--json', ...args].map(shq).join(' '))
-  if (r.code !== 0 && !r.out.trim()) return null
-  const lines = r.out.split(/\r?\n/)
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const t = lines[i].trim()
-    if (t.startsWith('{') && t.endsWith('}')) { try { const p = JSON.parse(t); if (p.schema === 1) return p } catch {} }
+  if (r.code !== 0) return null
+
+  const payload = r.out.trim()
+  if (!payload) return null
+
+  try {
+    const result = JSON.parse(payload)
+    if (result?.schema !== 1 || result?.ok !== true) return null
+    return result as T
+  } catch {
+    return null
   }
-  return null
 }
 
 export const shell = run
