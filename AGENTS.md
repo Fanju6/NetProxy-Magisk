@@ -9,7 +9,7 @@
 ## 项目边界
 
 - `src/module/`：Magisk、KernelSU 与 APatch 模块，包含生命周期脚本、`netproxyctl`、sing-box 配置、资源和打包内容。
-- `src/native/netproxy/`：模块专用 Go 组件，负责节点转换、Provider、订阅 HTTP 元数据和 Service API 客户端。
+- `src/native/netproxy/`：模块专用 Go 组件，负责节点转换、Provider、订阅、配置、eBPF 运行时、Service API 与唯一允许的订阅 Worker。
 - `src/webui/`：React + TypeScript 终端式 WebUI，构建产物写入 `src/module/webroot/netproxy/`。
 - `src/android/`：Android 管理器，使用 Compose、miuix、Navigation3 和内置 Scripta 源码快照。
 - `docs/`：VitePress 用户文档；`tests/`：Shell 契约与运行时回归测试。
@@ -36,8 +36,8 @@
 
 - `src/module/netproxyctl` 只是 7 行 shim，实际实现在 `scripts/netproxyctl`（约 1400 行 dispatcher）。改命令行为改后者，shim 只负责定位。
 - 命令组权威清单：`service catalog node sub mode app ebpf config logs`。新增命令组必须同时更新 dispatcher、Android `NetProxyCtlClient`、WebUI `src/exec.ts` 和契约测试。
-- `scripts/utils/`：`common.sh`、`config.sh`（`read_conf` / `set_conf`）、`api.sh`、`state.sh`、`catalog.sh`、`metadata.sh`。
-- `scripts/core/`：`service.sh`、`runtime.sh`、`switch.sh`、`subscription.sh`、`subworker.sh`、`ebpf.sh`。
+- `scripts/utils/`：`common.sh`、`config.sh`（`read_conf` / `set_conf`）、`api.sh`、`state.sh`、`catalog.sh`。
+- `scripts/core/`：`service.sh`、`runtime.sh`、`switch.sh`、`subscription.sh`、`ebpf.sh`。订阅调度由 `netproxy-native subworker` 承担。
 - `scripts/network/netmon.sh` 负责网络变化监听。
 - 设备上的调用形式是 `su -c /data/adb/modules/netproxy/netproxyctl [--json] <命令组> <命令>`；文档和排查步骤按此形式给出，不要写成裸 `netproxyctl`，它不在 PATH 里。
 
@@ -51,7 +51,8 @@
 
 ## Go 组件
 
-- `src/native/netproxy` 只实现需要类型化 sing-box 配置、HTTP 或 Protobuf 的能力；Shell 负责模块生命周期和平台编排。
+- `src/native/netproxy` 是 Catalog、Provider、订阅事务、配置、eBPF 运行时和 Service API 的业务事实源；Shell 只负责模块生命周期与 Android 平台编排。
+- 允许且仅允许一个 Go 订阅 Worker。它必须替换 `subworker.sh` 的常驻进程，不能演变为通用控制守护进程、REST 服务或第二个代理核心。
 - 使用 reF1nd sing-box 的类型定义解析、生成和校验 Provider，不通过字符串替换拼接协议配置。
 - reF1nd 依赖版本必须与打包的 sing-box 内核兼容；升级时同时验证转换 fixtures、Provider 和 Service API。
 - Provider 修改必须保持完整校验、稳定 tag、`0600` 权限和原子替换。错误必须返回结构化 diagnostics，不允许空输出加成功退出码。
@@ -165,18 +166,17 @@ Android Root、开机启动、模块命令、快捷设置磁贴、eBPF、热点�
 
 ```text
 Android Manager ─┐
-WebUI ───────────┼─> netproxyctl ─> Shell 编排 ─> sing-box
-终端用户 ───────┘        │              │
-                         │              ├─> eBPF 入站运行时
-                         │              └─> 订阅 worker / 网络监听
-                         └─> netproxy-native
-                              ├─> 节点与订阅转换
-                              ├─> Provider 校验与原子写入
-                              ├─> HTTP 元数据
-                              └─> Service API
+WebUI ───────────┼─> netproxyctl ─> Go 业务层 ─> Shell 编排 ─> sing-box
+终端用户 ───────┘        │              │              │
+                         │              │              ├─> eBPF 入站运行时
+                         │              │              └─> 网络事件采集
+                         │              ├─> 节点、订阅、Provider、配置
+                         │              ├─> eBPF runtime 与 Service API
+                         │              └─> 订阅 Worker
+                         └─> schema=1 JSON 契约
 ```
 
-NetProxy 不维护独立常驻守护进程。Shell 负责 Android 模块生命周期、sing-box 进程、运行时配置和后台任务；Go 组件处理 Shell 不适合安全实现的类型化配置、网络和 Protobuf 能力。
+NetProxy 不维护通用独立控制守护进程。唯一长期 Go 进程是订阅 Worker，它替换现有 Shell Worker；Shell 负责 Android 模块生命周期、sing-box 进程和原始系统事件，Go 负责类型化配置、网络事务、Provider 与业务状态。
 
 ## 事实源
 
@@ -258,7 +258,7 @@ OUTBOUND_MODE=rule
 
 下载、转换和校验阶段可以取消，原子提交阶段不可取消。任何失败都保留上一版有效 Provider 和当前选择。核心 ready 时可按设置经本地代理下载；核心停止或代理下载失败时，`auto` 策略允许直连重试。
 
-后台 `subworker.sh` 根据各订阅的 `next_update_at` 调度，不依赖 sing-box 和 `crond`。运行时进度放在 `/dev/netproxy/subscriptions/`，完成后不作为长期 UI 状态显示。
+订阅 Worker 根据各订阅的 `next_update_at` 调度，不依赖 sing-box 和 `crond`。它由 Go 实现并替换 `subworker.sh`；运行时进度放在 `/dev/netproxy/subscriptions/`，完成后不作为长期 UI 状态显示。没有启用自动更新的订阅时 Worker 不应驻留。
 
 订阅响应头的解析要点：`Subscription-Userinfo` 提供流量与到期，空值（如 `expire=`）表示不适用而非畸形；`Profile-Title` 可能带 `base64:` 前缀或 RFC 2047 编码；`Content-Disposition` 的 `filename` 可能是 RFC 5987 形式，也可能直接携带原始 UTF-8 字节。
 

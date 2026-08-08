@@ -13,9 +13,12 @@ if [ -f "$MODDIR/scripts/core/service.sh" ]; then
   sh "$MODDIR/scripts/core/service.sh" stop > /dev/null 2>&1 || true
 fi
 
-# 订阅 worker 独立于代理核心运行，卸载时单独停止。
-if [ -f "$MODDIR/scripts/core/subworker.sh" ]; then
-  sh "$MODDIR/scripts/core/subworker.sh" stop > /dev/null 2>&1 || true
+# 订阅 Worker 独立于代理核心运行，卸载时单独停止。
+if [ -x "$MODDIR/bin/netproxy-native" ]; then
+  "$MODDIR/bin/netproxy-native" subworker stop \
+    --root "$MODDIR/config/catalog" \
+    --pid-file "/dev/netproxy/subworker.pid" \
+    --module-conf "$MODDIR/config/module.conf" > /dev/null 2>&1 || true
 fi
 
 rm -rf /dev/netproxy/subscriptions /dev/netproxy/subworker.pid 2> /dev/null || true

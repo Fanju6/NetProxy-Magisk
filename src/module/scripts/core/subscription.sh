@@ -3,7 +3,7 @@
 # 文件: subscription.sh
 # 功能: Catalog 节点编排与订阅入口，负责本地节点变更、运行时 reload、
 #       Go 订阅事务调用与取消控制。
-# 用法: 由 netproxyctl 与 subworker.sh 引入；也可执行 update/update-all/cancel。
+# 用法: 由 netproxyctl 引入；也可执行 update/update-all/cancel。
 # 依赖: common.sh、config.sh、catalog.sh 与 netproxy-native。
 #######################################
 
@@ -27,6 +27,24 @@ fi
 . "$MODDIR/scripts/utils/catalog.sh"
 
 SUB_LOCK_DIR=""
+
+#######################################
+# 唤醒 Go 订阅 Worker 重新计算任务
+# 参数: 无
+# 返回: Worker 未运行时按需启动；失败返回 1
+#######################################
+wake_subscription_worker() {
+  "$NETPROXY_NATIVE_BIN" subworker wake \
+    --root "$CATALOG_DIR" \
+    --progress-dir "$SUB_RUNTIME_DIR" \
+    --pid-file "/dev/netproxy/subworker.pid" \
+    --log-file "$MODDIR/logs/subscription.log" \
+    --module-conf "$MODULE_CONF" \
+    --reload-script "$SERVICE_SCRIPT" \
+    --sing-box "$SING_BOX_BIN" \
+    --service-address "${SERVICE_API:-127.0.0.1:9090}" \
+    --service-secret "${SERVICE_SECRET:-singbox}" > /dev/null 2>&1
+}
 
 #######################################
 # 初始化 Catalog 事务目录
@@ -293,17 +311,24 @@ cancel_subscription_update() {
 #######################################
 update_subscription() {
   local query="$1"
-  local group_id result error_file key value node_count=0 structure_changed=false
+  local group_id result error_file key value node_count=0
 
   initialize_catalog_storage || return 1
   group_id="$(catalog_resolve_group "$query")" || return $?
 
   rm -f "$SUB_RUNTIME_DIR/$group_id.cancel"
   error_file="$SUB_RUNTIME_DIR/$group_id.native.log"
-  set -- "$NETPROXY_NATIVE_BIN" subscription update \
+  set -- "$NETPROXY_NATIVE_BIN" subworker once \
     --root "$CATALOG_DIR" \
     --group "$group_id" \
     --progress-dir "$SUB_RUNTIME_DIR" \
+    --pid-file "/dev/netproxy/subworker.pid" \
+    --log-file "$MODDIR/logs/subscription.log" \
+    --module-conf "$MODULE_CONF" \
+    --reload-script "$SERVICE_SCRIPT" \
+    --sing-box "$SING_BOX_BIN" \
+    --service-address "${SERVICE_API:-127.0.0.1:9090}" \
+    --service-secret "${SERVICE_SECRET:-singbox}" \
     --format kv
 
   result="$("$@" 2> "$error_file")" || {
@@ -318,17 +343,11 @@ update_subscription() {
   while IFS="=" read -r key value; do
     case "$key" in
       node_count) node_count="$value" ;;
-      structure_changed) structure_changed="$value" ;;
     esac
   done << EOF
 $result
 EOF
 
-  activate_group_if_needed "$group_id" || true
-  fallback_missing_selected_node "$group_id"
-  if [ "$structure_changed" = "true" ]; then
-    reload_catalog_structure_if_running
-  fi
   log "INFO" "订阅更新完成: $group_id，节点数: $node_count"
   return 0
 }

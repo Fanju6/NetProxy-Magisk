@@ -21,7 +21,6 @@ readonly SING_BOX_BIN="$MODDIR/bin/sing-box"
 readonly BPFTOOL_BIN="$MODDIR/bin/bpftool"
 readonly SERVICE_SCRIPT="$MODDIR/scripts/core/service.sh"
 readonly SWITCH_SCRIPT="$MODDIR/scripts/core/switch.sh"
-readonly SUBWORKER_SCRIPT="$MODDIR/scripts/core/subworker.sh"
 readonly LOG_DIR="$MODDIR/logs"
 readonly LOG_FILE="$LOG_DIR/service.log"
 readonly LOG_TAG="netproxyctl"
@@ -219,7 +218,7 @@ command_service_status() {
   local runtime_group="Proxy" active_runtime_tag="" active_group_name=""
   local ready_at started_at state_pid state_error now
   local active_node_count=0
-  local worker_state="stopped" worker_pid=""
+  local worker_state="stopped" worker_pid="" worker_status="" worker_key worker_value
   local runtime_status="" memory=0 connections_in=0 connections_out=0
   local upload_total=0 download_total=0
   local runtime_key runtime_value group_key group_value group_record
@@ -314,12 +313,19 @@ EOF
     done < /proc/stat
     [ "$cpu_count" -gt 0 ] || cpu_count=1
   fi
-  worker_pid="$(sed -n '1p' /dev/netproxy/subworker.pid 2> /dev/null || true)"
-  if [ -n "$worker_pid" ] && kill -0 "$worker_pid" 2> /dev/null; then
-    worker_state="running"
-  else
-    worker_pid=""
-  fi
+  worker_status="$("$NETPROXY_NATIVE_BIN" subworker status \
+    --root "$CATALOG_DIR" --progress-dir "$SUB_RUNTIME_DIR" \
+    --pid-file "/dev/netproxy/subworker.pid" --module-conf "$MODULE_CONF" \
+    --format tsv 2> /dev/null || true)"
+  while IFS="$TAB" read -r worker_key worker_value; do
+    case "$worker_key" in
+      state) worker_state="$worker_value" ;;
+      pid) worker_pid="$worker_value" ;;
+    esac
+  done << EOF
+$worker_status
+EOF
+  [ "$worker_state" = "running" ] || worker_pid=""
 
   if [ "$OUTPUT_JSON" = "1" ]; then
     emit_success "service.status" "服务状态" \
@@ -515,7 +521,7 @@ command_node() {
       [ -n "$target" ] || emit_error "usage.invalid" "用法: netproxyctl node import <文件> [名称]" 2
       group_id="$(import_local_file_group "$target" "$group")" \
         || emit_error "node.import_failed" "文件节点导入失败"
-      sh "$SUBWORKER_SCRIPT" wake > /dev/null 2>&1 || true
+      wake_subscription_worker || true
       emit_write_success "node.imported" "文件节点已导入" "{\"group_id\":\"$(json_escape "$group_id")\"}"
       ;;
     get)
@@ -658,7 +664,7 @@ command_sub_add() {
   done
 
   if group_id="$(add_subscription "$name" "$url")"; then
-    sh "$SUBWORKER_SCRIPT" wake > /dev/null 2>&1 || true
+    wake_subscription_worker || true
     emit_write_success "subscription.added" "订阅已添加" "{\"id\":\"$(json_escape "$group_id")\"}"
   else
     emit_error "subscription.add_failed" "订阅已保存，但首次更新失败" 1 \
@@ -745,7 +751,7 @@ EOF
     sh "$SERVICE_SCRIPT" reload >&2 \
       || emit_error "subscription.reload_failed" "订阅设置已保存，但运行时重新加载失败"
   fi
-  sh "$SUBWORKER_SCRIPT" wake > /dev/null 2>&1 || true
+  wake_subscription_worker || true
   emit_write_success "subscription.edited" "订阅设置已更新" "{\"id\":\"$group_id\"}"
 }
 
@@ -781,12 +787,12 @@ command_sub() {
     update)
       [ -n "$query" ] || emit_error "usage.invalid" "用法: netproxyctl sub update <订阅>" 2
       update_subscription "$query" || emit_error "subscription.update_failed" "订阅更新失败，已保留上一版节点"
-      sh "$SUBWORKER_SCRIPT" wake > /dev/null 2>&1 || true
+      wake_subscription_worker || true
       emit_write_success "subscription.updated" "订阅更新完成" "{}"
       ;;
     update-all)
       update_all_subscriptions || emit_error "subscription.update_partial" "部分订阅更新失败，其他任务已继续执行"
-      sh "$SUBWORKER_SCRIPT" wake > /dev/null 2>&1 || true
+      wake_subscription_worker || true
       emit_write_success "subscription.updated_all" "全部订阅更新完成" "{}"
       ;;
     activate)
@@ -802,7 +808,7 @@ command_sub() {
     remove | rm)
       [ -n "$query" ] || emit_error "usage.invalid" "用法: netproxyctl sub remove <订阅> [替代分组]" 2
       remove_subscription "$query" "$replacement" || emit_error "subscription.remove_failed" "订阅删除失败"
-      sh "$SUBWORKER_SCRIPT" wake > /dev/null 2>&1 || true
+      wake_subscription_worker || true
       emit_write_success "subscription.removed" "订阅已删除" "{}"
       ;;
     history)

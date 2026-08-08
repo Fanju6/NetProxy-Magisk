@@ -48,7 +48,6 @@ readonly EXECUTABLE_FILES="
     scripts/core/switch.sh
     scripts/network/netmon.sh
     scripts/core/subscription.sh
-    scripts/core/subworker.sh
     bin/bpftool
 "
 
@@ -239,11 +238,24 @@ stop_proxy_if_running() {
     return 0
   fi
 
-  # 订阅 worker 与代理核心独立运行，安装前单独停止旧实例。
-  if [ -f "$LIVE_DIR/scripts/core/subworker.sh" ]; then
-    sh "$LIVE_DIR/scripts/core/subworker.sh" stop > /dev/null 2>&1 || true
-  elif [ -f "$LIVE_DIR/scripts/core/subsched.sh" ]; then
-    sh "$LIVE_DIR/scripts/core/subsched.sh" stop > /dev/null 2>&1 || true
+  # 优先停止 Go Worker。
+  if [ -x "$LIVE_DIR/bin/netproxy-native" ]; then
+    "$LIVE_DIR/bin/netproxy-native" subworker stop \
+      --root "$LIVE_DIR/config/catalog" \
+      --pid-file "/dev/netproxy/subworker.pid" \
+      --module-conf "$LIVE_DIR/config/module.conf" > /dev/null 2>&1 || true
+  fi
+  # 旧版本 Worker 只按 PID 和命令行身份清理，避免误杀其他进程。
+  if [ -f "/dev/netproxy/subworker.pid" ]; then
+    local legacy_worker_pid legacy_worker_cmdline
+    legacy_worker_pid="$(sed -n '1p' /dev/netproxy/subworker.pid 2> /dev/null || true)"
+    if [ -n "$legacy_worker_pid" ] && [ -r "/proc/$legacy_worker_pid/cmdline" ]; then
+      legacy_worker_cmdline="$(tr '\0' ' ' < "/proc/$legacy_worker_pid/cmdline" 2> /dev/null || true)"
+      case "$legacy_worker_cmdline" in
+        *subworker.sh* | *subsched.sh*) kill "$legacy_worker_pid" 2> /dev/null || true ;;
+      esac
+    fi
+    rm -f /dev/netproxy/subworker.pid 2> /dev/null || true
   fi
 
   # 检测当前或旧版内核进程
@@ -350,11 +362,17 @@ sync_to_live() {
 # 返回: 0
 #######################################
 restart_proxy_if_needed() {
-  # 热更新安装无需等待重启设备，先拉起新版独立订阅 worker。
-  if [ -f "$LIVE_DIR/scripts/core/subworker.sh" ]; then
-    sh "$LIVE_DIR/scripts/core/subworker.sh" start > /dev/null 2>&1 || true
+  # 热更新安装无需等待重启设备，先拉起新版 Go 订阅 Worker。
+  if [ -x "$LIVE_DIR/bin/netproxy-native" ]; then
+    "$LIVE_DIR/bin/netproxy-native" subworker start \
+      --root "$LIVE_DIR/config/catalog" \
+      --progress-dir "/dev/netproxy/subscriptions" \
+      --pid-file "/dev/netproxy/subworker.pid" \
+      --log-file "$LIVE_DIR/logs/subscription.log" \
+      --module-conf "$LIVE_DIR/config/module.conf" \
+      --reload-script "$LIVE_DIR/scripts/core/service.sh" \
+      --sing-box "$LIVE_DIR/bin/sing-box" > /dev/null 2>&1 || true
   fi
-
   if [ "$PROXY_WAS_RUNNING" = true ]; then
     print_step "重新启动代理服务..."
     # su 包裹：经管理器刷入时让 sing-box 迁出冻结 cgroup，避免切后台断网

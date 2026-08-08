@@ -80,16 +80,22 @@ if [ "${1:-}" = "convert" ] && [ "${2:-}" = "subscription" ]; then
   exit 0
 fi
 
-if [ "$1" = "subscription" ] && [ "$2" = "update" ]; then
+if { [ "$1" = "subscription" ] && [ "$2" = "update" ]; } || { [ "$1" = "subworker" ] && [ "$2" = "once" ]; }; then
+  worker_mode=0
+  [ "$1" = "subworker" ] && worker_mode=1
   shift 2
   root=""
   group=""
+  module_conf=""
+  format="json"
   while [ $# -gt 0 ]; do
     case "$1" in
       --root) root="$2"; shift 2 ;;
       --group) group="$2"; shift 2 ;;
+      --module-conf) module_conf="$2"; shift 2 ;;
       --proxy) shift 2 ;;
-      --progress-dir | --now) shift 2 ;;
+      --progress-dir | --now | --pid-file | --log-file | --reload-script | --sing-box | --service-address | --service-secret) shift 2 ;;
+      --format) format="$2"; shift 2 ;;
       --fallback-direct) shift ;;
       *) shift ;;
     esac
@@ -104,6 +110,10 @@ if [ "$1" = "subscription" ] && [ "$2" = "update" ]; then
   fi
   if printf "%s" "$url" | grep -q '/304$'; then
     printf '%s\n' '{"at":"fixture","ok":true,"code":"subscription.not_modified"}' >> "$group_dir/history.jsonl"
+    if [ "$worker_mode" -eq 1 ]; then
+      printf 'group_id=%s\nnode_count=1\nrevision=2\nnot_modified=true\nstructure_changed=false\n' "$group"
+      exit 0
+    fi
     printf '%s\n' '{"schema":1,"ok":true,"code":"subscription.not_modified","message":"订阅未发生变化","data":{"not_modified":true,"node_count":1,"revision":2}}'
     exit 0
   fi
@@ -122,6 +132,15 @@ if [ "$1" = "subscription" ] && [ "$2" = "update" ]; then
   printf '%s\n' "{\"at\":\"fixture\",\"ok\":true,\"code\":\"subscription.updated\",\"node_count\":1,\"revision\":$revision}" >> "$group_dir/history.jsonl"
   structure_changed=false
   [ "$revision" -eq 1 ] && structure_changed=true
+  if [ "$worker_mode" -eq 1 ]; then
+    sed -i \
+      -e "s/^ACTIVE_GROUP_ID=.*/ACTIVE_GROUP_ID=\"$group\"/" \
+      -e 's/^SELECTOR_MODE=.*/SELECTOR_MODE=urltest/' \
+      -e 's/^SELECTED_NODE_REF=.*/SELECTED_NODE_REF=""/' \
+      "$module_conf"
+    printf 'group_id=%s\nnode_count=1\nrevision=%s\nnot_modified=false\nstructure_changed=%s\n' "$group" "$revision" "$structure_changed"
+    exit 0
+  fi
   printf '%s\n' "{\"schema\":1,\"ok\":true,\"code\":\"subscription.updated\",\"message\":\"订阅更新完成\",\"data\":{\"group_id\":\"$group\",\"node_count\":1,\"revision\":$revision,\"structure_changed\":$structure_changed}}"
   exit 0
 fi

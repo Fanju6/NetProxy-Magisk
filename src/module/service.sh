@@ -12,7 +12,9 @@ set -e  # 命令失败立即退出
 # 模块根目录与关键路径
 readonly MODDIR="${0%/*}"                          # 模块根目录 (脚本所在目录)
 readonly MODULE_CONF="$MODDIR/config/module.conf"  # 模块配置
-readonly SUBWORKER_SCRIPT="$MODDIR/scripts/core/subworker.sh"  # 订阅更新 worker
+readonly CATALOG_DIR="$MODDIR/config/catalog"      # Catalog 根目录
+readonly NETPROXY_NATIVE_BIN="$MODDIR/bin/netproxy-native"  # Go 原生组件
+readonly WORKER_PID_FILE="/dev/netproxy/subworker.pid"     # Worker PID 文件
 readonly LOG_FILE="$MODDIR/logs/service.log"       # 服务日志
 readonly LOG_TAG="boot"                            # 日志组件标签
 
@@ -59,7 +61,16 @@ wait_for_boot() {
 # 返回: 无
 #######################################
 start_subscription_worker() {
-  if sh "$SUBWORKER_SCRIPT" start; then
+  if "$NETPROXY_NATIVE_BIN" subworker start \
+    --root "$CATALOG_DIR" \
+    --progress-dir "/dev/netproxy/subscriptions" \
+    --pid-file "$WORKER_PID_FILE" \
+    --log-file "$MODDIR/logs/subscription.log" \
+    --module-conf "$MODULE_CONF" \
+    --reload-script "$MODDIR/scripts/core/service.sh" \
+    --sing-box "$MODDIR/bin/sing-box" \
+    --service-address "127.0.0.1:9090" \
+    --service-secret "singbox" > /dev/null 2>&1; then
     log "DEBUG" "订阅自动更新 worker 已就绪"
   else
     log "WARN" "订阅自动更新 worker 启动失败，可稍后手动重试"
