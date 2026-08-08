@@ -34,10 +34,10 @@
 
 ## 命令入口与脚本布局
 
-- `src/module/netproxyctl` 只负责定位 `bin/netproxyctl`；公共实现位于 `src/native/netproxy/cmd/netproxyctl`。`scripts/netproxyctl` 仅是阶段 7 删除前的内部过渡脚本，不得作为 Android/WebUI 入口。
-- 命令组权威清单：`service catalog node sub mode app ebpf config logs`。新增命令组必须同时更新 dispatcher、Android `NetProxyCtlClient`、WebUI `src/exec.ts` 和契约测试。
-- `scripts/utils/`：`common.sh`、`config.sh`（`read_conf` / `set_conf`）、`api.sh`、`state.sh`、`catalog.sh`。
-- `scripts/core/`：`service.sh`、`runtime.sh`、`switch.sh`、`subscription.sh`。eBPF 配置生成与订阅调度由 `netproxy-native` 负责。
+- `src/module/netproxyctl` 只负责定位 `bin/netproxyctl`；公共实现位于 `src/native/netproxy/cmd/netproxyctl`。Shell 不再保留公共命令 dispatcher。
+- 命令组权威清单：`service catalog node sub mode network app ebpf config logs`。新增命令组必须同时更新 Go CLI、Android `NetProxyCtlClient`、WebUI `src/exec.ts` 和契约测试。
+- `scripts/utils/` 只保留 `common.sh` 与 `state.sh`；配置、Catalog 和 Service API 业务统一由 Go 实现。
+- `scripts/core/` 只保留 `service.sh`；运行时配置、节点切换、订阅事务和调度由 `netproxy-native` 负责。
 - `scripts/network/netmon.sh` 负责网络变化监听。
 - 设备上的调用形式是 `su -c /data/adb/modules/netproxy/netproxyctl [--json] <命令组> <命令>`；文档和排查步骤按此形式给出，不要写成裸 `netproxyctl`，它不在 PATH 里。
 
@@ -97,7 +97,7 @@ sh tests/catalog_subscription_test.sh ./.tmp/netproxy-native
 sh tests/netproxyctl_contract_test.sh ./.tmp/netproxyctl ./.tmp/netproxy-native
 sh tests/runtime_catalog_test.sh ./.tmp/netproxy-native
 sh tests/config_utils_test.sh ./.tmp/netproxy-native
-sh tests/service_state_test.sh
+sh tests/service_state_test.sh ./.tmp/netproxy-native
 
 # WebUI
 (cd src/webui && npm ci && npm run build)

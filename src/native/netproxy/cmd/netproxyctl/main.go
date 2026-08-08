@@ -107,6 +107,8 @@ func (c *cli) run(ctx context.Context, args []string) int {
 		return c.forwardModule(args[1:], "sub")
 	case "mode":
 		return c.forwardModule(args[1:], "mode")
+	case "network":
+		return c.forwardModule(args[1:], "network")
 	case "app":
 		return c.forwardModule(args[1:], "app")
 	case "ebpf":
@@ -257,7 +259,7 @@ func (c *cli) forwardModule(args []string, action string) int {
 
 func (c *cli) moduleArgs(action string, args ...string) []string {
 	result := []string{"module", action}
-	if (action == "app" || action == "node" || action == "sub" || action == "config" || action == "logs") && len(args) > 0 {
+	if (action == "app" || action == "node" || action == "sub" || action == "network" || action == "config" || action == "logs") && len(args) > 0 {
 		result = append(result, args[0])
 		args = args[1:]
 	}
@@ -369,6 +371,7 @@ func (c *cli) help() {
   netproxyctl [--json] node list|current|show|get|export|delay|add|import|edit|remove|use
   netproxyctl [--json] sub list|show|add|edit|update|update-all|activate|remove|history|cancel
   netproxyctl [--json] mode [rule|global|direct|AllowAds]
+  netproxyctl [--json] network evaluate --type <wifi|not_wifi> [--ssid <名称>]
   netproxyctl [--json] app list|mode|users|add|remove|enable|disable
   netproxyctl [--json] ebpf status|diagnose|validate
   netproxyctl [--json] config list|read|check|validate|apply

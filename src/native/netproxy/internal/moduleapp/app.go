@@ -39,6 +39,7 @@ type Options struct {
 	ServiceSecret      string
 	WorkerPIDFile      string
 	WorkerLogFile      string
+	WiFiStateFile      string
 	SkipServiceAdapter bool
 	RequestTimeout     time.Duration
 }
@@ -63,6 +64,7 @@ func NewOptions(moduleDir string) Options {
 		ServiceSecret:  "singbox",
 		WorkerPIDFile:  "/dev/netproxy/subworker.pid",
 		WorkerLogFile:  filepath.Join(moduleDir, "logs", "subscription.log"),
+		WiFiStateFile:  "/dev/netproxy/wifi_state",
 		RequestTimeout: 8 * time.Second,
 	}
 }

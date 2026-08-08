@@ -19,7 +19,7 @@ cat > "$MODULE/bin/sing-box" << 'EOF'
 #!/usr/bin/env sh
 [ "${1:-}" = "check" ]
 EOF
-chmod +x "$MODULE/bin/netproxyctl" "$MODULE/bin/netproxy-native" "$MODULE/bin/netproxy-native.exe" "$MODULE/bin/sing-box" "$MODULE/netproxyctl" "$MODULE/scripts/netproxyctl"
+chmod +x "$MODULE/bin/netproxyctl" "$MODULE/bin/netproxy-native" "$MODULE/bin/netproxy-native.exe" "$MODULE/bin/sing-box" "$MODULE/netproxyctl"
 SUB_RUNTIME_DIR="$TMP_ROOT/runtime/subscriptions"
 export SUB_RUNTIME_DIR
 export NETPROXY_MODULE_DIR="$MODULE"

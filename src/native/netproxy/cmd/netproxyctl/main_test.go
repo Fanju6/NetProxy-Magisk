@@ -38,4 +38,12 @@ func TestModuleArgsKeepsOperationBeforeFlags(t *testing.T) {
 	if got[len(got)-1] != "AllowAds" {
 		t.Fatalf("mode argument = %q", got[len(got)-1])
 	}
+
+	got = command.moduleArgs("network", "evaluate", "--type", "wifi", "--ssid", "办公 WiFi")
+	if !reflect.DeepEqual(got[:3], []string{"module", "network", "evaluate"}) {
+		t.Fatalf("network operation prefix = %v", got[:3])
+	}
+	if got[len(got)-1] != "办公 WiFi" {
+		t.Fatalf("network SSID argument = %q", got[len(got)-1])
+	}
 }

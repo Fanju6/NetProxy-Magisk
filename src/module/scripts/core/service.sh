@@ -1,9 +1,9 @@
 #!/system/bin/sh
 #######################################
 # 文件: service.sh
-# 功能: 构建 sing-box 运行时配置，管理核心生命周期、配置检查与就绪状态。
+# 功能: 管理 sing-box 生命周期、生成运行时配置、配置检查与就绪状态。
 # 用法: service.sh {start|stop|restart|reload|status|check}
-# 依赖: common.sh、api.sh、state.sh、runtime.sh、netproxy-native。
+# 依赖: common.sh、state.sh、netproxy-native。
 #######################################
 
 set -u
@@ -26,9 +26,7 @@ readonly KILL_TIMEOUT=10
 readonly SERVICE_LOCK_DIR="/dev/netproxy/service.lock"
 
 . "$MODDIR/scripts/utils/common.sh"
-. "$MODDIR/scripts/utils/api.sh"
 . "$MODDIR/scripts/utils/state.sh"
-. "$MODDIR/scripts/core/runtime.sh"
 
 export PATH="$MODDIR/bin:$PATH"
 readonly BUSYBOX="$(detect_busybox)"
@@ -41,6 +39,84 @@ SERVICE_STATE_FINALIZED=0
 SERVICE_STATE_TRACK_FAILURE=0
 VALIDATION_RUNTIME_DIR=""
 SERVICE_LOCK_HELD=0
+RUNTIME_PROVIDERS_FILE="$RUNTIME_DIR/providers.json"
+RUNTIME_OUTBOUNDS_FILE="$RUNTIME_DIR/outbounds.json"
+RUNTIME_EBPF_FILE="$RUNTIME_DIR/ebpf.json"
+RUNTIME_CATALOG_STATE_FILE="$RUNTIME_DIR/catalog.state"
+
+#######################################
+# 调用 Service API 检查核心是否就绪
+# 参数: 无
+# 返回: 就绪返回 0，否则返回 1
+#######################################
+service_api_is_ready() {
+  "$NETPROXY_NATIVE_BIN" service ready \
+    --address "127.0.0.1:9090" --secret "singbox" --timeout 2s > /dev/null 2>&1
+}
+
+#######################################
+# 读取 Service API 返回的核心启动时间
+# 参数: 无
+# 返回: 输出 Unix 毫秒时间戳
+#######################################
+service_api_started_at() {
+  "$NETPROXY_NATIVE_BIN" service started-at \
+    --address "127.0.0.1:9090" --secret "singbox" \
+    --timeout 2s --format raw 2> /dev/null
+}
+
+#######################################
+# 将 Unix 毫秒时间戳转换为秒
+# 参数: $1 毫秒时间戳
+# 返回: 输出 Unix 秒时间戳
+#######################################
+unix_millis_to_seconds() {
+  local value="${1:-}"
+
+  case "$value" in
+    "" | *[!0-9]*) return 1 ;;
+  esac
+  [ "${#value}" -gt 3 ] || { printf '0\n'; return 0; }
+  printf '%s\n' "${value%???}"
+}
+
+#######################################
+# 调用 Go 生成 Catalog、Provider、选择器和 eBPF 入站
+# 参数: $1 可选 allow-empty
+# 返回: 生成成功返回 0，否则返回 1
+#######################################
+build_runtime_catalog() {
+  local mode="${1:-strict}"
+  if [ "$mode" = "allow-empty" ]; then
+    "$NETPROXY_NATIVE_BIN" module prepare \
+      --module-dir "$MODDIR" \
+      --catalog-root "$CATALOG_DIR" \
+      --module-config "$MODULE_CONF" \
+      --ebpf-config "$EBPF_CONF" \
+      --singbox-dir "$SINGBOX_DIR" \
+      --runtime-dir "${RUNTIME_PROVIDERS_FILE%/*}" \
+      --allow-empty > /dev/null || {
+        SERVICE_STATE_ERROR="运行时配置生成失败"
+        return 1
+      }
+  elif ! "$NETPROXY_NATIVE_BIN" module prepare \
+      --module-dir "$MODDIR" \
+      --catalog-root "$CATALOG_DIR" \
+      --module-config "$MODULE_CONF" \
+      --ebpf-config "$EBPF_CONF" \
+      --singbox-dir "$SINGBOX_DIR" \
+      --runtime-dir "${RUNTIME_PROVIDERS_FILE%/*}" \
+      > /dev/null; then
+    SERVICE_STATE_ERROR="运行时配置生成失败"
+    return 1
+  fi
+  if [ ! -s "$RUNTIME_PROVIDERS_FILE" ] \
+    || [ ! -s "$RUNTIME_OUTBOUNDS_FILE" ] \
+    || [ ! -s "$RUNTIME_EBPF_FILE" ]; then
+    SERVICE_STATE_ERROR="运行时配置文件不完整"
+    return 1
+  fi
+}
 
 #######################################
 # 获取服务生命周期操作锁
@@ -148,11 +224,7 @@ cleanup_runtime_files() {
 # 返回: 成功返回 0，失败则退出
 #######################################
 build_runtime_configuration() {
-  initialize_runtime_context
-  if ! build_runtime_catalog; then
-    [ -z "$RUNTIME_BUILD_ERROR" ] || SERVICE_STATE_ERROR="$RUNTIME_BUILD_ERROR"
-    return 1
-  fi
+  build_runtime_catalog
 }
 
 #######################################
@@ -162,19 +234,13 @@ build_runtime_configuration() {
 # 说明: 空 Catalog 使用临时直连占位出站，只参与 sing-box check，绝不用于启动。
 #######################################
 build_validation_configuration() {
-  initialize_runtime_context
   VALIDATION_RUNTIME_DIR="/dev/netproxy/config-check.$$"
   rm -rf "$VALIDATION_RUNTIME_DIR" 2> /dev/null || true
   ensure_dir "$VALIDATION_RUNTIME_DIR" "无法创建配置检查目录"
   RUNTIME_PROVIDERS_FILE="$VALIDATION_RUNTIME_DIR/providers.json"
   RUNTIME_OUTBOUNDS_FILE="$VALIDATION_RUNTIME_DIR/outbounds.json"
   RUNTIME_EBPF_FILE="$VALIDATION_RUNTIME_DIR/ebpf.json"
-  RUNTIME_CATALOG_STATE_FILE="$VALIDATION_RUNTIME_DIR/catalog.state"
-
-  if ! build_runtime_catalog allow-empty; then
-    SERVICE_STATE_ERROR="$RUNTIME_BUILD_ERROR"
-    return 1
-  fi
+  build_runtime_catalog allow-empty
 }
 
 #######################################
@@ -336,9 +402,8 @@ do_start() {
     cleanup_runtime_files
     return 1
   fi
-  if [ "${WIFI_AUTO_SWITCH:-0}" = "1" ]; then
-    sh "$NETMON_SCRIPT" startup > /dev/null 2>&1 || log "WARN" "WiFi 自动切换初始化失败"
-  fi
+  # netmon 只负责监听 Android 网络事件；策略是否启用由 Go 评估命令决定。
+  sh "$NETMON_SCRIPT" startup > /dev/null 2>&1 || log "WARN" "网络事件监听初始化失败"
   ready_at="$(date +%s)"
   write_service_state ready "$new_pid" "$SERVICE_STATE_STARTED_AT" "$ready_at" ""
   SERVICE_STATE_FINALIZED=1

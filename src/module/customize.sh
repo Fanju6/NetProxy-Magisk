@@ -44,11 +44,8 @@ readonly EXECUTABLE_FILES="
     netproxyctl
     service.sh
     uninstall.sh
-    scripts/netproxyctl
     scripts/core/service.sh
-    scripts/core/switch.sh
     scripts/network/netmon.sh
-    scripts/core/subscription.sh
     bin/bpftool
 "
 

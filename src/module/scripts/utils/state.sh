@@ -3,7 +3,7 @@
 # 文件: state.sh
 # 功能: 原子记录与读取 NetProxy 服务生命周期状态。
 # 用法: 由 service.sh 与 netproxyctl 引入。
-# 依赖: common.sh 提供 json_escape。
+# 依赖: common.sh 提供日志函数。
 #######################################
 
 [ -n "${SERVICE_STATE_DIR:-}" ] || SERVICE_STATE_DIR="${MODDIR:-}/config/runtime"
@@ -30,7 +30,7 @@ load_service_state() {
   SERVICE_STATE_READY_AT_VALUE=0
   SERVICE_STATE_ERROR_VALUE=""
   [ -f "$SERVICE_STATE_FILE" ] || return 1
-  IFS= read -r line < "$SERVICE_STATE_FILE" || return 1
+  line="$(sed -n '1p' "$SERVICE_STATE_FILE")" || return 1
   case "$line" in *'"state":"'*'","pid":'*'"started_at":'*'"ready_at":'*'"error":"'*) ;; *) return 1 ;; esac
 
   value="${line#*\"state\":\"}"
@@ -62,30 +62,15 @@ write_service_state() {
   local started_at="${3:-0}"
   local ready_at="${4:-0}"
   local error_message="${5:-}"
-  local temporary="$SERVICE_STATE_FILE.tmp.$$"
-
-  # 正式服务路径由 Go 原子写入；独立契约测试没有 native 时保留最小文件回退。
-  if [ -n "${NETPROXY_NATIVE_BIN:-}" ] && [ -x "$NETPROXY_NATIVE_BIN" ]; then
-    "$NETPROXY_NATIVE_BIN" module state \
-      --module-dir "${MODDIR:-$(dirname "$NETPROXY_NATIVE_BIN")/..}" \
-      --state-file "$SERVICE_STATE_FILE" \
-      --state "$status" \
-      --pid "${2:-0}" \
-      --started-at "${3:-0}" \
-      --ready-at "${4:-0}" \
-      --error "${5:-}" > /dev/null 2>&1
-    return $?
-  fi
-
-  case "$pid" in "" | *[!0-9]*) pid=0 ;; esac
-  case "$started_at" in "" | *[!0-9]*) started_at=0 ;; esac
-  case "$ready_at" in "" | *[!0-9]*) ready_at=0 ;; esac
-  mkdir -p "$SERVICE_STATE_DIR" || return 1
-  cat > "$temporary" << EOF
-{"schema":1,"state":"$(json_escape "$status")","pid":$pid,"started_at":$started_at,"ready_at":$ready_at,"error":"$(json_escape "$error_message")","updated_at":$(date +%s)}
-EOF
-  chmod 0600 "$temporary" 2> /dev/null || true
-  mv -f "$temporary" "$SERVICE_STATE_FILE"
+  [ -n "${NETPROXY_NATIVE_BIN:-}" ] && [ -x "$NETPROXY_NATIVE_BIN" ] || return 1
+  "$NETPROXY_NATIVE_BIN" module state \
+    --module-dir "${MODDIR:-$(dirname "$NETPROXY_NATIVE_BIN")/..}" \
+    --state-file "$SERVICE_STATE_FILE" \
+    --state "$status" \
+    --pid "$pid" \
+    --started-at "$started_at" \
+    --ready-at "$ready_at" \
+    --error "$error_message" > /dev/null 2>&1
 }
 
 #######################################

@@ -109,7 +109,7 @@ func defaultModuleDir() string {
 
 func runModule(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("缺少模块业务操作: prepare|select|mode|app|node|sub|config|logs|service")
+		return errors.New("缺少模块业务操作: prepare|select|mode|network|app|node|sub|config|logs|service")
 	}
 	action := args[0]
 	switch action {
@@ -121,6 +121,8 @@ func runModule(ctx context.Context, args []string) error {
 		return runModuleSync(ctx, args[1:])
 	case "mode":
 		return runModuleMode(ctx, args[1:])
+	case "network":
+		return runModuleNetwork(ctx, args[1:])
 	case "app":
 		return runModuleApp(ctx, args[1:])
 	case "node":
@@ -138,6 +140,28 @@ func runModule(ctx context.Context, args []string) error {
 	default:
 		return fmt.Errorf("未知模块业务操作 %q", action)
 	}
+}
+
+func runModuleNetwork(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("缺少 network 操作: evaluate")
+	}
+	flags := newFlagSet("module network")
+	values := bindModuleFlags(flags)
+	networkType := flags.String("type", "not_wifi", "网络类型")
+	ssid := flags.String("ssid", "", "当前 WiFi SSID")
+	if err := flags.Parse(args[1:]); err != nil {
+		return err
+	}
+	if args[0] != "evaluate" {
+		return fmt.Errorf("未知 network 操作 %q", args[0])
+	}
+	data, err := moduleapp.EvaluateNetwork(ctx, values.options(), *networkType, *ssid)
+	if err != nil {
+		return err
+	}
+	writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "network.evaluated", Message: data.Reason, Data: data})
+	return nil
 }
 
 func runModuleState(args []string) error {

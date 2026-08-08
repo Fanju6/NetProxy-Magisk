@@ -4,7 +4,7 @@
 # 功能: Magisk service 阶段入口，在系统启动完成后记录运行环境，
 #       加载模块配置并按需开机自启 sing-box 服务。
 # 用法: 由 Magisk/KernelSU/APatch 在 service 阶段自动调用。
-# 依赖: common.sh、utils/config.sh、scripts/core/service.sh、netproxy-native。
+# 依赖: common.sh、scripts/core/service.sh、netproxy-native。
 #######################################
 
 set -e  # 命令失败立即退出
@@ -19,7 +19,6 @@ readonly LOG_FILE="$MODDIR/logs/service.log"       # 服务日志
 readonly LOG_TAG="boot"                            # 日志组件标签
 
 . "$MODDIR/scripts/utils/common.sh"
-. "$MODDIR/scripts/utils/config.sh"
 
 #######################################
 # 加载模块配置
@@ -30,7 +29,8 @@ readonly LOG_TAG="boot"                            # 日志组件标签
 #######################################
 load_module_config() {
   # 开机服务相关默认值
-  AUTO_START="$(read_module_value "$MODULE_CONF" "AUTO_START" 2> /dev/null || printf "%s" "1")"
+  AUTO_START="$("$NETPROXY_NATIVE_BIN" config module-get \
+    --path "$MODULE_CONF" --key AUTO_START --format text 2> /dev/null || printf "%s" "1")"
 
   if [ -f "$MODULE_CONF" ]; then
     log "INFO" "模块配置已加载"

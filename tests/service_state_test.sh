@@ -2,6 +2,7 @@
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+NETPROXY_NATIVE_BIN="${1:-$ROOT/src/module/bin/netproxy-native}"
 TMP_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TMP_ROOT"' EXIT INT TERM
 
@@ -14,10 +15,9 @@ LOG_TAG="state-test"
 
 . "$MODDIR/scripts/utils/common.sh"
 . "$MODDIR/scripts/utils/state.sh"
-. "$MODDIR/scripts/utils/api.sh"
 
-[ "$(unix_millis_to_seconds 1785858181715)" = "1785858181" ]
-! unix_millis_to_seconds invalid > /dev/null 2>&1
+[ -x "$NETPROXY_NATIVE_BIN" ]
+export NETPROXY_NATIVE_BIN
 
 write_service_state preparing 0 0 0 ""
 [ "$(service_state_get_string state stopped)" = "preparing" ]

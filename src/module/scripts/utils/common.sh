@@ -169,40 +169,6 @@ ensure_dir() {
 }
 
 #######################################
-# 转义字符串中的 JSON 特殊字符 (反斜杠与双引号)
-# 参数:
-#   $1  原始字符串
-# 返回: 标准输出打印转义后的字符串
-#######################################
-json_escape() {
-  local value="$1"
-
-  # Android mksh 与 BusyBox ash 均支持该替换语法，可避免为每个字段启动 sed。
-  value="${value//\\/\\\\}"
-  value="${value//\"/\\\"}"
-  printf "%s" "$value"
-}
-
-#######################################
-# 从 netproxy-native 统一结果中提取 data
-# 参数:
-#   $1  单行结果 JSON
-# 返回: 标准输出打印 data JSON；结果格式无效返回 1
-#######################################
-extract_result_data() {
-  local result="$1"
-  local data
-
-  case "$result" in
-    *'"data":'*) ;;
-    *) return 1 ;;
-  esac
-  data="${result#*\"data\":}"
-  data="${data%?}"
-  printf "%s" "$data"
-}
-
-#######################################
 # 获取指定二进制对应的进程 PID
 # 参数:
 #   $1  二进制路径
