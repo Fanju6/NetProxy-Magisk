@@ -50,15 +50,16 @@ func TestNewGroupID(t *testing.T) {
 		t.Fatalf("unexpected subscription id: %q", subscriptionID)
 	}
 
-	fileID, err := NewGroupID(root, "file", "C:\\Users\\Test User\\Nodes.yaml")
-	if err != nil || fileID != "local-nodes" {
+	filePath := filepath.Join("nodes", "My Nodes.yaml")
+	fileID, err := NewGroupID(root, "file", filePath)
+	if err != nil || fileID != "local-my-nodes" {
 		t.Fatalf("file id: %q, %v", fileID, err)
 	}
 	if err := os.Mkdir(filepath.Join(root, fileID), 0o700); err != nil {
 		t.Fatalf("create collision: %v", err)
 	}
-	secondFileID, err := NewGroupID(root, "file", "C:\\Users\\Test User\\Nodes.yaml")
-	if err != nil || secondFileID != "local-nodes-2" {
+	secondFileID, err := NewGroupID(root, "file", filePath)
+	if err != nil || secondFileID != "local-my-nodes-2" {
 		t.Fatalf("collision id: %q, %v", secondFileID, err)
 	}
 }
