@@ -919,10 +919,20 @@ private fun SubscriptionSummaryCard(
 private fun HistoryRow(entry: SubscriptionHistoryEntry) {
     Card(modifier = Modifier.fillMaxWidth()) {
         BasicComponent(
-            title = entry.message.ifBlank { entry.status },
+            title = when {
+                !entry.ok -> "更新失败"
+                entry.code == "subscription.not_modified" -> "未发生变化"
+                else -> "更新成功"
+            },
             summary = buildString {
                 append(formatDate(entry.time))
                 entry.nodeCount?.let { append(" · ").append(it).append(" 个节点") }
+                entry.revision?.let { append(" · 修订版 ").append(it) }
+                if (!entry.ok) {
+                    entry.message.takeIf(String::isNotBlank)?.let {
+                        append(" · ").append(it)
+                    }
+                }
             }
         )
     }
@@ -1014,5 +1024,4 @@ private fun formatBytes(bytes: Long): String {
     return if (value >= 100) "${value.roundToInt()} ${units[index]}"
     else "%.1f %s".format(value, units[index])
 }
-
 

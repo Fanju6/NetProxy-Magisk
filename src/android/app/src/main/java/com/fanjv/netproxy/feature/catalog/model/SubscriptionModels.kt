@@ -39,11 +39,11 @@ internal data class SubscriptionDraft(
 
 @Serializable
 internal data class SubscriptionHistoryEntry(
-    val time: String = "",
-    val status: String = "",
+    @SerialName("at") val time: String = "",
+    val ok: Boolean = true,
+    val code: String = "",
     val message: String = "",
     @SerialName("node_count") val nodeCount: Int? = null,
     val revision: Long? = null
 )
-
 
