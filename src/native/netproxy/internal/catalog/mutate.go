@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalogtxn"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/convert"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
@@ -71,6 +72,12 @@ func InitializeGroup(ctx context.Context, options GroupOptions) error {
 	if err := validateGroupOptions(options); err != nil {
 		return err
 	}
+	release := lockGroup(options.GroupID)
+	release.Lock()
+	defer release.Unlock()
+	if err := recoverTransactions(options.Root); err != nil {
+		return err
+	}
 	if options.Now.IsZero() {
 		options.Now = time.Now()
 	}
@@ -88,6 +95,12 @@ func InitializeGroup(ctx context.Context, options GroupOptions) error {
 // EnsureGroup 确保已有 Catalog 根目录包含指定的本地分组。
 func EnsureGroup(ctx context.Context, options GroupOptions) error {
 	if err := validateGroupOptions(options); err != nil {
+		return err
+	}
+	release := lockGroup(options.GroupID)
+	release.Lock()
+	defer release.Unlock()
+	if err := recoverTransactions(options.Root); err != nil {
 		return err
 	}
 	if options.Now.IsZero() {
@@ -126,6 +139,12 @@ func SetGroupName(ctx context.Context, root, groupID, name string, now time.Time
 	}
 	if !validGroupID.MatchString(groupID) {
 		return fmt.Errorf("非法分组 ID: %s", groupID)
+	}
+	release := lockGroup(groupID)
+	release.Lock()
+	defer release.Unlock()
+	if err := recoverTransactions(root); err != nil {
+		return err
 	}
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -201,6 +220,12 @@ func AppendNode(ctx context.Context, options MutationOptions) (MutationResult, e
 	if err := validateMutationOptions(options, false); err != nil {
 		return MutationResult{}, err
 	}
+	release := lockGroup(options.GroupID)
+	release.Lock()
+	defer release.Unlock()
+	if err := recoverTransactions(filepath.Dir(options.GroupDir)); err != nil {
+		return MutationResult{}, err
+	}
 	if options.Now.IsZero() {
 		options.Now = time.Now()
 	}
@@ -234,6 +259,12 @@ func RemoveNode(ctx context.Context, options MutationOptions) (MutationResult, e
 	if err := validateMutationOptions(options, true); err != nil {
 		return MutationResult{}, err
 	}
+	release := lockGroup(options.GroupID)
+	release.Lock()
+	defer release.Unlock()
+	if err := recoverTransactions(filepath.Dir(options.GroupDir)); err != nil {
+		return MutationResult{}, err
+	}
 	if options.Now.IsZero() {
 		options.Now = time.Now()
 	}
@@ -255,6 +286,12 @@ func RemoveNode(ctx context.Context, options MutationOptions) (MutationResult, e
 // EditNode 原子替换 Catalog 分组中的一个节点。
 func EditNode(ctx context.Context, options MutationOptions) (MutationResult, error) {
 	if err := validateMutationOptions(options, true); err != nil {
+		return MutationResult{}, err
+	}
+	release := lockGroup(options.GroupID)
+	release.Lock()
+	defer release.Unlock()
+	if err := recoverTransactions(filepath.Dir(options.GroupDir)); err != nil {
 		return MutationResult{}, err
 	}
 	if options.Now.IsZero() {
@@ -287,6 +324,12 @@ func ImportGroup(ctx context.Context, options ImportOptions) (MutationResult, er
 	}
 	if strings.TrimSpace(options.Root) == "" || strings.TrimSpace(options.Input) == "" {
 		return MutationResult{}, errors.New("Catalog 根目录和输入内容不能为空")
+	}
+	release := lockGroup(options.GroupID)
+	release.Lock()
+	defer release.Unlock()
+	if err := recoverTransactions(options.Root); err != nil {
+		return MutationResult{}, err
 	}
 	if options.Now.IsZero() {
 		options.Now = time.Now()
@@ -399,17 +442,8 @@ func commitPair(ctx context.Context, groupDir string, document provider.Document
 	if err := os.MkdirAll(parent, 0o700); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(groupDir, 0o700); err != nil {
-		return err
-	}
-	stage, err := os.MkdirTemp(parent, ".catalog-txn-")
+	providerContent, err := provider.MarshalAllowEmpty(ctx, document)
 	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(stage)
-	providerStage := filepath.Join(stage, "provider.json")
-	metadataStage := filepath.Join(stage, "meta.json")
-	if err := provider.SaveAtomicAllowEmpty(ctx, providerStage, document); err != nil {
 		return err
 	}
 	metadataContent, err := json.MarshalIndent(metadata, "", "  ")
@@ -417,66 +451,7 @@ func commitPair(ctx context.Context, groupDir string, document provider.Document
 		return err
 	}
 	metadataContent = append(metadataContent, '\n')
-	if err := provider.WriteAtomic(metadataStage, metadataContent, 0o600); err != nil {
-		return err
-	}
-	return replacePair(groupDir, providerStage, metadataStage)
-}
-
-func replacePair(groupDir, providerStage, metadataStage string) error {
-	providerPath := filepath.Join(groupDir, "provider.json")
-	metadataPath := filepath.Join(groupDir, "meta.json")
-	providerBackup := providerPath + ".bak"
-	metadataBackup := metadataPath + ".bak"
-	_ = os.Remove(providerBackup)
-	_ = os.Remove(metadataBackup)
-	providerExists := fileExists(providerPath)
-	metadataExists := fileExists(metadataPath)
-	providerBackedUp := false
-	metadataBackedUp := false
-	providerInstalled := false
-	metadataInstalled := false
-	if providerExists {
-		if err := os.Rename(providerPath, providerBackup); err != nil {
-			return err
-		}
-		providerBackedUp = true
-	}
-	if metadataExists {
-		if err := os.Rename(metadataPath, metadataBackup); err != nil {
-			rollbackPair(providerPath, metadataPath, providerBackup, metadataBackup, providerBackedUp, metadataBackedUp, providerInstalled, metadataInstalled)
-			return err
-		}
-		metadataBackedUp = true
-	}
-	if err := os.Rename(providerStage, providerPath); err != nil {
-		rollbackPair(providerPath, metadataPath, providerBackup, metadataBackup, providerBackedUp, metadataBackedUp, providerInstalled, metadataInstalled)
-		return err
-	}
-	providerInstalled = true
-	if err := os.Rename(metadataStage, metadataPath); err != nil {
-		rollbackPair(providerPath, metadataPath, providerBackup, metadataBackup, providerBackedUp, metadataBackedUp, providerInstalled, metadataInstalled)
-		return err
-	}
-	metadataInstalled = true
-	_ = os.Remove(providerBackup)
-	_ = os.Remove(metadataBackup)
-	return nil
-}
-
-func rollbackPair(providerPath, metadataPath, providerBackup, metadataBackup string, providerBackedUp, metadataBackedUp, providerInstalled, metadataInstalled bool) {
-	if providerInstalled {
-		_ = os.Remove(providerPath)
-	}
-	if metadataInstalled {
-		_ = os.Remove(metadataPath)
-	}
-	if providerBackedUp {
-		_ = os.Rename(providerBackup, providerPath)
-	}
-	if metadataBackedUp {
-		_ = os.Rename(metadataBackup, metadataPath)
-	}
+	return catalogtxn.CommitPair(parent, groupDir, providerContent, metadataContent)
 }
 
 func fileExists(path string) bool {

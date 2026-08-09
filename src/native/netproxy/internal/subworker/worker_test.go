@@ -315,7 +315,7 @@ func TestRunWakeProcessesMultipleRoundsAndRestartsFromStalePID(t *testing.T) {
 	}
 }
 
-func TestWorkerRejectsConcurrentSubscriptionUpdate(t *testing.T) {
+func TestConcurrentSubscriptionUpdateSerializesPerGroup(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var once sync.Once
@@ -333,6 +333,7 @@ func TestWorkerRejectsConcurrentSubscriptionUpdate(t *testing.T) {
 	options.PIDFile = filepath.Join(root, "worker.pid")
 	options.Now = func() time.Time { return now }
 	firstDone := make(chan error, 1)
+	secondDone := make(chan error, 1)
 	go func() {
 		_, err := UpdateGroup(context.Background(), options, "fixture", now, nil)
 		firstDone <- err
@@ -342,17 +343,25 @@ func TestWorkerRejectsConcurrentSubscriptionUpdate(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("首个订阅更新未进入下载阶段")
 	}
-	if _, err := UpdateGroup(context.Background(), options, "fixture", now, nil); err == nil {
-		t.Fatal("并发订阅更新应该被分组锁拒绝")
+	go func() {
+		_, err := UpdateGroup(context.Background(), options, "fixture", now, nil)
+		secondDone <- err
+	}()
+	select {
+	case err := <-secondDone:
+		t.Fatalf("第二个订阅更新未等待分组锁: %v", err)
+	case <-time.After(100 * time.Millisecond):
 	}
 	close(release)
-	select {
-	case err := <-firstDone:
-		if err != nil {
-			t.Fatalf("首个订阅更新失败: %v", err)
+	for name, done := range map[string]chan error{"首个": firstDone, "第二个": secondDone} {
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatalf("%s订阅更新失败: %v", name, err)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatalf("%s订阅更新未结束", name)
 		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("首个订阅更新未结束")
 	}
 }
 

@@ -11,8 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalogtxn"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/convert"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/fetch"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/grouplock"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 )
 
@@ -131,6 +133,11 @@ func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 	}
 	if options.Now.IsZero() {
 		options.Now = time.Now()
+	}
+	release := grouplock.Acquire(options.GroupID)
+	defer release()
+	if err := catalogtxn.Recover(options.Root); err != nil {
+		return Result{}, &Error{Code: "subscription.recovery_failed", Message: "鎭㈠鏈畬鎴愯闃呬簨鍔″け璐?", Data: err.Error()}
 	}
 	groupDir := filepath.Join(options.Root, options.GroupID)
 	metaPath := filepath.Join(groupDir, "meta.json")
@@ -256,17 +263,8 @@ func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 	if err != nil {
 		return updateFailure(options, metadata, groupDir, started, response, "metadata.read_failed", "读取临时元数据失败", err)
 	}
-	oldProvider, _ := os.ReadFile(providerPath)
-	if err := provider.WriteAtomic(providerPath, providerContent, 0o600); err != nil {
-		return updateFailure(options, metadata, groupDir, started, response, "provider.commit_failed", "订阅 Provider 提交失败", err)
-	}
-	if err := provider.WriteAtomic(metaPath, metadataContent, 0o600); err != nil {
-		if len(oldProvider) > 0 {
-			_ = provider.WriteAtomic(providerPath, oldProvider, 0o600)
-		} else {
-			_ = os.Remove(providerPath)
-		}
-		return updateFailure(options, metadata, groupDir, started, response, "metadata.commit_failed", "订阅元数据提交失败", err)
+	if err := catalogtxn.CommitPair(options.Root, groupDir, providerContent, metadataContent); err != nil {
+		return updateFailure(options, metadata, groupDir, started, response, "subscription.commit_failed", "订阅 Provider 与元数据提交失败", err)
 	}
 
 	appendHistory(groupDir, map[string]any{
@@ -441,7 +439,33 @@ func acquireLock(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	return os.Mkdir(path, 0o700)
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := os.Mkdir(path, 0o700); err == nil {
+			return nil
+		} else if !errors.Is(err, os.ErrExist) {
+			return err
+		}
+		pid := readLockPID(filepath.Join(path, "pid"))
+		if pid > 0 && isProcessAlive(pid) {
+			return os.ErrExist
+		}
+		if err := os.RemoveAll(path); err != nil {
+			return err
+		}
+	}
+	return os.ErrExist
+}
+
+func readLockPID(path string) int {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	var pid int
+	if _, err := fmt.Sscanf(string(content), "%d", &pid); err != nil {
+		return 0
+	}
+	return pid
 }
 
 func validGroupID(value string) bool {

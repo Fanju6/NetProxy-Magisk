@@ -18,6 +18,9 @@ func ResolveGroup(root, query string) (string, error) {
 	if strings.TrimSpace(root) == "" || strings.TrimSpace(query) == "" {
 		return "", errors.New("Catalog 根目录和分组查询不能为空")
 	}
+	if err := recoverTransactions(root); err != nil {
+		return "", err
+	}
 	if validGroupID.MatchString(query) {
 		if _, err := os.Stat(filepath.Join(root, query)); err == nil {
 			return query, nil
@@ -118,6 +121,9 @@ func PrivateMetadata(root, groupID string) (subscription.Metadata, error) {
 	if !validGroupID.MatchString(groupID) {
 		return subscription.Metadata{}, fmt.Errorf("非法分组 ID: %s", groupID)
 	}
+	if err := recoverTransactions(root); err != nil {
+		return subscription.Metadata{}, err
+	}
 	return subscription.LoadMetadata(filepath.Join(root, groupID, "meta.json"), groupID)
 }
 
@@ -156,6 +162,12 @@ func DeleteGroup(root, groupID string) error {
 	if !validGroupID.MatchString(groupID) || groupID == "default" {
 		return fmt.Errorf("不允许删除分组: %s", groupID)
 	}
+	release := lockGroup(groupID)
+	release.Lock()
+	defer release.Unlock()
+	if err := recoverTransactions(root); err != nil {
+		return err
+	}
 	groupDir := filepath.Join(root, groupID)
 	if _, err := os.Stat(groupDir); err != nil {
 		return err
@@ -166,6 +178,9 @@ func DeleteGroup(root, groupID string) error {
 func loadGroupProvider(ctx context.Context, root, groupID string) (provider.Document, error) {
 	if strings.TrimSpace(root) == "" || !validGroupID.MatchString(groupID) {
 		return provider.Document{}, errors.New("Catalog 分组参数无效")
+	}
+	if err := recoverTransactions(root); err != nil {
+		return provider.Document{}, err
 	}
 	return provider.LoadAllowEmpty(ctx, filepath.Join(root, groupID, "provider.json"))
 }

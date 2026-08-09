@@ -214,3 +214,22 @@ func TestCancelledUpdateKeepsPreviousProvider(t *testing.T) {
 		t.Fatalf("取消更新不应替换旧 Provider: %s", current)
 	}
 }
+
+func TestAcquireLockRemovesStalePID(t *testing.T) {
+	root := t.TempDir()
+	lockPath := filepath.Join(root, "locks", "group.lock")
+	if err := os.MkdirAll(lockPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(lockPath, "pid"), []byte("2147483647\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := acquireLock(lockPath); err != nil {
+		t.Fatalf("stale lock was not reclaimed: %v", err)
+	}
+	defer os.RemoveAll(lockPath)
+	if _, err := os.Stat(filepath.Join(lockPath, "pid")); !os.IsNotExist(err) {
+		t.Fatalf("stale lock contents were unexpectedly preserved: %v", err)
+	}
+}

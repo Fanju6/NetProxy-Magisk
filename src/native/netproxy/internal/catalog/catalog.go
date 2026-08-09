@@ -103,6 +103,9 @@ type ScheduleResult struct {
 }
 
 func Scan(ctx context.Context, options ScanOptions) ([]GroupSnapshot, error) {
+	if err := recoverTransactions(options.Root); err != nil {
+		return nil, err
+	}
 	groups, err := loadGroups(ctx, options.Root, true)
 	if err != nil {
 		return nil, err
@@ -127,6 +130,9 @@ func Scan(ctx context.Context, options ScanOptions) ([]GroupSnapshot, error) {
 }
 
 func Schedule(root string, now int64) (ScheduleResult, error) {
+	if err := recoverTransactions(root); err != nil {
+		return ScheduleResult{}, err
+	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return ScheduleResult{}, err
@@ -160,6 +166,9 @@ func Schedule(root string, now int64) (ScheduleResult, error) {
 func RuntimeTag(root, groupID string) (string, error) {
 	if !validGroupID.MatchString(groupID) || strings.Contains(groupID, "..") {
 		return "", fmt.Errorf("非法分组 ID: %s", groupID)
+	}
+	if err := recoverTransactions(root); err != nil {
+		return "", err
 	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -196,6 +205,9 @@ func RuntimeTag(root, groupID string) (string, error) {
 }
 
 func GroupIDs(root, groupType string) ([]string, error) {
+	if err := recoverTransactions(root); err != nil {
+		return nil, err
+	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return nil, err
@@ -220,6 +232,9 @@ func GroupIDs(root, groupType string) ([]string, error) {
 func NewGroupID(root, kind, source string) (string, error) {
 	if strings.TrimSpace(root) == "" {
 		return "", errors.New("Catalog 根目录不能为空")
+	}
+	if err := recoverTransactions(root); err != nil {
+		return "", err
 	}
 	switch kind {
 	case "subscription":
@@ -285,6 +300,9 @@ func NewGroupID(root, kind, source string) (string, error) {
 func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, error) {
 	if options.Root == "" || options.ProvidersOutput == "" || options.OutboundsOutput == "" {
 		return RuntimeResult{}, errors.New("Catalog 根目录和运行时输出路径不能为空")
+	}
+	if err := recoverTransactions(options.Root); err != nil {
+		return RuntimeResult{}, err
 	}
 	outboundMode := ""
 	if options.ModuleConfig != "" {

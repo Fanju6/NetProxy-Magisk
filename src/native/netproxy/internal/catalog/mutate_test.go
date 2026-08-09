@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -92,6 +93,55 @@ func TestCatalogNodeMutationRejectsMissingTag(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("remove of missing tag unexpectedly succeeded")
+	}
+}
+
+func TestCatalogNodeMutationsSerializePerGroup(t *testing.T) {
+	root := t.TempDir()
+	if _, err := ImportGroup(context.Background(), ImportOptions{
+		Root: root, GroupID: "concurrent", Name: "Concurrent", Input: "socks://example.com:1080#BASE",
+	}); err != nil {
+		t.Fatalf("import group: %v", err)
+	}
+
+	var wait sync.WaitGroup
+	errorsCh := make(chan error, 2)
+	for _, input := range []string{
+		"socks://one.example:1081#ONE",
+		"socks://two.example:1082#TWO",
+	} {
+		wait.Add(1)
+		go func(input string) {
+			defer wait.Done()
+			_, err := AppendNode(context.Background(), MutationOptions{
+				GroupDir: filepath.Join(root, "concurrent"),
+				GroupID:  "concurrent",
+				Input:    input,
+			})
+			errorsCh <- err
+		}(input)
+	}
+	wait.Wait()
+	close(errorsCh)
+	for err := range errorsCh {
+		if err != nil {
+			t.Fatalf("concurrent append: %v", err)
+		}
+	}
+
+	document, err := provider.Load(context.Background(), filepath.Join(root, "concurrent", "provider.json"))
+	if err != nil {
+		t.Fatalf("load provider: %v", err)
+	}
+	if got := len(provider.Inspect(document)); got != 3 {
+		t.Fatalf("concurrent append lost nodes: got %d", got)
+	}
+	metadata, err := subscription.LoadMetadata(filepath.Join(root, "concurrent", "meta.json"), "concurrent")
+	if err != nil {
+		t.Fatalf("load metadata: %v", err)
+	}
+	if metadata.NodeCount != 3 || metadata.Revision != 3 {
+		t.Fatalf("provider and metadata diverged: nodes=%d revision=%d", metadata.NodeCount, metadata.Revision)
 	}
 }
 
