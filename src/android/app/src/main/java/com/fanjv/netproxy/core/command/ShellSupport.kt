@@ -1,15 +1,41 @@
 package com.fanjv.netproxy.core.command
 
 import com.topjohnwu.superuser.Shell
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 /** 安全构造 root 命令；业务操作只允许调用 netproxyctl 或 Android 的 pm。 */
 internal object ShellCommand {
-    fun exec(vararg args: String): Shell.Result =
-        Shell.cmd(args.joinToString(" ", transform = ::quote)).exec()
+	fun exec(vararg args: String): Shell.Result =
+		Shell.cmd(args.joinToString(" ", transform = ::quote)).exec()
+
+	fun exec(timeoutMillis: Long, vararg args: String): TimedShellResult {
+		val future = Shell.cmd(args.joinToString(" ", transform = ::quote)).enqueue()
+		return try {
+			val result = future.get(timeoutMillis.coerceAtLeast(1L), TimeUnit.MILLISECONDS)
+			TimedShellResult(result.isSuccess, result.out, result.err)
+		} catch (_: TimeoutException) {
+			future.cancel(true)
+			TimedShellResult(false, emptyList(), listOf("命令执行超时"))
+		} catch (_: InterruptedException) {
+			future.cancel(true)
+			Thread.currentThread().interrupt()
+			TimedShellResult(false, emptyList(), listOf("命令执行被中断"))
+		} catch (error: Exception) {
+			future.cancel(true)
+			TimedShellResult(false, emptyList(), listOf(error.message ?: "命令执行失败"))
+		}
+	}
 
     private fun quote(value: String): String =
         "'" + value.replace("'", "'\"'\"'") + "'"
 }
+
+internal data class TimedShellResult(
+	val successful: Boolean,
+	val stdout: List<String>,
+	val stderr: List<String>
+)
 
 /** 纯内存解析和更新 KEY=value 配置，实际读写由 netproxyctl 事务完成。 */
 internal object ShellConfigFile {

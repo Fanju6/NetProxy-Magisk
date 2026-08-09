@@ -31,18 +31,25 @@ internal data class NetProxyCtlOutput(
 )
 
 internal fun interface NetProxyCtlTransport {
-    fun execute(arguments: List<String>): NetProxyCtlOutput
+	fun execute(arguments: List<String>, timeoutMillis: Long): NetProxyCtlOutput
 }
 
 private object RootShellNetProxyCtlTransport : NetProxyCtlTransport {
-    override fun execute(arguments: List<String>): NetProxyCtlOutput {
-        val result = ShellCommand.exec(ModulePaths.NETPROXYCTL, "--json", *arguments.toTypedArray())
-        return NetProxyCtlOutput(
-            successful = result.isSuccess,
-            stdout = result.out,
-            stderr = result.err
-        )
-    }
+	override fun execute(arguments: List<String>, timeoutMillis: Long): NetProxyCtlOutput {
+		val result = ShellCommand.exec(
+			timeoutMillis,
+			ModulePaths.NETPROXYCTL,
+			"--json",
+			"--timeout",
+			"${(timeoutMillis + 999L) / 1000L}s",
+			*arguments.toTypedArray()
+		)
+		return NetProxyCtlOutput(
+			successful = result.successful,
+			stdout = result.stdout,
+			stderr = result.stderr
+		)
+	}
 }
 
 /** 严格解析 netproxyctl 的单一 JSON 输出，额外 stdout 会被视为契约错误。 */
@@ -106,6 +113,17 @@ internal class NetProxyCtlClient(
     private val codec = NetProxyCtlCodec(json)
 
     suspend fun execute(vararg args: String): NetProxyCtlResponse = withContext(Dispatchers.IO) {
-        codec.decode(transport.execute(args.toList()))
+        val arguments = args.toList()
+        val timeoutMillis = if (arguments.firstOrNull() == "service" && arguments.getOrNull(1) == "start") {
+            SERVICE_START_TIMEOUT_MILLIS
+        } else {
+            DEFAULT_TIMEOUT_MILLIS
+        }
+        codec.decode(transport.execute(arguments, timeoutMillis))
+    }
+
+    private companion object {
+        const val DEFAULT_TIMEOUT_MILLIS = 30_000L
+        const val SERVICE_START_TIMEOUT_MILLIS = 120_000L
     }
 }

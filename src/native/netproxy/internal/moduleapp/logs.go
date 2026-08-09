@@ -65,6 +65,10 @@ func ClearLog(options Options, kind string) error {
 	if err != nil {
 		return err
 	}
+	if err := file.Chmod(0o600); err != nil {
+		_ = file.Close()
+		return err
+	}
 	return file.Close()
 }
 
@@ -148,11 +152,14 @@ func appendDirectoryFiles(files *[]struct{ source, name string }, root, archiveR
 }
 
 func redactText(value string) string {
-	var object map[string]any
-	if json.Unmarshal([]byte(value), &object) == nil {
-		redactJSON(object)
-		if encoded, err := json.MarshalIndent(object, "", "  "); err == nil {
-			return string(encoded) + "\n"
+	var document any
+	if json.Unmarshal([]byte(value), &document) == nil {
+		switch document.(type) {
+		case map[string]any, []any:
+			redactJSON(document)
+			if encoded, err := json.MarshalIndent(document, "", "  "); err == nil {
+				return string(encoded) + "\n"
+			}
 		}
 	}
 	value = urlCredentialPattern.ReplaceAllString(value, `$1***@`)

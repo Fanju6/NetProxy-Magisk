@@ -98,3 +98,18 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 		t.Fatal("诊断包未包含运行时配置")
 	}
 }
+
+func TestRedactTextRedactsTopLevelJSONArray(t *testing.T) {
+	content := redactText(`[{
+  "url": "https://example.test/sub?token=secret-token",
+  "nested": {"password": "secret-password"}
+}, {"authorization": "Bearer secret-bearer"}]`)
+	for _, secret := range []string{"secret-token", "secret-password", "secret-bearer"} {
+		if strings.Contains(content, secret) {
+			t.Fatalf("top-level JSON array leaked %q: %s", secret, content)
+		}
+	}
+	if !strings.Contains(content, "***") {
+		t.Fatalf("redacted JSON array did not contain a replacement: %s", content)
+	}
+}

@@ -135,7 +135,7 @@ func Subscription(ctx context.Context, request Request) (Response, error) {
 	if err != nil {
 		var urlError *url.Error
 		if errors.As(err, &urlError) {
-			return Response{}, fmt.Errorf("subscription request failed: %v", urlError.Err)
+			return Response{}, fmt.Errorf("subscription request failed: %w", urlError.Err)
 		}
 		return Response{}, errors.New("subscription request failed")
 	}

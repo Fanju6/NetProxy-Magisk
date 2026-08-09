@@ -37,7 +37,7 @@ export default function App() {
   }, [])
 
   const pollStatus = useCallback(() => {
-    ctlJson<{ ok: boolean; data: any }>(['service', 'status']).then(j => j?.ok && setSvcState(j.data?.state))
+    ctlJson<{ state?: string }>(['service', 'status']).then(j => j.ok && setSvcState(j.data?.state))
   }, [])
 
   useEffect(() => { pollStatus(); refresh() }, [pollStatus, refresh])
