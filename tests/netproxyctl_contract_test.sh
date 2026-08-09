@@ -19,6 +19,11 @@ cp "$REAL_NETPROXY_NATIVE" "$MODULE/bin/netproxy-native"
 cp "$REAL_NETPROXY_NATIVE" "$MODULE/bin/netproxy-native.exe"
 cat > "$MODULE/bin/sing-box" << 'EOF'
 #!/usr/bin/env sh
+[ "${1:-}" = "tools" ] && {
+  printf '%s\n' 'Platform: kernel: 6.1.0; architecture: arm64;'
+  printf '%s\n' 'Summary: PASS=8 WARN=0 FAIL=0 UNKNOWN=0'
+  exit 0
+}
 [ "${1:-}" = "check" ]
 EOF
 chmod +x "$MODULE/bin/netproxyctl" "$MODULE/bin/netproxy-native" "$MODULE/bin/netproxy-native.exe" "$MODULE/bin/sing-box" "$MODULE/netproxyctl"
@@ -53,9 +58,15 @@ result="$(sh "$MODULE/netproxyctl" --json app list)"
 run_json "$result"
 printf '%s' "$result" | grep -q '"android_users":""'
 
-result="$(sh "$MODULE/netproxyctl" --json ebpf diagnose)"
-run_json "$result"
-printf '%s' "$result" | grep -q '"code":"ebpf.diagnosed"'
+case "$(uname -s 2>/dev/null || printf unknown)" in
+  MINGW* | MSYS* | CYGWIN*) : ;;
+  *)
+    result="$(sh "$MODULE/netproxyctl" --json ebpf status configured)"
+    run_json "$result"
+    printf '%s' "$result" | grep -q '"code":"ebpf.status"'
+    printf '%s' "$result" | grep -q '通过: 8 项'
+    ;;
+esac
 
 result="$(sh "$MODULE/netproxyctl" --json app users 0 999)"
 run_json "$result"

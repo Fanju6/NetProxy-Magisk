@@ -105,13 +105,6 @@ func TestLoadRejectsUnknownAndInvalidConfiguration(t *testing.T) {
 	}
 }
 
-func TestDiagnoseReturnsChineseStructuredReport(t *testing.T) {
-	report := Diagnose(writeFixture(t, "EBPF_SHARED_INCLUDE_MAC_ADDRESSES=02:11:22:33:44:5G\n"))
-	if report.Valid || len(report.Diagnostics) == 0 || report.Diagnostics[0].Level != "error" {
-		t.Fatalf("unexpected diagnostic report: %#v", report)
-	}
-}
-
 func runtimeInbound(t *testing.T, config Config) map[string]any {
 	t.Helper()
 	content, err := json.Marshal(config.Build())

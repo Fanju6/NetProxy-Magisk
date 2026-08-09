@@ -2,7 +2,6 @@ package ebpf
 
 import (
 	"encoding/json"
-	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -87,26 +86,6 @@ type Diagnostic struct {
 }
 
 // Summary 描述诊断所需的安全配置摘要。
-type Summary struct {
-	Network              string `json:"network"`
-	DNSMode              string `json:"dns_mode"`
-	CgroupEnabled        bool   `json:"cgroup_enabled"`
-	CgroupIPv6Mode       string `json:"cgroup_ipv6_mode"`
-	BypassPrivateAddress bool   `json:"bypass_private_address"`
-	SharedNetwork        bool   `json:"shared_network"`
-	AndroidUserCount     int    `json:"android_user_count"`
-	ProxyPackageCount    int    `json:"proxy_package_count"`
-	BypassPackageCount   int    `json:"bypass_package_count"`
-	BypassRuleSetCount   int    `json:"bypass_rule_set_count"`
-}
-
-// Report 是 ebpf validate/diagnose 的结构化结果。
-type Report struct {
-	Valid       bool         `json:"valid"`
-	Summary     Summary      `json:"summary"`
-	Diagnostics []Diagnostic `json:"diagnostics"`
-}
-
 // ValidationError 包含可供 CLI 转发的中文配置诊断。
 type ValidationError struct {
 	Diagnostics []Diagnostic
@@ -438,24 +417,6 @@ func WriteAtomic(path string, config Config) error {
 }
 
 // Diagnose 返回不包含凭据的配置检查结果。
-func Diagnose(path string) Report {
-	config, err := Load(path)
-	if err != nil {
-		var validation *ValidationError
-		if errors.As(err, &validation) {
-			return Report{Valid: false, Diagnostics: validation.Diagnostics}
-		}
-		return Report{Valid: false, Diagnostics: []Diagnostic{{Level: "error", Code: "ebpf.config_invalid", Message: err.Error()}}}
-	}
-	return Report{Valid: true, Summary: Summary{
-		Network: config.Network, DNSMode: config.DNSMode, CgroupEnabled: config.CgroupEnabled,
-		CgroupIPv6Mode: config.CgroupIPv6Mode, BypassPrivateAddress: config.BypassPrivateAddress,
-		SharedNetwork: config.SharedNetwork, AndroidUserCount: len(config.AndroidUsers),
-		ProxyPackageCount: len(config.ProxyPackages), BypassPackageCount: len(config.BypassPackages),
-		BypassRuleSetCount: len(config.BypassRuleSets),
-	}, Diagnostics: []Diagnostic{{Level: "info", Code: "ebpf.config_valid", Message: "eBPF 配置有效"}}}
-}
-
 func validationError(code, field, message string) error {
 	return &ValidationError{Diagnostics: []Diagnostic{{Level: "error", Code: code, Field: field, Message: message}}}
 }
