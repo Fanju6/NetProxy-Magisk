@@ -13,6 +13,9 @@ import (
 
 func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "module.prop"), []byte("version=v8.0.0-test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	logDir := filepath.Join(root, "logs")
 	moduleConfig := filepath.Join(root, "config", "module.conf")
 	ebpfConfig := filepath.Join(root, "config", "ebpf", "ebpf.conf")
@@ -45,12 +48,14 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 
 	destination := filepath.Join(root, "export", "diagnostics.tar.gz")
 	options := Options{
-		CatalogRoot:  catalogRoot,
-		ModuleConfig: moduleConfig,
-		EBPFConfig:   ebpfConfig,
-		SingBoxDir:   singboxDir,
-		RuntimeDir:   runtimeDir,
-		LogDir:       logDir,
+		ModuleDir:      root,
+		ManagerVersion: "8.0.0-manager-test",
+		CatalogRoot:    catalogRoot,
+		ModuleConfig:   moduleConfig,
+		EBPFConfig:     ebpfConfig,
+		SingBoxDir:     singboxDir,
+		RuntimeDir:     runtimeDir,
+		LogDir:         logDir,
 	}
 	if err := ExportLogs(options, destination); err != nil {
 		t.Fatal(err)
@@ -75,6 +80,7 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 	defer compressed.Close()
 	reader := tar.NewReader(compressed)
 	seenRuntime := false
+	seenReadme := false
 	for {
 		header, readErr := reader.Next()
 		if readErr == io.EOF {
@@ -90,6 +96,15 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 		if strings.Contains(header.Name, "runtime/ebpf.json") {
 			seenRuntime = true
 		}
+		if header.Name == "README.txt" {
+			seenReadme = true
+			readme := string(content)
+			for _, version := range []string{"管理器版本: 8.0.0-manager-test", "模块版本: v8.0.0-test"} {
+				if !strings.Contains(readme, version) {
+					t.Fatalf("README.txt 缺少版本信息 %q: %s", version, readme)
+				}
+			}
+		}
 		for _, secret := range []string{"secret-bearer", "secret-token", "secret-hwid", "secret-config"} {
 			if strings.Contains(string(content), secret) {
 				t.Fatalf("诊断包泄露敏感值 %q，文件 %s，内容 %s", secret, header.Name, content)
@@ -98,6 +113,9 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 	}
 	if !seenRuntime {
 		t.Fatal("诊断包未包含运行时配置")
+	}
+	if !seenReadme {
+		t.Fatal("诊断包未包含 README.txt")
 	}
 }
 

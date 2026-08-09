@@ -25,6 +25,7 @@ import (
 // Options 描述模块目录、运行时目录和平台适配器路径。
 type Options struct {
 	ModuleDir          string
+	ManagerVersion     string
 	CatalogRoot        string
 	ModuleConfig       string
 	EBPFConfig         string

@@ -19,16 +19,17 @@ import (
 )
 
 type moduleFlags struct {
-	moduleDir, catalogRoot, moduleConfig, ebpfConfig, singBox, singBoxDir string
-	runtimeDir, progressDir, serviceScript, address, secret, logDir       string
-	stateFile, workerPID, workerLog                                       string
-	skipServiceAdapter                                                    bool
-	timeout                                                               time.Duration
+	moduleDir, managerVersion, catalogRoot, moduleConfig, ebpfConfig, singBox, singBoxDir string
+	runtimeDir, progressDir, serviceScript, address, secret, logDir                       string
+	stateFile, workerPID, workerLog                                                       string
+	skipServiceAdapter                                                                    bool
+	timeout                                                                               time.Duration
 }
 
 func bindModuleFlags(flags *flag.FlagSet) *moduleFlags {
 	values := &moduleFlags{}
 	flags.StringVar(&values.moduleDir, "module-dir", defaultModuleDir(), "模块根目录")
+	flags.StringVar(&values.managerVersion, "manager-version", "unknown", "Android 管理器版本")
 	flags.StringVar(&values.catalogRoot, "catalog-root", "", "Catalog 根目录")
 	flags.StringVar(&values.moduleConfig, "module-config", "", "module.conf 路径")
 	flags.StringVar(&values.ebpfConfig, "ebpf-config", "", "ebpf.conf 路径")
@@ -50,6 +51,7 @@ func bindModuleFlags(flags *flag.FlagSet) *moduleFlags {
 
 func (values *moduleFlags) options() moduleapp.Options {
 	options := moduleapp.NewOptions(values.moduleDir)
+	options.ManagerVersion = values.managerVersion
 	if values.catalogRoot != "" {
 		options.CatalogRoot = values.catalogRoot
 	}

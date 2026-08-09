@@ -123,7 +123,30 @@ func ExportLogs(options Options, destination string) error {
 			return err
 		}
 	}
-	return writeTarFile(tarWriter, "README.txt", []byte(fmt.Sprintf("NetProxy 诊断包\n生成时间: %s\n敏感信息已脱敏。\n", time.Now().Format(time.RFC3339))))
+	readme := fmt.Sprintf("NetProxy 诊断包\n管理器版本: %s\n模块版本: %s\n生成时间: %s\n敏感信息已脱敏。\n",
+		versionOrUnknown(options.ManagerVersion), moduleVersion(options), time.Now().Format(time.RFC3339))
+	return writeTarFile(tarWriter, "README.txt", []byte(readme))
+}
+
+func versionOrUnknown(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "unknown"
+	}
+	return value
+}
+
+func moduleVersion(options Options) string {
+	content, err := os.ReadFile(filepath.Join(options.ModuleDir, "module.prop"))
+	if err != nil {
+		return "unknown"
+	}
+	for _, line := range strings.Split(string(content), "\n") {
+		if strings.HasPrefix(line, "version=") {
+			return versionOrUnknown(strings.TrimPrefix(line, "version="))
+		}
+	}
+	return "unknown"
 }
 
 func writeTarFile(writer *tar.Writer, name string, content []byte) error {

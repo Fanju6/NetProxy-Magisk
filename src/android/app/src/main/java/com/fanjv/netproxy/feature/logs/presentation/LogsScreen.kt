@@ -1,7 +1,9 @@
 package com.fanjv.netproxy.feature.logs.presentation
 
+import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
+import android.os.ParcelFileDescriptor
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -64,6 +66,7 @@ import com.fanjv.netproxy.feature.logs.data.LogType
 import com.fanjv.netproxy.feature.logs.data.OutboundFlow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
@@ -144,16 +147,26 @@ internal fun LogsScreen(
         ActivityResultContracts.CreateDocument("application/gzip")
     ) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
-        scope.launch(Dispatchers.IO) {
+        scope.launch {
             try {
-                val logFile = viewModel.createReport()
-                context.contentResolver.openOutputStream(uri)?.use { output ->
-                    logFile.inputStream().use { it.copyTo(output) }
+                val logFile = withContext(Dispatchers.IO) {
+                    viewModel.createReport()
+                }
+                withContext(Dispatchers.IO) {
+                    val descriptor = context.contentResolver.openFileDescriptor(uri, "rwt")
+                        ?: error("无法打开保存位置")
+                    val copiedBytes = ParcelFileDescriptor.AutoCloseOutputStream(descriptor).use { output ->
+                        logFile.inputStream().use { input ->
+                            input.copyTo(output).also { output.flush() }
+                        }
+                    }
+                    check(copiedBytes == logFile.length() && copiedBytes > 0L) {
+                        "日志保存失败：文件写入后为空"
+                    }
                 }
                 showMessage(logSavedMessage)
             } catch (e: Exception) {
-                showMessage("Error: ${e.message}", isError = true)
-            } finally {
+                showMessage(e.message ?: "日志保存失败", isError = true)
             }
         }
     }
@@ -182,9 +195,11 @@ internal fun LogsScreen(
                         },
                         actions = {
                             IconButton(onClick = {
-                                scope.launch(Dispatchers.IO) {
+                                scope.launch {
                                     try {
-                                        val logFile = viewModel.createReport()
+                                        val logFile = withContext(Dispatchers.IO) {
+                                            viewModel.createReport()
+                                        }
                                         val uri = FileProvider.getUriForFile(
                                             context,
                                             "${context.packageName}.fileprovider",
@@ -193,6 +208,7 @@ internal fun LogsScreen(
                                         val intent = Intent(Intent.ACTION_SEND).apply {
                                             type = "application/gzip"
                                             putExtra(Intent.EXTRA_STREAM, uri)
+                                            clipData = ClipData.newRawUri(sendLogTitle, uri)
                                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                         }
                                         context.startActivity(
@@ -202,8 +218,7 @@ internal fun LogsScreen(
                                             )
                                         )
                                     } catch (e: Exception) {
-                                        showMessage("Error: ${e.message}", isError = true)
-                                    } finally {
+                                        showMessage(e.message ?: "日志分享失败", isError = true)
                                     }
                                 }
                             }) {

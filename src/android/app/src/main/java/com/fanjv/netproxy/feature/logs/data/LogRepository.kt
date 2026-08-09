@@ -1,12 +1,14 @@
 package com.fanjv.netproxy.feature.logs.data
 
 import android.content.Context
+import com.fanjv.netproxy.BuildConfig
 import com.fanjv.netproxy.core.command.NetProxyCtlClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
+import java.io.IOException
 
 /** 日志读取、清理和诊断包导出的模块数据入口。 */
 internal class LogRepository(
@@ -26,16 +28,23 @@ internal class LogRepository(
     }
 
     suspend fun export(outputPath: String): String =
-        client.execute("logs", "export", outputPath).data.jsonObject["path"]
+        client.execute("logs", "export", "--manager-version", BuildConfig.VERSION_NAME, outputPath).data.jsonObject["path"]
             ?.jsonPrimitive?.content ?: outputPath
 
     suspend fun createReport(): File {
         val target = withContext(Dispatchers.IO) {
             reportsDir.mkdirs()
-            File(reportsDir, "NetProxy_Logs_${System.currentTimeMillis()}.tar.gz")
-                .also(File::delete)
+            File(reportsDir, "NetProxy_Logs_${System.currentTimeMillis()}.tar.gz").also {
+                it.delete()
+                check(it.createNewFile()) { "无法创建诊断包临时文件" }
+            }
         }
         export(target.absolutePath)
+        withContext(Dispatchers.IO) {
+            if (!target.isFile || target.length() == 0L) {
+                throw IOException("诊断包导出后为空")
+            }
+        }
         return target
     }
 
