@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 )
@@ -92,7 +93,7 @@ func prepareWorkerFixture(t *testing.T, serverURL string, now time.Time) (string
 	if err := os.MkdirAll(groupDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	metadata := subscription.NewMetadata(groupID, groupID, "subscription", serverURL, now)
+	metadata := catalog.NewMetadata(groupID, groupID, "subscription", serverURL, now)
 	metadata.AutoUpdate = true
 	metadata.UpdateInterval = 900
 	metadata.UpdateViaProxy = "never"
@@ -160,7 +161,7 @@ func TestNextUpdateUsesNearestEnabledSubscription(t *testing.T) {
 		{id: "later", interval: 3_600, auto: true},
 		{id: "manual", interval: 900, auto: false},
 	} {
-		metadata := subscription.NewMetadata(entry.id, entry.id, "subscription", "https://example.invalid/"+entry.id, now)
+		metadata := catalog.NewMetadata(entry.id, entry.id, "subscription", "https://example.invalid/"+entry.id, now)
 		metadata.AutoUpdate = entry.auto
 		metadata.UpdateInterval = entry.interval
 		if entry.auto {
@@ -388,7 +389,7 @@ func TestRunDueContinuesAfterOneSubscriptionFails(t *testing.T) {
 		if err := os.MkdirAll(groupDir, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		metadata := subscription.NewMetadata(item.id, item.id, "subscription", item.url, now)
+		metadata := catalog.NewMetadata(item.id, item.id, "subscription", item.url, now)
 		metadata.AutoUpdate = true
 		metadata.UpdateInterval = 900
 		metadata.UpdateViaProxy = "never"

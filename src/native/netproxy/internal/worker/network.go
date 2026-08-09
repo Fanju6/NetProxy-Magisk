@@ -143,12 +143,6 @@ func getWiFiSnapshotWith(
 	return networkType, ssid, nil
 }
 
-// getActiveNetworkInterface 返回当前默认路由使用的网络接口名称。
-// Wi-Fi 保持连接但移动数据承载默认路由时，只能以默认路由判断实际网络类型。
-func getActiveNetworkInterface(ctx context.Context) (string, error) {
-	return getActiveNetworkInterfaceWith(ctx, androidCommand, os.ReadFile)
-}
-
 func getActiveNetworkInterfaceWith(
 	ctx context.Context,
 	command networkCommandFunc,

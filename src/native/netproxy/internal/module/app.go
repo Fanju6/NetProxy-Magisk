@@ -751,15 +751,6 @@ func hostName(rawURL string) string {
 	return parsed.Hostname()
 }
 
-// EditSubscription 修改订阅元数据，并在必要时重新验证内容。
-func EditSubscription(ctx context.Context, options SubscriptionOptions, groupID string, edit subscription.EditOptions) (subscription.EditResult, error) {
-	edit.Root = options.CatalogRoot
-	edit.GroupID = groupID
-	edit.ProgressDir = options.ProgressDir
-	edit.Now = time.Now()
-	return subscription.Edit(ctx, edit)
-}
-
 // MarshalAppData 返回应用设置的 JSON 摘要，供 CLI 和客户端复用。
 func MarshalAppData(configPath string) (json.RawMessage, error) {
 	config, err := ebpf.Load(configPath)

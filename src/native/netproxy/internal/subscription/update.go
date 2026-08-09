@@ -412,4 +412,3 @@ func validGroupID(value string) bool {
 }
 
 func formatTime(value time.Time) string { return value.UTC().Format(time.RFC3339) }
-func formatEpoch(value int64) string    { return time.Unix(value, 0).UTC().Format(time.RFC3339) }

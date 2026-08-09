@@ -310,8 +310,6 @@ func parseTrailer(content []byte) error {
 
 type wireCodec struct{}
 
-func (wireCodec) Name() string { return "proto" }
-
 func (wireCodec) Marshal(value any) ([]byte, error) {
 	var output []byte
 	switch message := value.(type) {

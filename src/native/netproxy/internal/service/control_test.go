@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 )
@@ -18,7 +19,7 @@ func writeCatalogFixture(t *testing.T, root string) {
 	if err := os.MkdirAll(groupDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	metadata := subscription.NewMetadata("default", "本地配置", "local", "", time.Now())
+	metadata := catalog.NewMetadata("default", "本地配置", "local", "", time.Now())
 	if err := subscription.SaveMetadataAtomic(filepath.Join(groupDir, "meta.json"), metadata); err != nil {
 		t.Fatal(err)
 	}

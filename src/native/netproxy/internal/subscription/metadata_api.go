@@ -8,10 +8,6 @@ import (
 
 type Metadata = catalog.Metadata
 
-func NewMetadata(id, name, metadataType, rawURL string, now time.Time) Metadata {
-	return catalog.NewMetadata(id, name, metadataType, rawURL, now)
-}
-
 func DurationToSeconds(value string) (int64, error) {
 	return catalog.DurationToSeconds(value)
 }
@@ -30,8 +26,4 @@ func LoadMetadata(path, fallbackID string) (Metadata, error) {
 
 func SaveMetadataAtomic(path string, metadata Metadata) error {
 	return catalog.SaveMetadataAtomic(path, metadata)
-}
-
-func normalizeMetadata(metadata Metadata) Metadata {
-	return catalog.NormalizeMetadata(metadata)
 }

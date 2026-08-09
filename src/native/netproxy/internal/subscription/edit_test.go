@@ -5,12 +5,14 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 )
 
 func TestEditUpdatesSchedulingWithoutDownloading(t *testing.T) {
 	root := t.TempDir()
 	now := time.Unix(1_700_000_000, 0)
-	metadata := NewMetadata("sub-test", "测试订阅", "subscription", "https://example.test/sub", now)
+	metadata := catalog.NewMetadata("sub-test", "测试订阅", "subscription", "https://example.test/sub", now)
 	metadata.AutoUpdate = true
 	metadata.UpdateInterval = 900
 	ScheduleAt(&metadata, now)

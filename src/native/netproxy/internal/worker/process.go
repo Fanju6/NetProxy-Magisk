@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -86,11 +85,6 @@ func Wake(ctx context.Context, options Options, executable string) (Status, erro
 		return Status{}, err
 	}
 	return status, nil
-}
-
-// MarshalStatus 将 Worker 状态编码为内部 JSON。
-func MarshalStatus(status Status) ([]byte, error) {
-	return json.Marshal(status)
 }
 
 func appendWorkerFlags(arguments []string, options Options) []string {

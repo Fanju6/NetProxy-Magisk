@@ -24,27 +24,6 @@ type ModuleConfig struct {
 	ProxyOnCellular bool   `json:"proxy_on_cellular"`
 }
 
-// Read 读取简单的 KEY=value 配置，不执行配置内容。
-func Read(path string) (map[string]string, error) {
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	values := make(map[string]string)
-	for _, line := range strings.Split(strings.ReplaceAll(string(content), "\r\n", "\n"), "\n") {
-		line = strings.TrimSuffix(line, "\r")
-		if strings.HasPrefix(line, "#") || strings.TrimSpace(line) == "" {
-			continue
-		}
-		key, value, found := strings.Cut(line, "=")
-		if !found || !validKey(key) {
-			continue
-		}
-		values[key] = decodeValue(value)
-	}
-	return values, nil
-}
-
 // ReadStrict 读取受限的 KEY=value 配置，不执行任何 Shell 语义。
 func ReadStrict(path string) (map[string]string, error) {
 	content, err := os.ReadFile(path)
@@ -129,29 +108,6 @@ func LoadModule(path string) (ModuleConfig, error) {
 		return ModuleConfig{}, err
 	}
 	return config, nil
-}
-
-// ReadValue 读取一个配置值，键不存在时返回 fallback。
-func ReadValue(path, key, fallback string) (string, error) {
-	if !validKey(key) {
-		return "", fmt.Errorf("非法配置键: %s", key)
-	}
-	values, err := Read(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return fallback, nil
-		}
-		return "", err
-	}
-	if value, ok := values[key]; ok {
-		return value, nil
-	}
-	return fallback, nil
-}
-
-// Update 原子更新若干 KEY=value，保留原文件的注释和键顺序。
-func Update(path string, updates map[string]string) error {
-	return UpdateValidated(path, updates, nil)
 }
 
 // UpdateModule 更新并校验 module.conf，校验失败时不会替换原文件。
@@ -253,16 +209,6 @@ func validKey(value string) bool {
 		return false
 	}
 	return true
-}
-
-func decodeValue(value string) string {
-	value = strings.TrimSpace(value)
-	if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
-		if decoded, err := strconv.Unquote(value); err == nil {
-			return decoded
-		}
-	}
-	return value
 }
 
 func decodeValueStrict(value string) (string, error) {
