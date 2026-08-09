@@ -18,6 +18,8 @@ data class AppsUiState(
     val appProxyEnabled: Boolean = true,
     val appProxyMode: String = "blacklist",
     val appAndroidUsers: Set<String> = emptySet(),
+    val proxyApps: Set<String> = emptySet(),
+    val bypassApps: Set<String> = emptySet(),
     val proxiedApps: Set<String> = emptySet(),
     val allApps: List<AppInfoModel> = emptyList(),
     val masterAppList: List<AppInfoModel> = emptyList(),

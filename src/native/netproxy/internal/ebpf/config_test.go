@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -87,6 +88,46 @@ PROXY_APPS_LIST=""
 	}
 	if packages := inbound["include_package"].([]any); len(packages) != 0 {
 		t.Fatalf("unexpected package list: %#v", packages)
+	}
+}
+
+func TestBuildUsesOnlyActiveApplicationList(t *testing.T) {
+	tests := []struct {
+		name        string
+		mode        string
+		include     []string
+		exclude     []string
+		wantInclude int
+		wantExclude int
+	}{
+		{
+			name:        "blacklist",
+			mode:        "blacklist",
+			include:     []string{"com.proxy.app"},
+			exclude:     []string{"com.bypass.app"},
+			wantInclude: 0,
+			wantExclude: 1,
+		},
+		{
+			name:        "whitelist",
+			mode:        "whitelist",
+			include:     []string{"com.proxy.app"},
+			exclude:     []string{"com.bypass.app"},
+			wantInclude: 1,
+			wantExclude: 0,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			config := loadFixture(t, "APP_PROXY_ENABLE=1\nAPP_PROXY_MODE=\""+test.mode+"\"\nPROXY_APPS_LIST=\""+strings.Join(test.include, " ")+"\"\nBYPASS_APPS_LIST=\""+strings.Join(test.exclude, " ")+"\"\n")
+			inbound := runtimeInbound(t, config)
+			if got := len(inbound["include_package"].([]any)); got != test.wantInclude {
+				t.Fatalf("unexpected include_package count: got %d, want %d", got, test.wantInclude)
+			}
+			if got := len(inbound["exclude_package"].([]any)); got != test.wantExclude {
+				t.Fatalf("unexpected exclude_package count: got %d, want %d", got, test.wantExclude)
+			}
+		})
 	}
 }
 

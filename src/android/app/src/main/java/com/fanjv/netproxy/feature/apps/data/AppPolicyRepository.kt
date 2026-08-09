@@ -11,27 +11,25 @@ internal class AppPolicyRepository(
     suspend fun config(): AppProxyConfig =
         client.json.decodeFromJsonElement(client.execute("app", "list").data)
 
-    suspend fun setMode(mode: String) {
-        client.execute("app", "mode", mode)
-    }
+    suspend fun setMode(mode: String): AppProxyConfig =
+        executeConfig("app", "mode", mode)
 
-    suspend fun setUsers(userIds: Collection<String>) {
+    suspend fun setUsers(userIds: Collection<String>): AppProxyConfig =
         if (userIds.isEmpty()) {
-            client.execute("app", "users", "all")
+            executeConfig("app", "users", "all")
         } else {
-            client.execute("app", "users", *userIds.toTypedArray())
+            executeConfig("app", "users", *userIds.toTypedArray())
         }
-    }
 
-    suspend fun add(id: String) {
-        client.execute("app", "add", id)
-    }
+    suspend fun add(id: String): AppProxyConfig =
+        executeConfig("app", "add", id)
 
-    suspend fun remove(id: String) {
-        client.execute("app", "remove", id)
-    }
+    suspend fun remove(id: String): AppProxyConfig =
+        executeConfig("app", "remove", id)
 
-    suspend fun setEnabled(enabled: Boolean) {
-        client.execute("app", if (enabled) "enable" else "disable")
-    }
+    suspend fun setEnabled(enabled: Boolean): AppProxyConfig =
+        executeConfig("app", if (enabled) "enable" else "disable")
+
+    private suspend fun executeConfig(vararg args: String): AppProxyConfig =
+        client.json.decodeFromJsonElement(client.execute(*args).data)
 }

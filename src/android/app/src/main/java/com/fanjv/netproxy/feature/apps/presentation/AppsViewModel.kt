@@ -83,6 +83,8 @@ internal class AppsViewModel(
                         appProxyEnabled = config.enabled,
                         appProxyMode = config.mode,
                         appAndroidUsers = parseAndroidUsers(config),
+                        proxyApps = parsePackages(config.proxyApps),
+                        bypassApps = parsePackages(config.bypassApps),
                         proxiedApps = selected,
                         masterAppList = master,
                         users = users,
@@ -110,23 +112,34 @@ internal class AppsViewModel(
             it.copy(
                 appProxyEnabled = enabled,
                 appProxyMode = mode ?: it.appProxyMode,
+                proxiedApps = if (mode == null) it.proxiedApps else activeItems(
+                    mode,
+                    it.proxyApps,
+                    it.bypassApps
+                ),
                 error = ""
             )
         }
         viewModelScope.launch {
             policyMutationMutex.withLock {
                 runCatching {
-                    repository.setEnabled(enabled)
                     if (enabled && mode != null) repository.setMode(mode)
+                    else repository.setEnabled(enabled)
                 }.onFailure { error ->
                     _state.update {
                         it.copy(
                             appProxyEnabled = previous.appProxyEnabled,
                             appProxyMode = previous.appProxyMode,
+                            proxyApps = previous.proxyApps,
+                            bypassApps = previous.bypassApps,
+                            proxiedApps = previous.proxiedApps,
                             error = error.userMessage()
                         )
                     }
                     refreshConfig()
+                }.onSuccess { config ->
+                    applyPolicyConfig(config)
+                    applyFilterAndSort()
                 }
             }
         }
@@ -150,6 +163,9 @@ internal class AppsViewModel(
                 }.onFailure { error ->
                     _state.update { it.copy(error = error.userMessage()) }
                     refreshConfig()
+                }.onSuccess { config ->
+                    applyPolicyConfig(config)
+                    applyFilterAndSort()
                 }
             }
         }
@@ -221,15 +237,7 @@ internal class AppsViewModel(
                 .onSuccess { config ->
                     val selected = activeItems(config).toSet()
                     resolveLabels(selected.map { it to "0" })
-                    _state.update {
-                        it.copy(
-                            appProxyEnabled = config.enabled,
-                            appProxyMode = config.mode,
-                            appAndroidUsers = parseAndroidUsers(config),
-                            proxiedApps = selected,
-                            error = ""
-                        )
-                    }
+                    applyPolicyConfig(config)
                     applyFilterAndSort()
                 }
                 .onFailure { error -> _state.update { it.copy(error = error.userMessage()) } }
@@ -291,10 +299,33 @@ internal class AppsViewModel(
             isSystem = isSystem
         )
 
-    private fun activeItems(config: AppProxyConfig): List<String> =
-        (if (config.mode == "blacklist") config.bypassApps else config.proxyApps)
-            .split(' ')
-            .filter(String::isNotBlank)
+    private fun activeItems(config: AppProxyConfig): Set<String> =
+        activeItems(config.mode, parsePackages(config.proxyApps), parsePackages(config.bypassApps))
+
+    private fun activeItems(
+        mode: String,
+        proxyApps: Set<String>,
+        bypassApps: Set<String>
+    ): Set<String> = if (mode == "blacklist") bypassApps else proxyApps
+
+    private fun parsePackages(value: String): Set<String> =
+        value.split(' ').filter(String::isNotBlank).toSet()
+
+    private fun applyPolicyConfig(config: AppProxyConfig) {
+        val proxyApps = parsePackages(config.proxyApps)
+        val bypassApps = parsePackages(config.bypassApps)
+        _state.update {
+            it.copy(
+                appProxyEnabled = config.enabled,
+                appProxyMode = config.mode,
+                appAndroidUsers = parseAndroidUsers(config),
+                proxyApps = proxyApps,
+                bypassApps = bypassApps,
+                proxiedApps = activeItems(config.mode, proxyApps, bypassApps),
+                error = ""
+            )
+        }
+    }
 
     private fun parseAndroidUsers(config: AppProxyConfig): Set<String> =
         config.androidUsers.split(' ').filter(String::isNotBlank).toSet()
@@ -307,6 +338,9 @@ internal class AppsViewModel(
                     .onFailure { error ->
                         _state.update { it.copy(error = error.userMessage()) }
                         refreshConfig()
+                    }
+                    .onSuccess { config ->
+                        applyPolicyConfig(config)
                     }
             }
         }

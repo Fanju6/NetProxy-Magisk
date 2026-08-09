@@ -273,15 +273,18 @@ func (c Config) Build() Runtime {
 		},
 	}
 	if c.CgroupEnabled {
-		includePackages := append([]string{}, c.ProxyPackages...)
-		excludePackages := append([]string{}, c.BypassPackages...)
+		includePackages := []string{}
+		excludePackages := []string{}
 		includeUID := []uint64{}
-		if c.AppProxyEnable && c.AppProxyMode == "whitelist" && len(includePackages) == 0 {
-			includeUID = []uint64{4294967295}
-		}
-		if !c.AppProxyEnable {
-			includePackages = []string{}
-			excludePackages = []string{}
+		if c.AppProxyEnable {
+			if c.AppProxyMode == "whitelist" {
+				includePackages = append(includePackages, c.ProxyPackages...)
+				if len(includePackages) == 0 {
+					includeUID = []uint64{4294967295}
+				}
+			} else {
+				excludePackages = append(excludePackages, c.BypassPackages...)
+			}
 		}
 		inbound.Cgroup = &CgroupFields{
 			Path:               c.CgroupPath,
