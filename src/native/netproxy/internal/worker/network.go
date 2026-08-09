@@ -1,7 +1,9 @@
 package worker
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -22,6 +24,7 @@ const (
 var (
 	connectedSSIDPattern = regexp.MustCompile(`(?i)wifi is connected to\s+(.+?)(?:,\s*bssid:|$)`)
 	infoSSIDPattern      = regexp.MustCompile(`(?i)(?:^|[\s,=:])ssid:\s*([^,\r\n]+)`)
+	activeDevicePattern  = regexp.MustCompile(`(?m)\bdev\s+(\S+)`)
 )
 
 // runNetworkWatcher 轮询 Android 路由表变化，并在网络状态稳定后评估 Wi-Fi 策略。
@@ -104,14 +107,25 @@ func evaluateNetwork(parent context.Context, options Options, logger *log.Logger
 }
 
 func getWiFiSnapshot(ctx context.Context) (string, string, error) {
-	status, statusErr := androidCommand(ctx, "cmd", "wifi", "status")
+	return getWiFiSnapshotWith(ctx, androidCommand, os.ReadFile)
+}
+
+type networkCommandFunc func(context.Context, string, ...string) (string, error)
+type networkFileReader func(string) ([]byte, error)
+
+func getWiFiSnapshotWith(
+	ctx context.Context,
+	command networkCommandFunc,
+	readFile networkFileReader,
+) (string, string, error) {
+	status, statusErr := command(ctx, "cmd", "wifi", "status")
 	if statusErr == nil && containsFold(status, "wifi is disabled") {
 		return "not_wifi", "", nil
 	}
 
 	combined := status
 	if statusErr != nil || !containsConnectedState(status) {
-		fallback, fallbackErr := androidCommand(ctx, "dumpsys", "wifi")
+		fallback, fallbackErr := command(ctx, "dumpsys", "wifi")
 		if fallbackErr == nil {
 			combined = strings.TrimSpace(strings.Join([]string{status, fallback}, "\n"))
 		} else if statusErr != nil {
@@ -120,7 +134,69 @@ func getWiFiSnapshot(ctx context.Context) (string, string, error) {
 	}
 
 	networkType, ssid := parseWiFiSnapshot(combined)
+	if networkType == "wifi" {
+		activeInterface, routeErr := getActiveNetworkInterfaceWith(ctx, command, readFile)
+		if routeErr == nil && !isWiFiInterface(activeInterface) {
+			return "not_wifi", "", nil
+		}
+	}
 	return networkType, ssid, nil
+}
+
+// getActiveNetworkInterface 返回当前默认路由使用的网络接口名称。
+// Wi-Fi 保持连接但移动数据承载默认路由时，只能以默认路由判断实际网络类型。
+func getActiveNetworkInterface(ctx context.Context) (string, error) {
+	return getActiveNetworkInterfaceWith(ctx, androidCommand, os.ReadFile)
+}
+
+func getActiveNetworkInterfaceWith(
+	ctx context.Context,
+	command networkCommandFunc,
+	readFile networkFileReader,
+) (string, error) {
+	if output, err := command(ctx, "ip", "route", "get", "1.1.1.1"); err == nil {
+		if iface := parseRouteDevice(output); iface != "" {
+			return iface, nil
+		}
+	}
+
+	content, err := readFile("/proc/net/route")
+	if err != nil {
+		return "", fmt.Errorf("读取默认路由失败: %w", err)
+	}
+	if iface := parseProcRouteDevice(string(content)); iface != "" {
+		return iface, nil
+	}
+	return "", errors.New("无法确定活跃网络接口")
+}
+
+func parseRouteDevice(output string) string {
+	match := activeDevicePattern.FindStringSubmatch(output)
+	if len(match) < 2 {
+		return ""
+	}
+	return strings.TrimSpace(match[1])
+}
+
+func parseProcRouteDevice(content string) string {
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	if scanner.Scan() {
+		// 第一行是接口、目标地址和网关等字段的表头。
+	}
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) >= 2 && fields[1] == "00000000" {
+			return fields[0]
+		}
+	}
+	return ""
+}
+
+func isWiFiInterface(iface string) bool {
+	lower := strings.ToLower(strings.TrimSpace(iface))
+	return strings.HasPrefix(lower, "wlan") ||
+		strings.HasPrefix(lower, "ap") ||
+		strings.HasPrefix(lower, "wifi")
 }
 
 func androidCommand(parent context.Context, name string, args ...string) (string, error) {
