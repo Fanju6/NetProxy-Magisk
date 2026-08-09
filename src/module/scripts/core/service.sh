@@ -21,7 +21,6 @@ readonly SINGBOX_LOG_FILE="$MODDIR/logs/sing-box.log"
 readonly SINGBOX_DIR="${NETPROXY_SINGBOX_DIR:-$MODDIR/config/singbox}"
 readonly CONFDIR="$SINGBOX_DIR/confdir"
 readonly RUNTIME_DIR="${NETPROXY_RUNTIME_DIR:-$MODDIR/runtime}"
-readonly NETMON_SCRIPT="$MODDIR/scripts/network/netmon.sh"
 readonly KILL_TIMEOUT=10
 readonly SERVICE_LOCK_DIR="/dev/netproxy/service.lock"
 
@@ -521,8 +520,6 @@ do_start() {
     cleanup_runtime_files
     return 1
   fi
-  # netmon 只负责监听 Android 网络事件；策略是否启用由 Go 评估命令决定。
-  sh "$NETMON_SCRIPT" startup > /dev/null 2>&1 || log "WARN" "网络事件监听初始化失败"
   ready_at="$(date +%s)"
   write_service_state ready "$new_pid" "$SERVICE_STATE_STARTED_AT" "$ready_at" ""
   SERVICE_STATE_FINALIZED=1
@@ -539,7 +536,6 @@ do_stop() {
 
   log "INFO" "停止 sing-box 服务"
   ensure_dir "$SERVICE_STATE_DIR" "无法创建状态目录: $SERVICE_STATE_DIR"
-  sh "$NETMON_SCRIPT" stop > /dev/null 2>&1 || true
   pid="$(get_pid "$SING_BOX_BIN")"
   started_at="$(service_state_get_number started_at 0)"
   write_service_state stopping "${pid:-0}" "$started_at" 0 ""

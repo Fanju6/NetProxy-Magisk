@@ -33,6 +33,7 @@ check_removed_scripts() {
     "$MODULE_DIR/scripts/utils/api.sh" \
     "$MODULE_DIR/scripts/utils/catalog.sh" \
     "$MODULE_DIR/scripts/utils/metadata.sh" \
+    "$MODULE_DIR/scripts/network/netmon.sh" \
     "$MODULE_DIR/scripts/network/tproxy.sh"; do
     if [ -e "$script" ]; then
       printf '%s\n' "旧业务脚本仍存在: $script" >&2
@@ -41,14 +42,6 @@ check_removed_scripts() {
   done
 }
 
-#######################################
-# 确认 Android 网络事件采集器仍然存在
-#######################################
-check_network_monitor() {
-  [ -f "$MODULE_DIR/scripts/network/netmon.sh" ]
-}
-
 check_shell_syntax
 check_removed_scripts
-check_network_monitor
 printf '%s\n' 'module scripts test passed'

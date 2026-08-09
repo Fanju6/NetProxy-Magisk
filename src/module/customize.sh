@@ -46,7 +46,6 @@ readonly EXECUTABLE_FILES="
     service.sh
     uninstall.sh
     scripts/core/service.sh
-    scripts/network/netmon.sh
     bin/bpftool
 "
 

@@ -33,7 +33,7 @@ func Start(ctx context.Context, options Options, executable string) (Status, err
 	if err != nil {
 		return Status{}, err
 	}
-	if nearest == 0 {
+	if nearest == 0 && !(options.NetworkWatchEnabled && options.NetworkEvaluate != nil) {
 		return Status{State: "stopped", Nearest: 0}, nil
 	}
 	if executable == "" {

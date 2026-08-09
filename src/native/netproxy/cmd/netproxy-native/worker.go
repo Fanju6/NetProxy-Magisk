@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/worker"
 )
 
@@ -55,6 +56,7 @@ func runSubworker(ctx context.Context, args []string) error {
 	if options.ReloadScript == "" {
 		options.ReloadScript = filepath.Join(filepath.Dir(*root), "..", "scripts", "core", "service.sh")
 	}
+	configureNetworkWatcher(&options, *root, *moduleConf, *singBox, *serviceAddress, *serviceSecret, *progressDir, *pidFile, *reloadScript)
 	switch action {
 	case "run":
 		logger, closer, err := worker.OpenLogger(options.LogFile)
@@ -124,6 +126,29 @@ func runSubworker(ctx context.Context, args []string) error {
 		return writeWorkerResult(*format, "worker.once", "订阅到期任务已处理", summary)
 	default:
 		return fmt.Errorf("未知 Worker 操作 %q", action)
+	}
+}
+
+func configureNetworkWatcher(options *worker.Options, catalogRoot, moduleConf, singBox, address, secret, progressDir, pidFile, reloadScript string) {
+	if options == nil || strings.TrimSpace(moduleConf) == "" {
+		return
+	}
+
+	moduleDir := filepath.Dir(filepath.Dir(catalogRoot))
+	moduleOptions := moduleapp.NewOptions(moduleDir)
+	moduleOptions.CatalogRoot = catalogRoot
+	moduleOptions.ModuleConfig = moduleConf
+	moduleOptions.SingBoxPath = singBox
+	moduleOptions.ServiceAddress = address
+	moduleOptions.ServiceSecret = secret
+	moduleOptions.ProgressDir = progressDir
+	moduleOptions.WorkerPIDFile = pidFile
+	moduleOptions.ServiceScript = reloadScript
+
+	options.NetworkWatchEnabled = true
+	options.NetworkEvaluate = func(ctx context.Context, networkType, ssid string) error {
+		_, err := moduleapp.EvaluateNetwork(ctx, moduleOptions, networkType, ssid)
+		return err
 	}
 }
 

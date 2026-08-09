@@ -30,17 +30,20 @@ type TimerFactory func(time.Duration) Timer
 
 // Options 描述订阅 Worker 的运行环境。
 type Options struct {
-	Root           string
-	ProgressDir    string
-	PIDFile        string
-	LogFile        string
-	ModuleConf     string
-	ReloadScript   string
-	SingBoxPath    string
-	ServiceAddress string
-	ServiceSecret  string
-	Now            func() time.Time
-	NewTimer       TimerFactory
+	Root                string
+	ProgressDir         string
+	PIDFile             string
+	LogFile             string
+	ModuleConf          string
+	ReloadScript        string
+	SingBoxPath         string
+	ServiceAddress      string
+	ServiceSecret       string
+	NetworkWatchEnabled bool
+	NetworkEvaluate     func(context.Context, string, string) error
+	NetworkTablesPath   string
+	Now                 func() time.Time
+	NewTimer            TimerFactory
 }
 
 // Summary 是一次调度轮次的结果。
@@ -60,12 +63,13 @@ type Status struct {
 // NewOptions 返回模块默认的 Worker 配置。
 func NewOptions(root string) Options {
 	return Options{
-		Root:           root,
-		ProgressDir:    "/dev/netproxy/subscriptions",
-		PIDFile:        "/dev/netproxy/worker.pid",
-		ServiceAddress: "127.0.0.1:9090",
-		ServiceSecret:  defaultServiceSecret,
-		Now:            time.Now,
+		Root:              root,
+		ProgressDir:       "/dev/netproxy/subscriptions",
+		PIDFile:           "/dev/netproxy/worker.pid",
+		ServiceAddress:    "127.0.0.1:9090",
+		ServiceSecret:     defaultServiceSecret,
+		NetworkTablesPath: "/data/misc/net/rt_tables",
+		Now:               time.Now,
 	}
 }
 
@@ -81,6 +85,22 @@ func Run(ctx context.Context, options Options, wake <-chan struct{}, logger *log
 		return err
 	}
 	defer releasePID(options.PIDFile)
+
+	networkWatchEnabled := options.NetworkWatchEnabled && options.NetworkEvaluate != nil
+	var networkDone chan struct{}
+	if networkWatchEnabled {
+		networkDone = make(chan struct{})
+		go func() {
+			defer close(networkDone)
+			runNetworkWatcher(ctx, options, logger)
+		}()
+		logger.Printf("Android 网络事件监听已启动")
+	}
+	defer func() {
+		if networkDone != nil {
+			<-networkDone
+		}
+	}()
 
 	logger.Printf("订阅自动更新 Worker 已启动")
 	for {
@@ -99,9 +119,12 @@ func Run(ctx context.Context, options Options, wake <-chan struct{}, logger *log
 				nearest = now.Unix() + 60
 			}
 		}
-		if nearest == 0 {
+		if nearest == 0 && !networkWatchEnabled {
 			logger.Printf("没有启用自动更新的订阅，Worker 退出")
 			return nil
+		}
+		if nearest == 0 {
+			nearest = now.Unix() + int64((24*time.Hour)/time.Second)
 		}
 		delay := time.Duration(nearest-now.Unix()) * time.Second
 		if delay < time.Second {

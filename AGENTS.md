@@ -38,7 +38,7 @@
 - 命令组权威清单：`service catalog node sub mode network app ebpf config logs`。新增命令组必须同时更新 Go CLI、Android `NetProxyCtlClient`、WebUI `src/exec.ts` 和契约测试。
 - `scripts/utils/` 不承载运行时业务；配置、Catalog、状态和 Service API 业务统一由 Go 实现。
 - `scripts/core/` 只保留 `service.sh`；运行时配置、节点切换、订阅事务和调度由 `netproxy-native` 负责。
-- `scripts/network/netmon.sh` 负责 Android 网络变化采集；Go 负责策略评估。
+- Go Worker 负责 Android 网络变化采集、Wi-Fi 状态读取和策略评估。
 - 设备上的调用形式是 `su -c /data/adb/modules/netproxy/netproxyctl [--json] <命令组> <命令>`；文档和排查步骤按此形式给出，不要写成裸 `netproxyctl`，它不在 PATH 里。
 
 ### 最终脚本边界
@@ -47,7 +47,6 @@
 
 ```text
 src/module/scripts/core/service.sh
-src/module/scripts/network/netmon.sh
 ```
 
 以下旧业务脚本已从运行时删除，不得重新添加：`subscription.sh`、`subworker.sh`、`ebpf.sh`、`switch.sh`、`runtime.sh`、`utils/api.sh`、`utils/catalog.sh`、`utils/metadata.sh`、`network/tproxy.sh`、`utils/ipset.sh` 和 `core/subsched.sh`。`customize.sh` 中仍可保留一次性的旧 Worker/TPROXY 清理分支，但这些分支只用于安装时清理残留，不属于当前运行时兼容层。
@@ -56,14 +55,14 @@ src/module/scripts/network/netmon.sh
 
 - 运行时脚本面向 Android `/system/bin/sh`，只写 POSIX/mksh 可执行语法，不使用 Bash 数组、`[[ ]]`、进程替换或 Bash 专属选项。
 - 参数和路径始终双引号包裹；跨进程传递复杂数据时使用文件或 JSON，不使用 `eval` 拼装命令。
-- 公共能力优先放在 `scripts/utils/`，生命周期编排放在 `scripts/core/`；不要在 `netproxyctl`、service 和 worker 中复制配置、Catalog 或 API 解析器。
+- 公共业务能力统一放在 Go；Shell 只保留 `scripts/core/service.sh` 生命周期编排，不要在 `netproxyctl`、service 和 worker 中复制配置、Catalog 或 API 解析器。
 - 配置写入使用候选文件、校验和原子替换。订阅更新失败必须保留上一版有效 Provider。
 - 新增可执行文件时同步检查 `customize.sh` 权限列表和模块打包结果。
 
 ## Go 组件
 
 - `src/native/netproxy` 是 Catalog、Provider、订阅事务、配置、eBPF 运行时和 Service API 的业务事实源；Shell 只负责模块生命周期与 Android 平台编排。
-- 允许且仅允许一个 Go 订阅 Worker。它必须替换 `subworker.sh` 的常驻进程，不能演变为通用控制守护进程、REST 服务或第二个代理核心。
+- 允许且仅允许一个 Go Worker。它承载订阅调度和可选的 Android 网络监听，不能演变为通用控制守护进程、REST 服务或第二个代理核心。
 - 使用 reF1nd sing-box 的类型定义解析、生成和校验 Provider，不通过字符串替换拼接协议配置。
 - reF1nd 依赖版本必须与打包的 sing-box 内核兼容；升级时同时验证转换 fixtures、Provider 和 Service API。
 - Provider 修改必须保持完整校验、稳定 tag、`0600` 权限和原子替换。错误必须返回结构化 diagnostics，不允许空输出加成功退出码。
@@ -188,7 +187,7 @@ WebUI ───────────┼─> netproxyctl ─> Go 业务层 ─
                          └─> schema=1 JSON 契约
 ```
 
-NetProxy 不维护通用独立控制守护进程。唯一长期 Go 进程是订阅 Worker，它替换现有 Shell Worker；Shell 负责 Android 模块生命周期、sing-box 进程和原始系统事件，Go 负责类型化配置、网络事务、Provider 与业务状态。
+NetProxy 不维护通用独立控制守护进程。唯一长期 Go 进程是模块启动的 Worker，负责订阅调度、Android 网络事件和策略评估；Shell 负责 Android 模块生命周期与 sing-box 进程，Go 负责类型化配置、网络事务、Provider 与业务状态。
 
 ## 事实源
 
@@ -270,7 +269,7 @@ OUTBOUND_MODE=rule
 
 下载、转换和校验阶段可以取消，原子提交阶段不可取消。任何失败都保留上一版有效 Provider 和当前选择。核心 ready 时可按设置经本地代理下载；核心停止或代理下载失败时，`auto` 策略允许直连重试。
 
-订阅 Worker 根据各订阅的 `next_update_at` 调度，不依赖 sing-box 和 `crond`。它由 Go 实现并替换 `subworker.sh`；运行时进度放在 `/dev/netproxy/subscriptions/`，完成后不作为长期 UI 状态显示。没有启用自动更新的订阅时 Worker 不应驻留。
+Worker 根据各订阅的 `next_update_at` 调度，不依赖 sing-box 和 `crond`；同时轮询 Android 路由表并读取 Wi-Fi 状态，网络策略是否生效由每次评估读取的配置决定。它由 Go 实现并替换 `subworker.sh`；运行时进度放在 `/dev/netproxy/subscriptions/`，完成后不作为长期 UI 状态显示。
 
 订阅响应头的解析要点：`Subscription-Userinfo` 提供流量与到期，空值（如 `expire=`）表示不适用而非畸形；`Profile-Title` 可能带 `base64:` 前缀或 RFC 2047 编码；`Content-Disposition` 的 `filename` 可能是 RFC 5987 形式，也可能直接携带原始 UTF-8 字节。
 
