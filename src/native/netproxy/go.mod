@@ -1,6 +1,6 @@
 module github.com/Fanju6/NetProxy-Magisk/src/native/netproxy
 
-go 1.26.0
+go 1.26.5
 
 require (
 	github.com/sagernet/sing v0.8.13-0.20260804143108-f22b119cc7a2
