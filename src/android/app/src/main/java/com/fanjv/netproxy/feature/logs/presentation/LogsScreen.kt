@@ -155,11 +155,12 @@ internal fun LogsScreen(
                 withContext(Dispatchers.IO) {
                     val descriptor = context.contentResolver.openFileDescriptor(uri, "rwt")
                         ?: error("无法打开保存位置")
-                    val copiedBytes = ParcelFileDescriptor.AutoCloseOutputStream(descriptor).use { output ->
-                        logFile.inputStream().use { input ->
-                            input.copyTo(output).also { output.flush() }
+                    val copiedBytes =
+                        ParcelFileDescriptor.AutoCloseOutputStream(descriptor).use { output ->
+                            logFile.inputStream().use { input ->
+                                input.copyTo(output).also { output.flush() }
+                            }
                         }
-                    }
                     check(copiedBytes == logFile.length() && copiedBytes > 0L) {
                         "日志保存失败：文件写入后为空"
                     }
@@ -540,7 +541,7 @@ fun LatencyBadge(latency: String) {
     ) {
         Text(
             text = latency,
-            style = top.yukonga.miuix.kmp.theme.MiuixTheme.textStyles.footnote2.copy(
+            style = MiuixTheme.textStyles.footnote2.copy(
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold
             ),

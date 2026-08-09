@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -16,7 +15,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -36,9 +34,9 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.ExpandLess
 import top.yukonga.miuix.kmp.icon.extended.ExpandMore
 import top.yukonga.miuix.kmp.icon.extended.Refresh
-import top.yukonga.miuix.kmp.utils.PressFeedbackType
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
+import top.yukonga.miuix.kmp.utils.PressFeedbackType
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
@@ -67,7 +65,10 @@ internal fun CatalogNodeGrid(
     }
     val spacing = if (columns == 3) 8.dp else 10.dp
     LazyVerticalGrid(
-        modifier = modifier.scrollEndHaptic().overScrollVertical().nestedScroll(nestedScrollConnection),
+        modifier = modifier
+            .scrollEndHaptic()
+            .overScrollVertical()
+            .nestedScroll(nestedScrollConnection),
         contentPadding = contentPadding,
         columns = GridCells.Fixed(columns),
         verticalArrangement = Arrangement.spacedBy(spacing),
@@ -105,7 +106,9 @@ internal fun CatalogNodeGrid(
                 EmptyCatalog(
                     text = "该分组暂时没有节点",
                     onRefresh = null,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 64.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 64.dp)
                 )
             }
         }
@@ -135,7 +138,10 @@ internal fun CatalogGroupList(
 ) {
     val spacing = if (columns == 3) 8.dp else 10.dp
     LazyColumn(
-        modifier = modifier.scrollEndHaptic().overScrollVertical().nestedScroll(nestedScrollConnection),
+        modifier = modifier
+            .scrollEndHaptic()
+            .overScrollVertical()
+            .nestedScroll(nestedScrollConnection),
         contentPadding = contentPadding,
         overscrollEffect = null
     ) {
@@ -219,7 +225,11 @@ private fun CatalogGroupHeader(name: String, count: Int, expanded: Boolean, onCl
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(text = "$count 个节点", style = MiuixTheme.textStyles.body2, color = colorScheme.onSurfaceVariantActions)
+                Text(
+                    text = "$count 个节点",
+                    style = MiuixTheme.textStyles.body2,
+                    color = colorScheme.onSurfaceVariantActions
+                )
             }
             Icon(
                 imageVector = if (expanded) MiuixIcons.ExpandLess else MiuixIcons.ExpandMore,

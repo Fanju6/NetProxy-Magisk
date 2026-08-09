@@ -8,15 +8,15 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fanjv.netproxy.NetProxyApplication
 import com.fanjv.netproxy.feature.apps.presentation.AppsViewModel
-import com.fanjv.netproxy.feature.dashboard.presentation.CatalogDashboardViewModel
-import com.fanjv.netproxy.feature.logs.presentation.LogsViewModel
 import com.fanjv.netproxy.feature.catalog.presentation.nodes.CatalogNodesViewModel
-import com.fanjv.netproxy.feature.settings.presentation.SettingsViewModel
-import com.fanjv.netproxy.feature.kernel.presentation.SingBoxConfigViewModel
-import com.fanjv.netproxy.feature.theme.presentation.ThemeViewModel
 import com.fanjv.netproxy.feature.catalog.presentation.subscriptions.SubscriptionDetailsViewModel
 import com.fanjv.netproxy.feature.catalog.presentation.subscriptions.SubscriptionEditorViewModel
 import com.fanjv.netproxy.feature.catalog.presentation.subscriptions.SubscriptionsViewModel
+import com.fanjv.netproxy.feature.dashboard.presentation.CatalogDashboardViewModel
+import com.fanjv.netproxy.feature.kernel.presentation.SingBoxConfigViewModel
+import com.fanjv.netproxy.feature.logs.presentation.LogsViewModel
+import com.fanjv.netproxy.feature.settings.presentation.SettingsViewModel
+import com.fanjv.netproxy.feature.theme.presentation.ThemeViewModel
 
 /** 在应用组合根集中创建 ViewModel，业务类不再依赖 Application 或服务定位器。 */
 internal class NetProxyViewModelFactory(

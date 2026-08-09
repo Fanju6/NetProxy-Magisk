@@ -3,8 +3,8 @@ package com.fanjv.netproxy.feature.catalog.presentation.subscriptions
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fanjv.netproxy.core.ui.userMessage
-import com.fanjv.netproxy.feature.catalog.model.CatalogGroupSummary
 import com.fanjv.netproxy.feature.catalog.data.SubscriptionRepository
+import com.fanjv.netproxy.feature.catalog.model.CatalogGroupSummary
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

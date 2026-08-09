@@ -23,7 +23,10 @@ internal fun EditorField(
         onValueChange = onValueChange,
         label = label,
         singleLine = true,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 12.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .padding(bottom = 12.dp),
         keyboardActions = KeyboardActions(onDone = { onImeDone() }),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
     )

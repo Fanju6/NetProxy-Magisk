@@ -55,7 +55,7 @@ fun BackIconButton(onClick: () -> Unit) {
             },
             imageVector = MiuixIcons.Back,
             contentDescription = null,
-            tint = MiuixTheme.colorScheme.onSurface,
+            tint = colorScheme.onSurface,
         )
     }
 }
@@ -64,7 +64,7 @@ fun BackIconButton(onClick: () -> Unit) {
 @Composable
 fun rememberBlurBackdrop(enableBlur: Boolean = LocalEnableBlur.current): LayerBackdrop? {
     if (!enableBlur || !isRenderEffectSupported()) return null
-    val surfaceColor = MiuixTheme.colorScheme.surface
+    val surfaceColor = colorScheme.surface
     return rememberLayerBackdrop {
         drawRect(surfaceColor)
         drawContent()
@@ -77,7 +77,7 @@ fun BlurredBar(
     backdrop: LayerBackdrop?,
     content: @Composable () -> Unit,
 ) {
-    val surfaceColor = MiuixTheme.colorScheme.surface
+    val surfaceColor = colorScheme.surface
     Box(
         modifier = if (backdrop != null) {
             Modifier.textureBlur(

@@ -7,10 +7,9 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -79,13 +78,17 @@ internal fun NodeCard(
         pressFeedbackType = PressFeedbackType.Sink,
         showIndication = true
     ) {
-        Column(modifier = Modifier.fillMaxWidthCompat().padding(innerPadding)) {
+        Column(modifier = Modifier
+            .fillMaxWidthCompat()
+            .padding(innerPadding)) {
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 if (icon != null) {
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        modifier = Modifier.padding(end = 8.dp).size(18.dp),
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .size(18.dp),
                         tint = colorScheme.primary
                     )
                 }
@@ -137,7 +140,9 @@ internal fun NodeCard(
                 } else {
                     Text(
                         text = summary,
-                        modifier = Modifier.padding(start = 8.dp).weight(1f),
+                        modifier = Modifier
+                            .padding(start = 8.dp)
+                            .weight(1f),
                         color = colorScheme.onSurfaceVariantSummary,
                         style = MiuixTheme.textStyles.body2.copy(
                             fontSize = when (itemSize) {

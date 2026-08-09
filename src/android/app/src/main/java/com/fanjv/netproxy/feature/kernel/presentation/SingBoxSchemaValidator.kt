@@ -1,7 +1,6 @@
 package com.fanjv.netproxy.feature.kernel.presentation
 
 import android.content.Context
-import java.math.BigDecimal
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
@@ -13,6 +12,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.math.BigDecimal
 
 data class SingBoxSchemaIssue(
     val message: String,
@@ -158,7 +158,11 @@ private class SingBoxSchemaEngine(
         if (allowedTypes.isEmpty() || valueMatchesTypes(value, allowedTypes)) return null
         return issue(
             path,
-            "应为${allowedTypes.joinToString("或") { localizedType(it) }}，实际为${localizedType(jsonType(value))}",
+            "应为${allowedTypes.joinToString("或") { localizedType(it) }}，实际为${
+                localizedType(
+                    jsonType(value)
+                )
+            }",
         )
     }
 
@@ -172,7 +176,10 @@ private class SingBoxSchemaEngine(
         }
         val allowedValues = schema["enum"] as? JsonArray
         if (allowedValues != null && value !in allowedValues) {
-            return issue(path, "值不在允许范围内：${allowedValues.joinToString { displayJsonValue(it) }}")
+            return issue(
+                path,
+                "值不在允许范围内：${allowedValues.joinToString { displayJsonValue(it) }}"
+            )
         }
         return null
     }
@@ -201,8 +208,9 @@ private class SingBoxSchemaEngine(
     ) {
         if (jsonType(value) != "string") return
         schema["pattern"]?.jsonPrimitive?.contentOrNull?.let { pattern ->
-            val matches = runCatching { Regex(pattern).containsMatchIn(value.jsonPrimitive.content) }
-                .getOrDefault(true)
+            val matches =
+                runCatching { Regex(pattern).containsMatchIn(value.jsonPrimitive.content) }
+                    .getOrDefault(true)
             if (!matches) issues += issue(path, "字符串格式不符合要求")
         }
     }
@@ -366,7 +374,10 @@ private class SingBoxSchemaEngine(
             if (name in properties) return@forEach
             when {
                 (additionalProperties as? JsonPrimitive)?.booleanOrNull == false -> {
-                    issues += issue("$path/${escapeJsonPointerSegment(name)}", "不允许字段 \"$name\"")
+                    issues += issue(
+                        "$path/${escapeJsonPointerSegment(name)}",
+                        "不允许字段 \"$name\""
+                    )
                 }
 
                 additionalProperties is JsonObject -> {
@@ -494,7 +505,9 @@ private fun jsonType(value: JsonElement): String = when (value) {
     is JsonPrimitive -> when {
         value.isString -> "string"
         value.booleanOrNull != null -> "boolean"
-        value.content.toBigDecimalOrNull()?.stripTrailingZeros()?.scale()?.let { it <= 0 } == true -> "integer"
+        value.content.toBigDecimalOrNull()?.stripTrailingZeros()?.scale()
+            ?.let { it <= 0 } == true -> "integer"
+
         else -> "number"
     }
 }

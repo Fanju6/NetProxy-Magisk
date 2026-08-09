@@ -2,15 +2,10 @@ package com.fanjv.netproxy.feature.catalog.presentation.nodes.edit
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.runtime.Composable
@@ -25,17 +20,19 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.fanjv.netproxy.R
-import com.fanjv.netproxy.feature.catalog.presentation.nodes.CatalogNodesViewModel
-import com.fanjv.netproxy.feature.catalog.presentation.nodes.edit.components.*
+import com.fanjv.netproxy.core.ui.component.AdaptiveTopAppBar
 import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BlurredBar
-import com.fanjv.netproxy.core.ui.component.SnackbarNoticeEffect
 import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
+import com.fanjv.netproxy.feature.catalog.presentation.nodes.CatalogNodesViewModel
+import com.fanjv.netproxy.feature.catalog.presentation.nodes.edit.components.ActionButtons
+import com.fanjv.netproxy.feature.catalog.presentation.nodes.edit.components.ServerConfigSection
+import com.fanjv.netproxy.feature.catalog.presentation.nodes.edit.components.TlsConfigSection
+import com.fanjv.netproxy.feature.catalog.presentation.nodes.edit.components.TransportSection
+import com.fanjv.netproxy.feature.catalog.presentation.nodes.edit.components.ValidationPanel
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -49,19 +46,11 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.TextField
-import com.fanjv.netproxy.core.ui.component.AdaptiveTopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Ok
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
@@ -358,335 +347,335 @@ internal fun SingBoxNodeEditScreen(
                     },
                     actions = {
                         ActionButtons(onSave = {
-                                if (tag.isBlank()) {
-                                    notice = nodeTagEmpty
-                                    noticeId++
-                                    return@ActionButtons
-                                }
-                                if (server.isBlank()) {
-                                    notice = serverAddressEmpty
-                                    noticeId++
-                                    return@ActionButtons
-                                }
-                                if (serverPort.isBlank()) {
-                                    notice = serverPortEmpty
-                                    noticeId++
-                                    return@ActionButtons
-                                }
+                            if (tag.isBlank()) {
+                                notice = nodeTagEmpty
+                                noticeId++
+                                return@ActionButtons
+                            }
+                            if (server.isBlank()) {
+                                notice = serverAddressEmpty
+                                noticeId++
+                                return@ActionButtons
+                            }
+                            if (serverPort.isBlank()) {
+                                notice = serverPortEmpty
+                                noticeId++
+                                return@ActionButtons
+                            }
 
-                                val updatedOutbound = buildJsonObject {
-                                    put("type", JsonPrimitive(type))
-                                    put("tag", JsonPrimitive(tag))
-                                    put("server", JsonPrimitive(server))
+                            val updatedOutbound = buildJsonObject {
+                                put("type", JsonPrimitive(type))
+                                put("tag", JsonPrimitive(tag))
+                                put("server", JsonPrimitive(server))
 
-                                    val portVal = serverPort.trim().toIntOrNull()
-                                    if (portVal != null) {
-                                        put("server_port", portVal)
-                                    } else {
-                                        put("server_port", serverPort)
-                                    }
-
-                                    // 协议相关配置
-                                    when (type) {
-                                        "vless" -> {
-                                            put("uuid", JsonPrimitive(uuid))
-                                            if (flow != "none") {
-                                                put("flow", JsonPrimitive(flow))
-                                            }
-                                        }
-
-                                        "vmess" -> {
-                                            put("uuid", JsonPrimitive(uuid))
-                                            put("security", JsonPrimitive(security))
-                                            alterId.trim().toIntOrNull()?.let {
-                                                put("alter_id", it)
-                                            }
-                                        }
-
-                                        "shadowsocks" -> {
-                                            put("method", JsonPrimitive(method))
-                                            put("password", JsonPrimitive(password))
-                                            if (plugin.isNotEmpty()) {
-                                                put("plugin", JsonPrimitive(plugin))
-                                            }
-                                            if (pluginOpts.isNotEmpty()) {
-                                                put("plugin_opts", JsonPrimitive(pluginOpts))
-                                            }
-                                        }
-
-                                        "trojan", "anytls" -> {
-                                            put("password", JsonPrimitive(password))
-                                        }
-
-                                        "hysteria2" -> {
-                                            put("password", JsonPrimitive(password))
-                                            upMbps.trim().toIntOrNull()?.let { put("up_mbps", it) }
-                                            downMbps.trim().toIntOrNull()
-                                                ?.let { put("down_mbps", it) }
-                                            if (obfsType != "none" && obfsPassword.isNotEmpty()) {
-                                                put("obfs", buildJsonObject {
-                                                    val origObfsMap =
-                                                        originalObfsJson?.toMutableMap()
-                                                            ?: mutableMapOf()
-                                                    origObfsMap["type"] = JsonPrimitive(obfsType)
-                                                    origObfsMap["password"] =
-                                                        JsonPrimitive(obfsPassword)
-                                                    origObfsMap.forEach { (k, v) -> put(k, v) }
-                                                })
-                                            }
-                                            if (serverPorts.isNotEmpty()) {
-                                                val ports = serverPorts.split(",").map { it.trim() }
-                                                    .filter { it.isNotEmpty() }
-                                                put(
-                                                    "server_ports",
-                                                    JsonArray(ports.map { JsonPrimitive(it) })
-                                                )
-                                            }
-                                            if (hopInterval.isNotEmpty()) {
-                                                put(
-                                                    "hop_interval",
-                                                    JsonPrimitive("${hopInterval}s")
-                                                )
-                                            }
-                                        }
-
-                                        "tuic" -> {
-                                            if (uuid.isNotEmpty()) put("uuid", JsonPrimitive(uuid))
-                                            put("password", JsonPrimitive(password))
-                                            put(
-                                                "congestion_control",
-                                                JsonPrimitive(congestionControl)
-                                            )
-                                            put("udp_relay_mode", JsonPrimitive(udpRelayMode))
-                                            put("udp_over_stream", JsonPrimitive(udpOverStream))
-                                            put(
-                                                "zero_rtt_handshake",
-                                                JsonPrimitive(zeroRttHandshake)
-                                            )
-                                            if (heartbeat.isNotEmpty()) {
-                                                put("heartbeat", JsonPrimitive("${heartbeat}s"))
-                                            }
-                                        }
-                                    }
-
-                                    // 传输层
-                                    if (transportType != "none") {
-                                        put("transport", buildJsonObject {
-                                            val origTransMap = if (originalTransportJson != null &&
-                                                originalTransportJson?.get("type")?.jsonPrimitive?.contentOrNull == transportType
-                                            ) {
-                                                originalTransportJson!!.toMutableMap()
-                                            } else {
-                                                mutableMapOf()
-                                            }
-
-                                            origTransMap["type"] = JsonPrimitive(transportType)
-                                            when (transportType) {
-                                                "ws", "httpupgrade" -> {
-                                                    origTransMap["path"] =
-                                                        JsonPrimitive(path.ifBlank { "/" })
-                                                    if (host.isNotEmpty()) {
-                                                        val origHeaders = (origTransMap["headers"]
-                                                            ?: originalTransportJson?.get("headers"))?.jsonObject?.toMutableMap()
-                                                            ?: mutableMapOf()
-                                                        val hostKey = origHeaders.keys.firstOrNull {
-                                                            it.equals(
-                                                                "host",
-                                                                ignoreCase = true
-                                                            )
-                                                        } ?: "Host"
-                                                        origHeaders[hostKey] = JsonPrimitive(host)
-                                                        origTransMap["headers"] = buildJsonObject {
-                                                            origHeaders.forEach { (k, v) ->
-                                                                put(
-                                                                    k,
-                                                                    v
-                                                                )
-                                                            }
-                                                        }
-                                                    } else {
-                                                        val origHeaders = (origTransMap["headers"]
-                                                            ?: originalTransportJson?.get("headers"))?.jsonObject?.toMutableMap()
-                                                            ?: mutableMapOf()
-                                                        val hostKey = origHeaders.keys.firstOrNull {
-                                                            it.equals(
-                                                                "host",
-                                                                ignoreCase = true
-                                                            )
-                                                        }
-                                                        if (hostKey != null) {
-                                                            origHeaders.remove(hostKey)
-                                                        }
-                                                        if (origHeaders.isNotEmpty()) {
-                                                            origTransMap["headers"] =
-                                                                buildJsonObject {
-                                                                    origHeaders.forEach { (k, v) ->
-                                                                        put(
-                                                                            k,
-                                                                            v
-                                                                        )
-                                                                    }
-                                                                }
-                                                        } else {
-                                                            origTransMap.remove("headers")
-                                                        }
-                                                    }
-                                                }
-
-                                                "grpc" -> {
-                                                    origTransMap["service_name"] =
-                                                        JsonPrimitive(serviceName)
-                                                }
-
-                                                "http", "h2" -> {
-                                                    if (path.isNotEmpty()) {
-                                                        origTransMap["path"] = JsonPrimitive(path)
-                                                    } else {
-                                                        origTransMap.remove("path")
-                                                    }
-                                                    if (host.isNotEmpty()) {
-                                                        val hosts =
-                                                            host.split(",").map { it.trim() }
-                                                                .filter { it.isNotEmpty() }
-                                                        origTransMap["host"] =
-                                                            JsonArray(hosts.map { JsonPrimitive(it) })
-                                                    } else {
-                                                        origTransMap.remove("host")
-                                                    }
-                                                }
-                                            }
-
-                                            origTransMap.forEach { (key, value) ->
-                                                put(key, value)
-                                            }
-                                        })
-                                    }
-
-                                    // TLS 配置
-                                    if (tlsEnabled) {
-                                        put("tls", buildJsonObject {
-                                            val origTlsMap =
-                                                originalTlsJson?.toMutableMap() ?: mutableMapOf()
-
-                                            origTlsMap["enabled"] = JsonPrimitive(true)
-                                            if (serverName.isNotEmpty()) {
-                                                origTlsMap["server_name"] =
-                                                    JsonPrimitive(serverName)
-                                            } else {
-                                                origTlsMap.remove("server_name")
-                                            }
-
-                                            if (insecure) {
-                                                origTlsMap["insecure"] = JsonPrimitive(true)
-                                            } else {
-                                                origTlsMap.remove("insecure")
-                                            }
-
-                                            if (disableSni) {
-                                                origTlsMap["disable_sni"] = JsonPrimitive(true)
-                                            } else {
-                                                origTlsMap.remove("disable_sni")
-                                            }
-
-                                            if (alpn.isNotEmpty()) {
-                                                val alpns = alpn.split(",").map { it.trim() }
-                                                    .filter { it.isNotEmpty() }
-                                                origTlsMap["alpn"] =
-                                                    JsonArray(alpns.map { JsonPrimitive(it) })
-                                            } else {
-                                                origTlsMap.remove("alpn")
-                                            }
-
-                                            if (fingerprint.isNotEmpty() && fingerprint != "none") {
-                                                val origUtlsMap = originalUtlsJson?.toMutableMap()
-                                                    ?: mutableMapOf()
-                                                origUtlsMap["enabled"] = JsonPrimitive(true)
-                                                origUtlsMap["fingerprint"] =
-                                                    JsonPrimitive(fingerprint)
-                                                origTlsMap["utls"] = buildJsonObject {
-                                                    origUtlsMap.forEach { (k, v) -> put(k, v) }
-                                                }
-                                            } else {
-                                                origTlsMap.remove("utls")
-                                            }
-
-                                            if (realityEnabled) {
-                                                val origRealityMap =
-                                                    originalRealityJson?.toMutableMap()
-                                                        ?: mutableMapOf()
-                                                origRealityMap["enabled"] = JsonPrimitive(true)
-                                                origRealityMap["public_key"] =
-                                                    JsonPrimitive(realityPublicKey)
-                                                if (realityShortId.isNotEmpty()) {
-                                                    origRealityMap["short_id"] =
-                                                        JsonPrimitive(realityShortId)
-                                                } else {
-                                                    origRealityMap.remove("short_id")
-                                                }
-                                                origTlsMap["reality"] = buildJsonObject {
-                                                    origRealityMap.forEach { (k, v) -> put(k, v) }
-                                                }
-                                            } else {
-                                                origTlsMap.remove("reality")
-                                            }
-
-                                            if (echEnabled) {
-                                                val origEchMap = originalEchJson?.toMutableMap()
-                                                    ?: mutableMapOf()
-                                                origEchMap["enabled"] = JsonPrimitive(true)
-                                                if (echConfig.isNotEmpty()) {
-                                                    origEchMap["config"] =
-                                                        JsonArray(listOf(JsonPrimitive(echConfig)))
-                                                } else {
-                                                    origEchMap.remove("config")
-                                                }
-                                                if (echQueryServerName.isNotEmpty()) {
-                                                    origEchMap["query_server_name"] =
-                                                        JsonPrimitive(echQueryServerName)
-                                                } else {
-                                                    origEchMap.remove("query_server_name")
-                                                }
-                                                origTlsMap["ech"] = buildJsonObject {
-                                                    origEchMap.forEach { (k, v) -> put(k, v) }
-                                                }
-                                            } else {
-                                                origTlsMap.remove("ech")
-                                            }
-
-                                            origTlsMap.forEach { (key, value) ->
-                                                put(key, value)
-                                            }
-                                        })
-                                    }
-
-                                    // 还原原始属性
-                                    rawJsonMap.forEach { (key, value) ->
-                                        put(key, value)
-                                    }
-                                }
-
-                                val finalJson = if (isWrappedOriginal) {
-                                    buildJsonObject {
-                                        put("outbounds", JsonArray(listOf(updatedOutbound)))
-                                    }
+                                val portVal = serverPort.trim().toIntOrNull()
+                                if (portVal != null) {
+                                    put("server_port", portVal)
                                 } else {
-                                    updatedOutbound
+                                    put("server_port", serverPort)
                                 }
 
-                                val jsonStringFormatter = Json { prettyPrint = true }
-                                val outString = jsonStringFormatter.encodeToString(finalJson)
+                                // 协议相关配置
+                                when (type) {
+                                    "vless" -> {
+                                        put("uuid", JsonPrimitive(uuid))
+                                        if (flow != "none") {
+                                            put("flow", JsonPrimitive(flow))
+                                        }
+                                    }
 
-                                viewModel.saveNodeConfigContent(
-                                    nodeRef,
-                                    outString
-                                ) { success ->
-                                    if (success) {
-                                        onBack()
-                                    } else {
-                                        notice = saveFailedCheckPermission
-                                        noticeId++
+                                    "vmess" -> {
+                                        put("uuid", JsonPrimitive(uuid))
+                                        put("security", JsonPrimitive(security))
+                                        alterId.trim().toIntOrNull()?.let {
+                                            put("alter_id", it)
+                                        }
+                                    }
+
+                                    "shadowsocks" -> {
+                                        put("method", JsonPrimitive(method))
+                                        put("password", JsonPrimitive(password))
+                                        if (plugin.isNotEmpty()) {
+                                            put("plugin", JsonPrimitive(plugin))
+                                        }
+                                        if (pluginOpts.isNotEmpty()) {
+                                            put("plugin_opts", JsonPrimitive(pluginOpts))
+                                        }
+                                    }
+
+                                    "trojan", "anytls" -> {
+                                        put("password", JsonPrimitive(password))
+                                    }
+
+                                    "hysteria2" -> {
+                                        put("password", JsonPrimitive(password))
+                                        upMbps.trim().toIntOrNull()?.let { put("up_mbps", it) }
+                                        downMbps.trim().toIntOrNull()
+                                            ?.let { put("down_mbps", it) }
+                                        if (obfsType != "none" && obfsPassword.isNotEmpty()) {
+                                            put("obfs", buildJsonObject {
+                                                val origObfsMap =
+                                                    originalObfsJson?.toMutableMap()
+                                                        ?: mutableMapOf()
+                                                origObfsMap["type"] = JsonPrimitive(obfsType)
+                                                origObfsMap["password"] =
+                                                    JsonPrimitive(obfsPassword)
+                                                origObfsMap.forEach { (k, v) -> put(k, v) }
+                                            })
+                                        }
+                                        if (serverPorts.isNotEmpty()) {
+                                            val ports = serverPorts.split(",").map { it.trim() }
+                                                .filter { it.isNotEmpty() }
+                                            put(
+                                                "server_ports",
+                                                JsonArray(ports.map { JsonPrimitive(it) })
+                                            )
+                                        }
+                                        if (hopInterval.isNotEmpty()) {
+                                            put(
+                                                "hop_interval",
+                                                JsonPrimitive("${hopInterval}s")
+                                            )
+                                        }
+                                    }
+
+                                    "tuic" -> {
+                                        if (uuid.isNotEmpty()) put("uuid", JsonPrimitive(uuid))
+                                        put("password", JsonPrimitive(password))
+                                        put(
+                                            "congestion_control",
+                                            JsonPrimitive(congestionControl)
+                                        )
+                                        put("udp_relay_mode", JsonPrimitive(udpRelayMode))
+                                        put("udp_over_stream", JsonPrimitive(udpOverStream))
+                                        put(
+                                            "zero_rtt_handshake",
+                                            JsonPrimitive(zeroRttHandshake)
+                                        )
+                                        if (heartbeat.isNotEmpty()) {
+                                            put("heartbeat", JsonPrimitive("${heartbeat}s"))
+                                        }
                                     }
                                 }
+
+                                // 传输层
+                                if (transportType != "none") {
+                                    put("transport", buildJsonObject {
+                                        val origTransMap = if (originalTransportJson != null &&
+                                            originalTransportJson?.get("type")?.jsonPrimitive?.contentOrNull == transportType
+                                        ) {
+                                            originalTransportJson!!.toMutableMap()
+                                        } else {
+                                            mutableMapOf()
+                                        }
+
+                                        origTransMap["type"] = JsonPrimitive(transportType)
+                                        when (transportType) {
+                                            "ws", "httpupgrade" -> {
+                                                origTransMap["path"] =
+                                                    JsonPrimitive(path.ifBlank { "/" })
+                                                if (host.isNotEmpty()) {
+                                                    val origHeaders = (origTransMap["headers"]
+                                                        ?: originalTransportJson?.get("headers"))?.jsonObject?.toMutableMap()
+                                                        ?: mutableMapOf()
+                                                    val hostKey = origHeaders.keys.firstOrNull {
+                                                        it.equals(
+                                                            "host",
+                                                            ignoreCase = true
+                                                        )
+                                                    } ?: "Host"
+                                                    origHeaders[hostKey] = JsonPrimitive(host)
+                                                    origTransMap["headers"] = buildJsonObject {
+                                                        origHeaders.forEach { (k, v) ->
+                                                            put(
+                                                                k,
+                                                                v
+                                                            )
+                                                        }
+                                                    }
+                                                } else {
+                                                    val origHeaders = (origTransMap["headers"]
+                                                        ?: originalTransportJson?.get("headers"))?.jsonObject?.toMutableMap()
+                                                        ?: mutableMapOf()
+                                                    val hostKey = origHeaders.keys.firstOrNull {
+                                                        it.equals(
+                                                            "host",
+                                                            ignoreCase = true
+                                                        )
+                                                    }
+                                                    if (hostKey != null) {
+                                                        origHeaders.remove(hostKey)
+                                                    }
+                                                    if (origHeaders.isNotEmpty()) {
+                                                        origTransMap["headers"] =
+                                                            buildJsonObject {
+                                                                origHeaders.forEach { (k, v) ->
+                                                                    put(
+                                                                        k,
+                                                                        v
+                                                                    )
+                                                                }
+                                                            }
+                                                    } else {
+                                                        origTransMap.remove("headers")
+                                                    }
+                                                }
+                                            }
+
+                                            "grpc" -> {
+                                                origTransMap["service_name"] =
+                                                    JsonPrimitive(serviceName)
+                                            }
+
+                                            "http", "h2" -> {
+                                                if (path.isNotEmpty()) {
+                                                    origTransMap["path"] = JsonPrimitive(path)
+                                                } else {
+                                                    origTransMap.remove("path")
+                                                }
+                                                if (host.isNotEmpty()) {
+                                                    val hosts =
+                                                        host.split(",").map { it.trim() }
+                                                            .filter { it.isNotEmpty() }
+                                                    origTransMap["host"] =
+                                                        JsonArray(hosts.map { JsonPrimitive(it) })
+                                                } else {
+                                                    origTransMap.remove("host")
+                                                }
+                                            }
+                                        }
+
+                                        origTransMap.forEach { (key, value) ->
+                                            put(key, value)
+                                        }
+                                    })
+                                }
+
+                                // TLS 配置
+                                if (tlsEnabled) {
+                                    put("tls", buildJsonObject {
+                                        val origTlsMap =
+                                            originalTlsJson?.toMutableMap() ?: mutableMapOf()
+
+                                        origTlsMap["enabled"] = JsonPrimitive(true)
+                                        if (serverName.isNotEmpty()) {
+                                            origTlsMap["server_name"] =
+                                                JsonPrimitive(serverName)
+                                        } else {
+                                            origTlsMap.remove("server_name")
+                                        }
+
+                                        if (insecure) {
+                                            origTlsMap["insecure"] = JsonPrimitive(true)
+                                        } else {
+                                            origTlsMap.remove("insecure")
+                                        }
+
+                                        if (disableSni) {
+                                            origTlsMap["disable_sni"] = JsonPrimitive(true)
+                                        } else {
+                                            origTlsMap.remove("disable_sni")
+                                        }
+
+                                        if (alpn.isNotEmpty()) {
+                                            val alpns = alpn.split(",").map { it.trim() }
+                                                .filter { it.isNotEmpty() }
+                                            origTlsMap["alpn"] =
+                                                JsonArray(alpns.map { JsonPrimitive(it) })
+                                        } else {
+                                            origTlsMap.remove("alpn")
+                                        }
+
+                                        if (fingerprint.isNotEmpty() && fingerprint != "none") {
+                                            val origUtlsMap = originalUtlsJson?.toMutableMap()
+                                                ?: mutableMapOf()
+                                            origUtlsMap["enabled"] = JsonPrimitive(true)
+                                            origUtlsMap["fingerprint"] =
+                                                JsonPrimitive(fingerprint)
+                                            origTlsMap["utls"] = buildJsonObject {
+                                                origUtlsMap.forEach { (k, v) -> put(k, v) }
+                                            }
+                                        } else {
+                                            origTlsMap.remove("utls")
+                                        }
+
+                                        if (realityEnabled) {
+                                            val origRealityMap =
+                                                originalRealityJson?.toMutableMap()
+                                                    ?: mutableMapOf()
+                                            origRealityMap["enabled"] = JsonPrimitive(true)
+                                            origRealityMap["public_key"] =
+                                                JsonPrimitive(realityPublicKey)
+                                            if (realityShortId.isNotEmpty()) {
+                                                origRealityMap["short_id"] =
+                                                    JsonPrimitive(realityShortId)
+                                            } else {
+                                                origRealityMap.remove("short_id")
+                                            }
+                                            origTlsMap["reality"] = buildJsonObject {
+                                                origRealityMap.forEach { (k, v) -> put(k, v) }
+                                            }
+                                        } else {
+                                            origTlsMap.remove("reality")
+                                        }
+
+                                        if (echEnabled) {
+                                            val origEchMap = originalEchJson?.toMutableMap()
+                                                ?: mutableMapOf()
+                                            origEchMap["enabled"] = JsonPrimitive(true)
+                                            if (echConfig.isNotEmpty()) {
+                                                origEchMap["config"] =
+                                                    JsonArray(listOf(JsonPrimitive(echConfig)))
+                                            } else {
+                                                origEchMap.remove("config")
+                                            }
+                                            if (echQueryServerName.isNotEmpty()) {
+                                                origEchMap["query_server_name"] =
+                                                    JsonPrimitive(echQueryServerName)
+                                            } else {
+                                                origEchMap.remove("query_server_name")
+                                            }
+                                            origTlsMap["ech"] = buildJsonObject {
+                                                origEchMap.forEach { (k, v) -> put(k, v) }
+                                            }
+                                        } else {
+                                            origTlsMap.remove("ech")
+                                        }
+
+                                        origTlsMap.forEach { (key, value) ->
+                                            put(key, value)
+                                        }
+                                    })
+                                }
+
+                                // 还原原始属性
+                                rawJsonMap.forEach { (key, value) ->
+                                    put(key, value)
+                                }
+                            }
+
+                            val finalJson = if (isWrappedOriginal) {
+                                buildJsonObject {
+                                    put("outbounds", JsonArray(listOf(updatedOutbound)))
+                                }
+                            } else {
+                                updatedOutbound
+                            }
+
+                            val jsonStringFormatter = Json { prettyPrint = true }
+                            val outString = jsonStringFormatter.encodeToString(finalJson)
+
+                            viewModel.saveNodeConfigContent(
+                                nodeRef,
+                                outString
+                            ) { success ->
+                                if (success) {
+                                    onBack()
+                                } else {
+                                    notice = saveFailedCheckPermission
+                                    noticeId++
+                                }
+                            }
                         })
                     }
                 )
@@ -705,54 +694,54 @@ internal fun SingBoxNodeEditScreen(
             ) {
                 item {
                     ServerConfigSection(
-                    tag = tag,
-                    onTagChange = { tag = it },
-                    server = server,
-                    onServerChange = { server = it },
-                    serverPort = serverPort,
-                    onServerPortChange = { serverPort = it },
-                    type = type,
-                    onTypeChange = { type = it },
-                    uuid = uuid,
-                    onUuidChange = { uuid = it },
-                    flow = flow,
-                    onFlowChange = { flow = it },
-                    security = security,
-                    onSecurityChange = { security = it },
-                    alterId = alterId,
-                    onAlterIdChange = { alterId = it },
-                    method = method,
-                    onMethodChange = { method = it },
-                    password = password,
-                    onPasswordChange = { password = it },
-                    plugin = plugin,
-                    onPluginChange = { plugin = it },
-                    pluginOpts = pluginOpts,
-                    onPluginOptsChange = { pluginOpts = it },
-                    upMbps = upMbps,
-                    onUpMbpsChange = { upMbps = it },
-                    downMbps = downMbps,
-                    onDownMbpsChange = { downMbps = it },
-                    obfsType = obfsType,
-                    onObfsTypeChange = { obfsType = it },
-                    obfsPassword = obfsPassword,
-                    onObfsPasswordChange = { obfsPassword = it },
-                    serverPorts = serverPorts,
-                    onServerPortsChange = { serverPorts = it },
-                    hopInterval = hopInterval,
-                    onHopIntervalChange = { hopInterval = it },
-                    congestionControl = congestionControl,
-                    onCongestionControlChange = { congestionControl = it },
-                    udpRelayMode = udpRelayMode,
-                    onUdpRelayModeChange = { udpRelayMode = it },
-                    udpOverStream = udpOverStream,
-                    onUdpOverStreamChange = { udpOverStream = it },
-                    zeroRttHandshake = zeroRttHandshake,
-                    onZeroRttHandshakeChange = { zeroRttHandshake = it },
-                    heartbeat = heartbeat,
-                    onHeartbeatChange = { heartbeat = it },
-                    focusManager = focusManager,
-                    alterIdLabel = alterIdLabel,
+                        tag = tag,
+                        onTagChange = { tag = it },
+                        server = server,
+                        onServerChange = { server = it },
+                        serverPort = serverPort,
+                        onServerPortChange = { serverPort = it },
+                        type = type,
+                        onTypeChange = { type = it },
+                        uuid = uuid,
+                        onUuidChange = { uuid = it },
+                        flow = flow,
+                        onFlowChange = { flow = it },
+                        security = security,
+                        onSecurityChange = { security = it },
+                        alterId = alterId,
+                        onAlterIdChange = { alterId = it },
+                        method = method,
+                        onMethodChange = { method = it },
+                        password = password,
+                        onPasswordChange = { password = it },
+                        plugin = plugin,
+                        onPluginChange = { plugin = it },
+                        pluginOpts = pluginOpts,
+                        onPluginOptsChange = { pluginOpts = it },
+                        upMbps = upMbps,
+                        onUpMbpsChange = { upMbps = it },
+                        downMbps = downMbps,
+                        onDownMbpsChange = { downMbps = it },
+                        obfsType = obfsType,
+                        onObfsTypeChange = { obfsType = it },
+                        obfsPassword = obfsPassword,
+                        onObfsPasswordChange = { obfsPassword = it },
+                        serverPorts = serverPorts,
+                        onServerPortsChange = { serverPorts = it },
+                        hopInterval = hopInterval,
+                        onHopIntervalChange = { hopInterval = it },
+                        congestionControl = congestionControl,
+                        onCongestionControlChange = { congestionControl = it },
+                        udpRelayMode = udpRelayMode,
+                        onUdpRelayModeChange = { udpRelayMode = it },
+                        udpOverStream = udpOverStream,
+                        onUdpOverStreamChange = { udpOverStream = it },
+                        zeroRttHandshake = zeroRttHandshake,
+                        onZeroRttHandshakeChange = { zeroRttHandshake = it },
+                        heartbeat = heartbeat,
+                        onHeartbeatChange = { heartbeat = it },
+                        focusManager = focusManager,
+                        alterIdLabel = alterIdLabel,
                         udpRelayModeTitle = udpRelayModeTitle
                     )
                 }

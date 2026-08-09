@@ -408,8 +408,10 @@ internal fun ProxySettingsScreen(
             "EBPF_SHARED_INTERFACES" -> stringResource(R.string.settings_hint_interfaces)
             "EBPF_SHARED_INCLUDE_SOURCE_CIDRS",
             "EBPF_SHARED_EXCLUDE_SOURCE_CIDRS" -> stringResource(R.string.settings_hint_cidrs)
+
             "EBPF_SHARED_INCLUDE_MAC_ADDRESSES",
             "EBPF_SHARED_EXCLUDE_MAC_ADDRESSES" -> stringResource(R.string.settings_hint_macs)
+
             "WIFI_SSID_LIST" -> stringResource(R.string.settings_hint_ssids)
             else -> stringResource(R.string.value_label)
         }

@@ -31,25 +31,25 @@ internal data class NetProxyCtlOutput(
 )
 
 internal fun interface NetProxyCtlTransport {
-	fun execute(arguments: List<String>, timeoutMillis: Long): NetProxyCtlOutput
+    fun execute(arguments: List<String>, timeoutMillis: Long): NetProxyCtlOutput
 }
 
 private object RootShellNetProxyCtlTransport : NetProxyCtlTransport {
-	override fun execute(arguments: List<String>, timeoutMillis: Long): NetProxyCtlOutput {
-		val result = ShellCommand.exec(
-			timeoutMillis,
-			ModulePaths.NETPROXYCTL,
-			"--json",
-			"--timeout",
-			"${(timeoutMillis + 999L) / 1000L}s",
-			*arguments.toTypedArray()
-		)
-		return NetProxyCtlOutput(
-			successful = result.successful,
-			stdout = result.stdout,
-			stderr = result.stderr
-		)
-	}
+    override fun execute(arguments: List<String>, timeoutMillis: Long): NetProxyCtlOutput {
+        val result = ShellCommand.exec(
+            timeoutMillis,
+            ModulePaths.NETPROXYCTL,
+            "--json",
+            "--timeout",
+            "${(timeoutMillis + 999L) / 1000L}s",
+            *arguments.toTypedArray()
+        )
+        return NetProxyCtlOutput(
+            successful = result.successful,
+            stdout = result.stdout,
+            stderr = result.stderr
+        )
+    }
 }
 
 /** 严格解析 netproxyctl 的单一 JSON 输出，额外 stdout 会被视为契约错误。 */
@@ -114,11 +114,12 @@ internal class NetProxyCtlClient(
 
     suspend fun execute(vararg args: String): NetProxyCtlResponse = withContext(Dispatchers.IO) {
         val arguments = args.toList()
-        val timeoutMillis = if (arguments.firstOrNull() == "service" && arguments.getOrNull(1) == "start") {
-            SERVICE_START_TIMEOUT_MILLIS
-        } else {
-            DEFAULT_TIMEOUT_MILLIS
-        }
+        val timeoutMillis =
+            if (arguments.firstOrNull() == "service" && arguments.getOrNull(1) == "start") {
+                SERVICE_START_TIMEOUT_MILLIS
+            } else {
+                DEFAULT_TIMEOUT_MILLIS
+            }
         codec.decode(transport.execute(arguments, timeoutMillis))
     }
 

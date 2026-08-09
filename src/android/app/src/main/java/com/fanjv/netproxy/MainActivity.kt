@@ -47,20 +47,20 @@ import com.fanjv.netproxy.core.ui.theme.ColorMode
 import com.fanjv.netproxy.core.ui.theme.NetProxyTheme
 import com.fanjv.netproxy.feature.about.presentation.AboutScreen
 import com.fanjv.netproxy.feature.apps.presentation.AppsScreen
-import com.fanjv.netproxy.feature.dashboard.presentation.CatalogDashboardScreen
-import com.fanjv.netproxy.feature.logs.presentation.LogsScreen
-import com.fanjv.netproxy.feature.catalog.presentation.nodes.list.CatalogNodesScreen
 import com.fanjv.netproxy.feature.catalog.presentation.nodes.CatalogNodesViewModel
 import com.fanjv.netproxy.feature.catalog.presentation.nodes.edit.SingBoxNodeEditScreen
-import com.fanjv.netproxy.feature.settings.presentation.ProxySettingsScreen
-import com.fanjv.netproxy.feature.settings.presentation.SettingsScreen
-import com.fanjv.netproxy.feature.kernel.presentation.SingBoxJsonEditScreen
-import com.fanjv.netproxy.feature.kernel.presentation.SingBoxKernelSettingsScreen
-import com.fanjv.netproxy.feature.theme.presentation.ThemeSettingsScreen
-import com.fanjv.netproxy.feature.theme.presentation.ThemeViewModel
+import com.fanjv.netproxy.feature.catalog.presentation.nodes.list.CatalogNodesScreen
 import com.fanjv.netproxy.feature.catalog.presentation.subscriptions.SubscriptionDetailsScreen
 import com.fanjv.netproxy.feature.catalog.presentation.subscriptions.SubscriptionEditorScreen
 import com.fanjv.netproxy.feature.catalog.presentation.subscriptions.SubscriptionsScreen
+import com.fanjv.netproxy.feature.dashboard.presentation.CatalogDashboardScreen
+import com.fanjv.netproxy.feature.kernel.presentation.SingBoxJsonEditScreen
+import com.fanjv.netproxy.feature.kernel.presentation.SingBoxKernelSettingsScreen
+import com.fanjv.netproxy.feature.logs.presentation.LogsScreen
+import com.fanjv.netproxy.feature.settings.presentation.ProxySettingsScreen
+import com.fanjv.netproxy.feature.settings.presentation.SettingsScreen
+import com.fanjv.netproxy.feature.theme.presentation.ThemeSettingsScreen
+import com.fanjv.netproxy.feature.theme.presentation.ThemeViewModel
 import com.fanjv.netproxy.navigation.AppDestination
 import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.MainBottomBar
@@ -329,7 +329,7 @@ internal fun MainScreen(
                     items = navItems,
                     enableFloatingBottomBar = enableFloatingBottomBar,
                     enableFloatingBottomBarBlur = enableFloatingBottomBarBlur,
-                    modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter),
+                    modifier = Modifier.align(Alignment.BottomCenter),
                 )
             }
         }

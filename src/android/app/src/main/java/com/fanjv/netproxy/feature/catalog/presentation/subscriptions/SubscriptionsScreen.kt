@@ -430,9 +430,11 @@ internal fun SubscriptionDetailsScreen(
     ) { innerPadding ->
         val details = state.details
         if (state.loading && details == null) {
-            Box(Modifier
-                .fillMaxSize()
-                .padding(innerPadding), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding), contentAlignment = Alignment.Center
+            ) {
                 InfiniteProgressIndicator()
             }
         } else if (details != null) {
@@ -533,9 +535,11 @@ internal fun SubscriptionDetailsScreen(
         onDismissRequest = { actionNode = null }
     ) {
         if (selectedNode != null) {
-            Card(modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 8.dp)) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp)
+            ) {
                 BasicComponent(
                     title = "测试延迟",
                     startAction = { DetailActionIcon(Icons.Rounded.NetworkPing) },
@@ -679,9 +683,11 @@ internal fun SubscriptionEditorScreen(
         contentWindowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Horizontal)
     ) { innerPadding ->
         if (state.loading) {
-            Box(Modifier
-                .fillMaxSize()
-                .padding(innerPadding), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding), contentAlignment = Alignment.Center
+            ) {
                 InfiniteProgressIndicator()
             }
         } else {

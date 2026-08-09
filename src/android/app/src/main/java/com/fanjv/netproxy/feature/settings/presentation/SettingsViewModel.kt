@@ -219,6 +219,7 @@ internal class SettingsViewModel(
                 "EBPF_BYPASS_PRIVATE_ADDRESS" -> current.copy(
                     proxySettings = settings.copy(bypassPrivateAddress = value == "1")
                 )
+
                 "EBPF_BYPASS_RULE_SETS" -> current.copy(
                     proxySettings = settings.copy(bypassRuleSets = value)
                 )

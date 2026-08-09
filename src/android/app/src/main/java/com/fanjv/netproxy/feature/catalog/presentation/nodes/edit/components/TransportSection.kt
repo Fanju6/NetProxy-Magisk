@@ -12,7 +12,6 @@ import androidx.compose.ui.unit.dp
 import com.fanjv.netproxy.R
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 
 /** 传输层配置区。 */
@@ -35,7 +34,10 @@ internal fun TransportSection(
             insideMargin = PaddingValues(start = 26.dp, top = 8.dp, bottom = 8.dp, end = 26.dp)
         )
         Card(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 12.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp)
+                .padding(bottom = 12.dp)
         ) {
             OverlayDropdownPreference(
                 title = stringResource(R.string.transport_protocol),

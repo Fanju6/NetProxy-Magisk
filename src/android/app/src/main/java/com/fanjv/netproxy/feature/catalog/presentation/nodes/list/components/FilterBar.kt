@@ -1,7 +1,7 @@
 package com.fanjv.netproxy.feature.catalog.presentation.nodes.list.components
 
-import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.fanjv.netproxy.feature.catalog.model.CatalogNodeGroup
