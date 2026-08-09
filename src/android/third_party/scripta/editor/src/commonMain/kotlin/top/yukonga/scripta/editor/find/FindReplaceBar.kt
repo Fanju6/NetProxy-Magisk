@@ -219,7 +219,11 @@ internal fun FindField(
                 platformStyle = fieldPlatformStyle,
             ),
             cursorBrush = SolidColor(colors.cursor),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search, keyboardType = keyboardType),
+            keyboardOptions = KeyboardOptions(
+                imeAction = ImeAction.Search,
+                keyboardType = keyboardType,
+                autoCorrectEnabled = false,
+            ),
             keyboardActions = KeyboardActions(onSearch = { onImeSearch() }),
             // 撑满外框：空文本的字段本身只有光标宽，点框内空白必须也能聚焦。
             modifier = Modifier.fillMaxWidth(),

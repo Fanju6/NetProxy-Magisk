@@ -75,6 +75,12 @@ internal class EditorInputConnection(
     override fun getTextAfterCursor(n: Int, flags: Int): CharSequence = engine.textAfterCursor(n)
     override fun getSelectedText(flags: Int): CharSequence? = engine.selectedText()
 
+    override fun setSelection(start: Int, end: Int): Boolean {
+        // Gboard 空格滑动通过 InputConnection.setSelection 移动光标；自绘编辑器必须转发到引擎。
+        engine.setSelection(engine.buffer.positionAt(start), engine.buffer.positionAt(end))
+        return true
+    }
+
     override fun getCursorCapsMode(reqModes: Int): Int {
         // 有界窗口即可（避免大文件 O(n)）。
         val before = engine.textBeforeCursor(256).toString()
