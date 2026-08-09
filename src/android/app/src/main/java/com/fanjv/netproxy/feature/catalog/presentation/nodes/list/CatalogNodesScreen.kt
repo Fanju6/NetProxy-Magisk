@@ -290,6 +290,7 @@ internal fun CatalogNodesScreen(
                     if (layoutStyle == 0) {
                         CatalogNodeGrid(
                             group = selectedGroup,
+                            activeGroupId = state.selection.activeGroupId,
                             selectedRef = state.selection.selected,
                             selectorMode = state.selection.selectorMode,
                             latencies = state.latencies,
@@ -307,6 +308,7 @@ internal fun CatalogNodesScreen(
                     } else {
                         CatalogGroupList(
                             groups = state.groups,
+                            activeGroupId = state.selection.activeGroupId,
                             selectedRef = state.selection.selected,
                             selectorMode = state.selection.selectorMode,
                             latencies = state.latencies,
@@ -514,4 +516,3 @@ private fun SheetIcon(vector: androidx.compose.ui.graphics.vector.ImageVector) {
         tint = colorScheme.onSurface
     )
 }
-

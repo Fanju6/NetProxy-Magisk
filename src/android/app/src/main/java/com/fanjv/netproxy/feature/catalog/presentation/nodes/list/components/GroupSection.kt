@@ -46,6 +46,7 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 @Composable
 internal fun CatalogNodeGrid(
     group: CatalogNodeGroup,
+    activeGroupId: String,
     selectedRef: String,
     selectorMode: String,
     latencies: Map<String, String>,
@@ -60,7 +61,7 @@ internal fun CatalogNodeGrid(
     contentPadding: PaddingValues,
     nestedScrollConnection: NestedScrollConnection
 ) {
-    val automaticSelected = selectorMode == "urltest" && selectedRef == "Auto/${group.group.id}"
+    val automaticSelected = selectorMode == "urltest" && activeGroupId == group.group.id
     val sortedNodes = remember(group.nodes, sortMode, latencies) {
         sortCatalogNodes(group.nodes, sortMode, group.group.id, latencies)
     }
@@ -115,6 +116,7 @@ internal fun CatalogNodeGrid(
 @Composable
 internal fun CatalogGroupList(
     groups: List<CatalogNodeGroup>,
+    activeGroupId: String,
     selectedRef: String,
     selectorMode: String,
     latencies: Map<String, String>,
@@ -168,7 +170,7 @@ internal fun CatalogGroupList(
                                             summary = "自动测速",
                                             protocol = "AUTO",
                                             latency = latencies["Auto/$groupId"],
-                                            selected = selectorMode == "urltest" && selectedRef == "Auto/$groupId",
+                                            selected = selectorMode == "urltest" && activeGroupId == groupId,
                                             enabled = !busy && group.nodes.isNotEmpty(),
                                             itemSize = itemSize,
                                             icon = MiuixIcons.Refresh,
@@ -245,4 +247,3 @@ private fun CatalogNode.serverWithPort(): String = buildString {
     append(server.ifBlank { "--" })
     if (port > 0) append(':').append(port)
 }
-
