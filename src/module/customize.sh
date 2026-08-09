@@ -18,12 +18,9 @@ readonly MODULE_ID="netproxy"                       # 模块 ID
 readonly LIVE_DIR="/data/adb/modules/$MODULE_ID"    # 已安装模块的运行目录
 readonly CONFIG_DIR="$LIVE_DIR/config"              # 运行目录下的配置目录
 readonly BACKUP_DIR="$TMPDIR/netproxy_backup"       # 配置备份临时目录
-readonly LEGACY_CORE_NAME="x""ray"                  # 旧版内核名 (用于停止旧进程)
-readonly LEGACY_WEB_DIR_NAME="web""root"            # 旧版 WebUI 目录名
 
 # 全局状态: 安装前代理服务是否处于运行状态
 PROXY_WAS_RUNNING=false
-RESET_LEGACY_CONFIG=false
 
 # 需要保留的配置文件/目录 (相对于 config/)
 readonly DATA_DIR="$LIVE_DIR/data"
@@ -152,14 +149,6 @@ backup_config() {
     return 0
   fi
 
-  # 8.x Catalog 存在时按正常升级处理，只暂存当前版本仍受支持的配置。
-  if [ ! -f "$DATA_DIR/catalog/default/meta.json" ] \
-    || [ ! -f "$DATA_DIR/catalog/default/provider.json" ]; then
-    RESET_LEGACY_CONFIG=true
-    print_warn "检测到非 Catalog 配置，将直接初始化全新配置"
-    return 0
-  fi
-
   backup_catalog_data
   print_step "备份当前配置..."
   mkdir -p "$BACKUP_DIR"
@@ -253,63 +242,17 @@ stop_proxy_if_running() {
     return 0
   fi
 
-  # 优先停止 Go Worker。
-  if [ -x "$LIVE_DIR/bin/netproxy-native" ]; then
-    "$LIVE_DIR/bin/netproxy-native" subworker stop \
-      --root "$LIVE_DIR/data/catalog" \
-      --pid-file "/dev/netproxy/subworker.pid" \
-      --module-conf "$LIVE_DIR/config/module.conf" > /dev/null 2>&1 || true
-  fi
-  # 旧版本 Worker 只按 PID 和命令行身份清理，避免误杀其他进程。
-  if [ -f "/dev/netproxy/subworker.pid" ]; then
-    local legacy_worker_pid legacy_worker_cmdline
-    legacy_worker_pid="$(sed -n '1p' /dev/netproxy/subworker.pid 2> /dev/null || true)"
-    if [ -n "$legacy_worker_pid" ] && [ -r "/proc/$legacy_worker_pid/cmdline" ]; then
-      legacy_worker_cmdline="$(tr '\0' ' ' < "/proc/$legacy_worker_pid/cmdline" 2> /dev/null || true)"
-      case "$legacy_worker_cmdline" in
-        *subworker.sh* | *subsched.sh*) kill "$legacy_worker_pid" 2> /dev/null || true ;;
-      esac
-    fi
-    rm -f /dev/netproxy/subworker.pid 2> /dev/null || true
-  fi
+  # 停止 Go Worker。
+  pkill -f "netproxy-native.*subworker" 2> /dev/null || true
 
-  # 检测当前或旧版内核进程
-  if pidof -s "$LIVE_DIR/bin/sing-box" > /dev/null 2>&1 || pidof -s "$LIVE_DIR/bin/$LEGACY_CORE_NAME" > /dev/null 2>&1; then
+  # 检测当前 sing-box 进程。
+  if pidof -s "$LIVE_DIR/bin/sing-box" > /dev/null 2>&1; then
     PROXY_WAS_RUNNING=true
     print_step "检测到代理服务正在运行，停止服务..."
     sh "$LIVE_DIR/scripts/core/service.sh" stop > /dev/null 2>&1
     print_ok "服务已停止"
   fi
 
-  # 即使核心已经异常退出，也让旧脚本清理可能残留的防火墙与策略路由
-  if [ -f "$LIVE_DIR/scripts/network/tproxy.sh" ] && [ -d "$LIVE_DIR/config/tproxy" ]; then
-    sh "$LIVE_DIR/scripts/network/tproxy.sh" stop -d "$LIVE_DIR/config/tproxy" > /dev/null 2>&1 || true
-  fi
-
-  return 0
-}
-
-#######################################
-# 清理旧版 TPROXY 与 IPSET 文件
-# 参数: 无
-# 返回: 0
-#######################################
-cleanup_legacy_dataplane() {
-  print_step "清理旧版透明代理组件..."
-
-  rm -rf "$LIVE_DIR/config/tproxy" \
-    "$LIVE_DIR/bin/IPSET-LKM" \
-    "/data/adb/netfilter" \
-    2> /dev/null || true
-  rm -f "$LIVE_DIR/scripts/network/tproxy.sh" \
-    "$LIVE_DIR/scripts/utils/ipset.sh" \
-    "$LIVE_DIR/scripts/core/subsched.sh" \
-    "$LIVE_DIR/post-fs-data.sh" \
-    "/data/adb/ksu/bin/ipset" \
-    "/data/adb/ap/bin/ipset" \
-    2> /dev/null || true
-
-  print_ok "旧版透明代理组件已清理"
   return 0
 }
 
@@ -326,29 +269,6 @@ sync_to_live() {
   if [ ! -d "$LIVE_DIR" ]; then
     print_ok "首次安装，跳过同步"
     return 0
-  fi
-
-  # API 地址与密钥已固定在 sing-box 配置中，不再保留旧凭据目录。
-  rm -rf "$LIVE_DIR/config/api" 2> /dev/null || true
-  # 订阅日志已并入服务日志，删除旧的独立日志文件。
-  rm -f "$LIVE_DIR/logs/subscription.log" 2> /dev/null || true
-  # 清理旧 Catalog、旧运行时目录和旧节点文件布局。
-  rm -rf "$LIVE_DIR/config/catalog" "$LIVE_DIR/config/runtime" \
-    "$LIVE_DIR/config/singbox/outbounds" "$LIVE_DIR/config/singbox/runtime" \
-    2> /dev/null || true
-
-  # 非 Catalog 配置不迁移，运行目录直接改用全新配置。
-  if [ "$RESET_LEGACY_CONFIG" = true ]; then
-    rm -rf "$LIVE_DIR/config" 2> /dev/null || true
-    rm -rf "$LIVE_DIR/data" "$LIVE_DIR/runtime" 2> /dev/null || true
-    cp -r "$MODPATH/data" "$LIVE_DIR/data" 2> /dev/null || return 1
-    mkdir -p "$LIVE_DIR/runtime"
-    if cp -r "$MODPATH/config" "$LIVE_DIR/config" 2> /dev/null; then
-      print_ok "已初始化全新 Catalog 配置"
-    else
-      print_error "初始化 Catalog 配置失败"
-      return 1
-    fi
   fi
 
   # 同步程序文件与脚本，以及需要更新的内置资源 (整目录/文件覆盖)
@@ -552,7 +472,6 @@ if backup_config \
   && extract_module \
   && restore_config \
   && stop_proxy_if_running \
-  && cleanup_legacy_dataplane \
   && sync_to_live \
   && set_permissions \
   && restart_proxy_if_needed; then
