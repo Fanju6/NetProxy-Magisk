@@ -41,6 +41,7 @@
     <string name="app_proxy_mode_blacklist">黑名单模式</string>
     <string name="app_proxy_mode_whitelist">白名单模式</string>
     <string name="proxy_mode_off">关闭</string>
+    <string name="app_proxy_disabled_hint">分应用代理已关闭</string>
     <string name="app_selected_first">选中优先</string>
     <string name="app_reverse_sort">逆向排序</string>
     <string name="app_show_package_name">显示包名</string>

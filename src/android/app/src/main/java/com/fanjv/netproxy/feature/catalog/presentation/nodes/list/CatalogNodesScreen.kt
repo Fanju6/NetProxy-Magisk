@@ -266,8 +266,8 @@ internal fun CatalogNodesScreen(
                 )
 
                 selectedGroup == null -> EmptyState(
-                    text = "还没有可用节点\n请添加单节点链接或导入配置文件",
-                    onRefresh = { showAddSheet = true },
+                    text = "还没有可用节点",
+                    onRefresh = null,
                     modifier = Modifier
                         .align(Alignment.Center)
                         .padding(horizontal = 24.dp)
@@ -514,5 +514,4 @@ private fun SheetIcon(vector: androidx.compose.ui.graphics.vector.ImageVector) {
         tint = colorScheme.onSurface
     )
 }
-
 

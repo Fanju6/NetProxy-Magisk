@@ -56,6 +56,7 @@ import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.core.ui.component.BackIconButton
 import com.fanjv.netproxy.core.ui.component.BlurredBar
+import com.fanjv.netproxy.core.ui.component.EmptyCatalog
 import com.fanjv.netproxy.core.ui.component.SearchBarFake
 import com.fanjv.netproxy.core.ui.component.SearchBox
 import com.fanjv.netproxy.core.ui.component.SearchPager
@@ -384,14 +385,30 @@ internal fun AppsScreen(
                                     }
                                 }
 
-                                items(allApps, key = AppInfoModel::packageName) { app ->
-                                    AppItem(
-                                        app,
-                                        apps.appShowPackageName,
-                                        app.isProxied,
-                                        spacing,
-                                        viewModel
-                                    )
+                                if (apps.appProxyEnabled) {
+                                    items(allApps, key = AppInfoModel::packageName) { app ->
+                                        AppItem(
+                                            app,
+                                            apps.appShowPackageName,
+                                            app.isProxied,
+                                            spacing,
+                                            viewModel
+                                        )
+                                    }
+                                } else {
+                                    item("app_proxy_disabled") {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(300.dp),
+                                            contentAlignment = androidx.compose.ui.Alignment.Center,
+                                        ) {
+                                            EmptyCatalog(
+                                                text = stringResource(R.string.app_proxy_disabled_hint),
+                                                onRefresh = null,
+                                            )
+                                        }
+                                    }
                                 }
 
                                 item {
@@ -404,12 +421,14 @@ internal fun AppsScreen(
             }
         }
 
-        searchStatus.SearchPager(
-            defaultResult = { },
-            searchBarTopPadding = dynamicTopPadding,
-        ) {
-            items(apps.searchResults, key = AppInfoModel::packageName) { app ->
-                AppItem(app, apps.appShowPackageName, app.isProxied, spacing, viewModel)
+        if (apps.appProxyEnabled) {
+            searchStatus.SearchPager(
+                defaultResult = { },
+                searchBarTopPadding = dynamicTopPadding,
+            ) {
+                items(apps.searchResults, key = AppInfoModel::packageName) { app ->
+                    AppItem(app, apps.appShowPackageName, app.isProxied, spacing, viewModel)
+                }
             }
         }
     }

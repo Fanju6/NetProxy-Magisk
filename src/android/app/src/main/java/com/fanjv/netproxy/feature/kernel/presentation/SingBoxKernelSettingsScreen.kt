@@ -35,6 +35,7 @@ import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BackIconButton
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.CardItem
+import com.fanjv.netproxy.core.ui.component.EmptyCatalog
 import com.fanjv.netproxy.core.ui.component.TopBarMenuAction
 import com.fanjv.netproxy.core.ui.component.TopBarMoreMenu
 import com.fanjv.netproxy.core.ui.component.groupedCardSection
@@ -148,6 +149,23 @@ internal fun SingBoxKernelSettingsScreen(
                 ) {
                     InfiniteProgressIndicator()
                 }
+            } else if (state.documentsError || state.documents.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth()
+                        .padding(innerPadding),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    EmptyCatalog(
+                        text = stringResource(
+                            if (state.documentsError) R.string.singbox_documents_load_failed
+                            else R.string.singbox_documents_empty,
+                        ),
+                        onRefresh = null,
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                    )
+                }
             } else {
                 LazyColumn(
                     modifier = Modifier
@@ -159,18 +177,6 @@ internal fun SingBoxKernelSettingsScreen(
                     contentPadding = innerPadding,
                     overscrollEffect = null,
                 ) {
-                    if (state.documentsError || state.documents.isEmpty()) {
-                        item("singbox_empty") {
-                            Text(
-                                text = stringResource(
-                                    if (state.documentsError) R.string.singbox_documents_load_failed
-                                    else R.string.singbox_documents_empty,
-                                ),
-                                color = colorScheme.onSurfaceVariantSummary,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp),
-                            )
-                        }
-                    }
                     if (commonDocuments.isNotEmpty()) {
                         documentSection(
                             keyPrefix = "singbox_common",
@@ -275,5 +281,4 @@ private fun documentSummary(document: SingBoxDocument): String {
         "${document.filename} · ${stringResource(R.string.read_only)} · $description"
     }
 }
-
 

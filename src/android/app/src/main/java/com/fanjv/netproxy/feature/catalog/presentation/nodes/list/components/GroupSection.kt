@@ -73,7 +73,7 @@ internal fun CatalogNodeGrid(
         horizontalArrangement = Arrangement.spacedBy(spacing),
         overscrollEffect = null
     ) {
-        item(span = { GridItemSpan(maxLineSpan) }) {
+        item {
             NodeCard(
                 title = "Auto-Fastest",
                 summary = "自动测速",
@@ -245,5 +245,4 @@ private fun CatalogNode.serverWithPort(): String = buildString {
     append(server.ifBlank { "--" })
     if (port > 0) append(':').append(port)
 }
-
 
