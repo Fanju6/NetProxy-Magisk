@@ -3,7 +3,7 @@
 # 文件: netmon.sh
 # 功能: 采集 Android 网络事件、读取当前 WiFi SSID 并调用 Go 网络策略评估。
 # 用法: netmon.sh {startup|sync|stop|eval}；或由 inotifyd 传入事件参数。
-# 依赖: common.sh、netproxyctl、cmd、dumpsys、awk、inotifyd。
+# 依赖: netproxyctl、cmd、dumpsys、awk、inotifyd
 #######################################
 
 set -u
@@ -18,7 +18,18 @@ readonly LOG_FILE="$MODDIR/logs/service.log"
 readonly LOG_TAG="netmon"
 readonly DEBOUNCE_SEC=2
 
-. "$MODDIR/scripts/utils/common.sh"
+NL='
+'
+TAB="$(printf '\t')"
+
+log() {
+  local level="INFO" message="$1"
+  if [ "$#" -ge 2 ]; then
+    level="$1"
+    message="$2"
+  fi
+  printf '[%s] [%s] [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$level" "$LOG_TAG" "$message" >> "$LOG_FILE"
+}
 
 #######################################
 # 获取 WiFi 连接类型与当前 SSID

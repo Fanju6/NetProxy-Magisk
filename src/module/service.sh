@@ -4,7 +4,7 @@
 # 功能: Magisk service 阶段入口，在系统启动完成后记录运行环境，
 #       加载模块配置并按需开机自启 sing-box 服务。
 # 用法: 由 Magisk/KernelSU/APatch 在 service 阶段自动调用。
-# 依赖: common.sh、scripts/core/service.sh、netproxy-native。
+# 依赖: scripts/core/service.sh、netproxy-native
 #######################################
 
 set -e  # 命令失败立即退出
@@ -12,13 +12,20 @@ set -e  # 命令失败立即退出
 # 模块根目录与关键路径
 readonly MODDIR="${0%/*}"                          # 模块根目录 (脚本所在目录)
 readonly MODULE_CONF="$MODDIR/config/module.conf"  # 模块配置
-readonly CATALOG_DIR="$MODDIR/config/catalog"      # Catalog 根目录
+readonly CATALOG_DIR="$MODDIR/data/catalog"        # Catalog 根目录
 readonly NETPROXY_NATIVE_BIN="$MODDIR/bin/netproxy-native"  # Go 原生组件
 readonly WORKER_PID_FILE="/dev/netproxy/subworker.pid"     # Worker PID 文件
 readonly LOG_FILE="$MODDIR/logs/service.log"       # 服务日志
 readonly LOG_TAG="boot"                            # 日志组件标签
 
-. "$MODDIR/scripts/utils/common.sh"
+log() {
+  local level="INFO" message="$1"
+  if [ "$#" -ge 2 ]; then
+    level="$1"
+    message="$2"
+  fi
+  printf '[%s] [%s] [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$level" "$LOG_TAG" "$message" >> "$LOG_FILE"
+}
 
 #######################################
 # 加载模块配置

@@ -16,7 +16,7 @@ fi
 # 订阅 Worker 独立于代理核心运行，卸载时单独停止。
 if [ -x "$MODDIR/bin/netproxy-native" ]; then
   "$MODDIR/bin/netproxy-native" subworker stop \
-    --root "$MODDIR/config/catalog" \
+    --root "$MODDIR/data/catalog" \
     --pid-file "/dev/netproxy/subworker.pid" \
     --module-conf "$MODDIR/config/module.conf" > /dev/null 2>&1 || true
 fi

@@ -11,6 +11,8 @@ MODULE="$TMP_ROOT/module"
 mkdir -p "$MODULE/bin" "$MODULE/logs"
 cp -R "$ROOT/src/module/scripts" "$MODULE/"
 cp -R "$ROOT/src/module/config" "$MODULE/"
+cp -R "$ROOT/src/module/data" "$MODULE/"
+mkdir -p "$MODULE/runtime"
 cp "$ROOT/src/module/netproxyctl" "$MODULE/netproxyctl"
 cp "$REAL_NETPROXY_CTL" "$MODULE/bin/netproxyctl"
 cp "$REAL_NETPROXY_NATIVE" "$MODULE/bin/netproxy-native"
@@ -146,17 +148,17 @@ result="$(sh "$MODULE/netproxyctl" --json config read singbox/confdir/03_dns.jso
 run_json "$result"
 printf '%s' "$result" | grep -q '"target":"singbox/confdir/03_dns.json"'
 
-mkdir -p "$MODULE/config/catalog/test-sub"
-cp "$MODULE/config/catalog/default/meta.json" "$MODULE/config/catalog/test-sub/meta.json"
-cp "$MODULE/config/catalog/default/provider.json" "$MODULE/config/catalog/test-sub/provider.json"
+mkdir -p "$MODULE/data/catalog/test-sub"
+cp "$MODULE/data/catalog/default/meta.json" "$MODULE/data/catalog/test-sub/meta.json"
+cp "$MODULE/data/catalog/default/provider.json" "$MODULE/data/catalog/test-sub/provider.json"
 sed -i \
   -e 's/"id": "default"/"id": "test-sub"/' \
   -e 's/"name": "本地配置"/"name": "契约订阅"/' \
   -e 's/"type": "local"/"type": "subscription"/' \
   -e 's#"url": ""#"url": "https://example.test/sub?token=secret"#' \
-  "$MODULE/config/catalog/test-sub/meta.json"
+  "$MODULE/data/catalog/test-sub/meta.json"
 "$MODULE/bin/netproxy-native" provider append \
-  --target "$MODULE/config/catalog/test-sub/provider.json" \
+  --target "$MODULE/data/catalog/test-sub/provider.json" \
   --input 'socks://example.com:1080#SUB' > /dev/null
 
 result="$(sh "$MODULE/netproxyctl" --json node edit 'test-sub/SUB' 'http://example.org:8080#SUB-EDITED')"

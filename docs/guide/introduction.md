@@ -38,8 +38,8 @@ NetProxy 现在有三种正式入口：
 - `config/module.conf`：模块级默认项
 - `config/ebpf/ebpf.conf`：eBPF 入站、分应用与共享网络配置
 - `config/singbox/confdir/`：通用 sing-box 配置片段
-- `config/singbox/outbounds/`：节点与订阅目录
-- `config/singbox/runtime/`：运行时生成配置
+- `data/catalog/`：节点与订阅 Catalog
+- `runtime/`：运行时生成配置与服务状态
 - `logs/`：服务、核心、订阅日志
 
 ### Android 管理器侧

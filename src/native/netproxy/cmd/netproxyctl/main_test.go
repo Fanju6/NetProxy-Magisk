@@ -9,7 +9,7 @@ import (
 func TestModuleArgsKeepsOperationBeforeFlags(t *testing.T) {
 	command := &cli{
 		moduleDir:      "/module",
-		catalogRoot:    "/module/config/catalog",
+		catalogRoot:    "/module/data/catalog",
 		moduleConfig:   "/module/config/module.conf",
 		ebpfConfig:     "/module/config/ebpf/ebpf.conf",
 		singBoxPath:    "/module/bin/sing-box",
@@ -18,7 +18,7 @@ func TestModuleArgsKeepsOperationBeforeFlags(t *testing.T) {
 		serviceAddress: "127.0.0.1:9090",
 		serviceSecret:  "singbox",
 		logDir:         "/module/logs",
-		stateFile:      "/module/config/runtime/service.json",
+		stateFile:      "/module/runtime/service.json",
 		progressDir:    "/dev/netproxy/subscriptions",
 		workerPIDFile:  "/dev/netproxy/subworker.pid",
 	}

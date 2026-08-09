@@ -1,90 +1,59 @@
 # 节点与订阅
 
-NetProxy 统一将节点转换为 **sing-box** 配置，并按目录组织。
+NetProxy 使用 Catalog 保存节点和订阅，服务停止时也可以浏览和修改。
 
-## 节点目录结构
+## 数据位置
 
 ```text
-/data/adb/modules/netproxy/config/singbox/outbounds/
-├── default/
-└── sub_xxx/
+/data/adb/modules/netproxy/data/catalog/
+├── default/       # 本地配置
+├── <group-id>/    # 订阅或文件导入分组
+└── staging/       # 更新事务临时目录
 ```
 
-- `default/`：手动导入节点的默认目录
-- `sub_xxx/`：每个订阅各自的目录
+每个分组使用 `meta.json` 和 `provider.json`。客户端优先通过 `netproxyctl` 访问 Catalog，不直接解析文件。
 
-当前节点文件路径保存在 `module.conf` 的 `CURRENT_CONFIG` 中。
-
-## 支持的导入方式
-
-### 单链接
-
-适合快速添加一个节点：
+## 导入节点
 
 ```sh
-su -c '/data/adb/modules/netproxy/scripts/cli node add "vless://..."'
+su -c '/data/adb/modules/netproxy/netproxyctl node add "vless://..."'
+su -c '/data/adb/modules/netproxy/netproxyctl node import /sdcard/clash.yaml'
 ```
 
-### 文件导入
+单节点和本地文件默认进入 `default` 本地配置组。
 
-适合导入 Clash YAML 或本地节点文件：
+## 添加订阅
 
 ```sh
-su -c '/data/adb/modules/netproxy/scripts/cli node import /sdcard/clash.yaml'
+su -c '/data/adb/modules/netproxy/netproxyctl sub add 我的订阅 https://example.com/sub'
+su -c '/data/adb/modules/netproxy/netproxyctl sub update 我的订阅'
 ```
 
-### 订阅导入
+订阅更新独立于 sing-box 服务运行。更新失败时保留上一版有效 Provider；更新成功后运行中的 Local Provider 会按需热加载。
 
-适合长期维护一组节点：
+## 选择节点
+
+自动测速：
 
 ```sh
-su -c '/data/adb/modules/netproxy/scripts/cli sub add 我的订阅 https://example.com/sub'
-su -c '/data/adb/modules/netproxy/scripts/cli sub update-all'
+su -c '/data/adb/modules/netproxy/netproxyctl node use auto default'
 ```
 
-## 切换节点
-
-### 查看节点列表
+手动选择：
 
 ```sh
-su -c '/data/adb/modules/netproxy/scripts/cli node list'
+su -c '/data/adb/modules/netproxy/netproxyctl node use default/example-tag'
 ```
 
-### 切换到目标节点
+自动模式保存空的 `SELECTED_NODE_REF`，手动模式保存 `<group-id>/<tag>`，不保存节点文件路径。
+
+## 常用操作
 
 ```sh
-su -c '/data/adb/modules/netproxy/scripts/cli node use 节点名称'
+su -c '/data/adb/modules/netproxy/netproxyctl catalog list'
+su -c '/data/adb/modules/netproxy/netproxyctl node list'
+su -c '/data/adb/modules/netproxy/netproxyctl node delay auto default'
+su -c '/data/adb/modules/netproxy/netproxyctl node export default/example-tag'
 ```
 
-NetProxy 会优先尝试通过控制接口热切换；如果目标节点不在当前运行实例已加载范围内，则会自动回退到重启服务。
-
-## 动态测速与手动选择
-
-由 `module.conf` 中的 `SELECTOR_MODE` 决定：
-
-- `manual`：更偏向手动选节点
-- `urltest`：生成动态测速组，默认优先更低延迟节点
-
-当你启用 `urltest` 时，运行时会生成 `Auto-Fastest` 一类测速组，并通过 `Proxy` 选择器统一切换。
-
-## 延迟测试
-
-```sh
-su -c '/data/adb/modules/netproxy/scripts/cli node delay 当前节点'
-su -c '/data/adb/modules/netproxy/scripts/cli node delay all'
-```
-
-## 导出链接
-
-已生成的 sing-box 节点也可以重新导出为分享链接：
-
-```sh
-su -c '/data/adb/modules/netproxy/scripts/cli node export 节点名称'
-```
-
-## 常见建议
-
-- `default/` 适合放你手动维护的节点
-- 订阅建议一订阅一目录，便于切换与清理
-- 出现异常节点时，优先删除无效节点并重新更新订阅
-- 同时结合 Android 管理器和 zashboard 观察当前真实代理组状态
+Android 管理器提供相同能力的图形化入口。

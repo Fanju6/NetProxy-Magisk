@@ -55,6 +55,8 @@ func newCLI() *cli {
 		moduleDir = defaultModuleDir()
 	}
 	configDir := filepath.Join(moduleDir, "config")
+	dataDir := filepath.Join(moduleDir, "data")
+	runtimeDir := filepath.Join(moduleDir, "runtime")
 	singBoxDir := filepath.Join(configDir, "singbox")
 	nativePath := os.Getenv("NETPROXY_NATIVE_BIN")
 	if nativePath == "" {
@@ -68,12 +70,12 @@ func newCLI() *cli {
 		moduleDir:      moduleDir,
 		nativePath:     nativePath,
 		serviceScript:  filepath.Join(moduleDir, "scripts", "core", "service.sh"),
-		catalogRoot:    filepath.Join(configDir, "catalog"),
+		catalogRoot:    filepath.Join(dataDir, "catalog"),
 		moduleConfig:   filepath.Join(configDir, "module.conf"),
 		ebpfConfig:     filepath.Join(configDir, "ebpf", "ebpf.conf"),
 		singBoxPath:    filepath.Join(moduleDir, "bin", "sing-box"),
 		singBoxDir:     singBoxDir,
-		stateFile:      filepath.Join(configDir, "runtime", "service.json"),
+		stateFile:      filepath.Join(runtimeDir, "service.json"),
 		logDir:         filepath.Join(moduleDir, "logs"),
 		progressDir:    progressDir,
 		workerPIDFile:  "/dev/netproxy/subworker.pid",

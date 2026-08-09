@@ -6,7 +6,7 @@ eBPF 透明代理主配置位于：
 /data/adb/modules/netproxy/config/ebpf/ebpf.conf
 ```
 
-服务启动时，`runtime.sh` 读取该文件并生成 `config/singbox/runtime/ebpf.json`。运行时文件会在停止服务后清理，不应直接编辑。
+服务启动时，模块读取该文件并生成 `runtime/ebpf.json`。运行时文件会在停止服务后清理，不应直接编辑。
 
 ## 基础设置
 

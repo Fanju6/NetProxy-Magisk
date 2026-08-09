@@ -26,10 +26,11 @@ PROXY_WAS_RUNNING=false
 RESET_LEGACY_CONFIG=false
 
 # 需要保留的配置文件/目录 (相对于 config/)
+readonly DATA_DIR="$LIVE_DIR/data"
+
 readonly PRESERVE_CONFIGS="
     module.conf
     ebpf/ebpf.conf
-    catalog/
     singbox/source/direct.json
     singbox/source/proxy.json
     singbox/source/block.json
@@ -129,24 +130,39 @@ set_perm_recursive() {
 # 全局: 读取 CONFIG_DIR / PRESERVE_CONFIGS / BACKUP_DIR
 # 返回: 0 (全新安装时跳过)
 #######################################
+backup_catalog_data() {
+  [ -d "$DATA_DIR/catalog" ] || return 0
+  mkdir -p "$BACKUP_DIR/data"
+  rm -rf "$BACKUP_DIR/data/catalog" 2> /dev/null || true
+  cp -r "$DATA_DIR/catalog" "$BACKUP_DIR/data/catalog" 2> /dev/null || print_warn "Catalog 数据备份失败"
+}
+
+restore_catalog_data() {
+  [ -d "$BACKUP_DIR/data/catalog" ] || return 0
+  mkdir -p "$MODPATH/data"
+  rm -rf "$MODPATH/data/catalog" 2> /dev/null || true
+  cp -r "$BACKUP_DIR/data/catalog" "$MODPATH/data/catalog" 2> /dev/null || print_warn "Catalog 数据恢复失败"
+}
+
 backup_config() {
   print_step "检查现有配置..."
 
   # 配置目录为空视为全新安装，无需备份
-  if ! dir_not_empty "$CONFIG_DIR"; then
+  if ! dir_not_empty "$CONFIG_DIR" && ! dir_not_empty "$DATA_DIR"; then
     print_ok "全新安装，无需备份"
     return 0
   fi
 
   # 8.x Catalog 存在时按正常升级处理，只暂存当前版本仍受支持的配置。
-  if [ ! -f "$CONFIG_DIR/catalog/default/meta.json" ] \
-    || [ ! -f "$CONFIG_DIR/catalog/default/provider.json" ]; then
+  if [ ! -f "$DATA_DIR/catalog/default/meta.json" ] \
+    || [ ! -f "$DATA_DIR/catalog/default/provider.json" ]; then
     RESET_LEGACY_CONFIG=true
     print_warn "检测到非 Catalog 配置，将直接初始化全新配置"
     return 0
   fi
 
-  print_step "备份当前 Catalog 配置..."
+  backup_catalog_data
+  print_step "备份当前配置..."
   mkdir -p "$BACKUP_DIR"
 
   # 逐项备份需保留的配置
@@ -194,6 +210,8 @@ extract_module() {
 # 返回: 0 (无备份时跳过)
 #######################################
 restore_config() {
+  restore_catalog_data
+
   # 无备份则跳过
   if ! dir_not_empty "$BACKUP_DIR"; then
     return 0
@@ -239,7 +257,7 @@ stop_proxy_if_running() {
   # 优先停止 Go Worker。
   if [ -x "$LIVE_DIR/bin/netproxy-native" ]; then
     "$LIVE_DIR/bin/netproxy-native" subworker stop \
-      --root "$LIVE_DIR/config/catalog" \
+      --root "$LIVE_DIR/data/catalog" \
       --pid-file "/dev/netproxy/subworker.pid" \
       --module-conf "$LIVE_DIR/config/module.conf" > /dev/null 2>&1 || true
   fi
@@ -313,10 +331,17 @@ sync_to_live() {
 
   # API 地址与密钥已固定在 sing-box 配置中，不再保留旧凭据目录。
   rm -rf "$LIVE_DIR/config/api" 2> /dev/null || true
+  # 清理旧 Catalog、旧运行时目录和旧节点文件布局。
+  rm -rf "$LIVE_DIR/config/catalog" "$LIVE_DIR/config/runtime" \
+    "$LIVE_DIR/config/singbox/outbounds" "$LIVE_DIR/config/singbox/runtime" \
+    2> /dev/null || true
 
   # 非 Catalog 配置不迁移，运行目录直接改用全新配置。
   if [ "$RESET_LEGACY_CONFIG" = true ]; then
     rm -rf "$LIVE_DIR/config" 2> /dev/null || true
+    rm -rf "$LIVE_DIR/data" "$LIVE_DIR/runtime" 2> /dev/null || true
+    cp -r "$MODPATH/data" "$LIVE_DIR/data" 2> /dev/null || return 1
+    mkdir -p "$LIVE_DIR/runtime"
     if cp -r "$MODPATH/config" "$LIVE_DIR/config" 2> /dev/null; then
       print_ok "已初始化全新 Catalog 配置"
     else
@@ -363,7 +388,7 @@ restart_proxy_if_needed() {
   # 热更新安装无需等待重启设备，先拉起新版 Go 订阅 Worker。
   if [ -x "$LIVE_DIR/bin/netproxy-native" ]; then
     "$LIVE_DIR/bin/netproxy-native" subworker start \
-      --root "$LIVE_DIR/config/catalog" \
+      --root "$LIVE_DIR/data/catalog" \
       --progress-dir "/dev/netproxy/subscriptions" \
       --pid-file "/dev/netproxy/subworker.pid" \
       --log-file "$LIVE_DIR/logs/subscription.log" \
@@ -410,14 +435,14 @@ set_permissions() {
   [ ! -f "$MODPATH/config/ebpf/ebpf.conf" ] || chmod 0600 "$MODPATH/config/ebpf/ebpf.conf" 2> /dev/null
   [ ! -f "$LIVE_DIR/config/module.conf" ] || chmod 0600 "$LIVE_DIR/config/module.conf" 2> /dev/null
   [ ! -f "$LIVE_DIR/config/ebpf/ebpf.conf" ] || chmod 0600 "$LIVE_DIR/config/ebpf/ebpf.conf" 2> /dev/null
-  [ ! -d "$MODPATH/config/catalog" ] \
-    || set_perm_recursive "$MODPATH/config/catalog" 0 0 0700 0600
-  [ ! -d "$LIVE_DIR/config/catalog" ] \
-    || set_perm_recursive "$LIVE_DIR/config/catalog" 0 0 0700 0600
-  [ ! -d "$MODPATH/config/runtime" ] \
-    || set_perm_recursive "$MODPATH/config/runtime" 0 0 0700 0600
-  [ ! -d "$LIVE_DIR/config/runtime" ] \
-    || set_perm_recursive "$LIVE_DIR/config/runtime" 0 0 0700 0600
+  [ ! -d "$MODPATH/data/catalog" ] \
+    || set_perm_recursive "$MODPATH/data/catalog" 0 0 0700 0600
+  [ ! -d "$LIVE_DIR/data/catalog" ] \
+    || set_perm_recursive "$LIVE_DIR/data/catalog" 0 0 0700 0600
+  [ ! -d "$MODPATH/runtime" ] \
+    || set_perm_recursive "$MODPATH/runtime" 0 0 0700 0600
+  [ ! -d "$LIVE_DIR/runtime" ] \
+    || set_perm_recursive "$LIVE_DIR/runtime" 0 0 0700 0600
 
   print_ok "权限设置完成"
   return 0

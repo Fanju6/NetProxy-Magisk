@@ -47,16 +47,18 @@ type Options struct {
 // NewOptions 根据模块根目录返回完整的默认路径。
 func NewOptions(moduleDir string) Options {
 	configDir := filepath.Join(moduleDir, "config")
+	dataDir := filepath.Join(moduleDir, "data")
+	runtimeDir := filepath.Join(moduleDir, "runtime")
 	singBoxDir := filepath.Join(configDir, "singbox")
 	return Options{
 		ModuleDir:      moduleDir,
-		CatalogRoot:    filepath.Join(configDir, "catalog"),
+		CatalogRoot:    filepath.Join(dataDir, "catalog"),
 		ModuleConfig:   filepath.Join(configDir, "module.conf"),
 		EBPFConfig:     filepath.Join(configDir, "ebpf", "ebpf.conf"),
 		SingBoxPath:    filepath.Join(moduleDir, "bin", "sing-box"),
 		SingBoxDir:     singBoxDir,
-		RuntimeDir:     filepath.Join(singBoxDir, "runtime"),
-		StateFile:      filepath.Join(configDir, "runtime", "service.json"),
+		RuntimeDir:     runtimeDir,
+		StateFile:      filepath.Join(runtimeDir, "service.json"),
 		ProgressDir:    "/dev/netproxy/subscriptions",
 		LogDir:         filepath.Join(moduleDir, "logs"),
 		ServiceScript:  filepath.Join(moduleDir, "scripts", "core", "service.sh"),

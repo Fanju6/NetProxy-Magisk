@@ -38,7 +38,7 @@ func ListConfigs(options Options) ([]ConfigDocument, error) {
 	}{
 		{filepath.Join(options.SingBoxDir, "confdir"), "config", true},
 		{filepath.Join(options.SingBoxDir, "source"), "source", true},
-		{filepath.Join(options.SingBoxDir, "runtime"), "runtime", false},
+		{options.RuntimeDir, "runtime", false},
 	} {
 		entries, err := os.ReadDir(item.dir)
 		if os.IsNotExist(err) {
@@ -52,10 +52,14 @@ func ListConfigs(options Options) ([]ConfigDocument, error) {
 				continue
 			}
 			pathCategory := item.category
+			pathPrefix := "singbox/"
 			if pathCategory == "config" {
 				pathCategory = "confdir"
 			}
-			result = append(result, ConfigDocument{ID: "singbox/" + filepath.ToSlash(filepath.Join(pathCategory, entry.Name())), Filename: entry.Name(), Category: item.category, Editable: item.editable})
+			if item.category == "runtime" {
+				pathPrefix = "runtime/"
+			}
+			result = append(result, ConfigDocument{ID: pathPrefix + filepath.ToSlash(filepath.Join(pathCategory, entry.Name())), Filename: entry.Name(), Category: item.category, Editable: item.editable})
 		}
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
@@ -81,7 +85,7 @@ func ApplyConfig(ctx context.Context, options Options, target, source string, va
 	if err != nil {
 		return err
 	}
-	if strings.HasPrefix(target, "singbox/runtime/") {
+	if strings.HasPrefix(target, "runtime/") {
 		return errors.New("运行时配置只读")
 	}
 	if _, err := os.Stat(source); err != nil {
@@ -129,7 +133,7 @@ func ValidateConfig(ctx context.Context, options Options, target, candidate stri
 		_, err := ebpf.Load(candidate)
 		return err
 	}
-	if !strings.HasPrefix(target, "singbox/") {
+	if !strings.HasPrefix(target, "singbox/") && !strings.HasPrefix(target, "runtime/") {
 		return errors.New("不支持的配置目标")
 	}
 	content, err := os.ReadFile(candidate)
@@ -222,20 +226,30 @@ func ResolveConfig(options Options, target string) (string, error) {
 	case "ebpf":
 		return options.EBPFConfig, nil
 	}
-	if !strings.HasPrefix(target, "singbox/") {
+	if !strings.HasPrefix(target, "singbox/") && !strings.HasPrefix(target, "runtime/") {
 		return "", errors.New("不支持的配置目标")
 	}
-	relative := filepath.FromSlash(strings.TrimPrefix(target, "singbox/"))
+	root := options.SingBoxDir
+	prefix := "singbox/"
+	if strings.HasPrefix(target, "runtime/") {
+		root = options.RuntimeDir
+		prefix = "runtime/"
+	}
+	relative := filepath.FromSlash(strings.TrimPrefix(target, prefix))
 	parts := strings.Split(filepath.ToSlash(relative), "/")
-	if len(parts) != 2 || (parts[0] != "confdir" && parts[0] != "source" && parts[0] != "runtime") || filepath.Ext(parts[1]) != ".json" || parts[1] == "" || parts[1][0] == '.' {
+	if prefix == "singbox/" && (len(parts) != 2 || (parts[0] != "confdir" && parts[0] != "source") || filepath.Ext(parts[1]) != ".json" || parts[1] == "" || parts[1][0] == '.') {
 		return "", errors.New("配置目标路径无效")
 	}
-	for _, char := range parts[1] {
+	if prefix == "runtime/" && (len(parts) != 1 || filepath.Ext(parts[0]) != ".json" || parts[0] == "" || parts[0][0] == '.') {
+		return "", errors.New("配置目标路径无效")
+	}
+	name := parts[len(parts)-1]
+	for _, char := range name {
 		if !(char == '.' || char == '-' || char == '_' || char >= '0' && char <= '9' || char >= 'A' && char <= 'Z' || char >= 'a' && char <= 'z') {
 			return "", errors.New("配置文件名无效")
 		}
 	}
-	return filepath.Join(options.SingBoxDir, relative), nil
+	return filepath.Join(root, relative), nil
 }
 
 func copyFile(destination, source string, mode fs.FileMode) error {

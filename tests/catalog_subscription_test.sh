@@ -13,7 +13,7 @@ CATALOG_ROOT="$TMP_ROOT/catalog"
 mkdir -p "$CATALOG_ROOT"
 cp "$MODULE/config/module.conf" "$MODULE_CONF"
 cp "$MODULE/config/ebpf/ebpf.conf" "$EBPF_CONF"
-cp -R "$MODULE/config/catalog/default" "$CATALOG_ROOT/default"
+cp -R "$MODULE/data/catalog/default" "$CATALOG_ROOT/default"
 
 native_module_node() {
   action="$1"

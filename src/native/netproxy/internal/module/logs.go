@@ -104,8 +104,8 @@ func ExportLogs(options Options, destination string) error {
 	for _, directory := range []struct{ path, name string }{
 		{filepath.Join(options.SingBoxDir, "confdir"), "config/singbox/confdir"},
 		{filepath.Join(options.SingBoxDir, "source"), "config/singbox/source"},
-		{filepath.Join(options.SingBoxDir, "runtime"), "config/singbox/runtime"},
-		{options.CatalogRoot, "config/catalog"},
+		{options.RuntimeDir, "runtime"},
+		{options.CatalogRoot, "data/catalog"},
 	} {
 		appendDirectoryFiles(&files, directory.path, directory.name, directory.path == options.CatalogRoot)
 	}

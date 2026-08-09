@@ -120,7 +120,7 @@ internal fun SingBoxJsonEditScreen(
 
     val document = configState.documents.firstOrNull { it.id == documentId }
     val displayFilename = document?.filename ?: documentId.substringAfterLast('/')
-    val isEditable = document?.editable ?: !documentId.startsWith("singbox/runtime/")
+    val isEditable = document?.editable ?: !documentId.startsWith("runtime/")
     val usesRootSchema = document?.category != SingBoxDocumentCategory.Source &&
             !documentId.startsWith("singbox/source/")
 
@@ -715,5 +715,4 @@ private fun parseJsonObjectOrError(rawJson: String, onError: (String) -> Unit): 
         onError(it.message ?: "Invalid JSON")
         null
     }
-
 

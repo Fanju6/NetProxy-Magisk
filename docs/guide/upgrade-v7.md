@@ -42,7 +42,7 @@
 ## 升级后建议做什么
 
 1. 检查 `module.conf` 是否仍然指向有效节点文件
-2. 检查 `config/singbox/outbounds/` 下是否有可用节点
+2. 检查 `data/catalog/` 下是否有可用节点
 3. 重新确认默认模式为 `rule`
 4. 通过 Android 管理器或 CLI 验证节点切换与订阅更新
 5. 检查 zashboard 是否可正常访问

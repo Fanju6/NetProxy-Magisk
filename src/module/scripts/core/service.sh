@@ -3,7 +3,7 @@
 # 文件: service.sh
 # 功能: 管理 sing-box 生命周期、生成运行时配置、配置检查与就绪状态。
 # 用法: service.sh {start|stop|restart|reload|status|check}
-# 依赖: common.sh、state.sh、netproxy-native。
+# 依赖: netproxy-native、Android 基础命令
 #######################################
 
 set -u
@@ -15,20 +15,139 @@ readonly SING_BOX_BIN="$MODDIR/bin/sing-box"
 readonly NETPROXY_NATIVE_BIN="$MODDIR/bin/netproxy-native"
 readonly MODULE_CONF="${NETPROXY_MODULE_CONF:-$MODDIR/config/module.conf}"
 readonly EBPF_CONF="${NETPROXY_EBPF_CONF:-$MODDIR/config/ebpf/ebpf.conf}"
-readonly CATALOG_DIR="${NETPROXY_CATALOG_DIR:-$MODDIR/config/catalog}"
-readonly SERVICE_STATE_DIR="$MODDIR/config/runtime"
+readonly CATALOG_DIR="${NETPROXY_CATALOG_DIR:-$MODDIR/data/catalog}"
+readonly SERVICE_STATE_DIR="$MODDIR/runtime"
 readonly SINGBOX_LOG_FILE="$MODDIR/logs/sing-box.log"
 readonly SINGBOX_DIR="${NETPROXY_SINGBOX_DIR:-$MODDIR/config/singbox}"
 readonly CONFDIR="$SINGBOX_DIR/confdir"
-readonly RUNTIME_DIR="$SINGBOX_DIR/runtime"
+readonly RUNTIME_DIR="${NETPROXY_RUNTIME_DIR:-$MODDIR/runtime}"
 readonly NETMON_SCRIPT="$MODDIR/scripts/network/netmon.sh"
 readonly KILL_TIMEOUT=10
 readonly SERVICE_LOCK_DIR="/dev/netproxy/service.lock"
 
-. "$MODDIR/scripts/utils/common.sh"
-. "$MODDIR/scripts/utils/state.sh"
-
 export PATH="$MODDIR/bin:$PATH"
+NL='
+'
+TAB="$(printf '\t')"
+SERVICE_STATE_FILE="$SERVICE_STATE_DIR/service.json"
+
+log_level_value() {
+  case "$1" in
+    DEBUG) printf '10' ;;
+    INFO) printf '20' ;;
+    WARN) printf '30' ;;
+    ERROR) printf '40' ;;
+    *) printf '20' ;;
+  esac
+}
+
+log() {
+  local level="INFO" message timestamp
+  if [ "$#" -ge 2 ]; then
+    level="$1"
+    message="$2"
+  else
+    message="$1"
+  fi
+  [ "$(log_level_value "$level")" -ge "$(log_level_value "${LOG_LEVEL:-INFO}")" ] || return 0
+  timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+  [ -n "${LOG_FILE:-}" ] && printf '[%s] [%s] [%s] %s\n' "$timestamp" "$level" "$LOG_TAG" "$message" >> "$LOG_FILE"
+  [ "${LOG_STDERR:-1}" = "0" ] || printf '[%s] [%s] [%s] %s\n' "$timestamp" "$level" "$LOG_TAG" "$message" >&2
+}
+
+die() {
+  log "ERROR" "$1"
+  exit "${2:-1}"
+}
+
+command_exists() {
+  command -v "$1" > /dev/null 2>&1
+}
+
+detect_busybox() {
+  local path
+  for path in /data/adb/ksu/bin/busybox /data/adb/ap/bin/busybox /data/adb/magisk/busybox; do
+    if [ -x "$path" ]; then
+      printf '%s\n' "$path"
+      return 0
+    fi
+  done
+  printf '%s\n' busybox
+}
+
+require_cmds() {
+  local cmd missing=""
+  for cmd in "$@"; do
+    command_exists "$cmd" || missing="$missing $cmd"
+  done
+  [ -z "$missing" ] || die "缺少必要的命令:$missing"
+}
+
+require_file() {
+  [ -f "$1" ] || die "${2:-文件不存在: $1}"
+}
+
+require_dir() {
+  [ -d "$1" ] || die "${2:-目录不存在: $1}"
+}
+
+ensure_dir() {
+  [ -d "$1" ] || mkdir -p "$1" || die "${2:-无法创建目录: $1}"
+}
+
+get_pid() {
+  local bin="$1"
+  [ -n "$bin" ] || return 1
+  pidof -s "$bin" 2> /dev/null || pgrep -f "^$bin" 2> /dev/null | head -1 || true
+}
+
+lock_write_owner() {
+  printf '%s\n' "$$" > "$1/pid"
+  awk '{print $22}' "/proc/$$/stat" > "$1/start" 2> /dev/null || true
+}
+
+lock_owner_alive() {
+  local lock_dir="$1" pid owner_start current_start
+  pid="$(sed -n '1p' "$lock_dir/pid" 2> /dev/null || true)"
+  owner_start="$(sed -n '1p' "$lock_dir/start" 2> /dev/null || true)"
+  current_start="$(awk '{print $22}' "/proc/$pid/stat" 2> /dev/null || true)"
+  [ -n "$pid" ] && [ -n "$owner_start" ] && [ "$owner_start" = "$current_start" ] && kill -0 "$pid" 2> /dev/null
+}
+
+SERVICE_STATE_VALUE="stopped"
+SERVICE_STATE_PID_VALUE=0
+SERVICE_STATE_STARTED_AT_VALUE=0
+SERVICE_STATE_READY_AT_VALUE=0
+SERVICE_STATE_ERROR_VALUE=""
+
+write_service_state() {
+  local status="$1" pid="${2:-0}" started_at="${3:-0}" ready_at="${4:-0}" error_message="${5:-}"
+  [ -x "${NETPROXY_NATIVE_BIN:-}" ] || return 1
+  "$NETPROXY_NATIVE_BIN" module state \
+    --module-dir "$MODDIR" --state-file "$SERVICE_STATE_FILE" \
+    --state "$status" --pid "$pid" --started-at "$started_at" \
+    --ready-at "$ready_at" --error "$error_message" > /dev/null 2>&1
+}
+
+service_state_get_string() {
+  local key="$1" fallback="${2:-}" value=""
+  if [ -f "$SERVICE_STATE_FILE" ]; then
+    value="$(sed -n 's/.*"'"$key"'":"\([^"]*\)".*/\1/p' "$SERVICE_STATE_FILE")"
+  fi
+  [ -n "$value" ] && printf '%s' "$value" || printf '%s' "$fallback"
+}
+
+service_state_get_number() {
+  local key="$1" fallback="${2:-0}" value=""
+  if [ -f "$SERVICE_STATE_FILE" ]; then
+    value="$(sed -n 's/.*"'"$key"'":\([0-9][0-9]*\).*/\1/p' "$SERVICE_STATE_FILE")"
+  fi
+  case "$value" in
+    "" | *[!0-9]*) printf '%s' "$fallback" ;;
+    *) printf '%s' "$value" ;;
+  esac
+}
+
 readonly BUSYBOX="$(detect_busybox)"
 
 SERVICE_ACTION=""

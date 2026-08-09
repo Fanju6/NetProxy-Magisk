@@ -22,7 +22,7 @@
 
 - `netproxyctl` 是终端、Android 和 WebUI 的唯一模块管理入口；`netproxy-native` 是内部实现，不是平行的公开 CLI。
 - 机器接口固定使用 `schema=1` JSON。stdout 只能包含结果 JSON，日志与诊断写 stderr；字段、错误码或状态语义变化必须同步检查 Shell、Go、Android、WebUI 和测试。
-- Catalog 是持久节点事实源：每组使用 `config/catalog/<group-id>/meta.json` 与 `provider.json`。`staging/` 只存事务临时文件，不得作为持久状态读取。
+- Catalog 是持久节点事实源：每组使用 `data/catalog/<group-id>/meta.json` 与 `provider.json`。`staging/` 只存事务临时文件，不得作为持久状态读取。
 - `ACTIVE_GROUP_ID` 保存分组 ID；`SELECTOR_MODE` 只允许 `urltest` 或 `manual`；`SELECTED_NODE_REF` 只在手动模式保存 `<group-id>/<tag>`。
 - Provider 的运行时显示标签来自分组名称；名称冲突时才附加分组 ID。用户界面不得直接显示 UUID 代替可读名称。
 - 自动选择必须落到 `Auto/<group>`，Provider/selector 的默认值绝不能静默回退到 `direct`。
@@ -36,9 +36,9 @@
 
 - `src/module/netproxyctl` 只负责定位 `bin/netproxyctl`；公共实现位于 `src/native/netproxy/cmd/netproxyctl`。Shell 不再保留公共命令 dispatcher。
 - 命令组权威清单：`service catalog node sub mode network app ebpf config logs`。新增命令组必须同时更新 Go CLI、Android `NetProxyCtlClient`、WebUI `src/exec.ts` 和契约测试。
-- `scripts/utils/` 只保留 `common.sh` 与 `state.sh`；配置、Catalog 和 Service API 业务统一由 Go 实现。
+- `scripts/utils/` 不承载运行时业务；配置、Catalog、状态和 Service API 业务统一由 Go 实现。
 - `scripts/core/` 只保留 `service.sh`；运行时配置、节点切换、订阅事务和调度由 `netproxy-native` 负责。
-- `scripts/network/netmon.sh` 负责网络变化监听。
+- `scripts/network/netmon.sh` 负责 Android 网络变化采集；Go 负责策略评估。
 - 设备上的调用形式是 `su -c /data/adb/modules/netproxy/netproxyctl [--json] <命令组> <命令>`；文档和排查步骤按此形式给出，不要写成裸 `netproxyctl`，它不在 PATH 里。
 
 ### 最终脚本边界
@@ -48,8 +48,6 @@
 ```text
 src/module/scripts/core/service.sh
 src/module/scripts/network/netmon.sh
-src/module/scripts/utils/common.sh
-src/module/scripts/utils/state.sh
 ```
 
 以下旧业务脚本已从运行时删除，不得重新添加：`subscription.sh`、`subworker.sh`、`ebpf.sh`、`switch.sh`、`runtime.sh`、`utils/api.sh`、`utils/catalog.sh`、`utils/metadata.sh`、`network/tproxy.sh`、`utils/ipset.sh` 和 `core/subsched.sh`。`customize.sh` 中仍可保留一次性的旧 Worker/TPROXY 清理分支，但这些分支只用于安装时清理残留，不属于当前运行时兼容层。
@@ -199,10 +197,10 @@ NetProxy 不维护通用独立控制守护进程。唯一长期 Go 进程是订�
 | 模块版本 | `src/module/module.prop` | `versionCode` 由打包工作流写入 |
 | 模块设置 | `src/module/config/module.conf` | 保存活动分组、选择模式和出站模式 |
 | eBPF 设置 | `src/module/config/ebpf/ebpf.conf` | 由运行时生成 sing-box eBPF inbound |
-| 节点与订阅 | `src/module/config/catalog/<group-id>/` | `meta.json` + `provider.json` |
+| 节点与订阅 | `src/module/data/catalog/<group-id>/` | `meta.json` + `provider.json` |
 | sing-box 静态配置 | `src/module/config/singbox/confdir/` | 按编号组合加载 |
-| sing-box 运行时配置 | `src/module/config/singbox/runtime/` | 启动或检查时生成，不由客户端编辑 |
-| 服务状态 | `src/module/config/runtime/service.json` | `netproxyctl service status` 的状态源之一 |
+| sing-box 运行时配置 | `src/module/runtime/` | 启动或检查时生成，不由客户端编辑 |
+| 服务状态 | `src/module/runtime/service.json` | `netproxyctl service status` 的状态源之一 |
 | 实时核心状态 | Service API / Clash API | 连接、流量、测速和实际选择 |
 
 Android 和 WebUI 不建立另一份节点数据库，也不直接修改这些文件。持久状态通过 `netproxyctl` 读取和变更，运行状态通过固定的 sing-box API 补充。
@@ -210,7 +208,7 @@ Android 和 WebUI 不建立另一份节点数据库，也不直接修改这些�
 ## Catalog 与 Provider
 
 ```text
-config/catalog/
+data/catalog/
 ├── default/
 │   ├── meta.json
 │   └── provider.json

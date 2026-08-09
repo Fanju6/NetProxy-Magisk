@@ -9,34 +9,37 @@ trap 'rm -rf "$TMP_ROOT"' EXIT INT TERM
 MODDIR="$ROOT/src/module"
 SERVICE_STATE_DIR="$TMP_ROOT/runtime"
 SERVICE_STATE_FILE="$SERVICE_STATE_DIR/service.json"
-LOG_FILE="$TMP_ROOT/test.log"
-LOG_STDERR=0
-LOG_TAG="state-test"
-
-. "$MODDIR/scripts/utils/common.sh"
-. "$MODDIR/scripts/utils/state.sh"
-
 [ -x "$NETPROXY_NATIVE_BIN" ]
 export NETPROXY_NATIVE_BIN
 
-write_service_state preparing 0 0 0 ""
-[ "$(service_state_get_string state stopped)" = "preparing" ]
-[ "$(service_state_get_number pid 99)" -eq 0 ]
+write_state() {
+  "$NETPROXY_NATIVE_BIN" module state \
+    --module-dir "$MODDIR" --state-file "$SERVICE_STATE_FILE" \
+    --state "$1" --pid "${2:-0}" --started-at "${3:-0}" \
+    --ready-at "${4:-0}" --error "${5:-}" > /dev/null
+}
 
-write_service_state ready 123 1700000000 1700000005 ""
-[ "$(service_state_get_string state stopped)" = "ready" ]
-[ "$(service_state_get_number pid 0)" -eq 123 ]
-[ "$(service_state_get_number started_at 0)" -eq 1700000000 ]
-[ "$(service_state_get_number ready_at 0)" -eq 1700000005 ]
-load_service_state
-[ "$SERVICE_STATE_VALUE" = "ready" ]
-[ "$SERVICE_STATE_PID_VALUE" -eq 123 ]
-[ "$SERVICE_STATE_STARTED_AT_VALUE" -eq 1700000000 ]
-[ "$SERVICE_STATE_READY_AT_VALUE" -eq 1700000005 ]
+read_string() {
+  sed -n 's/.*"'"$1"'":"\([^"]*\)".*/\1/p' "$SERVICE_STATE_FILE"
+}
 
-write_service_state failed 0 0 0 "核心启动失败"
-[ "$(service_state_get_string state stopped)" = "failed" ]
-[ "$(service_state_get_string error '')" = "核心启动失败" ]
+read_number() {
+  sed -n 's/.*"'"$1"'":\([0-9][0-9]*\).*/\1/p' "$SERVICE_STATE_FILE"
+}
+
+write_state preparing 0 0 0 ""
+[ "$(read_string state)" = "preparing" ]
+[ "$(read_number pid)" -eq 0 ]
+
+write_state ready 123 1700000000 1700000005 ""
+[ "$(read_string state)" = "ready" ]
+[ "$(read_number pid)" -eq 123 ]
+[ "$(read_number started_at)" -eq 1700000000 ]
+[ "$(read_number ready_at)" -eq 1700000005 ]
+
+write_state failed 0 0 0 "核心启动失败"
+[ "$(read_string state)" = "failed" ]
+[ "$(read_string error)" = "核心启动失败" ]
 [ ! -e "$SERVICE_STATE_FILE.tmp.$$" ]
 
 if command -v python3 > /dev/null 2>&1; then

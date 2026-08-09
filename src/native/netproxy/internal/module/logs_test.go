@@ -17,8 +17,9 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 	moduleConfig := filepath.Join(root, "config", "module.conf")
 	ebpfConfig := filepath.Join(root, "config", "ebpf", "ebpf.conf")
 	singboxDir := filepath.Join(root, "config", "singbox")
-	catalogRoot := filepath.Join(root, "config", "catalog", "group")
-	for _, dir := range []string{logDir, filepath.Dir(moduleConfig), filepath.Dir(ebpfConfig), filepath.Join(singboxDir, "confdir"), filepath.Join(singboxDir, "runtime"), catalogRoot} {
+	runtimeDir := filepath.Join(root, "runtime")
+	catalogRoot := filepath.Join(root, "data", "catalog", "group")
+	for _, dir := range []string{logDir, filepath.Dir(moduleConfig), filepath.Dir(ebpfConfig), filepath.Join(singboxDir, "confdir"), runtimeDir, catalogRoot} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -32,7 +33,7 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 	if err := os.WriteFile(ebpfConfig, []byte("HWID=secret-hwid\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(singboxDir, "runtime", "ebpf.json"), []byte(`{"type":"ebpf","tag":"runtime"}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(runtimeDir, "ebpf.json"), []byte(`{"type":"ebpf","tag":"runtime"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(singboxDir, "confdir", "08_services.json"), []byte(`{"secret":"secret-config"}`), 0o600); err != nil {
@@ -48,6 +49,7 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 		ModuleConfig: moduleConfig,
 		EBPFConfig:   ebpfConfig,
 		SingBoxDir:   singboxDir,
+		RuntimeDir:   runtimeDir,
 		LogDir:       logDir,
 	}
 	if err := ExportLogs(options, destination); err != nil {

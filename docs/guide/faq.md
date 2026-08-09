@@ -1,71 +1,45 @@
 # 常见问题
 
-## 服务启动失败怎么办
+## 服务启动失败
 
-先看三类日志：
+先查看三类日志：
 
-- `/data/adb/modules/netproxy/logs/service.log`
-- `/data/adb/modules/netproxy/logs/sing-box.log`
-- `/data/adb/modules/netproxy/logs/subscription.log`
+```text
+/data/adb/modules/netproxy/logs/service.log
+/data/adb/modules/netproxy/logs/sing-box.log
+/data/adb/modules/netproxy/logs/subscription.log
+```
 
-再确认这几项：
+再确认：
 
-- `CURRENT_CONFIG` 指向的节点文件存在
-- `config/singbox/outbounds/` 下至少有一个可用节点
-- 当前内核支持 BPF、cgroup v2 与 cgroup socket attach
-- `config/ebpf/ebpf.conf` 中的网络、DNS、接口和 Map 容量合法
-- 当前节点或订阅生成的 sing-box 配置没有语法错误
+- `data/catalog/` 下至少有一个可用节点分组。
+- 当前活动分组存在且包含节点。
+- `config/ebpf/ebpf.conf` 的参数有效。
+- sing-box 配置检查没有报错。
 
-若 `sing-box.log` 出现 eBPF 加载或挂载错误，说明内核能力、权限或配置不满足要求。本版本不提供 TPROXY / REDIRECT 回退。
+```sh
+su -c '/data/adb/modules/netproxy/netproxyctl service status'
+su -c '/data/adb/modules/netproxy/netproxyctl config validate'
+```
 
-## 打不开 zashboard
+## 订阅更新失败
 
-请依次检查：
+确认订阅地址可以返回节点内容，并检查 `subscription.log`。核心停止时更新仍应可用；如果更新失败，旧 Provider 会继续保留，不会清空节点。
 
-1. 服务是否在运行
-2. 设备与访问端是否处于同一局域网
-3. `9999` 端口是否可达
-4. 是否带上正确的 Secret：`singbox`
+## 切换节点没有立即生效
+
+同一分组内的选择优先通过 Service API 即时切换。跨分组或运行时 Provider 尚未加载时，模块会重新加载运行时配置。确认服务状态已经是 `ready`。
+
+## 无法访问 zashboard
 
 默认入口：
 
-- `http://<设备IP>:9999`
-- `http://<设备IP>:9999/ui`
+```text
+http://<设备 IP>:9999/ui
+```
 
-## 升级后找不到旧 WebUI
+确认服务已启动，并使用密钥 `singbox`。Clash API 主要供 zashboard 和第三方客户端使用，Android 管理器的核心状态通过 Service API 获取。
 
-这是正常变化。
-当前版本已移除内置模块 WebUI，图形化入口改为 **Android 管理器**，控制面板改为 **Clash API + zashboard**。
+## 应用分身没有生效
 
-## 节点导入失败
-
-优先检查：
-
-- 链接本身是否完整
-- 订阅地址是否返回有效内容
-- 导入文件是否为标准 Clash YAML 或节点列表
-- NetProxy 原生组件生成的 Provider 是否包含 sing-box 所需字段
-
-## 切换节点后没有立刻生效
-
-通常先区分两种情况：
-
-- **同目录已加载节点**：优先通过 Clash API 即时切换
-- **目标节点不在当前运行目录**：服务可能会重启后生效
-
-如果你启用了 `SELECTOR_MODE=urltest`，运行时默认优先使用动态测速组，而不是固定节点。
-
-## 访问 Google / Chrome 出现个别异常
-
-部分 ROM、浏览器和安全 DNS 组合会影响表现。常见排查方向：
-
-- 临时切换 `rule / global / direct` 对比行为
-- 在 Android 管理器或控制面板里检查当前实际节点和代理组
-
-## 想看当前真实运行模式和代理组
-
-可以使用：
-
-- Android 管理器的仪表盘与节点页
-- CLI：`cli mode`、`cli api groups`、`cli api conns`
-- zashboard：查看代理组、规则和连接
+分应用配置保存包名和 Android 用户范围，由 sing-box eBPF 入站在启动或 reload 时解析。不要填写 UID，也不要使用 `user:package` 格式。
