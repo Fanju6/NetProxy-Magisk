@@ -2,14 +2,10 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -123,19 +119,19 @@ func (c *cli) run(ctx context.Context, args []string) int {
 	case "node":
 		return c.node(args[1:])
 	case "sub":
-		return c.forwardModule(args[1:], "sub")
+		return c.subscription(args[1:])
 	case "mode":
-		return c.forwardModule(args[1:], "mode")
+		return c.mode(args[1:])
 	case "network":
-		return c.forwardModule(args[1:], "network")
+		return c.network(args[1:])
 	case "app":
-		return c.forwardModule(args[1:], "app")
+		return c.app(args[1:])
 	case "ebpf":
 		return c.ebpf(args[1:])
 	case "config":
-		return c.forwardModule(args[1:], "config")
+		return c.config(args[1:])
 	case "logs":
-		return c.forwardModule(args[1:], "logs")
+		return c.logs(args[1:])
 	default:
 		return c.fail("usage.invalid", "未知命令组，使用 netproxyctl help 查看帮助", 2)
 	}
@@ -196,318 +192,4 @@ func (c *cli) context() context.Context {
 		return c.commandCtx
 	}
 	return context.Background()
-}
-
-func (c *cli) service(ctx context.Context, args []string) int {
-	action := "status"
-	if len(args) > 0 {
-		action = args[0]
-	}
-	switch action {
-	case "status":
-		return c.runNative(ctx, c.controlArgs("status", "--format", "json")...)
-	case "start", "stop", "restart", "reload", "check":
-		return c.runServiceScript(ctx, action)
-	default:
-		return c.fail("usage.invalid", "用法: netproxyctl service status|start|stop|restart|reload|check", 2)
-	}
-}
-
-func (c *cli) catalog(args []string) int {
-	action := "list"
-	if len(args) > 0 {
-		action = args[0]
-	}
-	switch action {
-	case "list":
-		return c.runNative(c.context(), append([]string{"catalog", "groups"}, c.catalogArgs("--type", "all", "--format", "json")...)...)
-	case "show":
-		if len(args) < 2 || strings.TrimSpace(args[1]) == "" {
-			return c.fail("usage.invalid", "用法: netproxyctl catalog show <分组>", 2)
-		}
-		return c.runNative(c.context(), append([]string{"catalog", "show"}, c.catalogArgs("--group", args[1], "--format", "json")...)...)
-	default:
-		return c.fail("usage.invalid", "用法: netproxyctl catalog list|show", 2)
-	}
-}
-
-func (c *cli) node(args []string) int {
-	if len(args) == 0 {
-		args = []string{"list"}
-	}
-	action := args[0]
-	positionals := args[1:]
-	switch action {
-	case "list":
-		controlArgs := []string{"nodes", "--format", "json"}
-		if len(positionals) > 0 && positionals[0] != "" {
-			controlArgs = append(controlArgs, "--group", positionals[0])
-		}
-		return c.runNative(c.context(), c.controlArgs(controlArgs[0], controlArgs[1:]...)...)
-	case "snapshot":
-		controlArgs := []string{"snapshot", "--format", "json"}
-		if len(positionals) > 0 && positionals[0] != "" {
-			controlArgs = append(controlArgs, "--group", positionals[0])
-		}
-		return c.runNative(c.context(), c.controlArgs(controlArgs[0], controlArgs[1:]...)...)
-	case "current":
-		return c.runNative(c.context(), c.controlArgs("selection", "--format", "json")...)
-	case "show":
-		if len(positionals) < 1 {
-			return c.fail("usage.invalid", "用法: netproxyctl node show <分组>", 2)
-		}
-		return c.runNative(c.context(), append([]string{"catalog", "show"}, c.catalogArgs("--group", positionals[0], "--format", "json")...)...)
-	case "get", "export":
-		group, tag, ok := splitReference(first(positionals))
-		if !ok {
-			return c.fail("node.ref_invalid", "节点引用格式应为 <group-id>/<tag>", 2)
-		}
-		operation := "node-get"
-		if action == "export" {
-			operation = "node-export"
-		}
-		return c.runNative(c.context(), append([]string{"catalog", operation}, c.catalogArgs("--group", group, "--tag", tag)...)...)
-	case "add":
-		if len(positionals) < 1 {
-			return c.fail("usage.invalid", "用法: netproxyctl node add <节点链接> [分组]", 2)
-		}
-		return c.runNative(c.context(), c.moduleArgs("node", append([]string{"add"}, positionals...)...)...)
-	case "import":
-		if len(positionals) < 1 {
-			return c.fail("usage.invalid", "用法: netproxyctl node import <文件> [名称]", 2)
-		}
-		input := []string{"import", positionals[0]}
-		if len(positionals) > 1 {
-			input = []string{"import", "--name", positionals[1], positionals[0]}
-		}
-		return c.runNative(c.context(), c.moduleArgs("node", input...)...)
-	case "edit":
-		if len(positionals) < 2 {
-			return c.fail("usage.invalid", "用法: netproxyctl node edit <分组/tag> <节点链接|文件>", 2)
-		}
-		return c.runNative(c.context(), c.moduleArgs("node", "edit", positionals[0], positionals[1])...)
-	case "remove", "rm":
-		if len(positionals) < 1 {
-			return c.fail("usage.invalid", "用法: netproxyctl node remove <分组/tag>", 2)
-		}
-		return c.runNative(c.context(), c.moduleArgs("node", "remove", positionals[0])...)
-	case "use":
-		if len(positionals) < 1 {
-			return c.fail("usage.invalid", "用法: netproxyctl node use <分组/tag|auto> [分组]", 2)
-		}
-		return c.runNative(c.context(), c.moduleArgs("select", positionals...)...)
-	case "delay":
-		controlArgs := []string{"delay", "--format", "json"}
-		if len(positionals) > 0 && positionals[0] != "" {
-			controlArgs = append(controlArgs, "--target", positionals[0])
-		}
-		if len(positionals) > 1 && positionals[1] != "" {
-			controlArgs = append(controlArgs, "--group", positionals[1])
-		}
-		return c.runNative(c.context(), c.controlArgs(controlArgs[0], controlArgs[1:]...)...)
-	default:
-		return c.fail("usage.invalid", "用法: netproxyctl node list|snapshot|current|show|get|export|delay|add|import|edit|remove|use", 2)
-	}
-}
-
-func (c *cli) ebpf(args []string) int {
-	action := "diagnose"
-	if len(args) > 0 {
-		action = args[0]
-	}
-	switch action {
-	case "diagnose", "validate", "status":
-		return c.runNative(c.context(), "ebpf", "diagnose", "--config", c.ebpfConfig, "--format", "json")
-	default:
-		return c.fail("usage.invalid", "用法: netproxyctl ebpf status|diagnose|validate", 2)
-	}
-}
-
-func (c *cli) forwardModule(args []string, action string) int {
-	if action == "app" && len(args) == 0 {
-		args = []string{"list"}
-	}
-	if action == "logs" && len(args) == 0 {
-		args = []string{"show"}
-	}
-	return c.runNative(c.context(), c.moduleArgs(action, args...)...)
-}
-
-func (c *cli) moduleArgs(action string, args ...string) []string {
-	result := []string{"module", action}
-	if (action == "app" || action == "node" || action == "sub" || action == "network" || action == "config" || action == "logs") && len(args) > 0 {
-		result = append(result, args[0])
-		args = args[1:]
-	}
-	result = append(result,
-		"--module-dir", c.moduleDir,
-		"--catalog-root", c.catalogRoot,
-		"--module-config", c.moduleConfig,
-		"--ebpf-config", c.ebpfConfig,
-		"--sing-box", c.singBoxPath,
-		"--singbox-dir", c.singBoxDir,
-		"--runtime-dir", filepath.Join(c.singBoxDir, "runtime"),
-		"--service-script", c.serviceScript,
-		"--address", c.serviceAddress,
-		"--secret", c.serviceSecret,
-		"--log-dir", c.logDir,
-		"--state-file", c.stateFile,
-		"--progress-dir", c.progressDir,
-		"--worker-pid-file", c.workerPIDFile,
-		"--worker-log-file", filepath.Join(c.logDir, "subscription.log"),
-	)
-	return append(result, args...)
-}
-
-func (c *cli) controlArgs(action string, args ...string) []string {
-	result := []string{"control", action}
-	result = append(result,
-		"--catalog-root", c.catalogRoot,
-		"--module-config", c.moduleConfig,
-		"--state-file", c.stateFile,
-		"--progress-dir", c.progressDir,
-		"--worker-pid-file", c.workerPIDFile,
-		"--sing-box", c.singBoxPath,
-		"--address", c.serviceAddress,
-		"--secret", c.serviceSecret,
-	)
-	return append(result, args...)
-}
-
-func (c *cli) catalogArgs(args ...string) []string {
-	return append([]string{"--root", c.catalogRoot, "--module-config", c.moduleConfig}, args...)
-}
-
-func (c *cli) runNative(ctx context.Context, args ...string) int {
-	command := exec.CommandContext(ctx, c.nativePath, args...)
-	var stdout, stderr bytes.Buffer
-	command.Stdout = &stdout
-	command.Stderr = &stderr
-	if err := command.Run(); err != nil {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return c.fail("command.timeout", "命令执行超时", 124)
-		}
-		c.forwardDiagnostics(stderr.String())
-		if structured := lastErrorResult(stderr.String()); structured != "" {
-			fmt.Fprintln(os.Stdout, structured)
-		} else {
-			c.fail("command.failed", nativeErrorMessage(err, stderr.String()), exitCode(err))
-		}
-		return exitCode(err)
-	}
-	if stderr.Len() > 0 {
-		_, _ = os.Stderr.Write(stderr.Bytes())
-	}
-	if stdout.Len() > 0 {
-		_, _ = os.Stdout.Write(stdout.Bytes())
-	}
-	return 0
-}
-
-func (c *cli) runServiceScript(ctx context.Context, action string) int {
-	shell := "/system/bin/sh"
-	if _, err := os.Stat(shell); err != nil {
-		shell = "sh"
-	}
-	command := exec.CommandContext(ctx, shell, c.serviceScript, action)
-	command.Stdout = os.Stderr
-	command.Stderr = os.Stderr
-	if err := command.Run(); err != nil {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return c.fail("command.timeout", "命令执行超时", 124)
-		}
-		return c.fail("service."+action+"_failed", "服务操作失败", exitCode(err))
-	}
-	return c.success("service."+action, "服务操作完成", map[string]string{"action": action})
-}
-
-func (c *cli) success(code, message string, data any) int {
-	writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: code, Message: message, Data: data})
-	return 0
-}
-
-func (c *cli) fail(code, message string, status int) int {
-	if status <= 0 {
-		status = 1
-	}
-	writeJSON(os.Stdout, result{Schema: 1, OK: false, Code: code, Message: message, Data: map[string]any{}})
-	return status
-}
-
-func (c *cli) forwardDiagnostics(content string) {
-	for _, line := range strings.Split(strings.TrimSuffix(content, "\n"), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || isErrorResult(line) {
-			continue
-		}
-		fmt.Fprintln(os.Stderr, line)
-	}
-}
-
-func (c *cli) help() {
-	fmt.Fprintln(os.Stdout, `NetProxy 管理命令
-
-用法:
-  netproxyctl [--json] [--timeout <秒|时长>] service status|start|stop|restart|reload|check
-  netproxyctl [--json] [--timeout <秒|时长>] catalog list|show <分组>
-  netproxyctl [--json] [--timeout <秒|时长>] node list|current|show|get|export|delay|add|import|edit|remove|use
-  netproxyctl [--json] [--timeout <秒|时长>] sub list|show|add|edit|update|update-all|activate|remove|history|cancel
-  netproxyctl [--json] [--timeout <秒|时长>] mode [rule|global|direct|AllowAds]
-  netproxyctl [--json] [--timeout <秒|时长>] network evaluate --type <wifi|not_wifi> [--ssid <名称>]
-  netproxyctl [--json] [--timeout <秒|时长>] app list|mode|users|add|remove|enable|disable
-  netproxyctl [--json] [--timeout <秒|时长>] ebpf status|diagnose|validate
-  netproxyctl [--json] [--timeout <秒|时长>] config list|read|check|validate|apply
-  netproxyctl [--json] [--timeout <秒|时长>] logs show|clear|export
-
-节点引用固定为 <group-id>/<tag>；自动模式使用 node use auto [分组]。
-默认命令超时为 30 秒，service start 默认 120 秒；可使用 --timeout 覆盖。
-stdout 只包含 schema=1 结果，运行日志写入 stderr。`)
-}
-
-func writeJSON(writer io.Writer, value any) {
-	encoder := json.NewEncoder(writer)
-	encoder.SetEscapeHTML(false)
-	_ = encoder.Encode(value)
-}
-
-func splitReference(reference string) (string, string, bool) {
-	group, tag, found := strings.Cut(reference, "/")
-	return group, tag, found && group != "" && tag != ""
-}
-
-func first(values []string) string {
-	if len(values) == 0 {
-		return ""
-	}
-	return values[0]
-}
-
-func isErrorResult(line string) bool {
-	return strings.HasPrefix(line, "{") && strings.Contains(line, `"schema":1`) && strings.Contains(line, `"ok":false`)
-}
-
-func lastErrorResult(content string) string {
-	last := ""
-	for _, line := range strings.Split(content, "\n") {
-		line = strings.TrimSpace(line)
-		if isErrorResult(line) {
-			last = line
-		}
-	}
-	return last
-}
-
-func nativeErrorMessage(err error, diagnostics string) string {
-	if text := strings.TrimSpace(diagnostics); text != "" {
-		return text
-	}
-	return err.Error()
-}
-
-func exitCode(err error) int {
-	var processError *exec.ExitError
-	if errors.As(err, &processError) && processError.ExitCode() > 0 {
-		return processError.ExitCode()
-	}
-	return 1
 }
