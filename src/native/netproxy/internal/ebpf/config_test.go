@@ -12,7 +12,8 @@ func TestBuildRuntimeIncludesTypedCgroupAndSharedFields(t *testing.T) {
 EBPF_UDP_TIMEOUT="5m"
 EBPF_DNS_MODE="hijack"
 EBPF_CGROUP_ENABLED=1
-EBPF_IPV6_MODE="auto"
+EBPF_CGROUP_IPV6_MODE="auto"
+EBPF_BYPASS_PRIVATE_ADDRESS=0
 APP_PROXY_ENABLE=1
 APP_PROXY_MODE="blacklist"
 APP_ANDROID_USERS="0 999"
@@ -21,6 +22,9 @@ EBPF_SHARED_NETWORK=1
 EBPF_SHARED_INTERFACES="wlan2"
 EBPF_SHARED_INCLUDE_SOURCE_CIDRS="192.168.43.0/24"
 EBPF_SHARED_INCLUDE_MAC_ADDRESSES="02:11:22:33:44:55"
+EBPF_SHARED_PROXY_MAP_CAPACITY=128
+EBPF_SHARED_BYPASS_MAP_CAPACITY=256
+EBPF_SHARED_FRAGMENT_MAP_CAPACITY=512
 `)
 
 	inbound := runtimeInbound(t, config)
@@ -32,9 +36,18 @@ EBPF_SHARED_INCLUDE_MAC_ADDRESSES="02:11:22:33:44:55"
 	if inbound["cgroup_ipv6_mode"] != "auto" {
 		t.Fatalf("unexpected IPv6 mode: %#v", inbound["cgroup_ipv6_mode"])
 	}
+	if inbound["bypass_private_address"] != false {
+		t.Fatalf("unexpected private address bypass: %#v", inbound["bypass_private_address"])
+	}
 	shared := inbound["shared_network"].(map[string]any)
 	if shared["tc_priority"] != float64(1) {
 		t.Fatalf("unexpected TC priority: %#v", shared["tc_priority"])
+	}
+	sharedCapacity := shared["map_capacity"].(map[string]any)
+	if sharedCapacity["proxy"] != float64(128) ||
+		sharedCapacity["bypass"] != float64(256) ||
+		sharedCapacity["fragment"] != float64(512) {
+		t.Fatalf("unexpected shared map capacity: %#v", sharedCapacity)
 	}
 	if len(inbound["include_android_user"].([]any)) != 2 {
 		t.Fatalf("unexpected Android users: %#v", inbound["include_android_user"])
@@ -80,6 +93,9 @@ PROXY_APPS_LIST=""
 func TestLoadRejectsUnknownAndInvalidConfiguration(t *testing.T) {
 	if _, err := Load(writeFixture(t, "EBPF_NETWROK=tcp\n")); err == nil {
 		t.Fatal("expected unknown key to fail")
+	}
+	if _, err := Load(writeFixture(t, "EBPF_IPV6_MODE=auto\n")); err == nil {
+		t.Fatal("expected removed IPv6 key to fail")
 	}
 	if _, err := Load(writeFixture(t, "EBPF_UDP_TIMEOUT=0m\n")); err == nil {
 		t.Fatal("expected zero timeout to fail")

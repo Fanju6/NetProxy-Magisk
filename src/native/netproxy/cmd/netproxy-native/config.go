@@ -191,8 +191,10 @@ func ebpfConfigValue(config ebpf.Config, key string) (string, error) {
 		return boolString(config.CgroupEnabled), nil
 	case "EBPF_CGROUP_PATH":
 		return config.CgroupPath, nil
-	case "EBPF_IPV6_MODE":
-		return config.IPv6Mode, nil
+	case "EBPF_CGROUP_IPV6_MODE":
+		return config.CgroupIPv6Mode, nil
+	case "EBPF_BYPASS_PRIVATE_ADDRESS":
+		return boolString(config.BypassPrivateAddress), nil
 	case "EBPF_BYPASS_RULE_SETS":
 		return strings.Join(config.BypassRuleSets, " "), nil
 	case "APP_PROXY_ENABLE":
@@ -223,8 +225,12 @@ func ebpfConfigValue(config ebpf.Config, key string) (string, error) {
 		return strconv.FormatUint(config.UDPMapCapacity, 10), nil
 	case "EBPF_SOCKET_MAP_CAPACITY":
 		return strconv.FormatUint(config.SocketMapCapacity, 10), nil
-	case "EBPF_SHARED_MAP_CAPACITY":
-		return strconv.FormatUint(config.SharedMapCapacity, 10), nil
+	case "EBPF_SHARED_PROXY_MAP_CAPACITY":
+		return strconv.FormatUint(config.SharedProxyMapCapacity, 10), nil
+	case "EBPF_SHARED_BYPASS_MAP_CAPACITY":
+		return strconv.FormatUint(config.SharedBypassMapCapacity, 10), nil
+	case "EBPF_SHARED_FRAGMENT_MAP_CAPACITY":
+		return strconv.FormatUint(config.SharedFragmentMapCapacity, 10), nil
 	default:
 		return "", fmt.Errorf("不支持的 ebpf.conf 配置键: %s", key)
 	}
@@ -241,12 +247,14 @@ func joinUintValues(values []uint64) string {
 func writeEBPFConfigTSV(config ebpf.Config) {
 	keys := []string{
 		"EBPF_NETWORK", "EBPF_UDP_TIMEOUT", "EBPF_DNS_MODE", "EBPF_CGROUP_ENABLED",
-		"EBPF_CGROUP_PATH", "EBPF_IPV6_MODE", "EBPF_BYPASS_RULE_SETS", "APP_PROXY_ENABLE",
+		"EBPF_CGROUP_PATH", "EBPF_CGROUP_IPV6_MODE", "EBPF_BYPASS_PRIVATE_ADDRESS",
+		"EBPF_BYPASS_RULE_SETS", "APP_PROXY_ENABLE",
 		"APP_PROXY_MODE", "APP_ANDROID_USERS", "PROXY_APPS_LIST", "BYPASS_APPS_LIST",
 		"EBPF_SHARED_NETWORK", "EBPF_SHARED_INTERFACES", "EBPF_SHARED_INCLUDE_SOURCE_CIDRS",
 		"EBPF_SHARED_EXCLUDE_SOURCE_CIDRS", "EBPF_SHARED_INCLUDE_MAC_ADDRESSES",
 		"EBPF_SHARED_EXCLUDE_MAC_ADDRESSES", "EBPF_TCP_MAP_CAPACITY", "EBPF_UDP_MAP_CAPACITY",
-		"EBPF_SOCKET_MAP_CAPACITY", "EBPF_SHARED_MAP_CAPACITY",
+		"EBPF_SOCKET_MAP_CAPACITY", "EBPF_SHARED_PROXY_MAP_CAPACITY",
+		"EBPF_SHARED_BYPASS_MAP_CAPACITY", "EBPF_SHARED_FRAGMENT_MAP_CAPACITY",
 	}
 	for _, key := range keys {
 		value, _ := ebpfConfigValue(config, key)

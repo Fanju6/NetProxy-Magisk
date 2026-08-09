@@ -10,12 +10,15 @@ NetProxy 使用 sing-box 的实验性 eBPF 入站接管流量。它通过 cgroup
 EBPF_NETWORK=""
 EBPF_DNS_MODE="hijack"
 EBPF_CGROUP_ENABLED=1
-EBPF_IPV6_MODE="auto"
+EBPF_CGROUP_IPV6_MODE="always"
+EBPF_BYPASS_PRIVATE_ADDRESS=1
 ```
 
 `EBPF_NETWORK` 可设为 `tcp` 或 `udp`，留空表示两者都处理。DNS 劫持依赖 UDP；将网络限制为 `tcp` 时不应同时用于需要 UDP DNS 的共享网络。
 
-`EBPF_IPV6_MODE` 可设为 `disabled`、`auto`、`always` 或 `shared`。`shared` 只接管热点与 USB 共享网络的 IPv6 流量，本机应用 IPv6 保持直连。
+`EBPF_CGROUP_IPV6_MODE` 只控制本机 cgroup 的 IPv6 接管，可设为 `always`、`auto` 或 `off`。共享网络的 IPv6 是否启用由 `redirect_address` 的 IPv6 前缀决定，不能使用旧的“仅共享网络”模式表达。
+
+`EBPF_BYPASS_PRIVATE_ADDRESS=1` 时，私网和特殊用途地址会在 eBPF 层绕过，不进入 sing-box 路由；需要严格 Global 行为时应设为 `0`。
 
 ## 分应用代理
 
@@ -47,14 +50,15 @@ EBPF_SHARED_NETWORK=0
 EBPF_SHARED_INTERFACES="wlan2"
 EBPF_SHARED_INCLUDE_SOURCE_CIDRS=""
 EBPF_SHARED_EXCLUDE_SOURCE_CIDRS=""
-EBPF_SHARED_TC_PRIORITY=1
+EBPF_SHARED_INCLUDE_MAC_ADDRESSES=""
+EBPF_SHARED_EXCLUDE_MAC_ADDRESSES=""
 ```
 
 启用后，sing-box 会向指定下游接口挂载 TC eBPF。接口暂时不存在不会阻止核心启动，热点开启后会自动尝试挂载。不同 ROM 的热点或 USB 接口名可能不同，必须填写实际接收下游流量的接口。
 
 ## Map 容量
 
-TCP、UDP、套接字绕过和共享网络 Map 默认容量均为 `65536`；只有在日志明确提示容量不足时才需要调整。
+TCP、UDP、套接字绕过 Map，以及共享网络的代理、绕过、分片 Map 默认容量均为 `65536`；只有在日志明确提示容量不足时才需要调整。
 
 ## 内核要求
 

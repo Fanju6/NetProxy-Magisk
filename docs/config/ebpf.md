@@ -8,6 +8,10 @@ eBPF 透明代理主配置位于：
 
 服务启动时，模块读取该文件并生成 `runtime/ebpf.json`。运行时文件会在停止服务后清理，不应直接编辑。
 
+UDP 会话超时、cgroup v2 路径和 eBPF Map 容量属于内核运行参数，使用稳定默认值，
+不在 Android 代理设置页提供编辑入口。只有排查特定内核兼容性或并发容量问题时，
+才需要直接修改配置文件。
+
 ## 基础设置
 
 | 配置项 | 默认值 | 说明 |
@@ -17,7 +21,8 @@ eBPF 透明代理主配置位于：
 | `EBPF_DNS_MODE` | `hijack` | `hijack` 接管 TCP / UDP 53，`off` 放行 |
 | `EBPF_CGROUP_ENABLED` | `1` | 是否通过 cgroup 接管本机应用流量 |
 | `EBPF_CGROUP_PATH` | 空 | 留空时由 sing-box 自动发现 cgroup v2 路径 |
-| `EBPF_IPV6_MODE` | `auto` | IPv6 接管策略：`disabled` 关闭、`auto` 自动判断、`always` 始终接管、`shared` 仅接管共享网络 |
+| `EBPF_CGROUP_IPV6_MODE` | `always` | 本机 IPv6 接管策略：`always` 始终接管、`auto` 有 IPv6 路由时接管、`off` 关闭 |
+| `EBPF_BYPASS_PRIVATE_ADDRESS` | `1` | 是否在 eBPF 层绕过私网和特殊用途地址 |
 
 ## 内核提前绕过
 
@@ -43,7 +48,10 @@ eBPF 透明代理主配置位于：
 | `EBPF_SHARED_INTERFACES` | `wlan2` | 下游接口名，多个值使用空格分隔 |
 | `EBPF_SHARED_INCLUDE_SOURCE_CIDRS` | 空 | 只接管指定来源网段 |
 | `EBPF_SHARED_EXCLUDE_SOURCE_CIDRS` | 空 | 绕过指定来源网段 |
-| `EBPF_SHARED_TC_PRIORITY` | `1` | TC filter 优先级，Android 建议保持 `1` |
+| `EBPF_SHARED_INCLUDE_MAC_ADDRESSES` | 空 | 只接管指定来源 MAC 地址 |
+| `EBPF_SHARED_EXCLUDE_MAC_ADDRESSES` | 空 | 绕过指定来源 MAC 地址 |
+
+共享网络的 TC 优先级固定为 `1`，Android 不提供编辑入口。
 
 ## Map 容量
 
@@ -52,7 +60,9 @@ eBPF 透明代理主配置位于：
 - `EBPF_TCP_MAP_CAPACITY`
 - `EBPF_UDP_MAP_CAPACITY`
 - `EBPF_SOCKET_MAP_CAPACITY`
-- `EBPF_SHARED_MAP_CAPACITY`
+- `EBPF_SHARED_PROXY_MAP_CAPACITY`
+- `EBPF_SHARED_BYPASS_MAP_CAPACITY`
+- `EBPF_SHARED_FRAGMENT_MAP_CAPACITY`
 
 ## 应用配置
 

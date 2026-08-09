@@ -180,47 +180,24 @@ internal fun ProxySettingsScreen(
                             )
                         },
                         CardItem("ipv6_mode") {
-                            val values = listOf("disabled", "auto", "always", "shared")
+                            val values = listOf("always", "auto", "off")
                             OverlayDropdownPreference(
                                 title = stringResource(R.string.ebpf_ipv6_mode),
                                 items = listOf(
-                                    stringResource(R.string.ebpf_ipv6_mode_disabled),
-                                    stringResource(R.string.ebpf_ipv6_mode_auto),
                                     stringResource(R.string.ebpf_ipv6_mode_always),
-                                    stringResource(R.string.ebpf_ipv6_mode_shared)
+                                    stringResource(R.string.ebpf_ipv6_mode_auto),
+                                    stringResource(R.string.ebpf_ipv6_mode_off)
                                 ),
-                                selectedIndex = values.indexOf(settings.ipv6Mode)
+                                selectedIndex = values.indexOf(settings.cgroupIpv6Mode)
                                     .coerceAtLeast(0),
                                 onSelectedIndexChange = {
                                     viewModel.updateProxySetting(
-                                        "EBPF_IPV6_MODE",
+                                        "EBPF_CGROUP_IPV6_MODE",
                                         values[it]
                                     )
                                 }
                             )
                         },
-                        CardItem("udp_timeout") {
-                            val label = stringResource(R.string.ebpf_udp_timeout)
-                            ArrowPreference(
-                                title = label,
-                                summary = settings.udpTimeout,
-                                onClick = {
-                                    editValue("EBPF_UDP_TIMEOUT", label, settings.udpTimeout)
-                                }
-                            )
-                        },
-                        CardItem("cgroup") {
-                            val label = stringResource(R.string.ebpf_cgroup_path)
-                            ArrowPreference(
-                                title = label,
-                                summary = settings.cgroupPath.ifBlank {
-                                    stringResource(R.string.ebpf_cgroup_auto)
-                                },
-                                onClick = {
-                                    editValue("EBPF_CGROUP_PATH", label, settings.cgroupPath)
-                                }
-                            )
-                        }
                     )
                 )
 
@@ -228,6 +205,19 @@ internal fun ProxySettingsScreen(
                     keyPrefix = "ebpf_bypass",
                     title = { stringResource(R.string.ebpf_bypass_settings) },
                     items = listOf(
+                        CardItem("private_address") {
+                            SwitchPreference(
+                                title = stringResource(R.string.ebpf_bypass_private_address),
+                                summary = stringResource(R.string.ebpf_bypass_private_address_summary),
+                                checked = settings.bypassPrivateAddress,
+                                onCheckedChange = {
+                                    viewModel.updateProxySetting(
+                                        "EBPF_BYPASS_PRIVATE_ADDRESS",
+                                        if (it) "1" else "0"
+                                    )
+                                }
+                            )
+                        },
                         CardItem("rule_sets") {
                             val label = stringResource(R.string.ebpf_bypass_rule_sets)
                             ArrowPreference(
@@ -337,69 +327,6 @@ internal fun ProxySettingsScreen(
                                 }
                             )
                         },
-                    )
-                )
-
-                groupedCardSection(
-                    keyPrefix = "ebpf_maps",
-                    title = { stringResource(R.string.ebpf_map_settings) },
-                    items = listOf(
-                        CardItem("tcp") {
-                            val label = stringResource(R.string.ebpf_tcp_map)
-                            ArrowPreference(
-                                title = label,
-                                summary = settings.tcpMapCapacity,
-                                onClick = {
-                                    editValue(
-                                        "EBPF_TCP_MAP_CAPACITY",
-                                        label,
-                                        settings.tcpMapCapacity
-                                    )
-                                }
-                            )
-                        },
-                        CardItem("udp") {
-                            val label = stringResource(R.string.ebpf_udp_map)
-                            ArrowPreference(
-                                title = label,
-                                summary = settings.udpMapCapacity,
-                                onClick = {
-                                    editValue(
-                                        "EBPF_UDP_MAP_CAPACITY",
-                                        label,
-                                        settings.udpMapCapacity
-                                    )
-                                }
-                            )
-                        },
-                        CardItem("socket") {
-                            val label = stringResource(R.string.ebpf_socket_map)
-                            ArrowPreference(
-                                title = label,
-                                summary = settings.socketMapCapacity,
-                                onClick = {
-                                    editValue(
-                                        "EBPF_SOCKET_MAP_CAPACITY",
-                                        label,
-                                        settings.socketMapCapacity
-                                    )
-                                }
-                            )
-                        },
-                        CardItem("shared") {
-                            val label = stringResource(R.string.ebpf_shared_map)
-                            ArrowPreference(
-                                title = label,
-                                summary = settings.sharedMapCapacity,
-                                onClick = {
-                                    editValue(
-                                        "EBPF_SHARED_MAP_CAPACITY",
-                                        label,
-                                        settings.sharedMapCapacity
-                                    )
-                                }
-                            )
-                        }
                     )
                 )
 

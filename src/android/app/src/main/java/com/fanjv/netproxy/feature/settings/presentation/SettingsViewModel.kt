@@ -207,14 +207,18 @@ internal class SettingsViewModel(
             when (key) {
                 "AUTO_START" -> current.copy(autoStartEnabled = value == "1")
                 "EBPF_NETWORK" -> current.copy(proxySettings = settings.copy(network = value))
-                "EBPF_UDP_TIMEOUT" -> current.copy(proxySettings = settings.copy(udpTimeout = value))
                 "EBPF_DNS_MODE" -> current.copy(proxySettings = settings.copy(dnsMode = value))
                 "EBPF_CGROUP_ENABLED" -> current.copy(
                     proxySettings = settings.copy(cgroupEnabled = value == "1")
                 )
 
-                "EBPF_CGROUP_PATH" -> current.copy(proxySettings = settings.copy(cgroupPath = value))
-                "EBPF_IPV6_MODE" -> current.copy(proxySettings = settings.copy(ipv6Mode = value))
+                "EBPF_CGROUP_IPV6_MODE" -> current.copy(
+                    proxySettings = settings.copy(cgroupIpv6Mode = value)
+                )
+
+                "EBPF_BYPASS_PRIVATE_ADDRESS" -> current.copy(
+                    proxySettings = settings.copy(bypassPrivateAddress = value == "1")
+                )
                 "EBPF_BYPASS_RULE_SETS" -> current.copy(
                     proxySettings = settings.copy(bypassRuleSets = value)
                 )
@@ -241,22 +245,6 @@ internal class SettingsViewModel(
 
                 "EBPF_SHARED_EXCLUDE_MAC_ADDRESSES" -> current.copy(
                     proxySettings = settings.copy(sharedExcludeMacAddresses = value)
-                )
-
-                "EBPF_TCP_MAP_CAPACITY" -> current.copy(
-                    proxySettings = settings.copy(tcpMapCapacity = value)
-                )
-
-                "EBPF_UDP_MAP_CAPACITY" -> current.copy(
-                    proxySettings = settings.copy(udpMapCapacity = value)
-                )
-
-                "EBPF_SOCKET_MAP_CAPACITY" -> current.copy(
-                    proxySettings = settings.copy(socketMapCapacity = value)
-                )
-
-                "EBPF_SHARED_MAP_CAPACITY" -> current.copy(
-                    proxySettings = settings.copy(sharedMapCapacity = value)
                 )
 
                 "WIFI_AUTO_SWITCH" -> current.copy(
@@ -290,12 +278,11 @@ internal class SettingsViewModel(
 
         return ProxySettings(
             network = value("EBPF_NETWORK", ""),
-            udpTimeout = value("EBPF_UDP_TIMEOUT", "5m"),
             dnsMode = value("EBPF_DNS_MODE", "hijack"),
             cgroupEnabled = enabled("EBPF_CGROUP_ENABLED", true),
-            cgroupPath = value("EBPF_CGROUP_PATH", ""),
-            ipv6Mode = value("EBPF_IPV6_MODE", "auto")
-                .takeIf { it in ipv6Modes } ?: "auto",
+            cgroupIpv6Mode = value("EBPF_CGROUP_IPV6_MODE", "always")
+                .takeIf { it in ipv6Modes } ?: "always",
+            bypassPrivateAddress = enabled("EBPF_BYPASS_PRIVATE_ADDRESS", true),
             bypassRuleSets = value("EBPF_BYPASS_RULE_SETS", "direct ChinaIP"),
             sharedNetworkEnabled = enabled("EBPF_SHARED_NETWORK"),
             sharedInterfaces = value("EBPF_SHARED_INTERFACES", "wlan2"),
@@ -303,10 +290,6 @@ internal class SettingsViewModel(
             sharedExcludeSourceCidrs = value("EBPF_SHARED_EXCLUDE_SOURCE_CIDRS", ""),
             sharedIncludeMacAddresses = value("EBPF_SHARED_INCLUDE_MAC_ADDRESSES", ""),
             sharedExcludeMacAddresses = value("EBPF_SHARED_EXCLUDE_MAC_ADDRESSES", ""),
-            tcpMapCapacity = value("EBPF_TCP_MAP_CAPACITY", "65536"),
-            udpMapCapacity = value("EBPF_UDP_MAP_CAPACITY", "65536"),
-            socketMapCapacity = value("EBPF_SOCKET_MAP_CAPACITY", "65536"),
-            sharedMapCapacity = value("EBPF_SHARED_MAP_CAPACITY", "65536"),
             wifiAutoSwitch = module["WIFI_AUTO_SWITCH"] == "1",
             wifiSsidMode = module["WIFI_SSID_MODE"] ?: "blacklist",
             wifiSsidList = module["WIFI_SSID_LIST"].orEmpty(),
@@ -317,10 +300,8 @@ internal class SettingsViewModel(
     private companion object {
         val quotedEbpfKeys = setOf(
             "EBPF_NETWORK",
-            "EBPF_UDP_TIMEOUT",
             "EBPF_DNS_MODE",
-            "EBPF_CGROUP_PATH",
-            "EBPF_IPV6_MODE",
+            "EBPF_CGROUP_IPV6_MODE",
             "EBPF_BYPASS_RULE_SETS",
             "EBPF_SHARED_INTERFACES",
             "EBPF_SHARED_INCLUDE_SOURCE_CIDRS",
@@ -328,6 +309,6 @@ internal class SettingsViewModel(
             "EBPF_SHARED_INCLUDE_MAC_ADDRESSES",
             "EBPF_SHARED_EXCLUDE_MAC_ADDRESSES"
         )
-        val ipv6Modes = setOf("disabled", "auto", "always", "shared")
+        val ipv6Modes = setOf("always", "auto", "off")
     }
 }

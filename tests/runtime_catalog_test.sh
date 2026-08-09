@@ -69,7 +69,8 @@ grep -q '"listen": "0.0.0.0"' "$SINGBOX_DIR/confdir/08_services.json"
 grep -q '"secret": "singbox"' "$SINGBOX_DIR/confdir/02_experimental.json"
 grep -q '"secret": "singbox"' "$SINGBOX_DIR/confdir/08_services.json"
 json_contains '"cgroup_enabled":true'
-json_contains '"cgroup_ipv6_mode":"auto"'
+json_contains '"cgroup_ipv6_mode":"always"'
+json_contains '"bypass_private_address":true'
 json_contains '"include_package":\[\]'
 json_contains '"exclude_package":\[\]'
 json_contains '"include_android_user":\[\]'
@@ -99,19 +100,19 @@ prepare_runtime
 json_contains '"include_uid":\[4294967295\]'
 json_contains '"include_package":\[\]'
 
-set_conf_values "$EBPF_CONF" "PROXY_APPS_LIST" '"com.google.android.youtube"' "EBPF_IPV6_MODE" '"disabled"'
+set_conf_values "$EBPF_CONF" "PROXY_APPS_LIST" '"com.google.android.youtube"' "EBPF_CGROUP_IPV6_MODE" '"off"'
 prepare_runtime
 json_contains '"include_uid":\[\]'
 json_contains '"include_package":\["com.google.android.youtube"\]'
 json_contains '"cgroup_ipv6_mode":"off"'
 ! json_contains 'fd53:696e:672d:626f::/64'
 
-set_conf "$EBPF_CONF" "EBPF_IPV6_MODE" '"shared"'
+set_conf "$EBPF_CONF" "EBPF_CGROUP_IPV6_MODE" '"off"'
 prepare_runtime
 json_contains '"cgroup_ipv6_mode":"off"'
-json_contains 'fd53:696e:672d:626f::/64'
+! json_contains 'fd53:696e:672d:626f::/64'
 
-set_conf "$EBPF_CONF" "EBPF_IPV6_MODE" '"always"'
+set_conf "$EBPF_CONF" "EBPF_CGROUP_IPV6_MODE" '"always"'
 prepare_runtime
 json_contains '"cgroup_ipv6_mode":"always"'
 json_contains 'fd53:696e:672d:626f::/64'
@@ -121,7 +122,8 @@ prepare_runtime
 json_contains '"cgroup_enabled":false'
 ! json_contains '"cgroup_path"'
 ! json_contains '"include_package"'
-json_contains '"map_capacity":65536'
+json_contains '"map_capacity":{"proxy":65536,"bypass":65536,"fragment":65536}'
+json_contains 'fd53:696e:672d:626f::/64'
 
 sed -i 's/"name": "备用配置"/"name": "本地配置"/' "$CATALOG_DIR/secondary/meta.json"
 [ "$("$NETPROXY_NATIVE_BIN" catalog tag --root "$CATALOG_DIR" --group default --format raw)" = "本地配置 [default]" ]

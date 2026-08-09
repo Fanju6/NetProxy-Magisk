@@ -14,9 +14,11 @@ import (
 )
 
 const (
-	defaultUDPTimeout  = "5m"
-	defaultSharedIface = "wlan2"
-	maxMapCapacity     = 1048576
+	defaultUDPTimeout     = "5m"
+	defaultCgroupIPv6Mode = "always"
+	defaultSharedIface    = "wlan2"
+	defaultMapCapacity    = 65536
+	maxMapCapacity        = 1048576
 )
 
 var allowedKeys = map[string]bool{
@@ -25,7 +27,8 @@ var allowedKeys = map[string]bool{
 	"EBPF_DNS_MODE":                     true,
 	"EBPF_CGROUP_ENABLED":               true,
 	"EBPF_CGROUP_PATH":                  true,
-	"EBPF_IPV6_MODE":                    true,
+	"EBPF_CGROUP_IPV6_MODE":             true,
+	"EBPF_BYPASS_PRIVATE_ADDRESS":       true,
 	"EBPF_BYPASS_RULE_SETS":             true,
 	"APP_PROXY_ENABLE":                  true,
 	"APP_PROXY_MODE":                    true,
@@ -41,7 +44,9 @@ var allowedKeys = map[string]bool{
 	"EBPF_TCP_MAP_CAPACITY":             true,
 	"EBPF_UDP_MAP_CAPACITY":             true,
 	"EBPF_SOCKET_MAP_CAPACITY":          true,
-	"EBPF_SHARED_MAP_CAPACITY":          true,
+	"EBPF_SHARED_PROXY_MAP_CAPACITY":    true,
+	"EBPF_SHARED_BYPASS_MAP_CAPACITY":   true,
+	"EBPF_SHARED_FRAGMENT_MAP_CAPACITY": true,
 }
 
 // Config 描述 ebpf.conf 的类型化配置。
@@ -51,7 +56,8 @@ type Config struct {
 	DNSMode                   string
 	CgroupEnabled             bool
 	CgroupPath                string
-	IPv6Mode                  string
+	CgroupIPv6Mode            string
+	BypassPrivateAddress      bool
 	BypassRuleSets            []string
 	AppProxyEnable            bool
 	AppProxyMode              string
@@ -67,7 +73,9 @@ type Config struct {
 	TCPMapCapacity            uint64
 	UDPMapCapacity            uint64
 	SocketMapCapacity         uint64
-	SharedMapCapacity         uint64
+	SharedProxyMapCapacity    uint64
+	SharedBypassMapCapacity   uint64
+	SharedFragmentMapCapacity uint64
 }
 
 // Diagnostic 描述可以直接展示给用户的配置问题。
@@ -80,14 +88,16 @@ type Diagnostic struct {
 
 // Summary 描述诊断所需的安全配置摘要。
 type Summary struct {
-	Network            string `json:"network"`
-	DNSMode            string `json:"dns_mode"`
-	CgroupEnabled      bool   `json:"cgroup_enabled"`
-	SharedNetwork      bool   `json:"shared_network"`
-	AndroidUserCount   int    `json:"android_user_count"`
-	ProxyPackageCount  int    `json:"proxy_package_count"`
-	BypassPackageCount int    `json:"bypass_package_count"`
-	BypassRuleSetCount int    `json:"bypass_rule_set_count"`
+	Network              string `json:"network"`
+	DNSMode              string `json:"dns_mode"`
+	CgroupEnabled        bool   `json:"cgroup_enabled"`
+	CgroupIPv6Mode       string `json:"cgroup_ipv6_mode"`
+	BypassPrivateAddress bool   `json:"bypass_private_address"`
+	SharedNetwork        bool   `json:"shared_network"`
+	AndroidUserCount     int    `json:"android_user_count"`
+	ProxyPackageCount    int    `json:"proxy_package_count"`
+	BypassPackageCount   int    `json:"bypass_package_count"`
+	BypassRuleSetCount   int    `json:"bypass_rule_set_count"`
 }
 
 // Report 是 ebpf validate/diagnose 的结构化结果。
@@ -121,18 +131,21 @@ func Load(path string) (Config, error) {
 		}
 	}
 	config := Config{
-		UDPTimeout:        defaultUDPTimeout,
-		DNSMode:           "hijack",
-		CgroupEnabled:     true,
-		IPv6Mode:          "auto",
-		BypassRuleSets:    []string{"direct", "ChinaIP"},
-		AppProxyEnable:    true,
-		AppProxyMode:      "blacklist",
-		SharedInterfaces:  []string{defaultSharedIface},
-		TCPMapCapacity:    65536,
-		UDPMapCapacity:    65536,
-		SocketMapCapacity: 65536,
-		SharedMapCapacity: 65536,
+		UDPTimeout:                defaultUDPTimeout,
+		DNSMode:                   "hijack",
+		CgroupEnabled:             true,
+		CgroupIPv6Mode:            defaultCgroupIPv6Mode,
+		BypassPrivateAddress:      true,
+		BypassRuleSets:            []string{"direct", "ChinaIP"},
+		AppProxyEnable:            true,
+		AppProxyMode:              "blacklist",
+		SharedInterfaces:          []string{defaultSharedIface},
+		TCPMapCapacity:            defaultMapCapacity,
+		UDPMapCapacity:            defaultMapCapacity,
+		SocketMapCapacity:         defaultMapCapacity,
+		SharedProxyMapCapacity:    defaultMapCapacity,
+		SharedBypassMapCapacity:   defaultMapCapacity,
+		SharedFragmentMapCapacity: defaultMapCapacity,
 	}
 	var parseErr error
 	config.Network = valueOr(values, "EBPF_NETWORK", "")
@@ -143,7 +156,11 @@ func Load(path string) (Config, error) {
 		return Config{}, parseErr
 	}
 	config.CgroupPath = valueOr(values, "EBPF_CGROUP_PATH", "")
-	config.IPv6Mode = valueOr(values, "EBPF_IPV6_MODE", config.IPv6Mode)
+	config.CgroupIPv6Mode = valueOr(values, "EBPF_CGROUP_IPV6_MODE", config.CgroupIPv6Mode)
+	config.BypassPrivateAddress, parseErr = boolValue(values, "EBPF_BYPASS_PRIVATE_ADDRESS", config.BypassPrivateAddress)
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
 	config.BypassRuleSets = fields(valueOr(values, "EBPF_BYPASS_RULE_SETS", "direct ChinaIP"))
 	config.AppProxyEnable, parseErr = boolValue(values, "APP_PROXY_ENABLE", config.AppProxyEnable)
 	if parseErr != nil {
@@ -197,7 +214,15 @@ func Load(path string) (Config, error) {
 			return Config{}, parseErr
 		}
 	}
-	config.SharedMapCapacity, parseErr = mapCapacity(values, "EBPF_SHARED_MAP_CAPACITY", config.SharedMapCapacity)
+	config.SharedProxyMapCapacity, parseErr = mapCapacity(values, "EBPF_SHARED_PROXY_MAP_CAPACITY", config.SharedProxyMapCapacity)
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
+	config.SharedBypassMapCapacity, parseErr = mapCapacity(values, "EBPF_SHARED_BYPASS_MAP_CAPACITY", config.SharedBypassMapCapacity)
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
+	config.SharedFragmentMapCapacity, parseErr = mapCapacity(values, "EBPF_SHARED_FRAGMENT_MAP_CAPACITY", config.SharedFragmentMapCapacity)
 	if parseErr != nil {
 		return Config{}, parseErr
 	}
@@ -219,8 +244,8 @@ func (c Config) Validate() error {
 	if c.DNSMode != "hijack" && c.DNSMode != "off" {
 		return validationError("ebpf.dns_mode_invalid", "EBPF_DNS_MODE", "DNS 模式只能是 hijack 或 off")
 	}
-	if c.IPv6Mode != "disabled" && c.IPv6Mode != "auto" && c.IPv6Mode != "always" && c.IPv6Mode != "shared" {
-		return validationError("ebpf.ipv6_mode_invalid", "EBPF_IPV6_MODE", "IPv6 模式只能是 disabled、auto、always 或 shared")
+	if c.CgroupIPv6Mode != "always" && c.CgroupIPv6Mode != "auto" && c.CgroupIPv6Mode != "off" {
+		return validationError("ebpf.cgroup_ipv6_mode_invalid", "EBPF_CGROUP_IPV6_MODE", "本机 IPv6 接管模式只能是 always、auto 或 off")
 	}
 	if c.AppProxyMode != "blacklist" && c.AppProxyMode != "whitelist" {
 		return validationError("ebpf.app_mode_invalid", "APP_PROXY_MODE", "分应用代理模式只能是 blacklist 或 whitelist")
@@ -240,18 +265,19 @@ func (c Config) Validate() error {
 // Build 生成 sing-box eBPF inbound 的类型化运行时文档。
 func (c Config) Build() Runtime {
 	redirect := []string{"127.128.0.0/9"}
-	if c.IPv6Mode != "disabled" {
+	if (c.CgroupEnabled && c.CgroupIPv6Mode != "off") || c.SharedNetwork {
 		redirect = append(redirect, "fd53:696e:672d:626f::/64")
 	}
 	inbound := Inbound{
-		Type:            "ebpf",
-		Tag:             "ebpf-in",
-		CgroupEnabled:   c.CgroupEnabled,
-		Network:         c.Network,
-		UDPTimeout:      c.UDPTimeout,
-		DNSMode:         c.DNSMode,
-		RedirectAddress: redirect,
-		BypassRuleSet:   c.BypassRuleSets,
+		Type:                 "ebpf",
+		Tag:                  "ebpf-in",
+		CgroupEnabled:        c.CgroupEnabled,
+		Network:              c.Network,
+		UDPTimeout:           c.UDPTimeout,
+		DNSMode:              c.DNSMode,
+		BypassPrivateAddress: c.BypassPrivateAddress,
+		RedirectAddress:      redirect,
+		BypassRuleSet:        c.BypassRuleSets,
 		SharedNetwork: SharedNetwork{
 			Enabled:           c.SharedNetwork,
 			IncludeInterface:  c.SharedInterfaces,
@@ -260,7 +286,11 @@ func (c Config) Build() Runtime {
 			IncludeMACAddress: c.SharedIncludeMACAddresses,
 			ExcludeMACAddress: c.SharedExcludeMACAddresses,
 			TCPriority:        1,
-			MapCapacity:       c.SharedMapCapacity,
+			MapCapacity: SharedMapCapacity{
+				Proxy:    c.SharedProxyMapCapacity,
+				Bypass:   c.SharedBypassMapCapacity,
+				Fragment: c.SharedFragmentMapCapacity,
+			},
 		},
 	}
 	if c.CgroupEnabled {
@@ -274,13 +304,9 @@ func (c Config) Build() Runtime {
 			includePackages = []string{}
 			excludePackages = []string{}
 		}
-		ipv6Mode := c.IPv6Mode
-		if c.IPv6Mode == "disabled" || c.IPv6Mode == "shared" {
-			ipv6Mode = "off"
-		}
 		inbound.Cgroup = &CgroupFields{
 			Path:               c.CgroupPath,
-			IPv6Mode:           ipv6Mode,
+			IPv6Mode:           c.CgroupIPv6Mode,
 			IncludeUID:         includeUID,
 			IncludeAndroidUser: c.AndroidUsers,
 			IncludePackages:    includePackages,
@@ -300,16 +326,17 @@ type Runtime struct {
 
 // Inbound 是 eBPF 入站的固定字段模型。
 type Inbound struct {
-	Type            string
-	Tag             string
-	CgroupEnabled   bool
-	Network         string
-	UDPTimeout      string
-	DNSMode         string
-	Cgroup          *CgroupFields
-	RedirectAddress []string
-	BypassRuleSet   []string
-	SharedNetwork   SharedNetwork
+	Type                 string
+	Tag                  string
+	CgroupEnabled        bool
+	Network              string
+	UDPTimeout           string
+	DNSMode              string
+	BypassPrivateAddress bool
+	Cgroup               *CgroupFields
+	RedirectAddress      []string
+	BypassRuleSet        []string
+	SharedNetwork        SharedNetwork
 }
 
 // CgroupFields 是仅在本机 cgroup 路径启用时输出的字段。
@@ -327,27 +354,35 @@ type CgroupFields struct {
 
 // SharedNetwork 是共享网络数据路径配置。
 type SharedNetwork struct {
-	Enabled           bool     `json:"enabled"`
-	IncludeInterface  []string `json:"include_interface"`
-	IncludeSourceCIDR []string `json:"include_source_cidr"`
-	ExcludeSourceCIDR []string `json:"exclude_source_cidr"`
-	IncludeMACAddress []string `json:"include_mac_address"`
-	ExcludeMACAddress []string `json:"exclude_mac_address"`
-	TCPriority        int      `json:"tc_priority"`
-	MapCapacity       uint64   `json:"map_capacity"`
+	Enabled           bool              `json:"enabled"`
+	IncludeInterface  []string          `json:"include_interface"`
+	IncludeSourceCIDR []string          `json:"include_source_cidr"`
+	ExcludeSourceCIDR []string          `json:"exclude_source_cidr"`
+	IncludeMACAddress []string          `json:"include_mac_address"`
+	ExcludeMACAddress []string          `json:"exclude_mac_address"`
+	TCPriority        int               `json:"tc_priority"`
+	MapCapacity       SharedMapCapacity `json:"map_capacity"`
+}
+
+// SharedMapCapacity 是共享网络三类运行状态 Map 的容量。
+type SharedMapCapacity struct {
+	Proxy    uint64 `json:"proxy"`
+	Bypass   uint64 `json:"bypass"`
+	Fragment uint64 `json:"fragment"`
 }
 
 // MarshalJSON 根据 cgroup 是否启用裁剪本机路径字段。
 func (i Inbound) MarshalJSON() ([]byte, error) {
 	value := map[string]any{
-		"type":             i.Type,
-		"tag":              i.Tag,
-		"cgroup_enabled":   i.CgroupEnabled,
-		"udp_timeout":      i.UDPTimeout,
-		"dns_mode":         i.DNSMode,
-		"redirect_address": i.RedirectAddress,
-		"bypass_rule_set":  i.BypassRuleSet,
-		"shared_network":   i.SharedNetwork,
+		"type":                   i.Type,
+		"tag":                    i.Tag,
+		"cgroup_enabled":         i.CgroupEnabled,
+		"udp_timeout":            i.UDPTimeout,
+		"dns_mode":               i.DNSMode,
+		"bypass_private_address": i.BypassPrivateAddress,
+		"redirect_address":       i.RedirectAddress,
+		"bypass_rule_set":        i.BypassRuleSet,
+		"shared_network":         i.SharedNetwork,
 	}
 	if i.Network != "" {
 		value["network"] = i.Network
@@ -414,6 +449,7 @@ func Diagnose(path string) Report {
 	}
 	return Report{Valid: true, Summary: Summary{
 		Network: config.Network, DNSMode: config.DNSMode, CgroupEnabled: config.CgroupEnabled,
+		CgroupIPv6Mode: config.CgroupIPv6Mode, BypassPrivateAddress: config.BypassPrivateAddress,
 		SharedNetwork: config.SharedNetwork, AndroidUserCount: len(config.AndroidUsers),
 		ProxyPackageCount: len(config.ProxyPackages), BypassPackageCount: len(config.BypassPackages),
 		BypassRuleSetCount: len(config.BypassRuleSets),
