@@ -123,8 +123,10 @@ func ExportLogs(options Options, destination string) error {
 			return err
 		}
 	}
-	readme := fmt.Sprintf("NetProxy 诊断包\n管理器版本: %s\n模块版本: %s\n生成时间: %s\n敏感信息已脱敏。\n",
-		versionOrUnknown(options.ManagerVersion), moduleVersion(options), time.Now().Format(time.RFC3339))
+	moduleVersionName, moduleVersionCode := moduleVersionInfo(options)
+	readme := fmt.Sprintf("NetProxy 诊断包\n管理器版本: %s\n管理器版本号: %s\n模块版本: %s\n模块版本号: %s\n生成时间: %s\n敏感信息已脱敏。\n",
+		versionOrUnknown(options.ManagerVersion), versionOrUnknown(options.ManagerVersionCode),
+		moduleVersionName, moduleVersionCode, time.Now().Format(time.RFC3339))
 	return writeTarFile(tarWriter, "README.txt", []byte(readme))
 }
 
@@ -136,17 +138,23 @@ func versionOrUnknown(value string) string {
 	return value
 }
 
-func moduleVersion(options Options) string {
+func moduleVersionInfo(options Options) (string, string) {
 	content, err := os.ReadFile(filepath.Join(options.ModuleDir, "module.prop"))
 	if err != nil {
-		return "unknown"
+		return "unknown", "unknown"
 	}
-	for _, line := range strings.Split(string(content), "\n") {
+	version := "unknown"
+	versionCode := "unknown"
+	for _, rawLine := range strings.Split(string(content), "\n") {
+		line := strings.TrimSpace(strings.TrimPrefix(rawLine, "\ufeff"))
 		if strings.HasPrefix(line, "version=") {
-			return versionOrUnknown(strings.TrimPrefix(line, "version="))
+			version = versionOrUnknown(strings.TrimPrefix(line, "version="))
+		}
+		if strings.HasPrefix(line, "versionCode=") {
+			versionCode = versionOrUnknown(strings.TrimPrefix(line, "versionCode="))
 		}
 	}
-	return "unknown"
+	return version, versionCode
 }
 
 func writeTarFile(writer *tar.Writer, name string, content []byte) error {

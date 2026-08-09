@@ -13,7 +13,7 @@ import (
 
 func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "module.prop"), []byte("version=v8.0.0-test\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "module.prop"), []byte("version=v8.0.0-test\nversionCode=5\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	logDir := filepath.Join(root, "logs")
@@ -48,14 +48,15 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 
 	destination := filepath.Join(root, "export", "diagnostics.tar.gz")
 	options := Options{
-		ModuleDir:      root,
-		ManagerVersion: "8.0.0-manager-test",
-		CatalogRoot:    catalogRoot,
-		ModuleConfig:   moduleConfig,
-		EBPFConfig:     ebpfConfig,
-		SingBoxDir:     singboxDir,
-		RuntimeDir:     runtimeDir,
-		LogDir:         logDir,
+		ModuleDir:          root,
+		ManagerVersion:     "8.0.0-manager-test",
+		ManagerVersionCode: "29",
+		CatalogRoot:        catalogRoot,
+		ModuleConfig:       moduleConfig,
+		EBPFConfig:         ebpfConfig,
+		SingBoxDir:         singboxDir,
+		RuntimeDir:         runtimeDir,
+		LogDir:             logDir,
 	}
 	if err := ExportLogs(options, destination); err != nil {
 		t.Fatal(err)
@@ -99,7 +100,12 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 		if header.Name == "README.txt" {
 			seenReadme = true
 			readme := string(content)
-			for _, version := range []string{"管理器版本: 8.0.0-manager-test", "模块版本: v8.0.0-test"} {
+			for _, version := range []string{
+				"管理器版本: 8.0.0-manager-test",
+				"管理器版本号: 29",
+				"模块版本: v8.0.0-test",
+				"模块版本号: 5",
+			} {
 				if !strings.Contains(readme, version) {
 					t.Fatalf("README.txt 缺少版本信息 %q: %s", version, readme)
 				}

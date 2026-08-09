@@ -26,6 +26,7 @@ import (
 type Options struct {
 	ModuleDir          string
 	ManagerVersion     string
+	ManagerVersionCode string
 	CatalogRoot        string
 	ModuleConfig       string
 	EBPFConfig         string

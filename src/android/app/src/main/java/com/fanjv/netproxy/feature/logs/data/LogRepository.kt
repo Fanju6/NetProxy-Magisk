@@ -28,7 +28,12 @@ internal class LogRepository(
     }
 
     suspend fun export(outputPath: String): String =
-        client.execute("logs", "export", "--manager-version", BuildConfig.VERSION_NAME, outputPath).data.jsonObject["path"]
+        client.execute(
+            "logs", "export",
+            "--manager-version", BuildConfig.VERSION_NAME,
+            "--manager-version-code", BuildConfig.VERSION_CODE.toString(),
+            outputPath,
+        ).data.jsonObject["path"]
             ?.jsonPrimitive?.content ?: outputPath
 
     suspend fun createReport(): File {
