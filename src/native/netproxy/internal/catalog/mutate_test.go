@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/convert"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/grouplock"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 )
@@ -143,6 +145,89 @@ func TestCatalogNodeMutationsSerializePerGroup(t *testing.T) {
 	if metadata.NodeCount != 3 || metadata.Revision != 3 {
 		t.Fatalf("provider and metadata diverged: nodes=%d revision=%d", metadata.NodeCount, metadata.Revision)
 	}
+}
+
+func TestConcurrentNodeEditsWithSubscriptionUpdate(t *testing.T) {
+	root := t.TempDir()
+	groupID := "concurrent-update"
+	now := time.Unix(1_700_000_000, 0)
+	if _, err := ImportGroup(context.Background(), ImportOptions{
+		Root: root, GroupID: groupID, Name: "并发测试", Input: "socks://base.example:1080#BASE", Now: now,
+	}); err != nil {
+		t.Fatalf("import group: %v", err)
+	}
+
+	parsed, err := convert.Input(context.Background(), "socks://subscription.example:2080#SUB", false)
+	if err != nil {
+		t.Fatalf("convert subscription node: %v", err)
+	}
+	metadata := subscription.NewMetadata(groupID, "订阅更新", "subscription", "https://example.test/sub", now)
+	metadata.NodeCount = 1
+	metadata.Revision = 10
+	metadata.UpdatedAt = subscription.FormatEpochUTC(now.Unix())
+	groupDir := filepath.Join(root, groupID)
+
+	start := make(chan struct{})
+	errorsCh := make(chan error, 2)
+	var wait sync.WaitGroup
+	wait.Add(2)
+	go func() {
+		defer wait.Done()
+		<-start
+		_, appendErr := AppendNode(context.Background(), MutationOptions{
+			GroupDir: groupDir,
+			GroupID:  groupID,
+			Input:    "socks://append.example:2081#APPEND",
+			Now:      now,
+		})
+		errorsCh <- appendErr
+	}()
+	go func() {
+		defer wait.Done()
+		<-start
+		// 订阅更新在提交阶段持有同一个分组锁，不能和节点编辑交错读写。
+		release := grouplock.Acquire(groupID)
+		defer release()
+		errorsCh <- commitPair(context.Background(), groupDir, parsed.Document, metadata)
+	}()
+	close(start)
+	wait.Wait()
+	close(errorsCh)
+	for err := range errorsCh {
+		if err != nil {
+			t.Fatalf("concurrent catalog write: %v", err)
+		}
+	}
+
+	document, err := provider.Load(context.Background(), filepath.Join(groupDir, "provider.json"))
+	if err != nil {
+		t.Fatalf("load final provider: %v", err)
+	}
+	finalMetadata, err := subscription.LoadMetadata(filepath.Join(groupDir, "meta.json"), groupID)
+	if err != nil {
+		t.Fatalf("load final metadata: %v", err)
+	}
+	nodes := provider.Inspect(document)
+	if finalMetadata.NodeCount != len(nodes) {
+		t.Fatalf("provider and metadata node count diverged: nodes=%d metadata=%d", len(nodes), finalMetadata.NodeCount)
+	}
+	if !providerHasTag(nodes, "SUB") {
+		t.Fatalf("subscription update was lost: nodes=%+v", nodes)
+	}
+	// 订阅先提交时，节点追加会把 revision 从 10 提升到 11；反之保持 10。
+	if (len(nodes) == 1 && finalMetadata.Revision != 10) ||
+		(len(nodes) == 2 && finalMetadata.Revision != 11) {
+		t.Fatalf("provider and metadata revision diverged: nodes=%d revision=%d", len(nodes), finalMetadata.Revision)
+	}
+}
+
+func providerHasTag(nodes []provider.NodeSummary, tag string) bool {
+	for _, node := range nodes {
+		if node.Tag == tag {
+			return true
+		}
+	}
+	return false
 }
 
 func TestCatalogGroupInitialization(t *testing.T) {

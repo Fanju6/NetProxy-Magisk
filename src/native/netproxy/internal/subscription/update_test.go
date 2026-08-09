@@ -233,3 +233,30 @@ func TestAcquireLockRemovesStalePID(t *testing.T) {
 		t.Fatalf("stale lock contents were unexpectedly preserved: %v", err)
 	}
 }
+
+func TestAcquireLockWithInvalidPIDFile(t *testing.T) {
+	for _, content := range []string{"", "not-a-pid\n", "  \n"} {
+		name := strings.ReplaceAll(strings.TrimSpace(content), "-", "_")
+		if name == "" {
+			name = "empty"
+		}
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			lockPath := filepath.Join(root, "locks", "group.lock")
+			if err := os.MkdirAll(lockPath, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(lockPath, "pid"), []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := acquireLock(lockPath); err != nil {
+				t.Fatalf("invalid PID lock was not reclaimed: %v", err)
+			}
+			defer os.RemoveAll(lockPath)
+			if _, err := os.Stat(filepath.Join(lockPath, "pid")); !os.IsNotExist(err) {
+				t.Fatalf("invalid PID file was unexpectedly preserved: %v", err)
+			}
+		})
+	}
+}
