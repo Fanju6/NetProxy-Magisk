@@ -5,6 +5,20 @@ plugins {
     alias(libs.plugins.kotlin.parcelize)
 }
 
+// 使用仓库提交数作为管理器 versionCode，避免发布时手动维护两套编号。
+fun gitCommitCount(): Int {
+    val repositoryRoot = rootProject.rootDir.parentFile.parentFile
+    return runCatching {
+        val process = ProcessBuilder("git", "rev-list", "--count", "HEAD")
+            .directory(repositoryRoot)
+            .redirectErrorStream(true)
+            .start()
+        val output = process.inputStream.bufferedReader().use { it.readText().trim() }
+        val exitCode = process.waitFor()
+        output.toIntOrNull()?.takeIf { exitCode == 0 && it > 0 } ?: 1
+    }.getOrDefault(1)
+}
+
 android {
     namespace = "com.fanjv.netproxy"
     compileSdk {
@@ -15,9 +29,9 @@ android {
         applicationId = "com.fanjv.netproxy"
         minSdk = 31
         targetSdk = 37
-        versionCode = 28
-        versionName = "8.0.0-alpha.4"
-        buildConfigField("long", "ALPHA_EXPIRES_AT_MILLIS", "1786291200000L")
+        versionCode = gitCommitCount()
+        versionName = "8.0.0-beta.1"
+        buildConfigField("long", "ALPHA_EXPIRES_AT_MILLIS", "1787155200000L")
         ndk {
             abiFilters += "arm64-v8a"
         }

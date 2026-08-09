@@ -83,7 +83,7 @@ Android 管理器是 NetProxy 的图形化主入口，目前通过 Google Play �
 当前管理器源码中：
 
 - `applicationId`：`com.fanjv.netproxy`
-- `versionName`：`7.0.0`
+- `versionName`：`8.0.0-beta.1`
 - `minSdk`：`31`
 
 普通用户直接通过 Google Play 安装即可。
