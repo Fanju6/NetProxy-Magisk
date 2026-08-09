@@ -76,6 +76,7 @@
       "with_quic",
       "with_utls",
       "with_clash_api",
+      "with_gvisor",
       "with_tailscale",
       "badlinkname",
       "tfogo_checklinkname0",
