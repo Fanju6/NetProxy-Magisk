@@ -72,7 +72,7 @@ start_subscription_worker() {
     --root "$CATALOG_DIR" \
     --progress-dir "/dev/netproxy/subscriptions" \
     --pid-file "$WORKER_PID_FILE" \
-    --log-file "$MODDIR/logs/subscription.log" \
+    --log-file "$MODDIR/logs/service.log" \
     --module-conf "$MODULE_CONF" \
     --reload-script "$MODDIR/scripts/core/service.sh" \
     --sing-box "$MODDIR/bin/sing-box" \

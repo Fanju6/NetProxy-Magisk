@@ -65,7 +65,7 @@ func NewOptions(moduleDir string) Options {
 		ServiceAddress: "127.0.0.1:9090",
 		ServiceSecret:  "singbox",
 		WorkerPIDFile:  "/dev/netproxy/worker.pid",
-		WorkerLogFile:  filepath.Join(moduleDir, "logs", "subscription.log"),
+		WorkerLogFile:  filepath.Join(moduleDir, "logs", "service.log"),
 		WiFiStateFile:  "/dev/netproxy/wifi_state",
 		RequestTimeout: 8 * time.Second,
 	}

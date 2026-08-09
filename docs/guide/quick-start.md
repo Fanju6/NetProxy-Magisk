@@ -72,5 +72,4 @@ su -c /data/adb/modules/netproxy/scripts/cli api ui
 ```sh
 su -c '/data/adb/modules/netproxy/scripts/cli service logs service 80'
 su -c '/data/adb/modules/netproxy/scripts/cli service logs core 80'
-su -c '/data/adb/modules/netproxy/scripts/cli service logs sub 80'
 ```

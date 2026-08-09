@@ -22,7 +22,7 @@ var (
 
 // LogFile 返回用户可见日志类型对应的文件。
 func LogFile(options Options, kind string) (string, error) {
-	name := map[string]string{"service": "service.log", "core": "sing-box.log", "sub": "subscription.log"}[kind]
+	name := map[string]string{"service": "service.log", "core": "sing-box.log"}[kind]
 	if name == "" {
 		return "", fmt.Errorf("未知日志类型: %s", kind)
 	}
@@ -93,7 +93,7 @@ func ExportLogs(options Options, destination string) error {
 	tarWriter := tar.NewWriter(archive)
 	defer tarWriter.Close()
 	files := make([]struct{ source, name string }, 0)
-	for _, kind := range []string{"service", "core", "sub"} {
+	for _, kind := range []string{"service", "core"} {
 		path, _ := LogFile(options, kind)
 		files = append(files, struct{ source, name string }{path, "logs/" + filepath.Base(path)})
 	}

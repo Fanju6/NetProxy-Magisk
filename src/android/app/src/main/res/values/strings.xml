@@ -56,7 +56,6 @@
     <string name="log_saved">日志已保存</string>
     <string name="logs">日志</string>
     <string name="service_logs">运行日志</string>
-    <string name="subscription_logs">订阅日志</string>
     <string name="kernel_logs">内核日志</string>
     <string name="raw_view">原始视图</string>
     <string name="card_view">卡片视图</string>

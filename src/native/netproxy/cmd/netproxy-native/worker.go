@@ -51,7 +51,7 @@ func runSubworker(ctx context.Context, args []string) error {
 		return errors.New("subworker 需要 --module-conf")
 	}
 	if options.LogFile == "" {
-		options.LogFile = filepath.Join(filepath.Dir(*root), "..", "logs", "subscription.log")
+		options.LogFile = filepath.Join(filepath.Dir(*root), "..", "logs", "service.log")
 	}
 	if options.ReloadScript == "" {
 		options.ReloadScript = filepath.Join(filepath.Dir(*root), "..", "scripts", "core", "service.sh")

@@ -15,7 +15,7 @@ const SUBS: Record<string, string[]> = {
 const VALS: Record<string, string[]> = {
   'app mode': ['blacklist', 'whitelist'],
   'ebpf status': ['configured', 'all', 'local', 'shared'],
-  'logs show': ['service', 'core', 'sub'],
+  'logs show': ['service', 'core'],
 }
 const NODE_OPS = ['list', 'export', 'edit', 'remove', 'rm', 'show']
 const SUB_OPS = ['activate', 'update', 'show', 'edit', 'remove', 'rm', 'history', 'cancel']

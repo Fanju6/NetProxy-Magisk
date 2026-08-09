@@ -42,7 +42,6 @@ internal class LogRepository(
     private val LogType.commandName: String
         get() = when (this) {
             LogType.SERVICE -> "service"
-            LogType.SUBSCRIPTION -> "sub"
             LogType.KERNEL -> "core"
         }
 }

@@ -3,10 +3,9 @@ package com.fanjv.netproxy.feature.logs.data
 import androidx.compose.runtime.Immutable
 import java.util.regex.Pattern
 
-/** 日志类型：服务、订阅、内核。 */
+/** 日志类型：服务、内核。 */
 enum class LogType {
     SERVICE,
-    SUBSCRIPTION,
     KERNEL
 }
 
@@ -38,7 +37,7 @@ data class LogItem(
     val outboundFlow: OutboundFlow? = null
 )
 
-/** 将模块服务、订阅和内核日志转换为统一展示模型。 */
+/** 将模块服务和内核日志转换为统一展示模型。 */
 internal object LogParser {
 
     // 格式 1：[2026-05-31 18:09:49] [INFO] message
@@ -75,14 +74,10 @@ internal object LogParser {
             .toList()
 
     private fun parseLogLine(line: String, type: LogType): LogItem {
-        val safeLine = if (type == LogType.SUBSCRIPTION) {
-            LogSanitizer.sanitizeSubscriptionLog(line)
-        } else {
-            line
-        }
+        val safeLine = if (type == LogType.SERVICE) LogSanitizer.sanitizeLog(line) else line
 
         return when (type) {
-            LogType.SERVICE, LogType.SUBSCRIPTION -> {
+            LogType.SERVICE -> {
                 val matcher1 = serviceLogPattern1.matcher(safeLine)
                 if (matcher1.matches()) {
                     val timestamp = matcher1.group(1).orEmpty()

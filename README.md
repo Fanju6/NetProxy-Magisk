@@ -217,9 +217,8 @@ su -c '/data/adb/modules/netproxy/netproxyctl help'
 | `config/singbox/confdir/` | 通用 sing-box 配置，包括 DNS、路由和 Clash API |
 | `data/catalog/<分组 ID>/` | 节点与订阅分组，含 `meta.json` 与 `provider.json` |
 | `config/singbox/source/` | 本地路由规则与规则集 |
-| `logs/service.log` | 模块服务与透明代理日志 |
+| `logs/service.log` | 模块服务、订阅更新与透明代理日志 |
 | `logs/sing-box.log` | sing-box 核心日志 |
-| `logs/subscription.log` | 节点和订阅转换日志 |
 
 常用默认值：
 
@@ -244,8 +243,8 @@ su -c '/data/adb/modules/netproxy/netproxyctl help'
 su -c '/data/adb/modules/netproxy/netproxyctl logs show service 100'
 su -c '/data/adb/modules/netproxy/netproxyctl logs show core 100'
 
-# 节点和订阅转换日志
-su -c '/data/adb/modules/netproxy/netproxyctl logs show sub 100'
+# 模块服务、节点和订阅转换日志
+su -c '/data/adb/modules/netproxy/netproxyctl logs show service 100'
 ```
 
 启动失败时优先检查 `sing-box.log`。出现 eBPF 加载错误时，请检查内核 BPF / cgroup 能力、Root 授权与 `ebpf.conf`；手写节点无法加载时，重点检查顶层是否为 `outbounds`、协议字段是否为 `type`、JSON 语法是否正确，以及节点标签是否冲突。

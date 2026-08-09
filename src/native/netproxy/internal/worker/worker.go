@@ -19,6 +19,13 @@ import (
 
 const defaultServiceSecret = "singbox"
 
+// logWorker 统一标识 Worker 写入服务日志的记录。
+func logWorker(logger *log.Logger, format string, args ...any) {
+	if logger != nil {
+		logger.Printf("[Worker] "+format, args...)
+	}
+}
+
 // Timer 描述 Worker 调度所需的最小定时器接口。
 type Timer interface {
 	C() <-chan time.Time
@@ -94,7 +101,7 @@ func Run(ctx context.Context, options Options, wake <-chan struct{}, logger *log
 			defer close(networkDone)
 			runNetworkWatcher(ctx, options, logger)
 		}()
-		logger.Printf("Android 网络事件监听已启动")
+		logWorker(logger, "Android 网络事件监听已启动")
 	}
 	defer func() {
 		if networkDone != nil {
@@ -102,12 +109,12 @@ func Run(ctx context.Context, options Options, wake <-chan struct{}, logger *log
 		}
 	}()
 
-	logger.Printf("订阅自动更新 Worker 已启动")
+	logWorker(logger, "订阅自动更新 Worker 已启动")
 	for {
 		now := options.Now()
 		summary, err := RunDue(ctx, options, now, logger)
 		if err != nil {
-			logger.Printf("读取订阅调度失败: %v", err)
+			logWorker(logger, "读取订阅调度失败: %v", err)
 		}
 		nearest := summary.Nearest
 		if err != nil {
@@ -115,12 +122,12 @@ func Run(ctx context.Context, options Options, wake <-chan struct{}, logger *log
 		} else {
 			nearest, err = nextUpdate(options.Root, now.Unix())
 			if err != nil {
-				logger.Printf("计算下一次订阅更新时间失败: %v", err)
+				logWorker(logger, "计算下一次订阅更新时间失败: %v", err)
 				nearest = now.Unix() + 60
 			}
 		}
 		if nearest == 0 && !networkWatchEnabled {
-			logger.Printf("没有启用自动更新的订阅，Worker 退出")
+			logWorker(logger, "没有启用自动更新的订阅，Worker 退出")
 			return nil
 		}
 		if nearest == 0 {
@@ -134,7 +141,7 @@ func Run(ctx context.Context, options Options, wake <-chan struct{}, logger *log
 		select {
 		case <-ctx.Done():
 			stopTimer(timer)
-			logger.Printf("订阅自动更新 Worker 已停止")
+			logWorker(logger, "订阅自动更新 Worker 已停止")
 			return nil
 		case <-wake:
 			stopTimer(timer)
@@ -190,13 +197,13 @@ func RunDue(ctx context.Context, options Options, now time.Time, logger *log.Log
 			return summary, err
 		}
 		if logger != nil {
-			logger.Printf("自动更新到期订阅: %s", groupID)
+			logWorker(logger, "自动更新到期订阅: %s", groupID)
 		}
 		_, updateErr := UpdateGroup(ctx, options, groupID, now, logger)
 		if updateErr != nil {
 			summary.Failed = append(summary.Failed, groupID)
 			if logger != nil {
-				logger.Printf("订阅更新失败: %s: %v", groupID, updateErr)
+				logWorker(logger, "订阅更新失败: %s: %v", groupID, updateErr)
 			}
 			continue
 		}
@@ -215,7 +222,7 @@ func UpdateGroup(ctx context.Context, options Options, groupID string, now time.
 		return subscription.Result{}, err
 	}
 	if effectErr := applyUpdateEffects(ctx, options, result, groupID, logger); effectErr != nil && logger != nil {
-		logger.Printf("订阅更新后的运行时同步失败: %s: %v", groupID, effectErr)
+		logWorker(logger, "订阅更新后的运行时同步失败: %s: %v", groupID, effectErr)
 	}
 	return result, nil
 }
@@ -307,7 +314,7 @@ func fallbackMissingNode(ctx context.Context, options Options, groupID string, l
 		return err
 	}
 	if logger != nil {
-		logger.Printf("手动节点已从 Provider 移除，回退到 Auto/%s", runtimeTag)
+		logWorker(logger, "手动节点已从 Provider 移除，回退到 Auto/%s", runtimeTag)
 	}
 	if !isProcessRunning(options.SingBoxPath) {
 		return nil

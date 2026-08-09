@@ -27,7 +27,6 @@ internal class LogsViewModel(
                 _state.update {
                     when (type) {
                         LogType.SERVICE -> it.copy(serviceLogs = logs, error = "")
-                        LogType.SUBSCRIPTION -> it.copy(subscriptionLogs = logs, error = "")
                         LogType.KERNEL -> it.copy(kernelLogs = logs, error = "")
                     }
                 }
@@ -44,9 +43,6 @@ internal class LogsViewModel(
                     _state.update { state ->
                         when (type) {
                             LogType.SERVICE -> state.copy(serviceLogs = emptyList(), error = "")
-                            LogType.SUBSCRIPTION ->
-                                state.copy(subscriptionLogs = emptyList(), error = "")
-
                             LogType.KERNEL -> state.copy(kernelLogs = emptyList(), error = "")
                         }
                     }

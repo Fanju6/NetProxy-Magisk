@@ -8,7 +8,7 @@ import kotlinx.serialization.json.JsonPrimitive
 
 /** 分享或展示诊断信息前移除日志与配置中的敏感值。 */
 internal object LogSanitizer {
-    private const val REDACTED_SUBSCRIPTION_URL = "[订阅链接已隐藏]"
+    private const val REDACTED_URL = "[订阅链接已隐藏]"
     private const val REDACTED_CONFIG_VALUE = "[配置值已隐藏]"
     private val httpUrlPattern = Regex("""(?i)\bhttps?://[^\s\p{Cc}<>"']+""")
     private val json = Json { prettyPrint = true }
@@ -35,8 +35,8 @@ internal object LogSanitizer {
         "hwid"
     )
 
-    fun sanitizeSubscriptionLog(content: String): String =
-        httpUrlPattern.replace(content, REDACTED_SUBSCRIPTION_URL)
+    fun sanitizeLog(content: String): String =
+        httpUrlPattern.replace(content, REDACTED_URL)
 
     fun sanitizeShellConfig(content: String): String =
         content.split('\n').joinToString("\n") { line ->

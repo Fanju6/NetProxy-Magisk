@@ -40,7 +40,7 @@ NetProxy 现在有三种正式入口：
 - `config/singbox/confdir/`：通用 sing-box 配置片段
 - `data/catalog/`：节点与订阅 Catalog
 - `runtime/`：运行时生成配置与服务状态
-- `logs/`：服务、核心、订阅日志
+- `logs/`：服务与核心日志，订阅更新记录写入服务日志
 
 ### Android 管理器侧
 
@@ -63,4 +63,4 @@ Android 管理器下载地址：[`NetProxy - Google Play`](https://play.google.c
 - 日常使用：优先 Android 管理器
 - 批量或远程操作：CLI
 - 观察代理组、连接和延迟：Clash API / zashboard
-- 深度排障：查看 `service.log`、`sing-box.log`、`subscription.log`
+- 深度排障：查看 `service.log` 与 `sing-box.log`

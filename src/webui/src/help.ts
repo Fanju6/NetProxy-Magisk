@@ -87,7 +87,6 @@ logs - 日志
 
   logs show service       服务日志 (启动/停止/错误)
   logs show core          sing-box 内核日志 (连接详情)
-  logs show sub           订阅更新日志
   logs clear <类型>       清空日志
 `,
   config: `

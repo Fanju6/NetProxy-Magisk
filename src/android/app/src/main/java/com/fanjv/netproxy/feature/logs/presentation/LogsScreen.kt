@@ -87,7 +87,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
-/** 日志页：查看并导出服务/订阅/内核日志。 */
+/** 日志页：查看并导出服务与内核日志。 */
 @Composable
 internal fun LogsScreen(
     viewModel: LogsViewModel = com.fanjv.netproxy.core.di.netProxyViewModel(),
@@ -120,7 +120,6 @@ internal fun LogsScreen(
     val currentType = remember(selectedTabIndex) {
         when (selectedTabIndex) {
             0 -> LogType.SERVICE
-            1 -> LogType.SUBSCRIPTION
             else -> LogType.KERNEL
         }
     }
@@ -131,13 +130,11 @@ internal fun LogsScreen(
 
     val logs = remember(
         logsState.serviceLogs,
-        logsState.subscriptionLogs,
         logsState.kernelLogs,
         selectedTabIndex
     ) {
         when (selectedTabIndex) {
             0 -> logsState.serviceLogs
-            1 -> logsState.subscriptionLogs
             else -> logsState.kernelLogs
         }
     }
@@ -163,7 +160,6 @@ internal fun LogsScreen(
 
     val tabs = listOf(
         stringResource(R.string.service_logs),
-        stringResource(R.string.subscription_logs),
         stringResource(R.string.kernel_logs)
     )
 

@@ -2,12 +2,11 @@
 
 ## 服务启动失败
 
-先查看三类日志：
+先查看两类日志：
 
 ```text
 /data/adb/modules/netproxy/logs/service.log
 /data/adb/modules/netproxy/logs/sing-box.log
-/data/adb/modules/netproxy/logs/subscription.log
 ```
 
 再确认：
@@ -24,7 +23,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl config validate'
 
 ## 订阅更新失败
 
-确认订阅地址可以返回节点内容，并检查 `subscription.log`。核心停止时更新仍应可用；如果更新失败，旧 Provider 会继续保留，不会清空节点。
+确认订阅地址可以返回节点内容，并检查 `service.log` 中的订阅更新记录。核心停止时更新仍应可用；如果更新失败，旧 Provider 会继续保留，不会清空节点。
 
 ## 切换节点没有立即生效
 

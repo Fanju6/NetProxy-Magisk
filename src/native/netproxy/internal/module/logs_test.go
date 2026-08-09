@@ -115,3 +115,10 @@ func TestRedactTextRedactsTopLevelJSONArray(t *testing.T) {
 		t.Fatalf("redacted JSON array did not contain a replacement: %s", content)
 	}
 }
+
+func TestLogFileRejectsRemovedSubscriptionLog(t *testing.T) {
+	_, err := LogFile(Options{LogDir: t.TempDir()}, "sub")
+	if err == nil {
+		t.Fatal("已删除的独立订阅日志类型不应继续可用")
+	}
+}

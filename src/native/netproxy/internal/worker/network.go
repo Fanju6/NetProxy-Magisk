@@ -97,12 +97,12 @@ func evaluateNetwork(parent context.Context, options Options, logger *log.Logger
 	networkType, ssid, err := getWiFiSnapshot(ctx)
 	if err != nil {
 		if logger != nil {
-			logger.Printf("读取 Android 网络状态失败: %v", err)
+			logWorker(logger, "读取 Android 网络状态失败: %v", err)
 		}
 		return
 	}
 	if err := options.NetworkEvaluate(ctx, networkType, ssid); err != nil && logger != nil {
-		logger.Printf("网络策略评估失败: %v", err)
+		logWorker(logger, "网络策略评估失败: %v", err)
 	}
 }
 

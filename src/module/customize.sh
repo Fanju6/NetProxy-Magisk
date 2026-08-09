@@ -330,6 +330,8 @@ sync_to_live() {
 
   # API 地址与密钥已固定在 sing-box 配置中，不再保留旧凭据目录。
   rm -rf "$LIVE_DIR/config/api" 2> /dev/null || true
+  # 订阅日志已并入服务日志，删除旧的独立日志文件。
+  rm -f "$LIVE_DIR/logs/subscription.log" 2> /dev/null || true
   # 清理旧 Catalog、旧运行时目录和旧节点文件布局。
   rm -rf "$LIVE_DIR/config/catalog" "$LIVE_DIR/config/runtime" \
     "$LIVE_DIR/config/singbox/outbounds" "$LIVE_DIR/config/singbox/runtime" \
@@ -390,7 +392,7 @@ restart_proxy_if_needed() {
       --root "$LIVE_DIR/data/catalog" \
       --progress-dir "/dev/netproxy/subscriptions" \
       --pid-file "/dev/netproxy/subworker.pid" \
-      --log-file "$LIVE_DIR/logs/subscription.log" \
+      --log-file "$LIVE_DIR/logs/service.log" \
       --module-conf "$LIVE_DIR/config/module.conf" \
       --reload-script "$LIVE_DIR/scripts/core/service.sh" \
       --sing-box "$LIVE_DIR/bin/sing-box" > /dev/null 2>&1 || true

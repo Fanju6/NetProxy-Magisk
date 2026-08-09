@@ -42,7 +42,7 @@ func (c *cli) moduleArgs(action string, args ...string) []string {
 		"--state-file", c.stateFile,
 		"--progress-dir", c.progressDir,
 		"--worker-pid-file", c.workerPIDFile,
-		"--worker-log-file", filepath.Join(c.logDir, "subscription.log"),
+		"--worker-log-file", filepath.Join(c.logDir, "service.log"),
 	)
 	return append(result, args...)
 }

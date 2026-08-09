@@ -13,7 +13,7 @@ class LogSanitizerTest {
             retry HTTP://example.net/api/subscription?id=123
         """.trimIndent()
 
-        val sanitized = LogSanitizer.sanitizeSubscriptionLog(source)
+        val sanitized = LogSanitizer.sanitizeLog(source)
 
         assertEquals(
             """
@@ -30,7 +30,7 @@ class LogSanitizerTest {
     fun preservesNonUrlDiagnosticText() {
         val source = "订阅更新失败: timeout"
 
-        assertEquals(source, LogSanitizer.sanitizeSubscriptionLog(source))
+        assertEquals(source, LogSanitizer.sanitizeLog(source))
     }
 
     @Test
