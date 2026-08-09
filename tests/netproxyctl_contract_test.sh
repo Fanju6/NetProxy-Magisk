@@ -13,7 +13,11 @@ cp -R "$ROOT/src/module/scripts" "$MODULE/"
 cp -R "$ROOT/src/module/config" "$MODULE/"
 cp -R "$ROOT/src/module/data" "$MODULE/"
 mkdir -p "$MODULE/runtime"
-cp "$ROOT/src/module/netproxyctl" "$MODULE/netproxyctl"
+# 契约测试在宿主机运行，使用同等行为的临时 POSIX 入口，不执行 Android AArch64 发行二进制。
+printf '%s\n' \
+  '#!/usr/bin/env sh' \
+  'exec "${0%/*}/bin/netproxyctl" "$@"' \
+  > "$MODULE/netproxyctl"
 cp "$REAL_NETPROXY_CTL" "$MODULE/bin/netproxyctl"
 cp "$REAL_NETPROXY_NATIVE" "$MODULE/bin/netproxy-native"
 cp "$REAL_NETPROXY_NATIVE" "$MODULE/bin/netproxy-native.exe"
