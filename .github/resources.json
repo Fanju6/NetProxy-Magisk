@@ -40,8 +40,8 @@
       "ref": "X",
       "sourcePath": "sing-box/Rules/ChinaIP.srs",
       "metadataPath": "sing-box/Rules/ChinaIP.json",
-      "currentCommit": "3141de2acfcd8a12bcb4da72e159ee6b168f0ae7",
-      "currentSha256": "dd7ec1a3dca600c06b8037cb77e7b1b3e0e12c5b1acebec96448d77c27723355"
+      "currentCommit": "eee40d30f48a5e527aae11f1047677294a3ca147",
+      "currentSha256": "ae0d2d01e35429647bf9387616badfbc3bf382adb431d8e5d636f307ae748a3c"
     },
     {
       "name": "Proxy",
@@ -70,7 +70,7 @@
     "path": "src/module/bin/sing-box",
     "repo": "reF1nd/sing-box",
     "tagPattern": "^v[0-9].*-reF1nd$",
-    "currentVersion": "v1.14.0-beta.9-reF1nd",
+    "currentVersion": "v1.14.0-beta.10-reF1nd",
     "ndkVersion": "r29",
     "buildTags": [
       "with_quic",
@@ -88,7 +88,7 @@
       "path": "src/module/webroot/zashboard",
       "repo": "Zephyruso/zashboard",
       "assetPattern": "dist-no-fonts.zip",
-      "currentVersion": "v3.17.0"
+      "currentVersion": "v3.18.0"
     }
   ],
   "githubArchive": [
