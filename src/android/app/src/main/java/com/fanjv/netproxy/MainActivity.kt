@@ -49,9 +49,9 @@ import com.fanjv.netproxy.feature.about.presentation.AboutScreen
 import com.fanjv.netproxy.feature.apps.presentation.AppsScreen
 import com.fanjv.netproxy.feature.dashboard.presentation.CatalogDashboardScreen
 import com.fanjv.netproxy.feature.logs.presentation.LogsScreen
-import com.fanjv.netproxy.feature.nodes.presentation.CatalogNodesScreen
+import com.fanjv.netproxy.feature.nodes.presentation.list.CatalogNodesScreen
 import com.fanjv.netproxy.feature.nodes.presentation.CatalogNodesViewModel
-import com.fanjv.netproxy.feature.nodes.presentation.SingBoxNodeEditScreen
+import com.fanjv.netproxy.feature.nodes.presentation.edit.SingBoxNodeEditScreen
 import com.fanjv.netproxy.feature.settings.presentation.ProxySettingsScreen
 import com.fanjv.netproxy.feature.settings.presentation.SettingsScreen
 import com.fanjv.netproxy.feature.settings.singbox.SingBoxJsonEditScreen

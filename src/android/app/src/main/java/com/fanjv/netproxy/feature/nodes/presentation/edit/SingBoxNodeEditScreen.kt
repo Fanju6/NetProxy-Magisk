@@ -1,4 +1,4 @@
-package com.fanjv.netproxy.feature.nodes.presentation
+package com.fanjv.netproxy.feature.nodes.presentation.edit
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -29,6 +29,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.fanjv.netproxy.R
+import com.fanjv.netproxy.feature.nodes.presentation.CatalogNodesViewModel
+import com.fanjv.netproxy.feature.nodes.presentation.edit.components.*
 import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.SnackbarNoticeEffect
@@ -81,7 +83,7 @@ internal fun SingBoxNodeEditScreen(
     var notice by remember { mutableStateOf("") }
     var noticeId by remember { mutableStateOf(0L) }
 
-    SnackbarNoticeEffect(
+    ValidationPanel(
         eventId = noticeId,
         message = notice,
         isError = true,
@@ -355,22 +357,21 @@ internal fun SingBoxNodeEditScreen(
                         }
                     },
                     actions = {
-                        IconButton(
-                            onClick = {
+                        ActionButtons(onSave = {
                                 if (tag.isBlank()) {
                                     notice = nodeTagEmpty
                                     noticeId++
-                                    return@IconButton
+                                    return@ActionButtons
                                 }
                                 if (server.isBlank()) {
                                     notice = serverAddressEmpty
                                     noticeId++
-                                    return@IconButton
+                                    return@ActionButtons
                                 }
                                 if (serverPort.isBlank()) {
                                     notice = serverPortEmpty
                                     noticeId++
-                                    return@IconButton
+                                    return@ActionButtons
                                 }
 
                                 val updatedOutbound = buildJsonObject {
@@ -686,14 +687,7 @@ internal fun SingBoxNodeEditScreen(
                                         noticeId++
                                     }
                                 }
-                            }
-                        ) {
-                            Icon(
-                                imageVector = MiuixIcons.Ok,
-                                contentDescription = stringResource(R.string.save_text),
-                                tint = colorScheme.onSurface
-                            )
-                        }
+                        })
                     }
                 )
             }
@@ -709,730 +703,108 @@ internal fun SingBoxNodeEditScreen(
                 contentPadding = innerPadding,
                 overscrollEffect = null
             ) {
-                // ==================== 1. 常规设置 ====================
                 item {
-                    SmallTitle(
-                        text = stringResource(R.string.basic_settings),
-                        insideMargin = PaddingValues(
-                            start = 26.dp,
-                            top = 12.dp,
-                            bottom = 8.dp,
-                            end = 26.dp
-                        )
-                    )
-                }
-                item {
-                    TextField(
-                        value = tag,
-                        onValueChange = { tag = it },
-                        label = stringResource(R.string.node_tag),
-                        singleLine = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp)
-                            .padding(bottom = 12.dp),
-                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
-                    )
-                }
-                item {
-                    val protocolTypes = listOf(
-                        "vless",
-                        "vmess",
-                        "shadowsocks",
-                        "trojan",
-                        "hysteria2",
-                        "tuic",
-                        "anytls"
-                    )
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp)
-                            .padding(bottom = 12.dp)
-                    ) {
-                        OverlayDropdownPreference(
-                            title = stringResource(R.string.protocol_type),
-                            items = protocolTypes.map { it.uppercase() },
-                            selectedIndex = protocolTypes.indexOf(type).coerceAtLeast(0),
-                            onSelectedIndexChange = { index -> type = protocolTypes[index] }
-                        )
-                    }
-                }
-                item {
-                    TextField(
-                        value = server,
-                        onValueChange = { server = it },
-                        label = stringResource(R.string.server_address_label),
-                        singleLine = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp)
-                            .padding(bottom = 12.dp),
-                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
-                    )
-                }
-                item {
-                    TextField(
-                        value = serverPort,
-                        onValueChange = { serverPort = it },
-                        label = stringResource(R.string.server_port_label),
-                        singleLine = true,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp)
-                            .padding(bottom = 12.dp),
-                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                        keyboardOptions = KeyboardOptions(
-                            imeAction = ImeAction.Done,
-                            keyboardType = KeyboardType.Number
-                        )
+                    ServerConfigSection(
+                    tag = tag,
+                    onTagChange = { tag = it },
+                    server = server,
+                    onServerChange = { server = it },
+                    serverPort = serverPort,
+                    onServerPortChange = { serverPort = it },
+                    type = type,
+                    onTypeChange = { type = it },
+                    uuid = uuid,
+                    onUuidChange = { uuid = it },
+                    flow = flow,
+                    onFlowChange = { flow = it },
+                    security = security,
+                    onSecurityChange = { security = it },
+                    alterId = alterId,
+                    onAlterIdChange = { alterId = it },
+                    method = method,
+                    onMethodChange = { method = it },
+                    password = password,
+                    onPasswordChange = { password = it },
+                    plugin = plugin,
+                    onPluginChange = { plugin = it },
+                    pluginOpts = pluginOpts,
+                    onPluginOptsChange = { pluginOpts = it },
+                    upMbps = upMbps,
+                    onUpMbpsChange = { upMbps = it },
+                    downMbps = downMbps,
+                    onDownMbpsChange = { downMbps = it },
+                    obfsType = obfsType,
+                    onObfsTypeChange = { obfsType = it },
+                    obfsPassword = obfsPassword,
+                    onObfsPasswordChange = { obfsPassword = it },
+                    serverPorts = serverPorts,
+                    onServerPortsChange = { serverPorts = it },
+                    hopInterval = hopInterval,
+                    onHopIntervalChange = { hopInterval = it },
+                    congestionControl = congestionControl,
+                    onCongestionControlChange = { congestionControl = it },
+                    udpRelayMode = udpRelayMode,
+                    onUdpRelayModeChange = { udpRelayMode = it },
+                    udpOverStream = udpOverStream,
+                    onUdpOverStreamChange = { udpOverStream = it },
+                    zeroRttHandshake = zeroRttHandshake,
+                    onZeroRttHandshakeChange = { zeroRttHandshake = it },
+                    heartbeat = heartbeat,
+                    onHeartbeatChange = { heartbeat = it },
+                    focusManager = focusManager,
+                    alterIdLabel = alterIdLabel,
+                        udpRelayModeTitle = udpRelayModeTitle
                     )
                 }
 
-                // ==================== 2. 协议专属设置 ====================
                 item {
-                    SmallTitle(
-                        text = stringResource(R.string.protocol_specific_config, type.uppercase()),
-                        insideMargin = PaddingValues(
-                            start = 26.dp,
-                            top = 8.dp,
-                            bottom = 8.dp,
-                            end = 26.dp
-                        )
+                    TransportSection(
+                        transportType = transportType,
+                        path = path,
+                        host = host,
+                        serviceName = serviceName,
+                        onTransportTypeChange = { transportType = it },
+                        onPathChange = { path = it },
+                        onHostChange = { host = it },
+                        onServiceNameChange = { serviceName = it },
+                        onImeDone = { focusManager.clearFocus() }
                     )
                 }
-                when (type) {
-                    "vless" -> {
-                        item {
-                            TextField(
-                                value = uuid,
-                                onValueChange = { uuid = it },
-                                label = stringResource(R.string.user_id),
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 12.dp),
-                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
-                            )
-                        }
-                        item {
-                            val flowOptions = listOf("none", "xtls-rprx-vision")
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 12.dp)
-                            ) {
-                                OverlayDropdownPreference(
-                                    title = stringResource(R.string.flow_control),
-                                    items = flowOptions,
-                                    selectedIndex = flowOptions.indexOf(flow).coerceAtLeast(0),
-                                    onSelectedIndexChange = { index -> flow = flowOptions[index] }
-                                )
-                            }
-                        }
-                    }
 
-                    "vmess" -> {
-                        item {
-                            TextField(
-                                value = uuid,
-                                onValueChange = { uuid = it },
-                                label = stringResource(R.string.user_id),
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 12.dp),
-                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
-                            )
-                        }
-                        item {
-                            val vmessSecurities =
-                                listOf("auto", "none", "zero", "aes-128-gcm", "chacha20-poly1305")
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 12.dp)
-                            ) {
-                                OverlayDropdownPreference(
-                                    title = stringResource(R.string.security_label),
-                                    items = vmessSecurities,
-                                    selectedIndex = vmessSecurities.indexOf(security)
-                                        .coerceAtLeast(0),
-                                    onSelectedIndexChange = { index ->
-                                        security = vmessSecurities[index]
-                                    }
-                                )
-                            }
-                        }
-                        item {
-                            TextField(
-                                value = alterId,
-                                onValueChange = { alterId = it },
-                                label = alterIdLabel,
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 12.dp),
-                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                                keyboardOptions = KeyboardOptions(
-                                    imeAction = ImeAction.Done,
-                                    keyboardType = KeyboardType.Number
-                                )
-                            )
-                        }
-                    }
-
-                    "shadowsocks" -> {
-                        item {
-                            val ssMethods = listOf(
-                                "aes-128-gcm",
-                                "aes-256-gcm",
-                                "chacha20-ietf-poly1305",
-                                "2022-blake3-aes-128-gcm",
-                                "2022-blake3-aes-256-gcm",
-                                "2022-blake3-chacha20-poly1305"
-                            )
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 12.dp)
-                            ) {
-                                OverlayDropdownPreference(
-                                    title = stringResource(R.string.method_label),
-                                    items = ssMethods,
-                                    selectedIndex = ssMethods.indexOf(method).coerceAtLeast(0),
-                                    onSelectedIndexChange = { index -> method = ssMethods[index] }
-                                )
-                            }
-                        }
-                        item {
-                            TextField(
-                                value = password,
-                                onValueChange = { password = it },
-                                label = stringResource(R.string.password_key_label),
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 12.dp),
-                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
-                            )
-                        }
-                        item {
-                            TextField(
-                                value = plugin,
-                                onValueChange = { plugin = it },
-                                label = stringResource(R.string.plugin_label),
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 12.dp),
-                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
-                            )
-                        }
-                        item {
-                            TextField(
-                                value = pluginOpts,
-                                onValueChange = { pluginOpts = it },
-                                label = stringResource(R.string.plugin_options),
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 12.dp),
-                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
-                            )
-                        }
-                    }
-
-                    "trojan", "anytls" -> {
-                        item {
-                            TextField(
-                                value = password,
-                                onValueChange = { password = it },
-                                label = stringResource(R.string.password_only),
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 12.dp),
-                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
-                            )
-                        }
-                    }
-
-                    "hysteria2" -> {
-                        item {
-                            TextField(
-                                value = password,
-                                onValueChange = { password = it },
-                                label = stringResource(R.string.password_label),
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 12.dp),
-                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
-                            )
-                        }
-                        item {
-                            TextField(
-                                value = upMbps,
-                                onValueChange = { upMbps = it },
-                                label = stringResource(R.string.up_mbps),
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 12.dp),
-                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                                keyboardOptions = KeyboardOptions(
-                                    imeAction = ImeAction.Done,
-                                    keyboardType = KeyboardType.Number
-                                )
-                            )
-                        }
-                        item {
-                            TextField(
-                                value = downMbps,
-                                onValueChange = { downMbps = it },
-                                label = stringResource(R.string.down_mbps),
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 12.dp),
-                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                                keyboardOptions = KeyboardOptions(
-                                    imeAction = ImeAction.Done,
-                                    keyboardType = KeyboardType.Number
-                                )
-                            )
-                        }
-                        item {
-                            val obfsTypeList = listOf("none", "salamander")
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 12.dp)
-                            ) {
-                                OverlayDropdownPreference(
-                                    title = stringResource(R.string.obfs_type),
-                                    items = obfsTypeList,
-                                    selectedIndex = obfsTypeList.indexOf(obfsType).coerceAtLeast(0),
-                                    onSelectedIndexChange = { index ->
-                                        obfsType = obfsTypeList[index]
-                                    }
-                                )
-                            }
-                        }
-                        if (obfsType != "none") {
-                            item {
-                                TextField(
-                                    value = obfsPassword,
-                                    onValueChange = { obfsPassword = it },
-                                    label = stringResource(R.string.obfs_password),
-                                    singleLine = true,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp)
-                                        .padding(bottom = 12.dp),
-                                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
-                                )
-                            }
-                        }
-                        item {
-                            TextField(
-                                value = serverPorts,
-                                onValueChange = { serverPorts = it },
-                                label = stringResource(R.string.server_ports_hop),
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 12.dp),
-                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                                keyboardOptions = KeyboardOptions(
-                                    imeAction = ImeAction.Done,
-                                    keyboardType = KeyboardType.Number
-                                )
-                            )
-                        }
-                        item {
-                            TextField(
-                                value = hopInterval,
-                                onValueChange = { hopInterval = it },
-                                label = stringResource(R.string.hop_interval_seconds),
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 12.dp),
-                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                                keyboardOptions = KeyboardOptions(
-                                    imeAction = ImeAction.Done,
-                                    keyboardType = KeyboardType.Number
-                                )
-                            )
-                        }
-                    }
-
-                    "tuic" -> {
-                        item {
-                            TextField(
-                                value = uuid,
-                                onValueChange = { uuid = it },
-                                label = stringResource(R.string.user_id_uuid),
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 12.dp),
-                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
-                            )
-                        }
-                        item {
-                            TextField(
-                                value = password,
-                                onValueChange = { password = it },
-                                label = stringResource(R.string.password_label),
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 12.dp),
-                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
-                            )
-                        }
-                        item {
-                            val ccOptions = listOf("cubic", "bbr", "new_reno")
-                            val urmOptions = listOf("quic", "native")
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 12.dp)
-                            ) {
-                                OverlayDropdownPreference(
-                                    title = stringResource(R.string.congestion_control),
-                                    items = ccOptions,
-                                    selectedIndex = ccOptions.indexOf(congestionControl)
-                                        .coerceAtLeast(0),
-                                    onSelectedIndexChange = { index ->
-                                        congestionControl = ccOptions[index]
-                                    }
-                                )
-                                OverlayDropdownPreference(
-                                    title = udpRelayModeTitle,
-                                    items = urmOptions,
-                                    selectedIndex = urmOptions.indexOf(udpRelayMode)
-                                        .coerceAtLeast(0),
-                                    onSelectedIndexChange = { index ->
-                                        udpRelayMode = urmOptions[index]
-                                    }
-                                )
-                                SwitchPreference(
-                                title = stringResource(R.string.udp_over_stream),
-                                    checked = udpOverStream,
-                                    onCheckedChange = { udpOverStream = it }
-                                )
-                                SwitchPreference(
-                                title = stringResource(R.string.zero_rtt_handshake),
-                                    checked = zeroRttHandshake,
-                                    onCheckedChange = { zeroRttHandshake = it }
-                                )
-                            }
-                        }
-                        item {
-                            TextField(
-                                value = heartbeat,
-                                onValueChange = { heartbeat = it },
-                                label = stringResource(R.string.heartbeat_interval_seconds),
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 12.dp),
-                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                                keyboardOptions = KeyboardOptions(
-                                    imeAction = ImeAction.Done,
-                                    keyboardType = KeyboardType.Number
-                                )
-                            )
-                        }
-                    }
-                }
-
-                // ==================== 3. 传输层设置 ====================
                 item {
-                    SmallTitle(
-                        text = stringResource(R.string.transport_settings),
-                        insideMargin = PaddingValues(
-                            start = 26.dp,
-                            top = 8.dp,
-                            bottom = 8.dp,
-                            end = 26.dp
-                        )
+                    TlsConfigSection(
+                        enabled = tlsEnabled,
+                        serverName = serverName,
+                        insecure = insecure,
+                        disableSni = disableSni,
+                        alpn = alpn,
+                        fingerprint = fingerprint,
+                        realityEnabled = realityEnabled,
+                        realityPublicKey = realityPublicKey,
+                        realityShortId = realityShortId,
+                        echEnabled = echEnabled,
+                        echConfig = echConfig,
+                        echQueryServerName = echQueryServerName,
+                        alpnLabel = alpnLabel,
+                        utlsFingerprintLabel = utlsFingerprint,
+                        realityPublicKeyLabel = realityPublicKeyLabel,
+                        realityShortIdLabel = realityShortIdLabel,
+                        echConfigLabel = echConfigListLabel,
+                        echDnsServerNameLabel = echDnsServerNameLabel,
+                        onEnabledChange = { tlsEnabled = it },
+                        onServerNameChange = { serverName = it },
+                        onInsecureChange = { insecure = it },
+                        onDisableSniChange = { disableSni = it },
+                        onAlpnChange = { alpn = it },
+                        onFingerprintChange = { fingerprint = it },
+                        onRealityEnabledChange = { realityEnabled = it },
+                        onRealityPublicKeyChange = { realityPublicKey = it },
+                        onRealityShortIdChange = { realityShortId = it },
+                        onEchEnabledChange = { echEnabled = it },
+                        onEchConfigChange = { echConfig = it },
+                        onEchQueryServerNameChange = { echQueryServerName = it },
+                        onImeDone = { focusManager.clearFocus() }
                     )
-                }
-                item {
-                    val transTypeList = listOf("none", "ws", "grpc", "http", "httpupgrade")
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp)
-                            .padding(bottom = 12.dp)
-                    ) {
-                        OverlayDropdownPreference(
-                            title = stringResource(R.string.transport_protocol),
-                            items = transTypeList.map { if (it == "none") "DIRECT (TCP)" else it.uppercase() },
-                            selectedIndex = transTypeList.indexOf(transportType).coerceAtLeast(0),
-                            onSelectedIndexChange = { index ->
-                                transportType = transTypeList[index]
-                            }
-                        )
-                    }
-                }
-                if (transportType == "ws" || transportType == "httpupgrade" || transportType == "http" || transportType == "h2") {
-                    item {
-                        TextField(
-                            value = path,
-                            onValueChange = { path = it },
-                            label = stringResource(R.string.path_default),
-                            singleLine = true,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp)
-                                .padding(bottom = 12.dp),
-                            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
-                        )
-                    }
-                    item {
-                        TextField(
-                            value = host,
-                            onValueChange = { host = it },
-                            label = stringResource(R.string.domain_name_host),
-                            singleLine = true,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp)
-                                .padding(bottom = 12.dp),
-                            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
-                        )
-                    }
-                }
-                if (transportType == "grpc") {
-                    item {
-                        TextField(
-                            value = serviceName,
-                            onValueChange = { serviceName = it },
-                            label = stringResource(R.string.service_name),
-                            singleLine = true,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp)
-                                .padding(bottom = 12.dp),
-                            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
-                        )
-                    }
-                }
-
-                // ==================== 4. TLS 与安全设置 ====================
-                item {
-                    SmallTitle(
-                        text = stringResource(R.string.security_tls_config_security),
-                        insideMargin = PaddingValues(
-                            start = 26.dp,
-                            top = 8.dp,
-                            bottom = 8.dp,
-                            end = 26.dp
-                        )
-                    )
-                }
-                item {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp)
-                            .padding(bottom = 12.dp)
-                    ) {
-                        SwitchPreference(
-                            title = stringResource(R.string.enable_tls),
-                            checked = tlsEnabled,
-                            onCheckedChange = { tlsEnabled = it }
-                        )
-                    }
-                }
-                if (tlsEnabled) {
-                    item {
-                        TextField(
-                            value = serverName,
-                            onValueChange = { serverName = it },
-                            label = stringResource(R.string.server_name),
-                            singleLine = true,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp)
-                                .padding(bottom = 12.dp),
-                            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
-                        )
-                    }
-                    item {
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp)
-                                .padding(bottom = 12.dp)
-                        ) {
-                            SwitchPreference(
-                                title = stringResource(R.string.allow_insecure),
-                                checked = insecure,
-                                onCheckedChange = { insecure = it }
-                            )
-                            SwitchPreference(
-                                title = stringResource(R.string.disable_sni),
-                                checked = disableSni,
-                                onCheckedChange = { disableSni = it }
-                            )
-                        }
-                    }
-                    item {
-                        TextField(
-                            value = alpn,
-                            onValueChange = { alpn = it },
-                            label = alpnLabel,
-                            singleLine = true,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp)
-                                .padding(bottom = 12.dp),
-                            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
-                        )
-                    }
-                    item {
-                        val fingerprintList =
-                            listOf("chrome", "firefox", "safari", "randomised", "none")
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp)
-                                .padding(bottom = 12.dp)
-                        ) {
-                            OverlayDropdownPreference(
-                                title = utlsFingerprint,
-                                items = fingerprintList,
-                                selectedIndex = fingerprintList.indexOf(fingerprint)
-                                    .coerceAtLeast(0),
-                                onSelectedIndexChange = { index ->
-                                    fingerprint = fingerprintList[index]
-                                }
-                            )
-                            SwitchPreference(
-                                title = stringResource(R.string.enable_reality),
-                                checked = realityEnabled,
-                                onCheckedChange = { realityEnabled = it }
-                            )
-                        }
-                    }
-                    if (realityEnabled) {
-                        item {
-                            TextField(
-                                value = realityPublicKey,
-                                onValueChange = { realityPublicKey = it },
-                                label = realityPublicKeyLabel,
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 12.dp),
-                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
-                            )
-                        }
-                        item {
-                            TextField(
-                                value = realityShortId,
-                                onValueChange = { realityShortId = it },
-                                label = realityShortIdLabel,
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 12.dp),
-                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
-                            )
-                        }
-                    }
-                    item {
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp)
-                                .padding(bottom = 12.dp)
-                        ) {
-                            SwitchPreference(
-                                title = stringResource(R.string.enable_ech),
-                                checked = echEnabled,
-                                onCheckedChange = { echEnabled = it }
-                            )
-                        }
-                    }
-                    if (echEnabled) {
-                        item {
-                            TextField(
-                                value = echConfig,
-                                onValueChange = { echConfig = it },
-                                label = echConfigListLabel,
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 12.dp),
-                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
-                            )
-                        }
-                        item {
-                            TextField(
-                                value = echQueryServerName,
-                                onValueChange = { echQueryServerName = it },
-                                label = echDnsServerNameLabel,
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp)
-                                    .padding(bottom = 12.dp),
-                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
-                            )
-                        }
-                    }
                 }
 
                 // 底部占位

@@ -1,4 +1,4 @@
-package com.fanjv.netproxy.feature.nodes.presentation
+package com.fanjv.netproxy.feature.nodes.presentation.list
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -69,6 +69,11 @@ import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import com.fanjv.netproxy.feature.catalog.model.CatalogNode
 import com.fanjv.netproxy.feature.catalog.model.CatalogNodeGroup
+import com.fanjv.netproxy.feature.nodes.presentation.CatalogNodesViewModel
+import com.fanjv.netproxy.feature.nodes.presentation.list.components.CatalogGroupList
+import com.fanjv.netproxy.feature.nodes.presentation.list.components.CatalogNodeGrid
+import com.fanjv.netproxy.feature.nodes.presentation.list.components.EmptyState
+import com.fanjv.netproxy.feature.nodes.presentation.list.components.FilterBar
 import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.Route.NodeEdit
 import top.yukonga.miuix.kmp.basic.BasicComponent
@@ -226,21 +231,13 @@ internal fun CatalogNodesScreen(
                             )
                         }
                     )
-                    if (state.groups.isNotEmpty() && layoutStyle == 0) {
-                        TabRow(
-                            tabs = state.groups.map {
-                                val name =
-                                    if (it.group.id == "default") "本地配置" else it.group.name
-                                "$name (${it.nodes.size})"
-                            },
-                            selectedTabIndex = selectedIndex,
-                            onTabSelected = { index ->
+                    if (layoutStyle == 0) {
+                        FilterBar(
+                            groups = state.groups,
+                            selectedIndex = selectedIndex,
+                            onSelected = { index ->
                                 state.groups.getOrNull(index)?.group?.id?.let(viewModel::selectGroup)
-                            },
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                            colors = TabRowDefaults.tabRowColors(
-                                backgroundColor = Color.Transparent
-                            )
+                            }
                         )
                     }
                 }
@@ -260,7 +257,7 @@ internal fun CatalogNodesScreen(
                     modifier = Modifier.align(Alignment.Center)
                 )
 
-                state.error.isNotBlank() && state.groups.isEmpty() -> EmptyCatalog(
+                state.error.isNotBlank() && state.groups.isEmpty() -> EmptyState(
                     text = state.error,
                     onRefresh = { viewModel.refresh() },
                     modifier = Modifier
@@ -268,7 +265,7 @@ internal fun CatalogNodesScreen(
                         .padding(horizontal = 24.dp)
                 )
 
-                selectedGroup == null -> EmptyCatalog(
+                selectedGroup == null -> EmptyState(
                     text = "还没有可用节点\n请添加单节点链接或导入配置文件",
                     onRefresh = { showAddSheet = true },
                     modifier = Modifier
@@ -504,392 +501,6 @@ internal fun CatalogNodesScreen(
             }
         }
     }
-}
-
-@Composable
-private fun CatalogNodeGrid(
-    group: CatalogNodeGroup,
-    selectedRef: String,
-    selectorMode: String,
-    latencies: Map<String, String>,
-    busy: Boolean,
-    columns: Int,
-    itemSize: Int,
-    sortMode: Int,
-    onAuto: () -> Unit,
-    onNode: (CatalogNode) -> Unit,
-    onNodeAction: (CatalogNode) -> Unit,
-    modifier: Modifier,
-    contentPadding: PaddingValues,
-    nestedScrollConnection: NestedScrollConnection
-) {
-    val automaticSelected = selectorMode == "urltest" &&
-            selectedRef == "Auto/${group.group.id}"
-    val sortedNodes = remember(group.nodes, sortMode, latencies) {
-        sortCatalogNodes(group.nodes, sortMode, group.group.id, latencies)
-    }
-    val spacing = if (columns == 3) 8.dp else 10.dp
-    LazyVerticalGrid(
-        modifier = modifier
-            .scrollEndHaptic()
-            .overScrollVertical()
-            .nestedScroll(nestedScrollConnection),
-        contentPadding = contentPadding,
-        columns = GridCells.Fixed(columns),
-        verticalArrangement = Arrangement.spacedBy(spacing),
-        horizontalArrangement = Arrangement.spacedBy(spacing),
-        overscrollEffect = null
-    ) {
-        if (group.nodes.isNotEmpty()) {
-            item(key = "auto:${group.group.id}") {
-                NodeCard(
-                    title = "Auto-Fastest",
-                    summary = "自动测速",
-                    protocol = "AUTO",
-                    latency = latencies["Auto/${group.group.id}"],
-                    selected = automaticSelected,
-                    enabled = !busy,
-                    itemSize = itemSize,
-                    icon = MiuixIcons.Refresh,
-                    onClick = onAuto
-                )
-            }
-        }
-        items(sortedNodes, key = { it.tag }) { node ->
-            NodeCard(
-                title = node.tag,
-                summary = buildString {
-                    append(node.server.ifBlank { "服务器信息不可用" })
-                    if (node.port > 0) append(':').append(node.port)
-                },
-                protocol = node.protocol.uppercase().ifBlank { "NODE" },
-                latency = latencies["${group.group.id}/${node.tag}"],
-                selected = selectorMode == "manual" &&
-                        selectedRef == "${group.group.id}/${node.tag}",
-                enabled = !busy,
-                itemSize = itemSize,
-                onClick = { onNode(node) },
-                onLongClick = { onNodeAction(node) }
-            )
-        }
-        if (group.nodes.isEmpty()) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                EmptyCatalog(
-                    text = "该分组暂时没有节点",
-                    onRefresh = null,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 64.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun CatalogGroupList(
-    groups: List<CatalogNodeGroup>,
-    selectedRef: String,
-    selectorMode: String,
-    latencies: Map<String, String>,
-    busy: Boolean,
-    columns: Int,
-    itemSize: Int,
-    sortMode: Int,
-    expandedGroups: Set<String>,
-    onToggleGroup: (String) -> Unit,
-    onAuto: (String) -> Unit,
-    onNode: (CatalogNodeGroup, CatalogNode) -> Unit,
-    onNodeAction: (CatalogNodeGroup, CatalogNode) -> Unit,
-    modifier: Modifier,
-    contentPadding: PaddingValues,
-    nestedScrollConnection: NestedScrollConnection
-) {
-    val spacing = if (columns == 3) 8.dp else 10.dp
-    LazyColumn(
-        modifier = modifier
-            .scrollEndHaptic()
-            .overScrollVertical()
-            .nestedScroll(nestedScrollConnection),
-        contentPadding = contentPadding,
-        overscrollEffect = null
-    ) {
-        groups.forEachIndexed { groupIndex, group ->
-            val groupId = group.group.id
-            val expanded = groupId in expandedGroups
-            item(key = "header:$groupId") {
-                Column {
-                    if (groupIndex > 0) Spacer(Modifier.height(12.dp))
-                    CatalogGroupHeader(
-                        name = if (groupId == "default") "本地配置" else group.group.name,
-                        count = group.nodes.size,
-                        expanded = expanded,
-                        onClick = { onToggleGroup(groupId) }
-                    )
-                    if (expanded) Spacer(Modifier.height(spacing))
-                }
-            }
-            if (expanded) {
-                val entries = listOf<CatalogNode?>(null) + sortCatalogNodes(
-                    group.nodes,
-                    sortMode,
-                    groupId,
-                    latencies
-                )
-                val rows = entries.chunked(columns)
-                rows.forEachIndexed { rowIndex, row ->
-                    item(key = "row:$groupId:$rowIndex") {
-                        Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
-                            row.forEach { node ->
-                                Box(modifier = Modifier.weight(1f)) {
-                                    if (node == null) {
-                                        NodeCard(
-                                            title = "Auto-Fastest",
-                                            summary = "自动测速",
-                                            protocol = "AUTO",
-                                            latency = latencies["Auto/$groupId"],
-                                            selected = selectorMode == "urltest" &&
-                                                    selectedRef == "Auto/$groupId",
-                                            enabled = !busy && group.nodes.isNotEmpty(),
-                                            itemSize = itemSize,
-                                            icon = MiuixIcons.Refresh,
-                                            onClick = { onAuto(groupId) }
-                                        )
-                                    } else {
-                                        NodeCard(
-                                            title = node.tag,
-                                            summary = node.serverWithPort(),
-                                            protocol = node.protocol.uppercase().ifBlank { "NODE" },
-                                            latency = latencies["$groupId/${node.tag}"],
-                                            selected = selectorMode == "manual" &&
-                                                    selectedRef == "$groupId/${node.tag}",
-                                            enabled = !busy,
-                                            itemSize = itemSize,
-                                            onClick = { onNode(group, node) },
-                                            onLongClick = { onNodeAction(group, node) }
-                                        )
-                                    }
-                                }
-                            }
-                            repeat(columns - row.size) { Box(modifier = Modifier.weight(1f)) }
-                        }
-                        if (rowIndex < rows.lastIndex) {
-                            Spacer(Modifier.height(spacing))
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CatalogGroupHeader(
-    name: String,
-    count: Int,
-    expanded: Boolean,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        cornerRadius = 16.dp,
-        insideMargin = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-        pressFeedbackType = PressFeedbackType.Sink,
-        showIndication = true,
-        onClick = onClick
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = name,
-                    style = MiuixTheme.textStyles.body1.copy(fontWeight = FontWeight.Medium),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "$count 个节点",
-                    style = MiuixTheme.textStyles.body2,
-                    color = colorScheme.onSurfaceVariantActions
-                )
-            }
-            Icon(
-                imageVector = if (expanded) MiuixIcons.ExpandLess else MiuixIcons.ExpandMore,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp),
-                tint = colorScheme.onSurfaceVariantActions
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun NodeCard(
-    title: String,
-    summary: String,
-    protocol: String,
-    latency: String? = null,
-    selected: Boolean,
-    enabled: Boolean,
-    itemSize: Int,
-    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
-    onClick: () -> Unit,
-    onLongClick: (() -> Unit)? = null
-) {
-    val cornerRadius = when (itemSize) {
-        1 -> 12.dp
-        2 -> 8.dp
-        else -> 16.dp
-    }
-    val innerPadding = when (itemSize) {
-        1 -> 12.dp
-        2 -> 8.dp
-        else -> 16.dp
-    }
-    val shape = RoundedCornerShape(cornerRadius)
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .graphicsLayer {
-                this.shape = shape
-                clip = true
-            }
-            .border(
-                width = if (selected) 1.5.dp else 0.dp,
-                color = if (selected) colorScheme.primary else Color.Transparent,
-                shape = shape
-            ),
-        cornerRadius = cornerRadius,
-        insideMargin = PaddingValues(0.dp),
-        colors = CardDefaults.defaultColors(
-            color = if (selected) colorScheme.primary.copy(alpha = 0.1f)
-            else colorScheme.surfaceContainer
-        ),
-        onClick = if (enabled) onClick else null,
-        onLongPress = if (enabled) onLongClick else null,
-        pressFeedbackType = PressFeedbackType.Sink,
-        showIndication = true
-    ) {
-        Column(modifier = Modifier
-            .fillMaxWidth()
-            .padding(innerPadding)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (icon != null) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .padding(end = 8.dp)
-                            .size(18.dp),
-                        tint = colorScheme.primary
-                    )
-                }
-                Text(
-                    text = title,
-                    modifier = Modifier.weight(1f),
-                    color = if (selected) colorScheme.primary else colorScheme.onSurface,
-                    style = MiuixTheme.textStyles.body1.copy(
-                        fontSize = when (itemSize) {
-                            1 -> 13.sp
-                            2 -> 12.sp
-                            else -> 14.sp
-                        }
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Spacer(Modifier.height(if (itemSize == 0) 8.dp else if (itemSize == 1) 4.dp else 2.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = protocol,
-                    modifier = Modifier.weight(1f),
-                    color = if (selected) colorScheme.primary else colorScheme.onSurfaceVariantActions,
-                    style = MiuixTheme.textStyles.body2.copy(
-                        fontSize = when (itemSize) {
-                            1 -> 11.sp
-                            2 -> 10.sp
-                            else -> 12.sp
-                        }
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (latency != null) {
-                    Text(
-                        text = latencyLabel(latency),
-                        modifier = Modifier.padding(start = 8.dp),
-                        color = latencyColor(latency),
-                        style = MiuixTheme.textStyles.body2.copy(
-                            fontSize = when (itemSize) {
-                                1 -> 10.sp
-                                2 -> 9.sp
-                                else -> 11.sp
-                            },
-                            fontWeight = FontWeight.Medium
-                        )
-                    )
-                } else {
-                    Text(
-                        text = summary,
-                        modifier = Modifier
-                            .padding(start = 8.dp)
-                            .weight(1f),
-                        color = colorScheme.onSurfaceVariantSummary,
-                        style = MiuixTheme.textStyles.body2.copy(
-                            fontSize = when (itemSize) {
-                                1 -> 10.sp
-                                2 -> 9.sp
-                                else -> 11.sp
-                            }
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
-    }
-}
-
-private fun sortCatalogNodes(
-    nodes: List<CatalogNode>,
-    sortMode: Int,
-    groupId: String,
-    latencies: Map<String, String>
-): List<CatalogNode> =
-    when (sortMode) {
-        1 -> nodes.sortedBy { it.tag.lowercase() }
-        2 -> nodes.sortedWith(compareBy<CatalogNode> { it.protocol }.thenBy { it.tag })
-        3 -> nodes.sortedBy { node ->
-            latencies["$groupId/${node.tag}"]?.toIntOrNull() ?: Int.MAX_VALUE
-        }
-
-        else -> nodes
-    }
-
-@Composable
-private fun latencyLabel(value: String): String = when (value) {
-    "testing..." -> stringResource(com.fanjv.netproxy.R.string.latency_testing)
-    "failed" -> stringResource(com.fanjv.netproxy.R.string.latency_failed)
-    "timeout" -> stringResource(com.fanjv.netproxy.R.string.latency_timeout)
-    else -> "$value ms"
-}
-
-@Composable
-private fun latencyColor(value: String): Color = when (value) {
-    "testing..." -> colorScheme.primary
-    "failed", "timeout" -> if (MiuixTheme.isDynamicColor) colorScheme.error else Color(0xFFF72727)
-    else -> when (value.toIntOrNull() ?: Int.MAX_VALUE) {
-        in 0..799 -> Color(0xFF32A852)
-        in 800..1499 -> Color(0xFFE39A20)
-        else -> if (MiuixTheme.isDynamicColor) colorScheme.error else Color(0xFFF05252)
-    }
-}
-
-private fun CatalogNode.serverWithPort(): String = buildString {
-    append(server.ifBlank { "--" })
-    if (port > 0) append(':').append(port)
 }
 
 @Composable
