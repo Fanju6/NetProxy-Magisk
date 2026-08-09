@@ -137,3 +137,80 @@ func TestUpdateRejectsEmptyProviderWithoutReplacingPrevious(t *testing.T) {
 		t.Fatalf("更新失败后旧 Provider 被覆盖: %s", current)
 	}
 }
+
+func TestUpdateFallsBackToDirectWhenConfiguredProxyFails(t *testing.T) {
+	root := t.TempDir()
+	groupID := "fallback"
+	groupDir := filepath.Join(root, groupID)
+	if err := os.MkdirAll(groupDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = writer.Write([]byte(`{"outbounds":[{"type":"socks","tag":"direct-node","server":"127.0.0.1","server_port":1080}]}`))
+	}))
+	defer server.Close()
+
+	metadata := Metadata{
+		Schema: 1, ID: groupID, Name: "Fallback", Type: "subscription", URL: server.URL,
+		Timeout: 5, UpdateViaProxy: "auto",
+	}
+	if err := SaveMetadataAtomic(filepath.Join(groupDir, "meta.json"), metadata); err != nil {
+		t.Fatal(err)
+	}
+	if err := provider.WriteAtomic(filepath.Join(groupDir, "provider.json"), []byte(`{"outbounds":[]}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Update(context.Background(), UpdateOptions{
+		Root: root, GroupID: groupID, ProxyURL: "http://127.0.0.1:1", FallbackDirect: true,
+		Now: time.Unix(1700000000, 0),
+	})
+	if err != nil {
+		t.Fatalf("代理失败后直连回退应成功: %v", err)
+	}
+	if result.UsedProxy {
+		t.Fatal("直连回退后不应报告使用代理")
+	}
+	content, err := os.ReadFile(filepath.Join(groupDir, "provider.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), "direct-node") {
+		t.Fatalf("直连回退未提交 Provider: %s", content)
+	}
+}
+
+func TestCancelledUpdateKeepsPreviousProvider(t *testing.T) {
+	root := t.TempDir()
+	groupID := "cancelled"
+	groupDir := filepath.Join(root, groupID)
+	if err := os.MkdirAll(groupDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = writer.Write([]byte(`{"outbounds":[{"type":"socks","tag":"new-node","server":"127.0.0.1","server_port":1080}]}`))
+	}))
+	defer server.Close()
+	if err := SaveMetadataAtomic(filepath.Join(groupDir, "meta.json"), Metadata{
+		Schema: 1, ID: groupID, Name: "Cancelled", Type: "subscription", URL: server.URL, Timeout: 5,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	oldProvider := []byte(`{"outbounds":[{"type":"socks","tag":"old-node","server":"127.0.0.1","server_port":1080}]}` + "\n")
+	providerPath := filepath.Join(groupDir, "provider.json")
+	if err := provider.WriteAtomic(providerPath, oldProvider, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := Update(ctx, UpdateOptions{Root: root, GroupID: groupID, Now: time.Unix(1700000000, 0)}); err == nil {
+		t.Fatal("已取消更新应返回错误")
+	}
+	current, err := os.ReadFile(providerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(current) != string(oldProvider) {
+		t.Fatalf("取消更新不应替换旧 Provider: %s", current)
+	}
+}

@@ -41,6 +41,19 @@
 - `scripts/network/netmon.sh` 负责网络变化监听。
 - 设备上的调用形式是 `su -c /data/adb/modules/netproxy/netproxyctl [--json] <命令组> <命令>`；文档和排查步骤按此形式给出，不要写成裸 `netproxyctl`，它不在 PATH 里。
 
+### 最终脚本边界
+
+模块运行时只保留以下 Shell：
+
+```text
+src/module/scripts/core/service.sh
+src/module/scripts/network/netmon.sh
+src/module/scripts/utils/common.sh
+src/module/scripts/utils/state.sh
+```
+
+以下旧业务脚本已从运行时删除，不得重新添加：`subscription.sh`、`subworker.sh`、`ebpf.sh`、`switch.sh`、`runtime.sh`、`utils/api.sh`、`utils/catalog.sh`、`utils/metadata.sh`、`network/tproxy.sh`、`utils/ipset.sh` 和 `core/subsched.sh`。`customize.sh` 中仍可保留一次性的旧 Worker/TPROXY 清理分支，但这些分支只用于安装时清理残留，不属于当前运行时兼容层。
+
 ## Shell 约定
 
 - 运行时脚本面向 Android `/system/bin/sh`，只写 POSIX/mksh 可执行语法，不使用 Bash 数组、`[[ ]]`、进程替换或 Bash 专属选项。
@@ -98,6 +111,7 @@ sh tests/netproxyctl_contract_test.sh ./.tmp/netproxyctl ./.tmp/netproxy-native
 sh tests/runtime_catalog_test.sh ./.tmp/netproxy-native
 sh tests/config_utils_test.sh ./.tmp/netproxy-native
 sh tests/service_state_test.sh ./.tmp/netproxy-native
+sh tests/module_scripts_test.sh
 
 # WebUI
 (cd src/webui && npm ci && npm run build)

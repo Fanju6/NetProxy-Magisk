@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/fetch"
 )
@@ -156,5 +157,68 @@ func TestSubscriptionNotModified(t *testing.T) {
 	}
 	if !response.Metadata.NotModified || len(response.Body) != 0 {
 		t.Fatalf("unexpected 304 response: %#v", response)
+	}
+}
+
+func TestSubscriptionHonorsContextCancellation(t *testing.T) {
+	started := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		close(started)
+		<-request.Context().Done()
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := fetch.Subscription(ctx, fetch.Request{URL: server.URL, Timeout: time.Second})
+		done <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("请求未进入服务端")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("取消请求应返回错误")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("取消请求未及时结束")
+	}
+}
+
+func TestSubscriptionTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		_, _ = writer.Write([]byte("socks://example.com:1080#node"))
+	}))
+	defer server.Close()
+
+	_, err := fetch.Subscription(context.Background(), fetch.Request{URL: server.URL, Timeout: 20 * time.Millisecond})
+	if err == nil {
+		t.Fatal("请求超时应返回错误")
+	}
+}
+
+func TestSubscriptionTLSRequiresExplicitInsecureOption(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = writer.Write([]byte("socks://example.com:1080#node"))
+	}))
+	defer server.Close()
+
+	if _, err := fetch.Subscription(context.Background(), fetch.Request{URL: server.URL}); err == nil {
+		t.Fatal("未启用 insecure 时不应接受自签名证书")
+	}
+	response, err := fetch.Subscription(context.Background(), fetch.Request{
+		URL: server.URL, AllowInsecure: true,
+	})
+	if err != nil {
+		t.Fatalf("显式启用 insecure 后请求失败: %v", err)
+	}
+	if len(response.Body) == 0 {
+		t.Fatal("TLS 请求未返回订阅内容")
 	}
 }

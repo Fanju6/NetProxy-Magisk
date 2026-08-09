@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -352,5 +353,61 @@ func TestWorkerRejectsConcurrentSubscriptionUpdate(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("首个订阅更新未结束")
+	}
+}
+
+func TestRunDueContinuesAfterOneSubscriptionFails(t *testing.T) {
+	now := time.Unix(1_700_300_000, 0)
+	goodServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = writer.Write([]byte(`{"outbounds":[{"type":"socks","tag":"good-node","server":"127.0.0.1","server_port":1080}]}`))
+	}))
+	defer goodServer.Close()
+
+	root := t.TempDir()
+	moduleConf := filepath.Join(root, "module.conf")
+	if err := os.WriteFile(moduleConf, []byte("ACTIVE_GROUP_ID=\"good\"\nSELECTOR_MODE=urltest\nOUTBOUND_MODE=rule\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []struct {
+		id  string
+		url string
+	}{
+		{id: "good", url: goodServer.URL},
+		{id: "bad", url: "http://127.0.0.1:1"},
+	} {
+		groupDir := filepath.Join(root, item.id)
+		if err := os.MkdirAll(groupDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		metadata := subscription.NewMetadata(item.id, item.id, "subscription", item.url, now)
+		metadata.AutoUpdate = true
+		metadata.UpdateInterval = 900
+		metadata.UpdateViaProxy = "never"
+		metadata.NextUpdateEpoch = now.Unix() - 1
+		metadata.NextUpdateAt = subscription.FormatEpochUTC(metadata.NextUpdateEpoch)
+		if err := subscription.SaveMetadataAtomic(filepath.Join(groupDir, "meta.json"), metadata); err != nil {
+			t.Fatal(err)
+		}
+		if err := provider.WriteAtomic(filepath.Join(groupDir, "provider.json"), []byte(`{"outbounds":[]}`+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	options := NewOptions(root)
+	options.ModuleConf = moduleConf
+	options.Now = func() time.Time { return now }
+	summary, err := RunDue(context.Background(), options, now, log.New(io.Discard, "", 0))
+	if err != nil {
+		t.Fatalf("批量更新不应因单项失败而中断: %v", err)
+	}
+	if len(summary.Updated) != 1 || summary.Updated[0] != "good" || len(summary.Failed) != 1 || summary.Failed[0] != "bad" {
+		t.Fatalf("批量更新摘要异常: %+v", summary)
+	}
+	content, err := os.ReadFile(filepath.Join(root, "good", "provider.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), "good-node") {
+		t.Fatalf("成功订阅未提交 Provider: %s", content)
 	}
 }

@@ -1,0 +1,100 @@
+package moduleapp
+
+import (
+	"archive/tar"
+	"compress/gzip"
+	"io"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+)
+
+func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
+	root := t.TempDir()
+	logDir := filepath.Join(root, "logs")
+	moduleConfig := filepath.Join(root, "config", "module.conf")
+	ebpfConfig := filepath.Join(root, "config", "ebpf", "ebpf.conf")
+	singboxDir := filepath.Join(root, "config", "singbox")
+	catalogRoot := filepath.Join(root, "config", "catalog", "group")
+	for _, dir := range []string{logDir, filepath.Dir(moduleConfig), filepath.Dir(ebpfConfig), filepath.Join(singboxDir, "confdir"), filepath.Join(singboxDir, "runtime"), catalogRoot} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(logDir, "service.log"), []byte("Authorization: Bearer secret-bearer\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(moduleConfig, []byte("SUB_URL=https://example.test/sub?token=secret-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ebpfConfig, []byte("HWID=secret-hwid\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(singboxDir, "runtime", "ebpf.json"), []byte(`{"type":"ebpf","tag":"runtime"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(singboxDir, "confdir", "08_services.json"), []byte(`{"secret":"secret-config"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(catalogRoot, "meta.json"), []byte(`{"url":"https://example.test/sub?token=secret-token","hwid":"secret-hwid","custom_headers":{"Authorization":"Bearer secret-bearer"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	destination := filepath.Join(root, "export", "diagnostics.tar.gz")
+	options := Options{
+		CatalogRoot:  catalogRoot,
+		ModuleConfig: moduleConfig,
+		EBPFConfig:   ebpfConfig,
+		SingBoxDir:   singboxDir,
+		LogDir:       logDir,
+	}
+	if err := ExportLogs(options, destination); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Fatalf("诊断包权限应为 0600，实际为 %o", info.Mode().Perm())
+	}
+
+	file, err := os.Open(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	compressed, err := gzip.NewReader(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer compressed.Close()
+	reader := tar.NewReader(compressed)
+	seenRuntime := false
+	for {
+		header, readErr := reader.Next()
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		content, err := io.ReadAll(reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(header.Name, "runtime/ebpf.json") {
+			seenRuntime = true
+		}
+		for _, secret := range []string{"secret-bearer", "secret-token", "secret-hwid", "secret-config"} {
+			if strings.Contains(string(content), secret) {
+				t.Fatalf("诊断包泄露敏感值 %q，文件 %s，内容 %s", secret, header.Name, content)
+			}
+		}
+	}
+	if !seenRuntime {
+		t.Fatal("诊断包未包含运行时配置")
+	}
+}

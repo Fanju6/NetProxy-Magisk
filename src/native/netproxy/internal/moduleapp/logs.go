@@ -16,6 +16,8 @@ import (
 var (
 	urlCredentialPattern = regexp.MustCompile(`(https?://)[^/@\s]+@`)
 	querySecretPattern   = regexp.MustCompile(`(?i)([?&](?:token|key|secret|password|auth|uuid|hwid)=)[^&\s]+`)
+	authorizationPattern = regexp.MustCompile(`(?i)((?:authorization|proxy-authorization)\s*:\s*(?:bearer|basic)\s+)[^\r\n\s,;]+`)
+	lineSecretPattern    = regexp.MustCompile(`(?i)((?:authorization|proxy-authorization|x-hwid|hwid|token|password|secret|private[_-]?key|custom[_-]?headers)\s*[:=]\s*)[^\r\n\s,;]+`)
 )
 
 // LogFile 返回用户可见日志类型对应的文件。
@@ -79,6 +81,9 @@ func ExportLogs(options Options, destination string) error {
 		return err
 	}
 	defer file.Close()
+	if err := file.Chmod(0o600); err != nil {
+		return err
+	}
 	archive := gzip.NewWriter(file)
 	defer archive.Close()
 	tarWriter := tar.NewWriter(archive)
@@ -143,8 +148,6 @@ func appendDirectoryFiles(files *[]struct{ source, name string }, root, archiveR
 }
 
 func redactText(value string) string {
-	value = urlCredentialPattern.ReplaceAllString(value, `$1***@`)
-	value = querySecretPattern.ReplaceAllString(value, `${1}***`)
 	var object map[string]any
 	if json.Unmarshal([]byte(value), &object) == nil {
 		redactJSON(object)
@@ -152,6 +155,10 @@ func redactText(value string) string {
 			return string(encoded) + "\n"
 		}
 	}
+	value = urlCredentialPattern.ReplaceAllString(value, `$1***@`)
+	value = querySecretPattern.ReplaceAllString(value, `${1}***`)
+	value = authorizationPattern.ReplaceAllString(value, `${1}***`)
+	value = lineSecretPattern.ReplaceAllString(value, `${1}***`)
 	return value
 }
 
