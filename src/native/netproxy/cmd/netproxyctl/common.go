@@ -34,7 +34,7 @@ func (c *cli) moduleArgs(action string, args ...string) []string {
 		"--ebpf-config", c.ebpfConfig,
 		"--sing-box", c.singBoxPath,
 		"--singbox-dir", c.singBoxDir,
-		"--runtime-dir", filepath.Join(c.singBoxDir, "runtime"),
+		"--runtime-dir", filepath.Join(c.moduleDir, "runtime"),
 		"--service-script", c.serviceScript,
 		"--address", c.serviceAddress,
 		"--secret", c.serviceSecret,
