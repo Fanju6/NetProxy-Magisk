@@ -1,4 +1,4 @@
-package catalogtxn
+package catalog
 
 import (
 	"os"

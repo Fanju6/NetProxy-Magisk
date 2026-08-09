@@ -1,4 +1,4 @@
-package moduleapp
+package module
 
 import (
 	"context"
@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/control"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/moduleconfig"
+	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 )
 
 // NetworkEvaluation 描述一次网络事件评估以及实际应用结果。
@@ -44,12 +44,12 @@ func EvaluateNetwork(ctx context.Context, options Options, networkType, ssid str
 	if !module.WiFiAutoSwitch {
 		result.Target = "proxying"
 		result.DesiredMode = module.OutboundMode
-		result.RuntimeMode, _ = control.ReadRuntimeMode(ctx, networkControlOptions(options))
+		result.RuntimeMode, _ = service.ReadRuntimeMode(ctx, networkControlOptions(options))
 		if result.RuntimeMode != "" && result.RuntimeMode != modeToRuntime(module.OutboundMode) {
 			if err := ApplyRuntimeMode(ctx, options, module.OutboundMode); err != nil {
 				return result, err
 			}
-			_ = control.CloseAllConnections(ctx, networkControlOptions(options))
+			_ = service.CloseAllConnections(ctx, networkControlOptions(options))
 			result.RuntimeMode = modeToRuntime(module.OutboundMode)
 			result.Changed = true
 			result.Reason = "已恢复基础出站模式"
@@ -82,8 +82,8 @@ func EvaluateNetwork(ctx context.Context, options Options, networkType, ssid str
 	result.DesiredMode = desiredMode
 
 	previousState := readWiFiState(options.WiFiStateFile)
-	if control.ProcessRunning(options.SingBoxPath) {
-		result.RuntimeMode, _ = control.ReadRuntimeMode(ctx, networkControlOptions(options))
+	if service.ProcessRunning(options.SingBoxPath) {
+		result.RuntimeMode, _ = service.ReadRuntimeMode(ctx, networkControlOptions(options))
 	}
 	if previousState == target && (result.RuntimeMode == "" || result.RuntimeMode == modeToRuntime(desiredMode)) {
 		result.Reason = "网络策略未变化"
@@ -91,12 +91,12 @@ func EvaluateNetwork(ctx context.Context, options Options, networkType, ssid str
 	}
 	modeChanged := result.RuntimeMode != modeToRuntime(desiredMode)
 	if modeChanged {
-		if control.ProcessRunning(options.SingBoxPath) {
+		if service.ProcessRunning(options.SingBoxPath) {
 			if err := ApplyRuntimeMode(ctx, options, desiredMode); err != nil {
 				return result, err
 			}
 		}
-		_ = control.CloseAllConnections(ctx, networkControlOptions(options))
+		_ = service.CloseAllConnections(ctx, networkControlOptions(options))
 		result.RuntimeMode = modeToRuntime(desiredMode)
 	}
 	if err := writeWiFiState(options.WiFiStateFile, target); err != nil {
@@ -117,11 +117,11 @@ func ApplyRuntimeMode(ctx context.Context, options Options, mode string) error {
 	if mode != "rule" && mode != "global" && mode != "direct" && mode != "AllowAds" {
 		return errors.New("未知运行时出站模式: " + mode)
 	}
-	return control.SetMode(ctx, networkControlOptions(options), mode)
+	return service.SetMode(ctx, networkControlOptions(options), mode)
 }
 
-func networkControlOptions(options Options) control.Options {
-	return control.Options{
+func networkControlOptions(options Options) service.Options {
+	return service.Options{
 		ModuleConfig:   options.ModuleConfig,
 		CatalogRoot:    options.CatalogRoot,
 		StateFile:      options.StateFile,

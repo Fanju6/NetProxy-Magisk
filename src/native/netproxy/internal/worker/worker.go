@@ -1,4 +1,4 @@
-package subworker
+package worker
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/moduleconfig"
+	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 )
@@ -62,7 +62,7 @@ func NewOptions(root string) Options {
 	return Options{
 		Root:           root,
 		ProgressDir:    "/dev/netproxy/subscriptions",
-		PIDFile:        "/dev/netproxy/subworker.pid",
+		PIDFile:        "/dev/netproxy/worker.pid",
 		ServiceAddress: "127.0.0.1:9090",
 		ServiceSecret:  defaultServiceSecret,
 		Now:            time.Now,

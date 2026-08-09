@@ -1,5 +1,5 @@
-// Package grouplock 提供进程内的 Catalog 分组锁。
-package grouplock
+// Package catalog 提供 Catalog 数据与进程内分组锁。
+package catalog
 
 import "sync"
 

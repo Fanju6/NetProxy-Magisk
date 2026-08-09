@@ -9,9 +9,7 @@ import (
 	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/convert"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/grouplock"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 )
 
 func TestCatalogNodeMutationsCommitPair(t *testing.T) {
@@ -68,7 +66,7 @@ func TestCatalogNodeMutationsCommitPair(t *testing.T) {
 	if len(nodes) != 1 || nodes[0].Tag != "EDITED" {
 		t.Fatalf("unexpected nodes: %+v", nodes)
 	}
-	metadata, err := subscription.LoadMetadata(filepath.Join(groupDir, "meta.json"), "local-test")
+	metadata, err := LoadMetadata(filepath.Join(groupDir, "meta.json"), "local-test")
 	if err != nil {
 		t.Fatalf("load metadata: %v", err)
 	}
@@ -138,7 +136,7 @@ func TestCatalogNodeMutationsSerializePerGroup(t *testing.T) {
 	if got := len(provider.Inspect(document)); got != 3 {
 		t.Fatalf("concurrent append lost nodes: got %d", got)
 	}
-	metadata, err := subscription.LoadMetadata(filepath.Join(root, "concurrent", "meta.json"), "concurrent")
+	metadata, err := LoadMetadata(filepath.Join(root, "concurrent", "meta.json"), "concurrent")
 	if err != nil {
 		t.Fatalf("load metadata: %v", err)
 	}
@@ -157,14 +155,14 @@ func TestConcurrentNodeEditsWithSubscriptionUpdate(t *testing.T) {
 		t.Fatalf("import group: %v", err)
 	}
 
-	parsed, err := convert.Input(context.Background(), "socks://subscription.example:2080#SUB", false)
+	parsed, err := convert.Input(context.Background(), "socks://example:2080#SUB", false)
 	if err != nil {
 		t.Fatalf("convert subscription node: %v", err)
 	}
-	metadata := subscription.NewMetadata(groupID, "订阅更新", "subscription", "https://example.test/sub", now)
+	metadata := NewMetadata(groupID, "订阅更新", "subscription", "https://example.test/sub", now)
 	metadata.NodeCount = 1
 	metadata.Revision = 10
-	metadata.UpdatedAt = subscription.FormatEpochUTC(now.Unix())
+	metadata.UpdatedAt = FormatEpochUTC(now.Unix())
 	groupDir := filepath.Join(root, groupID)
 
 	start := make(chan struct{})
@@ -186,7 +184,7 @@ func TestConcurrentNodeEditsWithSubscriptionUpdate(t *testing.T) {
 		defer wait.Done()
 		<-start
 		// 订阅更新在提交阶段持有同一个分组锁，不能和节点编辑交错读写。
-		release := grouplock.Acquire(groupID)
+		release := Acquire(groupID)
 		defer release()
 		errorsCh <- commitPair(context.Background(), groupDir, parsed.Document, metadata)
 	}()
@@ -203,7 +201,7 @@ func TestConcurrentNodeEditsWithSubscriptionUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load final provider: %v", err)
 	}
-	finalMetadata, err := subscription.LoadMetadata(filepath.Join(groupDir, "meta.json"), groupID)
+	finalMetadata, err := LoadMetadata(filepath.Join(groupDir, "meta.json"), groupID)
 	if err != nil {
 		t.Fatalf("load final metadata: %v", err)
 	}
@@ -243,7 +241,7 @@ func TestCatalogGroupInitialization(t *testing.T) {
 		t.Fatalf("initialize group: %v", err)
 	}
 	groupDir := filepath.Join(root, "subscription-test")
-	metadata, err := subscription.LoadMetadata(filepath.Join(groupDir, "meta.json"), "subscription-test")
+	metadata, err := LoadMetadata(filepath.Join(groupDir, "meta.json"), "subscription-test")
 	if err != nil {
 		t.Fatalf("load initialized metadata: %v", err)
 	}
@@ -269,7 +267,7 @@ func TestCatalogGroupInitialization(t *testing.T) {
 	if err := SetGroupName(context.Background(), root, "subscription-test", "更新后的订阅", now); err != nil {
 		t.Fatalf("set group name: %v", err)
 	}
-	metadata, err = subscription.LoadMetadata(filepath.Join(groupDir, "meta.json"), "subscription-test")
+	metadata, err = LoadMetadata(filepath.Join(groupDir, "meta.json"), "subscription-test")
 	if err != nil || metadata.Name != "更新后的订阅" {
 		t.Fatalf("unexpected renamed metadata: %v, %+v", err, metadata)
 	}

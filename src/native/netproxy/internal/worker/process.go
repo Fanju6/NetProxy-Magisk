@@ -1,4 +1,4 @@
-package subworker
+package worker
 
 import (
 	"context"

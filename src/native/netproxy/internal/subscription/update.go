@@ -11,10 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalogtxn"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/convert"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/fetch"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/grouplock"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 )
 
@@ -23,45 +22,6 @@ const (
 	minimumInterval = 15 * time.Minute
 	maxHistory      = 20
 )
-
-// Metadata 是 Catalog 分组的持久元数据。
-// 订阅更新必须由 Go 统一读写，避免 Shell 通过 awk/sed 解析 JSON。
-type Metadata struct {
-	Schema             int                   `json:"schema"`
-	ID                 string                `json:"id"`
-	Name               string                `json:"name"`
-	Type               string                `json:"type"`
-	URL                string                `json:"url"`
-	UserAgent          string                `json:"user_agent"`
-	HWID               string                `json:"hwid"`
-	CustomHeaders      map[string]string     `json:"custom_headers"`
-	AutoUpdate         bool                  `json:"auto_update"`
-	UpdateInterval     int64                 `json:"update_interval"`
-	IntervalSource     string                `json:"interval_source"`
-	UpdateViaProxy     string                `json:"update_via_proxy"`
-	Include            string                `json:"include"`
-	Exclude            string                `json:"exclude"`
-	AllowInsecure      bool                  `json:"allow_insecure"`
-	Timeout            int64                 `json:"timeout"`
-	Usage              json.RawMessage       `json:"usage"`
-	NodeCount          int                   `json:"node_count"`
-	Revision           int64                 `json:"revision"`
-	ETag               string                `json:"etag"`
-	LastModified       string                `json:"last_modified"`
-	ProfileTitle       string                `json:"profile_title"`
-	ProfileWebPageURL  string                `json:"profile_web_page_url"`
-	ContentDisposition string                `json:"content_disposition"`
-	FileName           string                `json:"file_name"`
-	LastStatusCode     int                   `json:"last_status_code"`
-	LastDiagnostics    []provider.Diagnostic `json:"last_diagnostics"`
-	LastAttemptAt      string                `json:"last_attempt_at"`
-	LastSuccessAt      string                `json:"last_success_at"`
-	NextUpdateAt       string                `json:"next_update_at"`
-	NextUpdateEpoch    int64                 `json:"next_update_epoch"`
-	LastError          string                `json:"last_error"`
-	CreatedAt          string                `json:"created_at"`
-	UpdatedAt          string                `json:"updated_at"`
-}
 
 // UpdateOptions 定义一次订阅更新的运行上下文。
 type UpdateOptions struct {
@@ -93,36 +53,6 @@ type Error struct {
 
 func (e *Error) Error() string { return e.Message }
 
-// LoadMetadata 读取并补齐旧字段缺省值。
-func LoadMetadata(path, fallbackID string) (Metadata, error) {
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return Metadata{}, err
-	}
-	var metadata Metadata
-	if err := json.Unmarshal(content, &metadata); err != nil {
-		return Metadata{}, err
-	}
-	if metadata.ID == "" {
-		metadata.ID = fallbackID
-	}
-	if metadata.Name == "" {
-		metadata.Name = metadata.ID
-	}
-	return normalizeMetadata(metadata), nil
-}
-
-// SaveMetadataAtomic 以 0600 权限原子保存 Catalog 元数据。
-func SaveMetadataAtomic(path string, metadata Metadata) error {
-	metadata = normalizeMetadata(metadata)
-	content, err := json.MarshalIndent(metadata, "", "  ")
-	if err != nil {
-		return err
-	}
-	content = append(content, '\n')
-	return provider.WriteAtomic(path, content, 0o600)
-}
-
 // Update 执行一次可回滚的订阅更新。
 func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 	if strings.TrimSpace(options.Root) == "" || strings.TrimSpace(options.GroupID) == "" {
@@ -134,9 +64,9 @@ func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 	if options.Now.IsZero() {
 		options.Now = time.Now()
 	}
-	release := grouplock.Acquire(options.GroupID)
+	release := catalog.Acquire(options.GroupID)
 	defer release()
-	if err := catalogtxn.Recover(options.Root); err != nil {
+	if err := catalog.Recover(options.Root); err != nil {
 		return Result{}, &Error{Code: "subscription.recovery_failed", Message: "鎭㈠鏈畬鎴愯闃呬簨鍔″け璐?", Data: err.Error()}
 	}
 	groupDir := filepath.Join(options.Root, options.GroupID)
@@ -263,7 +193,7 @@ func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 	if err != nil {
 		return updateFailure(options, metadata, groupDir, started, response, "metadata.read_failed", "读取临时元数据失败", err)
 	}
-	if err := catalogtxn.CommitPair(options.Root, groupDir, providerContent, metadataContent); err != nil {
+	if err := catalog.CommitPair(options.Root, groupDir, providerContent, metadataContent); err != nil {
 		return updateFailure(options, metadata, groupDir, started, response, "subscription.commit_failed", "订阅 Provider 与元数据提交失败", err)
 	}
 

@@ -1,4 +1,4 @@
-package moduleapp
+package module
 
 import (
 	"archive/tar"

@@ -1,4 +1,4 @@
-package control
+package service
 
 import (
 	"context"
@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/moduleconfig"
+	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subworker"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/worker"
 )
 
 // Options 描述控制面访问所需的模块路径和 Service API 参数。
@@ -313,7 +313,7 @@ func normalizeOptions(options Options) Options {
 		options.ProgressDir = "/dev/netproxy/subscriptions"
 	}
 	if options.WorkerPIDFile == "" {
-		options.WorkerPIDFile = "/dev/netproxy/subworker.pid"
+		options.WorkerPIDFile = "/dev/netproxy/worker.pid"
 	}
 	return options
 }
@@ -618,12 +618,12 @@ func runtimeNodeRef(ctx context.Context, root, reference string) (string, error)
 	return runtimeTag + "/" + tag, nil
 }
 
-func readWorkerStatus(options Options) (subworker.Status, error) {
-	workerOptions := subworker.NewOptions(options.CatalogRoot)
+func readWorkerStatus(options Options) (worker.Status, error) {
+	workerOptions := worker.NewOptions(options.CatalogRoot)
 	workerOptions.ProgressDir = options.ProgressDir
 	workerOptions.PIDFile = options.WorkerPIDFile
 	workerOptions.ModuleConf = options.ModuleConfig
-	return subworker.ReadStatus(workerOptions)
+	return worker.ReadStatus(workerOptions)
 }
 
 func findProcess(executable string, statePID int) int {

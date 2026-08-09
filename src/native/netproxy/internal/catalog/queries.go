@@ -10,7 +10,6 @@ import (
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/sharelink"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 )
 
 // ResolveGroup 按分组 ID 或唯一显示名称解析分组。
@@ -117,14 +116,14 @@ func ExportGroupNode(ctx context.Context, root, groupID, tag string) (sharelink.
 }
 
 // PrivateMetadata 返回订阅编辑所需的完整元数据。
-func PrivateMetadata(root, groupID string) (subscription.Metadata, error) {
+func PrivateMetadata(root, groupID string) (Metadata, error) {
 	if !validGroupID.MatchString(groupID) {
-		return subscription.Metadata{}, fmt.Errorf("非法分组 ID: %s", groupID)
+		return Metadata{}, fmt.Errorf("非法分组 ID: %s", groupID)
 	}
 	if err := recoverTransactions(root); err != nil {
-		return subscription.Metadata{}, err
+		return Metadata{}, err
 	}
-	return subscription.LoadMetadata(filepath.Join(root, groupID, "meta.json"), groupID)
+	return LoadMetadata(filepath.Join(root, groupID, "meta.json"), groupID)
 }
 
 // GroupType 返回分组类型。

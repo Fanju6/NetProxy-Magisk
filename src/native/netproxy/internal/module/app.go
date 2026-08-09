@@ -1,5 +1,5 @@
-// Package moduleapp 提供模块业务操作的 Go 应用服务。
-package moduleapp
+// Package module 提供模块业务操作的 Go 应用服务。
+package module
 
 import (
 	"context"
@@ -14,12 +14,12 @@ import (
 	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/control"
+	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/ebpf"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/moduleconfig"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subworker"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/worker"
 )
 
 // Options 描述模块目录、运行时目录和平台适配器路径。
@@ -62,7 +62,7 @@ func NewOptions(moduleDir string) Options {
 		ServiceScript:  filepath.Join(moduleDir, "scripts", "core", "service.sh"),
 		ServiceAddress: "127.0.0.1:9090",
 		ServiceSecret:  "singbox",
-		WorkerPIDFile:  "/dev/netproxy/subworker.pid",
+		WorkerPIDFile:  "/dev/netproxy/worker.pid",
 		WorkerLogFile:  filepath.Join(moduleDir, "logs", "subscription.log"),
 		WiFiStateFile:  "/dev/netproxy/wifi_state",
 		RequestTimeout: 8 * time.Second,
@@ -240,7 +240,7 @@ func SyncSelection(ctx context.Context, options Options) (map[string]string, err
 }
 
 func syncRuntimeSelector(ctx context.Context, options Options, active, inner string) error {
-	if !control.ProcessRunning(options.SingBoxPath) {
+	if !service.ProcessRunning(options.SingBoxPath) {
 		return nil
 	}
 	client, err := serviceapi.New(options.ServiceAddress, options.ServiceSecret)
@@ -297,7 +297,7 @@ func ApplyMode(ctx context.Context, options Options, mode string) error {
 	if err := moduleconfig.UpdateModule(options.ModuleConfig, map[string]string{"OUTBOUND_MODE": mode}); err != nil {
 		return err
 	}
-	if !control.ProcessRunning(options.SingBoxPath) {
+	if !service.ProcessRunning(options.SingBoxPath) {
 		return nil
 	}
 	mapped := map[string]string{"rule": "Rule", "global": "Global", "direct": "Direct", "AllowAds": "AllowAds"}[mode]
@@ -496,7 +496,7 @@ func RemoveSubscription(ctx context.Context, options Options, query, replacement
 			if err := moduleconfig.UpdateModule(options.ModuleConfig, map[string]string{"ACTIVE_GROUP_ID": moduleconfig.Quote(""), "SELECTOR_MODE": "urltest", "SELECTED_NODE_REF": moduleconfig.Quote("")}); err != nil {
 				return err
 			}
-			if control.ProcessRunning(options.SingBoxPath) {
+			if service.ProcessRunning(options.SingBoxPath) {
 				if err := runServiceAdapter(ctx, options, "stop"); err != nil {
 					return err
 				}
@@ -506,7 +506,7 @@ func RemoveSubscription(ctx context.Context, options Options, query, replacement
 	if err := catalog.DeleteGroup(options.CatalogRoot, groupID); err != nil {
 		return err
 	}
-	if control.ProcessRunning(options.SingBoxPath) {
+	if service.ProcessRunning(options.SingBoxPath) {
 		return runServiceAdapter(ctx, options, "reload")
 	}
 	return nil
@@ -539,7 +539,7 @@ func syncCatalogChange(ctx context.Context, options Options, groupID string, str
 			return err
 		}
 	}
-	if structureChanged && control.ProcessRunning(options.SingBoxPath) {
+	if structureChanged && service.ProcessRunning(options.SingBoxPath) {
 		return runServiceAdapter(ctx, options, "reload")
 	}
 	return nil
@@ -699,7 +699,7 @@ func AddSubscription(ctx context.Context, options SubscriptionOptions) (subscrip
 		return subscription.Result{}, err
 	}
 	workerOptions := workerOptions(options.Options)
-	updated, err := subworker.UpdateGroup(ctx, workerOptions, groupID, time.Now(), nil)
+	updated, err := worker.UpdateGroup(ctx, workerOptions, groupID, time.Now(), nil)
 	if err != nil {
 		if options.Name == "" {
 			if fallback := hostName(options.URL); fallback != "" {
@@ -717,18 +717,18 @@ func UpdateSubscription(ctx context.Context, options Options, query string) (sub
 	if err != nil {
 		return subscription.Result{}, err
 	}
-	return subworker.UpdateGroup(ctx, workerOptions(options), groupID, time.Now(), nil)
+	return worker.UpdateGroup(ctx, workerOptions(options), groupID, time.Now(), nil)
 }
 
 // UpdateAllSubscriptions 按 Catalog 顺序更新全部订阅。
-func UpdateAllSubscriptions(ctx context.Context, options Options) (subworker.Summary, error) {
+func UpdateAllSubscriptions(ctx context.Context, options Options) (worker.Summary, error) {
 	ids, err := catalog.GroupIDs(options.CatalogRoot, "subscription")
 	if err != nil {
-		return subworker.Summary{}, err
+		return worker.Summary{}, err
 	}
-	summary := subworker.Summary{Updated: []string{}, Failed: []string{}}
+	summary := worker.Summary{Updated: []string{}, Failed: []string{}}
 	for _, id := range ids {
-		if _, updateErr := subworker.UpdateGroup(ctx, workerOptions(options), id, time.Now(), nil); updateErr != nil {
+		if _, updateErr := worker.UpdateGroup(ctx, workerOptions(options), id, time.Now(), nil); updateErr != nil {
 			summary.Failed = append(summary.Failed, id)
 		} else {
 			summary.Updated = append(summary.Updated, id)
@@ -737,8 +737,8 @@ func UpdateAllSubscriptions(ctx context.Context, options Options) (subworker.Sum
 	return summary, nil
 }
 
-func workerOptions(options Options) subworker.Options {
-	return subworker.Options{Root: options.CatalogRoot, ProgressDir: options.ProgressDir, PIDFile: options.WorkerPIDFile, LogFile: options.WorkerLogFile, ModuleConf: options.ModuleConfig, ReloadScript: options.ServiceScript, SingBoxPath: options.SingBoxPath, ServiceAddress: options.ServiceAddress, ServiceSecret: options.ServiceSecret, Now: time.Now}
+func workerOptions(options Options) worker.Options {
+	return worker.Options{Root: options.CatalogRoot, ProgressDir: options.ProgressDir, PIDFile: options.WorkerPIDFile, LogFile: options.WorkerLogFile, ModuleConf: options.ModuleConfig, ReloadScript: options.ServiceScript, SingBoxPath: options.SingBoxPath, ServiceAddress: options.ServiceAddress, ServiceSecret: options.ServiceSecret, Now: time.Now}
 }
 
 func hostName(rawURL string) string {

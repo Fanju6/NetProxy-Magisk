@@ -1,4 +1,4 @@
-package subworker
+package worker
 
 import (
 	"context"
@@ -194,7 +194,7 @@ func TestRunExitsWhenNoAutomaticSubscription(t *testing.T) {
 	}
 	options := NewOptions(root)
 	options.ModuleConf = moduleConf
-	options.PIDFile = filepath.Join(t.TempDir(), "subworker.pid")
+	options.PIDFile = filepath.Join(t.TempDir(), "worker.pid")
 	options.Now = time.Now
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()

@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/moduleapp"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/moduleconfig"
+	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
+	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 )
 
@@ -41,7 +41,7 @@ func bindModuleFlags(flags *flag.FlagSet) *moduleFlags {
 	flags.StringVar(&values.secret, "secret", "singbox", "Service API 密钥")
 	flags.StringVar(&values.logDir, "log-dir", "", "日志目录")
 	flags.StringVar(&values.stateFile, "state-file", "", "服务状态文件")
-	flags.StringVar(&values.workerPID, "worker-pid-file", "/dev/netproxy/subworker.pid", "Worker PID 文件")
+	flags.StringVar(&values.workerPID, "worker-pid-file", "/dev/netproxy/worker.pid", "Worker PID 文件")
 	flags.StringVar(&values.workerLog, "worker-log-file", "", "Worker 日志文件")
 	flags.BoolVar(&values.skipServiceAdapter, "skip-service-adapter", false, "服务内部同步时禁止嵌套 reload")
 	flags.DurationVar(&values.timeout, "timeout", 8*time.Second, "Service API 超时")

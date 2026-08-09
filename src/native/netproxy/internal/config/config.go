@@ -1,4 +1,4 @@
-package moduleconfig
+package config
 
 import (
 	"errors"

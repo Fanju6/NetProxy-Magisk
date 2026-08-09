@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
+	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/ebpf"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/moduleconfig"
 )
 
 func runConfig(_ context.Context, args []string) error {

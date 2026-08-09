@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/moduleconfig"
+	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 )
 
 const (

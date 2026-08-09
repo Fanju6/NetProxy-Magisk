@@ -1,4 +1,4 @@
-package moduleapp
+package module
 
 import (
 	"context"
@@ -39,5 +39,5 @@ func TestServiceStartFailureReportsCheckError(t *testing.T) {
 		}
 	}
 	// TODO: 完整的启动失败清理需要在 Android Shell 中驱动 service.sh，
-	// moduleapp.Check 本身只负责生成配置并调用 sing-box check，不持有服务状态。
+	// module.Check 本身只负责生成配置并调用 sing-box check，不持有服务状态。
 }

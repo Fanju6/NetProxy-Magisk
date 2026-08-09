@@ -1,4 +1,4 @@
-package moduleapp
+package module
 
 import (
 	"encoding/json"

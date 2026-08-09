@@ -1,4 +1,4 @@
-package moduleapp
+package module
 
 import (
 	"context"
@@ -12,9 +12,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/control"
+	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/ebpf"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/moduleconfig"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 )
 
 // ConfigDocument 是配置工作台可见的文件摘要。
@@ -111,7 +111,7 @@ func ApplyConfig(ctx context.Context, options Options, target, source string, va
 	if err := os.Rename(candidatePath, destination); err != nil {
 		return err
 	}
-	if control.ProcessRunning(options.SingBoxPath) {
+	if service.ProcessRunning(options.SingBoxPath) {
 		if err := runServiceAdapter(ctx, options, "reload"); err != nil {
 			return fmt.Errorf("配置已保存，但服务 reload 失败: %w", err)
 		}

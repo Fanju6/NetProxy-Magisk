@@ -1,4 +1,4 @@
-package control
+package service
 
 import (
 	"context"

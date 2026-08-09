@@ -1,5 +1,5 @@
-// Package catalogtxn 提供 Catalog provider 与 meta 的双文件事务提交。
-package catalogtxn
+// Package catalog 提供 Catalog provider 与 meta 的双文件事务提交。
+package catalog
 
 import (
 	"errors"
@@ -123,7 +123,7 @@ func recoverTransaction(txDir string) error {
 	for _, name := range []string{"provider.json", "meta.json"} {
 		finalPath := filepath.Join(groupDir, name)
 		backupPath := filepath.Join(txDir, name+".bak")
-		if fileExists(backupPath) {
+		if transactionFileExists(backupPath) {
 			if err := os.Remove(finalPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 				return err
 			}
@@ -143,7 +143,7 @@ func recoverTransaction(txDir string) error {
 
 func moveExisting(groupDir, txDir, name string) error {
 	source := filepath.Join(groupDir, name)
-	if !fileExists(source) {
+	if !transactionFileExists(source) {
 		return nil
 	}
 	return os.Rename(source, filepath.Join(txDir, name+".bak"))
@@ -168,7 +168,7 @@ func rollback(txDir string) {
 	for _, name := range []string{"provider.json", "meta.json"} {
 		finalPath := filepath.Join(groupDir, name)
 		backupPath := filepath.Join(txDir, name+".bak")
-		if fileExists(backupPath) {
+		if transactionFileExists(backupPath) {
 			_ = os.Remove(finalPath)
 			_ = os.Rename(backupPath, finalPath)
 		} else if _, err := os.Stat(filepath.Join(txDir, name)); errors.Is(err, os.ErrNotExist) {
@@ -214,7 +214,7 @@ func appendSynced(path string, content []byte) error {
 	return file.Close()
 }
 
-func fileExists(path string) bool {
+func transactionFileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
 }

@@ -10,10 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalogtxn"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/convert"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 )
 
 // MutationResult 是 Catalog 节点变更提交后的最小结果。
@@ -124,7 +122,7 @@ func EnsureGroup(ctx context.Context, options GroupOptions) error {
 	}
 	metadata, err := buildGroupMetadata(options)
 	if metadataExists {
-		metadata, err = subscription.LoadMetadata(metadataPath, options.GroupID)
+		metadata, err = LoadMetadata(metadataPath, options.GroupID)
 	}
 	if err != nil {
 		return err
@@ -154,13 +152,13 @@ func SetGroupName(ctx context.Context, root, groupID, name string, now time.Time
 		now = time.Now()
 	}
 	metadataPath := filepath.Join(root, groupID, "meta.json")
-	metadata, err := subscription.LoadMetadata(metadataPath, groupID)
+	metadata, err := LoadMetadata(metadataPath, groupID)
 	if err != nil {
 		return err
 	}
 	metadata.Name = name
-	metadata.UpdatedAt = subscription.FormatEpochUTC(now.Unix())
-	return subscription.SaveMetadataAtomic(metadataPath, metadata)
+	metadata.UpdatedAt = FormatEpochUTC(now.Unix())
+	return SaveMetadataAtomic(metadataPath, metadata)
 }
 
 func validateGroupOptions(options GroupOptions) error {
@@ -181,8 +179,8 @@ func validateGroupOptions(options GroupOptions) error {
 	return nil
 }
 
-func buildGroupMetadata(options GroupOptions) (subscription.Metadata, error) {
-	metadata := subscription.NewMetadata(options.GroupID, options.Name, options.Type, options.URL, options.Now)
+func buildGroupMetadata(options GroupOptions) (Metadata, error) {
+	metadata := NewMetadata(options.GroupID, options.Name, options.Type, options.URL, options.Now)
 	if options.Type != "subscription" {
 		// 本地分组只保存节点，不应因为 group-ensure 的默认参数进入订阅调度。
 		options.AutoUpdate = false
@@ -210,7 +208,7 @@ func buildGroupMetadata(options GroupOptions) (subscription.Metadata, error) {
 		metadata.Timeout = options.Timeout
 	}
 	if metadata.AutoUpdate {
-		subscription.ScheduleAt(&metadata, options.Now)
+		ScheduleAt(&metadata, options.Now)
 	}
 	return metadata, nil
 }
@@ -345,7 +343,7 @@ func ImportGroup(ctx context.Context, options ImportOptions) (MutationResult, er
 	if name == "" {
 		name = options.GroupID
 	}
-	metadata := subscription.NewMetadata(options.GroupID, name, "file", "", options.Now)
+	metadata := NewMetadata(options.GroupID, name, "file", "", options.Now)
 	result := mutationResultFor(options.GroupID, metadata, document, true)
 	return commitMutation(ctx, filepath.Join(options.Root, options.GroupID), document, metadata, result, options.Now)
 }
@@ -386,14 +384,14 @@ func loadProvider(ctx context.Context, groupDir string) (provider.Document, erro
 	return document, err
 }
 
-func loadMutationMetadata(options MutationOptions) (subscription.Metadata, error) {
+func loadMutationMetadata(options MutationOptions) (Metadata, error) {
 	path := filepath.Join(options.GroupDir, "meta.json")
-	metadata, err := subscription.LoadMetadata(path, options.GroupID)
+	metadata, err := LoadMetadata(path, options.GroupID)
 	if os.IsNotExist(err) {
-		metadata = subscription.NewMetadata(options.GroupID, options.Name, options.Type, "", options.Now)
+		metadata = NewMetadata(options.GroupID, options.Name, options.Type, "", options.Now)
 	}
 	if err != nil && !os.IsNotExist(err) {
-		return subscription.Metadata{}, err
+		return Metadata{}, err
 	}
 	if metadata.ID == "" {
 		metadata.ID = options.GroupID
@@ -407,11 +405,11 @@ func loadMutationMetadata(options MutationOptions) (subscription.Metadata, error
 	return metadata, nil
 }
 
-func mutationResult(options MutationOptions, metadata subscription.Metadata, document provider.Document, structureChanged bool) MutationResult {
+func mutationResult(options MutationOptions, metadata Metadata, document provider.Document, structureChanged bool) MutationResult {
 	return mutationResultFor(options.GroupID, metadata, document, structureChanged)
 }
 
-func mutationResultFor(groupID string, metadata subscription.Metadata, document provider.Document, structureChanged bool) MutationResult {
+func mutationResultFor(groupID string, metadata Metadata, document provider.Document, structureChanged bool) MutationResult {
 	metadata.NodeCount = len(document.Outbounds) + len(document.Endpoints)
 	return MutationResult{
 		GroupID:          groupID,
@@ -421,7 +419,7 @@ func mutationResultFor(groupID string, metadata subscription.Metadata, document 
 	}
 }
 
-func commitMutation(ctx context.Context, groupDir string, document provider.Document, metadata subscription.Metadata, result MutationResult, now time.Time) (MutationResult, error) {
+func commitMutation(ctx context.Context, groupDir string, document provider.Document, metadata Metadata, result MutationResult, now time.Time) (MutationResult, error) {
 	if result.Revision <= 0 {
 		result.Revision = 1
 	}
@@ -430,14 +428,14 @@ func commitMutation(ctx context.Context, groupDir string, document provider.Docu
 	}
 	metadata.NodeCount = result.NodeCount
 	metadata.Revision = result.Revision
-	metadata.UpdatedAt = subscription.FormatEpochUTC(now.Unix())
+	metadata.UpdatedAt = FormatEpochUTC(now.Unix())
 	if err := commitPair(ctx, groupDir, document, metadata); err != nil {
 		return MutationResult{}, err
 	}
 	return result, nil
 }
 
-func commitPair(ctx context.Context, groupDir string, document provider.Document, metadata subscription.Metadata) error {
+func commitPair(ctx context.Context, groupDir string, document provider.Document, metadata Metadata) error {
 	parent := filepath.Dir(groupDir)
 	if err := os.MkdirAll(parent, 0o700); err != nil {
 		return err
@@ -451,7 +449,7 @@ func commitPair(ctx context.Context, groupDir string, document provider.Document
 		return err
 	}
 	metadataContent = append(metadataContent, '\n')
-	return catalogtxn.CommitPair(parent, groupDir, providerContent, metadataContent)
+	return CommitPair(parent, groupDir, providerContent, metadataContent)
 }
 
 func fileExists(path string) bool {

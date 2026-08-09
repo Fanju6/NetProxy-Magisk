@@ -1,6 +1,6 @@
 //go:build !windows
 
-package subworker
+package worker
 
 import (
 	"os"

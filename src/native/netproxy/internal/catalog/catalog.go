@@ -13,9 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/moduleconfig"
+	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 )
 
 var validGroupID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
@@ -28,8 +27,6 @@ func isGroupDir(entry os.DirEntry) bool {
 	return entry.IsDir() && name != "staging" && validGroupID.MatchString(name) &&
 		!strings.Contains(name, "..")
 }
-
-type Metadata = subscription.Metadata
 
 type GroupSummary struct {
 	ID                string          `json:"id"`
@@ -413,7 +410,7 @@ func loadGroups(ctx context.Context, root string, includeEmpty bool) ([]*loadedG
 }
 
 func loadMetadata(path, fallbackID string) (Metadata, error) {
-	return subscription.LoadMetadata(path, fallbackID)
+	return LoadMetadata(path, fallbackID)
 }
 
 func summaryFor(group *loadedGroup, activeGroup, progressDir string) GroupSummary {
