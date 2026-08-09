@@ -1,12 +1,13 @@
 export interface CompletionResult { completed: string; candidates: string[] }
 
-const GROUPS = ['service', 'catalog', 'node', 'sub', 'mode', 'app', 'logs', 'config', 'ebpf', 'help', 'clear', 'exit']
+const GROUPS = ['service', 'catalog', 'node', 'sub', 'mode', 'network', 'app', 'logs', 'config', 'ebpf', 'help', 'clear', 'exit']
 const SUBS: Record<string, string[]> = {
-  service: ['status', 'start', 'stop', 'restart', 'reload'],
+  service: ['status', 'start', 'stop', 'restart', 'reload', 'check'],
   catalog: ['list', 'show'],
   node: ['list', 'snapshot', 'current', 'use', 'add', 'import', 'export', 'edit', 'remove', 'rm', 'delay'],
   sub: ['list', 'show', 'add', 'edit', 'update', 'update-all', 'activate', 'remove', 'rm', 'history', 'cancel'],
   mode: ['rule', 'global', 'direct', 'AllowAds'],
+  network: ['evaluate'],
   app: ['list', 'mode', 'users', 'add', 'remove', 'rm', 'enable', 'disable'],
   logs: ['show', 'clear', 'export'],
   config: ['list', 'read', 'check', 'validate', 'apply'],
@@ -14,8 +15,11 @@ const SUBS: Record<string, string[]> = {
 }
 const VALS: Record<string, string[]> = {
   'app mode': ['blacklist', 'whitelist'],
-  'ebpf status': ['configured', 'all', 'local', 'shared'],
+  'ebpf status': ['configured', 'all', 'local', 'shared', '--raw'],
   'logs show': ['service', 'core'],
+  'logs clear': ['service', 'core'],
+  'network evaluate': ['--type', '--ssid'],
+  'network evaluate --type': ['wifi', 'not_wifi'],
 }
 const NODE_OPS = ['list', 'export', 'edit', 'remove', 'rm', 'show']
 const SUB_OPS = ['activate', 'update', 'show', 'edit', 'remove', 'rm', 'history', 'cancel']
@@ -52,8 +56,9 @@ export function complete(input: string, knownGroups: string[] = [], knownSubs: s
       cands = knownSubs.filter(c => c.startsWith(cur))
     } else if (cmd === 'node' && NODE_OPS.includes(sub) && n === 2) {
       cands = all.filter(c => c.startsWith(cur))
-    } else if (n === 2 && VALS[`${cmd} ${sub}`]) {
-      cands = VALS[`${cmd} ${sub}`].filter(c => c.startsWith(cur))
+    } else {
+      const valueKey = cur.startsWith('--') ? toks.slice(0, n - 1).join(' ') : toks.slice(0, n).join(' ')
+      cands = (VALS[valueKey] || []).filter(c => c.startsWith(cur))
     }
   }
 
