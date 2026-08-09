@@ -18,7 +18,6 @@ composeBom = "2026.06.01"
 libsu = "6.0.0"
 miuix = "0.9.3"
 hiddenapibypass = "6.1"
-jsonSchemaValidator = "2.0.4"
 junit = "4.13.2"
 
 [libraries]
@@ -55,7 +54,6 @@ miuix-preference = { module = "top.yukonga.miuix.kmp:miuix-preference-android", 
 miuix-blur = { module = "top.yukonga.miuix.kmp:miuix-blur-android", version.ref = "miuix" }
 miuix-squircle = { module = "top.yukonga.miuix.kmp:miuix-squircle-android", version.ref = "miuix" }
 hiddenapibypass = { module = "org.lsposed.hiddenapibypass:hiddenapibypass", version.ref = "hiddenapibypass" }
-json-schema-validator = { module = "com.networknt:json-schema-validator", version.ref = "jsonSchemaValidator" }
 junit = { module = "junit:junit", version.ref = "junit" }
 scripta-editor = { module = "scripta:editor" }
 

@@ -3,7 +3,6 @@ package com.fanjv.netproxy.feature.kernel.presentation
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -37,7 +36,7 @@ class SingBoxSchemaCompletionProvider private constructor(
     internal constructor(schemaContent: String) : this({ schemaContent })
 
     private val navigator by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        SchemaNavigator(completionJson.parseToJsonElement(schemaProvider()).jsonObject)
+        SchemaNavigator(singBoxSchemaJson.parseToJsonElement(schemaProvider()).jsonObject)
     }
 
     override suspend fun complete(request: CompletionRequest): CompletionResult? =
@@ -177,8 +176,6 @@ class SingBoxSchemaCompletionProvider private constructor(
         const val SCHEMA_ASSET = "sing-box.schema.json"
     }
 }
-
-private val completionJson = Json { ignoreUnknownKeys = true }
 
 private enum class CursorKind { Property, Value }
 
@@ -524,6 +521,7 @@ private data class SchemaTemplate(
 
 /** 只解析本地 $ref；内置 Schema 不包含远程引用。 */
 private class SchemaNavigator(private val root: JsonObject) {
+    private val references = SingBoxSchemaReferenceResolver(root)
     fun properties(
         path: List<JsonPathSegment>,
         discriminators: Map<List<JsonPathSegment>, String>,
@@ -857,16 +855,7 @@ private class SchemaNavigator(private val root: JsonObject) {
     private fun referencedSchema(
         schema: JsonObject,
         visitedRefs: Set<String>,
-    ): Pair<String, JsonObject>? {
-        val ref = schema["\$ref"]?.asPrimitive()?.contentOrNull ?: return null
-        if (ref in visitedRefs || !ref.startsWith("#/")) return null
-        var target: JsonElement = root
-        ref.removePrefix("#/").split('/').forEach { rawSegment ->
-            val segment = rawSegment.replace("~1", "/").replace("~0", "~")
-            target = target.asObject()?.get(segment) ?: return null
-        }
-        return ref to (target.asObject() ?: return null)
-    }
+    ): Pair<String, JsonObject>? = references.referencedSchema(schema, visitedRefs)
 
     private companion object {
         const val MAX_SCHEMA_DEPTH = 32
@@ -947,7 +936,7 @@ private fun Char.isJsonDelimiter(): Boolean =
     isWhitespace() || this == ',' || this == '}' || this == ']'
 
 private fun decodeLooseJsonString(raw: String): String = runCatching {
-    completionJson.parseToJsonElement("\"$raw\"").jsonPrimitive.content
+    singBoxSchemaJson.parseToJsonElement("\"$raw\"").jsonPrimitive.content
 }.getOrElse {
     raw.replace("\\\"", "\"").replace("\\\\", "\\")
 }
@@ -969,16 +958,6 @@ private fun positionToOffset(text: String, position: TextPosition): Int {
 }
 
 private fun offsetToPosition(text: String, rawOffset: Int): TextPosition {
-    val offset = rawOffset.coerceIn(0, text.length)
-    var line = 0
-    var lineStart = 0
-    for (index in 0 until offset) {
-        if (text[index] == '\n') {
-            line++
-            lineStart = index + 1
-        }
-    }
-    return TextPosition(line, offset - lineStart)
+    val position = sourcePositionAt(text, rawOffset)
+    return TextPosition(position.line - 1, position.column - 1)
 }
-
-

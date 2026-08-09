@@ -105,7 +105,6 @@ dependencies {
     implementation(libs.androidx.navigationevent.compose)
     implementation(libs.androidx.lifecycle.viewmodel.navigation3)
     implementation(libs.kotlinx.serialization.json)
-    implementation(libs.json.schema.validator)
     implementation(libs.hiddenapibypass)
     testImplementation(libs.junit)
 }
