@@ -58,6 +58,7 @@ func ListConfigs(options Options) ([]ConfigDocument, error) {
 			}
 			if item.category == "runtime" {
 				pathPrefix = "runtime/"
+				pathCategory = ""
 			}
 			result = append(result, ConfigDocument{ID: pathPrefix + filepath.ToSlash(filepath.Join(pathCategory, entry.Name())), Filename: entry.Name(), Category: item.category, Editable: item.editable})
 		}
