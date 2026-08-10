@@ -11,6 +11,7 @@ import (
 func TestServiceStartFailureReportsCheckError(t *testing.T) {
 	root := t.TempDir()
 	options := NewOptions(root)
+	options.StateFile = filepath.Join(root, "state", "service.json")
 	if err := os.MkdirAll(filepath.Join(options.SingBoxDir, "confdir"), 0o700); err != nil {
 		t.Fatal(err)
 	}
