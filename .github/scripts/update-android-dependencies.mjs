@@ -107,13 +107,6 @@ export const ANDROID_DEPENDENCIES = [
     source: moduleSource('org.lsposed.hiddenapibypass', 'hiddenapibypass', ['central'], 'https://github.com/LSPosed/AndroidHiddenApiBypass/releases'),
   },
   {
-    id: 'json-schema-validator',
-    name: 'JSON Schema Validator',
-    policy: 'auto-minor',
-    refs: [ref(MAIN_CATALOG, 'jsonSchemaValidator')],
-    source: moduleSource('com.networknt', 'json-schema-validator', ['central'], 'https://github.com/networknt/json-schema-validator/releases'),
-  },
-  {
     id: 'junit',
     name: 'JUnit 4',
     policy: 'auto-minor',
