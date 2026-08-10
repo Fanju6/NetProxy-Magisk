@@ -40,8 +40,8 @@
       "ref": "X",
       "sourcePath": "sing-box/Rules/ChinaIP.srs",
       "metadataPath": "sing-box/Rules/ChinaIP.json",
-      "currentCommit": "eee40d30f48a5e527aae11f1047677294a3ca147",
-      "currentSha256": "ae0d2d01e35429647bf9387616badfbc3bf382adb431d8e5d636f307ae748a3c"
+      "currentCommit": "a5bbe680afe26bf5aac494246a02cca7a214ce36",
+      "currentSha256": "25ff4522a7c8d0bd0e4879b7a471421505690c5d1f06b96ab0657d6568cc2007"
     },
     {
       "name": "Proxy",
@@ -70,7 +70,7 @@
     "path": "src/module/bin/sing-box",
     "repo": "reF1nd/sing-box",
     "tagPattern": "^v[0-9].*-reF1nd$",
-    "currentVersion": "v1.14.0-beta.12-reF1nd",
+    "currentVersion": "v1.14.0-beta.13-reF1nd",
     "ndkVersion": "r29",
     "buildTags": [
       "with_quic",
