@@ -94,10 +94,9 @@ func Prepare(ctx context.Context, options Options, allowEmpty bool) (PrepareResu
 	providers := filepath.Join(options.RuntimeDir, "providers.json")
 	outbounds := filepath.Join(options.RuntimeDir, "outbounds.json")
 	ebpfPath := filepath.Join(options.RuntimeDir, "ebpf.json")
-	statePath := filepath.Join(options.RuntimeDir, "catalog.state")
 	runtime, err := catalog.BuildRuntime(ctx, catalog.RuntimeOptions{
 		Root: options.CatalogRoot, ModuleConfig: options.ModuleConfig,
-		ProvidersOutput: providers, OutboundsOutput: outbounds, StateOutput: statePath,
+		ProvidersOutput: providers, OutboundsOutput: outbounds,
 		AllowEmpty: allowEmpty,
 	})
 	if err != nil {

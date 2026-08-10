@@ -39,10 +39,9 @@ func TestScanAndBuildRuntime(t *testing.T) {
 
 	providersPath := filepath.Join(root, "runtime", "providers.json")
 	outboundsPath := filepath.Join(root, "runtime", "outbounds.json")
-	statePath := filepath.Join(root, "runtime", "catalog.state")
 	result, err := BuildRuntime(context.Background(), RuntimeOptions{
 		Root: root, ProvidersOutput: providersPath, OutboundsOutput: outboundsPath,
-		StateOutput: statePath, ActiveGroup: "remote", SelectorMode: "manual",
+		ActiveGroup: "remote", SelectorMode: "manual",
 		SelectedNodeRef: "remote/订阅节点",
 	})
 	if err != nil {
@@ -53,7 +52,7 @@ func TestScanAndBuildRuntime(t *testing.T) {
 	}
 	providers := readFile(t, providersPath)
 	outbounds := readFile(t, outboundsPath)
-	state := readFile(t, statePath)
+	state := "selected_node_ref\t" + result.SelectedNodeRef
 	for _, expected := range []string{`"tag": "同名分组 [default]"`, `"tag": "同名分组 [remote]"`} {
 		if !strings.Contains(providers, expected) {
 			t.Fatalf("providers missing %s: %s", expected, providers)
@@ -64,6 +63,22 @@ func TestScanAndBuildRuntime(t *testing.T) {
 	}
 	if !strings.Contains(state, "selected_node_ref\tremote/订阅节点") {
 		t.Fatalf("unexpected state: %s", state)
+	}
+}
+
+func TestBuildRuntimeDoesNotWriteCatalogState(t *testing.T) {
+	root := t.TempDir()
+	writeGroup(t, root, "default", "本地配置", "local", "节点")
+	if _, err := BuildRuntime(context.Background(), RuntimeOptions{
+		Root:            root,
+		ProvidersOutput: filepath.Join(root, "providers.json"),
+		OutboundsOutput: filepath.Join(root, "outbounds.json"),
+		ActiveGroup:     "default",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "catalog.state")); !os.IsNotExist(err) {
+		t.Fatalf("Catalog 不应生成 catalog.state: %v", err)
 	}
 }
 

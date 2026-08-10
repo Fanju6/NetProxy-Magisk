@@ -44,9 +44,8 @@ runtime/           # 启动时生成的运行时配置
 - `providers.json`
 - `outbounds.json`
 - `ebpf.json`
-- `catalog.state`
 
-停止服务时前三个运行时配置和 Catalog 状态会清理。运行时目录不应由用户编辑。
+运行时目录只包含启动或检查时生成的 sing-box 配置，不应由用户编辑。
 
 ## 配置组合
 

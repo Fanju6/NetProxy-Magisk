@@ -48,7 +48,6 @@ func runCatalog(ctx context.Context, args []string) error {
 	timeout := flags.Int64("timeout", 60, "订阅请求超时秒数")
 	providersOutput := flags.String("providers-output", "", "运行时 Provider 配置输出")
 	outboundsOutput := flags.String("outbounds-output", "", "运行时出站配置输出")
-	stateOutput := flags.String("state-output", "", "运行时状态输出")
 	selector := flags.String("selector", "urltest", "选择模式")
 	selected := flags.String("selected", "", "手动节点引用")
 	allowEmpty := flags.Bool("allow-empty", false, "允许空 Catalog")
@@ -374,7 +373,7 @@ func runCatalog(ctx context.Context, args []string) error {
 		return nil
 	case "runtime":
 		data, err := catalog.BuildRuntime(ctx, catalog.RuntimeOptions{
-			Root: *root, ModuleConfig: *moduleConfig, ProvidersOutput: *providersOutput, OutboundsOutput: *outboundsOutput, StateOutput: *stateOutput,
+			Root: *root, ModuleConfig: *moduleConfig, ProvidersOutput: *providersOutput, OutboundsOutput: *outboundsOutput,
 			ActiveGroup: *active, SelectorMode: *selector, SelectedNodeRef: *selected,
 			AllowEmpty: *allowEmpty,
 		})

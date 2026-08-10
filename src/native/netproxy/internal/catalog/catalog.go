@@ -77,7 +77,6 @@ type RuntimeOptions struct {
 	ModuleConfig    string
 	ProvidersOutput string
 	OutboundsOutput string
-	StateOutput     string
 	ActiveGroup     string
 	SelectorMode    string
 	SelectedNodeRef string
@@ -363,11 +362,6 @@ func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, e
 		GroupCount:      len(groups),
 		NodeCount:       nodeCount,
 	}
-	if options.StateOutput != "" {
-		if err := writeRuntimeState(options.StateOutput, result); err != nil {
-			return RuntimeResult{}, err
-		}
-	}
 	return result, nil
 }
 
@@ -543,19 +537,7 @@ func writeEmptyRuntime(options RuntimeOptions) error {
 	}}); err != nil {
 		return err
 	}
-	if options.StateOutput != "" {
-		return writeRuntimeState(options.StateOutput, RuntimeResult{SelectorMode: "urltest"})
-	}
 	return nil
-}
-
-func writeRuntimeState(path string, result RuntimeResult) error {
-	content := fmt.Sprintf(
-		"active_group_id\t%s\nactive_group_tag\t%s\nselector_mode\t%s\nselected_node_ref\t%s\noutbound_mode\t%s\ngroup_count\t%d\nnode_count\t%d\n",
-		result.ActiveGroup, result.ActiveGroupTag, result.SelectorMode,
-		result.SelectedNodeRef, result.OutboundMode, result.GroupCount, result.NodeCount,
-	)
-	return provider.WriteAtomic(path, []byte(content), 0o600)
 }
 
 func writeJSONAtomic(path string, value any) error {

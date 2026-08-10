@@ -113,9 +113,6 @@ func ExportLogs(options Options, destination string) error {
 			filepath.Join(options.RuntimeDir, name), "runtime/" + name,
 		})
 	}
-	files = append(files, struct{ source, name string }{
-		filepath.Join(options.RuntimeDir, "catalog.state"), "state/catalog.state",
-	})
 	if options.StateFile != "" {
 		files = append(files, struct{ source, name string }{options.StateFile, "state/service.json"})
 	}

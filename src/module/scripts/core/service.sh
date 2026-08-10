@@ -160,7 +160,6 @@ SERVICE_LOCK_HELD=0
 RUNTIME_PROVIDERS_FILE="$RUNTIME_DIR/providers.json"
 RUNTIME_OUTBOUNDS_FILE="$RUNTIME_DIR/outbounds.json"
 RUNTIME_EBPF_FILE="$RUNTIME_DIR/ebpf.json"
-RUNTIME_CATALOG_STATE_FILE="$RUNTIME_DIR/catalog.state"
 
 #######################################
 # 调用 Service API 检查核心是否就绪
@@ -332,7 +331,6 @@ cleanup_runtime_files() {
     "$RUNTIME_DIR/providers.json" \
     "$RUNTIME_DIR/outbounds.json" \
     "$RUNTIME_DIR/ebpf.json" \
-    "$RUNTIME_DIR/catalog.state" \
     2> /dev/null || true
 }
 

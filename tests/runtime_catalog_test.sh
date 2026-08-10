@@ -15,7 +15,6 @@ EBPF_CONF="$TMP_ROOT/ebpf.conf"
 RUNTIME_PROVIDERS_FILE="$RUNTIME_DIR/providers.json"
 RUNTIME_OUTBOUNDS_FILE="$RUNTIME_DIR/outbounds.json"
 RUNTIME_EBPF_FILE="$RUNTIME_DIR/ebpf.json"
-RUNTIME_CATALOG_STATE_FILE="$RUNTIME_DIR/catalog.state"
 
 mkdir -p "$CATALOG_DIR/default" "$CATALOG_DIR/secondary" "$CATALOG_DIR/staging" "$RUNTIME_DIR"
 cp "$MODDIR/config/module.conf" "$MODULE_CONF"
@@ -57,9 +56,6 @@ json_contains() {
 }
 
 prepare_runtime
-[ -s "$RUNTIME_CATALOG_STATE_FILE" ]
-grep -q '^group_count[[:space:]]*2' "$RUNTIME_CATALOG_STATE_FILE"
-grep -q '^node_count[[:space:]]*2' "$RUNTIME_CATALOG_STATE_FILE"
 grep -q '"tag": "本地配置"' "$RUNTIME_PROVIDERS_FILE"
 grep -q '"tag": "备用配置"' "$RUNTIME_PROVIDERS_FILE"
 grep -q '"default": "Auto/本地配置"' "$RUNTIME_OUTBOUNDS_FILE"
