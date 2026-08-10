@@ -125,7 +125,7 @@ func ReadStatus(ctx context.Context, options Options) (Status, error) {
 		status.ActiveGroupName = status.ActiveGroupID
 	}
 
-	pid := findProcess(options.SingBoxPath, state.PID)
+	pid := FindProcess(options.SingBoxPath, state.PID)
 	if pid <= 0 {
 		status.PID = nil
 		if state.State == "preparing" || state.State == "starting" || state.State == "ready" || state.State == "stopping" {
@@ -315,7 +315,7 @@ func normalizeOptions(options Options) Options {
 		options.ProgressDir = "/dev/netproxy/subscriptions"
 	}
 	if options.WorkerPIDFile == "" {
-		options.WorkerPIDFile = "/dev/netproxy/worker.pid"
+		options.WorkerPIDFile = "/dev/netproxy/subworker.pid"
 	}
 	return options
 }
@@ -636,7 +636,8 @@ func readWorkerStatus(options Options) (worker.Status, error) {
 	return worker.ReadStatus(workerOptions)
 }
 
-func findProcess(executable string, statePID int) int {
+// FindProcess 返回与指定可执行文件匹配的进程；statePID 可减少 /proc 扫描。
+func FindProcess(executable string, statePID int) int {
 	selfPID := os.Getpid()
 	if statePID > 0 && statePID != selfPID && processExists(statePID) && (executable == "" || processMatches(statePID, executable)) {
 		return statePID
@@ -662,7 +663,7 @@ func findProcess(executable string, statePID int) int {
 
 // ProcessRunning 判断指定可执行文件是否正在运行。
 func ProcessRunning(executable string) bool {
-	return findProcess(executable, 0) > 0
+	return FindProcess(executable, 0) > 0
 }
 
 func processExists(pid int) bool {

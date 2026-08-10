@@ -35,7 +35,6 @@ func (c *cli) moduleArgs(action string, args ...string) []string {
 		"--sing-box", c.singBoxPath,
 		"--singbox-dir", c.singBoxDir,
 		"--runtime-dir", filepath.Join(c.moduleDir, "runtime"),
-		"--service-script", c.serviceScript,
 		"--address", c.serviceAddress,
 		"--secret", c.serviceSecret,
 		"--log-dir", c.logDir,

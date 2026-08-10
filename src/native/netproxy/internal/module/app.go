@@ -36,13 +36,12 @@ type Options struct {
 	StateFile          string
 	ProgressDir        string
 	LogDir             string
-	ServiceScript      string
 	ServiceAddress     string
 	ServiceSecret      string
 	WorkerPIDFile      string
 	WorkerLogFile      string
 	WiFiStateFile      string
-	SkipServiceAdapter bool
+	SkipServiceReload  bool
 	RequestTimeout     time.Duration
 }
 
@@ -63,10 +62,9 @@ func NewOptions(moduleDir string) Options {
 		StateFile:      filepath.Join("/dev/netproxy", "service.json"),
 		ProgressDir:    "/dev/netproxy/subscriptions",
 		LogDir:         filepath.Join(moduleDir, "logs"),
-		ServiceScript:  filepath.Join(moduleDir, "service.sh"),
 		ServiceAddress: "127.0.0.1:9090",
 		ServiceSecret:  "singbox",
-		WorkerPIDFile:  "/dev/netproxy/worker.pid",
+		WorkerPIDFile:  "/dev/netproxy/subworker.pid",
 		WorkerLogFile:  filepath.Join(moduleDir, "logs", "service.log"),
 		WiFiStateFile:  "/dev/netproxy/wifi_state",
 		RequestTimeout: 8 * time.Second,
@@ -254,10 +252,11 @@ func syncRuntimeSelector(ctx context.Context, options Options, active, inner str
 			return nil
 		}
 	}
-	if options.SkipServiceAdapter {
+	if options.SkipServiceReload {
 		return fmt.Errorf("Service API 切换失败，跳过嵌套服务 reload: %w", err)
 	}
-	return runServiceAdapter(ctx, options, "reload")
+	_, reloadErr := ManageService(ctx, options, "reload")
+	return reloadErr
 }
 
 // retryRuntimeSelection 等待 reload 后的 selector 完成注册，再同步组内与顶层选择器。
@@ -314,10 +313,11 @@ func ApplyMode(ctx context.Context, options Options, mode string) error {
 			return nil
 		}
 	}
-	if options.SkipServiceAdapter {
+	if options.SkipServiceReload {
 		return fmt.Errorf("Service API 模式切换失败，跳过嵌套服务 reload: %w", err)
 	}
-	return runServiceAdapter(ctx, options, "reload")
+	_, reloadErr := ManageService(ctx, options, "reload")
+	return reloadErr
 }
 
 // UpdateApp 按类型化 eBPF 配置修改分应用策略。
@@ -500,7 +500,7 @@ func RemoveSubscription(ctx context.Context, options Options, query, replacement
 				return err
 			}
 			if service.ProcessRunning(options.SingBoxPath) {
-				if err := runServiceAdapter(ctx, options, "stop"); err != nil {
+				if _, err := ManageService(ctx, options, "stop"); err != nil {
 					return err
 				}
 			}
@@ -510,7 +510,8 @@ func RemoveSubscription(ctx context.Context, options Options, query, replacement
 		return err
 	}
 	if service.ProcessRunning(options.SingBoxPath) {
-		return runServiceAdapter(ctx, options, "reload")
+		_, reloadErr := ManageService(ctx, options, "reload")
+		return reloadErr
 	}
 	return nil
 }
@@ -543,7 +544,8 @@ func syncCatalogChange(ctx context.Context, options Options, groupID string, str
 		}
 	}
 	if structureChanged && service.ProcessRunning(options.SingBoxPath) {
-		return runServiceAdapter(ctx, options, "reload")
+		_, reloadErr := ManageService(ctx, options, "reload")
+		return reloadErr
 	}
 	return nil
 }
@@ -578,20 +580,6 @@ func splitReference(reference string) (string, string, error) {
 		return "", "", errors.New("节点引用格式应为 <group-id>/<tag>")
 	}
 	return group, tag, nil
-}
-
-func runServiceAdapter(ctx context.Context, options Options, action string) error {
-	shell := "/system/bin/sh"
-	if _, err := os.Stat(shell); err != nil {
-		shell = "sh"
-	}
-	command := exec.CommandContext(ctx, shell, options.ServiceScript, action)
-	command.Stdout = os.Stderr
-	command.Stderr = os.Stderr
-	if err := command.Run(); err != nil {
-		return fmt.Errorf("服务 %s 适配失败: %w", action, err)
-	}
-	return nil
 }
 
 func (options Options) validate() error {
@@ -741,7 +729,24 @@ func UpdateAllSubscriptions(ctx context.Context, options Options) (worker.Summar
 }
 
 func workerOptions(options Options) worker.Options {
-	return worker.Options{Root: options.CatalogRoot, ProgressDir: options.ProgressDir, PIDFile: options.WorkerPIDFile, LogFile: options.WorkerLogFile, ModuleConf: options.ModuleConfig, ReloadScript: options.ServiceScript, SingBoxPath: options.SingBoxPath, ServiceAddress: options.ServiceAddress, ServiceSecret: options.ServiceSecret, Now: time.Now}
+	workerOptions := worker.Options{
+		Root:                options.CatalogRoot,
+		ProgressDir:         options.ProgressDir,
+		PIDFile:             options.WorkerPIDFile,
+		LogFile:             options.WorkerLogFile,
+		ModuleConf:          options.ModuleConfig,
+		NativePath:          filepath.Join(options.ModuleDir, "bin", "netproxy-native"),
+		SingBoxPath:         options.SingBoxPath,
+		ServiceAddress:      options.ServiceAddress,
+		ServiceSecret:       options.ServiceSecret,
+		NetworkWatchEnabled: true,
+		Now:                 time.Now,
+	}
+	workerOptions.NetworkEvaluate = func(ctx context.Context, networkType, ssid string) error {
+		_, err := EvaluateNetwork(ctx, options, networkType, ssid)
+		return err
+	}
+	return workerOptions
 }
 
 func hostName(rawURL string) string {

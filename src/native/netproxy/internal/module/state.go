@@ -21,6 +21,28 @@ type ServiceState struct {
 	UpdatedAt int64  `json:"updated_at"`
 }
 
+// ReadServiceState 读取服务状态；缺失或损坏时返回 stopped，避免状态文件影响恢复流程。
+func ReadServiceState(path string) (ServiceState, error) {
+	state := ServiceState{Schema: 1, State: "stopped"}
+	if strings.TrimSpace(path) == "" {
+		return state, fmt.Errorf("服务状态路径不能为空")
+	}
+	content, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return state, nil
+	}
+	if err != nil {
+		return state, err
+	}
+	if err := json.Unmarshal(content, &state); err != nil {
+		return ServiceState{Schema: 1, State: "stopped"}, err
+	}
+	if !validServiceState(state.State) {
+		return ServiceState{Schema: 1, State: "stopped"}, fmt.Errorf("服务状态无效: %s", state.State)
+	}
+	return state, nil
+}
+
 // WriteServiceState 原子写入服务状态，避免 Shell 直接拼接 JSON。
 func WriteServiceState(path, state string, pid, startedAt, readyAt int64, message string) error {
 	if strings.TrimSpace(path) == "" {

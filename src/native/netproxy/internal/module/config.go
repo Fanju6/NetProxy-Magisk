@@ -132,7 +132,7 @@ func ApplyConfig(ctx context.Context, options Options, target, source string, va
 		return err
 	}
 	if service.ProcessRunning(options.SingBoxPath) {
-		if err := runServiceAdapter(ctx, options, "reload"); err != nil {
+		if _, err := ManageService(ctx, options, "reload"); err != nil {
 			return fmt.Errorf("配置已保存，但服务 reload 失败: %w", err)
 		}
 	}

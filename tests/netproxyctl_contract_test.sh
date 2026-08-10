@@ -9,7 +9,6 @@ trap 'rm -rf "$TMP_ROOT"' EXIT INT TERM
 
 MODULE="$TMP_ROOT/module"
 mkdir -p "$MODULE/bin" "$MODULE/logs"
-cp -R "$ROOT/src/module/scripts" "$MODULE/"
 cp -R "$ROOT/src/module/config" "$MODULE/"
 cp -R "$ROOT/src/module/data" "$MODULE/"
 mkdir -p "$MODULE/runtime"

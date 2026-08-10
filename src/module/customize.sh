@@ -248,11 +248,7 @@ stop_proxy_if_running() {
   if pidof -s "$LIVE_DIR/bin/sing-box" > /dev/null 2>&1; then
     PROXY_WAS_RUNNING=true
     print_step "检测到代理服务正在运行，停止服务..."
-    if [ -f "$LIVE_DIR/scripts/core/service.sh" ]; then
-      sh "$LIVE_DIR/scripts/core/service.sh" stop > /dev/null 2>&1
-    else
-      sh "$LIVE_DIR/service.sh" stop > /dev/null 2>&1
-    fi
+    "$LIVE_DIR/netproxyctl" service stop > /dev/null 2>&1
     print_ok "服务已停止"
   fi
 
@@ -319,13 +315,13 @@ restart_proxy_if_needed() {
       --pid-file "/dev/netproxy/subworker.pid" \
       --log-file "$LIVE_DIR/logs/service.log" \
       --module-conf "$LIVE_DIR/config/module.conf" \
-      --reload-script "$LIVE_DIR/service.sh" \
+      --native-path "$LIVE_DIR/bin/netproxy-native" \
       --sing-box "$LIVE_DIR/bin/sing-box" > /dev/null 2>&1 || true
   fi
   if [ "$PROXY_WAS_RUNNING" = true ]; then
     print_step "重新启动代理服务..."
     # su 包裹：经管理器刷入时让 sing-box 迁出冻结 cgroup，避免切后台断网
-    if su -c "sh \"$LIVE_DIR/service.sh\" start" > /dev/null 2>&1; then
+    if su -c "\"$LIVE_DIR/netproxyctl\" service start" > /dev/null 2>&1; then
       print_ok "服务已启动"
     else
       print_warn "服务未启动，请先导入可用节点"

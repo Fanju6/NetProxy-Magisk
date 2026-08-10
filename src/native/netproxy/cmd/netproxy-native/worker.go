@@ -22,10 +22,10 @@ func runSubworker(ctx context.Context, args []string) error {
 	flags := newFlagSet("subworker " + action)
 	root := flags.String("root", "", "Catalog 根目录")
 	progressDir := flags.String("progress-dir", "/dev/netproxy/subscriptions", "订阅进度目录")
-	pidFile := flags.String("pid-file", "/dev/netproxy/worker.pid", "Worker PID 文件")
+	pidFile := flags.String("pid-file", "/dev/netproxy/subworker.pid", "Worker PID 文件")
 	logFile := flags.String("log-file", "", "Worker 日志文件")
 	moduleConf := flags.String("module-conf", "", "模块配置文件")
-	reloadScript := flags.String("reload-script", "", "服务 reload 适配脚本")
+	nativePath := flags.String("native-path", "", "NetProxy 原生组件路径")
 	singBox := flags.String("sing-box", "", "sing-box 二进制路径")
 	serviceAddress := flags.String("service-address", "127.0.0.1:9090", "Service API 地址")
 	serviceSecret := flags.String("service-secret", "singbox", "Service API 密钥")
@@ -43,7 +43,7 @@ func runSubworker(ctx context.Context, args []string) error {
 	options.PIDFile = *pidFile
 	options.LogFile = *logFile
 	options.ModuleConf = *moduleConf
-	options.ReloadScript = *reloadScript
+	options.NativePath = *nativePath
 	options.SingBoxPath = *singBox
 	options.ServiceAddress = *serviceAddress
 	options.ServiceSecret = *serviceSecret
@@ -53,10 +53,10 @@ func runSubworker(ctx context.Context, args []string) error {
 	if options.LogFile == "" {
 		options.LogFile = filepath.Join(filepath.Dir(*root), "..", "logs", "service.log")
 	}
-	if options.ReloadScript == "" {
-		options.ReloadScript = filepath.Join(filepath.Dir(*root), "..", "scripts", "core", "service.sh")
+	if options.NativePath == "" {
+		options.NativePath = os.Args[0]
 	}
-	configureNetworkWatcher(&options, *root, *moduleConf, *singBox, *serviceAddress, *serviceSecret, *progressDir, *pidFile, *reloadScript)
+	configureNetworkWatcher(&options, *root, *moduleConf, *singBox, *serviceAddress, *serviceSecret, *progressDir, *pidFile)
 	switch action {
 	case "run":
 		logger, closer, err := worker.OpenLogger(options.LogFile)
@@ -129,7 +129,7 @@ func runSubworker(ctx context.Context, args []string) error {
 	}
 }
 
-func configureNetworkWatcher(options *worker.Options, catalogRoot, moduleConf, singBox, address, secret, progressDir, pidFile, reloadScript string) {
+func configureNetworkWatcher(options *worker.Options, catalogRoot, moduleConf, singBox, address, secret, progressDir, pidFile string) {
 	if options == nil || strings.TrimSpace(moduleConf) == "" {
 		return
 	}
@@ -143,8 +143,6 @@ func configureNetworkWatcher(options *worker.Options, catalogRoot, moduleConf, s
 	moduleOptions.ServiceSecret = secret
 	moduleOptions.ProgressDir = progressDir
 	moduleOptions.WorkerPIDFile = pidFile
-	moduleOptions.ServiceScript = reloadScript
-
 	options.NetworkWatchEnabled = true
 	options.NetworkEvaluate = func(ctx context.Context, networkType, ssid string) error {
 		_, err := moduleapp.EvaluateNetwork(ctx, moduleOptions, networkType, ssid)

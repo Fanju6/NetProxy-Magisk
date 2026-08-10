@@ -8,9 +8,9 @@
 
 readonly MODDIR="${0%/*}"
 
-# SIGTERM 关闭核心，由 eBPF 入站生命周期负责清理内核资源
-if [ -f "$MODDIR/service.sh" ]; then
-  sh "$MODDIR/service.sh" stop > /dev/null 2>&1 || true
+# SIGTERM 关闭核心，由 eBPF 入站生命周期负责清理内核资源。
+if [ -x "$MODDIR/netproxyctl" ]; then
+  "$MODDIR/netproxyctl" service stop > /dev/null 2>&1 || true
 fi
 
 # 订阅 Worker 独立于代理核心运行，卸载时单独停止。
@@ -18,7 +18,8 @@ if [ -x "$MODDIR/bin/netproxy-native" ]; then
   "$MODDIR/bin/netproxy-native" subworker stop \
     --root "$MODDIR/data/catalog" \
     --pid-file "/dev/netproxy/subworker.pid" \
-    --module-conf "$MODDIR/config/module.conf" > /dev/null 2>&1 || true
+    --module-conf "$MODDIR/config/module.conf" \
+    --native-path "$MODDIR/bin/netproxy-native" > /dev/null 2>&1 || true
 fi
 
 rm -rf /dev/netproxy/subscriptions /dev/netproxy/subworker.pid 2> /dev/null || true

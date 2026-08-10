@@ -42,7 +42,7 @@ type Options struct {
 	PIDFile             string
 	LogFile             string
 	ModuleConf          string
-	ReloadScript        string
+	NativePath          string
 	SingBoxPath         string
 	ServiceAddress      string
 	ServiceSecret       string
@@ -72,7 +72,7 @@ func NewOptions(root string) Options {
 	return Options{
 		Root:              root,
 		ProgressDir:       "/dev/netproxy/subscriptions",
-		PIDFile:           "/dev/netproxy/worker.pid",
+		PIDFile:           "/dev/netproxy/subworker.pid",
 		ServiceAddress:    "127.0.0.1:9090",
 		ServiceSecret:     defaultServiceSecret,
 		NetworkTablesPath: "/data/misc/net/rt_tables",
@@ -252,7 +252,7 @@ func applyUpdateEffects(ctx context.Context, options Options, result subscriptio
 		return err
 	}
 	if (result.StructureChanged || activeChanged) && isProcessRunning(options.SingBoxPath) {
-		return reloadService(ctx, options.ReloadScript)
+		return reloadService(ctx, options)
 	}
 	return nil
 }
@@ -329,15 +329,20 @@ func fallbackMissingNode(ctx context.Context, options Options, groupID string, l
 	return client.Select(requestContext, "Proxy", "Auto/"+runtimeTag)
 }
 
-func reloadService(ctx context.Context, script string) error {
-	if strings.TrimSpace(script) == "" {
-		return errors.New("未配置服务 reload 适配器")
+func reloadService(ctx context.Context, options Options) error {
+	if strings.TrimSpace(options.NativePath) == "" {
+		return errors.New("未配置 NetProxy 原生组件路径")
 	}
-	shell := "/system/bin/sh"
-	if _, err := os.Stat(shell); err != nil {
-		shell = "sh"
-	}
-	command := exec.CommandContext(ctx, shell, script, "reload")
+	moduleDir := filepath.Dir(filepath.Dir(options.Root))
+	command := exec.CommandContext(ctx, options.NativePath,
+		"module", "service", "reload",
+		"--module-dir", moduleDir,
+		"--catalog-root", options.Root,
+		"--module-config", options.ModuleConf,
+		"--sing-box", options.SingBoxPath,
+		"--service-address", options.ServiceAddress,
+		"--service-secret", options.ServiceSecret,
+	)
 	command.Stdout = nil
 	command.Stderr = nil
 	if err := command.Run(); err != nil {

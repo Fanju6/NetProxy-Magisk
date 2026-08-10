@@ -23,7 +23,6 @@ type result struct {
 type cli struct {
 	moduleDir      string
 	nativePath     string
-	serviceScript  string
 	catalogRoot    string
 	moduleConfig   string
 	ebpfConfig     string
@@ -68,7 +67,6 @@ func newCLI() *cli {
 	return &cli{
 		moduleDir:      moduleDir,
 		nativePath:     nativePath,
-		serviceScript:  filepath.Join(moduleDir, "service.sh"),
 		catalogRoot:    filepath.Join(dataDir, "catalog"),
 		moduleConfig:   filepath.Join(configDir, "module.conf"),
 		ebpfConfig:     filepath.Join(configDir, "ebpf", "ebpf.conf"),

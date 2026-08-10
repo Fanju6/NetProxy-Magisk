@@ -90,7 +90,7 @@ func Wake(ctx context.Context, options Options, executable string) (Status, erro
 func appendWorkerFlags(arguments []string, options Options) []string {
 	arguments = append(arguments, "--root", options.Root, "--progress-dir", options.ProgressDir,
 		"--pid-file", options.PIDFile, "--log-file", options.LogFile,
-		"--module-conf", options.ModuleConf, "--reload-script", options.ReloadScript,
+		"--module-conf", options.ModuleConf, "--native-path", options.NativePath,
 		"--sing-box", options.SingBoxPath, "--service-address", options.ServiceAddress,
 		"--service-secret", options.ServiceSecret)
 	return arguments

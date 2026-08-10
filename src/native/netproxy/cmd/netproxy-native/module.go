@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -20,9 +19,9 @@ import (
 
 type moduleFlags struct {
 	moduleDir, managerVersion, managerVersionCode, catalogRoot, moduleConfig, ebpfConfig, singBox, singBoxDir string
-	runtimeDir, progressDir, serviceScript, address, secret, logDir                                           string
+	runtimeDir, progressDir, address, secret, logDir                                                          string
 	stateFile, workerPID, workerLog                                                                           string
-	skipServiceAdapter                                                                                        bool
+	skipServiceReload                                                                                         bool
 	timeout                                                                                                   time.Duration
 }
 
@@ -38,14 +37,13 @@ func bindModuleFlags(flags *flag.FlagSet) *moduleFlags {
 	flags.StringVar(&values.singBoxDir, "singbox-dir", "", "sing-box 配置目录")
 	flags.StringVar(&values.runtimeDir, "runtime-dir", "", "运行时目录")
 	flags.StringVar(&values.progressDir, "progress-dir", "/dev/netproxy/subscriptions", "订阅进度目录")
-	flags.StringVar(&values.serviceScript, "service-script", "", "服务生命周期适配脚本")
 	flags.StringVar(&values.address, "address", "127.0.0.1:9090", "Service API 地址")
 	flags.StringVar(&values.secret, "secret", "singbox", "Service API 密钥")
 	flags.StringVar(&values.logDir, "log-dir", "", "日志目录")
 	flags.StringVar(&values.stateFile, "state-file", "", "服务状态文件")
-	flags.StringVar(&values.workerPID, "worker-pid-file", "/dev/netproxy/worker.pid", "Worker PID 文件")
+	flags.StringVar(&values.workerPID, "worker-pid-file", "/dev/netproxy/subworker.pid", "Worker PID 文件")
 	flags.StringVar(&values.workerLog, "worker-log-file", "", "Worker 日志文件")
-	flags.BoolVar(&values.skipServiceAdapter, "skip-service-adapter", false, "服务内部同步时禁止嵌套 reload")
+	flags.BoolVar(&values.skipServiceReload, "skip-service-reload", false, "服务内部同步时禁止嵌套 reload")
 	flags.DurationVar(&values.timeout, "timeout", 8*time.Second, "Service API 超时")
 	return values
 }
@@ -75,9 +73,6 @@ func (values *moduleFlags) options() moduleapp.Options {
 	if values.progressDir != "" {
 		options.ProgressDir = values.progressDir
 	}
-	if values.serviceScript != "" {
-		options.ServiceScript = values.serviceScript
-	}
 	if values.address != "" {
 		options.ServiceAddress = values.address
 	}
@@ -96,7 +91,7 @@ func (values *moduleFlags) options() moduleapp.Options {
 	if values.workerLog != "" {
 		options.WorkerLogFile = values.workerLog
 	}
-	options.SkipServiceAdapter = values.skipServiceAdapter
+	options.SkipServiceReload = values.skipServiceReload
 	if values.timeout > 0 {
 		options.RequestTimeout = values.timeout
 	}
@@ -113,10 +108,12 @@ func defaultModuleDir() string {
 
 func runModule(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("缺少模块业务操作: prepare|select|mode|network|app|node|sub|config|logs|service")
+		return errors.New("缺少模块业务操作: boot|prepare|select|mode|network|app|node|sub|config|logs|service")
 	}
 	action := args[0]
 	switch action {
+	case "boot":
+		return runModuleBoot(ctx, args[1:])
 	case "prepare":
 		return runModulePrepare(ctx, args[1:])
 	case "select":
@@ -738,28 +735,52 @@ func runModuleLogs(_ context.Context, args []string) error {
 }
 
 func runModuleService(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("service 需要操作")
+	}
 	flags := newFlagSet("module service")
 	values := bindModuleFlags(flags)
-	if err := flags.Parse(args[1:]); err != nil {
+	operation := args[0]
+	flagArgs := args[1:]
+	if strings.HasPrefix(operation, "-") {
+		operation = ""
+		flagArgs = args
+	}
+	if err := flags.Parse(flagArgs); err != nil {
 		return err
 	}
 	positionals := flags.Args()
-	if len(positionals) == 0 {
+	if operation == "" && len(positionals) > 0 {
+		operation = positionals[0]
+	}
+	if operation == "" {
 		return errors.New("service 需要操作")
 	}
-	// 生命周期仍由受限 Shell 适配器执行，Go 不复制 setuidgid/nohup/PID 回收逻辑。
-	options := values.options()
-	shell := "/system/bin/sh"
-	if _, err := os.Stat(shell); err != nil {
-		shell = "sh"
-	}
-	command := execCommand(ctx, shell, options.ServiceScript, positionals[0])
-	command.Stdout = os.Stderr
-	command.Stderr = os.Stderr
-	if err := command.Run(); err != nil {
+	data, err := moduleapp.ManageService(ctx, values.options(), operation)
+	if err != nil {
 		return err
 	}
-	writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "service." + positionals[0], Message: "服务操作完成", Data: map[string]string{"action": positionals[0]}})
+	message := "服务操作完成"
+	responseData := any(data)
+	if operation == "status" {
+		message = "服务状态"
+		// service.status 是 Android 与 WebUI 的既有公开契约，状态字段必须直接位于 data。
+		responseData = data.Status
+	}
+	writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "service." + operation, Message: message, Data: responseData})
+	return nil
+}
+
+func runModuleBoot(ctx context.Context, args []string) error {
+	flags := newFlagSet("module boot")
+	values := bindModuleFlags(flags)
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if err := moduleapp.Boot(ctx, values.options(), os.Args[0]); err != nil {
+		return err
+	}
+	writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "module.booted", Message: "开机服务流程完成"})
 	return nil
 }
 
@@ -779,9 +800,4 @@ func flagWasSetNative(flags *flag.FlagSet, name string) bool {
 		}
 	})
 	return found
-}
-
-// execCommand 单独封装便于在 Windows 单元测试中替换平台命令。
-var execCommand = func(ctx context.Context, name string, args ...string) *exec.Cmd {
-	return exec.CommandContext(ctx, name, args...)
 }

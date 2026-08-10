@@ -19,6 +19,18 @@ check_shell_syntax() {
 }
 
 #######################################
+# 确认仅保留根目录开机桥接脚本
+#######################################
+check_service_bridge() {
+  [ -f "$MODULE_DIR/service.sh" ] || {
+    printf '%s\n' "缺少模块开机桥接脚本: $MODULE_DIR/service.sh" >&2
+    return 1
+  }
+  grep -q 'module boot' "$MODULE_DIR/service.sh"
+  ! grep -q 'setuidgid\|nohup\|service_main' "$MODULE_DIR/service.sh"
+}
+
+#######################################
 # 确认已删除的旧业务脚本没有重新进入模块
 #######################################
 check_removed_scripts() {
@@ -44,5 +56,6 @@ check_removed_scripts() {
 }
 
 check_shell_syntax
+check_service_bridge
 check_removed_scripts
 printf '%s\n' 'module scripts test passed'
