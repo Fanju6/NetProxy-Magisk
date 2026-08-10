@@ -39,6 +39,13 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(runtimeDir, "ebpf.json"), []byte(`{"type":"ebpf","tag":"runtime"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	stateFile := filepath.Join(root, "dev", "netproxy", "service.json")
+	if err := os.MkdirAll(filepath.Dir(stateFile), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stateFile, []byte(`{"state":"ready"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(singboxDir, "confdir", "08_services.json"), []byte(`{"secret":"secret-config"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -56,6 +63,7 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 		EBPFConfig:         ebpfConfig,
 		SingBoxDir:         singboxDir,
 		RuntimeDir:         runtimeDir,
+		StateFile:          stateFile,
 		LogDir:             logDir,
 	}
 	if err := ExportLogs(options, destination); err != nil {
@@ -81,6 +89,7 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 	defer compressed.Close()
 	reader := tar.NewReader(compressed)
 	seenRuntime := false
+	seenState := false
 	seenReadme := false
 	for {
 		header, readErr := reader.Next()
@@ -96,6 +105,12 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 		}
 		if strings.Contains(header.Name, "runtime/ebpf.json") {
 			seenRuntime = true
+		}
+		if header.Name == "state/service.json" {
+			seenState = true
+		}
+		if header.Name == "runtime/service.json" {
+			t.Fatal("服务状态不应归档为运行时配置")
 		}
 		if header.Name == "README.txt" {
 			seenReadme = true
@@ -119,6 +134,9 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 	}
 	if !seenRuntime {
 		t.Fatal("诊断包未包含运行时配置")
+	}
+	if !seenState {
+		t.Fatal("诊断包未包含服务状态")
 	}
 	if !seenReadme {
 		t.Fatal("诊断包未包含 README.txt")

@@ -60,7 +60,7 @@ func NewOptions(moduleDir string) Options {
 		SingBoxPath:    filepath.Join(moduleDir, "bin", "sing-box"),
 		SingBoxDir:     singBoxDir,
 		RuntimeDir:     runtimeDir,
-		StateFile:      filepath.Join(runtimeDir, "service.json"),
+		StateFile:      filepath.Join("/dev/netproxy", "service.json"),
 		ProgressDir:    "/dev/netproxy/subscriptions",
 		LogDir:         filepath.Join(moduleDir, "logs"),
 		ServiceScript:  filepath.Join(moduleDir, "scripts", "core", "service.sh"),

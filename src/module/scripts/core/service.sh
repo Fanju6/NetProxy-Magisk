@@ -16,7 +16,7 @@ readonly NETPROXY_NATIVE_BIN="$MODDIR/bin/netproxy-native"
 readonly MODULE_CONF="${NETPROXY_MODULE_CONF:-$MODDIR/config/module.conf}"
 readonly EBPF_CONF="${NETPROXY_EBPF_CONF:-$MODDIR/config/ebpf/ebpf.conf}"
 readonly CATALOG_DIR="${NETPROXY_CATALOG_DIR:-$MODDIR/data/catalog}"
-readonly SERVICE_STATE_DIR="$MODDIR/runtime"
+readonly SERVICE_STATE_DIR="/dev/netproxy"
 readonly SINGBOX_LOG_FILE="$MODDIR/logs/sing-box.log"
 readonly SINGBOX_DIR="${NETPROXY_SINGBOX_DIR:-$MODDIR/config/singbox}"
 readonly CONFDIR="$SINGBOX_DIR/confdir"
@@ -28,7 +28,7 @@ export PATH="$MODDIR/bin:$PATH"
 NL='
 '
 TAB="$(printf '\t')"
-SERVICE_STATE_FILE="$SERVICE_STATE_DIR/service.json"
+readonly SERVICE_STATE_FILE="$SERVICE_STATE_DIR/service.json"
 
 log_level_value() {
   case "$1" in

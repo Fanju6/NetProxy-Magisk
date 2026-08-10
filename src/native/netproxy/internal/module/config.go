@@ -38,7 +38,6 @@ func ListConfigs(options Options) ([]ConfigDocument, error) {
 	}{
 		{filepath.Join(options.SingBoxDir, "confdir"), "config", true},
 		{filepath.Join(options.SingBoxDir, "source"), "source", true},
-		{options.RuntimeDir, "runtime", false},
 	} {
 		entries, err := os.ReadDir(item.dir)
 		if os.IsNotExist(err) {
@@ -62,6 +61,22 @@ func ListConfigs(options Options) ([]ConfigDocument, error) {
 			}
 			result = append(result, ConfigDocument{ID: pathPrefix + filepath.ToSlash(filepath.Join(pathCategory, entry.Name())), Filename: entry.Name(), Category: item.category, Editable: item.editable})
 		}
+	}
+	for _, name := range []string{"providers.json", "outbounds.json", "ebpf.json"} {
+		path := filepath.Join(options.RuntimeDir, name)
+		info, err := os.Stat(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if info.IsDir() {
+			continue
+		}
+		result = append(result, ConfigDocument{
+			ID: "runtime/" + name, Filename: name, Category: "runtime", Editable: false,
+		})
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result, nil
@@ -136,6 +151,9 @@ func ValidateConfig(ctx context.Context, options Options, target, candidate stri
 	}
 	if !strings.HasPrefix(target, "singbox/") && !strings.HasPrefix(target, "runtime/") {
 		return errors.New("不支持的配置目标")
+	}
+	if strings.HasPrefix(target, "runtime/") && !isRuntimeConfigName(strings.TrimPrefix(target, "runtime/")) {
+		return errors.New("不支持的运行时文件")
 	}
 	content, err := os.ReadFile(candidate)
 	if err != nil {
@@ -245,12 +263,24 @@ func ResolveConfig(options Options, target string) (string, error) {
 		return "", errors.New("配置目标路径无效")
 	}
 	name := parts[len(parts)-1]
+	if prefix == "runtime/" && !isRuntimeConfigName(name) {
+		return "", errors.New("不支持的运行时文件")
+	}
 	for _, char := range name {
 		if !(char == '.' || char == '-' || char == '_' || char >= '0' && char <= '9' || char >= 'A' && char <= 'Z' || char >= 'a' && char <= 'z') {
 			return "", errors.New("配置文件名无效")
 		}
 	}
 	return filepath.Join(root, relative), nil
+}
+
+func isRuntimeConfigName(name string) bool {
+	switch name {
+	case "providers.json", "outbounds.json", "ebpf.json":
+		return true
+	default:
+		return false
+	}
 }
 
 func copyFile(destination, source string, mode fs.FileMode) error {

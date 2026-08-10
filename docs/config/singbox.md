@@ -45,7 +45,6 @@ runtime/           # 启动时生成的运行时配置
 - `outbounds.json`
 - `ebpf.json`
 - `catalog.state`
-- `service.json`
 
 停止服务时前三个运行时配置和 Catalog 状态会清理。运行时目录不应由用户编辑。
 

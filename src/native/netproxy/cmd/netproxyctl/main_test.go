@@ -18,7 +18,7 @@ func TestModuleArgsKeepsOperationBeforeFlags(t *testing.T) {
 		serviceAddress: "127.0.0.1:9090",
 		serviceSecret:  "singbox",
 		logDir:         "/module/logs",
-		stateFile:      "/module/runtime/service.json",
+		stateFile:      "/dev/netproxy/service.json",
 		progressDir:    "/dev/netproxy/subscriptions",
 		workerPIDFile:  "/dev/netproxy/subworker.pid",
 	}

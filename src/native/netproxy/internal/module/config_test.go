@@ -16,9 +16,24 @@ func TestListConfigsUsesReadableRuntimeID(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if err := os.WriteFile(filepath.Join(options.RuntimeDir, "service.json"), []byte(`{"state":"ready"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(options.RuntimeDir, "catalog.state"), []byte("internal"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
 	documents, err := ListConfigs(options)
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, document := range documents {
+		if document.Filename == "service.json" || document.Filename == "catalog.state" {
+			t.Fatalf("内部状态文件不应出现在配置列表: %q", document.ID)
+		}
+	}
+	if _, err := ReadConfig(options, "runtime/service.json"); err == nil {
+		t.Fatal("内部服务状态不应作为运行时配置读取")
 	}
 	var runtimeDocument *ConfigDocument
 	for index := range documents {

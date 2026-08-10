@@ -200,7 +200,7 @@ NetProxy 不维护通用独立控制守护进程。唯一长期 Go 进程是模�
 | 节点与订阅 | `src/module/data/catalog/<group-id>/` | `meta.json` + `provider.json` |
 | sing-box 静态配置 | `src/module/config/singbox/confdir/` | 按编号组合加载 |
 | sing-box 运行时配置 | `src/module/runtime/` | 启动或检查时生成，不由客户端编辑 |
-| 服务状态 | `src/module/runtime/service.json` | `netproxyctl service status` 的状态源之一 |
+| 服务状态 | `/dev/netproxy/service.json` | 本次启动周期的状态快照；缺失时按 stopped 处理 |
 | 实时核心状态 | Service API / Clash API | 连接、流量、测速和实际选择 |
 
 Android 和 WebUI 不建立另一份节点数据库，也不直接修改这些文件。持久状态通过 `netproxyctl` 读取和变更，运行状态通过固定的 sing-box API 补充。

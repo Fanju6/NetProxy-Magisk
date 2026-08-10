@@ -104,10 +104,20 @@ func ExportLogs(options Options, destination string) error {
 	for _, directory := range []struct{ path, name string }{
 		{filepath.Join(options.SingBoxDir, "confdir"), "config/singbox/confdir"},
 		{filepath.Join(options.SingBoxDir, "source"), "config/singbox/source"},
-		{options.RuntimeDir, "runtime"},
 		{options.CatalogRoot, "data/catalog"},
 	} {
 		appendDirectoryFiles(&files, directory.path, directory.name, directory.path == options.CatalogRoot)
+	}
+	for _, name := range []string{"providers.json", "outbounds.json", "ebpf.json"} {
+		files = append(files, struct{ source, name string }{
+			filepath.Join(options.RuntimeDir, name), "runtime/" + name,
+		})
+	}
+	files = append(files, struct{ source, name string }{
+		filepath.Join(options.RuntimeDir, "catalog.state"), "state/catalog.state",
+	})
+	if options.StateFile != "" {
+		files = append(files, struct{ source, name string }{options.StateFile, "state/service.json"})
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].name < files[j].name })
 	for _, item := range files {

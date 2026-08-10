@@ -7,7 +7,7 @@ TMP_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TMP_ROOT"' EXIT INT TERM
 
 MODDIR="$ROOT/src/module"
-SERVICE_STATE_DIR="$TMP_ROOT/runtime"
+SERVICE_STATE_DIR="$TMP_ROOT/dev/netproxy"
 SERVICE_STATE_FILE="$SERVICE_STATE_DIR/service.json"
 [ -x "$NETPROXY_NATIVE_BIN" ]
 export NETPROXY_NATIVE_BIN
