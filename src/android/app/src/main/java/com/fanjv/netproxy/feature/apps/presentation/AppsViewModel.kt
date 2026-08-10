@@ -309,7 +309,7 @@ internal class AppsViewModel(
     ): Set<String> = if (mode == "blacklist") bypassApps else proxyApps
 
     private fun parsePackages(value: String): Set<String> =
-        value.split(' ').filter(String::isNotBlank).toSet()
+        value.split(',').map(String::trim).filter(String::isNotBlank).toSet()
 
     private fun applyPolicyConfig(config: AppProxyConfig) {
         val proxyApps = parsePackages(config.proxyApps)
@@ -328,7 +328,7 @@ internal class AppsViewModel(
     }
 
     private fun parseAndroidUsers(config: AppProxyConfig): Set<String> =
-        config.androidUsers.split(' ').filter(String::isNotBlank).toSet()
+        config.androidUsers.split(',').map(String::trim).filter(String::isNotBlank).toSet()
 
     private fun updateAndroidUsers(userIds: Set<String>) {
         _state.update { it.copy(appAndroidUsers = userIds, error = "") }

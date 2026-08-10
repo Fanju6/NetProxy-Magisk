@@ -52,7 +52,7 @@ func ResolveProbeOptions(path, requestedMode string) (ProbeOptions, error) {
 		return ProbeOptions{}, fmt.Errorf("eBPF 检查范围无效: %s", requestedMode)
 	}
 
-	interfaces := strings.Fields(values["EBPF_SHARED_INTERFACES"])
+	interfaces := CommaSeparated(values["EBPF_SHARED_INTERFACES"])
 	interfaceName := ""
 	if len(interfaces) > 0 {
 		interfaceName = interfaces[0]

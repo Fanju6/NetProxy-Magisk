@@ -140,7 +140,7 @@ func Load(path string) (Config, error) {
 	if parseErr != nil {
 		return Config{}, parseErr
 	}
-	config.BypassRuleSets = fields(valueOr(values, "EBPF_BYPASS_RULE_SETS", "direct ChinaIP"))
+	config.BypassRuleSets = CommaSeparated(valueOr(values, "EBPF_BYPASS_RULE_SETS", "direct,ChinaIP"))
 	config.AppProxyEnable, parseErr = boolValue(values, "APP_PROXY_ENABLE", config.AppProxyEnable)
 	if parseErr != nil {
 		return Config{}, parseErr
@@ -162,7 +162,7 @@ func Load(path string) (Config, error) {
 	if parseErr != nil {
 		return Config{}, parseErr
 	}
-	config.SharedInterfaces = fields(valueOr(values, "EBPF_SHARED_INTERFACES", defaultSharedIface))
+	config.SharedInterfaces = CommaSeparated(valueOr(values, "EBPF_SHARED_INTERFACES", defaultSharedIface))
 	config.SharedIncludeSourceCIDRs, parseErr = parseCIDRs(valueOr(values, "EBPF_SHARED_INCLUDE_SOURCE_CIDRS", ""))
 	if parseErr != nil {
 		return Config{}, parseErr
@@ -431,11 +431,21 @@ func valueOr(values map[string]string, key, fallback string) string {
 	return fallback
 }
 
-func fields(value string) []string {
+// CommaSeparated 解析 eBPF 配置使用的逗号分隔值。
+func CommaSeparated(value string) []string {
+	value = strings.ReplaceAll(value, "，", ",")
 	if strings.TrimSpace(value) == "" {
 		return []string{}
 	}
-	return strings.Fields(value)
+	items := strings.Split(value, ",")
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			result = append(result, item)
+		}
+	}
+	return result
 }
 
 func boolValue(values map[string]string, key string, fallback bool) (bool, error) {
@@ -454,7 +464,7 @@ func boolValue(values map[string]string, key string, fallback bool) (bool, error
 }
 
 func parseUsers(value string) ([]uint64, error) {
-	result := fields(value)
+	result := CommaSeparated(value)
 	users := make([]uint64, 0, len(result))
 	for _, item := range result {
 		parsed, err := strconv.ParseUint(item, 10, 32)
@@ -467,7 +477,7 @@ func parseUsers(value string) ([]uint64, error) {
 }
 
 func parsePackages(value string) ([]string, error) {
-	packages := fields(value)
+	packages := CommaSeparated(value)
 	for _, item := range packages {
 		for _, char := range item {
 			if !(char == '.' || char == '_' || (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9')) {
@@ -479,7 +489,7 @@ func parsePackages(value string) ([]string, error) {
 }
 
 func parseCIDRs(value string) ([]string, error) {
-	items := fields(value)
+	items := CommaSeparated(value)
 	for _, item := range items {
 		if _, _, err := net.ParseCIDR(item); err != nil {
 			return nil, validationError("ebpf.cidr_invalid", "EBPF_SHARED_*_SOURCE_CIDRS", "共享网络来源 CIDR 格式无效: "+item)
@@ -489,7 +499,7 @@ func parseCIDRs(value string) ([]string, error) {
 }
 
 func parseMACs(value string) ([]string, error) {
-	items := fields(value)
+	items := CommaSeparated(value)
 	for _, item := range items {
 		parsed, err := net.ParseMAC(item)
 		if err != nil || len(parsed) != 6 {

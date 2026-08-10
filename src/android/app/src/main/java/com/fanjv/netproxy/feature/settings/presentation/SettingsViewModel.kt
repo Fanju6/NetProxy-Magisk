@@ -65,7 +65,7 @@ internal class SettingsViewModel(
         updateModuleSetting("WIFI_SSID_MODE", mode, forceQuotes = true)
 
     fun setWifiSsidList(value: String) =
-        updateModuleSetting("WIFI_SSID_LIST", value, forceQuotes = true)
+        updateModuleSetting("WIFI_SSID_LIST", normalizeCommaSeparated(value), forceQuotes = true)
 
     fun setProxyOnCellular(enabled: Boolean) =
         updateModuleSetting("PROXY_ON_CELLULAR", if (enabled) "1" else "0")
@@ -110,7 +110,12 @@ internal class SettingsViewModel(
     }
 
     fun updateProxySetting(key: String, value: String) {
-        updateProxySettings(listOf(key to value))
+        val normalizedValue = if (key in commaSeparatedKeys) {
+            normalizeCommaSeparated(value)
+        } else {
+            value
+        }
+        updateProxySettings(listOf(key to normalizedValue))
     }
 
     private fun updateProxySettings(updates: List<Pair<String, String>>) = updateSettings(
@@ -284,7 +289,7 @@ internal class SettingsViewModel(
             cgroupIpv6Mode = value("EBPF_CGROUP_IPV6_MODE", "always")
                 .takeIf { it in ipv6Modes } ?: "always",
             bypassPrivateAddress = enabled("EBPF_BYPASS_PRIVATE_ADDRESS", true),
-            bypassRuleSets = value("EBPF_BYPASS_RULE_SETS", "direct ChinaIP"),
+            bypassRuleSets = value("EBPF_BYPASS_RULE_SETS", "direct,ChinaIP"),
             sharedNetworkEnabled = enabled("EBPF_SHARED_NETWORK"),
             sharedInterfaces = value("EBPF_SHARED_INTERFACES", "wlan2"),
             sharedIncludeSourceCidrs = value("EBPF_SHARED_INCLUDE_SOURCE_CIDRS", ""),
@@ -311,5 +316,21 @@ internal class SettingsViewModel(
             "EBPF_SHARED_EXCLUDE_MAC_ADDRESSES"
         )
         val ipv6Modes = setOf("always", "auto", "off")
+        val commaSeparatedKeys = setOf(
+            "EBPF_BYPASS_RULE_SETS",
+            "EBPF_SHARED_INTERFACES",
+            "EBPF_SHARED_INCLUDE_SOURCE_CIDRS",
+            "EBPF_SHARED_EXCLUDE_SOURCE_CIDRS",
+            "EBPF_SHARED_INCLUDE_MAC_ADDRESSES",
+            "EBPF_SHARED_EXCLUDE_MAC_ADDRESSES",
+            "WIFI_SSID_LIST"
+        )
+
+        fun normalizeCommaSeparated(value: String): String = value
+            .replace('，', ',')
+            .split(',')
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .joinToString(",")
     }
 }

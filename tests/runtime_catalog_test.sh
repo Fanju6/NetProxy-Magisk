@@ -80,7 +80,7 @@ set_conf "$EBPF_CONF" "EBPF_BYPASS_RULE_SETS" '""'
 prepare_runtime
 json_contains '"bypass_rule_set":\[\]'
 
-set_conf_values "$EBPF_CONF"   "APP_PROXY_MODE" '"blacklist"'   "APP_ANDROID_USERS" '"0 999"'   "BYPASS_APPS_LIST" '"com.android.chrome org.telegram.messenger"'   "EBPF_SHARED_INCLUDE_SOURCE_CIDRS" '"192.168.43.0/24 fd00::/64"'   "EBPF_SHARED_EXCLUDE_SOURCE_CIDRS" '"192.168.43.10/32"'   "EBPF_SHARED_INCLUDE_MAC_ADDRESSES" '"02:11:22:33:44:55 AA:BB:CC:DD:EE:FF"'   "EBPF_SHARED_EXCLUDE_MAC_ADDRESSES" '"12:34:56:78:9A:BC"'
+set_conf_values "$EBPF_CONF"   "APP_PROXY_MODE" '"blacklist"'   "APP_ANDROID_USERS" '"0,999"'   "BYPASS_APPS_LIST" '"com.android.chrome,org.telegram.messenger"'   "EBPF_SHARED_INCLUDE_SOURCE_CIDRS" '"192.168.43.0/24,fd00::/64"'   "EBPF_SHARED_EXCLUDE_SOURCE_CIDRS" '"192.168.43.10/32"'   "EBPF_SHARED_INCLUDE_MAC_ADDRESSES" '"02:11:22:33:44:55,AA:BB:CC:DD:EE:FF"'   "EBPF_SHARED_EXCLUDE_MAC_ADDRESSES" '"12:34:56:78:9A:BC"'
 prepare_runtime
 json_contains '"include_android_user":\[0,999\]'
 json_contains '"exclude_package":\["com.android.chrome","org.telegram.messenger"\]'

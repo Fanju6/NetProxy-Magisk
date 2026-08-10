@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -17,12 +18,12 @@ EBPF_CGROUP_IPV6_MODE="auto"
 EBPF_BYPASS_PRIVATE_ADDRESS=0
 APP_PROXY_ENABLE=1
 APP_PROXY_MODE="blacklist"
-APP_ANDROID_USERS="0 999"
-BYPASS_APPS_LIST="com.android.chrome org.telegram.messenger"
+APP_ANDROID_USERS="0,999"
+BYPASS_APPS_LIST="com.android.chrome,org.telegram.messenger"
 EBPF_SHARED_NETWORK=1
-EBPF_SHARED_INTERFACES="wlan2"
-EBPF_SHARED_INCLUDE_SOURCE_CIDRS="192.168.43.0/24"
-EBPF_SHARED_INCLUDE_MAC_ADDRESSES="02:11:22:33:44:55"
+EBPF_SHARED_INTERFACES="wlan2,wlan0"
+EBPF_SHARED_INCLUDE_SOURCE_CIDRS="192.168.43.0/24,fd00::/64"
+EBPF_SHARED_INCLUDE_MAC_ADDRESSES="02:11:22:33:44:55,AA:BB:CC:DD:EE:FF"
 EBPF_SHARED_PROXY_MAP_CAPACITY=128
 EBPF_SHARED_BYPASS_MAP_CAPACITY=256
 EBPF_SHARED_FRAGMENT_MAP_CAPACITY=512
@@ -52,6 +53,36 @@ EBPF_SHARED_FRAGMENT_MAP_CAPACITY=512
 	}
 	if len(inbound["include_android_user"].([]any)) != 2 {
 		t.Fatalf("unexpected Android users: %#v", inbound["include_android_user"])
+	}
+	if got := len(shared["include_interface"].([]any)); got != 2 {
+		t.Fatalf("unexpected shared interfaces: %#v", shared["include_interface"])
+	}
+	if got := len(shared["include_source_cidr"].([]any)); got != 2 {
+		t.Fatalf("unexpected shared source CIDRs: %#v", shared["include_source_cidr"])
+	}
+	if got := len(shared["include_mac_address"].([]any)); got != 2 {
+		t.Fatalf("unexpected shared MAC addresses: %#v", shared["include_mac_address"])
+	}
+}
+
+func TestCommaSeparatedValuesUseCommaAsTheOnlyListSeparator(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  []string
+	}{
+		{name: "comma", value: "direct, ChinaIP", want: []string{"direct", "ChinaIP"}},
+		{name: "space is not a delimiter", value: "direct ChinaIP", want: []string{"direct ChinaIP"}},
+		{name: "fullwidth comma", value: "wlan2，wlan0", want: []string{"wlan2", "wlan0"}},
+		{name: "empty entries", value: "direct,, ChinaIP,", want: []string{"direct", "ChinaIP"}},
+		{name: "empty", value: "  ", want: []string{}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := CommaSeparated(test.value); !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("CommaSeparated(%q) = %#v, want %#v", test.value, got, test.want)
+			}
+		})
 	}
 }
 
@@ -119,7 +150,7 @@ func TestBuildUsesOnlyActiveApplicationList(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			config := loadFixture(t, "APP_PROXY_ENABLE=1\nAPP_PROXY_MODE=\""+test.mode+"\"\nPROXY_APPS_LIST=\""+strings.Join(test.include, " ")+"\"\nBYPASS_APPS_LIST=\""+strings.Join(test.exclude, " ")+"\"\n")
+			config := loadFixture(t, "APP_PROXY_ENABLE=1\nAPP_PROXY_MODE=\""+test.mode+"\"\nPROXY_APPS_LIST=\""+strings.Join(test.include, ",")+"\"\nBYPASS_APPS_LIST=\""+strings.Join(test.exclude, ",")+"\"\n")
 			inbound := runtimeInbound(t, config)
 			if got := len(inbound["include_package"].([]any)); got != test.wantInclude {
 				t.Fatalf("unexpected include_package count: got %d, want %d", got, test.wantInclude)

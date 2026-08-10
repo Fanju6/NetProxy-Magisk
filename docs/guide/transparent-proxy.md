@@ -38,7 +38,7 @@ EBPF_BYPASS_PRIVATE_ADDRESS=1
 默认值：
 
 ```text
-EBPF_BYPASS_RULE_SETS="direct ChinaIP"
+EBPF_BYPASS_RULE_SETS="direct,ChinaIP"
 ```
 
 命中的 IP CIDR 会在内核侧直接放行，不再进入 sing-box。这样可以降低常见直连流量开销，但也会绕过 Global 模式。需要严格全局代理时应清空该项并重启服务。

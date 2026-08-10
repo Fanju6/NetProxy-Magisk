@@ -322,7 +322,7 @@ func runModuleApp(_ context.Context, args []string) error {
 		value = positionals[0]
 	}
 	if action == "users" {
-		users = strings.Join(positionals, " ")
+		users = strings.Join(positionals, ",")
 		if users == "" {
 			users = "all"
 		}

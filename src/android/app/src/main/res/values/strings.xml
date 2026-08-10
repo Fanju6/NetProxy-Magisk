@@ -228,10 +228,10 @@
     <string name="ebpf_shared_exclude_mac_addresses">排除来源 MAC 地址</string>
     <string name="ebpf_restart_service">重启服务</string>
     <string name="ebpf_diagnostics">eBPF 诊断</string>
-    <string name="settings_hint_rule_sets">多个规则集标签请用空格分隔</string>
-    <string name="settings_hint_interfaces">多个接口名称请用空格分隔</string>
-    <string name="settings_hint_cidrs">多个 CIDR 请用空格分隔</string>
-    <string name="settings_hint_macs">多个 MAC 地址请用空格分隔</string>
+    <string name="settings_hint_rule_sets">多个规则集标签请用英文逗号分隔，例如 direct,ChinaIP</string>
+    <string name="settings_hint_interfaces">多个接口名称请用英文逗号分隔，例如 wlan2,wlan0</string>
+    <string name="settings_hint_cidrs">多个 CIDR 请用英文逗号分隔，例如 192.168.0.0/16,10.0.0.0/8</string>
+    <string name="settings_hint_macs">多个 MAC 地址请用英文逗号分隔</string>
     <string name="settings_hint_ssids">多个 SSID 请用英文逗号分隔</string>
     <string name="more_actions">更多操作</string>
 

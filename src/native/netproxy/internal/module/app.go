@@ -348,17 +348,17 @@ func UpdateApp(options Options, action, value, users string) (map[string]any, er
 			return nil, err
 		}
 		if config.AppProxyMode == "whitelist" {
-			updates["PROXY_APPS_LIST"] = moduleconfig.Quote(addWord(strings.Join(config.ProxyPackages, " "), value))
+			updates["PROXY_APPS_LIST"] = moduleconfig.Quote(addWord(strings.Join(config.ProxyPackages, ","), value))
 		} else {
-			updates["BYPASS_APPS_LIST"] = moduleconfig.Quote(addWord(strings.Join(config.BypassPackages, " "), value))
+			updates["BYPASS_APPS_LIST"] = moduleconfig.Quote(addWord(strings.Join(config.BypassPackages, ","), value))
 		}
 		updates["APP_PROXY_ENABLE"] = "1"
 	case "remove":
 		if err := validatePackage(value); err != nil {
 			return nil, err
 		}
-		updates["PROXY_APPS_LIST"] = moduleconfig.Quote(removeWord(strings.Join(config.ProxyPackages, " "), value))
-		updates["BYPASS_APPS_LIST"] = moduleconfig.Quote(removeWord(strings.Join(config.BypassPackages, " "), value))
+		updates["PROXY_APPS_LIST"] = moduleconfig.Quote(removeWord(strings.Join(config.ProxyPackages, ","), value))
+		updates["BYPASS_APPS_LIST"] = moduleconfig.Quote(removeWord(strings.Join(config.BypassPackages, ","), value))
 	case "enable", "disable":
 		updates["APP_PROXY_ENABLE"] = map[string]string{"enable": "1", "disable": "0"}[action]
 	default:
@@ -379,8 +379,8 @@ func UpdateApp(options Options, action, value, users string) (map[string]any, er
 
 func appData(config ebpf.Config) map[string]any {
 	return map[string]any{"enabled": config.AppProxyEnable, "mode": config.AppProxyMode,
-		"android_users": joinUint(config.AndroidUsers), "proxy_apps": strings.Join(config.ProxyPackages, " "),
-		"bypass_apps": strings.Join(config.BypassPackages, " ")}
+		"android_users": joinUint(config.AndroidUsers), "proxy_apps": strings.Join(config.ProxyPackages, ","),
+		"bypass_apps": strings.Join(config.BypassPackages, ",")}
 }
 
 // NodeAppend 将节点加入本地分组并处理活动状态与运行时 reload。
@@ -627,7 +627,7 @@ func validatePackage(value string) error {
 }
 
 func validateWords(value string, numeric bool) error {
-	for _, word := range strings.Fields(value) {
+	for _, word := range ebpf.CommaSeparated(value) {
 		if numeric {
 			for _, char := range word {
 				if char < '0' || char > '9' {
@@ -640,7 +640,7 @@ func validateWords(value string, numeric bool) error {
 }
 
 func addWord(current, value string) string {
-	for _, word := range strings.Fields(current) {
+	for _, word := range ebpf.CommaSeparated(current) {
 		if word == value {
 			return current
 		}
@@ -648,17 +648,17 @@ func addWord(current, value string) string {
 	if strings.TrimSpace(current) == "" {
 		return value
 	}
-	return strings.TrimSpace(current) + " " + value
+	return strings.TrimSpace(current) + "," + value
 }
 
 func removeWord(current, value string) string {
 	items := make([]string, 0)
-	for _, word := range strings.Fields(current) {
+	for _, word := range ebpf.CommaSeparated(current) {
 		if word != value {
 			items = append(items, word)
 		}
 	}
-	return strings.Join(items, " ")
+	return strings.Join(items, ",")
 }
 
 func joinUint(values []uint64) string {
@@ -666,7 +666,7 @@ func joinUint(values []uint64) string {
 	for _, value := range values {
 		items = append(items, fmt.Sprintf("%d", value))
 	}
-	return strings.Join(items, " ")
+	return strings.Join(items, ",")
 }
 
 // SubscriptionOptions 描述订阅业务的公共路径和 Service 适配器。

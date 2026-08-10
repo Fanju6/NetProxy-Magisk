@@ -11,7 +11,7 @@ import (
 
 func TestResolveProbeOptionsUsesConfiguredScope(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ebpf.conf")
-	content := "EBPF_CGROUP_ENABLED=1\nEBPF_SHARED_NETWORK=1\nEBPF_CGROUP_PATH=/sys/fs/cgroup\nEBPF_SHARED_INTERFACES=\"wlan2 wlan0\"\n"
+	content := "EBPF_CGROUP_ENABLED=1\nEBPF_SHARED_NETWORK=1\nEBPF_CGROUP_PATH=/sys/fs/cgroup\nEBPF_SHARED_INTERFACES=\"wlan2,wlan0\"\n"
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -225,7 +225,7 @@ Key defaults:
 - `EBPF_DNS_MODE=hijack`
 - `EBPF_CGROUP_IPV6_MODE=always`
 - `EBPF_BYPASS_PRIVATE_ADDRESS=1`
-- `EBPF_BYPASS_RULE_SETS="direct ChinaIP"`
+- `EBPF_BYPASS_RULE_SETS="direct,ChinaIP"` (comma-separated rule-set tags)
 - `EBPF_SHARED_NETWORK=0`
 - `WIFI_AUTO_SWITCH=0`
 

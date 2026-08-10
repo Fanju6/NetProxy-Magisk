@@ -232,7 +232,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl help'
 | `EBPF_DNS_MODE` | `hijack` | 在 eBPF 入站劫持 TCP / UDP 53 |
 | `EBPF_CGROUP_IPV6_MODE` | `always` | 本机 IPv6 接管策略，支持始终、自动和关闭 |
 | `EBPF_BYPASS_PRIVATE_ADDRESS` | `1` | 默认绕过私网与特殊用途地址 |
-| `EBPF_BYPASS_RULE_SETS` | `direct ChinaIP` | 在内核侧提前绕过可提取 CIDR 的规则集 |
+| `EBPF_BYPASS_RULE_SETS` | `direct,ChinaIP` | 在内核侧提前绕过可提取 CIDR 的规则集，多个规则集使用英文逗号分隔 |
 | `EBPF_SHARED_NETWORK` | `0` | 默认关闭热点与共享网络代理 |
 | `WIFI_AUTO_SWITCH` | `0` | 默认关闭 WiFi SSID 自动切换 |
 

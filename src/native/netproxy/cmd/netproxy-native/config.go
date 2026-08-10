@@ -196,7 +196,7 @@ func ebpfConfigValue(config ebpf.Config, key string) (string, error) {
 	case "EBPF_BYPASS_PRIVATE_ADDRESS":
 		return boolString(config.BypassPrivateAddress), nil
 	case "EBPF_BYPASS_RULE_SETS":
-		return strings.Join(config.BypassRuleSets, " "), nil
+		return strings.Join(config.BypassRuleSets, ","), nil
 	case "APP_PROXY_ENABLE":
 		return boolString(config.AppProxyEnable), nil
 	case "APP_PROXY_MODE":
@@ -204,21 +204,21 @@ func ebpfConfigValue(config ebpf.Config, key string) (string, error) {
 	case "APP_ANDROID_USERS":
 		return joinUintValues(config.AndroidUsers), nil
 	case "PROXY_APPS_LIST":
-		return strings.Join(config.ProxyPackages, " "), nil
+		return strings.Join(config.ProxyPackages, ","), nil
 	case "BYPASS_APPS_LIST":
-		return strings.Join(config.BypassPackages, " "), nil
+		return strings.Join(config.BypassPackages, ","), nil
 	case "EBPF_SHARED_NETWORK":
 		return boolString(config.SharedNetwork), nil
 	case "EBPF_SHARED_INTERFACES":
-		return strings.Join(config.SharedInterfaces, " "), nil
+		return strings.Join(config.SharedInterfaces, ","), nil
 	case "EBPF_SHARED_INCLUDE_SOURCE_CIDRS":
-		return strings.Join(config.SharedIncludeSourceCIDRs, " "), nil
+		return strings.Join(config.SharedIncludeSourceCIDRs, ","), nil
 	case "EBPF_SHARED_EXCLUDE_SOURCE_CIDRS":
-		return strings.Join(config.SharedExcludeSourceCIDRs, " "), nil
+		return strings.Join(config.SharedExcludeSourceCIDRs, ","), nil
 	case "EBPF_SHARED_INCLUDE_MAC_ADDRESSES":
-		return strings.Join(config.SharedIncludeMACAddresses, " "), nil
+		return strings.Join(config.SharedIncludeMACAddresses, ","), nil
 	case "EBPF_SHARED_EXCLUDE_MAC_ADDRESSES":
-		return strings.Join(config.SharedExcludeMACAddresses, " "), nil
+		return strings.Join(config.SharedExcludeMACAddresses, ","), nil
 	case "EBPF_TCP_MAP_CAPACITY":
 		return strconv.FormatUint(config.TCPMapCapacity, 10), nil
 	case "EBPF_UDP_MAP_CAPACITY":
@@ -241,7 +241,7 @@ func joinUintValues(values []uint64) string {
 	for _, value := range values {
 		items = append(items, strconv.FormatUint(value, 10))
 	}
-	return strings.Join(items, " ")
+	return strings.Join(items, ",")
 }
 
 func writeEBPFConfigTSV(config ebpf.Config) {

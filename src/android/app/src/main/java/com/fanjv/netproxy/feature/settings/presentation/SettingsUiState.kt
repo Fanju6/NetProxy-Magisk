@@ -9,7 +9,7 @@ data class ProxySettings(
     val cgroupEnabled: Boolean = true,
     val cgroupIpv6Mode: String = "always",
     val bypassPrivateAddress: Boolean = true,
-    val bypassRuleSets: String = "direct ChinaIP",
+    val bypassRuleSets: String = "direct,ChinaIP",
     val sharedNetworkEnabled: Boolean = false,
     val sharedInterfaces: String = "wlan2",
     val sharedIncludeSourceCidrs: String = "",
