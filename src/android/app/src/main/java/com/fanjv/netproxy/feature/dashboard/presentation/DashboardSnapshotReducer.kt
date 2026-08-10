@@ -10,18 +10,6 @@ internal class DashboardSnapshotReducer(
     private var lastTraffic: Pair<Long, Long>? = null
     private var lastTrafficAt = 0L
     private var lastCpuSample: Pair<Long, Long>? = null
-    private var localReadyAt: Long? = null
-    private var localReadyPid: Int? = null
-
-    fun markStarted(readyAt: Long) {
-        localReadyAt = readyAt
-        localReadyPid = null
-    }
-
-    fun clearReadyOverride() {
-        localReadyAt = null
-        localReadyPid = null
-    }
 
     fun reduce(
         current: CatalogDashboardUiState,
@@ -30,17 +18,7 @@ internal class DashboardSnapshotReducer(
         localAddress: String
     ): CatalogDashboardUiState {
         val nowSeconds = nowMillis / 1000
-        if (service.state != "ready") {
-            clearReadyOverride()
-        } else if (localReadyAt != null) {
-            if (localReadyPid == null) {
-                localReadyPid = service.pid
-            } else if (localReadyPid != service.pid) {
-                clearReadyOverride()
-            }
-        }
-
-        val displayedReadyAt = localReadyAt ?: service.readyAt
+        val displayedReadyAt = service.readyAt
         val displayedUptime = if (displayedReadyAt > 0 && service.state == "ready") {
             (nowSeconds - displayedReadyAt).coerceAtLeast(0)
         } else {

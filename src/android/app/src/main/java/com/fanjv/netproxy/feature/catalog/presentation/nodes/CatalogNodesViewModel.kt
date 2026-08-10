@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 internal data class CatalogNodesUiState(
@@ -36,6 +37,7 @@ internal class CatalogNodesViewModel(
     private val _state = MutableStateFlow(CatalogNodesUiState())
     val state: StateFlow<CatalogNodesUiState> = _state.asStateFlow()
     private var refreshJob: Job? = null
+    private var refreshPending = false
     private var loaded = false
 
     fun setVisible(visible: Boolean) {
@@ -43,33 +45,44 @@ internal class CatalogNodesViewModel(
     }
 
     fun refresh(silent: Boolean = false) {
-        if (refreshJob?.isActive == true) return
+        if (refreshJob?.isActive == true) {
+            refreshPending = true
+            return
+        }
         refreshJob = viewModelScope.launch {
-            if (!silent) _state.update { it.copy(loading = true, error = "") }
-            runCatching { repository.snapshot() }.onSuccess { snapshot ->
-                val groups = snapshot.groups
-                val selection = snapshot.selection
-                _state.update { old ->
-                    val selected = old.selectedGroupId
-                        .takeIf { id -> groups.any { it.group.id == id } }
-                        ?: selection.activeGroupId.takeIf(String::isNotBlank)
-                        ?: groups.firstOrNull()?.group?.id.orEmpty()
-                    old.copy(
-                        groups = groups,
-                        selection = selection,
-                        selectedGroupId = selected,
-                        loading = false,
-                        error = ""
-                    )
+            try {
+                if (!silent) _state.update { it.copy(loading = true, error = "") }
+                runCatching { repository.snapshot() }.onSuccess { snapshot ->
+                    val groups = snapshot.groups
+                    val selection = snapshot.selection
+                    _state.update { old ->
+                        val selected = old.selectedGroupId
+                            .takeIf { id -> groups.any { it.group.id == id } }
+                            ?: selection.activeGroupId.takeIf(String::isNotBlank)
+                            ?: groups.firstOrNull()?.group?.id.orEmpty()
+                        old.copy(
+                            groups = groups,
+                            selection = selection,
+                            selectedGroupId = selected,
+                            loading = false,
+                            error = ""
+                        )
+                    }
+                    loaded = true
+                }.onFailure { error ->
+                    _state.update {
+                        it.copy(
+                            loading = false,
+                            error = error.userMessage(),
+                            noticeId = it.noticeId + 1
+                        )
+                    }
                 }
-                loaded = true
-            }.onFailure { error ->
-                _state.update {
-                    it.copy(
-                        loading = false,
-                        error = error.userMessage(),
-                        noticeId = it.noticeId + 1
-                    )
+            } finally {
+                refreshJob = null
+                if (refreshPending && isActive) {
+                    refreshPending = false
+                    refresh(silent = true)
                 }
             }
         }
@@ -323,5 +336,3 @@ internal class CatalogNodesViewModel(
         }
     }
 }
-
-

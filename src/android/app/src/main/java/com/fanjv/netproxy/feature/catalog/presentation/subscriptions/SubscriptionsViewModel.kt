@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 internal data class SubscriptionsUiState(
@@ -31,6 +32,7 @@ internal class SubscriptionsViewModel(
     private var visible = false
     private var loaded = false
     private var refreshJob: Job? = null
+    private var refreshPending = false
 
     fun setVisible(value: Boolean) {
         visible = value
@@ -38,23 +40,34 @@ internal class SubscriptionsViewModel(
     }
 
     fun refresh(silent: Boolean = false) {
-        if (refreshJob?.isActive == true) return
+        if (refreshJob?.isActive == true) {
+            refreshPending = true
+            return
+        }
         refreshJob = viewModelScope.launch {
-            if (!silent) _state.update { it.copy(loading = true, error = "") }
-            runCatching { repository.list() }
-                .onSuccess { groups ->
-                    _state.update { it.copy(groups = groups, loading = false) }
-                    loaded = true
-                }
-                .onFailure { error ->
-                    _state.update {
-                        it.copy(
-                            loading = false,
-                            error = error.userMessage(),
-                            noticeId = it.noticeId + 1
-                        )
+            try {
+                if (!silent) _state.update { it.copy(loading = true, error = "") }
+                runCatching { repository.list() }
+                    .onSuccess { groups ->
+                        _state.update { it.copy(groups = groups, loading = false) }
+                        loaded = true
                     }
+                    .onFailure { error ->
+                        _state.update {
+                            it.copy(
+                                loading = false,
+                                error = error.userMessage(),
+                                noticeId = it.noticeId + 1
+                            )
+                        }
+                    }
+            } finally {
+                refreshJob = null
+                if (refreshPending && isActive) {
+                    refreshPending = false
+                    refresh(silent = true)
                 }
+            }
         }
     }
 
@@ -123,5 +136,3 @@ internal class SubscriptionsViewModel(
         }
     }
 }
-
-

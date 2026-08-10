@@ -21,8 +21,7 @@ func (c *cli) ebpf(args []string) int {
 		}
 		nativeArgs := []string{
 			"ebpf", "status",
-			"--config", c.ebpfConfig,
-			"--sing-box", c.singBoxPath,
+			"--module-dir", c.moduleDir,
 			"--mode", mode,
 			"--format", "json",
 		}

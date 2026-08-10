@@ -183,9 +183,6 @@ internal class CatalogDashboardViewModel(
         viewModelScope.launch {
             val changesServiceState = name == "start" || name == "stop"
             if (changesServiceState) serviceTransitionRevision++
-            if (name == "stop") {
-                snapshotReducer.clearReadyOverride()
-            }
             _state.update { current ->
                 current.copy(
                     operation = name,
@@ -199,13 +196,6 @@ internal class CatalogDashboardViewModel(
             runCatching { action() }
                 .onSuccess { message ->
                     if (changesServiceState) serviceTransitionRevision++
-                    val readyAt = if (name == "start") {
-                        (System.currentTimeMillis() / 1000).also {
-                            snapshotReducer.markStarted(it)
-                        }
-                    } else {
-                        null
-                    }
                     _state.update {
                         it.copy(
                             operation = "",
@@ -214,8 +204,6 @@ internal class CatalogDashboardViewModel(
                                 "stop" -> "stopped"
                                 else -> it.serviceState
                             },
-                            readyAt = readyAt ?: it.readyAt,
-                            uptimeSeconds = if (name == "start") 0 else it.uptimeSeconds,
                             notice = message,
                             noticeId = it.noticeId + 1
                         )

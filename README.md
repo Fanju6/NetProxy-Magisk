@@ -60,11 +60,11 @@ Android 管理器与模块共用 `netproxyctl` JSON 契约，但保持独立的�
 
 Clash API 默认配置：
 
-- Controller：`http://<设备IP>:9999`
-- zashboard：`http://<设备IP>:9999/ui/`
+- Controller：`http://127.0.0.1:9999`
+- zashboard：`http://127.0.0.1:9999/ui/`
 - Secret：`singbox`
 
-控制器默认监听所有网络接口，请仅在可信网络中使用，并按需修改访问密钥。
+控制器默认只监听本机。需要从其他设备访问时，请显式配置监听地址，并同时调整访问控制和密钥。
 
 ## 界面预览
 

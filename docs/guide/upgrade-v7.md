@@ -49,8 +49,8 @@
 
 ## 新的默认控制入口
 
-- Controller：`http://<设备IP>:9999`
-- UI：`http://<设备IP>:9999/ui`
+- Controller：`http://127.0.0.1:9999`
+- UI：`http://127.0.0.1:9999/ui`
 - Secret：`singbox`
 
 ## 常见迁移误区

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
@@ -16,6 +18,7 @@ func runControl(ctx context.Context, args []string) error {
 	}
 	action := args[0]
 	flags := newFlagSet("control " + action)
+	moduleDir := flags.String("module-dir", defaultModuleDir(), "模块根目录")
 	catalogRoot := flags.String("catalog-root", "", "Catalog 根目录")
 	moduleConfig := flags.String("module-config", "", "模块配置文件")
 	stateFile := flags.String("state-file", "", "服务状态文件")
@@ -31,6 +34,27 @@ func runControl(ctx context.Context, args []string) error {
 	format := flags.String("format", "json", "输出格式")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
+	}
+	if strings.TrimSpace(*catalogRoot) == "" {
+		*catalogRoot = filepath.Join(*moduleDir, "data", "catalog")
+	}
+	if strings.TrimSpace(*moduleConfig) == "" {
+		*moduleConfig = filepath.Join(*moduleDir, "config", "module.conf")
+	}
+	if strings.TrimSpace(*stateFile) == "" {
+		*stateFile = "/dev/netproxy/service.json"
+	}
+	if strings.TrimSpace(*progressDir) == "" {
+		*progressDir = os.Getenv("SUB_RUNTIME_DIR")
+		if *progressDir == "" {
+			*progressDir = "/dev/netproxy/subscriptions"
+		}
+	}
+	if strings.TrimSpace(*workerPIDFile) == "" {
+		*workerPIDFile = "/dev/netproxy/subworker.pid"
+	}
+	if strings.TrimSpace(*singBox) == "" {
+		*singBox = filepath.Join(*moduleDir, "bin", "sing-box")
 	}
 	options := service.Options{
 		CatalogRoot: *catalogRoot, ModuleConfig: *moduleConfig, StateFile: *stateFile,

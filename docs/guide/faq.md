@@ -34,7 +34,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl config validate'
 默认入口：
 
 ```text
-http://<设备 IP>:9999/ui
+http://127.0.0.1:9999/ui
 ```
 
 确认服务已启动，并使用密钥 `singbox`。Clash API 主要供 zashboard 和第三方客户端使用，Android 管理器的核心状态通过 Service API 获取。

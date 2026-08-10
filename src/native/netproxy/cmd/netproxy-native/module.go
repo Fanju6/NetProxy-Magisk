@@ -14,6 +14,7 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 )
 
@@ -27,6 +28,10 @@ type moduleFlags struct {
 
 func bindModuleFlags(flags *flag.FlagSet) *moduleFlags {
 	values := &moduleFlags{}
+	progressDir := os.Getenv("SUB_RUNTIME_DIR")
+	if progressDir == "" {
+		progressDir = "/dev/netproxy/subscriptions"
+	}
 	flags.StringVar(&values.moduleDir, "module-dir", defaultModuleDir(), "模块根目录")
 	flags.StringVar(&values.managerVersion, "manager-version", "unknown", "Android 管理器版本")
 	flags.StringVar(&values.managerVersionCode, "manager-version-code", "unknown", "Android 管理器版本号")
@@ -36,7 +41,7 @@ func bindModuleFlags(flags *flag.FlagSet) *moduleFlags {
 	flags.StringVar(&values.singBox, "sing-box", "", "sing-box 路径")
 	flags.StringVar(&values.singBoxDir, "singbox-dir", "", "sing-box 配置目录")
 	flags.StringVar(&values.runtimeDir, "runtime-dir", "", "运行时目录")
-	flags.StringVar(&values.progressDir, "progress-dir", "/dev/netproxy/subscriptions", "订阅进度目录")
+	flags.StringVar(&values.progressDir, "progress-dir", progressDir, "订阅进度目录")
 	flags.StringVar(&values.address, "address", "127.0.0.1:9090", "Service API 地址")
 	flags.StringVar(&values.secret, "secret", "singbox", "Service API 密钥")
 	flags.StringVar(&values.logDir, "log-dir", "", "日志目录")
@@ -99,11 +104,7 @@ func (values *moduleFlags) options() moduleapp.Options {
 }
 
 func defaultModuleDir() string {
-	executable, err := os.Executable()
-	if err == nil {
-		return filepath.Dir(filepath.Dir(executable))
-	}
-	return "."
+	return paths.Root()
 }
 
 func runModule(ctx context.Context, args []string) error {

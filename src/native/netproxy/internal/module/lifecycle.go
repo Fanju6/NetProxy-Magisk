@@ -64,6 +64,12 @@ func ManageService(ctx context.Context, options Options, action string) (Service
 	if err != nil {
 		return ServiceResult{}, err
 	}
+	if action == "start" || action == "restart" {
+		if err := ensureWorker(ctx, options); err != nil {
+			// Worker 独立于 sing-box，不能因为订阅调度启动失败而把已经就绪的核心判为失败。
+			logService(options, "WARN", "订阅自动更新 Worker 启动失败: %v", err)
+		}
+	}
 	return serviceResult(ctx, options, action)
 }
 
@@ -98,6 +104,12 @@ func StartService(ctx context.Context, options Options) error {
 	prepared, err := Prepare(ctx, options, false)
 	if err != nil {
 		return failServiceStart(options, 0, 0, "运行时配置生成失败", err)
+	}
+	if err := checkPreparedConfiguration(ctx, options, prepared); err != nil {
+		return failServiceStart(options, 0, 0, "sing-box 配置检查失败", err)
+	}
+	if err := syncRuntimeSelection(options.ModuleConfig, prepared.RuntimeResult); err != nil {
+		return failServiceStart(options, 0, 0, "运行时选择状态同步失败", err)
 	}
 
 	command, logFile, err := newSingBoxCommand(options, prepared)
@@ -185,6 +197,9 @@ func ReloadService(ctx context.Context, options Options) error {
 	if err := checkPreparedConfiguration(ctx, options, prepared); err != nil {
 		return err
 	}
+	if err := syncRuntimeSelection(options.ModuleConfig, prepared.RuntimeResult); err != nil {
+		return fmt.Errorf("运行时选择状态同步失败: %w", err)
+	}
 	if err := WriteServiceState(options.StateFile, "starting", int64(pid), oldStartedAt, 0, ""); err != nil {
 		return err
 	}
@@ -249,10 +264,18 @@ func Boot(ctx context.Context, options Options, executable string) error {
 	if executable == "" {
 		executable = filepath.Join(options.ModuleDir, "bin", "netproxy-native")
 	}
-	if _, err := worker.Start(ctx, workerOptions(options), executable); err != nil {
+	if err := ensureWorker(ctx, options); err != nil {
 		logService(options, "WARN", "订阅自动更新 Worker 启动失败，可稍后手动重试: %v", err)
 	}
 	logService(options, "INFO", "开机服务流程结束")
+	return nil
+}
+
+func ensureWorker(ctx context.Context, options Options) error {
+	executable := filepath.Join(options.ModuleDir, "bin", "netproxy-native")
+	if _, err := worker.Start(ctx, workerOptions(options), executable); err != nil {
+		return err
+	}
 	return nil
 }
 

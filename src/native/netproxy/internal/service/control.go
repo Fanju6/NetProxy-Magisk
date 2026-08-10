@@ -697,7 +697,7 @@ func executableMatches(candidate, target string) bool {
 	if candidate == target {
 		return true
 	}
-	return filepath.Base(candidate) == filepath.Base(target)
+	return false
 }
 
 func processCPUTicks(pid int) uint64 {
