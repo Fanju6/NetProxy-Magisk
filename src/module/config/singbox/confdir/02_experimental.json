@@ -7,7 +7,7 @@
     },
     "clash_api": {
       "default_mode": "Rule",
-      "external_controller": "0.0.0.0:9999",
+      "external_controller": "127.0.0.1:9999",
       "secret": "singbox",
       "external_ui": "/data/adb/modules/netproxy/webroot",
       "external_ui_download_url": "https://github.com/Zephyruso/zashboard/releases/latest/download/dist.zip"

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/ebpf"
@@ -16,6 +17,7 @@ func runEBPF(ctx context.Context, args []string) error {
 	}
 	action := args[0]
 	flags := newFlagSet("ebpf " + action)
+	moduleDir := flags.String("module-dir", defaultModuleDir(), "模块根目录")
 	configPath := flags.String("config", "", "ebpf.conf 路径")
 	outputPath := flags.String("output", "", "运行时 JSON 输出路径")
 	singBoxPath := flags.String("sing-box", "", "sing-box 二进制路径")
@@ -24,6 +26,12 @@ func runEBPF(ctx context.Context, args []string) error {
 	format := flags.String("format", "json", "输出格式")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
+	}
+	if strings.TrimSpace(*configPath) == "" {
+		*configPath = filepath.Join(*moduleDir, "config", "ebpf", "ebpf.conf")
+	}
+	if strings.TrimSpace(*singBoxPath) == "" {
+		*singBoxPath = filepath.Join(*moduleDir, "bin", "sing-box")
 	}
 	if strings.TrimSpace(*configPath) == "" {
 		return errors.New("eBPF 操作需要 --config")

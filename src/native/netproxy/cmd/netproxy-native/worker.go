@@ -20,6 +20,7 @@ func runSubworker(ctx context.Context, args []string) error {
 	}
 	action := args[0]
 	flags := newFlagSet("subworker " + action)
+	moduleDir := flags.String("module-dir", "", "NetProxy 模块目录")
 	root := flags.String("root", "", "Catalog 根目录")
 	progressDir := flags.String("progress-dir", "/dev/netproxy/subscriptions", "订阅进度目录")
 	pidFile := flags.String("pid-file", "/dev/netproxy/subworker.pid", "Worker PID 文件")
@@ -34,6 +35,24 @@ func runSubworker(ctx context.Context, args []string) error {
 	format := flags.String("format", "json", "输出格式")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
+	}
+	if strings.TrimSpace(*moduleDir) != "" {
+		modulePath := filepath.Clean(*moduleDir)
+		if strings.TrimSpace(*root) == "" {
+			*root = filepath.Join(modulePath, "data", "catalog")
+		}
+		if strings.TrimSpace(*moduleConf) == "" {
+			*moduleConf = filepath.Join(modulePath, "config", "module.conf")
+		}
+		if strings.TrimSpace(*nativePath) == "" {
+			*nativePath = filepath.Join(modulePath, "bin", "netproxy-native")
+		}
+		if strings.TrimSpace(*singBox) == "" {
+			*singBox = filepath.Join(modulePath, "bin", "sing-box")
+		}
+		if strings.TrimSpace(*logFile) == "" {
+			*logFile = filepath.Join(modulePath, "logs", "service.log")
+		}
 	}
 	if strings.TrimSpace(*root) == "" {
 		return errors.New("subworker 需要 --root")

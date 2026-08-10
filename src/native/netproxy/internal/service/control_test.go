@@ -68,6 +68,12 @@ func TestProcessMatchingDoesNotMatchControlCommand(t *testing.T) {
 	if executableMatches("/data/adb/modules/netproxy/bin/netproxy-native", "/data/adb/modules/netproxy/bin/sing-box") {
 		t.Fatal("不同的可执行文件不应匹配")
 	}
+	if executableMatches("/data/adb/modules/other/bin/sing-box", "/data/adb/modules/netproxy/bin/sing-box") {
+		t.Fatal("不同目录中的同名 sing-box 不应匹配")
+	}
+	if !executableMatches("/data/adb/modules/netproxy/bin/sing-box (deleted)", "/data/adb/modules/netproxy/bin/sing-box") {
+		t.Fatal("已删除但路径相同的进程应保持可识别")
+	}
 }
 
 func TestReadGroupsUnavailable(t *testing.T) {

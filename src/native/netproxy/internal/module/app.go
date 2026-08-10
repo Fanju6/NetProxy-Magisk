@@ -100,11 +100,6 @@ func Prepare(ctx context.Context, options Options, allowEmpty bool) (PrepareResu
 	if err != nil {
 		return PrepareResult{}, err
 	}
-	if !allowEmpty {
-		if err := syncRuntimeSelection(options.ModuleConfig, runtime); err != nil {
-			return PrepareResult{}, err
-		}
-	}
 	config, err := ebpf.Load(options.EBPFConfig)
 	if err != nil {
 		return PrepareResult{}, err

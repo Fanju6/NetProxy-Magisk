@@ -63,8 +63,8 @@ su -c /data/adb/modules/netproxy/scripts/cli api ui
 
 默认入口：
 
-- Controller：`http://<设备IP>:9999`
-- UI：`http://<设备IP>:9999/ui`
+- Controller：`http://127.0.0.1:9999`
+- UI：`http://127.0.0.1:9999/ui`
 - Secret：`singbox`
 
 ## 7. 遇到问题先看日志

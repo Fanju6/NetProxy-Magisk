@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 )
 
 type result struct {
@@ -21,21 +23,9 @@ type result struct {
 }
 
 type cli struct {
-	moduleDir      string
-	nativePath     string
-	catalogRoot    string
-	moduleConfig   string
-	ebpfConfig     string
-	singBoxPath    string
-	singBoxDir     string
-	stateFile      string
-	logDir         string
-	progressDir    string
-	workerPIDFile  string
-	serviceAddress string
-	serviceSecret  string
-	outputJSON     bool
-	commandCtx     context.Context
+	moduleDir  string
+	nativePath string
+	commandCtx context.Context
 }
 
 const (
@@ -49,52 +39,19 @@ func main() {
 }
 
 func newCLI() *cli {
-	moduleDir := os.Getenv("NETPROXY_MODULE_DIR")
-	if moduleDir == "" {
-		moduleDir = defaultModuleDir()
-	}
-	configDir := filepath.Join(moduleDir, "config")
-	dataDir := filepath.Join(moduleDir, "data")
-	singBoxDir := filepath.Join(configDir, "singbox")
+	moduleDir := paths.Root()
 	nativePath := os.Getenv("NETPROXY_NATIVE_BIN")
 	if nativePath == "" {
 		nativePath = filepath.Join(moduleDir, "bin", "netproxy-native")
 	}
-	progressDir := os.Getenv("SUB_RUNTIME_DIR")
-	if progressDir == "" {
-		progressDir = "/dev/netproxy/subscriptions"
-	}
-	return &cli{
-		moduleDir:      moduleDir,
-		nativePath:     nativePath,
-		catalogRoot:    filepath.Join(dataDir, "catalog"),
-		moduleConfig:   filepath.Join(configDir, "module.conf"),
-		ebpfConfig:     filepath.Join(configDir, "ebpf", "ebpf.conf"),
-		singBoxPath:    filepath.Join(moduleDir, "bin", "sing-box"),
-		singBoxDir:     singBoxDir,
-		stateFile:      filepath.Join("/dev/netproxy", "service.json"),
-		logDir:         filepath.Join(moduleDir, "logs"),
-		progressDir:    progressDir,
-		workerPIDFile:  "/dev/netproxy/subworker.pid",
-		serviceAddress: "127.0.0.1:9090",
-		serviceSecret:  "singbox",
-	}
-}
-
-func defaultModuleDir() string {
-	executable, err := os.Executable()
-	if err != nil {
-		return "."
-	}
-	return filepath.Dir(filepath.Dir(executable))
+	return &cli{moduleDir: moduleDir, nativePath: nativePath}
 }
 
 func (c *cli) run(ctx context.Context, args []string) int {
-	cleanArgs, timeout, outputJSON, err := parseCommandArgs(args)
+	cleanArgs, timeout, err := parseCommandArgs(args)
 	if err != nil {
 		return c.fail("usage.invalid", err.Error(), 2)
 	}
-	c.outputJSON = outputJSON
 	args = cleanArgs
 	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
 		c.help()
@@ -136,36 +93,35 @@ func (c *cli) run(ctx context.Context, args []string) int {
 	}
 }
 
-func parseCommandArgs(args []string) ([]string, time.Duration, bool, error) {
+func parseCommandArgs(args []string) ([]string, time.Duration, error) {
 	cleaned := make([]string, 0, len(args))
 	var timeout time.Duration
-	outputJSON := false
 	for index := 0; index < len(args); index++ {
 		argument := args[index]
 		switch {
 		case argument == "--json":
-			outputJSON = true
+			// 所有机器输出固定为 schema=1 JSON，--json 仅作为显式契约标记。
 		case argument == "--timeout":
 			if index+1 >= len(args) {
-				return nil, 0, false, errors.New("--timeout 需要一个秒数或时长")
+				return nil, 0, errors.New("--timeout 需要一个秒数或时长")
 			}
 			index++
 			parsed, err := parseCommandTimeout(args[index])
 			if err != nil {
-				return nil, 0, false, err
+				return nil, 0, err
 			}
 			timeout = parsed
 		case strings.HasPrefix(argument, "--timeout="):
 			parsed, err := parseCommandTimeout(strings.TrimPrefix(argument, "--timeout="))
 			if err != nil {
-				return nil, 0, false, err
+				return nil, 0, err
 			}
 			timeout = parsed
 		default:
 			cleaned = append(cleaned, argument)
 		}
 	}
-	return cleaned, timeout, outputJSON, nil
+	return cleaned, timeout, nil
 }
 
 func parseCommandTimeout(value string) (time.Duration, error) {

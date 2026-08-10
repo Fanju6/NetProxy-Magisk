@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 )
 
@@ -29,19 +28,6 @@ func (c *cli) moduleArgs(action string, args ...string) []string {
 	}
 	result = append(result,
 		"--module-dir", c.moduleDir,
-		"--catalog-root", c.catalogRoot,
-		"--module-config", c.moduleConfig,
-		"--ebpf-config", c.ebpfConfig,
-		"--sing-box", c.singBoxPath,
-		"--singbox-dir", c.singBoxDir,
-		"--runtime-dir", filepath.Join(c.moduleDir, "runtime"),
-		"--address", c.serviceAddress,
-		"--secret", c.serviceSecret,
-		"--log-dir", c.logDir,
-		"--state-file", c.stateFile,
-		"--progress-dir", c.progressDir,
-		"--worker-pid-file", c.workerPIDFile,
-		"--worker-log-file", filepath.Join(c.logDir, "service.log"),
 	)
 	return append(result, args...)
 }
@@ -49,20 +35,13 @@ func (c *cli) moduleArgs(action string, args ...string) []string {
 func (c *cli) controlArgs(action string, args ...string) []string {
 	result := []string{"control", action}
 	result = append(result,
-		"--catalog-root", c.catalogRoot,
-		"--module-config", c.moduleConfig,
-		"--state-file", c.stateFile,
-		"--progress-dir", c.progressDir,
-		"--worker-pid-file", c.workerPIDFile,
-		"--sing-box", c.singBoxPath,
-		"--address", c.serviceAddress,
-		"--secret", c.serviceSecret,
+		"--module-dir", c.moduleDir,
 	)
 	return append(result, args...)
 }
 
 func (c *cli) catalogArgs(args ...string) []string {
-	return append([]string{"--root", c.catalogRoot, "--module-config", c.moduleConfig}, args...)
+	return append([]string{"--module-dir", c.moduleDir}, args...)
 }
 
 func (c *cli) success(code, message string, data any) int {

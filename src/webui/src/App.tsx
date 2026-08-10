@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, type KeyboardEvent, type MouseEvent } from 'react'
 import { ctl, ctlJson, shell, inKsu, completions as fetchCompletions } from './exec'
 import { complete } from './autocomplete'
+import { parseCommandLine } from './command'
 import { getHelp } from './help'
 
 const PROMPT = '❯ '
@@ -69,7 +70,7 @@ export default function App() {
           const s = cmd.slice(1).trim()
           if (s) ({ out, err, code } = await shell(s))
         } else {
-          const args = cmd.split(/\s+/).filter(Boolean)
+          const args = parseCommandLine(cmd)
           ;({ out, err, code } = await ctl(args))
           if (['service', 'sub', 'node', 'catalog'].includes(args[0])) {
             refresh()

@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -23,6 +24,7 @@ func runSubscription(ctx context.Context, args []string) error {
 		return fmt.Errorf("未知订阅操作 %q", args[0])
 	}
 	flags := newFlagSet("subscription update")
+	moduleDir := flags.String("module-dir", defaultModuleDir(), "模块根目录")
 	root := flags.String("root", "", "Catalog 根目录")
 	groupID := flags.String("group", "", "订阅分组 ID")
 	progressDir := flags.String("progress-dir", "", "订阅进度目录")
@@ -32,6 +34,15 @@ func runSubscription(ctx context.Context, args []string) error {
 	format := flags.String("format", "json", "输出格式")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
+	}
+	if strings.TrimSpace(*root) == "" {
+		*root = filepath.Join(*moduleDir, "data", "catalog")
+	}
+	if strings.TrimSpace(*progressDir) == "" {
+		*progressDir = os.Getenv("SUB_RUNTIME_DIR")
+		if *progressDir == "" {
+			*progressDir = "/dev/netproxy/subscriptions"
+		}
 	}
 	if strings.TrimSpace(*root) == "" || strings.TrimSpace(*groupID) == "" {
 		return errors.New("subscription update 需要 --root 和 --group")
@@ -72,6 +83,7 @@ func runSubscription(ctx context.Context, args []string) error {
 
 func runSubscriptionEdit(ctx context.Context, args []string) error {
 	flags := newFlagSet("subscription edit")
+	moduleDir := flags.String("module-dir", defaultModuleDir(), "模块根目录")
 	root := flags.String("root", "", "Catalog 根目录")
 	groupID := flags.String("group", "", "订阅分组 ID")
 	progressDir := flags.String("progress-dir", "", "订阅更新进度目录")
@@ -93,6 +105,15 @@ func runSubscriptionEdit(ctx context.Context, args []string) error {
 	format := flags.String("format", "json", "输出格式")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	if strings.TrimSpace(*root) == "" {
+		*root = filepath.Join(*moduleDir, "data", "catalog")
+	}
+	if strings.TrimSpace(*progressDir) == "" {
+		*progressDir = os.Getenv("SUB_RUNTIME_DIR")
+		if *progressDir == "" {
+			*progressDir = "/dev/netproxy/subscriptions"
+		}
 	}
 	if strings.TrimSpace(*root) == "" || strings.TrimSpace(*groupID) == "" {
 		return errors.New("subscription edit 需要 --root 和 --group")

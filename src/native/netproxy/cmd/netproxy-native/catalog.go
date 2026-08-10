@@ -22,6 +22,7 @@ func runCatalog(ctx context.Context, args []string) error {
 	}
 	action := args[0]
 	flags := newFlagSet("catalog " + action)
+	moduleDir := flags.String("module-dir", defaultModuleDir(), "模块根目录")
 	input := flags.String("input", "", "输入路径或内容")
 	value := flags.String("value", "", "元数据字段值")
 	root := flags.String("root", "", "Catalog 根目录")
@@ -55,6 +56,21 @@ func runCatalog(ctx context.Context, args []string) error {
 	format := flags.String("format", "json", "输出格式")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
+	}
+	if strings.TrimSpace(*root) == "" {
+		*root = filepath.Join(*moduleDir, "data", "catalog")
+	}
+	if strings.TrimSpace(*moduleConfig) == "" {
+		candidate := filepath.Join(*moduleDir, "config", "module.conf")
+		if _, err := os.Stat(candidate); err == nil {
+			*moduleConfig = candidate
+		}
+	}
+	if strings.TrimSpace(*progressDir) == "" {
+		*progressDir = os.Getenv("SUB_RUNTIME_DIR")
+		if *progressDir == "" {
+			*progressDir = "/dev/netproxy/subscriptions"
+		}
 	}
 	if action == "duration" {
 		seconds, err := subscription.DurationToSeconds(*value)

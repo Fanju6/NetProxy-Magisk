@@ -6,14 +6,14 @@ NetProxy 默认启用 sing-box 的 Clash API，并内置 zashboard 作为前端�
 
 来自 `config/singbox/confdir/02_experimental.json` 的默认值：
 
-- `external_controller`: `0.0.0.0:9999`
+- `external_controller`: `127.0.0.1:9999`
 - `secret`: `singbox`
 - `external_ui`: `/data/adb/modules/netproxy/bin/zashboard`
 
 ## 默认入口
 
-- Controller：`http://<设备IP>:9999`
-- UI：`http://<设备IP>:9999/ui`
+- Controller：`http://127.0.0.1:9999`
+- UI：`http://127.0.0.1:9999/ui`
 - Secret：`singbox`
 
 ## 能做什么
@@ -43,5 +43,5 @@ NetProxy 默认启用 sing-box 的 Clash API，并内置 zashboard 作为前端�
 
 ## 安全提醒
 
-默认控制器监听在 `0.0.0.0:9999`，适合可信局域网调试。  
-如果你的使用环境更复杂，建议按实际需求调整控制地址、密钥和可访问范围。
+默认控制器只监听 `127.0.0.1:9999`，仅供本机 zashboard 和管理器使用。
+如果确实需要局域网访问，请显式调整控制地址，并同步设置独立密钥和可访问范围。

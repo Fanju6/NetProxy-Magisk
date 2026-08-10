@@ -1,5 +1,7 @@
 export interface CompletionResult { completed: string; candidates: string[] }
 
+import { parseCommandTokens, quoteCommandToken } from './command'
+
 const GROUPS = ['service', 'catalog', 'node', 'sub', 'mode', 'network', 'app', 'logs', 'config', 'ebpf', 'help', 'clear', 'exit']
 const SUBS: Record<string, string[]> = {
   service: ['status', 'start', 'stop', 'restart', 'reload', 'check'],
@@ -32,10 +34,12 @@ function lcp(items: string[]): string {
 
 export function complete(input: string, knownGroups: string[] = [], knownSubs: string[] = []): CompletionResult {
   if (input.startsWith('!')) return { completed: input, candidates: [] }
-  const toks = input.split(/\s+/)
+  const parsed = parseCommandTokens(input)
+  const toks = parsed.map(token => token.value)
   const trailing = input.endsWith(' ')
-  const n = trailing ? toks.length : toks.length - 1
-  const cur = trailing ? '' : toks[toks.length - 1]
+  const n = trailing ? toks.length : Math.max(0, toks.length - 1)
+  const currentToken = trailing ? undefined : parsed[parsed.length - 1]
+  const cur = currentToken?.value || ''
   const all = [...knownGroups, ...knownSubs]
   let cands: string[] = []
 
@@ -64,6 +68,9 @@ export function complete(input: string, knownGroups: string[] = [], knownSubs: s
 
   if (!cands.length) return { completed: input, candidates: [] }
   const prefix = lcp(cands)
-  const base = input.slice(0, input.length - cur.length)
-  return { completed: cands.length === 1 ? cands[0] + ' ' : base + prefix, candidates: cands }
+  const base = currentToken ? input.slice(0, currentToken.start) : input
+  const completed = cands.length === 1
+    ? base + quoteCommandToken(cands[0]) + ' '
+    : base + quoteCommandToken(prefix)
+  return { completed, candidates: cands }
 }
