@@ -63,7 +63,7 @@ func NewOptions(moduleDir string) Options {
 		StateFile:      filepath.Join("/dev/netproxy", "service.json"),
 		ProgressDir:    "/dev/netproxy/subscriptions",
 		LogDir:         filepath.Join(moduleDir, "logs"),
-		ServiceScript:  filepath.Join(moduleDir, "scripts", "core", "service.sh"),
+		ServiceScript:  filepath.Join(moduleDir, "service.sh"),
 		ServiceAddress: "127.0.0.1:9090",
 		ServiceSecret:  "singbox",
 		WorkerPIDFile:  "/dev/netproxy/worker.pid",

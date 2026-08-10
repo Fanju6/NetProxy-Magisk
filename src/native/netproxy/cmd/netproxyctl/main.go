@@ -68,7 +68,7 @@ func newCLI() *cli {
 	return &cli{
 		moduleDir:      moduleDir,
 		nativePath:     nativePath,
-		serviceScript:  filepath.Join(moduleDir, "scripts", "core", "service.sh"),
+		serviceScript:  filepath.Join(moduleDir, "service.sh"),
 		catalogRoot:    filepath.Join(dataDir, "catalog"),
 		moduleConfig:   filepath.Join(configDir, "module.conf"),
 		ebpfConfig:     filepath.Join(configDir, "ebpf", "ebpf.conf"),

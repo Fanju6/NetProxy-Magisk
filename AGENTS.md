@@ -47,7 +47,7 @@
 模块运行时只保留以下 Shell：
 
 ```text
-src/module/scripts/core/service.sh
+src/module/service.sh
 ```
 
 以下旧业务脚本已从运行时删除，不得重新添加：`subscription.sh`、`subworker.sh`、`ebpf.sh`、`switch.sh`、`runtime.sh`、`utils/api.sh`、`utils/catalog.sh`、`utils/metadata.sh`、`network/tproxy.sh`、`utils/ipset.sh` 和 `core/subsched.sh`。`customize.sh` 中仍可保留一次性的旧 Worker/TPROXY 清理分支，但这些分支只用于安装时清理残留，不属于当前运行时兼容层。
@@ -56,7 +56,7 @@ src/module/scripts/core/service.sh
 
 - 运行时脚本面向 Android `/system/bin/sh`，只写 POSIX/mksh 可执行语法，不使用 Bash 数组、`[[ ]]`、进程替换或 Bash 专属选项。
 - 参数和路径始终双引号包裹；跨进程传递复杂数据时使用文件或 JSON，不使用 `eval` 拼装命令。
-- 公共业务能力统一放在 Go；Shell 只保留 `scripts/core/service.sh` 生命周期编排，不要在 `netproxyctl`、service 和 worker 中复制配置、Catalog 或 API 解析器。
+- 公共业务能力统一放在 Go；Shell 只保留根目录 `service.sh` 生命周期编排，不要在 `netproxyctl`、service 和 worker 中复制配置、Catalog 或 API 解析器。
 - 配置写入使用候选文件、校验和原子替换。订阅更新失败必须保留上一版有效 Provider。
 - 新增可执行文件时同步检查 `customize.sh` 权限列表和模块打包结果。
 

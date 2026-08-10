@@ -9,8 +9,8 @@
 readonly MODDIR="${0%/*}"
 
 # SIGTERM 关闭核心，由 eBPF 入站生命周期负责清理内核资源
-if [ -f "$MODDIR/scripts/core/service.sh" ]; then
-  sh "$MODDIR/scripts/core/service.sh" stop > /dev/null 2>&1 || true
+if [ -f "$MODDIR/service.sh" ]; then
+  sh "$MODDIR/service.sh" stop > /dev/null 2>&1 || true
 fi
 
 # 订阅 Worker 独立于代理核心运行，卸载时单独停止。

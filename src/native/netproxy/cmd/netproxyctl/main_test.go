@@ -14,7 +14,7 @@ func TestModuleArgsKeepsOperationBeforeFlags(t *testing.T) {
 		ebpfConfig:     "/module/config/ebpf/ebpf.conf",
 		singBoxPath:    "/module/bin/sing-box",
 		singBoxDir:     "/module/config/singbox",
-		serviceScript:  "/module/scripts/core/service.sh",
+		serviceScript:  "/module/service.sh",
 		serviceAddress: "127.0.0.1:9090",
 		serviceSecret:  "singbox",
 		logDir:         "/module/logs",

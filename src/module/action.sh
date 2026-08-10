@@ -4,12 +4,12 @@
 # 功能: 模块管理器中的操作按钮入口，根据 sing-box 当前运行状态
 #       一键切换：运行中则停止，未运行则启动。
 # 用法: 由 Magisk/KernelSU/APatch 管理器点击模块操作按钮时调用。
-# 依赖: scripts/core/service.sh
+# 依赖: service.sh
 #######################################
 
 # 模块根目录与关键路径
 readonly MODDIR="${0%/*}"                                  # 模块根目录 (脚本所在目录)
-readonly SERVICE_SCRIPT="$MODDIR/scripts/core/service.sh"  # 服务管理脚本
+readonly SERVICE_SCRIPT="$MODDIR/service.sh"               # 服务管理脚本
 readonly LOG_FILE="$MODDIR/logs/service.log"               # 服务日志
 readonly SING_BOX_BIN="$MODDIR/bin/sing-box"               # sing-box 二进制
 readonly LOG_TAG="action"                                  # 日志组件标签

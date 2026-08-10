@@ -33,6 +33,7 @@ check_removed_scripts() {
     "$MODULE_DIR/scripts/utils/api.sh" \
     "$MODULE_DIR/scripts/utils/catalog.sh" \
     "$MODULE_DIR/scripts/utils/metadata.sh" \
+    "$MODULE_DIR/scripts/core/service.sh" \
     "$MODULE_DIR/scripts/network/netmon.sh" \
     "$MODULE_DIR/scripts/network/tproxy.sh"; do
     if [ -e "$script" ]; then
