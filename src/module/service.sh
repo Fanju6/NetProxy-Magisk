@@ -24,9 +24,6 @@ readonly KILL_TIMEOUT=10
 readonly SERVICE_LOCK_DIR="/dev/netproxy/service.lock"
 
 export PATH="$MODDIR/bin:$PATH"
-NL='
-'
-TAB="$(printf '\t')"
 readonly SERVICE_STATE_FILE="$SERVICE_STATE_DIR/service.json"
 
 log_level_value() {
@@ -107,16 +104,15 @@ lock_write_owner() {
 lock_owner_alive() {
   local lock_dir="$1" pid owner_start current_start
   pid="$(sed -n '1p' "$lock_dir/pid" 2> /dev/null || true)"
+  case "$pid" in
+    "" | *[!0-9]*) return 1 ;;
+  esac
+  kill -0 "$pid" 2> /dev/null || return 1
+
   owner_start="$(sed -n '1p' "$lock_dir/start" 2> /dev/null || true)"
   current_start="$(awk '{print $22}' "/proc/$pid/stat" 2> /dev/null || true)"
-  [ -n "$pid" ] && [ -n "$owner_start" ] && [ "$owner_start" = "$current_start" ] && kill -0 "$pid" 2> /dev/null
+  [ -z "$owner_start" ] || [ -z "$current_start" ] || [ "$owner_start" = "$current_start" ]
 }
-
-SERVICE_STATE_VALUE="stopped"
-SERVICE_STATE_PID_VALUE=0
-SERVICE_STATE_STARTED_AT_VALUE=0
-SERVICE_STATE_READY_AT_VALUE=0
-SERVICE_STATE_ERROR_VALUE=""
 
 write_service_state() {
   local status="$1" pid="${2:-0}" started_at="${3:-0}" ready_at="${4:-0}" error_message="${5:-}"
@@ -203,26 +199,24 @@ unix_millis_to_seconds() {
 #######################################
 build_runtime_catalog() {
   local mode="${1:-strict}"
-  if [ "$mode" = "allow-empty" ]; then
-    "$NETPROXY_NATIVE_BIN" module prepare \
+  case "$mode" in
+    strict) set -- ;;
+    allow-empty) set -- --allow-empty ;;
+    *)
+      SERVICE_STATE_ERROR="未知的运行时配置模式: $mode"
+      return 1
+      ;;
+  esac
+
+  # 函数位置参数仅承载可选开关，不影响服务入口参数。
+  if ! "$NETPROXY_NATIVE_BIN" module prepare \
       --module-dir "$MODDIR" \
       --catalog-root "$CATALOG_DIR" \
       --module-config "$MODULE_CONF" \
       --ebpf-config "$EBPF_CONF" \
       --singbox-dir "$SINGBOX_DIR" \
       --runtime-dir "${RUNTIME_PROVIDERS_FILE%/*}" \
-      --allow-empty > /dev/null || {
-        SERVICE_STATE_ERROR="运行时配置生成失败"
-        return 1
-      }
-  elif ! "$NETPROXY_NATIVE_BIN" module prepare \
-      --module-dir "$MODDIR" \
-      --catalog-root "$CATALOG_DIR" \
-      --module-config "$MODULE_CONF" \
-      --ebpf-config "$EBPF_CONF" \
-      --singbox-dir "$SINGBOX_DIR" \
-      --runtime-dir "${RUNTIME_PROVIDERS_FILE%/*}" \
-      > /dev/null; then
+      "$@" > /dev/null; then
     SERVICE_STATE_ERROR="运行时配置生成失败"
     return 1
   fi
@@ -241,7 +235,7 @@ build_runtime_catalog() {
 # 返回: 成功返回 0，已有操作执行时返回 1
 #######################################
 acquire_service_lock() {
-  local action="$1"
+  local action="$1" stale_lock
 
   mkdir -p "${SERVICE_LOCK_DIR%/*}" || return 1
   if mkdir "$SERVICE_LOCK_DIR" 2> /dev/null; then
@@ -251,14 +245,19 @@ acquire_service_lock() {
     return 0
   fi
 
-  # 持有者已消失则接管残锁
+  # 原子移走残锁，避免并发操作删除新持有者刚创建的锁。
   if ! lock_owner_alive "$SERVICE_LOCK_DIR"; then
-    rm -rf "$SERVICE_LOCK_DIR" 2> /dev/null || return 1
-    mkdir "$SERVICE_LOCK_DIR" 2> /dev/null || return 1
-    lock_write_owner "$SERVICE_LOCK_DIR"
-    printf '%s\n' "$action" > "$SERVICE_LOCK_DIR/action"
-    SERVICE_LOCK_HELD=1
-    return 0
+    stale_lock="${SERVICE_LOCK_DIR}.stale.$$"
+    rm -rf "$stale_lock" 2> /dev/null || return 1
+    if mv "$SERVICE_LOCK_DIR" "$stale_lock" 2> /dev/null; then
+      rm -rf "$stale_lock" 2> /dev/null || true
+      if mkdir "$SERVICE_LOCK_DIR" 2> /dev/null; then
+        lock_write_owner "$SERVICE_LOCK_DIR"
+        printf '%s\n' "$action" > "$SERVICE_LOCK_DIR/action"
+        SERVICE_LOCK_HELD=1
+        return 0
+      fi
+    fi
   fi
 
   log "WARN" "已有服务操作正在执行: $(sed -n '1p' "$SERVICE_LOCK_DIR/action" 2> /dev/null || printf 'unknown')"
@@ -329,15 +328,6 @@ cleanup_runtime_files() {
     "$RUNTIME_DIR/outbounds.json" \
     "$RUNTIME_DIR/ebpf.json" \
     2> /dev/null || true
-}
-
-#######################################
-# 生成完整运行时配置
-# 参数: 无
-# 返回: 成功返回 0，失败则退出
-#######################################
-build_runtime_configuration() {
-  build_runtime_catalog
 }
 
 #######################################
@@ -477,7 +467,7 @@ do_start() {
 
   write_service_state preparing 0 0 0 ""
   SERVICE_STATE_ERROR="运行时配置生成失败"
-  build_runtime_configuration || return 1
+  build_runtime_catalog || return 1
   log "INFO" "运行时配置准备完成"
 
   SERVICE_STATE_ERROR="sing-box 进程启动失败"
@@ -581,7 +571,7 @@ do_reload() {
   esac
   SERVICE_STATE_STARTED_AT="$started_seconds"
   SERVICE_STATE_ERROR="重新加载配置生成或校验失败"
-  build_runtime_configuration || return 1
+  build_runtime_catalog || return 1
   check_runtime_configuration >> "$SINGBOX_LOG_FILE" 2>&1 \
     || { log "ERROR" "$SERVICE_STATE_ERROR"; return 1; }
 
