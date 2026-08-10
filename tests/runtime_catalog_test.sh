@@ -48,7 +48,7 @@ set_conf_values() {
 }
 
 prepare_runtime() {
-  "$NETPROXY_NATIVE_BIN" module prepare     --module-dir "$MODDIR" --catalog-root "$CATALOG_DIR"     --module-config "$MODULE_CONF" --ebpf-config "$EBPF_CONF"     --singbox-dir "$SINGBOX_DIR" --runtime-dir "$RUNTIME_DIR" > /dev/null
+  "$NETPROXY_NATIVE_BIN" module prepare     --module-dir "$MODDIR" --catalog-root "$CATALOG_DIR"     --module-config "$MODULE_CONF" --ebpf-config "$EBPF_CONF"     --singbox-dir "$SINGBOX_DIR" --runtime-dir "$RUNTIME_DIR"     --state-file "$TMP_ROOT/dev/netproxy/service.json" > /dev/null
 }
 
 json_contains() {
