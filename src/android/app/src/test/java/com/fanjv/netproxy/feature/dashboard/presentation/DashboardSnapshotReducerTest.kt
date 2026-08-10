@@ -55,6 +55,20 @@ class DashboardSnapshotReducerTest {
         assertEquals(1, restarted.uptimeSeconds)
     }
 
+    @Test
+    fun `shows the effective runtime outbound mode`() {
+        val reducer = DashboardSnapshotReducer(totalMemoryBytes = 1)
+
+        val state = reducer.reduce(
+            CatalogDashboardUiState(),
+            service(outboundMode = "direct", configuredOutboundMode = "rule"),
+            1_000,
+            "--"
+        )
+
+        assertEquals("direct", state.outboundMode)
+    }
+
     private fun service(
         pid: Int = 10,
         readyAt: Long = 1,
@@ -62,7 +76,9 @@ class DashboardSnapshotReducerTest {
         upload: Long = 0,
         processTicks: Long = 10,
         systemTicks: Long = 100,
-        memory: Long = 0
+        memory: Long = 0,
+        outboundMode: String = "rule",
+        configuredOutboundMode: String = outboundMode
     ) = ServiceStatusSnapshot(
         state = "ready",
         pid = pid,
@@ -73,6 +89,8 @@ class DashboardSnapshotReducerTest {
         systemCpuTicks = systemTicks,
         cpuCount = 2,
         memoryBytes = memory,
-        activeGroupNodeCount = 1
+        activeGroupNodeCount = 1,
+        outboundMode = outboundMode,
+        configuredOutboundMode = configuredOutboundMode
     )
 }

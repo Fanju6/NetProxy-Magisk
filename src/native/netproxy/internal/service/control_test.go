@@ -43,7 +43,8 @@ func TestReadStatusWithoutService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.State != "stopped" || status.OutboundMode != "global" || status.ActiveGroupID != "default" {
+	if status.State != "stopped" || status.OutboundMode != "global" ||
+		status.ConfiguredOutboundMode != "global" || status.ActiveGroupID != "default" {
 		t.Fatalf("unexpected status: %#v", status)
 	}
 	if status.PID != nil || status.SubscriptionWorker != "stopped" {
