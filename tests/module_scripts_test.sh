@@ -31,6 +31,15 @@ check_service_bridge() {
 }
 
 #######################################
+# 确认管理器操作按钮不在 Shell 中推断服务状态
+#######################################
+check_action_bridge() {
+  grep -q 'service toggle' "$MODULE_DIR/action.sh"
+  ! grep -q 'pidof\|is_sing_box_running' "$MODULE_DIR/action.sh"
+  ! grep -q 'grep.*schema\|grep.*json' "$MODULE_DIR/action.sh"
+}
+
+#######################################
 # 确认运行时 Shell 保持在根目录桥接层
 #######################################
 check_runtime_scripts() {
@@ -41,6 +50,13 @@ check_runtime_scripts() {
     printf '%s\n' '运行时业务 Shell 应通过 Go 组件提供' >&2
     return 1
   fi
+}
+
+#######################################
+# 确认模块脚本使用 Android mksh 可执行的 POSIX 读取语法
+#######################################
+check_mksh_compatible_helpers() {
+  ! grep -q -- '-print0\|read -r -d' "$MODULE_DIR/customize.sh"
 }
 
 #######################################
@@ -74,7 +90,7 @@ check_install_choices() {
   grep -q 'get_installed_manager_version' "$MODULE_DIR/customize.sh"
   grep -q 'dumpsys package' "$MODULE_DIR/customize.sh"
   ! grep -q 'am start -a android.intent.action.VIEW' "$MODULE_DIR/customize.sh"
-  grep -q 'key=$(getevent -lqc 1' "$MODULE_DIR/customize.sh"
+  grep -q 'getevent -lqc 1 > "\$event_file"' "$MODULE_DIR/customize.sh"
 }
 
 #######################################
@@ -89,7 +105,9 @@ check_install_order() {
 
 check_shell_syntax
 check_service_bridge
+check_action_bridge
 check_runtime_scripts
+check_mksh_compatible_helpers
 check_worker_lifecycle
 check_install_choices
 check_install_order

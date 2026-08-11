@@ -105,18 +105,20 @@ set_perm() {
 # 递归设置目录的属主、权限与上下文
 # 参数:
 #   $1 目录  $2 属主  $3 属组  $4 目录权限  $5 文件权限  $6 上下文 (可选)
-# 返回: 无
+# 返回: 0=完成，1=任一项设置失败。
 #######################################
 set_perm_recursive() {
   # 先设置所有子目录权限
-  find "$1" -type d -print0 2>/dev/null | while IFS= read -r -d '' dir; do
-    set_perm "$dir" "$2" "$3" "$4" "$6"
-  done
+  # 模块路径由安装包控制，不包含换行；使用 POSIX read，兼容 Android mksh。
+  find "$1" -type d -print 2>/dev/null | while IFS= read -r dir; do
+    set_perm "$dir" "$2" "$3" "$4" "$6" || exit 1
+  done || return 1
 
   # 再设置所有文件与符号链接权限
-  find "$1" \( -type f -o -type l \) -print0 2>/dev/null | while IFS= read -r -d '' file; do
-    set_perm "$file" "$2" "$3" "$5" "$6"
-  done
+  find "$1" \( -type f -o -type l \) -print 2>/dev/null | while IFS= read -r file; do
+    set_perm "$file" "$2" "$3" "$5" "$6" || exit 1
+  done || return 1
+  return 0
 }
 
 ################################################################################
@@ -163,6 +165,28 @@ choose_install_mode() {
 }
 
 #######################################
+# 复制持久 Catalog 状态，忽略事务 staging 目录。
+# 参数: $1 源 Catalog 目录  $2 目标 Catalog 目录
+# 返回: 0=成功，1=复制失败。
+#######################################
+copy_catalog_state() {
+  local source_dir="$1"
+  local target_dir="$2"
+  local group_dir
+
+  [ -d "$source_dir" ] || return 1
+  rm -rf "$target_dir" 2> /dev/null || return 1
+  mkdir -p "$target_dir" || return 1
+
+  for group_dir in "$source_dir"/*; do
+    [ -e "$group_dir" ] || continue
+    [ "$(basename "$group_dir")" = staging ] && continue
+    cp -r "$group_dir" "$target_dir/" 2> /dev/null || return 1
+  done
+  return 0
+}
+
+#######################################
 # 备份现有配置到临时目录
 # 参数: 无
 # 全局: 读取 INSTALL_MODE / CONFIG_DIR / PRESERVE_CONFIGS / BACKUP_DIR
@@ -170,16 +194,22 @@ choose_install_mode() {
 #######################################
 backup_catalog_data() {
   [ -d "$DATA_DIR/catalog" ] || return 0
-  mkdir -p "$BACKUP_DIR/data"
-  rm -rf "$BACKUP_DIR/data/catalog" 2> /dev/null || true
-  cp -r "$DATA_DIR/catalog" "$BACKUP_DIR/data/catalog" 2> /dev/null || print_warn "Catalog 数据备份失败"
+  mkdir -p "$BACKUP_DIR/data" || return 1
+  if copy_catalog_state "$DATA_DIR/catalog" "$BACKUP_DIR/data/catalog"; then
+    return 0
+  fi
+  print_error "Catalog 数据备份失败"
+  return 1
 }
 
 restore_catalog_data() {
   [ -d "$BACKUP_DIR/data/catalog" ] || return 0
-  mkdir -p "$MODPATH/data"
-  rm -rf "$MODPATH/data/catalog" 2> /dev/null || true
-  cp -r "$BACKUP_DIR/data/catalog" "$MODPATH/data/catalog" 2> /dev/null || print_warn "Catalog 数据恢复失败"
+  mkdir -p "$MODPATH/data" || return 1
+  if copy_catalog_state "$BACKUP_DIR/data/catalog" "$MODPATH/data/catalog"; then
+    return 0
+  fi
+  print_error "Catalog 数据恢复失败"
+  return 1
 }
 
 backup_config() {
@@ -190,8 +220,8 @@ backup_config() {
 
   print_step "备份现有用户数据..."
 
-  backup_catalog_data
-  mkdir -p "$BACKUP_DIR"
+  mkdir -p "$BACKUP_DIR" || return 1
+  backup_catalog_data || return 1
 
   # 逐项备份需保留的配置
   local config_item
@@ -204,7 +234,8 @@ backup_config() {
       if cp -r "$src" "$dst" 2> /dev/null; then
         print_ok "已备份: $config_item"
       else
-        print_warn "备份失败: $config_item"
+        print_error "备份失败: $config_item"
+        return 1
       fi
     fi
   done
@@ -239,7 +270,7 @@ extract_module() {
 #######################################
 restore_config() {
   [ "$INSTALL_MODE" = "preserve" ] || return 0
-  restore_catalog_data
+  restore_catalog_data || return 1
 
   # 无备份则跳过
   if ! dir_not_empty "$BACKUP_DIR"; then
@@ -263,7 +294,8 @@ restore_config() {
       if cp -r "$src" "$dst" 2> /dev/null; then
         print_ok "已恢复: $config_item"
       else
-        print_warn "恢复失败: $config_item"
+        print_error "恢复失败: $config_item"
+        return 1
       fi
     fi
   done
@@ -316,20 +348,25 @@ stop_proxy_if_running() {
     return 0
   fi
 
-  # 通过 Worker PID 文件停止订阅调度，不按进程名误杀其他实例。
+  # 检测当前 sing-box 进程。
+  if pidof -s "$LIVE_DIR/bin/sing-box" > /dev/null 2>&1; then
+    PROXY_WAS_RUNNING=true
+    print_step "检测到代理服务正在运行，停止服务..."
+    if "$LIVE_DIR/netproxyctl" service stop > /dev/null 2>&1; then
+      print_ok "服务已停止"
+    else
+      print_error "服务停止失败，取消本次安装"
+      PROXY_WAS_RUNNING=false
+      return 1
+    fi
+  fi
+
+  # 通过 Worker PID 文件停止后台调度，不按进程名误杀其他实例。
   if [ -x "$LIVE_DIR/bin/netproxy-native" ]; then
     "$LIVE_DIR/bin/netproxy-native" worker stop \
       --module-dir "$LIVE_DIR" > /dev/null 2>&1 || true
   fi
   cleanup_worker_state
-
-  # 检测当前 sing-box 进程。
-  if pidof -s "$LIVE_DIR/bin/sing-box" > /dev/null 2>&1; then
-    PROXY_WAS_RUNNING=true
-    print_step "检测到代理服务正在运行，停止服务..."
-    "$LIVE_DIR/netproxyctl" service stop > /dev/null 2>&1
-    print_ok "服务已停止"
-  fi
 
   return 0
 }
@@ -419,6 +456,26 @@ copy_persistent_entry() {
 }
 
 #######################################
+# 复制持久 Catalog 状态，忽略事务 staging 目录。
+# 参数: $1 源 Catalog 目录  $2 目标 Catalog 目录
+# 返回: 0=成功，1=复制失败。
+#######################################
+copy_catalog_state() {
+  source_dir="$1"
+  target_dir="$2"
+  [ -d "$source_dir" ] || return 1
+  rm -rf "$target_dir" 2> /dev/null || return 1
+  mkdir -p "$target_dir" || return 1
+
+  for group_dir in "$source_dir"/*; do
+    [ -e "$group_dir" ] || continue
+    [ "$(basename "$group_dir")" = staging ] && continue
+    cp -r "$group_dir" "$target_dir/" 2> /dev/null || return 1
+  done
+  return 0
+}
+
+#######################################
 # 合并 live 目录在安装期间新增的用户状态。
 # 参数: 无
 # 返回: 0=成功或全新安装跳过，1=任一项复制失败。
@@ -426,7 +483,9 @@ copy_persistent_entry() {
 merge_live_state() {
   [ "$install_mode" = "preserve" ] || return 0
   [ -d "$live_dir" ] || return 0
-  copy_persistent_entry "$live_dir/data/catalog" "$stage_dir/data/catalog" || return 1
+  if [ -d "$live_dir/data/catalog" ]; then
+    copy_catalog_state "$live_dir/data/catalog" "$stage_dir/data/catalog" || return 1
+  fi
 
   for config_item in \
     module.conf \
@@ -530,23 +589,23 @@ set_permissions() {
   print_step "设置文件权限..."
 
   # 先设置默认权限，再单独放开真正需要执行的入口。
-  set_perm_recursive "$MODPATH" 0 0 0755 0644
+  set_perm_recursive "$MODPATH" 0 0 0755 0644 || return 1
 
   local file
   for file in $EXECUTABLE_FILES; do
     local path="$MODPATH/$file"
     if [ -e "$path" ]; then
-      chmod 0755 "$path" 2> /dev/null
+      chmod 0755 "$path" 2> /dev/null || return 1
     fi
   done
 
   # 用户配置与 Catalog 包含节点凭据、订阅地址和应用名单，仅允许 root 读取。
-  [ ! -f "$MODPATH/config/module.conf" ] || chmod 0600 "$MODPATH/config/module.conf" 2> /dev/null
-  [ ! -f "$MODPATH/config/ebpf/ebpf.conf" ] || chmod 0600 "$MODPATH/config/ebpf/ebpf.conf" 2> /dev/null
+  [ ! -f "$MODPATH/config/module.conf" ] || chmod 0600 "$MODPATH/config/module.conf" 2> /dev/null || return 1
+  [ ! -f "$MODPATH/config/ebpf/ebpf.conf" ] || chmod 0600 "$MODPATH/config/ebpf/ebpf.conf" 2> /dev/null || return 1
   [ ! -d "$MODPATH/data/catalog" ] \
-    || set_perm_recursive "$MODPATH/data/catalog" 0 0 0700 0600
+    || set_perm_recursive "$MODPATH/data/catalog" 0 0 0700 0600 || return 1
   [ ! -d "$MODPATH/runtime" ] \
-    || set_perm_recursive "$MODPATH/runtime" 0 0 0700 0600
+    || set_perm_recursive "$MODPATH/runtime" 0 0 0700 0600 || return 1
 
   print_ok "权限设置完成"
   return 0
@@ -560,11 +619,21 @@ set_permissions() {
 #######################################
 wait_volume_key() {
   local timeout="${1:-10}"
-  local key
+  local key event_file event_pid
 
-  # 每秒轮询一次按键事件，捕获到音量键即返回
+  event_file="${TMPDIR:-/data/local/tmp}/netproxy_volume_key.$$"
+
+  # 每秒轮询一次按键事件，避免无按键时被 getevent 无限阻塞。
   while [ "$timeout" -gt 0 ]; do
-    key=$(getevent -lqc 1 2> /dev/null | grep -E "KEY_VOLUME(UP|DOWN)" | head -1)
+    : > "$event_file" || break
+    getevent -lqc 1 > "$event_file" 2> /dev/null &
+    event_pid=$!
+    sleep 1
+    key=$(cat "$event_file" 2> /dev/null)
+    kill "$event_pid" 2> /dev/null || true
+    wait "$event_pid" 2> /dev/null || true
+    rm -f "$event_file"
+    key=$(printf '%s\n' "$key" | grep -E "KEY_VOLUME(UP|DOWN)" | head -1)
 
     if echo "$key" | grep -q "VOLUMEUP"; then
       printf "up\n"
@@ -574,7 +643,6 @@ wait_volume_key() {
       return 0
     fi
 
-    sleep 1
     timeout=$((timeout - 1))
   done
 
@@ -668,8 +736,12 @@ ui_print "  版本: $(grep_prop version "$TMPDIR/module.prop" 2> /dev/null || ec
 
 # 先停止旧服务，再替换模块文件，避免运行中的进程继续使用旧文件。
 choose_install_mode
-if [ "${BOOTMODE:-false}" = true ]; then
-  stop_proxy_if_running
+if [ "${BOOTMODE:-false}" = true ] && ! stop_proxy_if_running; then
+  print_title "安装失败"
+  ui_print ""
+  ui_print "  旧服务未能安全停止，已取消模块替换"
+  ui_print ""
+  exit 1
 fi
 
 # 按顺序执行安装步骤，任一失败则进入失败分支

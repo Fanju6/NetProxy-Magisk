@@ -29,7 +29,7 @@ extract_worker() {
 }
 
 write_stage_module() {
-  mkdir -p "$STAGE/bin" "$STAGE/config/ebpf" "$STAGE/data/catalog/default"
+  mkdir -p "$STAGE/bin" "$STAGE/config/ebpf" "$STAGE/data/catalog/default" "$STAGE/data/catalog/staging"
   printf '%s\n' 'id=netproxy' 'version=test-new' > "$STAGE/module.prop"
   : > "$STAGE/netproxyctl"
   : > "$STAGE/bin/netproxy-native"
@@ -37,14 +37,16 @@ write_stage_module() {
   printf '%s\n' 'OUTBOUND_MODE=rule' > "$STAGE/config/module.conf"
   printf '%s\n' 'EBPF_DNS_MODE=off' > "$STAGE/config/ebpf/ebpf.conf"
   printf '%s\n' 'stage-provider' > "$STAGE/data/catalog/default/provider.json"
+  printf '%s\n' 'stage-temporary' > "$STAGE/data/catalog/staging/download.tmp"
 }
 
 write_live_module() {
-  mkdir -p "$LIVE/config/ebpf" "$LIVE/data/catalog/default"
+  mkdir -p "$LIVE/config/ebpf" "$LIVE/data/catalog/default" "$LIVE/data/catalog/staging"
   printf '%s\n' 'id=netproxy' 'version=test-old' > "$LIVE/module.prop"
   printf '%s\n' 'OUTBOUND_MODE=global' > "$LIVE/config/module.conf"
   printf '%s\n' 'EBPF_DNS_MODE=hijack' > "$LIVE/config/ebpf/ebpf.conf"
   printf '%s\n' 'live-provider' > "$LIVE/data/catalog/default/provider.json"
+  printf '%s\n' 'live-temporary' > "$LIVE/data/catalog/staging/download.tmp"
   : > "$LIVE/update"
 }
 
@@ -73,6 +75,7 @@ test_hot_commit_preserves_latest_state() {
   assert_file_contains "$LIVE/config/module.conf" 'OUTBOUND_MODE=global'
   assert_file_contains "$LIVE/config/ebpf/ebpf.conf" 'EBPF_DNS_MODE=hijack'
   assert_file_contains "$LIVE/data/catalog/default/provider.json" 'live-provider'
+  [ ! -e "$LIVE/data/catalog/staging/download.tmp" ]
 }
 
 test_invalid_stage_keeps_kernel_su_fallback() {
