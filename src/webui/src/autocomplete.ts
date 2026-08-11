@@ -57,7 +57,7 @@ export function complete(input: string, knownGroups: string[] = [], knownSubs: s
     } else if (cmd === 'sub' && SUB_OPS.includes(sub) && n === 2) {
       cands = knownSubs.filter(c => c.startsWith(cur))
     } else if (cmd === 'catalog' && sub === 'show' && n === 2) {
-      cands = knownSubs.filter(c => c.startsWith(cur))
+      cands = knownGroups.filter(c => c.startsWith(cur))
     } else if (cmd === 'node' && NODE_OPS.includes(sub) && n === 2) {
       cands = all.filter(c => c.startsWith(cur))
     } else {
