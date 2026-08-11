@@ -279,7 +279,7 @@ restore_config() {
 cleanup_worker_state() {
   [ -d /dev/netproxy ] || return 0
 
-  # PID 文件名统一以 worker.pid 结尾，升级时可覆盖旧文件名而不保留旧命令入口。
+  # 统一处理 /dev/netproxy 下的 Worker PID 文件，避免状态残留。
   for pid_file in /dev/netproxy/*worker.pid; do
     [ -f "$pid_file" ] || continue
     pid="$(cat "$pid_file" 2> /dev/null || true)"

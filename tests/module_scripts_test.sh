@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # 文件: tests/module_scripts_test.sh
-# 功能: 检查模块保留脚本的 POSIX 语法和已删除业务脚本的文件边界
+# 功能: 检查模块 Shell 的 POSIX 语法和运行时桥接边界
 # 用法: sh tests/module_scripts_test.sh
 # 依赖: POSIX sh、find、sort
 
@@ -31,27 +31,16 @@ check_service_bridge() {
 }
 
 #######################################
-# 确认已删除的旧业务脚本没有重新进入模块
+# 确认运行时 Shell 保持在根目录桥接层
 #######################################
-check_removed_scripts() {
-  for script in \
-    "$MODULE_DIR/scripts/utils/common.sh" \
-    "$MODULE_DIR/scripts/utils/state.sh" \
-    "$MODULE_DIR/scripts/core/subscription.sh" \
-    "$MODULE_DIR/scripts/core/ebpf.sh" \
-    "$MODULE_DIR/scripts/core/switch.sh" \
-    "$MODULE_DIR/scripts/core/runtime.sh" \
-    "$MODULE_DIR/scripts/utils/api.sh" \
-    "$MODULE_DIR/scripts/utils/catalog.sh" \
-    "$MODULE_DIR/scripts/utils/metadata.sh" \
-    "$MODULE_DIR/scripts/core/service.sh" \
-    "$MODULE_DIR/scripts/network/netmon.sh" \
-    "$MODULE_DIR/scripts/network/tproxy.sh"; do
-    if [ -e "$script" ]; then
-      printf '%s\n' "旧业务脚本仍存在: $script" >&2
-      return 1
-    fi
-  done
+check_runtime_scripts() {
+  [ -f "$MODULE_DIR/service.sh" ] || return 1
+  if [ -d "$MODULE_DIR/scripts" ] \
+    && find "$MODULE_DIR/scripts" -type f -name '*.sh' -print \
+      | grep -q .; then
+    printf '%s\n' '运行时业务 Shell 应通过 Go 组件提供' >&2
+    return 1
+  fi
 }
 
 #######################################
@@ -90,7 +79,7 @@ check_install_choices() {
 
 check_shell_syntax
 check_service_bridge
-check_removed_scripts
+check_runtime_scripts
 check_worker_lifecycle
 check_install_choices
 printf '%s\n' 'module scripts test passed'

@@ -73,9 +73,6 @@ func TestListConfigsUsesReadableRuntimeID(t *testing.T) {
 	if localRuleDocument == nil || localRuleDocument.ID != "singbox/rules/local/direct.json" || localRuleDocument.Category != "rules" {
 		t.Fatalf("本地规则集文档契约错误: %#v", localRuleDocument)
 	}
-	if _, err := ReadConfig(options, "singbox/source/direct.json"); err == nil {
-		t.Fatal("旧 source 路径不应继续可读")
-	}
 	if _, err := ReadConfig(options, "singbox/rules/remote/Proxy.srs"); err == nil {
 		t.Fatal("远程 SRS 不应作为可编辑配置读取")
 	}

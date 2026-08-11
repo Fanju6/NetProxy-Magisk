@@ -78,7 +78,7 @@ result="$(sh "$MODULE/netproxyctl" --json app add com.android.chrome)"
 run_json "$result"
 grep -q '^BYPASS_APPS_LIST="com.android.chrome"$' "$MODULE/config/ebpf/ebpf.conf"
 if result="$(sh "$MODULE/netproxyctl" --json app add 0:com.android.chrome 2> /dev/null)"; then
-  printf '%s\n' 'legacy user:package syntax should fail' >&2
+  printf '%s\n' 'user:package syntax should fail' >&2
   exit 1
 fi
 printf '%s' "$result" | grep -q '"code":"app.package_invalid"'

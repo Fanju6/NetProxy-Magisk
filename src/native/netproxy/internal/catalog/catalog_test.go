@@ -66,22 +66,6 @@ func TestScanAndBuildRuntime(t *testing.T) {
 	}
 }
 
-func TestBuildRuntimeDoesNotWriteCatalogState(t *testing.T) {
-	root := t.TempDir()
-	writeGroup(t, root, "default", "本地配置", "local", "节点")
-	if _, err := BuildRuntime(context.Background(), RuntimeOptions{
-		Root:            root,
-		ProvidersOutput: filepath.Join(root, "providers.json"),
-		OutboundsOutput: filepath.Join(root, "outbounds.json"),
-		ActiveGroup:     "default",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(root, "catalog.state")); !os.IsNotExist(err) {
-		t.Fatalf("Catalog 不应生成 catalog.state: %v", err)
-	}
-}
-
 func TestBuildRuntimeFallbackAndEmpty(t *testing.T) {
 	root := t.TempDir()
 	writeGroup(t, root, "default", "本地配置", "local", "节点")

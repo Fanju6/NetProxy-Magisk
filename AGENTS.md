@@ -16,7 +16,7 @@
 
 `src/module/` 与设备上的 `/data/adb/modules/netproxy/` 1:1 对应，改脚本即改部署布局。
 
-不要恢复 8.0 已废弃的旧节点目录、`CURRENT_CONFIG`、`_meta.json`、TPROXY/iptables/IPSET 数据面或旧 CLI——8.0 起透明代理入站只有 eBPF 一条数据面。除非任务明确要求，不为旧版配置增加迁移和兼容分支。
+8.0 起透明代理入站使用 eBPF，Catalog 是节点与订阅的持久事实源。
 
 ## 核心契约
 
@@ -50,8 +50,6 @@
 ```text
 src/module/service.sh
 ```
-
-以下旧业务脚本已从运行时删除，不得重新添加：`subscription.sh`、`ebpf.sh`、`switch.sh`、`runtime.sh`、`utils/api.sh`、`utils/catalog.sh`、`utils/metadata.sh`、`network/tproxy.sh`、`utils/ipset.sh` 和 `core/subsched.sh`。`customize.sh` 中仍可保留一次性的 Worker/TPROXY 资源清理分支，但这些分支只用于安装时清理残留，不属于当前运行时兼容层。
 
 ## Shell 约定
 
