@@ -64,7 +64,9 @@ check_worker_lifecycle() {
   grep -q -- '--module-dir' "$MODULE_DIR/customize.sh"
   grep -q 'subworker stop' "$MODULE_DIR/uninstall.sh"
   grep -q -- '--module-dir' "$MODULE_DIR/uninstall.sh"
-  grep -q 'webroot' "$MODULE_DIR/customize.sh"
+  ! grep -q 'sync_to_live\|restart_proxy_if_needed' "$MODULE_DIR/customize.sh"
+  grep -q 'schedule_hot_update' "$MODULE_DIR/customize.sh"
+  grep -q 'NETPROXY_HOT_UPDATE_WORKER_BEGIN' "$MODULE_DIR/customize.sh"
 }
 
 check_shell_syntax

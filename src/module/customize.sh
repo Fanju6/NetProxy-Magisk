@@ -2,8 +2,8 @@
 #######################################
 # 文件: customize.sh
 # 功能: NetProxy 模块安装脚本，由 Magisk/KernelSU/APatch 在刷入模块时执行：
-#       备份/恢复配置、解压模块、清理旧数据面、同步到运行时目录、
-#       设置权限，并按需安装配套应用。
+#       备份/恢复用户状态、解压和校验新模块；在已开机环境中等待管理器
+#       写入更新标记后，以原子目录切换立即应用更新，无需重启设备。
 # 用法: 由管理器在安装模块时自动调用 (SKIPUNZIP=1 表示自行解压)。
 # 说明: 运行于管理器提供的 busybox 环境，依赖 ui_print/grep_prop 等管理器函数。
 #######################################
@@ -259,72 +259,180 @@ stop_proxy_if_running() {
 }
 
 #######################################
-# 同步新文件到运行目录 (支持热更新)
-# 参数: 无
-# 全局: 读取 MODPATH / LIVE_DIR
-# 返回: 0 (首次安装时跳过)
+# 在新会话中以 root 执行后台 Shell。
+# 参数: 透传给 su 的参数。
+# 返回: 不返回，exec 到后台 root Shell。
 #######################################
-sync_to_live() {
-  print_step "同步到运行时目录..."
-
-  # 运行目录不存在 (首次安装) 则无需同步
-  if [ ! -d "$LIVE_DIR" ]; then
-    print_ok "首次安装，跳过同步"
-    return 0
+launch_detached_root_shell() {
+  if command -v setsid > /dev/null 2>&1; then
+    exec setsid nohup su "$@"
   fi
-
-  # 同步程序文件与脚本，以及需要更新的内置资源 (整目录/文件覆盖)
-  rm -rf "$LIVE_DIR/scripts" 2> /dev/null
-  rm -rf "$LIVE_DIR/config/singbox/source" 2> /dev/null
-
-  local sync_dirs="bin netproxyctl action.sh service.sh uninstall.sh module.prop webroot config/ebpf config/singbox/confdir config/singbox/rules"
-
-  for item in $sync_dirs; do
-    local src="$MODPATH/$item"
-    local dst="$LIVE_DIR/$item"
-
-    if [ -e "$src" ]; then
-      rm -rf "$dst" 2> /dev/null
-      if cp -r "$src" "$dst" 2> /dev/null; then
-        print_ok "已同步: $item"
-      else
-        print_warn "同步失败: $item"
-      fi
-    fi
-  done
-
-  # 增量更新配置目录中的新文件 (不覆盖已存在的)
-  if [ -d "$MODPATH/config" ]; then
-    print_step "增量更新配置..."
-
-    cp -rn "$MODPATH/config/"* "$LIVE_DIR/config/" 2> /dev/null
-    print_ok "配置目录已增量更新"
-  fi
-
-  return 0
+  exec nohup su "$@"
 }
 
 #######################################
-# 安装前若服务在运行，安装后重新启动
+# 在 KernelSU 写入 update 标记后提交暂存模块。
 # 参数: 无
-# 全局: 读取 PROXY_WAS_RUNNING
-# 返回: 0
+# 全局: 读取 MODPATH / LIVE_DIR / PROXY_WAS_RUNNING / MODULE_ID
+# 返回: 0=已安排后台提交，1=无法安排，保留 KernelSU 下次开机更新
 #######################################
-restart_proxy_if_needed() {
-  # 热更新安装无需等待重启设备，先拉起新版 Go 订阅 Worker。
-  if [ -x "$LIVE_DIR/bin/netproxy-native" ]; then
-    "$LIVE_DIR/bin/netproxy-native" subworker start \
-      --module-dir "$LIVE_DIR" > /dev/null 2>&1 || true
+schedule_hot_update() {
+  if ! command -v su > /dev/null 2>&1; then
+    print_warn "无法启动后台热更新，将在下次开机时由管理器完成更新"
+    return 1
   fi
-  if [ "$PROXY_WAS_RUNNING" = true ]; then
-    print_step "重新启动代理服务..."
-    # su 包裹：经管理器刷入时让 sing-box 迁出冻结 cgroup，避免切后台断网
-    if su -c "\"$LIVE_DIR/netproxyctl\" service start" > /dev/null 2>&1; then
-      print_ok "服务已启动"
-    else
-      print_warn "服务未启动，请先导入可用节点"
-    fi
+
+  # setsid 和 nohup 先脱离安装器会话，su 再迁出管理器 cgroup。Worker 从标准
+  # 输入读取，避免 customize.sh 被安装器清理后发生脚本文件竞争；它只在安装器
+  # 退出且 update 标记出现后提交。
+  (
+    launch_detached_root_shell -c "/system/bin/sh -s -- '$$' '$MODPATH' '$LIVE_DIR' '$PROXY_WAS_RUNNING' '$MODULE_ID'" <<'NETPROXY_HOT_UPDATE_WORKER'
+# NETPROXY_HOT_UPDATE_WORKER_BEGIN
+set -u
+
+[ "$#" -eq 5 ] || exit 2
+installer_pid="$1"
+stage_dir="$2"
+live_dir="$3"
+restart_service="$4"
+module_id="$5"
+log_file="$live_dir/logs/service.log"
+
+#######################################
+# 写入后台热更新日志。
+# 参数: $1 日志正文
+# 返回: 始终返回 0，不影响更新回退。
+#######################################
+write_log() {
+  mkdir -p "$(dirname "$log_file")" 2> /dev/null || return 0
+  printf '[%s] [INFO] %s\n' "$(date '+%Y-%m-%d %H:%M:%S' 2> /dev/null || printf 'unknown-time')" "$1" >> "$log_file" 2> /dev/null || true
+}
+
+#######################################
+# 校验待提交模块包含最小运行入口。
+# 参数: 无
+# 返回: 0=有效，1=无效。
+#######################################
+stage_is_valid() {
+  [ -d "$stage_dir" ] \
+    && [ -f "$stage_dir/module.prop" ] \
+    && grep -qx "id=$module_id" "$stage_dir/module.prop" \
+    && [ -f "$stage_dir/netproxyctl" ] \
+    && [ -f "$stage_dir/bin/netproxy-native" ] \
+    && [ -f "$stage_dir/bin/sing-box" ]
+}
+
+#######################################
+# 原子替换前复制一项最新持久状态。
+# 参数: $1 源路径  $2 目标路径
+# 返回: 0=成功或源不存在，1=复制失败。
+#######################################
+copy_persistent_entry() {
+  source_path="$1"
+  target_path="$2"
+  [ -e "$source_path" ] || return 0
+  rm -rf "$target_path" 2> /dev/null || return 1
+  mkdir -p "$(dirname "$target_path")" || return 1
+  cp -af "$source_path" "$target_path"
+}
+
+#######################################
+# 合并 live 目录在安装期间新增的用户状态。
+# 参数: 无
+# 返回: 0=成功，1=任一项复制失败。
+#######################################
+merge_live_state() {
+  [ -d "$live_dir" ] || return 0
+  copy_persistent_entry "$live_dir/data/catalog" "$stage_dir/data/catalog" || return 1
+
+  for config_item in \
+    module.conf \
+    ebpf/ebpf.conf \
+    singbox/rules/local/direct.json \
+    singbox/rules/local/proxy.json \
+    singbox/rules/local/block.json; do
+    copy_persistent_entry "$live_dir/config/$config_item" "$stage_dir/config/$config_item" || return 1
+  done
+}
+
+#######################################
+# 热提交失败时恢复更新前正在运行的服务。
+# 参数: 无
+# 返回: 始终返回 0，不覆盖原始失败原因。
+#######################################
+restore_live_service() {
+  [ "$restart_service" = true ] || return 0
+  [ -x "$live_dir/netproxyctl" ] || return 0
+  su -c "\"$live_dir/bin/netproxy-native\" subworker start --module-dir \"$live_dir\"" > /dev/null 2>&1 || true
+  su -c "\"$live_dir/netproxyctl\" service start" > /dev/null 2>&1 || true
+}
+
+#######################################
+# 记录失败并保留管理器的下次开机更新路径。
+# 参数: $1 失败原因
+# 返回: 不返回，退出后台 Shell。
+#######################################
+fail_hot_update() {
+  write_log "后台热更新未提交: $1；保留待更新目录，下次开机将由管理器完成更新"
+  restore_live_service
+  exit 0
+}
+
+# KernelSU 在 customize.sh 返回后才写 live/update 并完成自己的清理。
+elapsed=0
+while [ -d "/proc/$installer_pid" ]; do
+  [ "$elapsed" -lt 30 ] || fail_hot_update "等待安装器退出超时"
+  sleep 1
+  elapsed=$((elapsed + 1))
+done
+
+elapsed=0
+while [ ! -f "$live_dir/update" ]; do
+  [ "$elapsed" -lt 30 ] || fail_hot_update "未检测到更新标记"
+  sleep 1
+  elapsed=$((elapsed + 1))
+done
+
+# 给管理器完成 module.prop 复制和暂存目录清理留出稳定窗口。
+sleep 3
+stage_is_valid || fail_hot_update "暂存模块校验失败"
+[ -f "$live_dir/update" ] || fail_hot_update "更新标记已被撤销"
+merge_live_state || fail_hot_update "合并最新用户数据失败"
+
+module_parent="$(dirname "$live_dir")"
+backup_dir="$module_parent/.${module_id}.hot-update.$$"
+rm -rf "$backup_dir" 2> /dev/null || fail_hot_update "无法清理旧热更新备份"
+
+if [ -e "$live_dir" ] && ! mv "$live_dir" "$backup_dir"; then
+  fail_hot_update "无法备份当前模块"
+fi
+
+if ! mv "$stage_dir" "$live_dir"; then
+  if [ -e "$backup_dir" ] && [ ! -e "$live_dir" ]; then
+    mv "$backup_dir" "$live_dir" || true
   fi
+  fail_hot_update "无法切换新模块，已尝试恢复旧模块"
+fi
+
+rm -f "$live_dir/update"
+rm -rf "$backup_dir" 2> /dev/null || true
+write_log "后台热更新已完成，无需重启设备"
+
+if [ -x "$live_dir/bin/netproxy-native" ]; then
+  su -c "\"$live_dir/bin/netproxy-native\" subworker start --module-dir \"$live_dir\"" > /dev/null 2>&1 \
+    || write_log "新版订阅 Worker 启动失败"
+fi
+
+if [ "$restart_service" = true ]; then
+  if su -c "\"$live_dir/netproxyctl\" service start" > /dev/null 2>&1; then
+    write_log "后台热更新后服务已恢复"
+  else
+    write_log "后台热更新后服务未启动，请在管理器中检查节点配置"
+  fi
+fi
+# NETPROXY_HOT_UPDATE_WORKER_END
+NETPROXY_HOT_UPDATE_WORKER
+  ) > /dev/null 2>&1 &
 
   return 0
 }
@@ -332,7 +440,7 @@ restart_proxy_if_needed() {
 #######################################
 # 设置模块文件权限
 # 参数: 无
-# 全局: 读取 EXECUTABLE_FILES / MODPATH / LIVE_DIR
+# 全局: 读取 EXECUTABLE_FILES / MODPATH
 # 返回: 0
 #######################################
 set_permissions() {
@@ -346,23 +454,16 @@ set_permissions() {
     local path="$MODPATH/$file"
     if [ -e "$path" ]; then
       chmod 0755 "$path" 2> /dev/null
-      [ -e "$LIVE_DIR/$file" ] && chmod 0755 "$LIVE_DIR/$file" 2> /dev/null
     fi
   done
 
   # 用户配置与 Catalog 包含节点凭据、订阅地址和应用名单，仅允许 root 读取。
   [ ! -f "$MODPATH/config/module.conf" ] || chmod 0600 "$MODPATH/config/module.conf" 2> /dev/null
   [ ! -f "$MODPATH/config/ebpf/ebpf.conf" ] || chmod 0600 "$MODPATH/config/ebpf/ebpf.conf" 2> /dev/null
-  [ ! -f "$LIVE_DIR/config/module.conf" ] || chmod 0600 "$LIVE_DIR/config/module.conf" 2> /dev/null
-  [ ! -f "$LIVE_DIR/config/ebpf/ebpf.conf" ] || chmod 0600 "$LIVE_DIR/config/ebpf/ebpf.conf" 2> /dev/null
   [ ! -d "$MODPATH/data/catalog" ] \
     || set_perm_recursive "$MODPATH/data/catalog" 0 0 0700 0600
-  [ ! -d "$LIVE_DIR/data/catalog" ] \
-    || set_perm_recursive "$LIVE_DIR/data/catalog" 0 0 0700 0600
   [ ! -d "$MODPATH/runtime" ] \
     || set_perm_recursive "$MODPATH/runtime" 0 0 0700 0600
-  [ ! -d "$LIVE_DIR/runtime" ] \
-    || set_perm_recursive "$LIVE_DIR/runtime" 0 0 0700 0600
 
   print_ok "权限设置完成"
   return 0
@@ -470,17 +571,26 @@ ui_print "  版本: $(grep_prop version "$TMPDIR/module.prop" 2> /dev/null || ec
 if backup_config \
   && extract_module \
   && restore_config \
-  && stop_proxy_if_running \
-  && sync_to_live \
-  && set_permissions \
-  && restart_proxy_if_needed; then
+  && set_permissions; then
 
   cleanup
 
-  print_title "安装完成，请重启设备"
-
   # 询问是否安装配套应用
   ask_install_app
+
+  if [ "${BOOTMODE:-false}" = true ]; then
+    stop_proxy_if_running
+    if schedule_hot_update; then
+      print_title "安装完成"
+      ui_print "  正在后台应用新版本，无需重启设备"
+      ui_print "  接下来约 3 秒请不要重启；若现在重启，"
+      ui_print "  KernelSU 将在开机时按标准流程继续更新"
+    else
+      print_title "安装完成，将在下次开机时应用更新"
+    fi
+  else
+    print_title "安装完成，请重启设备"
+  fi
 else
   # 安装失败：清理并提示反馈
   cleanup

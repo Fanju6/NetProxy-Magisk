@@ -40,6 +40,7 @@
 - `scripts/` 不承载运行时业务；配置、Catalog、状态和 Service API 业务统一由 Go 实现。
 - 根目录 `service.sh` 只保留 Magisk/KernelSU/APatch 开机桥接；运行时配置、服务生命周期、节点切换、订阅事务和调度由 `netproxy-native` 负责。
 - Go Worker 负责 Android 网络变化采集、Wi-Fi 状态读取和策略评估。
+- `customize.sh` 在已开机安装时不得提前覆盖 live 模块目录；必须等待管理器写入 `update` 标记后再由脱离安装器 cgroup 的 Shell 完成目录切换。任何校验或切换失败都保留 `modules_update`，交回管理器下次开机处理。
 - 设备上的调用形式是 `su -c /data/adb/modules/netproxy/netproxyctl [--json] <命令组> <命令>`；文档和排查步骤按此形式给出，不要写成裸 `netproxyctl`，它不在 PATH 里。
 
 ### 最终脚本边界
@@ -111,6 +112,7 @@ sh tests/runtime_catalog_test.sh ./.tmp/netproxy-native
 sh tests/config_utils_test.sh ./.tmp/netproxy-native
 sh tests/service_state_test.sh ./.tmp/netproxy-native
 sh tests/module_scripts_test.sh
+sh tests/customize_hot_update_test.sh
 
 # WebUI
 (cd src/webui && npm ci && npm run build)
