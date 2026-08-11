@@ -14,7 +14,7 @@ type lifecycleLock struct {
 	pid  int
 }
 
-func acquireLifecycleLock(stateFile, action string) (*lifecycleLock, error) {
+func acquireLifecycleLock(stateFile string) (*lifecycleLock, error) {
 	if strings.TrimSpace(stateFile) == "" {
 		return nil, errors.New("服务状态文件路径不能为空")
 	}
@@ -23,7 +23,7 @@ func acquireLifecycleLock(stateFile, action string) (*lifecycleLock, error) {
 		return nil, err
 	}
 	lock := &lifecycleLock{path: path, pid: os.Getpid()}
-	if err := lock.create(action); err == nil {
+	if err := lock.create(); err == nil {
 		return lock, nil
 	} else if !os.IsExist(err) {
 		return nil, err
@@ -36,26 +36,22 @@ func acquireLifecycleLock(stateFile, action string) (*lifecycleLock, error) {
 	_ = os.RemoveAll(stale)
 	if err := os.Rename(path, stale); err != nil {
 		if os.IsNotExist(err) {
-			return acquireLifecycleLock(stateFile, action)
+			return acquireLifecycleLock(stateFile)
 		}
 		return nil, fmt.Errorf("清理残留服务锁失败: %w", err)
 	}
 	_ = os.RemoveAll(stale)
-	if err := lock.create(action); err != nil {
+	if err := lock.create(); err != nil {
 		return nil, err
 	}
 	return lock, nil
 }
 
-func (lock *lifecycleLock) create(action string) error {
+func (lock *lifecycleLock) create() error {
 	if err := os.Mkdir(lock.path, 0o700); err != nil {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(lock.path, "pid"), []byte(strconv.Itoa(lock.pid)+"\n"), 0o600); err != nil {
-		_ = os.RemoveAll(lock.path)
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(lock.path, "action"), []byte(action+"\n"), 0o600); err != nil {
 		_ = os.RemoveAll(lock.path)
 		return err
 	}

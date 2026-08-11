@@ -21,6 +21,7 @@ const (
 	defaultInterval = 24 * time.Hour
 	minimumInterval = 15 * time.Minute
 	maxHistory      = 20
+	cancelPoll      = 100 * time.Millisecond
 )
 
 // UpdateOptions 定义一次订阅更新的运行上下文。
@@ -113,14 +114,18 @@ func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 	_ = os.WriteFile(filepath.Join(lockDir, "stage"), []byte(stageDir+"\n"), 0o600)
 	if options.ProgressDir != "" {
 		_ = os.MkdirAll(options.ProgressDir, 0o700)
-		_ = os.WriteFile(filepath.Join(options.ProgressDir, options.GroupID+".child.pid"), []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o600)
-		defer os.Remove(filepath.Join(options.ProgressDir, options.GroupID+".child.pid"))
 	}
+	updateContext, stopWatching := watchCancellation(ctx, options.ProgressDir, options.GroupID)
+	defer stopWatching()
+	ctx = updateContext
 
 	started := options.Now
 	writeProgress(options.ProgressDir, options.GroupID, "download", "正在下载订阅")
 	response, usedProxy, fetchErr := fetchSubscription(ctx, metadata, options)
 	if fetchErr != nil {
+		if cancelled(ctx, options.ProgressDir, options.GroupID) {
+			return updateFailure(options, metadata, groupDir, started, response, "subscription.cancelled", "订阅更新已取消", fetchErr)
+		}
 		return updateFailure(options, metadata, groupDir, started, response, "subscription.convert_failed", "订阅下载或转换失败", fetchErr)
 	}
 	metadata = applyResponseMetadata(metadata, response.Metadata, options.Now)
@@ -147,6 +152,9 @@ func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 	parsed, parseErr := convert.Content(ctx, string(response.Body), metadata.AllowInsecure)
 	metadata.LastDiagnostics = append(response.Metadata.Diagnostics, parsed.Diagnostics...)
 	if parseErr != nil {
+		if cancelled(ctx, options.ProgressDir, options.GroupID) {
+			return updateFailure(options, metadata, groupDir, started, response, "subscription.cancelled", "订阅更新已取消", parseErr)
+		}
 		return updateFailure(options, metadata, groupDir, started, response, "subscription.convert_failed", "订阅下载、转换或校验失败", parseErr)
 	}
 	filtered, filterErr := provider.Filter(parsed.Document, metadata.Include, metadata.Exclude)
@@ -350,6 +358,38 @@ func clearProgress(dir, groupID string) {
 	}
 	_ = os.Remove(filepath.Join(dir, groupID+".progress.json"))
 	_ = os.Remove(filepath.Join(dir, groupID+".cancel"))
+}
+
+// watchCancellation 将外部取消标记转换为当前更新的 context 取消。
+// 取消命令与更新任务是不同进程，不能共享 context，只能通过短周期轮询文件标记通信。
+func watchCancellation(parent context.Context, dir, groupID string) (context.Context, func()) {
+	if dir == "" {
+		return parent, func() {}
+	}
+
+	ctx, cancel := context.WithCancel(parent)
+	done := make(chan struct{})
+	cancelPath := filepath.Join(dir, groupID+".cancel")
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(cancelPoll)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if _, err := os.Stat(cancelPath); err == nil {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	return ctx, func() {
+		cancel()
+		<-done
+	}
 }
 
 func cancelled(ctx context.Context, dir, groupID string) bool {

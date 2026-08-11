@@ -3,6 +3,7 @@ package subscription
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -212,6 +213,80 @@ func TestCancelledUpdateKeepsPreviousProvider(t *testing.T) {
 	}
 	if string(current) != string(oldProvider) {
 		t.Fatalf("取消更新不应替换旧 Provider: %s", current)
+	}
+}
+
+func TestCancelMarkerInterruptsInFlightUpdate(t *testing.T) {
+	root := t.TempDir()
+	groupID := "in-flight-cancel"
+	groupDir := filepath.Join(root, groupID)
+	progressDir := filepath.Join(root, "progress")
+	if err := os.MkdirAll(groupDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	oldProvider := []byte(`{"outbounds":[{"type":"socks","tag":"old-node","server":"127.0.0.1","server_port":1080}]}` + "\n")
+	if err := SaveMetadataAtomic(filepath.Join(groupDir, "meta.json"), Metadata{
+		Schema: 1, ID: groupID, Name: "In-flight Cancel", Type: "subscription", URL: "http://test.invalid", Timeout: 30,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	providerPath := filepath.Join(groupDir, "provider.json")
+	if err := provider.WriteAtomic(providerPath, oldProvider, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	requestStarted := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		close(requestStarted)
+		<-request.Context().Done()
+	}))
+	defer server.Close()
+	metadata, err := LoadMetadata(filepath.Join(groupDir, "meta.json"), groupID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata.URL = server.URL
+	if err := SaveMetadataAtomic(filepath.Join(groupDir, "meta.json"), metadata); err != nil {
+		t.Fatal(err)
+	}
+
+	resultCh := make(chan error, 1)
+	go func() {
+		_, updateErr := Update(context.Background(), UpdateOptions{
+			Root: root, GroupID: groupID, ProgressDir: progressDir, Now: time.Unix(1700000000, 0),
+		})
+		resultCh <- updateErr
+	}()
+	select {
+	case <-requestStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("订阅请求未进入等待状态")
+	}
+	if err := os.MkdirAll(progressDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(progressDir, groupID+".cancel"), []byte("1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case updateErr := <-resultCh:
+		var subscriptionErr *Error
+		if !errors.As(updateErr, &subscriptionErr) || subscriptionErr.Code != "subscription.cancelled" {
+			t.Fatalf("取消请求未返回结构化取消错误: %v", updateErr)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("取消请求未能中断进行中的下载")
+	}
+	current, err := os.ReadFile(providerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(current) != string(oldProvider) {
+		t.Fatalf("取消更新不应替换旧 Provider: %s", current)
+	}
+	if _, err := os.Stat(filepath.Join(progressDir, groupID+".child.pid")); !os.IsNotExist(err) {
+		t.Fatalf("订阅更新不应再生成 child.pid: %v", err)
 	}
 }
 

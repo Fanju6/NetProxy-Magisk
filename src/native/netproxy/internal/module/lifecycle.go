@@ -44,7 +44,7 @@ func ManageService(ctx context.Context, options Options, action string) (Service
 		return ServiceResult{}, fmt.Errorf("未知服务操作: %s", action)
 	}
 
-	lock, err := acquireLifecycleLock(options.StateFile, action)
+	lock, err := acquireLifecycleLock(options.StateFile)
 	if err != nil {
 		return ServiceResult{}, err
 	}

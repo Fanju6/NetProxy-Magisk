@@ -71,18 +71,21 @@ func TestCheckServiceRejectsMissingBinary(t *testing.T) {
 
 func TestLifecycleLockRejectsConcurrentOperation(t *testing.T) {
 	stateFile := filepath.Join(t.TempDir(), "service.json")
-	first, err := acquireLifecycleLock(stateFile, "start")
+	first, err := acquireLifecycleLock(stateFile)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer first.release()
-	if _, err := acquireLifecycleLock(stateFile, "reload"); err == nil {
+	if _, err := acquireLifecycleLock(stateFile); err == nil {
 		t.Fatal("并发服务操作应被锁拒绝")
 	}
 	first.release()
-	second, err := acquireLifecycleLock(stateFile, "reload")
+	second, err := acquireLifecycleLock(stateFile)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(stateFile), "service.lock", "action")); !os.IsNotExist(err) {
+		t.Fatalf("服务锁不应再创建无读取方的 action 文件: %v", err)
 	}
 	second.release()
 }
