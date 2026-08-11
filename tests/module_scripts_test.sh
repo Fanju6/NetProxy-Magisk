@@ -78,6 +78,7 @@ check_install_choices() {
   grep -q '全新安装' "$MODULE_DIR/customize.sh"
   grep -q '\[ "$(wait_volume_key 10)" = "down" \]' "$MODULE_DIR/customize.sh"
   grep -q 'install_bundled_manager' "$MODULE_DIR/customize.sh"
+  grep -q 'print_title "安装 NetProxy 管理器"' "$MODULE_DIR/customize.sh"
   grep -q '\[ ! -f "\$MODPATH/NetProxy.apk" \]' "$MODULE_DIR/customize.sh"
   grep -q 'MANAGER_PACKAGE="com.fanjv.netproxy"' "$MODULE_DIR/customize.sh"
   grep -q 'get_installed_manager_version' "$MODULE_DIR/customize.sh"

@@ -575,22 +575,23 @@ get_installed_manager_version() {
 install_bundled_manager() {
   local installed_version
 
+  print_title "安装 NetProxy 管理器"
+  ui_print ""
+
   if [ ! -f "$MODPATH/NetProxy.apk" ]; then
-    print_step "本安装包未随附 NetProxy 管理器"
+    ui_print "  本安装包未随附 NetProxy 管理器"
     ui_print "  可稍后从 Google Play 安装管理器"
     return 0
   fi
 
   if installed_version="$(get_installed_manager_version)"; then
-    print_step "已安装 NetProxy 管理器"
+    ui_print "  已安装 NetProxy 管理器"
     ui_print "  当前版本: $installed_version"
     ui_print "  为避免覆盖现有安装，跳过随附 APK"
     rm -f "$MODPATH/NetProxy.apk"
     return 0
   fi
 
-  print_title "安装 NetProxy 管理器"
-  ui_print ""
   ui_print "  本包随附 NetProxy 管理器 APK"
   ui_print "  [音量+] 安装 (默认)"
   ui_print "  [音量-] 跳过"
@@ -628,6 +629,7 @@ cleanup() {
 unzip -o "$ZIPFILE" "module.prop" -d "$TMPDIR" > /dev/null 2>&1
 
 print_title "NetProxy - sing-box 透明代理"
+ui_print ""
 ui_print "  版本: $(grep_prop version "$TMPDIR/module.prop" 2> /dev/null || echo "未知")"
 
 # 按顺序执行安装步骤，任一失败则进入失败分支
