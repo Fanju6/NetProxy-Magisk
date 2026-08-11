@@ -40,7 +40,6 @@ import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
@@ -121,16 +120,6 @@ internal fun CatalogDashboardScreen(
                     }
                 } else if (state.serviceState == "failed" && state.serviceError.isNotBlank()) {
                     item { DashboardWarning(state.serviceError) }
-                }
-
-                if (state.loading) {
-                    item {
-                        InfiniteProgressIndicator(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 24.dp)
-                        )
-                    }
                 }
 
                 item {
