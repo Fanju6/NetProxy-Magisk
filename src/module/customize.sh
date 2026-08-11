@@ -141,8 +141,6 @@ has_existing_user_data() {
 # 返回: 始终返回 0。
 #######################################
 choose_install_mode() {
-  local install_choice
-
   if ! has_existing_user_data; then
     INSTALL_MODE=fresh
     print_step "未发现现有用户数据，将执行全新安装"
@@ -151,19 +149,13 @@ choose_install_mode() {
 
   print_title "选择安装方式"
   ui_print ""
-  ui_print "  [音量+] 保留现有数据 (默认，10 秒未操作自动选择)"
-  ui_print "            保留节点、订阅、规则和模块设置"
+  ui_print "  [音量+] 保留现有数据 (默认)"
   ui_print "  [音量-] 全新安装"
-  ui_print "            清除上述数据并恢复为包内默认值"
   ui_print ""
 
-  install_choice="$(wait_volume_key 10)"
-  if [ "$install_choice" = "down" ]; then
+  if [ "$(wait_volume_key 10)" = "down" ]; then
     INSTALL_MODE=fresh
     print_step "已选择全新安装"
-  elif [ "$install_choice" = "timeout" ]; then
-    INSTALL_MODE=preserve
-    print_step "未选择安装方式，默认保留现有数据"
   else
     INSTALL_MODE=preserve
     print_step "已选择保留现有数据"
@@ -534,34 +526,24 @@ set_permissions() {
 #######################################
 wait_volume_key() {
   local timeout="${1:-10}"
-  local key event_file event_pid
+  local key
 
-  event_file="$TMPDIR/volume_key.$$"
-
-  # getevent -c 1 会一直阻塞至收到事件，必须放入后台并由本循环限时回收。
+  # 每秒轮询一次按键事件，捕获到音量键即返回
   while [ "$timeout" -gt 0 ]; do
-    : > "$event_file"
-    getevent -lqc 1 > "$event_file" 2> /dev/null &
-    event_pid=$!
-    sleep 1
-    key="$(cat "$event_file" 2> /dev/null)"
-    kill "$event_pid" 2> /dev/null || true
-    wait "$event_pid" 2> /dev/null || true
+    key=$(getevent -lqc 1 2> /dev/null | grep -E "KEY_VOLUME(UP|DOWN)" | head -1)
 
     if echo "$key" | grep -q "VOLUMEUP"; then
-      rm -f "$event_file"
       printf "up\n"
       return 0
     elif echo "$key" | grep -q "VOLUMEDOWN"; then
-      rm -f "$event_file"
       printf "down\n"
       return 0
     fi
 
+    sleep 1
     timeout=$((timeout - 1))
   done
 
-  rm -f "$event_file"
   # 超时未按键
   printf "timeout\n"
 }

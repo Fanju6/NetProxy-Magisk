@@ -76,16 +76,14 @@ check_install_choices() {
   grep -q 'choose_install_mode' "$MODULE_DIR/customize.sh"
   grep -q '保留现有数据' "$MODULE_DIR/customize.sh"
   grep -q '全新安装' "$MODULE_DIR/customize.sh"
-  grep -q 'install_choice.*timeout' "$MODULE_DIR/customize.sh"
+  grep -q '\[ "$(wait_volume_key 10)" = "down" \]' "$MODULE_DIR/customize.sh"
   grep -q 'install_bundled_manager' "$MODULE_DIR/customize.sh"
   grep -q '\[ ! -f "\$MODPATH/NetProxy.apk" \]' "$MODULE_DIR/customize.sh"
   grep -q 'MANAGER_PACKAGE="com.fanjv.netproxy"' "$MODULE_DIR/customize.sh"
   grep -q 'get_installed_manager_version' "$MODULE_DIR/customize.sh"
   grep -q 'dumpsys package' "$MODULE_DIR/customize.sh"
   ! grep -q 'am start -a android.intent.action.VIEW' "$MODULE_DIR/customize.sh"
-  grep -q 'getevent -lqc 1 > "$event_file" 2> /dev/null &' "$MODULE_DIR/customize.sh"
-  grep -q 'kill "$event_pid" 2> /dev/null || true' "$MODULE_DIR/customize.sh"
-  ! grep -q 'key=$(getevent -lqc 1' "$MODULE_DIR/customize.sh"
+  grep -q 'key=$(getevent -lqc 1' "$MODULE_DIR/customize.sh"
 }
 
 check_shell_syntax
