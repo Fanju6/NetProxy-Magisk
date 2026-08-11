@@ -34,6 +34,8 @@ write_stage_module() {
   : > "$STAGE/netproxyctl"
   : > "$STAGE/bin/netproxy-native"
   : > "$STAGE/bin/sing-box"
+  printf '%s\n' 'OUTBOUND_MODE=rule' > "$STAGE/config/module.conf"
+  printf '%s\n' 'EBPF_DNS_MODE=off' > "$STAGE/config/ebpf/ebpf.conf"
   printf '%s\n' 'stage-provider' > "$STAGE/data/catalog/default/provider.json"
 }
 
@@ -60,7 +62,7 @@ test_hot_commit_preserves_latest_state() {
 
   sh -c 'sleep 1' &
   installer_pid=$!
-  sh "$WORKER" "$installer_pid" "$STAGE" "$LIVE" false netproxy
+  sh "$WORKER" "$installer_pid" "$STAGE" "$LIVE" false preserve netproxy
   wait "$installer_pid"
 
   [ -d "$LIVE" ]
@@ -81,7 +83,7 @@ test_invalid_stage_keeps_kernel_su_fallback() {
 
   sh -c 'sleep 1' &
   installer_pid=$!
-  sh "$WORKER" "$installer_pid" "$STAGE" "$LIVE" false netproxy
+  sh "$WORKER" "$installer_pid" "$STAGE" "$LIVE" false preserve netproxy
   wait "$installer_pid"
 
   [ -d "$STAGE" ]
@@ -98,7 +100,7 @@ test_hot_commit_through_su() {
 
   sh -c 'sleep 1' &
   installer_pid=$!
-  su -c "/system/bin/sh -s -- '$installer_pid' '$STAGE' '$LIVE' false netproxy" < "$WORKER"
+  su -c "/system/bin/sh -s -- '$installer_pid' '$STAGE' '$LIVE' false preserve netproxy" < "$WORKER"
   wait "$installer_pid"
 
   [ -d "$LIVE" ]
@@ -108,7 +110,27 @@ test_hot_commit_through_su() {
   assert_file_contains "$LIVE/data/catalog/default/provider.json" 'live-provider'
 }
 
+test_fresh_install_discards_existing_state() {
+  rm -rf "$MODULE_ROOT"
+  write_stage_module
+  write_live_module
+
+  sh -c 'sleep 1' &
+  installer_pid=$!
+  sh "$WORKER" "$installer_pid" "$STAGE" "$LIVE" false fresh netproxy
+  wait "$installer_pid"
+
+  [ -d "$LIVE" ]
+  [ ! -e "$STAGE" ]
+  [ ! -e "$LIVE/update" ]
+  assert_file_contains "$LIVE/module.prop" 'version=test-new'
+  assert_file_contains "$LIVE/config/module.conf" 'OUTBOUND_MODE=rule'
+  assert_file_contains "$LIVE/config/ebpf/ebpf.conf" 'EBPF_DNS_MODE=off'
+  assert_file_contains "$LIVE/data/catalog/default/provider.json" 'stage-provider'
+}
+
 test_hot_commit_preserves_latest_state
 test_invalid_stage_keeps_kernel_su_fallback
 test_hot_commit_through_su
+test_fresh_install_discards_existing_state
 printf '%s\n' 'customize hot update test passed'

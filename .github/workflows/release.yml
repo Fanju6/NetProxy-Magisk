@@ -29,7 +29,7 @@ jobs:
           REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
           COMMIT_COUNT: ${{ steps.pack.outputs.commit_count }}
-          FULL_NAME: ${{ steps.pack.outputs.full_name }}
+          STANDARD_NAME: ${{ steps.pack.outputs.standard_name }}
         run: |
           # 以仓库根的 update.json 为模板（保留 changelog 等静态字段），仅回填动态字段
           # 模板与产物同名，先写临时文件再覆盖，避免重定向截断输入
@@ -37,7 +37,7 @@ jobs:
           jq \
             --arg version "Module ${TAG}" \
             --argjson versionCode "${COMMIT_COUNT}" \
-            --arg zipUrl "https://github.com/${REPO}/releases/download/${TAG}/${FULL_NAME}" \
+            --arg zipUrl "https://github.com/${REPO}/releases/download/${TAG}/${STANDARD_NAME}" \
             '.version = $version | .versionCode = $versionCode | .zipUrl = $zipUrl' \
             update.json > "$tmp"
           mv "$tmp" update.json
@@ -48,8 +48,8 @@ jobs:
         with:
           body_path: docs/changelog.md
           files: |
-            ${{ steps.pack.outputs.full_name }}
-            ${{ steps.pack.outputs.lite_name }}
+            ${{ steps.pack.outputs.standard_name }}
+            ${{ steps.pack.outputs.manager_name }}
             update.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -69,8 +69,8 @@ jobs:
             [查看更新日志并下载](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }})
 
             **直接下载:**
-            [完整包](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.pack.outputs.full_name }})
-            [Lite 包](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.pack.outputs.lite_name }})
+            [标准包](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.pack.outputs.standard_name }})
+            [含管理器包](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.pack.outputs.manager_name }})
 
       - name: 触发同步到 KernelSU 仓库
         if: github.ref_type == 'tag'

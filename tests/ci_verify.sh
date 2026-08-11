@@ -44,6 +44,8 @@ run_shell_contracts() {
   sh "$ROOT/tests/runtime_catalog_test.sh" "$BUILD_DIR/netproxy-native"
   sh "$ROOT/tests/service_state_test.sh" "$BUILD_DIR/netproxy-native"
   sh "$ROOT/tests/module_scripts_test.sh"
+  sh "$ROOT/tests/customize_hot_update_test.sh"
+  sh "$ROOT/tests/module_packaging_test.sh"
   sh "$ROOT/tests/netproxyctl_contract_test.sh" \
     "$BUILD_DIR/netproxyctl" "$BUILD_DIR/netproxy-native"
 }

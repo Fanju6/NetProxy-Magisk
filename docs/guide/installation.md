@@ -11,7 +11,14 @@
 
 ## 安装模块
 
-Release 提供两个代理能力相同的包：完整版内置 Android 管理器 APK，Lite 不内置 APK。已从 Google Play 安装管理器或只使用 CLI / zashboard 时可选择 Lite。
+Release 提供两个代理能力相同的包：标准包不内置 Android 管理器 APK，也是模块自更新的默认目标；含管理器包的文件名带 `_with-manager`，仅额外提供刷入时可选安装的 APK。已从 Google Play 安装管理器或只使用 CLI / zashboard 时请选择标准包。
+
+更新已有模块时，安装器会提供两种方式：
+
+- **保留现有数据**：保留节点、订阅、规则和模块设置；10 秒未操作时默认选择。
+- **全新安装**：清除上述用户数据，使用模块包内的默认值。
+
+已开机环境下，安装器会在后台应用新版本，无需重启；从 Recovery 刷入后仍需要重启设备。
 
 1. 从 [NetProxy Releases](https://github.com/Fanju6/NetProxy-Magisk/releases) 下载最新模块 ZIP
 2. 在 **Magisk / KernelSU / APatch** 中刷入模块

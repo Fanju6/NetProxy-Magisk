@@ -15,12 +15,16 @@ SKIPUNZIP=1  # 跳过管理器自动解压，由本脚本手动控制解压流�
 ################################################################################
 
 readonly MODULE_ID="netproxy"                       # 模块 ID
+readonly MANAGER_PACKAGE="com.fanjv.netproxy"       # Android 管理器包名
 readonly LIVE_DIR="/data/adb/modules/$MODULE_ID"    # 已安装模块的运行目录
 readonly CONFIG_DIR="$LIVE_DIR/config"              # 运行目录下的配置目录
 readonly BACKUP_DIR="$TMPDIR/netproxy_backup"       # 配置备份临时目录
 
 # 全局状态: 安装前代理服务是否处于运行状态
 PROXY_WAS_RUNNING=false
+
+# 安装方式: preserve=保留现有用户数据，fresh=使用包内默认数据。
+INSTALL_MODE=fresh
 
 # 需要保留的配置文件/目录 (相对于 config/)
 readonly DATA_DIR="$LIVE_DIR/data"
@@ -120,10 +124,57 @@ set_perm_recursive() {
 ################################################################################
 
 #######################################
+# 判断是否存在可由用户保留的数据。
+# 参数: 无
+# 返回: 0=存在，1=不存在。
+#######################################
+has_existing_user_data() {
+  [ -f "$CONFIG_DIR/module.conf" ] \
+    || [ -f "$CONFIG_DIR/ebpf/ebpf.conf" ] \
+    || [ -d "$DATA_DIR/catalog" ]
+}
+
+#######################################
+# 选择安装方式。
+# 参数: 无
+# 全局: 写入 INSTALL_MODE
+# 返回: 始终返回 0。
+#######################################
+choose_install_mode() {
+  local install_choice
+
+  if ! has_existing_user_data; then
+    INSTALL_MODE=fresh
+    print_step "未发现现有用户数据，将执行全新安装"
+    return 0
+  fi
+
+  print_title "选择安装方式"
+  ui_print ""
+  ui_print "  [音量+] 保留现有数据 (默认，10 秒未操作自动选择)"
+  ui_print "            保留节点、订阅、规则和模块设置"
+  ui_print "  [音量-] 全新安装"
+  ui_print "            清除上述数据并恢复为包内默认值"
+  ui_print ""
+
+  install_choice="$(wait_volume_key 10)"
+  if [ "$install_choice" = "down" ]; then
+    INSTALL_MODE=fresh
+    print_step "已选择全新安装"
+  elif [ "$install_choice" = "timeout" ]; then
+    INSTALL_MODE=preserve
+    print_step "未选择安装方式，默认保留现有数据"
+  else
+    INSTALL_MODE=preserve
+    print_step "已选择保留现有数据"
+  fi
+}
+
+#######################################
 # 备份现有配置到临时目录
 # 参数: 无
-# 全局: 读取 CONFIG_DIR / PRESERVE_CONFIGS / BACKUP_DIR
-# 返回: 0 (全新安装时跳过)
+# 全局: 读取 INSTALL_MODE / CONFIG_DIR / PRESERVE_CONFIGS / BACKUP_DIR
+# 返回: 0=成功或全新安装跳过，1=失败。
 #######################################
 backup_catalog_data() {
   [ -d "$DATA_DIR/catalog" ] || return 0
@@ -140,16 +191,14 @@ restore_catalog_data() {
 }
 
 backup_config() {
-  print_step "检查现有配置..."
-
-  # 配置目录为空视为全新安装，无需备份
-  if ! dir_not_empty "$CONFIG_DIR" && ! dir_not_empty "$DATA_DIR"; then
-    print_ok "全新安装，无需备份"
+  if [ "$INSTALL_MODE" != "preserve" ]; then
+    print_step "全新安装不保留现有数据"
     return 0
   fi
 
+  print_step "备份现有用户数据..."
+
   backup_catalog_data
-  print_step "备份当前配置..."
   mkdir -p "$BACKUP_DIR"
 
   # 逐项备份需保留的配置
@@ -193,10 +242,11 @@ extract_module() {
 #######################################
 # 将备份的配置恢复到新解压的模块目录
 # 参数: 无
-# 全局: 读取 BACKUP_DIR / PRESERVE_CONFIGS / MODPATH
-# 返回: 0 (无备份时跳过)
+# 全局: 读取 INSTALL_MODE / BACKUP_DIR / PRESERVE_CONFIGS / MODPATH
+# 返回: 0=成功或无备份时跳过，1=失败。
 #######################################
 restore_config() {
+  [ "$INSTALL_MODE" = "preserve" ] || return 0
   restore_catalog_data
 
   # 无备份则跳过
@@ -273,7 +323,7 @@ launch_detached_root_shell() {
 #######################################
 # 在 KernelSU 写入 update 标记后提交暂存模块。
 # 参数: 无
-# 全局: 读取 MODPATH / LIVE_DIR / PROXY_WAS_RUNNING / MODULE_ID
+# 全局: 读取 MODPATH / LIVE_DIR / PROXY_WAS_RUNNING / INSTALL_MODE / MODULE_ID
 # 返回: 0=已安排后台提交，1=无法安排，保留 KernelSU 下次开机更新
 #######################################
 schedule_hot_update() {
@@ -286,17 +336,23 @@ schedule_hot_update() {
   # 输入读取，避免 customize.sh 被安装器清理后发生脚本文件竞争；它只在安装器
   # 退出且 update 标记出现后提交。
   (
-    launch_detached_root_shell -c "/system/bin/sh -s -- '$$' '$MODPATH' '$LIVE_DIR' '$PROXY_WAS_RUNNING' '$MODULE_ID'" <<'NETPROXY_HOT_UPDATE_WORKER'
+    launch_detached_root_shell -c "/system/bin/sh -s -- '$$' '$MODPATH' '$LIVE_DIR' '$PROXY_WAS_RUNNING' '$INSTALL_MODE' '$MODULE_ID'" <<'NETPROXY_HOT_UPDATE_WORKER'
 # NETPROXY_HOT_UPDATE_WORKER_BEGIN
 set -u
 
-[ "$#" -eq 5 ] || exit 2
+[ "$#" -eq 6 ] || exit 2
 installer_pid="$1"
 stage_dir="$2"
 live_dir="$3"
 restart_service="$4"
-module_id="$5"
+install_mode="$5"
+module_id="$6"
 log_file="$live_dir/logs/service.log"
+
+case "$install_mode" in
+  preserve|fresh) ;;
+  *) exit 2 ;;
+esac
 
 #######################################
 # 写入后台热更新日志。
@@ -339,9 +395,10 @@ copy_persistent_entry() {
 #######################################
 # 合并 live 目录在安装期间新增的用户状态。
 # 参数: 无
-# 返回: 0=成功，1=任一项复制失败。
+# 返回: 0=成功或全新安装跳过，1=任一项复制失败。
 #######################################
 merge_live_state() {
+  [ "$install_mode" = "preserve" ] || return 0
   [ -d "$live_dir" ] || return 0
   copy_persistent_entry "$live_dir/data/catalog" "$stage_dir/data/catalog" || return 1
 
@@ -477,76 +534,100 @@ set_permissions() {
 #######################################
 wait_volume_key() {
   local timeout="${1:-10}"
-  local key
+  local key event_file event_pid
 
-  # 每秒轮询一次按键事件，捕获到音量键即返回
+  event_file="$TMPDIR/volume_key.$$"
+
+  # getevent -c 1 会一直阻塞至收到事件，必须放入后台并由本循环限时回收。
   while [ "$timeout" -gt 0 ]; do
-    key=$(getevent -lqc 1 2> /dev/null | grep -E "KEY_VOLUME(UP|DOWN)" | head -1)
+    : > "$event_file"
+    getevent -lqc 1 > "$event_file" 2> /dev/null &
+    event_pid=$!
+    sleep 1
+    key="$(cat "$event_file" 2> /dev/null)"
+    kill "$event_pid" 2> /dev/null || true
+    wait "$event_pid" 2> /dev/null || true
 
     if echo "$key" | grep -q "VOLUMEUP"; then
+      rm -f "$event_file"
       printf "up\n"
       return 0
     elif echo "$key" | grep -q "VOLUMEDOWN"; then
+      rm -f "$event_file"
       printf "down\n"
       return 0
     fi
 
-    sleep 1
     timeout=$((timeout - 1))
   done
 
+  rm -f "$event_file"
   # 超时未按键
   printf "timeout\n"
 }
 
 #######################################
-# 询问用户是否安装配套应用 (音量键交互)
+# 读取已安装管理器的版本信息。
 # 参数: 无
-# 返回: 0 (无论安装与否)
+# 返回: 0=标准输出版本信息，1=管理器未安装或无法读取。
 #######################################
-ask_install_app() {
-  print_title "是否安装 NetProxy 配套应用？"
-  ui_print ""
-  ui_print "  [音量+] 安装 (默认)"
-  ui_print "  [音量-] 跳过"
-  ui_print ""
+get_installed_manager_version() {
+  local package_dump version_name version_code
 
-  # 等待选择：音量- 跳过，音量+ 或超时则安装
-  if [ "$(wait_volume_key 10)" = "down" ]; then
-    print_step "已跳过安装"
+  pm path "$MANAGER_PACKAGE" > /dev/null 2>&1 || return 1
+  package_dump="$(dumpsys package "$MANAGER_PACKAGE" 2> /dev/null)" || return 1
+  version_name="$(printf '%s\n' "$package_dump" | sed -n 's/^[[:space:]]*versionName=\([^[:space:]]*\).*/\1/p' | head -n 1)"
+  version_code="$(printf '%s\n' "$package_dump" | sed -n 's/^[[:space:]]*versionCode=\([0-9][0-9]*\).*/\1/p' | head -n 1)"
+
+  [ -n "$version_name" ] || version_name="未知"
+  [ -n "$version_code" ] || version_code="未知"
+  printf '%s (versionCode %s)\n' "$version_name" "$version_code"
+}
+
+#######################################
+# 按安装包内容选择是否安装随附管理器。
+# 参数: 无
+# 全局: 读取 MODPATH
+# 返回: 始终返回 0。
+#######################################
+install_bundled_manager() {
+  local installed_version
+
+  if [ ! -f "$MODPATH/NetProxy.apk" ]; then
+    print_step "本安装包未随附 NetProxy 管理器"
+    ui_print "  可稍后从 Google Play 安装管理器"
+    return 0
+  fi
+
+  if installed_version="$(get_installed_manager_version)"; then
+    print_step "已安装 NetProxy 管理器"
+    ui_print "  当前版本: $installed_version"
+    ui_print "  为避免覆盖现有安装，跳过随附 APK"
     rm -f "$MODPATH/NetProxy.apk"
     return 0
   fi
 
-  # 二次选择：模块内安装 还是 跳转 Google Play
-  sleep 1
-
-  print_title "选择安装来源"
+  print_title "安装 NetProxy 管理器"
   ui_print ""
-  ui_print "  [音量+] 模块内安装 (默认，含广告)"
-  ui_print "  [音量-] Google Play (无广告)"
+  ui_print "  本包随附 NetProxy 管理器 APK"
+  ui_print "  [音量+] 安装 (默认)"
+  ui_print "  [音量-] 跳过"
   ui_print ""
 
-  # 等待选择：音量- 选 Google Play，音量+ 或超时则模块内安装
-  local source="module"
-  [ "$(wait_volume_key 10)" = "down" ] && source="play"
-
-  # 模块内安装：调用 pm 安装内置 APK
-  if [ "$source" = "module" ] && [ -f "$MODPATH/NetProxy.apk" ]; then
-    print_step "正在安装模块内应用..."
-    if pm install -r "$MODPATH/NetProxy.apk" > /dev/null 2>&1; then
-      print_ok "应用安装成功"
-    else
-      print_warn "应用安装失败，请手动安装"
-    fi
-  else
-    # 否则跳转到 Google Play 页面
-    print_step "正在打开 Google Play..."
-    am start -a android.intent.action.VIEW -d "https://play.google.com/store/apps/details?id=com.fanjv.netproxy" > /dev/null 2>&1
-    print_ok "已打开 Google Play"
+  if [ "$(wait_volume_key 10)" = "down" ]; then
+    print_step "已跳过管理器安装"
+    rm -f "$MODPATH/NetProxy.apk"
+    return 0
   fi
 
-  # 清理安装包以减小模块体积
+  print_step "正在安装随附管理器..."
+  if pm install -r "$MODPATH/NetProxy.apk" > /dev/null 2>&1; then
+    print_ok "管理器安装成功"
+  else
+    print_warn "管理器安装失败，可稍后手动安装或使用 Google Play"
+  fi
+
+  # 随附 APK 仅用于刷入时安装，成功或跳过后都不保留在模块目录。
   rm -f "$MODPATH/NetProxy.apk"
 
   return 0
@@ -568,15 +649,15 @@ print_title "NetProxy - sing-box 透明代理"
 ui_print "  版本: $(grep_prop version "$TMPDIR/module.prop" 2> /dev/null || echo "未知")"
 
 # 按顺序执行安装步骤，任一失败则进入失败分支
-if backup_config \
+if choose_install_mode \
+  && backup_config \
   && extract_module \
   && restore_config \
   && set_permissions; then
 
   cleanup
 
-  # 询问是否安装配套应用
-  ask_install_app
+  install_bundled_manager
 
   if [ "${BOOTMODE:-false}" = true ]; then
     stop_proxy_if_running

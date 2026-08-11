@@ -1,5 +1,5 @@
 name: 构建并打包模块
-description: 构建 WebUI、写入 versionCode，并打出完整包与 Lite 包
+description: 构建 WebUI、写入 versionCode，并打出标准包与含管理器包
 
 # 被 ci.yml 与 release.yml 复用的共享打包逻辑（调用前需已 checkout，且 fetch-depth: 0 以便统计提交数）
 outputs:
@@ -9,12 +9,12 @@ outputs:
   commit_count:
     description: 提交数，用作 versionCode
     value: ${{ steps.meta.outputs.commit_count }}
-  full_name:
-    description: 完整包文件名
-    value: ${{ steps.meta.outputs.full_name }}
-  lite_name:
-    description: Lite 包文件名
-    value: ${{ steps.meta.outputs.lite_name }}
+  standard_name:
+    description: 标准包文件名
+    value: ${{ steps.meta.outputs.standard_name }}
+  manager_name:
+    description: 含管理器包文件名
+    value: ${{ steps.meta.outputs.manager_name }}
 
 runs:
   using: composite
@@ -82,18 +82,18 @@ runs:
         {
           echo "version=$VERSION"
           echo "commit_count=$COMMIT_COUNT"
-          echo "full_name=NetProxy_${VERSION}_${COMMIT_COUNT}.zip"
-          echo "lite_name=NetProxy_${VERSION}_${COMMIT_COUNT}_lite.zip"
+          echo "standard_name=NetProxy_${VERSION}_${COMMIT_COUNT}.zip"
+          echo "manager_name=NetProxy_${VERSION}_${COMMIT_COUNT}_with-manager.zip"
         } >> "$GITHUB_OUTPUT"
 
-    - name: 打包模块（完整 / Lite）
+    - name: 打包模块（标准 / 含管理器）
       shell: bash
       working-directory: src/module
       env:
-        FULL_NAME: ${{ steps.meta.outputs.full_name }}
-        LITE_NAME: ${{ steps.meta.outputs.lite_name }}
+        STANDARD_NAME: ${{ steps.meta.outputs.standard_name }}
+        MANAGER_NAME: ${{ steps.meta.outputs.manager_name }}
       run: |
-        # 完整包（全部组件）
-        7z a -tzip -mx=9 "../../$FULL_NAME" .
-        # Lite 包（不内置 Android 管理器 APK，代理与管理能力保持完整）
-        7z a -tzip -mx=9 "../../$LITE_NAME" . -x!"NetProxy.apk"
+        # 标准包不内置 Android 管理器，代理、CLI 和 Web 面板能力完整。
+        7z a -tzip -mx=9 "../../$STANDARD_NAME" . -x!"NetProxy.apk"
+        # 含管理器包只额外携带安装阶段可选安装的 Android APK。
+        7z a -tzip -mx=9 "../../$MANAGER_NAME" .
