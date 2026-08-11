@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/ebpf"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 )
 
 func runEBPF(ctx context.Context, args []string) error {
@@ -27,11 +27,12 @@ func runEBPF(ctx context.Context, args []string) error {
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
+	layout := paths.New(*moduleDir)
 	if strings.TrimSpace(*configPath) == "" {
-		*configPath = filepath.Join(*moduleDir, "config", "ebpf", "ebpf.conf")
+		*configPath = layout.EBPFConfig()
 	}
 	if strings.TrimSpace(*singBoxPath) == "" {
-		*singBoxPath = filepath.Join(*moduleDir, "bin", "sing-box")
+		*singBoxPath = layout.SingBox()
 	}
 	if strings.TrimSpace(*configPath) == "" {
 		return errors.New("eBPF 操作需要 --config")

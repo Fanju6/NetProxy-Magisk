@@ -28,10 +28,6 @@ type moduleFlags struct {
 
 func bindModuleFlags(flags *flag.FlagSet) *moduleFlags {
 	values := &moduleFlags{}
-	progressDir := os.Getenv("SUB_RUNTIME_DIR")
-	if progressDir == "" {
-		progressDir = "/dev/netproxy/subscriptions"
-	}
 	flags.StringVar(&values.moduleDir, "module-dir", defaultModuleDir(), "模块根目录")
 	flags.StringVar(&values.managerVersion, "manager-version", "unknown", "Android 管理器版本")
 	flags.StringVar(&values.managerVersionCode, "manager-version-code", "unknown", "Android 管理器版本号")
@@ -41,12 +37,12 @@ func bindModuleFlags(flags *flag.FlagSet) *moduleFlags {
 	flags.StringVar(&values.singBox, "sing-box", "", "sing-box 路径")
 	flags.StringVar(&values.singBoxDir, "singbox-dir", "", "sing-box 配置目录")
 	flags.StringVar(&values.runtimeDir, "runtime-dir", "", "运行时目录")
-	flags.StringVar(&values.progressDir, "progress-dir", progressDir, "订阅进度目录")
+	flags.StringVar(&values.progressDir, "progress-dir", defaultProgressDir(), "订阅进度目录")
 	flags.StringVar(&values.address, "address", "127.0.0.1:9090", "Service API 地址")
 	flags.StringVar(&values.secret, "secret", "singbox", "Service API 密钥")
 	flags.StringVar(&values.logDir, "log-dir", "", "日志目录")
 	flags.StringVar(&values.stateFile, "state-file", "", "服务状态文件")
-	flags.StringVar(&values.workerPID, "worker-pid-file", "/dev/netproxy/subworker.pid", "Worker PID 文件")
+	flags.StringVar(&values.workerPID, "worker-pid-file", "", "Worker PID 文件")
 	flags.StringVar(&values.workerLog, "worker-log-file", "", "Worker 日志文件")
 	flags.BoolVar(&values.skipServiceReload, "skip-service-reload", false, "服务内部同步时禁止嵌套 reload")
 	flags.DurationVar(&values.timeout, "timeout", 8*time.Second, "Service API 超时")
@@ -105,6 +101,13 @@ func (values *moduleFlags) options() moduleapp.Options {
 
 func defaultModuleDir() string {
 	return paths.Root()
+}
+
+func defaultProgressDir() string {
+	if progressDir := strings.TrimSpace(os.Getenv("SUB_RUNTIME_DIR")); progressDir != "" {
+		return filepath.Clean(progressDir)
+	}
+	return paths.Default().ProgressDir()
 }
 
 func runModule(ctx context.Context, args []string) error {

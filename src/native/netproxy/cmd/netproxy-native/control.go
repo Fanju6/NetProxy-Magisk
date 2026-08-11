@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 )
 
@@ -22,8 +22,8 @@ func runControl(ctx context.Context, args []string) error {
 	catalogRoot := flags.String("catalog-root", "", "Catalog 根目录")
 	moduleConfig := flags.String("module-config", "", "模块配置文件")
 	stateFile := flags.String("state-file", "", "服务状态文件")
-	progressDir := flags.String("progress-dir", "/dev/netproxy/subscriptions", "订阅进度目录")
-	workerPIDFile := flags.String("worker-pid-file", "/dev/netproxy/worker.pid", "订阅 Worker PID 文件")
+	progressDir := flags.String("progress-dir", "", "订阅进度目录")
+	workerPIDFile := flags.String("worker-pid-file", "", "订阅 Worker PID 文件")
 	singBox := flags.String("sing-box", "", "sing-box 二进制路径")
 	address := flags.String("address", "127.0.0.1:9090", "Service API 地址")
 	secret := flags.String("secret", "singbox", "Service API 密钥")
@@ -35,26 +35,24 @@ func runControl(ctx context.Context, args []string) error {
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
+	layout := paths.New(*moduleDir)
 	if strings.TrimSpace(*catalogRoot) == "" {
-		*catalogRoot = filepath.Join(*moduleDir, "data", "catalog")
+		*catalogRoot = layout.Catalog()
 	}
 	if strings.TrimSpace(*moduleConfig) == "" {
-		*moduleConfig = filepath.Join(*moduleDir, "config", "module.conf")
+		*moduleConfig = layout.ModuleConfig()
 	}
 	if strings.TrimSpace(*stateFile) == "" {
-		*stateFile = "/dev/netproxy/service.json"
+		*stateFile = layout.ServiceState()
 	}
 	if strings.TrimSpace(*progressDir) == "" {
-		*progressDir = os.Getenv("SUB_RUNTIME_DIR")
-		if *progressDir == "" {
-			*progressDir = "/dev/netproxy/subscriptions"
-		}
+		*progressDir = defaultProgressDir()
 	}
 	if strings.TrimSpace(*workerPIDFile) == "" {
-		*workerPIDFile = "/dev/netproxy/subworker.pid"
+		*workerPIDFile = layout.WorkerPID()
 	}
 	if strings.TrimSpace(*singBox) == "" {
-		*singBox = filepath.Join(*moduleDir, "bin", "sing-box")
+		*singBox = layout.SingBox()
 	}
 	options := service.Options{
 		CatalogRoot: *catalogRoot, ModuleConfig: *moduleConfig, StateFile: *stateFile,

@@ -16,6 +16,7 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/ebpf"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
@@ -47,26 +48,23 @@ type Options struct {
 
 // NewOptions 根据模块根目录返回完整的默认路径。
 func NewOptions(moduleDir string) Options {
-	configDir := filepath.Join(moduleDir, "config")
-	dataDir := filepath.Join(moduleDir, "data")
-	runtimeDir := filepath.Join(moduleDir, "runtime")
-	singBoxDir := filepath.Join(configDir, "singbox")
+	layout := paths.New(moduleDir)
 	return Options{
-		ModuleDir:      moduleDir,
-		CatalogRoot:    filepath.Join(dataDir, "catalog"),
-		ModuleConfig:   filepath.Join(configDir, "module.conf"),
-		EBPFConfig:     filepath.Join(configDir, "ebpf", "ebpf.conf"),
-		SingBoxPath:    filepath.Join(moduleDir, "bin", "sing-box"),
-		SingBoxDir:     singBoxDir,
-		RuntimeDir:     runtimeDir,
-		StateFile:      filepath.Join("/dev/netproxy", "service.json"),
-		ProgressDir:    "/dev/netproxy/subscriptions",
-		LogDir:         filepath.Join(moduleDir, "logs"),
+		ModuleDir:      layout.Root(),
+		CatalogRoot:    layout.Catalog(),
+		ModuleConfig:   layout.ModuleConfig(),
+		EBPFConfig:     layout.EBPFConfig(),
+		SingBoxPath:    layout.SingBox(),
+		SingBoxDir:     layout.SingBoxDir(),
+		RuntimeDir:     layout.Runtime(),
+		StateFile:      layout.ServiceState(),
+		ProgressDir:    layout.ProgressDir(),
+		LogDir:         layout.Logs(),
 		ServiceAddress: "127.0.0.1:9090",
 		ServiceSecret:  "singbox",
-		WorkerPIDFile:  "/dev/netproxy/subworker.pid",
-		WorkerLogFile:  filepath.Join(moduleDir, "logs", "service.log"),
-		WiFiStateFile:  "/dev/netproxy/wifi_state",
+		WorkerPIDFile:  layout.WorkerPID(),
+		WorkerLogFile:  layout.ServiceLog(),
+		WiFiStateFile:  layout.WiFiState(),
 		RequestTimeout: 8 * time.Second,
 	}
 }
@@ -137,7 +135,7 @@ func Check(ctx context.Context, options Options, allowEmpty bool) (PrepareResult
 	if options.SingBoxPath == "" {
 		return prepared, errors.New("sing-box 路径为空")
 	}
-	confDir := filepath.Join(options.SingBoxDir, "confdir")
+	confDir := paths.SingBoxConfDir(options.SingBoxDir)
 	command := exec.CommandContext(ctx, options.SingBoxPath, "check", "-C", confDir,
 		"-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.EBPF)
 	command.Dir = options.SingBoxDir
@@ -730,7 +728,7 @@ func workerOptions(options Options) worker.Options {
 		PIDFile:             options.WorkerPIDFile,
 		LogFile:             options.WorkerLogFile,
 		ModuleConf:          options.ModuleConfig,
-		NativePath:          filepath.Join(options.ModuleDir, "bin", "netproxy-native"),
+		NativePath:          paths.New(options.ModuleDir).Native(),
 		SingBoxPath:         options.SingBoxPath,
 		ServiceAddress:      options.ServiceAddress,
 		ServiceSecret:       options.ServiceSecret,

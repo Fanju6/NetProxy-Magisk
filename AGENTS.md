@@ -63,6 +63,7 @@ src/module/service.sh
 ## Go 组件
 
 - `src/native/netproxy` 是 Catalog、Provider、订阅事务、配置、eBPF 运行时、Service API 与 sing-box 生命周期的业务事实源；Shell 只负责模块 service 阶段进入 Go 的平台桥接。
+- 模块、配置、Catalog、运行时、日志、二进制与 `/dev/netproxy` 状态路径统一由 `internal/paths.Layout` 推导。生产代码不得自行拼接这些布局；测试和用户指定的导入、导出、临时路径仍可显式注入。
 - 允许且仅允许一个 Go Worker。它承载订阅调度和可选的 Android 网络监听，不能演变为通用控制守护进程、REST 服务或第二个代理核心。
 - 使用 reF1nd sing-box 的类型定义解析、生成和校验 Provider，不通过字符串替换拼接协议配置。
 - reF1nd 依赖版本必须与打包的 sing-box 内核兼容；升级时同时验证转换 fixtures、Provider 和 Service API。

@@ -13,6 +13,7 @@ import (
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/worker"
 )
@@ -302,6 +303,7 @@ func Delay(ctx context.Context, options Options, target, group string) (DelayRes
 }
 
 func normalizeOptions(options Options) Options {
+	layout := paths.Default()
 	if options.ServiceAddress == "" {
 		options.ServiceAddress = "127.0.0.1:9090"
 	}
@@ -312,10 +314,10 @@ func normalizeOptions(options Options) Options {
 		options.RequestTimeout = 8 * time.Second
 	}
 	if options.ProgressDir == "" {
-		options.ProgressDir = "/dev/netproxy/subscriptions"
+		options.ProgressDir = layout.ProgressDir()
 	}
 	if options.WorkerPIDFile == "" {
-		options.WorkerPIDFile = "/dev/netproxy/subworker.pid"
+		options.WorkerPIDFile = layout.WorkerPID()
 	}
 	return options
 }

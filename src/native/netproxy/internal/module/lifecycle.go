@@ -11,6 +11,7 @@ import (
 	"time"
 
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/worker"
@@ -262,7 +263,7 @@ func Boot(ctx context.Context, options Options, executable string) error {
 		logService(options, "INFO", "开机自启动已禁用，跳过启动")
 	}
 	if executable == "" {
-		executable = filepath.Join(options.ModuleDir, "bin", "netproxy-native")
+		executable = paths.New(options.ModuleDir).Native()
 	}
 	if err := ensureWorker(ctx, options); err != nil {
 		logService(options, "WARN", "订阅自动更新 Worker 启动失败，可稍后手动重试: %v", err)
@@ -272,7 +273,7 @@ func Boot(ctx context.Context, options Options, executable string) error {
 }
 
 func ensureWorker(ctx context.Context, options Options) error {
-	executable := filepath.Join(options.ModuleDir, "bin", "netproxy-native")
+	executable := paths.New(options.ModuleDir).Native()
 	if _, err := worker.Start(ctx, workerOptions(options), executable); err != nil {
 		return err
 	}
@@ -293,7 +294,7 @@ func validateLifecycleOptions(options Options) error {
 	}
 	for name, path := range map[string]string{
 		"sing-box 二进制":  options.SingBoxPath,
-		"sing-box 配置目录": filepath.Join(options.SingBoxDir, "confdir"),
+		"sing-box 配置目录": paths.SingBoxConfDir(options.SingBoxDir),
 		"Catalog":       options.CatalogRoot,
 	} {
 		info, err := os.Stat(path)
@@ -326,7 +327,7 @@ func newSingBoxCommand(options Options, prepared PrepareResult) (*exec.Cmd, *os.
 	if err != nil {
 		return nil, nil, err
 	}
-	command := exec.Command(options.SingBoxPath, "run", "-C", filepath.Join(options.SingBoxDir, "confdir"),
+	command := exec.Command(options.SingBoxPath, "run", "-C", paths.SingBoxConfDir(options.SingBoxDir),
 		"-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.EBPF)
 	command.Dir = options.SingBoxDir
 	command.Stdout = logFile
@@ -336,7 +337,7 @@ func newSingBoxCommand(options Options, prepared PrepareResult) (*exec.Cmd, *os.
 }
 
 func checkPreparedConfiguration(ctx context.Context, options Options, prepared PrepareResult) error {
-	command := exec.CommandContext(ctx, options.SingBoxPath, "check", "-C", filepath.Join(options.SingBoxDir, "confdir"),
+	command := exec.CommandContext(ctx, options.SingBoxPath, "check", "-C", paths.SingBoxConfDir(options.SingBoxDir),
 		"-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.EBPF)
 	command.Dir = options.SingBoxDir
 	command.Stdout = os.Stderr

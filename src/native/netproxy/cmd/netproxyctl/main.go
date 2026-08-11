@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -39,10 +38,11 @@ func main() {
 }
 
 func newCLI() *cli {
-	moduleDir := paths.Root()
+	layout := paths.Default()
+	moduleDir := layout.Root()
 	nativePath := os.Getenv("NETPROXY_NATIVE_BIN")
 	if nativePath == "" {
-		nativePath = filepath.Join(moduleDir, "bin", "netproxy-native")
+		nativePath = layout.Native()
 	}
 	return &cli{moduleDir: moduleDir, nativePath: nativePath}
 }

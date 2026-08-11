@@ -6,11 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/worker"
 )
 
@@ -20,10 +20,10 @@ func runSubworker(ctx context.Context, args []string) error {
 	}
 	action := args[0]
 	flags := newFlagSet("subworker " + action)
-	moduleDir := flags.String("module-dir", "", "NetProxy 模块目录")
+	moduleDir := flags.String("module-dir", defaultModuleDir(), "NetProxy 模块目录")
 	root := flags.String("root", "", "Catalog 根目录")
-	progressDir := flags.String("progress-dir", "/dev/netproxy/subscriptions", "订阅进度目录")
-	pidFile := flags.String("pid-file", "/dev/netproxy/subworker.pid", "Worker PID 文件")
+	progressDir := flags.String("progress-dir", "", "订阅进度目录")
+	pidFile := flags.String("pid-file", "", "Worker PID 文件")
 	logFile := flags.String("log-file", "", "Worker 日志文件")
 	moduleConf := flags.String("module-conf", "", "模块配置文件")
 	nativePath := flags.String("native-path", "", "NetProxy 原生组件路径")
@@ -36,23 +36,27 @@ func runSubworker(ctx context.Context, args []string) error {
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
-	if strings.TrimSpace(*moduleDir) != "" {
-		modulePath := filepath.Clean(*moduleDir)
-		if strings.TrimSpace(*root) == "" {
-			*root = filepath.Join(modulePath, "data", "catalog")
-		}
-		if strings.TrimSpace(*moduleConf) == "" {
-			*moduleConf = filepath.Join(modulePath, "config", "module.conf")
-		}
-		if strings.TrimSpace(*nativePath) == "" {
-			*nativePath = filepath.Join(modulePath, "bin", "netproxy-native")
-		}
-		if strings.TrimSpace(*singBox) == "" {
-			*singBox = filepath.Join(modulePath, "bin", "sing-box")
-		}
-		if strings.TrimSpace(*logFile) == "" {
-			*logFile = filepath.Join(modulePath, "logs", "service.log")
-		}
+	layout := paths.New(*moduleDir)
+	if strings.TrimSpace(*root) == "" {
+		*root = layout.Catalog()
+	}
+	if strings.TrimSpace(*moduleConf) == "" {
+		*moduleConf = layout.ModuleConfig()
+	}
+	if strings.TrimSpace(*nativePath) == "" {
+		*nativePath = layout.Native()
+	}
+	if strings.TrimSpace(*singBox) == "" {
+		*singBox = layout.SingBox()
+	}
+	if strings.TrimSpace(*logFile) == "" {
+		*logFile = layout.ServiceLog()
+	}
+	if strings.TrimSpace(*progressDir) == "" {
+		*progressDir = defaultProgressDir()
+	}
+	if strings.TrimSpace(*pidFile) == "" {
+		*pidFile = layout.WorkerPID()
 	}
 	if strings.TrimSpace(*root) == "" {
 		return errors.New("subworker 需要 --root")
@@ -70,12 +74,12 @@ func runSubworker(ctx context.Context, args []string) error {
 		return errors.New("subworker 需要 --module-conf")
 	}
 	if options.LogFile == "" {
-		options.LogFile = filepath.Join(filepath.Dir(*root), "..", "logs", "service.log")
+		options.LogFile = layout.ServiceLog()
 	}
 	if options.NativePath == "" {
 		options.NativePath = os.Args[0]
 	}
-	configureNetworkWatcher(&options, *root, *moduleConf, *singBox, *serviceAddress, *serviceSecret, *progressDir, *pidFile)
+	configureNetworkWatcher(&options, layout.Root(), *root, *moduleConf, *singBox, *serviceAddress, *serviceSecret, *progressDir, *pidFile)
 	switch action {
 	case "run":
 		logger, closer, err := worker.OpenLogger(options.LogFile)
@@ -148,12 +152,11 @@ func runSubworker(ctx context.Context, args []string) error {
 	}
 }
 
-func configureNetworkWatcher(options *worker.Options, catalogRoot, moduleConf, singBox, address, secret, progressDir, pidFile string) {
+func configureNetworkWatcher(options *worker.Options, moduleDir, catalogRoot, moduleConf, singBox, address, secret, progressDir, pidFile string) {
 	if options == nil || strings.TrimSpace(moduleConf) == "" {
 		return
 	}
 
-	moduleDir := filepath.Dir(filepath.Dir(catalogRoot))
 	moduleOptions := moduleapp.NewOptions(moduleDir)
 	moduleOptions.CatalogRoot = catalogRoot
 	moduleOptions.ModuleConfig = moduleConf

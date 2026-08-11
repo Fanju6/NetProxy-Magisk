@@ -13,6 +13,7 @@ import (
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 )
@@ -69,10 +70,11 @@ type Status struct {
 
 // NewOptions 返回模块默认的 Worker 配置。
 func NewOptions(root string) Options {
+	layout := paths.Default()
 	return Options{
 		Root:              root,
-		ProgressDir:       "/dev/netproxy/subscriptions",
-		PIDFile:           "/dev/netproxy/subworker.pid",
+		ProgressDir:       layout.ProgressDir(),
+		PIDFile:           layout.WorkerPID(),
 		ServiceAddress:    "127.0.0.1:9090",
 		ServiceSecret:     defaultServiceSecret,
 		NetworkTablesPath: "/data/misc/net/rt_tables",

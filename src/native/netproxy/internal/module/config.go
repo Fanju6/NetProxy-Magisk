@@ -14,6 +14,7 @@ import (
 
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/ebpf"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 )
 
@@ -37,8 +38,8 @@ func ListConfigs(options Options) ([]ConfigDocument, error) {
 		category   string
 		editable   bool
 	}{
-		{filepath.Join(options.SingBoxDir, "confdir"), "confdir", "config", true},
-		{filepath.Join(options.SingBoxDir, "rules", "local"), "rules/local", "rules", true},
+		{paths.SingBoxConfDir(options.SingBoxDir), "confdir", "config", true},
+		{paths.SingBoxLocalRulesDir(options.SingBoxDir), "rules/local", "rules", true},
 	} {
 		entries, err := os.ReadDir(item.dir)
 		if os.IsNotExist(err) {
@@ -177,8 +178,11 @@ func validateSingBoxTree(ctx context.Context, options Options, target, candidate
 		return err
 	}
 	defer os.RemoveAll(temporary)
-	for _, name := range []string{"confdir", "rules"} {
-		if err := copyDirectory(filepath.Join(options.SingBoxDir, name), filepath.Join(temporary, name)); err != nil {
+	for _, directory := range []struct{ source, destination string }{
+		{paths.SingBoxConfDir(options.SingBoxDir), paths.SingBoxConfDir(temporary)},
+		{paths.SingBoxRulesDir(options.SingBoxDir), paths.SingBoxRulesDir(temporary)},
+	} {
+		if err := copyDirectory(directory.source, directory.destination); err != nil {
 			return err
 		}
 	}
@@ -186,11 +190,11 @@ func validateSingBoxTree(ctx context.Context, options Options, target, candidate
 	if err != nil {
 		return err
 	}
-	relative, err := filepath.Rel(filepath.Join(options.SingBoxDir, "confdir"), targetPath)
+	relative, err := filepath.Rel(paths.SingBoxConfDir(options.SingBoxDir), targetPath)
 	if err != nil {
 		return err
 	}
-	candidatePath := filepath.Join(temporary, "confdir", relative)
+	candidatePath := filepath.Join(paths.SingBoxConfDir(temporary), relative)
 	if err := os.MkdirAll(filepath.Dir(candidatePath), 0o700); err != nil {
 		return err
 	}
@@ -201,7 +205,7 @@ func validateSingBoxTree(ctx context.Context, options Options, target, candidate
 	if err != nil {
 		return err
 	}
-	command := exec.CommandContext(ctx, options.SingBoxPath, "check", "-C", filepath.Join(temporary, "confdir"),
+	command := exec.CommandContext(ctx, options.SingBoxPath, "check", "-C", paths.SingBoxConfDir(temporary),
 		"-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.EBPF)
 	command.Dir = temporary
 	command.Stdout = os.Stderr

@@ -6,10 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 )
 
@@ -35,14 +35,12 @@ func runSubscription(ctx context.Context, args []string) error {
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
+	layout := paths.New(*moduleDir)
 	if strings.TrimSpace(*root) == "" {
-		*root = filepath.Join(*moduleDir, "data", "catalog")
+		*root = layout.Catalog()
 	}
 	if strings.TrimSpace(*progressDir) == "" {
-		*progressDir = os.Getenv("SUB_RUNTIME_DIR")
-		if *progressDir == "" {
-			*progressDir = "/dev/netproxy/subscriptions"
-		}
+		*progressDir = defaultProgressDir()
 	}
 	if strings.TrimSpace(*root) == "" || strings.TrimSpace(*groupID) == "" {
 		return errors.New("subscription update 需要 --root 和 --group")
@@ -106,14 +104,12 @@ func runSubscriptionEdit(ctx context.Context, args []string) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
+	layout := paths.New(*moduleDir)
 	if strings.TrimSpace(*root) == "" {
-		*root = filepath.Join(*moduleDir, "data", "catalog")
+		*root = layout.Catalog()
 	}
 	if strings.TrimSpace(*progressDir) == "" {
-		*progressDir = os.Getenv("SUB_RUNTIME_DIR")
-		if *progressDir == "" {
-			*progressDir = "/dev/netproxy/subscriptions"
-		}
+		*progressDir = defaultProgressDir()
 	}
 	if strings.TrimSpace(*root) == "" || strings.TrimSpace(*groupID) == "" {
 		return errors.New("subscription edit 需要 --root 和 --group")

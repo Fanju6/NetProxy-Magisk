@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 )
 
 var (
@@ -108,13 +110,13 @@ func ExportLogs(options Options, destination string) error {
 		archiveFile{source: options.EBPFConfig, name: "config/ebpf.conf", redact: true},
 	)
 	for _, directory := range []struct{ path, name string }{
-		{filepath.Join(options.SingBoxDir, "confdir"), "config/singbox/confdir"},
-		{filepath.Join(options.SingBoxDir, "rules", "local"), "config/singbox/rules/local"},
+		{paths.SingBoxConfDir(options.SingBoxDir), "config/singbox/confdir"},
+		{paths.SingBoxLocalRulesDir(options.SingBoxDir), "config/singbox/rules/local"},
 	} {
 		appendDirectoryFiles(&files, directory.path, directory.name, true, false)
 	}
 	appendDirectoryFiles(&files,
-		filepath.Join(options.SingBoxDir, "rules", "remote"),
+		paths.SingBoxRemoteRulesDir(options.SingBoxDir),
 		"config/singbox/rules/remote", false, false,
 	)
 	appendDirectoryFiles(&files, options.CatalogRoot, "data/catalog", true, true)
@@ -160,7 +162,7 @@ func versionOrUnknown(value string) string {
 }
 
 func moduleVersionInfo(options Options) (string, string) {
-	content, err := os.ReadFile(filepath.Join(options.ModuleDir, "module.prop"))
+	content, err := os.ReadFile(paths.New(options.ModuleDir).ModuleProp())
 	if err != nil {
 		return "unknown", "unknown"
 	}
