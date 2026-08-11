@@ -48,13 +48,8 @@ func run(ctx context.Context, args []string) error {
 		return runConfig(ctx, args[1:])
 	case "module":
 		return runModule(ctx, args[1:])
-	case "subworker":
-		return runSubworker(ctx, args[1:])
-	case "sub":
-		if len(args) > 1 && args[1] == "worker" {
-			return runSubworker(ctx, args[2:])
-		}
-		return fmt.Errorf("未知 sub 操作")
+	case "worker":
+		return runWorker(ctx, args[1:])
 	case "version":
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "version", Message: "版本信息", Data: map[string]string{
 			"netproxy_native": version,

@@ -9,7 +9,7 @@
 ## 项目边界
 
 - `src/module/`：Magisk、KernelSU 与 APatch 模块，包含生命周期脚本、`netproxyctl`、sing-box 配置、资源和打包内容。
-- `src/native/netproxy/`：模块专用 Go 组件，负责节点转换、Provider、订阅、配置、eBPF 运行时、Service API 与唯一允许的订阅 Worker。
+- `src/native/netproxy/`：模块专用 Go 组件，负责节点转换、Provider、订阅、配置、eBPF 运行时、Service API 与唯一允许的后台 Worker。
 - `src/webui/`：React + TypeScript 终端式 WebUI，构建产物写入 `src/module/webroot/netproxy/`。
 - `src/android/`：Android 管理器，使用 Compose、miuix、Navigation3 和内置 Scripta 源码快照。
 - `docs/`：VitePress 用户文档；`tests/`：Shell 契约与运行时回归测试。
@@ -51,7 +51,7 @@
 src/module/service.sh
 ```
 
-以下旧业务脚本已从运行时删除，不得重新添加：`subscription.sh`、`subworker.sh`、`ebpf.sh`、`switch.sh`、`runtime.sh`、`utils/api.sh`、`utils/catalog.sh`、`utils/metadata.sh`、`network/tproxy.sh`、`utils/ipset.sh` 和 `core/subsched.sh`。`customize.sh` 中仍可保留一次性的旧 Worker/TPROXY 清理分支，但这些分支只用于安装时清理残留，不属于当前运行时兼容层。
+以下旧业务脚本已从运行时删除，不得重新添加：`subscription.sh`、`ebpf.sh`、`switch.sh`、`runtime.sh`、`utils/api.sh`、`utils/catalog.sh`、`utils/metadata.sh`、`network/tproxy.sh`、`utils/ipset.sh` 和 `core/subsched.sh`。`customize.sh` 中仍可保留一次性的 Worker/TPROXY 资源清理分支，但这些分支只用于安装时清理残留，不属于当前运行时兼容层。
 
 ## Shell 约定
 
@@ -187,7 +187,7 @@ WebUI ───────────┼─> netproxyctl ─> Go 业务层 ─
                          │              │          └─> 网络事件采集
                          │              ├─> 节点、订阅、Provider、配置
                          │              ├─> eBPF runtime 与 Service API
-                         │              └─> 订阅 Worker
+                         │              └─> 后台 Worker
                          └─> schema=1 JSON 契约
 ```
 
@@ -273,7 +273,7 @@ OUTBOUND_MODE=rule
 
 下载、转换和校验阶段可以取消，原子提交阶段不可取消。任何失败都保留上一版有效 Provider 和当前选择。核心 ready 时可按设置经本地代理下载；核心停止或代理下载失败时，`auto` 策略允许直连重试。
 
-Worker 根据各订阅的 `next_update_at` 调度，不依赖 sing-box 和 `crond`；同时轮询 Android 路由表并读取 Wi-Fi 状态，网络策略是否生效由每次评估读取的配置决定。它由 Go 实现并替换 `subworker.sh`；运行时进度放在 `/dev/netproxy/subscriptions/`，完成后不作为长期 UI 状态显示。
+Worker 根据各订阅的 `next_update_at` 调度，不依赖 sing-box 和 `crond`；同时轮询 Android 路由表并读取 Wi-Fi 状态，网络策略是否生效由每次评估读取的配置决定。运行时进度放在 `/dev/netproxy/subscriptions/`，完成后不作为长期 UI 状态显示。
 
 订阅响应头的解析要点：`Subscription-Userinfo` 提供流量与到期，空值（如 `expire=`）表示不适用而非畸形；`Profile-Title` 可能带 `base64:` 前缀或 RFC 2047 编码；`Content-Disposition` 的 `filename` 可能是 RFC 5987 形式，也可能直接携带原始 UTF-8 字节。
 

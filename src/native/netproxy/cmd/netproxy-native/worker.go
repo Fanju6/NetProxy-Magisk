@@ -14,12 +14,12 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/worker"
 )
 
-func runSubworker(ctx context.Context, args []string) error {
+func runWorker(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return errors.New("缺少 Worker 操作: start|stop|restart|wake|status|once|run")
 	}
 	action := args[0]
-	flags := newFlagSet("subworker " + action)
+	flags := newFlagSet("worker " + action)
 	moduleDir := flags.String("module-dir", defaultModuleDir(), "NetProxy 模块目录")
 	root := flags.String("root", "", "Catalog 根目录")
 	progressDir := flags.String("progress-dir", "", "订阅进度目录")
@@ -59,7 +59,7 @@ func runSubworker(ctx context.Context, args []string) error {
 		*pidFile = layout.WorkerPID()
 	}
 	if strings.TrimSpace(*root) == "" {
-		return errors.New("subworker 需要 --root")
+		return errors.New("worker 需要 --root")
 	}
 	options := worker.NewOptions(*root)
 	options.ProgressDir = *progressDir
@@ -71,7 +71,7 @@ func runSubworker(ctx context.Context, args []string) error {
 	options.ServiceAddress = *serviceAddress
 	options.ServiceSecret = *serviceSecret
 	if options.ModuleConf == "" {
-		return errors.New("subworker 需要 --module-conf")
+		return errors.New("worker 需要 --module-conf")
 	}
 	if options.LogFile == "" {
 		options.LogFile = layout.ServiceLog()
@@ -93,12 +93,12 @@ func runSubworker(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		return writeWorkerResult(*format, "worker.started", "订阅 Worker 已启动", status)
+		return writeWorkerResult(*format, "worker.started", "后台 Worker 已启动", status)
 	case "stop":
 		if err := worker.Stop(options); err != nil {
 			return err
 		}
-		return writeWorkerResult(*format, "worker.stopped", "订阅 Worker 已停止", worker.Status{State: "stopped"})
+		return writeWorkerResult(*format, "worker.stopped", "后台 Worker 已停止", worker.Status{State: "stopped"})
 	case "restart":
 		if err := worker.Stop(options); err != nil {
 			return err
@@ -107,13 +107,13 @@ func runSubworker(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		return writeWorkerResult(*format, "worker.restarted", "订阅 Worker 已重启", status)
+		return writeWorkerResult(*format, "worker.restarted", "后台 Worker 已重启", status)
 	case "wake":
 		status, err := worker.Wake(ctx, options, os.Args[0])
 		if err != nil {
 			return err
 		}
-		return writeWorkerResult(*format, "worker.woken", "订阅 Worker 已唤醒", status)
+		return writeWorkerResult(*format, "worker.woken", "后台 Worker 已唤醒", status)
 	case "status":
 		status, err := worker.ReadStatus(options)
 		if err != nil {
@@ -123,7 +123,7 @@ func runSubworker(ctx context.Context, args []string) error {
 			fmt.Printf("state\t%s\npid\t%d\nnearest\t%d\n", status.State, status.PID, status.Nearest)
 			return nil
 		}
-		return writeWorkerResult(*format, "worker.status", "订阅 Worker 状态", status)
+		return writeWorkerResult(*format, "worker.status", "后台 Worker 状态", status)
 	case "once":
 		logger, closer, err := worker.OpenLogger(options.LogFile)
 		if err != nil {

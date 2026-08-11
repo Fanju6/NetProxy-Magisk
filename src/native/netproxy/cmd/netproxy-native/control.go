@@ -23,7 +23,7 @@ func runControl(ctx context.Context, args []string) error {
 	moduleConfig := flags.String("module-config", "", "模块配置文件")
 	stateFile := flags.String("state-file", "", "服务状态文件")
 	progressDir := flags.String("progress-dir", "", "订阅进度目录")
-	workerPIDFile := flags.String("worker-pid-file", "", "订阅 Worker PID 文件")
+	workerPIDFile := flags.String("worker-pid-file", "", "后台 Worker PID 文件")
 	singBox := flags.String("sing-box", "", "sing-box 二进制路径")
 	address := flags.String("address", "127.0.0.1:9090", "Service API 地址")
 	secret := flags.String("secret", "singbox", "Service API 密钥")
@@ -66,9 +66,9 @@ func runControl(ctx context.Context, args []string) error {
 			return err
 		}
 		if *format == "text" {
-			fmt.Fprintf(os.Stdout, "服务状态: %s\n运行时间: %d 秒\n出站模式: %s\n活动分组: %s\n节点选择: %s\n订阅更新: %s\n",
+			fmt.Fprintf(os.Stdout, "服务状态: %s\n运行时间: %d 秒\n出站模式: %s\n活动分组: %s\n节点选择: %s\n后台 Worker: %s\n",
 				status.State, status.UptimeSeconds, status.OutboundMode, status.ActiveGroupName,
-				status.RuntimeSelected, status.SubscriptionWorker)
+				status.RuntimeSelected, status.WorkerState)
 			return nil
 		}
 		if *format != "json" {

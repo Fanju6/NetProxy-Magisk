@@ -55,8 +55,8 @@ type Status struct {
 	ConnectionsOut         int32  `json:"connections_out"`
 	UploadTotal            int64  `json:"upload_total"`
 	DownloadTotal          int64  `json:"download_total"`
-	SubscriptionWorker     string `json:"subscription_worker"`
-	SubscriptionWorkerPID  *int   `json:"subscription_worker_pid"`
+	WorkerState            string `json:"worker_state"`
+	WorkerPID              *int   `json:"worker_pid"`
 }
 
 // DelayResult 是一次节点测速请求及其最新分组状态。
@@ -114,7 +114,7 @@ func ReadStatus(ctx context.Context, options Options) (Status, error) {
 		ActiveGroupID:          readConfig(options.ModuleConfig, "ACTIVE_GROUP_ID", ""),
 		SelectedNodeRef:        readConfig(options.ModuleConfig, "SELECTED_NODE_REF", ""),
 		CPUCount:               1,
-		SubscriptionWorker:     "stopped",
+		WorkerState:            "stopped",
 	}
 
 	_, active := readActiveGroup(ctx, options)
@@ -151,10 +151,10 @@ func ReadStatus(ctx context.Context, options Options) (Status, error) {
 	}
 
 	if worker, err := readWorkerStatus(options); err == nil {
-		status.SubscriptionWorker = worker.State
+		status.WorkerState = worker.State
 		if worker.State == "running" && worker.PID > 0 {
 			pid := worker.PID
-			status.SubscriptionWorkerPID = &pid
+			status.WorkerPID = &pid
 		}
 	}
 

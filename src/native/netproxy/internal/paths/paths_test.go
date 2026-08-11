@@ -21,7 +21,7 @@ func TestLayout(t *testing.T) {
 		"runtime":       filepath.Join(root, "runtime"),
 		"logs":          filepath.Join(root, "logs"),
 		"service state": filepath.Join("/dev", "netproxy", "service.json"),
-		"worker pid":    filepath.Join("/dev", "netproxy", "subworker.pid"),
+		"worker pid":    filepath.Join("/dev", "netproxy", "worker.pid"),
 		"progress":      filepath.Join("/dev", "netproxy", "subscriptions"),
 		"wifi state":    filepath.Join("/dev", "netproxy", "wifi_state"),
 	}

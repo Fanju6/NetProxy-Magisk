@@ -187,9 +187,9 @@
 
     <!-- Placeholders -->
 
-    <!-- 订阅定时更新 (subsched.sh) -->
+    <!-- 订阅定时更新 -->
 
-    <!-- WiFi SSID 自动切换代理 (netmon.sh) -->
+    <!-- WiFi SSID 自动切换代理 -->
     <string name="wifi_auto_switch_title">WiFi 自动切换</string>
     <string name="wifi_auto_switch">按 WiFi 自动切换</string>
     <string name="wifi_auto_switch_summary">根据当前 WiFi 名称自动开启或关闭代理</string>

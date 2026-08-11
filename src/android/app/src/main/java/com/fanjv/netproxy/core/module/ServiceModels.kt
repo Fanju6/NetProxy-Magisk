@@ -27,6 +27,6 @@ internal data class ServiceStatusSnapshot(
     @SerialName("connections_out") val connectionsOut: Int = 0,
     @SerialName("upload_total") val uploadTotal: Long = 0,
     @SerialName("download_total") val downloadTotal: Long = 0,
-    @SerialName("subscription_worker") val subscriptionWorker: String = "stopped",
-    @SerialName("subscription_worker_pid") val subscriptionWorkerPid: Int? = null
+    @SerialName("worker_state") val workerState: String = "stopped",
+    @SerialName("worker_pid") val workerPid: Int? = null
 )

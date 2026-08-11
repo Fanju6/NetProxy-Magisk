@@ -35,7 +35,7 @@ func isWorkerProcessPID(pid int) bool {
 	}
 	arguments := strings.Split(string(content), "\x00")
 	for index, argument := range arguments {
-		if argument == "subworker" && index+1 < len(arguments) && arguments[index+1] == "run" {
+		if argument == "worker" && index+1 < len(arguments) && arguments[index+1] == "run" {
 			return true
 		}
 	}

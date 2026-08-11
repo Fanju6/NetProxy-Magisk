@@ -36,7 +36,7 @@ type Timer interface {
 // TimerFactory 创建 Worker 调度定时器；测试可以用虚拟时钟替换系统时间。
 type TimerFactory func(time.Duration) Timer
 
-// Options 描述订阅 Worker 的运行环境。
+// Options 描述后台 Worker 的运行环境。
 type Options struct {
 	Root                string
 	ProgressDir         string
@@ -111,7 +111,7 @@ func Run(ctx context.Context, options Options, wake <-chan struct{}, logger *log
 		}
 	}()
 
-	logWorker(logger, "订阅自动更新 Worker 已启动")
+	logWorker(logger, "后台 Worker 已启动")
 	for {
 		now := options.Now()
 		summary, err := RunDue(ctx, options, now, logger)
@@ -143,7 +143,7 @@ func Run(ctx context.Context, options Options, wake <-chan struct{}, logger *log
 		select {
 		case <-ctx.Done():
 			stopTimer(timer)
-			logWorker(logger, "订阅自动更新 Worker 已停止")
+			logWorker(logger, "后台 Worker 已停止")
 			return nil
 		case <-wake:
 			stopTimer(timer)
@@ -374,7 +374,7 @@ func acquirePID(path string) error {
 		if os.IsExist(err) {
 			owner := readPID(filepath.Join(lock, "pid"))
 			if owner > 0 && isProcessRunningPID(owner) {
-				return errors.New("订阅 Worker 已在运行")
+				return errors.New("后台 Worker 已在运行")
 			}
 			_ = os.RemoveAll(lock)
 			if err = os.Mkdir(lock, 0o700); err != nil {
@@ -391,7 +391,7 @@ func acquirePID(path string) error {
 	}
 	if pid := readPID(path); pid > 0 && pid != os.Getpid() && isWorkerProcessPID(pid) {
 		_ = os.RemoveAll(lock)
-		return fmt.Errorf("订阅 Worker 已在运行: %d", pid)
+		return fmt.Errorf("后台 Worker 已在运行: %d", pid)
 	}
 	if err := os.WriteFile(path, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o600); err != nil {
 		_ = os.RemoveAll(lock)

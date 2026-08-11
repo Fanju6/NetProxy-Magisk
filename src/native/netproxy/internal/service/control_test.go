@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -47,14 +48,21 @@ func TestReadStatusWithoutService(t *testing.T) {
 		status.ConfiguredOutboundMode != "global" || status.ActiveGroupID != "default" {
 		t.Fatalf("unexpected status: %#v", status)
 	}
-	if status.PID != nil || status.SubscriptionWorker != "stopped" {
+	if status.PID != nil || status.WorkerState != "stopped" {
 		t.Fatalf("unexpected process state: %#v", status)
 	}
 	if status.CPUCount < 1 {
 		t.Fatalf("invalid CPU count: %d", status.CPUCount)
 	}
-	if _, err := json.Marshal(status); err != nil {
+	encoded, err := json.Marshal(status)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if bytes.Contains(encoded, []byte("subscription_worker")) {
+		t.Fatalf("status 不应继续输出旧 Worker 字段: %s", encoded)
+	}
+	if !bytes.Contains(encoded, []byte(`"worker_state"`)) || !bytes.Contains(encoded, []byte(`"worker_pid"`)) {
+		t.Fatalf("status 缺少后台 Worker 字段: %s", encoded)
 	}
 }
 

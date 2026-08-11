@@ -98,8 +98,8 @@ func (l Layout) DevRoot() string { return l.devRoot }
 // ServiceState 返回服务状态文件路径。
 func (l Layout) ServiceState() string { return filepath.Join(l.DevRoot(), "service.json") }
 
-// WorkerPID 返回订阅 Worker PID 文件路径。
-func (l Layout) WorkerPID() string { return filepath.Join(l.DevRoot(), "subworker.pid") }
+// WorkerPID 返回后台 Worker PID 文件路径。
+func (l Layout) WorkerPID() string { return filepath.Join(l.DevRoot(), "worker.pid") }
 
 // ProgressDir 返回订阅进度目录。
 func (l Layout) ProgressDir() string { return filepath.Join(l.DevRoot(), "subscriptions") }

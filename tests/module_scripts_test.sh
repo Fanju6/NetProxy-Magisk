@@ -38,7 +38,6 @@ check_removed_scripts() {
     "$MODULE_DIR/scripts/utils/common.sh" \
     "$MODULE_DIR/scripts/utils/state.sh" \
     "$MODULE_DIR/scripts/core/subscription.sh" \
-    "$MODULE_DIR/scripts/core/subworker.sh" \
     "$MODULE_DIR/scripts/core/ebpf.sh" \
     "$MODULE_DIR/scripts/core/switch.sh" \
     "$MODULE_DIR/scripts/core/runtime.sh" \
@@ -59,10 +58,12 @@ check_removed_scripts() {
 # 确认升级/卸载只通过 PID 感知的 Worker 入口操作
 #######################################
 check_worker_lifecycle() {
-  ! grep -q 'pkill -f.*subworker' "$MODULE_DIR/customize.sh"
-  grep -q 'subworker stop' "$MODULE_DIR/customize.sh"
+  ! grep -q 'pkill -f' "$MODULE_DIR/customize.sh"
+  grep -q 'cleanup_worker_state' "$MODULE_DIR/customize.sh"
+  grep -q 'worker stop' "$MODULE_DIR/customize.sh"
   grep -q -- '--module-dir' "$MODULE_DIR/customize.sh"
-  grep -q 'subworker stop' "$MODULE_DIR/uninstall.sh"
+  grep -q 'worker stop' "$MODULE_DIR/uninstall.sh"
+  grep -q 'stop_worker_processes' "$MODULE_DIR/uninstall.sh"
   grep -q -- '--module-dir' "$MODULE_DIR/uninstall.sh"
   ! grep -q 'sync_to_live\|restart_proxy_if_needed' "$MODULE_DIR/customize.sh"
   grep -q 'schedule_hot_update' "$MODULE_DIR/customize.sh"

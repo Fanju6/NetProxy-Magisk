@@ -38,7 +38,7 @@ func Start(ctx context.Context, options Options, executable string) (Status, err
 	if executable == "" {
 		return Status{}, errors.New("Worker 可执行文件不能为空")
 	}
-	arguments := []string{"subworker", "run"}
+	arguments := []string{"worker", "run"}
 	arguments = appendWorkerFlags(arguments, options)
 	command := exec.CommandContext(ctx, executable, arguments...)
 	devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)

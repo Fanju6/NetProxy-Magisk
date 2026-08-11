@@ -68,7 +68,7 @@ func ManageService(ctx context.Context, options Options, action string) (Service
 	if action == "start" || action == "restart" {
 		if err := ensureWorker(ctx, options); err != nil {
 			// Worker 独立于 sing-box，不能因为订阅调度启动失败而把已经就绪的核心判为失败。
-			logService(options, "WARN", "订阅自动更新 Worker 启动失败: %v", err)
+			logService(options, "WARN", "后台 Worker 启动失败: %v", err)
 		}
 	}
 	return serviceResult(ctx, options, action)
@@ -266,7 +266,7 @@ func Boot(ctx context.Context, options Options, executable string) error {
 		executable = paths.New(options.ModuleDir).Native()
 	}
 	if err := ensureWorker(ctx, options); err != nil {
-		logService(options, "WARN", "订阅自动更新 Worker 启动失败，可稍后手动重试: %v", err)
+		logService(options, "WARN", "后台 Worker 启动失败，可稍后手动重试: %v", err)
 	}
 	logService(options, "INFO", "开机服务流程结束")
 	return nil

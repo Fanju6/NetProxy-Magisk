@@ -272,9 +272,42 @@ restore_config() {
 }
 
 #######################################
+# 清理安装前残留的后台 Worker 状态。
+# 参数: 无
+# 返回: 始终返回 0；只处理 /dev/netproxy 下由本模块记录的 Worker PID。
+#######################################
+cleanup_worker_state() {
+  [ -d /dev/netproxy ] || return 0
+
+  # PID 文件名统一以 worker.pid 结尾，升级时可覆盖旧文件名而不保留旧命令入口。
+  for pid_file in /dev/netproxy/*worker.pid; do
+    [ -f "$pid_file" ] || continue
+    pid="$(cat "$pid_file" 2> /dev/null || true)"
+    case "$pid" in
+      ''|*[!0-9]*) pid='' ;;
+    esac
+
+    if [ -n "$pid" ] && [ -r "/proc/$pid/cmdline" ] \
+      && grep -q "$LIVE_DIR/bin/netproxy-native" "/proc/$pid/cmdline" 2> /dev/null; then
+      kill -TERM "$pid" 2> /dev/null || true
+      wait_count=0
+      while [ -d "/proc/$pid" ] && [ "$wait_count" -lt 10 ]; do
+        sleep 1
+        wait_count=$((wait_count + 1))
+      done
+    fi
+
+    rm -f "$pid_file" "$pid_file.lock" 2> /dev/null || true
+  done
+
+  rm -rf /dev/netproxy/*worker.pid.lock 2> /dev/null || true
+  return 0
+}
+
+#######################################
 # 安装前停止正在运行的代理服务
 # 参数: 无
-# 全局: 检测新旧内核进程，置 PROXY_WAS_RUNNING
+# 全局: 检测 sing-box 进程，置 PROXY_WAS_RUNNING
 # 返回: 0
 #######################################
 stop_proxy_if_running() {
@@ -285,9 +318,10 @@ stop_proxy_if_running() {
 
   # 通过 Worker PID 文件停止订阅调度，不按进程名误杀其他实例。
   if [ -x "$LIVE_DIR/bin/netproxy-native" ]; then
-    "$LIVE_DIR/bin/netproxy-native" subworker stop \
+    "$LIVE_DIR/bin/netproxy-native" worker stop \
       --module-dir "$LIVE_DIR" > /dev/null 2>&1 || true
   fi
+  cleanup_worker_state
 
   # 检测当前 sing-box 进程。
   if pidof -s "$LIVE_DIR/bin/sing-box" > /dev/null 2>&1; then
@@ -412,7 +446,7 @@ merge_live_state() {
 restore_live_service() {
   [ "$restart_service" = true ] || return 0
   [ -x "$live_dir/netproxyctl" ] || return 0
-  su -c "\"$live_dir/bin/netproxy-native\" subworker start --module-dir \"$live_dir\"" > /dev/null 2>&1 || true
+  su -c "\"$live_dir/bin/netproxy-native\" worker start --module-dir \"$live_dir\"" > /dev/null 2>&1 || true
   su -c "\"$live_dir/netproxyctl\" service start" > /dev/null 2>&1 || true
 }
 
@@ -468,8 +502,8 @@ rm -rf "$backup_dir" 2> /dev/null || true
 write_log "后台热更新已完成，无需重启设备"
 
 if [ -x "$live_dir/bin/netproxy-native" ]; then
-  su -c "\"$live_dir/bin/netproxy-native\" subworker start --module-dir \"$live_dir\"" > /dev/null 2>&1 \
-    || write_log "新版订阅 Worker 启动失败"
+  su -c "\"$live_dir/bin/netproxy-native\" worker start --module-dir \"$live_dir\"" > /dev/null 2>&1 \
+    || write_log "新版后台 Worker 启动失败"
 fi
 
 if [ "$restart_service" = true ]; then
