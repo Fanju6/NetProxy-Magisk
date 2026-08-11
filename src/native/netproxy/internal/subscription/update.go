@@ -54,6 +54,31 @@ type Error struct {
 
 func (e *Error) Error() string { return e.Message }
 
+// RequestCancel 仅为仍持有活动更新锁的进程写入取消标记。
+// 空闲任务和残留锁不能污染下一次订阅更新。
+func RequestCancel(root, groupID, progressDir string) (bool, error) {
+	if strings.TrimSpace(root) == "" || !validGroupID(groupID) {
+		return false, &Error{Code: "subscription.invalid_target", Message: "订阅目录或分组无效"}
+	}
+	if strings.TrimSpace(progressDir) == "" {
+		return false, errors.New("订阅进度目录不能为空")
+	}
+	cancelPath := filepath.Join(progressDir, groupID+".cancel")
+	lockPath := filepath.Join(root, "staging", "locks", groupID+".lock")
+	pid := readLockPID(filepath.Join(lockPath, "pid"))
+	if pid <= 0 || !isProcessAlive(pid) {
+		_ = os.Remove(cancelPath)
+		return false, nil
+	}
+	if err := os.MkdirAll(progressDir, 0o700); err != nil {
+		return false, err
+	}
+	if err := provider.WriteAtomic(cancelPath, []byte("1\n"), 0o600); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // Update 执行一次可回滚的订阅更新。
 func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 	if strings.TrimSpace(options.Root) == "" || strings.TrimSpace(options.GroupID) == "" {
@@ -91,15 +116,13 @@ func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 			// 明确直连，不设置代理地址。
 		}
 	}
-	if cancelled(ctx, options.ProgressDir, options.GroupID) {
-		return Result{}, &Error{Code: "subscription.cancelled", Message: "订阅更新已取消"}
-	}
 	stagingDir := filepath.Join(options.Root, "staging")
 	if err := os.MkdirAll(stagingDir, 0o700); err != nil {
 		return Result{}, &Error{Code: "subscription.stage_failed", Message: "创建订阅临时目录失败", Data: err.Error()}
 	}
 
 	lockDir := filepath.Join(options.Root, "staging", "locks", options.GroupID+".lock")
+	clearStaleCancellation(options.Root, options.ProgressDir, options.GroupID)
 	if err := acquireLock(lockDir); err != nil {
 		return Result{}, &Error{Code: "subscription.busy", Message: "订阅已经有更新任务正在执行"}
 	}
@@ -118,6 +141,10 @@ func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 	updateContext, stopWatching := watchCancellation(ctx, options.ProgressDir, options.GroupID)
 	defer stopWatching()
 	ctx = updateContext
+	if cancelled(ctx, options.ProgressDir, options.GroupID) {
+		clearProgress(options.ProgressDir, options.GroupID)
+		return Result{}, &Error{Code: "subscription.cancelled", Message: "订阅更新已取消"}
+	}
 
 	started := options.Now
 	writeProgress(options.ProgressDir, options.GroupID, "download", "正在下载订阅")
@@ -358,6 +385,17 @@ func clearProgress(dir, groupID string) {
 	}
 	_ = os.Remove(filepath.Join(dir, groupID+".progress.json"))
 	_ = os.Remove(filepath.Join(dir, groupID+".cancel"))
+}
+
+func clearStaleCancellation(root, progressDir, groupID string) {
+	if progressDir == "" {
+		return
+	}
+	lockPath := filepath.Join(root, "staging", "locks", groupID+".lock")
+	pid := readLockPID(filepath.Join(lockPath, "pid"))
+	if pid <= 0 || !isProcessAlive(pid) {
+		_ = os.Remove(filepath.Join(progressDir, groupID+".cancel"))
+	}
 }
 
 // watchCancellation 将外部取消标记转换为当前更新的 context 取消。

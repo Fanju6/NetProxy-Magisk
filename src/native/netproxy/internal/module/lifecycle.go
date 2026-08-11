@@ -28,6 +28,19 @@ type ServiceResult struct {
 	Status service.Status `json:"status"`
 }
 
+func toggleServiceAction(state string) (string, error) {
+	switch state {
+	case "ready":
+		return "stop", nil
+	case "", "stopped", "failed":
+		return "start", nil
+	case "preparing", "starting", "stopping":
+		return "", fmt.Errorf("服务正在切换 (%s)", state)
+	default:
+		return "start", nil
+	}
+}
+
 // ManageService 执行 sing-box 生命周期操作。生命周期锁、状态落盘和进程管理全部在 Go 内完成。
 func ManageService(ctx context.Context, options Options, action string) (ServiceResult, error) {
 	action = strings.TrimSpace(action)
@@ -40,7 +53,7 @@ func ManageService(ctx context.Context, options Options, action string) (Service
 		}
 		return serviceResult(ctx, options, action)
 	}
-	if action != "start" && action != "stop" && action != "restart" && action != "reload" {
+	if action != "start" && action != "stop" && action != "restart" && action != "reload" && action != "toggle" {
 		return ServiceResult{}, fmt.Errorf("未知服务操作: %s", action)
 	}
 
@@ -49,6 +62,17 @@ func ManageService(ctx context.Context, options Options, action string) (Service
 		return ServiceResult{}, err
 	}
 	defer lock.release()
+
+	if action == "toggle" {
+		state, stateErr := ReadServiceState(options.StateFile)
+		if stateErr != nil {
+			return ServiceResult{}, fmt.Errorf("读取服务状态失败: %w", stateErr)
+		}
+		action, err = toggleServiceAction(state.State)
+		if err != nil {
+			return ServiceResult{}, err
+		}
+	}
 
 	switch action {
 	case "start":

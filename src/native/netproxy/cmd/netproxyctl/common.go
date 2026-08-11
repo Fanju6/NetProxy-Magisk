@@ -71,7 +71,7 @@ func (c *cli) help() {
 	fmt.Fprintln(os.Stdout, `NetProxy 管理命令
 
 用法:
-  netproxyctl [--json] [--timeout <秒|时长>] service status|start|stop|restart|reload|check
+  netproxyctl [--json] [--timeout <秒|时长>] service status|start|stop|restart|reload|check|toggle
   netproxyctl [--json] [--timeout <秒|时长>] catalog list|show <分组>
   netproxyctl [--json] [--timeout <秒|时长>] node list|current|show|get|export|delay|add|import|edit|remove|use
   netproxyctl [--json] [--timeout <秒|时长>] sub list|show|add|edit|update|update-all|activate|remove|history|cancel

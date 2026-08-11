@@ -63,3 +63,26 @@ func TestNewGroupID(t *testing.T) {
 		t.Fatalf("collision id: %q, %v", secondFileID, err)
 	}
 }
+
+func TestReservedGroupIDsAreRejectedByDirectOperations(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "staging"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, groupID := range []string{"staging", "nested..group"} {
+		t.Run(groupID, func(t *testing.T) {
+			if err := InitializeGroup(context.Background(), GroupOptions{Root: root, GroupID: groupID, Type: "local"}); err == nil {
+				t.Fatal("保留分组 ID 不应初始化成功")
+			}
+			if _, err := PrivateMetadata(root, groupID); err == nil {
+				t.Fatal("保留分组 ID 不应读取元数据")
+			}
+			if err := DeleteGroup(root, groupID); err == nil {
+				t.Fatal("保留分组 ID 不应删除目录")
+			}
+			if _, err := ResolveGroup(root, groupID); err == nil {
+				t.Fatal("保留目录不应解析为 Catalog 分组")
+			}
+		})
+	}
+}

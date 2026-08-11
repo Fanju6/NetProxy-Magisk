@@ -20,10 +20,12 @@ func ResolveGroup(root, query string) (string, error) {
 	if err := recoverTransactions(root); err != nil {
 		return "", err
 	}
-	if validGroupID.MatchString(query) {
-		if _, err := os.Stat(filepath.Join(root, query)); err == nil {
+	if isValidGroupID(query) {
+		info, err := os.Stat(filepath.Join(root, query))
+		if err == nil && info.IsDir() {
 			return query, nil
-		} else if !os.IsNotExist(err) {
+		}
+		if err != nil && !os.IsNotExist(err) {
 			return "", err
 		}
 	}
@@ -117,7 +119,7 @@ func ExportGroupNode(ctx context.Context, root, groupID, tag string) (sharelink.
 
 // PrivateMetadata 返回订阅编辑所需的完整元数据。
 func PrivateMetadata(root, groupID string) (Metadata, error) {
-	if !validGroupID.MatchString(groupID) {
+	if !isValidGroupID(groupID) {
 		return Metadata{}, fmt.Errorf("非法分组 ID: %s", groupID)
 	}
 	if err := recoverTransactions(root); err != nil {
@@ -158,7 +160,7 @@ func FirstNonEmptyGroup(ctx context.Context, root, exclude string) (string, erro
 
 // DeleteGroup 删除 Catalog 分组目录。
 func DeleteGroup(root, groupID string) error {
-	if !validGroupID.MatchString(groupID) || groupID == "default" {
+	if !isValidGroupID(groupID) || groupID == "default" {
 		return fmt.Errorf("不允许删除分组: %s", groupID)
 	}
 	release := lockGroup(groupID)
@@ -175,7 +177,7 @@ func DeleteGroup(root, groupID string) error {
 }
 
 func loadGroupProvider(ctx context.Context, root, groupID string) (provider.Document, error) {
-	if strings.TrimSpace(root) == "" || !validGroupID.MatchString(groupID) {
+	if strings.TrimSpace(root) == "" || !isValidGroupID(groupID) {
 		return provider.Document{}, errors.New("Catalog 分组参数无效")
 	}
 	if err := recoverTransactions(root); err != nil {

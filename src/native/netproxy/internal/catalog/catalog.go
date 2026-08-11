@@ -19,13 +19,16 @@ import (
 
 var validGroupID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
+// isValidGroupID 统一拒绝事务目录和可能改变路径语义的分组 ID。
+func isValidGroupID(value string) bool {
+	return validGroupID.MatchString(value) && value != stagingDirName && !strings.Contains(value, "..")
+}
+
 // isGroupDir 判断 Catalog 根目录下的条目是否为可用分组目录。
-// staging 跳过与路径穿越校验只在此处实现，所有分组扫描都必须经过本函数，
-// 避免多处副本各自演化导致校验漂移。
+// 所有分组扫描都必须经过本函数，避免多处副本各自演化导致校验漂移。
 func isGroupDir(entry os.DirEntry) bool {
 	name := entry.Name()
-	return entry.IsDir() && name != "staging" && validGroupID.MatchString(name) &&
-		!strings.Contains(name, "..")
+	return entry.IsDir() && isValidGroupID(name)
 }
 
 type GroupSummary struct {
@@ -160,7 +163,7 @@ func Schedule(root string, now int64) (ScheduleResult, error) {
 }
 
 func RuntimeTag(root, groupID string) (string, error) {
-	if !validGroupID.MatchString(groupID) || strings.Contains(groupID, "..") {
+	if !isValidGroupID(groupID) {
 		return "", fmt.Errorf("非法分组 ID: %s", groupID)
 	}
 	if err := recoverTransactions(root); err != nil {

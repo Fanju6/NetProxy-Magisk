@@ -15,10 +15,10 @@ func (c *cli) service(ctx context.Context, args []string) int {
 		action = args[0]
 	}
 	switch action {
-	case "status", "start", "stop", "restart", "reload", "check":
+	case "status", "start", "stop", "restart", "reload", "check", "toggle":
 		return c.runNative(ctx, c.moduleArgs("service", action)...)
 	default:
-		return c.fail("usage.invalid", "用法: netproxyctl service status|start|stop|restart|reload|check", 2)
+		return c.fail("usage.invalid", "用法: netproxyctl service status|start|stop|restart|reload|check|toggle", 2)
 	}
 }
 

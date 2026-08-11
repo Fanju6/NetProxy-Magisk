@@ -135,7 +135,7 @@ func SetGroupName(ctx context.Context, root, groupID, name string, now time.Time
 	if strings.TrimSpace(root) == "" {
 		return errors.New("Catalog 根目录不能为空")
 	}
-	if !validGroupID.MatchString(groupID) {
+	if !isValidGroupID(groupID) {
 		return fmt.Errorf("非法分组 ID: %s", groupID)
 	}
 	release := lockGroup(groupID)
@@ -165,7 +165,7 @@ func validateGroupOptions(options GroupOptions) error {
 	if strings.TrimSpace(options.Root) == "" {
 		return errors.New("Catalog 根目录不能为空")
 	}
-	if !validGroupID.MatchString(options.GroupID) {
+	if !isValidGroupID(options.GroupID) {
 		return fmt.Errorf("非法分组 ID: %s", options.GroupID)
 	}
 	if options.Type == "" || options.Type == "all" {
@@ -317,7 +317,7 @@ func EditNode(ctx context.Context, options MutationOptions) (MutationResult, err
 
 // ImportGroup 创建本地分组并原子写入 Provider 与元数据。
 func ImportGroup(ctx context.Context, options ImportOptions) (MutationResult, error) {
-	if !validGroupID.MatchString(options.GroupID) {
+	if !isValidGroupID(options.GroupID) {
 		return MutationResult{}, fmt.Errorf("非法分组 ID: %s", options.GroupID)
 	}
 	if strings.TrimSpace(options.Root) == "" || strings.TrimSpace(options.Input) == "" {
@@ -363,7 +363,7 @@ func validateMutationOptions(options MutationOptions, requireTag bool) error {
 	if strings.TrimSpace(options.GroupID) == "" {
 		options.GroupID = filepath.Base(options.GroupDir)
 	}
-	if !validGroupID.MatchString(options.GroupID) {
+	if !isValidGroupID(options.GroupID) {
 		return fmt.Errorf("非法分组 ID: %s", options.GroupID)
 	}
 	if requireTag && strings.TrimSpace(options.Tag) == "" {

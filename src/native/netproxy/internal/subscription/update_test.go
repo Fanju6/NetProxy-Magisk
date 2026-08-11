@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -213,6 +214,48 @@ func TestCancelledUpdateKeepsPreviousProvider(t *testing.T) {
 	}
 	if string(current) != string(oldProvider) {
 		t.Fatalf("取消更新不应替换旧 Provider: %s", current)
+	}
+}
+
+func TestRequestCancelOnlyMarksActiveUpdate(t *testing.T) {
+	root := t.TempDir()
+	groupID := "request-cancel"
+	progressDir := filepath.Join(root, "progress")
+
+	active, err := RequestCancel(root, groupID, progressDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active {
+		t.Fatal("空闲订阅不应被报告为可取消")
+	}
+	if _, err := os.Stat(filepath.Join(progressDir, groupID+".cancel")); !os.IsNotExist(err) {
+		t.Fatalf("空闲取消不应留下标记文件: %v", err)
+	}
+
+	lockDir := filepath.Join(root, "staging", "locks", groupID+".lock")
+	if err := os.MkdirAll(lockDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(lockDir, "pid"), []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	active, err = RequestCancel(root, groupID, progressDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !active {
+		t.Fatal("活动订阅应被报告为可取消")
+	}
+	if _, err := os.Stat(filepath.Join(progressDir, groupID+".cancel")); err != nil {
+		t.Fatalf("活动取消标记未写入: %v", err)
+	}
+	if err := os.RemoveAll(lockDir); err != nil {
+		t.Fatal(err)
+	}
+	clearStaleCancellation(root, progressDir, groupID)
+	if _, err := os.Stat(filepath.Join(progressDir, groupID+".cancel")); !os.IsNotExist(err) {
+		t.Fatalf("残留锁对应的取消标记未清理: %v", err)
 	}
 }
 

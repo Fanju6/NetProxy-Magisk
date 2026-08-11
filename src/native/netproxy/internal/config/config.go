@@ -87,7 +87,7 @@ func LoadModule(path string) (ModuleConfig, error) {
 	if config.OutboundMode = valueOr(values, "OUTBOUND_MODE", config.OutboundMode); config.OutboundMode != "rule" && config.OutboundMode != "global" && config.OutboundMode != "direct" && config.OutboundMode != "AllowAds" {
 		return ModuleConfig{}, fmt.Errorf("OUTBOUND_MODE 无效: %s", config.OutboundMode)
 	}
-	if config.SelectorMode = valueOr(values, "SELECTOR_MODE", config.SelectorMode); config.SelectorMode != "urltest" && config.SelectorMode != "manual" && config.SelectorMode != "auto" && config.SelectorMode != "selector" {
+	if config.SelectorMode = valueOr(values, "SELECTOR_MODE", config.SelectorMode); config.SelectorMode != "urltest" && config.SelectorMode != "manual" {
 		return ModuleConfig{}, fmt.Errorf("SELECTOR_MODE 无效: %s", config.SelectorMode)
 	}
 	config.ActiveGroupID = valueOr(values, "ACTIVE_GROUP_ID", config.ActiveGroupID)

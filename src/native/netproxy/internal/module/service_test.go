@@ -90,6 +90,35 @@ func TestLifecycleLockRejectsConcurrentOperation(t *testing.T) {
 	second.release()
 }
 
+func TestToggleServiceAction(t *testing.T) {
+	tests := map[string]string{
+		"":        "start",
+		"stopped": "start",
+		"failed":  "start",
+		"ready":   "stop",
+		"unknown": "start",
+	}
+	for state, want := range tests {
+		t.Run(state, func(t *testing.T) {
+			got, err := toggleServiceAction(state)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != want {
+				t.Fatalf("切换状态 %q 得到 %q，期望 %q", state, got, want)
+			}
+		})
+	}
+
+	for _, state := range []string{"preparing", "starting", "stopping"} {
+		t.Run(state+"-busy", func(t *testing.T) {
+			if _, err := toggleServiceAction(state); err == nil {
+				t.Fatalf("状态 %q 应拒绝重复切换", state)
+			}
+		})
+	}
+}
+
 func TestWorkerOptionsKeepNetworkWatcherEnabled(t *testing.T) {
 	options := workerOptions(NewOptions(t.TempDir()))
 	if !options.NetworkWatchEnabled {

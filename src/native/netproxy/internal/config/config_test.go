@@ -47,6 +47,15 @@ func TestLoadModuleDefaultsAndValidation(t *testing.T) {
 	if _, err := LoadModule(path); err == nil {
 		t.Fatal("expected unknown module key to fail")
 	}
+
+	for _, selector := range []string{"auto", "selector"} {
+		if err := os.WriteFile(path, []byte("SELECTOR_MODE="+selector+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LoadModule(path); err == nil {
+			t.Fatalf("SELECTOR_MODE=%s 不应继续被接受", selector)
+		}
+	}
 }
 
 func TestUpdateModuleKeepsOriginalWhenCandidateIsInvalid(t *testing.T) {

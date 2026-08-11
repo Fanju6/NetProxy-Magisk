@@ -597,10 +597,7 @@ func runModuleSub(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		if err := os.MkdirAll(options.ProgressDir, 0o700); err != nil {
-			return err
-		}
-		if err := os.WriteFile(filepath.Join(options.ProgressDir, id+".cancel"), []byte("1\n"), 0o600); err != nil {
+		if _, err := subscription.RequestCancel(options.CatalogRoot, id, options.ProgressDir); err != nil {
 			return err
 		}
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "subscription.cancelled", Message: "已请求取消订阅更新", Data: map[string]string{"id": id}})
