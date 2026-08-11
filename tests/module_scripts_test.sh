@@ -77,9 +77,20 @@ check_install_choices() {
   grep -q 'key=$(getevent -lqc 1' "$MODULE_DIR/customize.sh"
 }
 
+#######################################
+# 确认安装前先停止旧服务，再进入管理器安装区块
+#######################################
+check_install_order() {
+  main_flow="$(sed -n '/unzip -o "\$ZIPFILE" "module.prop"/,/else$/p' "$MODULE_DIR/customize.sh")"
+  stop_line="$(printf '%s\n' "$main_flow" | grep -n 'stop_proxy_if_running' | head -n 1 | cut -d: -f1)"
+  manager_line="$(printf '%s\n' "$main_flow" | grep -n 'install_bundled_manager' | head -n 1 | cut -d: -f1)"
+  [ -n "$stop_line" ] && [ -n "$manager_line" ] && [ "$stop_line" -lt "$manager_line" ]
+}
+
 check_shell_syntax
 check_service_bridge
 check_runtime_scripts
 check_worker_lifecycle
 check_install_choices
+check_install_order
 printf '%s\n' 'module scripts test passed'

@@ -666,9 +666,14 @@ print_title "NetProxy - sing-box 透明代理"
 ui_print ""
 ui_print "  版本: $(grep_prop version "$TMPDIR/module.prop" 2> /dev/null || echo "未知")"
 
+# 先停止旧服务，再替换模块文件，避免运行中的进程继续使用旧文件。
+choose_install_mode
+if [ "${BOOTMODE:-false}" = true ]; then
+  stop_proxy_if_running
+fi
+
 # 按顺序执行安装步骤，任一失败则进入失败分支
-if choose_install_mode \
-  && backup_config \
+if backup_config \
   && extract_module \
   && restore_config \
   && set_permissions; then
@@ -678,7 +683,6 @@ if choose_install_mode \
   install_bundled_manager
 
   if [ "${BOOTMODE:-false}" = true ]; then
-    stop_proxy_if_running
     if schedule_hot_update; then
       print_title "安装完成"
       ui_print "  正在后台应用新版本，无需重启设备"
