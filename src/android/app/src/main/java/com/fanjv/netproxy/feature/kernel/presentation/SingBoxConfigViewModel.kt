@@ -31,7 +31,7 @@ internal class SingBoxConfigViewModel(
                                     id = document.id,
                                     filename = document.filename,
                                     category = when (document.category) {
-                                        "source" -> SingBoxDocumentCategory.Source
+                                        "rules" -> SingBoxDocumentCategory.LocalRule
                                         "runtime" -> SingBoxDocumentCategory.Runtime
                                         else -> SingBoxDocumentCategory.Config
                                     },
@@ -122,5 +122,4 @@ internal class SingBoxConfigViewModel(
         }
     }
 }
-
 

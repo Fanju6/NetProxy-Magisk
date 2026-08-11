@@ -20,6 +20,12 @@ var (
 	lineSecretPattern    = regexp.MustCompile(`(?i)((?:authorization|proxy-authorization|x-hwid|hwid|token|password|secret|private[_-]?key|custom[_-]?headers)\s*[:=]\s*)[^\r\n\s,;]+`)
 )
 
+type archiveFile struct {
+	source string
+	name   string
+	redact bool
+}
+
 // LogFile 返回用户可见日志类型对应的文件。
 func LogFile(options Options, kind string) (string, error) {
 	name := map[string]string{"service": "service.log", "core": "sing-box.log"}[kind]
@@ -92,29 +98,35 @@ func ExportLogs(options Options, destination string) error {
 	defer archive.Close()
 	tarWriter := tar.NewWriter(archive)
 	defer tarWriter.Close()
-	files := make([]struct{ source, name string }, 0)
+	files := make([]archiveFile, 0)
 	for _, kind := range []string{"service", "core"} {
 		path, _ := LogFile(options, kind)
-		files = append(files, struct{ source, name string }{path, "logs/" + filepath.Base(path)})
+		files = append(files, archiveFile{source: path, name: "logs/" + filepath.Base(path), redact: true})
 	}
 	files = append(files,
-		struct{ source, name string }{options.ModuleConfig, "config/module.conf"},
-		struct{ source, name string }{options.EBPFConfig, "config/ebpf.conf"},
+		archiveFile{source: options.ModuleConfig, name: "config/module.conf", redact: true},
+		archiveFile{source: options.EBPFConfig, name: "config/ebpf.conf", redact: true},
 	)
 	for _, directory := range []struct{ path, name string }{
 		{filepath.Join(options.SingBoxDir, "confdir"), "config/singbox/confdir"},
-		{filepath.Join(options.SingBoxDir, "source"), "config/singbox/source"},
-		{options.CatalogRoot, "data/catalog"},
+		{filepath.Join(options.SingBoxDir, "rules", "local"), "config/singbox/rules/local"},
 	} {
-		appendDirectoryFiles(&files, directory.path, directory.name, directory.path == options.CatalogRoot)
+		appendDirectoryFiles(&files, directory.path, directory.name, true, false)
 	}
+	appendDirectoryFiles(&files,
+		filepath.Join(options.SingBoxDir, "rules", "remote"),
+		"config/singbox/rules/remote", false, false,
+	)
+	appendDirectoryFiles(&files, options.CatalogRoot, "data/catalog", true, true)
 	for _, name := range []string{"providers.json", "outbounds.json", "ebpf.json"} {
-		files = append(files, struct{ source, name string }{
-			filepath.Join(options.RuntimeDir, name), "runtime/" + name,
+		files = append(files, archiveFile{
+			source: filepath.Join(options.RuntimeDir, name),
+			name:   "runtime/" + name,
+			redact: true,
 		})
 	}
 	if options.StateFile != "" {
-		files = append(files, struct{ source, name string }{options.StateFile, "state/service.json"})
+		files = append(files, archiveFile{source: options.StateFile, name: "state/service.json", redact: true})
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].name < files[j].name })
 	for _, item := range files {
@@ -125,7 +137,9 @@ func ExportLogs(options Options, destination string) error {
 		if err != nil {
 			return err
 		}
-		content = []byte(redactText(string(content)))
+		if item.redact {
+			content = []byte(redactText(string(content)))
+		}
 		if err := writeTarFile(tarWriter, item.name, content); err != nil {
 			return err
 		}
@@ -173,7 +187,7 @@ func writeTarFile(writer *tar.Writer, name string, content []byte) error {
 	return err
 }
 
-func appendDirectoryFiles(files *[]struct{ source, name string }, root, archiveRoot string, skipStaging bool) {
+func appendDirectoryFiles(files *[]archiveFile, root, archiveRoot string, redact, skipStaging bool) {
 	_ = filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil || info == nil || info.IsDir() {
 			if skipStaging && info != nil && info.IsDir() && info.Name() == "staging" {
@@ -183,7 +197,11 @@ func appendDirectoryFiles(files *[]struct{ source, name string }, root, archiveR
 		}
 		relative, err := filepath.Rel(root, path)
 		if err == nil {
-			*files = append(*files, struct{ source, name string }{path, filepath.ToSlash(filepath.Join(archiveRoot, relative))})
+			*files = append(*files, archiveFile{
+				source: path,
+				name:   filepath.ToSlash(filepath.Join(archiveRoot, relative)),
+				redact: redact,
+			})
 		}
 		return nil
 	})

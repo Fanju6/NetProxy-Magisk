@@ -21,6 +21,6 @@
 
 1. 开启 DNS 乐观缓存并使用 DNS 并发，提高 DNS 稳定性。
 2. 更新内置 sing-box 内核及广告规则、GeoIP / GeoSite 规则集、zashboard 面板等上游资源。
-3. 优化模块升级备份同步机制：仅增量备份个人配置与本地规则（direct.json 等），升级时强制更新 cn.zone 和 singbox/source/ 内置上游规则。
+3. 优化模块升级备份同步机制：仅增量备份个人配置与本地规则（direct.json 等），升级时强制更新 `singbox/source/` 内置上游规则。
 
 * * *

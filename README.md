@@ -216,7 +216,8 @@ su -c '/data/adb/modules/netproxy/netproxyctl help'
 | `config/ebpf/ebpf.conf` | eBPF 入站、分应用、共享网络与 Map 容量 |
 | `config/singbox/confdir/` | 通用 sing-box 配置，包括 DNS、路由和 Clash API |
 | `data/catalog/<分组 ID>/` | 节点与订阅分组，含 `meta.json` 与 `provider.json` |
-| `config/singbox/source/` | 本地路由规则与规则集 |
+| `config/singbox/rules/local/` | 可编辑的本地路由规则集 |
+| `config/singbox/rules/remote/` | 由远程 Provider 管理的内置 SRS 规则资源 |
 | `logs/service.log` | 模块服务、订阅更新与透明代理日志 |
 | `logs/sing-box.log` | sing-box 核心日志 |
 

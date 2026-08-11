@@ -11,7 +11,7 @@
         ],
         "type": "local",
         "format": "source",
-        "path": "./source/{tag}.json"
+        "path": "./rules/local/{tag}.json"
       },
       {
         "tag": [
@@ -25,7 +25,7 @@
         "format": "binary",
         "url": "https://raw.githubusercontent.com/Repcz/Tool/X/sing-box/Rules/{tag}.srs",
         "update_interval": "24h",
-        "path": "./source/{tag}.srs"
+        "path": "./rules/remote/{tag}.srs"
       }
     ],
     "rules": [

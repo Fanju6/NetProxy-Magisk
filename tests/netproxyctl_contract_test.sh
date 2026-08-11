@@ -156,7 +156,7 @@ run_json "$result"
 result="$(sh "$MODULE/netproxyctl" --json config list)"
 run_json "$result"
 printf '%s' "$result" | grep -q '"id":"singbox/confdir/03_dns.json"'
-printf '%s' "$result" | grep -q '"id":"singbox/source/direct.json"'
+printf '%s' "$result" | grep -q '"id":"singbox/rules/local/direct.json"'
 
 result="$(sh "$MODULE/netproxyctl" --json config read singbox/confdir/03_dns.json)"
 run_json "$result"

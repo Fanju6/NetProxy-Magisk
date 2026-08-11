@@ -28,9 +28,9 @@ readonly DATA_DIR="$LIVE_DIR/data"
 readonly PRESERVE_CONFIGS="
     module.conf
     ebpf/ebpf.conf
-    singbox/source/direct.json
-    singbox/source/proxy.json
-    singbox/source/block.json
+    singbox/rules/local/direct.json
+    singbox/rules/local/proxy.json
+    singbox/rules/local/block.json
 "
 
 # 需要设置可执行权限的文件
@@ -275,8 +275,9 @@ sync_to_live() {
 
   # 同步程序文件与脚本，以及需要更新的内置资源 (整目录/文件覆盖)
   rm -rf "$LIVE_DIR/scripts" 2> /dev/null
+  rm -rf "$LIVE_DIR/config/singbox/source" 2> /dev/null
 
-  local sync_dirs="bin netproxyctl action.sh service.sh uninstall.sh module.prop webroot config/ebpf config/singbox/confdir config/singbox/source"
+  local sync_dirs="bin netproxyctl action.sh service.sh uninstall.sh module.prop webroot config/ebpf config/singbox/confdir config/singbox/rules"
 
   for item in $sync_dirs; do
     local src="$MODPATH/$item"

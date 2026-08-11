@@ -119,7 +119,7 @@
     <string name="kernel_settings_summary">编辑与检查 sing-box 配置文件</string>
     <string name="singbox_common_configs">常用配置</string>
     <string name="singbox_advanced_configs">高级配置</string>
-    <string name="singbox_rule_files">规则文件</string>
+    <string name="singbox_rule_files">本地规则集</string>
     <string name="singbox_runtime_configs">运行时配置</string>
     <string name="singbox_check_all">检查全部配置</string>
     <string name="singbox_check_success">全部配置有效</string>

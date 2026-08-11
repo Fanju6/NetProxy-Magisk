@@ -77,8 +77,8 @@ internal fun SingBoxKernelSettingsScreen(
     val commonNames = setOf("03_dns.json", "04_inbounds.json", "06_route.json")
     val commonDocuments = configDocuments.filter { it.filename in commonNames }
     val advancedDocuments = configDocuments.filterNot { it.filename in commonNames }
-    val sourceDocuments = state.documents.filter {
-        it.category == SingBoxDocumentCategory.Source
+    val localRuleDocuments = state.documents.filter {
+        it.category == SingBoxDocumentCategory.LocalRule
     }
     val runtimeDocuments = state.documents.filter {
         it.category == SingBoxDocumentCategory.Runtime
@@ -192,11 +192,11 @@ internal fun SingBoxKernelSettingsScreen(
                             onOpen = { navigator.push(Route.JsonEdit(it.id)) },
                         )
                     }
-                    if (sourceDocuments.isNotEmpty()) {
+                    if (localRuleDocuments.isNotEmpty()) {
                         documentSection(
-                            keyPrefix = "singbox_source",
+                            keyPrefix = "singbox_local_rules",
                             title = { stringResource(R.string.singbox_rule_files) },
-                            documents = sourceDocuments,
+                            documents = localRuleDocuments,
                             onOpen = { navigator.push(Route.JsonEdit(it.id)) },
                         )
                     }
@@ -269,7 +269,7 @@ private fun documentSummary(document: SingBoxDocument): String {
         "07_http_clients.json" -> stringResource(R.string.singbox_document_http_clients_summary)
         "08_services.json" -> stringResource(R.string.singbox_document_services_summary)
         else -> when (document.category) {
-            SingBoxDocumentCategory.Source -> stringResource(R.string.singbox_document_source_summary)
+            SingBoxDocumentCategory.LocalRule -> stringResource(R.string.singbox_document_source_summary)
             SingBoxDocumentCategory.Runtime -> stringResource(R.string.singbox_document_runtime_summary)
             SingBoxDocumentCategory.Config -> stringResource(R.string.singbox_document_custom_summary)
         }
@@ -280,4 +280,3 @@ private fun documentSummary(document: SingBoxDocument): String {
         "${document.filename} · ${stringResource(R.string.read_only)} · $description"
     }
 }
-

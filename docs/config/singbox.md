@@ -11,7 +11,9 @@ NetProxy 的 sing-box 静态配置位于：
 ```text
 config/singbox/
 ├── confdir/       # 静态 sing-box 配置片段
-└── source/        # 规则集与路由资源
+└── rules/
+    ├── local/     # 可编辑的本地规则集
+    └── remote/    # 远程 Provider 管理的 SRS 规则资源
 
 data/catalog/
 └── <group-id>/    # 节点与订阅 Provider
@@ -23,9 +25,13 @@ runtime/           # 启动时生成的运行时配置
 
 这里保存日志、DNS、路由、入站、HTTP Client 和 Service API 等静态配置。运行时节点、Provider 和 eBPF 入站由模块根据 Catalog 自动生成，不能直接写入静态片段。
 
-### `source/`
+### `rules/local/`
 
-这里保存规则集和其他静态资源。规则模式会按 `06_route.json` 的引用加载这些文件。
+这里保存 `block.json`、`direct.json` 和 `proxy.json` 等本地规则集。它们使用 sing-box 的 `source` 格式，属于用户可编辑配置。
+
+### `rules/remote/`
+
+这里保存模块内置的 SRS 规则资源。它们由 sing-box Remote Provider 按 `06_route.json` 的配置自动更新，不通过 Android 管理器的配置编辑器修改。
 
 ### `data/catalog/`
 

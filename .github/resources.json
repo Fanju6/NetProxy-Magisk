@@ -2,7 +2,7 @@
   "raw": [
     {
       "name": "Ads_AWAvenue",
-      "path": "src/module/config/singbox/source/Ads_AWAvenue.srs",
+      "path": "src/module/config/singbox/rules/remote/Ads_AWAvenue.srs",
       "url": "https://raw.githubusercontent.com/Repcz/Tool/X/sing-box/Rules/Ads_AWAvenue.srs",
       "repo": "Repcz/Tool",
       "ref": "X",
@@ -12,7 +12,7 @@
     },
     {
       "name": "AppleCN",
-      "path": "src/module/config/singbox/source/AppleCN.srs",
+      "path": "src/module/config/singbox/rules/remote/AppleCN.srs",
       "url": "https://raw.githubusercontent.com/Repcz/Tool/X/sing-box/Rules/AppleCN.srs",
       "repo": "Repcz/Tool",
       "ref": "X",
@@ -23,7 +23,7 @@
     },
     {
       "name": "ChinaDomain",
-      "path": "src/module/config/singbox/source/ChinaDomain.srs",
+      "path": "src/module/config/singbox/rules/remote/ChinaDomain.srs",
       "url": "https://raw.githubusercontent.com/Repcz/Tool/X/sing-box/Rules/ChinaDomain.srs",
       "repo": "Repcz/Tool",
       "ref": "X",
@@ -34,7 +34,7 @@
     },
     {
       "name": "ChinaIP",
-      "path": "src/module/config/singbox/source/ChinaIP.srs",
+      "path": "src/module/config/singbox/rules/remote/ChinaIP.srs",
       "url": "https://raw.githubusercontent.com/Repcz/Tool/X/sing-box/Rules/ChinaIP.srs",
       "repo": "Repcz/Tool",
       "ref": "X",
@@ -45,7 +45,7 @@
     },
     {
       "name": "Proxy",
-      "path": "src/module/config/singbox/source/Proxy.srs",
+      "path": "src/module/config/singbox/rules/remote/Proxy.srs",
       "url": "https://raw.githubusercontent.com/Repcz/Tool/X/sing-box/Rules/Proxy.srs",
       "repo": "Repcz/Tool",
       "ref": "X",

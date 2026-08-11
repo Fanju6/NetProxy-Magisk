@@ -211,7 +211,8 @@ su -c '/data/adb/modules/netproxy/netproxyctl help'
 | `config/ebpf/ebpf.conf` | eBPF inbound, per-app rules, shared networks, and map capacities |
 | `config/singbox/confdir/` | Shared sing-box DNS, route, and Clash API configuration |
 | `data/catalog/<group-id>/` | Node and subscription groups (`meta.json` + `provider.json`) |
-| `config/singbox/source/` | Local route rules and rule sets |
+| `config/singbox/rules/local/` | Editable local route rule sets |
+| `config/singbox/rules/remote/` | Built-in SRS rule resources managed by remote providers |
 | `logs/service.log` | Module service, subscription updates, and transparent proxy logs |
 | `logs/sing-box.log` | sing-box core logs |
 

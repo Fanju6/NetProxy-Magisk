@@ -32,12 +32,13 @@ func ListConfigs(options Options) ([]ConfigDocument, error) {
 	}
 	result := make([]ConfigDocument, 0)
 	for _, item := range []struct {
-		dir      string
-		category string
-		editable bool
+		dir        string
+		pathPrefix string
+		category   string
+		editable   bool
 	}{
-		{filepath.Join(options.SingBoxDir, "confdir"), "config", true},
-		{filepath.Join(options.SingBoxDir, "source"), "source", true},
+		{filepath.Join(options.SingBoxDir, "confdir"), "confdir", "config", true},
+		{filepath.Join(options.SingBoxDir, "rules", "local"), "rules/local", "rules", true},
 	} {
 		entries, err := os.ReadDir(item.dir)
 		if os.IsNotExist(err) {
@@ -50,16 +51,12 @@ func ListConfigs(options Options) ([]ConfigDocument, error) {
 			if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 				continue
 			}
-			pathCategory := item.category
-			pathPrefix := "singbox/"
-			if pathCategory == "config" {
-				pathCategory = "confdir"
-			}
-			if item.category == "runtime" {
-				pathPrefix = "runtime/"
-				pathCategory = ""
-			}
-			result = append(result, ConfigDocument{ID: pathPrefix + filepath.ToSlash(filepath.Join(pathCategory, entry.Name())), Filename: entry.Name(), Category: item.category, Editable: item.editable})
+			result = append(result, ConfigDocument{
+				ID:       "singbox/" + filepath.ToSlash(filepath.Join(item.pathPrefix, entry.Name())),
+				Filename: entry.Name(),
+				Category: item.category,
+				Editable: item.editable,
+			})
 		}
 	}
 	for _, name := range []string{"providers.json", "outbounds.json", "ebpf.json"} {
@@ -155,6 +152,11 @@ func ValidateConfig(ctx context.Context, options Options, target, candidate stri
 	if strings.HasPrefix(target, "runtime/") && !isRuntimeConfigName(strings.TrimPrefix(target, "runtime/")) {
 		return errors.New("不支持的运行时文件")
 	}
+	if strings.HasPrefix(target, "singbox/") &&
+		!strings.HasPrefix(target, "singbox/confdir/") &&
+		!strings.HasPrefix(target, "singbox/rules/local/") {
+		return errors.New("不支持的 sing-box 配置目标")
+	}
 	content, err := os.ReadFile(candidate)
 	if err != nil {
 		return err
@@ -175,7 +177,7 @@ func validateSingBoxTree(ctx context.Context, options Options, target, candidate
 		return err
 	}
 	defer os.RemoveAll(temporary)
-	for _, name := range []string{"confdir", "source"} {
+	for _, name := range []string{"confdir", "rules"} {
 		if err := copyDirectory(filepath.Join(options.SingBoxDir, name), filepath.Join(temporary, name)); err != nil {
 			return err
 		}
@@ -256,7 +258,9 @@ func ResolveConfig(options Options, target string) (string, error) {
 	}
 	relative := filepath.FromSlash(strings.TrimPrefix(target, prefix))
 	parts := strings.Split(filepath.ToSlash(relative), "/")
-	if prefix == "singbox/" && (len(parts) != 2 || (parts[0] != "confdir" && parts[0] != "source") || filepath.Ext(parts[1]) != ".json" || parts[1] == "" || parts[1][0] == '.') {
+	validSingBoxPath := len(parts) == 2 && parts[0] == "confdir" && filepath.Ext(parts[1]) == ".json" && parts[1] != "" && parts[1][0] != '.'
+	validLocalRulePath := len(parts) == 3 && parts[0] == "rules" && parts[1] == "local" && filepath.Ext(parts[2]) == ".json" && parts[2] != "" && parts[2][0] != '.'
+	if prefix == "singbox/" && !validSingBoxPath && !validLocalRulePath {
 		return "", errors.New("配置目标路径无效")
 	}
 	if prefix == "runtime/" && (len(parts) != 1 || filepath.Ext(parts[0]) != ".json" || parts[0] == "" || parts[0][0] == '.') {

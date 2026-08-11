@@ -11,6 +11,20 @@ func TestListConfigsUsesReadableRuntimeID(t *testing.T) {
 	if err := os.MkdirAll(options.RuntimeDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	localRules := filepath.Join(options.SingBoxDir, "rules", "local")
+	remoteRules := filepath.Join(options.SingBoxDir, "rules", "remote")
+	if err := os.MkdirAll(localRules, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(remoteRules, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(localRules, "direct.json"), []byte(`{"version":1,"rules":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(remoteRules, "Proxy.srs"), []byte{0x00, 0xff, 0x01}, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	const content = "{\"type\":\"ebpf\"}\n"
 	if err := os.WriteFile(filepath.Join(options.RuntimeDir, "ebpf.json"), []byte(content), 0o600); err != nil {
 		t.Fatal(err)
@@ -47,6 +61,23 @@ func TestListConfigsUsesReadableRuntimeID(t *testing.T) {
 	}
 	if runtimeDocument.ID != "runtime/ebpf.json" {
 		t.Fatalf("运行时配置 ID 错误: %q", runtimeDocument.ID)
+	}
+
+	var localRuleDocument *ConfigDocument
+	for index := range documents {
+		if documents[index].Filename == "direct.json" {
+			localRuleDocument = &documents[index]
+			break
+		}
+	}
+	if localRuleDocument == nil || localRuleDocument.ID != "singbox/rules/local/direct.json" || localRuleDocument.Category != "rules" {
+		t.Fatalf("本地规则集文档契约错误: %#v", localRuleDocument)
+	}
+	if _, err := ReadConfig(options, "singbox/source/direct.json"); err == nil {
+		t.Fatal("旧 source 路径不应继续可读")
+	}
+	if _, err := ReadConfig(options, "singbox/rules/remote/Proxy.srs"); err == nil {
+		t.Fatal("远程 SRS 不应作为可编辑配置读取")
 	}
 
 	read, err := ReadConfig(options, runtimeDocument.ID)

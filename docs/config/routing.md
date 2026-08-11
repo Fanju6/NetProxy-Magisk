@@ -24,10 +24,10 @@ NetProxy 的分流行为由三层共同决定：
 ## 规则集位置
 
 ```text
-/data/adb/modules/netproxy/config/singbox/source/
+/data/adb/modules/netproxy/config/singbox/rules/
 ```
 
-这里存放规则集和相关资源，`rule` 模式下会被 sing-box 路由配置引用。
+这里分为两个目录：`rules/local/` 存放可编辑的本地规则集，`rules/remote/` 存放由远程 Provider 管理的 SRS 规则资源。`rule` 模式下两者都会被 sing-box 路由配置引用。
 
 ## 与透明代理层的关系
 
@@ -48,6 +48,6 @@ eBPF 入站先在内核侧判断需要提前绕过的 CIDR 与 UID，sing-box �
 如果出现域名能解析但分流异常，请同时检查：
 
 1. 当前 `OUTBOUND_MODE`
-2. `source/` 中的规则集是否正确
+2. `rules/local/` 与 `rules/remote/` 中的规则资源是否正确
 3. `EBPF_DNS_MODE` 与 sing-box DNS 配置
 4. 当前节点和代理组是否正常
