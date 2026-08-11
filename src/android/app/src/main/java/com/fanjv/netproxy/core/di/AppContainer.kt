@@ -28,7 +28,7 @@ internal class AppContainer(context: Context) {
     val appPolicyRepository = AppPolicyRepository(netProxyCtlClient)
     val configRepository = ConfigRepository(netProxyCtlClient, commandFileStore)
     val logRepository = LogRepository(netProxyCtlClient, appContext)
-    val moduleEnvironment = AndroidModuleEnvironment(appContext)
+    val moduleEnvironment = AndroidModuleEnvironment(appContext, netProxyCtlClient)
     val nodeImportStore = NodeImportStore(appContext)
     val appPackageRepository = AppPackageRepository(appContext)
     val themeManager = ThemeManager(

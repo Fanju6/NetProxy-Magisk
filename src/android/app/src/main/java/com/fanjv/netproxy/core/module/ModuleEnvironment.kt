@@ -2,8 +2,8 @@ package com.fanjv.netproxy.core.module
 
 import android.app.ActivityManager
 import android.content.Context
+import com.fanjv.netproxy.core.command.NetProxyCtlClient
 import com.fanjv.netproxy.core.shell.ShellUtil
-import com.topjohnwu.superuser.io.SuFile
 
 internal data class ModuleAvailability(
     val rootGranted: Boolean,
@@ -16,7 +16,10 @@ internal interface ModuleEnvironment {
     suspend fun availability(): ModuleAvailability
 }
 
-internal class AndroidModuleEnvironment(context: Context) : ModuleEnvironment {
+internal class AndroidModuleEnvironment(
+    context: Context,
+    private val client: NetProxyCtlClient
+) : ModuleEnvironment {
     override val totalMemoryBytes: Long = ActivityManager.MemoryInfo().also { info ->
         (context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager)
             ?.getMemoryInfo(info)
@@ -26,7 +29,7 @@ internal class AndroidModuleEnvironment(context: Context) : ModuleEnvironment {
         val root = ShellUtil.isRootAvailable()
         return ModuleAvailability(
             rootGranted = root,
-            moduleInstalled = root && SuFile.open(ModulePaths.NETPROXYCTL).isFile
+            moduleInstalled = root && client.isAvailable()
         )
     }
 }

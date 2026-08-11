@@ -1,6 +1,7 @@
 package com.fanjv.netproxy.core.command
 
 import com.fanjv.netproxy.core.module.ModulePaths
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -112,6 +113,20 @@ internal class NetProxyCtlClient(
 ) {
     private val codec = NetProxyCtlCodec(json)
 
+    /** 通过唯一管理入口确认模块 CLI 可用，不读取模块目录或进程状态。 */
+    suspend fun isAvailable(): Boolean {
+        return try {
+            execute("service", "status")
+            true
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: NetProxyCtlException) {
+            error.resultCode !in TRANSPORT_ERROR_CODES
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     suspend fun execute(vararg args: String): NetProxyCtlResponse = withContext(Dispatchers.IO) {
         val arguments = args.toList()
         val timeoutMillis =
@@ -126,5 +141,9 @@ internal class NetProxyCtlClient(
     private companion object {
         const val DEFAULT_TIMEOUT_MILLIS = 30_000L
         const val SERVICE_START_TIMEOUT_MILLIS = 120_000L
+        val TRANSPORT_ERROR_CODES = setOf(
+            "transport.invalid_output",
+            "transport.invalid_json"
+        )
     }
 }

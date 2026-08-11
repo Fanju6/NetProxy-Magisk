@@ -110,7 +110,7 @@ internal class CatalogDashboardViewModel(
     }
 
     fun toggleService() {
-        if (_state.value.operation.isNotEmpty()) return
+        if (!canControlService()) return
         val action = if (_state.value.serviceState in setOf("ready", "starting", "preparing")) {
             "stop"
         } else {
@@ -122,10 +122,19 @@ internal class CatalogDashboardViewModel(
         }
     }
 
-    fun setMode(mode: String) = runOperation("mode") {
-        repository.setMode(mode)
-        "出站模式已切换"
+    fun setMode(mode: String) {
+        if (!canControlService()) return
+        runOperation("mode") {
+            repository.setMode(mode)
+            "出站模式已切换"
+        }
     }
+
+    private fun canControlService(): Boolean =
+        _state.value.rootGranted &&
+            _state.value.moduleInstalled &&
+            !_state.value.loading &&
+            _state.value.operation.isEmpty()
 
     fun clearNotice() {
         _state.update { it.copy(notice = "") }
@@ -172,7 +181,7 @@ internal class CatalogDashboardViewModel(
             _state.update {
                 it.copy(
                     loading = false,
-                    serviceState = if (it.serviceState == "ready") "failed" else it.serviceState,
+                    serviceState = "failed",
                     serviceError = error.userMessage()
                 )
             }
@@ -182,10 +191,12 @@ internal class CatalogDashboardViewModel(
     private fun runOperation(name: String, action: suspend () -> String) {
         viewModelScope.launch {
             val changesServiceState = name == "start" || name == "stop"
+            val previousServiceState = _state.value.serviceState
             if (changesServiceState) serviceTransitionRevision++
             _state.update { current ->
                 current.copy(
                     operation = name,
+                    serviceError = "",
                     serviceState = when (name) {
                         "start" -> "starting"
                         "stop" -> "stopping"
@@ -215,6 +226,11 @@ internal class CatalogDashboardViewModel(
                     _state.update {
                         it.copy(
                             operation = "",
+                            serviceState = if (changesServiceState) {
+                                previousServiceState
+                            } else {
+                                it.serviceState
+                            },
                             notice = error.userMessage(),
                             noticeId = it.noticeId + 1
                         )

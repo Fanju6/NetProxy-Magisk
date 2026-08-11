@@ -3,7 +3,10 @@ package com.fanjv.netproxy.core.command
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
@@ -71,5 +74,54 @@ class NetProxyCtlCodecTest {
         }
 
         assertEquals("transport.unsupported_schema", error.resultCode)
+    }
+
+    @Test
+    fun `availability accepts structured command errors`() = runBlocking {
+        val client = NetProxyCtlClient(
+            transport = NetProxyCtlTransport { _, _ ->
+                NetProxyCtlOutput(
+                    successful = false,
+                    stdout = listOf(
+                        "{\"schema\":1,\"ok\":false,\"code\":\"command.failed\",\"message\":\"配置无效\",\"data\":{}}"
+                    ),
+                    stderr = emptyList()
+                )
+            }
+        )
+
+        assertTrue(client.isAvailable())
+    }
+
+    @Test
+    fun `availability rejects missing or invalid cli output`() = runBlocking {
+        val client = NetProxyCtlClient(
+            transport = NetProxyCtlTransport { _, _ ->
+                NetProxyCtlOutput(
+                    successful = false,
+                    stdout = emptyList(),
+                    stderr = listOf("命令不存在")
+                )
+            }
+        )
+
+        assertFalse(client.isAvailable())
+    }
+
+    @Test
+    fun `availability keeps incompatible cli distinguishable from missing cli`() = runBlocking {
+        val client = NetProxyCtlClient(
+            transport = NetProxyCtlTransport { _, _ ->
+                NetProxyCtlOutput(
+                    successful = true,
+                    stdout = listOf(
+                        "{\"schema\":2,\"ok\":true,\"code\":\"service.status\",\"message\":\"\",\"data\":{}}"
+                    ),
+                    stderr = emptyList()
+                )
+            }
+        )
+
+        assertTrue(client.isAvailable())
     }
 }

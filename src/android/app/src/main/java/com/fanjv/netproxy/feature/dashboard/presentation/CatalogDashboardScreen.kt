@@ -40,6 +40,7 @@ import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
@@ -122,6 +123,16 @@ internal fun CatalogDashboardScreen(
                     item { DashboardWarning(state.serviceError) }
                 }
 
+                if (state.loading) {
+                    item {
+                        InfiniteProgressIndicator(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 24.dp)
+                        )
+                    }
+                }
+
                 item {
                     val serviceSummary = when {
                         state.isStarting -> stringResource(R.string.service_starting)
@@ -136,7 +147,10 @@ internal fun CatalogDashboardScreen(
                         uploadHistory = state.uploadHistory,
                         statusSummary = serviceSummary,
                         isRunning = state.isReady,
-                        serviceControlEnabled = !state.isServiceControlBusy,
+                        serviceControlEnabled = state.rootGranted &&
+                            state.moduleInstalled &&
+                            !state.loading &&
+                            !state.isServiceControlBusy,
                         modifier = Modifier.padding(top = 12.dp),
                         onToggleService = viewModel::toggleService
                     )
@@ -182,7 +196,11 @@ internal fun CatalogDashboardScreen(
                                     tint = colorScheme.primary
                                 )
                             },
-                            onSelectedIndexChange = { index -> viewModel.setMode(modeValues[index]) }
+                            onSelectedIndexChange = { index ->
+                                if (state.rootGranted && state.moduleInstalled && !state.loading) {
+                                    viewModel.setMode(modeValues[index])
+                                }
+                            }
                         )
                         ArrowPreference(
                             title = "当前节点",
