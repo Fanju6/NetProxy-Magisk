@@ -397,22 +397,26 @@ func NodeAppend(ctx context.Context, options Options, groupID, input string, all
 	return result, nil
 }
 
-// NodeImport 创建本地文件分组。
-func NodeImport(ctx context.Context, options Options, input, name string, allowInsecure bool) (string, error) {
+// NodeImport 将本地文件中的节点追加到 default 本地配置组。
+func NodeImport(ctx context.Context, options Options, input string, allowInsecure bool) (catalog.MutationResult, error) {
 	if err := ensureDefaultGroup(ctx, options); err != nil {
-		return "", err
+		return catalog.MutationResult{}, err
 	}
-	groupID, err := catalog.NewGroupID(options.CatalogRoot, "file", input)
+	const groupID = "default"
+	result, err := catalog.AppendNode(ctx, catalog.MutationOptions{
+		GroupDir:      filepath.Join(options.CatalogRoot, groupID),
+		GroupID:       groupID,
+		Type:          "local",
+		Input:         input,
+		AllowInsecure: allowInsecure,
+	})
 	if err != nil {
-		return "", err
+		return catalog.MutationResult{}, err
 	}
-	if _, err := catalog.ImportGroup(ctx, catalog.ImportOptions{Root: options.CatalogRoot, GroupID: groupID, Name: name, Input: input, AllowInsecure: allowInsecure}); err != nil {
-		return "", err
+	if err := syncCatalogChange(ctx, options, groupID, result.StructureChanged); err != nil {
+		return result, err
 	}
-	if err := syncCatalogChange(ctx, options, groupID, true); err != nil {
-		return groupID, err
-	}
-	return groupID, nil
+	return result, nil
 }
 
 // NodeEdit 原子替换指定分组的节点。

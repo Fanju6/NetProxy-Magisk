@@ -37,6 +37,16 @@ func TestModuleArgsKeepsOperationBeforeFlags(t *testing.T) {
 	}
 }
 
+func TestNodeImportArgsOnlyAcceptsFile(t *testing.T) {
+	got, ok := nodeImportArgs([]string{"nodes.yaml"})
+	if !ok || !reflect.DeepEqual(got, []string{"import", "nodes.yaml"}) {
+		t.Fatalf("node import args = %v, %v", got, ok)
+	}
+	if _, ok := nodeImportArgs([]string{"nodes.yaml", "自定义分组"}); ok {
+		t.Fatal("node import should reject the removed group name argument")
+	}
+}
+
 func TestParseCommandArgsSupportsMixedOptions(t *testing.T) {
 	args, timeout, err := parseCommandArgs([]string{
 		"service", "status", "--json", "--timeout=45s",

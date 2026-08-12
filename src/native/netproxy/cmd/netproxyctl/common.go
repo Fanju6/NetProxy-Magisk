@@ -83,6 +83,7 @@ func (c *cli) help() {
   netproxyctl [--json] [--timeout <秒|时长>] logs show|clear|export
 
 节点引用固定为 <group-id>/<tag>；自动模式使用 node use auto [分组]。
+node import <文件> 会将文件中的全部节点追加到 default 本地配置组。
 默认命令超时为 30 秒，service start 默认 120 秒；可使用 --timeout 覆盖。
 stdout 只包含 schema=1 结果，运行日志写入 stderr。`)
 }

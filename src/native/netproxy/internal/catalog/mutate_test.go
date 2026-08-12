@@ -96,6 +96,52 @@ func TestCatalogNodeMutationRejectsMissingTag(t *testing.T) {
 	}
 }
 
+func TestCatalogAppendFileKeepsExistingNodesAndNormalizesTags(t *testing.T) {
+	root := t.TempDir()
+	if _, err := ImportGroup(context.Background(), ImportOptions{
+		Root: root, GroupID: "default", Name: "本地配置",
+		Input: "socks://first.example:1080#NODE\nsocks://second.example:1081#NODE_2",
+	}); err != nil {
+		t.Fatalf("initialize default group: %v", err)
+	}
+	input := filepath.Join(root, "nodes.txt")
+	if err := os.WriteFile(input, []byte("socks://third.example:1082#NODE\nsocks://fourth.example:1083#OTHER\n"), 0o600); err != nil {
+		t.Fatalf("write node file: %v", err)
+	}
+
+	result, err := AppendNode(context.Background(), MutationOptions{
+		GroupDir: filepath.Join(root, "default"), GroupID: "default", Type: "local", Input: input,
+	})
+	if err != nil {
+		t.Fatalf("append node file: %v", err)
+	}
+	if result.GroupID != "default" || result.NodeCount != 4 || result.Revision != 2 || result.StructureChanged {
+		t.Fatalf("unexpected append result: %+v", result)
+	}
+
+	document, err := provider.Load(context.Background(), filepath.Join(root, "default", "provider.json"))
+	if err != nil {
+		t.Fatalf("load default provider: %v", err)
+	}
+	nodes := provider.Inspect(document)
+	wantTags := []string{"NODE", "NODE_2", "NODE_3", "OTHER"}
+	if len(nodes) != len(wantTags) {
+		t.Fatalf("node count = %d, want %d: %+v", len(nodes), len(wantTags), nodes)
+	}
+	for index, want := range wantTags {
+		if nodes[index].Tag != want {
+			t.Fatalf("node tag %d = %q, want %q", index, nodes[index].Tag, want)
+		}
+	}
+	metadata, err := LoadMetadata(filepath.Join(root, "default", "meta.json"), "default")
+	if err != nil {
+		t.Fatalf("load default metadata: %v", err)
+	}
+	if metadata.Name != "本地配置" || metadata.NodeCount != 4 {
+		t.Fatalf("default metadata changed unexpectedly: %+v", metadata)
+	}
+}
+
 func TestCatalogNodeMutationsSerializePerGroup(t *testing.T) {
 	root := t.TempDir()
 	if _, err := ImportGroup(context.Background(), ImportOptions{

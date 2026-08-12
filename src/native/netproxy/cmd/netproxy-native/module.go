@@ -357,7 +357,6 @@ func runModuleNode(ctx context.Context, args []string) error {
 	flags := newFlagSet("module node")
 	values := bindModuleFlags(flags)
 	allowInsecure := flags.Bool("allow-insecure", false, "跳过节点 TLS 校验")
-	name := flags.String("name", "", "本地分组名称")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -379,11 +378,14 @@ func runModuleNode(ctx context.Context, args []string) error {
 		}
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "node.added", Message: "节点已加入本地配置", Data: data})
 	case "import":
-		group, err := moduleapp.NodeImport(ctx, options, positionals[0], *name, *allowInsecure)
+		if len(positionals) != 1 {
+			return errors.New("用法: netproxy-native module node import <文件>")
+		}
+		data, err := moduleapp.NodeImport(ctx, options, positionals[0], *allowInsecure)
 		if err != nil {
 			return err
 		}
-		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "node.imported", Message: "文件节点已导入", Data: map[string]string{"group_id": group}})
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "node.imported", Message: "文件节点已加入本地配置", Data: data})
 	case "edit":
 		if len(positionals) < 2 {
 			return errors.New("node edit 需要节点引用和节点内容")

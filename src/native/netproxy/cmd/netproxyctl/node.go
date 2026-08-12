@@ -42,12 +42,9 @@ func (c *cli) node(args []string) int {
 		}
 		return c.runNative(c.context(), c.moduleArgs("node", append([]string{"add"}, positionals...)...)...)
 	case "import":
-		if len(positionals) < 1 {
-			return c.fail("usage.invalid", "用法: netproxyctl node import <文件> [名称]", 2)
-		}
-		input := []string{"import", positionals[0]}
-		if len(positionals) > 1 {
-			input = []string{"import", "--name", positionals[1], positionals[0]}
+		input, ok := nodeImportArgs(positionals)
+		if !ok {
+			return c.fail("usage.invalid", "用法: netproxyctl node import <文件>", 2)
 		}
 		return c.runNative(c.context(), c.moduleArgs("node", input...)...)
 	case "edit":
@@ -77,4 +74,11 @@ func (c *cli) node(args []string) int {
 	default:
 		return c.fail("usage.invalid", "用法: netproxyctl node list|snapshot|current|show|get|export|delay|add|import|edit|remove|use", 2)
 	}
+}
+
+func nodeImportArgs(positionals []string) ([]string, bool) {
+	if len(positionals) != 1 {
+		return nil, false
+	}
+	return []string{"import", positionals[0]}, true
 }
