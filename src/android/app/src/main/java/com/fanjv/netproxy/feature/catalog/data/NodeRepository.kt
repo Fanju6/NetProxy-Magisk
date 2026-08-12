@@ -24,10 +24,8 @@ internal class NodeRepository(
         catalog.execute("node", "add", link)
     }
 
-    suspend fun import(filePath: String, groupName: String = ""): String {
-        val args = mutableListOf("node", "import", filePath)
-        groupName.takeIf(String::isNotBlank)?.let(args::add)
-        return catalog.execute(*args.toTypedArray()).data
+    suspend fun import(filePath: String): String {
+        return catalog.execute("node", "import", filePath).data
             .let { element -> element.jsonObject["group_id"]?.jsonPrimitive?.content.orEmpty() }
     }
 

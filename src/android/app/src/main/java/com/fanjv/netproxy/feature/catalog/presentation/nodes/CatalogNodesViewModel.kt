@@ -20,6 +20,8 @@ internal data class CatalogNodesUiState(
     val groups: List<CatalogNodeGroup> = emptyList(),
     val selection: CurrentNodeSelection = CurrentNodeSelection(),
     val selectedGroupId: String = "",
+    val focusGroupId: String = "",
+    val focusGroupRevision: Long = 0,
     val latencies: Map<String, String> = emptyMap(),
     val loading: Boolean = false,
     val operation: String = "",
@@ -201,12 +203,24 @@ internal class CatalogNodesViewModel(
         )
     }
 
-    fun importFile(uri: Uri, groupName: String = "") = runOperation("import") {
-        importStore.withImportedFile(uri) { temporary ->
-            repository.import(temporary.absolutePath, groupName)
+    fun importFile(uri: Uri) = runOperation(
+        name = "import",
+        action = {
+            importStore.withImportedFile(uri) { temporary ->
+                repository.import(temporary.absolutePath)
+            }
+            "文件节点已加入本地配置"
+        },
+        onSuccess = {
+            _state.update {
+                it.copy(
+                    selectedGroupId = DEFAULT_GROUP_ID,
+                    focusGroupId = DEFAULT_GROUP_ID,
+                    focusGroupRevision = it.focusGroupRevision + 1
+                )
+            }
         }
-        "节点文件已导入"
-    }
+    )
 
     fun clearNotice() {
         _state.update { it.copy(notice = "", error = "") }
@@ -308,6 +322,7 @@ internal class CatalogNodesViewModel(
     private fun runOperation(
         name: String,
         refreshAfter: Boolean = true,
+        onSuccess: () -> Unit = {},
         action: suspend () -> String
     ) {
         if (_state.value.operation.isNotEmpty()) return
@@ -322,6 +337,7 @@ internal class CatalogNodesViewModel(
                             noticeId = it.noticeId + 1
                         )
                     }
+                    onSuccess()
                     if (refreshAfter) refresh(silent = true)
                 }
                 .onFailure { error ->
@@ -334,5 +350,9 @@ internal class CatalogNodesViewModel(
                     }
                 }
         }
+    }
+
+    private companion object {
+        const val DEFAULT_GROUP_ID = "default"
     }
 }

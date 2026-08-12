@@ -132,6 +132,14 @@ internal fun CatalogNodesScreen(
             displayPreferences.getStringSet("expanded_groups", emptySet()).orEmpty()
         )
     }
+    LaunchedEffect(state.focusGroupRevision) {
+        val groupId = state.focusGroupId
+        if (groupId.isBlank()) return@LaunchedEffect
+        expandedGroups = expandedGroups + groupId
+        displayPreferences.edit {
+            putStringSet("expanded_groups", expandedGroups)
+        }
+    }
     val pullToRefreshState = rememberPullToRefreshState()
     val snackbarHostState = rememberAppSnackbarHostState()
     val refreshTexts = listOf(
