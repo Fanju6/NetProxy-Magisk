@@ -19,6 +19,7 @@ src/module/bin/netproxyctl
 src/android/**/.gradle/
 src/android/**/.kotlin/
 src/android/**/build/
+src/android/app/release/
 src/android/**/local.properties
 src/android/captures/
 src/android/.externalNativeBuild/
@@ -26,3 +27,33 @@ src/android/.cxx/
 src/android/**/*.jks
 src/android/**/*.keystore
 src/android/**/keystore.properties
+
+# WebUI 本地依赖与构建产物
+src/webui/**/node_modules/
+src/webui/**/dist/
+src/webui/**/.DS_Store
+src/webui/**/*.log
+src/webui/**/*.tsbuildinfo
+
+# 文档站本地依赖、缓存与构建产物
+docs/**/logs/
+docs/**/*.log
+docs/**/npm-debug.log*
+docs/**/yarn-debug.log*
+docs/**/yarn-error.log*
+docs/**/pnpm-debug.log*
+docs/**/lerna-debug.log*
+docs/**/node_modules/
+docs/**/dist/
+docs/**/dist-ssr/
+docs/**/*.local
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+docs/.vscode/*
+!docs/.vscode/extensions.json
+docs/**/.DS_Store
+docs/**/*.suo
+docs/**/*.ntvs*
+docs/**/*.njsproj
+docs/**/*.sln
+docs/**/*.sw?
