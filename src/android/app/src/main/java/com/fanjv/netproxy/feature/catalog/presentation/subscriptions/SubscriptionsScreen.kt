@@ -36,12 +36,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.core.di.netProxyViewModel
+import com.fanjv.netproxy.R
+import com.fanjv.netproxy.core.ui.UiText
+import com.fanjv.netproxy.core.ui.resolve
 import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BackIconButton
 import com.fanjv.netproxy.core.ui.component.BlurredBar
@@ -108,11 +112,11 @@ internal fun SubscriptionsScreen(
         onDispose { if (isActive) viewModel.setVisible(false) }
     }
 
-    val noticeText = state.error.ifBlank { state.notice }
+    val noticeText = if (state.error !is UiText.Empty) state.error else state.notice
     SnackbarNoticeEffect(
         eventId = state.noticeId,
-        message = noticeText,
-        isError = state.error.isNotBlank(),
+        message = noticeText.resolve(),
+        isError = state.error !is UiText.Empty,
         hostState = snackbarHostState,
         onConsumed = viewModel::clearNotice
     )
@@ -125,7 +129,7 @@ internal fun SubscriptionsScreen(
             BlurredBar(backdrop) {
                 TopAppBar(
                     color = barColor,
-                    title = "订阅",
+                    title = stringResource(R.string.subscriptions),
                     scrollBehavior = scrollBehavior,
                     actions = {
                         if (state.groups.any { it.type == "subscription" }) {
@@ -135,7 +139,7 @@ internal fun SubscriptionsScreen(
                             ) {
                                 Icon(
                                     imageVector = MiuixIcons.Refresh,
-                                    contentDescription = "更新全部订阅",
+                                    contentDescription = stringResource(R.string.subscription_update_all),
                                     tint = colorScheme.onSurface
                                 )
                             }
@@ -145,7 +149,7 @@ internal fun SubscriptionsScreen(
                         ) {
                             Icon(
                                 imageVector = MiuixIcons.Add,
-                                contentDescription = "添加 URL 订阅",
+                                contentDescription = stringResource(R.string.subscription_add_url),
                                 tint = colorScheme.onSurface
                             )
                         }
@@ -166,7 +170,7 @@ internal fun SubscriptionsScreen(
                 )
 
                 state.groups.isEmpty() -> EmptyCatalog(
-                    text = "暂无订阅",
+                    text = stringResource(R.string.subscription_empty),
                     onRefresh = null,
                     modifier = Modifier
                         .align(Alignment.Center)
@@ -246,7 +250,7 @@ private fun CatalogGroupCard(
             if (group.active) {
                 val activeColor = Color(0xFF32A852)
                 Text(
-                    text = "使用中",
+                    text = stringResource(R.string.subscription_active),
                     fontSize = 12.sp,
                     fontWeight = FontWeight(750),
                     color = activeColor,
@@ -263,11 +267,15 @@ private fun CatalogGroupCard(
             Column {
                 Text(
                     text = if (!isSubscription) {
-                        "${group.nodeCount} 个节点"
+                        stringResource(R.string.subscription_node_count, group.nodeCount)
                     } else if (total > 0) {
-                        "已用 ${formatBytes(used)} / ${formatBytes(total)}"
+                        stringResource(
+                            R.string.subscription_usage,
+                            formatBytes(used),
+                            formatBytes(total)
+                        )
                     } else {
-                        "暂无流量信息"
+                        stringResource(R.string.subscription_no_usage)
                     },
                     modifier = Modifier.padding(top = 2.dp),
                     fontSize = 12.sp,
@@ -276,9 +284,25 @@ private fun CatalogGroupCard(
                 Spacer(Modifier.weight(1f))
                 Text(
                     text = if (updatedAt.isNotBlank()) {
-                        "${if (isSubscription) "更新" else "修改"}于 ${formatDate(updatedAt)}"
+                        stringResource(
+                            R.string.subscription_updated_at,
+                            stringResource(
+                                if (isSubscription) {
+                                    R.string.subscription_updated_label
+                                } else {
+                                    R.string.local_config_modified_label
+                                }
+                            ),
+                            formatDate(updatedAt)
+                        )
                     } else {
-                        if (isSubscription) "尚未更新" else "暂无修改时间"
+                        stringResource(
+                            if (isSubscription) {
+                                R.string.subscription_not_updated
+                            } else {
+                                R.string.local_config_modified_at
+                            }
+                        )
                     },
                     modifier = Modifier.padding(top = 2.dp),
                     fontSize = 12.sp,
@@ -297,7 +321,10 @@ private fun CatalogGroupCard(
                 Icon(
                     modifier = Modifier.size(20.dp),
                     imageVector = MiuixIcons.MoreCircle,
-                    contentDescription = if (isSubscription) "订阅详情" else "本地配置详情",
+                    contentDescription = stringResource(
+                        if (isSubscription) R.string.subscription_details
+                        else R.string.local_config_details
+                    ),
                     tint = colorScheme.onSurfaceVariantSummary
                 )
             }
@@ -313,7 +340,7 @@ private fun CatalogGroupCard(
                     Icon(
                         modifier = Modifier.size(20.dp),
                         imageVector = MiuixIcons.Refresh,
-                        contentDescription = "更新订阅",
+                        contentDescription = stringResource(R.string.common_update),
                         tint = colorScheme.onSurfaceVariantSummary
                     )
                 }
@@ -328,7 +355,7 @@ private fun CatalogGroupCard(
                     Icon(
                         modifier = Modifier.size(20.dp),
                         imageVector = MiuixIcons.Delete,
-                        contentDescription = "删除订阅",
+                        contentDescription = stringResource(R.string.common_delete),
                         tint = colorScheme.onSurfaceVariantSummary
                     )
                 }
@@ -338,19 +365,19 @@ private fun CatalogGroupCard(
 
     OverlayDialog(
         show = isSubscription && showDeleteDialog,
-        title = "删除订阅？",
+        title = stringResource(R.string.subscription_delete_title),
         onDismissRequest = { showDeleteDialog = false }
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("将删除 ${group.name} 的节点与更新记录，此操作无法撤销。")
+            Text(stringResource(R.string.subscription_delete_message, group.name))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(
-                    text = "取消",
+                    text = stringResource(R.string.common_cancel),
                     modifier = Modifier.weight(1f),
                     onClick = { showDeleteDialog = false }
                 )
                 TextButton(
-                    text = "确认",
+                    text = stringResource(R.string.common_confirm),
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.textButtonColorsPrimary(),
                     onClick = {
@@ -392,11 +419,11 @@ internal fun SubscriptionDetailsScreen(
             ?.setPrimaryClip(ClipData.newPlainText("NetProxy node", link))
         viewModel.nodeLinkCopied()
     }
-    val noticeText = state.error.ifBlank { state.notice }
+    val noticeText = if (state.error !is UiText.Empty) state.error else state.notice
     SnackbarNoticeEffect(
         eventId = state.noticeId,
-        message = noticeText,
-        isError = state.error.isNotBlank(),
+        message = noticeText.resolve(),
+        isError = state.error !is UiText.Empty,
         hostState = snackbarHostState,
         onConsumed = viewModel::clearNotice
     )
@@ -407,19 +434,31 @@ internal fun SubscriptionDetailsScreen(
             BlurredBar(backdrop) {
                 TopAppBar(
                     color = barColor,
-                    title = if (state.details?.group?.type == "local") "本地配置详情" else "订阅详情",
+                    title = stringResource(
+                        if (state.details?.group?.type == "local") {
+                            R.string.local_config_details
+                        } else {
+                            R.string.subscription_details
+                        }
+                    ),
                     scrollBehavior = scrollBehavior,
                     navigationIcon = { BackIconButton(onClick = onBack) },
                     actions = {
                         if (state.details?.group?.type == "subscription") {
                             IconButton(onClick = { navigator.push(Route.SubscriptionEdit(id)) }) {
-                                Icon(Icons.Rounded.Edit, contentDescription = "编辑")
+                                Icon(
+                                    Icons.Rounded.Edit,
+                                    contentDescription = stringResource(R.string.common_edit)
+                                )
                             }
                             IconButton(
                                 enabled = state.operation.isEmpty(),
                                 onClick = { viewModel.update(id) }
                             ) {
-                                Icon(MiuixIcons.Refresh, contentDescription = "更新")
+                                Icon(
+                                    MiuixIcons.Refresh,
+                                    contentDescription = stringResource(R.string.common_update)
+                                )
                             }
                         }
                     }
@@ -459,7 +498,7 @@ internal fun SubscriptionDetailsScreen(
                     }
                 }
                 item {
-                    SectionLabel("节点 (${details.nodes.size})")
+                    SectionLabel(stringResource(R.string.subscription_nodes_section, details.nodes.size))
                 }
                 items(details.nodes, key = { it.tag }) { node ->
                     Card(modifier = Modifier.fillMaxWidth()) {
@@ -477,11 +516,11 @@ internal fun SubscriptionDetailsScreen(
                     }
                 }
                 if (details.group.type == "subscription") {
-                    item { SectionLabel("更新历史") }
+                    item { SectionLabel(stringResource(R.string.subscription_history_section)) }
                     if (state.history.isEmpty()) {
                         item {
                             Text(
-                                text = "暂无更新记录",
+                                text = stringResource(R.string.subscription_history_empty),
                                 color = colorScheme.onSurfaceVariantSummary,
                                 modifier = Modifier.padding(12.dp)
                             )
@@ -493,7 +532,7 @@ internal fun SubscriptionDetailsScreen(
                     }
                     item {
                         TextButton(
-                            text = "删除订阅",
+                            text = stringResource(R.string.common_delete),
                             onClick = { showDelete = true },
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -505,19 +544,19 @@ internal fun SubscriptionDetailsScreen(
 
     OverlayDialog(
         show = showDelete,
-        title = "删除订阅？",
+        title = stringResource(R.string.subscription_delete_title),
         onDismissRequest = { showDelete = false }
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("节点与更新历史将一并删除，此操作无法撤销。")
+            Text(stringResource(R.string.subscription_delete_details_message))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 TextButton(
-                    text = "取消",
+                    text = stringResource(R.string.common_cancel),
                     onClick = { showDelete = false },
                     modifier = Modifier.weight(1f)
                 )
                 TextButton(
-                    text = "删除",
+                    text = stringResource(R.string.common_delete),
                     onClick = {
                         showDelete = false
                         viewModel.remove(id, onBack)
@@ -541,7 +580,7 @@ internal fun SubscriptionDetailsScreen(
                     .padding(bottom = 8.dp)
             ) {
                 BasicComponent(
-                    title = "测试延迟",
+                    title = stringResource(R.string.node_test_delay),
                     startAction = { DetailActionIcon(Icons.Rounded.NetworkPing) },
                     onClick = {
                         viewModel.testNode(id, selectedNode.tag)
@@ -549,7 +588,7 @@ internal fun SubscriptionDetailsScreen(
                     }
                 )
                 BasicComponent(
-                    title = "编辑节点",
+                    title = stringResource(R.string.node_edit),
                     startAction = { DetailActionIcon(Icons.Rounded.Edit) },
                     onClick = {
                         viewModel.editNode(id, selectedNode.tag)
@@ -557,7 +596,7 @@ internal fun SubscriptionDetailsScreen(
                     }
                 )
                 BasicComponent(
-                    title = "导出节点",
+                    title = stringResource(R.string.node_export),
                     startAction = { DetailActionIcon(Icons.Rounded.Share) },
                     onClick = {
                         viewModel.exportNode(id, selectedNode.tag)
@@ -565,7 +604,7 @@ internal fun SubscriptionDetailsScreen(
                     }
                 )
                 BasicComponent(
-                    title = "删除节点",
+                    title = stringResource(R.string.node_delete),
                     startAction = { DetailActionIcon(MiuixIcons.Delete) },
                     onClick = {
                         viewModel.removeNode(id, selectedNode.tag)
@@ -578,36 +617,36 @@ internal fun SubscriptionDetailsScreen(
 
     OverlayDialog(
         show = state.editingNodeRef.isNotBlank(),
-        title = "编辑节点",
+        title = stringResource(R.string.node_edit),
         onDismissRequest = viewModel::dismissNodeEditor
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             TextField(
                 value = editedNodeLink,
                 onValueChange = { editedNodeLink = it },
-                label = "节点链接",
+                label = stringResource(R.string.node_link_label),
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 3,
                 maxLines = 8
             )
             Text(
                 text = if (state.details?.group?.type == "subscription") {
-                    "修改只影响当前订阅节点，下次更新订阅时会被远端内容覆盖"
+                    stringResource(R.string.subscription_edit_remote_note)
                 } else {
-                    "修改后将更新本地配置中的节点"
+                    stringResource(R.string.subscription_edit_local_note)
                 },
                 color = colorScheme.onSurfaceVariantSummary,
                 fontSize = 13.sp
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 TextButton(
-                    text = "取消",
+                    text = stringResource(R.string.common_cancel),
                     modifier = Modifier.weight(1f),
                     enabled = state.operation != "edit",
                     onClick = viewModel::dismissNodeEditor
                 )
                 TextButton(
-                    text = "保存",
+                    text = stringResource(R.string.save_text),
                     modifier = Modifier.weight(1f),
                     enabled = editedNodeLink.isNotBlank() && state.operation != "edit",
                     colors = ButtonDefaults.textButtonColorsPrimary(),
@@ -650,8 +689,8 @@ internal fun SubscriptionEditorScreen(
     }
     SnackbarNoticeEffect(
         eventId = state.noticeId,
-        message = state.error,
-        isError = true,
+        message = state.error.resolve(),
+        isError = state.error !is UiText.Empty,
         hostState = snackbarHostState,
         onConsumed = viewModel::clearError
     )
@@ -662,7 +701,10 @@ internal fun SubscriptionEditorScreen(
             BlurredBar(backdrop) {
                 TopAppBar(
                     color = barColor,
-                    title = if (id.isBlank()) "添加 URL 订阅" else "编辑订阅",
+                    title = stringResource(
+                        if (id.isBlank()) R.string.subscription_editor_add_title
+                        else R.string.subscription_editor_edit_title
+                    ),
                     scrollBehavior = scrollBehavior,
                     navigationIcon = { BackIconButton(onClick = onBack) },
                     actions = {
@@ -673,7 +715,10 @@ internal fun SubscriptionEditorScreen(
                             if (state.saving) {
                                 InfiniteProgressIndicator(modifier = Modifier.size(20.dp))
                             } else {
-                                Icon(Icons.Rounded.Check, contentDescription = "保存")
+                                Icon(
+                                    Icons.Rounded.Check,
+                                    contentDescription = stringResource(R.string.save_text)
+                                )
                             }
                         }
                     }
@@ -706,14 +751,17 @@ internal fun SubscriptionEditorScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 overscrollEffect = null
             ) {
-                item { SectionLabel("基础信息") }
+                item { SectionLabel(stringResource(R.string.subscription_editor_basic_section)) }
                 item {
                     TextField(
                         value = draft.name,
                         onValueChange = { value ->
                             viewModel.update { it.copy(name = value) }
                         },
-                        label = if (id.isBlank()) "订阅名称（留空自动获取）" else "订阅名称",
+                        label = stringResource(
+                            if (id.isBlank()) R.string.subscription_editor_name_auto
+                            else R.string.subscription_editor_name
+                        ),
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
@@ -724,7 +772,7 @@ internal fun SubscriptionEditorScreen(
                         onValueChange = { value ->
                             viewModel.update { it.copy(url = value) }
                         },
-                        label = "订阅链接",
+                        label = stringResource(R.string.subscription_editor_url),
                         modifier = Modifier.fillMaxWidth(),
                         minLines = 2,
                         maxLines = 4
@@ -735,16 +783,16 @@ internal fun SubscriptionEditorScreen(
                         val intervals =
                             listOf(900L, 3600L, 21600L, 43200L, 86400L, 259200L, 604800L)
                         val intervalLabels = listOf(
-                            "15 分钟",
-                            "1 小时",
-                            "6 小时",
-                            "12 小时",
-                            "24 小时",
-                            "3 天",
-                            "7 天"
+                            stringResource(R.string.subscription_duration_minutes, 15),
+                            stringResource(R.string.subscription_duration_hours, 1),
+                            stringResource(R.string.subscription_duration_hours, 6),
+                            stringResource(R.string.subscription_duration_hours, 12),
+                            stringResource(R.string.subscription_duration_hours, 24),
+                            stringResource(R.string.subscription_duration_days, 3),
+                            stringResource(R.string.subscription_duration_days, 7)
                         )
                         OverlayDropdownPreference(
-                            title = "自动更新周期",
+                            title = stringResource(R.string.subscription_editor_update_interval),
                             items = intervalLabels,
                             // 未命中候选档位时回退到 24 小时；不可对索引取下限，
                             // 否则 24 小时以下的档位会被一并抬高到该档
@@ -757,8 +805,8 @@ internal fun SubscriptionEditorScreen(
                             }
                         )
                         SwitchPreference(
-                            title = "自动更新",
-                            summary = "核心停止时也会按计划更新",
+                            title = stringResource(R.string.subscription_editor_auto_update),
+                            summary = stringResource(R.string.subscription_editor_auto_update_summary),
                             checked = draft.autoUpdate,
                             onCheckedChange = { enabled ->
                                 viewModel.update { it.copy(autoUpdate = enabled) }
@@ -766,8 +814,12 @@ internal fun SubscriptionEditorScreen(
                         )
                         val viaValues = listOf("auto", "always", "never")
                         OverlayDropdownPreference(
-                            title = "更新网络",
-                            items = listOf("自动", "始终通过代理", "始终直连"),
+                            title = stringResource(R.string.subscription_editor_update_network),
+                            items = listOf(
+                                stringResource(R.string.subscription_editor_network_auto),
+                                stringResource(R.string.subscription_editor_network_proxy),
+                                stringResource(R.string.subscription_editor_network_direct)
+                            ),
                             selectedIndex = viaValues.indexOf(draft.updateViaProxy)
                                 .coerceAtLeast(0),
                             onSelectedIndexChange = { index ->
@@ -778,14 +830,14 @@ internal fun SubscriptionEditorScreen(
                         )
                     }
                 }
-                item { SectionLabel("筛选与连接") }
+                item { SectionLabel(stringResource(R.string.subscription_editor_filter_section)) }
                 item {
                     TextField(
                         value = draft.include,
                         onValueChange = { value ->
                             viewModel.update { it.copy(include = value) }
                         },
-                        label = "仅保留（正则，可选）",
+                        label = stringResource(R.string.subscription_editor_include),
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
@@ -796,7 +848,7 @@ internal fun SubscriptionEditorScreen(
                         onValueChange = { value ->
                             viewModel.update { it.copy(exclude = value) }
                         },
-                        label = "排除（正则，可选）",
+                        label = stringResource(R.string.subscription_editor_exclude),
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
@@ -804,8 +856,8 @@ internal fun SubscriptionEditorScreen(
                 item {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         SwitchPreference(
-                            title = "跳过 TLS 证书验证",
-                            summary = "仅在订阅服务器证书异常时启用",
+                            title = stringResource(R.string.subscription_editor_allow_insecure),
+                            summary = stringResource(R.string.subscription_editor_allow_insecure_summary),
                             checked = draft.allowInsecure,
                             onCheckedChange = { enabled ->
                                 viewModel.update { it.copy(allowInsecure = enabled) }
@@ -813,14 +865,14 @@ internal fun SubscriptionEditorScreen(
                         )
                     }
                 }
-                item { SectionLabel("高级请求设置") }
+                item { SectionLabel(stringResource(R.string.subscription_editor_advanced_section)) }
                 item {
                     TextField(
                         value = draft.userAgent,
                         onValueChange = { value ->
                             viewModel.update { it.copy(userAgent = value) }
                         },
-                        label = "User-Agent（可选）",
+                        label = stringResource(R.string.subscription_editor_user_agent),
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
@@ -831,7 +883,7 @@ internal fun SubscriptionEditorScreen(
                         onValueChange = { value ->
                             viewModel.update { it.copy(hwid = value) }
                         },
-                        label = "HWID（可选）",
+                        label = stringResource(R.string.subscription_editor_hwid),
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
@@ -840,7 +892,7 @@ internal fun SubscriptionEditorScreen(
                     TextField(
                         value = state.headersText,
                         onValueChange = viewModel::updateHeaders,
-                        label = "自定义请求头，每行 名称: 值",
+                        label = stringResource(R.string.subscription_editor_headers),
                         modifier = Modifier.fillMaxWidth(),
                         minLines = 3,
                         maxLines = 8
@@ -854,14 +906,18 @@ internal fun SubscriptionEditorScreen(
                                 viewModel.update { it.copy(timeoutSeconds = seconds) }
                             }
                         },
-                        label = "下载超时（秒）",
+                        label = stringResource(R.string.subscription_editor_timeout),
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
                 }
                 item {
                     TextButton(
-                        text = if (state.saving) "正在验证并保存…" else "保存",
+                        text = if (state.saving) {
+                            stringResource(R.string.subscription_editor_validating_save)
+                        } else {
+                            stringResource(R.string.save_text)
+                        },
                         enabled = !state.saving,
                         colors = ButtonDefaults.textButtonColorsPrimary(),
                         onClick = viewModel::save,
@@ -892,16 +948,24 @@ private fun SubscriptionSummaryCard(
                     modifier = Modifier.weight(1f)
                 )
                 StatusTag(
-                    label = if (subscription.active) "使用中" else subscriptionStatus(subscription).label,
+                    label = if (subscription.active) {
+                        stringResource(R.string.subscription_active)
+                    } else {
+                        subscriptionStatus(subscription).label
+                    },
                     backgroundColor = colorScheme.primaryContainer,
                     contentColor = colorScheme.onPrimaryContainer
                 )
             }
             Text(
                 text = if (isSubscription) {
-                    "${subscription.nodeCount} 个节点 · 每 ${formatDuration(subscription.updateInterval)} 更新"
+                    stringResource(
+                        R.string.subscription_summary,
+                        subscription.nodeCount,
+                        formatDuration(subscription.updateInterval)
+                    )
                 } else {
-                    "${subscription.nodeCount} 个节点 · 本地配置"
+                    stringResource(R.string.local_config_summary, subscription.nodeCount)
                 },
                 color = colorScheme.onSurfaceVariantSummary,
                 fontSize = 13.sp
@@ -911,7 +975,10 @@ private fun SubscriptionSummaryCard(
             }
             if (!subscription.active) {
                 TextButton(
-                    text = if (isSubscription) "设为活动订阅" else "设为活动配置",
+                    text = stringResource(
+                        if (isSubscription) R.string.subscription_set_active
+                        else R.string.local_config_set_active
+                    ),
                     onClick = onActivate,
                     colors = ButtonDefaults.textButtonColorsPrimary(),
                     modifier = Modifier.fillMaxWidth()
@@ -923,17 +990,24 @@ private fun SubscriptionSummaryCard(
 
 @Composable
 private fun HistoryRow(entry: SubscriptionHistoryEntry) {
+    val nodeCount = entry.nodeCount?.let {
+        stringResource(R.string.subscription_node_count, it)
+    }
+    val revision = entry.revision?.let {
+        stringResource(R.string.subscription_revision, it)
+    }
     Card(modifier = Modifier.fillMaxWidth()) {
         BasicComponent(
             title = when {
-                !entry.ok -> "更新失败"
-                entry.code == "subscription.not_modified" -> "未发生变化"
-                else -> "更新成功"
+                !entry.ok -> stringResource(R.string.subscription_update_failed)
+                entry.code == "subscription.not_modified" ->
+                    stringResource(R.string.subscription_not_modified)
+                else -> stringResource(R.string.subscription_update_success)
             },
             summary = buildString {
                 append(formatDate(entry.time))
-                entry.nodeCount?.let { append(" · ").append(it).append(" 个节点") }
-                entry.revision?.let { append(" · 修订版 ").append(it) }
+                nodeCount?.let { append(" · ").append(it) }
+                revision?.let { append(" · ").append(it) }
                 if (!entry.ok) {
                     entry.message.takeIf(String::isNotBlank)?.let {
                         append(" · ").append(it)
@@ -957,7 +1031,9 @@ private fun SubscriptionUpdateSheet(operation: String) {
     val updateAll = operation == "update-all"
     OverlayBottomSheet(
         show = operation == "update" || updateAll,
-        title = if (updateAll) "更新全部订阅" else "更新订阅",
+        title = stringResource(
+            if (updateAll) R.string.subscription_update_all else R.string.common_update
+        ),
         onDismissRequest = {}
     ) {
         Row(
@@ -970,9 +1046,9 @@ private fun SubscriptionUpdateSheet(operation: String) {
             Spacer(Modifier.width(16.dp))
             Text(
                 text = if (updateAll) {
-                    "正在依次更新全部订阅…"
+                    stringResource(R.string.subscription_update_sheet_all)
                 } else {
-                    "正在下载、转换并应用订阅…"
+                    stringResource(R.string.subscription_update_sheet_single)
                 },
                 color = colorScheme.onSurface
             )
@@ -989,20 +1065,26 @@ private fun subscriptionStatus(subscription: CatalogGroupSummary): SubscriptionS
     val expire = subscription.usage?.expire ?: 0L
     return when {
         subscription.progress?.stage?.let(activeProgressStages::contains) == true ->
-            SubscriptionStatus("更新中", colorScheme.primary)
+            SubscriptionStatus(
+                stringResource(R.string.subscription_update_in_progress),
+                colorScheme.primary
+            )
 
-        subscription.lastError.isNotBlank() -> SubscriptionStatus("更新失败", colorScheme.error)
+        subscription.lastError.isNotBlank() -> SubscriptionStatus(
+            stringResource(R.string.subscription_update_failed),
+            colorScheme.error
+        )
         expire > 0 && expire <= Instant.now().epochSecond -> SubscriptionStatus(
-            "已过期",
+            stringResource(R.string.subscription_expired),
             colorScheme.error
         )
 
         subscription.lastSuccessAt.isBlank() -> SubscriptionStatus(
-            "从未更新",
+            stringResource(R.string.subscription_never_updated),
             colorScheme.onSurfaceVariantSummary
         )
 
-        else -> SubscriptionStatus("正常", colorScheme.primary)
+        else -> SubscriptionStatus(stringResource(R.string.subscription_normal), colorScheme.primary)
     }
 }
 
@@ -1012,10 +1094,15 @@ private fun formatDate(value: String): String = runCatching {
         .format(Instant.parse(value))
 }.getOrDefault(value.ifBlank { "--" })
 
+@Composable
 private fun formatDuration(seconds: Long): String = when {
-    seconds % 86400L == 0L -> "${seconds / 86400L} 天"
-    seconds % 3600L == 0L -> "${seconds / 3600L} 小时"
-    else -> "${seconds / 60L} 分钟"
+    seconds % 86400L == 0L ->
+        stringResource(R.string.subscription_duration_days, seconds / 86400L)
+
+    seconds % 3600L == 0L ->
+        stringResource(R.string.subscription_duration_hours, seconds / 3600L)
+
+    else -> stringResource(R.string.subscription_duration_minutes, seconds / 60L)
 }
 
 private fun formatBytes(bytes: Long): String {
@@ -1030,4 +1117,3 @@ private fun formatBytes(bytes: Long): String {
     return if (value >= 100) "${value.roundToInt()} ${units[index]}"
     else "%.1f %s".format(value, units[index])
 }
-

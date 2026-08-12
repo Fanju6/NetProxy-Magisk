@@ -13,6 +13,20 @@
     <string name="modify_label">修改 %1$s</string>
     <string name="read_only">只读</string>
 
+    <!-- Common actions and labels -->
+    <string name="common_add">添加</string>
+    <string name="common_cancel">取消</string>
+    <string name="common_confirm">确认</string>
+    <string name="common_continue">继续</string>
+    <string name="common_delete">删除</string>
+    <string name="common_edit">编辑</string>
+    <string name="common_update">更新</string>
+    <string name="common_done">完成</string>
+    <string name="more_actions">更多操作</string>
+    <string name="more_options">更多选项</string>
+    <string name="source_label">来源</string>
+    <string name="destination_label">目标</string>
+
     <!-- Dashboard -->
     <string name="dashboard">仪表盘</string>
     <string name="service_status">服务状态</string>
@@ -22,15 +36,171 @@
     <string name="cpu_usage">CPU 占用</string>
     <string name="mem_usage">内存占用</string>
     <string name="collecting_data">正在收集数据…</string>
+    <string name="dashboard_lan_ip">内网 IP</string>
+    <string name="dashboard_total_traffic">累计流量</string>
+    <string name="dashboard_traffic">↑ %1$s   ↓ %2$s</string>
+    <string name="dashboard_outbound_mode">出站模式</string>
+    <string name="dashboard_mode_rule">规则</string>
+    <string name="dashboard_mode_global">全局</string>
+    <string name="dashboard_mode_direct">直连</string>
+    <string name="dashboard_mode_allow_ads">允许广告</string>
+    <string name="dashboard_current_node">当前节点</string>
+    <string name="dashboard_not_selected">未选择</string>
+    <string name="dashboard_service_up">UP: %1$s</string>
+    <string name="dashboard_service_started">服务已启动</string>
+    <string name="dashboard_service_stopped">服务已停止</string>
+    <string name="dashboard_mode_changed">出站模式已切换</string>
 
-    <!-- Nodes & Subscription -->
+    <!-- Catalog: Nodes -->
     <string name="nodes">节点</string>
-    <string name="subscriptions">订阅</string>
     <string name="latency_testing">测试中…</string>
     <string name="latency_failed">测试失败</string>
     <string name="latency_timeout">超时</string>
+    <string name="node_test_current_group">测试当前分组延迟</string>
+    <string name="node_display_settings">节点显示设置</string>
+    <string name="node_empty">还没有可用节点</string>
+    <string name="node_layout_style">布局样式</string>
+    <string name="node_layout_tabs">分组标签页</string>
+    <string name="node_layout_list">分组列表</string>
+    <string name="node_sort">排序</string>
+    <string name="node_sort_default">默认</string>
+    <string name="node_sort_name">名称</string>
+    <string name="node_sort_protocol">协议</string>
+    <string name="node_sort_latency">延迟</string>
+    <string name="node_density">疏密</string>
+    <string name="node_density_spacious">松散</string>
+    <string name="node_density_standard">标准</string>
+    <string name="node_density_compact">紧凑</string>
+    <string name="node_card_size">卡片尺寸</string>
+    <string name="node_card_size_standard">标准</string>
+    <string name="node_card_size_compact">紧凑</string>
+    <string name="node_card_size_minimal">极简</string>
+    <string name="node_add">添加节点</string>
+    <string name="node_add_single">添加单节点</string>
+    <string name="node_single_link">单节点链接</string>
+    <string name="node_single_link_summary">VLESS、VMess、SS、Trojan 等链接</string>
+    <string name="node_local_file">本地文件</string>
+    <string name="node_local_file_summary">导入 Clash YAML、节点文本或 sing-box JSON</string>
+    <string name="node_link_label">节点链接</string>
+    <string name="node_test_delay">测试延迟</string>
+    <string name="node_edit">编辑节点</string>
+    <string name="node_export">导出节点</string>
+    <string name="node_delete">删除节点</string>
+    <string name="node_auto_fastest">Auto-Fastest</string>
+    <string name="node_auto_test">自动测速</string>
+    <string name="node_group_empty">该分组暂时没有节点</string>
+    <string name="node_local_config">本地配置</string>
+    <string name="node_count">%1$d 个节点</string>
+    <string name="node_switched_auto">已切换到自动测速</string>
+    <string name="node_switched">已切换到 %1$s</string>
+    <string name="node_link_empty">节点链接不能为空</string>
+    <string name="node_added">节点已加入本地配置</string>
+    <string name="node_file_added">文件节点已加入本地配置</string>
+    <string name="node_deleted">节点已删除</string>
+    <string name="node_updated">节点已更新</string>
+    <string name="node_delay">节点延迟：%1$d ms</string>
+    <string name="node_delay_timeout">节点测速超时</string>
+    <string name="node_link_copied">节点链接已复制到剪贴板</string>
+    <string name="node_latency_complete">延迟测试完成</string>
 
-    <!-- Node Display Settings -->
+    <!-- Catalog: Subscriptions -->
+    <string name="subscriptions">订阅</string>
+    <string name="subscription_update_all">更新全部订阅</string>
+    <string name="subscription_add_url">添加 URL 订阅</string>
+    <string name="subscription_empty">暂无订阅</string>
+    <string name="subscription_active">使用中</string>
+    <string name="subscription_node_count">%1$d 个节点</string>
+    <string name="subscription_usage">已用 %1$s / %2$s</string>
+    <string name="subscription_no_usage">暂无流量信息</string>
+    <string name="subscription_updated_at">%1$s于 %2$s</string>
+    <string name="subscription_updated_label">更新</string>
+    <string name="local_config_modified_label">修改</string>
+    <string name="subscription_not_updated">尚未更新</string>
+    <string name="local_config_modified_at">暂无修改时间</string>
+    <string name="subscription_details">订阅详情</string>
+    <string name="local_config_details">本地配置详情</string>
+    <string name="subscription_delete_title">删除订阅？</string>
+    <string name="subscription_delete_message">将删除 %1$s 的节点与更新记录，此操作无法撤销。</string>
+    <string name="subscription_delete_details_message">节点与更新历史将一并删除，此操作无法撤销。</string>
+    <string name="subscription_nodes_section">节点 (%1$d)</string>
+    <string name="subscription_history_section">更新历史</string>
+    <string name="subscription_history_empty">暂无更新记录</string>
+    <string name="subscription_update_in_progress">更新中</string>
+    <string name="subscription_update_failed">更新失败</string>
+    <string name="subscription_expired">已过期</string>
+    <string name="subscription_never_updated">从未更新</string>
+    <string name="subscription_normal">正常</string>
+    <string name="subscription_set_active">设为活动订阅</string>
+    <string name="local_config_set_active">设为活动配置</string>
+    <string name="subscription_summary">%1$d 个节点 · 每 %2$s 更新</string>
+    <string name="local_config_summary">%1$d 个节点 · 本地配置</string>
+    <string name="subscription_update_success">更新成功</string>
+    <string name="subscription_not_modified">未发生变化</string>
+    <string name="subscription_updated">订阅更新完成</string>
+    <string name="subscription_update_all_success">全部订阅更新完成</string>
+    <string name="subscription_activated">已启用该配置</string>
+    <string name="subscription_deleted">订阅已删除</string>
+    <string name="subscription_cancel_requested">已请求取消更新</string>
+    <string name="subscription_update_sheet_all">正在依次更新全部订阅…</string>
+    <string name="subscription_update_sheet_single">正在下载、转换并应用订阅…</string>
+    <string name="subscription_duration_days">%1$d 天</string>
+    <string name="subscription_duration_hours">%1$d 小时</string>
+    <string name="subscription_duration_minutes">%1$d 分钟</string>
+    <string name="subscription_revision">修订版 %1$s</string>
+    <string name="subscription_edit_remote_note">修改只影响当前订阅节点，下次更新订阅时会被远端内容覆盖</string>
+    <string name="subscription_edit_local_note">修改后将更新本地配置中的节点</string>
+    <string name="subscription_editor_add_title">添加 URL 订阅</string>
+    <string name="subscription_editor_edit_title">编辑订阅</string>
+    <string name="subscription_editor_basic_section">基础信息</string>
+    <string name="subscription_editor_name_auto">订阅名称（留空自动获取）</string>
+    <string name="subscription_editor_name">订阅名称</string>
+    <string name="subscription_editor_url">订阅链接</string>
+    <string name="subscription_editor_update_interval">自动更新周期</string>
+    <string name="subscription_editor_auto_update">自动更新</string>
+    <string name="subscription_editor_auto_update_summary">核心停止时也会按计划更新</string>
+    <string name="subscription_editor_update_network">更新网络</string>
+    <string name="subscription_editor_network_auto">自动</string>
+    <string name="subscription_editor_network_proxy">始终通过代理</string>
+    <string name="subscription_editor_network_direct">始终直连</string>
+    <string name="subscription_editor_filter_section">筛选与连接</string>
+    <string name="subscription_editor_include">仅保留（正则，可选）</string>
+    <string name="subscription_editor_exclude">排除（正则，可选）</string>
+    <string name="subscription_editor_allow_insecure">跳过 TLS 证书验证</string>
+    <string name="subscription_editor_allow_insecure_summary">仅在订阅服务器证书异常时启用</string>
+    <string name="subscription_editor_advanced_section">高级请求设置</string>
+    <string name="subscription_editor_user_agent">User-Agent（可选）</string>
+    <string name="subscription_editor_hwid">HWID（可选）</string>
+    <string name="subscription_editor_headers">自定义请求头，每行 名称: 值</string>
+    <string name="subscription_editor_timeout">下载超时（秒）</string>
+    <string name="subscription_editor_validating_save">正在验证并保存…</string>
+    <string name="subscription_name_empty">订阅名称不能为空</string>
+    <string name="subscription_url_empty">订阅链接不能为空</string>
+    <string name="subscription_interval_invalid">更新周期不能少于 15 分钟</string>
+    <string name="subscription_timeout_invalid">下载超时必须大于 0 秒</string>
+    <string name="subscription_header_invalid">第 %1$d 行请求头格式应为 名称: 值</string>
+    <string name="subscription_header_empty">第 %1$d 行请求头不能为空</string>
+
+    <!-- Logs -->
+    <string name="log_save_location_failed">无法打开保存位置</string>
+    <string name="log_save_empty_failed">日志保存失败：文件写入后为空</string>
+    <string name="log_save_failed">日志保存失败</string>
+    <string name="log_share_failed">日志分享失败</string>
+    <string name="log_export_failed">日志导出失败：%1$s</string>
+    <string name="log_share_failed_detail">日志分享失败：%1$s</string>
+    <string name="send_log">发送日志</string>
+    <string name="save_log">保存日志</string>
+    <string name="log_saved">日志已保存</string>
+    <string name="logs">日志</string>
+    <string name="service_logs">运行日志</string>
+    <string name="kernel_logs">内核日志</string>
+    <string name="raw_view">原始视图</string>
+    <string name="card_view">卡片视图</string>
+    <string name="scroll_to_top">滚动到顶部</string>
+    <string name="scroll_to_bottom">滚动到底部</string>
+    <string name="clear_logs_now">立即清空日志</string>
+    <string name="clear_logs_success">日志已成功清空</string>
+    <string name="clear_logs_failed">清空日志失败</string>
+    <string name="no_logs">暂无日志内容</string>
 
     <!-- Apps Control -->
     <string name="apps">应用</string>
@@ -46,29 +216,19 @@
     <string name="app_reverse_sort">逆向排序</string>
     <string name="app_show_package_name">显示包名</string>
 
-    <!-- Main Settings -->
+    <!-- Settings: Main -->
     <string name="proxy_settings">代理设置</string>
     <string name="proxy_settings_summary">配置端口、路由标记、接口和过滤规则</string>
     <string name="auto_start">开机自启</string>
     <string name="auto_start_summary">系统启动时自动开启服务</string>
-    <string name="send_log">发送日志</string>
-    <string name="save_log">保存日志</string>
-    <string name="log_saved">日志已保存</string>
-    <string name="logs">日志</string>
-    <string name="service_logs">运行日志</string>
-    <string name="kernel_logs">内核日志</string>
-    <string name="raw_view">原始视图</string>
-    <string name="card_view">卡片视图</string>
-    <string name="scroll_to_top">滚动到顶部</string>
-    <string name="scroll_to_bottom">滚动到底部</string>
-    <string name="clear_logs_now">立即清空日志</string>
-    <string name="clear_logs_success">日志已成功清空</string>
-    <string name="clear_logs_failed">清空日志失败</string>
-    <string name="no_logs">暂无日志内容</string>
+
+    <!-- Module prerequisites -->
     <string name="no_root_title">未获取 Root 权限</string>
     <string name="no_root_summary">请先授予应用 Root 权限以使用全部功能</string>
     <string name="no_module_title">未检测到核心模块</string>
     <string name="no_module_summary">未检测到 NetProxy 模块，请先在 Magisk/KernelSU 中安装并启用该模块</string>
+
+    <!-- About -->
     <string name="about_source_code">在 %1$s 查看源码&lt;br/&gt;加入我们的 %2$s 频道</string>
 
     <!-- Theme & UI -->
@@ -175,21 +335,7 @@
     <string name="json_continue_editing">继续编辑</string>
     <string name="json_discard_changes">放弃更改</string>
 
-    <!-- SingBox DNS Settings -->
-
-    <!-- SingBox Route Settings -->
-
-    <!-- SingBox Inbound Settings -->
-
-    <!-- SingBox Node Edit -->
-
-    <!-- Rule Match -->
-
-    <!-- Placeholders -->
-
-    <!-- 订阅定时更新 -->
-
-    <!-- WiFi SSID 自动切换代理 -->
+    <!-- Settings: WiFi automatic switching -->
     <string name="wifi_auto_switch_title">WiFi 自动切换</string>
     <string name="wifi_auto_switch">按 WiFi 自动切换</string>
     <string name="wifi_auto_switch_summary">根据当前 WiFi 名称自动开启或关闭代理</string>
@@ -233,16 +379,12 @@
     <string name="settings_hint_cidrs">多个 CIDR 请用英文逗号分隔，例如 192.168.0.0/16,10.0.0.0/8</string>
     <string name="settings_hint_macs">多个 MAC 地址请用英文逗号分隔</string>
     <string name="settings_hint_ssids">多个 SSID 请用英文逗号分隔</string>
-    <string name="more_actions">更多操作</string>
-
-    <string name="more_options">更多选项</string>
-    <string name="source_label">来源</string>
-    <string name="destination_label">目标</string>
-    <string name="app_user_label">用户 %1$s</string>
+    <!-- Apps: user scope labels -->
     <string name="app_users_label">用户 %1$s</string>
     <string name="app_all_android_users">全部 Android 用户</string>
     <string name="app_android_user_scope">%1$s（用户 %2$s）</string>
     <string name="percentage_value">%1$d%%</string>
+    <!-- Node editor -->
     <string name="allow_insecure">允许不安全证书 (Insecure)</string>
     <string name="alpn_label">ALPN（逗号分隔）</string>
     <string name="alterid_label">AlterId（额外 ID，默认：0）</string>
@@ -262,7 +404,6 @@
     <string name="heartbeat_interval_seconds">心跳间隔 (Heartbeat 秒)</string>
     <string name="hop_interval_seconds">跳跃间隔 (Hop Interval 秒)</string>
     <string name="method_label">加密方法 (Method)</string>
-    <string name="node_save_success">节点保存成功</string>
     <string name="node_tag">节点标识 (Tag)</string>
     <string name="node_tag_empty">节点 Tag 不能为空</string>
     <string name="obfs_password">混淆密码 (Obfs Password)</string>

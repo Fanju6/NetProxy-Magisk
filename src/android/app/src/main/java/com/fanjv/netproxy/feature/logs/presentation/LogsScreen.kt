@@ -109,6 +109,12 @@ internal fun LogsScreen(
     val logSavedMessage = stringResource(R.string.log_saved)
     val clearSuccessMessage = stringResource(R.string.clear_logs_success)
     val clearFailedMessage = stringResource(R.string.clear_logs_failed)
+    val saveLocationFailed = stringResource(R.string.log_save_location_failed)
+    val saveEmptyFailed = stringResource(R.string.log_save_empty_failed)
+    val saveFailed = stringResource(R.string.log_save_failed)
+    val shareFailed = stringResource(R.string.log_share_failed)
+    val exportFailed = stringResource(R.string.log_export_failed)
+    val shareFailedDetail = stringResource(R.string.log_share_failed_detail)
 
     fun showMessage(message: String, isError: Boolean = false) {
         scope.launch {
@@ -158,7 +164,7 @@ internal fun LogsScreen(
                 }
                 withContext(Dispatchers.IO) {
                     val descriptor = context.contentResolver.openFileDescriptor(uri, "rwt")
-                        ?: error("无法打开保存位置")
+                        ?: error(saveLocationFailed)
                     val copiedBytes =
                         ParcelFileDescriptor.AutoCloseOutputStream(descriptor).use { output ->
                             logFile.inputStream().use { input ->
@@ -166,12 +172,12 @@ internal fun LogsScreen(
                             }
                         }
                     check(copiedBytes == logFile.length() && copiedBytes > 0L) {
-                        "日志保存失败：文件写入后为空"
+                        saveEmptyFailed
                     }
                 }
                 showMessage(logSavedMessage)
             } catch (e: Exception) {
-                showMessage(e.message ?: "日志保存失败", isError = true)
+                showMessage(e.message ?: saveFailed, isError = true)
             }
         }
     }
@@ -225,7 +231,10 @@ internal fun LogsScreen(
                                             )
                                         )
                                     } catch (e: Exception) {
-                                        showMessage(e.message ?: "日志分享失败", isError = true)
+                                        showMessage(
+                                            e.message ?: shareFailedDetail.format(shareFailed),
+                                            isError = true
+                                        )
                                     }
                                 }
                             }) {
@@ -242,7 +251,10 @@ internal fun LogsScreen(
                                             .format(java.time.LocalDateTime.now())
                                     exportLauncher.launch("NetProxy_Logs_$timestamp.tar.gz")
                                 } catch (e: Exception) {
-                                    showMessage("Error: ${e.message}", isError = true)
+                                    showMessage(
+                                        exportFailed.format(e.message ?: saveFailed),
+                                        isError = true
+                                    )
                                 }
                             }) {
                                 Icon(

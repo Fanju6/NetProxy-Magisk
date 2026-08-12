@@ -3,6 +3,9 @@ package com.fanjv.netproxy.feature.catalog.presentation.nodes
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.fanjv.netproxy.R
+import com.fanjv.netproxy.core.ui.UiText
+import com.fanjv.netproxy.core.ui.toUiText
 import com.fanjv.netproxy.core.ui.userMessage
 import com.fanjv.netproxy.feature.catalog.data.NodeImportStore
 import com.fanjv.netproxy.feature.catalog.data.NodeRepository
@@ -25,8 +28,8 @@ internal data class CatalogNodesUiState(
     val latencies: Map<String, String> = emptyMap(),
     val loading: Boolean = false,
     val operation: String = "",
-    val error: String = "",
-    val notice: String = "",
+    val error: UiText = UiText.Empty,
+    val notice: UiText = UiText.Empty,
     val noticeId: Long = 0,
     val exportedNodeLink: String = "",
     val exportedNodeLinkId: Long = 0
@@ -53,7 +56,7 @@ internal class CatalogNodesViewModel(
         }
         refreshJob = viewModelScope.launch {
             try {
-                if (!silent) _state.update { it.copy(loading = true, error = "") }
+                if (!silent) _state.update { it.copy(loading = true, error = UiText.Empty) }
                 runCatching { repository.snapshot() }.onSuccess { snapshot ->
                     val groups = snapshot.groups
                     val selection = snapshot.selection
@@ -67,7 +70,7 @@ internal class CatalogNodesViewModel(
                             selection = selection,
                             selectedGroupId = selected,
                             loading = false,
-                            error = ""
+                            error = UiText.Empty
                         )
                     }
                     loaded = true
@@ -75,7 +78,7 @@ internal class CatalogNodesViewModel(
                     _state.update {
                         it.copy(
                             loading = false,
-                            error = error.userMessage(),
+                            error = error.userMessage().toUiText(),
                             noticeId = it.noticeId + 1
                         )
                     }
@@ -102,7 +105,7 @@ internal class CatalogNodesViewModel(
                 selectedGroupId = groupId
             )
         }
-        "已切换到自动测速"
+        UiText.Resource(R.string.node_switched_auto)
     }
 
     fun useNode(groupId: String, tag: String) = runOperation("select", refreshAfter = false) {
@@ -113,18 +116,23 @@ internal class CatalogNodesViewModel(
                 selectedGroupId = groupId
             )
         }
-        "已切换到 $tag"
+        UiText.Resource(R.string.node_switched, listOf(tag))
     }
 
-    fun addNode(link: String) = runOperation("add") {
-        require(link.isNotBlank()) { "节点链接不能为空" }
-        repository.add(link.trim())
-        "节点已加入本地配置"
+    fun addNode(link: String) {
+        if (link.isBlank()) {
+            publishError(UiText.Resource(R.string.node_link_empty))
+            return
+        }
+        runOperation("add") {
+            repository.add(link.trim())
+            UiText.Resource(R.string.node_added)
+        }
     }
 
     fun removeNode(groupId: String, tag: String) = runOperation("remove") {
         repository.remove("$groupId/$tag")
-        "节点已删除"
+        UiText.Resource(R.string.node_deleted)
     }
 
     suspend fun loadNodeConfigContent(nodeRef: String): String =
@@ -137,7 +145,7 @@ internal class CatalogNodesViewModel(
     ) {
         if (_state.value.operation.isNotEmpty()) return
         viewModelScope.launch {
-            _state.update { it.copy(operation = "edit", error = "") }
+            _state.update { it.copy(operation = "edit", error = UiText.Empty) }
             runCatching { repository.editJson(nodeRef, content) }
                 .onSuccess {
                     _state.update { it.copy(operation = "") }
@@ -148,7 +156,7 @@ internal class CatalogNodesViewModel(
                     _state.update {
                         it.copy(
                             operation = "",
-                            error = error.userMessage(),
+                            error = error.userMessage().toUiText(),
                             noticeId = it.noticeId + 1
                         )
                     }
@@ -160,7 +168,7 @@ internal class CatalogNodesViewModel(
     fun exportNode(groupId: String, tag: String) {
         if (_state.value.operation.isNotEmpty()) return
         viewModelScope.launch {
-            _state.update { it.copy(operation = "export", error = "") }
+            _state.update { it.copy(operation = "export", error = UiText.Empty) }
             runCatching { repository.export("$groupId/$tag") }
                 .onSuccess { exported ->
                     _state.update {
@@ -179,7 +187,7 @@ internal class CatalogNodesViewModel(
         _state.update {
             it.copy(
                 exportedNodeLink = "",
-                notice = "节点链接已复制到剪贴板",
+                notice = UiText.Resource(R.string.node_link_copied),
                 noticeId = it.noticeId + 1
             )
         }
@@ -209,7 +217,7 @@ internal class CatalogNodesViewModel(
             importStore.withImportedFile(uri) { temporary ->
                 repository.import(temporary.absolutePath)
             }
-            "文件节点已加入本地配置"
+            UiText.Resource(R.string.node_file_added)
         },
         onSuccess = {
             _state.update {
@@ -223,14 +231,18 @@ internal class CatalogNodesViewModel(
     )
 
     fun clearNotice() {
-        _state.update { it.copy(notice = "", error = "") }
+        _state.update { it.copy(notice = UiText.Empty, error = UiText.Empty) }
     }
 
     private fun publishError(error: Throwable) {
+        publishError(error.userMessage().toUiText())
+    }
+
+    private fun publishError(message: UiText) {
         _state.update {
             it.copy(
                 operation = "",
-                error = error.userMessage(),
+                error = message,
                 noticeId = it.noticeId + 1
             )
         }
@@ -246,7 +258,7 @@ internal class CatalogNodesViewModel(
             _state.update { current ->
                 current.copy(
                     operation = "delay",
-                    error = "",
+                    error = UiText.Empty,
                     latencies = current.latencies + targets.associateWith { "testing..." }
                 )
             }
@@ -285,7 +297,7 @@ internal class CatalogNodesViewModel(
                             latencies = current.latencies + targets.associateWith { target ->
                                 measured[target] ?: "timeout"
                             },
-                            notice = "延迟测试完成",
+                            notice = UiText.Resource(R.string.node_latency_complete),
                             noticeId = current.noticeId + 1
                         )
                     }
@@ -295,7 +307,7 @@ internal class CatalogNodesViewModel(
                         current.copy(
                             operation = "",
                             latencies = current.latencies + targets.associateWith { "failed" },
-                            error = error.userMessage(),
+                            error = error.userMessage().toUiText(),
                             noticeId = current.noticeId + 1
                         )
                     }
@@ -323,11 +335,11 @@ internal class CatalogNodesViewModel(
         name: String,
         refreshAfter: Boolean = true,
         onSuccess: () -> Unit = {},
-        action: suspend () -> String
+        action: suspend () -> UiText
     ) {
         if (_state.value.operation.isNotEmpty()) return
         viewModelScope.launch {
-            _state.update { it.copy(operation = name, error = "") }
+            _state.update { it.copy(operation = name, error = UiText.Empty) }
             runCatching { action() }
                 .onSuccess { message ->
                     _state.update {
@@ -344,7 +356,7 @@ internal class CatalogNodesViewModel(
                     _state.update {
                         it.copy(
                             operation = "",
-                            error = error.userMessage(),
+                            error = error.userMessage().toUiText(),
                             noticeId = it.noticeId + 1
                         )
                     }

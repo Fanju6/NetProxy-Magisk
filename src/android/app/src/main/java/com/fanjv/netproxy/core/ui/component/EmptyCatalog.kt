@@ -5,10 +5,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.fanjv.netproxy.R
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
@@ -35,7 +37,7 @@ internal fun EmptyCatalog(
         )
         if (onRefresh != null) {
             TextButton(
-                text = "继续",
+                text = stringResource(R.string.common_continue),
                 colors = ButtonDefaults.textButtonColorsPrimary(),
                 onClick = onRefresh
             )

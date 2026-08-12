@@ -2,6 +2,9 @@ package com.fanjv.netproxy.feature.catalog.presentation.subscriptions
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.fanjv.netproxy.R
+import com.fanjv.netproxy.core.ui.UiText
+import com.fanjv.netproxy.core.ui.toUiText
 import com.fanjv.netproxy.core.ui.userMessage
 import com.fanjv.netproxy.feature.catalog.data.SubscriptionRepository
 import com.fanjv.netproxy.feature.catalog.model.CatalogGroupSummary
@@ -18,8 +21,8 @@ internal data class SubscriptionsUiState(
     val loading: Boolean = false,
     val operation: String = "",
     val operationGroupId: String = "",
-    val error: String = "",
-    val notice: String = "",
+    val error: UiText = UiText.Empty,
+    val notice: UiText = UiText.Empty,
     val noticeId: Long = 0
 )
 
@@ -46,7 +49,7 @@ internal class SubscriptionsViewModel(
         }
         refreshJob = viewModelScope.launch {
             try {
-                if (!silent) _state.update { it.copy(loading = true, error = "") }
+                if (!silent) _state.update { it.copy(loading = true, error = UiText.Empty) }
                 runCatching { repository.list() }
                     .onSuccess { groups ->
                         _state.update { it.copy(groups = groups, loading = false) }
@@ -56,7 +59,7 @@ internal class SubscriptionsViewModel(
                         _state.update {
                             it.copy(
                                 loading = false,
-                                error = error.userMessage(),
+                                error = error.userMessage().toUiText(),
                                 noticeId = it.noticeId + 1
                             )
                         }
@@ -73,42 +76,46 @@ internal class SubscriptionsViewModel(
 
     fun updateSubscription(id: String) = runOperation("update", id) {
         repository.update(id)
-        "订阅更新完成"
+        UiText.Resource(R.string.subscription_updated)
     }
 
     fun updateAll() = runOperation("update-all", "*") {
         repository.updateAll()
-        "全部订阅更新完成"
+        UiText.Resource(R.string.subscription_update_all_success)
     }
 
     fun activate(id: String) = runOperation("activate", id) {
         repository.activate(id)
-        "已启用该配置"
+        UiText.Resource(R.string.subscription_activated)
     }
 
     fun remove(id: String, replacement: String = "") = runOperation("remove", id) {
         repository.remove(id, replacement)
-        "订阅已删除"
+        UiText.Resource(R.string.subscription_deleted)
     }
 
     fun cancelUpdate(id: String) = runOperation("cancel", id) {
         repository.cancelUpdate(id)
-        "已请求取消更新"
+        UiText.Resource(R.string.subscription_cancel_requested)
     }
 
     fun clearNotice() {
-        _state.update { it.copy(notice = "", error = "") }
+        _state.update { it.copy(notice = UiText.Empty, error = UiText.Empty) }
     }
 
     private fun runOperation(
         operation: String,
         groupId: String,
-        action: suspend () -> String
+        action: suspend () -> UiText
     ) {
         if (_state.value.operation.isNotEmpty()) return
         viewModelScope.launch {
             _state.update {
-                it.copy(operation = operation, operationGroupId = groupId, error = "")
+                it.copy(
+                    operation = operation,
+                    operationGroupId = groupId,
+                    error = UiText.Empty
+                )
             }
             runCatching { action() }
                 .onSuccess { message ->
@@ -127,7 +134,7 @@ internal class SubscriptionsViewModel(
                         it.copy(
                             operation = "",
                             operationGroupId = "",
-                            error = error.userMessage(),
+                            error = error.userMessage().toUiText(),
                             noticeId = it.noticeId + 1
                         )
                     }

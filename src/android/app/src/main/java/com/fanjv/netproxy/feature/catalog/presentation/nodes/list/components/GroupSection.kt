@@ -20,11 +20,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.fanjv.netproxy.core.ui.component.EmptyCatalog
+import com.fanjv.netproxy.R
 import com.fanjv.netproxy.feature.catalog.model.CatalogNode
 import com.fanjv.netproxy.feature.catalog.model.CatalogNodeGroup
 import top.yukonga.miuix.kmp.basic.Card
@@ -77,8 +79,8 @@ internal fun CatalogNodeGrid(
     ) {
         item {
             NodeCard(
-                title = "Auto-Fastest",
-                summary = "自动测速",
+                title = stringResource(R.string.node_auto_fastest),
+                summary = stringResource(R.string.node_auto_test),
                 protocol = "AUTO",
                 latency = latencies["Auto/${group.group.id}"],
                 selected = automaticSelected,
@@ -104,7 +106,7 @@ internal fun CatalogNodeGrid(
         if (group.nodes.isEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 EmptyCatalog(
-                    text = "该分组暂时没有节点",
+                    text = stringResource(R.string.node_group_empty),
                     onRefresh = null,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -152,7 +154,11 @@ internal fun CatalogGroupList(
                 Column {
                     if (groupIndex > 0) Spacer(Modifier.height(12.dp))
                     CatalogGroupHeader(
-                        name = if (groupId == "default") "本地配置" else group.group.name,
+                        name = if (groupId == "default") {
+                            stringResource(R.string.node_local_config)
+                        } else {
+                            group.group.name
+                        },
                         count = group.nodes.size,
                         expanded = expanded,
                         onClick = { onToggleGroup(groupId) }
@@ -172,8 +178,8 @@ internal fun CatalogGroupList(
                                 Box(Modifier.weight(1f)) {
                                     if (node == null) {
                                         NodeCard(
-                                            title = "Auto-Fastest",
-                                            summary = "自动测速",
+                                            title = stringResource(R.string.node_auto_fastest),
+                                            summary = stringResource(R.string.node_auto_test),
                                             protocol = "AUTO",
                                             latency = latencies["Auto/$groupId"],
                                             selected = selectorMode == "urltest" && activeGroupId == groupId,
@@ -226,7 +232,7 @@ private fun CatalogGroupHeader(name: String, count: Int, expanded: Boolean, onCl
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = "$count 个节点",
+                    text = stringResource(R.string.node_count, count),
                     style = MiuixTheme.textStyles.body2,
                     color = colorScheme.onSurfaceVariantActions
                 )

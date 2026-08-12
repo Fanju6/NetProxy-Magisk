@@ -2,6 +2,9 @@ package com.fanjv.netproxy.feature.catalog.presentation.subscriptions
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.fanjv.netproxy.R
+import com.fanjv.netproxy.core.ui.UiText
+import com.fanjv.netproxy.core.ui.toUiText
 import com.fanjv.netproxy.core.ui.userMessage
 import com.fanjv.netproxy.feature.catalog.data.NodeRepository
 import com.fanjv.netproxy.feature.catalog.data.SubscriptionRepository
@@ -18,8 +21,8 @@ internal data class SubscriptionDetailsUiState(
     val history: List<SubscriptionHistoryEntry> = emptyList(),
     val loading: Boolean = false,
     val operation: String = "",
-    val error: String = "",
-    val notice: String = "",
+    val error: UiText = UiText.Empty,
+    val notice: UiText = UiText.Empty,
     val noticeId: Long = 0,
     val latencies: Map<String, String> = emptyMap(),
     val editingNodeRef: String = "",
@@ -38,7 +41,7 @@ internal class SubscriptionDetailsViewModel(
 
     fun load(id: String) {
         viewModelScope.launch {
-            _state.update { it.copy(loading = true, error = "", details = null) }
+            _state.update { it.copy(loading = true, error = UiText.Empty, details = null) }
             runCatching {
                 val details = repository.details(id)
                 val history = if (details.group.type == "subscription") {
@@ -55,7 +58,7 @@ internal class SubscriptionDetailsViewModel(
                 _state.update {
                     it.copy(
                         loading = false,
-                        error = error.userMessage(),
+                        error = error.userMessage().toUiText(),
                         noticeId = it.noticeId + 1
                     )
                 }
@@ -65,18 +68,18 @@ internal class SubscriptionDetailsViewModel(
 
     fun update(id: String) = runOperation("update", id) {
         repository.update(id)
-        "订阅更新完成"
+        UiText.Resource(R.string.subscription_updated)
     }
 
     fun activate(id: String) = runOperation("activate", id) {
         repository.activate(id)
-        "已启用该订阅"
+        UiText.Resource(R.string.subscription_activated)
     }
 
     fun remove(id: String, onRemoved: () -> Unit) = runOperation("remove", id) {
         repository.remove(id)
         onRemoved()
-        "订阅已删除"
+        UiText.Resource(R.string.subscription_deleted)
     }
 
     fun testNode(groupId: String, tag: String) {
@@ -86,7 +89,7 @@ internal class SubscriptionDetailsViewModel(
             _state.update {
                 it.copy(
                     operation = "delay",
-                    error = "",
+                    error = UiText.Empty,
                     latencies = it.latencies + (nodeRef to "testing")
                 )
             }
@@ -101,7 +104,11 @@ internal class SubscriptionDetailsViewModel(
                             operation = "",
                             latencies = it.latencies + (nodeRef to (delay?.toString()
                                 ?: "timeout")),
-                            notice = if (delay != null) "节点延迟：${delay} ms" else "节点测速超时",
+                            notice = if (delay != null) {
+                                UiText.Resource(R.string.node_delay, listOf(delay))
+                            } else {
+                                UiText.Resource(R.string.node_delay_timeout)
+                            },
                             noticeId = it.noticeId + 1
                         )
                     }
@@ -114,7 +121,7 @@ internal class SubscriptionDetailsViewModel(
         if (_state.value.operation.isNotEmpty()) return
         val nodeRef = "$groupId/$tag"
         viewModelScope.launch {
-            _state.update { it.copy(operation = "export", error = "") }
+            _state.update { it.copy(operation = "export", error = UiText.Empty) }
             runCatching { nodeRepository.export(nodeRef) }
                 .onSuccess { exported ->
                     _state.update {
@@ -133,11 +140,14 @@ internal class SubscriptionDetailsViewModel(
         val nodeRef = _state.value.editingNodeRef
         if (nodeRef.isBlank()) return
         val groupId = nodeRef.substringBefore('/')
+        if (link.isBlank()) {
+            publishError(UiText.Resource(R.string.node_link_empty))
+            return
+        }
         runNodeOperation("edit", groupId) {
-            require(link.isNotBlank()) { "节点链接不能为空" }
             nodeRepository.edit(nodeRef, link.trim())
             _state.update { it.copy(editingNodeRef = "", editingNodeLink = "") }
-            "节点已更新"
+            UiText.Resource(R.string.node_updated)
         }
     }
 
@@ -149,7 +159,7 @@ internal class SubscriptionDetailsViewModel(
     fun exportNode(groupId: String, tag: String) {
         if (_state.value.operation.isNotEmpty()) return
         viewModelScope.launch {
-            _state.update { it.copy(operation = "export", error = "") }
+            _state.update { it.copy(operation = "export", error = UiText.Empty) }
             runCatching { nodeRepository.export("$groupId/$tag") }
                 .onSuccess { exported ->
                     _state.update {
@@ -168,7 +178,7 @@ internal class SubscriptionDetailsViewModel(
         _state.update {
             it.copy(
                 exportedNodeLink = "",
-                notice = "节点链接已复制到剪贴板",
+                notice = UiText.Resource(R.string.node_link_copied),
                 noticeId = it.noticeId + 1
             )
         }
@@ -176,18 +186,22 @@ internal class SubscriptionDetailsViewModel(
 
     fun removeNode(groupId: String, tag: String) = runNodeOperation("remove-node", groupId) {
         nodeRepository.remove("$groupId/$tag")
-        "节点已删除"
+        UiText.Resource(R.string.node_deleted)
     }
 
     fun clearNotice() {
-        _state.update { it.copy(notice = "", error = "") }
+        _state.update { it.copy(notice = UiText.Empty, error = UiText.Empty) }
     }
 
     private fun publishError(error: Throwable) {
+        publishError(error.userMessage().toUiText())
+    }
+
+    private fun publishError(message: UiText) {
         _state.update {
             it.copy(
                 operation = "",
-                error = error.userMessage(),
+                error = message,
                 noticeId = it.noticeId + 1
             )
         }
@@ -196,11 +210,11 @@ internal class SubscriptionDetailsViewModel(
     private fun runNodeOperation(
         operation: String,
         groupId: String,
-        action: suspend () -> String
+        action: suspend () -> UiText
     ) {
         if (_state.value.operation.isNotEmpty()) return
         viewModelScope.launch {
-            _state.update { it.copy(operation = operation, error = "") }
+            _state.update { it.copy(operation = operation, error = UiText.Empty) }
             runCatching { action() }
                 .onSuccess { message ->
                     _state.update {
@@ -215,11 +229,11 @@ internal class SubscriptionDetailsViewModel(
     private fun runOperation(
         operation: String,
         id: String,
-        action: suspend () -> String
+        action: suspend () -> UiText
     ) {
         if (_state.value.operation.isNotEmpty()) return
         viewModelScope.launch {
-            _state.update { it.copy(operation = operation, error = "") }
+            _state.update { it.copy(operation = operation, error = UiText.Empty) }
             runCatching { action() }
                 .onSuccess { message ->
                     _state.update {
@@ -231,7 +245,7 @@ internal class SubscriptionDetailsViewModel(
                     _state.update {
                         it.copy(
                             operation = "",
-                            error = error.userMessage(),
+                            error = error.userMessage().toUiText(),
                             noticeId = it.noticeId + 1
                         )
                     }
@@ -239,5 +253,3 @@ internal class SubscriptionDetailsViewModel(
         }
     }
 }
-
-

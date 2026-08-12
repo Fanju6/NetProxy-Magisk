@@ -2,7 +2,10 @@ package com.fanjv.netproxy.feature.catalog.presentation.subscriptions
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.fanjv.netproxy.core.ui.userMessage
+import com.fanjv.netproxy.R
+import com.fanjv.netproxy.core.ui.UiText
+import com.fanjv.netproxy.core.ui.UiTextException
+import com.fanjv.netproxy.core.ui.toUiText
 import com.fanjv.netproxy.feature.catalog.data.SubscriptionRepository
 import com.fanjv.netproxy.feature.catalog.model.SubscriptionDraft
 import com.fanjv.netproxy.feature.catalog.model.SubscriptionEditorState
@@ -21,7 +24,7 @@ internal data class SubscriptionEditorUiState(
     val loading: Boolean = false,
     val saving: Boolean = false,
     val saved: Boolean = false,
-    val error: String = "",
+    val error: UiText = UiText.Empty,
     val noticeId: Long = 0
 )
 
@@ -38,7 +41,7 @@ internal class SubscriptionEditorViewModel(
             return
         }
         viewModelScope.launch {
-            _state.update { it.copy(loading = true, saved = false, error = "") }
+            _state.update { it.copy(loading = true, saved = false, error = UiText.Empty) }
             runCatching { repository.readEditor(id) }
                 .onSuccess { editor ->
                     _state.value = SubscriptionEditorUiState(
@@ -54,7 +57,7 @@ internal class SubscriptionEditorViewModel(
                     _state.update {
                         it.copy(
                             loading = false,
-                            error = error.userMessage(),
+                            error = error.toUiText(),
                             noticeId = it.noticeId + 1
                         )
                     }
@@ -80,13 +83,13 @@ internal class SubscriptionEditorViewModel(
                 .getOrElse { error ->
                     _state.update {
                         it.copy(
-                            error = error.userMessage(),
+                            error = error.toUiText(),
                             noticeId = it.noticeId + 1
                         )
                     }
                     return@launch
                 }
-            _state.update { it.copy(saving = true, error = "", saved = false) }
+            _state.update { it.copy(saving = true, error = UiText.Empty, saved = false) }
             runCatching {
                 val original = snapshot.original
                 if (original == null) repository.add(draft)
@@ -95,14 +98,14 @@ internal class SubscriptionEditorViewModel(
                 _state.update { it.copy(saving = false, draft = draft, saved = true) }
             }.onFailure { error ->
                 _state.update {
-                    it.copy(saving = false, error = error.userMessage(), noticeId = it.noticeId + 1)
+                    it.copy(saving = false, error = error.toUiText(), noticeId = it.noticeId + 1)
                 }
             }
         }
     }
 
     fun clearError() {
-        _state.update { it.copy(error = "") }
+        _state.update { it.copy(error = UiText.Empty) }
     }
 
     private fun validate(
@@ -112,10 +115,18 @@ internal class SubscriptionEditorViewModel(
     ): SubscriptionDraft {
         // 新增订阅允许留空名称，由模块按 Profile-Title、文件名、主机名顺序自动取名；
         // 编辑既有订阅时清空名称属于误操作，仍需拒绝
-        require(isNew || draft.name.isNotBlank()) { "订阅名称不能为空" }
-        require(draft.url.isNotBlank()) { "订阅链接不能为空" }
-        require(draft.updateIntervalSeconds >= 900) { "更新周期不能少于 15 分钟" }
-        require(draft.timeoutSeconds > 0) { "下载超时必须大于 0 秒" }
+        if (!isNew && draft.name.isBlank()) {
+            throw UiTextException(UiText.Resource(R.string.subscription_name_empty))
+        }
+        if (draft.url.isBlank()) {
+            throw UiTextException(UiText.Resource(R.string.subscription_url_empty))
+        }
+        if (draft.updateIntervalSeconds < 900) {
+            throw UiTextException(UiText.Resource(R.string.subscription_interval_invalid))
+        }
+        if (draft.timeoutSeconds <= 0) {
+            throw UiTextException(UiText.Resource(R.string.subscription_timeout_invalid))
+        }
         return draft.copy(
             name = draft.name.trim(),
             url = draft.url.trim(),
@@ -128,11 +139,17 @@ internal class SubscriptionEditorViewModel(
             val line = raw.trim()
             if (line.isEmpty()) return@forEachIndexed
             val separator = line.indexOf(':')
-            require(separator > 0) { "第 ${index + 1} 行请求头格式应为 名称: 值" }
+            if (separator <= 0) {
+                throw UiTextException(
+                    UiText.Resource(R.string.subscription_header_invalid, listOf(index + 1))
+                )
+            }
             val name = line.substring(0, separator).trim()
             val value = line.substring(separator + 1).trim()
-            require(name.isNotEmpty() && value.isNotEmpty()) {
-                "第 ${index + 1} 行请求头不能为空"
+            if (name.isEmpty() || value.isEmpty()) {
+                throw UiTextException(
+                    UiText.Resource(R.string.subscription_header_empty, listOf(index + 1))
+                )
             }
             put(name, value)
         }
@@ -153,5 +170,3 @@ internal class SubscriptionEditorViewModel(
         timeoutSeconds = timeout
     )
 }
-
-

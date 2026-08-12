@@ -38,6 +38,7 @@ import com.fanjv.netproxy.core.ui.component.SnackbarNoticeEffect
 import com.fanjv.netproxy.core.ui.component.WarningCard
 import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
+import com.fanjv.netproxy.core.ui.resolve
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
@@ -78,7 +79,7 @@ internal fun CatalogDashboardScreen(
 
     SnackbarNoticeEffect(
         eventId = state.noticeId,
-        message = state.notice,
+        message = state.notice.resolve(),
         isError = false,
         hostState = snackbarHostState,
         onConsumed = viewModel::clearNotice
@@ -92,7 +93,7 @@ internal fun CatalogDashboardScreen(
             BlurredBar(backdrop) {
                 TopAppBar(
                     color = barColor,
-                    title = "仪表盘",
+                    title = stringResource(R.string.dashboard),
                     scrollBehavior = scrollBehavior
                 )
             }
@@ -126,7 +127,10 @@ internal fun CatalogDashboardScreen(
                     val serviceSummary = when {
                         state.isStarting -> stringResource(R.string.service_starting)
                         state.isStopping -> stringResource(R.string.service_stopping)
-                        state.isReady -> "UP: ${formatUptime(state.uptimeSeconds)}"
+                        state.isReady -> stringResource(
+                            R.string.dashboard_service_up,
+                            formatUptime(state.uptimeSeconds)
+                        )
                         else -> stringResource(R.string.service_stopped)
                     }
                     SpeedChartCard(
@@ -157,13 +161,17 @@ internal fun CatalogDashboardScreen(
                 item {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         InfoRow(
-                            title = "内网 IP",
+                            title = stringResource(R.string.dashboard_lan_ip),
                             content = state.internalIp,
                             icon = Icons.Rounded.Router
                         )
                         InfoRow(
-                            title = "累计流量",
-                            content = "↑ ${formatBytes(state.uploadTotal)}   ↓ ${formatBytes(state.downloadTotal)}",
+                            title = stringResource(R.string.dashboard_total_traffic),
+                            content = stringResource(
+                                R.string.dashboard_traffic,
+                                formatBytes(state.uploadTotal),
+                                formatBytes(state.downloadTotal)
+                            ),
                             icon = Icons.Rounded.DataUsage
                         )
                     }
@@ -174,8 +182,13 @@ internal fun CatalogDashboardScreen(
                     Card(modifier = Modifier.fillMaxWidth()) {
                         val modeValues = listOf("rule", "global", "direct", "AllowAds")
                         OverlayDropdownPreference(
-                            title = "出站模式",
-                            items = listOf("规则", "全局", "直连", "允许广告"),
+                            title = stringResource(R.string.dashboard_outbound_mode),
+                            items = listOf(
+                                stringResource(R.string.dashboard_mode_rule),
+                                stringResource(R.string.dashboard_mode_global),
+                                stringResource(R.string.dashboard_mode_direct),
+                                stringResource(R.string.dashboard_mode_allow_ads)
+                            ),
                             selectedIndex = modeValues.indexOf(state.outboundMode).coerceAtLeast(0),
                             startAction = {
                                 Icon(
@@ -192,8 +205,10 @@ internal fun CatalogDashboardScreen(
                             }
                         )
                         ArrowPreference(
-                            title = "当前节点",
-                            summary = state.currentNode.ifBlank { "未选择" },
+                            title = stringResource(R.string.dashboard_current_node),
+                            summary = state.currentNode.ifBlank {
+                                stringResource(R.string.dashboard_not_selected)
+                            },
                             startAction = {
                                 Icon(
                                     imageVector = Icons.Rounded.Router,

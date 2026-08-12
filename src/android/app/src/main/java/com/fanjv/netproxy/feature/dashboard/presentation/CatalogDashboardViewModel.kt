@@ -2,9 +2,12 @@ package com.fanjv.netproxy.feature.dashboard.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.module.ModuleEnvironment
 import com.fanjv.netproxy.core.module.ServiceRepository
 import com.fanjv.netproxy.core.module.ServiceStatusSnapshot
+import com.fanjv.netproxy.core.ui.UiText
+import com.fanjv.netproxy.core.ui.toUiText
 import com.fanjv.netproxy.core.ui.userMessage
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -38,7 +41,7 @@ internal data class CatalogDashboardUiState(
     val uploadHistory: List<Float> = emptyList(),
     val internalIp: String = "--",
     val operation: String = "",
-    val notice: String = "",
+    val notice: UiText = UiText.Empty,
     val noticeId: Long = 0
 ) {
     val isServiceTransitioning: Boolean
@@ -118,7 +121,11 @@ internal class CatalogDashboardViewModel(
         }
         runOperation(action) {
             repository.action(action)
-            if (action == "start") "服务已启动" else "服务已停止"
+            if (action == "start") {
+                UiText.Resource(R.string.dashboard_service_started)
+            } else {
+                UiText.Resource(R.string.dashboard_service_stopped)
+            }
         }
     }
 
@@ -126,7 +133,7 @@ internal class CatalogDashboardViewModel(
         if (!canControlService()) return
         runOperation("mode") {
             repository.setMode(mode)
-            "出站模式已切换"
+            UiText.Resource(R.string.dashboard_mode_changed)
         }
     }
 
@@ -137,7 +144,7 @@ internal class CatalogDashboardViewModel(
             _state.value.operation.isEmpty()
 
     fun clearNotice() {
-        _state.update { it.copy(notice = "") }
+        _state.update { it.copy(notice = UiText.Empty) }
     }
 
     private fun startPolling() {
@@ -188,7 +195,7 @@ internal class CatalogDashboardViewModel(
         }
     }
 
-    private fun runOperation(name: String, action: suspend () -> String) {
+    private fun runOperation(name: String, action: suspend () -> UiText) {
         viewModelScope.launch {
             val changesServiceState = name == "start" || name == "stop"
             val previousServiceState = _state.value.serviceState
@@ -231,7 +238,7 @@ internal class CatalogDashboardViewModel(
                             } else {
                                 it.serviceState
                             },
-                            notice = error.userMessage(),
+                            notice = error.userMessage().toUiText(),
                             noticeId = it.noticeId + 1
                         )
                     }

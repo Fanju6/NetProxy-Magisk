@@ -5,9 +5,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.fanjv.netproxy.core.ui.component.deferredTopPadding
+import com.fanjv.netproxy.R
 import com.fanjv.netproxy.feature.catalog.model.CatalogNodeGroup
 import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.TabRowDefaults
@@ -31,7 +33,11 @@ internal fun FilterBar(
     ) {
         TabRow(
             tabs = groups.map {
-                val name = if (it.group.id == "default") "本地配置" else it.group.name
+                val name = if (it.group.id == "default") {
+                    stringResource(R.string.node_local_config)
+                } else {
+                    it.group.name
+                }
                 "$name (${it.nodes.size})"
             },
             selectedTabIndex = selectedIndex,

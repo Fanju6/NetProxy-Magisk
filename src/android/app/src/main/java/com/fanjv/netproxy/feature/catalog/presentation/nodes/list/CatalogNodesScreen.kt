@@ -55,6 +55,8 @@ import com.fanjv.netproxy.core.ui.component.TopBarMenuAction
 import com.fanjv.netproxy.core.ui.component.TopBarMoreMenu
 import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
+import com.fanjv.netproxy.core.ui.UiText
+import com.fanjv.netproxy.core.ui.resolve
 import com.fanjv.netproxy.feature.catalog.model.CatalogNode
 import com.fanjv.netproxy.feature.catalog.model.CatalogNodeGroup
 import com.fanjv.netproxy.feature.catalog.presentation.nodes.CatalogNodesViewModel
@@ -159,11 +161,11 @@ internal fun CatalogNodesScreen(
             uri?.let { viewModel.importFile(it) }
         }
 
-    val noticeText = state.error.ifBlank { state.notice }
+    val noticeText = if (state.error !is UiText.Empty) state.error else state.notice
     SnackbarNoticeEffect(
         eventId = state.noticeId,
-        message = noticeText,
-        isError = state.error.isNotBlank(),
+        message = noticeText.resolve(),
+        isError = state.error !is UiText.Empty,
         hostState = snackbarHostState,
         onConsumed = viewModel::clearNotice
     )
@@ -187,13 +189,13 @@ internal fun CatalogNodesScreen(
             BlurredBar(backdrop) {
                 TopAppBar(
                     color = barColor,
-                    title = "节点",
+                    title = stringResource(R.string.nodes),
                     scrollBehavior = scrollBehavior,
                     actions = {
                         IconButton(onClick = { showAddSheet = true }) {
                             Icon(
                                 imageVector = MiuixIcons.Add,
-                                contentDescription = "添加节点",
+                                contentDescription = stringResource(R.string.node_add),
                                 tint = colorScheme.onSurface
                             )
                         }
@@ -202,7 +204,7 @@ internal fun CatalogNodesScreen(
                             onExpandedChange = { showMoreMenu = it },
                             actions = listOf(
                                 TopBarMenuAction(
-                                    text = "测试当前分组延迟",
+                                    text = stringResource(R.string.node_test_current_group),
                                     enabled = selectedGroup?.nodes?.isNotEmpty() == true &&
                                             state.operation.isEmpty(),
                                     onClick = {
@@ -210,7 +212,7 @@ internal fun CatalogNodesScreen(
                                     }
                                 ),
                                 TopBarMenuAction(
-                                    text = "节点显示设置",
+                                    text = stringResource(R.string.node_display_settings),
                                     onClick = { showDisplaySettings = true }
                                 )
                             ),
@@ -249,8 +251,8 @@ internal fun CatalogNodesScreen(
                     modifier = Modifier.align(Alignment.Center)
                 )
 
-                state.error.isNotBlank() && state.groups.isEmpty() -> EmptyState(
-                    text = state.error,
+                state.error !is UiText.Empty && state.groups.isEmpty() -> EmptyState(
+                    text = state.error.resolve(),
                     onRefresh = { viewModel.refresh() },
                     modifier = Modifier
                         .align(Alignment.Center)
@@ -258,7 +260,7 @@ internal fun CatalogNodesScreen(
                 )
 
                 selectedGroup == null -> EmptyState(
-                    text = "还没有可用节点",
+                    text = stringResource(R.string.node_empty),
                     onRefresh = null,
                     modifier = Modifier
                         .align(Alignment.Center)
@@ -340,14 +342,17 @@ internal fun CatalogNodesScreen(
 
     OverlayDialog(
         show = showDisplaySettings,
-        title = "节点显示设置",
+        title = stringResource(R.string.node_display_settings),
         onDismissRequest = { showDisplaySettings = false }
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Card {
                 OverlayDropdownPreference(
-                    title = "布局样式",
-                    items = listOf("分组标签页", "分组列表"),
+                    title = stringResource(R.string.node_layout_style),
+                    items = listOf(
+                        stringResource(R.string.node_layout_tabs),
+                        stringResource(R.string.node_layout_list)
+                    ),
                     selectedIndex = layoutStyle,
                     onSelectedIndexChange = { index ->
                         layoutStyle = index
@@ -355,8 +360,13 @@ internal fun CatalogNodesScreen(
                     }
                 )
                 OverlayDropdownPreference(
-                    title = "排序",
-                    items = listOf("默认", "名称", "协议", "延迟"),
+                    title = stringResource(R.string.node_sort),
+                    items = listOf(
+                        stringResource(R.string.node_sort_default),
+                        stringResource(R.string.node_sort_name),
+                        stringResource(R.string.node_sort_protocol),
+                        stringResource(R.string.node_sort_latency)
+                    ),
                     selectedIndex = sortMode,
                     onSelectedIndexChange = { index ->
                         sortMode = index
@@ -364,8 +374,12 @@ internal fun CatalogNodesScreen(
                     }
                 )
                 OverlayDropdownPreference(
-                    title = "疏密",
-                    items = listOf("松散", "标准", "紧凑"),
+                    title = stringResource(R.string.node_density),
+                    items = listOf(
+                        stringResource(R.string.node_density_spacious),
+                        stringResource(R.string.node_density_standard),
+                        stringResource(R.string.node_density_compact)
+                    ),
                     selectedIndex = layoutDensity,
                     onSelectedIndexChange = { index ->
                         layoutDensity = index
@@ -373,8 +387,12 @@ internal fun CatalogNodesScreen(
                     }
                 )
                 OverlayDropdownPreference(
-                    title = "卡片尺寸",
-                    items = listOf("标准", "紧凑", "极简"),
+                    title = stringResource(R.string.node_card_size),
+                    items = listOf(
+                        stringResource(R.string.node_card_size_standard),
+                        stringResource(R.string.node_card_size_compact),
+                        stringResource(R.string.node_card_size_minimal)
+                    ),
                     selectedIndex = itemSize,
                     onSelectedIndexChange = { index ->
                         itemSize = index
@@ -383,7 +401,7 @@ internal fun CatalogNodesScreen(
                 )
             }
             TextButton(
-                text = "完成",
+                text = stringResource(R.string.common_done),
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.textButtonColorsPrimary(),
                 onClick = { showDisplaySettings = false }
@@ -393,7 +411,7 @@ internal fun CatalogNodesScreen(
 
     OverlayBottomSheet(
         show = showAddSheet,
-        title = "添加节点",
+        title = stringResource(R.string.node_add),
         onDismissRequest = { showAddSheet = false }
     ) {
         Card(
@@ -402,8 +420,8 @@ internal fun CatalogNodesScreen(
                 .padding(bottom = 8.dp)
         ) {
             BasicComponent(
-                title = "单节点链接",
-                summary = "VLESS、VMess、SS、Trojan 等链接",
+                title = stringResource(R.string.node_single_link),
+                summary = stringResource(R.string.node_single_link_summary),
                 startAction = { SheetIcon(Icons.Rounded.Link) },
                 onClick = {
                     showAddSheet = false
@@ -411,8 +429,8 @@ internal fun CatalogNodesScreen(
                 }
             )
             BasicComponent(
-                title = "本地文件",
-                summary = "导入 Clash YAML、节点文本或 sing-box JSON",
+                title = stringResource(R.string.node_local_file),
+                summary = stringResource(R.string.node_local_file_summary),
                 startAction = { SheetIcon(Icons.Rounded.FileOpen) },
                 onClick = {
                     showAddSheet = false
@@ -424,26 +442,26 @@ internal fun CatalogNodesScreen(
 
     OverlayDialog(
         show = showLinkDialog,
-        title = "添加单节点",
+        title = stringResource(R.string.node_add_single),
         onDismissRequest = { showLinkDialog = false }
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             TextField(
                 value = nodeLink,
                 onValueChange = { nodeLink = it },
-                label = "节点链接",
+                label = stringResource(R.string.node_link_label),
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 3,
                 maxLines = 6
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 TextButton(
-                    text = "取消",
+                    text = stringResource(R.string.common_cancel),
                     modifier = Modifier.weight(1f),
                     onClick = { showLinkDialog = false }
                 )
                 TextButton(
-                    text = "添加",
+                    text = stringResource(R.string.common_add),
                     modifier = Modifier.weight(1f),
                     enabled = nodeLink.isNotBlank(),
                     colors = ButtonDefaults.textButtonColorsPrimary(),
@@ -471,7 +489,7 @@ internal fun CatalogNodesScreen(
                     .padding(bottom = 8.dp)
             ) {
                 BasicComponent(
-                    title = "测试延迟",
+                    title = stringResource(R.string.node_test_delay),
                     startAction = { SheetIcon(Icons.Rounded.NetworkPing) },
                     onClick = {
                         viewModel.testDelay("${group.group.id}/${node.tag}")
@@ -479,7 +497,7 @@ internal fun CatalogNodesScreen(
                     }
                 )
                 BasicComponent(
-                    title = "编辑节点",
+                    title = stringResource(R.string.node_edit),
                     startAction = { SheetIcon(Icons.Rounded.Edit) },
                     onClick = {
                         navigator.push(NodeEdit("${group.group.id}/${node.tag}"))
@@ -487,7 +505,7 @@ internal fun CatalogNodesScreen(
                     }
                 )
                 BasicComponent(
-                    title = "导出节点",
+                    title = stringResource(R.string.node_export),
                     startAction = { SheetIcon(Icons.Rounded.Share) },
                     onClick = {
                         viewModel.exportNode(group.group.id, node.tag)
@@ -495,7 +513,7 @@ internal fun CatalogNodesScreen(
                     }
                 )
                 BasicComponent(
-                    title = "删除节点",
+                    title = stringResource(R.string.node_delete),
                     startAction = { SheetIcon(Icons.Rounded.Delete) },
                     onClick = {
                         viewModel.removeNode(group.group.id, node.tag)
