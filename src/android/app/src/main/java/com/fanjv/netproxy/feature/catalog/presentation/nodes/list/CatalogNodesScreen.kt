@@ -12,6 +12,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.add
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.only
@@ -37,6 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
@@ -91,6 +96,9 @@ internal fun CatalogNodesScreen(
     val navigator = LocalNavigator.current
     val context = LocalContext.current
     val scrollBehavior = MiuixScrollBehavior()
+    val dynamicTopPadding = remember(scrollBehavior) {
+        { 12.dp * (1f - scrollBehavior.state.collapsedFraction) }
+    }
     val backdrop = rememberBlurBackdrop()
     val barColor = if (backdrop != null) Color.Transparent else colorScheme.surface
     var showAddSheet by remember { mutableStateOf(false) }
@@ -169,54 +177,58 @@ internal fun CatalogNodesScreen(
         },
         topBar = {
             BlurredBar(backdrop) {
-                Column {
-                    TopAppBar(
-                        color = barColor,
-                        title = "节点",
-                        scrollBehavior = scrollBehavior,
-                        actions = {
-                            IconButton(onClick = { showAddSheet = true }) {
-                                Icon(
-                                    imageVector = MiuixIcons.Add,
-                                    contentDescription = "添加节点",
-                                    tint = colorScheme.onSurface
-                                )
-                            }
-                            TopBarMoreMenu(
-                                expanded = showMoreMenu,
-                                onExpandedChange = { showMoreMenu = it },
-                                actions = listOf(
-                                    TopBarMenuAction(
-                                        text = "测试当前分组延迟",
-                                        enabled = selectedGroup?.nodes?.isNotEmpty() == true &&
-                                                state.operation.isEmpty(),
-                                        onClick = {
-                                            selectedGroup?.group?.id?.let(viewModel::testGroupDelay)
-                                        }
-                                    ),
-                                    TopBarMenuAction(
-                                        text = "节点显示设置",
-                                        onClick = { showDisplaySettings = true }
-                                    )
-                                ),
-                                contentDescription = stringResource(R.string.more_actions)
+                TopAppBar(
+                    color = barColor,
+                    title = "节点",
+                    scrollBehavior = scrollBehavior,
+                    actions = {
+                        IconButton(onClick = { showAddSheet = true }) {
+                            Icon(
+                                imageVector = MiuixIcons.Add,
+                                contentDescription = "添加节点",
+                                tint = colorScheme.onSurface
                             )
                         }
-                    )
-                    if (layoutStyle == 0) {
-                        FilterBar(
-                            groups = state.groups,
-                            selectedIndex = selectedIndex,
-                            onSelected = { index ->
-                                state.groups.getOrNull(index)?.group?.id?.let(viewModel::selectGroup)
-                            }
+                        TopBarMoreMenu(
+                            expanded = showMoreMenu,
+                            onExpandedChange = { showMoreMenu = it },
+                            actions = listOf(
+                                TopBarMenuAction(
+                                    text = "测试当前分组延迟",
+                                    enabled = selectedGroup?.nodes?.isNotEmpty() == true &&
+                                            state.operation.isEmpty(),
+                                    onClick = {
+                                        selectedGroup?.group?.id?.let(viewModel::testGroupDelay)
+                                    }
+                                ),
+                                TopBarMenuAction(
+                                    text = "节点显示设置",
+                                    onClick = { showDisplaySettings = true }
+                                )
+                            ),
+                            contentDescription = stringResource(R.string.more_actions)
                         )
+                    },
+                    bottomContent = {
+                        if (layoutStyle == 0) {
+                            FilterBar(
+                                groups = state.groups,
+                                selectedIndex = selectedIndex,
+                                onSelected = { index ->
+                                    state.groups.getOrNull(index)?.group?.id?.let(viewModel::selectGroup)
+                                },
+                                topPadding = dynamicTopPadding,
+                                backgroundColor = barColor
+                            )
+                        }
                     }
-                }
+                )
             }
         },
-        contentWindowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Horizontal)
+        contentWindowInsets = WindowInsets.systemBars.add(WindowInsets.displayCutout)
+            .only(WindowInsetsSides.Horizontal)
     ) { innerPadding ->
+        val layoutDirection = LocalLayoutDirection.current
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -251,12 +263,18 @@ internal fun CatalogNodesScreen(
                     pullToRefreshState = pullToRefreshState,
                     topAppBarScrollBehavior = scrollBehavior,
                     refreshTexts = refreshTexts,
-                    contentPadding = PaddingValues(top = innerPadding.calculateTopPadding())
+                    contentPadding = PaddingValues(
+                        top = innerPadding.calculateTopPadding() +
+                            if (layoutStyle == 0) 6.dp else 0.dp,
+                        start = innerPadding.calculateStartPadding(layoutDirection),
+                        end = innerPadding.calculateEndPadding(layoutDirection)
+                    )
                 ) {
                     val contentPadding = PaddingValues(
-                        start = 12.dp,
-                        top = innerPadding.calculateTopPadding() + 12.dp,
-                        end = 12.dp,
+                        start = innerPadding.calculateStartPadding(layoutDirection) + 12.dp,
+                        top = innerPadding.calculateTopPadding() +
+                            if (layoutStyle == 0) 6.dp else 12.dp,
+                        end = innerPadding.calculateEndPadding(layoutDirection) + 12.dp,
                         bottom = innerPadding.calculateBottomPadding() + bottomPadding + 84.dp
                     )
                     if (layoutStyle == 0) {
