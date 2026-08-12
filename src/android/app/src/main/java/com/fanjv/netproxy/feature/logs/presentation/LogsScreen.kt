@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.add
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -44,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -57,6 +60,7 @@ import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BackIconButton
 import com.fanjv.netproxy.core.ui.component.BlurredBar
+import com.fanjv.netproxy.core.ui.component.deferredTopPadding
 import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import com.fanjv.netproxy.core.ui.theme.LocalEnableBlur
@@ -178,6 +182,9 @@ internal fun LogsScreen(
     )
 
     val scrollBehavior = MiuixScrollBehavior()
+    val dynamicTopPadding = remember(scrollBehavior) {
+        { 12.dp * (1f - scrollBehavior.state.collapsedFraction) }
+    }
     val enableBlur = LocalEnableBlur.current
     val backdrop = rememberBlurBackdrop(enableBlur)
     val blurActive = backdrop != null
@@ -187,14 +194,13 @@ internal fun LogsScreen(
         snackbarHost = { AppSnackbarHost(snackbarHostState) },
         topBar = {
             BlurredBar(backdrop) {
-                Column(modifier = Modifier.background(barColor)) {
-                    TopAppBar(
-                        color = Color.Transparent,
-                        title = stringResource(R.string.logs),
-                        navigationIcon = {
-                            BackIconButton(onClick = onBack)
-                        },
-                        actions = {
+                TopAppBar(
+                    color = barColor,
+                    title = stringResource(R.string.logs),
+                    navigationIcon = {
+                        BackIconButton(onClick = onBack)
+                    },
+                    actions = {
                             IconButton(onClick = {
                                 scope.launch {
                                     try {
@@ -328,32 +334,35 @@ internal fun LogsScreen(
                                     }
                                 }
                             }
-                        },
-                        scrollBehavior = scrollBehavior
-                    )
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp)
-                    ) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        TabRow(
-                            tabs = tabs,
-                            selectedTabIndex = selectedTabIndex,
-                            onTabSelected = { selectedTabIndex = it },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = TabRowDefaults.tabRowColors(
-                                backgroundColor = if (blurActive) Color.Transparent else MiuixTheme.colorScheme.surface
+                    },
+                    scrollBehavior = scrollBehavior,
+                    bottomContent = {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp)
+                                .padding(bottom = 6.dp)
+                                .deferredTopPadding(dynamicTopPadding)
+                        ) {
+                            TabRow(
+                                tabs = tabs,
+                                selectedTabIndex = selectedTabIndex,
+                                onTabSelected = { selectedTabIndex = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = TabRowDefaults.tabRowColors(
+                                    backgroundColor = barColor
+                                ),
+                                height = 40.dp
                             )
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
+                        }
                     }
-                }
+                )
             }
         },
         contentWindowInsets = WindowInsets.systemBars.add(WindowInsets.displayCutout)
             .only(WindowInsetsSides.Horizontal)
     ) { innerPadding ->
+        val layoutDirection = LocalLayoutDirection.current
         Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
             LazyColumn(
                 state = listState,
@@ -361,9 +370,13 @@ internal fun LogsScreen(
                     .fillMaxSize()
                     .scrollEndHaptic()
                     .overScrollVertical()
-                    .nestedScroll(scrollBehavior.nestedScrollConnection)
-                    .padding(horizontal = 12.dp),
-                contentPadding = innerPadding,
+                    .nestedScroll(scrollBehavior.nestedScrollConnection),
+                contentPadding = PaddingValues(
+                    top = innerPadding.calculateTopPadding() + 6.dp,
+                    start = innerPadding.calculateStartPadding(layoutDirection) + 12.dp,
+                    end = innerPadding.calculateEndPadding(layoutDirection) + 12.dp,
+                    bottom = innerPadding.calculateBottomPadding()
+                ),
                 overscrollEffect = null
             ) {
                 if (logs.isEmpty()) {
@@ -429,7 +442,7 @@ fun LogItemCard(item: LogItem, type: LogType) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .padding(bottom = 12.dp),
         insideMargin = PaddingValues(12.dp)
     ) {
         Column {
