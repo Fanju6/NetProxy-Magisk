@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 )
 
 const (
@@ -17,15 +16,32 @@ const (
 	targetName     = "target"
 )
 
-var transactionMu sync.Mutex
-
 // CommitPair 原子提交一组 Catalog 的 Provider 与元数据文件。
 func CommitPair(root, groupDir string, providerContent, metadataContent []byte) error {
-	transactionMu.Lock()
-	defer transactionMu.Unlock()
 	if strings.TrimSpace(root) == "" || strings.TrimSpace(groupDir) == "" {
 		return errors.New("catalog transaction target is empty")
 	}
+	groupID := filepath.Base(filepath.Clean(groupDir))
+	if !isValidGroupID(groupID) {
+		return fmt.Errorf("非法 Catalog 分组 ID: %s", groupID)
+	}
+	release, err := acquireCatalogMutation(root, groupID)
+	if err != nil {
+		return err
+	}
+	defer release()
+	return commitPairLocked(root, groupDir, providerContent, metadataContent)
+}
+
+// CommitPairLocked 在调用方已持有分组锁和根锁时提交事务。
+func CommitPairLocked(root, groupDir string, providerContent, metadataContent []byte) error {
+	if strings.TrimSpace(root) == "" || strings.TrimSpace(groupDir) == "" {
+		return errors.New("catalog transaction target is empty")
+	}
+	return commitPairLocked(root, groupDir, providerContent, metadataContent)
+}
+
+func commitPairLocked(root, groupDir string, providerContent, metadataContent []byte) error {
 	if err := os.MkdirAll(filepath.Join(root, stagingDirName), 0o700); err != nil {
 		return err
 	}
@@ -42,7 +58,7 @@ func CommitPair(root, groupDir string, providerContent, metadataContent []byte) 
 		_ = os.RemoveAll(txDir)
 		return err
 	}
-	if err := writeSynced(journalPath, []byte("begin\nprovider\nmeta\n"), 0o600); err != nil {
+	if err := writeSynced(journalPath, []byte("begin\nprovider\nmeta\n"+lockOwnerJournal()), 0o600); err != nil {
 		_ = os.RemoveAll(txDir)
 		return err
 	}
@@ -80,8 +96,20 @@ func CommitPair(root, groupDir string, providerContent, metadataContent []byte) 
 
 // Recover 清理启动前遗留的 Catalog 事务目录并恢复未完成提交。
 func Recover(root string) error {
-	transactionMu.Lock()
-	defer transactionMu.Unlock()
+	release, err := AcquireRoot(root)
+	if err != nil {
+		return err
+	}
+	defer release()
+	return recoverTransactionsLocked(root)
+}
+
+// RecoverLocked 在调用方已持有根锁时恢复遗留事务。
+func RecoverLocked(root string) error {
+	return recoverTransactionsLocked(root)
+}
+
+func recoverTransactionsLocked(root string) error {
 	staging := filepath.Join(root, stagingDirName)
 	entries, err := os.ReadDir(staging)
 	if os.IsNotExist(err) {
@@ -112,8 +140,10 @@ func recoverTransaction(txDir string) error {
 	if len(lines) < 3 || lines[0] != "begin" || lines[1] != "provider" || lines[2] != "meta" {
 		return os.RemoveAll(txDir)
 	}
-	if len(lines) >= 4 && lines[3] == "commit" {
-		return os.RemoveAll(txDir)
+	for _, line := range lines[3:] {
+		if line == "commit" {
+			return os.RemoveAll(txDir)
+		}
 	}
 	target, err := os.ReadFile(filepath.Join(txDir, targetName))
 	if err != nil || strings.TrimSpace(string(target)) == "" {
@@ -146,7 +176,11 @@ func moveExisting(groupDir, txDir, name string) error {
 	if !transactionFileExists(source) {
 		return nil
 	}
-	return os.Rename(source, filepath.Join(txDir, name+".bak"))
+	if err := os.Rename(source, filepath.Join(txDir, name+".bak")); err != nil {
+		return err
+	}
+	transactionRenameHook("move-" + name)
+	return nil
 }
 
 func install(txDir, groupDir, name string) error {
@@ -155,8 +189,12 @@ func install(txDir, groupDir, name string) error {
 	if err := os.Rename(source, target); err != nil {
 		return fmt.Errorf("install %s: %w", name, err)
 	}
+	transactionRenameHook("install-" + name)
 	return nil
 }
+
+// transactionRenameHook 仅供同包测试模拟 rename 完成后的进程中断。
+var transactionRenameHook = func(string) {}
 
 func rollback(txDir string) {
 	target, err := os.ReadFile(filepath.Join(txDir, targetName))

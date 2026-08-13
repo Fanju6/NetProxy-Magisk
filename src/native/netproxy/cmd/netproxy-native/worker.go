@@ -2,12 +2,10 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
@@ -16,7 +14,7 @@ import (
 
 func runWorker(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("缺少 Worker 操作: start|stop|restart|wake|status|once|run")
+		return errors.New("缺少 Worker 操作: start|stop|run")
 	}
 	action := args[0]
 	flags := newFlagSet("worker " + action)
@@ -30,9 +28,6 @@ func runWorker(ctx context.Context, args []string) error {
 	singBox := flags.String("sing-box", "", "sing-box 二进制路径")
 	serviceAddress := flags.String("service-address", "127.0.0.1:9090", "Service API 地址")
 	serviceSecret := flags.String("service-secret", "singbox", "Service API 密钥")
-	group := flags.String("group", "", "指定单个订阅分组")
-	now := flags.Int64("now", time.Now().Unix(), "当前 Unix 时间")
-	format := flags.String("format", "json", "输出格式")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -93,60 +88,14 @@ func runWorker(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		return writeWorkerResult(*format, "worker.started", "后台 Worker 已启动", status)
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "worker.started", Message: "后台 Worker 已启动", Data: status})
+		return nil
 	case "stop":
 		if err := worker.Stop(options); err != nil {
 			return err
 		}
-		return writeWorkerResult(*format, "worker.stopped", "后台 Worker 已停止", worker.Status{State: "stopped"})
-	case "restart":
-		if err := worker.Stop(options); err != nil {
-			return err
-		}
-		status, err := worker.Start(ctx, options, os.Args[0])
-		if err != nil {
-			return err
-		}
-		return writeWorkerResult(*format, "worker.restarted", "后台 Worker 已重启", status)
-	case "wake":
-		status, err := worker.Wake(ctx, options, os.Args[0])
-		if err != nil {
-			return err
-		}
-		return writeWorkerResult(*format, "worker.woken", "后台 Worker 已唤醒", status)
-	case "status":
-		status, err := worker.ReadStatus(options)
-		if err != nil {
-			return err
-		}
-		if *format == "tsv" {
-			fmt.Printf("state\t%s\npid\t%d\nnearest\t%d\n", status.State, status.PID, status.Nearest)
-			return nil
-		}
-		return writeWorkerResult(*format, "worker.status", "后台 Worker 状态", status)
-	case "once":
-		logger, closer, err := worker.OpenLogger(options.LogFile)
-		if err != nil {
-			return err
-		}
-		defer closer.Close()
-		currentTime := time.Unix(*now, 0)
-		if *group != "" {
-			updated, updateErr := worker.UpdateGroup(ctx, options, *group, currentTime, logger)
-			if updateErr != nil {
-				return updateErr
-			}
-			if *format == "kv" {
-				fmt.Printf("group_id=%s\nnode_count=%d\nrevision=%d\nnot_modified=%t\nstructure_changed=%t\n", updated.GroupID, updated.NodeCount, updated.Revision, updated.NotModified, updated.StructureChanged)
-				return nil
-			}
-			return writeWorkerResult(*format, "worker.once", "订阅更新完成", updated)
-		}
-		summary, err := worker.RunDue(ctx, options, currentTime, logger)
-		if err != nil {
-			return err
-		}
-		return writeWorkerResult(*format, "worker.once", "订阅到期任务已处理", summary)
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "worker.stopped", Message: "后台 Worker 已停止", Data: worker.Status{State: "stopped"}})
+		return nil
 	default:
 		return fmt.Errorf("未知 Worker 操作 %q", action)
 	}
@@ -170,20 +119,4 @@ func configureNetworkWatcher(options *worker.Options, moduleDir, catalogRoot, mo
 		_, err := moduleapp.EvaluateNetwork(ctx, moduleOptions, networkType, ssid)
 		return err
 	}
-}
-
-func writeWorkerResult(format, code, message string, data any) error {
-	if format == "tsv" {
-		encoded, err := json.Marshal(data)
-		if err != nil {
-			return err
-		}
-		fmt.Println(string(encoded))
-		return nil
-	}
-	if format != "json" {
-		return fmt.Errorf("Worker 不支持输出格式 %q", format)
-	}
-	writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: code, Message: message, Data: data})
-	return nil
 }

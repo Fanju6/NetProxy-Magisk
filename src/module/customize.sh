@@ -419,12 +419,14 @@ esac
 
 #######################################
 # 写入后台热更新日志。
-# 参数: $1 日志正文
+# 参数: $1 日志级别，$2 结果，$3 错误码或 -，$4 日志正文
 # 返回: 始终返回 0，不影响更新回退。
 #######################################
 write_log() {
   mkdir -p "$(dirname "$log_file")" 2> /dev/null || return 0
-  printf '[%s] [INFO] %s\n' "$(date '+%Y-%m-%d %H:%M:%S' 2> /dev/null || printf 'unknown-time')" "$1" >> "$log_file" 2> /dev/null || true
+  printf '[%s] [%s] [module] [module.update] [%s] [%s] %s\n' \
+    "$(date '+%Y-%m-%d %H:%M:%S' 2> /dev/null || printf 'unknown-time')" "$1" "$2" "$3" "$4" \
+    >> "$log_file" 2> /dev/null || true
 }
 
 #######################################
@@ -515,7 +517,7 @@ restore_live_service() {
 # 返回: 不返回，退出后台 Shell。
 #######################################
 fail_hot_update() {
-  write_log "后台热更新未提交: $1；保留待更新目录，下次开机将由管理器完成更新"
+  write_log "WARN" "failed" "module.update_failed" "后台热更新未提交: $1；保留待更新目录，下次开机将由管理器完成更新"
   restore_live_service
   exit 0
 }
@@ -558,18 +560,18 @@ fi
 
 rm -f "$live_dir/update"
 rm -rf "$backup_dir" 2> /dev/null || true
-write_log "后台热更新已完成，无需重启设备"
+write_log "INFO" "success" "-" "后台热更新已完成，无需重启设备"
 
 if [ -x "$live_dir/bin/netproxy-native" ]; then
   su -c "\"$live_dir/bin/netproxy-native\" worker start --module-dir \"$live_dir\"" > /dev/null 2>&1 \
-    || write_log "新版后台 Worker 启动失败"
+    || write_log "WARN" "failed" "worker.start_failed" "新版后台 Worker 启动失败"
 fi
 
 if [ "$restart_service" = true ]; then
   if su -c "\"$live_dir/netproxyctl\" service start" > /dev/null 2>&1; then
-    write_log "后台热更新后服务已恢复"
+    write_log "INFO" "success" "-" "后台热更新后服务已恢复"
   else
-    write_log "后台热更新后服务未启动，请在管理器中检查节点配置"
+    write_log "WARN" "failed" "service.start_failed" "后台热更新后服务未启动，请在管理器中检查节点配置"
   fi
 fi
 # NETPROXY_HOT_UPDATE_WORKER_END

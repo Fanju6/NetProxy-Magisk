@@ -28,7 +28,7 @@ internal data class CatalogDashboardUiState(
     val serviceError: String = "",
     val readyAt: Long = 0,
     val uptimeSeconds: Long = 0,
-    val outboundMode: String = "rule",
+    val outboundMode: String = "unknown",
     val activeGroupId: String = "",
     val currentNode: String = "",
     val downloadBytesPerSecond: Long = 0,

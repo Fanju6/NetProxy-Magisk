@@ -26,6 +26,14 @@ type moduleFlags struct {
 	timeout                                                                                                   time.Duration
 }
 
+func moduleSubscriptionError(err error) error {
+	var structured *subscription.Error
+	if errors.As(err, &structured) {
+		return &resultError{Code: structured.Code, Message: structured.Message, Data: structured.Data}
+	}
+	return err
+}
+
 func bindModuleFlags(flags *flag.FlagSet) *moduleFlags {
 	values := &moduleFlags{}
 	flags.StringVar(&values.moduleDir, "module-dir", defaultModuleDir(), "模块根目录")
@@ -122,8 +130,6 @@ func runModule(ctx context.Context, args []string) error {
 		return runModulePrepare(ctx, args[1:])
 	case "select":
 		return runModuleSelect(ctx, args[1:])
-	case "sync":
-		return runModuleSync(ctx, args[1:])
 	case "mode":
 		return runModuleMode(ctx, args[1:])
 	case "network":
@@ -138,8 +144,6 @@ func runModule(ctx context.Context, args []string) error {
 		return runModuleConfig(ctx, args[1:])
 	case "logs":
 		return runModuleLogs(ctx, args[1:])
-	case "state":
-		return runModuleState(args[1:])
 	case "service":
 		return runModuleService(ctx, args[1:])
 	default:
@@ -166,61 +170,6 @@ func runModuleNetwork(ctx context.Context, args []string) error {
 		return err
 	}
 	writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "network.evaluated", Message: data.Reason, Data: data})
-	return nil
-}
-
-func runModuleState(args []string) error {
-	flags := newFlagSet("module state")
-	values := bindModuleFlags(flags)
-	state := flags.String("state", "", "服务状态")
-	pid := flags.String("pid", "0", "服务 PID")
-	startedAt := flags.String("started-at", "0", "启动时间")
-	readyAt := flags.String("ready-at", "0", "就绪时间")
-	message := flags.String("error", "", "错误信息")
-	if err := flags.Parse(args); err != nil {
-		return err
-	}
-	if *state == "" {
-		return errors.New("module state 需要 --state")
-	}
-	options := values.options()
-	pidValue, err := moduleapp.ParseNonNegativeInt(*pid)
-	if err != nil {
-		return err
-	}
-	startedValue, err := moduleapp.ParseNonNegativeInt(*startedAt)
-	if err != nil {
-		return err
-	}
-	readyValue, err := moduleapp.ParseNonNegativeInt(*readyAt)
-	if err != nil {
-		return err
-	}
-	if err := moduleapp.WriteServiceState(options.StateFile, *state, pidValue, startedValue, readyValue, *message); err != nil {
-		return err
-	}
-	writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "service.state_written", Message: "服务状态已写入", Data: map[string]string{"state": *state}})
-	return nil
-}
-
-func runModuleSync(ctx context.Context, args []string) error {
-	flags := newFlagSet("module sync")
-	values := bindModuleFlags(flags)
-	if err := flags.Parse(args); err != nil {
-		return err
-	}
-	data, err := moduleapp.SyncSelection(ctx, values.options())
-	if err != nil {
-		return err
-	}
-	module, err := moduleconfig.LoadModule(values.options().ModuleConfig)
-	if err != nil {
-		return err
-	}
-	if err := moduleapp.ApplyMode(ctx, values.options(), module.OutboundMode); err != nil {
-		return err
-	}
-	writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "module.selection_synced", Message: "运行时选择已同步", Data: data})
 	return nil
 }
 
@@ -454,7 +403,7 @@ func runModuleSub(ctx context.Context, args []string) error {
 		if *urlValue == "" {
 			return errors.New("sub add 需要 URL")
 		}
-		seconds, err := subscription.DurationToSeconds(*interval)
+		seconds, err := catalog.DurationToSeconds(*interval)
 		if err != nil {
 			return err
 		}
@@ -470,7 +419,7 @@ func runModuleSub(ctx context.Context, args []string) error {
 		}
 		updated, err := moduleapp.AddSubscription(ctx, moduleapp.SubscriptionOptions{Options: options, Name: *name, URL: *urlValue, UserAgent: *userAgent, HWID: *hwid, Headers: headers, AutoUpdate: *autoUpdate, UpdateInterval: seconds, IntervalSource: "user", UpdateViaProxy: *viaProxy, Include: *include, Exclude: *exclude, AllowInsecure: *allowInsecure, Timeout: *timeout})
 		if err != nil {
-			return err
+			return moduleSubscriptionError(err)
 		}
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "subscription.added", Message: "订阅已添加", Data: updated})
 		return nil
@@ -481,7 +430,7 @@ func runModuleSub(ctx context.Context, args []string) error {
 		}
 		updated, err := moduleapp.UpdateSubscription(ctx, options, positionals[0])
 		if err != nil {
-			return err
+			return moduleSubscriptionError(err)
 		}
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "subscription.updated", Message: "订阅更新完成", Data: updated})
 		return nil
@@ -489,10 +438,6 @@ func runModuleSub(ctx context.Context, args []string) error {
 	if action == "edit" {
 		if len(positionals) == 0 {
 			return errors.New("sub edit 需要订阅")
-		}
-		groupID, err := catalog.ResolveGroup(options.CatalogRoot, positionals[0])
-		if err != nil {
-			return err
 		}
 		var headers *map[string]string
 		if *headersFile != "" {
@@ -508,13 +453,13 @@ func runModuleSub(ctx context.Context, args []string) error {
 		}
 		var intervalSeconds *int64
 		if flagWasSetNative(flags, "interval") {
-			value, err := subscription.DurationToSeconds(*interval)
+			value, err := catalog.DurationToSeconds(*interval)
 			if err != nil {
 				return err
 			}
 			intervalSeconds = &value
 		}
-		edit := subscription.EditOptions{Root: options.CatalogRoot, GroupID: groupID, ProgressDir: options.ProgressDir, Now: time.Now(), CustomHeaders: headers}
+		edit := subscription.EditOptions{Now: time.Now(), CustomHeaders: headers}
 		if flagWasSetNative(flags, "name") {
 			edit.Name = name
 		}
@@ -548,9 +493,9 @@ func runModuleSub(ctx context.Context, args []string) error {
 		if flagWasSetNative(flags, "download-timeout") {
 			edit.Timeout = timeout
 		}
-		edited, err := subscription.Edit(ctx, edit)
+		edited, err := moduleapp.EditSubscription(ctx, options, positionals[0], edit)
 		if err != nil {
-			return err
+			return moduleSubscriptionError(err)
 		}
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "subscription.edited", Message: "订阅设置已更新", Data: edited})
 		return nil
@@ -558,7 +503,7 @@ func runModuleSub(ctx context.Context, args []string) error {
 	if action == "update-all" {
 		summary, err := moduleapp.UpdateAllSubscriptions(ctx, options)
 		if err != nil {
-			return err
+			return moduleSubscriptionError(err)
 		}
 		if len(summary.Failed) > 0 {
 			return fmt.Errorf("部分订阅更新失败")
@@ -671,7 +616,7 @@ func runModuleConfig(ctx context.Context, args []string) error {
 		}
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "config.read", Message: "配置内容", Data: data})
 	case "check":
-		_, err := moduleapp.Check(ctx, options, true)
+		err := moduleapp.CheckService(ctx, options)
 		if err != nil {
 			return err
 		}
@@ -709,15 +654,15 @@ func runModuleLogs(_ context.Context, args []string) error {
 	}
 	switch action {
 	case "show":
-		content, err := moduleapp.ShowLog(options, kind, *lines)
+		snapshot, err := moduleapp.ReadLog(options, kind, *lines)
 		if err != nil {
 			return err
 		}
 		if *format == "text" {
-			fmt.Fprint(os.Stdout, content)
+			fmt.Fprint(os.Stdout, snapshot.Content)
 			return nil
 		}
-		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "logs.show", Message: "日志内容", Data: map[string]string{"kind": kind, "content": content}})
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "logs.show", Message: "日志内容", Data: snapshot})
 	case "clear":
 		if err := moduleapp.ClearLog(options, kind); err != nil {
 			return err
@@ -780,7 +725,7 @@ func runModuleBoot(ctx context.Context, args []string) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	if err := moduleapp.Boot(ctx, values.options(), os.Args[0]); err != nil {
+	if err := moduleapp.Boot(ctx, values.options()); err != nil {
 		return err
 	}
 	writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "module.booted", Message: "开机服务流程完成"})

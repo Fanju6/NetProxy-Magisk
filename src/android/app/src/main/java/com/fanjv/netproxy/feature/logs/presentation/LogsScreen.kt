@@ -88,6 +88,7 @@ import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Download
 import top.yukonga.miuix.kmp.icon.extended.MoreCircle
+import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.icon.extended.Share
 import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -207,6 +208,13 @@ internal fun LogsScreen(
                         BackIconButton(onClick = onBack)
                     },
                     actions = {
+                            IconButton(onClick = { viewModel.refresh(currentType) }) {
+                                Icon(
+                                    imageVector = MiuixIcons.Refresh,
+                                    contentDescription = stringResource(R.string.refresh_logs),
+                                    tint = MiuixTheme.colorScheme.onSurface
+                                )
+                            }
                             IconButton(onClick = {
                                 scope.launch {
                                     try {
@@ -470,15 +478,19 @@ fun LogItemCard(item: LogItem, type: LogType) {
                     LogLevelBadge(level = item.level)
                     if (cleanTag.isNotEmpty()) {
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = cleanTag,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
+                        if (type == LogType.SERVICE) {
+                            NativeComponentBadge(component = cleanTag)
+                        } else {
+                            Text(
+                                text = cleanTag,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                        }
                     }
                 }
                 if (item.timestamp.isNotEmpty()) {
@@ -490,6 +502,26 @@ fun LogItemCard(item: LogItem, type: LogType) {
                         maxLines = 1
                     )
                 }
+            }
+
+            if (type == LogType.SERVICE && (item.event.isNotEmpty() || item.result.isNotEmpty())) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (item.event.isNotEmpty()) {
+                        NativeEventBadge(event = item.event)
+                    }
+                    if (item.result.isNotEmpty()) {
+                        NativeResultBadge(result = item.result)
+                    }
+                }
+            }
+
+            if (type == LogType.SERVICE && item.errorCode.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                NativeErrorCodeBadge(errorCode = item.errorCode)
             }
 
             if (connId != null) {
@@ -519,6 +551,162 @@ fun LogItemCard(item: LogItem, type: LogType) {
             }
         }
     }
+}
+
+@Composable
+fun NativeComponentBadge(component: String) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val label = when (component) {
+        "service" -> "服务"
+        "worker" -> "后台"
+        "subscription" -> "订阅"
+        "node" -> "节点"
+        "mode" -> "模式"
+        "app" -> "应用"
+        "config" -> "配置"
+        "network" -> "网络"
+        "module" -> "模块"
+        else -> component
+    }
+    NativeBadge(
+        text = label,
+        backgroundColor = if (isDark) Color(0xFF283593).copy(alpha = 0.3f) else Color(0xFFE8EAF6),
+        textColor = if (isDark) Color(0xFF9FA8DA) else Color(0xFF3949AB)
+    )
+}
+
+@Composable
+fun NativeEventBadge(event: String) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val label = when (event) {
+        "service.start" -> "启动"
+        "service.stop" -> "停止"
+        "service.reload" -> "重载"
+        "worker.start", "worker.run" -> "Worker"
+        "network.watch" -> "网络监听"
+        "network.read" -> "网络读取"
+        "network.policy" -> "网络策略"
+        "subscription.add" -> "添加订阅"
+        "subscription.edit" -> "编辑订阅"
+        "subscription.update" -> "更新订阅"
+        "subscription.update-all" -> "更新全部"
+        "subscription.remove" -> "删除订阅"
+        "subscription.runtime-sync" -> "运行时同步"
+        "subscription.effect" -> "订阅副作用"
+        "subscription.schedule" -> "订阅调度"
+        "node.append" -> "添加节点"
+        "node.import" -> "导入节点"
+        "node.edit" -> "编辑节点"
+        "node.remove" -> "删除节点"
+        "node.select", "node.selection" -> "选择节点"
+        "mode.apply" -> "切换模式"
+        "app-policy.update" -> "应用策略"
+        "config.apply" -> "保存配置"
+        "config.validate" -> "校验配置"
+        "module.boot" -> "开机流程"
+        "module.update" -> "模块更新"
+        else -> event
+    }
+    NativeBadge(
+        text = label,
+        backgroundColor = if (isDark) Color(0xFF37474F).copy(alpha = 0.3f) else Color(0xFFECEFF1),
+        textColor = if (isDark) Color(0xFFB0BEC5) else Color(0xFF546E7A)
+    )
+}
+
+@Composable
+fun NativeResultBadge(result: String) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val (label, backgroundColor, textColor) = when (result) {
+        "success", "recovered" -> if (isDark) {
+            Triple("成功", Color(0xFF1B5E20).copy(alpha = 0.3f), Color(0xFF81C784))
+        } else {
+            Triple("成功", Color(0xFFE8F5E9), Color(0xFF2E7D32))
+        }
+
+        "failed", "forced" -> if (isDark) {
+            Triple("失败", Color(0xFFB71C1C).copy(alpha = 0.3f), Color(0xFFE57373))
+        } else {
+            Triple("失败", Color(0xFFFFEBEE), Color(0xFFC62828))
+        }
+
+        "persisted", "fallback" -> if (isDark) {
+            Triple(
+                if (result == "persisted") "已保存" else "已回退",
+                Color(0xFFE65100).copy(alpha = 0.3f),
+                Color(0xFFFFB74D)
+            )
+        } else {
+            Triple(
+                if (result == "persisted") "已保存" else "已回退",
+                Color(0xFFFFF3E0),
+                Color(0xFFE65100)
+            )
+        }
+
+        "started", "already-running" -> if (isDark) {
+            Triple(
+                if (result == "started") "进行中" else "已运行",
+                Color(0xFF0D47A1).copy(alpha = 0.3f),
+                Color(0xFF64B5F6)
+            )
+        } else {
+            Triple(
+                if (result == "started") "进行中" else "已运行",
+                Color(0xFFE3F2FD),
+                Color(0xFF1976D2)
+            )
+        }
+
+        "stopped", "skipped" -> if (isDark) {
+            Triple(
+                if (result == "stopped") "已停止" else "已跳过",
+                Color(0xFF37474F).copy(alpha = 0.3f),
+                Color(0xFFB0BEC5)
+            )
+        } else {
+            Triple(
+                if (result == "stopped") "已停止" else "已跳过",
+                Color(0xFFF5F5F5),
+                Color(0xFF616161)
+            )
+        }
+
+        else -> if (isDark) {
+            Triple(result, Color(0xFF37474F).copy(alpha = 0.3f), Color(0xFFB0BEC5))
+        } else {
+            Triple(result, Color(0xFFF5F5F5), Color(0xFF616161))
+        }
+    }
+    NativeBadge(text = label, backgroundColor = backgroundColor, textColor = textColor)
+}
+
+@Composable
+private fun NativeBadge(text: String, backgroundColor: Color, textColor: Color) {
+    Box(
+        modifier = Modifier
+            .background(backgroundColor, RoundedCornerShape(4.dp))
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+    ) {
+        Text(
+            text = text,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            color = textColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun NativeErrorCodeBadge(errorCode: String) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    NativeBadge(
+        text = errorCode,
+        backgroundColor = if (isDark) Color(0xFF4A1414).copy(alpha = 0.45f) else Color(0xFFFFEBEE),
+        textColor = if (isDark) Color(0xFFEF9A9A) else Color(0xFFC62828)
+    )
 }
 
 @Composable

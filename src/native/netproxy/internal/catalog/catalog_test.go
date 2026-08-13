@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,6 +65,141 @@ func TestScanAndBuildRuntime(t *testing.T) {
 	if !strings.Contains(state, "selected_node_ref\tremote/订阅节点") {
 		t.Fatalf("unexpected state: %s", state)
 	}
+}
+
+func TestScanSummaryUsesMetadataWithoutParsingProvider(t *testing.T) {
+	root := t.TempDir()
+	writeGroup(t, root, "first", "同名分组", "local", "节点一")
+	writeGroup(t, root, "second", "同名分组", "subscription", "节点二")
+	updateNodeCount(t, filepath.Join(root, "first", "meta.json"), 7)
+	updateNodeCount(t, filepath.Join(root, "second", "meta.json"), 9)
+	if err := os.WriteFile(filepath.Join(root, "second", "provider.json"), []byte("invalid"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	groups, err := Scan(context.Background(), ScanOptions{Root: root, WithNodes: false})
+	if err != nil {
+		t.Fatalf("摘要扫描不应解析 Provider: %v", err)
+	}
+	if len(groups) != 2 || groups[0].Group.NodeCount != 7 || groups[1].Group.NodeCount != 9 {
+		t.Fatalf("摘要未使用 metadata 节点数: %#v", groups)
+	}
+	if groups[0].Group.RuntimeTag != "同名分组 [first]" || groups[1].Group.RuntimeTag != "同名分组 [second]" {
+		t.Fatalf("摘要扫描丢失名称消歧: %#v", groups)
+	}
+	if _, err := Scan(context.Background(), ScanOptions{Root: root, WithNodes: true}); err == nil {
+		t.Fatal("节点详情扫描应拒绝损坏的 Provider")
+	}
+}
+
+func TestRuntimeTagIgnoresEmptyDuplicateGroup(t *testing.T) {
+	root := t.TempDir()
+	writeGroup(t, root, "ready", "同名分组", "subscription", "可用节点")
+	writeGroup(t, root, "empty", "同名分组", "subscription", "待更新节点")
+	if err := os.WriteFile(filepath.Join(root, "empty", "provider.json"), []byte(`{"outbounds":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	updateNodeCount(t, filepath.Join(root, "empty", "meta.json"), 0)
+
+	groups, err := Scan(context.Background(), ScanOptions{Root: root, WithNodes: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, group := range groups {
+		if group.Group.RuntimeTag != "同名分组" {
+			t.Fatalf("empty duplicate changed summary RuntimeTag: %#v", groups)
+		}
+	}
+	runtimeTag, err := RuntimeTag(root, "ready")
+	if err != nil || runtimeTag != "同名分组" {
+		t.Fatalf("RuntimeTag = %q, err=%v", runtimeTag, err)
+	}
+
+	runtimeDir := t.TempDir()
+	providersPath := filepath.Join(runtimeDir, "providers.json")
+	result, err := BuildRuntime(context.Background(), RuntimeOptions{
+		Root: root, ProvidersOutput: providersPath,
+		OutboundsOutput: filepath.Join(runtimeDir, "outbounds.json"), ActiveGroup: "ready",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.GroupCount != 1 || result.ActiveGroupTag != runtimeTag {
+		t.Fatalf("runtime result and lookup disagree: result=%+v tag=%q", result, runtimeTag)
+	}
+	providers := readFile(t, providersPath)
+	if !strings.Contains(providers, `"tag": "同名分组"`) || strings.Contains(providers, `"tag": "同名分组 [ready]"`) {
+		t.Fatalf("runtime providers used a different tag: %s", providers)
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "empty", "provider.json"), []byte(`{"outbounds":[{"type":"socks","tag":"新节点","server":"example.com","server_port":1080}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	updateNodeCount(t, filepath.Join(root, "empty", "meta.json"), 1)
+	runtimeTag, err = RuntimeTag(root, "ready")
+	if err != nil || runtimeTag != "同名分组 [ready]" {
+		t.Fatalf("non-empty duplicate RuntimeTag = %q, err=%v", runtimeTag, err)
+	}
+	result, err = BuildRuntime(context.Background(), RuntimeOptions{
+		Root: root, ProvidersOutput: providersPath,
+		OutboundsOutput: filepath.Join(runtimeDir, "outbounds.json"), ActiveGroup: "ready",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.GroupCount != 2 || result.ActiveGroupTag != runtimeTag {
+		t.Fatalf("runtime did not adopt duplicate tags after the group gained nodes: result=%+v tag=%q", result, runtimeTag)
+	}
+}
+
+func BenchmarkScanSummary(b *testing.B) {
+	root := b.TempDir()
+	for groupIndex := 0; groupIndex < 40; groupIndex++ {
+		id := fmt.Sprintf("group-%02d", groupIndex)
+		directory := filepath.Join(root, id)
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			b.Fatal(err)
+		}
+		metadata, err := json.Marshal(map[string]any{
+			"id": id, "name": id, "type": "subscription", "revision": 1,
+			"node_count": 250, "update_interval": 86400, "update_via_proxy": "auto",
+		})
+		if err != nil {
+			b.Fatal(err)
+		}
+		nodes := make([]map[string]any, 250)
+		for nodeIndex := range nodes {
+			nodes[nodeIndex] = map[string]any{
+				"type": "socks", "tag": fmt.Sprintf("node-%03d", nodeIndex),
+				"server": "example.com", "server_port": 1080,
+			}
+		}
+		providerDocument, err := json.Marshal(map[string]any{"outbounds": nodes})
+		if err != nil {
+			b.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(directory, "meta.json"), metadata, 0o600); err != nil {
+			b.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(directory, "provider.json"), providerDocument, 0o600); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	b.Run("summary", func(b *testing.B) {
+		for range b.N {
+			if _, err := Scan(context.Background(), ScanOptions{Root: root, WithNodes: false}); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("with-nodes", func(b *testing.B) {
+		for range b.N {
+			if _, err := Scan(context.Background(), ScanOptions{Root: root, WithNodes: true}); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
 
 func TestBuildRuntimeFallbackAndEmpty(t *testing.T) {
@@ -128,7 +264,7 @@ func writeGroup(t *testing.T, root, id, name, groupType, tag string) {
 	}
 	metadata, err := json.Marshal(map[string]any{
 		"id": id, "name": name, "type": groupType, "revision": 1,
-		"update_interval": 86400, "update_via_proxy": "auto",
+		"node_count": 1, "update_interval": 86400, "update_via_proxy": "auto",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -163,6 +299,26 @@ func updateSchedule(t *testing.T, path string, enabled bool, epoch int64) {
 	}
 	metadata["auto_update"] = enabled
 	metadata["next_update_epoch"] = epoch
+	content, err = json.Marshal(metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func updateNodeCount(t *testing.T, path string, nodeCount int) {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metadata map[string]any
+	if err := json.Unmarshal(content, &metadata); err != nil {
+		t.Fatal(err)
+	}
+	metadata["node_count"] = nodeCount
 	content, err = json.Marshal(metadata)
 	if err != nil {
 		t.Fatal(err)

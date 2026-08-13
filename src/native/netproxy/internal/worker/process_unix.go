@@ -77,14 +77,6 @@ func terminateProcess(pid int) error {
 	return process.Signal(syscall.SIGTERM)
 }
 
-func wakeProcess(pid int) error {
-	process, err := os.FindProcess(pid)
-	if err != nil {
-		return err
-	}
-	return process.Signal(syscall.SIGUSR1)
-}
-
 func waitProcessStop(pid int, timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {

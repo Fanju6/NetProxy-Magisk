@@ -3,7 +3,12 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,7 +16,7 @@ import (
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
+	"google.golang.org/protobuf/encoding/protowire"
 )
 
 func writeCatalogFixture(t *testing.T, root string) {
@@ -21,7 +26,7 @@ func writeCatalogFixture(t *testing.T, root string) {
 		t.Fatal(err)
 	}
 	metadata := catalog.NewMetadata("default", "本地配置", "local", "", time.Now())
-	if err := subscription.SaveMetadataAtomic(filepath.Join(groupDir, "meta.json"), metadata); err != nil {
+	if err := catalog.SaveMetadataAtomic(filepath.Join(groupDir, "meta.json"), metadata); err != nil {
 		t.Fatal(err)
 	}
 	providerJSON := []byte(`{"outbounds":[{"type":"socks","tag":"NODE","server":"example.com","server_port":1080}]}`)
@@ -46,7 +51,7 @@ func TestReadStatusWithoutService(t *testing.T) {
 	}
 	if status.State != "stopped" || status.OutboundMode != "global" ||
 		status.ConfiguredOutboundMode != "global" || status.ActiveGroupID != "default" {
-		t.Fatalf("unexpected status: %#v", status)
+		t.Fatalf("停止服务时应回退到配置模式: %#v", status)
 	}
 	if status.PID != nil || status.WorkerState != "stopped" {
 		t.Fatalf("unexpected process state: %#v", status)
@@ -63,6 +68,155 @@ func TestReadStatusWithoutService(t *testing.T) {
 	}
 	if !bytes.Contains(encoded, []byte(`"worker_state"`)) || !bytes.Contains(encoded, []byte(`"worker_pid"`)) {
 		t.Fatalf("status 缺少后台 Worker 字段: %s", encoded)
+	}
+}
+
+func writeServiceAPIFrame(t *testing.T, writer io.Writer, payload []byte) {
+	t.Helper()
+	header := make([]byte, 5)
+	binary.BigEndian.PutUint32(header[1:], uint32(len(payload)))
+	if _, err := writer.Write(header); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Write(payload); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func serviceStatusFixture(t *testing.T, mode string, modeAvailable bool) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var payload []byte
+		switch request.URL.Path {
+		case "/daemon.StartedService/GetClashModeStatus":
+			if modeAvailable {
+				payload = protowire.AppendTag(payload, 2, protowire.BytesType)
+				payload = protowire.AppendBytes(payload, []byte(mode))
+			}
+		case "/daemon.StartedService/SubscribeStatus", "/daemon.StartedService/SubscribeGroups":
+		default:
+			http.NotFound(writer, request)
+			return
+		}
+		writeServiceAPIFrame(t, writer, payload)
+	}))
+}
+
+func withServiceProcess(t *testing.T, pid int) {
+	t.Helper()
+	original := serviceFindProcess
+	serviceFindProcess = func(string, int) int { return pid }
+	t.Cleanup(func() { serviceFindProcess = original })
+}
+
+func writeReadyServiceState(t *testing.T, path string, pid int) {
+	t.Helper()
+	content := []byte(`{"state":"ready","pid":` + fmt.Sprint(pid) + `,"started_at":1700000000,"ready_at":1700000005,"error":""}`)
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReadStatusUsesActualServiceAPIMode(t *testing.T) {
+	temp := t.TempDir()
+	moduleConfig := filepath.Join(temp, "module.conf")
+	stateFile := filepath.Join(temp, "service.json")
+	if err := os.WriteFile(moduleConfig, []byte("OUTBOUND_MODE=rule\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeReadyServiceState(t, stateFile, 123)
+	server := serviceStatusFixture(t, "Global", true)
+	defer server.Close()
+	withServiceProcess(t, 123)
+
+	status, err := ReadStatus(context.Background(), Options{
+		ModuleConfig: moduleConfig, StateFile: stateFile, ServiceAddress: server.URL,
+		RequestTimeout: time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.OutboundMode != "global" || status.ConfiguredOutboundMode != "rule" {
+		t.Fatalf("Service API 实际模式未正确映射: %#v", status)
+	}
+}
+
+func TestReadStatusServiceAPIFailureDoesNotUseConfiguredMode(t *testing.T) {
+	temp := t.TempDir()
+	moduleConfig := filepath.Join(temp, "module.conf")
+	stateFile := filepath.Join(temp, "service.json")
+	if err := os.WriteFile(moduleConfig, []byte("OUTBOUND_MODE=AllowAds\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeReadyServiceState(t, stateFile, 123)
+	withServiceProcess(t, 123)
+
+	status, err := ReadStatus(context.Background(), Options{
+		ModuleConfig: moduleConfig, StateFile: stateFile, ServiceAddress: "127.0.0.1:1",
+		RequestTimeout: 20 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.OutboundMode != unknownOutboundMode || status.ConfiguredOutboundMode != "AllowAds" {
+		t.Fatalf("Service API 不可用时错误回退到配置模式: %#v", status)
+	}
+}
+
+func TestReadStatusEmptyModeAndRecovery(t *testing.T) {
+	temp := t.TempDir()
+	moduleConfig := filepath.Join(temp, "module.conf")
+	stateFile := filepath.Join(temp, "service.json")
+	if err := os.WriteFile(moduleConfig, []byte("OUTBOUND_MODE=direct\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeReadyServiceState(t, stateFile, 123)
+	mode := ""
+	server := serviceStatusFixture(t, mode, true)
+	defer server.Close()
+	withServiceProcess(t, 123)
+
+	options := Options{ModuleConfig: moduleConfig, StateFile: stateFile, ServiceAddress: server.URL, RequestTimeout: time.Second}
+	status, err := ReadStatus(context.Background(), options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.OutboundMode != unknownOutboundMode || status.ConfiguredOutboundMode != "direct" {
+		t.Fatalf("空 Service API 模式未返回 unknown: %#v", status)
+	}
+
+	server.Close()
+	server = serviceStatusFixture(t, "Rule", true)
+	defer server.Close()
+	options.ServiceAddress = server.URL
+	status, err = ReadStatus(context.Background(), options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.OutboundMode != "rule" || status.ConfiguredOutboundMode != "direct" {
+		t.Fatalf("Service API 恢复后未返回实际模式: %#v", status)
+	}
+}
+
+func TestReadStatusOldSnapshotDoesNotClaimConfiguredMode(t *testing.T) {
+	temp := t.TempDir()
+	moduleConfig := filepath.Join(temp, "module.conf")
+	stateFile := filepath.Join(temp, "service.json")
+	if err := os.WriteFile(moduleConfig, []byte("OUTBOUND_MODE=global\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeReadyServiceState(t, stateFile, 123)
+	withServiceProcess(t, 0)
+
+	status, err := ReadStatus(context.Background(), Options{
+		ModuleConfig: moduleConfig, StateFile: stateFile, ServiceAddress: "127.0.0.1:1",
+		RequestTimeout: 20 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.State != "failed" || status.OutboundMode != unknownOutboundMode || status.ConfiguredOutboundMode != "global" {
+		t.Fatalf("旧服务快照错误声明了配置模式: %#v", status)
 	}
 }
 

@@ -5,6 +5,7 @@ import com.fanjv.netproxy.BuildConfig
 import com.fanjv.netproxy.core.command.NetProxyCtlClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
@@ -18,9 +19,19 @@ internal class LogRepository(
     private val reportsDir = File(context.applicationContext.cacheDir, "reports")
 
     suspend fun read(type: LogType, lines: Int = 800): List<LogItem> {
-        val content = client.execute("logs", "show", type.commandName, lines.toString())
-            .data.jsonObject["content"]?.jsonPrimitive?.content.orEmpty()
-        return LogParser.parse(content, type)
+        val data = client.execute("logs", "show", type.commandName, lines.toString()).data.jsonObject
+        return when (type) {
+            LogType.SERVICE -> {
+                val entries = data["entries"]?.jsonArray
+                    ?: error("Native 日志响应缺少 entries")
+                LogParser.parseNative(entries)
+            }
+
+            LogType.KERNEL -> {
+                val content = data["content"]?.jsonPrimitive?.content.orEmpty()
+                LogParser.parseKernel(content)
+            }
+        }
     }
 
     suspend fun clear(type: LogType) {

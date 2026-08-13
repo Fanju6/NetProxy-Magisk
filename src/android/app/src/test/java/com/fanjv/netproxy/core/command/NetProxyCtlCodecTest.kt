@@ -51,14 +51,23 @@ class NetProxyCtlCodecTest {
             codec.decode(
                 NetProxyCtlOutput(
                     successful = false,
-                    stdout = listOf("{\"schema\":1,\"ok\":false,\"code\":\"subscription.failed\",\"message\":\"更新失败\",\"data\":{}}"),
+                    stdout = listOf(
+                        """{"schema":1,"ok":false,"code":"subscription.runtime_sync_failed","message":"更新失败","data":{"persisted":true,"runtime_synced":false,"runtime_sync_state":"failed","runtime_sync_pending":true,"original_code":"subscription.download_failed","cause":"fixture failure"}}"""
+                    ),
                     stderr = listOf("details")
                 )
             )
         }
 
-        assertEquals("subscription.failed", error.resultCode)
+        assertEquals("subscription.runtime_sync_failed", error.resultCode)
         assertEquals("更新失败", error.message)
+        val data = error.data.jsonObject
+        assertEquals("true", data["persisted"]?.jsonPrimitive?.content)
+        assertEquals("false", data["runtime_synced"]?.jsonPrimitive?.content)
+        assertEquals("failed", data["runtime_sync_state"]?.jsonPrimitive?.content)
+        assertEquals("true", data["runtime_sync_pending"]?.jsonPrimitive?.content)
+        assertEquals("subscription.download_failed", data["original_code"]?.jsonPrimitive?.content)
+        assertEquals("fixture failure", data["cause"]?.jsonPrimitive?.content)
     }
 
     @Test
@@ -123,5 +132,27 @@ class NetProxyCtlCodecTest {
         )
 
         assertTrue(client.isAvailable())
+    }
+
+    @Test
+    fun `subscription mutations rely on the subscription download timeout`() = runBlocking {
+        val observed = mutableListOf<Long>()
+        val client = NetProxyCtlClient(
+            transport = NetProxyCtlTransport { _, timeoutMillis ->
+                observed += timeoutMillis
+                NetProxyCtlOutput(
+                    successful = true,
+                    stdout = listOf("{\"schema\":1,\"ok\":true,\"code\":\"ok\",\"message\":\"\",\"data\":{}}"),
+                    stderr = emptyList()
+                )
+            }
+        )
+
+        client.execute("sub", "edit", "fixture")
+        client.execute("sub", "update-all")
+        client.execute("sub", "list")
+        client.execute("service", "start")
+
+        assertEquals(listOf(0L, 0L, 30_000L, 120_000L), observed)
     }
 }

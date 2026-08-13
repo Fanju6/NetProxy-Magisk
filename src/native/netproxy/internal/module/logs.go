@@ -3,29 +3,29 @@ package module
 import (
 	"archive/tar"
 	"compress/gzip"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/logfile"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
-)
-
-var (
-	urlCredentialPattern = regexp.MustCompile(`(https?://)[^/@\s]+@`)
-	querySecretPattern   = regexp.MustCompile(`(?i)([?&](?:token|key|secret|password|auth|uuid|hwid)=)[^&\s]+`)
-	authorizationPattern = regexp.MustCompile(`(?i)((?:authorization|proxy-authorization)\s*:\s*(?:bearer|basic)\s+)[^\r\n\s,;]+`)
-	lineSecretPattern    = regexp.MustCompile(`(?i)((?:authorization|proxy-authorization|x-hwid|hwid|token|password|secret|private[_-]?key|custom[_-]?headers)\s*[:=]\s*)[^\r\n\s,;]+`)
 )
 
 type archiveFile struct {
 	source string
 	name   string
 	redact bool
+	tail   int64
+}
+
+// LogSnapshot 是 logs.show 对客户端返回的文本和结构化日志快照。
+type LogSnapshot struct {
+	Kind    string          `json:"kind"`
+	Content string          `json:"content"`
+	Entries []logfile.Entry `json:"entries"`
 }
 
 // LogFile 返回用户可见日志类型对应的文件。
@@ -37,27 +37,25 @@ func LogFile(options Options, kind string) (string, error) {
 	return filepath.Join(options.LogDir, name), nil
 }
 
-// ShowLog 返回末尾日志，并对订阅地址和凭据做脱敏。
-func ShowLog(options Options, kind string, lines int) (string, error) {
+// ReadLog 返回脱敏文本；Native 服务日志同时返回稳定字段条目。
+func ReadLog(options Options, kind string, lines int) (LogSnapshot, error) {
 	path, err := LogFile(options, kind)
 	if err != nil {
-		return "", err
+		return LogSnapshot{}, err
 	}
 	if lines <= 0 {
 		lines = 200
 	}
-	content, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return "", nil
-	}
+	content, err := logfile.TailLines(path, lines)
 	if err != nil {
-		return "", err
+		return LogSnapshot{}, err
 	}
-	items := strings.Split(strings.ReplaceAll(string(content), "\r\n", "\n"), "\n")
-	if len(items) > lines+1 {
-		items = items[len(items)-lines-1:]
+	redacted := logfile.RedactText(string(content))
+	snapshot := LogSnapshot{Kind: kind, Content: redacted, Entries: []logfile.Entry{}}
+	if kind == "service" {
+		snapshot.Entries = logfile.ParseEntries(redacted)
 	}
-	return redactText(strings.Join(items, "\n")), nil
+	return snapshot, nil
 }
 
 // ClearLog 清空指定日志。
@@ -103,7 +101,13 @@ func ExportLogs(options Options, destination string) error {
 	files := make([]archiveFile, 0)
 	for _, kind := range []string{"service", "core"} {
 		path, _ := LogFile(options, kind)
-		files = append(files, archiveFile{source: path, name: "logs/" + filepath.Base(path), redact: true})
+		if kind == "service" {
+			for index := logfile.BackupCount; index >= 1; index-- {
+				backup := fmt.Sprintf("%s.%d", path, index)
+				files = append(files, archiveFile{source: backup, name: "logs/" + filepath.Base(backup), redact: true, tail: logfile.MaxFileBytes})
+			}
+		}
+		files = append(files, archiveFile{source: path, name: "logs/" + filepath.Base(path), redact: true, tail: logfile.MaxFileBytes})
 	}
 	files = append(files,
 		archiveFile{source: options.ModuleConfig, name: "config/module.conf", redact: true},
@@ -132,7 +136,13 @@ func ExportLogs(options Options, destination string) error {
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].name < files[j].name })
 	for _, item := range files {
-		content, err := os.ReadFile(item.source)
+		var content []byte
+		var err error
+		if item.tail > 0 {
+			content, err = logfile.ReadSuffix(item.source, item.tail)
+		} else {
+			content, err = os.ReadFile(item.source)
+		}
 		if os.IsNotExist(err) {
 			continue
 		}
@@ -140,7 +150,7 @@ func ExportLogs(options Options, destination string) error {
 			return err
 		}
 		if item.redact {
-			content = []byte(redactText(string(content)))
+			content = []byte(logfile.RedactText(string(content)))
 		}
 		if err := writeTarFile(tarWriter, item.name, content); err != nil {
 			return err
@@ -207,40 +217,4 @@ func appendDirectoryFiles(files *[]archiveFile, root, archiveRoot string, redact
 		}
 		return nil
 	})
-}
-
-func redactText(value string) string {
-	var document any
-	if json.Unmarshal([]byte(value), &document) == nil {
-		switch document.(type) {
-		case map[string]any, []any:
-			redactJSON(document)
-			if encoded, err := json.MarshalIndent(document, "", "  "); err == nil {
-				return string(encoded) + "\n"
-			}
-		}
-	}
-	value = urlCredentialPattern.ReplaceAllString(value, `$1***@`)
-	value = querySecretPattern.ReplaceAllString(value, `${1}***`)
-	value = authorizationPattern.ReplaceAllString(value, `${1}***`)
-	value = lineSecretPattern.ReplaceAllString(value, `${1}***`)
-	return value
-}
-
-func redactJSON(value any) {
-	switch item := value.(type) {
-	case map[string]any:
-		for key, child := range item {
-			lower := strings.ToLower(key)
-			if lower == "url" || lower == "hwid" || lower == "user_agent" || lower == "custom_headers" || lower == "headers" || lower == "authorization" || lower == "proxy_authorization" || lower == "uuid" || lower == "password" || lower == "token" || lower == "secret" || lower == "private_key" || lower == "public_key" || lower == "short_id" {
-				item[key] = "***"
-				continue
-			}
-			redactJSON(child)
-		}
-	case []any:
-		for _, child := range item {
-			redactJSON(child)
-		}
-	}
 }

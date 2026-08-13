@@ -14,7 +14,7 @@ import (
 
 func runControl(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("缺少控制面操作: status|nodes|snapshot|selection|groups|mode|delay|close-all")
+		return errors.New("缺少控制面操作: nodes|snapshot|selection|delay")
 	}
 	action := args[0]
 	flags := newFlagSet("control " + action)
@@ -30,7 +30,6 @@ func runControl(ctx context.Context, args []string) error {
 	timeout := flags.Duration("timeout", 8*time.Second, "Service API 请求超时")
 	target := flags.String("target", "", "测速目标")
 	group := flags.String("group", "", "测速分组")
-	mode := flags.String("mode", "", "出站模式")
 	format := flags.String("format", "json", "输出格式")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
@@ -54,45 +53,19 @@ func runControl(ctx context.Context, args []string) error {
 	if strings.TrimSpace(*singBox) == "" {
 		*singBox = layout.SingBox()
 	}
+	if *format != "json" {
+		return fmt.Errorf("control %s 不支持输出格式 %q", action, *format)
+	}
 	options := service.Options{
 		CatalogRoot: *catalogRoot, ModuleConfig: *moduleConfig, StateFile: *stateFile,
 		ProgressDir: *progressDir, WorkerPIDFile: *workerPIDFile, SingBoxPath: *singBox,
 		ServiceAddress: *address, ServiceSecret: *secret, RequestTimeout: *timeout,
 	}
 	switch action {
-	case "status":
-		status, err := service.ReadStatus(ctx, options)
-		if err != nil {
-			return err
-		}
-		if *format == "text" {
-			fmt.Fprintf(os.Stdout, "服务状态: %s\n运行时间: %d 秒\n出站模式: %s\n活动分组: %s\n节点选择: %s\n后台 Worker: %s\n",
-				status.State, status.UptimeSeconds, status.OutboundMode, status.ActiveGroupName,
-				status.RuntimeSelected, status.WorkerState)
-			return nil
-		}
-		if *format != "json" {
-			return fmt.Errorf("control status 不支持输出格式 %q", *format)
-		}
-		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "service.status", Message: "服务状态", Data: status})
-		return nil
-	case "groups":
-		groups, err := service.ReadGroups(ctx, options)
-		if err != nil {
-			return err
-		}
-		if *format != "json" {
-			return fmt.Errorf("control groups 不支持输出格式 %q", *format)
-		}
-		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "service.groups", Message: "节点组状态", Data: groups})
-		return nil
 	case "nodes":
 		groups, err := service.ReadNodes(ctx, options, *group)
 		if err != nil {
 			return err
-		}
-		if *format != "json" {
-			return fmt.Errorf("control nodes 不支持输出格式 %q", *format)
 		}
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "node.list", Message: "节点列表", Data: groups})
 		return nil
@@ -101,9 +74,6 @@ func runControl(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		if *format != "json" {
-			return fmt.Errorf("control snapshot 不支持输出格式 %q", *format)
-		}
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "node.snapshot", Message: "节点快照", Data: snapshot})
 		return nil
 	case "selection":
@@ -111,61 +81,16 @@ func runControl(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		if *format != "json" {
-			return fmt.Errorf("control selection 不支持输出格式 %q", *format)
-		}
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "node.current", Message: "当前节点选择", Data: selection})
-		return nil
-	case "mode":
-		state, err := service.ReadMode(ctx, options)
-		if err != nil {
-			return err
-		}
-		if *format == "text" {
-			fmt.Fprintln(os.Stdout, state.Mode)
-			return nil
-		}
-		if *format != "json" {
-			return fmt.Errorf("control mode 不支持输出格式 %q", *format)
-		}
-		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "mode.current", Message: "当前出站模式", Data: state})
-		return nil
-	case "runtime-mode":
-		runtimeMode, err := service.ReadRuntimeMode(ctx, options)
-		if err != nil {
-			return err
-		}
-		if *format == "text" {
-			fmt.Fprintln(os.Stdout, runtimeMode)
-			return nil
-		}
-		if *format != "json" {
-			return fmt.Errorf("control runtime-mode 不支持输出格式 %q", *format)
-		}
-		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "mode.runtime", Message: "运行时出站模式", Data: map[string]string{"mode": runtimeMode}})
-		return nil
-	case "set-mode":
-		if *mode == "" {
-			return errors.New("control set-mode 需要 --mode")
-		}
-		if err := service.SetMode(ctx, options, *mode); err != nil {
-			return err
-		}
-		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "mode.changed", Message: "运行时出站模式已切换", Data: map[string]string{"mode": *mode}})
-		return nil
-	case "close-all":
-		if err := service.CloseAllConnections(ctx, options); err != nil {
-			return err
-		}
-		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "connection.closed_all", Message: "已关闭全部连接", Data: map[string]bool{"closed": true}})
 		return nil
 	case "delay":
 		delay, err := service.Delay(ctx, options, *target, *group)
 		if err != nil {
+			var structured *service.Error
+			if errors.As(err, &structured) {
+				return &resultError{Code: structured.Code, Message: structured.Message, Data: structured.Data}
+			}
 			return err
-		}
-		if *format != "json" {
-			return fmt.Errorf("control delay 不支持输出格式 %q", *format)
 		}
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "node.delay", Message: "节点测速完成", Data: delay})
 		return nil

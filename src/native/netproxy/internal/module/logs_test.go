@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/logfile"
 )
 
 func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
@@ -27,13 +29,13 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(logDir, "service.log"), []byte("Authorization: Bearer secret-bearer\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(logDir, "service.log"), []byte("Authorization: Bearer secret-bearer\npayload={\"uuid\":\"secret-log-uuid\",\"auth_str\":\"secret-log-auth\"}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(moduleConfig, []byte("SUB_URL=https://example.test/sub?token=secret-token\n"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConfig, []byte("SUB_URL=https://example.test/sub?token=secret-token\nWIFI_SSID_LIST=\"secret-office,secret-home\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(ebpfConfig, []byte("HWID=secret-hwid\n"), 0o600); err != nil {
+	if err := os.WriteFile(ebpfConfig, []byte("HWID=secret-hwid\nPROXY_APPS_LIST=\"secret.app.one,secret.app.two\"\nBYPASS_APPS_LIST=\"secret.app.three\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(runtimeDir, "ebpf.json"), []byte(`{"type":"ebpf","tag":"runtime"}`), 0o600); err != nil {
@@ -50,6 +52,9 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(catalogRoot, "meta.json"), []byte(`{"url":"https://example.test/sub?token=secret-token","hwid":"secret-hwid","custom_headers":{"Authorization":"Bearer secret-bearer"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(catalogRoot, "provider.json"), []byte(`{"outbounds":[{"type":"hysteria","tag":"hy","auth_str":"secret-hysteria-auth"}],"endpoints":[{"type":"wireguard","tag":"wg","private_key":"secret-private-key","pre_shared_key":"secret-wireguard-psk"}]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -126,7 +131,12 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 				}
 			}
 		}
-		for _, secret := range []string{"secret-bearer", "secret-token", "secret-hwid", "secret-config"} {
+		for _, secret := range []string{
+			"secret-bearer", "secret-token", "secret-hwid", "secret-config",
+			"secret-log-uuid", "secret-log-auth", "secret-hysteria-auth", "secret-private-key",
+			"secret-wireguard-psk", "secret-office", "secret-home", "secret.app.one",
+			"secret.app.two", "secret.app.three",
+		} {
 			if strings.Contains(string(content), secret) {
 				t.Fatalf("诊断包泄露敏感值 %q，文件 %s，内容 %s", secret, header.Name, content)
 			}
@@ -144,7 +154,7 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 }
 
 func TestRedactTextRedactsTopLevelJSONArray(t *testing.T) {
-	content := redactText(`[{
+	content := logfile.RedactText(`[{
   "url": "https://example.test/sub?token=secret-token",
   "nested": {"password": "secret-password"}
 }, {"authorization": "Bearer secret-bearer"}]`)
@@ -155,5 +165,78 @@ func TestRedactTextRedactsTopLevelJSONArray(t *testing.T) {
 	}
 	if !strings.Contains(content, "***") {
 		t.Fatalf("redacted JSON array did not contain a replacement: %s", content)
+	}
+}
+
+func TestReadLogRedactsURLsForAllLogKinds(t *testing.T) {
+	root := t.TempDir()
+	logDir := filepath.Join(root, "logs")
+	if err := os.MkdirAll(logDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"service", "core"} {
+		path, err := LogFile(Options{LogDir: logDir}, kind)
+		if err != nil {
+			t.Fatal(err)
+		}
+		content := "retry HTTP://example.test/api/subscription?id=123\n" +
+			"update https://user:password@example.test/sub?token=secret-token\n" +
+			`payload={"uuid":"secret-uuid","auth_str":"secret-auth","pre_shared_key":"secret-psk"}` + "\n"
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		snapshot, err := ReadLog(Options{LogDir: logDir}, kind, 20)
+		if err != nil {
+			t.Fatal(err)
+		}
+		shown := snapshot.Content
+		for _, secret := range []string{"example.test", "password", "secret-token", "secret-uuid", "secret-auth", "secret-psk"} {
+			if strings.Contains(shown, secret) {
+				t.Fatalf("%s 日志泄露 %q: %s", kind, secret, shown)
+			}
+		}
+		if strings.Count(shown, "[订阅链接已隐藏]") != 2 {
+			t.Fatalf("%s 日志 URL 脱敏结果异常: %s", kind, shown)
+		}
+	}
+}
+
+func TestReadLogReturnsStructuredNativeEntriesOnly(t *testing.T) {
+	logDir := t.TempDir()
+	content := strings.Join([]string{
+		"[2026-08-13 12:00:00] [INFO] [service] [service.start] [success] [-] 服务启动完成",
+		"not-a-native-event",
+	}, "\n") + "\n"
+	if err := os.WriteFile(filepath.Join(logDir, "service.log"), []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := ReadLog(Options{LogDir: logDir}, "service", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Entries) != 1 {
+		t.Fatalf("结构化日志未忽略非契约行: %+v", snapshot.Entries)
+	}
+	entry := snapshot.Entries[0]
+	if entry.Component != "service" || entry.Event != "service.start" || entry.Result != "success" || entry.ErrorCode != "" {
+		t.Fatalf("结构化日志字段异常: %+v", entry)
+	}
+}
+
+func TestReadLogKeepsCoreOutsideNativeEntryContract(t *testing.T) {
+	logDir := t.TempDir()
+	content := "[2026-08-13 12:00:00] [INFO] [service] [service.start] [success] [-] 服务启动完成\n"
+	if err := os.WriteFile(filepath.Join(logDir, "sing-box.log"), []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := ReadLog(Options{LogDir: logDir}, "core", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Entries) != 0 {
+		t.Fatalf("内核日志不应进入 Native 结构化契约: %+v", snapshot.Entries)
+	}
+	if snapshot.Content != content {
+		t.Fatalf("内核日志文本异常: %q", snapshot.Content)
 	}
 }

@@ -76,6 +76,7 @@ test_hot_commit_preserves_latest_state() {
   assert_file_contains "$LIVE/config/ebpf/ebpf.conf" 'EBPF_DNS_MODE=hijack'
   assert_file_contains "$LIVE/data/catalog/default/provider.json" 'live-provider'
   [ ! -e "$LIVE/data/catalog/staging/download.tmp" ]
+  grep -Eq '^\[[^]]+\] \[INFO\] \[module\] \[module\.update\] \[success\] \[-\] 后台热更新已完成' "$LIVE/logs/service.log"
 }
 
 test_invalid_stage_keeps_kernel_su_fallback() {

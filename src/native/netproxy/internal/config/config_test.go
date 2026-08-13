@@ -2,9 +2,28 @@ package config
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 )
+
+func TestConfigLockHelper(t *testing.T) {
+	if os.Getenv("NETPROXY_CONFIG_LOCK_HELPER") != "1" {
+		return
+	}
+	lock, err := acquireLock(os.Getenv("NETPROXY_CONFIG_LOCK_PATH"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+	if err := os.WriteFile(os.Getenv("NETPROXY_CONFIG_LOCK_READY"), []byte("ready\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		time.Sleep(time.Hour)
+	}
+}
 
 func TestReadStrictRejectsShellLikeInputAndDuplicateKeys(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "module.conf")
@@ -73,5 +92,72 @@ func TestUpdateModuleKeepsOriginalWhenCandidateIsInvalid(t *testing.T) {
 	}
 	if string(content) != original {
 		t.Fatalf("invalid update changed original file: %q", content)
+	}
+}
+
+func TestUpdateModuleIgnoresLegacyStaleLockDirectory(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "module.conf")
+	if err := os.WriteFile(path, []byte("OUTBOUND_MODE=rule\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path+".lock", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := UpdateModule(path, map[string]string{"OUTBOUND_MODE": "global"}); err != nil {
+		t.Fatalf("旧目录锁仍阻塞配置写入: %v", err)
+	}
+	config, err := LoadModule(path)
+	if err != nil || config.OutboundMode != "global" {
+		t.Fatalf("配置未更新: config=%+v err=%v", config, err)
+	}
+}
+
+func TestConfigLockRecoversAfterHolderExit(t *testing.T) {
+	root := t.TempDir()
+	lockPath := filepath.Join(root, "module.conf.lock.flock")
+	ready := filepath.Join(root, "ready")
+	command := exec.Command(os.Args[0], "-test.run=^TestConfigLockHelper$")
+	command.Env = append(os.Environ(),
+		"NETPROXY_CONFIG_LOCK_HELPER=1",
+		"NETPROXY_CONFIG_LOCK_PATH="+lockPath,
+		"NETPROXY_CONFIG_LOCK_READY="+ready,
+	)
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	waited := false
+	t.Cleanup(func() {
+		if command.Process != nil {
+			_ = command.Process.Kill()
+		}
+		if !waited {
+			_ = command.Wait()
+		}
+	})
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(ready); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("等待配置锁持有进程超时")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err := command.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	if err := command.Wait(); err == nil {
+		t.Fatal("被终止的配置锁持有进程意外成功退出")
+	}
+	waited = true
+
+	lock, err := acquireLock(lockPath)
+	if err != nil {
+		t.Fatalf("持锁进程退出后配置锁未恢复: %v", err)
+	}
+	if err := lock.Release(); err != nil {
+		t.Fatal(err)
 	}
 }

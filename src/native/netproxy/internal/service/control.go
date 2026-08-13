@@ -18,6 +18,10 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/worker"
 )
 
+const unknownOutboundMode = "unknown"
+
+var serviceFindProcess = FindProcess
+
 // Options 描述控制面访问所需的模块路径和 Service API 参数。
 type Options struct {
 	CatalogRoot    string
@@ -65,6 +69,17 @@ type DelayResult struct {
 	Groups []serviceapi.Group `json:"groups"`
 }
 
+// Error 是控制操作可以直接返回给 netproxy-native 的结构化错误。
+type Error struct {
+	Code    string
+	Message string
+	Data    any
+}
+
+func (e *Error) Error() string {
+	return e.Message
+}
+
 // Selection 描述持久化选择与运行时实际选择。
 type Selection struct {
 	ActiveGroupID         string `json:"active_group_id"`
@@ -108,7 +123,7 @@ func ReadStatus(ctx context.Context, options Options) (Status, error) {
 		StartedAt:              state.StartedAt,
 		ReadyAt:                state.ReadyAt,
 		Error:                  state.Error,
-		OutboundMode:           readConfig(options.ModuleConfig, "OUTBOUND_MODE", "rule"),
+		OutboundMode:           unknownOutboundMode,
 		ConfiguredOutboundMode: readConfig(options.ModuleConfig, "OUTBOUND_MODE", "rule"),
 		SelectorMode:           readConfig(options.ModuleConfig, "SELECTOR_MODE", "urltest"),
 		ActiveGroupID:          readConfig(options.ModuleConfig, "ACTIVE_GROUP_ID", ""),
@@ -117,16 +132,23 @@ func ReadStatus(ctx context.Context, options Options) (Status, error) {
 		WorkerState:            "stopped",
 	}
 
-	_, active := readActiveGroup(ctx, options)
+	active, activeErr := readActiveGroup(ctx, options)
 	if active != nil {
 		status.ActiveGroupName = active.Group.Name
 		status.ActiveGroupNodeCount = active.Group.NodeCount
+	}
+	if activeErr != nil {
+		if status.Error == "" {
+			status.Error = fmt.Sprintf("Catalog 活动分组状态不可用: %v", activeErr)
+		} else {
+			status.Error += "; Catalog 活动分组状态不可用: " + activeErr.Error()
+		}
 	}
 	if status.ActiveGroupName == "" {
 		status.ActiveGroupName = status.ActiveGroupID
 	}
 
-	pid := FindProcess(options.SingBoxPath, state.PID)
+	pid := serviceFindProcess(options.SingBoxPath, state.PID)
 	if pid <= 0 {
 		status.PID = nil
 		if state.State == "preparing" || state.State == "starting" || state.State == "ready" || state.State == "stopping" {
@@ -160,6 +182,9 @@ func ReadStatus(ctx context.Context, options Options) (Status, error) {
 
 	if status.State == "ready" {
 		mergeRuntimeStatus(ctx, options, &status, active)
+	} else if status.State == "stopped" {
+		// 服务未运行时没有核心实时模式，展示持久化配置作为下一次启动模式。
+		status.OutboundMode = status.ConfiguredOutboundMode
 	}
 	return status, nil
 }
@@ -273,7 +298,7 @@ func CloseAllConnections(ctx context.Context, options Options) error {
 	return client.CloseAllConnections(requestContext)
 }
 
-// Delay 发起测速并返回最新的节点组状态。
+// Delay 通过 Service API 发起异步测速，并返回当前可用的延迟快照。
 func Delay(ctx context.Context, options Options, target, group string) (DelayResult, error) {
 	options = normalizeOptions(options)
 	resolved, err := resolveDelayTarget(ctx, options, target, group)
@@ -282,24 +307,76 @@ func Delay(ctx context.Context, options Options, target, group string) (DelayRes
 	}
 	client, requestContext, cancel, err := newClient(ctx, options)
 	if err != nil {
-		return DelayResult{}, err
+		return DelayResult{}, delayAPIError(resolved, err)
 	}
 	defer cancel()
 	defer client.Close()
+
 	if err := client.URLTest(requestContext, resolved); err != nil {
-		return DelayResult{}, fmt.Errorf("节点测速请求失败: %w", err)
+		return DelayResult{}, mapDelayRequestError(resolved, err)
 	}
-	// URLTest 是异步请求，给 Service API 一个很短的窗口写入最新延迟。
+
+	// URLTest 在核心中异步执行。保留旧的短暂观察窗口，读取缓存结果不会把尚未完成的批次误报为本轮超时。
 	select {
 	case <-ctx.Done():
 		return DelayResult{}, ctx.Err()
 	case <-time.After(300 * time.Millisecond):
 	}
-	groups, err := client.Groups(requestContext)
-	if err != nil {
-		return DelayResult{}, fmt.Errorf("读取测速结果失败: %w", err)
+
+	if strings.HasPrefix(resolved, "Auto/") || strings.HasPrefix(resolved, "Select/") {
+		outbounds, err := client.Outbounds(requestContext)
+		if err != nil {
+			return DelayResult{}, mapDelayRequestError(resolved, err)
+		}
+		groupType := "urltest"
+		if strings.HasPrefix(resolved, "Select/") {
+			groupType = "selector"
+		}
+		runtimeTag := strings.TrimPrefix(strings.TrimPrefix(resolved, "Auto/"), "Select/")
+		prefix := runtimeTag + "/"
+		items := make([]serviceapi.GroupItem, 0)
+		groupFound := false
+		for _, item := range outbounds {
+			switch {
+			case item.Tag == resolved:
+				groupFound = true
+				if item.Type != "" {
+					groupType = item.Type
+				}
+			case strings.HasPrefix(item.Tag, prefix):
+				items = append(items, item)
+			}
+		}
+		if !groupFound || len(items) == 0 {
+			return DelayResult{}, delayTargetError(resolved)
+		}
+		return DelayResult{Target: resolved, Groups: []serviceapi.Group{{
+			Tag: resolved, Type: groupType, Selectable: groupType == "selector", Items: items,
+		}}}, nil
 	}
-	return DelayResult{Target: resolved, Groups: groups}, nil
+
+	outbounds, err := client.Outbounds(requestContext)
+	if err != nil {
+		return DelayResult{}, mapDelayRequestError(resolved, err)
+	}
+	runtimeGroup, _, found := strings.Cut(resolved, "/")
+	if !found {
+		return DelayResult{}, delayTargetError(resolved)
+	}
+	items := make([]serviceapi.GroupItem, 0, 1)
+	for _, item := range outbounds {
+		if item.Tag == resolved {
+			items = append(items, item)
+			break
+		}
+	}
+	if len(items) == 0 {
+		return DelayResult{}, delayTargetError(resolved)
+	}
+	return DelayResult{
+		Target: resolved,
+		Groups: []serviceapi.Group{{Tag: "Auto/" + runtimeGroup, Items: items}},
+	}, nil
 }
 
 func normalizeOptions(options Options) Options {
@@ -320,6 +397,43 @@ func normalizeOptions(options Options) Options {
 		options.WorkerPIDFile = layout.WorkerPID()
 	}
 	return options
+}
+
+func delayAPIError(target string, cause error) error {
+	return &Error{
+		Code:    "node.delay_api_failed",
+		Message: fmt.Sprintf("节点测速 Service API 失败: %v", cause),
+		Data: map[string]any{
+			"target": target,
+			"cause":  cause.Error(),
+		},
+	}
+}
+
+func delayTimeoutError(target string, cause error) error {
+	return &Error{
+		Code:    "node.delay_timeout",
+		Message: "节点测速请求超时",
+		Data: map[string]any{
+			"target": target,
+			"cause":  cause.Error(),
+		},
+	}
+}
+
+func delayTargetError(target string) error {
+	return &Error{
+		Code:    "node.delay_target_missing",
+		Message: fmt.Sprintf("未找到测速目标 %s", target),
+		Data:    map[string]any{"target": target},
+	}
+}
+
+func mapDelayRequestError(target string, cause error) error {
+	if errors.Is(cause, context.DeadlineExceeded) || errors.Is(cause, context.Canceled) {
+		return delayTimeoutError(target, cause)
+	}
+	return delayAPIError(target, cause)
 }
 
 func newClient(ctx context.Context, options Options) (*serviceapi.Client, context.Context, context.CancelFunc, error) {
@@ -505,27 +619,23 @@ func serviceModeToModuleMode(value string) (string, error) {
 	}
 }
 
-func readActiveGroup(ctx context.Context, options Options) ([]catalog.GroupSnapshot, *catalog.GroupSnapshot) {
+func readActiveGroup(ctx context.Context, options Options) (*catalog.GroupSnapshot, error) {
 	if options.CatalogRoot == "" {
 		return nil, nil
 	}
-	groups, err := catalog.Scan(ctx, catalog.ScanOptions{
-		Root: options.CatalogRoot, ActiveGroup: readConfig(options.ModuleConfig, "ACTIVE_GROUP_ID", ""),
-		ProgressDir: options.ProgressDir, WithNodes: true,
-	})
-	if err != nil {
-		return nil, nil
-	}
 	activeID := readConfig(options.ModuleConfig, "ACTIVE_GROUP_ID", "")
-	for index := range groups {
-		if groups[index].Group.ID == activeID {
-			return groups, &groups[index]
+	summary, err := catalog.ReadGroupSummary(ctx, options.CatalogRoot, activeID, options.ProgressDir)
+	if err != nil {
+		if summary.ID == "" {
+			return nil, err
 		}
+		return &catalog.GroupSnapshot{Group: summary}, err
 	}
-	return groups, nil
+	return &catalog.GroupSnapshot{Group: summary}, nil
 }
 
 func mergeRuntimeStatus(ctx context.Context, options Options, status *Status, active *catalog.GroupSnapshot) {
+	status.OutboundMode = unknownOutboundMode
 	client, requestContext, cancel, err := newClient(ctx, options)
 	if err != nil {
 		return
@@ -594,11 +704,11 @@ func resolveDelayTarget(ctx context.Context, options Options, target, group stri
 	if target == "all" {
 		target = "auto"
 	}
-	if target == "auto" {
+	if target == "auto" || target == "select" {
 		if group == "" {
 			group = activeID
 		}
-		resolvedGroup, err := catalog.ResolveGroup(options.CatalogRoot, group)
+		resolvedGroup, err := resolveDelayGroup(ctx, options, group)
 		if err != nil {
 			return "", err
 		}
@@ -606,9 +716,45 @@ func resolveDelayTarget(ctx context.Context, options Options, target, group stri
 		if err != nil {
 			return "", err
 		}
+		if target == "select" {
+			return "Select/" + runtimeTag, nil
+		}
 		return "Auto/" + runtimeTag, nil
 	}
+	if prefix, groupRef, found := strings.Cut(target, "/"); found && (prefix == "Auto" || prefix == "Select") {
+		if groupRef == "" {
+			return "", errors.New("测速分组引用格式应为 Auto/<group> 或 Select/<group>")
+		}
+		resolvedGroup, err := resolveDelayGroup(ctx, options, groupRef)
+		if err != nil {
+			return "", err
+		}
+		runtimeTag, err := catalog.RuntimeTag(options.CatalogRoot, resolvedGroup)
+		if err != nil {
+			return "", err
+		}
+		return prefix + "/" + runtimeTag, nil
+	}
 	return runtimeNodeRef(ctx, options.CatalogRoot, target)
+}
+
+func resolveDelayGroup(ctx context.Context, options Options, query string) (string, error) {
+	resolved, err := catalog.ResolveGroup(options.CatalogRoot, query)
+	if err == nil {
+		return resolved, nil
+	}
+	// 重名分组的运行时标签带有稳定 ID 后缀，ResolveGroup 只接受 ID 或显示名称，
+	// 因此这里补充按已生成的 RuntimeTag 查找，确保 Auto/<group> 与实际标签一致。
+	groups, scanErr := catalog.Scan(ctx, catalog.ScanOptions{Root: options.CatalogRoot})
+	if scanErr != nil {
+		return "", err
+	}
+	for _, group := range groups {
+		if group.Group.RuntimeTag == query {
+			return group.Group.ID, nil
+		}
+	}
+	return "", err
 }
 
 func runtimeNodeRef(ctx context.Context, root, reference string) (string, error) {

@@ -286,9 +286,9 @@ internal class CatalogNodesViewModel(
                         .toMap()
                         .toMutableMap()
                     val nodeTargets = targets.filterNot { it.startsWith("Auto/") }
-                    if (nodeTargets.size == 1) {
-                        measured["Auto/$persistentGroupId"]?.let { autoDelay ->
-                            measured.putIfAbsent(nodeTargets.single(), autoDelay)
+                    targets.firstOrNull { it.startsWith("Auto/") }?.let { autoTarget ->
+                        groupAutoDelay(measured, nodeTargets)?.let { delay ->
+                            measured[autoTarget] = delay
                         }
                     }
                     _state.update { current ->
@@ -368,3 +368,6 @@ internal class CatalogNodesViewModel(
         const val DEFAULT_GROUP_ID = "default"
     }
 }
+
+internal fun groupAutoDelay(measured: Map<String, String>, nodeTargets: List<String>): String? =
+    nodeTargets.mapNotNull { measured[it]?.toIntOrNull() }.minOrNull()?.toString()

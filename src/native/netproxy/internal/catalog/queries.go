@@ -17,9 +17,11 @@ func ResolveGroup(root, query string) (string, error) {
 	if strings.TrimSpace(root) == "" || strings.TrimSpace(query) == "" {
 		return "", errors.New("Catalog 根目录和分组查询不能为空")
 	}
-	if err := recoverTransactions(root); err != nil {
+	release, err := acquireCatalogRootAndRecover(root)
+	if err != nil {
 		return "", err
 	}
+	defer release()
 	if isValidGroupID(query) {
 		info, err := os.Stat(filepath.Join(root, query))
 		if err == nil && info.IsDir() {
@@ -60,6 +62,11 @@ func ResolveGroup(root, query string) (string, error) {
 
 // GroupHasNodes 判断分组是否包含节点。
 func GroupHasNodes(ctx context.Context, root, groupID string) (bool, error) {
+	release, err := acquireCatalogRootAndRecover(root)
+	if err != nil {
+		return false, err
+	}
+	defer release()
 	document, err := loadGroupProvider(ctx, root, groupID)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -72,6 +79,11 @@ func GroupHasNodes(ctx context.Context, root, groupID string) (bool, error) {
 
 // GroupFirstTag 返回分组按标签排序后的第一个节点标签。
 func GroupFirstTag(ctx context.Context, root, groupID string) (string, error) {
+	release, err := acquireCatalogRootAndRecover(root)
+	if err != nil {
+		return "", err
+	}
+	defer release()
 	document, err := loadGroupProvider(ctx, root, groupID)
 	if err != nil {
 		return "", err
@@ -85,6 +97,11 @@ func GroupFirstTag(ctx context.Context, root, groupID string) (string, error) {
 
 // GroupContainsTag 判断分组是否包含指定节点标签。
 func GroupContainsTag(ctx context.Context, root, groupID, tag string) (bool, error) {
+	release, err := acquireCatalogRootAndRecover(root)
+	if err != nil {
+		return false, err
+	}
+	defer release()
 	document, err := loadGroupProvider(ctx, root, groupID)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -97,6 +114,11 @@ func GroupContainsTag(ctx context.Context, root, groupID, tag string) (bool, err
 
 // GroupNode 返回分组中指定节点的标准 Provider JSON。
 func GroupNode(ctx context.Context, root, groupID, tag string) (provider.Document, error) {
+	release, err := acquireCatalogRootAndRecover(root)
+	if err != nil {
+		return provider.Document{}, err
+	}
+	defer release()
 	document, err := loadGroupProvider(ctx, root, groupID)
 	if err != nil {
 		return provider.Document{}, err
@@ -110,6 +132,11 @@ func GroupNode(ctx context.Context, root, groupID, tag string) (provider.Documen
 
 // ExportGroupNode 将 Catalog 节点导出为分享链接。
 func ExportGroupNode(ctx context.Context, root, groupID, tag string) (sharelink.Result, error) {
+	release, err := acquireCatalogRootAndRecover(root)
+	if err != nil {
+		return sharelink.Result{}, err
+	}
+	defer release()
 	document, err := loadGroupProvider(ctx, root, groupID)
 	if err != nil {
 		return sharelink.Result{}, err
@@ -122,10 +149,12 @@ func PrivateMetadata(root, groupID string) (Metadata, error) {
 	if !isValidGroupID(groupID) {
 		return Metadata{}, fmt.Errorf("非法分组 ID: %s", groupID)
 	}
-	if err := recoverTransactions(root); err != nil {
+	release, err := acquireCatalogRootAndRecover(root)
+	if err != nil {
 		return Metadata{}, err
 	}
-	return LoadMetadata(filepath.Join(root, groupID, "meta.json"), groupID)
+	defer release()
+	return LoadMetadataLocked(filepath.Join(root, groupID, "meta.json"), groupID)
 }
 
 // GroupType 返回分组类型。
@@ -163,12 +192,11 @@ func DeleteGroup(root, groupID string) error {
 	if !isValidGroupID(groupID) || groupID == "default" {
 		return fmt.Errorf("不允许删除分组: %s", groupID)
 	}
-	release := lockGroup(groupID)
-	release.Lock()
-	defer release.Unlock()
-	if err := recoverTransactions(root); err != nil {
+	release, err := acquireCatalogMutation(root, groupID)
+	if err != nil {
 		return err
 	}
+	defer release()
 	groupDir := filepath.Join(root, groupID)
 	if _, err := os.Stat(groupDir); err != nil {
 		return err
@@ -179,9 +207,6 @@ func DeleteGroup(root, groupID string) error {
 func loadGroupProvider(ctx context.Context, root, groupID string) (provider.Document, error) {
 	if strings.TrimSpace(root) == "" || !isValidGroupID(groupID) {
 		return provider.Document{}, errors.New("Catalog 分组参数无效")
-	}
-	if err := recoverTransactions(root); err != nil {
-		return provider.Document{}, err
 	}
 	return provider.LoadAllowEmpty(ctx, filepath.Join(root, groupID, "provider.json"))
 }

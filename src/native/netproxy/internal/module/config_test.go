@@ -7,7 +7,7 @@ import (
 )
 
 func TestListConfigsUsesReadableRuntimeID(t *testing.T) {
-	options := NewOptions(t.TempDir())
+	options := newTestOptions(t.TempDir())
 	if err := os.MkdirAll(options.RuntimeDir, 0o700); err != nil {
 		t.Fatal(err)
 	}

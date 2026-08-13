@@ -8,10 +8,13 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/logfile"
 )
+
+const workerStartTimeout = 2 * time.Second
 
 // RunProcess 安装系统信号并运行 Worker。
 func RunProcess(ctx context.Context, options Options, logger *log.Logger) error {
@@ -25,8 +28,11 @@ func Start(ctx context.Context, options Options, executable string) (Status, err
 	if err := validateOptions(options); err != nil {
 		return Status{}, err
 	}
-	if status, err := ReadStatus(options); err == nil && status.State == "running" {
-		return status, nil
+	if status, err := ReadStatus(options); err == nil {
+		if status.State == "running" {
+			return status, nil
+		}
+		_ = os.Remove(options.PIDFile)
 	}
 	nearest, err := NextUpdate(options.Root, options.Now())
 	if err != nil {
@@ -53,7 +59,34 @@ func Start(ctx context.Context, options Options, executable string) (Status, err
 	if err := command.Start(); err != nil {
 		return Status{}, err
 	}
-	return Status{State: "running", PID: command.Process.Pid, Nearest: nearest}, nil
+	pid := command.Process.Pid
+	if err := waitForWorkerPID(ctx, options.PIDFile, pid, workerStartTimeout); err != nil {
+		_ = terminateProcess(pid)
+		return Status{}, err
+	}
+	return Status{State: "running", PID: pid, Nearest: nearest}, nil
+}
+
+func waitForWorkerPID(ctx context.Context, path string, pid int, timeout time.Duration) error {
+	if pid <= 0 {
+		return errors.New("Worker 启动失败：进程 PID 无效")
+	}
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if readPID(path) == pid {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("Worker 启动被取消: %w", ctx.Err())
+		case <-deadline.C:
+			return errors.New("Worker 启动失败：PID 状态未成功写入")
+		case <-ticker.C:
+		}
+	}
 }
 
 // Stop 请求 Worker 优雅退出。
@@ -72,21 +105,6 @@ func Stop(options Options) error {
 	return nil
 }
 
-// Wake 请求正在运行的 Worker 立即重新计算任务；未运行时按需启动。
-func Wake(ctx context.Context, options Options, executable string) (Status, error) {
-	status, err := ReadStatus(options)
-	if err != nil {
-		return Status{}, err
-	}
-	if status.State != "running" {
-		return Start(ctx, options, executable)
-	}
-	if err := wakeProcess(status.PID); err != nil {
-		return Status{}, err
-	}
-	return status, nil
-}
-
 func appendWorkerFlags(arguments []string, options Options) []string {
 	arguments = append(arguments, "--root", options.Root, "--progress-dir", options.ProgressDir,
 		"--pid-file", options.PIDFile, "--log-file", options.LogFile,
@@ -101,12 +119,8 @@ func OpenLogger(path string) (*log.Logger, io.Closer, error) {
 	if strings.TrimSpace(path) == "" {
 		return log.New(os.Stderr, "", log.LstdFlags), io.NopCloser(strings.NewReader("")), nil
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := logfile.Prepare(path); err != nil {
 		return nil, nil, err
 	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return nil, nil, err
-	}
-	return log.New(file, "", log.LstdFlags), file, nil
+	return log.New(logfile.NewWriter(path), "", 0), io.NopCloser(strings.NewReader("")), nil
 }

@@ -58,13 +58,14 @@ func (c *cli) run(ctx context.Context, args []string) int {
 		return 0
 	}
 	if timeout == 0 {
-		timeout = defaultCommandTimeout
-		if len(args) > 1 && args[0] == "service" && args[1] == "start" {
-			timeout = serviceStartTimeout
-		}
+		timeout = defaultTimeoutFor(args)
 	}
-	commandCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	commandCtx := ctx
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		commandCtx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
 	c.commandCtx = commandCtx
 
 	switch args[0] {
@@ -90,6 +91,29 @@ func (c *cli) run(ctx context.Context, args []string) int {
 		return c.logs(args[1:])
 	default:
 		return c.fail("usage.invalid", "未知命令组，使用 netproxyctl help 查看帮助", 2)
+	}
+}
+
+func defaultTimeoutFor(args []string) time.Duration {
+	if isSubscriptionMutation(args) {
+		// 每个订阅已经有自己的下载超时；外层默认时限会提前杀死 Native，丢失已持久化状态。
+		return 0
+	}
+	if len(args) > 1 && args[0] == "service" && args[1] == "start" {
+		return serviceStartTimeout
+	}
+	return defaultCommandTimeout
+}
+
+func isSubscriptionMutation(args []string) bool {
+	if len(args) < 2 || args[0] != "sub" {
+		return false
+	}
+	switch args[1] {
+	case "add", "edit", "update", "update-all":
+		return true
+	default:
+		return false
 	}
 }
 

@@ -22,6 +22,7 @@
 
 - `netproxyctl` 是终端、Android 和 WebUI 的唯一模块管理入口；`netproxy-native` 是内部实现，不是平行的公开 CLI。
 - 机器接口固定使用 `schema=1` JSON。stdout 只能包含结果 JSON，日志与诊断写 stderr；字段、错误码或状态语义变化必须同步检查 Shell、Go、Android、WebUI 和测试。
+- Native 运行日志固定为 `[timestamp] [LEVEL] [component] [event] [result] [error_code] message`，成功或无错误码时写 `-`；消息必须在落盘前统一脱敏和限长。`logs show service` 的 `entries` 是 Android 展示事实源，不得回退到旧文本猜测。`logs show core` 保持 sing-box 文本，由客户端使用独立解析逻辑。
 - Catalog 是持久节点事实源：每组使用 `data/catalog/<group-id>/meta.json` 与 `provider.json`。`staging/` 只存事务临时文件，不得作为持久状态读取。
 - `ACTIVE_GROUP_ID` 保存分组 ID；`SELECTOR_MODE` 只允许 `urltest` 或 `manual`；`SELECTED_NODE_REF` 只在手动模式保存 `<group-id>/<tag>`。
 - Provider 的运行时显示标签来自分组名称；名称冲突时才附加分组 ID。用户界面不得直接显示 UUID 代替可读名称。
@@ -104,11 +105,7 @@ src/module/service.sh
 # Shell/Catalog 契约（先准备 netproxy-native 测试二进制）
 mkdir -p .tmp
 (cd src/native/netproxy && go build -o ../../../.tmp/netproxy-native ./cmd/netproxy-native && go build -o ../../../.tmp/netproxyctl ./cmd/netproxyctl)
-sh tests/catalog_subscription_test.sh ./.tmp/netproxy-native
-sh tests/netproxyctl_contract_test.sh ./.tmp/netproxyctl ./.tmp/netproxy-native
 sh tests/runtime_catalog_test.sh ./.tmp/netproxy-native
-sh tests/config_utils_test.sh ./.tmp/netproxy-native
-sh tests/service_state_test.sh ./.tmp/netproxy-native
 sh tests/module_scripts_test.sh
 sh tests/customize_hot_update_test.sh
 
@@ -233,7 +230,7 @@ data/catalog/
 - `Select/<group>`：selector，手动选择。
 - `Proxy`：顶层 selector，连接各分组的 Auto/Select 出站。
 
-分组 ID 是内部稳定身份，运行时标签和界面优先使用分组名称；只有名称冲突时追加 ID 消歧。同组和跨组节点切换优先使用 Service API，新增或删除整个分组时才需要重新加载运行时配置。
+分组 ID 是内部稳定身份，运行时标签和界面优先使用分组名称；只有名称冲突时追加 ID 消歧。同组和跨组节点切换优先使用 Service API，新增或删除整个分组时才需要重新加载运行时配置。已有 Local Provider 的内容更新依赖 sing-box 文件监听，并通过 Service API 出站快照确认；不得把 `runtime_sync_pending` 直接当作整核 reload 条件。
 
 订阅名称留空时按 `Profile-Title`、`Content-Disposition` 文件名、URL 主机名、默认名「订阅」的顺序自动取名，在首次取得响应头后回填。
 

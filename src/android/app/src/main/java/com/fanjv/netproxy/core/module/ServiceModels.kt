@@ -11,7 +11,7 @@ internal data class ServiceStatusSnapshot(
     @SerialName("ready_at") val readyAt: Long = 0,
     @SerialName("uptime_seconds") val uptimeSeconds: Long = 0,
     val error: String = "",
-    @SerialName("outbound_mode") val outboundMode: String = "rule",
+    @SerialName("outbound_mode") val outboundMode: String = "unknown",
     @SerialName("configured_outbound_mode") val configuredOutboundMode: String = "rule",
     @SerialName("selector_mode") val selectorMode: String = "urltest",
     @SerialName("active_group_id") val activeGroupId: String = "",

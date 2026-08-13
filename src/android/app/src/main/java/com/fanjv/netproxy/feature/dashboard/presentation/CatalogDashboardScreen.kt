@@ -181,15 +181,22 @@ internal fun CatalogDashboardScreen(
                 item {
                     Card(modifier = Modifier.fillMaxWidth()) {
                         val modeValues = listOf("rule", "global", "direct", "AllowAds")
+                        val modeLabels = listOf(
+                            stringResource(R.string.dashboard_mode_rule),
+                            stringResource(R.string.dashboard_mode_global),
+                            stringResource(R.string.dashboard_mode_direct),
+                            stringResource(R.string.dashboard_mode_allow_ads)
+                        )
+                        val selectedModeIndex = modeValues.indexOf(state.outboundMode)
+                        val modeItems = if (selectedModeIndex >= 0) {
+                            modeLabels
+                        } else {
+                            listOf(stringResource(R.string.dashboard_mode_unknown)) + modeLabels
+                        }
                         OverlayDropdownPreference(
                             title = stringResource(R.string.dashboard_outbound_mode),
-                            items = listOf(
-                                stringResource(R.string.dashboard_mode_rule),
-                                stringResource(R.string.dashboard_mode_global),
-                                stringResource(R.string.dashboard_mode_direct),
-                                stringResource(R.string.dashboard_mode_allow_ads)
-                            ),
-                            selectedIndex = modeValues.indexOf(state.outboundMode).coerceAtLeast(0),
+                            items = modeItems,
+                            selectedIndex = if (selectedModeIndex >= 0) selectedModeIndex else 0,
                             startAction = {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Rounded.AltRoute,
@@ -199,8 +206,9 @@ internal fun CatalogDashboardScreen(
                                 )
                             },
                             onSelectedIndexChange = { index ->
-                                if (state.rootGranted && state.moduleInstalled && !state.loading) {
-                                    viewModel.setMode(modeValues[index])
+                                val actualIndex = if (selectedModeIndex >= 0) index else index - 1
+                                if (actualIndex in modeValues.indices && state.rootGranted && state.moduleInstalled && !state.loading) {
+                                    viewModel.setMode(modeValues[actualIndex])
                                 }
                             }
                         )

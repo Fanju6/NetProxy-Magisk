@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -92,13 +91,4 @@ func validServiceState(value string) bool {
 	default:
 		return false
 	}
-}
-
-// ParseNonNegativeInt 将 Shell 传入的数字参数转换为受限整数。
-func ParseNonNegativeInt(value string) (int64, error) {
-	parsed, err := strconv.ParseInt(value, 10, 64)
-	if err != nil || parsed < 0 {
-		return 0, fmt.Errorf("无效的非负整数: %s", value)
-	}
-	return parsed, nil
 }

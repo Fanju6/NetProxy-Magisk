@@ -2,9 +2,14 @@ package subscription
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
+
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 )
 
 // EditOptions 描述一次订阅元数据编辑及其必要的重新验证。
@@ -12,6 +17,7 @@ type EditOptions struct {
 	Root           string
 	GroupID        string
 	ProgressDir    string
+	DeferUpdate    bool
 	ProxyURL       string
 	FallbackDirect bool
 	Name           *string
@@ -31,14 +37,21 @@ type EditOptions struct {
 
 // EditResult 是订阅编辑对 Shell 暴露的最小结果。
 type EditResult struct {
-	GroupID          string `json:"group_id"`
-	NameChanged      bool   `json:"name_changed"`
-	RequiresUpdate   bool   `json:"requires_update"`
-	NodeCount        int    `json:"node_count"`
-	Revision         int64  `json:"revision"`
-	StructureChanged bool   `json:"structure_changed"`
-	NotModified      bool   `json:"not_modified"`
+	GroupID            string `json:"group_id"`
+	NameChanged        bool   `json:"name_changed"`
+	RequiresUpdate     bool   `json:"requires_update"`
+	NodeCount          int    `json:"node_count"`
+	Revision           int64  `json:"revision"`
+	StructureChanged   bool   `json:"structure_changed"`
+	NotModified        bool   `json:"not_modified"`
+	Persisted          bool   `json:"persisted"`
+	RuntimeSynced      bool   `json:"runtime_synced"`
+	RuntimeSyncState   string `json:"runtime_sync_state"`
+	RuntimeSyncPending bool   `json:"runtime_sync_pending"`
 }
+
+// editBeforeRestoreHook 仅供同包测试在恢复窗口内模拟其他进程写入。
+var editBeforeRestoreHook = func() {}
 
 // Edit 更新订阅设置，并在影响节点内容的设置变化时重新验证订阅。
 func Edit(ctx context.Context, options EditOptions) (EditResult, error) {
@@ -48,8 +61,27 @@ func Edit(ctx context.Context, options EditOptions) (EditResult, error) {
 	if options.Now.IsZero() {
 		options.Now = time.Now()
 	}
+	releaseGroup, err := catalog.Acquire(options.Root, options.GroupID)
+	if err != nil {
+		return EditResult{}, &Error{Code: "subscription.busy", Message: "订阅或 Catalog 正在被其他进程使用", Data: err.Error()}
+	}
+	releaseRoot, err := catalog.AcquireRoot(options.Root)
+	if err != nil {
+		releaseGroup()
+		return EditResult{}, &Error{Code: "subscription.busy", Message: "订阅或 Catalog 正在被其他进程使用", Data: err.Error()}
+	}
+	locked := true
+	defer func() {
+		if locked {
+			releaseRoot()
+			releaseGroup()
+		}
+	}()
+	if err := catalog.RecoverLocked(options.Root); err != nil {
+		return EditResult{}, &Error{Code: "subscription.recovery_failed", Message: "恢复 Catalog 事务失败", Data: err.Error()}
+	}
 	metaPath := filepath.Join(options.Root, options.GroupID, "meta.json")
-	metadata, err := LoadMetadata(metaPath, options.GroupID)
+	metadata, err := catalog.LoadMetadataLocked(metaPath, options.GroupID)
 	if err != nil {
 		return EditResult{}, &Error{Code: "subscription.metadata_read_failed", Message: "读取订阅元数据失败", Data: err.Error()}
 	}
@@ -91,6 +123,8 @@ func Edit(ctx context.Context, options EditOptions) (EditResult, error) {
 		}
 		if metadata.UserAgent != *options.UserAgent {
 			metadata.UserAgent = *options.UserAgent
+			metadata.ETag = ""
+			metadata.LastModified = ""
 			requiresUpdate = true
 		}
 	}
@@ -100,11 +134,15 @@ func Edit(ctx context.Context, options EditOptions) (EditResult, error) {
 		}
 		if metadata.HWID != *options.HWID {
 			metadata.HWID = *options.HWID
+			metadata.ETag = ""
+			metadata.LastModified = ""
 			requiresUpdate = true
 		}
 	}
 	if options.CustomHeaders != nil {
 		metadata.CustomHeaders = cloneHeaders(*options.CustomHeaders)
+		metadata.ETag = ""
+		metadata.LastModified = ""
 		requiresUpdate = true
 	}
 	if options.AutoUpdate != nil {
@@ -134,6 +172,8 @@ func Edit(ctx context.Context, options EditOptions) (EditResult, error) {
 		}
 		if metadata.Include != *options.Include {
 			metadata.Include = *options.Include
+			metadata.ETag = ""
+			metadata.LastModified = ""
 			requiresUpdate = true
 		}
 	}
@@ -143,12 +183,16 @@ func Edit(ctx context.Context, options EditOptions) (EditResult, error) {
 		}
 		if metadata.Exclude != *options.Exclude {
 			metadata.Exclude = *options.Exclude
+			metadata.ETag = ""
+			metadata.LastModified = ""
 			requiresUpdate = true
 		}
 	}
 	if options.AllowInsecure != nil {
 		if metadata.AllowInsecure != *options.AllowInsecure {
 			metadata.AllowInsecure = *options.AllowInsecure
+			metadata.ETag = ""
+			metadata.LastModified = ""
 			requiresUpdate = true
 		}
 	}
@@ -163,18 +207,26 @@ func Edit(ctx context.Context, options EditOptions) (EditResult, error) {
 	}
 	if options.AutoUpdate != nil || options.UpdateInterval != nil {
 		if metadata.AutoUpdate {
-			ScheduleAt(&metadata, options.Now)
+			catalog.ScheduleAt(&metadata, options.Now)
 		} else {
 			metadata.NextUpdateEpoch = 0
 			metadata.NextUpdateAt = ""
 		}
 	}
 	metadata.UpdatedAt = formatTime(options.Now)
-	if err := SaveMetadataAtomic(metaPath, metadata); err != nil {
+	if err := catalog.SaveMetadataAtomicLocked(metaPath, metadata); err != nil {
 		return EditResult{}, &Error{Code: "subscription.edit_failed", Message: "保存订阅设置失败", Data: err.Error()}
 	}
-	if !requiresUpdate {
-		return EditResult{GroupID: options.GroupID, NameChanged: nameChanged}, nil
+	releaseRoot()
+	releaseGroup()
+	locked = false
+	if !requiresUpdate || options.DeferUpdate {
+		return EditResult{
+			GroupID: options.GroupID, NameChanged: nameChanged, RequiresUpdate: requiresUpdate,
+			NodeCount: metadata.NodeCount, Revision: metadata.Revision, Persisted: true,
+			RuntimeSynced:    metadata.RuntimeSyncState == RuntimeSyncApplied && !metadata.RuntimeSyncPending,
+			RuntimeSyncState: metadata.RuntimeSyncState, RuntimeSyncPending: metadata.RuntimeSyncPending,
+		}, nil
 	}
 	updated, err := Update(ctx, UpdateOptions{
 		Root: options.Root, GroupID: options.GroupID, ProgressDir: options.ProgressDir,
@@ -182,14 +234,71 @@ func Edit(ctx context.Context, options EditOptions) (EditResult, error) {
 		FallbackDirect: options.FallbackDirect, Now: options.Now,
 	})
 	if err != nil {
-		_ = SaveMetadataAtomic(metaPath, oldMetadata)
-		return EditResult{}, err
+		if updated.Persisted {
+			return mergeEditResult(EditResult{GroupID: options.GroupID, NameChanged: nameChanged, RequiresUpdate: requiresUpdate}, updated), err
+		}
+		editBeforeRestoreHook()
+		restoreErr := restoreMetadataIfUnchanged(options.Root, options.GroupID, metaPath, oldMetadata, metadata)
+		return EditResult{}, errors.Join(err, restoreErr)
 	}
-	return EditResult{
-		GroupID: options.GroupID, NameChanged: nameChanged, RequiresUpdate: true,
-		NodeCount: updated.NodeCount, Revision: updated.Revision,
-		StructureChanged: updated.StructureChanged, NotModified: updated.NotModified,
-	}, nil
+	return mergeEditResult(EditResult{GroupID: options.GroupID, NameChanged: nameChanged, RequiresUpdate: true}, updated), nil
+}
+
+func mergeEditResult(edit EditResult, update Result) EditResult {
+	edit.NodeCount = update.NodeCount
+	edit.Revision = update.Revision
+	edit.StructureChanged = update.StructureChanged
+	edit.NotModified = update.NotModified
+	edit.Persisted = update.Persisted
+	edit.RuntimeSynced = update.RuntimeSynced
+	edit.RuntimeSyncState = update.RuntimeSyncState
+	edit.RuntimeSyncPending = update.RuntimeSyncPending
+	return edit
+}
+
+func restoreMetadataIfUnchanged(root, groupID, metaPath string, oldMetadata, expected catalog.Metadata) error {
+	releaseGroup, err := catalog.Acquire(root, groupID)
+	if err != nil {
+		return err
+	}
+	defer releaseGroup()
+	releaseRoot, err := catalog.AcquireRoot(root)
+	if err != nil {
+		return err
+	}
+	defer releaseRoot()
+	if err := catalog.RecoverLocked(root); err != nil {
+		return err
+	}
+	current, err := catalog.LoadMetadataLocked(metaPath, groupID)
+	if err != nil {
+		return err
+	}
+	if !sameEditMetadata(current, expected) {
+		return fmt.Errorf("订阅元数据已被其他进程更新，跳过旧元数据恢复")
+	}
+	return catalog.SaveMetadataAtomicLocked(metaPath, oldMetadata)
+}
+
+func sameEditMetadata(left, right catalog.Metadata) bool {
+	return left.Schema == right.Schema &&
+		left.ID == right.ID &&
+		left.Name == right.Name &&
+		left.Type == right.Type &&
+		left.URL == right.URL &&
+		left.UserAgent == right.UserAgent &&
+		left.HWID == right.HWID &&
+		reflect.DeepEqual(left.CustomHeaders, right.CustomHeaders) &&
+		left.AutoUpdate == right.AutoUpdate &&
+		left.UpdateInterval == right.UpdateInterval &&
+		left.IntervalSource == right.IntervalSource &&
+		left.UpdateViaProxy == right.UpdateViaProxy &&
+		left.Include == right.Include &&
+		left.Exclude == right.Exclude &&
+		left.AllowInsecure == right.AllowInsecure &&
+		left.Timeout == right.Timeout &&
+		left.Revision == right.Revision &&
+		left.CreatedAt == right.CreatedAt
 }
 
 func validateEditText(value string) error {

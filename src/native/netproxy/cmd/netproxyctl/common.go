@@ -44,11 +44,6 @@ func (c *cli) catalogArgs(args ...string) []string {
 	return append([]string{"--module-dir", c.moduleDir}, args...)
 }
 
-func (c *cli) success(code, message string, data any) int {
-	writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: code, Message: message, Data: data})
-	return 0
-}
-
 func (c *cli) fail(code, message string, status int) int {
 	if status <= 0 {
 		status = 1
@@ -84,7 +79,8 @@ func (c *cli) help() {
 
 节点引用固定为 <group-id>/<tag>；自动模式使用 node use auto [分组]。
 node import <文件> 会将文件中的全部节点追加到 default 本地配置组。
-默认命令超时为 30 秒，service start 默认 120 秒；可使用 --timeout 覆盖。
+默认命令超时为 30 秒，service start 默认 120 秒；订阅变更由各订阅下载超时控制。
+所有命令均可使用 --timeout 显式覆盖。
 stdout 只包含 schema=1 结果，运行日志写入 stderr。`)
 }
 

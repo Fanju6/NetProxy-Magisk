@@ -3,7 +3,7 @@
     {
       "type": "mixed",
       "tag": "mixed_in",
-      "listen": "::",
+      "listen": "127.0.0.1",
       "listen_port": 7080
     }
   ]

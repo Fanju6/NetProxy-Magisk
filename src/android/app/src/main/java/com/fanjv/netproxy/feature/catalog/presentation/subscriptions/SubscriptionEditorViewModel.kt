@@ -3,6 +3,7 @@ package com.fanjv.netproxy.feature.catalog.presentation.subscriptions
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fanjv.netproxy.R
+import com.fanjv.netproxy.core.command.NetProxyCtlException
 import com.fanjv.netproxy.core.ui.UiText
 import com.fanjv.netproxy.core.ui.UiTextException
 import com.fanjv.netproxy.core.ui.toUiText
@@ -14,7 +15,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.jsonObject
 
 internal data class SubscriptionEditorUiState(
     val id: String = "",
@@ -24,6 +28,9 @@ internal data class SubscriptionEditorUiState(
     val loading: Boolean = false,
     val saving: Boolean = false,
     val saved: Boolean = false,
+    val persisted: Boolean = false,
+    val runtimeSyncState: String = "",
+    val runtimeSyncPending: Boolean = false,
     val error: UiText = UiText.Empty,
     val noticeId: Long = 0
 )
@@ -94,11 +101,29 @@ internal class SubscriptionEditorViewModel(
                 val original = snapshot.original
                 if (original == null) repository.add(draft)
                 else repository.edit(snapshot.id, original, draft)
-            }.onSuccess {
-                _state.update { it.copy(saving = false, draft = draft, saved = true) }
-            }.onFailure { error ->
+            }.onSuccess { data ->
+                val runtime = data.runtimeSyncOutcome()
                 _state.update {
-                    it.copy(saving = false, error = error.toUiText(), noticeId = it.noticeId + 1)
+                    it.copy(
+                        saving = false,
+                        draft = draft,
+                        saved = true,
+                        persisted = runtime.persisted,
+                        runtimeSyncState = runtime.state,
+                        runtimeSyncPending = runtime.pending
+                    )
+                }
+            }.onFailure { error ->
+                val runtime = (error as? NetProxyCtlException)?.data?.runtimeSyncOutcome()
+                _state.update {
+                    it.copy(
+                        saving = false,
+                        persisted = runtime?.persisted ?: it.persisted,
+                        runtimeSyncState = runtime?.state ?: it.runtimeSyncState,
+                        runtimeSyncPending = runtime?.pending ?: it.runtimeSyncPending,
+                        error = error.toUiText(),
+                        noticeId = it.noticeId + 1
+                    )
                 }
             }
         }
@@ -153,6 +178,21 @@ internal class SubscriptionEditorViewModel(
             }
             put(name, value)
         }
+    }
+
+    private data class RuntimeSyncOutcome(
+        val persisted: Boolean,
+        val state: String,
+        val pending: Boolean
+    )
+
+    private fun JsonElement.runtimeSyncOutcome(): RuntimeSyncOutcome {
+        val objectValue = jsonObject
+        return RuntimeSyncOutcome(
+            persisted = objectValue["persisted"]?.jsonPrimitive?.booleanOrNull == true,
+            state = objectValue["runtime_sync_state"]?.jsonPrimitive?.content.orEmpty(),
+            pending = objectValue["runtime_sync_pending"]?.jsonPrimitive?.booleanOrNull == true
+        )
     }
 
     private fun SubscriptionEditorState.toDraft() = SubscriptionDraft(

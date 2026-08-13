@@ -18,6 +18,12 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 )
 
+var (
+	configProcessRunning = service.ProcessRunning
+	configReload         = reloadAppliedConfig
+	configRestoreReload  = reloadConfigSnapshot
+)
+
 // ConfigDocument 是配置工作台可见的文件摘要。
 type ConfigDocument struct {
 	ID       string `json:"id"`
@@ -94,7 +100,14 @@ func ReadConfig(options Options, target string) (map[string]string, error) {
 }
 
 // ApplyConfig 通过候选文件、校验和原子替换应用配置。
-func ApplyConfig(ctx context.Context, options Options, target, source string, validateOnly bool) error {
+func ApplyConfig(ctx context.Context, options Options, target, source string, validateOnly bool) (err error) {
+	event := "config.apply"
+	message := "配置保存"
+	if validateOnly {
+		event = "config.validate"
+		message = "配置校验"
+	}
+	defer func() { logOperation(options, "config", event, message, false, err) }()
 	destination, err := ResolveConfig(options, target)
 	if err != nil {
 		return err
@@ -106,6 +119,9 @@ func ApplyConfig(ctx context.Context, options Options, target, source string, va
 		return fmt.Errorf("配置内容文件不存在: %w", err)
 	}
 	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+		return err
+	}
+	if err := options.validate(); err != nil {
 		return err
 	}
 	candidate, err := os.CreateTemp(filepath.Dir(destination), ".config-candidate-")
@@ -120,21 +136,97 @@ func ApplyConfig(ctx context.Context, options Options, target, source string, va
 	if err := copyFile(candidatePath, source, 0o600); err != nil {
 		return err
 	}
+	var lifecycleLock *lifecycleLock
+	if !validateOnly {
+		lifecycleLock, err = acquireLifecycleLock(options.StateFile)
+		if err != nil {
+			return err
+		}
+		defer lifecycleLock.release()
+		if err := recoverConfigApply(ctx, options); err != nil {
+			return err
+		}
+	}
 	if err := ValidateConfig(ctx, options, target, candidatePath); err != nil {
 		return err
 	}
 	if validateOnly {
 		return nil
 	}
-	if err := os.Rename(candidatePath, destination); err != nil {
+	transaction, err := beginConfigApply(options, destination)
+	if err != nil {
 		return err
 	}
-	if service.ProcessRunning(options.SingBoxPath) {
-		if _, err := ManageService(ctx, options, "reload"); err != nil {
-			return fmt.Errorf("配置已保存，但服务 reload 失败: %w", err)
+	if err := os.Rename(candidatePath, destination); err != nil {
+		_ = transaction.rollback()
+		return err
+	}
+	if err := transaction.setPhase("static_replaced"); err != nil {
+		rollbackErr := transaction.rollback()
+		if rollbackErr != nil {
+			return fmt.Errorf("记录配置应用阶段失败: %v；回滚失败: %w", err, rollbackErr)
 		}
+		return fmt.Errorf("记录配置应用阶段失败: %w", err)
+	}
+	if !configProcessRunning(options.SingBoxPath) {
+		if err := transaction.commit(); err != nil {
+			rollbackErr := transaction.rollback()
+			if rollbackErr != nil {
+				return fmt.Errorf("提交配置事务失败: %v；回滚失败: %w", err, rollbackErr)
+			}
+			return fmt.Errorf("提交配置事务失败: %w", err)
+		}
+		return nil
+	}
+	if err := transaction.setPhase("reload_started"); err != nil {
+		rollbackErr := transaction.rollback()
+		if rollbackErr != nil {
+			return fmt.Errorf("记录配置 reload 阶段失败: %v；回滚失败: %w", err, rollbackErr)
+		}
+		return fmt.Errorf("记录配置 reload 阶段失败: %w", err)
+	}
+	if err := configReload(ctx, options); err != nil {
+		restoreErr := transaction.restore()
+		if restoreErr != nil {
+			return fmt.Errorf("配置 reload 失败: %v；恢复旧配置失败: %w", err, restoreErr)
+		}
+		if configProcessRunning(options.SingBoxPath) {
+			if restoreErr := configRestoreReload(ctx, options, transaction.journal); restoreErr != nil {
+				return fmt.Errorf("配置 reload 失败，且运行实例恢复失败: %v；%w", err, restoreErr)
+			}
+		}
+		if cleanupErr := transaction.cleanup(); cleanupErr != nil {
+			return fmt.Errorf("配置 reload 失败，旧配置已恢复但清理事务失败: %v；%w", err, cleanupErr)
+		}
+		return fmt.Errorf("配置 reload 失败，已恢复旧配置: %w", err)
+	}
+	if err := transaction.commit(); err != nil {
+		return rollbackAfterCommitFailure(ctx, options, transaction, err)
 	}
 	return nil
+}
+
+func rollbackAfterCommitFailure(ctx context.Context, options Options, transaction *configApplyTransaction, commitErr error) error {
+	diskErr := transaction.restore()
+	var runtimeErr error
+	if configProcessRunning(options.SingBoxPath) {
+		runtimeErr = configRestoreReload(ctx, options, transaction.journal)
+	}
+	cleanupErr := transaction.cleanup()
+	details := make([]string, 0, 3)
+	if diskErr != nil {
+		details = append(details, fmt.Sprintf("磁盘恢复失败: %v", diskErr))
+	}
+	if runtimeErr != nil {
+		details = append(details, fmt.Sprintf("旧 runtime reload 失败: %v", runtimeErr))
+	}
+	if cleanupErr != nil {
+		details = append(details, fmt.Sprintf("事务清理失败: %v", cleanupErr))
+	}
+	if len(details) == 0 {
+		return fmt.Errorf("提交配置事务失败: %w", commitErr)
+	}
+	return fmt.Errorf("提交配置事务失败: %w；%s", commitErr, strings.Join(details, "；"))
 }
 
 // ValidateConfig 校验 module.conf、ebpf.conf 或 sing-box JSON。
@@ -201,7 +293,9 @@ func validateSingBoxTree(ctx context.Context, options Options, target, candidate
 	if err := copyFile(candidatePath, candidate, 0o600); err != nil {
 		return err
 	}
-	prepared, err := Prepare(ctx, options, true)
+	checkOptions := options
+	checkOptions.RuntimeDir = filepath.Join(temporary, "runtime")
+	prepared, err := Prepare(ctx, checkOptions, true)
 	if err != nil {
 		return err
 	}

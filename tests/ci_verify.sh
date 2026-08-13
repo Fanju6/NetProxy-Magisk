@@ -39,15 +39,10 @@ build_binaries() {
 #######################################
 run_shell_contracts() {
   printf '%s\n' '开始执行 Shell 契约测试'
-  sh "$ROOT/tests/catalog_subscription_test.sh" "$BUILD_DIR/netproxy-native"
-  sh "$ROOT/tests/config_utils_test.sh" "$BUILD_DIR/netproxy-native"
   sh "$ROOT/tests/runtime_catalog_test.sh" "$BUILD_DIR/netproxy-native"
-  sh "$ROOT/tests/service_state_test.sh" "$BUILD_DIR/netproxy-native"
   sh "$ROOT/tests/module_scripts_test.sh"
   sh "$ROOT/tests/customize_hot_update_test.sh"
   sh "$ROOT/tests/module_packaging_test.sh"
-  sh "$ROOT/tests/netproxyctl_contract_test.sh" \
-    "$BUILD_DIR/netproxyctl" "$BUILD_DIR/netproxy-native"
 }
 
 build_binaries

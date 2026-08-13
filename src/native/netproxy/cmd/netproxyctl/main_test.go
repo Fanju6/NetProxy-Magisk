@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"reflect"
 	"testing"
 	"time"
@@ -77,5 +78,37 @@ func TestParseCommandTimeoutAcceptsSecondsAndDurations(t *testing.T) {
 	}
 	if _, err := parseCommandTimeout("0"); err == nil {
 		t.Fatal("zero timeout should fail")
+	}
+}
+
+func TestDefaultTimeoutDoesNotPreemptSubscriptionMutation(t *testing.T) {
+	for _, args := range [][]string{
+		{"sub", "add"}, {"sub", "edit"}, {"sub", "update"}, {"sub", "update-all"},
+	} {
+		if got := defaultTimeoutFor(args); got != 0 {
+			t.Fatalf("default timeout for %v = %s, want no outer deadline", args, got)
+		}
+	}
+	if got := defaultTimeoutFor([]string{"sub", "list"}); got != defaultCommandTimeout {
+		t.Fatalf("sub list timeout = %s, want %s", got, defaultCommandTimeout)
+	}
+	if got := defaultTimeoutFor([]string{"service", "start"}); got != serviceStartTimeout {
+		t.Fatalf("service start timeout = %s, want %s", got, serviceStartTimeout)
+	}
+}
+
+func TestGracefulNativeDeadlinePrecedesHardDeadline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	parentDeadline, _ := ctx.Deadline()
+	childDeadline, ok := gracefulNativeDeadline(ctx, []string{"module", "sub", "edit"})
+	if !ok {
+		t.Fatal("subscription edit should receive a graceful Native deadline")
+	}
+	if got := parentDeadline.Sub(childDeadline); got < nativeShutdownGrace-time.Millisecond || got > nativeShutdownGrace+time.Millisecond {
+		t.Fatalf("Native grace = %s, want %s", got, nativeShutdownGrace)
+	}
+	if _, ok := gracefulNativeDeadline(ctx, []string{"module", "service", "start"}); ok {
+		t.Fatal("non-subscription command should keep the hard deadline behavior")
 	}
 }

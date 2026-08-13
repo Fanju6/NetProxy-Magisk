@@ -5,6 +5,7 @@ import com.fanjv.netproxy.feature.catalog.model.CatalogNodeGroup
 import com.fanjv.netproxy.feature.catalog.model.SubscriptionDraft
 import com.fanjv.netproxy.feature.catalog.model.SubscriptionEditorState
 import com.fanjv.netproxy.feature.catalog.model.SubscriptionHistoryEntry
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
@@ -24,27 +25,26 @@ internal class SubscriptionRepository(
     suspend fun readEditor(id: String): SubscriptionEditorState =
         catalog.decode("sub", "show", "--private", id)
 
-    suspend fun add(draft: SubscriptionDraft): String =
+    suspend fun add(draft: SubscriptionDraft): JsonElement =
         withHeadersFile(draft.customHeaders) { headersFile ->
             // 名称为空时整个省略该位置参数，由模块自动取名；传空串会被当作显式空名称
             val args = mutableListOf("sub", "add")
             appendOptions(args, draft, headersFile, addMode = true)
             if (draft.name.isNotBlank()) args.add(draft.name)
             args.add(draft.url)
-            catalog.execute(*args.toTypedArray()).data.jsonObject["group_id"]
-                ?.jsonPrimitive?.content.orEmpty()
+            catalog.execute(*args.toTypedArray()).data
         }
 
     suspend fun edit(
         id: String,
         original: SubscriptionEditorState,
         updated: SubscriptionDraft
-    ) {
+    ): JsonElement {
         val originalHeaders = original.customHeaders.mapValues { (_, value) ->
             value.jsonPrimitive.content
         }
         val headersChanged = originalHeaders != updated.customHeaders
-        withHeadersFile(updated.customHeaders, required = headersChanged) { headersFile ->
+        return withHeadersFile(updated.customHeaders, required = headersChanged) { headersFile ->
             val args = mutableListOf("sub", "edit")
             if (original.name != updated.name) args += listOf("--name", updated.name)
             if (original.url != updated.url) args += listOf("--url", updated.url)
@@ -73,7 +73,7 @@ internal class SubscriptionRepository(
                 args += "--auto-update=${updated.autoUpdate}"
             }
             args += id
-            if (args.size > 3) catalog.execute(*args.toTypedArray())
+            if (args.size > 3) catalog.execute(*args.toTypedArray()).data else JsonObject(emptyMap())
         }
     }
 

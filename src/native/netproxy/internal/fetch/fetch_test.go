@@ -3,6 +3,7 @@ package fetch_test
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -147,16 +148,218 @@ func TestSubscriptionNotModified(t *testing.T) {
 		if request.Header.Get("If-None-Match") != "revision-1" {
 			t.Error("conditional ETag was not sent")
 		}
+		if request.Header.Get("If-Modified-Since") != "Wed, 21 Oct 2015 07:28:00 GMT" {
+			t.Error("conditional Last-Modified was not sent")
+		}
+		writer.Header().Set("ETag", "revision-2")
+		writer.Header().Set("Last-Modified", "Thu, 22 Oct 2015 07:28:00 GMT")
 		writer.WriteHeader(http.StatusNotModified)
 	}))
 	defer server.Close()
 
-	response, err := fetch.Subscription(context.Background(), fetch.Request{URL: server.URL, ETag: "revision-1"})
+	response, err := fetch.Subscription(context.Background(), fetch.Request{
+		URL: server.URL, ETag: "revision-1", LastModified: "Wed, 21 Oct 2015 07:28:00 GMT",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !response.Metadata.NotModified || len(response.Body) != 0 {
 		t.Fatalf("unexpected 304 response: %#v", response)
+	}
+	if response.Metadata.ETag != "revision-2" || response.Metadata.LastModified != "Thu, 22 Oct 2015 07:28:00 GMT" {
+		t.Fatalf("304 response metadata was not preserved: %#v", response.Metadata)
+	}
+}
+
+func TestSubscriptionSameOriginHTTPSRedirectPreservesHeaders(t *testing.T) {
+	var seenHWID, seenToken string
+	var server *httptest.Server
+	server = httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/start":
+			http.Redirect(writer, request, server.URL+"/final", http.StatusFound)
+		case "/final":
+			seenHWID = request.Header.Get("X-HWID")
+			seenToken = request.Header.Get("X-Vendor-Token")
+			_, _ = writer.Write([]byte("socks://example.com:1080#node"))
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	response, err := fetch.Subscription(context.Background(), fetch.Request{
+		URL: server.URL + "/start", AllowInsecure: true, HWID: "hwid-secret",
+		Headers: map[string]string{"X-Vendor-Token": "token-secret"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(response.Body) == "" || seenHWID != "hwid-secret" || seenToken != "token-secret" {
+		t.Fatalf("same-origin HTTPS redirect did not preserve headers: hwid=%q token=%q", seenHWID, seenToken)
+	}
+}
+
+func TestSubscriptionSameOriginRelativeRedirectPreservesHeaders(t *testing.T) {
+	var seenToken string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/start":
+			http.Redirect(writer, request, "/final", http.StatusTemporaryRedirect)
+		case "/final":
+			seenToken = request.Header.Get("X-Vendor-Token")
+			_, _ = writer.Write([]byte("socks://example.com:1080#node"))
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	_, err := fetch.Subscription(context.Background(), fetch.Request{
+		URL: server.URL + "/start", Headers: map[string]string{"X-Vendor-Token": "token-secret"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seenToken != "token-secret" {
+		t.Fatalf("same-origin relative redirect did not preserve custom header: %q", seenToken)
+	}
+}
+
+func TestSubscriptionMultiLevelRedirectPreservesHeaders(t *testing.T) {
+	seen := make([]string, 0, 3)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/one":
+			seen = append(seen, request.Header.Get("X-Vendor-Token"))
+			http.Redirect(writer, request, "/two", http.StatusFound)
+		case "/two":
+			seen = append(seen, request.Header.Get("X-Vendor-Token"))
+			http.Redirect(writer, request, "/final", http.StatusFound)
+		case "/final":
+			seen = append(seen, request.Header.Get("X-Vendor-Token"))
+			_, _ = writer.Write([]byte("socks://example.com:1080#node"))
+		}
+	}))
+	defer server.Close()
+
+	_, err := fetch.Subscription(context.Background(), fetch.Request{
+		URL: server.URL + "/one", Headers: map[string]string{"X-Vendor-Token": "token-secret"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 3 || seen[0] != "token-secret" || seen[1] != "token-secret" || seen[2] != "token-secret" {
+		t.Fatalf("same-origin multi-level redirect changed headers: %#v", seen)
+	}
+}
+
+func TestSubscriptionCrossHostRedirectStripsAuthenticationHeaders(t *testing.T) {
+	var seenHWID, seenAuthorization, seenToken, seenCookie string
+	target := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		seenHWID = request.Header.Get("X-HWID")
+		seenAuthorization = request.Header.Get("Authorization")
+		seenToken = request.Header.Get("X-Vendor-Token")
+		seenCookie = request.Header.Get("Cookie")
+		_, _ = writer.Write([]byte("socks://example.com:1080#node"))
+	}))
+	defer target.Close()
+	source := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		http.Redirect(writer, request, target.URL+"/final", http.StatusFound)
+	}))
+	defer source.Close()
+
+	response, err := fetch.Subscription(context.Background(), fetch.Request{
+		URL: source.URL, HWID: "hwid-secret",
+		Headers: map[string]string{
+			"Authorization":      "Bearer authorization-secret",
+			"X-Vendor-Token":     "token-secret",
+			"Cookie":             "session=session-secret",
+			"X-Nonstandard-Auth": "other-secret",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Body) == 0 {
+		t.Fatal("cross-host redirect did not return the response")
+	}
+	if seenHWID != "" || seenAuthorization != "" || seenToken != "" || seenCookie != "" {
+		t.Fatalf("cross-host redirect leaked authentication headers: hwid=%q authorization=%q token=%q cookie=%q", seenHWID, seenAuthorization, seenToken, seenCookie)
+	}
+}
+
+func TestSubscriptionPortChangeStripsCustomHeaders(t *testing.T) {
+	var seenToken string
+	target := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		seenToken = request.Header.Get("X-Vendor-Token")
+		_, _ = writer.Write([]byte("socks://example.com:1080#node"))
+	}))
+	defer target.Close()
+	source := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		http.Redirect(writer, request, target.URL, http.StatusFound)
+	}))
+	defer source.Close()
+
+	_, err := fetch.Subscription(context.Background(), fetch.Request{
+		URL: source.URL, Headers: map[string]string{"X-Vendor-Token": "token-secret"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seenToken != "" {
+		t.Fatalf("port-change redirect leaked custom header: %q", seenToken)
+	}
+}
+
+func TestSubscriptionRejectsHTTPSDowngradeEvenWhenInsecureIsAllowed(t *testing.T) {
+	targetHits := 0
+	target := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		targetHits++
+		_, _ = writer.Write([]byte("socks://example.com:1080#node"))
+	}))
+	defer target.Close()
+	source := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		http.Redirect(writer, request, target.URL, http.StatusFound)
+	}))
+	defer source.Close()
+
+	_, err := fetch.Subscription(context.Background(), fetch.Request{
+		URL: source.URL, AllowInsecure: true, Headers: map[string]string{"X-Vendor-Token": "token-secret"},
+	})
+	if err == nil {
+		t.Fatal("HTTPS downgrade should be rejected")
+	}
+	var redirectErr *fetch.RedirectError
+	if !errors.As(err, &redirectErr) {
+		t.Fatalf("HTTPS downgrade did not return RedirectError: %v", err)
+	}
+	if targetHits != 0 {
+		t.Fatalf("HTTPS downgrade target was contacted: %d", targetHits)
+	}
+	if strings.Contains(err.Error(), "token-secret") {
+		t.Fatalf("redirect error leaked a secret: %v", err)
+	}
+}
+
+func TestSubscriptionUsesConfiguredProxy(t *testing.T) {
+	var seenURL, seenToken string
+	proxy := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		seenURL = request.URL.String()
+		seenToken = request.Header.Get("X-Vendor-Token")
+		_, _ = writer.Write([]byte("socks://example.com:1080#node"))
+	}))
+	defer proxy.Close()
+
+	response, err := fetch.Subscription(context.Background(), fetch.Request{
+		URL: "http://subscription.invalid/profile", ProxyURL: proxy.URL,
+		Headers: map[string]string{"X-Vendor-Token": "token-secret"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Body) == 0 || seenURL != "http://subscription.invalid/profile" || seenToken != "token-secret" {
+		t.Fatalf("configured proxy request was not preserved: url=%q token=%q", seenURL, seenToken)
 	}
 }
 

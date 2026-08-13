@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/processlock"
 )
 
 // ModuleConfig 描述 module.conf 中由运行时使用的全部设置。
@@ -133,11 +135,12 @@ func UpdateValidated(path string, updates map[string]string, validate func(strin
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	lockPath := path + ".lock"
-	if err := acquireLock(lockPath); err != nil {
+	// 使用新文件名避开旧版本崩溃后可能遗留的 .lock 目录。
+	lock, err := acquireLock(path + ".lock.flock")
+	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(lockPath)
+	defer lock.Release()
 
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -253,14 +256,16 @@ func boolValue(values map[string]string, key string, fallback bool) (bool, error
 	}
 }
 
-func acquireLock(path string) error {
+func acquireLock(path string) (*processlock.Lock, error) {
 	for attempt := 0; attempt < 50; attempt++ {
-		if err := os.Mkdir(path, 0o700); err == nil {
-			return nil
-		} else if !os.IsExist(err) {
-			return err
+		lock, err := processlock.TryAcquire(path)
+		if err == nil {
+			return lock, nil
+		}
+		if !errors.Is(err, processlock.ErrBusy) {
+			return nil, err
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return fmt.Errorf("配置文件正忙: %s", path)
+	return nil, fmt.Errorf("配置文件正忙: %s", path)
 }

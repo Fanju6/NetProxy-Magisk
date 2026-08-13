@@ -230,8 +230,18 @@ func TestConcurrentNodeEditsWithSubscriptionUpdate(t *testing.T) {
 		defer wait.Done()
 		<-start
 		// 订阅更新在提交阶段持有同一个分组锁，不能和节点编辑交错读写。
-		release := Acquire(groupID)
-		defer release()
+		releaseGroup, acquireErr := Acquire(root, groupID)
+		if acquireErr != nil {
+			errorsCh <- acquireErr
+			return
+		}
+		defer releaseGroup()
+		releaseRoot, acquireErr := AcquireRoot(root)
+		if acquireErr != nil {
+			errorsCh <- acquireErr
+			return
+		}
+		defer releaseRoot()
 		errorsCh <- commitPair(context.Background(), groupDir, parsed.Document, metadata)
 	}()
 	close(start)

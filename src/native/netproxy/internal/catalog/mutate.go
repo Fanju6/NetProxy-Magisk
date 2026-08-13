@@ -70,12 +70,11 @@ func InitializeGroup(ctx context.Context, options GroupOptions) error {
 	if err := validateGroupOptions(options); err != nil {
 		return err
 	}
-	release := lockGroup(options.GroupID)
-	release.Lock()
-	defer release.Unlock()
-	if err := recoverTransactions(options.Root); err != nil {
+	release, err := acquireCatalogMutation(options.Root, options.GroupID)
+	if err != nil {
 		return err
 	}
+	defer release()
 	if options.Now.IsZero() {
 		options.Now = time.Now()
 	}
@@ -95,12 +94,11 @@ func EnsureGroup(ctx context.Context, options GroupOptions) error {
 	if err := validateGroupOptions(options); err != nil {
 		return err
 	}
-	release := lockGroup(options.GroupID)
-	release.Lock()
-	defer release.Unlock()
-	if err := recoverTransactions(options.Root); err != nil {
+	release, err := acquireCatalogMutation(options.Root, options.GroupID)
+	if err != nil {
 		return err
 	}
+	defer release()
 	if options.Now.IsZero() {
 		options.Now = time.Now()
 	}
@@ -113,7 +111,6 @@ func EnsureGroup(ctx context.Context, options GroupOptions) error {
 		return nil
 	}
 	document := provider.Document{}
-	var err error
 	if providerExists {
 		document, err = provider.LoadAllowEmpty(ctx, providerPath)
 		if err != nil {
@@ -122,7 +119,7 @@ func EnsureGroup(ctx context.Context, options GroupOptions) error {
 	}
 	metadata, err := buildGroupMetadata(options)
 	if metadataExists {
-		metadata, err = LoadMetadata(metadataPath, options.GroupID)
+		metadata, err = LoadMetadataLocked(metadataPath, options.GroupID)
 	}
 	if err != nil {
 		return err
@@ -138,12 +135,11 @@ func SetGroupName(ctx context.Context, root, groupID, name string, now time.Time
 	if !isValidGroupID(groupID) {
 		return fmt.Errorf("非法分组 ID: %s", groupID)
 	}
-	release := lockGroup(groupID)
-	release.Lock()
-	defer release.Unlock()
-	if err := recoverTransactions(root); err != nil {
+	release, err := acquireCatalogMutation(root, groupID)
+	if err != nil {
 		return err
 	}
+	defer release()
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return errors.New("分组名称不能为空")
@@ -152,13 +148,13 @@ func SetGroupName(ctx context.Context, root, groupID, name string, now time.Time
 		now = time.Now()
 	}
 	metadataPath := filepath.Join(root, groupID, "meta.json")
-	metadata, err := LoadMetadata(metadataPath, groupID)
+	metadata, err := LoadMetadataLocked(metadataPath, groupID)
 	if err != nil {
 		return err
 	}
 	metadata.Name = name
 	metadata.UpdatedAt = FormatEpochUTC(now.Unix())
-	return SaveMetadataAtomic(metadataPath, metadata)
+	return SaveMetadataAtomicLocked(metadataPath, metadata)
 }
 
 func validateGroupOptions(options GroupOptions) error {
@@ -218,12 +214,11 @@ func AppendNode(ctx context.Context, options MutationOptions) (MutationResult, e
 	if err := validateMutationOptions(options, false); err != nil {
 		return MutationResult{}, err
 	}
-	release := lockGroup(options.GroupID)
-	release.Lock()
-	defer release.Unlock()
-	if err := recoverTransactions(filepath.Dir(options.GroupDir)); err != nil {
+	release, err := acquireCatalogMutation(filepath.Dir(options.GroupDir), options.GroupID)
+	if err != nil {
 		return MutationResult{}, err
 	}
+	defer release()
 	if options.Now.IsZero() {
 		options.Now = time.Now()
 	}
@@ -257,12 +252,11 @@ func RemoveNode(ctx context.Context, options MutationOptions) (MutationResult, e
 	if err := validateMutationOptions(options, true); err != nil {
 		return MutationResult{}, err
 	}
-	release := lockGroup(options.GroupID)
-	release.Lock()
-	defer release.Unlock()
-	if err := recoverTransactions(filepath.Dir(options.GroupDir)); err != nil {
+	release, err := acquireCatalogMutation(filepath.Dir(options.GroupDir), options.GroupID)
+	if err != nil {
 		return MutationResult{}, err
 	}
+	defer release()
 	if options.Now.IsZero() {
 		options.Now = time.Now()
 	}
@@ -286,12 +280,11 @@ func EditNode(ctx context.Context, options MutationOptions) (MutationResult, err
 	if err := validateMutationOptions(options, true); err != nil {
 		return MutationResult{}, err
 	}
-	release := lockGroup(options.GroupID)
-	release.Lock()
-	defer release.Unlock()
-	if err := recoverTransactions(filepath.Dir(options.GroupDir)); err != nil {
+	release, err := acquireCatalogMutation(filepath.Dir(options.GroupDir), options.GroupID)
+	if err != nil {
 		return MutationResult{}, err
 	}
+	defer release()
 	if options.Now.IsZero() {
 		options.Now = time.Now()
 	}
@@ -323,12 +316,11 @@ func ImportGroup(ctx context.Context, options ImportOptions) (MutationResult, er
 	if strings.TrimSpace(options.Root) == "" || strings.TrimSpace(options.Input) == "" {
 		return MutationResult{}, errors.New("Catalog 根目录和输入内容不能为空")
 	}
-	release := lockGroup(options.GroupID)
-	release.Lock()
-	defer release.Unlock()
-	if err := recoverTransactions(options.Root); err != nil {
+	release, err := acquireCatalogMutation(options.Root, options.GroupID)
+	if err != nil {
 		return MutationResult{}, err
 	}
+	defer release()
 	if options.Now.IsZero() {
 		options.Now = time.Now()
 	}
@@ -386,7 +378,7 @@ func loadProvider(ctx context.Context, groupDir string) (provider.Document, erro
 
 func loadMutationMetadata(options MutationOptions) (Metadata, error) {
 	path := filepath.Join(options.GroupDir, "meta.json")
-	metadata, err := LoadMetadata(path, options.GroupID)
+	metadata, err := LoadMetadataLocked(path, options.GroupID)
 	if os.IsNotExist(err) {
 		metadata = NewMetadata(options.GroupID, options.Name, options.Type, "", options.Now)
 	}
@@ -449,7 +441,7 @@ func commitPair(ctx context.Context, groupDir string, document provider.Document
 		return err
 	}
 	metadataContent = append(metadataContent, '\n')
-	return CommitPair(parent, groupDir, providerContent, metadataContent)
+	return commitPairLocked(parent, groupDir, providerContent, metadataContent)
 }
 
 func fileExists(path string) bool {

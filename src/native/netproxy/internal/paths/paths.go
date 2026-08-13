@@ -59,18 +59,6 @@ func (l Layout) EBPFConfig() string { return filepath.Join(l.Config(), "ebpf", "
 // SingBoxDir 返回 sing-box 静态配置根目录。
 func (l Layout) SingBoxDir() string { return filepath.Join(l.Config(), "singbox") }
 
-// SingBoxConfDir 返回 sing-box 配置片段目录。
-func (l Layout) SingBoxConfDir() string { return SingBoxConfDir(l.SingBoxDir()) }
-
-// SingBoxRulesDir 返回 sing-box 规则资源目录。
-func (l Layout) SingBoxRulesDir() string { return SingBoxRulesDir(l.SingBoxDir()) }
-
-// SingBoxLocalRulesDir 返回可编辑的本地规则目录。
-func (l Layout) SingBoxLocalRulesDir() string { return SingBoxLocalRulesDir(l.SingBoxDir()) }
-
-// SingBoxRemoteRulesDir 返回内置的远程规则目录。
-func (l Layout) SingBoxRemoteRulesDir() string { return SingBoxRemoteRulesDir(l.SingBoxDir()) }
-
 // Runtime 返回运行时生成目录。
 func (l Layout) Runtime() string { return filepath.Join(l.moduleRoot, "runtime") }
 
@@ -107,21 +95,6 @@ func (l Layout) ProgressDir() string { return filepath.Join(l.DevRoot(), "subscr
 // WiFiState 返回 Wi-Fi 自动策略状态文件路径。
 func (l Layout) WiFiState() string { return filepath.Join(l.DevRoot(), "wifi_state") }
 
-// Catalog 返回 Catalog 持久化目录。
-func Catalog(root string) string { return New(root).Catalog() }
-
-// ModuleConfig 返回模块配置文件路径。
-func ModuleConfig(root string) string { return New(root).ModuleConfig() }
-
-// EBPFConfig 返回 eBPF 配置文件路径。
-func EBPFConfig(root string) string { return New(root).EBPFConfig() }
-
-// SingBox 返回 sing-box 二进制路径。
-func SingBox(root string) string { return New(root).SingBox() }
-
-// SingBoxConfig 返回 sing-box 静态配置根目录。
-func SingBoxConfig(root string) string { return New(root).SingBoxDir() }
-
 // SingBoxConfDir 返回给定 sing-box 配置根目录下的配置片段目录。
 func SingBoxConfDir(singBoxDir string) string { return filepath.Join(singBoxDir, "confdir") }
 
@@ -137,9 +110,3 @@ func SingBoxLocalRulesDir(singBoxDir string) string {
 func SingBoxRemoteRulesDir(singBoxDir string) string {
 	return filepath.Join(SingBoxRulesDir(singBoxDir), "remote")
 }
-
-// Runtime 返回运行时生成目录。
-func Runtime(root string) string { return New(root).Runtime() }
-
-// Logs 返回日志目录。
-func Logs(root string) string { return New(root).Logs() }

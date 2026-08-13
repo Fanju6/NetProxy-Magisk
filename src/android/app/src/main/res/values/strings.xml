@@ -44,6 +44,7 @@
     <string name="dashboard_mode_global">全局</string>
     <string name="dashboard_mode_direct">直连</string>
     <string name="dashboard_mode_allow_ads">允许广告</string>
+    <string name="dashboard_mode_unknown">实际模式未知</string>
     <string name="dashboard_current_node">当前节点</string>
     <string name="dashboard_not_selected">未选择</string>
     <string name="dashboard_service_up">UP: %1$s</string>
@@ -193,6 +194,7 @@
     <string name="logs">日志</string>
     <string name="service_logs">运行日志</string>
     <string name="kernel_logs">内核日志</string>
+    <string name="refresh_logs">刷新日志</string>
     <string name="raw_view">原始视图</string>
     <string name="card_view">卡片视图</string>
     <string name="scroll_to_top">滚动到顶部</string>

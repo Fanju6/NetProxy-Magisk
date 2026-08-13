@@ -24,6 +24,7 @@ const (
 	methodSelectOutbound      = "/daemon.StartedService/SelectOutbound"
 	methodURLTest             = "/daemon.StartedService/URLTest"
 	methodSubscribeGroups     = "/daemon.StartedService/SubscribeGroups"
+	methodSubscribeOutbounds  = "/daemon.StartedService/SubscribeOutbounds"
 	methodCloseAllConnections = "/daemon.StartedService/CloseAllConnections"
 )
 
@@ -88,6 +89,7 @@ type selectOutboundRequest struct {
 }
 type urlTestRequest struct{ Outbound string }
 type groupsResponse struct{ Groups []Group }
+type outboundsResponse struct{ Outbounds []GroupItem }
 
 func New(address string, secret string) (*Client, error) {
 	address = strings.TrimSpace(address)
@@ -208,6 +210,23 @@ func (c *Client) Groups(ctx context.Context) ([]Group, error) {
 		return nil, err
 	}
 	return response.Groups, nil
+}
+
+// Outbounds 返回当前 sing-box 实例注册的出站与端点快照。
+func (c *Client) Outbounds(ctx context.Context) ([]GroupItem, error) {
+	payload, err := (wireCodec{}).Marshal(&emptyMessage{})
+	if err != nil {
+		return nil, err
+	}
+	content, err := c.doRequest(ctx, methodSubscribeOutbounds, payload, true)
+	if err != nil {
+		return nil, err
+	}
+	var response outboundsResponse
+	if err = (wireCodec{}).Unmarshal(content, &response); err != nil {
+		return nil, err
+	}
+	return response.Outbounds, nil
 }
 
 const maxFrameSize = 32 << 20
@@ -342,6 +361,8 @@ func (wireCodec) Unmarshal(content []byte, value any) error {
 		return decodeMode(content, message)
 	case *groupsResponse:
 		return decodeGroups(content, message)
+	case *outboundsResponse:
+		return decodeOutbounds(content, message)
 	default:
 		return fmt.Errorf("unsupported Service API response %T", value)
 	}
@@ -492,6 +513,24 @@ func decodeGroups(content []byte, message *groupsResponse) error {
 			return length, err
 		}
 		message.Groups = append(message.Groups, group)
+		return length, nil
+	})
+}
+
+func decodeOutbounds(content []byte, message *outboundsResponse) error {
+	return consumeFields(content, func(number protowire.Number, wireType protowire.Type, field []byte) (int, error) {
+		if number != 1 {
+			return 0, nil
+		}
+		value, length, err := consumeBytes(field, wireType)
+		if err != nil {
+			return length, err
+		}
+		var item GroupItem
+		if err = decodeGroupItem(value, &item); err != nil {
+			return length, err
+		}
+		message.Outbounds = append(message.Outbounds, item)
 		return length, nil
 	})
 }

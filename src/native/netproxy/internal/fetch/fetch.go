@@ -52,6 +52,18 @@ type Request struct {
 	Timeout       time.Duration
 }
 
+// RedirectError 表示订阅重定向违反了下载安全策略。
+type RedirectError struct {
+	Reason string
+}
+
+func (e *RedirectError) Error() string {
+	if e == nil || e.Reason == "" {
+		return "subscription redirect rejected"
+	}
+	return "subscription redirect rejected: " + e.Reason
+}
+
 type Usage struct {
 	Upload   *int64 `json:"upload,omitempty"`
 	Download *int64 `json:"download,omitempty"`
@@ -108,7 +120,13 @@ func Subscription(ctx context.Context, request Request) (Response, error) {
 		}
 		transport.Proxy = http.ProxyURL(proxyURL)
 	}
-	client := &http.Client{Transport: transport, Timeout: request.Timeout}
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   request.Timeout,
+		CheckRedirect: func(redirectRequest *http.Request, via []*http.Request) error {
+			return checkSubscriptionRedirect(redirectRequest, via)
+		},
+	}
 	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, request.URL, nil)
 	if err != nil {
 		return Response{}, errors.New("invalid subscription URL")
@@ -181,6 +199,67 @@ func subscriptionDialContext(ctx context.Context, network, address string) (net.
 		lastError = errors.New("DNS returned no usable address")
 	}
 	return nil, lastError
+}
+
+func checkSubscriptionRedirect(request *http.Request, via []*http.Request) error {
+	if request == nil || request.URL == nil {
+		return &RedirectError{Reason: "重定向目标无效"}
+	}
+	if !isHTTPSubscriptionScheme(request.URL.Scheme) {
+		return &RedirectError{Reason: "重定向目标协议不受支持"}
+	}
+	if len(via) == 0 {
+		return nil
+	}
+	previous := via[len(via)-1]
+	if previous == nil || previous.URL == nil {
+		return &RedirectError{Reason: "重定向来源无效"}
+	}
+	if strings.EqualFold(previous.URL.Scheme, "https") && strings.EqualFold(request.URL.Scheme, "http") {
+		return &RedirectError{Reason: "禁止 HTTPS 降级到 HTTP"}
+	}
+	if !sameSubscriptionOrigin(previous.URL, request.URL) {
+		stripRedirectHeaders(request)
+	}
+	return nil
+}
+
+func isHTTPSubscriptionScheme(scheme string) bool {
+	return strings.EqualFold(scheme, "http") || strings.EqualFold(scheme, "https")
+}
+
+func sameSubscriptionOrigin(first, second *url.URL) bool {
+	if first == nil || second == nil {
+		return false
+	}
+	return strings.EqualFold(first.Scheme, second.Scheme) &&
+		strings.EqualFold(first.Hostname(), second.Hostname()) &&
+		subscriptionPort(first) == subscriptionPort(second)
+}
+
+func subscriptionPort(value *url.URL) string {
+	if port := value.Port(); port != "" {
+		return port
+	}
+	switch strings.ToLower(value.Scheme) {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	default:
+		return ""
+	}
+}
+
+func stripRedirectHeaders(request *http.Request) {
+	for key := range request.Header {
+		switch strings.ToLower(key) {
+		case "user-agent", "accept", "if-none-match", "if-modified-since":
+			continue
+		default:
+			delete(request.Header, key)
+		}
+	}
 }
 
 func subscriptionResolvers() []ipResolver {

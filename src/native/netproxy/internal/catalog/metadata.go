@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -52,12 +53,28 @@ type Metadata struct {
 	NextUpdateAt       string                `json:"next_update_at"`
 	NextUpdateEpoch    int64                 `json:"next_update_epoch"`
 	LastError          string                `json:"last_error"`
+	RuntimeSyncPending bool                  `json:"runtime_sync_pending"`
+	RuntimeSyncState   string                `json:"runtime_sync_state"`
 	CreatedAt          string                `json:"created_at"`
 	UpdatedAt          string                `json:"updated_at"`
 }
 
 // LoadMetadata 读取并补齐旧字段缺省值。
 func LoadMetadata(path, fallbackID string) (Metadata, error) {
+	root, err := catalogRootForPath(path)
+	if err != nil {
+		return Metadata{}, err
+	}
+	release, err := acquireCatalogRootAndRecover(root)
+	if err != nil {
+		return Metadata{}, err
+	}
+	defer release()
+	return LoadMetadataLocked(path, fallbackID)
+}
+
+// LoadMetadataLocked 在调用方已持有 Catalog 根锁时读取元数据。
+func LoadMetadataLocked(path, fallbackID string) (Metadata, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return Metadata{}, err
@@ -77,6 +94,20 @@ func LoadMetadata(path, fallbackID string) (Metadata, error) {
 
 // SaveMetadataAtomic 以 0600 权限原子保存 Catalog 元数据。
 func SaveMetadataAtomic(path string, metadata Metadata) error {
+	root, err := catalogRootForPath(path)
+	if err != nil {
+		return err
+	}
+	release, err := acquireCatalogRootAndRecover(root)
+	if err != nil {
+		return err
+	}
+	defer release()
+	return SaveMetadataAtomicLocked(path, metadata)
+}
+
+// SaveMetadataAtomicLocked 在调用方已持有 Catalog 根锁时原子保存元数据。
+func SaveMetadataAtomicLocked(path string, metadata Metadata) error {
 	metadata = NormalizeMetadata(metadata)
 	content, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
@@ -86,6 +117,17 @@ func SaveMetadataAtomic(path string, metadata Metadata) error {
 	return provider.WriteAtomic(path, content, 0o600)
 }
 
+func catalogRootForPath(path string) (string, error) {
+	if strings.TrimSpace(path) == "" {
+		return "", errors.New("Catalog 元数据路径不能为空")
+	}
+	absPath, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return "", err
+	}
+	return filepath.Dir(filepath.Dir(absPath)), nil
+}
+
 // NewMetadata 创建一份可直接写入 Catalog 的默认元数据。
 func NewMetadata(id, name, metadataType, rawURL string, now time.Time) Metadata {
 	if now.IsZero() {
@@ -93,20 +135,21 @@ func NewMetadata(id, name, metadataType, rawURL string, now time.Time) Metadata 
 	}
 	nowText := FormatEpochUTC(now.Unix())
 	return Metadata{
-		Schema:          1,
-		ID:              id,
-		Name:            name,
-		Type:            metadataType,
-		URL:             rawURL,
-		CustomHeaders:   map[string]string{},
-		UpdateInterval:  int64(defaultInterval / time.Second),
-		IntervalSource:  "default",
-		UpdateViaProxy:  "auto",
-		Timeout:         60,
-		Usage:           json.RawMessage("null"),
-		LastDiagnostics: []provider.Diagnostic{},
-		CreatedAt:       nowText,
-		UpdatedAt:       nowText,
+		Schema:           1,
+		ID:               id,
+		Name:             name,
+		Type:             metadataType,
+		URL:              rawURL,
+		CustomHeaders:    map[string]string{},
+		UpdateInterval:   int64(defaultInterval / time.Second),
+		IntervalSource:   "default",
+		UpdateViaProxy:   "auto",
+		Timeout:          60,
+		Usage:            json.RawMessage("null"),
+		LastDiagnostics:  []provider.Diagnostic{},
+		RuntimeSyncState: "not_running",
+		CreatedAt:        nowText,
+		UpdatedAt:        nowText,
 	}
 }
 
@@ -184,6 +227,9 @@ func NormalizeMetadata(metadata Metadata) Metadata {
 	}
 	if metadata.LastDiagnostics == nil {
 		metadata.LastDiagnostics = []provider.Diagnostic{}
+	}
+	if metadata.RuntimeSyncState != "applied" && metadata.RuntimeSyncState != "failed" && metadata.RuntimeSyncState != "not_running" {
+		metadata.RuntimeSyncState = "not_running"
 	}
 	return metadata
 }

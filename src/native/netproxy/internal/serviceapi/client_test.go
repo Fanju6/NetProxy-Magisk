@@ -205,3 +205,31 @@ func TestWireCodecUnmarshalGroups(t *testing.T) {
 		t.Fatalf("unexpected decoded group: %#v", response.Groups[0])
 	}
 }
+
+func TestOutboundsOverGRPCWeb(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != methodSubscribeOutbounds {
+			http.Error(writer, "unexpected method", http.StatusNotFound)
+			return
+		}
+		item := appendString(nil, 1, "fixture/node")
+		item = appendString(item, 2, "vless")
+		payload := protowire.AppendTag(nil, 1, protowire.BytesType)
+		payload = protowire.AppendBytes(payload, item)
+		writeTestFrame(t, writer, 0, payload)
+	}))
+	defer server.Close()
+
+	client, err := New(server.URL, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	outbounds, err := client.Outbounds(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(outbounds) != 1 || outbounds[0].Tag != "fixture/node" || outbounds[0].Type != "vless" {
+		t.Fatalf("unexpected outbounds: %#v", outbounds)
+	}
+}

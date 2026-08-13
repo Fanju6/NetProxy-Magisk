@@ -59,10 +59,22 @@ export async function ctlJson<T>(args: string[], timeoutMs = DEFAULT_TIMEOUT_MS)
 
 export const shell = run
 
+interface CatalogCompletion {
+  id: string
+  type: string
+}
+
+function isCatalogCompletion(value: unknown): value is CatalogCompletion {
+  if (typeof value !== 'object' || value === null) return false
+  const item = value as Record<string, unknown>
+  return typeof item.id === 'string' && item.id.length > 0 && typeof item.type === 'string'
+}
+
 export async function completions() {
-  const [cat, sub] = await Promise.all([ctlJson<any[]>(['catalog', 'list']), ctlJson<any[]>(['sub', 'list'])])
+  const result = await ctlJson<unknown[]>(['catalog', 'list'])
+  const groups = result.ok && Array.isArray(result.data) ? result.data.filter(isCatalogCompletion) : []
   return {
-    groups: cat.ok && Array.isArray(cat.data) ? cat.data.map((g: any) => g.id).filter(Boolean) : [],
-    subs: sub.ok && Array.isArray(sub.data) ? sub.data.map((g: any) => g.id).filter(Boolean) : []
+    groups: groups.map(group => group.id),
+    subs: groups.filter(group => group.type === 'subscription').map(group => group.id)
   }
 }

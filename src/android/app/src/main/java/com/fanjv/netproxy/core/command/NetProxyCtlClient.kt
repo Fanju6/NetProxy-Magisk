@@ -35,16 +35,22 @@ internal fun interface NetProxyCtlTransport {
     fun execute(arguments: List<String>, timeoutMillis: Long): NetProxyCtlOutput
 }
 
+private const val TRANSPORT_GRACE_MILLIS = 5_000L
+
 private object RootShellNetProxyCtlTransport : NetProxyCtlTransport {
     override fun execute(arguments: List<String>, timeoutMillis: Long): NetProxyCtlOutput {
-        val result = ShellCommand.exec(
-            timeoutMillis,
-            ModulePaths.NETPROXYCTL,
-            "--json",
-            "--timeout",
-            "${(timeoutMillis + 999L) / 1000L}s",
-            *arguments.toTypedArray()
-        )
+        val command = mutableListOf(ModulePaths.NETPROXYCTL, "--json")
+        if (timeoutMillis > 0) {
+            command += listOf("--timeout", "${(timeoutMillis + 999L) / 1000L}s")
+        }
+        command += arguments
+        val result = if (timeoutMillis > 0) {
+            ShellCommand.exec(timeoutMillis + TRANSPORT_GRACE_MILLIS, *command.toTypedArray())
+        } else {
+            ShellCommand.exec(*command.toTypedArray()).let {
+                TimedShellResult(it.isSuccess, it.out, it.err)
+            }
+        }
         return NetProxyCtlOutput(
             successful = result.successful,
             stdout = result.stdout,
@@ -130,7 +136,9 @@ internal class NetProxyCtlClient(
     suspend fun execute(vararg args: String): NetProxyCtlResponse = withContext(Dispatchers.IO) {
         val arguments = args.toList()
         val timeoutMillis =
-            if (arguments.firstOrNull() == "service" && arguments.getOrNull(1) == "start") {
+            if (isSubscriptionMutation(arguments)) {
+                NO_OUTER_TIMEOUT
+            } else if (arguments.firstOrNull() == "service" && arguments.getOrNull(1) == "start") {
                 SERVICE_START_TIMEOUT_MILLIS
             } else {
                 DEFAULT_TIMEOUT_MILLIS
@@ -139,11 +147,16 @@ internal class NetProxyCtlClient(
     }
 
     private companion object {
+        const val NO_OUTER_TIMEOUT = 0L
         const val DEFAULT_TIMEOUT_MILLIS = 30_000L
         const val SERVICE_START_TIMEOUT_MILLIS = 120_000L
         val TRANSPORT_ERROR_CODES = setOf(
             "transport.invalid_output",
             "transport.invalid_json"
         )
+
+        fun isSubscriptionMutation(arguments: List<String>): Boolean =
+            arguments.firstOrNull() == "sub" &&
+                arguments.getOrNull(1) in setOf("add", "edit", "update", "update-all")
     }
 }

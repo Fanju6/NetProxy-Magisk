@@ -27,7 +27,12 @@ type NetworkEvaluation struct {
 //
 // 网络脚本只负责采集 Android 原始事件；SSID 匹配、移动网络策略、模式切换
 // 和连接清理全部在这里完成，避免 Shell 与 Go 各自维护一套状态机。
-func EvaluateNetwork(ctx context.Context, options Options, networkType, ssid string) (NetworkEvaluation, error) {
+func EvaluateNetwork(ctx context.Context, options Options, networkType, ssid string) (result NetworkEvaluation, err error) {
+	defer func() {
+		if err != nil || result.Changed {
+			logOperation(options, "network", "network.policy", "网络策略应用", false, err)
+		}
+	}()
 	module, err := moduleconfig.LoadModule(options.ModuleConfig)
 	if err != nil {
 		return NetworkEvaluation{}, err
@@ -36,7 +41,7 @@ func EvaluateNetwork(ctx context.Context, options Options, networkType, ssid str
 	if networkType != "wifi" && networkType != "not_wifi" {
 		return NetworkEvaluation{}, errors.New("网络类型必须是 wifi 或 not_wifi")
 	}
-	result := NetworkEvaluation{
+	result = NetworkEvaluation{
 		Enabled:     module.WiFiAutoSwitch,
 		NetworkType: networkType,
 		SSID:        strings.TrimSpace(ssid),

@@ -148,7 +148,9 @@ func Check(ctx context.Context, options Options, allowEmpty bool) (PrepareResult
 }
 
 // SelectNode 更新持久选择，并在服务运行时通过 Service API 同步选择器。
-func SelectNode(ctx context.Context, options Options, target, group string) (map[string]string, error) {
+func SelectNode(ctx context.Context, options Options, target, group string) (data map[string]string, err error) {
+	persisted := false
+	defer func() { logOperation(options, "node", "node.select", "节点选择", persisted, err) }()
 	if err := options.validate(); err != nil {
 		return nil, err
 	}
@@ -178,6 +180,7 @@ func SelectNode(ctx context.Context, options Options, target, group string) (map
 		if err := moduleconfig.UpdateModule(options.ModuleConfig, updates); err != nil {
 			return nil, err
 		}
+		persisted = true
 		runtimeTag, err := catalog.RuntimeTag(options.CatalogRoot, group)
 		if err != nil {
 			return nil, err
@@ -212,6 +215,7 @@ func SelectNode(ctx context.Context, options Options, target, group string) (map
 	}); err != nil {
 		return nil, err
 	}
+	persisted = true
 	if err := syncRuntimeSelector(ctx, options, "Select/"+runtimeTag, runtimeTag+"/"+tag); err != nil {
 		return nil, err
 	}
@@ -285,13 +289,16 @@ func retryRuntimeSelection(ctx context.Context, client *serviceapi.Client, optio
 }
 
 // ApplyMode 持久化出站模式，并优先使用 Service API 同步运行实例。
-func ApplyMode(ctx context.Context, options Options, mode string) error {
+func ApplyMode(ctx context.Context, options Options, mode string) (err error) {
+	persisted := false
+	defer func() { logOperation(options, "mode", "mode.apply", "出站模式切换", persisted, err) }()
 	if mode != "rule" && mode != "global" && mode != "direct" && mode != "AllowAds" {
 		return fmt.Errorf("未知出站模式: %s", mode)
 	}
 	if err := moduleconfig.UpdateModule(options.ModuleConfig, map[string]string{"OUTBOUND_MODE": mode}); err != nil {
 		return err
 	}
+	persisted = true
 	if !service.ProcessRunning(options.SingBoxPath) {
 		return nil
 	}
@@ -314,7 +321,9 @@ func ApplyMode(ctx context.Context, options Options, mode string) error {
 }
 
 // UpdateApp 按类型化 eBPF 配置修改分应用策略。
-func UpdateApp(options Options, action, value, users string) (map[string]any, error) {
+func UpdateApp(options Options, action, value, users string) (data map[string]any, err error) {
+	persisted := false
+	defer func() { logOperation(options, "app", "app-policy.update", "分应用策略更新", persisted, err) }()
 	config, err := ebpf.Load(options.EBPFConfig)
 	if err != nil {
 		return nil, err
@@ -362,6 +371,7 @@ func UpdateApp(options Options, action, value, users string) (map[string]any, er
 	}); err != nil {
 		return nil, err
 	}
+	persisted = true
 	config, err = ebpf.Load(options.EBPFConfig)
 	if err != nil {
 		return nil, err
@@ -376,14 +386,15 @@ func appData(config ebpf.Config) map[string]any {
 }
 
 // NodeAppend 将节点加入本地分组并处理活动状态与运行时 reload。
-func NodeAppend(ctx context.Context, options Options, groupID, input string, allowInsecure bool) (catalog.MutationResult, error) {
+func NodeAppend(ctx context.Context, options Options, groupID, input string, allowInsecure bool) (mutation catalog.MutationResult, err error) {
+	defer func() { logOperation(options, "node", "node.append", "节点添加", mutation.Revision > 0, err) }()
 	if err := ensureDefaultGroup(ctx, options); err != nil {
 		return catalog.MutationResult{}, err
 	}
 	if groupID == "" {
 		groupID = "default"
 	}
-	groupID, err := catalog.ResolveGroup(options.CatalogRoot, groupID)
+	groupID, err = catalog.ResolveGroup(options.CatalogRoot, groupID)
 	if err != nil {
 		return catalog.MutationResult{}, err
 	}
@@ -398,7 +409,8 @@ func NodeAppend(ctx context.Context, options Options, groupID, input string, all
 }
 
 // NodeImport 将本地文件中的节点追加到 default 本地配置组。
-func NodeImport(ctx context.Context, options Options, input string, allowInsecure bool) (catalog.MutationResult, error) {
+func NodeImport(ctx context.Context, options Options, input string, allowInsecure bool) (mutation catalog.MutationResult, err error) {
+	defer func() { logOperation(options, "node", "node.import", "节点导入", mutation.Revision > 0, err) }()
 	if err := ensureDefaultGroup(ctx, options); err != nil {
 		return catalog.MutationResult{}, err
 	}
@@ -420,7 +432,8 @@ func NodeImport(ctx context.Context, options Options, input string, allowInsecur
 }
 
 // NodeEdit 原子替换指定分组的节点。
-func NodeEdit(ctx context.Context, options Options, reference, input string, allowInsecure bool) (catalog.MutationResult, error) {
+func NodeEdit(ctx context.Context, options Options, reference, input string, allowInsecure bool) (mutation catalog.MutationResult, err error) {
+	defer func() { logOperation(options, "node", "node.edit", "节点编辑", mutation.Revision > 0, err) }()
 	groupID, tag, err := splitReference(reference)
 	if err != nil {
 		return catalog.MutationResult{}, err
@@ -440,7 +453,8 @@ func NodeEdit(ctx context.Context, options Options, reference, input string, all
 }
 
 // NodeRemove 删除指定节点，并在手动节点消失时回退 Auto。
-func NodeRemove(ctx context.Context, options Options, reference string) (catalog.MutationResult, error) {
+func NodeRemove(ctx context.Context, options Options, reference string) (mutation catalog.MutationResult, err error) {
+	defer func() { logOperation(options, "node", "node.remove", "节点删除", mutation.Revision > 0, err) }()
 	groupID, tag, err := splitReference(reference)
 	if err != nil {
 		return catalog.MutationResult{}, err
@@ -463,7 +477,9 @@ func NodeRemove(ctx context.Context, options Options, reference string) (catalog
 }
 
 // RemoveSubscription 删除订阅并处理活动分组替代。
-func RemoveSubscription(ctx context.Context, options Options, query, replacement string) error {
+func RemoveSubscription(ctx context.Context, options Options, query, replacement string) (err error) {
+	deleted := false
+	defer func() { logOperation(options, "subscription", "subscription.remove", "订阅删除", deleted, err) }()
 	groupID, err := catalog.ResolveGroup(options.CatalogRoot, query)
 	if err != nil {
 		return err
@@ -506,6 +522,7 @@ func RemoveSubscription(ctx context.Context, options Options, query, replacement
 	if err := catalog.DeleteGroup(options.CatalogRoot, groupID); err != nil {
 		return err
 	}
+	deleted = true
 	if service.ProcessRunning(options.SingBoxPath) {
 		_, reloadErr := ManageService(ctx, options, "reload")
 		return reloadErr
@@ -584,9 +601,6 @@ func (options Options) validate() error {
 		if strings.TrimSpace(value) == "" {
 			return fmt.Errorf("%s路径不能为空", name)
 		}
-	}
-	if options.RequestTimeout <= 0 {
-		options.RequestTimeout = 8 * time.Second
 	}
 	return nil
 }
@@ -672,7 +686,10 @@ type SubscriptionOptions struct {
 }
 
 // AddSubscription 创建订阅并立即执行一次验证更新。
-func AddSubscription(ctx context.Context, options SubscriptionOptions) (subscription.Result, error) {
+func AddSubscription(ctx context.Context, options SubscriptionOptions) (result subscription.Result, err error) {
+	defer func() {
+		logOperation(options.Options, "subscription", "subscription.add", "订阅添加", result.Persisted, err)
+	}()
 	if options.URL == "" {
 		return subscription.Result{}, errors.New("订阅 URL 不能为空")
 	}
@@ -687,6 +704,8 @@ func AddSubscription(ctx context.Context, options SubscriptionOptions) (subscrip
 		return subscription.Result{}, err
 	}
 	workerOptions := workerOptions(options.Options)
+	// 分组初始化已经提交；首次下载失败时也必须向客户端报告设置已持久化。
+	workerOptions.PersistedBeforeUpdate = true
 	updated, err := worker.UpdateGroup(ctx, workerOptions, groupID, time.Now(), nil)
 	if err != nil {
 		if options.Name == "" {
@@ -700,7 +719,10 @@ func AddSubscription(ctx context.Context, options SubscriptionOptions) (subscrip
 }
 
 // UpdateSubscription 执行指定订阅更新并处理更新后的运行时副作用。
-func UpdateSubscription(ctx context.Context, options Options, query string) (subscription.Result, error) {
+func UpdateSubscription(ctx context.Context, options Options, query string) (result subscription.Result, err error) {
+	defer func() {
+		logOperation(options, "subscription", "subscription.update", "订阅更新", result.Persisted, err)
+	}()
 	groupID, err := catalog.ResolveGroup(options.CatalogRoot, query)
 	if err != nil {
 		return subscription.Result{}, err
@@ -708,21 +730,98 @@ func UpdateSubscription(ctx context.Context, options Options, query string) (sub
 	return worker.UpdateGroup(ctx, workerOptions(options), groupID, time.Now(), nil)
 }
 
+// EditSubscription 保存订阅编辑，并将需要变更的运行时状态交给 Worker 应用。
+func EditSubscription(ctx context.Context, options Options, query string, edit subscription.EditOptions) (result subscription.EditResult, err error) {
+	defer func() {
+		logOperation(options, "subscription", "subscription.edit", "订阅编辑", result.Persisted, err)
+	}()
+	groupID, err := catalog.ResolveGroup(options.CatalogRoot, query)
+	if err != nil {
+		return subscription.EditResult{}, err
+	}
+	edit.Root = options.CatalogRoot
+	edit.GroupID = groupID
+	edit.ProgressDir = options.ProgressDir
+	edit.DeferUpdate = true
+	if edit.Now.IsZero() {
+		edit.Now = time.Now()
+	}
+	edited, err := subscription.Edit(ctx, edit)
+	if err != nil {
+		return edited, err
+	}
+	if !edited.RequiresUpdate && !edited.NameChanged {
+		if !service.ProcessRunning(options.SingBoxPath) {
+			if err := subscription.RecordRuntimeSyncNotRunning(ctx, options.CatalogRoot, groupID, edit.Now); err != nil {
+				return edited, err
+			}
+			edited.RuntimeSynced = false
+			edited.RuntimeSyncState = subscription.RuntimeSyncNotRunning
+		}
+		return edited, nil
+	}
+
+	var updated subscription.Result
+	workerOpts := workerOptions(options)
+	workerOpts.ProxyURL = edit.ProxyURL
+	workerOpts.FallbackDirect = edit.FallbackDirect
+	workerOpts.PersistedBeforeUpdate = true
+	if edited.RequiresUpdate {
+		updated, err = worker.UpdateGroup(ctx, workerOpts, groupID, edit.Now, nil)
+	} else {
+		updated, err = worker.SyncEditedGroup(ctx, workerOpts, groupID, edit.Now, nil)
+	}
+	if err != nil {
+		// 编辑设置已经在调用 Worker 前提交；更新失败只保留旧 Provider，不能把设置伪装成未保存。
+		if updated.Persisted {
+			edited.NodeCount = updated.NodeCount
+			if updated.Revision != 0 {
+				edited.Revision = updated.Revision
+			}
+			edited.StructureChanged = updated.StructureChanged
+			edited.NotModified = updated.NotModified
+			edited.RuntimeSynced = updated.RuntimeSynced
+			edited.RuntimeSyncState = updated.RuntimeSyncState
+			edited.RuntimeSyncPending = updated.RuntimeSyncPending
+		}
+		edited.Persisted = true
+		return edited, err
+	}
+	edited.NodeCount = updated.NodeCount
+	if updated.Revision != 0 {
+		edited.Revision = updated.Revision
+	}
+	edited.StructureChanged = updated.StructureChanged
+	edited.NotModified = updated.NotModified
+	edited.Persisted = updated.Persisted
+	edited.RuntimeSynced = updated.RuntimeSynced
+	edited.RuntimeSyncState = updated.RuntimeSyncState
+	edited.RuntimeSyncPending = updated.RuntimeSyncPending
+	return edited, err
+}
+
 // UpdateAllSubscriptions 按 Catalog 顺序更新全部订阅。
-func UpdateAllSubscriptions(ctx context.Context, options Options) (worker.Summary, error) {
+func UpdateAllSubscriptions(ctx context.Context, options Options) (result worker.Summary, err error) {
+	defer func() {
+		logOperation(options, "subscription", "subscription.update-all", "全部订阅更新", false, err)
+	}()
 	ids, err := catalog.GroupIDs(options.CatalogRoot, "subscription")
 	if err != nil {
 		return worker.Summary{}, err
 	}
 	summary := worker.Summary{Updated: []string{}, Failed: []string{}}
+	var firstUpdateErr error
 	for _, id := range ids {
 		if _, updateErr := worker.UpdateGroup(ctx, workerOptions(options), id, time.Now(), nil); updateErr != nil {
 			summary.Failed = append(summary.Failed, id)
+			if firstUpdateErr == nil {
+				firstUpdateErr = updateErr
+			}
 		} else {
 			summary.Updated = append(summary.Updated, id)
 		}
 	}
-	return summary, nil
+	return summary, firstUpdateErr
 }
 
 func workerOptions(options Options) worker.Options {

@@ -1,6 +1,10 @@
 package com.fanjv.netproxy.feature.logs.data
 
 import androidx.compose.runtime.Immutable
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.util.regex.Pattern
 
 /** 日志类型：服务、内核。 */
@@ -34,18 +38,14 @@ data class LogItem(
     val level: LogLevel,
     val tag: String,
     val message: String,
-    val outboundFlow: OutboundFlow? = null
+    val outboundFlow: OutboundFlow? = null,
+    val event: String = "",
+    val result: String = "",
+    val errorCode: String = ""
 )
 
 /** 将模块服务和内核日志转换为统一展示模型。 */
 internal object LogParser {
-
-    // 格式 1：[2026-05-31 18:09:49] [INFO] message
-    private val serviceLogPattern1 =
-        Pattern.compile("""^\[([\d\-:\s]+)]\s+\[([A-Za-z]+)]\s+(.*)$""")
-
-    // 格式 2：[Info]: message 或 [Warn]: message
-    private val serviceLogPattern2 = Pattern.compile("""^\[([A-Za-z]+)]:\s+(.*)$""")
 
     // 格式 1：2026-05-31T18:14:00Z INFO routing: message
     private val kernelLogPattern1 =
@@ -67,94 +67,73 @@ internal object LogParser {
     private val outboundConnPattern =
         Pattern.compile("""^outbound\s+(?:packet\s+)?connection\s+to\s+(\S+)$""")
 
-    fun parse(content: String, type: LogType): List<LogItem> =
+    fun parseKernel(content: String): List<LogItem> =
         content.lineSequence()
             .filter(String::isNotBlank)
-            .map { parseLogLine(it, type) }
+            .map(::parseKernelLine)
             .toList()
 
-    private fun parseLogLine(line: String, type: LogType): LogItem {
-        val safeLine = if (type == LogType.SERVICE) LogSanitizer.sanitizeLog(line) else line
+    fun parseNative(entries: JsonArray): List<LogItem> = entries.map { element ->
+        val entry = element.jsonObject
+        val timestamp = entry.requiredString("timestamp")
+        val levelText = entry.requiredString("level")
+        val component = entry.requiredString("component")
+        val event = entry.requiredString("event")
+        val result = entry.requiredString("result")
+        val errorCode = entry.requiredString("error_code")
+        val message = entry.requiredString("message")
+        LogItem(
+            rawLine = "[$timestamp] [$levelText] [$component] [$event] [$result] [${errorCode.ifEmpty { "-" }}] $message",
+            timestamp = timestamp,
+            level = parseLogLevel(levelText),
+            tag = component,
+            message = message,
+            event = event,
+            result = result,
+            errorCode = errorCode,
+        )
+    }
 
-        return when (type) {
-            LogType.SERVICE -> {
-                val matcher1 = serviceLogPattern1.matcher(safeLine)
-                if (matcher1.matches()) {
-                    val timestamp = matcher1.group(1).orEmpty()
-                    val levelStr = matcher1.group(2).orEmpty()
-                    val message = matcher1.group(3).orEmpty()
+    private fun parseKernelLine(line: String): LogItem {
+        val m3 = kernelLogPattern3.matcher(line)
+        return if (m3.matches()) {
+            val timestamp = formatDateTimeTimestamp(m3.group(2).orEmpty().trim())
+            val levelStr = m3.group(3).orEmpty()
+            val tag = m3.group(4).orEmpty()
+            val message = m3.group(5).orEmpty()
+            val level = parseLogLevel(levelStr)
+            val flow = parseOutboundFlow(message) ?: parseDetailOutboundFlow(message, tag)
+            LogItem(line, timestamp, level, tag, message, flow)
+        } else {
+            val m1 = kernelLogPattern1.matcher(line)
+            if (m1.matches()) {
+                val timestamp = formatIsoTimestamp(m1.group(1).orEmpty())
+                val levelStr = m1.group(2).orEmpty()
+                val tag = m1.group(3).orEmpty()
+                val message = m1.group(4).orEmpty()
+                val level = parseLogLevel(levelStr)
+                val flow =
+                    parseOutboundFlow(message) ?: parseDetailOutboundFlow(message, tag)
+                LogItem(line, timestamp, level, tag, message, flow)
+            } else {
+                val m2 = kernelLogPattern2.matcher(line)
+                if (m2.matches()) {
+                    val levelStr = m2.group(1).orEmpty()
+                    val tag = m2.group(2).orEmpty()
+                    val message = m2.group(3).orEmpty()
                     val level = parseLogLevel(levelStr)
-                    LogItem(
-                        rawLine = safeLine,
-                        timestamp = timestamp,
-                        level = level,
-                        tag = "System",
-                        message = message
-                    )
+                    val flow =
+                        parseOutboundFlow(message) ?: parseDetailOutboundFlow(message, tag)
+                    LogItem(line, "", level, tag, message, flow)
                 } else {
-                    val matcher2 = serviceLogPattern2.matcher(safeLine)
-                    if (matcher2.matches()) {
-                        val levelStr = matcher2.group(1).orEmpty()
-                        val message = matcher2.group(2).orEmpty()
-                        val level = parseLogLevel(levelStr)
-                        LogItem(
-                            rawLine = safeLine,
-                            timestamp = "",
-                            level = level,
-                            tag = "System",
-                            message = message
-                        )
-                    } else {
-                        LogItem(
-                            rawLine = safeLine,
-                            timestamp = "",
-                            level = guessLogLevel(safeLine),
-                            tag = "System",
-                            message = safeLine
-                        )
-                    }
-                }
-            }
-
-            LogType.KERNEL -> {
-                val m3 = kernelLogPattern3.matcher(safeLine)
-                if (m3.matches()) {
-                    val timestamp = formatDateTimeTimestamp(m3.group(2).orEmpty().trim())
-                    val levelStr = m3.group(3).orEmpty()
-                    val tag = m3.group(4).orEmpty()
-                    val message = m3.group(5).orEmpty()
-                    val level = parseLogLevel(levelStr)
-                    val flow = parseOutboundFlow(message) ?: parseDetailOutboundFlow(message, tag)
-                    LogItem(safeLine, timestamp, level, tag, message, flow)
-                } else {
-                    val m1 = kernelLogPattern1.matcher(safeLine)
-                    if (m1.matches()) {
-                        val timestamp = formatIsoTimestamp(m1.group(1).orEmpty())
-                        val levelStr = m1.group(2).orEmpty()
-                        val tag = m1.group(3).orEmpty()
-                        val message = m1.group(4).orEmpty()
-                        val level = parseLogLevel(levelStr)
-                        val flow =
-                            parseOutboundFlow(message) ?: parseDetailOutboundFlow(message, tag)
-                        LogItem(safeLine, timestamp, level, tag, message, flow)
-                    } else {
-                        val m2 = kernelLogPattern2.matcher(safeLine)
-                        if (m2.matches()) {
-                            val levelStr = m2.group(1).orEmpty()
-                            val tag = m2.group(2).orEmpty()
-                            val message = m2.group(3).orEmpty()
-                            val level = parseLogLevel(levelStr)
-                            val flow =
-                                parseOutboundFlow(message) ?: parseDetailOutboundFlow(message, tag)
-                            LogItem(safeLine, "", level, tag, message, flow)
-                        } else {
-                            LogItem(safeLine, "", LogLevel.UNKNOWN, "Kernel", safeLine)
-                        }
-                    }
+                    LogItem(line, "", LogLevel.UNKNOWN, "Kernel", line)
                 }
             }
         }
     }
+
+    private fun Map<String, JsonElement>.requiredString(key: String): String =
+        get(key)?.jsonPrimitive?.content ?: error("Native 日志条目缺少 $key")
 
     private fun parseLogLevel(levelStr: String): LogLevel {
         return when (levelStr.uppercase()) {
@@ -163,18 +142,6 @@ internal object LogParser {
             "WARN", "WARNING" -> LogLevel.WARN
             "ERROR", "FATAL" -> LogLevel.ERROR
             else -> LogLevel.UNKNOWN
-        }
-    }
-
-    private fun guessLogLevel(line: String): LogLevel {
-        val lower = line.lowercase()
-        return when {
-            lower.contains("error") || lower.contains("fail") || lower.contains("失败") || lower.contains(
-                "err"
-            ) -> LogLevel.ERROR
-
-            lower.contains("warn") || lower.contains("warning") || lower.contains("警告") -> LogLevel.WARN
-            else -> LogLevel.INFO
         }
     }
 

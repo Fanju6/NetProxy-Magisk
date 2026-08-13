@@ -2,16 +2,18 @@ package module
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/processlock"
 )
 
 type lifecycleLock struct {
-	path string
-	pid  int
+	path  string
+	pid   int
+	guard *processlock.Lock
 }
 
 func acquireLifecycleLock(stateFile string) (*lifecycleLock, error) {
@@ -22,32 +24,26 @@ func acquireLifecycleLock(stateFile string) (*lifecycleLock, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
-	lock := &lifecycleLock{path: path, pid: os.Getpid()}
-	if err := lock.create(); err == nil {
-		return lock, nil
-	} else if !os.IsExist(err) {
-		return nil, err
-	}
-
-	if lifecycleLockAlive(path) {
+	// OS 锁必须位于可回收的 PID 目录之外，否则崩溃清理会制造两个独立锁入口。
+	guard, err := processlock.TryAcquire(path + ".flock")
+	if errors.Is(err, processlock.ErrBusy) {
 		return nil, errors.New("已有服务操作正在执行")
 	}
-	stale := path + ".stale." + strconv.Itoa(os.Getpid())
-	_ = os.RemoveAll(stale)
-	if err := os.Rename(path, stale); err != nil {
-		if os.IsNotExist(err) {
-			return acquireLifecycleLock(stateFile)
-		}
-		return nil, fmt.Errorf("清理残留服务锁失败: %w", err)
+	if err != nil {
+		return nil, err
 	}
-	_ = os.RemoveAll(stale)
+	lock := &lifecycleLock{path: path, pid: os.Getpid(), guard: guard}
 	if err := lock.create(); err != nil {
+		_ = guard.Release()
 		return nil, err
 	}
 	return lock, nil
 }
 
 func (lock *lifecycleLock) create() error {
+	if err := os.RemoveAll(lock.path); err != nil {
+		return err
+	}
 	if err := os.Mkdir(lock.path, 0o700); err != nil {
 		return err
 	}
@@ -59,21 +55,6 @@ func (lock *lifecycleLock) create() error {
 }
 
 func (lock *lifecycleLock) release() {
-	content, err := os.ReadFile(filepath.Join(lock.path, "pid"))
-	if err != nil || strings.TrimSpace(string(content)) != strconv.Itoa(lock.pid) {
-		return
-	}
 	_ = os.RemoveAll(lock.path)
-}
-
-func lifecycleLockAlive(path string) bool {
-	content, err := os.ReadFile(filepath.Join(path, "pid"))
-	if err != nil {
-		return false
-	}
-	pid, err := strconv.Atoi(strings.TrimSpace(string(content)))
-	if err != nil {
-		return false
-	}
-	return pid == os.Getpid() || serviceProcessAlive(pid)
+	_ = lock.guard.Release()
 }

@@ -22,6 +22,11 @@ const (
 	serviceStopTimeout  = 10 * time.Second
 )
 
+var (
+	writeServiceState        = WriteServiceState
+	terminateServiceForStart = terminateService
+)
+
 // ServiceResult 描述一次服务操作结束后的统一状态快照。
 type ServiceResult struct {
 	Action string         `json:"action"`
@@ -92,7 +97,7 @@ func ManageService(ctx context.Context, options Options, action string) (Service
 	if action == "start" || action == "restart" {
 		if err := ensureWorker(ctx, options); err != nil {
 			// Worker 独立于 sing-box，不能因为订阅调度启动失败而把已经就绪的核心判为失败。
-			logService(options, "WARN", "后台 Worker 启动失败: %v", err)
+			logService(options, "WARN", "worker.start", "failed", "后台 Worker 启动失败: %v", err)
 		}
 	}
 	return serviceResult(ctx, options, action)
@@ -103,27 +108,33 @@ func StartService(ctx context.Context, options Options) error {
 	if err := validateLifecycleOptions(options); err != nil {
 		return err
 	}
-	state, _ := ReadServiceState(options.StateFile)
+	if err := recoverConfigApply(ctx, options); err != nil {
+		return err
+	}
+	state, stateErr := ReadServiceState(options.StateFile)
+	if stateErr != nil {
+		return fmt.Errorf("读取服务状态失败: %w", stateErr)
+	}
 	if pid := service.FindProcess(options.SingBoxPath, int(state.PID)); pid > 0 {
 		startedAt, err := serviceStartedAt(ctx, options)
 		if err != nil {
 			message := "检测到无响应的 sing-box 进程"
-			_ = WriteServiceState(options.StateFile, "failed", int64(pid), state.StartedAt, 0, message)
-			return fmt.Errorf("%s: %w", message, err)
+			stateErr := writeServiceState(options.StateFile, "failed", int64(pid), state.StartedAt, 0, message)
+			return errors.Join(fmt.Errorf("%s: %w", message, err), stateErr)
 		}
 		readyAt := state.ReadyAt
 		if readyAt <= 0 {
 			readyAt = time.Now().Unix()
 		}
-		if err := WriteServiceState(options.StateFile, "ready", int64(pid), startedAt, readyAt, ""); err != nil {
+		if err := writeServiceState(options.StateFile, "ready", int64(pid), startedAt, readyAt, ""); err != nil {
 			return err
 		}
-		logService(options, "WARN", "sing-box 已在运行 (PID: %d)", pid)
+		logService(options, "WARN", "service.start", "already-running", "sing-box 已在运行 (PID: %d)", pid)
 		return nil
 	}
 
-	logService(options, "INFO", "启动 sing-box 服务")
-	if err := WriteServiceState(options.StateFile, "preparing", 0, 0, 0, ""); err != nil {
+	logService(options, "INFO", "service.start", "started", "启动 sing-box 服务")
+	if err := writeServiceState(options.StateFile, "preparing", 0, 0, 0, ""); err != nil {
 		return err
 	}
 	prepared, err := Prepare(ctx, options, false)
@@ -149,10 +160,8 @@ func StartService(ctx context.Context, options Options) error {
 	_ = command.Process.Release()
 	_ = logFile.Close()
 	startedAt := time.Now().Unix()
-	if err := WriteServiceState(options.StateFile, "starting", int64(pid), startedAt, 0, ""); err != nil {
-		_ = terminateService(options, pid)
-		cleanupRuntimeFiles(options)
-		return err
+	if err := writeServiceState(options.StateFile, "starting", int64(pid), startedAt, 0, ""); err != nil {
+		return failServiceStateWrite(options, pid, startedAt, "starting", err)
 	}
 
 	actualStartedAt, err := waitForServiceReady(ctx, options, pid, serviceReadyTimeout, 0)
@@ -166,10 +175,10 @@ func StartService(ctx context.Context, options Options) error {
 		return failServiceStart(options, pid, startedAt, "运行时节点选择同步失败", err)
 	}
 	readyAt := time.Now().Unix()
-	if err := WriteServiceState(options.StateFile, "ready", int64(pid), startedAt, readyAt, ""); err != nil {
-		return err
+	if err := writeServiceState(options.StateFile, "ready", int64(pid), startedAt, readyAt, ""); err != nil {
+		return failServiceStateWrite(options, pid, startedAt, "ready", err)
 	}
-	logService(options, "INFO", "sing-box 服务启动完成 (PID: %d)", pid)
+	logService(options, "INFO", "service.start", "success", "sing-box 服务启动完成 (PID: %d)", pid)
 	return nil
 }
 
@@ -178,24 +187,26 @@ func StopService(_ context.Context, options Options) error {
 	if err := ensureLifecycleStateDir(options); err != nil {
 		return err
 	}
-	state, _ := ReadServiceState(options.StateFile)
-	pid := service.FindProcess(options.SingBoxPath, int(state.PID))
-	logService(options, "INFO", "停止 sing-box 服务")
-	if err := WriteServiceState(options.StateFile, "stopping", int64(pid), state.StartedAt, 0, ""); err != nil {
-		return err
+	state, stateErr := ReadServiceState(options.StateFile)
+	if stateErr != nil {
+		state = ServiceState{Schema: 1, State: "stopped"}
 	}
+	pid := service.FindProcess(options.SingBoxPath, int(state.PID))
+	logService(options, "INFO", "service.stop", "started", "停止 sing-box 服务")
+	stateWriteErr := writeServiceState(options.StateFile, "stopping", int64(pid), state.StartedAt, 0, "")
 	if pid > 0 {
 		if err := terminateService(options, pid); err != nil {
 			message := "sing-box 进程停止失败"
-			_ = WriteServiceState(options.StateFile, "failed", int64(pid), state.StartedAt, 0, message)
-			return fmt.Errorf("%s: %w", message, err)
+			failedWriteErr := writeServiceState(options.StateFile, "failed", int64(pid), state.StartedAt, 0, message)
+			return errors.Join(fmt.Errorf("%s: %w", message, err), stateErr, stateWriteErr, failedWriteErr)
 		}
 	}
 	cleanupRuntimeFiles(options)
-	if err := WriteServiceState(options.StateFile, "stopped", 0, 0, 0, ""); err != nil {
-		return err
+	stoppedWriteErr := writeServiceState(options.StateFile, "stopped", 0, 0, 0, "")
+	if err := errors.Join(stateErr, stateWriteErr, stoppedWriteErr); err != nil {
+		return fmt.Errorf("停止 sing-box 已完成，但服务状态写入失败: %w", err)
 	}
-	logService(options, "INFO", "sing-box 服务已停止")
+	logService(options, "INFO", "service.stop", "success", "sing-box 服务已停止")
 	return nil
 }
 
@@ -204,6 +215,64 @@ func ReloadService(ctx context.Context, options Options) error {
 	if err := validateLifecycleOptions(options); err != nil {
 		return err
 	}
+	if err := recoverConfigApply(ctx, options); err != nil {
+		return err
+	}
+	state, stateErr := ReadServiceState(options.StateFile)
+	if stateErr != nil {
+		return fmt.Errorf("读取服务状态失败: %w", stateErr)
+	}
+	pid := service.FindProcess(options.SingBoxPath, int(state.PID))
+	if pid <= 0 {
+		return errors.New("sing-box 未运行，无法重新加载")
+	}
+	if _, err := serviceStartedAtMillis(ctx, options); err != nil {
+		return fmt.Errorf("Service API 未就绪，无法确认原位重新加载: %w", err)
+	}
+	logService(options, "INFO", "service.reload", "started", "重新加载 sing-box 配置")
+	prepared, err := Prepare(ctx, options, false)
+	if err != nil {
+		return fmt.Errorf("重新加载配置生成失败: %w", err)
+	}
+	if err := checkPreparedConfiguration(ctx, options, prepared); err != nil {
+		return err
+	}
+	return reloadPreparedService(ctx, options, prepared, true)
+}
+
+func reloadAppliedConfig(ctx context.Context, options Options) error {
+	prepared, err := Prepare(ctx, options, false)
+	if err != nil {
+		return fmt.Errorf("重新加载配置生成失败: %w", err)
+	}
+	if err := checkPreparedConfiguration(ctx, options, prepared); err != nil {
+		return err
+	}
+	reloadOptions := options
+	reloadOptions.SkipServiceReload = true
+	return reloadPreparedService(ctx, reloadOptions, prepared, true)
+}
+
+func reloadConfigSnapshot(ctx context.Context, options Options, journal configApplyJournal) error {
+	prepared := prepareFromConfigJournal(options, journal)
+	for name, path := range map[string]string{
+		"providers": prepared.Providers,
+		"outbounds": prepared.Outbounds,
+		"ebpf":      prepared.EBPF,
+	} {
+		if path == "" {
+			return fmt.Errorf("旧运行时快照缺少 %s", name)
+		}
+		if _, err := os.Stat(path); err != nil {
+			return fmt.Errorf("旧运行时快照 %s 不可用: %w", name, err)
+		}
+	}
+	reloadOptions := options
+	reloadOptions.SkipServiceReload = true
+	return reloadPreparedService(ctx, reloadOptions, prepared, false)
+}
+
+func reloadPreparedService(ctx context.Context, options Options, prepared PrepareResult, syncSelection bool) error {
 	state, _ := ReadServiceState(options.StateFile)
 	pid := service.FindProcess(options.SingBoxPath, int(state.PID))
 	if pid <= 0 {
@@ -214,18 +283,7 @@ func ReloadService(ctx context.Context, options Options) error {
 		return fmt.Errorf("Service API 未就绪，无法确认原位重新加载: %w", err)
 	}
 	oldStartedAt := oldStartedAtMillis / 1000
-	logService(options, "INFO", "重新加载 sing-box 配置")
-	prepared, err := Prepare(ctx, options, false)
-	if err != nil {
-		return fmt.Errorf("重新加载配置生成失败: %w", err)
-	}
-	if err := checkPreparedConfiguration(ctx, options, prepared); err != nil {
-		return err
-	}
-	if err := syncRuntimeSelection(options.ModuleConfig, prepared.RuntimeResult); err != nil {
-		return fmt.Errorf("运行时选择状态同步失败: %w", err)
-	}
-	if err := WriteServiceState(options.StateFile, "starting", int64(pid), oldStartedAt, 0, ""); err != nil {
+	if err := writeServiceState(options.StateFile, "starting", int64(pid), oldStartedAt, 0, ""); err != nil {
 		return err
 	}
 	if err := signalServiceReload(pid); err != nil {
@@ -235,21 +293,34 @@ func ReloadService(ctx context.Context, options Options) error {
 	if err != nil {
 		return restoreReloadState(ctx, options, pid, oldStartedAt, state.ReadyAt, err)
 	}
-	syncOptions := options
-	syncOptions.SkipServiceReload = true
-	if _, err := SyncSelection(ctx, syncOptions); err != nil {
-		return restoreReloadState(ctx, options, pid, startedAt, state.ReadyAt, err)
+	if syncSelection {
+		syncOptions := options
+		syncOptions.SkipServiceReload = true
+		if err := syncRuntimeSelection(options.ModuleConfig, prepared.RuntimeResult); err != nil {
+			return restoreReloadState(ctx, options, pid, startedAt, state.ReadyAt, err)
+		}
+		if _, err := SyncSelection(ctx, syncOptions); err != nil {
+			return restoreReloadState(ctx, options, pid, startedAt, state.ReadyAt, err)
+		}
 	}
-	if err := WriteServiceState(options.StateFile, "ready", int64(pid), startedAt, time.Now().Unix(), ""); err != nil {
+	if err := writeServiceState(options.StateFile, "ready", int64(pid), startedAt, time.Now().Unix(), ""); err != nil {
 		return err
 	}
-	logService(options, "INFO", "sing-box 配置重新加载完成")
+	logService(options, "INFO", "service.reload", "success", "sing-box 配置重新加载完成")
 	return nil
 }
 
 // CheckService 在隔离运行时目录中检查完整 sing-box 配置，不影响正在运行的实例。
 func CheckService(ctx context.Context, options Options) error {
 	if err := validateLifecycleOptions(options); err != nil {
+		return err
+	}
+	lock, err := acquireLifecycleLock(options.StateFile)
+	if err != nil {
+		return err
+	}
+	defer lock.release()
+	if err := recoverConfigApply(ctx, options); err != nil {
 		return err
 	}
 	temporary, err := os.MkdirTemp(filepath.Dir(options.StateFile), "config-check-")
@@ -267,11 +338,11 @@ func CheckService(ctx context.Context, options Options) error {
 }
 
 // Boot 承载 service 阶段的最小开机流程：等待系统、按配置启动服务并拉起唯一 Worker。
-func Boot(ctx context.Context, options Options, executable string) error {
+func Boot(ctx context.Context, options Options) error {
 	if err := os.MkdirAll(options.LogDir, 0o700); err != nil {
 		return err
 	}
-	logService(options, "INFO", "NetProxy 开机服务启动")
+	logService(options, "INFO", "module.boot", "started", "NetProxy 开机服务启动")
 	if err := exec.CommandContext(ctx, "resetprop", "-w", "sys.boot_completed").Run(); err != nil {
 		return fmt.Errorf("等待系统启动完成失败: %w", err)
 	}
@@ -281,18 +352,15 @@ func Boot(ctx context.Context, options Options, executable string) error {
 	}
 	if config.AutoStart {
 		if _, err := ManageService(ctx, options, "start"); err != nil {
-			logService(options, "WARN", "代理服务开机启动失败，可在导入节点或修正配置后手动启动: %v", err)
+			logService(options, "WARN", "service.start", "failed", "代理服务开机启动失败，可在导入节点或修正配置后手动启动: %v", err)
 		}
 	} else {
-		logService(options, "INFO", "开机自启动已禁用，跳过启动")
-	}
-	if executable == "" {
-		executable = paths.New(options.ModuleDir).Native()
+		logService(options, "INFO", "service.start", "skipped", "开机自启动已禁用，跳过启动")
 	}
 	if err := ensureWorker(ctx, options); err != nil {
-		logService(options, "WARN", "后台 Worker 启动失败，可稍后手动重试: %v", err)
+		logService(options, "WARN", "worker.start", "failed", "后台 Worker 启动失败，可稍后手动重试: %v", err)
 	}
-	logService(options, "INFO", "开机服务流程结束")
+	logService(options, "INFO", "module.boot", "success", "开机服务流程结束")
 	return nil
 }
 
@@ -434,7 +502,7 @@ func terminateService(options Options, pid int) error {
 	for serviceProcessAlive(pid) {
 		select {
 		case <-deadline.C:
-			logService(options, "WARN", "sing-box 未在限定时间内退出，改用 SIGKILL")
+			logService(options, "WARN", "service.stop", "forced", "sing-box 未在限定时间内退出，改用 SIGKILL")
 			if err := signalServiceKill(pid); err != nil {
 				return err
 			}
@@ -461,13 +529,24 @@ func waitServiceExit(pid int, timeout time.Duration) error {
 }
 
 func failServiceStart(options Options, pid int, startedAt int64, message string, cause error) error {
+	var stopErr error
 	if pid > 0 {
-		_ = terminateService(options, pid)
+		stopErr = terminateServiceForStart(options, pid)
 	}
 	cleanupRuntimeFiles(options)
-	_ = WriteServiceState(options.StateFile, "failed", int64(pid), startedAt, 0, message)
-	logService(options, "ERROR", "%s: %v", message, cause)
-	return fmt.Errorf("%s: %w", message, cause)
+	stateErr := writeServiceState(options.StateFile, "failed", int64(pid), startedAt, 0, message)
+	logService(options, "ERROR", "service.start", "failed", "%s: %v", message, cause)
+	var convergeErr error
+	if stateErr != nil {
+		if err := os.Remove(options.StateFile); err != nil && !os.IsNotExist(err) {
+			convergeErr = fmt.Errorf("清理未收敛的服务状态失败: %w", err)
+		}
+	}
+	return errors.Join(fmt.Errorf("%s: %w", message, cause), stopErr, stateErr, convergeErr)
+}
+
+func failServiceStateWrite(options Options, pid int, startedAt int64, state string, cause error) error {
+	return failServiceStart(options, pid, startedAt, fmt.Sprintf("写入 sing-box %s 状态失败", state), cause)
 }
 
 func restoreReloadState(ctx context.Context, options Options, pid int, startedAt, readyAt int64, cause error) error {
@@ -475,9 +554,12 @@ func restoreReloadState(ctx context.Context, options Options, pid int, startedAt
 		if currentStartedAt, err := serviceStartedAt(ctx, options); err == nil {
 			startedAt = currentStartedAt
 		}
-		_ = WriteServiceState(options.StateFile, "ready", int64(pid), startedAt, readyAt, cause.Error())
+		stateErr := writeServiceState(options.StateFile, "ready", int64(pid), startedAt, readyAt, cause.Error())
+		if stateErr != nil {
+			cause = errors.Join(cause, stateErr)
+		}
 	}
-	logService(options, "ERROR", "sing-box 原位重新加载失败: %v", cause)
+	logService(options, "ERROR", "service.reload", "failed", "sing-box 原位重新加载失败: %v", cause)
 	return fmt.Errorf("sing-box 原位重新加载失败: %w", cause)
 }
 
@@ -487,18 +569,6 @@ func cleanupRuntimeFiles(options Options) {
 	}
 }
 
-func logService(options Options, level, format string, args ...any) {
-	if strings.TrimSpace(options.LogDir) == "" {
-		return
-	}
-	if err := os.MkdirAll(options.LogDir, 0o700); err != nil {
-		return
-	}
-	file, err := os.OpenFile(filepath.Join(options.LogDir, "service.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return
-	}
-	defer file.Close()
-	message := fmt.Sprintf(format, args...)
-	_, _ = fmt.Fprintf(file, "[%s] [%s] [service] %s\n", time.Now().Format("2006-01-02 15:04:05"), level, message)
+func logService(options Options, level, event, result, format string, args ...any) {
+	logEvent(options, level, "service", event, result, format, args...)
 }

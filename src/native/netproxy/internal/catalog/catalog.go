@@ -67,14 +67,6 @@ type ScanOptions struct {
 	GroupID     string
 }
 
-type runtimeGroup struct {
-	ID           string
-	Name         string
-	RuntimeTag   string
-	ProviderPath string
-	Nodes        []provider.NodeSummary
-}
-
 type RuntimeOptions struct {
 	Root            string
 	ModuleConfig    string
@@ -102,10 +94,12 @@ type ScheduleResult struct {
 }
 
 func Scan(ctx context.Context, options ScanOptions) ([]GroupSnapshot, error) {
-	if err := recoverTransactions(options.Root); err != nil {
+	release, err := acquireCatalogRootAndRecover(options.Root)
+	if err != nil {
 		return nil, err
 	}
-	groups, err := loadGroups(ctx, options.Root, true)
+	defer release()
+	groups, err := loadGroups(ctx, options.Root, true, options.WithNodes)
 	if err != nil {
 		return nil, err
 	}
@@ -129,9 +123,11 @@ func Scan(ctx context.Context, options ScanOptions) ([]GroupSnapshot, error) {
 }
 
 func Schedule(root string, now int64) (ScheduleResult, error) {
-	if err := recoverTransactions(root); err != nil {
+	release, err := acquireCatalogRootAndRecover(root)
+	if err != nil {
 		return ScheduleResult{}, err
 	}
+	defer release()
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return ScheduleResult{}, err
@@ -166,16 +162,19 @@ func RuntimeTag(root, groupID string) (string, error) {
 	if !isValidGroupID(groupID) {
 		return "", fmt.Errorf("非法分组 ID: %s", groupID)
 	}
-	if err := recoverTransactions(root); err != nil {
+	release, err := acquireCatalogRootAndRecover(root)
+	if err != nil {
 		return "", err
 	}
+	defer release()
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return "", err
 	}
 	targetName := ""
+	targetHasNodes := false
 	duplicateCount := 0
-	names := make(map[string]string, len(entries))
+	runtimeNames := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		if !isGroupDir(entry) {
 			continue
@@ -184,15 +183,21 @@ func RuntimeTag(root, groupID string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("读取分组 %s 元数据: %w", entry.Name(), err)
 		}
-		names[entry.Name()] = metadata.Name
+		if metadata.NodeCount > 0 {
+			runtimeNames = append(runtimeNames, metadata.Name)
+		}
 		if entry.Name() == groupID {
 			targetName = metadata.Name
+			targetHasNodes = metadata.NodeCount > 0
 		}
 	}
 	if targetName == "" {
 		return "", fmt.Errorf("分组不存在: %s", groupID)
 	}
-	for _, name := range names {
+	if !targetHasNodes {
+		return targetName, nil
+	}
+	for _, name := range runtimeNames {
 		if name == targetName {
 			duplicateCount++
 		}
@@ -204,9 +209,11 @@ func RuntimeTag(root, groupID string) (string, error) {
 }
 
 func GroupIDs(root, groupType string) ([]string, error) {
-	if err := recoverTransactions(root); err != nil {
+	release, err := acquireCatalogRootAndRecover(root)
+	if err != nil {
 		return nil, err
 	}
+	defer release()
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return nil, err
@@ -232,9 +239,11 @@ func NewGroupID(root, kind, source string) (string, error) {
 	if strings.TrimSpace(root) == "" {
 		return "", errors.New("Catalog 根目录不能为空")
 	}
-	if err := recoverTransactions(root); err != nil {
+	release, err := acquireCatalogRootAndRecover(root)
+	if err != nil {
 		return "", err
 	}
+	defer release()
 	switch kind {
 	case "subscription":
 		for attempt := 0; attempt < 16; attempt++ {
@@ -300,9 +309,11 @@ func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, e
 	if options.Root == "" || options.ProvidersOutput == "" || options.OutboundsOutput == "" {
 		return RuntimeResult{}, errors.New("Catalog 根目录和运行时输出路径不能为空")
 	}
-	if err := recoverTransactions(options.Root); err != nil {
+	release, err := acquireCatalogRootAndRecover(options.Root)
+	if err != nil {
 		return RuntimeResult{}, err
 	}
+	defer release()
 	outboundMode := ""
 	if options.ModuleConfig != "" {
 		module, err := moduleconfig.LoadModule(options.ModuleConfig)
@@ -314,7 +325,7 @@ func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, e
 		options.SelectedNodeRef = module.SelectedNodeRef
 		outboundMode = module.OutboundMode
 	}
-	groups, err := loadGroups(ctx, options.Root, false)
+	groups, err := loadGroups(ctx, options.Root, false, true)
 	if err != nil {
 		return RuntimeResult{}, err
 	}
@@ -374,9 +385,10 @@ type loadedGroup struct {
 	ProviderPath string
 	Nodes        []provider.NodeSummary
 	RuntimeTag   string
+	hasNodes     bool
 }
 
-func loadGroups(ctx context.Context, root string, includeEmpty bool) ([]*loadedGroup, error) {
+func loadGroups(ctx context.Context, root string, includeEmpty, withNodes bool) ([]*loadedGroup, error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return nil, err
@@ -392,6 +404,13 @@ func loadGroups(ctx context.Context, root string, includeEmpty bool) ([]*loadedG
 			return nil, fmt.Errorf("读取分组 %s 元数据: %w", entry.Name(), err)
 		}
 		providerPath := filepath.Join(groupDir, "provider.json")
+		if !withNodes {
+			groups = append(groups, &loadedGroup{
+				ID: entry.Name(), Metadata: metadata, ProviderPath: providerPath,
+				hasNodes: metadata.NodeCount > 0,
+			})
+			continue
+		}
 		document, err := provider.LoadAllowEmpty(ctx, providerPath)
 		if err != nil {
 			return nil, fmt.Errorf("读取分组 %s Provider: %w", entry.Name(), err)
@@ -400,52 +419,37 @@ func loadGroups(ctx context.Context, root string, includeEmpty bool) ([]*loadedG
 		if !includeEmpty && len(nodes) == 0 {
 			continue
 		}
-		groups = append(groups, &loadedGroup{ID: entry.Name(), Metadata: metadata, ProviderPath: providerPath, Nodes: nodes})
+		groups = append(groups, &loadedGroup{
+			ID: entry.Name(), Metadata: metadata, ProviderPath: providerPath,
+			Nodes: nodes, hasNodes: len(nodes) > 0,
+		})
 	}
 	sort.Slice(groups, func(i, j int) bool { return groups[i].ID < groups[j].ID })
 	return groups, nil
 }
 
 func loadMetadata(path, fallbackID string) (Metadata, error) {
-	return LoadMetadata(path, fallbackID)
+	return LoadMetadataLocked(path, fallbackID)
 }
 
 func summaryFor(group *loadedGroup, activeGroup, progressDir string) GroupSummary {
-	metadata := group.Metadata
-	progress := json.RawMessage("null")
-	if progressDir != "" {
-		if content, err := os.ReadFile(filepath.Join(progressDir, group.ID+".progress.json")); err == nil {
-			var state struct {
-				Stage string `json:"stage"`
-			}
-			if json.Unmarshal(content, &state) == nil {
-				switch state.Stage {
-				case "download", "convert", "validate", "apply":
-					progress = content
-				}
-			}
-		}
+	nodeCount := group.Metadata.NodeCount
+	if group.Nodes != nil {
+		nodeCount = len(group.Nodes)
 	}
-	return GroupSummary{
-		ID: metadata.ID, Name: metadata.Name, RuntimeTag: group.RuntimeTag, Type: metadata.Type,
-		Active: group.ID == activeGroup, NodeCount: len(group.Nodes), Revision: metadata.Revision,
-		AutoUpdate: metadata.AutoUpdate, UpdateInterval: metadata.UpdateInterval,
-		UpdateViaProxy: metadata.UpdateViaProxy, Usage: metadata.Usage,
-		ProfileTitle: metadata.ProfileTitle, ProfileWebPageURL: metadata.ProfileWebPageURL,
-		LastAttemptAt: metadata.LastAttemptAt, LastSuccessAt: metadata.LastSuccessAt,
-		NextUpdateAt: metadata.NextUpdateAt, LastError: metadata.LastError,
-		UpdatedAt: metadata.UpdatedAt, Progress: progress,
-	}
+	return summaryForMetadata(group.Metadata, group.RuntimeTag, activeGroup, progressDir, nodeCount)
 }
 
 func assignRuntimeTags(groups []*loadedGroup) {
 	counts := make(map[string]int, len(groups))
 	for _, group := range groups {
-		counts[group.Metadata.Name]++
+		if group.hasNodes {
+			counts[group.Metadata.Name]++
+		}
 	}
 	for _, group := range groups {
 		group.RuntimeTag = group.Metadata.Name
-		if counts[group.Metadata.Name] > 1 {
+		if group.hasNodes && counts[group.Metadata.Name] > 1 {
 			group.RuntimeTag = fmt.Sprintf("%s [%s]", group.Metadata.Name, group.ID)
 		}
 	}

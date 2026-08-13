@@ -10,6 +10,8 @@ MODDIR="$ROOT/src/module"
 MODULE_CONF="$TMP_ROOT/module.conf"
 CATALOG_DIR="$TMP_ROOT/catalog"
 SINGBOX_DIR="$MODDIR/config/singbox"
+MIXED_INBOUND_FILE="$SINGBOX_DIR/confdir/04_inbounds.json"
+SUBSCRIPTION_UPDATE_SOURCE="$ROOT/src/native/netproxy/internal/subscription/update.go"
 RUNTIME_DIR="$TMP_ROOT/runtime"
 EBPF_CONF="$TMP_ROOT/ebpf.conf"
 RUNTIME_PROVIDERS_FILE="$RUNTIME_DIR/providers.json"
@@ -24,16 +26,21 @@ cp "$MODDIR/data/catalog/default/meta.json" "$CATALOG_DIR/secondary/meta.json"
 sed -i 's/"node_count": 0/"node_count": 1/' "$CATALOG_DIR/default/meta.json" "$CATALOG_DIR/secondary/meta.json"
 sed -i 's/"id": "default"/"id": "secondary"/; s/"name": "本地配置"/"name": "备用配置"/' "$CATALOG_DIR/secondary/meta.json"
 
-"$NETPROXY_NATIVE_BIN" convert link --input 'socks://example.com:1080#SOCKS' --output "$CATALOG_DIR/default/provider.json" > /dev/null
-"$NETPROXY_NATIVE_BIN" convert link --input 'http://example.net:8080#HTTP' --output "$CATALOG_DIR/secondary/provider.json" > /dev/null
+printf '%s\n' '{"outbounds":[{"type":"socks","tag":"SOCKS","server":"example.com","server_port":1080}]}' \
+  > "$CATALOG_DIR/default/provider.json"
+printf '%s\n' '{"outbounds":[{"type":"http","tag":"HTTP","server":"example.net","server_port":8080}]}' \
+  > "$CATALOG_DIR/secondary/provider.json"
 
 set_conf() {
   local file="$1" key="$2" value="$3"
-  case "$file" in
-    "$MODULE_CONF") "$NETPROXY_NATIVE_BIN" config module-set --path "$file" --set "$key=$value" > /dev/null 2>&1 ;;
-    "$EBPF_CONF") "$NETPROXY_NATIVE_BIN" config ebpf-set --path "$file" --set "$key=$value" > /dev/null 2>&1 ;;
-    *) return 1 ;;
-  esac
+  local candidate="$file.candidate"
+  awk -v target="$key" -v replacement="$value" '
+    BEGIN { found = 0 }
+    index($0, target "=") == 1 { print target "=" replacement; found = 1; next }
+    { print }
+    END { if (!found) print target "=" replacement }
+  ' "$file" > "$candidate"
+  mv "$candidate" "$file"
 }
 
 set_conf_values() {
@@ -64,6 +71,15 @@ grep -q '"external_controller": "127.0.0.1:9999"' "$SINGBOX_DIR/confdir/02_exper
 grep -q '"listen": "127.0.0.1"' "$SINGBOX_DIR/confdir/08_services.json"
 grep -q '"secret": "singbox"' "$SINGBOX_DIR/confdir/02_experimental.json"
 grep -q '"secret": "singbox"' "$SINGBOX_DIR/confdir/08_services.json"
+
+# mixed 7080 仅供本机订阅下载使用，不得暴露到通配 IPv4/IPv6 地址。
+grep -q '"tag": "mixed_in"' "$MIXED_INBOUND_FILE"
+grep -q '"listen": "127.0.0.1"' "$MIXED_INBOUND_FILE"
+grep -q '"listen_port": 7080' "$MIXED_INBOUND_FILE"
+! grep -Eq '"listen"[[:space:]]*:[[:space:]]*"(0\.0\.0\.0|::)"' "$MIXED_INBOUND_FILE"
+grep -q 'options.ProxyURL = "http://127.0.0.1:7080"' "$SUBSCRIPTION_UPDATE_SOURCE"
+! grep -Eq 'ProxyURL = "http://(0\.0\.0\.0|::):7080"' "$SUBSCRIPTION_UPDATE_SOURCE"
+
 json_contains '"cgroup_enabled":true'
 json_contains '"cgroup_ipv6_mode":"always"'
 json_contains '"bypass_private_address":true'
@@ -89,7 +105,17 @@ json_contains '"tc_priority":1'
 INVALID_EBPF_CONF="$TMP_ROOT/invalid-ebpf.conf"
 cp "$EBPF_CONF" "$INVALID_EBPF_CONF"
 sed -i 's/02:11:22:33:44:55/02:11:22:33:44:5G/' "$INVALID_EBPF_CONF"
-! "$NETPROXY_NATIVE_BIN" ebpf validate --config "$INVALID_EBPF_CONF" --format json > /dev/null 2>&1
+INVALID_EBPF_OUTPUT="$TMP_ROOT/invalid-ebpf.json"
+INVALID_EBPF_ERROR="$TMP_ROOT/invalid-ebpf.error"
+if "$NETPROXY_NATIVE_BIN" ebpf runtime \
+  --config "$INVALID_EBPF_CONF" \
+  --output "$INVALID_EBPF_OUTPUT" \
+  --format json > /dev/null 2> "$INVALID_EBPF_ERROR"; then
+  printf '%s\n' 'invalid eBPF config should fail' >&2
+  exit 1
+fi
+grep -q '"code":"ebpf.config_invalid"' "$INVALID_EBPF_ERROR"
+[ ! -e "$INVALID_EBPF_OUTPUT" ]
 
 set_conf_values "$EBPF_CONF" "APP_PROXY_MODE" '"whitelist"' "PROXY_APPS_LIST" '""' "BYPASS_APPS_LIST" '""'
 prepare_runtime
@@ -122,8 +148,9 @@ json_contains '"map_capacity":{"proxy":65536,"bypass":65536,"fragment":65536}'
 json_contains 'fd53:696e:672d:626f::/64'
 
 sed -i 's/"name": "备用配置"/"name": "本地配置"/' "$CATALOG_DIR/secondary/meta.json"
-[ "$("$NETPROXY_NATIVE_BIN" catalog tag --root "$CATALOG_DIR" --group default --format raw)" = "本地配置 [default]" ]
-[ "$("$NETPROXY_NATIVE_BIN" catalog tag --root "$CATALOG_DIR" --group secondary --format raw)" = "本地配置 [secondary]" ]
+prepare_runtime
+grep -q '"tag": "本地配置 \[default\]"' "$RUNTIME_PROVIDERS_FILE"
+grep -q '"tag": "本地配置 \[secondary\]"' "$RUNTIME_PROVIDERS_FILE"
 sed -i 's/"name": "本地配置"/"name": "备用配置"/' "$CATALOG_DIR/secondary/meta.json"
 
 set_conf "$MODULE_CONF" "SELECTOR_MODE" "manual"

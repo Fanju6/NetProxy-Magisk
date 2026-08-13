@@ -33,7 +33,7 @@ PROXY_ON_CELLULAR=1
 	if err := os.WriteFile(modulePath, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	options := NewOptions(root)
+	options := newTestOptions(root)
 	options.ModuleConfig = modulePath
 	options.WiFiStateFile = statePath
 	options.SingBoxPath = filepath.Join(root, "missing-sing-box")
@@ -87,7 +87,7 @@ PROXY_ON_CELLULAR=1
 		t.Fatal(err)
 	}
 
-	options := NewOptions(root)
+	options := newTestOptions(root)
 	options.ModuleConfig = modulePath
 	options.WiFiStateFile = statePath
 	options.SingBoxPath = filepath.Join(root, "missing-sing-box")
