@@ -81,6 +81,7 @@ type Options struct {
 	PersistedBeforeUpdate   bool
 	NetworkWatchEnabled     bool
 	NetworkEvaluate         func(context.Context, string, string) error
+	NetworkTablesPath       string
 	NetworkStateReader      NetworkStateReader
 	NetworkPollInterval     time.Duration
 	NetworkDebounceInterval time.Duration
@@ -114,12 +115,13 @@ type Status struct {
 func NewOptions(root string) Options {
 	layout := paths.Default()
 	return Options{
-		Root:           root,
-		ProgressDir:    layout.ProgressDir(),
-		PIDFile:        layout.WorkerPID(),
-		ServiceAddress: "127.0.0.1:9090",
-		ServiceSecret:  defaultServiceSecret,
-		Now:            time.Now,
+		Root:              root,
+		ProgressDir:       layout.ProgressDir(),
+		PIDFile:           layout.WorkerPID(),
+		ServiceAddress:    "127.0.0.1:9090",
+		ServiceSecret:     defaultServiceSecret,
+		NetworkTablesPath: "/data/misc/net/rt_tables",
+		Now:               time.Now,
 	}
 }
 

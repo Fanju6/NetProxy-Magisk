@@ -15,11 +15,12 @@ import (
 )
 
 const (
-	networkPollInterval     = 3 * time.Second
-	networkDebounceInterval = 2 * time.Second
-	networkCommandTimeout   = 3 * time.Second
-	networkEvaluateTimeout  = 8 * time.Second
-	networkErrorRepeatEvery = 100
+	defaultNetworkTablesPath = "/data/misc/net/rt_tables"
+	networkPollInterval      = 3 * time.Second
+	networkDebounceInterval  = 2 * time.Second
+	networkCommandTimeout    = 3 * time.Second
+	networkEvaluateTimeout   = 8 * time.Second
+	networkErrorRepeatEvery  = 100
 )
 
 type repeatedNetworkError struct {
@@ -81,8 +82,18 @@ func (state NetworkState) Fingerprint() string {
 // NetworkStateReader 读取一次完整网络状态，测试可注入确定性的状态序列。
 type NetworkStateReader func(context.Context) (NetworkState, error)
 
+type networkFileState struct {
+	exists  bool
+	modTime int64
+	size    int64
+}
+
 // runNetworkWatcher 轮询完整 Android 网络状态，并在网络状态稳定后评估 Wi-Fi 策略。
 func runNetworkWatcher(ctx context.Context, options Options, logger *log.Logger) {
+	path := strings.TrimSpace(options.NetworkTablesPath)
+	if path == "" {
+		path = defaultNetworkTablesPath
+	}
 	reader := options.NetworkStateReader
 	if reader == nil {
 		reader = getNetworkState
@@ -96,24 +107,22 @@ func runNetworkWatcher(ctx context.Context, options Options, logger *log.Logger)
 		debounceInterval = networkDebounceInterval
 	}
 
-	lastState, err := readNetworkState(ctx, reader)
+	lastFileState := readNetworkFileState(path)
+	initialState, err := readNetworkState(ctx, reader)
 	var repeatedError repeatedNetworkError
-	haveLastState := err == nil
-	lastEvaluatedState := lastState
-	haveEvaluatedState := err == nil
 	if err != nil {
 		repeatedError.record(logger, "读取 Android 网络状态失败", err)
 	} else {
-		evaluateNetworkState(ctx, options, logger, lastState)
+		evaluateNetworkState(ctx, options, logger, initialState)
 	}
+	lastEvaluatedState := initialState
+	haveEvaluatedState := err == nil
 
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
 	var debounceTimer *time.Timer
 	var debounce <-chan time.Time
-	var pendingState NetworkState
-	havePendingState := false
 	defer func() { stopNetworkTimer(debounceTimer) }()
 
 	for {
@@ -121,52 +130,23 @@ func runNetworkWatcher(ctx context.Context, options Options, logger *log.Logger)
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			currentState, readErr := readNetworkState(ctx, reader)
-			if readErr != nil {
-				// 采集不完整时取消待处理评估，避免把读取失败误判为移动网络或 Wi-Fi。
-				stopNetworkTimer(debounceTimer)
-				debounce = nil
-				debounceTimer = nil
-				havePendingState = false
-				repeatedError.record(logger, "读取 Android 网络状态失败", readErr)
-				continue
-			}
-			repeatedError.recovered(logger)
-			if !haveLastState || currentState.Fingerprint() != lastState.Fingerprint() {
-				lastState = currentState
-				haveLastState = true
-				pendingState = currentState
-				havePendingState = true
+			currentFileState := readNetworkFileState(path)
+			if currentFileState != lastFileState {
+				lastFileState = currentFileState
 				stopNetworkTimer(debounceTimer)
 				debounceTimer = time.NewTimer(debounceInterval)
 				debounce = debounceTimer.C
 			}
 		case <-debounce:
 			debounce = nil
-			if !havePendingState {
-				continue
-			}
 			stableState, readErr := readNetworkState(ctx, reader)
 			if readErr != nil {
 				stopNetworkTimer(debounceTimer)
 				debounceTimer = nil
-				havePendingState = false
 				repeatedError.record(logger, "确认 Android 网络状态失败", readErr)
 				continue
 			}
 			repeatedError.recovered(logger)
-			if stableState.Fingerprint() != pendingState.Fingerprint() {
-				lastState = stableState
-				haveLastState = true
-				pendingState = stableState
-				stopNetworkTimer(debounceTimer)
-				debounceTimer = time.NewTimer(debounceInterval)
-				debounce = debounceTimer.C
-				continue
-			}
-			lastState = stableState
-			haveLastState = true
-			havePendingState = false
 			if haveEvaluatedState && stableState.Fingerprint() == lastEvaluatedState.Fingerprint() {
 				continue
 			}
@@ -175,6 +155,14 @@ func runNetworkWatcher(ctx context.Context, options Options, logger *log.Logger)
 			evaluateNetworkState(ctx, options, logger, stableState)
 		}
 	}
+}
+
+func readNetworkFileState(path string) networkFileState {
+	info, err := os.Stat(path)
+	if err != nil {
+		return networkFileState{}
+	}
+	return networkFileState{exists: true, modTime: info.ModTime().UnixNano(), size: info.Size()}
 }
 
 func readNetworkState(parent context.Context, reader NetworkStateReader) (NetworkState, error) {

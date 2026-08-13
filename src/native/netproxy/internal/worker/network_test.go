@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -300,9 +301,17 @@ func TestParseHotspotState(t *testing.T) {
 }
 
 func TestNetworkWatcherDebouncesStateChanges(t *testing.T) {
+	routeTable, err := os.CreateTemp(t.TempDir(), "rt_tables-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := routeTable.WriteString("initial\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := routeTable.Close(); err != nil {
+		t.Fatal(err)
+	}
 	initial := NetworkState{NetworkType: "wifi", SSID: "A", DefaultRoute: "wlan0", ActiveInterface: "wlan0", InterfaceStatus: "wlan0=up", HotspotState: "disabled"}
-	intermediate := initial
-	intermediate.SSID = "B"
 	final := initial
 	final.SSID = "C"
 
@@ -315,8 +324,6 @@ func TestNetworkWatcherDebouncesStateChanges(t *testing.T) {
 		switch readCount {
 		case 1:
 			return initial, nil
-		case 2:
-			return intermediate, nil
 		default:
 			return final, nil
 		}
@@ -326,6 +333,7 @@ func TestNetworkWatcherDebouncesStateChanges(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		runNetworkWatcher(ctx, Options{
+			NetworkTablesPath:       routeTable.Name(),
 			NetworkStateReader:      read,
 			NetworkPollInterval:     5 * time.Millisecond,
 			NetworkDebounceInterval: 20 * time.Millisecond,
@@ -345,6 +353,15 @@ func TestNetworkWatcherDebouncesStateChanges(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("初始网络评估未执行")
 	}
+	mu.Lock()
+	gotReads := readCount
+	mu.Unlock()
+	if gotReads != 1 {
+		t.Fatalf("route table stable state should not reread network state, count=%d", gotReads)
+	}
+	if err := os.WriteFile(routeTable.Name(), []byte("changed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	select {
 	case got := <-evaluated:
 		if got != "C" {
@@ -358,8 +375,54 @@ func TestNetworkWatcherDebouncesStateChanges(t *testing.T) {
 		t.Fatalf("重复评估了稳定状态 %q", got)
 	case <-time.After(30 * time.Millisecond):
 	}
+	mu.Lock()
+	gotReads = readCount
+	mu.Unlock()
+	if gotReads != 2 {
+		t.Fatalf("route table change should trigger one network reread, count=%d", gotReads)
+	}
 	cancel()
 	<-done
+}
+
+func TestNetworkWatcherDoesNotReadStateWhileRouteTableIsStable(t *testing.T) {
+	routeTable, err := os.CreateTemp(t.TempDir(), "rt_tables-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := routeTable.WriteString("stable\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := routeTable.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	var mu sync.Mutex
+	reads := 0
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		runNetworkWatcher(ctx, Options{
+			NetworkTablesPath:   routeTable.Name(),
+			NetworkPollInterval: 5 * time.Millisecond,
+			NetworkStateReader: func(context.Context) (NetworkState, error) {
+				mu.Lock()
+				defer mu.Unlock()
+				reads++
+				return NetworkState{NetworkType: "not_wifi"}, nil
+			},
+			NetworkEvaluate: func(context.Context, string, string) error { return nil },
+		}, log.New(io.Discard, "", 0))
+		close(done)
+	}()
+	time.Sleep(40 * time.Millisecond)
+	cancel()
+	<-done
+	mu.Lock()
+	defer mu.Unlock()
+	if reads != 1 {
+		t.Fatalf("stable route table should not reread network state, count=%d", reads)
+	}
 }
 
 func TestNetworkWatcherSkipsEvaluationWhenStateReadFails(t *testing.T) {
