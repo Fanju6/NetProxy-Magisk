@@ -3,6 +3,7 @@ import { ctl, ctlJson, shell, inKsu, completions as fetchCompletions } from './e
 import { complete } from './autocomplete'
 import { parseCommandLine } from './command'
 import { getHelp } from './help'
+import { formatCtlOutput } from './format'
 
 const PROMPT = '❯ '
 const STATE_MAP: Record<string, { label: string; color: string }> = {
@@ -72,6 +73,7 @@ export default function App() {
         } else {
           const args = parseCommandLine(cmd)
           ;({ out, err, code } = await ctl(args))
+          if (!args.includes('--raw')) out = formatCtlOutput(out)
           if (['service', 'sub', 'node', 'catalog'].includes(args[0])) {
             refresh()
             if (args[0] === 'service') pollStatus()
