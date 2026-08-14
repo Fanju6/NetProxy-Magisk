@@ -3,6 +3,7 @@ package module
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,7 +31,8 @@ type NetworkEvaluation struct {
 func EvaluateNetwork(ctx context.Context, options Options, networkType, ssid string) (result NetworkEvaluation, err error) {
 	defer func() {
 		if err != nil || result.Changed {
-			logOperation(options, "network", "network.policy", "网络策略应用", false, err)
+			message := fmt.Sprintf("网络策略应用 (network_type=%s, target=%s, mode=%s)", result.NetworkType, result.Target, result.DesiredMode)
+			logOperation(options, "network", "network.policy", message, false, err)
 		}
 	}()
 	module, err := moduleconfig.LoadModule(options.ModuleConfig)

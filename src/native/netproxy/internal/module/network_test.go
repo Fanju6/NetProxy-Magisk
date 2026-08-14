@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -47,6 +48,13 @@ PROXY_ON_CELLULAR=1
 	}
 	if value, _ := os.ReadFile(statePath); string(value) != "bypassed\n" {
 		t.Fatalf("WiFi 状态 = %q", value)
+	}
+	logContent, err := os.ReadFile(filepath.Join(options.LogDir, "service.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(logContent), "network_type=wifi") || !strings.Contains(string(logContent), "target=bypassed") {
+		t.Fatalf("网络策略日志缺少网络类型或目标模式: %s", logContent)
 	}
 
 	result, err = EvaluateNetwork(context.Background(), options, "wifi", "移动热点")

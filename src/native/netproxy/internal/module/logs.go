@@ -159,7 +159,7 @@ func ExportLogs(options Options, destination string) error {
 	moduleVersionName, moduleVersionCode := moduleVersionInfo(options)
 	readme := fmt.Sprintf("NetProxy 诊断包\n管理器版本: %s\n管理器版本号: %s\n模块版本: %s\n模块版本号: %s\n生成时间: %s\n敏感信息已脱敏。\n",
 		versionOrUnknown(options.ManagerVersion), versionOrUnknown(options.ManagerVersionCode),
-		moduleVersionName, moduleVersionCode, time.Now().Format(time.RFC3339))
+		moduleVersionName, moduleVersionCode, logfile.LocalNow().Format(time.RFC3339))
 	return writeTarFile(tarWriter, "README.txt", []byte(readme))
 }
 

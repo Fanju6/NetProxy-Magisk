@@ -23,6 +23,12 @@ const (
 	networkErrorRepeatEvery  = 100
 )
 
+var errNetworkUnavailable = errors.New("Android 网络尚未就绪")
+
+func networkUnavailable(format string, args ...any) error {
+	return fmt.Errorf("%w: %s", errNetworkUnavailable, fmt.Sprintf(format, args...))
+}
+
 type repeatedNetworkError struct {
 	key   string
 	count int
@@ -111,7 +117,7 @@ func runNetworkWatcher(ctx context.Context, options Options, logger *log.Logger)
 	initialState, err := readNetworkState(ctx, reader)
 	var repeatedError repeatedNetworkError
 	if err != nil {
-		repeatedError.record(logger, "读取 Android 网络状态失败", err)
+		logNetworkReadFailure(logger, &repeatedError, "读取 Android 网络状态失败", err)
 	} else {
 		evaluateNetworkState(ctx, options, logger, initialState)
 	}
@@ -143,7 +149,7 @@ func runNetworkWatcher(ctx context.Context, options Options, logger *log.Logger)
 			if readErr != nil {
 				stopNetworkTimer(debounceTimer)
 				debounceTimer = nil
-				repeatedError.record(logger, "确认 Android 网络状态失败", readErr)
+				logNetworkReadFailure(logger, &repeatedError, "确认 Android 网络状态失败", readErr)
 				continue
 			}
 			repeatedError.recovered(logger)
@@ -155,6 +161,14 @@ func runNetworkWatcher(ctx context.Context, options Options, logger *log.Logger)
 			evaluateNetworkState(ctx, options, logger, stableState)
 		}
 	}
+}
+
+func logNetworkReadFailure(logger *log.Logger, repeated *repeatedNetworkError, message string, err error) {
+	if errors.Is(err, errNetworkUnavailable) {
+		logWorker(logger, "INFO", "network.read", "waiting", "网络尚未就绪，等待默认路由: %v", err)
+		return
+	}
+	repeated.record(logger, message, err)
 }
 
 func readNetworkFileState(path string) networkFileState {
@@ -188,7 +202,7 @@ func evaluateNetworkState(parent context.Context, options Options, logger *log.L
 	ctx, cancel := context.WithTimeout(parent, networkEvaluateTimeout)
 	defer cancel()
 	if err := options.NetworkEvaluate(ctx, state.NetworkType, state.SSID); err != nil {
-		logWorker(logger, "ERROR", "network.policy", "failed", "网络策略评估失败: %v", err)
+		logWorker(logger, "ERROR", "network.policy", "failed", "网络策略评估失败 (network_type=%s): %v", state.NetworkType, err)
 	}
 }
 
@@ -232,7 +246,7 @@ func getNetworkStateWith(
 		return NetworkState{}, err
 	}
 	if !networkInterfaceIsUp(interfaceStates, activeInterface) {
-		return NetworkState{}, fmt.Errorf("活动网络接口 %s 不可用", activeInterface)
+		return NetworkState{}, networkUnavailable("活动网络接口 %s 不可用", activeInterface)
 	}
 
 	defaultRoute, err := readDefaultRoute(ctx, command, readFile)
@@ -404,12 +418,12 @@ func getActiveNetworkRouteWith(
 
 	content, err := readFile("/proc/net/route")
 	if err != nil {
-		return "", "", fmt.Errorf("读取默认路由失败: %w", err)
+		return "", "", fmt.Errorf("%w: 读取默认路由失败: %w", errNetworkUnavailable, err)
 	}
 	if iface := parseProcRouteDevice(string(content)); iface != "" {
 		return "proc:" + canonicalProcDefaultRoutes(string(content)), iface, nil
 	}
-	return "", "", errors.New("无法确定活跃网络接口")
+	return "", "", networkUnavailable("无法确定活跃网络接口")
 }
 
 func parseRouteDevice(output string) string {

@@ -31,6 +31,37 @@ func TestRepeatedNetworkErrorSuppressesDuplicatesAndReportsRecovery(t *testing.T
 	}
 }
 
+func TestNetworkUnavailableIsReportedAsWaiting(t *testing.T) {
+	var output bytes.Buffer
+	logger := log.New(&output, "", 0)
+	var repeated repeatedNetworkError
+
+	logNetworkReadFailure(logger, &repeated, "network read failed", networkUnavailable("no default route"))
+
+	content := output.String()
+	if strings.Contains(content, "[ERROR]") {
+		t.Fatalf("网络未就绪不应记录为 ERROR: %s", content)
+	}
+	if !strings.Contains(content, "[INFO] [worker] [network.read] [waiting]") {
+		t.Fatalf("网络未就绪应记录 waiting 日志: %s", content)
+	}
+}
+
+func TestNetworkUnavailableErrorIsClassified(t *testing.T) {
+	_, _, err := getActiveNetworkRouteWith(
+		context.Background(),
+		func(context.Context, string, ...string) (string, error) {
+			return "", errors.New("ip unavailable")
+		},
+		func(string) ([]byte, error) {
+			return []byte("Iface\tDestination\tGateway\nwlan0\t00000001\t0100000A\n"), nil
+		},
+	)
+	if !errors.Is(err, errNetworkUnavailable) {
+		t.Fatalf("无默认路由错误未分类为网络未就绪: %v", err)
+	}
+}
+
 func TestParseWiFiSnapshot(t *testing.T) {
 	tests := []struct {
 		name    string

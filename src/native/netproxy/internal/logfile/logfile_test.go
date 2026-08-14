@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAppendRotatesAndTailLinesReadsAcrossBackups(t *testing.T) {
@@ -82,6 +83,15 @@ func TestFormatEntryNormalizesFieldsAndMessage(t *testing.T) {
 	want := "[2026-08-13 12:00:00] [WARN] [subscription-worker] [subscription.update] [not-running] [subscription.runtime_sync_failed] 第一行 第二行"
 	if line != want {
 		t.Fatalf("统一日志格式异常:\nwant %q\n got %q", want, line)
+	}
+}
+
+func TestResolveLocalLocationHonorsTimezoneEnvironment(t *testing.T) {
+	t.Setenv("TZ", "Asia/Shanghai")
+	location := resolveLocalLocation()
+	_, offset := time.Now().In(location).Zone()
+	if offset != 8*60*60 {
+		t.Fatalf("本地日志时区未读取 TZ: offset=%d", offset)
 	}
 }
 

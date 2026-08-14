@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/processlock"
@@ -39,6 +42,41 @@ const (
 	lockTimeout        = 250 * time.Millisecond
 )
 
+var (
+	localLocationOnce  sync.Once
+	localLocationValue *time.Location
+)
+
+// LocalNow 返回设备本地时间。Android Go 运行时默认使用 UTC，需要读取系统时区属性。
+func LocalNow() time.Time {
+	localLocationOnce.Do(func() {
+		localLocationValue = resolveLocalLocation()
+	})
+	return time.Now().In(localLocationValue)
+}
+
+func resolveLocalLocation() *time.Location {
+	if timezone, ok := os.LookupEnv("TZ"); ok {
+		if timezone == "" || timezone == "UTC" {
+			return time.UTC
+		}
+		if location, err := time.LoadLocation(strings.TrimPrefix(timezone, ":")); err == nil {
+			return location
+		}
+	}
+	if runtime.GOOS == "android" {
+		if output, err := exec.Command("/system/bin/getprop", "persist.sys.timezone").Output(); err == nil {
+			timezone := strings.TrimSpace(string(output))
+			if timezone != "" {
+				if location, err := time.LoadLocation(timezone); err == nil {
+					return location
+				}
+			}
+		}
+	}
+	return time.Local
+}
+
 // Writer 为每次日志写入重新打开文件，确保跨进程轮转后继续写入当前文件。
 type Writer struct {
 	path string
@@ -52,7 +90,7 @@ func NewWriter(path string) *Writer {
 // FormatEntry 将结构化事件转换为兼容终端查看的单行格式。
 func FormatEntry(entry Entry) string {
 	if strings.TrimSpace(entry.Timestamp) == "" {
-		entry.Timestamp = time.Now().Format("2006-01-02 15:04:05")
+		entry.Timestamp = LocalNow().Format("2006-01-02 15:04:05")
 	}
 	level := strings.ToUpper(strings.TrimSpace(entry.Level))
 	if level == "WARNING" {
