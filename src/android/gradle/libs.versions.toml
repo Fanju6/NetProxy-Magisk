@@ -8,11 +8,11 @@ kotlinxSerialization = "1.11.0"
 activityCompose = "1.13.0"
 coreKtx = "1.19.0"
 lifecycleRuntimeKtx = "2.11.0"
-navigation3 = "1.1.5"
+navigation3 = "1.1.6"
 navigationevent = "1.1.2"
 
 # Compose
-composeBom = "2026.06.01"
+composeBom = "2026.08.00"
 
 # Third-party
 libsu = "6.0.0"
