@@ -1,66 +1,75 @@
-# 项目介绍
+# NetProxy 8.0
 
-NetProxy 是一个面向 Android Root 环境的透明代理模块，当前版本以 **sing-box** 为核心。
-它把透明代理、节点与订阅管理、分应用代理、Clash API 与面板控制整理成同一套运行体系，适用于 **Magisk / KernelSU / APatch** 环境。
+NetProxy 8.0 是面向 Android Root 设备的 sing-box 透明代理模块。它以 reF1nd sing-box 为核心，使用 eBPF 入站接管本机与共享网络流量，并把节点、订阅、路由、DNS、分应用代理和运行状态统一到一套模块目录与命令契约中。
 
-## 这套文档面向什么场景
+当前 8.0 仍处于测试阶段。稳定性、内核兼容性和 Android 管理器功能会继续迭代；遇到问题时请同时提供模块版本、设备内核信息和脱敏诊断包。
 
-- 第一次安装 NetProxy
-- 从 6.x 升级到 7.x
-- 通过 Android 管理器或 CLI 日常使用
-- 调整透明代理、分应用代理、路由和 DNS
-- 使用 Clash API 或 zashboard 做观察与排障
+## 支持环境
 
-## 当前架构重点
+- Magisk、KernelSU 或 APatch
+- Android 12 及以上
+- `arm64-v8a` 设备
+- 支持 BPF、cgroup v2 和 cgroup socket attach 的 Root 内核
+- 共享网络代理还需要 TC eBPF 能力
 
-- 使用 **sing-box** 作为代理核心
-- 图形化主入口为 **Android 管理器**
-- 默认控制面板为 **Clash API + zashboard**
-- 配置主目录位于 `/data/adb/modules/netproxy/config/singbox/`
-- 节点与订阅统一转换为 sing-box 配置
+本版本使用 sing-box eBPF 入站，不再提供 TPROXY / REDIRECT 回退。内核不具备 eBPF 能力时，sing-box 无法启动透明代理入站。
 
-## 控制入口
+## 管理入口
 
-NetProxy 现在有三种正式入口：
+1. **Android 管理器**：日常使用的原生界面，管理服务、节点、订阅、分应用代理、配置和日志。
+2. **模块 WebUI**：从 KernelSU、Magisk 或 APatch 的模块页面进入统一入口，可打开 NetProxy WebUI、zashboard 和 sing-box Service API Dashboard。
+3. **CLI**：通过 `netproxyctl` 进行终端操作、脚本自动化和故障排查。
+4. **Clash API / zashboard**：查看代理组、连接和延迟，并执行运行时切换。
+5. **Service API Dashboard**：查看 sing-box 原生服务状态和运行数据。
 
-1. **Android 管理器**
-   适合日常用户，负责仪表盘、节点、订阅、模式切换、分应用代理、日志和常用配置编辑。
-2. **CLI**
-   适合脚本化、终端排障和快速批量操作。
-3. **Clash API + zashboard**
-   适合查看连接、代理组、延迟、实时切换和跨设备访问。
+三类控制接口使用固定的本机监听：
 
-## 当前架构
+| 接口 | 地址 | 用途 |
+|------|------|------|
+| NetProxy CLI | `/data/adb/modules/netproxy/netproxyctl` | 模块持久配置与生命周期 |
+| Service API | `127.0.0.1:9090` | sing-box 原生状态、连接、节点组和测速 |
+| Clash API | `127.0.0.1:9999` | zashboard 和第三方 Clash 客户端 |
 
-### 模块侧
+默认密钥为 `singbox`，两个 API 默认只监听 loopback。除非你已经单独配置鉴权、CORS、TLS 和访问范围，否则不要把端口暴露到局域网。
 
-- `bin/sing-box`：核心进程
-- `config/module.conf`：模块级默认项
-- `config/ebpf/ebpf.conf`：eBPF 入站、分应用与共享网络配置
-- `config/singbox/confdir/`：通用 sing-box 配置片段
-- `data/catalog/`：节点与订阅 Catalog
-- `runtime/`：运行时生成配置与服务状态
-- `logs/`：服务与核心日志，订阅更新记录写入服务日志
+## 目录与事实源
 
-### Android 管理器侧
+```text
+/data/adb/modules/netproxy/
+├── bin/                         # sing-box、netproxyctl、netproxy-native、bpftool
+├── config/
+│   ├── module.conf              # 模块启动、选择和出站模式
+│   ├── ebpf/ebpf.conf           # eBPF 入站与分应用设置
+│   └── singbox/
+│       ├── confdir/             # 静态 sing-box 配置片段
+│       └── rules/               # 本地规则与内置远程 SRS
+├── data/catalog/                # 节点与订阅的持久事实源
+│   ├── default/                 # 单链接和文件导入的本地组
+│   ├── <group-id>/              # 订阅分组
+│   └── staging/                 # 临时事务目录
+├── runtime/                     # 启动时生成的配置
+├── logs/                        # service.log 与 sing-box.log
+└── webroot/                     # 模块 WebUI、zashboard、Service Dashboard
+```
 
-Android 管理器下载地址：[`NetProxy - Google Play`](https://play.google.com/store/apps/details?id=com.fanjv.netproxy)
+Catalog 中每个分组使用 `meta.json` 和 `provider.json`。`provider.json` 是节点内容事实源，客户端通过 `netproxyctl` 访问，不直接依赖文件扫描。`runtime/` 只保存生成的 `providers.json`、`outbounds.json` 和 `ebpf.json`，不应手动编辑。
 
-当前不提供公开源码仓库。
+## 选择与模式
 
-它当前负责的主要能力包括：
+- `ACTIVE_GROUP_ID` 保存当前活动分组。
+- `SELECTOR_MODE=urltest` 使用 `Auto/<group>` 自动测速。
+- `SELECTOR_MODE=manual` 使用 `<group-id>/<tag>` 手动选择。
+- `OUTBOUND_MODE` 支持 `rule`、`global`、`direct` 和 `AllowAds`。
 
-- 服务状态与仪表盘
-- 当前节点与出站模式
-- 节点 / 订阅导入、切换、测速、导出
-- 分应用代理开关与黑白名单
-- 自动启动、动态测速等常用项
-- sing-box / eBPF / JSON 配置编辑
-- 日志查看与导出
+自动模式不会保存某个测速结果作为手动节点，也不会在失败时静默切换到 `direct`。eBPF 提前绕过规则集可能在内核侧直接放行 CIDR；需要严格 Global 测试时，应清空 `EBPF_BYPASS_RULE_SETS` 后重启服务。
 
-## 推荐使用路径
+## 推荐阅读顺序
 
-- 日常使用：优先 Android 管理器
-- 批量或远程操作：CLI
-- 观察代理组、连接和延迟：Clash API / zashboard
-- 深度排障：查看 `service.log` 与 `sing-box.log`
+1. [安装与升级](/guide/installation)
+2. [快速开始](/guide/quick-start)
+3. [节点与订阅](/guide/nodes-subscriptions)
+4. [eBPF 透明代理](/guide/transparent-proxy)
+5. [CLI 使用](/guide/cli)
+6. [配置参考](/config/module)
+
+旧版本迁移说明保留在 [V7 历史升级指南](/guide/upgrade-v7)，不适合作为 8.0 的安装说明。

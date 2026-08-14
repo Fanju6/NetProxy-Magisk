@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>System-wide sing-box transparent proxy module for Android</strong><br>
-  eBPF, TCP / UDP, per-app routing, subscriptions, and Clash API
+  eBPF, TCP / UDP, per-app routing, subscriptions, and dual control APIs
 </p>
 
 <p align="center">
@@ -35,7 +35,7 @@
 
 ## Overview
 
-NetProxy is a system-wide transparent proxy module for rooted Android devices. Its embedded sing-box core captures local and shared-network traffic through cgroup and TC eBPF, and can be managed through the Android app, CLI, or zashboard.
+NetProxy 8.0 is a system-wide transparent proxy module for rooted Android devices. Its embedded sing-box core captures local and shared-network traffic through cgroup and TC eBPF, and can be managed through the Android app, module WebUI, CLI, Service API Dashboard, or zashboard.
 
 Supported root environments: **Magisk, KernelSU, and APatch**.
 
@@ -48,23 +48,25 @@ src/webui/           Module WebUI
 src/android/         Android Manager
 ```
 
-The Android Manager and module share the `netproxyctl` JSON contract while keeping separate local build workflows. Repository CI does not build or publish the manager; official releases are distributed through Google Play. The Full module package still bundles the ad-supported manager APK for devices without Google Play access. See the [manager source](src/android/) for local build instructions.
+The Android Manager and module share the `schema=1` `netproxyctl` JSON contract while keeping separate local build workflows. Repository CI does not build or publish the manager; Google Play is the recommended installation and update channel. A module package with the manager APK is also available for devices without Google Play access. See the [manager source](src/android/) for local build instructions.
 
 ## Management
 
 | Interface | Purpose |
 |-----------|---------|
 | [**Android Manager**](https://play.google.com/store/apps/details?id=com.fanjv.netproxy) ([source](src/android/)) | Service, nodes, subscriptions, per-app rules, configuration, and logs |
+| **Module WebUI** | Open the NetProxy portal from the KernelSU, Magisk, or APatch module page |
 | **CLI** | Terminal management, automation, and diagnostics |
 | **Clash API + zashboard** | Runtime groups, connections, delay tests, and mode control |
 
-Default Clash API endpoints:
+Default local endpoints:
 
-- Controller: `http://<device-ip>:9999`
-- zashboard: `http://<device-ip>:9999/ui/`
+- Clash Controller: `http://127.0.0.1:9999`
+- zashboard: `http://127.0.0.1:9999/ui/`
+- sing-box Service API Dashboard: `http://127.0.0.1:9090/dashboard/`
 - Secret: `singbox`
 
-The controller listens on all interfaces by default. Use it only on trusted networks and change the secret when necessary.
+Both APIs listen on loopback by default. LAN access requires an explicit listener, access-control, secret, and TLS review.
 
 ## Screenshot
 
@@ -75,12 +77,12 @@ The controller listens on all interfaces by default. Use it only on trusted netw
 ## Features
 
 - cgroup eBPF interception for local TCP, UDP, and DNS traffic
-- No TUN device, iptables/nftables rules, or policy routing
+- No iptables/nftables rules or policy routing
 - Per-app blacklist / whitelist routing
 - Wi-Fi hotspot and USB tethering support
 - Node links, node files, Clash YAML, and subscriptions
 - Manual selector and URLTest automatic selection
-- Rule, Global, and Direct modes
+- Rule, Global, Direct, and AllowAds modes
 - Wi-Fi SSID based switching between the configured mode and Direct
 - Clash API, zashboard, connection control, and delay tests
 - Scheduled subscription updates and rule-set bypass
@@ -92,18 +94,20 @@ Each release provides two packages:
 
 | Package | Filename | Contents | Recommended for |
 |---------|----------|----------|-----------------|
-| **Full** | `NetProxy_<version>_<build>.zip` | sing-box, the NetProxy native component, zashboard, and the Android Manager APK | The default choice when the manager should be installed with the module |
-| **Lite** | `NetProxy_<version>_<build>_lite.zip` | The same core, CLI, eBPF, and zashboard features, without the Android Manager APK | Users who install the manager from Google Play or only use CLI / zashboard |
+| **Standard** | `NetProxy_<version>_<build>.zip` | sing-box, the NetProxy native component, zashboard, CLI, eBPF, and the module WebUI | The default choice when the manager is installed separately |
+| **With manager** | `NetProxy_<version>_<build>_with-manager.zip` | Everything in Standard plus the optional manager APK | Devices without Google Play or users who want to install the APK during module installation |
 
-Both packages have identical proxy capabilities. Choose **Full** to bundle the manager installer; Lite users can still install the manager from Google Play.
+Both packages have identical proxy capabilities. The manager APK is an independent release asset; normal Android builds do not overwrite it.
 
 > [!IMPORTANT]
 > The eBPF inbound requires kernel BPF support, cgroup v2, and cgroup socket attachment. Shared-network proxying additionally requires usable TC eBPF support. Unsupported kernels cannot start this version.
 
 1. Download the latest ZIP from [Releases](https://github.com/Fanju6/NetProxy-Magisk/releases).
 2. Flash it with Magisk, KernelSU, or APatch.
-3. Follow the installer prompt for the bundled manager or Google Play version, then reboot.
-4. Import and select a node before starting the service.
+3. On an existing installation, choose **Keep existing data** or **Fresh installation**. Timeout keeps existing data.
+4. If the package includes an APK, choose whether to install it; otherwise install the manager from Google Play when available.
+5. A live installation is applied without a reboot. Recovery installation still requires a reboot.
+6. Import and select a node before starting the service.
 
 `AUTO_START` is disabled by default. Enable it from the manager after confirming that your node and configuration work, or set `AUTO_START=1` in `config/module.conf`.
 
@@ -178,26 +182,27 @@ su -c '/data/adb/modules/netproxy/netproxyctl node use default/fr-socks'
 Important rules:
 
 - sing-box uses `type`; the Xray-style `protocol` field is invalid here.
-- Keep one regular node per file and use a unique `tag` within the directory.
+- File imports are appended to the `default` local Catalog group; use a unique `tag` within that group.
 - Do not use `direct`, `block`, `Proxy`, or `Auto-Fastest` as node tags.
-- All JSON files in the active node directory are loaded together. A malformed file can prevent the core from starting.
+- File imports are appended to the `default` local Catalog group. Catalog `provider.json` files are managed by NetProxy and should not be edited manually.
 - Refer to the official [sing-box Outbound documentation](https://sing-box.sagernet.org/configuration/outbound/) for protocol fields.
 
 ## CLI Overview
 
 ```text
-netproxyctl [--json] service status|start|stop|restart|reload
+netproxyctl [--json] [--timeout <seconds|duration>] service status|start|stop|restart|reload|check|toggle
 netproxyctl [--json] catalog list|show <group>
 netproxyctl [--json] node list|current|show|add|import|export|edit|remove|use|delay
 netproxyctl [--json] sub list|show|add|edit|update|update-all|activate|remove|history|cancel
 netproxyctl [--json] mode [rule|global|direct|AllowAds]
+netproxyctl [--json] network evaluate --type <wifi|not_wifi> [--ssid <name>]
 netproxyctl [--json] app list|mode|users|add|remove|enable|disable
 netproxyctl [--json] ebpf status [configured|all|local|shared] [--raw]
 netproxyctl [--json] config list|read|check|validate|apply
 netproxyctl [--json] logs show|clear|export
 ```
 
-Node references are always `<group-id>/<tag>`. Use `node use auto [group]` for automatic mode and `node delay auto [group]` for group latency tests. The name argument of `sub add` is optional (`sub add <URL>`); it is then derived from Profile-Title, the response filename, or the URL host.
+Node references are always `<group-id>/<tag>`. Use `node use auto [group]` for automatic mode and `node delay auto [group]` for group latency tests. The name argument of `sub add` is optional (`sub add <URL>`); it is then derived from Profile-Title, the response filename, or the URL host. Commands use a 30-second default timeout, except `service start` (120 seconds); subscription mutations use their download timeout.
 
 ```sh
 su -c '/data/adb/modules/netproxy/netproxyctl help'
@@ -211,6 +216,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl help'
 | `config/ebpf/ebpf.conf` | eBPF inbound, per-app rules, shared networks, and map capacities |
 | `config/singbox/confdir/` | Shared sing-box DNS, route, and Clash API configuration |
 | `data/catalog/<group-id>/` | Node and subscription groups (`meta.json` + `provider.json`) |
+| `runtime/` | Generated Provider, outbound, and eBPF files; do not edit manually |
 | `config/singbox/rules/local/` | Editable local route rule sets |
 | `config/singbox/rules/remote/` | Built-in SRS rule resources managed by remote providers |
 | `logs/service.log` | Module service, subscription updates, and transparent proxy logs |

@@ -2,8 +2,6 @@
 
 这里是 [NetProxy](../../README.md) Android 管理器的源码目录。管理器通过 Root 权限调用模块提供的 `netproxyctl` JSON 接口，负责服务、节点、订阅、分应用代理、配置和日志等交互。
 
-> 当前项目处于 8.0 Alpha 阶段，模块与管理器接口仍可能调整。
-
 ## 获取应用
 
 - 推荐通过 [Google Play](https://play.google.com/store/apps/details?id=com.fanjv.netproxy) 安装和更新。

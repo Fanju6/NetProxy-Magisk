@@ -1,89 +1,52 @@
 # Android 管理器
 
-Android 管理器是 NetProxy 的图形化主入口，目前通过 Google Play 分发：
-
-[`NetProxy - Google Play`](https://play.google.com/store/apps/details?id=com.fanjv.netproxy)
-
-当前不提供公开源码仓库。
-
-它不是旧模块 WebUI 的替代皮肤，而是一套独立维护的原生 Android 应用。
+NetProxy Android 管理器是 8.0 的原生图形化入口，源码位于仓库的 [`src/android`](https://github.com/Fanju6/NetProxy-Magisk/tree/main/src/android)。普通用户推荐从 [Google Play](https://play.google.com/store/apps/details?id=com.fanjv.netproxy) 安装和更新；含管理器模块包为没有 Google Play 的设备提供备用安装方式。
 
 ## 管理器负责什么
 
-管理器当前覆盖的核心能力包括：
+- 仪表盘：服务状态、运行时间、流量、CPU、内存、当前分组和节点。
+- 节点：本地节点与订阅节点的浏览、选择、测速、编辑、导出和删除。
+- 订阅：添加、编辑、更新、流量信息、更新周期和历史记录。
+- 代理设置：出站模式、DNS 劫持、IPv6、分应用代理和共享网络。
+- 内核设置：编辑和校验 sing-box 静态配置，查看运行时配置。
+- 日志：查看 service.log、sing-box.log，导出脱敏诊断包。
+- 快捷设置磁贴：控制服务启动和停止。
 
-- 仪表盘与服务状态
-- 当前节点与出站模式
-- 节点导入、订阅管理、测速、导出链接
-- 分应用代理与黑白名单
-- 自动启动、动态测速等常用开关
-- sing-box / eBPF / JSON 配置编辑
-- 日志查看、导出与基础排障
+管理器不会直接读取 `/data/adb`、Catalog、PID 或 Shell 文本来推断业务状态。数据流固定为：
 
-## 推荐使用流程
+```text
+Compose -> ViewModel -> Repository -> NetProxyCtlClient -> netproxyctl
+```
 
-### 1. 仪表盘
+持久节点和订阅即使在服务停止时也能显示；流量、实际模式、运行时选中节点和连接等动态数据在服务 ready 后由 sing-box API 补充。
 
-先确认：
+## 运行要求
 
-- 服务是否运行
-- 当前节点是否正确
-- 当前出站模式是否符合预期
+- Android 12 或更高版本
+- `arm64-v8a`
+- Magisk、KernelSU 或 APatch Root 环境
+- 已安装兼容的 NetProxy 8.0 模块
 
-### 2. 节点与订阅
+管理器不包含 sing-box 核心，不能脱离模块单独工作。
 
-管理器适合做这些日常动作：
+## 本地构建
 
-- 从剪贴板导入节点
-- 添加订阅并更新
-- 查看节点列表与当前节点
-- 做延迟测试
-- 导出节点分享链接
+准备 Android SDK 37 和 JDK 21：
 
-### 3. 模式切换
+```bash
+cd src/android
+./gradlew testDebugUnitTest lintDebug assembleDebug
+```
 
-常用模式：
+Windows PowerShell：
 
-- `Rule`
-- `Global`
-- `Direct`
+```powershell
+cd src/android
+.\gradlew.bat testDebugUnitTest lintDebug assembleDebug
+```
 
-如果你启用了“动态选择节点”，运行时会优先使用测速组，而不是固定手动节点。
+APK 位于 `app/build/outputs/apk/debug/`。本地构建不会覆盖模块内独立维护的 `src/module/NetProxy.apk`。
 
-### 4. 分应用代理
+## 编辑器与第三方源码
 
-管理器可以直接维护：
-
-- 黑名单模式
-- 白名单模式
-- 应用列表
-- 是否启用分应用代理
-
-这部分最终会写入模块的 `ebpf.conf`，并由服务重启重新生成 eBPF 入站。
-
-### 5. 配置与日志
-
-当你需要进一步排障时，管理器适合查看：
-
-- 服务日志
-- sing-box 日志
-- 当前 JSON 配置
-- eBPF / sing-box 常用参数
-
-## 与 CLI、Clash API 的关系
-
-- **Android 管理器**：最适合日常使用
-- **CLI**：最适合终端、脚本和批量操作
-- **Clash API + zashboard**：最适合看代理组、连接和延迟
-
-三者不是互斥关系，而是共享同一套模块状态。
-
-## 版本与构建说明
-
-当前管理器源码中：
-
-- `applicationId`：`com.fanjv.netproxy`
-- `versionName`：当前发布版本号，例如 `8.0.0-beta.4`
-- `minSdk`：`31`
-
-普通用户直接通过 Google Play 安装即可。
+内核设置使用内置 sing-box Schema、补全和校验能力；编辑器可以直接处理 reF1nd sing-box 配置字段。`third_party/scripta` 是固定源码快照，来源、许可证和 NetProxy 扩展说明见 [`third_party/scripta/NETPROXY.md`](https://github.com/Fanju6/NetProxy-Magisk/blob/main/src/android/third_party/scripta/NETPROXY.md)。
