@@ -44,6 +44,7 @@ export default defineConfig({
             { text: '模块理念', link: '/guide/philosophy' },
             { text: '安装与升级', link: '/guide/installation' },
             { text: '快速开始', link: '/guide/quick-start' },
+            { text: '7.2 与 8.0 对比', link: '/guide/compare-v7-v8' },
             { text: 'V7 历史升级指南', link: '/guide/upgrade-v7' }
           ]
         },
