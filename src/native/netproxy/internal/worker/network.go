@@ -165,7 +165,7 @@ func runNetworkWatcher(ctx context.Context, options Options, logger *log.Logger)
 
 func logNetworkReadFailure(logger *log.Logger, repeated *repeatedNetworkError, message string, err error) {
 	if errors.Is(err, errNetworkUnavailable) {
-		logWorker(logger, "INFO", "network.read", "waiting", "网络尚未就绪，等待默认路由: %v", err)
+		logWorker(logger, "INFO", "network.read", "waiting", "网络尚未就绪：等待 Android 默认路由")
 		return
 	}
 	repeated.record(logger, message, err)
