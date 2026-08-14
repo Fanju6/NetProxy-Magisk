@@ -32,6 +32,7 @@ readonly DATA_DIR="$LIVE_DIR/data"
 readonly PRESERVE_CONFIGS="
     module.conf
     ebpf/ebpf.conf
+    singbox/confdir
     singbox/rules/local/direct.json
     singbox/rules/local/proxy.json
     singbox/rules/local/block.json
@@ -133,6 +134,7 @@ set_perm_recursive() {
 has_existing_user_data() {
   [ -f "$CONFIG_DIR/module.conf" ] \
     || [ -f "$CONFIG_DIR/ebpf/ebpf.conf" ] \
+    || [ -d "$CONFIG_DIR/singbox/confdir" ] \
     || [ -d "$DATA_DIR/catalog" ]
 }
 
@@ -492,6 +494,7 @@ merge_live_state() {
   for config_item in \
     module.conf \
     ebpf/ebpf.conf \
+    singbox/confdir \
     singbox/rules/local/direct.json \
     singbox/rules/local/proxy.json \
     singbox/rules/local/block.json; do
