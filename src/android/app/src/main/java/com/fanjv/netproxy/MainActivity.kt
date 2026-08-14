@@ -6,12 +6,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
@@ -20,17 +16,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -78,20 +70,13 @@ import com.fanjv.netproxy.navigation.Route.SubscriptionEdit
 import com.fanjv.netproxy.navigation.Route.ThemeSettings
 import com.fanjv.netproxy.navigation.rememberMainPagerState
 import com.fanjv.netproxy.navigation.rememberNavigator
-import kotlinx.coroutines.delay
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.NavigationItem
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.theme.ThemeColorSpec
 import top.yukonga.miuix.kmp.theme.ThemePaletteStyle
 
 class MainActivity : ComponentActivity() {
-    private val alphaExpired = mutableStateOf(AlphaExpiry.isExpired())
-
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(R.style.Theme_NetProxy)
         super.onCreate(savedInstanceState)
@@ -104,17 +89,8 @@ class MainActivity : ComponentActivity() {
         window.isNavigationBarContrastEnforced = false
 
         setContent {
-            val isExpired by alphaExpired
             val themeViewModel: ThemeViewModel = netProxyViewModel()
 
-            LaunchedEffect(isExpired) {
-                if (!isExpired) {
-                    val remaining = BuildConfig.ALPHA_EXPIRES_AT_MILLIS -
-                            System.currentTimeMillis()
-                    if (remaining > 0) delay(remaining)
-                    alphaExpired.value = true
-                }
-            }
             val themeState by themeViewModel.state.collectAsStateWithLifecycle()
             val paletteStyle = runCatching { ThemePaletteStyle.valueOf(themeState.colorStyle) }
                 .getOrDefault(ThemePaletteStyle.TonalSpot)
@@ -149,57 +125,8 @@ class MainActivity : ComponentActivity() {
 
             CompositionLocalProvider(LocalDensity provides density) {
                 NetProxyTheme(appThemeSettings = appThemeSettings) {
-                    if (isExpired) {
-                        AlphaExpiredScreen(onExit = ::finishAndRemoveTask)
-                    } else {
-                        NetProxyApp(themeViewModel)
-                    }
+                    NetProxyApp(themeViewModel)
                 }
-            }
-        }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        alphaExpired.value = AlphaExpiry.isExpired()
-    }
-}
-
-@Composable
-private fun AlphaExpiredScreen(onExit: () -> Unit) {
-    BackHandler(enabled = true) {}
-
-    Scaffold {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 32.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(
-                    text = stringResource(R.string.alpha_expired_title),
-                    color = colorScheme.onBackground,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = stringResource(R.string.alpha_expired_message),
-                    color = colorScheme.onSurfaceVariantSummary,
-                    fontSize = 15.sp,
-                    textAlign = TextAlign.Center,
-                )
-                Spacer(Modifier.height(24.dp))
-                TextButton(
-                    text = stringResource(R.string.alpha_expired_exit),
-                    onClick = onExit,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
-                )
             }
         }
     }

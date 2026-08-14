@@ -24,19 +24,11 @@ class NetProxyTileService : TileService() {
 
     override fun onStartListening() {
         super.onStartListening()
-        if (AlphaExpiry.isExpired()) {
-            applyExpiredState()
-        } else {
-            refreshTile()
-        }
+        refreshTile()
     }
 
     override fun onClick() {
         super.onClick()
-        if (AlphaExpiry.isExpired()) {
-            applyExpiredState()
-            return
-        }
         if (toggleJob?.isActive == true) return
 
         val currentRunning = lastKnownRunning ?: when (qsTile?.state) {
@@ -76,10 +68,6 @@ class NetProxyTileService : TileService() {
     }
 
     private suspend fun syncTileState(): Boolean {
-        if (AlphaExpiry.isExpired()) {
-            applyExpiredState()
-            return false
-        }
         return try {
             val isRunning = repository.status().state in
                     setOf("preparing", "starting", "ready")
@@ -99,15 +87,6 @@ class NetProxyTileService : TileService() {
             if (isRunning) R.drawable.ic_qs_active else R.drawable.ic_qs_inactive
         )
         tile.updateTile()
-    }
-
-    private fun applyExpiredState() {
-        lastKnownRunning = null
-        qsTile?.apply {
-            state = Tile.STATE_UNAVAILABLE
-            icon = Icon.createWithResource(this@NetProxyTileService, R.drawable.ic_qs_inactive)
-            updateTile()
-        }
     }
 
     override fun onDestroy() {

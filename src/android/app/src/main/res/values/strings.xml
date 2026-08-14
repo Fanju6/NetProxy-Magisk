@@ -2,9 +2,6 @@
 
     <!-- General -->
     <string name="app_name">NetProxy</string>
-    <string name="alpha_expired_title">测试版本已过期</string>
-    <string name="alpha_expired_message">此 Alpha 测试版本已于 2026 年 8 月 20 日到期，请安装最新版本后继续使用。</string>
-    <string name="alpha_expired_exit">退出应用</string>
     <string name="settings">设置</string>
     <string name="about">关于</string>
     <string name="save_text">保存</string>

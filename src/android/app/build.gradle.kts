@@ -31,7 +31,6 @@ android {
         targetSdk = 37
         versionCode = gitCommitCount()
         versionName = "8.0.0-beta.7"
-        buildConfigField("long", "ALPHA_EXPIRES_AT_MILLIS", "1787155200000L")
         ndk {
             abiFilters += "arm64-v8a"
         }
