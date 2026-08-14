@@ -1,1 +1,0 @@
-import{c as e,l as t}from"./index-D4W1clF_.js";var n=async()=>{t.value=[],e.value=[]};export{n as fetchRules};

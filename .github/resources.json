@@ -29,8 +29,8 @@
       "ref": "X",
       "sourcePath": "sing-box/Rules/ChinaDomain.srs",
       "metadataPath": "sing-box/Rules/ChinaDomain.json",
-      "currentCommit": "8e0987c5e1894a70cc2c4c3e2ffbfbcf0a36aeac",
-      "currentSha256": "45c67bd6edb6cde6bea06039f2ff70824ac3f29488a739f01ac6e05ed3518a43"
+      "currentCommit": "c5c6598bd20be1e22468a73a8a69840a2dd7446f",
+      "currentSha256": "7b1e7226edba86373f24768e8ffe36a907e15ac638b0ed60ae5f3242c75bbb8b"
     },
     {
       "name": "ChinaIP",
@@ -40,8 +40,8 @@
       "ref": "X",
       "sourcePath": "sing-box/Rules/ChinaIP.srs",
       "metadataPath": "sing-box/Rules/ChinaIP.json",
-      "currentCommit": "a5bbe680afe26bf5aac494246a02cca7a214ce36",
-      "currentSha256": "25ff4522a7c8d0bd0e4879b7a471421505690c5d1f06b96ab0657d6568cc2007"
+      "currentCommit": "5db64b37ff042c6ff8e371a18eefa11f56785dc0",
+      "currentSha256": "a41ef08057737beee65243dbb44f808c89c78cbb86247c842ae876be36b8cf0d"
     },
     {
       "name": "Proxy",
@@ -70,7 +70,7 @@
     "path": "src/module/bin/sing-box",
     "repo": "reF1nd/sing-box",
     "tagPattern": "^v[0-9].*-reF1nd$",
-    "currentVersion": "v1.14.0-beta.13-reF1nd",
+    "currentVersion": "v1.14.0-beta.14-reF1nd",
     "ndkVersion": "r29",
     "buildTags": [
       "with_quic",
@@ -88,7 +88,7 @@
       "path": "src/module/webroot/zashboard",
       "repo": "Zephyruso/zashboard",
       "assetPattern": "dist-no-fonts.zip",
-      "currentVersion": "v3.18.0"
+      "currentVersion": "v3.19.0"
     }
   ],
   "githubArchive": [
@@ -96,8 +96,8 @@
       "path": "src/module/webroot/sing-box-dashboard",
       "repo": "SagerNet/sing-box-dashboard",
       "ref": "gh-pages",
-      "currentCommit": "fa4d6ab6e742c4c22b65a2de3b10280d57c4d364",
-      "currentSourceCommit": "7021b7332b2bc52036b041cb9b5d5fae74d50d60"
+      "currentCommit": "02caf04d50c714562605216d63299d11396c9905",
+      "currentSourceCommit": "e5b293de743b2f4de1f3d3a14fc260ab42b93139"
     }
   ]
 }
