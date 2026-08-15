@@ -6,7 +6,7 @@ import org.junit.Test
 
 class DashboardSnapshotReducerTest {
     @Test
-    fun `computes rates and resource usage from consecutive samples`() {
+    fun `computes resource usage from a service snapshot`() {
         val reducer = DashboardSnapshotReducer(totalMemoryBytes = 2_000)
         val initial = CatalogDashboardUiState()
         reducer.reduce(initial, service(download = 1_000, upload = 500), 1_000, "10.0.0.1")
@@ -24,8 +24,8 @@ class DashboardSnapshotReducerTest {
             "10.0.0.2"
         )
 
-        assertEquals(1_000, state.downloadBytesPerSecond)
-        assertEquals(500, state.uploadBytesPerSecond)
+        assertEquals(3_000, state.downloadTotal)
+        assertEquals(1_500, state.uploadTotal)
         assertEquals(40f, state.cpuUsage)
         assertEquals(25f, state.memoryUsage)
         assertEquals("10.0.0.2", state.internalIp)

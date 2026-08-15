@@ -1,8 +1,6 @@
 package com.fanjv.netproxy.feature.dashboard.presentation
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -23,11 +21,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -51,8 +46,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 internal fun SpeedChartCard(
     downloadSpeed: String,
     uploadSpeed: String,
-    downloadHistory: List<Float>,
-    uploadHistory: List<Float>,
+    trafficSamples: List<TrafficSample>,
     statusSummary: String,
     isRunning: Boolean,
     serviceControlEnabled: Boolean,
@@ -91,19 +85,10 @@ internal fun SpeedChartCard(
                             .padding(bottom = 15.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (downloadHistory.isEmpty() && uploadHistory.isEmpty()) {
-                            Text(
-                                text = stringResource(R.string.collecting_data),
-                                style = MiuixTheme.textStyles.body2,
-                                color = colorScheme.onSurfaceVariantActions
-                            )
-                        } else {
-                            SpeedChart(
-                                downloadHistory = downloadHistory,
-                                uploadHistory = uploadHistory,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
+                        SpeedChart(
+                            trafficSamples = trafficSamples,
+                            modifier = Modifier.fillMaxSize()
+                        )
                     }
                 }
             }
@@ -124,42 +109,35 @@ private fun SpeedLabel(icon: ImageVector, value: String, color: Color) {
     }
 }
 
-/** 将最近 40 个采样点绘制为平滑双折线。 */
+/** 将最近一段流量采样绘制为双折线。 */
 @Composable
 private fun SpeedChart(
-    downloadHistory: List<Float>,
-    uploadHistory: List<Float>,
+    trafficSamples: List<TrafficSample>,
     modifier: Modifier = Modifier
 ) {
     val downloadColor = Color(0xFF2196F3)
     val uploadColor = Color(0xFF4CAF50)
-    val animation = remember { Animatable(0f) }
-    var previousDownload by remember { mutableStateOf<List<Offset>>(emptyList()) }
-    var currentDownload by remember { mutableStateOf<List<Offset>>(emptyList()) }
-    var previousUpload by remember { mutableStateOf<List<Offset>>(emptyList()) }
-    var currentUpload by remember { mutableStateOf<List<Offset>>(emptyList()) }
-
-    LaunchedEffect(downloadHistory, uploadHistory) {
-        previousDownload = currentDownload
-        previousUpload = currentUpload
-        val maxSpeed = maxOf(
-            downloadHistory.maxOrNull() ?: 0f,
-            uploadHistory.maxOrNull() ?: 0f,
-            100f
-        )
-        currentDownload = normalizedPoints(downloadHistory, maxSpeed)
-        currentUpload = normalizedPoints(uploadHistory, maxSpeed)
-        animation.snapTo(0f)
-        animation.animateTo(1f, tween(300))
-    }
-
-    val progress = animation.value
-    val download = interpolate(previousDownload, currentDownload, progress)
-    val upload = interpolate(previousUpload, currentUpload, progress)
+    val geometry = remember(trafficSamples) { trafficChartGeometry(trafficSamples) }
+    val gridColor = colorScheme.onSurfaceVariantActions.copy(alpha = 0.12f)
     Canvas(modifier = modifier) {
+        for (line in 1..3) {
+            val y = size.height * line / 4f
+            drawLine(
+                color = gridColor,
+                start = Offset(0f, y),
+                end = Offset(size.width, y),
+                strokeWidth = 1.dp.toPx()
+            )
+        }
+
         fun drawSeries(points: List<Offset>, color: Color, alpha: Float) {
             if (points.isEmpty()) return
-            val line = smoothPath(points, size.width, size.height)
+            val line = Path().apply {
+                moveTo(points.first().x * size.width, (1f - points.first().y) * size.height)
+                points.drop(1).forEach { point ->
+                    lineTo(point.x * size.width, (1f - point.y) * size.height)
+                }
+            }
             val fill = Path().apply {
                 addPath(line)
                 lineTo(points.last().x * size.width, size.height)
@@ -172,43 +150,8 @@ private fun SpeedChart(
             )
             drawPath(path = line, color = color, style = Stroke(width = 2.dp.toPx()))
         }
-        drawSeries(download, downloadColor, 0.25f)
-        drawSeries(upload, uploadColor, 0.15f)
-    }
-}
-
-private fun normalizedPoints(history: List<Float>, maxSpeed: Float): List<Offset> =
-    history.takeLast(40).mapIndexed { index, speed ->
-        Offset(index / 39f, speed / maxSpeed)
-    }
-
-private fun interpolate(
-    previous: List<Offset>,
-    current: List<Offset>,
-    progress: Float
-): List<Offset> = current.mapIndexed { index, point ->
-    val start = previous.getOrNull(index) ?: point
-    Offset(
-        x = start.x + (point.x - start.x) * progress,
-        y = start.y + (point.y - start.y) * progress
-    )
-}
-
-private fun smoothPath(points: List<Offset>, width: Float, height: Float): Path = Path().apply {
-    moveTo(points.first().x * width, (1f - points.first().y) * height)
-    for (index in 1 until points.lastIndex) {
-        val current = points[index]
-        val next = points[index + 1]
-        quadraticTo(
-            current.x * width,
-            (1f - current.y) * height,
-            (current.x + next.x) / 2f * width,
-            (1f - (current.y + next.y) / 2f) * height
-        )
-    }
-    if (points.size > 1) {
-        val last = points.last()
-        lineTo(last.x * width, (1f - last.y) * height)
+        drawSeries(geometry.download, downloadColor, 0.25f)
+        drawSeries(geometry.upload, uploadColor, 0.15f)
     }
 }
 

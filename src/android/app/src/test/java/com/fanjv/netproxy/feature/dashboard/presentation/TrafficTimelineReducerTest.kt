@@ -1,0 +1,65 @@
+package com.fanjv.netproxy.feature.dashboard.presentation
+
+import com.fanjv.netproxy.core.module.ServiceStatusSnapshot
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class TrafficTimelineReducerTest {
+    @Test
+    fun `first sample creates a visible baseline`() {
+        val reducer = TrafficTimelineReducer()
+        val state = reducer.reduce(service(1000, 500), 1000)
+
+        assertEquals(1, state.samples.size)
+        assertEquals(0, state.downloadBytesPerSecond)
+        assertEquals(0, state.uploadBytesPerSecond)
+    }
+
+    @Test
+    fun `second sample calculates rates from elapsed time`() {
+        val reducer = TrafficTimelineReducer()
+        reducer.reduce(service(1000, 500), 1000)
+        val state = reducer.reduce(service(3000, 1500), 2000)
+
+        assertEquals(2000, state.downloadBytesPerSecond)
+        assertEquals(1000, state.uploadBytesPerSecond)
+    }
+
+    @Test
+    fun `counter reset starts a new baseline`() {
+        val reducer = TrafficTimelineReducer()
+        reducer.reduce(service(1000, 500), 1000)
+        reducer.reduce(service(3000, 1500), 2000)
+        val state = reducer.reduce(service(10, 20), 3000)
+
+        assertEquals(0, state.downloadBytesPerSecond)
+        assertEquals(0, state.uploadBytesPerSecond)
+    }
+
+    @Test
+    fun `timeline is bounded`() {
+        val reducer = TrafficTimelineReducer(capacity = 3)
+        repeat(5) { index ->
+            reducer.reduce(service(index * 100L, 0), (index + 1) * 1000L)
+        }
+
+        assertEquals(3, reducer.reduce(service(600, 0), 6000).samples.size)
+    }
+
+    @Test
+    fun `geometry stretches a short history across the chart`() {
+        val geometry = trafficChartGeometry(
+            listOf(TrafficSample(1, 0, 0), TrafficSample(2, 100, 50))
+        )
+
+        assertEquals(0f, geometry.download.first().x)
+        assertEquals(1f, geometry.download.last().x)
+    }
+
+    private fun service(download: Long, upload: Long) =
+        ServiceStatusSnapshot(
+            state = "ready",
+            downloadTotal = download,
+            uploadTotal = upload
+        )
+}

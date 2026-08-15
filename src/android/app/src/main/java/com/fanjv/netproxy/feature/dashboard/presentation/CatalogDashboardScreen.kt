@@ -136,8 +136,7 @@ internal fun CatalogDashboardScreen(
                     SpeedChartCard(
                         downloadSpeed = formatRate(state.downloadBytesPerSecond),
                         uploadSpeed = formatRate(state.uploadBytesPerSecond),
-                        downloadHistory = state.downloadHistory,
-                        uploadHistory = state.uploadHistory,
+                        trafficSamples = state.trafficSamples,
                         statusSummary = serviceSummary,
                         isRunning = state.isReady,
                         serviceControlEnabled = state.rootGranted &&

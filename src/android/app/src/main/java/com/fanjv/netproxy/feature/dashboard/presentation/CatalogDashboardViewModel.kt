@@ -37,8 +37,7 @@ internal data class CatalogDashboardUiState(
     val uploadTotal: Long = 0,
     val cpuUsage: Float = 0f,
     val memoryUsage: Float = 0f,
-    val downloadHistory: List<Float> = emptyList(),
-    val uploadHistory: List<Float> = emptyList(),
+    val trafficSamples: List<TrafficSample> = emptyList(),
     val internalIp: String = "--",
     val operation: String = "",
     val notice: UiText = UiText.Empty,
@@ -68,6 +67,7 @@ internal class CatalogDashboardViewModel(
     private var serviceTransitionRevision = 0L
     private val totalMemoryBytes = environment.totalMemoryBytes
     private val snapshotReducer = DashboardSnapshotReducer(totalMemoryBytes)
+    private val trafficReducer = TrafficTimelineReducer()
 
     init {
         viewModelScope.launch {
@@ -150,9 +150,10 @@ internal class CatalogDashboardViewModel(
     private fun startPolling() {
         refreshJob?.cancel()
         refreshJob = viewModelScope.launch {
+            refreshSnapshot()
             while (isActive) {
-                refreshSnapshot()
                 delay(5000)
+                refreshSnapshot()
             }
         }
     }
@@ -169,12 +170,23 @@ internal class CatalogDashboardViewModel(
                 )
             ) return@onSuccess
 
+            val nowMillis = System.currentTimeMillis()
+            val timeline = if (service.state == "ready") {
+                trafficReducer.reduce(service, nowMillis)
+            } else {
+                trafficReducer.reset()
+                TrafficTimelineState()
+            }
             _state.update { current ->
                 snapshotReducer.reduce(
                     current = current,
                     service = service,
-                    nowMillis = System.currentTimeMillis(),
+                    nowMillis = nowMillis,
                     localAddress = localAddress()
+                ).copy(
+                    downloadBytesPerSecond = timeline.downloadBytesPerSecond,
+                    uploadBytesPerSecond = timeline.uploadBytesPerSecond,
+                    trafficSamples = timeline.samples
                 )
             }
         }.onFailure { error ->
