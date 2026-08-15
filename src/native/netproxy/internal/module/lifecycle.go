@@ -116,6 +116,12 @@ func StartService(ctx context.Context, options Options) error {
 		return fmt.Errorf("读取服务状态失败: %w", stateErr)
 	}
 	if pid := service.FindProcess(options.SingBoxPath, int(state.PID)); pid > 0 {
+		if err := ensureSingBoxRootCgroup(pid); err != nil {
+			message := "sing-box 无法加入 root cgroup"
+			stateErr := writeServiceState(options.StateFile, "failed", int64(pid), state.StartedAt, 0, message)
+			logService(options, "ERROR", "service.cgroup", "failed", "%s: %v", message, err)
+			return errors.Join(fmt.Errorf("%s: %w", message, err), stateErr)
+		}
 		startedAt, err := serviceStartedAt(ctx, options)
 		if err != nil {
 			message := "检测到无响应的 sing-box 进程"
@@ -157,6 +163,10 @@ func StartService(ctx context.Context, options Options) error {
 		return failServiceStart(options, 0, 0, "sing-box 进程启动失败", err)
 	}
 	pid := command.Process.Pid
+	if err := ensureSingBoxRootCgroup(pid); err != nil {
+		_ = logFile.Close()
+		return failServiceStart(options, pid, 0, "sing-box 无法加入 root cgroup", err)
+	}
 	_ = command.Process.Release()
 	_ = logFile.Close()
 	startedAt := time.Now().Unix()
