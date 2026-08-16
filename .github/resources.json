@@ -40,8 +40,8 @@
       "ref": "X",
       "sourcePath": "sing-box/Rules/ChinaIP.srs",
       "metadataPath": "sing-box/Rules/ChinaIP.json",
-      "currentCommit": "5db64b37ff042c6ff8e371a18eefa11f56785dc0",
-      "currentSha256": "a41ef08057737beee65243dbb44f808c89c78cbb86247c842ae876be36b8cf0d"
+      "currentCommit": "524e387581bc039e87380673b09a24e10cb24101",
+      "currentSha256": "554a112d8998de99942228e31851a283b0665ff6d4fc03b60ee79e37dea3ad9e"
     },
     {
       "name": "Proxy",
@@ -96,8 +96,8 @@
       "path": "src/module/webroot/sing-box-dashboard",
       "repo": "SagerNet/sing-box-dashboard",
       "ref": "gh-pages",
-      "currentCommit": "02caf04d50c714562605216d63299d11396c9905",
-      "currentSourceCommit": "e5b293de743b2f4de1f3d3a14fc260ab42b93139"
+      "currentCommit": "bec05dd5e5b985659c271ff0d7dc6f78fd50975e",
+      "currentSourceCommit": "96b91aab307d8fe016fc152d3fe3c8b6539e26c1"
     }
   ]
 }
