@@ -9,186 +9,143 @@ import (
 	"testing"
 )
 
-func TestBuildRuntimeIncludesTypedCgroupAndSharedFields(t *testing.T) {
-	config := loadFixture(t, `EBPF_NETWORK=""
-EBPF_UDP_TIMEOUT="5m"
-EBPF_DNS_MODE="hijack"
-EBPF_CGROUP_ENABLED=1
-EBPF_CGROUP_IPV6_MODE="auto"
+func TestBuildRuntimeUsesNewLocalAndSharedSchema(t *testing.T) {
+	config := loadFixture(t, `EBPF_MODE="hybrid"
+EBPF_NETWORK="tcp,udp"
+EBPF_LOCAL_IPV6_MODE="auto"
 EBPF_BYPASS_PRIVATE_ADDRESS=0
-APP_PROXY_ENABLE=1
 APP_PROXY_MODE="blacklist"
-APP_ANDROID_USERS="0,999"
-BYPASS_APPS_LIST="com.android.chrome,org.telegram.messenger"
-EBPF_SHARED_NETWORK=1
+BYPASS_APPS_LIST="0:com.android.chrome,10:org.telegram.messenger"
 EBPF_SHARED_INTERFACES="wlan2,wlan0"
-EBPF_SHARED_INCLUDE_SOURCE_CIDRS="192.168.43.0/24,fd00::/64"
-EBPF_SHARED_INCLUDE_MAC_ADDRESSES="02:11:22:33:44:55,AA:BB:CC:DD:EE:FF"
-EBPF_SHARED_PROXY_MAP_CAPACITY=128
-EBPF_SHARED_BYPASS_MAP_CAPACITY=256
-EBPF_SHARED_FRAGMENT_MAP_CAPACITY=512
+EBPF_SHARED_INCLUDE_SOURCE_CIDR="192.168.43.0/24,fd00::/64"
+EBPF_SHARED_INCLUDE_MAC_ADDRESS="02:11:22:33:44:55,AA:BB:CC:DD:EE:FF"
+EBPF_SHARED_STATE_CAPACITY=512
 `)
-
-	inbound := runtimeInbound(t, config)
-	for _, key := range []string{"cgroup_enabled", "cgroup_ipv6_mode", "include_android_user", "exclude_package", "map_capacity", "shared_network"} {
-		if _, ok := inbound[key]; !ok {
-			t.Fatalf("runtime inbound does not contain %q: %#v", key, inbound)
+	inbound := runtimeInbound(t, config, func(refs []PackageRef) ([]uint32, error) {
+		return []uint32{10123, 10124}, nil
+	})
+	if inbound["mode"] != "hybrid" || inbound["bypass_private_address"] != false {
+		t.Fatalf("unexpected base inbound: %#v", inbound)
+	}
+	local := inbound["local"].(map[string]any)
+	if local["ipv6_mode"] != "auto" || local["include_uid"] != nil {
+		t.Fatalf("unexpected local fields: %#v", local)
+	}
+	if got := local["exclude_uid"].([]any); !reflect.DeepEqual(got, []any{float64(10123), float64(10124)}) {
+		t.Fatalf("unexpected resolved app UIDs: %#v", got)
+	}
+	shared := inbound["shared"].(map[string]any)
+	if got := len(shared["interface"].([]any)); got != 2 {
+		t.Fatalf("unexpected shared interfaces: %d", got)
+	}
+	if shared["state_capacity"] != float64(512) {
+		t.Fatalf("unexpected shared state capacity: %#v", shared["state_capacity"])
+	}
+	advanced := shared["advanced"].(map[string]any)
+	if advanced["tc_priority"] != float64(1) {
+		t.Fatalf("unexpected shared advanced fields: %#v", advanced)
+	}
+	for _, key := range []string{"cgroup_enabled", "cgroup_ipv6_mode", "shared_network", "redirect_address", "map_capacity"} {
+		if _, ok := inbound[key]; ok {
+			t.Fatalf("legacy eBPF field %q is still emitted: %#v", key, inbound)
 		}
 	}
-	if inbound["cgroup_ipv6_mode"] != "auto" {
-		t.Fatalf("unexpected IPv6 mode: %#v", inbound["cgroup_ipv6_mode"])
+}
+
+func TestWhitelistAlwaysIncludesRootUID(t *testing.T) {
+	config := loadFixture(t, `APP_PROXY_MODE="whitelist"
+PROXY_APPS_LIST="10:com.example.app"
+`)
+	inbound := runtimeInbound(t, config, func([]PackageRef) ([]uint32, error) {
+		return []uint32{10123}, nil
+	})
+	local := inbound["local"].(map[string]any)
+	if got := local["include_uid"].([]any); !reflect.DeepEqual(got, []any{float64(0), float64(10123)}) {
+		t.Fatalf("whitelist must include root UID: %#v", got)
 	}
-	if inbound["bypass_private_address"] != false {
-		t.Fatalf("unexpected private address bypass: %#v", inbound["bypass_private_address"])
+	if got, ok := local["include_package"]; ok && len(got.([]any)) != 0 {
+		t.Fatalf("application policy should be resolved to UID: %#v", got)
 	}
-	shared := inbound["shared_network"].(map[string]any)
-	if shared["tc_priority"] != float64(1) {
-		t.Fatalf("unexpected TC priority: %#v", shared["tc_priority"])
+}
+
+func TestSharedModeOmitsLocalFields(t *testing.T) {
+	config := loadFixture(t, `EBPF_MODE="shared"
+EBPF_SHARED_INTERFACES="ap0"
+APP_PROXY_ENABLE=0
+EBPF_LOCAL_CGROUP_PATH=not-used
+EBPF_LOCAL_INCLUDE_UID=1234
+`)
+	inbound := runtimeInbound(t, config, nil)
+	if _, ok := inbound["local"]; ok {
+		t.Fatalf("shared mode emitted local fields: %#v", inbound)
 	}
-	sharedCapacity := shared["map_capacity"].(map[string]any)
-	if sharedCapacity["proxy"] != float64(128) ||
-		sharedCapacity["bypass"] != float64(256) ||
-		sharedCapacity["fragment"] != float64(512) {
-		t.Fatalf("unexpected shared map capacity: %#v", sharedCapacity)
+	if shared := inbound["shared"].(map[string]any); shared["interface"].([]any)[0] != "ap0" {
+		t.Fatalf("unexpected shared mode: %#v", shared)
 	}
-	if len(inbound["include_android_user"].([]any)) != 2 {
-		t.Fatalf("unexpected Android users: %#v", inbound["include_android_user"])
+}
+
+func TestParsePackageRefsRequiresUserScope(t *testing.T) {
+	refs, err := ParsePackageRefs("0:com.example.app,10:com.example.app", "PROXY_APPS_LIST")
+	if err != nil || len(refs) != 2 || refs[1].String() != "10:com.example.app" {
+		t.Fatalf("unexpected package refs: %#v, %v", refs, err)
 	}
-	if got := len(shared["include_interface"].([]any)); got != 2 {
-		t.Fatalf("unexpected shared interfaces: %#v", shared["include_interface"])
-	}
-	if got := len(shared["include_source_cidr"].([]any)); got != 2 {
-		t.Fatalf("unexpected shared source CIDRs: %#v", shared["include_source_cidr"])
-	}
-	if got := len(shared["include_mac_address"].([]any)); got != 2 {
-		t.Fatalf("unexpected shared MAC addresses: %#v", shared["include_mac_address"])
+	if _, err := ParsePackageRefs("com.example.app", "PROXY_APPS_LIST"); err == nil {
+		t.Fatal("package without Android user should fail")
 	}
 }
 
 func TestCommaSeparatedValuesUseCommaAsTheOnlyListSeparator(t *testing.T) {
 	tests := []struct {
-		name  string
 		value string
 		want  []string
 	}{
-		{name: "comma", value: "direct, ChinaIP", want: []string{"direct", "ChinaIP"}},
-		{name: "space is not a delimiter", value: "direct ChinaIP", want: []string{"direct ChinaIP"}},
-		{name: "fullwidth comma", value: "wlan2，wlan0", want: []string{"wlan2", "wlan0"}},
-		{name: "empty entries", value: "direct,, ChinaIP,", want: []string{"direct", "ChinaIP"}},
-		{name: "empty", value: "  ", want: []string{}},
+		{value: "direct, ChinaIP", want: []string{"direct", "ChinaIP"}},
+		{value: "direct ChinaIP", want: []string{"direct ChinaIP"}},
+		{value: "wlan2，wlan0", want: []string{"wlan2", "wlan0"}},
+		{value: "direct,, ChinaIP,", want: []string{"direct", "ChinaIP"}},
+		{value: "  ", want: []string{}},
 	}
 	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := CommaSeparated(test.value); !reflect.DeepEqual(got, test.want) {
-				t.Fatalf("CommaSeparated(%q) = %#v, want %#v", test.value, got, test.want)
-			}
-		})
-	}
-}
-
-func TestCgroupDisabledOmitsLocalFields(t *testing.T) {
-	config := loadFixture(t, `EBPF_CGROUP_ENABLED=0
-EBPF_SHARED_NETWORK=1
-EBPF_SHARED_INTERFACES="wlan2"
-EBPF_TCP_MAP_CAPACITY=not-used
-EBPF_UDP_MAP_CAPACITY=not-used
-EBPF_SOCKET_MAP_CAPACITY=not-used
-`)
-	inbound := runtimeInbound(t, config)
-	for _, key := range []string{"cgroup_path", "cgroup_ipv6_mode", "include_uid", "include_android_user", "include_package", "exclude_package", "map_capacity"} {
-		if _, ok := inbound[key]; ok {
-			t.Fatalf("local cgroup field %q must be omitted: %#v", key, inbound)
+		if got := CommaSeparated(test.value); !reflect.DeepEqual(got, test.want) {
+			t.Fatalf("CommaSeparated(%q) = %#v, want %#v", test.value, got, test.want)
 		}
 	}
-	if inbound["cgroup_enabled"] != false {
-		t.Fatalf("unexpected cgroup_enabled: %#v", inbound["cgroup_enabled"])
+}
+
+func TestLoadRejectsRemovedConfiguration(t *testing.T) {
+	for _, content := range []string{
+		"EBPF_CGROUP_ENABLED=1\n",
+		"EBPF_SHARED_NETWORK=1\n",
+		"APP_ANDROID_USERS=0\n",
+		"PROXY_APPS_LIST=\"com.example.app\"\n",
+	} {
+		if _, err := Load(writeFixture(t, content)); err == nil {
+			t.Fatalf("removed or unscoped configuration unexpectedly loaded: %q", content)
+		}
 	}
-	if _, ok := inbound["shared_network"]; !ok {
-		t.Fatal("shared network configuration was omitted")
+	if _, err := Load(writeFixture(t, "EBPF_MODE=shared\nEBPF_NETWORK=tcp\nEBPF_SHARED_INTERFACES=ap0\n")); err == nil {
+		t.Fatal("shared DNS interception without UDP should fail")
 	}
 }
 
-func TestWhitelistWithoutPackagesUsesSentinel(t *testing.T) {
-	config := loadFixture(t, `APP_PROXY_MODE="whitelist"
-PROXY_APPS_LIST=""
-`)
-	inbound := runtimeInbound(t, config)
-	users := inbound["include_uid"].([]any)
-	if len(users) != 1 || users[0] != float64(4294967295) {
-		t.Fatalf("unexpected whitelist sentinel: %#v", users)
-	}
-	if packages := inbound["include_package"].([]any); len(packages) != 0 {
-		t.Fatalf("unexpected package list: %#v", packages)
-	}
-}
-
-func TestBuildUsesOnlyActiveApplicationList(t *testing.T) {
-	tests := []struct {
-		name        string
-		mode        string
-		include     []string
-		exclude     []string
-		wantInclude int
-		wantExclude int
-	}{
-		{
-			name:        "blacklist",
-			mode:        "blacklist",
-			include:     []string{"com.proxy.app"},
-			exclude:     []string{"com.bypass.app"},
-			wantInclude: 0,
-			wantExclude: 1,
-		},
-		{
-			name:        "whitelist",
-			mode:        "whitelist",
-			include:     []string{"com.proxy.app"},
-			exclude:     []string{"com.bypass.app"},
-			wantInclude: 1,
-			wantExclude: 0,
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			config := loadFixture(t, "APP_PROXY_ENABLE=1\nAPP_PROXY_MODE=\""+test.mode+"\"\nPROXY_APPS_LIST=\""+strings.Join(test.include, ",")+"\"\nBYPASS_APPS_LIST=\""+strings.Join(test.exclude, ",")+"\"\n")
-			inbound := runtimeInbound(t, config)
-			if got := len(inbound["include_package"].([]any)); got != test.wantInclude {
-				t.Fatalf("unexpected include_package count: got %d, want %d", got, test.wantInclude)
-			}
-			if got := len(inbound["exclude_package"].([]any)); got != test.wantExclude {
-				t.Fatalf("unexpected exclude_package count: got %d, want %d", got, test.wantExclude)
-			}
-		})
-	}
-}
-
-func TestLoadRejectsUnknownAndInvalidConfiguration(t *testing.T) {
-	if _, err := Load(writeFixture(t, "EBPF_NETWROK=tcp\n")); err == nil {
-		t.Fatal("expected unknown key to fail")
-	}
-	if _, err := Load(writeFixture(t, "EBPF_IPV6_MODE=auto\n")); err == nil {
-		t.Fatal("expected removed IPv6 key to fail")
-	}
-	if _, err := Load(writeFixture(t, "EBPF_UDP_TIMEOUT=0m\n")); err == nil {
-		t.Fatal("expected zero timeout to fail")
-	}
-	if _, err := Load(writeFixture(t, "EBPF_SHARED_NETWORK=1\nEBPF_NETWORK=tcp\n")); err == nil {
-		t.Fatal("expected shared DNS/tcp combination to fail")
-	}
-}
-
-func runtimeInbound(t *testing.T, config Config) map[string]any {
+func runtimeInbound(t *testing.T, config Config, resolve PackageUIDResolver) map[string]any {
 	t.Helper()
-	content, err := json.Marshal(config.Build())
+	if resolve == nil {
+		resolve = func([]PackageRef) ([]uint32, error) { return []uint32{}, nil }
+	}
+	runtime, err := config.BuildWithResolver(resolve)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var runtime map[string]any
-	if err := json.Unmarshal(content, &runtime); err != nil {
+	content, err := json.Marshal(runtime)
+	if err != nil {
 		t.Fatal(err)
 	}
-	inbounds := runtime["inbounds"].([]any)
-	return inbounds[0].(map[string]any)
+	var document map[string]any
+	if err := json.Unmarshal(content, &document); err != nil {
+		t.Fatal(err)
+	}
+	return document["inbounds"].([]any)[0].(map[string]any)
 }
 
 func loadFixture(t *testing.T, content string) Config {
@@ -203,7 +160,7 @@ func loadFixture(t *testing.T, content string) Config {
 func writeFixture(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "ebpf.conf")
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(strings.TrimSpace(content)+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return path

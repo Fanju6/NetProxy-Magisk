@@ -199,7 +199,7 @@ netproxyctl [--json] node list|current|show|add|import|export|edit|remove|use|de
 netproxyctl [--json] sub list|show|add|edit|update|update-all|activate|remove|history|cancel
 netproxyctl [--json] mode [rule|global|direct|AllowAds]
 netproxyctl [--json] network evaluate --type <wifi|not_wifi> [--ssid <名称>]
-netproxyctl [--json] app list|mode|users|add|remove|enable|disable
+netproxyctl [--json] app list|mode|add|remove|enable|disable
 netproxyctl [--json] ebpf status [configured|all|local|shared] [--raw]
 netproxyctl [--json] config list|read|check|validate|apply
 netproxyctl [--json] logs show|clear|export
@@ -237,10 +237,10 @@ su -c '/data/adb/modules/netproxy/netproxyctl help'
 | `ACTIVE_GROUP_ID` | `default` | 当前生效的节点分组 |
 | `EBPF_NETWORK` | 空 | 同时接管 TCP 与 UDP |
 | `EBPF_DNS_MODE` | `hijack` | 在 eBPF 入站劫持 TCP / UDP 53 |
-| `EBPF_CGROUP_IPV6_MODE` | `always` | 本机 IPv6 接管策略，支持始终、自动和关闭 |
+| `EBPF_MODE` | `local` | eBPF 数据路径：local、shared 或 hybrid |
+| `EBPF_LOCAL_IPV6_MODE` | `auto` | 本机 IPv6 接管策略，支持始终、自动和关闭 |
 | `EBPF_BYPASS_PRIVATE_ADDRESS` | `1` | 默认绕过私网与特殊用途地址 |
-| `EBPF_BYPASS_RULE_SETS` | `direct,ChinaIP` | 在内核侧提前绕过可提取 CIDR 的规则集，多个规则集使用英文逗号分隔 |
-| `EBPF_SHARED_NETWORK` | `0` | 默认关闭热点与共享网络代理 |
+| `EBPF_BYPASS_RULE_SET` | `direct,ChinaIP` | 在内核侧提前绕过可提取 CIDR 的规则集，多个规则集使用英文逗号分隔 |
 | `WIFI_AUTO_SWITCH` | `0` | 默认关闭 WiFi SSID 自动切换 |
 
 ## 排障
@@ -268,7 +268,6 @@ su -c '/data/adb/modules/netproxy/netproxyctl logs export /sdcard/Download/netpr
 | [AsteriskNG](https://github.com/Asterisk4Magisk/AsteriskNG) | Android eBPF 实现参考 |
 | [zashboard](https://github.com/Zephyruso/zashboard) | Clash API 控制面板 |
 | [v2rayNG](https://github.com/2dust/v2rayNG) | 节点解析实现参考 |
-| [binaries-for-Android](https://github.com/bnsmb/binaries-for-Android) | Android arm64 bpftool 二进制 |
 
 ---
 

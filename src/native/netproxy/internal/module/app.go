@@ -321,7 +321,7 @@ func ApplyMode(ctx context.Context, options Options, mode string) (err error) {
 }
 
 // UpdateApp 按类型化 eBPF 配置修改分应用策略。
-func UpdateApp(options Options, action, value, users string) (data map[string]any, err error) {
+func UpdateApp(options Options, action, value string) (data map[string]any, err error) {
 	persisted := false
 	defer func() { logOperation(options, "app", "app-policy.update", "分应用策略更新", persisted, err) }()
 	config, err := ebpf.Load(options.EBPFConfig)
@@ -336,30 +336,24 @@ func UpdateApp(options Options, action, value, users string) (data map[string]an
 		}
 		updates["APP_PROXY_ENABLE"] = "1"
 		updates["APP_PROXY_MODE"] = moduleconfig.Quote(value)
-	case "users":
-		if users == "all" {
-			users = ""
-		}
-		if err := validateWords(users, true); err != nil {
-			return nil, errors.New("Android 用户 ID 只能是非负整数")
-		}
-		updates["APP_ANDROID_USERS"] = moduleconfig.Quote(users)
 	case "add":
-		if err := validatePackage(value); err != nil {
+		ref, err := ebpf.ParsePackageRef(value)
+		if err != nil {
 			return nil, err
 		}
 		if config.AppProxyMode == "whitelist" {
-			updates["PROXY_APPS_LIST"] = moduleconfig.Quote(addWord(strings.Join(config.ProxyPackages, ","), value))
+			updates["PROXY_APPS_LIST"] = moduleconfig.Quote(addPackageRef(config.ProxyPackages, ref))
 		} else {
-			updates["BYPASS_APPS_LIST"] = moduleconfig.Quote(addWord(strings.Join(config.BypassPackages, ","), value))
+			updates["BYPASS_APPS_LIST"] = moduleconfig.Quote(addPackageRef(config.BypassPackages, ref))
 		}
 		updates["APP_PROXY_ENABLE"] = "1"
 	case "remove":
-		if err := validatePackage(value); err != nil {
+		ref, err := ebpf.ParsePackageRef(value)
+		if err != nil {
 			return nil, err
 		}
-		updates["PROXY_APPS_LIST"] = moduleconfig.Quote(removeWord(strings.Join(config.ProxyPackages, ","), value))
-		updates["BYPASS_APPS_LIST"] = moduleconfig.Quote(removeWord(strings.Join(config.BypassPackages, ","), value))
+		updates["PROXY_APPS_LIST"] = moduleconfig.Quote(removePackageRef(config.ProxyPackages, ref))
+		updates["BYPASS_APPS_LIST"] = moduleconfig.Quote(removePackageRef(config.BypassPackages, ref))
 	case "enable", "disable":
 		updates["APP_PROXY_ENABLE"] = map[string]string{"enable": "1", "disable": "0"}[action]
 	default:
@@ -381,8 +375,7 @@ func UpdateApp(options Options, action, value, users string) (data map[string]an
 
 func appData(config ebpf.Config) map[string]any {
 	return map[string]any{"enabled": config.AppProxyEnable, "mode": config.AppProxyMode,
-		"android_users": joinUint(config.AndroidUsers), "proxy_apps": strings.Join(config.ProxyPackages, ","),
-		"bypass_apps": strings.Join(config.BypassPackages, ",")}
+		"proxy_apps": joinPackageRefs(config.ProxyPackages), "bypass_apps": joinPackageRefs(config.BypassPackages)}
 }
 
 // NodeAppend 将节点加入本地分组并处理活动状态与运行时 reload。
@@ -612,57 +605,29 @@ func minTimeout(value, fallback time.Duration) time.Duration {
 	return value
 }
 
-func validatePackage(value string) error {
-	if value == "" {
-		return errors.New("应用包名不能为空")
-	}
-	for _, char := range value {
-		if !(char == '.' || char == '_' || (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9')) {
-			return errors.New("应用包名格式无效")
+func addPackageRef(current []ebpf.PackageRef, value ebpf.PackageRef) string {
+	for _, ref := range current {
+		if ref == value {
+			return joinPackageRefs(current)
 		}
 	}
-	return nil
+	return joinPackageRefs(append(append([]ebpf.PackageRef{}, current...), value))
 }
 
-func validateWords(value string, numeric bool) error {
-	for _, word := range ebpf.CommaSeparated(value) {
-		if numeric {
-			for _, char := range word {
-				if char < '0' || char > '9' {
-					return errors.New("列表值必须为非负整数")
-				}
-			}
+func removePackageRef(current []ebpf.PackageRef, value ebpf.PackageRef) string {
+	items := make([]ebpf.PackageRef, 0, len(current))
+	for _, ref := range current {
+		if ref != value {
+			items = append(items, ref)
 		}
 	}
-	return nil
+	return joinPackageRefs(items)
 }
 
-func addWord(current, value string) string {
-	for _, word := range ebpf.CommaSeparated(current) {
-		if word == value {
-			return current
-		}
-	}
-	if strings.TrimSpace(current) == "" {
-		return value
-	}
-	return strings.TrimSpace(current) + "," + value
-}
-
-func removeWord(current, value string) string {
-	items := make([]string, 0)
-	for _, word := range ebpf.CommaSeparated(current) {
-		if word != value {
-			items = append(items, word)
-		}
-	}
-	return strings.Join(items, ",")
-}
-
-func joinUint(values []uint64) string {
+func joinPackageRefs(values []ebpf.PackageRef) string {
 	items := make([]string, 0, len(values))
 	for _, value := range values {
-		items = append(items, fmt.Sprintf("%d", value))
+		items = append(items, value.String())
 	}
 	return strings.Join(items, ",")
 }

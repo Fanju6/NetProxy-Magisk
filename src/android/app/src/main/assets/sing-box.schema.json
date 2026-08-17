@@ -1143,6 +1143,22 @@
                     }
                   ]
                 },
+                "query_client_subnet": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                },
+                "query_dnssec": {
+                  "type": "boolean"
+                },
                 "network": {
                   "anyOf": [
                     {
@@ -1751,6 +1767,9 @@
             },
             "client_subnet": {
               "type": "string"
+            },
+            "remove_client_subnet": {
+              "type": "boolean"
             }
           }
         },
@@ -1789,6 +1808,9 @@
             },
             "client_subnet": {
               "type": "string"
+            },
+            "remove_client_subnet": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -1834,6 +1856,9 @@
             },
             "client_subnet": {
               "type": "string"
+            },
+            "remove_client_subnet": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -3524,55 +3549,38 @@
       "type": "string",
       "pattern": "^[-+]?(((\\d+(\\.\\d*)?|\\.\\d+)(ns|us|µs|μs|ms|s|m|h|d))+|0)$"
     },
-    "EBPFMapCapacityOptions": {
+    "EBPFLocalOptions": {
       "type": "object",
       "properties": {
-        "tcp_redirect": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 1048576
+        "cgroup_path": {
+          "type": "string"
         },
-        "udp_redirect": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 1048576
+        "ipv6_mode": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "always",
+            "off"
+          ]
         },
-        "socket_bypass": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 1048576
-        }
-      },
-      "additionalProperties": false
-    },
-    "EBPFSharedNetworkMapCapacityOptions": {
-      "type": "object",
-      "properties": {
-        "proxy": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 1048576
+        "include_uid": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              }
+            }
+          ]
         },
-        "bypass": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 1048576
-        },
-        "fragment": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 1048576
-        }
-      },
-      "additionalProperties": false
-    },
-    "EBPFSharedNetworkOptions": {
-      "type": "object",
-      "properties": {
-        "enabled": {
-          "type": "boolean"
-        },
-        "include_interface": {
+        "include_uid_range": {
           "anyOf": [
             {
               "type": "string"
@@ -3583,6 +3591,117 @@
                 "type": "string"
               }
             }
+          ]
+        },
+        "exclude_uid": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              }
+            }
+          ]
+        },
+        "exclude_uid_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "include_android_user": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              }
+            }
+          ]
+        },
+        "include_package": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "exclude_package": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "state_capacity": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1048576
+        }
+      },
+      "additionalProperties": false
+    },
+    "EBPFSharedAdvancedOptions": {
+      "type": "object",
+      "properties": {
+        "tc_priority": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        }
+      },
+      "additionalProperties": false
+    },
+    "EBPFSharedOptions": {
+      "type": "object",
+      "properties": {
+        "interface": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "ipv6_mode": {
+          "type": "string",
+          "enum": [
+            "always",
+            "off"
           ]
         },
         "include_source_cidr": {
@@ -3637,13 +3756,13 @@
             }
           ]
         },
-        "tc_priority": {
+        "state_capacity": {
           "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
+          "minimum": 0,
+          "maximum": 1048576
         },
-        "map_capacity": {
-          "$ref": "#/$defs/EBPFSharedNetworkMapCapacityOptions"
+        "advanced": {
+          "$ref": "#/$defs/EBPFSharedAdvancedOptions"
         }
       },
       "additionalProperties": false
@@ -4790,6 +4909,11 @@
                 }
               ]
             },
+            "listen_port": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65535
+            },
             "relay_server_port": {
               "type": "integer",
               "minimum": 0,
@@ -4842,6 +4966,9 @@
                   "additionalProperties": false
                 }
               ]
+            },
+            "taildrop_directory": {
+              "type": "string"
             }
           },
           "required": [
@@ -6289,11 +6416,13 @@
             "tag": {
               "type": "string"
             },
-            "cgroup_enabled": {
-              "type": "boolean"
-            },
-            "cgroup_path": {
-              "type": "string"
+            "mode": {
+              "type": "string",
+              "enum": [
+                "local",
+                "shared",
+                "hybrid"
+              ]
             },
             "network": {
               "anyOf": [
@@ -6323,36 +6452,8 @@
               "type": "string",
               "enum": [
                 "hijack",
+                "respect_bypass",
                 "off"
-              ]
-            },
-            "cgroup_ipv6_mode": {
-              "type": "string",
-              "enum": [
-                "always",
-                "auto",
-                "off"
-              ]
-            },
-            "redirect_address": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "examples": [
-                    "127.128.0.0/9",
-                    "fd53:696e:672d:626f::/64"
-                  ]
-                },
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "examples": [
-                      "127.128.0.0/9",
-                      "fd53:696e:672d:626f::/64"
-                    ]
-                  }
-                }
               ]
             },
             "bypass_private_address": {
@@ -6373,110 +6474,11 @@
                 }
               ]
             },
-            "include_uid": {
-              "anyOf": [
-                {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 4294967295
-                },
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 4294967295
-                  }
-                }
-              ]
+            "local": {
+              "$ref": "#/$defs/EBPFLocalOptions"
             },
-            "include_uid_range": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                }
-              ]
-            },
-            "exclude_uid": {
-              "anyOf": [
-                {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 4294967295
-                },
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 4294967295
-                  }
-                }
-              ]
-            },
-            "exclude_uid_range": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                }
-              ]
-            },
-            "include_android_user": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "integer"
-                  }
-                }
-              ]
-            },
-            "include_package": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                }
-              ]
-            },
-            "exclude_package": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                }
-              ]
-            },
-            "map_capacity": {
-              "$ref": "#/$defs/EBPFMapCapacityOptions"
-            },
-            "shared_network": {
-              "$ref": "#/$defs/EBPFSharedNetworkOptions"
+            "shared": {
+              "$ref": "#/$defs/EBPFSharedOptions"
             }
           },
           "required": [
@@ -9422,6 +9424,22 @@
                   }
                 }
               ]
+            },
+            "query_client_subnet": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            },
+            "query_dnssec": {
+              "type": "boolean"
             },
             "network": {
               "anyOf": [

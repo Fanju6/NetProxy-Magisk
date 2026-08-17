@@ -80,27 +80,22 @@ grep -q '"listen_port": 7080' "$MIXED_INBOUND_FILE"
 grep -q 'options.ProxyURL = "http://127.0.0.1:7080"' "$SUBSCRIPTION_UPDATE_SOURCE"
 ! grep -Eq 'ProxyURL = "http://(0\.0\.0\.0|::):7080"' "$SUBSCRIPTION_UPDATE_SOURCE"
 
-json_contains '"cgroup_enabled":true'
-json_contains '"cgroup_ipv6_mode":"always"'
+json_contains '"mode":"local"'
+json_contains '"local":{"ipv6_mode":"auto"'
 json_contains '"bypass_private_address":true'
-json_contains '"include_package":\[\]'
-json_contains '"exclude_package":\[\]'
-json_contains '"include_android_user":\[\]'
-json_contains '"tc_priority":1'
+! json_contains '"shared"'
 
-set_conf "$EBPF_CONF" "EBPF_BYPASS_RULE_SETS" '""'
+set_conf "$EBPF_CONF" "EBPF_BYPASS_RULE_SET" '""'
 prepare_runtime
 json_contains '"bypass_rule_set":\[\]'
 
-set_conf_values "$EBPF_CONF"   "APP_PROXY_MODE" '"blacklist"'   "APP_ANDROID_USERS" '"0,999"'   "BYPASS_APPS_LIST" '"com.android.chrome,org.telegram.messenger"'   "EBPF_SHARED_INCLUDE_SOURCE_CIDRS" '"192.168.43.0/24,fd00::/64"'   "EBPF_SHARED_EXCLUDE_SOURCE_CIDRS" '"192.168.43.10/32"'   "EBPF_SHARED_INCLUDE_MAC_ADDRESSES" '"02:11:22:33:44:55,AA:BB:CC:DD:EE:FF"'   "EBPF_SHARED_EXCLUDE_MAC_ADDRESSES" '"12:34:56:78:9A:BC"'
+set_conf_values "$EBPF_CONF"   "EBPF_MODE" '"hybrid"'   "APP_PROXY_ENABLE" "0"   "APP_PROXY_MODE" '"blacklist"'   "EBPF_SHARED_INCLUDE_SOURCE_CIDR" '"192.168.43.0/24,fd00::/64"'   "EBPF_SHARED_EXCLUDE_SOURCE_CIDR" '"192.168.43.10/32"'   "EBPF_SHARED_INCLUDE_MAC_ADDRESS" '"02:11:22:33:44:55,AA:BB:CC:DD:EE:FF"'   "EBPF_SHARED_EXCLUDE_MAC_ADDRESS" '"12:34:56:78:9A:BC"'
 prepare_runtime
-json_contains '"include_android_user":\[0,999\]'
-json_contains '"exclude_package":\["com.android.chrome","org.telegram.messenger"\]'
 json_contains '"include_source_cidr":\["192.168.43.0/24","fd00::/64"\]'
 json_contains '"exclude_source_cidr":\["192.168.43.10/32"\]'
 json_contains '"include_mac_address":\["02:11:22:33:44:55","AA:BB:CC:DD:EE:FF"\]'
 json_contains '"exclude_mac_address":\["12:34:56:78:9A:BC"\]'
-json_contains '"tc_priority":1'
+json_contains '"advanced":{"tc_priority":1}'
 
 INVALID_EBPF_CONF="$TMP_ROOT/invalid-ebpf.conf"
 cp "$EBPF_CONF" "$INVALID_EBPF_CONF"
@@ -117,35 +112,31 @@ fi
 grep -q '"code":"ebpf.config_invalid"' "$INVALID_EBPF_ERROR"
 [ ! -e "$INVALID_EBPF_OUTPUT" ]
 
-set_conf_values "$EBPF_CONF" "APP_PROXY_MODE" '"whitelist"' "PROXY_APPS_LIST" '""' "BYPASS_APPS_LIST" '""'
+set_conf_values "$EBPF_CONF" "APP_PROXY_ENABLE" "1" "APP_PROXY_MODE" '"whitelist"' "PROXY_APPS_LIST" '""' "BYPASS_APPS_LIST" '""'
 prepare_runtime
-json_contains '"include_uid":\[4294967295\]'
-json_contains '"include_package":\[\]'
-
-set_conf_values "$EBPF_CONF" "PROXY_APPS_LIST" '"com.google.android.youtube"' "EBPF_CGROUP_IPV6_MODE" '"off"'
-prepare_runtime
-json_contains '"include_uid":\[\]'
-json_contains '"include_package":\["com.google.android.youtube"\]'
-json_contains '"cgroup_ipv6_mode":"off"'
-! json_contains 'fd53:696e:672d:626f::/64'
-
-set_conf "$EBPF_CONF" "EBPF_CGROUP_IPV6_MODE" '"off"'
-prepare_runtime
-json_contains '"cgroup_ipv6_mode":"off"'
-! json_contains 'fd53:696e:672d:626f::/64'
-
-set_conf "$EBPF_CONF" "EBPF_CGROUP_IPV6_MODE" '"always"'
-prepare_runtime
-json_contains '"cgroup_ipv6_mode":"always"'
-json_contains 'fd53:696e:672d:626f::/64'
-
-set_conf_values "$EBPF_CONF" "EBPF_SHARED_NETWORK" "1" "EBPF_SHARED_INTERFACES" '"wlan2"' "EBPF_CGROUP_ENABLED" "0"
-prepare_runtime
-json_contains '"cgroup_enabled":false'
-! json_contains '"cgroup_path"'
+json_contains '"include_uid":\[0\]'
 ! json_contains '"include_package"'
-json_contains '"map_capacity":{"proxy":65536,"bypass":65536,"fragment":65536}'
-json_contains 'fd53:696e:672d:626f::/64'
+
+set_conf_values "$EBPF_CONF" "APP_PROXY_ENABLE" "0" "EBPF_LOCAL_IPV6_MODE" '"off"'
+prepare_runtime
+json_contains '"mode":"hybrid"'
+json_contains '"local":{"ipv6_mode":"off"'
+
+set_conf "$EBPF_CONF" "EBPF_LOCAL_IPV6_MODE" '"off"'
+prepare_runtime
+json_contains '"local":{"ipv6_mode":"off"'
+
+set_conf "$EBPF_CONF" "EBPF_LOCAL_IPV6_MODE" '"always"'
+prepare_runtime
+json_contains '"local":{"ipv6_mode":"always"'
+
+set_conf_values "$EBPF_CONF" "EBPF_MODE" '"shared"' "EBPF_SHARED_INTERFACES" '"wlan2"' "APP_PROXY_ENABLE" "0"
+prepare_runtime
+json_contains '"mode":"shared"'
+! json_contains '"cgroup_path"'
+! json_contains '"local":'
+json_contains '"shared".*"interface":\["wlan2"\]'
+json_contains '"advanced":{"tc_priority":1}'
 
 sed -i 's/"name": "备用配置"/"name": "本地配置"/' "$CATALOG_DIR/secondary/meta.json"
 prepare_runtime

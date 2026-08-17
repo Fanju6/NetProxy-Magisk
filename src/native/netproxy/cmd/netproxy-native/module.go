@@ -267,24 +267,15 @@ func runModuleApp(_ context.Context, args []string) error {
 		return nil
 	}
 	value := ""
-	users := ""
 	if len(positionals) > 0 {
 		value = positionals[0]
 	}
-	if action == "users" {
-		users = strings.Join(positionals, ",")
-		if users == "" {
-			users = "all"
-		}
-	}
-	data, err := moduleapp.UpdateApp(options, action, value, users)
+	data, err := moduleapp.UpdateApp(options, action, value)
 	if err != nil {
 		code := "app.update_failed"
 		switch action {
 		case "add", "remove":
 			code = "app.package_invalid"
-		case "users":
-			code = "app.users_invalid"
 		case "mode":
 			code = "app.mode_invalid"
 		}

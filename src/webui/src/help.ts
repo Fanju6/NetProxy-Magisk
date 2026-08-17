@@ -106,9 +106,8 @@ app - 分应用代理
   app list                    查看应用代理配置
   app mode blacklist          使用黑名单模式
   app mode whitelist           使用白名单模式
-  app users                   查看 Android 用户范围
-  app add <包名>              添加应用
-  app remove <包名>           移除应用
+  app add <用户ID>:<包名>      添加指定用户的应用
+  app remove <用户ID>:<包名>   移除指定用户的应用
   app enable                  启用分应用代理
   app disable                 禁用分应用代理
 `,

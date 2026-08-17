@@ -196,7 +196,7 @@ netproxyctl [--json] node list|current|show|add|import|export|edit|remove|use|de
 netproxyctl [--json] sub list|show|add|edit|update|update-all|activate|remove|history|cancel
 netproxyctl [--json] mode [rule|global|direct|AllowAds]
 netproxyctl [--json] network evaluate --type <wifi|not_wifi> [--ssid <name>]
-netproxyctl [--json] app list|mode|users|add|remove|enable|disable
+netproxyctl [--json] app list|mode|add|remove|enable|disable
 netproxyctl [--json] ebpf status [configured|all|local|shared] [--raw]
 netproxyctl [--json] config list|read|check|validate|apply
 netproxyctl [--json] logs show|clear|export
@@ -230,10 +230,10 @@ Key defaults:
 - `ACTIVE_GROUP_ID=default`
 - `EBPF_NETWORK=""` (TCP and UDP)
 - `EBPF_DNS_MODE=hijack`
-- `EBPF_CGROUP_IPV6_MODE=always`
+- `EBPF_MODE=local`
+- `EBPF_LOCAL_IPV6_MODE=auto`
 - `EBPF_BYPASS_PRIVATE_ADDRESS=1`
-- `EBPF_BYPASS_RULE_SETS="direct,ChinaIP"` (comma-separated rule-set tags)
-- `EBPF_SHARED_NETWORK=0`
+- `EBPF_BYPASS_RULE_SET="direct,ChinaIP"` (comma-separated rule-set tags)
 - `WIFI_AUTO_SWITCH=0`
 
 For startup failures, inspect the core log first:
@@ -254,7 +254,6 @@ See the [NetProxy documentation](https://www.netproxy.store/) for complete insta
 | [AsteriskNG](https://github.com/Asterisk4Magisk/AsteriskNG) | Android eBPF implementation reference |
 | [zashboard](https://github.com/Zephyruso/zashboard) | Clash API dashboard |
 | [v2rayNG](https://github.com/2dust/v2rayNG) | Node parsing reference |
-| [binaries-for-Android](https://github.com/bnsmb/binaries-for-Android) | Android arm64 bpftool binary |
 
 ---
 

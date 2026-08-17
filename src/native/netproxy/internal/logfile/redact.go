@@ -13,7 +13,7 @@ var (
 	querySecretPattern   = regexp.MustCompile(`(?i)([?&](?:token|key|secret|password|auth|uuid|hwid)=)[^&\s]+`)
 	authorizationPattern = regexp.MustCompile(`(?i)((?:authorization|proxy-authorization)\s*:\s*(?:bearer|basic)\s+)[^\r\n\s,;，；。]+`)
 	lineSecretPattern    = regexp.MustCompile(`(?i)((?:["']?(?:x-hwid|hwid|uuid|token|password|secret|auth(?:[_-]?(?:str|key))?|p(?:re)?[_-]?shared[_-]?key|psk|private[_-]?key|public[_-]?key|short[_-]?id|custom[_-]?headers)["']?\s*[:=]\s*["']?))[^"'\r\n\s,;}，；。]+`)
-	privacyConfigPattern = regexp.MustCompile(`(?im)^(\s*(?:WIFI_SSID_LIST|PROXY_APPS_LIST|BYPASS_APPS_LIST|APP_ANDROID_USERS)\s*=\s*).*$`)
+	privacyConfigPattern = regexp.MustCompile(`(?im)^(\s*(?:WIFI_SSID_LIST|PROXY_APPS_LIST|BYPASS_APPS_LIST)\s*=\s*).*$`)
 	httpURLPattern       = regexp.MustCompile(`(?i)\bhttps?://[^\s\p{Cc}<>"'，；。]+`)
 	otherURLPattern      = regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.-]*://[^\s\p{Cc}<>"'，；。]+`)
 	sensitiveJSONKeys    = map[string]struct{}{

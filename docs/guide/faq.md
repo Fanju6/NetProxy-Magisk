@@ -34,10 +34,10 @@ su -c '/data/adb/modules/netproxy/netproxyctl ebpf status configured'
 
 ## Global 仍有国内直连
 
-eBPF 的 `EBPF_BYPASS_RULE_SETS` 会在进入 sing-box 前提前放行 IP CIDR。进行严格 Global 测试前清空该配置并重启服务：
+eBPF 的 `EBPF_BYPASS_RULE_SET` 会在进入 sing-box 前提前放行 IP CIDR。进行严格 Global 测试前清空该配置并重启服务：
 
 ```text
-EBPF_BYPASS_RULE_SETS=""
+EBPF_BYPASS_RULE_SET=""
 ```
 
 同时检查应用名单、私网绕过和路由规则。
@@ -51,7 +51,7 @@ EBPF_BYPASS_RULE_SETS=""
 
 ## 应用分身没有生效
 
-分应用配置保存包名和 Android 用户范围，由 sing-box eBPF 入站在启动或 reload 时解析。不要填写 UID，也不要使用 `user:package` 格式；用户范围和包名列表使用英文逗号分隔。
+分应用配置保存严格的 `用户ID:包名` 引用，由 Native 调用 Android package service 解析 UID。用户 0 和其他用户的同名包是独立条目；白名单会自动加入 UID 0。用户范围和包名列表使用英文逗号分隔。
 
 ## 如何提交诊断信息
 

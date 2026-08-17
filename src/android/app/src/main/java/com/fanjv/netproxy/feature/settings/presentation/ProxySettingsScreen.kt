@@ -171,12 +171,17 @@ internal fun ProxySettingsScreen(
                                 onCheckedChange = { viewModel.setDnsHijackEnabled(it) }
                             )
                         },
-                        CardItem("cgroup_enabled") {
-                            SwitchPreference(
-                                title = stringResource(R.string.ebpf_cgroup_enable),
-                                summary = stringResource(R.string.ebpf_cgroup_enable_summary),
-                                checked = settings.cgroupEnabled,
-                                onCheckedChange = viewModel::setCgroupEnabled
+                        CardItem("mode") {
+                            val values = listOf("local", "shared", "hybrid")
+                            OverlayDropdownPreference(
+                                title = stringResource(R.string.ebpf_mode),
+                                items = listOf(
+                                    stringResource(R.string.ebpf_mode_local),
+                                    stringResource(R.string.ebpf_mode_shared),
+                                    stringResource(R.string.ebpf_mode_hybrid)
+                                ),
+                                selectedIndex = values.indexOf(settings.mode).coerceAtLeast(0),
+                                onSelectedIndexChange = { viewModel.setMode(values[it]) }
                             )
                         },
                         CardItem("ipv6_mode") {
@@ -188,11 +193,11 @@ internal fun ProxySettingsScreen(
                                     stringResource(R.string.ebpf_ipv6_mode_auto),
                                     stringResource(R.string.ebpf_ipv6_mode_off)
                                 ),
-                                selectedIndex = values.indexOf(settings.cgroupIpv6Mode)
+                                selectedIndex = values.indexOf(settings.localIpv6Mode)
                                     .coerceAtLeast(0),
                                 onSelectedIndexChange = {
                                     viewModel.updateProxySetting(
-                                        "EBPF_CGROUP_IPV6_MODE",
+                                        "EBPF_LOCAL_IPV6_MODE",
                                         values[it]
                                     )
                                 }
@@ -222,14 +227,14 @@ internal fun ProxySettingsScreen(
                             val label = stringResource(R.string.ebpf_bypass_rule_sets)
                             ArrowPreference(
                                 title = label,
-                                summary = settings.bypassRuleSets.ifBlank {
+                                summary = settings.bypassRuleSet.ifBlank {
                                     stringResource(R.string.not_set)
                                 },
                                 onClick = {
                                     editValue(
-                                        "EBPF_BYPASS_RULE_SETS",
+                                        "EBPF_BYPASS_RULE_SET",
                                         label,
-                                        settings.bypassRuleSets
+                                        settings.bypassRuleSet
                                     )
                                 }
                             )
@@ -241,14 +246,6 @@ internal fun ProxySettingsScreen(
                     keyPrefix = "ebpf_shared",
                     title = { stringResource(R.string.ebpf_shared_settings) },
                     items = listOf(
-                        CardItem("enabled") {
-                            SwitchPreference(
-                                title = stringResource(R.string.ebpf_shared_enable),
-                                summary = stringResource(R.string.ebpf_shared_enable_summary),
-                                checked = settings.sharedNetworkEnabled,
-                                onCheckedChange = viewModel::setSharedNetworkEnabled
-                            )
-                        },
                         CardItem("interfaces") {
                             val label = stringResource(R.string.ebpf_shared_interfaces)
                             ArrowPreference(
@@ -272,7 +269,7 @@ internal fun ProxySettingsScreen(
                                 },
                                 onClick = {
                                     editValue(
-                                        "EBPF_SHARED_INCLUDE_SOURCE_CIDRS",
+                                        "EBPF_SHARED_INCLUDE_SOURCE_CIDR",
                                         label,
                                         settings.sharedIncludeSourceCidrs
                                     )
@@ -288,7 +285,7 @@ internal fun ProxySettingsScreen(
                                 },
                                 onClick = {
                                     editValue(
-                                        "EBPF_SHARED_EXCLUDE_SOURCE_CIDRS",
+                                        "EBPF_SHARED_EXCLUDE_SOURCE_CIDR",
                                         label,
                                         settings.sharedExcludeSourceCidrs
                                     )
@@ -304,7 +301,7 @@ internal fun ProxySettingsScreen(
                                 },
                                 onClick = {
                                     editValue(
-                                        "EBPF_SHARED_INCLUDE_MAC_ADDRESSES",
+                                        "EBPF_SHARED_INCLUDE_MAC_ADDRESS",
                                         label,
                                         settings.sharedIncludeMacAddresses
                                     )
@@ -320,7 +317,7 @@ internal fun ProxySettingsScreen(
                                 },
                                 onClick = {
                                     editValue(
-                                        "EBPF_SHARED_EXCLUDE_MAC_ADDRESSES",
+                                        "EBPF_SHARED_EXCLUDE_MAC_ADDRESS",
                                         label,
                                         settings.sharedExcludeMacAddresses
                                     )
@@ -395,22 +392,22 @@ internal fun ProxySettingsScreen(
     ) {
         var value by remember(editingValue) { mutableStateOf(editingValue) }
         val usesListHint = editingKey in listOf(
-            "EBPF_BYPASS_RULE_SETS",
+            "EBPF_BYPASS_RULE_SET",
             "EBPF_SHARED_INTERFACES",
-            "EBPF_SHARED_INCLUDE_SOURCE_CIDRS",
-            "EBPF_SHARED_EXCLUDE_SOURCE_CIDRS",
-            "EBPF_SHARED_INCLUDE_MAC_ADDRESSES",
-            "EBPF_SHARED_EXCLUDE_MAC_ADDRESSES",
+            "EBPF_SHARED_INCLUDE_SOURCE_CIDR",
+            "EBPF_SHARED_EXCLUDE_SOURCE_CIDR",
+            "EBPF_SHARED_INCLUDE_MAC_ADDRESS",
+            "EBPF_SHARED_EXCLUDE_MAC_ADDRESS",
             "WIFI_SSID_LIST"
         )
         val valueHint = when (editingKey) {
-            "EBPF_BYPASS_RULE_SETS" -> stringResource(R.string.settings_hint_rule_sets)
+            "EBPF_BYPASS_RULE_SET" -> stringResource(R.string.settings_hint_rule_sets)
             "EBPF_SHARED_INTERFACES" -> stringResource(R.string.settings_hint_interfaces)
-            "EBPF_SHARED_INCLUDE_SOURCE_CIDRS",
-            "EBPF_SHARED_EXCLUDE_SOURCE_CIDRS" -> stringResource(R.string.settings_hint_cidrs)
+            "EBPF_SHARED_INCLUDE_SOURCE_CIDR",
+            "EBPF_SHARED_EXCLUDE_SOURCE_CIDR" -> stringResource(R.string.settings_hint_cidrs)
 
-            "EBPF_SHARED_INCLUDE_MAC_ADDRESSES",
-            "EBPF_SHARED_EXCLUDE_MAC_ADDRESSES" -> stringResource(R.string.settings_hint_macs)
+            "EBPF_SHARED_INCLUDE_MAC_ADDRESS",
+            "EBPF_SHARED_EXCLUDE_MAC_ADDRESS" -> stringResource(R.string.settings_hint_macs)
 
             "WIFI_SSID_LIST" -> stringResource(R.string.settings_hint_ssids)
             else -> stringResource(R.string.value_label)

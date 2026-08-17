@@ -4,13 +4,12 @@ import androidx.compose.runtime.Immutable
 
 @Immutable
 data class ProxySettings(
+    val mode: String = "local",
     val network: String = "",
     val dnsMode: String = "hijack",
-    val cgroupEnabled: Boolean = true,
-    val cgroupIpv6Mode: String = "always",
+    val localIpv6Mode: String = "auto",
     val bypassPrivateAddress: Boolean = true,
-    val bypassRuleSets: String = "direct,ChinaIP",
-    val sharedNetworkEnabled: Boolean = false,
+    val bypassRuleSet: String = "direct,ChinaIP",
     val sharedInterfaces: String = "wlan2",
     val sharedIncludeSourceCidrs: String = "",
     val sharedExcludeSourceCidrs: String = "",

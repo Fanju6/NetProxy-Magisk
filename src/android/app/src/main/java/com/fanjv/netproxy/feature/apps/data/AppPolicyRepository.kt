@@ -14,13 +14,6 @@ internal class AppPolicyRepository(
     suspend fun setMode(mode: String): AppProxyConfig =
         executeConfig("app", "mode", mode)
 
-    suspend fun setUsers(userIds: Collection<String>): AppProxyConfig =
-        if (userIds.isEmpty()) {
-            executeConfig("app", "users", "all")
-        } else {
-            executeConfig("app", "users", *userIds.toTypedArray())
-        }
-
     suspend fun add(id: String): AppProxyConfig =
         executeConfig("app", "add", id)
 

@@ -351,6 +351,10 @@
     <string name="ebpf_network_all">TCP + UDP</string>
     <string name="ebpf_network_tcp">仅 TCP</string>
     <string name="ebpf_network_udp">仅 UDP</string>
+    <string name="ebpf_mode">透明代理范围</string>
+    <string name="ebpf_mode_local">仅本机应用</string>
+    <string name="ebpf_mode_shared">仅热点与共享网络</string>
+    <string name="ebpf_mode_hybrid">本机与共享网络</string>
     <string name="ebpf_dns_hijack">DNS 劫持</string>
     <string name="ebpf_dns_hijack_summary">接管 TCP 与 UDP 53 端口</string>
     <string name="ebpf_cgroup_enable">本机透明代理</string>
@@ -380,8 +384,6 @@
     <string name="settings_hint_ssids">多个 SSID 请用英文逗号分隔</string>
     <!-- Apps: user scope labels -->
     <string name="app_users_label">用户 %1$s</string>
-    <string name="app_all_android_users">全部 Android 用户</string>
-    <string name="app_android_user_scope">%1$s（用户 %2$s）</string>
     <string name="percentage_value">%1$d%%</string>
     <!-- Node editor -->
     <string name="allow_insecure">允许不安全证书 (Insecure)</string>

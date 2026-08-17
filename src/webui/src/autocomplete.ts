@@ -10,7 +10,7 @@ const SUBS: Record<string, string[]> = {
   sub: ['list', 'show', 'add', 'edit', 'update', 'update-all', 'activate', 'remove', 'rm', 'history', 'cancel'],
   mode: ['rule', 'global', 'direct', 'AllowAds'],
   network: ['evaluate'],
-  app: ['list', 'mode', 'users', 'add', 'remove', 'rm', 'enable', 'disable'],
+  app: ['list', 'mode', 'add', 'remove', 'rm', 'enable', 'disable'],
   logs: ['show', 'clear', 'export'],
   config: ['list', 'read', 'check', 'validate', 'apply'],
   ebpf: ['status'],

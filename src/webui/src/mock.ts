@@ -177,7 +177,7 @@ function execute(args: string[]): CtlResult<unknown> {
   }
 
   if (command === 'app' && action === 'list') {
-    return response('app.list', '分应用代理配置', { enabled: false, mode: 'blacklist', android_users: '', proxy_apps: '', bypass_apps: '' })
+    return response('app.list', '分应用代理配置', { enabled: false, mode: 'blacklist', proxy_apps: '', bypass_apps: '' })
   }
 
   if (command === 'network' && action === 'evaluate') {

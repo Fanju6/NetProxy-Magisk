@@ -36,7 +36,7 @@ NetProxy 8.0 是面向 Android Root 设备的 sing-box 透明代理模块。它�
 
 ```text
 /data/adb/modules/netproxy/
-├── bin/                         # sing-box、netproxyctl、netproxy-native、bpftool
+├── bin/                         # sing-box、netproxyctl、netproxy-native
 ├── config/
 │   ├── module.conf              # 模块启动、选择和出站模式
 │   ├── ebpf/ebpf.conf           # eBPF 入站与分应用设置
@@ -61,7 +61,7 @@ Catalog 中每个分组使用 `meta.json` 和 `provider.json`。`provider.json` 
 - `SELECTOR_MODE=manual` 使用 `<group-id>/<tag>` 手动选择。
 - `OUTBOUND_MODE` 支持 `rule`、`global`、`direct` 和 `AllowAds`。
 
-自动模式不会保存某个测速结果作为手动节点，也不会在失败时静默切换到 `direct`。eBPF 提前绕过规则集可能在内核侧直接放行 CIDR；需要严格 Global 测试时，应清空 `EBPF_BYPASS_RULE_SETS` 后重启服务。
+自动模式不会保存某个测速结果作为手动节点，也不会在失败时静默切换到 `direct`。eBPF 提前绕过规则集可能在内核侧直接放行 CIDR；需要严格 Global 测试时，应清空 `EBPF_BYPASS_RULE_SET` 后重启服务。
 
 ## 推荐阅读顺序
 

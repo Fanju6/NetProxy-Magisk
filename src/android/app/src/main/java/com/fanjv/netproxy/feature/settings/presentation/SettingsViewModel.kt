@@ -73,7 +73,7 @@ internal class SettingsViewModel(
     fun setNetwork(network: String) {
         val settings = _state.value.proxySettings
         val updates = mutableListOf("EBPF_NETWORK" to network)
-        if (network == "tcp" && settings.sharedNetworkEnabled && settings.dnsMode == "hijack") {
+        if (network == "tcp" && settings.mode in setOf("shared", "hybrid") && settings.dnsMode == "hijack") {
             updates += "EBPF_DNS_MODE" to "off"
         }
         updateProxySettings(updates)
@@ -82,29 +82,17 @@ internal class SettingsViewModel(
     fun setDnsHijackEnabled(enabled: Boolean) {
         val settings = _state.value.proxySettings
         val updates = mutableListOf("EBPF_DNS_MODE" to if (enabled) "hijack" else "off")
-        if (enabled && settings.sharedNetworkEnabled && settings.network == "tcp") {
+        if (enabled && settings.mode in setOf("shared", "hybrid") && settings.network == "tcp") {
             updates += "EBPF_NETWORK" to ""
         }
         updateProxySettings(updates)
     }
 
-    fun setCgroupEnabled(enabled: Boolean) {
+    fun setMode(mode: String) {
         val settings = _state.value.proxySettings
-        val updates = mutableListOf("EBPF_CGROUP_ENABLED" to if (enabled) "1" else "0")
-        if (!enabled && !settings.sharedNetworkEnabled) {
-            updates += "EBPF_SHARED_NETWORK" to "1"
-        }
-        updateProxySettings(updates)
-    }
-
-    fun setSharedNetworkEnabled(enabled: Boolean) {
-        val settings = _state.value.proxySettings
-        val updates = mutableListOf("EBPF_SHARED_NETWORK" to if (enabled) "1" else "0")
-        if (enabled && settings.dnsMode == "hijack" && settings.network == "tcp") {
+        val updates = mutableListOf("EBPF_MODE" to mode)
+        if (mode in setOf("shared", "hybrid") && settings.dnsMode == "hijack" && settings.network == "tcp") {
             updates += "EBPF_NETWORK" to ""
-        }
-        if (!enabled && !settings.cgroupEnabled) {
-            updates += "EBPF_CGROUP_ENABLED" to "1"
         }
         updateProxySettings(updates)
     }
@@ -213,43 +201,39 @@ internal class SettingsViewModel(
                 "AUTO_START" -> current.copy(autoStartEnabled = value == "1")
                 "EBPF_NETWORK" -> current.copy(proxySettings = settings.copy(network = value))
                 "EBPF_DNS_MODE" -> current.copy(proxySettings = settings.copy(dnsMode = value))
-                "EBPF_CGROUP_ENABLED" -> current.copy(
-                    proxySettings = settings.copy(cgroupEnabled = value == "1")
+                "EBPF_MODE" -> current.copy(
+                    proxySettings = settings.copy(mode = value)
                 )
 
-                "EBPF_CGROUP_IPV6_MODE" -> current.copy(
-                    proxySettings = settings.copy(cgroupIpv6Mode = value)
+                "EBPF_LOCAL_IPV6_MODE" -> current.copy(
+                    proxySettings = settings.copy(localIpv6Mode = value)
                 )
 
                 "EBPF_BYPASS_PRIVATE_ADDRESS" -> current.copy(
                     proxySettings = settings.copy(bypassPrivateAddress = value == "1")
                 )
 
-                "EBPF_BYPASS_RULE_SETS" -> current.copy(
-                    proxySettings = settings.copy(bypassRuleSets = value)
-                )
-
-                "EBPF_SHARED_NETWORK" -> current.copy(
-                    proxySettings = settings.copy(sharedNetworkEnabled = value == "1")
+                "EBPF_BYPASS_RULE_SET" -> current.copy(
+                    proxySettings = settings.copy(bypassRuleSet = value)
                 )
 
                 "EBPF_SHARED_INTERFACES" -> current.copy(
                     proxySettings = settings.copy(sharedInterfaces = value)
                 )
 
-                "EBPF_SHARED_INCLUDE_SOURCE_CIDRS" -> current.copy(
+                "EBPF_SHARED_INCLUDE_SOURCE_CIDR" -> current.copy(
                     proxySettings = settings.copy(sharedIncludeSourceCidrs = value)
                 )
 
-                "EBPF_SHARED_EXCLUDE_SOURCE_CIDRS" -> current.copy(
+                "EBPF_SHARED_EXCLUDE_SOURCE_CIDR" -> current.copy(
                     proxySettings = settings.copy(sharedExcludeSourceCidrs = value)
                 )
 
-                "EBPF_SHARED_INCLUDE_MAC_ADDRESSES" -> current.copy(
+                "EBPF_SHARED_INCLUDE_MAC_ADDRESS" -> current.copy(
                     proxySettings = settings.copy(sharedIncludeMacAddresses = value)
                 )
 
-                "EBPF_SHARED_EXCLUDE_MAC_ADDRESSES" -> current.copy(
+                "EBPF_SHARED_EXCLUDE_MAC_ADDRESS" -> current.copy(
                     proxySettings = settings.copy(sharedExcludeMacAddresses = value)
                 )
 
@@ -283,19 +267,18 @@ internal class SettingsViewModel(
             ebpf[key]?.let { it == "1" } ?: default
 
         return ProxySettings(
+            mode = value("EBPF_MODE", "local").takeIf { it in modes } ?: "local",
             network = value("EBPF_NETWORK", ""),
             dnsMode = value("EBPF_DNS_MODE", "hijack"),
-            cgroupEnabled = enabled("EBPF_CGROUP_ENABLED", true),
-            cgroupIpv6Mode = value("EBPF_CGROUP_IPV6_MODE", "always")
-                .takeIf { it in ipv6Modes } ?: "always",
+            localIpv6Mode = value("EBPF_LOCAL_IPV6_MODE", "auto")
+                .takeIf { it in ipv6Modes } ?: "auto",
             bypassPrivateAddress = enabled("EBPF_BYPASS_PRIVATE_ADDRESS", true),
-            bypassRuleSets = value("EBPF_BYPASS_RULE_SETS", "direct,ChinaIP"),
-            sharedNetworkEnabled = enabled("EBPF_SHARED_NETWORK"),
+            bypassRuleSet = value("EBPF_BYPASS_RULE_SET", "direct,ChinaIP"),
             sharedInterfaces = value("EBPF_SHARED_INTERFACES", "wlan2"),
-            sharedIncludeSourceCidrs = value("EBPF_SHARED_INCLUDE_SOURCE_CIDRS", ""),
-            sharedExcludeSourceCidrs = value("EBPF_SHARED_EXCLUDE_SOURCE_CIDRS", ""),
-            sharedIncludeMacAddresses = value("EBPF_SHARED_INCLUDE_MAC_ADDRESSES", ""),
-            sharedExcludeMacAddresses = value("EBPF_SHARED_EXCLUDE_MAC_ADDRESSES", ""),
+            sharedIncludeSourceCidrs = value("EBPF_SHARED_INCLUDE_SOURCE_CIDR", ""),
+            sharedExcludeSourceCidrs = value("EBPF_SHARED_EXCLUDE_SOURCE_CIDR", ""),
+            sharedIncludeMacAddresses = value("EBPF_SHARED_INCLUDE_MAC_ADDRESS", ""),
+            sharedExcludeMacAddresses = value("EBPF_SHARED_EXCLUDE_MAC_ADDRESS", ""),
             wifiAutoSwitch = module["WIFI_AUTO_SWITCH"] == "1",
             wifiSsidMode = module["WIFI_SSID_MODE"] ?: "blacklist",
             wifiSsidList = module["WIFI_SSID_LIST"].orEmpty(),
@@ -305,24 +288,26 @@ internal class SettingsViewModel(
 
     private companion object {
         val quotedEbpfKeys = setOf(
+            "EBPF_MODE",
             "EBPF_NETWORK",
             "EBPF_DNS_MODE",
-            "EBPF_CGROUP_IPV6_MODE",
-            "EBPF_BYPASS_RULE_SETS",
+            "EBPF_LOCAL_IPV6_MODE",
+            "EBPF_BYPASS_RULE_SET",
             "EBPF_SHARED_INTERFACES",
-            "EBPF_SHARED_INCLUDE_SOURCE_CIDRS",
-            "EBPF_SHARED_EXCLUDE_SOURCE_CIDRS",
-            "EBPF_SHARED_INCLUDE_MAC_ADDRESSES",
-            "EBPF_SHARED_EXCLUDE_MAC_ADDRESSES"
+            "EBPF_SHARED_INCLUDE_SOURCE_CIDR",
+            "EBPF_SHARED_EXCLUDE_SOURCE_CIDR",
+            "EBPF_SHARED_INCLUDE_MAC_ADDRESS",
+            "EBPF_SHARED_EXCLUDE_MAC_ADDRESS"
         )
         val ipv6Modes = setOf("always", "auto", "off")
+        val modes = setOf("local", "shared", "hybrid")
         val commaSeparatedKeys = setOf(
-            "EBPF_BYPASS_RULE_SETS",
+            "EBPF_BYPASS_RULE_SET",
             "EBPF_SHARED_INTERFACES",
-            "EBPF_SHARED_INCLUDE_SOURCE_CIDRS",
-            "EBPF_SHARED_EXCLUDE_SOURCE_CIDRS",
-            "EBPF_SHARED_INCLUDE_MAC_ADDRESSES",
-            "EBPF_SHARED_EXCLUDE_MAC_ADDRESSES",
+            "EBPF_SHARED_INCLUDE_SOURCE_CIDR",
+            "EBPF_SHARED_EXCLUDE_SOURCE_CIDR",
+            "EBPF_SHARED_INCLUDE_MAC_ADDRESS",
+            "EBPF_SHARED_EXCLUDE_MAC_ADDRESS",
             "WIFI_SSID_LIST"
         )
 

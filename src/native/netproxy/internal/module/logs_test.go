@@ -35,7 +35,7 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 	if err := os.WriteFile(moduleConfig, []byte("SUB_URL=https://example.test/sub?token=secret-token\nWIFI_SSID_LIST=\"secret-office,secret-home\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(ebpfConfig, []byte("HWID=secret-hwid\nPROXY_APPS_LIST=\"secret.app.one,secret.app.two\"\nBYPASS_APPS_LIST=\"secret.app.three\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(ebpfConfig, []byte("PROXY_APPS_LIST=\"0:secret.app.one,10:secret.app.two\"\nBYPASS_APPS_LIST=\"0:secret.app.three\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(runtimeDir, "ebpf.json"), []byte(`{"type":"ebpf","tag":"runtime"}`), 0o600); err != nil {

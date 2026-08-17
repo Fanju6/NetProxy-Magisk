@@ -2,9 +2,11 @@ package ebpf
 
 import (
 	"encoding/json"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -13,68 +15,94 @@ import (
 )
 
 const (
+	defaultMode           = "local"
 	defaultUDPTimeout     = "5m"
-	defaultCgroupIPv6Mode = "always"
+	defaultLocalIPv6Mode  = "auto"
+	defaultSharedIPv6Mode = "always"
 	defaultSharedIface    = "wlan2"
-	defaultMapCapacity    = 65536
-	maxMapCapacity        = 1048576
+	defaultStateCapacity  = 0
+	defaultTCPriority     = 1
+	maxStateCapacity      = 1048576
+	maxTCPriority         = 65535
 )
 
 var allowedKeys = map[string]bool{
-	"EBPF_NETWORK":                      true,
-	"EBPF_UDP_TIMEOUT":                  true,
-	"EBPF_DNS_MODE":                     true,
-	"EBPF_CGROUP_ENABLED":               true,
-	"EBPF_CGROUP_PATH":                  true,
-	"EBPF_CGROUP_IPV6_MODE":             true,
-	"EBPF_BYPASS_PRIVATE_ADDRESS":       true,
-	"EBPF_BYPASS_RULE_SETS":             true,
-	"APP_PROXY_ENABLE":                  true,
-	"APP_PROXY_MODE":                    true,
-	"APP_ANDROID_USERS":                 true,
-	"PROXY_APPS_LIST":                   true,
-	"BYPASS_APPS_LIST":                  true,
-	"EBPF_SHARED_NETWORK":               true,
-	"EBPF_SHARED_INTERFACES":            true,
-	"EBPF_SHARED_INCLUDE_SOURCE_CIDRS":  true,
-	"EBPF_SHARED_EXCLUDE_SOURCE_CIDRS":  true,
-	"EBPF_SHARED_INCLUDE_MAC_ADDRESSES": true,
-	"EBPF_SHARED_EXCLUDE_MAC_ADDRESSES": true,
-	"EBPF_TCP_MAP_CAPACITY":             true,
-	"EBPF_UDP_MAP_CAPACITY":             true,
-	"EBPF_SOCKET_MAP_CAPACITY":          true,
-	"EBPF_SHARED_PROXY_MAP_CAPACITY":    true,
-	"EBPF_SHARED_BYPASS_MAP_CAPACITY":   true,
-	"EBPF_SHARED_FRAGMENT_MAP_CAPACITY": true,
+	"EBPF_MODE":                       true,
+	"EBPF_NETWORK":                    true,
+	"EBPF_UDP_TIMEOUT":                true,
+	"EBPF_DNS_MODE":                   true,
+	"EBPF_BYPASS_PRIVATE_ADDRESS":     true,
+	"EBPF_BYPASS_RULE_SET":            true,
+	"EBPF_LOCAL_CGROUP_PATH":          true,
+	"EBPF_LOCAL_IPV6_MODE":            true,
+	"EBPF_LOCAL_INCLUDE_UID":          true,
+	"EBPF_LOCAL_INCLUDE_UID_RANGE":    true,
+	"EBPF_LOCAL_EXCLUDE_UID":          true,
+	"EBPF_LOCAL_EXCLUDE_UID_RANGE":    true,
+	"EBPF_LOCAL_INCLUDE_ANDROID_USER": true,
+	"EBPF_LOCAL_INCLUDE_PACKAGE":      true,
+	"EBPF_LOCAL_EXCLUDE_PACKAGE":      true,
+	"EBPF_LOCAL_STATE_CAPACITY":       true,
+	"EBPF_SHARED_INTERFACES":          true,
+	"EBPF_SHARED_IPV6_MODE":           true,
+	"EBPF_SHARED_INCLUDE_SOURCE_CIDR": true,
+	"EBPF_SHARED_EXCLUDE_SOURCE_CIDR": true,
+	"EBPF_SHARED_INCLUDE_MAC_ADDRESS": true,
+	"EBPF_SHARED_EXCLUDE_MAC_ADDRESS": true,
+	"EBPF_SHARED_STATE_CAPACITY":      true,
+	"EBPF_SHARED_TC_PRIORITY":         true,
+	"APP_PROXY_ENABLE":                true,
+	"APP_PROXY_MODE":                  true,
+	"PROXY_APPS_LIST":                 true,
+	"BYPASS_APPS_LIST":                true,
 }
 
 // Config 描述 ebpf.conf 的类型化配置。
 type Config struct {
-	Network                   string
-	UDPTimeout                string
-	DNSMode                   string
-	CgroupEnabled             bool
-	CgroupPath                string
-	CgroupIPv6Mode            string
-	BypassPrivateAddress      bool
-	BypassRuleSets            []string
-	AppProxyEnable            bool
-	AppProxyMode              string
-	AndroidUsers              []uint64
-	ProxyPackages             []string
-	BypassPackages            []string
-	SharedNetwork             bool
-	SharedInterfaces          []string
-	SharedIncludeSourceCIDRs  []string
-	SharedExcludeSourceCIDRs  []string
-	SharedIncludeMACAddresses []string
-	SharedExcludeMACAddresses []string
-	TCPMapCapacity            uint64
-	UDPMapCapacity            uint64
-	SocketMapCapacity         uint64
-	SharedProxyMapCapacity    uint64
-	SharedBypassMapCapacity   uint64
-	SharedFragmentMapCapacity uint64
+	Mode                 string
+	Network              []string
+	UDPTimeout           string
+	DNSMode              string
+	BypassPrivateAddress bool
+	BypassRuleSets       []string
+	Local                LocalConfig
+	Shared               SharedConfig
+	AppProxyEnable       bool
+	AppProxyMode         string
+	ProxyPackages        []PackageRef
+	BypassPackages       []PackageRef
+}
+
+// LocalConfig 描述 sing-box eBPF 的本机数据路径。
+type LocalConfig struct {
+	CgroupPath         string
+	IPv6Mode           string
+	IncludeUID         []uint32
+	IncludeUIDRange    []string
+	ExcludeUID         []uint32
+	ExcludeUIDRange    []string
+	IncludeAndroidUser []int
+	IncludePackage     []string
+	ExcludePackage     []string
+	StateCapacity      uint32
+}
+
+// SharedConfig 描述 sing-box eBPF 的共享网络数据路径。
+type SharedConfig struct {
+	Interfaces        []string
+	IPv6Mode          string
+	IncludeSourceCIDR []string
+	ExcludeSourceCIDR []string
+	IncludeMACAddress []string
+	ExcludeMACAddress []string
+	StateCapacity     uint32
+	TCPriority        uint16
+}
+
+// PackageRef 是一个带 Android 用户范围的应用包名。
+type PackageRef struct {
+	UserID  uint32
+	Package string
 }
 
 // Diagnostic 描述可以直接展示给用户的配置问题。
@@ -85,7 +113,6 @@ type Diagnostic struct {
 	Message string `json:"message"`
 }
 
-// Summary 描述诊断所需的安全配置摘要。
 // ValidationError 包含可供 CLI 转发的中文配置诊断。
 type ValidationError struct {
 	Diagnostics []Diagnostic
@@ -110,98 +137,107 @@ func Load(path string) (Config, error) {
 		}
 	}
 	config := Config{
-		UDPTimeout:                defaultUDPTimeout,
-		DNSMode:                   "hijack",
-		CgroupEnabled:             true,
-		CgroupIPv6Mode:            defaultCgroupIPv6Mode,
-		BypassPrivateAddress:      true,
-		BypassRuleSets:            []string{"direct", "ChinaIP"},
-		AppProxyEnable:            true,
-		AppProxyMode:              "blacklist",
-		SharedInterfaces:          []string{defaultSharedIface},
-		TCPMapCapacity:            defaultMapCapacity,
-		UDPMapCapacity:            defaultMapCapacity,
-		SocketMapCapacity:         defaultMapCapacity,
-		SharedProxyMapCapacity:    defaultMapCapacity,
-		SharedBypassMapCapacity:   defaultMapCapacity,
-		SharedFragmentMapCapacity: defaultMapCapacity,
+		Mode:                 defaultMode,
+		UDPTimeout:           defaultUDPTimeout,
+		DNSMode:              "hijack",
+		BypassPrivateAddress: true,
+		BypassRuleSets:       []string{"direct", "ChinaIP"},
+		Local: LocalConfig{
+			IPv6Mode:      defaultLocalIPv6Mode,
+			StateCapacity: defaultStateCapacity,
+		},
+		Shared: SharedConfig{
+			Interfaces:    []string{defaultSharedIface},
+			IPv6Mode:      defaultSharedIPv6Mode,
+			StateCapacity: defaultStateCapacity,
+			TCPriority:    defaultTCPriority,
+		},
+		AppProxyEnable: true,
+		AppProxyMode:   "blacklist",
 	}
 	var parseErr error
-	config.Network = valueOr(values, "EBPF_NETWORK", "")
+	config.Mode = valueOr(values, "EBPF_MODE", config.Mode)
+	config.Network = CommaSeparated(valueOr(values, "EBPF_NETWORK", ""))
 	config.UDPTimeout = valueOr(values, "EBPF_UDP_TIMEOUT", config.UDPTimeout)
 	config.DNSMode = valueOr(values, "EBPF_DNS_MODE", config.DNSMode)
-	config.CgroupEnabled, parseErr = boolValue(values, "EBPF_CGROUP_ENABLED", config.CgroupEnabled)
-	if parseErr != nil {
-		return Config{}, parseErr
-	}
-	config.CgroupPath = valueOr(values, "EBPF_CGROUP_PATH", "")
-	config.CgroupIPv6Mode = valueOr(values, "EBPF_CGROUP_IPV6_MODE", config.CgroupIPv6Mode)
 	config.BypassPrivateAddress, parseErr = boolValue(values, "EBPF_BYPASS_PRIVATE_ADDRESS", config.BypassPrivateAddress)
 	if parseErr != nil {
 		return Config{}, parseErr
 	}
-	config.BypassRuleSets = CommaSeparated(valueOr(values, "EBPF_BYPASS_RULE_SETS", "direct,ChinaIP"))
+	config.BypassRuleSets = CommaSeparated(valueOr(values, "EBPF_BYPASS_RULE_SET", "direct,ChinaIP"))
+
+	config.Local.CgroupPath = valueOr(values, "EBPF_LOCAL_CGROUP_PATH", "")
+	config.Local.IPv6Mode = valueOr(values, "EBPF_LOCAL_IPV6_MODE", config.Local.IPv6Mode)
+	config.Local.IncludeUID, parseErr = parseUint32List(values, "EBPF_LOCAL_INCLUDE_UID")
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
+	config.Local.IncludeUIDRange, parseErr = parseRanges(values, "EBPF_LOCAL_INCLUDE_UID_RANGE")
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
+	config.Local.ExcludeUID, parseErr = parseUint32List(values, "EBPF_LOCAL_EXCLUDE_UID")
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
+	config.Local.ExcludeUIDRange, parseErr = parseRanges(values, "EBPF_LOCAL_EXCLUDE_UID_RANGE")
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
+	config.Local.IncludeAndroidUser, parseErr = parseIntList(values, "EBPF_LOCAL_INCLUDE_ANDROID_USER")
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
+	config.Local.IncludePackage, parseErr = parsePackages(valueOr(values, "EBPF_LOCAL_INCLUDE_PACKAGE", ""), "EBPF_LOCAL_INCLUDE_PACKAGE")
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
+	config.Local.ExcludePackage, parseErr = parsePackages(valueOr(values, "EBPF_LOCAL_EXCLUDE_PACKAGE", ""), "EBPF_LOCAL_EXCLUDE_PACKAGE")
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
+	config.Local.StateCapacity, parseErr = stateCapacity(values, "EBPF_LOCAL_STATE_CAPACITY")
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
+
+	config.Shared.Interfaces = CommaSeparated(valueOr(values, "EBPF_SHARED_INTERFACES", defaultSharedIface))
+	config.Shared.IPv6Mode = valueOr(values, "EBPF_SHARED_IPV6_MODE", config.Shared.IPv6Mode)
+	config.Shared.IncludeSourceCIDR, parseErr = parseCIDRs(valueOr(values, "EBPF_SHARED_INCLUDE_SOURCE_CIDR", ""), "EBPF_SHARED_INCLUDE_SOURCE_CIDR")
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
+	config.Shared.ExcludeSourceCIDR, parseErr = parseCIDRs(valueOr(values, "EBPF_SHARED_EXCLUDE_SOURCE_CIDR", ""), "EBPF_SHARED_EXCLUDE_SOURCE_CIDR")
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
+	config.Shared.IncludeMACAddress, parseErr = parseMACs(valueOr(values, "EBPF_SHARED_INCLUDE_MAC_ADDRESS", ""), "EBPF_SHARED_INCLUDE_MAC_ADDRESS")
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
+	config.Shared.ExcludeMACAddress, parseErr = parseMACs(valueOr(values, "EBPF_SHARED_EXCLUDE_MAC_ADDRESS", ""), "EBPF_SHARED_EXCLUDE_MAC_ADDRESS")
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
+	config.Shared.StateCapacity, parseErr = stateCapacity(values, "EBPF_SHARED_STATE_CAPACITY")
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
+	config.Shared.TCPriority, parseErr = tcpPriority(values, "EBPF_SHARED_TC_PRIORITY")
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
+
 	config.AppProxyEnable, parseErr = boolValue(values, "APP_PROXY_ENABLE", config.AppProxyEnable)
 	if parseErr != nil {
 		return Config{}, parseErr
 	}
 	config.AppProxyMode = valueOr(values, "APP_PROXY_MODE", config.AppProxyMode)
-	config.AndroidUsers, parseErr = parseUsers(valueOr(values, "APP_ANDROID_USERS", ""))
+	config.ProxyPackages, parseErr = ParsePackageRefs(valueOr(values, "PROXY_APPS_LIST", ""), "PROXY_APPS_LIST")
 	if parseErr != nil {
 		return Config{}, parseErr
 	}
-	config.ProxyPackages, parseErr = parsePackages(valueOr(values, "PROXY_APPS_LIST", ""))
-	if parseErr != nil {
-		return Config{}, parseErr
-	}
-	config.BypassPackages, parseErr = parsePackages(valueOr(values, "BYPASS_APPS_LIST", ""))
-	if parseErr != nil {
-		return Config{}, parseErr
-	}
-	config.SharedNetwork, parseErr = boolValue(values, "EBPF_SHARED_NETWORK", false)
-	if parseErr != nil {
-		return Config{}, parseErr
-	}
-	config.SharedInterfaces = CommaSeparated(valueOr(values, "EBPF_SHARED_INTERFACES", defaultSharedIface))
-	config.SharedIncludeSourceCIDRs, parseErr = parseCIDRs(valueOr(values, "EBPF_SHARED_INCLUDE_SOURCE_CIDRS", ""))
-	if parseErr != nil {
-		return Config{}, parseErr
-	}
-	config.SharedExcludeSourceCIDRs, parseErr = parseCIDRs(valueOr(values, "EBPF_SHARED_EXCLUDE_SOURCE_CIDRS", ""))
-	if parseErr != nil {
-		return Config{}, parseErr
-	}
-	config.SharedIncludeMACAddresses, parseErr = parseMACs(valueOr(values, "EBPF_SHARED_INCLUDE_MAC_ADDRESSES", ""))
-	if parseErr != nil {
-		return Config{}, parseErr
-	}
-	config.SharedExcludeMACAddresses, parseErr = parseMACs(valueOr(values, "EBPF_SHARED_EXCLUDE_MAC_ADDRESSES", ""))
-	if parseErr != nil {
-		return Config{}, parseErr
-	}
-	if config.CgroupEnabled {
-		config.TCPMapCapacity, parseErr = mapCapacity(values, "EBPF_TCP_MAP_CAPACITY", config.TCPMapCapacity)
-		if parseErr != nil {
-			return Config{}, parseErr
-		}
-		config.UDPMapCapacity, parseErr = mapCapacity(values, "EBPF_UDP_MAP_CAPACITY", config.UDPMapCapacity)
-		if parseErr != nil {
-			return Config{}, parseErr
-		}
-		config.SocketMapCapacity, parseErr = mapCapacity(values, "EBPF_SOCKET_MAP_CAPACITY", config.SocketMapCapacity)
-		if parseErr != nil {
-			return Config{}, parseErr
-		}
-	}
-	config.SharedProxyMapCapacity, parseErr = mapCapacity(values, "EBPF_SHARED_PROXY_MAP_CAPACITY", config.SharedProxyMapCapacity)
-	if parseErr != nil {
-		return Config{}, parseErr
-	}
-	config.SharedBypassMapCapacity, parseErr = mapCapacity(values, "EBPF_SHARED_BYPASS_MAP_CAPACITY", config.SharedBypassMapCapacity)
-	if parseErr != nil {
-		return Config{}, parseErr
-	}
-	config.SharedFragmentMapCapacity, parseErr = mapCapacity(values, "EBPF_SHARED_FRAGMENT_MAP_CAPACITY", config.SharedFragmentMapCapacity)
+	config.BypassPackages, parseErr = ParsePackageRefs(valueOr(values, "BYPASS_APPS_LIST", ""), "BYPASS_APPS_LIST")
 	if parseErr != nil {
 		return Config{}, parseErr
 	}
@@ -211,94 +247,121 @@ func Load(path string) (Config, error) {
 	return config, nil
 }
 
-// Validate 检查 eBPF 配置之间的组合约束。
+// Validate 检查新 eBPF 配置之间的组合约束。
 func (c Config) Validate() error {
-	if c.Network != "" && c.Network != "tcp" && c.Network != "udp" {
-		return validationError("ebpf.network_invalid", "EBPF_NETWORK", "代理协议只能为空、tcp 或 udp")
+	if c.Mode != "local" && c.Mode != "shared" && c.Mode != "hybrid" {
+		return validationError("ebpf.mode_invalid", "EBPF_MODE", "eBPF 模式只能是 local、shared 或 hybrid")
 	}
-	duration, err := time.ParseDuration(c.UDPTimeout)
-	if err != nil || duration <= 0 {
+	for _, network := range c.Network {
+		if network != "tcp" && network != "udp" {
+			return validationError("ebpf.network_invalid", "EBPF_NETWORK", "代理协议只能是 tcp 或 udp")
+		}
+	}
+	if duration, err := time.ParseDuration(c.UDPTimeout); err != nil || duration <= 0 {
 		return validationError("ebpf.udp_timeout_invalid", "EBPF_UDP_TIMEOUT", "UDP 会话超时必须是正的时间长度，例如 5m")
 	}
-	if c.DNSMode != "hijack" && c.DNSMode != "off" {
-		return validationError("ebpf.dns_mode_invalid", "EBPF_DNS_MODE", "DNS 模式只能是 hijack 或 off")
+	if c.DNSMode != "hijack" && c.DNSMode != "respect_bypass" && c.DNSMode != "off" {
+		return validationError("ebpf.dns_mode_invalid", "EBPF_DNS_MODE", "DNS 模式只能是 hijack、respect_bypass 或 off")
 	}
-	if c.CgroupIPv6Mode != "always" && c.CgroupIPv6Mode != "auto" && c.CgroupIPv6Mode != "off" {
-		return validationError("ebpf.cgroup_ipv6_mode_invalid", "EBPF_CGROUP_IPV6_MODE", "本机 IPv6 接管模式只能是 always、auto 或 off")
+	if c.Mode == "local" || c.Mode == "hybrid" {
+		if c.Local.IPv6Mode != "always" && c.Local.IPv6Mode != "auto" && c.Local.IPv6Mode != "off" {
+			return validationError("ebpf.local_ipv6_mode_invalid", "EBPF_LOCAL_IPV6_MODE", "本机 IPv6 模式只能是 always、auto 或 off")
+		}
+	}
+	if c.Mode == "shared" || c.Mode == "hybrid" {
+		if len(c.Shared.Interfaces) == 0 {
+			return validationError("ebpf.shared_interface_required", "EBPF_SHARED_INTERFACES", "共享网络模式至少需要一个下游接口")
+		}
+		if c.Shared.IPv6Mode != "always" && c.Shared.IPv6Mode != "off" {
+			return validationError("ebpf.shared_ipv6_mode_invalid", "EBPF_SHARED_IPV6_MODE", "共享网络 IPv6 模式只能是 always 或 off")
+		}
+		if c.DNSMode != "off" && !contains(c.Network, "udp") && len(c.Network) > 0 {
+			return validationError("ebpf.shared_dns_requires_udp", "EBPF_NETWORK", "共享网络启用 DNS 拦截时必须启用 UDP")
+		}
 	}
 	if c.AppProxyMode != "blacklist" && c.AppProxyMode != "whitelist" {
 		return validationError("ebpf.app_mode_invalid", "APP_PROXY_MODE", "分应用代理模式只能是 blacklist 或 whitelist")
 	}
-	if c.SharedNetwork && len(c.SharedInterfaces) == 0 {
-		return validationError("ebpf.shared_interface_required", "EBPF_SHARED_INTERFACES", "启用共享网络时至少需要一个下游接口")
-	}
-	if c.SharedNetwork && c.DNSMode == "hijack" && c.Network == "tcp" {
-		return validationError("ebpf.shared_dns_requires_udp", "EBPF_NETWORK", "共享网络启用 DNS 劫持时不能只代理 TCP")
-	}
-	if !c.CgroupEnabled && !c.SharedNetwork {
-		return validationError("ebpf.no_data_path", "EBPF_CGROUP_ENABLED", "本机 cgroup 与共享网络不能同时禁用")
-	}
 	return nil
 }
 
+// PackageUIDResolver 将带用户范围的包名转换为 sing-box 可用的 UID。
+type PackageUIDResolver func([]PackageRef) ([]uint32, error)
+
 // Build 生成 sing-box eBPF inbound 的类型化运行时文档。
-func (c Config) Build() Runtime {
-	redirect := []string{"127.128.0.0/9"}
-	if (c.CgroupEnabled && c.CgroupIPv6Mode != "off") || c.SharedNetwork {
-		redirect = append(redirect, "fd53:696e:672d:626f::/64")
+func (c Config) Build() (Runtime, error) {
+	return c.BuildWithResolver(ResolvePackageUIDs)
+}
+
+// BuildWithResolver 使用指定的包名解析器生成运行时文档，测试可注入确定性解析结果。
+func (c Config) BuildWithResolver(resolve PackageUIDResolver) (Runtime, error) {
+	if err := c.Validate(); err != nil {
+		return Runtime{}, err
 	}
+	localEnabled := c.Mode == "local" || c.Mode == "hybrid"
+	sharedEnabled := c.Mode == "shared" || c.Mode == "hybrid"
 	inbound := Inbound{
 		Type:                 "ebpf",
 		Tag:                  "ebpf-in",
-		CgroupEnabled:        c.CgroupEnabled,
+		Mode:                 c.Mode,
 		Network:              c.Network,
 		UDPTimeout:           c.UDPTimeout,
 		DNSMode:              c.DNSMode,
 		BypassPrivateAddress: c.BypassPrivateAddress,
-		RedirectAddress:      redirect,
 		BypassRuleSet:        c.BypassRuleSets,
-		SharedNetwork: SharedNetwork{
-			Enabled:           c.SharedNetwork,
-			IncludeInterface:  c.SharedInterfaces,
-			IncludeSourceCIDR: c.SharedIncludeSourceCIDRs,
-			ExcludeSourceCIDR: c.SharedExcludeSourceCIDRs,
-			IncludeMACAddress: c.SharedIncludeMACAddresses,
-			ExcludeMACAddress: c.SharedExcludeMACAddresses,
-			TCPriority:        1,
-			MapCapacity: SharedMapCapacity{
-				Proxy:    c.SharedProxyMapCapacity,
-				Bypass:   c.SharedBypassMapCapacity,
-				Fragment: c.SharedFragmentMapCapacity,
-			},
-		},
 	}
-	if c.CgroupEnabled {
-		includePackages := []string{}
-		excludePackages := []string{}
-		includeUID := []uint64{}
+	if localEnabled {
+		local := LocalRuntime{
+			CgroupPath:         c.Local.CgroupPath,
+			IPv6Mode:           c.Local.IPv6Mode,
+			IncludeUID:         append([]uint32{}, c.Local.IncludeUID...),
+			IncludeUIDRange:    append([]string{}, c.Local.IncludeUIDRange...),
+			ExcludeUID:         append([]uint32{}, c.Local.ExcludeUID...),
+			ExcludeUIDRange:    append([]string{}, c.Local.ExcludeUIDRange...),
+			IncludeAndroidUser: append([]int{}, c.Local.IncludeAndroidUser...),
+			IncludePackage:     append([]string{}, c.Local.IncludePackage...),
+			ExcludePackage:     append([]string{}, c.Local.ExcludePackage...),
+			StateCapacity:      c.Local.StateCapacity,
+		}
 		if c.AppProxyEnable {
-			if c.AppProxyMode == "whitelist" {
-				includePackages = append(includePackages, c.ProxyPackages...)
-				if len(includePackages) == 0 {
-					includeUID = []uint64{4294967295}
+			if resolve == nil {
+				return Runtime{}, errors.New("eBPF 分应用策略需要包名 UID 解析器")
+			}
+			switch c.AppProxyMode {
+			case "whitelist":
+				local.IncludeUID = append(local.IncludeUID, 0)
+				uids, err := resolve(c.ProxyPackages)
+				if err != nil {
+					return Runtime{}, err
 				}
-			} else {
-				excludePackages = append(excludePackages, c.BypassPackages...)
+				local.IncludeUID = append(local.IncludeUID, uids...)
+			case "blacklist":
+				uids, err := resolve(c.BypassPackages)
+				if err != nil {
+					return Runtime{}, err
+				}
+				local.ExcludeUID = append(local.ExcludeUID, uids...)
 			}
 		}
-		inbound.Cgroup = &CgroupFields{
-			Path:               c.CgroupPath,
-			IPv6Mode:           c.CgroupIPv6Mode,
-			IncludeUID:         includeUID,
-			IncludeAndroidUser: c.AndroidUsers,
-			IncludePackages:    includePackages,
-			ExcludePackages:    excludePackages,
-			TCPMapCapacity:     c.TCPMapCapacity,
-			UDPMapCapacity:     c.UDPMapCapacity,
-			SocketMapCapacity:  c.SocketMapCapacity,
+		local.IncludeUID = uniqueUint32(local.IncludeUID)
+		local.ExcludeUID = uniqueUint32(local.ExcludeUID)
+		inbound.Local = &local
+	}
+	if sharedEnabled {
+		inbound.Shared = &SharedRuntime{
+			Interface:         c.Shared.Interfaces,
+			IPv6Mode:          c.Shared.IPv6Mode,
+			IncludeSourceCIDR: c.Shared.IncludeSourceCIDR,
+			ExcludeSourceCIDR: c.Shared.ExcludeSourceCIDR,
+			IncludeMACAddress: c.Shared.IncludeMACAddress,
+			ExcludeMACAddress: c.Shared.ExcludeMACAddress,
+			StateCapacity:     c.Shared.StateCapacity,
+			Advanced: SharedAdvancedRuntime{
+				TCPriority: c.Shared.TCPriority,
+			},
 		}
 	}
-	return Runtime{Inbounds: []Inbound{inbound}}
+	return Runtime{Inbounds: []Inbound{inbound}}, nil
 }
 
 // Runtime 是 sing-box 运行时配置文档。
@@ -306,94 +369,81 @@ type Runtime struct {
 	Inbounds []Inbound `json:"inbounds"`
 }
 
-// Inbound 是 eBPF 入站的固定字段模型。
+// Inbound 是新 eBPF 入站的固定字段模型。
 type Inbound struct {
 	Type                 string
 	Tag                  string
-	CgroupEnabled        bool
-	Network              string
+	Mode                 string
+	Network              []string
 	UDPTimeout           string
 	DNSMode              string
 	BypassPrivateAddress bool
-	Cgroup               *CgroupFields
-	RedirectAddress      []string
 	BypassRuleSet        []string
-	SharedNetwork        SharedNetwork
+	Local                *LocalRuntime
+	Shared               *SharedRuntime
 }
 
-// CgroupFields 是仅在本机 cgroup 路径启用时输出的字段。
-type CgroupFields struct {
-	Path               string
-	IPv6Mode           string
-	IncludeUID         []uint64
-	IncludeAndroidUser []uint64
-	IncludePackages    []string
-	ExcludePackages    []string
-	TCPMapCapacity     uint64
-	UDPMapCapacity     uint64
-	SocketMapCapacity  uint64
+// LocalRuntime 是仅在 local 或 hybrid 模式输出的字段。
+type LocalRuntime struct {
+	CgroupPath         string   `json:"cgroup_path,omitempty"`
+	IPv6Mode           string   `json:"ipv6_mode,omitempty"`
+	IncludeUID         []uint32 `json:"include_uid,omitempty"`
+	IncludeUIDRange    []string `json:"include_uid_range,omitempty"`
+	ExcludeUID         []uint32 `json:"exclude_uid,omitempty"`
+	ExcludeUIDRange    []string `json:"exclude_uid_range,omitempty"`
+	IncludeAndroidUser []int    `json:"include_android_user,omitempty"`
+	IncludePackage     []string `json:"include_package,omitempty"`
+	ExcludePackage     []string `json:"exclude_package,omitempty"`
+	StateCapacity      uint32   `json:"state_capacity,omitempty"`
 }
 
-// SharedNetwork 是共享网络数据路径配置。
-type SharedNetwork struct {
-	Enabled           bool              `json:"enabled"`
-	IncludeInterface  []string          `json:"include_interface"`
-	IncludeSourceCIDR []string          `json:"include_source_cidr"`
-	ExcludeSourceCIDR []string          `json:"exclude_source_cidr"`
-	IncludeMACAddress []string          `json:"include_mac_address"`
-	ExcludeMACAddress []string          `json:"exclude_mac_address"`
-	TCPriority        int               `json:"tc_priority"`
-	MapCapacity       SharedMapCapacity `json:"map_capacity"`
+// SharedRuntime 是仅在 shared 或 hybrid 模式输出的字段。
+type SharedRuntime struct {
+	Interface         []string              `json:"interface,omitempty"`
+	IPv6Mode          string                `json:"ipv6_mode,omitempty"`
+	IncludeSourceCIDR []string              `json:"include_source_cidr,omitempty"`
+	ExcludeSourceCIDR []string              `json:"exclude_source_cidr,omitempty"`
+	IncludeMACAddress []string              `json:"include_mac_address,omitempty"`
+	ExcludeMACAddress []string              `json:"exclude_mac_address,omitempty"`
+	StateCapacity     uint32                `json:"state_capacity,omitempty"`
+	Advanced          SharedAdvancedRuntime `json:"advanced,omitempty"`
 }
 
-// SharedMapCapacity 是共享网络三类运行状态 Map 的容量。
-type SharedMapCapacity struct {
-	Proxy    uint64 `json:"proxy"`
-	Bypass   uint64 `json:"bypass"`
-	Fragment uint64 `json:"fragment"`
+// SharedAdvancedRuntime 是 shared 数据路径的高级内核参数。
+type SharedAdvancedRuntime struct {
+	TCPriority uint16 `json:"tc_priority,omitempty"`
 }
 
-// MarshalJSON 根据 cgroup 是否启用裁剪本机路径字段。
+// MarshalJSON 只输出与当前 mode 对应的数据路径，避免 sing-box 拒绝无效字段。
 func (i Inbound) MarshalJSON() ([]byte, error) {
 	value := map[string]any{
 		"type":                   i.Type,
 		"tag":                    i.Tag,
-		"cgroup_enabled":         i.CgroupEnabled,
+		"mode":                   i.Mode,
 		"udp_timeout":            i.UDPTimeout,
 		"dns_mode":               i.DNSMode,
 		"bypass_private_address": i.BypassPrivateAddress,
-		"redirect_address":       i.RedirectAddress,
 		"bypass_rule_set":        i.BypassRuleSet,
-		"shared_network":         i.SharedNetwork,
 	}
-	if i.Network != "" {
+	if len(i.Network) > 0 {
 		value["network"] = i.Network
 	}
-	if i.CgroupEnabled && i.Cgroup != nil {
-		value["cgroup_path"] = i.Cgroup.Path
-		value["cgroup_ipv6_mode"] = i.Cgroup.IPv6Mode
-		value["include_uid"] = i.Cgroup.IncludeUID
-		value["include_uid_range"] = []uint64{}
-		value["exclude_uid"] = []uint64{}
-		value["exclude_uid_range"] = []uint64{}
-		value["include_android_user"] = i.Cgroup.IncludeAndroidUser
-		value["include_package"] = i.Cgroup.IncludePackages
-		value["exclude_package"] = i.Cgroup.ExcludePackages
-		value["map_capacity"] = map[string]uint64{
-			"tcp_redirect":  i.Cgroup.TCPMapCapacity,
-			"udp_redirect":  i.Cgroup.UDPMapCapacity,
-			"socket_bypass": i.Cgroup.SocketMapCapacity,
-		}
+	if i.Local != nil {
+		value["local"] = i.Local
+	}
+	if i.Shared != nil {
+		value["shared"] = i.Shared
 	}
 	return json.Marshal(value)
 }
 
 // WriteAtomic 校验并原子写入运行时 eBPF 配置。
 func WriteAtomic(path string, config Config) error {
-	if err := config.Validate(); err != nil {
+	runtime, err := config.Build()
+	if err != nil {
 		return err
 	}
-	content, err := json.MarshalIndent(config.Build(), "", "  ")
+	content, err := json.MarshalIndent(runtime, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -419,7 +469,48 @@ func WriteAtomic(path string, config Config) error {
 	return os.Rename(tmpPath, path)
 }
 
-// Diagnose 返回不包含凭据的配置检查结果。
+// ParsePackageRef 解析一个严格的 <用户ID>:<包名> 应用引用。
+func ParsePackageRef(value string) (PackageRef, error) {
+	items, err := ParsePackageRefs(value, "应用引用")
+	if err != nil {
+		return PackageRef{}, err
+	}
+	if len(items) != 1 {
+		return PackageRef{}, validationError("ebpf.package_invalid", "应用引用", "应用引用不能为空")
+	}
+	return items[0], nil
+}
+
+// ParsePackageRefs 解析逗号分隔的 <用户ID>:<包名> 列表。
+func ParsePackageRefs(value, field string) ([]PackageRef, error) {
+	items := CommaSeparated(value)
+	refs := make([]PackageRef, 0, len(items))
+	seen := make(map[PackageRef]struct{}, len(items))
+	for _, item := range items {
+		user, packageName, found := strings.Cut(item, ":")
+		if !found || user == "" || packageName == "" || strings.Contains(packageName, ":") {
+			return nil, validationError("ebpf.package_invalid", field, "应用必须使用 <用户ID>:<包名> 格式")
+		}
+		parsedUser, err := strconv.ParseUint(user, 10, 32)
+		if err != nil {
+			return nil, validationError("ebpf.android_user_invalid", field, "应用用户 ID 必须是 0 到 4294967295 的整数")
+		}
+		if err := validatePackageName(packageName); err != nil {
+			return nil, validationError("ebpf.package_invalid", field, "应用包名格式无效: "+packageName)
+		}
+		ref := PackageRef{UserID: uint32(parsedUser), Package: packageName}
+		if _, ok := seen[ref]; !ok {
+			refs = append(refs, ref)
+			seen[ref] = struct{}{}
+		}
+	}
+	return refs, nil
+}
+
+func (r PackageRef) String() string {
+	return strconv.FormatUint(uint64(r.UserID), 10) + ":" + r.Package
+}
+
 func validationError(code, field, message string) error {
 	return &ValidationError{Diagnostics: []Diagnostic{{Level: "error", Code: code, Field: field, Message: message}}}
 }
@@ -453,7 +544,7 @@ func boolValue(values map[string]string, key string, fallback bool) (bool, error
 	if !ok {
 		return fallback, nil
 	}
-	switch value {
+	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "0", "false":
 		return false, nil
 	case "1", "true":
@@ -463,57 +554,128 @@ func boolValue(values map[string]string, key string, fallback bool) (bool, error
 	}
 }
 
-func parseUsers(value string) ([]uint64, error) {
-	result := CommaSeparated(value)
-	users := make([]uint64, 0, len(result))
-	for _, item := range result {
-		parsed, err := strconv.ParseUint(item, 10, 32)
+func parseUint32List(values map[string]string, key string) ([]uint32, error) {
+	items := CommaSeparated(values[key])
+	result := make([]uint32, 0, len(items))
+	for _, item := range items {
+		value, err := strconv.ParseUint(item, 10, 32)
 		if err != nil {
-			return nil, validationError("ebpf.android_user_invalid", "APP_ANDROID_USERS", "Android 用户 ID 必须是 0 到 4294967295 的整数")
+			return nil, validationError("ebpf.uid_invalid", key, key+" 必须是 0 到 4294967295 的整数")
 		}
-		users = append(users, parsed)
+		result = append(result, uint32(value))
 	}
-	return users, nil
+	return uniqueUint32(result), nil
 }
 
-func parsePackages(value string) ([]string, error) {
+func parseIntList(values map[string]string, key string) ([]int, error) {
+	items := CommaSeparated(values[key])
+	result := make([]int, 0, len(items))
+	for _, item := range items {
+		value, err := strconv.ParseInt(item, 10, 31)
+		if err != nil || value < 0 {
+			return nil, validationError("ebpf.android_user_invalid", key, key+" 必须是非负整数")
+		}
+		result = append(result, int(value))
+	}
+	return result, nil
+}
+
+func parseRanges(values map[string]string, key string) ([]string, error) {
+	items := CommaSeparated(values[key])
+	for _, item := range items {
+		start, end, found := strings.Cut(item, ":")
+		if !found || start == "" || end == "" {
+			return nil, validationError("ebpf.uid_range_invalid", key, key+" 必须使用 start:end 格式")
+		}
+		startValue, startErr := strconv.ParseUint(start, 10, 32)
+		endValue, endErr := strconv.ParseUint(end, 10, 32)
+		if startErr != nil || endErr != nil || startValue > endValue {
+			return nil, validationError("ebpf.uid_range_invalid", key, key+" 的范围无效")
+		}
+	}
+	return items, nil
+}
+
+func parsePackages(value, field string) ([]string, error) {
 	packages := CommaSeparated(value)
-	for _, item := range packages {
-		for _, char := range item {
-			if !(char == '.' || char == '_' || (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9')) {
-				return nil, validationError("ebpf.package_invalid", "PROXY_APPS_LIST/BYPASS_APPS_LIST", "应用包名只能包含字母、数字、点和下划线")
-			}
+	for _, packageName := range packages {
+		if err := validatePackageName(packageName); err != nil {
+			return nil, validationError("ebpf.package_invalid", field, "应用包名格式无效: "+packageName)
 		}
 	}
 	return packages, nil
 }
 
-func parseCIDRs(value string) ([]string, error) {
+func validatePackageName(value string) error {
+	if value == "" {
+		return errors.New("应用包名不能为空")
+	}
+	for _, char := range value {
+		if !(char == '.' || char == '_' || (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9')) {
+			return errors.New("应用包名只能包含字母、数字、点和下划线")
+		}
+	}
+	return nil
+}
+
+func parseCIDRs(value, field string) ([]string, error) {
 	items := CommaSeparated(value)
 	for _, item := range items {
 		if _, _, err := net.ParseCIDR(item); err != nil {
-			return nil, validationError("ebpf.cidr_invalid", "EBPF_SHARED_*_SOURCE_CIDRS", "共享网络来源 CIDR 格式无效: "+item)
+			return nil, validationError("ebpf.cidr_invalid", field, field+" 格式无效: "+item)
 		}
 	}
 	return items, nil
 }
 
-func parseMACs(value string) ([]string, error) {
+func parseMACs(value, field string) ([]string, error) {
 	items := CommaSeparated(value)
 	for _, item := range items {
 		parsed, err := net.ParseMAC(item)
 		if err != nil || len(parsed) != 6 {
-			return nil, validationError("ebpf.mac_invalid", "EBPF_SHARED_*_MAC_ADDRESSES", "共享网络 MAC 必须是 EUI-48 地址: "+item)
+			return nil, validationError("ebpf.mac_invalid", field, field+" 必须是 EUI-48 地址: "+item)
 		}
 	}
 	return items, nil
 }
 
-func mapCapacity(values map[string]string, key string, fallback uint64) (uint64, error) {
-	value := valueOr(values, key, strconv.FormatUint(fallback, 10))
+func stateCapacity(values map[string]string, key string) (uint32, error) {
+	value := valueOr(values, key, strconv.Itoa(defaultStateCapacity))
 	parsed, err := strconv.ParseUint(value, 10, 32)
-	if err != nil || parsed < 1 || parsed > maxMapCapacity {
-		return 0, validationError("ebpf.map_capacity_invalid", key, key+" 必须是 1 到 1048576 之间的整数")
+	if err != nil || parsed > maxStateCapacity {
+		return 0, validationError("ebpf.state_capacity_invalid", key, key+" 必须是 0 到 1048576 之间的整数")
 	}
-	return parsed, nil
+	return uint32(parsed), nil
+}
+
+func tcpPriority(values map[string]string, key string) (uint16, error) {
+	value := valueOr(values, key, strconv.Itoa(defaultTCPriority))
+	parsed, err := strconv.ParseUint(value, 10, 16)
+	if err != nil || parsed < 1 || parsed > maxTCPriority {
+		return 0, validationError("ebpf.tc_priority_invalid", key, key+" 必须是 1 到 65535 之间的整数")
+	}
+	return uint16(parsed), nil
+}
+
+func uniqueUint32(values []uint32) []uint32 {
+	seen := make(map[uint32]struct{}, len(values))
+	result := make([]uint32, 0, len(values))
+	for _, value := range values {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	return result
+}
+
+func contains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }

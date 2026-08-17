@@ -28,8 +28,8 @@
 - Provider 的运行时显示标签来自分组名称；名称冲突时才附加分组 ID。用户界面不得直接显示 UUID 代替可读名称。
 - 自动选择必须落到 `Auto/<group>`，Provider/selector 的默认值绝不能静默回退到 `direct`。
 - eBPF 是 sing-box 的入站实现，不是独立代理核心。服务、模式和节点切换文案继续使用“服务”或“sing-box”，不要泛化为“eBPF 服务”。
-- 分应用策略持久化包名与 Android 用户范围，运行时直接生成 `include_package` / `exclude_package` / `include_android_user`；不得恢复模块侧包名转 UID 或 `user:package` 格式。
-- `EBPF_CGROUP_ENABLED=0` 时只允许 shared-network 数据路径，运行时不得输出 cgroup 路径、IPv6 模式、应用/UID 策略或本机 Map 配置。
+- 分应用策略持久化严格的 `<user-id>:<package>` 引用，Android 每个用户独立展示；Go 通过 Android package service 查询 UID，运行时生成 `include_uid` / `exclude_uid`。
+- `EBPF_MODE` 只允许 `local`、`shared` 或 `hybrid`；local/shared 专属字段只能在对应数据路径启用时输出。
 - Service API 与 Clash API 的固定监听和密钥位于 `02_experimental.json`、`08_services.json`。不要重新引入运行时随机 bootstrap，现有 WebUI 依赖固定入口。
 - 服务状态只允许 `stopped/preparing/starting/ready/stopping/failed`。`ready_at` 只能在 sing-box API 与 eBPF 入站均就绪后写入。
 - `service status` 的 `outbound_mode` 表示核心当前实际生效模式；用户在 `module.conf` 中保存的基础模式由 `configured_outbound_mode` 表示。Wi-Fi 自动切换不得覆盖基础模式。
@@ -92,7 +92,7 @@ src/module/service.sh
 
 - 不提交订阅地址、节点凭据、UUID、密钥、HWID、自定义 Header、签名材料、设备日志或 `local.properties`。
 - 日志、历史和诊断包必须复用统一脱敏逻辑；修复问题时使用匿名 fixture，不把用户提供的真实链接写入测试。
-- 不手工修改 `src/module/bin/` 下的 `netproxy-native`、`sing-box`、`bpftool`，也不手工修改 WebUI 构建目录或工作流生成的版本号。更新二进制和资源时使用对应构建/更新流程并核对来源。
+- 不手工修改 `src/module/bin/` 下的 `netproxy-native`、`sing-box`，也不手工修改 WebUI 构建目录或工作流生成的版本号。更新二进制和资源时使用对应构建/更新流程并核对来源。
 
 ## 验证
 
@@ -152,7 +152,7 @@ Android Root、开机启动、模块命令、快捷设置磁贴、eBPF、热点�
 
 以下写法看起来不规范，但都是上一版已被证伪写法的替代品。不要以「重构」或「统一风格」为由改回去。
 
-- 分应用策略直接生成 `include_package` / `exclude_package` / `include_android_user`——包名转 UID 和 `user:package` 格式在应用分身与多用户场景下静默漏配。
+- 分应用策略按 `<user-id>:<package>` 保存并在 Go 中按用户查询 UID——把多个 Android 用户合并成包名或直接把包名交给 sing-box 会在应用分身场景下静默漏配。
 - Service API 与 Clash API 使用 `02_experimental.json`、`08_services.json` 中的固定监听与密钥——改回运行时随机 bootstrap 会让 WebUI 连不上核心且无任何报错。
 - Android 依赖由 `AppContainer` 与 `NetProxyViewModelFactory` 手工构造——引入 Hilt/Koin 需先有全项目架构决策。
 - Provider 与 selector 的默认值必须落到 `Auto/<group>`——回退到 `direct` 会让用户以为已代理而实际直连。
@@ -291,9 +291,9 @@ stopped -> preparing -> starting -> ready -> stopping -> stopped
 
 eBPF 只负责透明代理入站。停止服务由 sing-box 关闭并清理其 eBPF 程序、Map 和 TC 挂载。
 
-分应用配置保存包名和可选 Android 用户范围，`netproxy-native ebpf runtime` 直接生成 `include_package`、`exclude_package` 与 `include_android_user`，包名到 UID 的解析由 sing-box 在入站启动时完成。应用安装、重装、UID 变化或用户范围变化后，通过配置 reload 重新解析，不维护模块侧 UID 缓存。
+分应用配置保存 `<user-id>:<package>`，`netproxy-native ebpf runtime` 通过 Android package service 查询 UID 后生成 `include_uid` 或 `exclude_uid`。应用安装、重装、UID 变化或用户范围变化后，通过配置 reload 重新解析，不维护模块侧 UID 缓存；白名单自动包含 UID 0。
 
-本机 cgroup 与热点 shared-network 是可独立启用的数据路径。关闭本机 cgroup 时，运行时配置省略 cgroup 路径、原生 IPv6 策略、应用/UID 策略和本机 Map 字段；本机与共享网络同时关闭属于无效配置。
+本机 cgroup 与热点 shared-network 由 `EBPF_MODE` 选择。`local` 只输出 local 字段，`shared` 只输出 shared 字段，`hybrid` 同时输出两者；`shared` 与 `hybrid` 必须配置至少一个下游接口。
 
 ## sing-box 配置组合
 

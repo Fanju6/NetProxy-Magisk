@@ -1,7 +1,6 @@
 package com.fanjv.netproxy.feature.apps.presentation
 
 import androidx.compose.runtime.Immutable
-import com.fanjv.netproxy.feature.apps.model.UserInfo
 
 @Immutable
 data class AppInfoModel(
@@ -9,15 +8,15 @@ data class AppInfoModel(
     val label: String,
     val isProxied: Boolean,
     val userId: String = "0",
-    val userIds: List<String> = listOf(userId),
     val isSystem: Boolean = false
-)
+) {
+    val id: String get() = "$userId:$packageName"
+}
 
 @Immutable
 data class AppsUiState(
     val appProxyEnabled: Boolean = true,
     val appProxyMode: String = "blacklist",
-    val appAndroidUsers: Set<String> = emptySet(),
     val proxyApps: Set<String> = emptySet(),
     val bypassApps: Set<String> = emptySet(),
     val proxiedApps: Set<String> = emptySet(),
@@ -26,7 +25,6 @@ data class AppsUiState(
     val appSearchQuery: String = "",
     val searchResults: List<AppInfoModel> = emptyList(),
     val showSystemApps: Boolean = false,
-    val users: List<UserInfo> = listOf(UserInfo("0", "Owner")),
     val appSelectedFirst: Boolean = true,
     val appReverseSort: Boolean = false,
     val appShowPackageName: Boolean = true,

@@ -7,21 +7,20 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-
-	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 )
 
 // ProbeOptions 描述 sing-box eBPF 能力检查所需的运行参数。
 type ProbeOptions struct {
 	RequestedMode string
 	CoreMode      string
+	Network       []string
 	CgroupPath    string
 	Interface     string
 }
 
-// ResolveProbeOptions 根据当前 eBPF 配置解析能力检查范围，不执行配置校验。
+// ResolveProbeOptions 根据当前 eBPF 配置解析能力检查范围，并拒绝旧配置字段。
 func ResolveProbeOptions(path, requestedMode string) (ProbeOptions, error) {
-	values, err := moduleconfig.ReadStrict(path)
+	config, err := Load(path)
 	if err != nil {
 		return ProbeOptions{}, fmt.Errorf("读取 eBPF 配置失败: %w", err)
 	}
@@ -32,12 +31,10 @@ func ResolveProbeOptions(path, requestedMode string) (ProbeOptions, error) {
 	}
 	coreMode := requested
 	if requested == "configured" {
-		cgroupEnabled := enabledValue(values["EBPF_CGROUP_ENABLED"])
-		sharedEnabled := enabledValue(values["EBPF_SHARED_NETWORK"])
-		switch {
-		case cgroupEnabled && sharedEnabled:
+		switch config.Mode {
+		case "hybrid":
 			coreMode = "all"
-		case sharedEnabled:
+		case "shared":
 			coreMode = "shared-network"
 		default:
 			coreMode = "local"
@@ -52,15 +49,19 @@ func ResolveProbeOptions(path, requestedMode string) (ProbeOptions, error) {
 		return ProbeOptions{}, fmt.Errorf("eBPF 检查范围无效: %s", requestedMode)
 	}
 
-	interfaces := CommaSeparated(values["EBPF_SHARED_INTERFACES"])
+	network := append([]string{}, config.Network...)
+	if len(network) == 0 {
+		network = []string{"tcp", "udp"}
+	}
 	interfaceName := ""
-	if len(interfaces) > 0 {
-		interfaceName = interfaces[0]
+	if len(config.Shared.Interfaces) > 0 {
+		interfaceName = config.Shared.Interfaces[0]
 	}
 	return ProbeOptions{
 		RequestedMode: requested,
 		CoreMode:      coreMode,
-		CgroupPath:    strings.TrimSpace(values["EBPF_CGROUP_PATH"]),
+		Network:       network,
+		CgroupPath:    strings.TrimSpace(config.Local.CgroupPath),
 		Interface:     interfaceName,
 	}, nil
 }
@@ -68,6 +69,9 @@ func ResolveProbeOptions(path, requestedMode string) (ProbeOptions, error) {
 // Args 返回 sing-box tools ebpf status 的参数。
 func (o ProbeOptions) Args() []string {
 	args := []string{"tools", "ebpf", "status", "--mode", o.CoreMode}
+	if len(o.Network) > 0 {
+		args = append(args, "--network", strings.Join(o.Network, ","))
+	}
 	if o.CoreMode == "all" || o.CoreMode == "local" {
 		if o.CgroupPath != "" {
 			args = append(args, "--cgroup", o.CgroupPath)
@@ -180,13 +184,4 @@ func parsePlatform(raw string) (string, string) {
 		return "", ""
 	}
 	return strings.TrimSpace(match[1]), strings.TrimSpace(match[2])
-}
-
-func enabledValue(value string) bool {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "1", "true", "yes", "on":
-		return true
-	default:
-		return false
-	}
 }

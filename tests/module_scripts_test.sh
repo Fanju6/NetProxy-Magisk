@@ -60,6 +60,17 @@ check_mksh_compatible_helpers() {
 }
 
 #######################################
+# 确认默认透明代理配置不再携带 FakeIP 或内部 bpftool
+# 参数: 无
+# 返回: 0=通过，1=仍有旧生成物或默认字段。
+#######################################
+check_removed_legacy_ebpf_assets() {
+  [ ! -e "$MODULE_DIR/bin/bpftool" ]
+  ! grep -Rqi 'fakeip\|fake-ip\|198\.18\.0\.0/15\|fc00::/18\|store_fakeip' \
+    "$MODULE_DIR/config/singbox/confdir"
+}
+
+#######################################
 # 确认升级/卸载只通过 PID 感知的 Worker 入口操作
 #######################################
 check_worker_lifecycle() {
@@ -108,6 +119,7 @@ check_service_bridge
 check_action_bridge
 check_runtime_scripts
 check_mksh_compatible_helpers
+check_removed_legacy_ebpf_assets
 check_worker_lifecycle
 check_install_choices
 check_install_order

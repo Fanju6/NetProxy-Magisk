@@ -72,7 +72,7 @@ func (c *cli) help() {
   netproxyctl [--json] [--timeout <秒|时长>] sub list|show|add|edit|update|update-all|activate|remove|history|cancel
   netproxyctl [--json] [--timeout <秒|时长>] mode [rule|global|direct|AllowAds]
   netproxyctl [--json] [--timeout <秒|时长>] network evaluate --type <wifi|not_wifi> [--ssid <名称>]
-  netproxyctl [--json] [--timeout <秒|时长>] app list|mode|users|add|remove|enable|disable
+  netproxyctl [--json] [--timeout <秒|时长>] app list|mode|add|remove|enable|disable
   netproxyctl [--json] [--timeout <秒|时长>] ebpf status [configured|all|local|shared] [--raw]
   netproxyctl [--json] [--timeout <秒|时长>] config list|read|check|validate|apply
   netproxyctl [--json] [--timeout <秒|时长>] logs show|clear|export
