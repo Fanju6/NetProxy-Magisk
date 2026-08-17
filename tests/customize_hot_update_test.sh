@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # 文件: tests/customize_hot_update_test.sh
-# 功能: 验证 customize.sh 的后台热更新仅在安装器结束后原子切换模块并保留最新用户状态
+# 功能: 验证 customize.sh 的后台热更新仅在安装器结束后原子切换模块，保留最新用户状态但重置 ebpf.conf
 # 用法: sh tests/customize_hot_update_test.sh
 # 依赖: POSIX sh、awk、grep、mktemp、/proc
 
@@ -59,7 +59,7 @@ assert_file_contains() {
   }
 }
 
-test_hot_commit_preserves_latest_state() {
+test_hot_commit_preserves_latest_state_and_resets_ebpf() {
   extract_worker
   write_stage_module
   write_live_module
@@ -75,7 +75,7 @@ test_hot_commit_preserves_latest_state() {
   [ -z "$(find "$MODULE_ROOT/modules" -maxdepth 1 -type d -name '.netproxy.hot-update.*' -print -quit)" ]
   assert_file_contains "$LIVE/module.prop" 'version=test-new'
   assert_file_contains "$LIVE/config/module.conf" 'OUTBOUND_MODE=global'
-  assert_file_contains "$LIVE/config/ebpf/ebpf.conf" 'EBPF_DNS_MODE=hijack'
+  assert_file_contains "$LIVE/config/ebpf/ebpf.conf" 'EBPF_DNS_MODE=off'
   assert_file_contains "$LIVE/config/singbox/confdir/03_dns.json" 'live-confdir'
   assert_file_contains "$LIVE/data/catalog/default/provider.json" 'live-provider'
   [ ! -e "$LIVE/data/catalog/staging/download.tmp" ]
@@ -137,7 +137,7 @@ test_fresh_install_discards_existing_state() {
   assert_file_contains "$LIVE/data/catalog/default/provider.json" 'stage-provider'
 }
 
-test_hot_commit_preserves_latest_state
+test_hot_commit_preserves_latest_state_and_resets_ebpf
 test_invalid_stage_keeps_kernel_su_fallback
 test_hot_commit_through_su
 test_fresh_install_discards_existing_state

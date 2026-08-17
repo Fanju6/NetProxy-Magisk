@@ -31,7 +31,6 @@ readonly DATA_DIR="$LIVE_DIR/data"
 
 readonly PRESERVE_CONFIGS="
     module.conf
-    ebpf/ebpf.conf
     singbox/confdir
     singbox/rules/local/direct.json
     singbox/rules/local/proxy.json
@@ -132,7 +131,6 @@ set_perm_recursive() {
 #######################################
 has_existing_user_data() {
   [ -f "$CONFIG_DIR/module.conf" ] \
-    || [ -f "$CONFIG_DIR/ebpf/ebpf.conf" ] \
     || [ -d "$CONFIG_DIR/singbox/confdir" ] \
     || [ -d "$DATA_DIR/catalog" ]
 }
@@ -220,6 +218,7 @@ backup_config() {
   fi
 
   print_step "备份现有用户数据..."
+  print_warn "eBPF 入站配置已更新，将使用新版本默认 ebpf.conf"
 
   mkdir -p "$BACKUP_DIR" || return 1
   backup_catalog_data || return 1
@@ -492,7 +491,6 @@ merge_live_state() {
 
   for config_item in \
     module.conf \
-    ebpf/ebpf.conf \
     singbox/confdir \
     singbox/rules/local/direct.json \
     singbox/rules/local/proxy.json \
