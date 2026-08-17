@@ -54,24 +54,12 @@
       "currentCommit": "8e0987c5e1894a70cc2c4c3e2ffbfbcf0a36aeac",
       "currentSha256": "d2397b031e1761373fdabdc86193a21de14a253cdf937019855fe09888582061"
     },
-    {
-      "name": "bpftool 5.16.0",
-      "path": "src/module/bin/bpftool",
-      "url": "https://raw.githubusercontent.com/bnsmb/binaries-for-Android/main/binaries/bpftool_static_5.16.0",
-      "repo": "bnsmb/binaries-for-Android",
-      "ref": "main",
-      "sourcePath": "binaries/bpftool_static_5.16.0",
-      "kind": "android-arm64-executable",
-      "currentCommit": "e5a6d28cccb6e38afd91460e0e23ef85731fe0bb",
-      "currentSha256": "fef6ee1c65fac265743040abb70841cc46dc903e026a8396d95dd1687d1ffb4f"
-    }
   ],
   "singBox": {
     "path": "src/module/bin/sing-box",
     "repo": "reF1nd/sing-box",
     "tagPattern": "^v[0-9].*-reF1nd$",
     "currentVersion": "v1.14.0-beta.14-reF1nd",
-    "ndkVersion": "r29",
     "buildTags": [
       "with_quic",
       "with_utls",
@@ -80,7 +68,8 @@
       "with_tailscale",
       "badlinkname",
       "tfogo_checklinkname0",
-      "with_ebpf"
+      "with_ebpf",
+      "with_connection_history"
     ]
   },
   "githubRelease": [

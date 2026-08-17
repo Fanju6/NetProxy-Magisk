@@ -45,7 +45,6 @@ jobs:
           pattern="$(jq -r '.singBox.tagPattern' .github/resources.json)"
           current="$(jq -r '.singBox.currentVersion' .github/resources.json)"
           target="$(jq -r '.singBox.path' .github/resources.json)"
-          ndk_version="$(jq -r '.singBox.ndkVersion' .github/resources.json)"
           build_tags="$(jq -r '.singBox.buildTags | join(",")' .github/resources.json)"
           latest="$({
             gh api --paginate "repos/${repo}/tags?per_page=100" --jq '.[].name' |
@@ -69,7 +68,6 @@ jobs:
           echo "current_version=$current" >> "$GITHUB_OUTPUT"
           echo "latest_version=$latest" >> "$GITHUB_OUTPUT"
           echo "target=$target" >> "$GITHUB_OUTPUT"
-          echo "ndk_version=$ndk_version" >> "$GITHUB_OUTPUT"
           echo "build_tags=$build_tags" >> "$GITHUB_OUTPUT"
 
       - name: 拉取 sing-box 上游源码
@@ -108,24 +106,15 @@ jobs:
           go-version: ${{ steps.singbox_go.outputs.version }}
           cache-dependency-path: .sing-box-source/go.sum
 
-      - name: 配置 Android NDK
-        if: steps.singbox_check.outputs.changed == 'true'
-        id: setup_singbox_ndk
-        uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: ${{ steps.singbox_check.outputs.ndk_version }}
-
       - name: 更新 sing-box 内核
         if: steps.singbox_check.outputs.changed == 'true'
         id: singbox
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAGS: ${{ steps.singbox_check.outputs.build_tags }}
-          CGO_ENABLED: '1'
+          CGO_ENABLED: '0'
           GOOS: android
           GOARCH: arm64
-          CC: ${{ steps.setup_singbox_ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android35-clang
-          BPF_CLANG: ${{ steps.setup_singbox_ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android35-clang
           SING_BOX_TARGET: ${{ steps.singbox_check.outputs.target }}
           CURRENT_VERSION: ${{ steps.singbox_check.outputs.current_version }}
           LATEST_VERSION: ${{ steps.singbox_check.outputs.latest_version }}
@@ -143,6 +132,7 @@ jobs:
           file .sing-box-source/sing-box | grep -q 'ARM aarch64'
           go version -m .sing-box-source/sing-box | grep -q "${LATEST_VERSION#v}"
           go version -m .sing-box-source/sing-box | grep -q 'with_ebpf'
+          go version -m .sing-box-source/sing-box | grep -q 'with_connection_history'
           go version -m .sing-box-source/sing-box | grep -q 'with_gvisor'
           go version -m .sing-box-source/sing-box | grep -q 'with_tailscale'
 

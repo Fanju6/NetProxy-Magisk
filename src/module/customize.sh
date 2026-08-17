@@ -47,7 +47,6 @@ readonly EXECUTABLE_FILES="
     netproxyctl
     service.sh
     uninstall.sh
-    bin/bpftool
 "
 
 ################################################################################
