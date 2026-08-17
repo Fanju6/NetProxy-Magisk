@@ -60,14 +60,6 @@
         "outbound": "Proxy"
       },
       {
-        "ip_cidr": [
-          "198.18.0.0/15",
-          "fc00::/18"
-        ],
-        "action": "route",
-        "outbound": "Proxy"
-      },
-      {
         "rule_set": [
           "direct",
           "AppleCN"
