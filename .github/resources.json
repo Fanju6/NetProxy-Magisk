@@ -53,7 +53,7 @@
       "metadataPath": "sing-box/Rules/Proxy.json",
       "currentCommit": "8e0987c5e1894a70cc2c4c3e2ffbfbcf0a36aeac",
       "currentSha256": "d2397b031e1761373fdabdc86193a21de14a253cdf937019855fe09888582061"
-    },
+    }
   ],
   "singBox": {
     "path": "src/module/bin/sing-box",
