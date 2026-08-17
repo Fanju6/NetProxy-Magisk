@@ -128,17 +128,9 @@
         ],
         "action": "route",
         "server": "dns-direct"
-      },
-      {
-        "query_type": [
-          "A",
-          "AAAA"
-        ],
-        "action": "route",
-        "server": "remote"
       }
     ],
-    "final": "dns-direct",
+    "final": "dns-proxy",
     "optimistic": true,
     "strategy": "prefer_ipv4"
   }
