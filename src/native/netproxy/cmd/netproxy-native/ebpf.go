@@ -53,17 +53,29 @@ func runEBPF(ctx context.Context, args []string) error {
 		if err != nil {
 			return toError(err)
 		}
-		if err := ebpf.WriteAtomic(*outputPath, config); err != nil {
+		missingPackages, err := ebpf.WriteAtomic(*outputPath, config)
+		if err != nil {
 			return toError(err)
 		}
 		if *format == "text" {
+			for _, ref := range missingPackages {
+				fmt.Fprintf(os.Stderr, "WARN 分应用代理跳过未安装应用: %s\n", ref.String())
+			}
 			fmt.Fprintln(os.Stdout, *outputPath)
 			return nil
 		}
 		if *format != "json" {
 			return fmt.Errorf("ebpf runtime 不支持输出格式 %q", *format)
 		}
-		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "ebpf.runtime_generated", Message: "eBPF 运行时配置已生成", Data: map[string]string{"path": *outputPath}})
+		data := map[string]any{"path": *outputPath}
+		if len(missingPackages) > 0 {
+			skipped := make([]string, 0, len(missingPackages))
+			for _, ref := range missingPackages {
+				skipped = append(skipped, ref.String())
+			}
+			data["skipped_packages"] = skipped
+		}
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "ebpf.runtime_generated", Message: "eBPF 运行时配置已生成", Data: data})
 		return nil
 	case "status":
 		if strings.TrimSpace(*singBoxPath) == "" {

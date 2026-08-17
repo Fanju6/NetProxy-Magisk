@@ -285,18 +285,24 @@ func (c Config) Validate() error {
 	return nil
 }
 
-// PackageUIDResolver 将带用户范围的包名转换为 sing-box 可用的 UID。
-type PackageUIDResolver func([]PackageRef) ([]uint32, error)
+// PackageUIDResolver 将带用户范围的包名转换为 UID，并报告当前设备上不存在的引用。
+type PackageUIDResolver func([]PackageRef) (PackageUIDResolution, error)
+
+// BuildResult 描述生成的运行时文档以及被跳过的应用配置。
+type BuildResult struct {
+	Runtime         Runtime
+	MissingPackages []PackageRef
+}
 
 // Build 生成 sing-box eBPF inbound 的类型化运行时文档。
-func (c Config) Build() (Runtime, error) {
+func (c Config) Build() (BuildResult, error) {
 	return c.BuildWithResolver(ResolvePackageUIDs)
 }
 
 // BuildWithResolver 使用指定的包名解析器生成运行时文档，测试可注入确定性解析结果。
-func (c Config) BuildWithResolver(resolve PackageUIDResolver) (Runtime, error) {
+func (c Config) BuildWithResolver(resolve PackageUIDResolver) (BuildResult, error) {
 	if err := c.Validate(); err != nil {
-		return Runtime{}, err
+		return BuildResult{}, err
 	}
 	localEnabled := c.Mode == "local" || c.Mode == "hybrid"
 	sharedEnabled := c.Mode == "shared" || c.Mode == "hybrid"
@@ -310,6 +316,7 @@ func (c Config) BuildWithResolver(resolve PackageUIDResolver) (Runtime, error) {
 		BypassPrivateAddress: c.BypassPrivateAddress,
 		BypassRuleSet:        c.BypassRuleSets,
 	}
+	missing := make([]PackageRef, 0)
 	if localEnabled {
 		local := LocalRuntime{
 			CgroupPath:         c.Local.CgroupPath,
@@ -325,22 +332,24 @@ func (c Config) BuildWithResolver(resolve PackageUIDResolver) (Runtime, error) {
 		}
 		if c.AppProxyEnable {
 			if resolve == nil {
-				return Runtime{}, errors.New("eBPF 分应用策略需要包名 UID 解析器")
+				return BuildResult{}, errors.New("eBPF 分应用策略需要包名 UID 解析器")
 			}
 			switch c.AppProxyMode {
 			case "whitelist":
 				local.IncludeUID = append(local.IncludeUID, 0)
-				uids, err := resolve(c.ProxyPackages)
+				resolution, err := resolve(c.ProxyPackages)
 				if err != nil {
-					return Runtime{}, err
+					return BuildResult{}, err
 				}
-				local.IncludeUID = append(local.IncludeUID, uids...)
+				local.IncludeUID = append(local.IncludeUID, resolution.UIDs...)
+				missing = append(missing, resolution.Missing...)
 			case "blacklist":
-				uids, err := resolve(c.BypassPackages)
+				resolution, err := resolve(c.BypassPackages)
 				if err != nil {
-					return Runtime{}, err
+					return BuildResult{}, err
 				}
-				local.ExcludeUID = append(local.ExcludeUID, uids...)
+				local.ExcludeUID = append(local.ExcludeUID, resolution.UIDs...)
+				missing = append(missing, resolution.Missing...)
 			}
 		}
 		local.IncludeUID = uniqueUint32(local.IncludeUID)
@@ -361,7 +370,10 @@ func (c Config) BuildWithResolver(resolve PackageUIDResolver) (Runtime, error) {
 			},
 		}
 	}
-	return Runtime{Inbounds: []Inbound{inbound}}, nil
+	return BuildResult{
+		Runtime:         Runtime{Inbounds: []Inbound{inbound}},
+		MissingPackages: missing,
+	}, nil
 }
 
 // Runtime 是 sing-box 运行时配置文档。
@@ -438,22 +450,22 @@ func (i Inbound) MarshalJSON() ([]byte, error) {
 }
 
 // WriteAtomic 校验并原子写入运行时 eBPF 配置。
-func WriteAtomic(path string, config Config) error {
-	runtime, err := config.Build()
+func WriteAtomic(path string, config Config) ([]PackageRef, error) {
+	built, err := config.Build()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	content, err := json.MarshalIndent(runtime, "", "  ")
+	content, err := json.MarshalIndent(built.Runtime, "", "  ")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	content = append(content, '\n')
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
+		return nil, err
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".ebpf-")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	tmpPath := tmp.Name()
 	defer os.Remove(tmpPath)
@@ -464,9 +476,12 @@ func WriteAtomic(path string, config Config) error {
 		err = closeErr
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return os.Rename(tmpPath, path)
+	if err := os.Rename(tmpPath, path); err != nil {
+		return nil, err
+	}
+	return built.MissingPackages, nil
 }
 
 // ParsePackageRef 解析一个严格的 <用户ID>:<包名> 应用引用。

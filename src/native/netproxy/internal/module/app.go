@@ -102,8 +102,12 @@ func Prepare(ctx context.Context, options Options, allowEmpty bool) (PrepareResu
 	if err != nil {
 		return PrepareResult{}, err
 	}
-	if err := ebpf.WriteAtomic(ebpfPath, config); err != nil {
+	missingPackages, err := ebpf.WriteAtomic(ebpfPath, config)
+	if err != nil {
 		return PrepareResult{}, err
+	}
+	for _, ref := range missingPackages {
+		logService(options, "WARN", "ebpf.package", "skipped", "分应用代理跳过未安装应用: %s", ref.String())
 	}
 	return PrepareResult{RuntimeResult: runtime, Providers: providers, Outbounds: outbounds, EBPF: ebpfPath}, nil
 }

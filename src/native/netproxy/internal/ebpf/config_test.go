@@ -21,8 +21,8 @@ EBPF_SHARED_INCLUDE_SOURCE_CIDR="192.168.43.0/24,fd00::/64"
 EBPF_SHARED_INCLUDE_MAC_ADDRESS="02:11:22:33:44:55,AA:BB:CC:DD:EE:FF"
 EBPF_SHARED_STATE_CAPACITY=512
 `)
-	inbound := runtimeInbound(t, config, func(refs []PackageRef) ([]uint32, error) {
-		return []uint32{10123, 10124}, nil
+	inbound := runtimeInbound(t, config, func(refs []PackageRef) (PackageUIDResolution, error) {
+		return PackageUIDResolution{UIDs: []uint32{10123, 10124}}, nil
 	})
 	if inbound["mode"] != "hybrid" || inbound["bypass_private_address"] != false {
 		t.Fatalf("unexpected base inbound: %#v", inbound)
@@ -56,8 +56,8 @@ func TestWhitelistAlwaysIncludesRootUID(t *testing.T) {
 	config := loadFixture(t, `APP_PROXY_MODE="whitelist"
 PROXY_APPS_LIST="10:com.example.app"
 `)
-	inbound := runtimeInbound(t, config, func([]PackageRef) ([]uint32, error) {
-		return []uint32{10123}, nil
+	inbound := runtimeInbound(t, config, func([]PackageRef) (PackageUIDResolution, error) {
+		return PackageUIDResolution{UIDs: []uint32{10123}}, nil
 	})
 	local := inbound["local"].(map[string]any)
 	if got := local["include_uid"].([]any); !reflect.DeepEqual(got, []any{float64(0), float64(10123)}) {
@@ -65,6 +65,63 @@ PROXY_APPS_LIST="10:com.example.app"
 	}
 	if got, ok := local["include_package"]; ok && len(got.([]any)) != 0 {
 		t.Fatalf("application policy should be resolved to UID: %#v", got)
+	}
+}
+
+func TestMissingPackageRefsAreSkippedWithWarnings(t *testing.T) {
+	config := loadFixture(t, `APP_PROXY_MODE="whitelist"
+PROXY_APPS_LIST="0:com.example.installed,10:com.example.removed"
+`)
+	built, err := config.BuildWithResolver(func(refs []PackageRef) (PackageUIDResolution, error) {
+		if len(refs) != 2 {
+			t.Fatalf("unexpected package refs: %#v", refs)
+		}
+		return PackageUIDResolution{
+			UIDs:    []uint32{10123},
+			Missing: []PackageRef{refs[1]},
+		}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(built.MissingPackages, []PackageRef{{UserID: 10, Package: "com.example.removed"}}) {
+		t.Fatalf("unexpected missing package refs: %#v", built.MissingPackages)
+	}
+	if got := built.Runtime.Inbounds[0].Local.IncludeUID; !reflect.DeepEqual(got, []uint32{0, 10123}) {
+		t.Fatalf("missing package changed whitelist UIDs: %#v", got)
+	}
+}
+
+func TestBlacklistMissingPackageIsSkipped(t *testing.T) {
+	config := loadFixture(t, `APP_PROXY_MODE="blacklist"
+BYPASS_APPS_LIST="0:com.example.removed"
+`)
+	built, err := config.BuildWithResolver(func(refs []PackageRef) (PackageUIDResolution, error) {
+		return PackageUIDResolution{Missing: refs}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(built.MissingPackages, []PackageRef{{UserID: 0, Package: "com.example.removed"}}) {
+		t.Fatalf("unexpected missing package refs: %#v", built.MissingPackages)
+	}
+	if len(built.Runtime.Inbounds[0].Local.ExcludeUID) != 0 {
+		t.Fatalf("missing blacklist package produced an UID: %#v", built.Runtime.Inbounds[0].Local.ExcludeUID)
+	}
+}
+
+func TestWhitelistAllMissingKeepsRootUID(t *testing.T) {
+	config := loadFixture(t, `APP_PROXY_MODE="whitelist"
+PROXY_APPS_LIST="0:com.example.removed,10:com.example.otherremoved"
+`)
+	built, err := config.BuildWithResolver(func(refs []PackageRef) (PackageUIDResolution, error) {
+		return PackageUIDResolution{Missing: refs}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := built.Runtime.Inbounds[0].Local.IncludeUID; !reflect.DeepEqual(got, []uint32{0}) {
+		t.Fatalf("whitelist without installed packages lost root UID: %#v", got)
 	}
 }
 
@@ -131,13 +188,15 @@ func TestLoadRejectsRemovedConfiguration(t *testing.T) {
 func runtimeInbound(t *testing.T, config Config, resolve PackageUIDResolver) map[string]any {
 	t.Helper()
 	if resolve == nil {
-		resolve = func([]PackageRef) ([]uint32, error) { return []uint32{}, nil }
+		resolve = func([]PackageRef) (PackageUIDResolution, error) {
+			return PackageUIDResolution{UIDs: []uint32{}}, nil
+		}
 	}
-	runtime, err := config.BuildWithResolver(resolve)
+	built, err := config.BuildWithResolver(resolve)
 	if err != nil {
 		t.Fatal(err)
 	}
-	content, err := json.Marshal(runtime)
+	content, err := json.Marshal(built.Runtime)
 	if err != nil {
 		t.Fatal(err)
 	}
