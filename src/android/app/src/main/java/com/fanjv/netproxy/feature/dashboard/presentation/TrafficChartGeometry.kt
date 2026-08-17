@@ -23,6 +23,34 @@ internal fun trafficChartGeometry(samples: List<TrafficSample>): TrafficChartGeo
     )
 }
 
+internal fun interpolateTrafficChartGeometry(
+    from: TrafficChartGeometry,
+    to: TrafficChartGeometry,
+    progress: Float
+): TrafficChartGeometry {
+    val fraction = progress.coerceIn(0f, 1f)
+    if (fraction >= 1f) return to
+    return TrafficChartGeometry(
+        download = interpolateSeries(from.download, to.download, fraction),
+        upload = interpolateSeries(from.upload, to.upload, fraction)
+    )
+}
+
+private fun interpolateSeries(
+    from: List<Offset>,
+    to: List<Offset>,
+    progress: Float
+): List<Offset> = to.mapIndexed { index, target ->
+    val start = from.getOrNull(index) ?: return@mapIndexed target
+    Offset(
+        x = lerp(start.x, target.x, progress),
+        y = lerp(start.y, target.y, progress)
+    )
+}
+
+private fun lerp(start: Float, end: Float, progress: Float): Float =
+    start + (end - start) * progress
+
 private fun normalizedSeries(values: List<Long>, maxSpeed: Float): List<Offset> {
     if (values.isEmpty()) return listOf(Offset(0f, 0f), Offset(1f, 0f))
     if (values.size == 1) {

@@ -1,6 +1,9 @@
 package com.fanjv.netproxy.feature.dashboard.presentation
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -21,14 +24,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
@@ -118,6 +126,23 @@ private fun SpeedChart(
     val downloadColor = Color(0xFF2196F3)
     val uploadColor = Color(0xFF4CAF50)
     val geometry = remember(trafficSamples) { trafficChartGeometry(trafficSamples) }
+    var fromGeometry by remember { mutableStateOf(geometry) }
+    var targetGeometry by remember { mutableStateOf(geometry) }
+    val animationProgress = remember { Animatable(1f) }
+    LaunchedEffect(geometry) {
+        fromGeometry = targetGeometry
+        targetGeometry = geometry
+        animationProgress.snapTo(0f)
+        animationProgress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = 700, easing = FastOutSlowInEasing)
+        )
+    }
+    val animatedGeometry = interpolateTrafficChartGeometry(
+        from = fromGeometry,
+        to = targetGeometry,
+        progress = animationProgress.value
+    )
     val gridColor = colorScheme.onSurfaceVariantActions.copy(alpha = 0.12f)
     Canvas(modifier = modifier) {
         for (line in 1..3) {
@@ -133,9 +158,23 @@ private fun SpeedChart(
         fun drawSeries(points: List<Offset>, color: Color, alpha: Float) {
             if (points.isEmpty()) return
             val line = Path().apply {
-                moveTo(points.first().x * size.width, (1f - points.first().y) * size.height)
-                points.drop(1).forEach { point ->
-                    lineTo(point.x * size.width, (1f - point.y) * size.height)
+                val first = points.first()
+                moveTo(first.x * size.width, (1f - first.y) * size.height)
+                for (index in 1 until points.lastIndex) {
+                    val current = points[index]
+                    val next = points[index + 1]
+                    val midpointX = (current.x + next.x) / 2f
+                    val midpointY = (current.y + next.y) / 2f
+                    quadraticTo(
+                        current.x * size.width,
+                        (1f - current.y) * size.height,
+                        midpointX * size.width,
+                        (1f - midpointY) * size.height
+                    )
+                }
+                if (points.size > 1) {
+                    val last = points.last()
+                    lineTo(last.x * size.width, (1f - last.y) * size.height)
                 }
             }
             val fill = Path().apply {
@@ -148,10 +187,18 @@ private fun SpeedChart(
                 path = fill,
                 brush = Brush.verticalGradient(listOf(color.copy(alpha = alpha), Color.Transparent))
             )
-            drawPath(path = line, color = color, style = Stroke(width = 2.dp.toPx()))
+            drawPath(
+                path = line,
+                color = color,
+                style = Stroke(
+                    width = 2.dp.toPx(),
+                    cap = StrokeCap.Round,
+                    join = StrokeJoin.Round
+                )
+            )
         }
-        drawSeries(geometry.download, downloadColor, 0.25f)
-        drawSeries(geometry.upload, uploadColor, 0.15f)
+        drawSeries(animatedGeometry.download, downloadColor, 0.25f)
+        drawSeries(animatedGeometry.upload, uploadColor, 0.15f)
     }
 }
 

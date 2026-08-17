@@ -1,5 +1,6 @@
 package com.fanjv.netproxy.feature.dashboard.presentation
 
+import androidx.compose.ui.geometry.Offset
 import com.fanjv.netproxy.core.module.ServiceStatusSnapshot
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -54,6 +55,25 @@ class TrafficTimelineReducerTest {
 
         assertEquals(0f, geometry.download.first().x)
         assertEquals(1f, geometry.download.last().x)
+    }
+
+    @Test
+    fun `geometry interpolation follows the target frame`() {
+        val from = TrafficChartGeometry(
+            download = listOf(Offset(0f, 0f), Offset(1f, 0.2f)),
+            upload = listOf(Offset(0f, 0.4f), Offset(1f, 0.6f))
+        )
+        val to = TrafficChartGeometry(
+            download = listOf(Offset(0f, 0.4f), Offset(0.5f, 0.8f), Offset(1f, 1f)),
+            upload = listOf(Offset(0f, 0.2f), Offset(1f, 0.1f))
+        )
+
+        val halfway = interpolateTrafficChartGeometry(from, to, 0.5f)
+
+        assertEquals(3, halfway.download.size)
+        assertEquals(0.2f, halfway.download[0].y)
+        assertEquals(to.download[2], halfway.download[2])
+        assertEquals(to, interpolateTrafficChartGeometry(from, to, 1f))
     }
 
     private fun service(download: Long, upload: Long) =
