@@ -3563,6 +3563,9 @@
             "off"
           ]
         },
+        "bypass_private_address": {
+          "type": "boolean"
+        },
         "include_uid": {
           "anyOf": [
             {
@@ -3703,6 +3706,9 @@
             "always",
             "off"
           ]
+        },
+        "bypass_private_address": {
+          "type": "boolean"
         },
         "include_source_cidr": {
           "anyOf": [
@@ -6455,9 +6461,6 @@
                 "respect_bypass",
                 "off"
               ]
-            },
-            "bypass_private_address": {
-              "type": "boolean"
             },
             "bypass_rule_set": {
               "anyOf": [
