@@ -73,16 +73,16 @@ internal class SettingsViewModel(
     fun setNetwork(network: String) {
         val settings = _state.value.proxySettings
         val updates = mutableListOf("EBPF_NETWORK" to network)
-        if (network == "tcp" && settings.mode in setOf("shared", "hybrid") && settings.dnsMode == "hijack") {
+        if (network == "tcp" && requiresSharedUdp(settings.mode, settings.dnsMode)) {
             updates += "EBPF_DNS_MODE" to "off"
         }
         updateProxySettings(updates)
     }
 
-    fun setDnsHijackEnabled(enabled: Boolean) {
+    fun setDnsMode(mode: String) {
         val settings = _state.value.proxySettings
-        val updates = mutableListOf("EBPF_DNS_MODE" to if (enabled) "hijack" else "off")
-        if (enabled && settings.mode in setOf("shared", "hybrid") && settings.network == "tcp") {
+        val updates = mutableListOf("EBPF_DNS_MODE" to mode)
+        if (settings.network == "tcp" && requiresSharedUdp(settings.mode, mode)) {
             updates += "EBPF_NETWORK" to ""
         }
         updateProxySettings(updates)
@@ -91,10 +91,24 @@ internal class SettingsViewModel(
     fun setMode(mode: String) {
         val settings = _state.value.proxySettings
         val updates = mutableListOf("EBPF_MODE" to mode)
-        if (mode in setOf("shared", "hybrid") && settings.dnsMode == "hijack" && settings.network == "tcp") {
+        if (settings.network == "tcp" && requiresSharedUdp(mode, settings.dnsMode)) {
             updates += "EBPF_NETWORK" to ""
         }
         updateProxySettings(updates)
+    }
+
+    fun setBypassPrivateAddress(enabled: Boolean) {
+        val value = if (enabled) "1" else "0"
+        val keys = when (_state.value.proxySettings.mode) {
+            "shared" -> listOf("EBPF_SHARED_BYPASS_PRIVATE_ADDRESS")
+            "hybrid" -> listOf(
+                "EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS",
+                "EBPF_SHARED_BYPASS_PRIVATE_ADDRESS"
+            )
+
+            else -> listOf("EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS")
+        }
+        updateProxySettings(keys.map { it to value })
     }
 
     fun updateProxySetting(key: String, value: String) {
@@ -209,8 +223,16 @@ internal class SettingsViewModel(
                     proxySettings = settings.copy(localIpv6Mode = value)
                 )
 
-                "EBPF_BYPASS_PRIVATE_ADDRESS" -> current.copy(
-                    proxySettings = settings.copy(bypassPrivateAddress = value == "1")
+                "EBPF_SHARED_IPV6_MODE" -> current.copy(
+                    proxySettings = settings.copy(sharedIpv6Mode = value)
+                )
+
+                "EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS" -> current.copy(
+                    proxySettings = settings.copy(localBypassPrivateAddress = value == "1")
+                )
+
+                "EBPF_SHARED_BYPASS_PRIVATE_ADDRESS" -> current.copy(
+                    proxySettings = settings.copy(sharedBypassPrivateAddress = value == "1")
                 )
 
                 "EBPF_BYPASS_RULE_SET" -> current.copy(
@@ -266,13 +288,17 @@ internal class SettingsViewModel(
         fun enabled(key: String, default: Boolean = false) =
             ebpf[key]?.let { it == "1" } ?: default
 
+        val mode = value("EBPF_MODE", "local").takeIf { it in modes } ?: "local"
         return ProxySettings(
-            mode = value("EBPF_MODE", "local").takeIf { it in modes } ?: "local",
+            mode = mode,
             network = value("EBPF_NETWORK", ""),
             dnsMode = value("EBPF_DNS_MODE", "hijack"),
             localIpv6Mode = value("EBPF_LOCAL_IPV6_MODE", "auto")
                 .takeIf { it in ipv6Modes } ?: "auto",
-            bypassPrivateAddress = enabled("EBPF_BYPASS_PRIVATE_ADDRESS", true),
+            sharedIpv6Mode = value("EBPF_SHARED_IPV6_MODE", "always")
+                .takeIf { it in sharedIpv6Modes } ?: "always",
+            localBypassPrivateAddress = enabled("EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS", true),
+            sharedBypassPrivateAddress = enabled("EBPF_SHARED_BYPASS_PRIVATE_ADDRESS", true),
             bypassRuleSet = value("EBPF_BYPASS_RULE_SET", "direct,ChinaIP"),
             sharedInterfaces = value("EBPF_SHARED_INTERFACES", "wlan2"),
             sharedIncludeSourceCidrs = value("EBPF_SHARED_INCLUDE_SOURCE_CIDR", ""),
@@ -292,6 +318,7 @@ internal class SettingsViewModel(
             "EBPF_NETWORK",
             "EBPF_DNS_MODE",
             "EBPF_LOCAL_IPV6_MODE",
+            "EBPF_SHARED_IPV6_MODE",
             "EBPF_BYPASS_RULE_SET",
             "EBPF_SHARED_INTERFACES",
             "EBPF_SHARED_INCLUDE_SOURCE_CIDR",
@@ -300,6 +327,7 @@ internal class SettingsViewModel(
             "EBPF_SHARED_EXCLUDE_MAC_ADDRESS"
         )
         val ipv6Modes = setOf("always", "auto", "off")
+        val sharedIpv6Modes = setOf("always", "off")
         val modes = setOf("local", "shared", "hybrid")
         val commaSeparatedKeys = setOf(
             "EBPF_BYPASS_RULE_SET",
@@ -319,3 +347,6 @@ internal class SettingsViewModel(
             .joinToString(",")
     }
 }
+
+internal fun requiresSharedUdp(mode: String, dnsMode: String): Boolean =
+    mode in setOf("shared", "hybrid") && dnsMode != "off"

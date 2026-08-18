@@ -13,7 +13,8 @@ func TestBuildRuntimeUsesNewLocalAndSharedSchema(t *testing.T) {
 	config := loadFixture(t, `EBPF_MODE="hybrid"
 EBPF_NETWORK="tcp,udp"
 EBPF_LOCAL_IPV6_MODE="auto"
-EBPF_BYPASS_PRIVATE_ADDRESS=0
+EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS=0
+EBPF_SHARED_BYPASS_PRIVATE_ADDRESS=0
 APP_PROXY_MODE="blacklist"
 BYPASS_APPS_LIST="0:com.android.chrome,10:org.telegram.messenger"
 EBPF_SHARED_INTERFACES="wlan2,wlan0"
@@ -24,17 +25,23 @@ EBPF_SHARED_STATE_CAPACITY=512
 	inbound := runtimeInbound(t, config, func(refs []PackageRef) (PackageUIDResolution, error) {
 		return PackageUIDResolution{UIDs: []uint32{10123, 10124}}, nil
 	})
-	if inbound["mode"] != "hybrid" || inbound["bypass_private_address"] != false {
+	if inbound["mode"] != "hybrid" {
 		t.Fatalf("unexpected base inbound: %#v", inbound)
 	}
+	if _, exists := inbound["bypass_private_address"]; exists {
+		t.Fatalf("top-level bypass_private_address is no longer supported: %#v", inbound)
+	}
 	local := inbound["local"].(map[string]any)
-	if local["ipv6_mode"] != "auto" || local["include_uid"] != nil {
+	if local["ipv6_mode"] != "auto" || local["bypass_private_address"] != false || local["include_uid"] != nil {
 		t.Fatalf("unexpected local fields: %#v", local)
 	}
 	if got := local["exclude_uid"].([]any); !reflect.DeepEqual(got, []any{float64(10123), float64(10124)}) {
 		t.Fatalf("unexpected resolved app UIDs: %#v", got)
 	}
 	shared := inbound["shared"].(map[string]any)
+	if shared["bypass_private_address"] != false {
+		t.Fatalf("unexpected shared private address policy: %#v", shared)
+	}
 	if got := len(shared["interface"].([]any)); got != 2 {
 		t.Fatalf("unexpected shared interfaces: %d", got)
 	}
@@ -173,6 +180,7 @@ func TestLoadRejectsRemovedConfiguration(t *testing.T) {
 	for _, content := range []string{
 		"EBPF_CGROUP_ENABLED=1\n",
 		"EBPF_SHARED_NETWORK=1\n",
+		"EBPF_BYPASS_PRIVATE_ADDRESS=1\n",
 		"APP_ANDROID_USERS=0\n",
 		"PROXY_APPS_LIST=\"com.example.app\"\n",
 	} {

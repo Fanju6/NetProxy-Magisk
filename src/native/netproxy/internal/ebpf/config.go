@@ -27,76 +27,78 @@ const (
 )
 
 var allowedKeys = map[string]bool{
-	"EBPF_MODE":                       true,
-	"EBPF_NETWORK":                    true,
-	"EBPF_UDP_TIMEOUT":                true,
-	"EBPF_DNS_MODE":                   true,
-	"EBPF_BYPASS_PRIVATE_ADDRESS":     true,
-	"EBPF_BYPASS_RULE_SET":            true,
-	"EBPF_LOCAL_CGROUP_PATH":          true,
-	"EBPF_LOCAL_IPV6_MODE":            true,
-	"EBPF_LOCAL_INCLUDE_UID":          true,
-	"EBPF_LOCAL_INCLUDE_UID_RANGE":    true,
-	"EBPF_LOCAL_EXCLUDE_UID":          true,
-	"EBPF_LOCAL_EXCLUDE_UID_RANGE":    true,
-	"EBPF_LOCAL_INCLUDE_ANDROID_USER": true,
-	"EBPF_LOCAL_INCLUDE_PACKAGE":      true,
-	"EBPF_LOCAL_EXCLUDE_PACKAGE":      true,
-	"EBPF_LOCAL_STATE_CAPACITY":       true,
-	"EBPF_SHARED_INTERFACES":          true,
-	"EBPF_SHARED_IPV6_MODE":           true,
-	"EBPF_SHARED_INCLUDE_SOURCE_CIDR": true,
-	"EBPF_SHARED_EXCLUDE_SOURCE_CIDR": true,
-	"EBPF_SHARED_INCLUDE_MAC_ADDRESS": true,
-	"EBPF_SHARED_EXCLUDE_MAC_ADDRESS": true,
-	"EBPF_SHARED_STATE_CAPACITY":      true,
-	"EBPF_SHARED_TC_PRIORITY":         true,
-	"APP_PROXY_ENABLE":                true,
-	"APP_PROXY_MODE":                  true,
-	"PROXY_APPS_LIST":                 true,
-	"BYPASS_APPS_LIST":                true,
+	"EBPF_MODE":                          true,
+	"EBPF_NETWORK":                       true,
+	"EBPF_UDP_TIMEOUT":                   true,
+	"EBPF_DNS_MODE":                      true,
+	"EBPF_BYPASS_RULE_SET":               true,
+	"EBPF_LOCAL_CGROUP_PATH":             true,
+	"EBPF_LOCAL_IPV6_MODE":               true,
+	"EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS":  true,
+	"EBPF_LOCAL_INCLUDE_UID":             true,
+	"EBPF_LOCAL_INCLUDE_UID_RANGE":       true,
+	"EBPF_LOCAL_EXCLUDE_UID":             true,
+	"EBPF_LOCAL_EXCLUDE_UID_RANGE":       true,
+	"EBPF_LOCAL_INCLUDE_ANDROID_USER":    true,
+	"EBPF_LOCAL_INCLUDE_PACKAGE":         true,
+	"EBPF_LOCAL_EXCLUDE_PACKAGE":         true,
+	"EBPF_LOCAL_STATE_CAPACITY":          true,
+	"EBPF_SHARED_INTERFACES":             true,
+	"EBPF_SHARED_IPV6_MODE":              true,
+	"EBPF_SHARED_BYPASS_PRIVATE_ADDRESS": true,
+	"EBPF_SHARED_INCLUDE_SOURCE_CIDR":    true,
+	"EBPF_SHARED_EXCLUDE_SOURCE_CIDR":    true,
+	"EBPF_SHARED_INCLUDE_MAC_ADDRESS":    true,
+	"EBPF_SHARED_EXCLUDE_MAC_ADDRESS":    true,
+	"EBPF_SHARED_STATE_CAPACITY":         true,
+	"EBPF_SHARED_TC_PRIORITY":            true,
+	"APP_PROXY_ENABLE":                   true,
+	"APP_PROXY_MODE":                     true,
+	"PROXY_APPS_LIST":                    true,
+	"BYPASS_APPS_LIST":                   true,
 }
 
 // Config 描述 ebpf.conf 的类型化配置。
 type Config struct {
-	Mode                 string
-	Network              []string
-	UDPTimeout           string
-	DNSMode              string
-	BypassPrivateAddress bool
-	BypassRuleSets       []string
-	Local                LocalConfig
-	Shared               SharedConfig
-	AppProxyEnable       bool
-	AppProxyMode         string
-	ProxyPackages        []PackageRef
-	BypassPackages       []PackageRef
+	Mode           string
+	Network        []string
+	UDPTimeout     string
+	DNSMode        string
+	BypassRuleSets []string
+	Local          LocalConfig
+	Shared         SharedConfig
+	AppProxyEnable bool
+	AppProxyMode   string
+	ProxyPackages  []PackageRef
+	BypassPackages []PackageRef
 }
 
 // LocalConfig 描述 sing-box eBPF 的本机数据路径。
 type LocalConfig struct {
-	CgroupPath         string
-	IPv6Mode           string
-	IncludeUID         []uint32
-	IncludeUIDRange    []string
-	ExcludeUID         []uint32
-	ExcludeUIDRange    []string
-	IncludeAndroidUser []int
-	IncludePackage     []string
-	ExcludePackage     []string
-	StateCapacity      uint32
+	CgroupPath           string
+	IPv6Mode             string
+	BypassPrivateAddress bool
+	IncludeUID           []uint32
+	IncludeUIDRange      []string
+	ExcludeUID           []uint32
+	ExcludeUIDRange      []string
+	IncludeAndroidUser   []int
+	IncludePackage       []string
+	ExcludePackage       []string
+	StateCapacity        uint32
 }
 
 // SharedConfig 描述 sing-box eBPF 的共享网络数据路径。
 type SharedConfig struct {
-	Interfaces        []string
-	IPv6Mode          string
-	IncludeSourceCIDR []string
-	ExcludeSourceCIDR []string
-	IncludeMACAddress []string
-	ExcludeMACAddress []string
-	StateCapacity     uint32
-	TCPriority        uint16
+	Interfaces           []string
+	IPv6Mode             string
+	BypassPrivateAddress bool
+	IncludeSourceCIDR    []string
+	ExcludeSourceCIDR    []string
+	IncludeMACAddress    []string
+	ExcludeMACAddress    []string
+	StateCapacity        uint32
+	TCPriority           uint16
 }
 
 // PackageRef 是一个带 Android 用户范围的应用包名。
@@ -137,20 +139,21 @@ func Load(path string) (Config, error) {
 		}
 	}
 	config := Config{
-		Mode:                 defaultMode,
-		UDPTimeout:           defaultUDPTimeout,
-		DNSMode:              "hijack",
-		BypassPrivateAddress: true,
-		BypassRuleSets:       []string{"direct", "ChinaIP"},
+		Mode:           defaultMode,
+		UDPTimeout:     defaultUDPTimeout,
+		DNSMode:        "hijack",
+		BypassRuleSets: []string{"direct", "ChinaIP"},
 		Local: LocalConfig{
-			IPv6Mode:      defaultLocalIPv6Mode,
-			StateCapacity: defaultStateCapacity,
+			IPv6Mode:             defaultLocalIPv6Mode,
+			BypassPrivateAddress: true,
+			StateCapacity:        defaultStateCapacity,
 		},
 		Shared: SharedConfig{
-			Interfaces:    []string{defaultSharedIface},
-			IPv6Mode:      defaultSharedIPv6Mode,
-			StateCapacity: defaultStateCapacity,
-			TCPriority:    defaultTCPriority,
+			Interfaces:           []string{defaultSharedIface},
+			IPv6Mode:             defaultSharedIPv6Mode,
+			BypassPrivateAddress: true,
+			StateCapacity:        defaultStateCapacity,
+			TCPriority:           defaultTCPriority,
 		},
 		AppProxyEnable: true,
 		AppProxyMode:   "blacklist",
@@ -160,14 +163,14 @@ func Load(path string) (Config, error) {
 	config.Network = CommaSeparated(valueOr(values, "EBPF_NETWORK", ""))
 	config.UDPTimeout = valueOr(values, "EBPF_UDP_TIMEOUT", config.UDPTimeout)
 	config.DNSMode = valueOr(values, "EBPF_DNS_MODE", config.DNSMode)
-	config.BypassPrivateAddress, parseErr = boolValue(values, "EBPF_BYPASS_PRIVATE_ADDRESS", config.BypassPrivateAddress)
-	if parseErr != nil {
-		return Config{}, parseErr
-	}
 	config.BypassRuleSets = CommaSeparated(valueOr(values, "EBPF_BYPASS_RULE_SET", "direct,ChinaIP"))
 
 	config.Local.CgroupPath = valueOr(values, "EBPF_LOCAL_CGROUP_PATH", "")
 	config.Local.IPv6Mode = valueOr(values, "EBPF_LOCAL_IPV6_MODE", config.Local.IPv6Mode)
+	config.Local.BypassPrivateAddress, parseErr = boolValue(values, "EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS", config.Local.BypassPrivateAddress)
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
 	config.Local.IncludeUID, parseErr = parseUint32List(values, "EBPF_LOCAL_INCLUDE_UID")
 	if parseErr != nil {
 		return Config{}, parseErr
@@ -203,6 +206,10 @@ func Load(path string) (Config, error) {
 
 	config.Shared.Interfaces = CommaSeparated(valueOr(values, "EBPF_SHARED_INTERFACES", defaultSharedIface))
 	config.Shared.IPv6Mode = valueOr(values, "EBPF_SHARED_IPV6_MODE", config.Shared.IPv6Mode)
+	config.Shared.BypassPrivateAddress, parseErr = boolValue(values, "EBPF_SHARED_BYPASS_PRIVATE_ADDRESS", config.Shared.BypassPrivateAddress)
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
 	config.Shared.IncludeSourceCIDR, parseErr = parseCIDRs(valueOr(values, "EBPF_SHARED_INCLUDE_SOURCE_CIDR", ""), "EBPF_SHARED_INCLUDE_SOURCE_CIDR")
 	if parseErr != nil {
 		return Config{}, parseErr
@@ -307,28 +314,28 @@ func (c Config) BuildWithResolver(resolve PackageUIDResolver) (BuildResult, erro
 	localEnabled := c.Mode == "local" || c.Mode == "hybrid"
 	sharedEnabled := c.Mode == "shared" || c.Mode == "hybrid"
 	inbound := Inbound{
-		Type:                 "ebpf",
-		Tag:                  "ebpf-in",
-		Mode:                 c.Mode,
-		Network:              c.Network,
-		UDPTimeout:           c.UDPTimeout,
-		DNSMode:              c.DNSMode,
-		BypassPrivateAddress: c.BypassPrivateAddress,
-		BypassRuleSet:        c.BypassRuleSets,
+		Type:          "ebpf",
+		Tag:           "ebpf-in",
+		Mode:          c.Mode,
+		Network:       c.Network,
+		UDPTimeout:    c.UDPTimeout,
+		DNSMode:       c.DNSMode,
+		BypassRuleSet: c.BypassRuleSets,
 	}
 	missing := make([]PackageRef, 0)
 	if localEnabled {
 		local := LocalRuntime{
-			CgroupPath:         c.Local.CgroupPath,
-			IPv6Mode:           c.Local.IPv6Mode,
-			IncludeUID:         append([]uint32{}, c.Local.IncludeUID...),
-			IncludeUIDRange:    append([]string{}, c.Local.IncludeUIDRange...),
-			ExcludeUID:         append([]uint32{}, c.Local.ExcludeUID...),
-			ExcludeUIDRange:    append([]string{}, c.Local.ExcludeUIDRange...),
-			IncludeAndroidUser: append([]int{}, c.Local.IncludeAndroidUser...),
-			IncludePackage:     append([]string{}, c.Local.IncludePackage...),
-			ExcludePackage:     append([]string{}, c.Local.ExcludePackage...),
-			StateCapacity:      c.Local.StateCapacity,
+			CgroupPath:           c.Local.CgroupPath,
+			IPv6Mode:             c.Local.IPv6Mode,
+			BypassPrivateAddress: c.Local.BypassPrivateAddress,
+			IncludeUID:           append([]uint32{}, c.Local.IncludeUID...),
+			IncludeUIDRange:      append([]string{}, c.Local.IncludeUIDRange...),
+			ExcludeUID:           append([]uint32{}, c.Local.ExcludeUID...),
+			ExcludeUIDRange:      append([]string{}, c.Local.ExcludeUIDRange...),
+			IncludeAndroidUser:   append([]int{}, c.Local.IncludeAndroidUser...),
+			IncludePackage:       append([]string{}, c.Local.IncludePackage...),
+			ExcludePackage:       append([]string{}, c.Local.ExcludePackage...),
+			StateCapacity:        c.Local.StateCapacity,
 		}
 		if c.AppProxyEnable {
 			if resolve == nil {
@@ -358,13 +365,14 @@ func (c Config) BuildWithResolver(resolve PackageUIDResolver) (BuildResult, erro
 	}
 	if sharedEnabled {
 		inbound.Shared = &SharedRuntime{
-			Interface:         c.Shared.Interfaces,
-			IPv6Mode:          c.Shared.IPv6Mode,
-			IncludeSourceCIDR: c.Shared.IncludeSourceCIDR,
-			ExcludeSourceCIDR: c.Shared.ExcludeSourceCIDR,
-			IncludeMACAddress: c.Shared.IncludeMACAddress,
-			ExcludeMACAddress: c.Shared.ExcludeMACAddress,
-			StateCapacity:     c.Shared.StateCapacity,
+			Interface:            c.Shared.Interfaces,
+			IPv6Mode:             c.Shared.IPv6Mode,
+			BypassPrivateAddress: c.Shared.BypassPrivateAddress,
+			IncludeSourceCIDR:    c.Shared.IncludeSourceCIDR,
+			ExcludeSourceCIDR:    c.Shared.ExcludeSourceCIDR,
+			IncludeMACAddress:    c.Shared.IncludeMACAddress,
+			ExcludeMACAddress:    c.Shared.ExcludeMACAddress,
+			StateCapacity:        c.Shared.StateCapacity,
 			Advanced: SharedAdvancedRuntime{
 				TCPriority: c.Shared.TCPriority,
 			},
@@ -383,42 +391,43 @@ type Runtime struct {
 
 // Inbound 是新 eBPF 入站的固定字段模型。
 type Inbound struct {
-	Type                 string
-	Tag                  string
-	Mode                 string
-	Network              []string
-	UDPTimeout           string
-	DNSMode              string
-	BypassPrivateAddress bool
-	BypassRuleSet        []string
-	Local                *LocalRuntime
-	Shared               *SharedRuntime
+	Type          string
+	Tag           string
+	Mode          string
+	Network       []string
+	UDPTimeout    string
+	DNSMode       string
+	BypassRuleSet []string
+	Local         *LocalRuntime
+	Shared        *SharedRuntime
 }
 
 // LocalRuntime 是仅在 local 或 hybrid 模式输出的字段。
 type LocalRuntime struct {
-	CgroupPath         string   `json:"cgroup_path,omitempty"`
-	IPv6Mode           string   `json:"ipv6_mode,omitempty"`
-	IncludeUID         []uint32 `json:"include_uid,omitempty"`
-	IncludeUIDRange    []string `json:"include_uid_range,omitempty"`
-	ExcludeUID         []uint32 `json:"exclude_uid,omitempty"`
-	ExcludeUIDRange    []string `json:"exclude_uid_range,omitempty"`
-	IncludeAndroidUser []int    `json:"include_android_user,omitempty"`
-	IncludePackage     []string `json:"include_package,omitempty"`
-	ExcludePackage     []string `json:"exclude_package,omitempty"`
-	StateCapacity      uint32   `json:"state_capacity,omitempty"`
+	CgroupPath           string   `json:"cgroup_path,omitempty"`
+	IPv6Mode             string   `json:"ipv6_mode,omitempty"`
+	BypassPrivateAddress bool     `json:"bypass_private_address"`
+	IncludeUID           []uint32 `json:"include_uid,omitempty"`
+	IncludeUIDRange      []string `json:"include_uid_range,omitempty"`
+	ExcludeUID           []uint32 `json:"exclude_uid,omitempty"`
+	ExcludeUIDRange      []string `json:"exclude_uid_range,omitempty"`
+	IncludeAndroidUser   []int    `json:"include_android_user,omitempty"`
+	IncludePackage       []string `json:"include_package,omitempty"`
+	ExcludePackage       []string `json:"exclude_package,omitempty"`
+	StateCapacity        uint32   `json:"state_capacity,omitempty"`
 }
 
 // SharedRuntime 是仅在 shared 或 hybrid 模式输出的字段。
 type SharedRuntime struct {
-	Interface         []string              `json:"interface,omitempty"`
-	IPv6Mode          string                `json:"ipv6_mode,omitempty"`
-	IncludeSourceCIDR []string              `json:"include_source_cidr,omitempty"`
-	ExcludeSourceCIDR []string              `json:"exclude_source_cidr,omitempty"`
-	IncludeMACAddress []string              `json:"include_mac_address,omitempty"`
-	ExcludeMACAddress []string              `json:"exclude_mac_address,omitempty"`
-	StateCapacity     uint32                `json:"state_capacity,omitempty"`
-	Advanced          SharedAdvancedRuntime `json:"advanced,omitempty"`
+	Interface            []string              `json:"interface,omitempty"`
+	IPv6Mode             string                `json:"ipv6_mode,omitempty"`
+	BypassPrivateAddress bool                  `json:"bypass_private_address"`
+	IncludeSourceCIDR    []string              `json:"include_source_cidr,omitempty"`
+	ExcludeSourceCIDR    []string              `json:"exclude_source_cidr,omitempty"`
+	IncludeMACAddress    []string              `json:"include_mac_address,omitempty"`
+	ExcludeMACAddress    []string              `json:"exclude_mac_address,omitempty"`
+	StateCapacity        uint32                `json:"state_capacity,omitempty"`
+	Advanced             SharedAdvancedRuntime `json:"advanced,omitempty"`
 }
 
 // SharedAdvancedRuntime 是 shared 数据路径的高级内核参数。
@@ -429,13 +438,12 @@ type SharedAdvancedRuntime struct {
 // MarshalJSON 只输出与当前 mode 对应的数据路径，避免 sing-box 拒绝无效字段。
 func (i Inbound) MarshalJSON() ([]byte, error) {
 	value := map[string]any{
-		"type":                   i.Type,
-		"tag":                    i.Tag,
-		"mode":                   i.Mode,
-		"udp_timeout":            i.UDPTimeout,
-		"dns_mode":               i.DNSMode,
-		"bypass_private_address": i.BypassPrivateAddress,
-		"bypass_rule_set":        i.BypassRuleSet,
+		"type":            i.Type,
+		"tag":             i.Tag,
+		"mode":            i.Mode,
+		"udp_timeout":     i.UDPTimeout,
+		"dns_mode":        i.DNSMode,
+		"bypass_rule_set": i.BypassRuleSet,
 	}
 	if len(i.Network) > 0 {
 		value["network"] = i.Network

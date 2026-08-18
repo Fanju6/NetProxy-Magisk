@@ -226,6 +226,50 @@ class SingBoxSchemaValidatorTest {
     }
 
     @Test
+    fun bundledSchemaScopesEbpfPrivateAddressToDataPlanes() = runBlocking {
+        val schemaFile = sequenceOf(
+            File("src/main/assets/sing-box.schema.json"),
+            File("app/src/main/assets/sing-box.schema.json"),
+        ).first(File::isFile)
+        val bundledValidator = SingBoxSchemaValidator(schemaFile.readText())
+
+        assertEquals(
+            SingBoxSchemaValidationResult.Valid,
+            bundledValidator.validate(
+                """
+                    {
+                      "inbounds": [
+                        {
+                          "type": "ebpf",
+                          "mode": "hybrid",
+                          "local": { "bypass_private_address": true },
+                          "shared": {
+                            "interface": ["wlan2"],
+                            "bypass_private_address": false
+                          }
+                        }
+                      ]
+                    }
+                """.trimIndent(),
+            ),
+        )
+        assertTrue(
+            bundledValidator.validate(
+                """
+                    {
+                      "inbounds": [
+                        {
+                          "type": "ebpf",
+                          "bypass_private_address": true
+                        }
+                      ]
+                    }
+                """.trimIndent(),
+            ) is SingBoxSchemaValidationResult.Invalid,
+        )
+    }
+
+    @Test
     fun bundledSchemaSupportsRef1ndExtensions() = runBlocking {
         val schemaFile = sequenceOf(
             File("src/main/assets/sing-box.schema.json"),

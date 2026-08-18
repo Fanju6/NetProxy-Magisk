@@ -8,7 +8,9 @@ data class ProxySettings(
     val network: String = "",
     val dnsMode: String = "hijack",
     val localIpv6Mode: String = "auto",
-    val bypassPrivateAddress: Boolean = true,
+    val sharedIpv6Mode: String = "always",
+    val localBypassPrivateAddress: Boolean = true,
+    val sharedBypassPrivateAddress: Boolean = true,
     val bypassRuleSet: String = "direct,ChinaIP",
     val sharedInterfaces: String = "wlan2",
     val sharedIncludeSourceCidrs: String = "",
@@ -19,7 +21,14 @@ data class ProxySettings(
     val wifiSsidMode: String = "blacklist",
     val wifiSsidList: String = "",
     val proxyOnCellular: Boolean = true
-)
+) {
+    val bypassPrivateAddress: Boolean
+        get() = when (mode) {
+            "shared" -> sharedBypassPrivateAddress
+            "hybrid" -> localBypassPrivateAddress || sharedBypassPrivateAddress
+            else -> localBypassPrivateAddress
+        }
+}
 
 @Immutable
 data class SettingsUiState(

@@ -81,8 +81,7 @@ grep -q 'options.ProxyURL = "http://127.0.0.1:7080"' "$SUBSCRIPTION_UPDATE_SOURC
 ! grep -Eq 'ProxyURL = "http://(0\.0\.0\.0|::):7080"' "$SUBSCRIPTION_UPDATE_SOURCE"
 
 json_contains '"mode":"local"'
-json_contains '"local":{"ipv6_mode":"auto"'
-json_contains '"bypass_private_address":true'
+json_contains '"local":{"ipv6_mode":"auto","bypass_private_address":true'
 ! json_contains '"shared"'
 
 set_conf "$EBPF_CONF" "EBPF_BYPASS_RULE_SET" '""'
@@ -135,7 +134,7 @@ prepare_runtime
 json_contains '"mode":"shared"'
 ! json_contains '"cgroup_path"'
 ! json_contains '"local":'
-json_contains '"shared".*"interface":\["wlan2"\]'
+json_contains '"shared".*"interface":\["wlan2"\],"ipv6_mode":"always","bypass_private_address":true'
 json_contains '"advanced":{"tc_priority":1}'
 
 sed -i 's/"name": "备用配置"/"name": "本地配置"/' "$CATALOG_DIR/secondary/meta.json"

@@ -15,7 +15,6 @@ EBPF_MODE="local"
 EBPF_NETWORK=""
 EBPF_UDP_TIMEOUT="5m"
 EBPF_DNS_MODE="hijack"
-EBPF_BYPASS_PRIVATE_ADDRESS=1
 EBPF_BYPASS_RULE_SET="direct,ChinaIP"
 ```
 
@@ -26,6 +25,7 @@ EBPF_BYPASS_RULE_SET="direct,ChinaIP"
 ```ini
 EBPF_LOCAL_CGROUP_PATH=""
 EBPF_LOCAL_IPV6_MODE="auto"
+EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS=1
 EBPF_LOCAL_INCLUDE_UID=""
 EBPF_LOCAL_INCLUDE_UID_RANGE=""
 EBPF_LOCAL_EXCLUDE_UID=""
@@ -36,7 +36,7 @@ EBPF_LOCAL_EXCLUDE_PACKAGE=""
 EBPF_LOCAL_STATE_CAPACITY=0
 ```
 
-`EBPF_LOCAL_INCLUDE_PACKAGE` 和 `EBPF_LOCAL_EXCLUDE_PACKAGE` 是高级用户直接填写的包名列表。分应用页面使用下方的带用户范围格式，Native 会调用 Android `cmd package list packages --user <用户ID> -U` 解析 UID。
+`EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS` 控制本机数据路径是否在进入 sing-box 前绕过私网与特殊用途地址。`EBPF_LOCAL_INCLUDE_PACKAGE` 和 `EBPF_LOCAL_EXCLUDE_PACKAGE` 是高级用户直接填写的包名列表。分应用页面使用下方的带用户范围格式，Native 会调用 Android `cmd package list packages --user <用户ID> -U` 解析 UID。
 
 ## 分应用代理
 
@@ -56,6 +56,7 @@ BYPASS_APPS_LIST="0:com.example.app,10:com.example.app"
 ```ini
 EBPF_SHARED_INTERFACES="wlan2"
 EBPF_SHARED_IPV6_MODE="always"
+EBPF_SHARED_BYPASS_PRIVATE_ADDRESS=1
 EBPF_SHARED_INCLUDE_SOURCE_CIDR=""
 EBPF_SHARED_EXCLUDE_SOURCE_CIDR=""
 EBPF_SHARED_INCLUDE_MAC_ADDRESS=""
@@ -64,7 +65,7 @@ EBPF_SHARED_STATE_CAPACITY=0
 EBPF_SHARED_TC_PRIORITY=1
 ```
 
-`shared` 和 `hybrid` 模式必须填写至少一个实际的下游接口。接口可以在服务启动后出现或消失，sing-box 会自动维护 TC 挂载。来源 CIDR、MAC 地址、状态容量和 TC 优先级属于高级配置，Android 管理器不要求展示全部字段。
+`EBPF_SHARED_BYPASS_PRIVATE_ADDRESS` 独立控制共享网络数据路径的私网与特殊用途地址绕过。`shared` 和 `hybrid` 模式必须填写至少一个实际的下游接口。接口可以在服务启动后出现或消失，sing-box 会自动维护 TC 挂载。来源 CIDR、MAC 地址、状态容量和 TC 优先级属于高级配置，Android 管理器不要求展示全部字段。
 
 ## 能力探测
 
