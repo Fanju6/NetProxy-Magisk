@@ -2,10 +2,10 @@ package ebpf
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
-	"regexp"
-	"strconv"
 	"strings"
 )
 
@@ -69,7 +69,7 @@ func ResolveProbeOptions(path, requestedMode string) (ProbeOptions, error) {
 // Args 返回 sing-box tools ebpf status 的参数。
 func (o ProbeOptions) Args() []string {
 	args := []string{"tools", "ebpf", "status", "--mode", o.CoreMode}
-	if len(o.Network) > 0 {
+	if (o.CoreMode == "all" || o.CoreMode == "local") && len(o.Network) > 0 {
 		args = append(args, "--network", strings.Join(o.Network, ","))
 	}
 	if o.CoreMode == "all" || o.CoreMode == "local" {
@@ -82,7 +82,7 @@ func (o ProbeOptions) Args() []string {
 			args = append(args, "--interface", o.Interface)
 		}
 	}
-	return args
+	return append(args, "--json")
 }
 
 // RunProbe 调用 sing-box 内置的 eBPF 内核能力检查。
@@ -91,14 +91,76 @@ func RunProbe(ctx context.Context, singBoxPath string, options ProbeOptions) (st
 		return "", fmt.Errorf("sing-box 路径为空")
 	}
 	command := exec.CommandContext(ctx, singBoxPath, options.Args()...)
-	output, err := command.CombinedOutput()
+	var stderr strings.Builder
+	command.Stderr = &stderr
+	output, err := command.Output()
+	if err != nil && strings.TrimSpace(stderr.String()) != "" {
+		err = fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
+	}
 	return string(output), err
 }
 
-// FormatProbeOutput 将 sing-box 的能力检查结果整理为用户可读的中文说明。
-func FormatProbeOutput(raw, coreMode string, probeErr error) string {
-	passCount, warnCount, failCount, unknownCount := parseSummary(raw)
-	kernel, architecture := parsePlatform(raw)
+// ProbeReport 是 sing-box tools ebpf status --json 的稳定报告结构。
+type ProbeReport struct {
+	Platform         string         `json:"platform"`
+	KernelRelease    string         `json:"kernel_release"`
+	Architecture     string         `json:"architecture"`
+	Mode             string         `json:"mode"`
+	Network          []string       `json:"network"`
+	Findings         []ProbeFinding `json:"findings"`
+	ActivePrograms   []ProbeProgram `json:"active_programs"`
+	ActiveStateError string         `json:"active_state_error,omitempty"`
+	Summary          ProbeSummary   `json:"summary"`
+	Result           string         `json:"result"`
+}
+
+// ProbeFinding 是单项 eBPF 能力检测结果。
+type ProbeFinding struct {
+	Status     string `json:"status"`
+	Scope      string `json:"scope"`
+	Importance string `json:"importance"`
+	Feature    string `json:"feature"`
+	Detail     string `json:"detail"`
+}
+
+// ProbeProgram 是内核中当前可见的 sing-box eBPF 程序摘要。
+type ProbeProgram struct {
+	ID       uint32 `json:"id"`
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	MapCount int    `json:"map_count"`
+}
+
+// ProbeSummary 是 eBPF 能力检测的统计结果。
+type ProbeSummary struct {
+	Pass             int `json:"pass"`
+	Warn             int `json:"warn"`
+	Fail             int `json:"fail"`
+	Unknown          int `json:"unknown"`
+	RequiredFailures int `json:"required_failures"`
+}
+
+// ParseProbeReport 解析并检查 sing-box JSON 诊断报告。
+func ParseProbeReport(raw string) (ProbeReport, error) {
+	var report ProbeReport
+	if strings.TrimSpace(raw) == "" {
+		return ProbeReport{}, errors.New("sing-box 未返回 eBPF JSON 诊断报告")
+	}
+	if err := json.Unmarshal([]byte(raw), &report); err != nil {
+		return ProbeReport{}, fmt.Errorf("解析 sing-box eBPF JSON 诊断报告失败: %w", err)
+	}
+	if report.Mode != "all" && report.Mode != "local" && report.Mode != "shared-network" {
+		return ProbeReport{}, fmt.Errorf("sing-box eBPF JSON 诊断报告模式无效: %q", report.Mode)
+	}
+	if report.Result != "supported" && report.Result != "inconclusive" && report.Result != "unsupported" {
+		return ProbeReport{}, fmt.Errorf("sing-box eBPF JSON 诊断报告结论无效: %q", report.Result)
+	}
+	return report, nil
+}
+
+// FormatProbeOutput 将结构化 eBPF 检测报告整理为用户可读的中文说明。
+func FormatProbeOutput(report ProbeReport, probeErr error) string {
+	coreMode := report.Mode
 	scope := map[string]string{
 		"local":          "本机应用流量",
 		"shared-network": "热点与共享网络",
@@ -108,80 +170,70 @@ func FormatProbeOutput(raw, coreMode string, probeErr error) string {
 		scope = coreMode
 	}
 
-	conclusion := "未发现明确问题，启动服务后可完成最终验证"
-	if probeErr != nil || failCount > 0 {
+	conclusion := "检测通过"
+	switch {
+	case report.Result == "unsupported" || report.Summary.RequiredFailures > 0 || probeErr != nil:
 		conclusion = "未通过"
-	} else if warnCount > 0 {
+	case report.Result == "inconclusive":
+		conclusion = "无法完全确认，启动服务后可完成最终验证"
+	case report.Summary.Warn > 0:
 		conclusion = "发现兼容性警告，建议启动服务进行最终验证"
 	}
 
 	var builder strings.Builder
 	fmt.Fprintf(&builder, "结论: %s\n", conclusion)
 	fmt.Fprintf(&builder, "检测范围: %s\n", scope)
-	if kernel != "" {
-		fmt.Fprintf(&builder, "内核版本: %s\n", kernel)
+	if report.KernelRelease != "" {
+		fmt.Fprintf(&builder, "内核版本: %s\n", report.KernelRelease)
 	}
-	if architecture != "" {
-		fmt.Fprintf(&builder, "设备架构: %s\n", architecture)
+	if report.Architecture != "" {
+		fmt.Fprintf(&builder, "设备架构: %s\n", report.Architecture)
 	}
 	builder.WriteString("\n检查统计:\n")
-	fmt.Fprintf(&builder, "  通过: %d 项\n", passCount)
-	fmt.Fprintf(&builder, "  警告: %d 项\n", warnCount)
-	fmt.Fprintf(&builder, "  失败: %d 项\n", failCount)
-	fmt.Fprintf(&builder, "  无法静态确认: %d 项\n", unknownCount)
+	fmt.Fprintf(&builder, "  通过: %d 项\n", report.Summary.Pass)
+	fmt.Fprintf(&builder, "  警告: %d 项\n", report.Summary.Warn)
+	fmt.Fprintf(&builder, "  失败: %d 项\n", report.Summary.Fail)
+	fmt.Fprintf(&builder, "  无法静态确认: %d 项\n", report.Summary.Unknown)
 
-	commonFail := strings.Count(raw, "[common]")
-	localFail := strings.Count(raw, "[local]")
-	sharedFail := strings.Count(raw, "[shared-network]")
-	if failCount > 0 || probeErr != nil {
+	commonFail := hasFailedScope(report.Findings, "common")
+	localFail := hasFailedScope(report.Findings, "local")
+	sharedFail := hasFailedScope(report.Findings, "shared-network")
+	if report.Summary.Fail > 0 || probeErr != nil {
 		builder.WriteString("\n问题定位:\n")
-		if commonFail > 0 {
+		if commonFail {
 			builder.WriteString("  - 基础 eBPF 权限或内核能力不满足。\n")
 		}
-		if localFail > 0 {
+		if localFail {
 			builder.WriteString("  - 本机 cgroup eBPF 能力不满足。\n")
 		}
-		if sharedFail > 0 {
+		if sharedFail {
 			builder.WriteString("  - 热点接口或 TC eBPF 能力不满足。\n")
 		}
-		if commonFail == 0 && localFail == 0 && sharedFail == 0 {
+		if !commonFail && !localFail && !sharedFail {
 			builder.WriteString("  - sing-box 未能完成 eBPF 能力检查，请查看服务日志。\n")
 		}
 		builder.WriteString("\n建议先检查 Root 授权、内核 eBPF 配置和服务日志。\n")
-	} else if unknownCount > 0 {
+	} else if report.Summary.Unknown > 0 {
 		builder.WriteString("\n说明:\n")
 		builder.WriteString("  “无法静态确认”不代表失败，部分能力只能在 sing-box 实际启动时验证。\n")
 	} else if coreMode == "local" {
 		builder.WriteString("\n当前未启用共享网络，本次没有检测热点接口。\n")
 	}
 
-	if strings.TrimSpace(raw) == "" {
-		builder.WriteString("\n检查程序没有返回详细结果。\n")
+	if len(report.ActivePrograms) > 0 {
+		fmt.Fprintf(&builder, "\n当前可见 sing-box eBPF 程序: %d 个。\n", len(report.ActivePrograms))
+	}
+	if report.ActiveStateError != "" {
+		builder.WriteString("\n无法确认当前已挂载的 eBPF 程序状态。\n")
 	}
 	return strings.TrimSpace(builder.String())
 }
 
-var (
-	probeSummaryPattern  = regexp.MustCompile(`(?m)^Summary: PASS=([0-9]+) WARN=([0-9]+) FAIL=([0-9]+) UNKNOWN=([0-9]+)$`)
-	probePlatformPattern = regexp.MustCompile(`(?m)^Platform:.*kernel: ([^;]*);.*architecture: ([^;]*);`)
-)
-
-func parseSummary(raw string) (int, int, int, int) {
-	match := probeSummaryPattern.FindStringSubmatch(raw)
-	if len(match) != 5 {
-		return 0, 0, 0, 0
+func hasFailedScope(findings []ProbeFinding, scope string) bool {
+	for _, finding := range findings {
+		if finding.Status == "FAIL" && finding.Scope == scope {
+			return true
+		}
 	}
-	values := [4]int{}
-	for index := range values {
-		values[index], _ = strconv.Atoi(match[index+1])
-	}
-	return values[0], values[1], values[2], values[3]
-}
-
-func parsePlatform(raw string) (string, string) {
-	match := probePlatformPattern.FindStringSubmatch(raw)
-	if len(match) != 3 {
-		return "", ""
-	}
-	return strings.TrimSpace(match[1]), strings.TrimSpace(match[2])
+	return false
 }

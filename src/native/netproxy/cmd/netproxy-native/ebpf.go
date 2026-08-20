@@ -86,14 +86,23 @@ func runEBPF(ctx context.Context, args []string) error {
 			return &resultError{Code: "ebpf.status_failed", Message: err.Error()}
 		}
 		probeOutput, probeErr := ebpf.RunProbe(ctx, *singBoxPath, options)
+		report, parseErr := ebpf.ParseProbeReport(probeOutput)
+		if parseErr != nil {
+			return &resultError{
+				Code:    "ebpf.status_invalid",
+				Message: parseErr.Error(),
+				Data:    map[string]any{"raw": *raw, "content": probeOutput},
+			}
+		}
 		content := probeOutput
 		if !*raw {
-			content = ebpf.FormatProbeOutput(probeOutput, options.CoreMode, probeErr)
+			content = ebpf.FormatProbeOutput(report, probeErr)
 		}
 		data := map[string]any{
 			"mode":    options.RequestedMode,
 			"raw":     *raw,
 			"content": content,
+			"report":  report,
 		}
 		if *format == "text" {
 			fmt.Fprintln(os.Stdout, content)
