@@ -292,7 +292,7 @@ internal class SettingsViewModel(
         return ProxySettings(
             mode = mode,
             network = value("EBPF_NETWORK", ""),
-            dnsMode = value("EBPF_DNS_MODE", "hijack"),
+            dnsMode = value("EBPF_DNS_MODE", "respect_bypass"),
             localIpv6Mode = value("EBPF_LOCAL_IPV6_MODE", "auto")
                 .takeIf { it in ipv6Modes } ?: "auto",
             sharedIpv6Mode = value("EBPF_SHARED_IPV6_MODE", "always")

@@ -325,13 +325,79 @@ func ApplyMode(ctx context.Context, options Options, mode string) (err error) {
 }
 
 // UpdateApp 按类型化 eBPF 配置修改分应用策略。
-func UpdateApp(options Options, action, value string) (data map[string]any, err error) {
+func UpdateApp(ctx context.Context, options Options, action, value string) (data map[string]any, err error) {
 	persisted := false
 	defer func() { logOperation(options, "app", "app-policy.update", "分应用策略更新", persisted, err) }()
-	config, err := ebpf.Load(options.EBPFConfig)
+	var applied bool
+	var config ebpf.Config
+	if err := moduleconfig.WithLockedContent(options.EBPFConfig, func(content []byte) error {
+		configPath, err := os.CreateTemp(filepath.Dir(options.EBPFConfig), ".ebpf-source-")
+		if err != nil {
+			return err
+		}
+		configPathName := configPath.Name()
+		defer os.Remove(configPathName)
+		if err := configPath.Chmod(0o600); err != nil {
+			_ = configPath.Close()
+			return err
+		}
+		if _, err := configPath.Write(content); err != nil {
+			_ = configPath.Close()
+			return err
+		}
+		if err := configPath.Close(); err != nil {
+			return err
+		}
+		var loadErr error
+		config, loadErr = ebpf.LoadForAppUpdate(configPathName)
+		if loadErr != nil {
+			return loadErr
+		}
+		updates, err := appPolicyUpdates(config, action, value)
+		if err != nil {
+			return err
+		}
+		candidateContent, err := moduleconfig.UpdatedContentBytes(content, updates)
+		if err != nil {
+			return err
+		}
+		candidate, err := os.CreateTemp(filepath.Dir(options.EBPFConfig), ".ebpf-candidate-")
+		if err != nil {
+			return err
+		}
+		candidatePath := candidate.Name()
+		defer os.Remove(candidatePath)
+		if err := candidate.Chmod(0o600); err != nil {
+			_ = candidate.Close()
+			return err
+		}
+		if _, err := candidate.Write(candidateContent); err != nil {
+			_ = candidate.Close()
+			return err
+		}
+		if err := candidate.Close(); err != nil {
+			return err
+		}
+		if err := ApplyConfig(ctx, options, "ebpf", candidatePath, false); err != nil {
+			return err
+		}
+		applied = true
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	if !applied {
+		return nil, errors.New("分应用配置未应用")
+	}
+	persisted = true
+	config, err = ebpf.Load(options.EBPFConfig)
 	if err != nil {
 		return nil, err
 	}
+	return appData(config), nil
+}
+
+func appPolicyUpdates(config ebpf.Config, action, value string) (map[string]string, error) {
 	updates := map[string]string{}
 	switch action {
 	case "mode":
@@ -347,7 +413,9 @@ func UpdateApp(options Options, action, value string) (data map[string]any, err 
 		}
 		if config.AppProxyMode == "whitelist" {
 			updates["PROXY_APPS_LIST"] = moduleconfig.Quote(addPackageRef(config.ProxyPackages, ref))
+			updates["BYPASS_APPS_LIST"] = moduleconfig.Quote(removePackageRef(config.BypassPackages, ref))
 		} else {
+			updates["PROXY_APPS_LIST"] = moduleconfig.Quote(removePackageRef(config.ProxyPackages, ref))
 			updates["BYPASS_APPS_LIST"] = moduleconfig.Quote(addPackageRef(config.BypassPackages, ref))
 		}
 		updates["APP_PROXY_ENABLE"] = "1"
@@ -363,18 +431,7 @@ func UpdateApp(options Options, action, value string) (data map[string]any, err 
 	default:
 		return nil, fmt.Errorf("未知应用操作: %s", action)
 	}
-	if err := moduleconfig.UpdateValidated(options.EBPFConfig, updates, func(candidate string) error {
-		_, validateErr := ebpf.Load(candidate)
-		return validateErr
-	}); err != nil {
-		return nil, err
-	}
-	persisted = true
-	config, err = ebpf.Load(options.EBPFConfig)
-	if err != nil {
-		return nil, err
-	}
-	return appData(config), nil
+	return updates, nil
 }
 
 func appData(config ebpf.Config) map[string]any {

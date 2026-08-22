@@ -92,6 +92,7 @@ type networkFileState struct {
 	exists  bool
 	modTime int64
 	size    int64
+	content string
 }
 
 // runNetworkWatcher 轮询完整 Android 网络状态，并在网络状态稳定后评估 Wi-Fi 策略。
@@ -172,11 +173,20 @@ func logNetworkReadFailure(logger *log.Logger, repeated *repeatedNetworkError, m
 }
 
 func readNetworkFileState(path string) networkFileState {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return networkFileState{}
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		return networkFileState{}
 	}
-	return networkFileState{exists: true, modTime: info.ModTime().UnixNano(), size: info.Size()}
+	return networkFileState{
+		exists:  true,
+		modTime: info.ModTime().UnixNano(),
+		size:    info.Size(),
+		content: string(content),
+	}
 }
 
 func readNetworkState(parent context.Context, reader NetworkStateReader) (NetworkState, error) {

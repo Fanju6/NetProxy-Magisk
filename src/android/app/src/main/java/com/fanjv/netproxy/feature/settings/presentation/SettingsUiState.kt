@@ -6,7 +6,7 @@ import androidx.compose.runtime.Immutable
 data class ProxySettings(
     val mode: String = "local",
     val network: String = "",
-    val dnsMode: String = "hijack",
+    val dnsMode: String = "respect_bypass",
     val localIpv6Mode: String = "auto",
     val sharedIpv6Mode: String = "always",
     val localBypassPrivateAddress: Boolean = true,
