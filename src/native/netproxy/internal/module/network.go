@@ -51,18 +51,7 @@ func EvaluateNetwork(ctx context.Context, options Options, networkType, ssid str
 	if !module.WiFiAutoSwitch {
 		result.Target = "proxying"
 		result.DesiredMode = module.OutboundMode
-		result.RuntimeMode, _ = service.ReadRuntimeMode(ctx, networkControlOptions(options))
-		if result.RuntimeMode != "" && result.RuntimeMode != modeToRuntime(module.OutboundMode) {
-			if err := ApplyRuntimeMode(ctx, options, module.OutboundMode); err != nil {
-				return result, err
-			}
-			_ = service.CloseAllConnections(ctx, networkControlOptions(options))
-			result.RuntimeMode = modeToRuntime(module.OutboundMode)
-			result.Changed = true
-			result.Reason = "已恢复基础出站模式"
-		} else {
-			result.Reason = "WiFi 自动切换未启用"
-		}
+		result.Reason = "WiFi 自动切换未启用"
 		_ = clearWiFiState(options.WiFiStateFile)
 		return result, nil
 	}

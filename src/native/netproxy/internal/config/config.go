@@ -125,11 +125,6 @@ func UpdateValidated(path string, updates map[string]string, validate func(strin
 	if len(updates) == 0 {
 		return nil
 	}
-	for key := range updates {
-		if !validKey(key) {
-			return fmt.Errorf("非法配置键: %s", key)
-		}
-	}
 	keys := make([]string, 0, len(updates))
 	for key := range updates {
 		keys = append(keys, key)
@@ -142,34 +137,9 @@ func UpdateValidated(path string, updates map[string]string, validate func(strin
 	}
 	defer lock.Release()
 
-	content, err := os.ReadFile(path)
+	updated, err := UpdatedContent(path, updates)
 	if err != nil {
 		return err
-	}
-	text := strings.ReplaceAll(string(content), "\r\n", "\n")
-	lines := strings.Split(text, "\n")
-	if len(lines) > 0 && lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
-	}
-	written := make(map[string]bool, len(updates))
-	for index, line := range lines {
-		key, _, found := strings.Cut(line, "=")
-		if found {
-			if value, ok := updates[key]; ok {
-				lines[index] = key + "=" + value
-				written[key] = true
-			}
-		}
-	}
-	for _, key := range keys {
-		value := updates[key]
-		if !written[key] {
-			lines = append(lines, key+"="+value)
-		}
-	}
-	updated := strings.Join(lines, "\n")
-	if !strings.HasSuffix(updated, "\n") {
-		updated += "\n"
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".module-conf-")
 	if err != nil {
@@ -177,7 +147,7 @@ func UpdateValidated(path string, updates map[string]string, validate func(strin
 	}
 	tmpPath := tmp.Name()
 	defer os.Remove(tmpPath)
-	if _, err = tmp.WriteString(updated); err != nil {
+	if _, err = tmp.Write(updated); err != nil {
 		_ = tmp.Close()
 		return err
 	}
@@ -194,6 +164,74 @@ func UpdateValidated(path string, updates map[string]string, validate func(strin
 		}
 	}
 	return os.Rename(tmpPath, path)
+}
+
+// UpdatedContent 根据现有配置和更新项生成完整的新配置内容。
+func UpdatedContent(path string, updates map[string]string) ([]byte, error) {
+	if len(updates) == 0 {
+		return os.ReadFile(path)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return UpdatedContentBytes(content, updates)
+}
+
+// UpdatedContentBytes 根据配置内容和更新项生成完整的新配置内容。
+func UpdatedContentBytes(content []byte, updates map[string]string) ([]byte, error) {
+	if len(updates) == 0 {
+		return append([]byte(nil), content...), nil
+	}
+	for key := range updates {
+		if !validKey(key) {
+			return nil, fmt.Errorf("非法配置键: %s", key)
+		}
+	}
+	keys := make([]string, 0, len(updates))
+	for key := range updates {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	text := strings.ReplaceAll(string(content), "\r\n", "\n")
+	lines := strings.Split(text, "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	written := make(map[string]bool, len(updates))
+	for index, line := range lines {
+		key, _, found := strings.Cut(line, "=")
+		if found {
+			if value, ok := updates[key]; ok {
+				lines[index] = key + "=" + value
+				written[key] = true
+			}
+		}
+	}
+	for _, key := range keys {
+		if !written[key] {
+			lines = append(lines, key+"="+updates[key])
+		}
+	}
+	updated := strings.Join(lines, "\n")
+	if !strings.HasSuffix(updated, "\n") {
+		updated += "\n"
+	}
+	return []byte(updated), nil
+}
+
+// WithLockedContent 在配置锁内读取内容，并执行应用回调。
+func WithLockedContent(path string, apply func([]byte) error) error {
+	lock, err := acquireLock(path + ".lock.flock")
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	return apply(content)
 }
 
 // Quote 生成与模块配置兼容的双引号值。

@@ -129,6 +129,15 @@ func (e *ValidationError) Error() string {
 
 // Load 读取并校验 ebpf.conf，不执行 Shell 语义。
 func Load(path string) (Config, error) {
+	return load(path, true)
+}
+
+// LoadForAppUpdate 读取应用更新所需的配置，允许先解析历史名单冲突。
+func LoadForAppUpdate(path string) (Config, error) {
+	return load(path, false)
+}
+
+func load(path string, rejectAppConflicts bool) (Config, error) {
 	values, err := moduleconfig.ReadStrict(path)
 	if err != nil {
 		return Config{}, validationError("ebpf.config_parse_failed", "", err.Error())
@@ -141,7 +150,7 @@ func Load(path string) (Config, error) {
 	config := Config{
 		Mode:           defaultMode,
 		UDPTimeout:     defaultUDPTimeout,
-		DNSMode:        "hijack",
+		DNSMode:        "respect_bypass",
 		BypassRuleSets: []string{"direct", "ChinaIP"},
 		Local: LocalConfig{
 			IPv6Mode:             defaultLocalIPv6Mode,
@@ -248,7 +257,7 @@ func Load(path string) (Config, error) {
 	if parseErr != nil {
 		return Config{}, parseErr
 	}
-	if err := config.Validate(); err != nil {
+	if err := config.validate(rejectAppConflicts); err != nil {
 		return Config{}, err
 	}
 	return config, nil
@@ -256,6 +265,10 @@ func Load(path string) (Config, error) {
 
 // Validate 检查新 eBPF 配置之间的组合约束。
 func (c Config) Validate() error {
+	return c.validate(true)
+}
+
+func (c Config) validate(rejectAppConflicts bool) error {
 	if c.Mode != "local" && c.Mode != "shared" && c.Mode != "hybrid" {
 		return validationError("ebpf.mode_invalid", "EBPF_MODE", "eBPF 模式只能是 local、shared 或 hybrid")
 	}
@@ -288,6 +301,17 @@ func (c Config) Validate() error {
 	}
 	if c.AppProxyMode != "blacklist" && c.AppProxyMode != "whitelist" {
 		return validationError("ebpf.app_mode_invalid", "APP_PROXY_MODE", "分应用代理模式只能是 blacklist 或 whitelist")
+	}
+	if rejectAppConflicts {
+		proxyPackages := make(map[PackageRef]struct{}, len(c.ProxyPackages))
+		for _, ref := range c.ProxyPackages {
+			proxyPackages[ref] = struct{}{}
+		}
+		for _, ref := range c.BypassPackages {
+			if _, exists := proxyPackages[ref]; exists {
+				return validationError("ebpf.app_package_conflict", "PROXY_APPS_LIST,BYPASS_APPS_LIST", "同一个应用不能同时出现在代理名单和绕过名单: "+ref.String())
+			}
+		}
 	}
 	return nil
 }

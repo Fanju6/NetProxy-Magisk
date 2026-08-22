@@ -246,7 +246,7 @@ func runModuleMode(ctx context.Context, args []string) error {
 	return nil
 }
 
-func runModuleApp(_ context.Context, args []string) error {
+func runModuleApp(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return errors.New("缺少 app 操作")
 	}
@@ -270,7 +270,7 @@ func runModuleApp(_ context.Context, args []string) error {
 	if len(positionals) > 0 {
 		value = positionals[0]
 	}
-	data, err := moduleapp.UpdateApp(options, action, value)
+	data, err := moduleapp.UpdateApp(ctx, options, action, value)
 	if err != nil {
 		code := "app.update_failed"
 		switch action {
