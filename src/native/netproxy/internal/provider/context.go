@@ -84,10 +84,59 @@ func (endpointOptionsRegistry) CreateOptions(endpointType string) (any, bool) {
 	}
 }
 
+type runtimeOutboundOptionsRegistry struct {
+	outboundOptionsRegistry
+}
+
+func (runtimeOutboundOptionsRegistry) OptionTypes() []string {
+	return append(outboundOptionsRegistry{}.OptionTypes(),
+		C.TypeDirect,
+		C.TypeBlock,
+		C.TypeSelector,
+		C.TypeURLTest,
+	)
+}
+
+func (runtimeOutboundOptionsRegistry) CreateOptions(outboundType string) (any, bool) {
+	switch outboundType {
+	case C.TypeDirect:
+		return new(option.DirectOutboundOptions), true
+	case C.TypeBlock:
+		return new(option.StubOptions), true
+	case C.TypeSelector:
+		return new(option.SelectorOutboundOptions), true
+	case C.TypeURLTest:
+		return new(option.URLTestOutboundOptions), true
+	default:
+		return outboundOptionsRegistry{}.CreateOptions(outboundType)
+	}
+}
+
+type runtimeProviderOptionsRegistry struct{}
+
+func (runtimeProviderOptionsRegistry) OptionTypes() []string {
+	return []string{C.ProviderTypeLocal}
+}
+
+func (runtimeProviderOptionsRegistry) CreateOptions(providerType string) (any, bool) {
+	if providerType == C.ProviderTypeLocal {
+		return new(option.ProviderLocalOptions), true
+	}
+	return nil, false
+}
+
 // Context registers only the option types required to parse provider documents.
 // It intentionally avoids importing the sing-box runtime and protocol engines.
 func Context(ctx context.Context) context.Context {
 	ctx = service.ContextWith[option.OutboundOptionsRegistry](ctx, outboundOptionsRegistry{})
 	ctx = service.ContextWith[option.EndpointOptionsRegistry](ctx, endpointOptionsRegistry{})
+	return ctx
+}
+
+// RuntimeContext 注册 NetProxy 生成运行时 Provider 和分组出站所需的类型。
+func RuntimeContext(ctx context.Context) context.Context {
+	ctx = Context(ctx)
+	ctx = service.ContextWith[option.OutboundOptionsRegistry](ctx, runtimeOutboundOptionsRegistry{})
+	ctx = service.ContextWith[option.ProviderOptionsRegistry](ctx, runtimeProviderOptionsRegistry{})
 	return ctx
 }

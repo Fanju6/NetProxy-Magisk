@@ -1,15 +1,12 @@
 package worker
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"os/exec"
 	"regexp"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -55,33 +52,23 @@ func (state *repeatedNetworkError) recovered(logger *log.Logger) {
 }
 
 var (
-	connectedSSIDPattern  = regexp.MustCompile(`(?i)wifi is connected to\s+(.+?)(?:,\s*bssid:|$)`)
-	infoSSIDPattern       = regexp.MustCompile(`(?i)(?:^|[\s,=:])ssid:\s*([^,\r\n]+)`)
-	activeDevicePattern   = regexp.MustCompile(`(?m)\bdev\s+(\S+)`)
-	interfaceLinePattern  = regexp.MustCompile(`(?m)^\d+:\s+([^:\s@]+)(?:@\S+)?:\s+<([^>]*)>.*?\bstate\s+(\S+)`)
-	hotspotStatePattern   = regexp.MustCompile(`(?i)(?:softap|wifi[ _-]*ap|hotspot|tethering).*?(?:state|status)?\s*[:=]?\s*(enabled|disabled|enabling|disabling|started|stopped|up|down)`)
-	hotspotNumericPattern = regexp.MustCompile(`(?i)(?:msoftapstate|mwifiapstate|wifiapstate)\s*[:=]\s*(\d+)`)
+	connectedSSIDPattern = regexp.MustCompile(`(?i)wifi is connected to\s+(.+?)(?:,\s*bssid:|$)`)
+	infoSSIDPattern      = regexp.MustCompile(`(?i)(?:^|[\s,=:])ssid:\s*([^,\r\n]+)`)
 )
 
 // NetworkState 描述一次 Android 网络采集结果，也是 Worker 的网络变化指纹输入。
 type NetworkState struct {
 	NetworkType     string
 	SSID            string
-	DefaultRoute    string
 	ActiveInterface string
-	InterfaceStatus string
-	HotspotState    string
 }
 
-// Fingerprint 返回包含网络路径和接口状态的稳定指纹。
+// Fingerprint 返回会影响 Wi-Fi 策略选择的稳定指纹。
 func (state NetworkState) Fingerprint() string {
 	return strings.Join([]string{
 		state.NetworkType,
 		state.SSID,
-		state.DefaultRoute,
 		state.ActiveInterface,
-		state.InterfaceStatus,
-		state.HotspotState,
 	}, "\x00")
 }
 
@@ -291,16 +278,16 @@ func evaluateNetworkState(parent context.Context, options Options, state Network
 }
 
 type networkCommandFunc func(context.Context, string, ...string) (string, error)
-type networkFileReader func(string) ([]byte, error)
+type activeNetworkReader func(context.Context) (string, error)
 
 func getNetworkState(ctx context.Context) (NetworkState, error) {
-	return getNetworkStateWith(ctx, androidCommand, os.ReadFile)
+	return getNetworkStateWith(ctx, androidCommand, readActiveNetworkInterface)
 }
 
 func getNetworkStateWith(
 	ctx context.Context,
 	command networkCommandFunc,
-	readFile networkFileReader,
+	readActiveInterface activeNetworkReader,
 ) (NetworkState, error) {
 	status, statusErr := command(ctx, "cmd", "wifi", "status")
 	dumpsys, dumpsysErr := command(ctx, "dumpsys", "wifi")
@@ -317,37 +304,12 @@ func getNetworkStateWith(
 	combined := strings.Join(parts, "\n")
 	networkType, ssid := parseWiFiSnapshot(combined)
 
-	activeRoute, activeInterface, activeErr := getActiveNetworkRouteWith(ctx, command, readFile)
-	if activeErr != nil {
-		return NetworkState{}, activeErr
-	}
-	interfaceStatusOutput, err := command(ctx, "ip", "-o", "link", "show")
-	if err != nil {
-		return NetworkState{}, fmt.Errorf("读取网络接口状态失败: %w", err)
-	}
-	interfaceStates, err := parseNetworkInterfaceStates(interfaceStatusOutput)
+	activeInterface, err := readActiveInterface(ctx)
 	if err != nil {
 		return NetworkState{}, err
 	}
-	if !networkInterfaceIsUp(interfaceStates, activeInterface) {
-		return NetworkState{}, networkUnavailable("活动网络接口 %s 不可用", activeInterface)
-	}
-
-	defaultRoute, err := readDefaultRoute(ctx, command, readFile)
-	if err != nil {
-		if activeRoute == "" {
-			return NetworkState{}, err
-		}
-		// Android policy routing 可能不在 main table 暴露 default 行；route get
-		// 已经给出本次真实流量路径时，用它作为有效默认路由指纹。
-		defaultRoute = activeRoute
-	}
-	if activeRoute != "" {
-		defaultRoute = activeRoute + "|" + defaultRoute
-	}
 	if networkType == "wifi" && !isWiFiInterface(activeInterface) {
-		// Wi-Fi 框架仍显示 connected，但默认路由已经落到 rmnet/蜂窝接口时，
-		// 该次评估必须按实际流量路径处理。
+		// Android 仍可能报告 Wi-Fi 已连接，但 policy routing 已将真实出口切到蜂窝网络。
 		networkType = "not_wifi"
 		ssid = ""
 	}
@@ -355,180 +317,8 @@ func getNetworkStateWith(
 	return NetworkState{
 		NetworkType:     networkType,
 		SSID:            ssid,
-		DefaultRoute:    defaultRoute,
 		ActiveInterface: activeInterface,
-		InterfaceStatus: canonicalNetworkInterfaceStates(interfaceStates),
-		HotspotState:    parseHotspotState(combined),
 	}, nil
-}
-
-func readDefaultRoute(
-	ctx context.Context,
-	command networkCommandFunc,
-	readFile networkFileReader,
-) (string, error) {
-	output, routeErr := command(ctx, "ip", "route", "show", "default")
-	if routeErr == nil {
-		if value := canonicalDefaultRoutes(output); value != "" {
-			return value, nil
-		}
-	}
-	content, fileErr := readFile("/proc/net/route")
-	if fileErr == nil {
-		if value := canonicalProcDefaultRoutes(string(content)); value != "" {
-			return value, nil
-		}
-		if routeErr == nil {
-			return "none", nil
-		}
-	}
-	if routeErr != nil {
-		if fileErr != nil {
-			return "", fmt.Errorf("读取默认路由失败: %v; /proc/net/route: %v", routeErr, fileErr)
-		}
-		return "", fmt.Errorf("默认路由为空: %w", routeErr)
-	}
-	return "", errors.New("无法读取默认路由")
-}
-
-func canonicalDefaultRoutes(content string) string {
-	routes := make([]string, 0)
-	for _, line := range strings.Split(content, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) > 0 && fields[0] == "default" {
-			routes = append(routes, strings.Join(fields, " "))
-		}
-	}
-	sort.Strings(routes)
-	return strings.Join(routes, ";")
-}
-
-func canonicalProcDefaultRoutes(content string) string {
-	routes := make([]string, 0)
-	scanner := bufio.NewScanner(strings.NewReader(content))
-	// 跳过 /proc/net/route 表头。
-	_ = scanner.Scan()
-	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
-		if len(fields) >= 3 && fields[1] == "00000000" {
-			routes = append(routes, strings.Join(fields, " "))
-		}
-	}
-	sort.Strings(routes)
-	return strings.Join(routes, ";")
-}
-
-type networkInterfaceState struct {
-	Name  string
-	Flags string
-	State string
-}
-
-func parseNetworkInterfaceStates(content string) ([]networkInterfaceState, error) {
-	matches := interfaceLinePattern.FindAllStringSubmatch(content, -1)
-	if len(matches) == 0 {
-		return nil, errors.New("无法解析网络接口状态")
-	}
-	result := make([]networkInterfaceState, 0, len(matches))
-	for _, match := range matches {
-		if len(match) < 4 {
-			continue
-		}
-		result = append(result, networkInterfaceState{
-			Name:  strings.TrimSpace(match[1]),
-			Flags: strings.ToUpper(strings.TrimSpace(match[2])),
-			State: strings.ToLower(strings.TrimSpace(match[3])),
-		})
-	}
-	if len(result) == 0 {
-		return nil, errors.New("无法解析网络接口状态")
-	}
-	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
-	return result, nil
-}
-
-func canonicalNetworkInterfaceStates(states []networkInterfaceState) string {
-	values := make([]string, 0, len(states))
-	for _, state := range states {
-		values = append(values, state.Name+"="+state.State+"<"+state.Flags+">")
-	}
-	return strings.Join(values, ";")
-}
-
-func networkInterfaceIsUp(states []networkInterfaceState, name string) bool {
-	for _, state := range states {
-		if state.Name != name {
-			continue
-		}
-		if state.State == "up" || strings.Contains(","+state.Flags+",", ",UP,") || strings.Contains(","+state.Flags+",", ",LOWER_UP,") {
-			return true
-		}
-		return false
-	}
-	return false
-}
-
-func parseHotspotState(output string) string {
-	if match := hotspotStatePattern.FindStringSubmatch(output); len(match) > 1 {
-		return strings.ToLower(match[1])
-	}
-	if match := hotspotNumericPattern.FindStringSubmatch(output); len(match) > 1 {
-		switch match[1] {
-		case "10":
-			return "disabling"
-		case "11":
-			return "disabled"
-		case "12":
-			return "enabling"
-		case "13":
-			return "enabled"
-		case "14":
-			return "failed"
-		}
-	}
-	return "unknown"
-}
-
-func getActiveNetworkRouteWith(
-	ctx context.Context,
-	command networkCommandFunc,
-	readFile networkFileReader,
-) (string, string, error) {
-	if output, err := command(ctx, "ip", "route", "get", "1.1.1.1"); err == nil {
-		if iface := parseRouteDevice(output); iface != "" {
-			return strings.Join(strings.Fields(output), " "), iface, nil
-		}
-	}
-
-	content, err := readFile("/proc/net/route")
-	if err != nil {
-		return "", "", fmt.Errorf("%w: 读取默认路由失败: %w", errNetworkUnavailable, err)
-	}
-	if iface := parseProcRouteDevice(string(content)); iface != "" {
-		return "proc:" + canonicalProcDefaultRoutes(string(content)), iface, nil
-	}
-	return "", "", networkUnavailable("无法确定活跃网络接口")
-}
-
-func parseRouteDevice(output string) string {
-	match := activeDevicePattern.FindStringSubmatch(output)
-	if len(match) < 2 {
-		return ""
-	}
-	return strings.TrimSpace(match[1])
-}
-
-func parseProcRouteDevice(content string) string {
-	scanner := bufio.NewScanner(strings.NewReader(content))
-	// 跳过接口、目标地址和网关等字段的表头。
-	_ = scanner.Scan()
-	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
-		if len(fields) >= 2 && fields[1] == "00000000" {
-			return fields[0]
-		}
-	}
-	return ""
 }
 
 func isWiFiInterface(iface string) bool {

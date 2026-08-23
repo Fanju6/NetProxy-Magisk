@@ -17,6 +17,7 @@ import (
 )
 
 const (
+	methodGetVersion          = "/daemon.StartedService/GetVersion"
 	methodGetStartedAt        = "/daemon.StartedService/GetStartedAt"
 	methodSubscribeStatus     = "/daemon.StartedService/SubscribeStatus"
 	methodGetClashModeStatus  = "/daemon.StartedService/GetClashModeStatus"
@@ -26,11 +27,11 @@ const (
 	methodSubscribeGroups     = "/daemon.StartedService/SubscribeGroups"
 	methodSubscribeOutbounds  = "/daemon.StartedService/SubscribeOutbounds"
 	methodCloseAllConnections = "/daemon.StartedService/CloseAllConnections"
+	minimumAPIVersion         = 1
 )
 
-// Client is the minimal native Service API bridge used by the NetProxy shell
-// control layer. It intentionally implements only the pinned protobuf wire
-// messages needed by the module, avoiding a dependency on the full daemon.
+// Client 是 NetProxy 控制层使用的最小 Service API 客户端。
+// 它只实现固定版本所需的 protobuf 消息，避免引入完整 daemon 运行时。
 type Client struct {
 	baseURL    string
 	secret     string
@@ -39,6 +40,11 @@ type Client struct {
 
 type StartedAt struct {
 	UnixMilli int64 `json:"unix_milli"`
+}
+
+type Version struct {
+	Version    string `json:"version"`
+	APIVersion int32  `json:"api_version"`
 }
 
 type Status struct {
@@ -75,6 +81,7 @@ type Group struct {
 }
 
 type emptyMessage struct{}
+type versionResponse Version
 type startedAtResponse struct{ UnixMilli int64 }
 type statusRequest struct{ Interval int64 }
 type statusResponse Status
@@ -136,8 +143,19 @@ func (c *Client) invoke(ctx context.Context, method string, request any, respons
 	return (wireCodec{}).Unmarshal(content, response)
 }
 
-// Ready verifies that StartedService is attached to a running sing-box instance.
+// Ready 检查 Service API 版本，并确认它已经绑定运行中的 sing-box 实例。
 func (c *Client) Ready(ctx context.Context) (StartedAt, error) {
+	version, err := c.Version(ctx)
+	if err != nil {
+		return StartedAt{}, fmt.Errorf("读取 Service API 版本失败: %w", err)
+	}
+	if version.APIVersion < minimumAPIVersion {
+		return StartedAt{}, fmt.Errorf(
+			"Service API 版本过旧: 核心=%d, NetProxy 最低要求=%d",
+			version.APIVersion,
+			minimumAPIVersion,
+		)
+	}
 	startedAt, err := c.StartedAt(ctx)
 	if err != nil {
 		return StartedAt{}, err
@@ -146,6 +164,14 @@ func (c *Client) Ready(ctx context.Context) (StartedAt, error) {
 		return StartedAt{}, errors.New("Service API has no active sing-box instance")
 	}
 	return startedAt, nil
+}
+
+func (c *Client) Version(ctx context.Context) (Version, error) {
+	var response versionResponse
+	if err := c.invoke(ctx, methodGetVersion, &emptyMessage{}, &response); err != nil {
+		return Version{}, err
+	}
+	return Version(response), nil
 }
 
 func (c *Client) StartedAt(ctx context.Context) (StartedAt, error) {
@@ -353,6 +379,8 @@ func (wireCodec) Unmarshal(content []byte, value any) error {
 	switch message := value.(type) {
 	case *emptyMessage:
 		return nil
+	case *versionResponse:
+		return decodeVersion(content, message)
 	case *startedAtResponse:
 		return decodeStartedAt(content, message)
 	case *statusResponse:
@@ -434,6 +462,23 @@ func consumeBytes(content []byte, wireType protowire.Type) ([]byte, int, error) 
 		return nil, 0, protowire.ParseError(length)
 	}
 	return value, length, nil
+}
+
+func decodeVersion(content []byte, message *versionResponse) error {
+	return consumeFields(content, func(number protowire.Number, wireType protowire.Type, field []byte) (int, error) {
+		switch number {
+		case 1:
+			value, length, err := consumeString(field, wireType)
+			message.Version = value
+			return length, err
+		case 2:
+			value, length, err := consumeVarint(field, wireType)
+			message.APIVersion = int32(value)
+			return length, err
+		default:
+			return 0, nil
+		}
+	})
 }
 
 func decodeStartedAt(content []byte, message *startedAtResponse) error {

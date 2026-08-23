@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -15,6 +16,10 @@ import (
 
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
+	C "github.com/sagernet/sing-box/constant"
+	"github.com/sagernet/sing-box/option"
+	SJSON "github.com/sagernet/sing/common/json"
+	"github.com/sagernet/sing/common/json/badoption"
 )
 
 var validGroupID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
@@ -487,37 +492,55 @@ func containsNode(group *loadedGroup, reference string) bool {
 }
 
 func writeRuntimeProviders(path string, groups []*loadedGroup) error {
-	items := make([]map[string]any, 0, len(groups))
+	items := make([]option.Provider, 0, len(groups))
 	for _, group := range groups {
-		items = append(items, map[string]any{
-			"type": "local", "tag": group.RuntimeTag, "path": group.ProviderPath,
-			"health_check": map[string]any{
-				"enabled": true, "url": "https://www.gstatic.com/generate_204",
-				"interval": "10m", "timeout": "5s",
+		items = append(items, option.Provider{
+			Type: C.ProviderTypeLocal,
+			Tag:  group.RuntimeTag,
+			Options: &option.ProviderLocalOptions{
+				Path: group.ProviderPath,
+				HealthCheck: option.ProviderHealthCheckOptions{
+					Enabled:  true,
+					URL:      "https://www.gstatic.com/generate_204",
+					Interval: badoption.Duration(10 * time.Minute),
+					Timeout:  badoption.Duration(5 * time.Second),
+				},
 			},
 		})
 	}
-	return writeJSONAtomic(path, map[string]any{"providers": items})
+	return writeRuntimeJSONAtomic(path, struct {
+		Providers []option.Provider `json:"providers"`
+	}{Providers: items})
 }
 
 func writeRuntimeOutbounds(path string, groups []*loadedGroup, activeTag, selector string) error {
-	outbounds := []map[string]any{
-		{"type": "direct", "tag": "direct"},
-		{"type": "block", "tag": "block"},
+	outbounds := []option.Outbound{
+		{Type: C.TypeDirect, Tag: "direct", Options: new(option.DirectOutboundOptions)},
+		{Type: C.TypeBlock, Tag: "block", Options: new(option.StubOptions)},
 	}
 	options := make([]string, 0, len(groups)*2)
 	for _, group := range groups {
 		autoTag := "Auto/" + group.RuntimeTag
 		selectTag := "Select/" + group.RuntimeTag
 		outbounds = append(outbounds,
-			map[string]any{
-				"type": "urltest", "tag": autoTag, "providers": []string{group.RuntimeTag},
-				"url": "https://www.gstatic.com/generate_204", "interval": "3m", "tolerance": 50,
-				"interrupt_exist_connections": true,
+			option.Outbound{
+				Type: C.TypeURLTest,
+				Tag:  autoTag,
+				Options: &option.URLTestOutboundOptions{
+					GroupCommonOption:         option.GroupCommonOption{Providers: []string{group.RuntimeTag}},
+					URL:                       "https://www.gstatic.com/generate_204",
+					Interval:                  badoption.Duration(3 * time.Minute),
+					Tolerance:                 50,
+					InterruptExistConnections: true,
+				},
 			},
-			map[string]any{
-				"type": "selector", "tag": selectTag, "providers": []string{group.RuntimeTag},
-				"interrupt_exist_connections": true,
+			option.Outbound{
+				Type: C.TypeSelector,
+				Tag:  selectTag,
+				Options: &option.SelectorOutboundOptions{
+					GroupCommonOption:         option.GroupCommonOption{Providers: []string{group.RuntimeTag}},
+					InterruptExistConnections: true,
+				},
 			},
 		)
 		options = append(options, autoTag, selectTag)
@@ -526,25 +549,49 @@ func writeRuntimeOutbounds(path string, groups []*loadedGroup, activeTag, select
 	if selector == "manual" {
 		defaultTag = "Select/" + activeTag
 	}
-	outbounds = append(outbounds, map[string]any{
-		"type": "selector", "tag": "Proxy", "outbounds": options, "default": defaultTag,
-		"interrupt_exist_connections": true,
+	outbounds = append(outbounds, option.Outbound{
+		Type: C.TypeSelector,
+		Tag:  "Proxy",
+		Options: &option.SelectorOutboundOptions{
+			GroupCommonOption:         option.GroupCommonOption{Outbounds: options},
+			Default:                   defaultTag,
+			InterruptExistConnections: true,
+		},
 	})
-	return writeJSONAtomic(path, map[string]any{"outbounds": outbounds})
+	return writeRuntimeJSONAtomic(path, struct {
+		Outbounds []option.Outbound `json:"outbounds"`
+	}{Outbounds: outbounds})
 }
 
 func writeEmptyRuntime(options RuntimeOptions) error {
-	if err := writeJSONAtomic(options.ProvidersOutput, map[string]any{"providers": []any{}}); err != nil {
+	if err := writeRuntimeJSONAtomic(options.ProvidersOutput, struct {
+		Providers []option.Provider `json:"providers"`
+	}{Providers: []option.Provider{}}); err != nil {
 		return err
 	}
-	if err := writeJSONAtomic(options.OutboundsOutput, map[string]any{"outbounds": []map[string]any{
-		{"type": "direct", "tag": "direct"},
-		{"type": "block", "tag": "block"},
-		{"type": "direct", "tag": "Proxy"},
+	if err := writeRuntimeJSONAtomic(options.OutboundsOutput, struct {
+		Outbounds []option.Outbound `json:"outbounds"`
+	}{Outbounds: []option.Outbound{
+		{Type: C.TypeDirect, Tag: "direct", Options: new(option.DirectOutboundOptions)},
+		{Type: C.TypeBlock, Tag: "block", Options: new(option.StubOptions)},
+		{Type: C.TypeDirect, Tag: "Proxy", Options: new(option.DirectOutboundOptions)},
 	}}); err != nil {
 		return err
 	}
 	return nil
+}
+
+func writeRuntimeJSONAtomic(path string, value any) error {
+	content, err := SJSON.MarshalContext(provider.RuntimeContext(context.Background()), value)
+	if err != nil {
+		return err
+	}
+	var formatted bytes.Buffer
+	if err := json.Indent(&formatted, content, "", "  "); err != nil {
+		return err
+	}
+	formatted.WriteByte('\n')
+	return provider.WriteAtomic(path, formatted.Bytes(), 0o600)
 }
 
 func writeJSONAtomic(path string, value any) error {

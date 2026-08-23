@@ -2,15 +2,69 @@ package serviceapi
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"google.golang.org/protobuf/encoding/protowire"
 )
+
+func TestReadyChecksServiceAPIVersion(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var payload []byte
+		switch request.URL.Path {
+		case methodGetVersion:
+			payload = appendString(payload, 1, "1.14.0-beta.17-reF1nd")
+			payload = appendVarint(payload, 2, minimumAPIVersion+3)
+		case methodGetStartedAt:
+			payload = appendVarint(payload, 1, 123456)
+		default:
+			http.Error(writer, "unexpected method", http.StatusNotFound)
+			return
+		}
+		writeTestFrame(t, writer, 0, payload)
+	}))
+	defer server.Close()
+
+	client, err := New(server.URL, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	startedAt, err := client.Ready(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if startedAt.UnixMilli != 123456 {
+		t.Fatalf("unexpected startedAt: %d", startedAt.UnixMilli)
+	}
+}
+
+func TestReadyRejectsMissingServiceAPIVersion(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != methodGetVersion {
+			http.Error(writer, "unexpected method", http.StatusNotFound)
+			return
+		}
+		payload := appendString(nil, 1, "legacy")
+		writeTestFrame(t, writer, 0, payload)
+	}))
+	defer server.Close()
+
+	client, err := New(server.URL, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if _, err = client.Ready(t.Context()); err == nil || !strings.Contains(err.Error(), fmt.Sprintf("最低要求=%d", minimumAPIVersion)) {
+		t.Fatalf("未拒绝缺少版本号的 Service API: %v", err)
+	}
+}
 
 func TestStartedAtOverGRPCWeb(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

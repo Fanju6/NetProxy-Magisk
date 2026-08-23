@@ -350,33 +350,14 @@ func looksLikeClash(content string) bool {
 
 func applyAllowInsecure(document *provider.Document) {
 	for index := range document.Outbounds {
-		switch options := document.Outbounds[index].Options.(type) {
-		case *option.AnyTLSOutboundOptions:
-			setInsecure(&options.OutboundTLSOptionsContainer)
-		case *option.HTTPOutboundOptions:
-			setInsecure(&options.OutboundTLSOptionsContainer)
-		case *option.HysteriaOutboundOptions:
-			setInsecure(&options.OutboundTLSOptionsContainer)
-		case *option.Hysteria2OutboundOptions:
-			setInsecure(&options.OutboundTLSOptionsContainer)
-		case *option.NaiveOutboundOptions:
-			setInsecure(&options.OutboundTLSOptionsContainer)
-		case *option.ShadowTLSOutboundOptions:
-			setInsecure(&options.OutboundTLSOptionsContainer)
-		case *option.TrojanOutboundOptions:
-			setInsecure(&options.OutboundTLSOptionsContainer)
-		case *option.TUICOutboundOptions:
-			setInsecure(&options.OutboundTLSOptionsContainer)
-		case *option.VLESSOutboundOptions:
-			setInsecure(&options.OutboundTLSOptionsContainer)
-		case *option.VMessOutboundOptions:
-			setInsecure(&options.OutboundTLSOptionsContainer)
+		wrapper, loaded := document.Outbounds[index].Options.(option.OutboundTLSOptionsWrapper)
+		if !loaded {
+			continue
 		}
-	}
-}
-
-func setInsecure(container *option.OutboundTLSOptionsContainer) {
-	if container.TLS != nil && container.TLS.Enabled {
-		container.TLS.Insecure = true
+		tlsOptions := wrapper.TakeOutboundTLSOptions()
+		if tlsOptions != nil && tlsOptions.Enabled {
+			tlsOptions.Insecure = true
+			wrapper.ReplaceOutboundTLSOptions(tlsOptions)
+		}
 	}
 }

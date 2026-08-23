@@ -3,6 +3,7 @@ module github.com/Fanju6/NetProxy-Magisk/src/native/netproxy
 go 1.26.5
 
 require (
+	github.com/sagernet/netlink v0.0.0-20260814022025-64455d367bbf
 	github.com/sagernet/sing v0.9.0-beta.4
 	github.com/sagernet/sing-box v1.14.0-rc.1-reF1nd
 	golang.org/x/sys v0.47.0
@@ -14,6 +15,7 @@ replace github.com/sagernet/sing-box => github.com/reF1nd/sing-box v1.14.0-rc.1-
 
 require (
 	github.com/miekg/dns v1.1.72 // indirect
+	github.com/vishvananda/netns v0.0.5 // indirect
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba // indirect
 	golang.org/x/mod v0.37.0 // indirect
 	golang.org/x/net v0.57.0 // indirect
