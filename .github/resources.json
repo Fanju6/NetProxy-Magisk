@@ -8,7 +8,8 @@
       "ref": "X",
       "sourcePath": "sing-box/Rules/Ads_AWAvenue.srs",
       "metadataPath": "sing-box/Rules/Ads_AWAvenue.json",
-      "currentCommit": "b275db41d70338b937f354972e9328f786028b9f"
+      "currentCommit": "4320fa39ded4284ad40f54767a2548e0dcdf5ce5",
+      "currentSha256": "d88b974b8933b7cfcabbd99a4049566028503f7ecfbad6665bb4d38abbbd4ec3"
     },
     {
       "name": "AppleCN",
@@ -40,8 +41,8 @@
       "ref": "X",
       "sourcePath": "sing-box/Rules/ChinaIP.srs",
       "metadataPath": "sing-box/Rules/ChinaIP.json",
-      "currentCommit": "68502d6641e6765b7af2e83c358b169e82dec4a8",
-      "currentSha256": "1011790a115b6295d76434f1bc99ad8a7b4717f3c979dcbe15b15e6af1ce8d5f"
+      "currentCommit": "7d57eb04a80eb69013a7ee8fbfbf3ee4b9f1480a",
+      "currentSha256": "1fc84183511b7ec64f0a3f4eff9cc8219c0de1c2dd3746dbaf33dd0b394e648e"
     },
     {
       "name": "Proxy",
@@ -77,7 +78,7 @@
       "path": "src/module/webroot/zashboard",
       "repo": "Zephyruso/zashboard",
       "assetPattern": "dist-no-fonts.zip",
-      "currentVersion": "v3.19.0"
+      "currentVersion": "v3.21.0"
     }
   ],
   "githubArchive": [
@@ -85,8 +86,8 @@
       "path": "src/module/webroot/sing-box-dashboard",
       "repo": "SagerNet/sing-box-dashboard",
       "ref": "gh-pages",
-      "currentCommit": "bec05dd5e5b985659c271ff0d7dc6f78fd50975e",
-      "currentSourceCommit": "96b91aab307d8fe016fc152d3fe3c8b6539e26c1"
+      "currentCommit": "a9d068d22a6cff77dbb2f803e7469209f2e76af4",
+      "currentSourceCommit": "564dd76b2382af2fb72aee9fcc95af75db693d1a"
     }
   ]
 }
