@@ -268,7 +268,7 @@ OUTBOUND_MODE=rule
 
 下载、转换和校验阶段可以取消，原子提交阶段不可取消。任何失败都保留上一版有效 Provider 和当前选择。核心 ready 时可按设置经本地代理下载；核心停止或代理下载失败时，`auto` 策略允许直连重试。
 
-Worker 根据各订阅的 `next_update_at` 调度，不依赖 sing-box 和 `crond`；同时轮询 Android 路由表并读取 Wi-Fi 状态，网络策略是否生效由每次评估读取的配置决定。运行时进度放在 `/dev/netproxy/subscriptions/`，完成后不作为长期 UI 状态显示。
+Worker 根据各订阅的 `next_update_at` 调度，不依赖 sing-box 和 `crond`；同时通过 netlink 监听 Android 路由、地址和接口变化，再读取 Wi-Fi 与实际出口状态进行策略评估，不得改回文件或定时轮询。运行时进度放在 `/dev/netproxy/subscriptions/`，完成后不作为长期 UI 状态显示。
 
 订阅响应头的解析要点：`Subscription-Userinfo` 提供流量与到期，空值（如 `expire=`）表示不适用而非畸形；`Profile-Title` 可能带 `base64:` 前缀或 RFC 2047 编码；`Content-Disposition` 的 `filename` 可能是 RFC 5987 形式，也可能直接携带原始 UTF-8 字节。
 

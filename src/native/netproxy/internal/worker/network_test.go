@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"log"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -332,16 +331,6 @@ func TestParseHotspotState(t *testing.T) {
 }
 
 func TestNetworkWatcherDebouncesStateChanges(t *testing.T) {
-	routeTable, err := os.CreateTemp(t.TempDir(), "rt_tables-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := routeTable.WriteString("initial\n"); err != nil {
-		t.Fatal(err)
-	}
-	if err := routeTable.Close(); err != nil {
-		t.Fatal(err)
-	}
 	initial := NetworkState{NetworkType: "wifi", SSID: "A", DefaultRoute: "wlan0", ActiveInterface: "wlan0", InterfaceStatus: "wlan0=up", HotspotState: "disabled"}
 	final := initial
 	final.SSID = "C"
@@ -360,13 +349,13 @@ func TestNetworkWatcherDebouncesStateChanges(t *testing.T) {
 		}
 	}
 	evaluated := make(chan string, 4)
+	events := make(chan struct{}, 4)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
 		runNetworkWatcher(ctx, Options{
-			NetworkTablesPath:       routeTable.Name(),
 			NetworkStateReader:      read,
-			NetworkPollInterval:     5 * time.Millisecond,
+			NetworkEventSource:      channelNetworkEventSource(events),
 			NetworkDebounceInterval: 20 * time.Millisecond,
 			NetworkEvaluate: func(_ context.Context, _, ssid string) error {
 				evaluated <- ssid
@@ -388,11 +377,11 @@ func TestNetworkWatcherDebouncesStateChanges(t *testing.T) {
 	gotReads := readCount
 	mu.Unlock()
 	if gotReads != 1 {
-		t.Fatalf("route table stable state should not reread network state, count=%d", gotReads)
+		t.Fatalf("没有网络事件时不应重复读取网络状态，count=%d", gotReads)
 	}
-	if err := os.WriteFile(routeTable.Name(), []byte("changed\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	events <- struct{}{}
+	events <- struct{}{}
+	events <- struct{}{}
 	select {
 	case got := <-evaluated:
 		if got != "C" {
@@ -410,32 +399,20 @@ func TestNetworkWatcherDebouncesStateChanges(t *testing.T) {
 	gotReads = readCount
 	mu.Unlock()
 	if gotReads != 2 {
-		t.Fatalf("route table change should trigger one network reread, count=%d", gotReads)
+		t.Fatalf("连续网络事件应合并为一次状态读取，count=%d", gotReads)
 	}
 	cancel()
 	<-done
 }
 
-func TestNetworkWatcherDoesNotReadStateWhileRouteTableIsStable(t *testing.T) {
-	routeTable, err := os.CreateTemp(t.TempDir(), "rt_tables-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := routeTable.WriteString("stable\n"); err != nil {
-		t.Fatal(err)
-	}
-	if err := routeTable.Close(); err != nil {
-		t.Fatal(err)
-	}
-
+func TestNetworkWatcherDoesNotReadStateWithoutEvents(t *testing.T) {
 	var mu sync.Mutex
 	reads := 0
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
 		runNetworkWatcher(ctx, Options{
-			NetworkTablesPath:   routeTable.Name(),
-			NetworkPollInterval: 5 * time.Millisecond,
+			NetworkEventSource: channelNetworkEventSource(nil),
 			NetworkStateReader: func(context.Context) (NetworkState, error) {
 				mu.Lock()
 				defer mu.Unlock()
@@ -452,8 +429,62 @@ func TestNetworkWatcherDoesNotReadStateWhileRouteTableIsStable(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	if reads != 1 {
-		t.Fatalf("stable route table should not reread network state, count=%d", reads)
+		t.Fatalf("没有网络事件时不应重复读取网络状态，count=%d", reads)
 	}
+}
+
+func TestNetworkWatcherCancelsStaleEvaluation(t *testing.T) {
+	states := []NetworkState{
+		{NetworkType: "wifi", SSID: "A"},
+		{NetworkType: "wifi", SSID: "B"},
+	}
+	var mu sync.Mutex
+	reads := 0
+	firstStarted := make(chan struct{})
+	latestEvaluated := make(chan string, 1)
+	events := make(chan struct{}, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		runNetworkWatcher(ctx, Options{
+			NetworkEventSource: channelNetworkEventSource(events),
+			NetworkStateReader: func(context.Context) (NetworkState, error) {
+				mu.Lock()
+				defer mu.Unlock()
+				state := states[min(reads, len(states)-1)]
+				reads++
+				return state, nil
+			},
+			NetworkEvaluate: func(ctx context.Context, _, ssid string) error {
+				if ssid == "A" {
+					close(firstStarted)
+					<-ctx.Done()
+					return ctx.Err()
+				}
+				latestEvaluated <- ssid
+				return nil
+			},
+			NetworkDebounceInterval: 5 * time.Millisecond,
+		}, log.New(io.Discard, "", 0))
+		close(done)
+	}()
+
+	select {
+	case <-firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("首个网络策略评估未启动")
+	}
+	events <- struct{}{}
+	select {
+	case got := <-latestEvaluated:
+		if got != "B" {
+			t.Fatalf("过期评估取消后应用了 %q, want B", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("新网络状态未在取消旧评估后应用")
+	}
+	cancel()
+	<-done
 }
 
 func TestNetworkWatcherSkipsEvaluationWhenStateReadFails(t *testing.T) {
@@ -462,11 +493,10 @@ func TestNetworkWatcherSkipsEvaluationWhenStateReadFails(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		runNetworkWatcher(ctx, Options{
+			NetworkEventSource: channelNetworkEventSource(nil),
 			NetworkStateReader: func(context.Context) (NetworkState, error) {
 				return NetworkState{}, errors.New("unavailable")
 			},
-			NetworkPollInterval:     5 * time.Millisecond,
-			NetworkDebounceInterval: 5 * time.Millisecond,
 			NetworkEvaluate: func(context.Context, string, string) error {
 				evaluated <- struct{}{}
 				return nil
@@ -481,5 +511,22 @@ func TestNetworkWatcherSkipsEvaluationWhenStateReadFails(t *testing.T) {
 	case <-evaluated:
 		t.Fatal("网络状态读取失败时不应执行策略评估")
 	default:
+	}
+}
+
+func channelNetworkEventSource(events <-chan struct{}) NetworkEventSource {
+	return func(ctx context.Context, notify func()) error {
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case _, open := <-events:
+				if !open {
+					<-ctx.Done()
+					return nil
+				}
+				notify()
+			}
+		}
 	}
 }

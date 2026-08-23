@@ -11,16 +11,16 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
 const (
-	defaultNetworkTablesPath = "/data/misc/net/rt_tables"
-	networkPollInterval      = 3 * time.Second
-	networkDebounceInterval  = 2 * time.Second
-	networkCommandTimeout    = 3 * time.Second
-	networkEvaluateTimeout   = 8 * time.Second
-	networkErrorRepeatEvery  = 100
+	networkDebounceInterval   = time.Second
+	networkEventRetryInterval = 30 * time.Second
+	networkCommandTimeout     = 3 * time.Second
+	networkEvaluateTimeout    = 8 * time.Second
+	networkErrorRepeatEvery   = 100
 )
 
 var errNetworkUnavailable = errors.New("Android 网络尚未就绪")
@@ -88,78 +88,172 @@ func (state NetworkState) Fingerprint() string {
 // NetworkStateReader 读取一次完整网络状态，测试可注入确定性的状态序列。
 type NetworkStateReader func(context.Context) (NetworkState, error)
 
-type networkFileState struct {
-	exists  bool
-	modTime int64
-	size    int64
+// NetworkEventSource 阻塞监听网络变化，并通过 notify 合并通知控制器。
+type NetworkEventSource func(context.Context, func()) error
+
+type networkEvaluationResult struct {
+	state       NetworkState
+	readErr     error
+	evaluateErr error
+	skipped     bool
 }
 
-// runNetworkWatcher 轮询完整 Android 网络状态，并在网络状态稳定后评估 Wi-Fi 策略。
+// runNetworkWatcher 监听 Android 网络事件，并在网络状态稳定后评估 Wi-Fi 策略。
 func runNetworkWatcher(ctx context.Context, options Options, logger *log.Logger) {
-	path := strings.TrimSpace(options.NetworkTablesPath)
-	if path == "" {
-		path = defaultNetworkTablesPath
-	}
 	reader := options.NetworkStateReader
 	if reader == nil {
 		reader = getNetworkState
 	}
-	pollInterval := options.NetworkPollInterval
-	if pollInterval <= 0 {
-		pollInterval = networkPollInterval
+	eventSource := options.NetworkEventSource
+	if eventSource == nil {
+		eventSource = defaultNetworkEventSource
 	}
 	debounceInterval := options.NetworkDebounceInterval
 	if debounceInterval <= 0 {
 		debounceInterval = networkDebounceInterval
 	}
-
-	lastFileState := readNetworkFileState(path)
-	initialState, err := readNetworkState(ctx, reader)
-	var repeatedError repeatedNetworkError
-	if err != nil {
-		logNetworkReadFailure(logger, &repeatedError, "读取 Android 网络状态失败", err)
-	} else {
-		evaluateNetworkState(ctx, options, logger, initialState)
+	events := make(chan struct{}, 1)
+	notify := func() {
+		select {
+		case events <- struct{}{}:
+		default:
+		}
 	}
-	lastEvaluatedState := initialState
-	haveEvaluatedState := err == nil
+	sourceContext, cancelSource := context.WithCancel(ctx)
+	var sourceWait sync.WaitGroup
+	sourceWait.Add(1)
+	go func() {
+		defer sourceWait.Done()
+		runNetworkEventSource(sourceContext, eventSource, notify, logger)
+	}()
 
-	ticker := time.NewTicker(pollInterval)
-	defer ticker.Stop()
-
+	results := make(chan networkEvaluationResult, 1)
+	var evaluationWait sync.WaitGroup
+	var evaluationCancel context.CancelFunc
+	running := false
+	pending := false
+	var lastEvaluatedState NetworkState
+	haveEvaluatedState := false
+	var repeatedError repeatedNetworkError
 	var debounceTimer *time.Timer
 	var debounce <-chan time.Time
-	defer func() { stopNetworkTimer(debounceTimer) }()
+
+	startEvaluation := func() {
+		if running {
+			pending = true
+			return
+		}
+		pending = false
+		running = true
+		evaluationContext, cancel := context.WithCancel(ctx)
+		evaluationCancel = cancel
+		previousState := lastEvaluatedState
+		havePreviousState := haveEvaluatedState
+		evaluationWait.Add(1)
+		go func() {
+			defer evaluationWait.Done()
+			results <- readAndEvaluateNetworkState(evaluationContext, options, reader, previousState, havePreviousState)
+		}()
+	}
+
+	scheduleEvaluation := func(delay time.Duration) {
+		pending = false
+		if evaluationCancel != nil {
+			evaluationCancel()
+		}
+		stopNetworkTimer(debounceTimer)
+		debounceTimer = time.NewTimer(delay)
+		debounce = debounceTimer.C
+	}
+
+	defer func() {
+		stopNetworkTimer(debounceTimer)
+		if evaluationCancel != nil {
+			evaluationCancel()
+		}
+		cancelSource()
+		evaluationWait.Wait()
+		sourceWait.Wait()
+	}()
+
+	// 首次状态不等待事件，确保开机已有网络时立即应用策略。
+	startEvaluation()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			currentFileState := readNetworkFileState(path)
-			if currentFileState != lastFileState {
-				lastFileState = currentFileState
-				stopNetworkTimer(debounceTimer)
-				debounceTimer = time.NewTimer(debounceInterval)
-				debounce = debounceTimer.C
-			}
+		case <-events:
+			scheduleEvaluation(debounceInterval)
 		case <-debounce:
 			debounce = nil
-			stableState, readErr := readNetworkState(ctx, reader)
-			if readErr != nil {
-				stopNetworkTimer(debounceTimer)
-				debounceTimer = nil
-				logNetworkReadFailure(logger, &repeatedError, "确认 Android 网络状态失败", readErr)
+			debounceTimer = nil
+			startEvaluation()
+		case result := <-results:
+			running = false
+			evaluationCancel = nil
+			if errors.Is(result.readErr, context.Canceled) || errors.Is(result.evaluateErr, context.Canceled) {
+				if pending {
+					startEvaluation()
+				}
 				continue
 			}
-			repeatedError.recovered(logger)
-			if haveEvaluatedState && stableState.Fingerprint() == lastEvaluatedState.Fingerprint() {
-				continue
+			if result.readErr != nil {
+				logNetworkReadFailure(logger, &repeatedError, "确认 Android 网络状态失败", result.readErr)
+			} else {
+				repeatedError.recovered(logger)
 			}
-			lastEvaluatedState = stableState
-			haveEvaluatedState = true
-			evaluateNetworkState(ctx, options, logger, stableState)
+			if result.evaluateErr != nil {
+				logWorker(logger, "ERROR", "network.policy", "failed", "网络策略评估失败 (network_type=%s): %v", result.state.NetworkType, result.evaluateErr)
+			} else if result.readErr == nil && !result.skipped {
+				lastEvaluatedState = result.state
+				haveEvaluatedState = true
+			}
+			if pending {
+				startEvaluation()
+			}
 		}
+	}
+}
+
+func runNetworkEventSource(ctx context.Context, source NetworkEventSource, notify func(), logger *log.Logger) {
+	for {
+		err := source(ctx, notify)
+		if ctx.Err() != nil {
+			return
+		}
+		if err != nil {
+			logWorker(logger, "ERROR", "network.watch", "failed", "监听 Android 网络事件失败: %v", err)
+		} else {
+			logWorker(logger, "ERROR", "network.watch", "failed", "Android 网络事件监听意外结束")
+		}
+		timer := time.NewTimer(networkEventRetryInterval)
+		select {
+		case <-ctx.Done():
+			stopNetworkTimer(timer)
+			return
+		case <-timer.C:
+		}
+	}
+}
+
+func readAndEvaluateNetworkState(
+	ctx context.Context,
+	options Options,
+	reader NetworkStateReader,
+	previous NetworkState,
+	havePrevious bool,
+) networkEvaluationResult {
+	state, err := readNetworkState(ctx, reader)
+	if err != nil {
+		return networkEvaluationResult{readErr: err}
+	}
+	if havePrevious && state.Fingerprint() == previous.Fingerprint() {
+		return networkEvaluationResult{state: state, skipped: true}
+	}
+	return networkEvaluationResult{
+		state:       state,
+		evaluateErr: evaluateNetworkState(ctx, options, state),
 	}
 }
 
@@ -169,14 +263,6 @@ func logNetworkReadFailure(logger *log.Logger, repeated *repeatedNetworkError, m
 		return
 	}
 	repeated.record(logger, message, err)
-}
-
-func readNetworkFileState(path string) networkFileState {
-	info, err := os.Stat(path)
-	if err != nil {
-		return networkFileState{}
-	}
-	return networkFileState{exists: true, modTime: info.ModTime().UnixNano(), size: info.Size()}
 }
 
 func readNetworkState(parent context.Context, reader NetworkStateReader) (NetworkState, error) {
@@ -195,15 +281,13 @@ func stopNetworkTimer(timer *time.Timer) {
 	}
 }
 
-func evaluateNetworkState(parent context.Context, options Options, logger *log.Logger, state NetworkState) {
+func evaluateNetworkState(parent context.Context, options Options, state NetworkState) error {
 	if options.NetworkEvaluate == nil {
-		return
+		return nil
 	}
 	ctx, cancel := context.WithTimeout(parent, networkEvaluateTimeout)
 	defer cancel()
-	if err := options.NetworkEvaluate(ctx, state.NetworkType, state.SSID); err != nil {
-		logWorker(logger, "ERROR", "network.policy", "failed", "网络策略评估失败 (network_type=%s): %v", state.NetworkType, err)
-	}
+	return options.NetworkEvaluate(ctx, state.NetworkType, state.SSID)
 }
 
 type networkCommandFunc func(context.Context, string, ...string) (string, error)
