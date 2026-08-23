@@ -20,6 +20,8 @@ const (
 	defaultLocalIPv6Mode  = "auto"
 	defaultSharedIPv6Mode = "always"
 	defaultSharedIface    = "wlan2"
+	defaultDNSMode        = "hijack"
+	defaultDataPlane      = "auto"
 	defaultStateCapacity  = 0
 	defaultTCPriority     = 1
 	maxStateCapacity      = 1048576
@@ -30,8 +32,9 @@ var allowedKeys = map[string]bool{
 	"EBPF_MODE":                          true,
 	"EBPF_NETWORK":                       true,
 	"EBPF_UDP_TIMEOUT":                   true,
-	"EBPF_DNS_MODE":                      true,
+	"EBPF_TCP_SPLICE":                    true,
 	"EBPF_BYPASS_RULE_SET":               true,
+	"EBPF_LOCAL_DNS_MODE":                true,
 	"EBPF_LOCAL_CGROUP_PATH":             true,
 	"EBPF_LOCAL_IPV6_MODE":               true,
 	"EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS":  true,
@@ -43,6 +46,7 @@ var allowedKeys = map[string]bool{
 	"EBPF_LOCAL_INCLUDE_PACKAGE":         true,
 	"EBPF_LOCAL_EXCLUDE_PACKAGE":         true,
 	"EBPF_LOCAL_STATE_CAPACITY":          true,
+	"EBPF_SHARED_DNS_MODE":               true,
 	"EBPF_SHARED_INTERFACES":             true,
 	"EBPF_SHARED_IPV6_MODE":              true,
 	"EBPF_SHARED_BYPASS_PRIVATE_ADDRESS": true,
@@ -52,6 +56,9 @@ var allowedKeys = map[string]bool{
 	"EBPF_SHARED_EXCLUDE_MAC_ADDRESS":    true,
 	"EBPF_SHARED_STATE_CAPACITY":         true,
 	"EBPF_SHARED_TC_PRIORITY":            true,
+	"EBPF_SHARED_DATA_PLANE":             true,
+	"EBPF_SHARED_ROUTING_MARK":           true,
+	"EBPF_SHARED_ROUTING_TABLE":          true,
 	"APP_PROXY_ENABLE":                   true,
 	"APP_PROXY_MODE":                     true,
 	"PROXY_APPS_LIST":                    true,
@@ -63,7 +70,7 @@ type Config struct {
 	Mode           string
 	Network        []string
 	UDPTimeout     string
-	DNSMode        string
+	TCPSplice      bool
 	BypassRuleSets []string
 	Local          LocalConfig
 	Shared         SharedConfig
@@ -75,6 +82,7 @@ type Config struct {
 
 // LocalConfig 描述 sing-box eBPF 的本机数据路径。
 type LocalConfig struct {
+	DNSMode              string
 	CgroupPath           string
 	IPv6Mode             string
 	BypassPrivateAddress bool
@@ -90,6 +98,7 @@ type LocalConfig struct {
 
 // SharedConfig 描述 sing-box eBPF 的共享网络数据路径。
 type SharedConfig struct {
+	DNSMode              string
 	Interfaces           []string
 	IPv6Mode             string
 	BypassPrivateAddress bool
@@ -99,6 +108,9 @@ type SharedConfig struct {
 	ExcludeMACAddress    []string
 	StateCapacity        uint32
 	TCPriority           uint16
+	DataPlane            string
+	RoutingMark          uint32
+	RoutingTable         uint32
 }
 
 // PackageRef 是一个带 Android 用户范围的应用包名。
@@ -141,19 +153,21 @@ func Load(path string) (Config, error) {
 	config := Config{
 		Mode:           defaultMode,
 		UDPTimeout:     defaultUDPTimeout,
-		DNSMode:        "hijack",
 		BypassRuleSets: []string{"direct", "ChinaIP"},
 		Local: LocalConfig{
+			DNSMode:              defaultDNSMode,
 			IPv6Mode:             defaultLocalIPv6Mode,
 			BypassPrivateAddress: true,
 			StateCapacity:        defaultStateCapacity,
 		},
 		Shared: SharedConfig{
+			DNSMode:              defaultDNSMode,
 			Interfaces:           []string{defaultSharedIface},
 			IPv6Mode:             defaultSharedIPv6Mode,
 			BypassPrivateAddress: true,
 			StateCapacity:        defaultStateCapacity,
 			TCPriority:           defaultTCPriority,
+			DataPlane:            defaultDataPlane,
 		},
 		AppProxyEnable: true,
 		AppProxyMode:   "blacklist",
@@ -162,9 +176,13 @@ func Load(path string) (Config, error) {
 	config.Mode = valueOr(values, "EBPF_MODE", config.Mode)
 	config.Network = CommaSeparated(valueOr(values, "EBPF_NETWORK", ""))
 	config.UDPTimeout = valueOr(values, "EBPF_UDP_TIMEOUT", config.UDPTimeout)
-	config.DNSMode = valueOr(values, "EBPF_DNS_MODE", config.DNSMode)
+	config.TCPSplice, parseErr = boolValue(values, "EBPF_TCP_SPLICE", false)
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
 	config.BypassRuleSets = CommaSeparated(valueOr(values, "EBPF_BYPASS_RULE_SET", "direct,ChinaIP"))
 
+	config.Local.DNSMode = valueOr(values, "EBPF_LOCAL_DNS_MODE", config.Local.DNSMode)
 	config.Local.CgroupPath = valueOr(values, "EBPF_LOCAL_CGROUP_PATH", "")
 	config.Local.IPv6Mode = valueOr(values, "EBPF_LOCAL_IPV6_MODE", config.Local.IPv6Mode)
 	config.Local.BypassPrivateAddress, parseErr = boolValue(values, "EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS", config.Local.BypassPrivateAddress)
@@ -204,6 +222,7 @@ func Load(path string) (Config, error) {
 		return Config{}, parseErr
 	}
 
+	config.Shared.DNSMode = valueOr(values, "EBPF_SHARED_DNS_MODE", config.Shared.DNSMode)
 	config.Shared.Interfaces = CommaSeparated(valueOr(values, "EBPF_SHARED_INTERFACES", defaultSharedIface))
 	config.Shared.IPv6Mode = valueOr(values, "EBPF_SHARED_IPV6_MODE", config.Shared.IPv6Mode)
 	config.Shared.BypassPrivateAddress, parseErr = boolValue(values, "EBPF_SHARED_BYPASS_PRIVATE_ADDRESS", config.Shared.BypassPrivateAddress)
@@ -231,6 +250,15 @@ func Load(path string) (Config, error) {
 		return Config{}, parseErr
 	}
 	config.Shared.TCPriority, parseErr = tcpPriority(values, "EBPF_SHARED_TC_PRIORITY")
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
+	config.Shared.DataPlane = valueOr(values, "EBPF_SHARED_DATA_PLANE", config.Shared.DataPlane)
+	config.Shared.RoutingMark, parseErr = uint32Value(values, "EBPF_SHARED_ROUTING_MARK", 0)
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
+	config.Shared.RoutingTable, parseErr = uint32Value(values, "EBPF_SHARED_ROUTING_TABLE", 0)
 	if parseErr != nil {
 		return Config{}, parseErr
 	}
@@ -267,8 +295,14 @@ func (c Config) Validate() error {
 	if duration, err := time.ParseDuration(c.UDPTimeout); err != nil || duration <= 0 {
 		return validationError("ebpf.udp_timeout_invalid", "EBPF_UDP_TIMEOUT", "UDP 会话超时必须是正的时间长度，例如 5m")
 	}
-	if c.DNSMode != "hijack" && c.DNSMode != "respect_bypass" && c.DNSMode != "off" {
-		return validationError("ebpf.dns_mode_invalid", "EBPF_DNS_MODE", "DNS 模式只能是 hijack、respect_bypass 或 off")
+	if !validDNSMode(c.Local.DNSMode) {
+		return validationError("ebpf.local_dns_mode_invalid", "EBPF_LOCAL_DNS_MODE", "本机 DNS 模式只能是 hijack、respect_policy 或 off")
+	}
+	if !validDNSMode(c.Shared.DNSMode) {
+		return validationError("ebpf.shared_dns_mode_invalid", "EBPF_SHARED_DNS_MODE", "共享网络 DNS 模式只能是 hijack、respect_policy 或 off")
+	}
+	if c.Shared.DataPlane != "auto" && c.Shared.DataPlane != "socket_assign" && c.Shared.DataPlane != "rewrite" {
+		return validationError("ebpf.shared_data_plane_invalid", "EBPF_SHARED_DATA_PLANE", "共享网络数据面只能是 auto、socket_assign 或 rewrite")
 	}
 	if c.Mode == "local" || c.Mode == "hybrid" {
 		if c.Local.IPv6Mode != "always" && c.Local.IPv6Mode != "auto" && c.Local.IPv6Mode != "off" {
@@ -281,9 +315,6 @@ func (c Config) Validate() error {
 		}
 		if c.Shared.IPv6Mode != "always" && c.Shared.IPv6Mode != "off" {
 			return validationError("ebpf.shared_ipv6_mode_invalid", "EBPF_SHARED_IPV6_MODE", "共享网络 IPv6 模式只能是 always 或 off")
-		}
-		if c.DNSMode != "off" && !contains(c.Network, "udp") && len(c.Network) > 0 {
-			return validationError("ebpf.shared_dns_requires_udp", "EBPF_NETWORK", "共享网络启用 DNS 拦截时必须启用 UDP")
 		}
 	}
 	if c.AppProxyMode != "blacklist" && c.AppProxyMode != "whitelist" {
@@ -319,12 +350,13 @@ func (c Config) BuildWithResolver(resolve PackageUIDResolver) (BuildResult, erro
 		Mode:          c.Mode,
 		Network:       c.Network,
 		UDPTimeout:    c.UDPTimeout,
-		DNSMode:       c.DNSMode,
+		TCPSplice:     c.TCPSplice,
 		BypassRuleSet: c.BypassRuleSets,
 	}
 	missing := make([]PackageRef, 0)
 	if localEnabled {
 		local := LocalRuntime{
+			DNSMode:              c.Local.DNSMode,
 			CgroupPath:           c.Local.CgroupPath,
 			IPv6Mode:             c.Local.IPv6Mode,
 			BypassPrivateAddress: c.Local.BypassPrivateAddress,
@@ -365,6 +397,7 @@ func (c Config) BuildWithResolver(resolve PackageUIDResolver) (BuildResult, erro
 	}
 	if sharedEnabled {
 		inbound.Shared = &SharedRuntime{
+			DNSMode:              c.Shared.DNSMode,
 			Interface:            c.Shared.Interfaces,
 			IPv6Mode:             c.Shared.IPv6Mode,
 			BypassPrivateAddress: c.Shared.BypassPrivateAddress,
@@ -374,7 +407,10 @@ func (c Config) BuildWithResolver(resolve PackageUIDResolver) (BuildResult, erro
 			ExcludeMACAddress:    c.Shared.ExcludeMACAddress,
 			StateCapacity:        c.Shared.StateCapacity,
 			Advanced: SharedAdvancedRuntime{
-				TCPriority: c.Shared.TCPriority,
+				TCPriority:   c.Shared.TCPriority,
+				DataPlane:    c.Shared.DataPlane,
+				RoutingMark:  c.Shared.RoutingMark,
+				RoutingTable: c.Shared.RoutingTable,
 			},
 		}
 	}
@@ -396,7 +432,7 @@ type Inbound struct {
 	Mode          string
 	Network       []string
 	UDPTimeout    string
-	DNSMode       string
+	TCPSplice     bool
 	BypassRuleSet []string
 	Local         *LocalRuntime
 	Shared        *SharedRuntime
@@ -404,6 +440,7 @@ type Inbound struct {
 
 // LocalRuntime 是仅在 local 或 hybrid 模式输出的字段。
 type LocalRuntime struct {
+	DNSMode              string   `json:"dns_mode,omitempty"`
 	CgroupPath           string   `json:"cgroup_path,omitempty"`
 	IPv6Mode             string   `json:"ipv6_mode,omitempty"`
 	BypassPrivateAddress bool     `json:"bypass_private_address"`
@@ -419,6 +456,7 @@ type LocalRuntime struct {
 
 // SharedRuntime 是仅在 shared 或 hybrid 模式输出的字段。
 type SharedRuntime struct {
+	DNSMode              string                `json:"dns_mode,omitempty"`
 	Interface            []string              `json:"interface,omitempty"`
 	IPv6Mode             string                `json:"ipv6_mode,omitempty"`
 	BypassPrivateAddress bool                  `json:"bypass_private_address"`
@@ -432,7 +470,10 @@ type SharedRuntime struct {
 
 // SharedAdvancedRuntime 是 shared 数据路径的高级内核参数。
 type SharedAdvancedRuntime struct {
-	TCPriority uint16 `json:"tc_priority,omitempty"`
+	TCPriority   uint16 `json:"tc_priority,omitempty"`
+	DataPlane    string `json:"data_plane,omitempty"`
+	RoutingMark  uint32 `json:"routing_mark,omitempty"`
+	RoutingTable uint32 `json:"routing_table,omitempty"`
 }
 
 // MarshalJSON 只输出与当前 mode 对应的数据路径，避免 sing-box 拒绝无效字段。
@@ -442,8 +483,10 @@ func (i Inbound) MarshalJSON() ([]byte, error) {
 		"tag":             i.Tag,
 		"mode":            i.Mode,
 		"udp_timeout":     i.UDPTimeout,
-		"dns_mode":        i.DNSMode,
 		"bypass_rule_set": i.BypassRuleSet,
+	}
+	if i.TCPSplice {
+		value["tcp_splice"] = true
 	}
 	if len(i.Network) > 0 {
 		value["network"] = i.Network
@@ -678,6 +721,19 @@ func tcpPriority(values map[string]string, key string) (uint16, error) {
 		return 0, validationError("ebpf.tc_priority_invalid", key, key+" 必须是 1 到 65535 之间的整数")
 	}
 	return uint16(parsed), nil
+}
+
+func uint32Value(values map[string]string, key string, fallback uint32) (uint32, error) {
+	value := valueOr(values, key, strconv.FormatUint(uint64(fallback), 10))
+	parsed, err := strconv.ParseUint(value, 10, 32)
+	if err != nil {
+		return 0, validationError("ebpf.uint32_invalid", key, key+" 必须是 0 到 4294967295 之间的整数")
+	}
+	return uint32(parsed), nil
+}
+
+func validDNSMode(value string) bool {
+	return value == "hijack" || value == "respect_policy" || value == "off"
 }
 
 func uniqueUint32(values []uint32) []uint32 {

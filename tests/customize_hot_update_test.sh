@@ -35,7 +35,7 @@ write_stage_module() {
   : > "$STAGE/bin/netproxy-native"
   : > "$STAGE/bin/sing-box"
   printf '%s\n' 'OUTBOUND_MODE=rule' > "$STAGE/config/module.conf"
-  printf '%s\n' 'EBPF_DNS_MODE=off' > "$STAGE/config/ebpf/ebpf.conf"
+  printf '%s\n' 'EBPF_LOCAL_DNS_MODE=off' > "$STAGE/config/ebpf/ebpf.conf"
   printf '%s\n' 'stage-confdir' > "$STAGE/config/singbox/confdir/03_dns.json"
   printf '%s\n' 'stage-provider' > "$STAGE/data/catalog/default/provider.json"
   printf '%s\n' 'stage-temporary' > "$STAGE/data/catalog/staging/download.tmp"
@@ -45,7 +45,7 @@ write_live_module() {
   mkdir -p "$LIVE/config/ebpf" "$LIVE/config/singbox/confdir" "$LIVE/data/catalog/default" "$LIVE/data/catalog/staging"
   printf '%s\n' 'id=netproxy' 'version=test-old' > "$LIVE/module.prop"
   printf '%s\n' 'OUTBOUND_MODE=global' > "$LIVE/config/module.conf"
-  printf '%s\n' 'EBPF_DNS_MODE=hijack' > "$LIVE/config/ebpf/ebpf.conf"
+  printf '%s\n' 'EBPF_LOCAL_DNS_MODE=hijack' > "$LIVE/config/ebpf/ebpf.conf"
   printf '%s\n' 'live-confdir' > "$LIVE/config/singbox/confdir/03_dns.json"
   printf '%s\n' 'live-provider' > "$LIVE/data/catalog/default/provider.json"
   printf '%s\n' 'live-temporary' > "$LIVE/data/catalog/staging/download.tmp"
@@ -75,7 +75,7 @@ test_hot_commit_preserves_latest_state_and_resets_ebpf() {
   [ -z "$(find "$MODULE_ROOT/modules" -maxdepth 1 -type d -name '.netproxy.hot-update.*' -print -quit)" ]
   assert_file_contains "$LIVE/module.prop" 'version=test-new'
   assert_file_contains "$LIVE/config/module.conf" 'OUTBOUND_MODE=global'
-  assert_file_contains "$LIVE/config/ebpf/ebpf.conf" 'EBPF_DNS_MODE=off'
+  assert_file_contains "$LIVE/config/ebpf/ebpf.conf" 'EBPF_LOCAL_DNS_MODE=off'
   assert_file_contains "$LIVE/config/singbox/confdir/03_dns.json" 'live-confdir'
   assert_file_contains "$LIVE/data/catalog/default/provider.json" 'live-provider'
   [ ! -e "$LIVE/data/catalog/staging/download.tmp" ]
@@ -132,7 +132,7 @@ test_fresh_install_discards_existing_state() {
   [ ! -e "$LIVE/update" ]
   assert_file_contains "$LIVE/module.prop" 'version=test-new'
   assert_file_contains "$LIVE/config/module.conf" 'OUTBOUND_MODE=rule'
-  assert_file_contains "$LIVE/config/ebpf/ebpf.conf" 'EBPF_DNS_MODE=off'
+  assert_file_contains "$LIVE/config/ebpf/ebpf.conf" 'EBPF_LOCAL_DNS_MODE=off'
   assert_file_contains "$LIVE/config/singbox/confdir/03_dns.json" 'stage-confdir'
   assert_file_contains "$LIVE/data/catalog/default/provider.json" 'stage-provider'
 }

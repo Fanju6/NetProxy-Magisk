@@ -6,7 +6,8 @@ import androidx.compose.runtime.Immutable
 data class ProxySettings(
     val mode: String = "local",
     val network: String = "",
-    val dnsMode: String = "hijack",
+    val localDnsMode: String = "hijack",
+    val sharedDnsMode: String = "hijack",
     val localIpv6Mode: String = "auto",
     val sharedIpv6Mode: String = "always",
     val localBypassPrivateAddress: Boolean = true,
@@ -21,14 +22,7 @@ data class ProxySettings(
     val wifiSsidMode: String = "blacklist",
     val wifiSsidList: String = "",
     val proxyOnCellular: Boolean = true
-) {
-    val bypassPrivateAddress: Boolean
-        get() = when (mode) {
-            "shared" -> sharedBypassPrivateAddress
-            "hybrid" -> localBypassPrivateAddress || sharedBypassPrivateAddress
-            else -> localBypassPrivateAddress
-        }
-}
+)
 
 @Immutable
 data class SettingsUiState(

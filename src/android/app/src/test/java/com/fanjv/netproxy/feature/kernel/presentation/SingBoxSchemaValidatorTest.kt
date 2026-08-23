@@ -242,10 +242,20 @@ class SingBoxSchemaValidatorTest {
                         {
                           "type": "ebpf",
                           "mode": "hybrid",
-                          "local": { "bypass_private_address": true },
+                          "tcp_splice": false,
+                          "local": {
+                            "dns_mode": "respect_policy",
+                            "bypass_private_address": true
+                          },
                           "shared": {
+                            "dns_mode": "off",
                             "interface": ["wlan2"],
-                            "bypass_private_address": false
+                            "bypass_private_address": false,
+                            "advanced": {
+                              "data_plane": "auto",
+                              "routing_mark": 0,
+                              "routing_table": 0
+                            }
                           }
                         }
                       ]
@@ -261,6 +271,22 @@ class SingBoxSchemaValidatorTest {
                         {
                           "type": "ebpf",
                           "bypass_private_address": true
+                        }
+                      ]
+                    }
+                """.trimIndent(),
+            ) is SingBoxSchemaValidationResult.Invalid,
+        )
+        assertTrue(
+            bundledValidator.validate(
+                """
+                    {
+                      "inbounds": [
+                        {
+                          "type": "ebpf",
+                          "mode": "local",
+                          "dns_mode": "hijack",
+                          "local": { "dns_mode": "respect_bypass" }
                         }
                       ]
                     }

@@ -47,9 +47,10 @@ EBPF_BYPASS_RULE_SET="direct,ChinaIP"
 
 ## DNS
 
-`EBPF_DNS_MODE` 控制 eBPF 是否优先接管 TCP / UDP 53：
+`EBPF_LOCAL_DNS_MODE` 与 `EBPF_SHARED_DNS_MODE` 分别控制两条数据路径是否接管 TCP / UDP 53：
 
 - `hijack`：接管 DNS 请求，交给 sing-box DNS 路由。
+- `respect_policy`：仅在流量通过对应数据路径的 UID、来源和地址策略后接管。
 - `off`：不由 eBPF 入站接管 DNS。
 
 sing-box 侧 DNS 服务器、域名解析策略和 DNS 路由位于 `config/singbox/confdir/03_dns.json`。默认 DNS A/AAAA 查询使用真实的 `dns-proxy` 服务器组，不使用 FakeIP 地址池。DNS 最终出站由 DNS 配置和 `OUTBOUND_MODE` 共同决定；若将兜底 DNS 设置为直连，解析请求可能不经过代理，这是可预期的配置取舍，不等同于核心故障。

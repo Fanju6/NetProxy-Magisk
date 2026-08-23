@@ -1,47 +1,32 @@
 package com.fanjv.netproxy.feature.settings.presentation
 
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ProxySettingsTest {
     @Test
-    fun sharedDnsInterceptionRequiresUdpForBothInterceptModes() {
-        assertTrue(requiresSharedUdp("shared", "hijack"))
-        assertTrue(requiresSharedUdp("hybrid", "respect_bypass"))
-        assertFalse(requiresSharedUdp("shared", "off"))
-        assertFalse(requiresSharedUdp("local", "hijack"))
+    fun dnsModesAreIndependentForLocalAndSharedDataPaths() {
+        val settings = ProxySettings(
+            mode = "hybrid",
+            network = "tcp",
+            localDnsMode = "respect_policy",
+            sharedDnsMode = "off",
+        )
+
+        assertEquals("tcp", settings.network)
+        assertEquals("respect_policy", settings.localDnsMode)
+        assertEquals("off", settings.sharedDnsMode)
     }
 
     @Test
-    fun bypassPrivateAddressReflectsEnabledDataPlanes() {
-        assertTrue(
-            ProxySettings(
-                mode = "local",
-                localBypassPrivateAddress = true,
-                sharedBypassPrivateAddress = false,
-            ).bypassPrivateAddress,
+    fun privateAddressBypassIsIndependentForLocalAndSharedDataPaths() {
+        val settings = ProxySettings(
+            mode = "hybrid",
+            localBypassPrivateAddress = true,
+            sharedBypassPrivateAddress = false,
         )
-        assertFalse(
-            ProxySettings(
-                mode = "shared",
-                localBypassPrivateAddress = true,
-                sharedBypassPrivateAddress = false,
-            ).bypassPrivateAddress,
-        )
-        assertTrue(
-            ProxySettings(
-                mode = "hybrid",
-                localBypassPrivateAddress = true,
-                sharedBypassPrivateAddress = false,
-            ).bypassPrivateAddress,
-        )
-        assertFalse(
-            ProxySettings(
-                mode = "hybrid",
-                localBypassPrivateAddress = false,
-                sharedBypassPrivateAddress = false,
-            ).bypassPrivateAddress,
-        )
+
+        assertEquals(true, settings.localBypassPrivateAddress)
+        assertEquals(false, settings.sharedBypassPrivateAddress)
     }
 }

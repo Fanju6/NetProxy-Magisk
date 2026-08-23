@@ -175,21 +175,22 @@ internal fun ProxySettingsScreen(
                                     viewModel.setNetwork(values[it])
                                 }
                             )
-                        },
+                        }
+                    )
+                )
+
+                groupedCardSection(
+                    keyPrefix = "ebpf_local",
+                    title = { stringResource(R.string.ebpf_local_settings) },
+                    items = listOf(
                         CardItem("dns_mode") {
-                            val values = listOf("hijack", "respect_bypass", "off")
-                            OverlayDropdownPreference(
-                                title = stringResource(R.string.ebpf_dns_mode),
-                                items = listOf(
-                                    stringResource(R.string.ebpf_dns_mode_hijack),
-                                    stringResource(R.string.ebpf_dns_mode_respect_bypass),
-                                    stringResource(R.string.ebpf_dns_mode_off)
-                                ),
-                                selectedIndex = values.indexOf(settings.dnsMode).coerceAtLeast(0),
-                                onSelectedIndexChange = { viewModel.setDnsMode(values[it]) }
+                            DnsModePreference(
+                                title = stringResource(R.string.ebpf_local_dns_mode),
+                                value = settings.localDnsMode,
+                                onValueChange = viewModel::setLocalDnsMode
                             )
                         },
-                        CardItem("local_ipv6_mode") {
+                        CardItem("ipv6_mode") {
                             val values = listOf("auto", "always", "off")
                             OverlayDropdownPreference(
                                 title = stringResource(R.string.ebpf_local_ipv6_mode),
@@ -208,24 +209,13 @@ internal fun ProxySettingsScreen(
                                 }
                             )
                         },
-                        CardItem("shared_ipv6_mode") {
-                            val values = listOf("always", "off")
-                            OverlayDropdownPreference(
-                                title = stringResource(R.string.ebpf_shared_ipv6_mode),
-                                items = listOf(
-                                    stringResource(R.string.ebpf_ipv6_mode_always),
-                                    stringResource(R.string.ebpf_ipv6_mode_off)
-                                ),
-                                selectedIndex = values.indexOf(settings.sharedIpv6Mode)
-                                    .coerceAtLeast(0),
-                                onSelectedIndexChange = {
-                                    viewModel.updateProxySetting(
-                                        "EBPF_SHARED_IPV6_MODE",
-                                        values[it]
-                                    )
-                                }
+                        CardItem("private_address") {
+                            SwitchPreference(
+                                title = stringResource(R.string.ebpf_bypass_private_address),
+                                checked = settings.localBypassPrivateAddress,
+                                onCheckedChange = viewModel::setLocalBypassPrivateAddress
                             )
-                        },
+                        }
                     )
                 )
 
@@ -233,13 +223,6 @@ internal fun ProxySettingsScreen(
                     keyPrefix = "ebpf_bypass",
                     title = { stringResource(R.string.ebpf_bypass_settings) },
                     items = listOf(
-                        CardItem("private_address") {
-                            SwitchPreference(
-                                title = stringResource(R.string.ebpf_bypass_private_address),
-                                checked = settings.bypassPrivateAddress,
-                                onCheckedChange = viewModel::setBypassPrivateAddress
-                            )
-                        },
                         CardItem("rule_sets") {
                             val label = stringResource(R.string.ebpf_bypass_rule_sets)
                             ArrowPreference(
@@ -263,6 +246,38 @@ internal fun ProxySettingsScreen(
                     keyPrefix = "ebpf_shared",
                     title = { stringResource(R.string.ebpf_shared_settings) },
                     items = listOf(
+                        CardItem("dns_mode") {
+                            DnsModePreference(
+                                title = stringResource(R.string.ebpf_shared_dns_mode),
+                                value = settings.sharedDnsMode,
+                                onValueChange = viewModel::setSharedDnsMode
+                            )
+                        },
+                        CardItem("ipv6_mode") {
+                            val values = listOf("always", "off")
+                            OverlayDropdownPreference(
+                                title = stringResource(R.string.ebpf_shared_ipv6_mode),
+                                items = listOf(
+                                    stringResource(R.string.ebpf_ipv6_mode_always),
+                                    stringResource(R.string.ebpf_ipv6_mode_off)
+                                ),
+                                selectedIndex = values.indexOf(settings.sharedIpv6Mode)
+                                    .coerceAtLeast(0),
+                                onSelectedIndexChange = {
+                                    viewModel.updateProxySetting(
+                                        "EBPF_SHARED_IPV6_MODE",
+                                        values[it]
+                                    )
+                                }
+                            )
+                        },
+                        CardItem("private_address") {
+                            SwitchPreference(
+                                title = stringResource(R.string.ebpf_bypass_private_address),
+                                checked = settings.sharedBypassPrivateAddress,
+                                onCheckedChange = viewModel::setSharedBypassPrivateAddress
+                            )
+                        },
                         CardItem("interfaces") {
                             val label = stringResource(R.string.ebpf_shared_interfaces)
                             ArrowPreference(
@@ -310,7 +325,8 @@ internal fun ProxySettingsScreen(
                             )
                         },
                         CardItem("include_mac_addresses") {
-                            val label = stringResource(R.string.ebpf_shared_include_mac_addresses)
+                            val label =
+                                stringResource(R.string.ebpf_shared_include_mac_addresses)
                             ArrowPreference(
                                 title = label,
                                 summary = settings.sharedIncludeMacAddresses.ifBlank {
@@ -326,7 +342,8 @@ internal fun ProxySettingsScreen(
                             )
                         },
                         CardItem("exclude_mac_addresses") {
-                            val label = stringResource(R.string.ebpf_shared_exclude_mac_addresses)
+                            val label =
+                                stringResource(R.string.ebpf_shared_exclude_mac_addresses)
                             ArrowPreference(
                                 title = label,
                                 summary = settings.sharedExcludeMacAddresses.ifBlank {
@@ -340,7 +357,7 @@ internal fun ProxySettingsScreen(
                                     )
                                 }
                             )
-                        },
+                        }
                     )
                 )
 
@@ -514,4 +531,23 @@ internal fun ProxySettingsScreen(
             )
         }
     }
+}
+
+@Composable
+private fun DnsModePreference(
+    title: String,
+    value: String,
+    onValueChange: (String) -> Unit
+) {
+    val values = listOf("hijack", "respect_policy", "off")
+    OverlayDropdownPreference(
+        title = title,
+        items = listOf(
+            stringResource(R.string.ebpf_dns_mode_hijack),
+            stringResource(R.string.ebpf_dns_mode_respect_policy),
+            stringResource(R.string.ebpf_dns_mode_off)
+        ),
+        selectedIndex = values.indexOf(value).coerceAtLeast(0),
+        onSelectedIndexChange = { onValueChange(values[it]) }
+    )
 }

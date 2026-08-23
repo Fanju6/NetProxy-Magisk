@@ -236,7 +236,8 @@ su -c '/data/adb/modules/netproxy/netproxyctl help'
 | `SELECTOR_MODE` | `urltest` | 自动测速选择 |
 | `ACTIVE_GROUP_ID` | `default` | 当前生效的节点分组 |
 | `EBPF_NETWORK` | 空 | 同时接管 TCP 与 UDP |
-| `EBPF_DNS_MODE` | `hijack` | 在 eBPF 入站劫持 TCP / UDP 53 |
+| `EBPF_LOCAL_DNS_MODE` | `hijack` | 本机数据路径的 DNS 处理模式 |
+| `EBPF_SHARED_DNS_MODE` | `hijack` | 共享网络数据路径的 DNS 处理模式 |
 | `EBPF_MODE` | `local` | eBPF 数据路径：local、shared 或 hybrid |
 | `EBPF_LOCAL_IPV6_MODE` | `auto` | 本机 IPv6 接管策略，支持始终、自动和关闭 |
 | `EBPF_BYPASS_PRIVATE_ADDRESS` | `1` | 默认绕过私网与特殊用途地址 |

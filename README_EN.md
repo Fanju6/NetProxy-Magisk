@@ -229,7 +229,8 @@ Key defaults:
 - `SELECTOR_MODE=urltest`
 - `ACTIVE_GROUP_ID=default`
 - `EBPF_NETWORK=""` (TCP and UDP)
-- `EBPF_DNS_MODE=hijack`
+- `EBPF_LOCAL_DNS_MODE=hijack`
+- `EBPF_SHARED_DNS_MODE=hijack`
 - `EBPF_MODE=local`
 - `EBPF_LOCAL_IPV6_MODE=auto`
 - `EBPF_BYPASS_PRIVATE_ADDRESS=1`

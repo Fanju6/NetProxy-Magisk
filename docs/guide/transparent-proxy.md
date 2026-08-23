@@ -7,7 +7,8 @@ NetProxy 使用 sing-box 的 eBPF 入站接管本机和共享网络流量。eBPF
 ```ini
 EBPF_MODE="local"       # local、shared 或 hybrid
 EBPF_NETWORK=""         # 空值表示 TCP + UDP
-EBPF_DNS_MODE="hijack"  # hijack、respect_bypass 或 off
+EBPF_LOCAL_DNS_MODE="hijack"   # hijack、respect_policy 或 off
+EBPF_SHARED_DNS_MODE="hijack"  # 与 local 独立配置
 EBPF_LOCAL_IPV6_MODE="auto"
 EBPF_SHARED_INTERFACES="wlan2"
 ```

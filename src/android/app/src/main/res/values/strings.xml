@@ -355,9 +355,11 @@
     <string name="ebpf_mode_local">仅本机网络</string>
     <string name="ebpf_mode_shared">仅热点与共享网络</string>
     <string name="ebpf_mode_hybrid">本机网络与共享网络</string>
-    <string name="ebpf_dns_mode">DNS 模式</string>
+    <string name="ebpf_local_settings">本机网络</string>
+    <string name="ebpf_local_dns_mode">本机网络 DNS 模式</string>
+    <string name="ebpf_shared_dns_mode">共享网络 DNS 模式</string>
     <string name="ebpf_dns_mode_hijack">优先劫持</string>
-    <string name="ebpf_dns_mode_respect_bypass">遵循绕过</string>
+    <string name="ebpf_dns_mode_respect_policy">遵循完整策略</string>
     <string name="ebpf_dns_mode_off">关闭</string>
     <string name="ebpf_cgroup_enable">本机透明代理</string>
     <string name="ebpf_cgroup_enable_summary">通过 cgroup 接管本机应用流量</string>

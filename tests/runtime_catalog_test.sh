@@ -81,20 +81,21 @@ grep -q 'options.ProxyURL = "http://127.0.0.1:7080"' "$SUBSCRIPTION_UPDATE_SOURC
 ! grep -Eq 'ProxyURL = "http://(0\.0\.0\.0|::):7080"' "$SUBSCRIPTION_UPDATE_SOURCE"
 
 json_contains '"mode":"local"'
-json_contains '"local":{"ipv6_mode":"auto","bypass_private_address":true'
+json_contains '"local":{"dns_mode":"hijack","ipv6_mode":"auto","bypass_private_address":true'
 ! json_contains '"shared"'
 
 set_conf "$EBPF_CONF" "EBPF_BYPASS_RULE_SET" '""'
 prepare_runtime
 json_contains '"bypass_rule_set":\[\]'
 
-set_conf_values "$EBPF_CONF"   "EBPF_MODE" '"hybrid"'   "APP_PROXY_ENABLE" "0"   "APP_PROXY_MODE" '"blacklist"'   "EBPF_SHARED_INCLUDE_SOURCE_CIDR" '"192.168.43.0/24,fd00::/64"'   "EBPF_SHARED_EXCLUDE_SOURCE_CIDR" '"192.168.43.10/32"'   "EBPF_SHARED_INCLUDE_MAC_ADDRESS" '"02:11:22:33:44:55,AA:BB:CC:DD:EE:FF"'   "EBPF_SHARED_EXCLUDE_MAC_ADDRESS" '"12:34:56:78:9A:BC"'
+set_conf_values "$EBPF_CONF"   "EBPF_MODE" '"hybrid"'   "EBPF_TCP_SPLICE" "1"   "APP_PROXY_ENABLE" "0"   "APP_PROXY_MODE" '"blacklist"'   "EBPF_SHARED_INCLUDE_SOURCE_CIDR" '"192.168.43.0/24,fd00::/64"'   "EBPF_SHARED_EXCLUDE_SOURCE_CIDR" '"192.168.43.10/32"'   "EBPF_SHARED_INCLUDE_MAC_ADDRESS" '"02:11:22:33:44:55,AA:BB:CC:DD:EE:FF"'   "EBPF_SHARED_EXCLUDE_MAC_ADDRESS" '"12:34:56:78:9A:BC"'
 prepare_runtime
+json_contains '"tcp_splice":true'
 json_contains '"include_source_cidr":\["192.168.43.0/24","fd00::/64"\]'
 json_contains '"exclude_source_cidr":\["192.168.43.10/32"\]'
 json_contains '"include_mac_address":\["02:11:22:33:44:55","AA:BB:CC:DD:EE:FF"\]'
 json_contains '"exclude_mac_address":\["12:34:56:78:9A:BC"\]'
-json_contains '"advanced":{"tc_priority":1}'
+json_contains '"advanced":{"tc_priority":1,"data_plane":"auto"}'
 
 INVALID_EBPF_CONF="$TMP_ROOT/invalid-ebpf.conf"
 cp "$EBPF_CONF" "$INVALID_EBPF_CONF"
@@ -119,23 +120,23 @@ json_contains '"include_uid":\[0\]'
 set_conf_values "$EBPF_CONF" "APP_PROXY_ENABLE" "0" "EBPF_LOCAL_IPV6_MODE" '"off"'
 prepare_runtime
 json_contains '"mode":"hybrid"'
-json_contains '"local":{"ipv6_mode":"off"'
+json_contains '"local":{"dns_mode":"hijack","ipv6_mode":"off"'
 
 set_conf "$EBPF_CONF" "EBPF_LOCAL_IPV6_MODE" '"off"'
 prepare_runtime
-json_contains '"local":{"ipv6_mode":"off"'
+json_contains '"local":{"dns_mode":"hijack","ipv6_mode":"off"'
 
 set_conf "$EBPF_CONF" "EBPF_LOCAL_IPV6_MODE" '"always"'
 prepare_runtime
-json_contains '"local":{"ipv6_mode":"always"'
+json_contains '"local":{"dns_mode":"hijack","ipv6_mode":"always"'
 
 set_conf_values "$EBPF_CONF" "EBPF_MODE" '"shared"' "EBPF_SHARED_INTERFACES" '"wlan2"' "APP_PROXY_ENABLE" "0"
 prepare_runtime
 json_contains '"mode":"shared"'
 ! json_contains '"cgroup_path"'
 ! json_contains '"local":'
-json_contains '"shared".*"interface":\["wlan2"\],"ipv6_mode":"always","bypass_private_address":true'
-json_contains '"advanced":{"tc_priority":1}'
+json_contains '"shared".*"dns_mode":"hijack","interface":\["wlan2"\],"ipv6_mode":"always","bypass_private_address":true'
+json_contains '"advanced":{"tc_priority":1,"data_plane":"auto"}'
 
 sed -i 's/"name": "备用配置"/"name": "本地配置"/' "$CATALOG_DIR/secondary/meta.json"
 prepare_runtime

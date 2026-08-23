@@ -14,15 +14,16 @@ eBPF 透明代理配置位于：
 EBPF_MODE="local"
 EBPF_NETWORK=""
 EBPF_UDP_TIMEOUT="5m"
-EBPF_DNS_MODE="hijack"
+EBPF_TCP_SPLICE=0
 EBPF_BYPASS_RULE_SET="direct,ChinaIP"
 ```
 
-`EBPF_MODE` 支持 `local`（本机 cgroup）、`shared`（下游接口 TC）和 `hybrid`（两者同时启用）。`EBPF_NETWORK` 留空表示 TCP 和 UDP，也可以填写 `tcp`、`udp` 或 `tcp,udp`。`EBPF_DNS_MODE` 支持 `hijack`、`respect_bypass` 和 `off`。共享或 hybrid 模式启用 DNS 劫持时必须包含 UDP。
+`EBPF_MODE` 支持 `local`（本机 cgroup）、`shared`（下游接口 TC）和 `hybrid`（两者同时启用）。`EBPF_NETWORK` 留空表示 TCP 和 UDP，也可以填写 `tcp`、`udp` 或 `tcp,udp`。`EBPF_TCP_SPLICE` 只优化符合条件的 DIRECT TCP 连接，默认关闭；启用前应在目标内核上验证连接统计和半关闭行为。
 
 ## local
 
 ```ini
+EBPF_LOCAL_DNS_MODE="hijack"
 EBPF_LOCAL_CGROUP_PATH=""
 EBPF_LOCAL_IPV6_MODE="auto"
 EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS=1
@@ -36,7 +37,7 @@ EBPF_LOCAL_EXCLUDE_PACKAGE=""
 EBPF_LOCAL_STATE_CAPACITY=0
 ```
 
-`EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS` 控制本机数据路径是否在进入 sing-box 前绕过私网与特殊用途地址。`EBPF_LOCAL_INCLUDE_PACKAGE` 和 `EBPF_LOCAL_EXCLUDE_PACKAGE` 是高级用户直接填写的包名列表。分应用页面使用下方的带用户范围格式，Native 会调用 Android `cmd package list packages --user <用户ID> -U` 解析 UID。
+`EBPF_LOCAL_DNS_MODE` 支持 `hijack`、`respect_policy` 和 `off`。`EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS` 控制本机数据路径是否在进入 sing-box 前绕过私网与特殊用途地址。`EBPF_LOCAL_INCLUDE_PACKAGE` 和 `EBPF_LOCAL_EXCLUDE_PACKAGE` 是高级用户直接填写的包名列表。分应用页面使用下方的带用户范围格式，Native 会调用 Android `cmd package list packages --user <用户ID> -U` 解析 UID。
 
 ## 分应用代理
 
@@ -54,6 +55,7 @@ BYPASS_APPS_LIST="0:com.example.app,10:com.example.app"
 ## shared
 
 ```ini
+EBPF_SHARED_DNS_MODE="hijack"
 EBPF_SHARED_INTERFACES="wlan2"
 EBPF_SHARED_IPV6_MODE="always"
 EBPF_SHARED_BYPASS_PRIVATE_ADDRESS=1
@@ -63,9 +65,14 @@ EBPF_SHARED_INCLUDE_MAC_ADDRESS=""
 EBPF_SHARED_EXCLUDE_MAC_ADDRESS=""
 EBPF_SHARED_STATE_CAPACITY=0
 EBPF_SHARED_TC_PRIORITY=1
+EBPF_SHARED_DATA_PLANE="auto"
+EBPF_SHARED_ROUTING_MARK=0
+EBPF_SHARED_ROUTING_TABLE=0
 ```
 
-`EBPF_SHARED_BYPASS_PRIVATE_ADDRESS` 独立控制共享网络数据路径的私网与特殊用途地址绕过。`shared` 和 `hybrid` 模式必须填写至少一个实际的下游接口。接口可以在服务启动后出现或消失，sing-box 会自动维护 TC 挂载。来源 CIDR、MAC 地址、状态容量和 TC 优先级属于高级配置，Android 管理器不要求展示全部字段。
+`EBPF_SHARED_DNS_MODE` 与 local 独立，支持 `hijack`、`respect_policy` 和 `off`；仅启用 TCP 时也可以使用 DNS 劫持。`EBPF_SHARED_BYPASS_PRIVATE_ADDRESS` 独立控制共享网络数据路径的私网与特殊用途地址绕过。`shared` 和 `hybrid` 模式必须填写至少一个实际的下游接口。接口可以在服务启动后出现或消失，sing-box 会自动维护 TC 挂载。
+
+`EBPF_SHARED_DATA_PLANE` 默认使用 `auto`，可强制为 `socket_assign` 或 `rewrite`。`EBPF_SHARED_ROUTING_MARK=0` 使用 sing-box 默认 mark，`EBPF_SHARED_ROUTING_TABLE=0` 使用默认表 `2026`。数据面、策略路由、来源 CIDR、MAC 地址、状态容量和 TC 优先级属于高级配置，仅建议在排障或协调现有网络规则时修改。
 
 ## 能力探测
 
