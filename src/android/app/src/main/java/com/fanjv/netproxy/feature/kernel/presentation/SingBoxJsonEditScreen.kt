@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -58,8 +59,10 @@ import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import com.fanjv.netproxy.core.ui.theme.LocalEnableBlur
 import com.fanjv.netproxy.core.ui.theme.isInDarkTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -117,6 +120,7 @@ internal fun SingBoxJsonEditScreen(
     var saveErrorText by remember(documentId) { mutableStateOf("") }
     var softWrap by rememberSaveable { mutableStateOf(false) }
     var isExiting by remember { mutableStateOf(false) }
+    var contextHelp by remember(documentId) { mutableStateOf<SingBoxSchemaContextHelp?>(null) }
 
     val document = configState.documents.firstOrNull { it.id == documentId }
     val displayFilename = document?.filename ?: documentId.substringAfterLast('/')
@@ -152,11 +156,15 @@ internal fun SingBoxJsonEditScreen(
 
     val documentVersion = controller.documentVersion
     val caret = controller.caret
-    val contextHelp = remember(documentVersion, caret, usesRootSchema) {
-        if (hasLoaded && usesRootSchema) {
-            completionProvider.contextHelp(controller.getText(), caret)
-        } else {
-            null
+    LaunchedEffect(documentVersion, caret, usesRootSchema, hasLoaded) {
+        if (!hasLoaded || !usesRootSchema) {
+            contextHelp = null
+            return@LaunchedEffect
+        }
+        delay(CONTEXT_HELP_DEBOUNCE_MS)
+        val text = controller.getText()
+        contextHelp = withContext(Dispatchers.Default) {
+            completionProvider.contextHelp(text, caret)
         }
     }
     LaunchedEffect(documentVersion) {
@@ -383,6 +391,13 @@ internal fun SingBoxJsonEditScreen(
                 } else {
                     MiuixTheme.colorScheme.onSurfaceVariantSummary
                 }
+                val contextPath = contextHelp?.path
+                    ?.takeIf { schemaIssues.isEmpty() && it.isNotBlank() }
+                val summaryText = if (contextPath == null) {
+                    statusText
+                } else {
+                    "$statusText · $contextPath"
+                }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -393,11 +408,12 @@ internal fun SingBoxJsonEditScreen(
                                 Modifier
                             },
                         )
-                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                        .height(32.dp)
+                        .padding(horizontal = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = statusText,
+                        text = summaryText,
                         color = statusColor,
                         fontSize = 13.sp,
                         maxLines = 1,
@@ -412,21 +428,6 @@ internal fun SingBoxJsonEditScreen(
                             modifier = Modifier.padding(start = 12.dp),
                         )
                     }
-                }
-                contextHelp?.let { help ->
-                    val helpText = listOfNotNull(
-                        help.path,
-                        help.field,
-                        help.documentation,
-                    ).distinct().joinToString(" · ")
-                    Text(
-                        text = helpText,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        fontSize = 12.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                    )
                 }
             }
 
@@ -698,6 +699,7 @@ private enum class EditorValidationState {
 }
 
 private const val VALIDATION_DEBOUNCE_MS = 500L
+private const val CONTEXT_HELP_DEBOUNCE_MS = 80L
 
 private val JsonEditorSymbols = listOf(
     EditorSymbol("⇥", "    "),
