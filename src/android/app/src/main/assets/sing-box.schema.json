@@ -3552,6 +3552,14 @@
     "EBPFLocalOptions": {
       "type": "object",
       "properties": {
+        "dns_mode": {
+          "type": "string",
+          "enum": [
+            "hijack",
+            "respect_policy",
+            "off"
+          ]
+        },
         "cgroup_path": {
           "type": "string"
         },
@@ -3680,6 +3688,24 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 65535
+        },
+        "data_plane": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "socket_assign",
+            "rewrite"
+          ]
+        },
+        "routing_mark": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "routing_table": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
         }
       },
       "additionalProperties": false
@@ -3687,6 +3713,14 @@
     "EBPFSharedOptions": {
       "type": "object",
       "properties": {
+        "dns_mode": {
+          "type": "string",
+          "enum": [
+            "hijack",
+            "respect_policy",
+            "off"
+          ]
+        },
         "interface": {
           "anyOf": [
             {
@@ -5183,6 +5217,9 @@
         "clash_api": {
           "$ref": "#/$defs/ClashAPIOptions"
         },
+        "observability": {
+          "$ref": "#/$defs/ObservabilityOptions"
+        },
         "v2ray_api": {
           "$ref": "#/$defs/V2RayAPIOptions"
         },
@@ -6454,14 +6491,6 @@
             "udp_timeout": {
               "$ref": "#/$defs/UDPTimeout"
             },
-            "dns_mode": {
-              "type": "string",
-              "enum": [
-                "hijack",
-                "respect_bypass",
-                "off"
-              ]
-            },
             "bypass_rule_set": {
               "anyOf": [
                 {
@@ -6482,6 +6511,9 @@
             },
             "shared": {
               "$ref": "#/$defs/EBPFSharedOptions"
+            },
+            "tcp_splice": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -10621,6 +10653,27 @@
         },
         "token": {
           "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ObservabilityOptions": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "recent_connections": {
+          "type": "integer"
+        },
+        "recent_ttl": {
+          "$ref": "#/$defs/Duration"
+        },
+        "top_k_size": {
+          "type": "integer"
+        },
+        "expose_sensitive": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false
