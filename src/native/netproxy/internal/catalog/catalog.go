@@ -558,9 +558,30 @@ func writeRuntimeOutbounds(path string, groups []*loadedGroup, activeTag, select
 			InterruptExistConnections: true,
 		},
 	})
-	return writeRuntimeJSONAtomic(path, struct {
+	return writeRuntimeOutboundsAtomic(path, outbounds)
+}
+
+func writeRuntimeOutboundsAtomic(path string, outbounds []option.Outbound) error {
+	content, err := SJSON.MarshalContext(provider.RuntimeContext(context.Background()), struct {
 		Outbounds []option.Outbound `json:"outbounds"`
 	}{Outbounds: outbounds})
+	if err != nil {
+		return err
+	}
+	var document struct {
+		Outbounds []map[string]json.RawMessage `json:"outbounds"`
+	}
+	if err := json.Unmarshal(content, &document); err != nil {
+		return err
+	}
+	for _, outbound := range document.Outbounds {
+		for _, field := range []string{"outbounds", "providers"} {
+			if value, exists := outbound[field]; exists && bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+				delete(outbound, field)
+			}
+		}
+	}
+	return writeJSONAtomic(path, document)
 }
 
 func writeEmptyRuntime(options RuntimeOptions) error {

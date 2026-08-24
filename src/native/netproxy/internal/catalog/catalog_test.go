@@ -62,8 +62,37 @@ func TestScanAndBuildRuntime(t *testing.T) {
 	if !strings.Contains(outbounds, `"default": "Select/同名分组 [remote]"`) {
 		t.Fatalf("unexpected outbounds: %s", outbounds)
 	}
+	assertRuntimeGroupSources(t, outbounds)
 	if !strings.Contains(state, "selected_node_ref\tremote/订阅节点") {
 		t.Fatalf("unexpected state: %s", state)
+	}
+}
+
+func assertRuntimeGroupSources(t *testing.T, content string) {
+	t.Helper()
+	var document struct {
+		Outbounds []map[string]json.RawMessage `json:"outbounds"`
+	}
+	if err := json.Unmarshal([]byte(content), &document); err != nil {
+		t.Fatalf("parse runtime outbounds: %v", err)
+	}
+	for _, outbound := range document.Outbounds {
+		var tag string
+		if err := json.Unmarshal(outbound["tag"], &tag); err != nil {
+			t.Fatalf("parse runtime outbound tag: %v", err)
+		}
+		_, hasOutbounds := outbound["outbounds"]
+		_, hasProviders := outbound["providers"]
+		switch {
+		case tag == "Proxy":
+			if !hasOutbounds || hasProviders {
+				t.Fatalf("Proxy should only contain outbounds: %s", content)
+			}
+		case strings.HasPrefix(tag, "Auto/") || strings.HasPrefix(tag, "Select/"):
+			if hasOutbounds || !hasProviders {
+				t.Fatalf("provider group %q should only contain providers: %s", tag, content)
+			}
+		}
 	}
 }
 
