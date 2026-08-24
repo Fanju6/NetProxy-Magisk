@@ -4,6 +4,9 @@
       "enabled": true,
       "path": "/data/adb/modules/netproxy/config/singbox/cache.db"
     },
+    "observability": {
+      "enabled": true
+    },
     "clash_api": {
       "default_mode": "Rule",
       "external_controller": "127.0.0.1:9999",
