@@ -618,7 +618,7 @@ jobs:
 
       - name: 配置 Android 验证 JDK
         if: steps.android.outputs.changed == 'true'
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 21
