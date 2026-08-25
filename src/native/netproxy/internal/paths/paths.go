@@ -92,6 +92,9 @@ func (l Layout) WorkerPID() string { return filepath.Join(l.DevRoot(), "worker.p
 // ProgressDir 返回订阅进度目录。
 func (l Layout) ProgressDir() string { return filepath.Join(l.DevRoot(), "subscriptions") }
 
+// DelayDir 返回离线节点测速的临时会话目录。
+func (l Layout) DelayDir() string { return filepath.Join(l.DevRoot(), "delay") }
+
 // WiFiState 返回 Wi-Fi 自动策略状态文件路径。
 func (l Layout) WiFiState() string { return filepath.Join(l.DevRoot(), "wifi_state") }
 

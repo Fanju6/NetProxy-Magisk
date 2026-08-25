@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -28,6 +29,7 @@ type Options struct {
 	ModuleConfig   string
 	StateFile      string
 	ProgressDir    string
+	DelayDir       string
 	WorkerPIDFile  string
 	SingBoxPath    string
 	ServiceAddress string
@@ -301,44 +303,62 @@ func CloseAllConnections(ctx context.Context, options Options) error {
 // Delay 通过 Service API 发起异步测速，并返回当前可用的延迟快照。
 func Delay(ctx context.Context, options Options, target, group string) (DelayResult, error) {
 	options = normalizeOptions(options)
-	resolved, err := resolveDelayTarget(ctx, options, target, group)
+	request, err := resolveDelayRequest(ctx, options, target, group)
 	if err != nil {
 		return DelayResult{}, err
 	}
 	client, requestContext, cancel, err := newClient(ctx, options)
 	if err != nil {
-		return DelayResult{}, delayAPIError(resolved, err)
+		return DelayResult{}, delayAPIError(request.Target, err)
 	}
-	defer cancel()
-	defer client.Close()
-
-	if err := client.URLTest(requestContext, resolved); err != nil {
-		return DelayResult{}, mapDelayRequestError(resolved, err)
+	result, requestErr := delayWithClient(requestContext, client, request.Target, false)
+	cancel()
+	_ = client.Close()
+	if requestErr == nil {
+		return result, nil
 	}
-
-	// URLTest 在核心中异步执行。保留旧的短暂观察窗口，读取缓存结果不会把尚未完成的批次误报为本轮超时。
-	select {
-	case <-ctx.Done():
-		return DelayResult{}, ctx.Err()
-	case <-time.After(300 * time.Millisecond):
+	if errors.Is(requestErr, context.DeadlineExceeded) || errors.Is(requestErr, context.Canceled) {
+		return DelayResult{}, mapDelayRequestError(request.Target, requestErr)
 	}
+	if serviceAPIUnavailable(requestErr) && offlineDelayAllowed(options) {
+		return offlineDelayRunner(ctx, options, request)
+	}
+	return DelayResult{}, mapDelayRequestError(request.Target, requestErr)
+}
 
-	if strings.HasPrefix(resolved, "Auto/") || strings.HasPrefix(resolved, "Select/") {
-		outbounds, err := client.Outbounds(requestContext)
-		if err != nil {
-			return DelayResult{}, mapDelayRequestError(resolved, err)
+func delayWithClient(ctx context.Context, client *serviceapi.Client, target string, waitForResults bool) (DelayResult, error) {
+	if err := client.URLTest(ctx, target); err != nil {
+		return DelayResult{}, err
+	}
+	var outbounds []serviceapi.GroupItem
+	var err error
+	if waitForResults {
+		outbounds, err = waitDelayResults(ctx, client, target)
+	} else {
+		// 正式核心持续维护测速缓存，短暂观察后即可读取本轮或最近一次有效结果。
+		select {
+		case <-ctx.Done():
+			return DelayResult{}, ctx.Err()
+		case <-time.After(300 * time.Millisecond):
 		}
+		outbounds, err = client.Outbounds(ctx)
+	}
+	if err != nil {
+		return DelayResult{}, err
+	}
+
+	if strings.HasPrefix(target, "Auto/") || strings.HasPrefix(target, "Select/") {
 		groupType := "urltest"
-		if strings.HasPrefix(resolved, "Select/") {
+		if strings.HasPrefix(target, "Select/") {
 			groupType = "selector"
 		}
-		runtimeTag := strings.TrimPrefix(strings.TrimPrefix(resolved, "Auto/"), "Select/")
+		runtimeTag := strings.TrimPrefix(strings.TrimPrefix(target, "Auto/"), "Select/")
 		prefix := runtimeTag + "/"
 		items := make([]serviceapi.GroupItem, 0)
 		groupFound := false
 		for _, item := range outbounds {
 			switch {
-			case item.Tag == resolved:
+			case item.Tag == target:
 				groupFound = true
 				if item.Type != "" {
 					groupType = item.Type
@@ -348,35 +368,81 @@ func Delay(ctx context.Context, options Options, target, group string) (DelayRes
 			}
 		}
 		if !groupFound || len(items) == 0 {
-			return DelayResult{}, delayTargetError(resolved)
+			return DelayResult{}, delayTargetError(target)
 		}
-		return DelayResult{Target: resolved, Groups: []serviceapi.Group{{
-			Tag: resolved, Type: groupType, Selectable: groupType == "selector", Items: items,
+		return DelayResult{Target: target, Groups: []serviceapi.Group{{
+			Tag: target, Type: groupType, Selectable: groupType == "selector", Items: items,
 		}}}, nil
 	}
 
-	outbounds, err := client.Outbounds(requestContext)
-	if err != nil {
-		return DelayResult{}, mapDelayRequestError(resolved, err)
-	}
-	runtimeGroup, _, found := strings.Cut(resolved, "/")
+	runtimeGroup, _, found := strings.Cut(target, "/")
 	if !found {
-		return DelayResult{}, delayTargetError(resolved)
+		return DelayResult{}, delayTargetError(target)
 	}
 	items := make([]serviceapi.GroupItem, 0, 1)
 	for _, item := range outbounds {
-		if item.Tag == resolved {
+		if item.Tag == target {
 			items = append(items, item)
 			break
 		}
 	}
 	if len(items) == 0 {
-		return DelayResult{}, delayTargetError(resolved)
+		return DelayResult{}, delayTargetError(target)
 	}
 	return DelayResult{
-		Target: resolved,
+		Target: target,
 		Groups: []serviceapi.Group{{Tag: "Auto/" + runtimeGroup, Items: items}},
 	}, nil
+}
+
+func waitDelayResults(ctx context.Context, client *serviceapi.Client, target string) ([]serviceapi.GroupItem, error) {
+	// Service API 最快每 250ms 推送一次测速变化，更高频轮询只会重复读取同一快照。
+	poll := time.NewTicker(250 * time.Millisecond)
+	defer poll.Stop()
+	limit := time.NewTimer(15 * time.Second)
+	defer limit.Stop()
+	var latest []serviceapi.GroupItem
+	completedCount := 0
+	lastProgress := time.Time{}
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-limit.C:
+			return latest, nil
+		case <-poll.C:
+		}
+		current, err := client.Outbounds(ctx)
+		if err != nil {
+			return nil, err
+		}
+		latest = current
+		expected, completed := delayResultProgress(target, current)
+		if completed > completedCount {
+			completedCount = completed
+			lastProgress = time.Now()
+		}
+		if expected > 0 && completedCount >= expected {
+			return latest, nil
+		}
+		if expected > 0 && completedCount*2 >= expected && !lastProgress.IsZero() && time.Since(lastProgress) >= 2*time.Second {
+			return latest, nil
+		}
+	}
+}
+
+func delayResultProgress(target string, outbounds []serviceapi.GroupItem) (expected int, completed int) {
+	groupTarget := strings.HasPrefix(target, "Auto/") || strings.HasPrefix(target, "Select/")
+	prefix := strings.TrimPrefix(strings.TrimPrefix(target, "Auto/"), "Select/") + "/"
+	for _, item := range outbounds {
+		if (!groupTarget && item.Tag == target) || (groupTarget && strings.HasPrefix(item.Tag, prefix)) {
+			expected++
+			if item.URLTestTime > 0 {
+				completed++
+			}
+		}
+	}
+	return
 }
 
 func normalizeOptions(options Options) Options {
@@ -393,10 +459,23 @@ func normalizeOptions(options Options) Options {
 	if options.ProgressDir == "" {
 		options.ProgressDir = layout.ProgressDir()
 	}
+	if options.DelayDir == "" {
+		options.DelayDir = layout.DelayDir()
+	}
 	if options.WorkerPIDFile == "" {
 		options.WorkerPIDFile = layout.WorkerPID()
 	}
 	return options
+}
+
+func serviceAPIUnavailable(err error) bool {
+	var requestError *url.Error
+	return errors.As(err, &requestError)
+}
+
+func offlineDelayAllowed(options Options) bool {
+	state := readState(options.StateFile).State
+	return state == "stopped" || state == "failed"
 }
 
 func delayAPIError(target string, cause error) error {
@@ -430,6 +509,10 @@ func delayTargetError(target string) error {
 }
 
 func mapDelayRequestError(target string, cause error) error {
+	var structured *Error
+	if errors.As(cause, &structured) {
+		return structured
+	}
 	if errors.Is(cause, context.DeadlineExceeded) || errors.Is(cause, context.Canceled) {
 		return delayTimeoutError(target, cause)
 	}
@@ -690,14 +773,20 @@ func mergeRuntimeStatus(ctx context.Context, options Options, status *Status, ac
 	}
 }
 
-func resolveDelayTarget(ctx context.Context, options Options, target, group string) (string, error) {
+type delayRequest struct {
+	Target  string
+	GroupID string
+	NodeTag string
+}
+
+func resolveDelayRequest(ctx context.Context, options Options, target, group string) (delayRequest, error) {
 	activeID := readConfig(options.ModuleConfig, "ACTIVE_GROUP_ID", "")
 	selector := readConfig(options.ModuleConfig, "SELECTOR_MODE", "urltest")
 	selected := readConfig(options.ModuleConfig, "SELECTED_NODE_REF", "")
 	if target == "" {
 		group = activeID
 		if selector == "manual" {
-			return runtimeNodeRef(ctx, options.CatalogRoot, selected)
+			return runtimeNodeDelayRequest(ctx, options.CatalogRoot, selected)
 		}
 		target = "auto"
 	}
@@ -710,32 +799,32 @@ func resolveDelayTarget(ctx context.Context, options Options, target, group stri
 		}
 		resolvedGroup, err := resolveDelayGroup(ctx, options, group)
 		if err != nil {
-			return "", err
+			return delayRequest{}, err
 		}
 		runtimeTag, err := catalog.RuntimeTag(options.CatalogRoot, resolvedGroup)
 		if err != nil {
-			return "", err
+			return delayRequest{}, err
 		}
 		if target == "select" {
-			return "Select/" + runtimeTag, nil
+			return delayRequest{Target: "Select/" + runtimeTag, GroupID: resolvedGroup}, nil
 		}
-		return "Auto/" + runtimeTag, nil
+		return delayRequest{Target: "Auto/" + runtimeTag, GroupID: resolvedGroup}, nil
 	}
 	if prefix, groupRef, found := strings.Cut(target, "/"); found && (prefix == "Auto" || prefix == "Select") {
 		if groupRef == "" {
-			return "", errors.New("测速分组引用格式应为 Auto/<group> 或 Select/<group>")
+			return delayRequest{}, errors.New("测速分组引用格式应为 Auto/<group> 或 Select/<group>")
 		}
 		resolvedGroup, err := resolveDelayGroup(ctx, options, groupRef)
 		if err != nil {
-			return "", err
+			return delayRequest{}, err
 		}
 		runtimeTag, err := catalog.RuntimeTag(options.CatalogRoot, resolvedGroup)
 		if err != nil {
-			return "", err
+			return delayRequest{}, err
 		}
-		return prefix + "/" + runtimeTag, nil
+		return delayRequest{Target: prefix + "/" + runtimeTag, GroupID: resolvedGroup}, nil
 	}
-	return runtimeNodeRef(ctx, options.CatalogRoot, target)
+	return runtimeNodeDelayRequest(ctx, options.CatalogRoot, target)
 }
 
 func resolveDelayGroup(ctx context.Context, options Options, query string) (string, error) {
@@ -757,23 +846,23 @@ func resolveDelayGroup(ctx context.Context, options Options, query string) (stri
 	return "", err
 }
 
-func runtimeNodeRef(ctx context.Context, root, reference string) (string, error) {
+func runtimeNodeDelayRequest(ctx context.Context, root, reference string) (delayRequest, error) {
 	groupID, tag, found := strings.Cut(reference, "/")
 	if !found || groupID == "" || tag == "" {
-		return "", errors.New("节点引用格式应为 <group-id>/<tag>")
+		return delayRequest{}, errors.New("节点引用格式应为 <group-id>/<tag>")
 	}
 	runtimeTag, err := catalog.RuntimeTag(root, groupID)
 	if err != nil {
-		return "", err
+		return delayRequest{}, err
 	}
 	present, err := catalog.GroupContainsTag(ctx, root, groupID, tag)
 	if err != nil {
-		return "", err
+		return delayRequest{}, err
 	}
 	if !present {
-		return "", fmt.Errorf("未找到节点: %s", reference)
+		return delayRequest{}, fmt.Errorf("未找到节点: %s", reference)
 	}
-	return runtimeTag + "/" + tag, nil
+	return delayRequest{Target: runtimeTag + "/" + tag, GroupID: groupID, NodeTag: tag}, nil
 }
 
 func readWorkerStatus(options Options) (worker.Status, error) {

@@ -307,16 +307,16 @@ func TestDelayTargetResolution(t *testing.T) {
 		t.Fatal(err)
 	}
 	options := Options{CatalogRoot: catalogRoot, ModuleConfig: moduleConfig}
-	target, err := resolveDelayTarget(context.Background(), options, "auto", "本地配置")
-	if err != nil || target != "Auto/本地配置" {
-		t.Fatalf("automatic target = %q, err=%v", target, err)
+	request, err := resolveDelayRequest(context.Background(), options, "auto", "本地配置")
+	if err != nil || request.Target != "Auto/本地配置" {
+		t.Fatalf("automatic target = %q, err=%v", request.Target, err)
 	}
 	if err := os.WriteFile(moduleConfig, []byte("SELECTOR_MODE=manual\nACTIVE_GROUP_ID=default\nSELECTED_NODE_REF=\"default/NODE\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	target, err = resolveDelayTarget(context.Background(), options, "", "")
-	if err != nil || target != "本地配置/NODE" {
-		t.Fatalf("manual target = %q, err=%v", target, err)
+	request, err = resolveDelayRequest(context.Background(), options, "", "")
+	if err != nil || request.Target != "本地配置/NODE" {
+		t.Fatalf("manual target = %q, err=%v", request.Target, err)
 	}
 }
 

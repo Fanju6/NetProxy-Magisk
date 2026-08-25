@@ -130,6 +130,16 @@ func GroupNode(ctx context.Context, root, groupID, tag string) (provider.Documen
 	return selected, nil
 }
 
+// GroupProvider 返回分组当前 Provider 的只读快照。
+func GroupProvider(ctx context.Context, root, groupID string) (provider.Document, error) {
+	release, err := acquireCatalogRootAndRecover(root)
+	if err != nil {
+		return provider.Document{}, err
+	}
+	defer release()
+	return loadGroupProvider(ctx, root, groupID)
+}
+
 // ExportGroupNode 将 Catalog 节点导出为分享链接。
 func ExportGroupNode(ctx context.Context, root, groupID, tag string) (sharelink.Result, error) {
 	release, err := acquireCatalogRootAndRecover(root)

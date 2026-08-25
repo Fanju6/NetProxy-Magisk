@@ -3,10 +3,12 @@ package service
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -226,6 +228,40 @@ func TestDelaySingleNodeReturnsFreshResult(t *testing.T) {
 	}
 }
 
+func TestOfflineDelayWaitsForResults(t *testing.T) {
+	current := delayOutbounds(
+		serviceapi.GroupItem{Tag: "本地配置/NODE", Type: "socks"},
+		serviceapi.GroupItem{Tag: "本地配置/DROP", Type: "socks"},
+	)
+	updated := delayOutbounds(
+		serviceapi.GroupItem{Tag: "本地配置/NODE", Type: "socks", URLTestTime: 200, URLTestDelay: 73},
+		serviceapi.GroupItem{Tag: "本地配置/DROP", Type: "socks", URLTestTime: 200, URLTestDelay: 91},
+	)
+	state := &delayServerState{current: current, updated: updated, updateAfter: 1}
+	server := delayServer(t, state)
+	defer server.Close()
+	client, err := serviceapi.New(strings.TrimPrefix(server.URL, "http://"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	result, err := delayWithClient(ctx, client, "Auto/本地配置", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Groups) != 1 || len(result.Groups[0].Items) != 2 {
+		t.Fatalf("离线测速结果异常: %#v", result)
+	}
+	for _, item := range result.Groups[0].Items {
+		if item.URLTestTime != 200 || item.URLTestDelay <= 0 {
+			t.Fatalf("离线测速未等待临时会话结果: %#v", result.Groups[0].Items)
+		}
+	}
+}
+
 func TestDelayReturnsCachedResultWhenBatchIsStillRunning(t *testing.T) {
 	catalogRoot, moduleConfig := delayFixtureFiles(t)
 	current := delayOutbounds(serviceapi.GroupItem{Tag: "本地配置/NODE", Type: "socks", URLTestTime: 100, URLTestDelay: 40}, serviceapi.GroupItem{})
@@ -275,10 +311,115 @@ func TestDelayServiceAPIFailureIsStructured(t *testing.T) {
 	state := &delayServerState{current: current, failURLTest: true}
 	server := delayServer(t, state)
 	defer server.Close()
+	originalRunner := offlineDelayRunner
+	offlineCalled := false
+	offlineDelayRunner = func(context.Context, Options, delayRequest) (DelayResult, error) {
+		offlineCalled = true
+		return DelayResult{}, nil
+	}
+	defer func() { offlineDelayRunner = originalRunner }()
 
 	_, err := Delay(context.Background(), delayOptions(t, catalogRoot, moduleConfig, server.URL), "Auto/default", "")
 	var structured *Error
 	if !errors.As(err, &structured) || structured.Code != "node.delay_api_failed" {
 		t.Fatalf("API 失败未返回结构化错误: %v", err)
+	}
+	if offlineCalled {
+		t.Fatal("Service API 已返回 HTTP 错误时不应启动离线测速")
+	}
+}
+
+func TestDelayFallsBackToOfflineSessionWhenServiceIsStopped(t *testing.T) {
+	catalogRoot, moduleConfig := delayFixtureFiles(t)
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := listener.Addr().String()
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	originalRunner := offlineDelayRunner
+	defer func() { offlineDelayRunner = originalRunner }()
+	offlineDelayRunner = func(_ context.Context, _ Options, request delayRequest) (DelayResult, error) {
+		if request.Target != "Auto/本地配置" || request.GroupID != "default" || request.NodeTag != "" {
+			t.Fatalf("离线测速目标解析异常: %#v", request)
+		}
+		return DelayResult{Target: request.Target}, nil
+	}
+	options := delayOptions(t, catalogRoot, moduleConfig, address)
+	options.StateFile = filepath.Join(t.TempDir(), "service.json")
+	options.SingBoxPath = filepath.Join(t.TempDir(), "sing-box")
+	if err := os.WriteFile(options.SingBoxPath, []byte("fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Delay(context.Background(), options, "auto", "default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Target != "Auto/本地配置" {
+		t.Fatalf("离线测速结果异常: %#v", result)
+	}
+}
+
+func TestDelayDoesNotStartOfflineSessionWhileServiceIsStarting(t *testing.T) {
+	catalogRoot, moduleConfig := delayFixtureFiles(t)
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := listener.Addr().String()
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	originalRunner := offlineDelayRunner
+	offlineCalled := false
+	offlineDelayRunner = func(context.Context, Options, delayRequest) (DelayResult, error) {
+		offlineCalled = true
+		return DelayResult{}, nil
+	}
+	defer func() { offlineDelayRunner = originalRunner }()
+	stateFile := filepath.Join(t.TempDir(), "service.json")
+	if err := os.WriteFile(stateFile, []byte(`{"state":"starting"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	options := delayOptions(t, catalogRoot, moduleConfig, address)
+	options.StateFile = stateFile
+
+	_, err = Delay(context.Background(), options, "auto", "default")
+	var structured *Error
+	if !errors.As(err, &structured) || structured.Code != "node.delay_api_failed" {
+		t.Fatalf("启动中 API 不可用应保留在线错误: %v", err)
+	}
+	if offlineCalled {
+		t.Fatal("正式服务启动期间不应创建离线测速会话")
+	}
+}
+
+func TestDelayTimeoutDoesNotStartOfflineSession(t *testing.T) {
+	catalogRoot, moduleConfig := delayFixtureFiles(t)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		time.Sleep(100 * time.Millisecond)
+		writeServiceAPIFrame(t, writer, nil)
+	}))
+	defer server.Close()
+	originalRunner := offlineDelayRunner
+	offlineCalled := false
+	offlineDelayRunner = func(context.Context, Options, delayRequest) (DelayResult, error) {
+		offlineCalled = true
+		return DelayResult{}, nil
+	}
+	defer func() { offlineDelayRunner = originalRunner }()
+	options := delayOptions(t, catalogRoot, moduleConfig, server.URL)
+	options.RequestTimeout = 20 * time.Millisecond
+
+	_, err := Delay(context.Background(), options, "auto", "default")
+	var structured *Error
+	if !errors.As(err, &structured) || structured.Code != "node.delay_timeout" {
+		t.Fatalf("在线测速超时错误异常: %v", err)
+	}
+	if offlineCalled {
+		t.Fatal("在线请求超时后不应使用已到期的上下文启动离线测速")
 	}
 }
