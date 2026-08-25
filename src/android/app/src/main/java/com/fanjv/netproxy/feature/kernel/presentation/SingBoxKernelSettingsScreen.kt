@@ -102,6 +102,10 @@ internal fun SingBoxKernelSettingsScreen(
                             onExpandedChange = { showMoreMenu = it },
                             actions = listOf(
                                 TopBarMenuAction(
+                                    text = stringResource(R.string.restart_core),
+                                    onClick = viewModel::restartService,
+                                ),
+                                TopBarMenuAction(
                                     text = stringResource(R.string.singbox_check_all),
                                     onClick = {
                                         viewModel.checkConfig { success ->
@@ -118,10 +122,6 @@ internal fun SingBoxKernelSettingsScreen(
                                             }
                                         }
                                     },
-                                ),
-                                TopBarMenuAction(
-                                    text = stringResource(R.string.ebpf_restart_service),
-                                    onClick = viewModel::restartService,
                                 ),
                             ),
                             contentDescription = stringResource(R.string.more_actions),

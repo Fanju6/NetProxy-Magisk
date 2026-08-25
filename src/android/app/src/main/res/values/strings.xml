@@ -191,7 +191,6 @@
     <string name="logs">日志</string>
     <string name="service_logs">运行日志</string>
     <string name="kernel_logs">内核日志</string>
-    <string name="refresh_logs">刷新日志</string>
     <string name="raw_view">原始视图</string>
     <string name="card_view">卡片视图</string>
     <string name="scroll_to_top">滚动到顶部</string>
@@ -217,7 +216,7 @@
 
     <!-- Settings: Main -->
     <string name="proxy_settings">代理设置</string>
-    <string name="proxy_settings_summary">配置端口、路由标记、接口和过滤规则</string>
+    <string name="proxy_settings_summary">配置 eBPF 接管、DNS、共享网络与 WiFi 策略</string>
     <string name="auto_start">开机自启</string>
     <string name="auto_start_summary">系统启动时自动开启服务</string>
 
@@ -379,7 +378,7 @@
     <string name="ebpf_shared_exclude_source_cidrs">排除来源 CIDR</string>
     <string name="ebpf_shared_include_mac_addresses">允许来源 MAC 地址</string>
     <string name="ebpf_shared_exclude_mac_addresses">排除来源 MAC 地址</string>
-    <string name="ebpf_restart_service">重启服务</string>
+    <string name="restart_core">重启核心</string>
     <string name="ebpf_diagnostics">eBPF 诊断</string>
     <string name="settings_hint_rule_sets">多个规则集标签请用英文逗号分隔，例如 direct,ChinaIP</string>
     <string name="settings_hint_interfaces">多个接口名称请用英文逗号分隔，例如 wlan2,wlan0</string>

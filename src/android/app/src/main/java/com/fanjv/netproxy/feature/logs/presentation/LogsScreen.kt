@@ -88,7 +88,6 @@ import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Download
 import top.yukonga.miuix.kmp.icon.extended.MoreCircle
-import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.icon.extended.Share
 import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -208,13 +207,6 @@ internal fun LogsScreen(
                         BackIconButton(onClick = onBack)
                     },
                     actions = {
-                            IconButton(onClick = { viewModel.refresh(currentType) }) {
-                                Icon(
-                                    imageVector = MiuixIcons.Refresh,
-                                    contentDescription = stringResource(R.string.refresh_logs),
-                                    tint = MiuixTheme.colorScheme.onSurface
-                                )
-                            }
                             IconButton(onClick = {
                                 scope.launch {
                                     try {

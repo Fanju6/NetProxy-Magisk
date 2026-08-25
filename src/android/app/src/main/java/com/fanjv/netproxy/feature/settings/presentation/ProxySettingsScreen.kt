@@ -115,7 +115,7 @@ internal fun ProxySettingsScreen(
                             onExpandedChange = { showMoreMenu = it },
                             actions = listOf(
                                 TopBarMenuAction(
-                                    text = stringResource(R.string.ebpf_restart_service),
+                                    text = stringResource(R.string.restart_core),
                                     onClick = viewModel::restartService
                                 ),
                                 TopBarMenuAction(
