@@ -1,13 +1,14 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
+
+	json "encoding/json/v2"
 )
 
 func (c *cli) forwardModule(args []string, action string) int {
@@ -53,7 +54,7 @@ func (c *cli) fail(code, message string, status int) int {
 }
 
 func (c *cli) forwardDiagnostics(content string) {
-	for _, line := range strings.Split(strings.TrimSuffix(content, "\n"), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSuffix(content, "\n"), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || isErrorResult(line) {
 			continue
@@ -85,9 +86,10 @@ stdout 只包含 schema=1 结果，运行日志写入 stderr。`)
 }
 
 func writeJSON(writer io.Writer, value any) {
-	encoder := json.NewEncoder(writer)
-	encoder.SetEscapeHTML(false)
-	_ = encoder.Encode(value)
+	if err := json.MarshalWrite(writer, value, json.Deterministic(true)); err != nil {
+		return
+	}
+	_, _ = io.WriteString(writer, "\n")
 }
 
 func splitReference(reference string) (string, string, bool) {
@@ -108,7 +110,7 @@ func isErrorResult(line string) bool {
 
 func lastErrorResult(content string) string {
 	last := ""
-	for _, line := range strings.Split(content, "\n") {
+	for line := range strings.SplitSeq(content, "\n") {
 		line = strings.TrimSpace(line)
 		if isErrorResult(line) {
 			last = line

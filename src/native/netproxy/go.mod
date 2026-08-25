@@ -1,6 +1,6 @@
 module github.com/Fanju6/NetProxy-Magisk/src/native/netproxy
 
-go 1.26.5
+go 1.27.0
 
 require (
 	github.com/sagernet/netlink v0.0.0-20260814022025-64455d367bbf

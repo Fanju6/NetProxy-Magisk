@@ -1,15 +1,17 @@
 package ebpf
 
 import (
-	"encoding/json"
 	"errors"
 	"net"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"encoding/json/jsontext"
+	json "encoding/json/v2"
 
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 )
@@ -451,7 +453,7 @@ type LocalRuntime struct {
 	IncludeAndroidUser   []int    `json:"include_android_user,omitempty"`
 	IncludePackage       []string `json:"include_package,omitempty"`
 	ExcludePackage       []string `json:"exclude_package,omitempty"`
-	StateCapacity        uint32   `json:"state_capacity,omitempty"`
+	StateCapacity        uint32   `json:"state_capacity,omitzero"`
 }
 
 // SharedRuntime 是仅在 shared 或 hybrid 模式输出的字段。
@@ -464,16 +466,16 @@ type SharedRuntime struct {
 	ExcludeSourceCIDR    []string              `json:"exclude_source_cidr,omitempty"`
 	IncludeMACAddress    []string              `json:"include_mac_address,omitempty"`
 	ExcludeMACAddress    []string              `json:"exclude_mac_address,omitempty"`
-	StateCapacity        uint32                `json:"state_capacity,omitempty"`
-	Advanced             SharedAdvancedRuntime `json:"advanced,omitempty"`
+	StateCapacity        uint32                `json:"state_capacity,omitzero"`
+	Advanced             SharedAdvancedRuntime `json:"advanced"`
 }
 
 // SharedAdvancedRuntime 是 shared 数据路径的高级内核参数。
 type SharedAdvancedRuntime struct {
-	TCPriority   uint16 `json:"tc_priority,omitempty"`
+	TCPriority   uint16 `json:"tc_priority,omitzero"`
 	DataPlane    string `json:"data_plane,omitempty"`
-	RoutingMark  uint32 `json:"routing_mark,omitempty"`
-	RoutingTable uint32 `json:"routing_table,omitempty"`
+	RoutingMark  uint32 `json:"routing_mark,omitzero"`
+	RoutingTable uint32 `json:"routing_table,omitzero"`
 }
 
 // MarshalJSON 只输出与当前 mode 对应的数据路径，避免 sing-box 拒绝无效字段。
@@ -497,7 +499,7 @@ func (i Inbound) MarshalJSON() ([]byte, error) {
 	if i.Shared != nil {
 		value["shared"] = i.Shared
 	}
-	return json.Marshal(value)
+	return json.Marshal(value, json.Deterministic(true))
 }
 
 // WriteAtomic 校验并原子写入运行时 eBPF 配置。
@@ -506,7 +508,7 @@ func WriteAtomic(path string, config Config) ([]PackageRef, error) {
 	if err != nil {
 		return nil, err
 	}
-	content, err := json.MarshalIndent(built.Runtime, "", "  ")
+	content, err := json.Marshal(built.Runtime, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
 		return nil, err
 	}
@@ -746,15 +748,6 @@ func uniqueUint32(values []uint32) []uint32 {
 		seen[value] = struct{}{}
 		result = append(result, value)
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	slices.Sort(result)
 	return result
-}
-
-func contains(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }

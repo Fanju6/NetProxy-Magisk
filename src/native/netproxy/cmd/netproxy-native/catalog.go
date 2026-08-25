@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"os"
@@ -59,7 +59,7 @@ func runCatalog(ctx context.Context, args []string) error {
 		if err != nil {
 			return err
 		}
-		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "node.loaded", Message: "节点配置已读取", Data: json.RawMessage(content)})
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "node.loaded", Message: "节点配置已读取", Data: jsontext.Value(content)})
 		return nil
 	case "node-export":
 		if *groupID == "" || *tag == "" {

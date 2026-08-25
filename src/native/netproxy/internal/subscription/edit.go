@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -310,8 +311,6 @@ func validateEditText(value string) error {
 
 func cloneHeaders(headers map[string]string) map[string]string {
 	cloned := make(map[string]string, len(headers))
-	for key, value := range headers {
-		cloned[key] = value
-	}
+	maps.Copy(cloned, headers)
 	return cloned
 }

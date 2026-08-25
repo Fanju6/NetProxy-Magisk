@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -140,10 +141,8 @@ func recoverTransaction(txDir string) error {
 	if len(lines) < 3 || lines[0] != "begin" || lines[1] != "provider" || lines[2] != "meta" {
 		return os.RemoveAll(txDir)
 	}
-	for _, line := range lines[3:] {
-		if line == "commit" {
-			return os.RemoveAll(txDir)
-		}
+	if slices.Contains(lines[3:], "commit") {
+		return os.RemoveAll(txDir)
 	}
 	target, err := os.ReadFile(filepath.Join(txDir, targetName))
 	if err != nil || strings.TrimSpace(string(target)) == "" {

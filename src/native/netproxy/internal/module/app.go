@@ -3,13 +3,13 @@ package module
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -75,6 +75,14 @@ type PrepareResult struct {
 	Providers string `json:"providers"`
 	Outbounds string `json:"outbounds"`
 	EBPF      string `json:"ebpf"`
+}
+
+// AppPolicy 描述分应用代理的持久设置。
+type AppPolicy struct {
+	Enabled    bool   `json:"enabled"`
+	Mode       string `json:"mode"`
+	ProxyApps  string `json:"proxy_apps"`
+	BypassApps string `json:"bypass_apps"`
 }
 
 // Prepare 生成 Catalog、出站和 eBPF 运行时配置，并同步规范化选择状态。
@@ -325,25 +333,25 @@ func ApplyMode(ctx context.Context, options Options, mode string) (err error) {
 }
 
 // UpdateApp 按类型化 eBPF 配置修改分应用策略。
-func UpdateApp(options Options, action, value string) (data map[string]any, err error) {
+func UpdateApp(options Options, action, value string) (data AppPolicy, err error) {
 	persisted := false
 	defer func() { logOperation(options, "app", "app-policy.update", "分应用策略更新", persisted, err) }()
 	config, err := ebpf.Load(options.EBPFConfig)
 	if err != nil {
-		return nil, err
+		return AppPolicy{}, err
 	}
 	updates := map[string]string{}
 	switch action {
 	case "mode":
 		if value != "blacklist" && value != "whitelist" {
-			return nil, errors.New("应用模式应为 blacklist 或 whitelist")
+			return AppPolicy{}, errors.New("应用模式应为 blacklist 或 whitelist")
 		}
 		updates["APP_PROXY_ENABLE"] = "1"
 		updates["APP_PROXY_MODE"] = moduleconfig.Quote(value)
 	case "add":
 		ref, err := ebpf.ParsePackageRef(value)
 		if err != nil {
-			return nil, err
+			return AppPolicy{}, err
 		}
 		if config.AppProxyMode == "whitelist" {
 			updates["PROXY_APPS_LIST"] = moduleconfig.Quote(addPackageRef(config.ProxyPackages, ref))
@@ -354,32 +362,36 @@ func UpdateApp(options Options, action, value string) (data map[string]any, err 
 	case "remove":
 		ref, err := ebpf.ParsePackageRef(value)
 		if err != nil {
-			return nil, err
+			return AppPolicy{}, err
 		}
 		updates["PROXY_APPS_LIST"] = moduleconfig.Quote(removePackageRef(config.ProxyPackages, ref))
 		updates["BYPASS_APPS_LIST"] = moduleconfig.Quote(removePackageRef(config.BypassPackages, ref))
 	case "enable", "disable":
 		updates["APP_PROXY_ENABLE"] = map[string]string{"enable": "1", "disable": "0"}[action]
 	default:
-		return nil, fmt.Errorf("未知应用操作: %s", action)
+		return AppPolicy{}, fmt.Errorf("未知应用操作: %s", action)
 	}
 	if err := moduleconfig.UpdateValidated(options.EBPFConfig, updates, func(candidate string) error {
 		_, validateErr := ebpf.Load(candidate)
 		return validateErr
 	}); err != nil {
-		return nil, err
+		return AppPolicy{}, err
 	}
 	persisted = true
 	config, err = ebpf.Load(options.EBPFConfig)
 	if err != nil {
-		return nil, err
+		return AppPolicy{}, err
 	}
-	return appData(config), nil
+	return appPolicy(config), nil
 }
 
-func appData(config ebpf.Config) map[string]any {
-	return map[string]any{"enabled": config.AppProxyEnable, "mode": config.AppProxyMode,
-		"proxy_apps": joinPackageRefs(config.ProxyPackages), "bypass_apps": joinPackageRefs(config.BypassPackages)}
+func appPolicy(config ebpf.Config) AppPolicy {
+	return AppPolicy{
+		Enabled:    config.AppProxyEnable,
+		Mode:       config.AppProxyMode,
+		ProxyApps:  joinPackageRefs(config.ProxyPackages),
+		BypassApps: joinPackageRefs(config.BypassPackages),
+	}
 }
 
 // NodeAppend 将节点加入本地分组并处理活动状态与运行时 reload。
@@ -610,10 +622,8 @@ func minTimeout(value, fallback time.Duration) time.Duration {
 }
 
 func addPackageRef(current []ebpf.PackageRef, value ebpf.PackageRef) string {
-	for _, ref := range current {
-		if ref == value {
-			return joinPackageRefs(current)
-		}
+	if slices.Contains(current, value) {
+		return joinPackageRefs(current)
 	}
 	return joinPackageRefs(append(append([]ebpf.PackageRef{}, current...), value))
 }
@@ -806,10 +816,10 @@ func workerOptions(options Options) worker.Options {
 		ServiceSecret:       options.ServiceSecret,
 		NetworkWatchEnabled: true,
 		Now:                 time.Now,
-	}
-	workerOptions.NetworkEvaluate = func(ctx context.Context, networkType, ssid string) error {
-		_, err := EvaluateNetwork(ctx, options, networkType, ssid)
-		return err
+		NetworkEvaluate: func(ctx context.Context, networkType, ssid string) error {
+			_, err := EvaluateNetwork(ctx, options, networkType, ssid)
+			return err
+		},
 	}
 	return workerOptions
 }
@@ -822,12 +832,11 @@ func hostName(rawURL string) string {
 	return parsed.Hostname()
 }
 
-// MarshalAppData 返回应用设置的 JSON 摘要，供 CLI 和客户端复用。
-func MarshalAppData(configPath string) (json.RawMessage, error) {
+// LoadAppPolicy 读取分应用代理设置。
+func LoadAppPolicy(configPath string) (AppPolicy, error) {
 	config, err := ebpf.Load(configPath)
 	if err != nil {
-		return nil, err
+		return AppPolicy{}, err
 	}
-	content, err := json.Marshal(appData(config))
-	return content, err
+	return appPolicy(config), nil
 }

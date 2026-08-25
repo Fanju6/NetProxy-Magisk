@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"uuid"
 )
 
 func TestCatalogGroupQueries(t *testing.T) {
@@ -48,6 +49,10 @@ func TestNewGroupID(t *testing.T) {
 	}
 	if len(subscriptionID) != 36 {
 		t.Fatalf("unexpected subscription id: %q", subscriptionID)
+	}
+	parsedID, err := uuid.Parse(subscriptionID)
+	if err != nil || parsedID[6]>>4 != 4 {
+		t.Fatalf("subscription id is not UUIDv4: %q, %v", subscriptionID, err)
 	}
 
 	filePath := filepath.Join("nodes", "My Nodes.yaml")

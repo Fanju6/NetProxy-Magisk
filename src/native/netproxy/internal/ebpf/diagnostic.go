@@ -2,11 +2,12 @@ package ebpf
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
+
+	json "encoding/json/v2"
 )
 
 // ProbeOptions 描述 sing-box eBPF 能力检查所需的运行参数。

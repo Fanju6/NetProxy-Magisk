@@ -38,8 +38,7 @@ func runEBPF(ctx context.Context, args []string) error {
 		return errors.New("eBPF 操作需要 --config")
 	}
 	toError := func(err error) error {
-		var validation *ebpf.ValidationError
-		if errors.As(err, &validation) {
+		if validation, ok := errors.AsType[*ebpf.ValidationError](err); ok {
 			return &resultError{Code: "ebpf.config_invalid", Message: validation.Error(), Data: map[string]any{"diagnostics": validation.Diagnostics}}
 		}
 		return err

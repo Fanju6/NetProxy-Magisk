@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -10,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	json "encoding/json/v2"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
@@ -27,8 +28,7 @@ type moduleFlags struct {
 }
 
 func moduleSubscriptionError(err error) error {
-	var structured *subscription.Error
-	if errors.As(err, &structured) {
+	if structured, ok := errors.AsType[*subscription.Error](err); ok {
 		return &resultError{Code: structured.Code, Message: structured.Message, Data: structured.Data}
 	}
 	return err
@@ -259,7 +259,7 @@ func runModuleApp(_ context.Context, args []string) error {
 	action := args[0]
 	positionals := flags.Args()
 	if action == "list" {
-		data, err := moduleapp.MarshalAppData(options.EBPFConfig)
+		data, err := moduleapp.LoadAppPolicy(options.EBPFConfig)
 		if err != nil {
 			return err
 		}

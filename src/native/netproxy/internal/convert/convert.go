@@ -202,9 +202,9 @@ func parseShadowsocks(link string) (option.Outbound, error) {
 		return option.Outbound{}, err
 	}
 	options := &option.ShadowsocksOutboundOptions{
-		ServerOptions: option.ServerOptions{Server: u.Hostname(), ServerPort: port},
-		Method:        method,
-		Password:      password,
+		Server: u.Hostname(), ServerPort: port,
+		Method:   method,
+		Password: password,
 	}
 	if plugin := u.Query().Get("plugin"); plugin != "" {
 		options.Plugin, options.PluginOptions, _ = strings.Cut(plugin, ";")
@@ -213,8 +213,8 @@ func parseShadowsocks(link string) (option.Outbound, error) {
 }
 
 func parseSOCKS(link string) (option.Outbound, error) {
-	schemeEnd := strings.Index(link, "://")
-	body := link[schemeEnd+3:]
+	_, after, _ := strings.Cut(link, "://")
+	body := after
 	fragment := ""
 	if before, after, found := strings.Cut(body, "#"); found {
 		body = before
@@ -232,8 +232,8 @@ func parseSOCKS(link string) (option.Outbound, error) {
 		return option.Outbound{}, err
 	}
 	options := &option.SOCKSOutboundOptions{
-		ServerOptions: option.ServerOptions{Server: u.Hostname(), ServerPort: port},
-		Version:       "5",
+		Server: u.Hostname(), ServerPort: port,
+		Version: "5",
 	}
 	if u.User != nil {
 		options.Username = u.User.Username()
@@ -281,7 +281,7 @@ func parseHTTP(link string) (option.Outbound, error) {
 		return option.Outbound{}, err
 	}
 	options := &option.HTTPOutboundOptions{
-		ServerOptions: option.ServerOptions{Server: u.Hostname(), ServerPort: port},
+		Server: u.Hostname(), ServerPort: port,
 	}
 	if u.User != nil {
 		options.Username = u.User.Username()

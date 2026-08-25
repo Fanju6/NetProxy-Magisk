@@ -1,9 +1,7 @@
 package provider
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -13,6 +11,9 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+
+	"encoding/json/jsontext"
+	json "encoding/json/v2"
 
 	"github.com/sagernet/sing-box/option"
 	providerparser "github.com/sagernet/sing-box/provider/parser"
@@ -25,7 +26,7 @@ type Document struct {
 }
 
 type Diagnostic struct {
-	Index   int    `json:"index,omitempty"`
+	Index   int    `json:"index,omitzero"`
 	Source  string `json:"source,omitempty"`
 	Code    string `json:"code"`
 	Message string `json:"message"`
@@ -40,7 +41,7 @@ type NodeSummary struct {
 	Tag      string `json:"tag"`
 	Protocol string `json:"protocol"`
 	Server   string `json:"server,omitempty"`
-	Port     uint16 `json:"port,omitempty"`
+	Port     uint16 `json:"port,omitzero"`
 }
 
 func ParseDocument(ctx context.Context, content []byte) (Document, error) {
@@ -69,7 +70,7 @@ func LoadAllowEmpty(ctx context.Context, path string) (Document, error) {
 	if err != nil {
 		return Document{}, err
 	}
-	var shape map[string]json.RawMessage
+	var shape map[string]jsontext.Value
 	if err := json.Unmarshal(content, &shape); err != nil {
 		return Document{}, err
 	}
@@ -81,7 +82,7 @@ func LoadAllowEmpty(ctx context.Context, path string) (Document, error) {
 			return ParseDocument(ctx, content)
 		}
 	}
-	var outbounds, endpoints []json.RawMessage
+	var outbounds, endpoints []jsontext.Value
 	if raw := shape["outbounds"]; len(raw) > 0 {
 		if err := json.Unmarshal(raw, &outbounds); err != nil {
 			return Document{}, err
@@ -119,12 +120,11 @@ func marshalDocument(ctx context.Context, document Document) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	var formatted bytes.Buffer
-	if err := json.Indent(&formatted, content, "", "  "); err != nil {
+	formatted := jsontext.Value(append([]byte(nil), content...))
+	if err := formatted.Indent(jsontext.WithIndent("  ")); err != nil {
 		return nil, err
 	}
-	formatted.WriteByte('\n')
-	return formatted.Bytes(), nil
+	return append(formatted, '\n'), nil
 }
 
 func SaveAtomic(ctx context.Context, path string, document Document) error {

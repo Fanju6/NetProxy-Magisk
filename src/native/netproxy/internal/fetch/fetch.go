@@ -151,8 +151,7 @@ func Subscription(ctx context.Context, request Request) (Response, error) {
 
 	httpResponse, err := client.Do(httpRequest)
 	if err != nil {
-		var urlError *url.Error
-		if errors.As(err, &urlError) {
+		if urlError, ok := errors.AsType[*url.Error](err); ok {
 			return Response{}, fmt.Errorf("subscription request failed: %w", urlError.Err)
 		}
 		return Response{}, errors.New("subscription request failed")
@@ -265,7 +264,6 @@ func stripRedirectHeaders(request *http.Request) {
 func subscriptionResolvers() []ipResolver {
 	resolvers := []ipResolver{net.DefaultResolver}
 	for _, server := range fallbackDNSServers {
-		server := server
 		resolvers = append(resolvers, &net.Resolver{
 			PreferGo: true,
 			Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
@@ -330,7 +328,7 @@ func parseUsage(value string, diagnostics []provider.Diagnostic) (*Usage, []prov
 	}
 	usage := &Usage{}
 	valid := false
-	for _, part := range strings.Split(value, ";") {
+	for part := range strings.SplitSeq(value, ";") {
 		key, rawValue, found := strings.Cut(strings.TrimSpace(part), "=")
 		if !found {
 			continue

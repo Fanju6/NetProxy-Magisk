@@ -2,15 +2,18 @@ package catalog
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"encoding/json/jsontext"
+	json "encoding/json/v2"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/convert"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
@@ -108,7 +111,7 @@ func TestCatalogMultiProcessMixedMutations(t *testing.T) {
 	}
 
 	var commands []*exec.Cmd
-	for index := 0; index < 4; index++ {
+	for index := range 4 {
 		commands = append(commands, startCatalogHelper(t, root, groupID, "append", map[string]string{
 			"NETPROXY_CATALOG_INPUT": fmt.Sprintf("socks://append-%d.example:1080#APPEND_%d", index, index),
 		}))
@@ -151,7 +154,7 @@ func TestCatalogMultiProcessSameGroupWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 	commands := make([]*exec.Cmd, 0, 12)
-	for index := 0; index < 12; index++ {
+	for index := range 12 {
 		commands = append(commands, startCatalogHelper(t, root, groupID, "append", map[string]string{
 			"NETPROXY_CATALOG_INPUT": fmt.Sprintf("socks://same-%d.example:1080#NODE_%d", index, index),
 		}))
@@ -319,7 +322,7 @@ func helperMetadataUpdate(ctx context.Context, root, groupID string) error {
 	if err != nil {
 		return err
 	}
-	metadataContent, err := json.MarshalIndent(metadata, "", "  ")
+	metadataContent, err := json.Marshal(metadata, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
 		return err
 	}
@@ -340,7 +343,7 @@ func helperTransactionContents(t *testing.T, groupID string) ([]byte, []byte) {
 	metadata := NewMetadata(groupID, groupID, "local", "", time.Now())
 	metadata.NodeCount = 1
 	metadata.Revision = 99
-	metadataContent, err := json.MarshalIndent(metadata, "", "  ")
+	metadataContent, err := json.Marshal(metadata, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,9 +381,7 @@ func startCatalogHelper(t *testing.T, root, groupID, operation string, values ma
 
 func cloneCatalogHelperValues(values map[string]string) map[string]string {
 	cloned := make(map[string]string, len(values)+3)
-	for key, value := range values {
-		cloned[key] = value
-	}
+	maps.Copy(cloned, values)
 	return cloned
 }
 

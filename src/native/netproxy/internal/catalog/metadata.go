@@ -1,7 +1,6 @@
 package catalog
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -9,6 +8,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"encoding/json/jsontext"
+	json "encoding/json/v2"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 )
@@ -37,7 +39,7 @@ type Metadata struct {
 	Exclude            string                `json:"exclude"`
 	AllowInsecure      bool                  `json:"allow_insecure"`
 	Timeout            int64                 `json:"timeout"`
-	Usage              json.RawMessage       `json:"usage"`
+	Usage              jsontext.Value        `json:"usage"`
 	NodeCount          int                   `json:"node_count"`
 	Revision           int64                 `json:"revision"`
 	ETag               string                `json:"etag"`
@@ -109,7 +111,7 @@ func SaveMetadataAtomic(path string, metadata Metadata) error {
 // SaveMetadataAtomicLocked 在调用方已持有 Catalog 根锁时原子保存元数据。
 func SaveMetadataAtomicLocked(path string, metadata Metadata) error {
 	metadata = NormalizeMetadata(metadata)
-	content, err := json.MarshalIndent(metadata, "", "  ")
+	content, err := json.Marshal(metadata, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
 		return err
 	}
@@ -145,7 +147,7 @@ func NewMetadata(id, name, metadataType, rawURL string, now time.Time) Metadata 
 		IntervalSource:   "default",
 		UpdateViaProxy:   "auto",
 		Timeout:          60,
-		Usage:            json.RawMessage("null"),
+		Usage:            jsontext.Value("null"),
 		LastDiagnostics:  []provider.Diagnostic{},
 		RuntimeSyncState: "not_running",
 		CreatedAt:        nowText,
@@ -223,7 +225,7 @@ func NormalizeMetadata(metadata Metadata) Metadata {
 		metadata.CustomHeaders = map[string]string{}
 	}
 	if len(metadata.Usage) == 0 {
-		metadata.Usage = json.RawMessage("null")
+		metadata.Usage = jsontext.Value("null")
 	}
 	if metadata.LastDiagnostics == nil {
 		metadata.LastDiagnostics = []provider.Diagnostic{}

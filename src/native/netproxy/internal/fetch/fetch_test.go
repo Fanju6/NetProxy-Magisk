@@ -330,8 +330,7 @@ func TestSubscriptionRejectsHTTPSDowngradeEvenWhenInsecureIsAllowed(t *testing.T
 	if err == nil {
 		t.Fatal("HTTPS downgrade should be rejected")
 	}
-	var redirectErr *fetch.RedirectError
-	if !errors.As(err, &redirectErr) {
+	if _, ok := errors.AsType[*fetch.RedirectError](err); !ok {
 		t.Fatalf("HTTPS downgrade did not return RedirectError: %v", err)
 	}
 	if targetHits != 0 {

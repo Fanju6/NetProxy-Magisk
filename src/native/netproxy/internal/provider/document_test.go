@@ -2,6 +2,7 @@ package provider_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -17,8 +18,8 @@ func TestSaveAtomicRoundTripAndReplace(t *testing.T) {
 		Type: C.TypeSOCKS,
 		Tag:  "first",
 		Options: &option.SOCKSOutboundOptions{
-			ServerOptions: option.ServerOptions{Server: "example.com", ServerPort: 1080},
-			Version:       "5",
+			Server: "example.com", ServerPort: 1080,
+			Version: "5",
 		},
 	}}}
 	if err := provider.SaveAtomic(context.Background(), path, document); err != nil {
@@ -42,9 +43,9 @@ func TestInspectDoesNotExposeCredentials(t *testing.T) {
 		Type: C.TypeSOCKS,
 		Tag:  "private",
 		Options: &option.SOCKSOutboundOptions{
-			ServerOptions: option.ServerOptions{Server: "node.internal.example.com", ServerPort: 1080},
-			Username:      "user",
-			Password:      "secret",
+			Server: "node.internal.example.com", ServerPort: 1080,
+			Username: "user",
+			Password: "secret",
 		},
 	}}}
 	summary := provider.Inspect(document)
@@ -67,12 +68,22 @@ func TestLoadAllowEmpty(t *testing.T) {
 	}
 }
 
+func TestLoadAllowEmptyRejectsDuplicateObjectNames(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "provider.json")
+	if err := os.WriteFile(path, []byte(`{"outbounds":[],"outbounds":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.LoadAllowEmpty(context.Background(), path); err == nil {
+		t.Fatal("重复对象名称未被 JSON v2 拒绝")
+	}
+}
+
 func TestValidateRejectsControlCharactersInTag(t *testing.T) {
 	document := provider.Document{Outbounds: []option.Outbound{{
 		Type: C.TypeSOCKS,
 		Tag:  "invalid\ttag",
 		Options: &option.SOCKSOutboundOptions{
-			ServerOptions: option.ServerOptions{Server: "example.com", ServerPort: 1080},
+			Server: "example.com", ServerPort: 1080,
 		},
 	}}}
 	if err := provider.Validate(document); err == nil {
@@ -86,7 +97,7 @@ func TestRemoveLastNodeWritesEmptyProvider(t *testing.T) {
 		Type: C.TypeSOCKS,
 		Tag:  "only",
 		Options: &option.SOCKSOutboundOptions{
-			ServerOptions: option.ServerOptions{Server: "example.com", ServerPort: 1080},
+			Server: "example.com", ServerPort: 1080,
 		},
 	}}}
 	if !provider.Remove(&document, "only") {

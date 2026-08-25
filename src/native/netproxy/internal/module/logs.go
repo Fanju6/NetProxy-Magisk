@@ -178,13 +178,13 @@ func moduleVersionInfo(options Options) (string, string) {
 	}
 	version := "unknown"
 	versionCode := "unknown"
-	for _, rawLine := range strings.Split(string(content), "\n") {
+	for rawLine := range strings.SplitSeq(string(content), "\n") {
 		line := strings.TrimSpace(strings.TrimPrefix(rawLine, "\ufeff"))
-		if strings.HasPrefix(line, "version=") {
-			version = versionOrUnknown(strings.TrimPrefix(line, "version="))
+		if after, ok := strings.CutPrefix(line, "version="); ok {
+			version = versionOrUnknown(after)
 		}
-		if strings.HasPrefix(line, "versionCode=") {
-			versionCode = versionOrUnknown(strings.TrimPrefix(line, "versionCode="))
+		if after, ok := strings.CutPrefix(line, "versionCode="); ok {
+			versionCode = versionOrUnknown(after)
 		}
 	}
 	return version, versionCode

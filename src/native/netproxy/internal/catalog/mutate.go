@@ -2,13 +2,15 @@ package catalog
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"encoding/json/jsontext"
+	json "encoding/json/v2"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/convert"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
@@ -436,7 +438,7 @@ func commitPair(ctx context.Context, groupDir string, document provider.Document
 	if err != nil {
 		return err
 	}
-	metadataContent, err := json.MarshalIndent(metadata, "", "  ")
+	metadataContent, err := json.Marshal(metadata, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
 		return err
 	}

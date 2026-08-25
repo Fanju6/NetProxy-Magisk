@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +12,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	json "encoding/json/v2"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
@@ -59,7 +60,7 @@ func TestReadStatusWithoutService(t *testing.T) {
 	if status.CPUCount < 1 {
 		t.Fatalf("invalid CPU count: %d", status.CPUCount)
 	}
-	encoded, err := json.Marshal(status)
+	encoded, err := json.Marshal(status, json.Deterministic(true))
 	if err != nil {
 		t.Fatal(err)
 	}

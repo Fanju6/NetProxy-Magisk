@@ -1,12 +1,13 @@
 package ebpf
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	json "encoding/json/v2"
 )
 
 func TestBuildRuntimeUsesNewLocalAndSharedSchema(t *testing.T) {
@@ -248,7 +249,7 @@ func runtimeInbound(t *testing.T, config Config, resolve PackageUIDResolver) map
 	if err != nil {
 		t.Fatal(err)
 	}
-	content, err := json.Marshal(built.Runtime)
+	content, err := json.Marshal(built.Runtime, json.Deterministic(true))
 	if err != nil {
 		t.Fatal(err)
 	}

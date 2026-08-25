@@ -51,9 +51,9 @@ func TestExportSOCKSRoundTrip(t *testing.T) {
 		Type: C.TypeSOCKS,
 		Tag:  "socks",
 		Options: &option.SOCKSOutboundOptions{
-			ServerOptions: option.ServerOptions{Server: "2001:db8::1", ServerPort: 1080},
-			Username:      "user",
-			Password:      "password",
+			Server: "2001:db8::1", ServerPort: 1080,
+			Username: "user",
+			Password: "password",
 		},
 	}}}
 
@@ -76,9 +76,9 @@ func TestExportShadowsocksRoundTrip(t *testing.T) {
 		Type: C.TypeShadowsocks,
 		Tag:  "ss",
 		Options: &option.ShadowsocksOutboundOptions{
-			ServerOptions: option.ServerOptions{Server: "example.com", ServerPort: 8388},
-			Method:        "aes-128-gcm",
-			Password:      "password",
+			Server: "example.com", ServerPort: 8388,
+			Method:   "aes-128-gcm",
+			Password: "password",
 		},
 	}}}
 

@@ -3,8 +3,6 @@ package catalog
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -13,6 +11,10 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"uuid"
+
+	"encoding/json/jsontext"
+	json "encoding/json/v2"
 
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
@@ -37,25 +39,25 @@ func isGroupDir(entry os.DirEntry) bool {
 }
 
 type GroupSummary struct {
-	ID                string          `json:"id"`
-	Name              string          `json:"name"`
-	RuntimeTag        string          `json:"runtime_tag"`
-	Type              string          `json:"type"`
-	Active            bool            `json:"active"`
-	NodeCount         int             `json:"node_count"`
-	Revision          int64           `json:"revision"`
-	AutoUpdate        bool            `json:"auto_update"`
-	UpdateInterval    int64           `json:"update_interval"`
-	UpdateViaProxy    string          `json:"update_via_proxy"`
-	Usage             json.RawMessage `json:"usage"`
-	ProfileTitle      string          `json:"profile_title"`
-	ProfileWebPageURL string          `json:"profile_web_page_url"`
-	LastAttemptAt     string          `json:"last_attempt_at"`
-	LastSuccessAt     string          `json:"last_success_at"`
-	NextUpdateAt      string          `json:"next_update_at"`
-	LastError         string          `json:"last_error"`
-	UpdatedAt         string          `json:"updated_at"`
-	Progress          json.RawMessage `json:"progress"`
+	ID                string         `json:"id"`
+	Name              string         `json:"name"`
+	RuntimeTag        string         `json:"runtime_tag"`
+	Type              string         `json:"type"`
+	Active            bool           `json:"active"`
+	NodeCount         int            `json:"node_count"`
+	Revision          int64          `json:"revision"`
+	AutoUpdate        bool           `json:"auto_update"`
+	UpdateInterval    int64          `json:"update_interval"`
+	UpdateViaProxy    string         `json:"update_via_proxy"`
+	Usage             jsontext.Value `json:"usage"`
+	ProfileTitle      string         `json:"profile_title"`
+	ProfileWebPageURL string         `json:"profile_web_page_url"`
+	LastAttemptAt     string         `json:"last_attempt_at"`
+	LastSuccessAt     string         `json:"last_success_at"`
+	NextUpdateAt      string         `json:"next_update_at"`
+	LastError         string         `json:"last_error"`
+	UpdatedAt         string         `json:"updated_at"`
+	Progress          jsontext.Value `json:"progress"`
 }
 
 type GroupSnapshot struct {
@@ -251,15 +253,8 @@ func NewGroupID(root, kind, source string) (string, error) {
 	defer release()
 	switch kind {
 	case "subscription":
-		for attempt := 0; attempt < 16; attempt++ {
-			var raw [16]byte
-			if _, err := rand.Read(raw[:]); err != nil {
-				return "", err
-			}
-			raw[6] = (raw[6] & 0x0f) | 0x40
-			raw[8] = (raw[8] & 0x3f) | 0x80
-			candidate := fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
-				raw[0:4], raw[4:6], raw[6:8], raw[8:10], raw[10:16])
+		for range 16 {
+			candidate := uuid.NewV4().String()
 			if _, err := os.Stat(filepath.Join(root, candidate)); err == nil {
 				continue
 			} else if os.IsNotExist(err) {
@@ -527,7 +522,7 @@ func writeRuntimeOutbounds(path string, groups []*loadedGroup, activeTag, select
 				Type: C.TypeURLTest,
 				Tag:  autoTag,
 				Options: &option.URLTestOutboundOptions{
-					GroupCommonOption:         option.GroupCommonOption{Providers: []string{group.RuntimeTag}},
+					Providers:                 []string{group.RuntimeTag},
 					URL:                       "https://www.gstatic.com/generate_204",
 					Interval:                  badoption.Duration(3 * time.Minute),
 					Tolerance:                 50,
@@ -538,7 +533,7 @@ func writeRuntimeOutbounds(path string, groups []*loadedGroup, activeTag, select
 				Type: C.TypeSelector,
 				Tag:  selectTag,
 				Options: &option.SelectorOutboundOptions{
-					GroupCommonOption:         option.GroupCommonOption{Providers: []string{group.RuntimeTag}},
+					Providers:                 []string{group.RuntimeTag},
 					InterruptExistConnections: true,
 				},
 			},
@@ -553,7 +548,7 @@ func writeRuntimeOutbounds(path string, groups []*loadedGroup, activeTag, select
 		Type: C.TypeSelector,
 		Tag:  "Proxy",
 		Options: &option.SelectorOutboundOptions{
-			GroupCommonOption:         option.GroupCommonOption{Outbounds: options},
+			Outbounds:                 options,
 			Default:                   defaultTag,
 			InterruptExistConnections: true,
 		},
@@ -569,7 +564,7 @@ func writeRuntimeOutboundsAtomic(path string, outbounds []option.Outbound) error
 		return err
 	}
 	var document struct {
-		Outbounds []map[string]json.RawMessage `json:"outbounds"`
+		Outbounds []map[string]jsontext.Value `json:"outbounds"`
 	}
 	if err := json.Unmarshal(content, &document); err != nil {
 		return err
@@ -607,16 +602,16 @@ func writeRuntimeJSONAtomic(path string, value any) error {
 	if err != nil {
 		return err
 	}
-	var formatted bytes.Buffer
-	if err := json.Indent(&formatted, content, "", "  "); err != nil {
+	formatted := jsontext.Value(append([]byte(nil), content...))
+	if err := formatted.Indent(jsontext.WithIndent("  ")); err != nil {
 		return err
 	}
-	formatted.WriteByte('\n')
-	return provider.WriteAtomic(path, formatted.Bytes(), 0o600)
+	formatted = append(formatted, '\n')
+	return provider.WriteAtomic(path, formatted, 0o600)
 }
 
 func writeJSONAtomic(path string, value any) error {
-	content, err := json.MarshalIndent(value, "", "  ")
+	content, err := json.Marshal(value, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
 		return err
 	}

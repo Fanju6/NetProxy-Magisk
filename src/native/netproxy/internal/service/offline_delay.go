@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -13,6 +12,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"encoding/json/jsontext"
+	json "encoding/json/v2"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/processlock"
@@ -87,10 +89,7 @@ func runOfflineDelay(ctx context.Context, options Options, request delayRequest)
 	}
 	defer func() { _ = logFile.Close() }()
 
-	sessionTimeout := options.RequestTimeout
-	if sessionTimeout < offlineDelayRequestTimeout {
-		sessionTimeout = offlineDelayRequestTimeout
-	}
+	sessionTimeout := max(options.RequestTimeout, offlineDelayRequestTimeout)
 	sessionContext, cancel := context.WithTimeout(ctx, sessionTimeout)
 	command := offlineDelayCommand(sessionContext, options.SingBoxPath, configPath, sessionDir, logFile)
 	if err := command.Start(); err != nil {
@@ -188,7 +187,7 @@ func writeOfflineDelayConfig(
 			"type": "api", "listen": "127.0.0.1", "listen_port": port, "secret": secret,
 		}},
 	}
-	content, err := json.MarshalIndent(config, "", "  ")
+	content, err := json.Marshal(config, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
 		return "", err
 	}
@@ -267,8 +266,7 @@ func stopOfflineDelayProcess(cancel context.CancelFunc, command *exec.Cmd, done 
 }
 
 func mapOfflineDelayError(target string, cause error) error {
-	var structured *Error
-	if errors.As(cause, &structured) {
+	if structured, ok := errors.AsType[*Error](cause); ok {
 		return structured
 	}
 	if errors.Is(cause, context.DeadlineExceeded) || errors.Is(cause, context.Canceled) {

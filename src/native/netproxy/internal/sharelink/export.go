@@ -2,7 +2,6 @@ package sharelink
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -10,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	json "encoding/json/v2"
 
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/option"
@@ -161,7 +162,7 @@ func exportVMess(tag string, options *option.VMessOutboundOptions) (string, erro
 			link.Insecure = "1"
 		}
 	}
-	content, err := json.Marshal(link)
+	content, err := json.Marshal(link, json.Deterministic(true))
 	if err != nil {
 		return "", err
 	}

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -106,7 +107,7 @@ const (
 // Status 描述 Worker 的进程和下一次任务。
 type Status struct {
 	State   string `json:"state"`
-	PID     int    `json:"pid,omitempty"`
+	PID     int    `json:"pid,omitzero"`
 	Nearest int64  `json:"nearest"`
 }
 
@@ -330,10 +331,8 @@ func (summary Summary) failureKind(runErr error) workerFailureKind {
 	if runErr != nil {
 		return classifyWorkerError(runErr)
 	}
-	for _, kind := range summary.failureKinds {
-		if kind == workerFailurePermanent {
-			return workerFailurePermanent
-		}
+	if slices.Contains(summary.failureKinds, workerFailurePermanent) {
+		return workerFailurePermanent
 	}
 	return workerFailureTransient
 }
@@ -371,8 +370,7 @@ func classifyWorkerError(err error) workerFailureKind {
 	if errors.As(err, &networkError) && networkError.Timeout() {
 		return workerFailureTransient
 	}
-	var subscriptionError *subscription.Error
-	if errors.As(err, &subscriptionError) {
+	if subscriptionError, ok := errors.AsType[*subscription.Error](err); ok {
 		switch subscriptionError.Code {
 		case "subscription.runtime_sync_failed", "subscription.busy":
 			return workerFailureTransient
@@ -618,8 +616,8 @@ func runtimeProviderMatches(outbounds []serviceapi.GroupItem, runtimeTag string,
 	prefix := runtimeTag + "/"
 	present := make(map[string]struct{}, len(expected))
 	for _, outbound := range outbounds {
-		if strings.HasPrefix(outbound.Tag, prefix) {
-			present[strings.TrimPrefix(outbound.Tag, prefix)] = struct{}{}
+		if after, ok := strings.CutPrefix(outbound.Tag, prefix); ok {
+			present[after] = struct{}{}
 		}
 	}
 	if len(present) != len(expected) {

@@ -18,7 +18,7 @@ type result struct {
 	OK      bool   `json:"ok"`
 	Code    string `json:"code"`
 	Message string `json:"message"`
-	Data    any    `json:"data,omitempty"`
+	Data    any    `json:"data,omitzero"`
 }
 
 type cli struct {

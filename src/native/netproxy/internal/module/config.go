@@ -2,7 +2,7 @@ package module
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -254,7 +254,7 @@ func ValidateConfig(ctx context.Context, options Options, target, candidate stri
 	if err != nil {
 		return err
 	}
-	if !json.Valid(content) {
+	if !jsontext.Value(content).IsValid() {
 		return errors.New("配置不是有效 JSON")
 	}
 	if strings.HasPrefix(target, "singbox/confdir/") {

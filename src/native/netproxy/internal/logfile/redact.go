@@ -1,9 +1,11 @@
 package logfile
 
 import (
-	"encoding/json"
 	"regexp"
 	"strings"
+
+	"encoding/json/jsontext"
+	json "encoding/json/v2"
 )
 
 const maxMessageRunes = 1024
@@ -33,7 +35,7 @@ func RedactText(value string) string {
 		switch document.(type) {
 		case map[string]any, []any:
 			redactJSON(document)
-			if encoded, err := json.MarshalIndent(document, "", "  "); err == nil {
+			if encoded, err := json.Marshal(document, json.Deterministic(true), jsontext.WithIndent("  ")); err == nil {
 				value = string(encoded) + "\n"
 			}
 		}

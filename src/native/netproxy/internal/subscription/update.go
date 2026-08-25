@@ -2,15 +2,18 @@ package subscription
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"time"
+
+	"encoding/json/jsontext"
+	json "encoding/json/v2"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/convert"
@@ -84,9 +87,7 @@ func MarkPersistedError(err error) error {
 	data := map[string]any{"persisted": true}
 	switch value := structured.Data.(type) {
 	case map[string]any:
-		for key, item := range value {
-			data[key] = item
-		}
+		maps.Copy(data, value)
 	case nil:
 		// 保留仅新增的 persisted 字段。
 	default:
@@ -366,12 +367,10 @@ func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 		if cancelled(ctx, options.ProgressDir, options.GroupID) {
 			return updateFailure(options, metadata, groupDir, started, response, "subscription.cancelled", "订阅更新已取消", fetchErr)
 		}
-		var redirectErr *fetch.RedirectError
-		if errors.As(fetchErr, &redirectErr) {
+		if _, ok := errors.AsType[*fetch.RedirectError](fetchErr); ok {
 			return updateFailure(options, metadata, groupDir, started, response, "subscription.redirect_rejected", "订阅重定向被拒绝", fetchErr)
 		}
-		var progressErr *progressWriteError
-		if errors.As(fetchErr, &progressErr) {
+		if progressErr, ok := errors.AsType[*progressWriteError](fetchErr); ok {
 			return updateFailure(options, metadata, groupDir, started, response, "subscription.progress_write_failed", "订阅状态写入失败", progressErr)
 		}
 		return updateFailure(options, metadata, groupDir, started, response, "subscription.convert_failed", "订阅下载或转换失败", fetchErr)
@@ -585,8 +584,7 @@ func fetchSubscription(ctx context.Context, metadata catalog.Metadata, options U
 	if err == nil || !options.FallbackDirect || options.ProxyURL == "" || cancelled(ctx, options.ProgressDir, options.GroupID) {
 		return response, options.ProxyURL != "", err
 	}
-	var redirectErr *fetch.RedirectError
-	if errors.As(err, &redirectErr) {
+	if _, ok := errors.AsType[*fetch.RedirectError](err); ok {
 		return response, options.ProxyURL != "", err
 	}
 	if err := writeProgress(options.ProgressDir, options.GroupID, "download", "代理下载失败，正在尝试直连"); err != nil {
@@ -720,11 +718,11 @@ func applyResponseMetadata(metadata catalog.Metadata, response fetch.Metadata, n
 		metadata.FileName = response.FileName
 	}
 	if response.Usage != nil {
-		if usage, err := json.Marshal(response.Usage); err == nil {
+		if usage, err := json.Marshal(response.Usage, json.Deterministic(true)); err == nil {
 			metadata.Usage = usage
 		}
 	} else if !response.NotModified {
-		metadata.Usage = json.RawMessage("null")
+		metadata.Usage = jsontext.Value("null")
 	}
 	metadata.LastDiagnostics = response.Diagnostics
 	if response.UpdateIntervalSeconds != nil && metadata.IntervalSource != "user" && *response.UpdateIntervalSeconds >= int64(minimumInterval/time.Second) {
@@ -775,7 +773,7 @@ func appendHistoryChecked(groupDir string, value map[string]any) error {
 	if len(lines) == 1 && lines[0] == "" {
 		lines = nil
 	}
-	encoded, err := json.Marshal(value)
+	encoded, err := json.Marshal(value, json.Deterministic(true))
 	if err != nil {
 		return err
 	}
@@ -797,7 +795,7 @@ func writeProgress(dir, groupID, stage, message string) error {
 		"schema": 1, "group_id": groupID, "stage": stage, "message": message,
 		"updated_at": formatTime(time.Now()),
 	}
-	content, err := json.Marshal(payload)
+	content, err := json.Marshal(payload, json.Deterministic(true))
 	if err != nil {
 		return err
 	}

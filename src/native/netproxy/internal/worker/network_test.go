@@ -17,7 +17,7 @@ func TestRepeatedNetworkErrorSuppressesDuplicatesAndReportsRecovery(t *testing.T
 	logger := log.New(&output, "", 0)
 	var state repeatedNetworkError
 	err := errors.New("network unavailable")
-	for index := 0; index < networkErrorRepeatEvery+1; index++ {
+	for range networkErrorRepeatEvery + 1 {
 		state.record(logger, "读取 Android 网络状态失败", err)
 	}
 	state.recovered(logger)

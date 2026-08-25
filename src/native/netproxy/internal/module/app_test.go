@@ -65,6 +65,21 @@ func TestNodeImportAppendsToDefaultGroup(t *testing.T) {
 	}
 }
 
+func TestLoadAppPolicyReturnsTypedSettings(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ebpf.conf")
+	content := "APP_PROXY_ENABLE=1\nAPP_PROXY_MODE=\"whitelist\"\nPROXY_APPS_LIST=\"0:com.example.one,10:com.example.two\"\nBYPASS_APPS_LIST=\"0:com.example.three\"\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	policy, err := LoadAppPolicy(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !policy.Enabled || policy.Mode != "whitelist" || policy.ProxyApps != "0:com.example.one,10:com.example.two" || policy.BypassApps != "0:com.example.three" {
+		t.Fatalf("unexpected app policy: %+v", policy)
+	}
+}
+
 func TestUpdateAllSubscriptionsPreservesStructuredFailure(t *testing.T) {
 	root := t.TempDir()
 	options := newTestOptions(root)

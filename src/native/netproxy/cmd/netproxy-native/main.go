@@ -18,8 +18,7 @@ func main() {
 	ctx, cancel := commandContext(context.Background())
 	defer cancel()
 	if err := run(ctx, os.Args[1:]); err != nil {
-		var structured *resultError
-		if errors.As(err, &structured) {
+		if structured, ok := errors.AsType[*resultError](err); ok {
 			writeJSON(os.Stderr, result{Schema: 1, OK: false, Code: structured.Code, Message: structured.Message, Data: structured.Data})
 		} else {
 			writeJSON(os.Stderr, result{Schema: 1, OK: false, Code: "command.failed", Message: err.Error()})

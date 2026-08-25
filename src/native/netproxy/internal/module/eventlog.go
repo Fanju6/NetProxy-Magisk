@@ -43,12 +43,10 @@ func logOperation(options Options, component, event, message string, persisted b
 }
 
 func operationFailure(err error) (string, string) {
-	var subscriptionError *subscription.Error
-	if errors.As(err, &subscriptionError) {
+	if subscriptionError, ok := errors.AsType[*subscription.Error](err); ok {
 		return subscriptionError.Code, structuredFailureReason(subscriptionError.Message, subscriptionError.Data)
 	}
-	var serviceError *service.Error
-	if errors.As(err, &serviceError) {
+	if serviceError, ok := errors.AsType[*service.Error](err); ok {
 		return serviceError.Code, structuredFailureReason(serviceError.Message, serviceError.Data)
 	}
 	return "operation.failed", err.Error()

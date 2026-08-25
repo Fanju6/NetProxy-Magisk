@@ -142,7 +142,7 @@ func networkControlOptions(options Options) service.Options {
 
 func containsSSID(list, target string) bool {
 	list = strings.ReplaceAll(list, "，", ",")
-	for _, value := range strings.Split(list, ",") {
+	for value := range strings.SplitSeq(list, ",") {
 		if strings.TrimSpace(value) == target && target != "" {
 			return true
 		}

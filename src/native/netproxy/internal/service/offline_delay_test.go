@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -10,6 +9,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"encoding/json/jsontext"
+	json "encoding/json/v2"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/processlock"
 )
@@ -35,7 +37,7 @@ func TestOfflineDelayConfigIsIsolatedAndUsesProviderSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var config map[string]json.RawMessage
+	var config map[string]jsontext.Value
 	if err := json.Unmarshal(content, &config); err != nil {
 		t.Fatal(err)
 	}

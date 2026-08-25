@@ -2,12 +2,14 @@ package catalog
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"encoding/json/jsontext"
+	json "encoding/json/v2"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 )
@@ -65,7 +67,7 @@ func ReadGroupSummary(ctx context.Context, root, groupID, progressDir string) (G
 }
 
 func summaryForMetadata(metadata Metadata, runtimeTag, activeGroup, progressDir string, nodeCount int) GroupSummary {
-	progress := json.RawMessage("null")
+	progress := jsontext.Value("null")
 	if progressDir != "" {
 		if content, err := os.ReadFile(filepath.Join(progressDir, metadata.ID+".progress.json")); err == nil {
 			var state struct {

@@ -86,8 +86,7 @@ func runControl(ctx context.Context, args []string) error {
 	case "delay":
 		delay, err := service.Delay(ctx, options, *target, *group)
 		if err != nil {
-			var structured *service.Error
-			if errors.As(err, &structured) {
+			if structured, ok := errors.AsType[*service.Error](err); ok {
 				return &resultError{Code: structured.Code, Message: structured.Message, Data: structured.Data}
 			}
 			return err

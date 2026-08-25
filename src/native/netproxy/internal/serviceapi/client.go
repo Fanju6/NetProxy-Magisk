@@ -67,8 +67,8 @@ type Mode struct {
 type GroupItem struct {
 	Tag          string `json:"tag"`
 	Type         string `json:"type"`
-	URLTestTime  int64  `json:"url_test_time,omitempty"`
-	URLTestDelay int32  `json:"url_test_delay,omitempty"`
+	URLTestTime  int64  `json:"url_test_time,omitzero"`
+	URLTestDelay int32  `json:"url_test_delay,omitzero"`
 }
 
 type Group struct {
@@ -179,7 +179,7 @@ func (c *Client) StartedAt(ctx context.Context) (StartedAt, error) {
 	if err := c.invoke(ctx, methodGetStartedAt, &emptyMessage{}, &response); err != nil {
 		return StartedAt{}, err
 	}
-	return StartedAt{UnixMilli: response.UnixMilli}, nil
+	return StartedAt(response), nil
 }
 
 func (c *Client) Status(ctx context.Context) (Status, error) {
@@ -203,7 +203,7 @@ func (c *Client) Mode(ctx context.Context) (Mode, error) {
 	if err := c.invoke(ctx, methodGetClashModeStatus, &emptyMessage{}, &response); err != nil {
 		return Mode{}, err
 	}
-	return Mode{Available: response.Available, Current: response.Current}, nil
+	return Mode(response), nil
 }
 
 func (c *Client) SetMode(ctx context.Context, mode string) error {
@@ -329,7 +329,7 @@ func (c *Client) doRequest(ctx context.Context, method string, payload []byte, f
 func parseTrailer(content []byte) error {
 	statusCode := -1
 	statusMessage := ""
-	for _, line := range strings.Split(strings.ReplaceAll(string(content), "\r\n", "\n"), "\n") {
+	for line := range strings.SplitSeq(strings.ReplaceAll(string(content), "\r\n", "\n"), "\n") {
 		key, value, found := strings.Cut(line, ":")
 		if !found {
 			continue

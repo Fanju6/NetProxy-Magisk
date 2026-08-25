@@ -2,7 +2,6 @@ package subscription
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,6 +11,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"encoding/json/jsontext"
+	json "encoding/json/v2"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/processlock"
@@ -48,7 +50,7 @@ func TestUpdateAndNotModified(t *testing.T) {
 		AutoUpdate:     true,
 		UpdateInterval: int64((24 * time.Hour) / time.Second),
 		Timeout:        5,
-		Usage:          json.RawMessage("null"),
+		Usage:          jsontext.Value("null"),
 	}
 	if err := catalog.SaveMetadataAtomic(filepath.Join(groupDir, "meta.json"), metadata); err != nil {
 		t.Fatal(err)
@@ -220,7 +222,7 @@ func TestUpdateRejectsMetadataChangeBeforeCommit(t *testing.T) {
 	}
 	changed.Revision++
 	changed.Include = "changed-during-download"
-	changedContent, err := json.MarshalIndent(changed, "", "  ")
+	changedContent, err := json.Marshal(changed, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
 		t.Fatal(err)
 	}

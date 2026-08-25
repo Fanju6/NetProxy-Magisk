@@ -257,7 +257,7 @@ func boolValue(values map[string]string, key string, fallback bool) (bool, error
 }
 
 func acquireLock(path string) (*processlock.Lock, error) {
-	for attempt := 0; attempt < 50; attempt++ {
+	for range 50 {
 		lock, err := processlock.TryAcquire(path)
 		if err == nil {
 			return lock, nil

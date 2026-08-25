@@ -2,12 +2,14 @@ package catalog
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"encoding/json/jsontext"
+	json "encoding/json/v2"
 )
 
 func TestScanAndBuildRuntime(t *testing.T) {
@@ -71,7 +73,7 @@ func TestScanAndBuildRuntime(t *testing.T) {
 func assertRuntimeGroupSources(t *testing.T, content string) {
 	t.Helper()
 	var document struct {
-		Outbounds []map[string]json.RawMessage `json:"outbounds"`
+		Outbounds []map[string]jsontext.Value `json:"outbounds"`
 	}
 	if err := json.Unmarshal([]byte(content), &document); err != nil {
 		t.Fatalf("parse runtime outbounds: %v", err)
@@ -183,7 +185,7 @@ func TestRuntimeTagIgnoresEmptyDuplicateGroup(t *testing.T) {
 
 func BenchmarkScanSummary(b *testing.B) {
 	root := b.TempDir()
-	for groupIndex := 0; groupIndex < 40; groupIndex++ {
+	for groupIndex := range 40 {
 		id := fmt.Sprintf("group-%02d", groupIndex)
 		directory := filepath.Join(root, id)
 		if err := os.MkdirAll(directory, 0o700); err != nil {
@@ -192,7 +194,7 @@ func BenchmarkScanSummary(b *testing.B) {
 		metadata, err := json.Marshal(map[string]any{
 			"id": id, "name": id, "type": "subscription", "revision": 1,
 			"node_count": 250, "update_interval": 86400, "update_via_proxy": "auto",
-		})
+		}, json.Deterministic(true))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -203,7 +205,7 @@ func BenchmarkScanSummary(b *testing.B) {
 				"server": "example.com", "server_port": 1080,
 			}
 		}
-		providerDocument, err := json.Marshal(map[string]any{"outbounds": nodes})
+		providerDocument, err := json.Marshal(map[string]any{"outbounds": nodes}, json.Deterministic(true))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -294,7 +296,7 @@ func writeGroup(t *testing.T, root, id, name, groupType, tag string) {
 	metadata, err := json.Marshal(map[string]any{
 		"id": id, "name": name, "type": groupType, "revision": 1,
 		"node_count": 1, "update_interval": 86400, "update_via_proxy": "auto",
-	})
+	}, json.Deterministic(true))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -328,7 +330,7 @@ func updateSchedule(t *testing.T, path string, enabled bool, epoch int64) {
 	}
 	metadata["auto_update"] = enabled
 	metadata["next_update_epoch"] = epoch
-	content, err = json.Marshal(metadata)
+	content, err = json.Marshal(metadata, json.Deterministic(true))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,7 +350,7 @@ func updateNodeCount(t *testing.T, path string, nodeCount int) {
 		t.Fatal(err)
 	}
 	metadata["node_count"] = nodeCount
-	content, err = json.Marshal(metadata)
+	content, err = json.Marshal(metadata, json.Deterministic(true))
 	if err != nil {
 		t.Fatal(err)
 	}

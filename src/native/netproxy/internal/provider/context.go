@@ -84,9 +84,7 @@ func (endpointOptionsRegistry) CreateOptions(endpointType string) (any, bool) {
 	}
 }
 
-type runtimeOutboundOptionsRegistry struct {
-	outboundOptionsRegistry
-}
+type runtimeOutboundOptionsRegistry struct{}
 
 func (runtimeOutboundOptionsRegistry) OptionTypes() []string {
 	return append(outboundOptionsRegistry{}.OptionTypes(),

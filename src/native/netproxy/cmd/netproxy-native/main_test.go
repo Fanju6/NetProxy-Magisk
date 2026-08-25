@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"strconv"
@@ -8,6 +9,14 @@ import (
 	"testing"
 	"time"
 )
+
+func TestWriteJSONPreservesEmptyDataObject(t *testing.T) {
+	var output bytes.Buffer
+	writeJSON(&output, result{Schema: 1, OK: false, Code: "test.failed", Message: "测试失败", Data: map[string]any{}})
+	if !strings.Contains(output.String(), `"data":{}`) {
+		t.Fatalf("schema=1 空 data 对象丢失: %s", output.String())
+	}
+}
 
 func TestCommandContextConsumesForwardedDeadline(t *testing.T) {
 	want := time.Now().Add(time.Minute).Truncate(time.Millisecond)

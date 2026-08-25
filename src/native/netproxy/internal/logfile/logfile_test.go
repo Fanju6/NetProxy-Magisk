@@ -55,7 +55,7 @@ func TestTailLinesBoundsReadAndDropsPartialLine(t *testing.T) {
 
 func TestAppendKeepsTwoBackups(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "service.log")
-	for index := 0; index < 4; index++ {
+	for index := range 4 {
 		line := []byte(fmt.Sprintf("entry-%d\n", index))
 		padding := bytes.Repeat([]byte{byte('a' + index)}, int(MaxFileBytes)-len(line))
 		if err := Append(path, append(padding, line...)); err != nil {

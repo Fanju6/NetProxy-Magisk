@@ -108,11 +108,9 @@ func runNetworkWatcher(ctx context.Context, options Options, logger *log.Logger)
 	}
 	sourceContext, cancelSource := context.WithCancel(ctx)
 	var sourceWait sync.WaitGroup
-	sourceWait.Add(1)
-	go func() {
-		defer sourceWait.Done()
+	sourceWait.Go(func() {
 		runNetworkEventSource(sourceContext, eventSource, notify, logger)
-	}()
+	})
 
 	results := make(chan networkEvaluationResult, 1)
 	var evaluationWait sync.WaitGroup
@@ -136,11 +134,9 @@ func runNetworkWatcher(ctx context.Context, options Options, logger *log.Logger)
 		evaluationCancel = cancel
 		previousState := lastEvaluatedState
 		havePreviousState := haveEvaluatedState
-		evaluationWait.Add(1)
-		go func() {
-			defer evaluationWait.Done()
+		evaluationWait.Go(func() {
 			results <- readAndEvaluateNetworkState(evaluationContext, options, reader, previousState, havePreviousState)
-		}()
+		})
 	}
 
 	scheduleEvaluation := func(delay time.Duration) {

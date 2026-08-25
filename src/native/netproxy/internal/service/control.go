@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -11,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	json "encoding/json/v2"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
@@ -509,8 +510,7 @@ func delayTargetError(target string) error {
 }
 
 func mapDelayRequestError(target string, cause error) error {
-	var structured *Error
-	if errors.As(cause, &structured) {
+	if structured, ok := errors.AsType[*Error](cause); ok {
 		return structured
 	}
 	if errors.Is(cause, context.DeadlineExceeded) || errors.Is(cause, context.Canceled) {
@@ -920,7 +920,7 @@ func processMatches(pid int, executable string) bool {
 	if err != nil {
 		return false
 	}
-	command := strings.SplitN(string(content), "\x00", 2)[0]
+	command, _, _ := strings.Cut(string(content), "\x00")
 	return executableMatches(command, executable)
 }
 
@@ -942,11 +942,11 @@ func processCPUTicks(pid int) uint64 {
 	if err != nil {
 		return 0
 	}
-	end := strings.LastIndexByte(string(content), ')')
-	if end < 0 || end+2 >= len(content) {
+	_, processFields, found := strings.CutLast(string(content), ")")
+	if !found {
 		return 0
 	}
-	fields := strings.Fields(string(content)[end+2:])
+	fields := strings.Fields(processFields)
 	if len(fields) <= 12 {
 		return 0
 	}
@@ -962,7 +962,7 @@ func systemCPUTicks() (uint64, int) {
 	}
 	var total uint64
 	cpuCount := 0
-	for _, line := range strings.Split(string(content), "\n") {
+	for line := range strings.SplitSeq(string(content), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) == 0 || fields[0] == "cpu" {
 			if len(fields) > 1 {
@@ -975,8 +975,8 @@ func systemCPUTicks() (uint64, int) {
 			}
 			continue
 		}
-		if strings.HasPrefix(fields[0], "cpu") {
-			if _, err := strconv.Atoi(strings.TrimPrefix(fields[0], "cpu")); err == nil {
+		if after, ok := strings.CutPrefix(fields[0], "cpu"); ok {
+			if _, err := strconv.Atoi(after); err == nil {
 				cpuCount++
 			}
 		}

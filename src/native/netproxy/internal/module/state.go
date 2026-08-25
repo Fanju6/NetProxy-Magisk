@@ -1,12 +1,13 @@
 package module
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	json "encoding/json/v2"
 )
 
 // ServiceState 描述模块服务的持久状态快照。
@@ -57,7 +58,7 @@ func WriteServiceState(path, state string, pid, startedAt, readyAt int64, messag
 		Schema: 1, State: state, PID: pid, StartedAt: startedAt,
 		ReadyAt: readyAt, Error: message, UpdatedAt: time.Now().Unix(),
 	}
-	content, err := json.Marshal(stateValue)
+	content, err := json.Marshal(stateValue, json.Deterministic(true))
 	if err != nil {
 		return err
 	}

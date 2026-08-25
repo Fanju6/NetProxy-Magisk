@@ -2,13 +2,14 @@ package module
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+
+	json "encoding/json/v2"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 )
@@ -22,7 +23,7 @@ type configFileSnapshot struct {
 	Path   string `json:"path"`
 	Backup string `json:"backup,omitempty"`
 	Exists bool   `json:"exists"`
-	Mode   uint32 `json:"mode,omitempty"`
+	Mode   uint32 `json:"mode,omitzero"`
 }
 
 type configApplyJournal struct {
@@ -136,7 +137,7 @@ func (transaction *configApplyTransaction) setPhase(phase string) error {
 }
 
 func (transaction *configApplyTransaction) writeJournal() error {
-	content, err := json.Marshal(transaction.journal)
+	content, err := json.Marshal(transaction.journal, json.Deterministic(true))
 	if err != nil {
 		return err
 	}

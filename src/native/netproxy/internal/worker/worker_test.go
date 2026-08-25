@@ -2,7 +2,7 @@ package worker
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"io"
@@ -210,7 +210,7 @@ func installPersistenceHooks(t *testing.T, updateModule func(string, map[string]
 	})
 }
 
-func historyContains(entries []json.RawMessage, code string) bool {
+func historyContains(entries []jsontext.Value, code string) bool {
 	for _, entry := range entries {
 		if strings.Contains(string(entry), code) {
 			return true
@@ -1248,8 +1248,7 @@ func TestWorkerPIDLockHandlesStaleReuseAndForeignRelease(t *testing.T) {
 }
 
 func TestWorkerStartRequiresPIDState(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	err := waitForWorkerPID(ctx, filepath.Join(t.TempDir(), "worker.pid"), os.Getpid(), 20*time.Millisecond)
 	if err == nil || !strings.Contains(err.Error(), "PID") {
 		t.Fatalf("missing PID state was not reported: %v", err)

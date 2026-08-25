@@ -1,13 +1,14 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime/debug"
+
+	json "encoding/json/v2"
 )
 
 type result struct {
@@ -15,7 +16,7 @@ type result struct {
 	OK      bool   `json:"ok"`
 	Code    string `json:"code"`
 	Message string `json:"message"`
-	Data    any    `json:"data,omitempty"`
+	Data    any    `json:"data,omitzero"`
 }
 
 type resultError struct {
@@ -29,9 +30,10 @@ func (e *resultError) Error() string {
 }
 
 func writeJSON(writer io.Writer, value any) {
-	encoder := json.NewEncoder(writer)
-	encoder.SetEscapeHTML(false)
-	_ = encoder.Encode(value)
+	if err := json.MarshalWrite(writer, value, json.Deterministic(true)); err != nil {
+		return
+	}
+	_, _ = io.WriteString(writer, "\n")
 }
 
 func newFlagSet(name string) *flag.FlagSet {

@@ -67,6 +67,7 @@ src/module/service.sh
 - 允许且仅允许一个 Go Worker。它承载订阅调度和可选的 Android 网络监听，不能演变为通用控制守护进程、REST 服务或第二个代理核心。
 - 使用 reF1nd sing-box 的类型定义解析、生成和校验 Provider，不通过字符串替换拼接协议配置。
 - reF1nd 依赖版本必须与打包的 sing-box 内核兼容；升级时同时验证转换 fixtures、Provider 和 Service API。
+- Native JSON 编解码统一使用 Go 标准库 `encoding/json/v2` 与 `encoding/json/jsontext`，依赖严格字段匹配、重复键拒绝和 UTF-8 校验；持久文件与 `schema=1` 输出必须显式传入 `json.Deterministic(true)`，不要回退到 v1 或设置 `GOEXPERIMENT=nojsonv2`。
 - Provider 修改必须保持完整校验、稳定 tag、`0600` 权限和原子替换。错误必须返回结构化 diagnostics，不允许空输出加成功退出码。
 - 新增协议或修复解析缺陷时补充不含真实凭据的 fixture/golden 测试。
 
