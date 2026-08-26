@@ -2,6 +2,29 @@
 
 本页收录 GitHub Releases 中发布的正式版本，按发布时间倒序排列；不包含持续更新的 `nightly Pre-release`。
 
+## 版本 8.1.1（2026-08-27）
+
+8.1.1 更新默认 DNS 与分流规则，统一内置规则标签和自动维护来源。
+
+### 默认分流与 DNS
+
+- 远程规则源调整为 AWAvenue 与 MetaCubeX，新增 `category-ads-all`、Apple 中国大陆、Google、国内外域名、国内 IP 与 Telegram IP 规则集。
+- Google、Telegram IP 与非中国域名默认经代理；Apple 中国大陆、国内域名与国内 IP 默认直连，并继续优先处理用户自定义的 `block`、`direct` 和 `proxy` 规则。
+- 广告拦截同时使用 AWAvenue 与 `category-ads-all`，`AllowAds` 模式仍可临时允许广告流量。
+- DNS 分流与路由规则保持一致，最终 DNS 请求默认经代理解析，减少未匹配请求从直连 DNS 出口发出的情况。
+
+### eBPF 与资源维护
+
+- eBPF 默认提前绕过规则集由 `direct,ChinaIP` 调整为 `direct,cn-ip`，与新版国内 IP 规则标签保持一致。
+- 资源更新工作流改为跟踪新规则仓库的文件提交与 SHA-256，后续可继续自动发现和更新内置规则。
+
+### 升级说明
+
+- “保留现有数据”安装模式会继续保留用户当前的 sing-box 静态配置；新默认规则用于新安装或选择“全新安装”的场景。
+- `rules/local/` 下的用户自定义规则不受本次远程规则源调整影响。
+
+* * *
+
 ## 版本 8.1.0（2026-08-26）
 
 8.1 继续完善 8.0 建立的 Go + Catalog 架构，重点升级透明代理数据面、网络感知与节点测速，并进一步收敛 Native、WebUI 和模块运行入口。
