@@ -368,7 +368,6 @@ internal fun ProxySettingsScreen(
                         CardItem("enabled") {
                             SwitchPreference(
                                 title = stringResource(R.string.wifi_auto_switch),
-                                summary = stringResource(R.string.wifi_auto_switch_summary),
                                 checked = settings.wifiAutoSwitch,
                                 onCheckedChange = viewModel::setWifiAutoSwitch
                             )
@@ -406,7 +405,6 @@ internal fun ProxySettingsScreen(
                         CardItem("cellular") {
                             SwitchPreference(
                                 title = stringResource(R.string.proxy_on_cellular),
-                                summary = stringResource(R.string.proxy_on_cellular_summary),
                                 checked = settings.proxyOnCellular,
                                 onCheckedChange = viewModel::setProxyOnCellular
                             )

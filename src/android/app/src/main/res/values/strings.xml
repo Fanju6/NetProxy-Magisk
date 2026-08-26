@@ -216,7 +216,7 @@
 
     <!-- Settings: Main -->
     <string name="proxy_settings">代理设置</string>
-    <string name="proxy_settings_summary">配置 eBPF 接管、DNS、共享网络与 WiFi 策略</string>
+    <string name="proxy_settings_summary">配置 eBPF 接管与 Wi-Fi 策略</string>
     <string name="auto_start">开机自启</string>
     <string name="auto_start_summary">系统启动时自动开启服务</string>
 
@@ -336,13 +336,11 @@
     <!-- Settings: WiFi automatic switching -->
     <string name="wifi_auto_switch_title">WiFi 自动切换</string>
     <string name="wifi_auto_switch">按 WiFi 自动切换</string>
-    <string name="wifi_auto_switch_summary">根据当前 WiFi 名称自动开启或关闭代理</string>
     <string name="wifi_ssid_mode">名单模式</string>
-    <string name="wifi_ssid_mode_blacklist">黑名单（名单内不代理）</string>
-    <string name="wifi_ssid_mode_whitelist">白名单（仅名单内代理）</string>
+    <string name="wifi_ssid_mode_blacklist">黑名单</string>
+    <string name="wifi_ssid_mode_whitelist">白名单</string>
     <string name="wifi_ssid_list">SSID 名单</string>
     <string name="proxy_on_cellular">非 WiFi 网络走代理</string>
-    <string name="proxy_on_cellular_summary">移动数据等非 WiFi 网络是否使用代理</string>
 
     <!-- eBPF 透明代理 -->
     <string name="ebpf_core_settings">eBPF 入站</string>
