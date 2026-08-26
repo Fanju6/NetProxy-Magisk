@@ -12,7 +12,25 @@
     <title>NetProxy Terminal</title>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <div id="root">
+      <div class="term" id="terminal">
+        <div class="out" id="output"></div>
+        <div class="iline">
+          <span class="prompt">❯ </span>
+          <input id="command-input" class="inp" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+        </div>
+        <div class="vk">
+          <button id="complete" class="vkbtn" type="button">Tab</button>
+          <button id="history-prev" class="vkbtn" type="button">↑</button>
+          <button id="history-next" class="vkbtn" type="button">↓</button>
+          <button id="run" class="vkbtn run" type="button">↵</button>
+        </div>
+        <div class="bar">
+          <span id="service-status" class="bar-status">服务: <b id="service-state">检测中</b></span>
+          <span id="environment" class="dim"></span>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

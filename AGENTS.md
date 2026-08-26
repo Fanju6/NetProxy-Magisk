@@ -10,7 +10,7 @@
 
 - `src/module/`：Magisk、KernelSU 与 APatch 模块，包含生命周期脚本、`netproxyctl`、sing-box 配置、资源和打包内容。
 - `src/native/netproxy/`：模块专用 Go 组件，负责节点转换、Provider、订阅、配置、eBPF 运行时、Service API 与唯一允许的后台 Worker。
-- `src/webui/`：React + TypeScript 终端式 WebUI，构建产物写入 `src/module/webroot/netproxy/`。
+- `src/webui/`：原生 TypeScript 终端式 WebUI，构建产物写入 `src/module/webroot/netproxy/`。
 - `src/android/`：Android 管理器，使用 Compose、miuix、Navigation3 和内置 Scripta 源码快照。
 - `docs/`：VitePress 用户文档；`tests/`：Shell 契约与运行时回归测试。
 
@@ -85,7 +85,7 @@ src/module/service.sh
 
 ## WebUI
 
-- 当前 WebUI 是终端式界面（约 580 行）：所有 Root 命令统一经 `src/webui/src/exec.ts` 调用 `netproxyctl` 并渲染输出，其他模块不得自行拼接 Root 命令。
+- 当前 WebUI 是原生 TypeScript 终端式界面：所有 Root 命令统一经 `src/webui/src/exec.ts` 调用 `netproxyctl` 并渲染输出，其他模块不得自行拼接 Root 命令。
 - 持久节点和订阅在核心停止时也必须可读，数据来自 `netproxyctl`；运行时延迟、流量和选择状态再与 sing-box API 合并。
 - 不要把错误、加载状态或内部 UUID 直接暴露为界面主信息。
 - `npm run dev` 使用 mock 数据，可在普通浏览器开发，不需要设备。
@@ -140,7 +140,7 @@ Android Root、开机启动、模块命令、快捷设置磁贴、eBPF、热点�
 
 ## 代码注释约束
 
-- 注释语言按语种统一：Shell、Kotlin、Go 与 WebUI 的 TypeScript/TSX 一律中文。协议名、字段名、命令名、类型名保持原文，不翻译。Go 现有注释中英混用，新增和触及的注释写中文，不做全量翻译式改写。
+- 注释语言按语种统一：Shell、Kotlin、Go 与 WebUI 的 TypeScript 一律中文。协议名、字段名、命令名、类型名保持原文，不翻译。Go 现有注释中英混用，新增和触及的注释写中文，不做全量翻译式改写。
 - 导出的 Go 标识符若需 godoc 注释，按 Go 惯例以标识符名开头，其余说明用中文。
 - Shell 文件头沿用现有格式，四个字段齐全：文件、功能、用法、依赖。
 - Shell 函数头沿用 `# 参数:` / `# 返回:`，并注明退出码含义。新增函数补齐两项；改签名时同步更新——签名与注释不一致比没有注释更容易误导。

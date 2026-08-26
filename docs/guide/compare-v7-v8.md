@@ -292,7 +292,7 @@ Compose -> ViewModel -> Repository -> NetProxyCtlClient -> netproxyctl
 
 ### WebUI
 
-当前 WebUI 是 React + TypeScript 终端式入口，所有 Root 命令经 `src/webui/src/exec.ts` 调用 `netproxyctl`。模块 WebUI 还提供两个独立面板入口：
+当前 WebUI 是原生 TypeScript 终端式入口，所有 Root 命令经 `src/webui/src/exec.ts` 调用 `netproxyctl`。模块 WebUI 还提供两个独立面板入口：
 
 - sing-box Service API Dashboard；
 - Clash API zashboard。

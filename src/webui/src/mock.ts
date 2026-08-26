@@ -1,70 +1,23 @@
 import { CONTRACT_SCHEMA, type CtlResult, type ExecResult } from './contract'
 
-type MockGroup = {
-  id: string
-  name: string
-  runtime_tag: string
-  type: 'local' | 'subscription'
-  active: boolean
-  node_count: number
-  revision: number
-  auto_update: boolean
-  update_interval: number
-  update_via_proxy: string
-  usage: null
-  profile_title: string
-  profile_web_page_url: string
-  last_attempt_at: string
-  last_success_at: string
-  next_update_at: string
-  last_error: string
-  updated_at: string
-  progress: null
+const GROUP_DEFAULTS = {
+  auto_update: false,
+  update_interval: 0,
+  update_via_proxy: 'auto',
+  usage: null,
+  profile_title: '',
+  profile_web_page_url: '',
+  last_attempt_at: '',
+  last_success_at: '',
+  next_update_at: '',
+  last_error: '',
+  updated_at: '',
+  progress: null,
 }
 
-const GROUPS: MockGroup[] = [
-  {
-    id: 'default',
-    name: '本地配置',
-    runtime_tag: '本地配置',
-    type: 'local',
-    active: true,
-    node_count: 1,
-    revision: 1,
-    auto_update: false,
-    update_interval: 0,
-    update_via_proxy: 'auto',
-    usage: null,
-    profile_title: '',
-    profile_web_page_url: '',
-    last_attempt_at: '',
-    last_success_at: '',
-    next_update_at: '',
-    last_error: '',
-    updated_at: '',
-    progress: null,
-  },
-  {
-    id: 'demo-sub',
-    name: '示例订阅',
-    runtime_tag: '示例订阅',
-    type: 'subscription',
-    active: false,
-    node_count: 2,
-    revision: 3,
-    auto_update: true,
-    update_interval: 86400,
-    update_via_proxy: 'auto',
-    usage: null,
-    profile_title: '',
-    profile_web_page_url: '',
-    last_attempt_at: '',
-    last_success_at: '',
-    next_update_at: '',
-    last_error: '',
-    updated_at: '',
-    progress: null,
-  },
+const GROUPS = [
+  { ...GROUP_DEFAULTS, id: 'default', name: '本地配置', runtime_tag: '本地配置', type: 'local' as const, active: true, node_count: 1, revision: 1 },
+  { ...GROUP_DEFAULTS, id: 'demo-sub', name: '示例订阅', runtime_tag: '示例订阅', type: 'subscription' as const, active: false, node_count: 2, revision: 3, auto_update: true, update_interval: 86400 },
 ]
 
 const NODE = { tag: 'demo-node', protocol: 'socks', server: 'example.test', port: 1080 }
