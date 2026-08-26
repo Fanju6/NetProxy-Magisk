@@ -26,11 +26,6 @@ type cli struct {
 	commandCtx context.Context
 }
 
-var (
-	version = "development"
-	commit  = "unknown"
-)
-
 const (
 	defaultCommandTimeout = 30 * time.Second
 	serviceStartTimeout   = 120 * time.Second
@@ -97,7 +92,21 @@ func (c *cli) run(ctx context.Context, args []string) int {
 }
 
 func (c *cli) runInternal(ctx context.Context, args []string) int {
-	if err := runNativeCommand(ctx, args); err != nil {
+	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
+		fmt.Fprint(os.Stdout, internalUsageText())
+		return 0
+	}
+	var handler commandHandler
+	switch args[0] {
+	case "boot":
+		handler = runModuleBoot
+	case "worker":
+		handler = runWorker
+	default:
+		writeJSON(os.Stderr, result{Schema: 1, OK: false, Code: "command.failed", Message: fmt.Sprintf("未知内部命令 %q", args[0])})
+		return 1
+	}
+	if err := handler(ctx, args[1:]); err != nil {
 		if structured, ok := errors.AsType[*resultError](err); ok {
 			writeJSON(os.Stderr, result{Schema: 1, OK: false, Code: structured.Code, Message: structured.Message, Data: structured.Data})
 		} else {
@@ -110,7 +119,7 @@ func (c *cli) runInternal(ctx context.Context, args []string) int {
 
 func defaultTimeoutFor(args []string) time.Duration {
 	if isSubscriptionMutation(args) {
-		// 每个订阅已经有自己的下载超时；外层默认时限会提前杀死 Native，丢失已持久化状态。
+		// 每个订阅已经有自己的下载超时；外层默认时限会提前取消事务，丢失已持久化状态。
 		return 0
 	}
 	if len(args) > 1 && args[0] == "service" && args[1] == "start" {

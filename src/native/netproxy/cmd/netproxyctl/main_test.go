@@ -22,7 +22,7 @@ func TestModuleArgsKeepsOperationBeforeFlags(t *testing.T) {
 	}
 
 	got := command.moduleArgs("node", "add", "socks://example.com:1080#node")
-	wantPrefix := []string{"module", "node", "add"}
+	wantPrefix := []string{"add", "--module-dir", "/module"}
 	if !reflect.DeepEqual(got[:len(wantPrefix)], wantPrefix) {
 		t.Fatalf("operation prefix = %v, want %v", got[:len(wantPrefix)], wantPrefix)
 	}
@@ -31,7 +31,7 @@ func TestModuleArgsKeepsOperationBeforeFlags(t *testing.T) {
 	}
 
 	got = command.moduleArgs("mode", "AllowAds")
-	if got[0] != "module" || got[1] != "mode" || got[2] == "AllowAds" {
+	if got[0] != "--module-dir" || got[1] != "/module" || got[2] != "AllowAds" {
 		t.Fatalf("mode arguments were not placed after flags: %v", got)
 	}
 	if got[len(got)-1] != "AllowAds" {
@@ -39,7 +39,7 @@ func TestModuleArgsKeepsOperationBeforeFlags(t *testing.T) {
 	}
 
 	got = command.moduleArgs("network", "evaluate", "--type", "wifi", "--ssid", "办公 WiFi")
-	if !reflect.DeepEqual(got[:3], []string{"module", "network", "evaluate"}) {
+	if !reflect.DeepEqual(got[:3], []string{"evaluate", "--module-dir", "/module"}) {
 		t.Fatalf("network operation prefix = %v", got[:3])
 	}
 	if got[len(got)-1] != "办公 WiFi" {
@@ -106,13 +106,14 @@ func TestDefaultTimeoutDoesNotPreemptSubscriptionMutation(t *testing.T) {
 	}
 }
 
-func TestInternalUsageListsCurrentModuleActions(t *testing.T) {
+func TestInternalUsageOnlyListsProcessEntrypoints(t *testing.T) {
 	usage := internalUsageText()
-	want := "module <boot|prepare|select|mode|network|app|node|sub|config|logs|service>"
-	if !strings.Contains(usage, want) {
-		t.Fatalf("usage missing current module actions: %s", usage)
+	for _, expected := range []string{"__internal boot", "__internal worker <start|stop|run>"} {
+		if !strings.Contains(usage, expected) {
+			t.Fatalf("usage missing process entry %q: %s", expected, usage)
+		}
 	}
-	for _, removed := range []string{"|sync|", "|state|", "netproxy-native"} {
+	for _, removed := range []string{"__internal module", "__internal catalog", "__internal control", "__internal ebpf", "__internal version", "netproxy-native"} {
 		if strings.Contains(usage, removed) {
 			t.Fatalf("usage still lists removed entry %q: %s", removed, usage)
 		}

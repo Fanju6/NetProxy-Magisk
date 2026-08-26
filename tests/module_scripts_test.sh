@@ -26,7 +26,8 @@ check_service_bridge() {
     printf '%s\n' "缺少模块开机桥接脚本: $MODULE_DIR/service.sh" >&2
     return 1
   }
-  grep -q 'module boot' "$MODULE_DIR/service.sh"
+  grep -q '__internal boot' "$MODULE_DIR/service.sh"
+  ! grep -q 'module boot' "$MODULE_DIR/service.sh"
   ! grep -q 'setuidgid\|nohup\|service_main' "$MODULE_DIR/service.sh"
 }
 

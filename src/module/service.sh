@@ -18,6 +18,6 @@ readonly NETPROXY_BIN="$MODDIR/bin/netproxyctl"
 
 # 通过 su 启动原生进程；sing-box 的最终 cgroup 归属由 Go 在启动时显式收敛。
 if command -v su > /dev/null 2>&1; then
-  exec su -c "\"$NETPROXY_BIN\" __internal module boot --module-dir \"$MODDIR\""
+  exec su -c "\"$NETPROXY_BIN\" __internal boot --module-dir \"$MODDIR\""
 fi
-exec "$NETPROXY_BIN" __internal module boot --module-dir "$MODDIR"
+exec "$NETPROXY_BIN" __internal boot --module-dir "$MODDIR"

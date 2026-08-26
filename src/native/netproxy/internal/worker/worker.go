@@ -1,15 +1,12 @@
 package worker
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -38,7 +35,6 @@ const (
 var (
 	workerProcessRunning   = isProcessRunning
 	workerProcessPID       = isWorkerProcessPID
-	workerReloadService    = reloadService
 	workerVerifyRuntime    = verifyRuntimeState
 	workerLoadModule       = moduleconfig.LoadModule
 	workerUpdateModule     = moduleconfig.UpdateModule
@@ -72,7 +68,6 @@ type Options struct {
 	PIDFile        string
 	LogFile        string
 	ModuleConf     string
-	ExecutablePath string
 	SingBoxPath    string
 	ServiceAddress string
 	ServiceSecret  string
@@ -81,6 +76,7 @@ type Options struct {
 	// PersistedBeforeUpdate 表示订阅编辑已保存设置，更新失败时不得误报为未保存。
 	PersistedBeforeUpdate   bool
 	NetworkWatchEnabled     bool
+	ReloadService           func(context.Context) error
 	NetworkEvaluate         func(context.Context, string, string) error
 	NetworkEventSource      NetworkEventSource
 	NetworkStateReader      NetworkStateReader
@@ -521,7 +517,10 @@ func applyUpdateEffects(ctx context.Context, options Options, result subscriptio
 	}
 	reloaded := forceReload || result.StructureChanged || activated
 	if reloaded {
-		if err := workerReloadService(ctx, options); err != nil {
+		if options.ReloadService == nil {
+			return subscription.RuntimeSyncFailed, true, errors.New("未配置服务 reload 回调")
+		}
+		if err := options.ReloadService(ctx); err != nil {
 			return subscription.RuntimeSyncFailed, true, err
 		}
 	}
@@ -701,36 +700,6 @@ func fallbackMissingNode(ctx context.Context, options Options, groupID string, l
 	requestContext, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	return client.Select(requestContext, "Proxy", "Auto/"+runtimeTag)
-}
-
-func reloadService(ctx context.Context, options Options) error {
-	if strings.TrimSpace(options.ExecutablePath) == "" {
-		return errors.New("未配置 netproxyctl 路径")
-	}
-	command := exec.CommandContext(ctx, options.ExecutablePath, reloadServiceArguments(options)...)
-	command.Stdout = io.Discard
-	var stderr bytes.Buffer
-	command.Stderr = &stderr
-	if err := command.Run(); err != nil {
-		if diagnostic := strings.TrimSpace(stderr.String()); diagnostic != "" {
-			return fmt.Errorf("服务 reload 失败: %s: %w", diagnostic, err)
-		}
-		return fmt.Errorf("服务 reload 失败: %w", err)
-	}
-	return nil
-}
-
-func reloadServiceArguments(options Options) []string {
-	moduleDir := filepath.Dir(filepath.Dir(options.Root))
-	return []string{
-		"__internal", "module", "service", "reload",
-		"--module-dir", moduleDir,
-		"--catalog-root", options.Root,
-		"--module-config", options.ModuleConf,
-		"--sing-box", options.SingBoxPath,
-		"--address", options.ServiceAddress,
-		"--secret", options.ServiceSecret,
-	}
 }
 
 func validateOptions(options Options) error {

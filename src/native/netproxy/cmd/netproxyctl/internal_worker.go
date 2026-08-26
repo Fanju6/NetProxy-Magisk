@@ -24,7 +24,6 @@ func runWorker(ctx context.Context, args []string) error {
 	pidFile := flags.String("pid-file", "", "Worker PID 文件")
 	logFile := flags.String("log-file", "", "Worker 日志文件")
 	moduleConf := flags.String("module-conf", "", "模块配置文件")
-	executable := flags.String("executable", "", "netproxyctl 路径")
 	singBox := flags.String("sing-box", "", "sing-box 二进制路径")
 	serviceAddress := flags.String("service-address", "127.0.0.1:9090", "Service API 地址")
 	serviceSecret := flags.String("service-secret", "singbox", "Service API 密钥")
@@ -37,9 +36,6 @@ func runWorker(ctx context.Context, args []string) error {
 	}
 	if strings.TrimSpace(*moduleConf) == "" {
 		*moduleConf = layout.ModuleConfig()
-	}
-	if strings.TrimSpace(*executable) == "" {
-		*executable = layout.Executable()
 	}
 	if strings.TrimSpace(*singBox) == "" {
 		*singBox = layout.SingBox()
@@ -61,7 +57,6 @@ func runWorker(ctx context.Context, args []string) error {
 	options.PIDFile = *pidFile
 	options.LogFile = *logFile
 	options.ModuleConf = *moduleConf
-	options.ExecutablePath = *executable
 	options.SingBoxPath = *singBox
 	options.ServiceAddress = *serviceAddress
 	options.ServiceSecret = *serviceSecret
@@ -71,10 +66,7 @@ func runWorker(ctx context.Context, args []string) error {
 	if options.LogFile == "" {
 		options.LogFile = layout.ServiceLog()
 	}
-	if options.ExecutablePath == "" {
-		options.ExecutablePath = os.Args[0]
-	}
-	configureNetworkWatcher(&options, layout.Root(), *root, *moduleConf, *singBox, *serviceAddress, *serviceSecret, *progressDir, *pidFile)
+	configureWorkerCallbacks(&options, layout.Root(), *root, *moduleConf, *singBox, *serviceAddress, *serviceSecret, *progressDir, *pidFile)
 	switch action {
 	case "run":
 		logger, closer, err := worker.OpenLogger(options.LogFile)
@@ -101,7 +93,7 @@ func runWorker(ctx context.Context, args []string) error {
 	}
 }
 
-func configureNetworkWatcher(options *worker.Options, moduleDir, catalogRoot, moduleConf, singBox, address, secret, progressDir, pidFile string) {
+func configureWorkerCallbacks(options *worker.Options, moduleDir, catalogRoot, moduleConf, singBox, address, secret, progressDir, pidFile string) {
 	if options == nil || strings.TrimSpace(moduleConf) == "" {
 		return
 	}
@@ -115,6 +107,9 @@ func configureNetworkWatcher(options *worker.Options, moduleDir, catalogRoot, mo
 	moduleOptions.ProgressDir = progressDir
 	moduleOptions.WorkerPIDFile = pidFile
 	options.NetworkWatchEnabled = true
+	options.ReloadService = func(ctx context.Context) error {
+		return moduleapp.ReloadService(ctx, moduleOptions)
+	}
 	options.NetworkEvaluate = func(ctx context.Context, networkType, ssid string) error {
 		_, err := moduleapp.EvaluateNetwork(ctx, moduleOptions, networkType, ssid)
 		return err

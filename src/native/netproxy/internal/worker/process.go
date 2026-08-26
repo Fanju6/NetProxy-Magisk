@@ -108,7 +108,7 @@ func Stop(options Options) error {
 func appendWorkerFlags(arguments []string, options Options) []string {
 	arguments = append(arguments, "--root", options.Root, "--progress-dir", options.ProgressDir,
 		"--pid-file", options.PIDFile, "--log-file", options.LogFile,
-		"--module-conf", options.ModuleConf, "--executable", options.ExecutablePath,
+		"--module-conf", options.ModuleConf,
 		"--sing-box", options.SingBoxPath, "--service-address", options.ServiceAddress,
 		"--service-secret", options.ServiceSecret)
 	return arguments

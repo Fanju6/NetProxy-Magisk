@@ -21,6 +21,7 @@
 ## 核心契约
 
 - `netproxyctl` 是仓库唯一 Go 可执行文件，也是终端、Android 和 WebUI 的唯一模块管理入口；模块生命周期使用同一二进制的隐藏 `__internal` 入口。
+- `__internal` 只允许 `boot` 与 `worker start|stop|run` 这类进程生命周期入口。Catalog、节点、订阅、配置、eBPF、Service API 和服务操作必须由公共命令直接调用 Go 领域处理器，不得重新建立内部命令转发层。
 - 机器接口固定使用 `schema=1` JSON。stdout 只能包含结果 JSON，日志与诊断写 stderr；字段、错误码或状态语义变化必须同步检查 Shell、Go、Android、WebUI 和测试。
 - Native 运行日志固定为 `[timestamp] [LEVEL] [component] [event] [result] [error_code] message`，成功或无错误码时写 `-`；消息必须在落盘前统一脱敏和限长。`logs show service` 的 `entries` 是 Android 展示事实源，不得回退到旧文本猜测。`logs show core` 保持 sing-box 文本，由客户端使用独立解析逻辑。
 - Catalog 是持久节点事实源：每组使用 `data/catalog/<group-id>/meta.json` 与 `provider.json`。`staging/` 只存事务临时文件，不得作为持久状态读取。
@@ -295,7 +296,7 @@ eBPF 只负责透明代理入站。停止服务由 sing-box 关闭并清理其 e
 
 节点测速不要求正式服务处于 `ready`。服务停止时，Native 只允许启动不含入站、eBPF 和 Clash API 的短生命周期 sing-box 会话，使用目标 Provider 快照与随机 loopback Service API 完成测速；会话不得修改正式服务状态、选择状态或 Worker，结束和取消时必须清理进程与临时文件。
 
-分应用配置保存 `<user-id>:<package>`，`netproxyctl __internal ebpf runtime` 通过 Android package service 查询 UID 后生成 `include_uid` 或 `exclude_uid`。应用安装、重装、UID 变化或用户范围变化后，通过配置 reload 重新解析，不维护模块侧 UID 缓存；白名单自动包含 UID 0。
+分应用配置保存 `<user-id>:<package>`，Go eBPF 运行时生成器通过 Android package service 查询 UID 后生成 `include_uid` 或 `exclude_uid`。应用安装、重装、UID 变化或用户范围变化后，通过配置 reload 重新解析，不维护模块侧 UID 缓存；白名单自动包含 UID 0。
 
 本机 cgroup 与热点 shared-network 由 `EBPF_MODE` 选择。`local` 只输出 local 字段，`shared` 只输出 shared 字段，`hybrid` 同时输出两者；`shared` 与 `hybrid` 必须配置至少一个下游接口。
 

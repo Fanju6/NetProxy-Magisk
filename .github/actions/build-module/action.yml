@@ -32,15 +32,13 @@ runs:
         set -euo pipefail
         go test ./...
 
-        version="$(sed -n 's/^version=//p' ../../module/module.prop | head -n 1)"
-        commit="$(git -C ../../.. rev-parse --short HEAD)"
         output_cli="../../module/bin/netproxyctl"
 
         CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -v \
           -trimpath \
           -buildvcs=false \
           -pgo=auto \
-          -ldflags="-s -w -buildid= -X main.version=${version} -X main.commit=${commit}" \
+          -ldflags="-s -w -buildid=" \
           -o "$output_cli" \
           ./cmd/netproxyctl
 

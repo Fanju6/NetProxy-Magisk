@@ -118,39 +118,6 @@ func defaultProgressDir() string {
 	return paths.Default().ProgressDir()
 }
 
-func runModule(ctx context.Context, args []string) error {
-	if len(args) == 0 {
-		return errors.New("缺少模块业务操作: boot|prepare|select|mode|network|app|node|sub|config|logs|service")
-	}
-	action := args[0]
-	switch action {
-	case "boot":
-		return runModuleBoot(ctx, args[1:])
-	case "prepare":
-		return runModulePrepare(ctx, args[1:])
-	case "select":
-		return runModuleSelect(ctx, args[1:])
-	case "mode":
-		return runModuleMode(ctx, args[1:])
-	case "network":
-		return runModuleNetwork(ctx, args[1:])
-	case "app":
-		return runModuleApp(ctx, args[1:])
-	case "node":
-		return runModuleNode(ctx, args[1:])
-	case "sub":
-		return runModuleSub(ctx, args[1:])
-	case "config":
-		return runModuleConfig(ctx, args[1:])
-	case "logs":
-		return runModuleLogs(ctx, args[1:])
-	case "service":
-		return runModuleService(ctx, args[1:])
-	default:
-		return fmt.Errorf("未知模块业务操作 %q", action)
-	}
-}
-
 func runModuleNetwork(ctx context.Context, args []string) error {
 	if len(args) == 0 {
 		return errors.New("缺少 network 操作: evaluate")
@@ -170,29 +137,6 @@ func runModuleNetwork(ctx context.Context, args []string) error {
 		return err
 	}
 	writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "network.evaluated", Message: data.Reason, Data: data})
-	return nil
-}
-
-func runModulePrepare(ctx context.Context, args []string) error {
-	flags := newFlagSet("module prepare")
-	values := bindModuleFlags(flags)
-	allowEmpty := flags.Bool("allow-empty", false, "允许空 Catalog，仅用于配置检查")
-	check := flags.Bool("check", false, "生成后执行 sing-box check")
-	if err := flags.Parse(args); err != nil {
-		return err
-	}
-	options := values.options()
-	var prepared moduleapp.PrepareResult
-	var err error
-	if *check {
-		prepared, err = moduleapp.Check(ctx, options, *allowEmpty)
-	} else {
-		prepared, err = moduleapp.Prepare(ctx, options, *allowEmpty)
-	}
-	if err != nil {
-		return err
-	}
-	writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "module.runtime_prepared", Message: "运行时配置已准备", Data: prepared})
 	return nil
 }
 
@@ -319,7 +263,7 @@ func runModuleNode(ctx context.Context, args []string) error {
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "node.added", Message: "节点已加入本地配置", Data: data})
 	case "import":
 		if len(positionals) != 1 {
-			return errors.New("用法: netproxyctl __internal module node import <文件>")
+			return errors.New("用法: netproxyctl node import <文件>")
 		}
 		data, err := moduleapp.NodeImport(ctx, options, positionals[0], *allowInsecure)
 		if err != nil {
@@ -443,7 +387,7 @@ func runModuleSub(ctx context.Context, args []string) error {
 			headers = &value
 		}
 		var intervalSeconds *int64
-		if flagWasSetNative(flags, "interval") {
+		if flagWasSet(flags, "interval") {
 			value, err := catalog.DurationToSeconds(*interval)
 			if err != nil {
 				return err
@@ -451,37 +395,37 @@ func runModuleSub(ctx context.Context, args []string) error {
 			intervalSeconds = &value
 		}
 		edit := subscription.EditOptions{Now: time.Now(), CustomHeaders: headers}
-		if flagWasSetNative(flags, "name") {
+		if flagWasSet(flags, "name") {
 			edit.Name = name
 		}
-		if flagWasSetNative(flags, "url") {
+		if flagWasSet(flags, "url") {
 			edit.URL = urlValue
 		}
-		if flagWasSetNative(flags, "user-agent") {
+		if flagWasSet(flags, "user-agent") {
 			edit.UserAgent = userAgent
 		}
-		if flagWasSetNative(flags, "hwid") {
+		if flagWasSet(flags, "hwid") {
 			edit.HWID = hwid
 		}
-		if flagWasSetNative(flags, "auto-update") {
+		if flagWasSet(flags, "auto-update") {
 			edit.AutoUpdate = autoUpdate
 		}
 		if intervalSeconds != nil {
 			edit.UpdateInterval = intervalSeconds
 		}
-		if flagWasSetNative(flags, "via-proxy") {
+		if flagWasSet(flags, "via-proxy") {
 			edit.UpdateViaProxy = viaProxy
 		}
-		if flagWasSetNative(flags, "include") {
+		if flagWasSet(flags, "include") {
 			edit.Include = include
 		}
-		if flagWasSetNative(flags, "exclude") {
+		if flagWasSet(flags, "exclude") {
 			edit.Exclude = exclude
 		}
-		if flagWasSetNative(flags, "allow-insecure") {
+		if flagWasSet(flags, "allow-insecure") {
 			edit.AllowInsecure = allowInsecure
 		}
-		if flagWasSetNative(flags, "download-timeout") {
+		if flagWasSet(flags, "download-timeout") {
 			edit.Timeout = timeout
 		}
 		edited, err := moduleapp.EditSubscription(ctx, options, positionals[0], edit)
@@ -731,7 +675,7 @@ func readActiveGroup(options moduleapp.Options) string {
 	return module.ActiveGroupID
 }
 
-func flagWasSetNative(flags *flag.FlagSet, name string) bool {
+func flagWasSet(flags *flag.FlagSet, name string) bool {
 	found := false
 	flags.Visit(func(value *flag.Flag) {
 		if value.Name == name {

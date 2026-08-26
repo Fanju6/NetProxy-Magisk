@@ -19,16 +19,16 @@ func (c *cli) ebpf(args []string) int {
 				return c.fail("usage.invalid", "用法: netproxyctl ebpf status [configured|all|local|shared] [--raw]", 2)
 			}
 		}
-		nativeArgs := []string{
-			"ebpf", "status",
+		handlerArgs := []string{
+			"status",
 			"--module-dir", c.moduleDir,
 			"--mode", mode,
 			"--format", "json",
 		}
 		if raw {
-			nativeArgs = append(nativeArgs, "--raw")
+			handlerArgs = append(handlerArgs, "--raw")
 		}
-		return c.runNative(c.context(), nativeArgs...)
+		return c.runCommand(c.context(), runEBPF, handlerArgs...)
 	default:
 		return c.fail("usage.invalid", "用法: netproxyctl ebpf status [configured|all|local|shared] [--raw]", 2)
 	}

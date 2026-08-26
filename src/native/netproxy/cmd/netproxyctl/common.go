@@ -9,18 +9,18 @@ import (
 	json "encoding/json/v2"
 )
 
-func (c *cli) forwardModule(args []string, action string) int {
+func (c *cli) runModuleCommand(args []string, action string, handler commandHandler) int {
 	if action == "app" && len(args) == 0 {
 		args = []string{"list"}
 	}
 	if action == "logs" && len(args) == 0 {
 		args = []string{"show"}
 	}
-	return c.runNative(c.context(), c.moduleArgs(action, args...)...)
+	return c.runCommand(c.context(), handler, c.moduleArgs(action, args...)...)
 }
 
 func (c *cli) moduleArgs(action string, args ...string) []string {
-	result := []string{"module", action}
+	result := make([]string, 0, len(args)+2)
 	if (action == "app" || action == "node" || action == "sub" || action == "network" || action == "config" || action == "logs") && len(args) > 0 {
 		result = append(result, args[0])
 		args = args[1:]

@@ -1,5 +1,5 @@
 package main
 
 func (c *cli) app(args []string) int {
-	return c.forwardModule(args, "app")
+	return c.runModuleCommand(args, "app", runModuleApp)
 }

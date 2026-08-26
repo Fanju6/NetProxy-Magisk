@@ -12,14 +12,16 @@ func (c *cli) service(ctx context.Context, args []string) int {
 	}
 	switch action {
 	case "status", "start", "stop", "restart", "reload", "check", "toggle":
-		return c.runNative(ctx, c.moduleArgs("service", action)...)
+		return c.runCommand(ctx, runModuleService, c.moduleArgs("service", action)...)
 	default:
 		return c.fail("usage.invalid", "用法: netproxyctl service status|start|stop|restart|reload|check|toggle", 2)
 	}
 }
 
-func (c *cli) runNative(ctx context.Context, args ...string) int {
-	if err := runNativeCommand(ctx, args); err != nil {
+type commandHandler func(context.Context, []string) error
+
+func (c *cli) runCommand(ctx context.Context, handler commandHandler, args ...string) int {
+	if err := handler(ctx, args); err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return c.fail("command.timeout", "命令执行超时", 124)
 		}

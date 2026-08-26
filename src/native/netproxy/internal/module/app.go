@@ -810,12 +810,14 @@ func workerOptions(options Options) worker.Options {
 		PIDFile:             options.WorkerPIDFile,
 		LogFile:             options.WorkerLogFile,
 		ModuleConf:          options.ModuleConfig,
-		ExecutablePath:      paths.New(options.ModuleDir).Executable(),
 		SingBoxPath:         options.SingBoxPath,
 		ServiceAddress:      options.ServiceAddress,
 		ServiceSecret:       options.ServiceSecret,
 		NetworkWatchEnabled: true,
-		Now:                 time.Now,
+		ReloadService: func(ctx context.Context) error {
+			return ReloadService(ctx, options)
+		},
+		Now: time.Now,
 		NetworkEvaluate: func(ctx context.Context, networkType, ssid string) error {
 			_, err := EvaluateNetwork(ctx, options, networkType, ssid)
 			return err

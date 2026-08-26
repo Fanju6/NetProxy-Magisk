@@ -40,27 +40,6 @@ func newManualClock(now time.Time) *manualClock {
 	return &manualClock{now: now}
 }
 
-func TestReloadServiceArgumentsMatchModuleFlags(t *testing.T) {
-	arguments := reloadServiceArguments(Options{
-		Root:           "/data/adb/modules/netproxy/data/catalog",
-		ModuleConf:     "/data/adb/modules/netproxy/config/module.conf",
-		SingBoxPath:    "/data/adb/modules/netproxy/bin/sing-box",
-		ServiceAddress: "127.0.0.1:9090",
-		ServiceSecret:  "singbox",
-	})
-	joined := strings.Join(arguments, " ")
-	for _, expected := range []string{"module service reload", "--address 127.0.0.1:9090", "--secret singbox"} {
-		if !strings.Contains(joined, expected) {
-			t.Fatalf("reload 参数缺少 %q: %s", expected, joined)
-		}
-	}
-	for _, removed := range []string{"--service-address", "--service-secret"} {
-		if strings.Contains(joined, removed) {
-			t.Fatalf("reload 仍使用未注册参数 %q: %s", removed, joined)
-		}
-	}
-}
-
 func (clock *manualClock) Now() time.Time {
 	clock.mu.Lock()
 	defer clock.mu.Unlock()
@@ -182,15 +161,18 @@ func markStaleWorker(t *testing.T, pidFile string) {
 	}
 }
 
-func installRuntimeHooks(t *testing.T, running bool, reload func(context.Context, Options) error) {
+func installRuntimeHooks(t *testing.T, options *Options, running bool, reload func(context.Context, Options) error) {
 	t.Helper()
-	originalRunning, originalReload, originalVerify := workerProcessRunning, workerReloadService, workerVerifyRuntime
+	originalRunning, originalVerify := workerProcessRunning, workerVerifyRuntime
 	workerProcessRunning = func(string) bool { return running }
-	workerReloadService = reload
 	workerVerifyRuntime = func(context.Context, Options, string) error { return nil }
+	if options != nil && reload != nil {
+		options.ReloadService = func(ctx context.Context) error {
+			return reload(ctx, *options)
+		}
+	}
 	t.Cleanup(func() {
 		workerProcessRunning = originalRunning
-		workerReloadService = originalReload
 		workerVerifyRuntime = originalVerify
 	})
 }
@@ -231,7 +213,7 @@ func TestUpdateGroupWhenServiceStoppedReportsPersistedNotRunning(t *testing.T) {
 	options.ModuleConf = moduleConf
 	options.SingBoxPath = filepath.Join(root, "sing-box")
 	reloadCalls := 0
-	installRuntimeHooks(t, false, func(context.Context, Options) error {
+	installRuntimeHooks(t, &options, false, func(context.Context, Options) error {
 		reloadCalls++
 		return nil
 	})
@@ -270,7 +252,7 @@ func TestSyncEditedGroupReloadsAfterNameChange(t *testing.T) {
 	options.ModuleConf = moduleConf
 	options.SingBoxPath = filepath.Join(root, "sing-box")
 	reloadCalls := 0
-	installRuntimeHooks(t, true, func(context.Context, Options) error {
+	installRuntimeHooks(t, &options, true, func(context.Context, Options) error {
 		reloadCalls++
 		return nil
 	})
@@ -298,7 +280,7 @@ func TestSyncEditedGroupWhenServiceStoppedDoesNotReload(t *testing.T) {
 	options.ModuleConf = moduleConf
 	options.SingBoxPath = filepath.Join(root, "sing-box")
 	reloadCalls := 0
-	installRuntimeHooks(t, false, func(context.Context, Options) error {
+	installRuntimeHooks(t, &options, false, func(context.Context, Options) error {
 		reloadCalls++
 		return nil
 	})
@@ -326,7 +308,7 @@ func TestUpdateGroupWhenServiceStoppedReturnsModuleConfigEffectError(t *testing.
 	options := newTestOptions(root)
 	options.ModuleConf = moduleConf
 	options.SingBoxPath = filepath.Join(root, "sing-box")
-	installRuntimeHooks(t, false, func(context.Context, Options) error { return nil })
+	installRuntimeHooks(t, &options, false, func(context.Context, Options) error { return nil })
 	installPersistenceHooks(t, func(string, map[string]string) error {
 		return errors.New("module.conf write failed")
 	}, nil)
@@ -359,7 +341,7 @@ func TestUpdateGroupWhenServiceStoppedReturnsCatalogReadError(t *testing.T) {
 	options := newTestOptions(root)
 	options.ModuleConf = moduleConf
 	options.SingBoxPath = filepath.Join(root, "sing-box")
-	installRuntimeHooks(t, false, func(context.Context, Options) error { return nil })
+	installRuntimeHooks(t, &options, false, func(context.Context, Options) error { return nil })
 	installPersistenceHooks(t, nil, func(context.Context, string, string) (bool, error) {
 		return false, errors.New("Catalog read failed")
 	})
@@ -392,7 +374,7 @@ func TestUpdateGroupWhenServiceStoppedEffectFailureStoresMetadata(t *testing.T) 
 	options := newTestOptions(root)
 	options.ModuleConf = moduleConf
 	options.SingBoxPath = filepath.Join(root, "sing-box")
-	installRuntimeHooks(t, false, func(context.Context, Options) error { return nil })
+	installRuntimeHooks(t, &options, false, func(context.Context, Options) error { return nil })
 	installPersistenceHooks(t, func(string, map[string]string) error {
 		return errors.New("module.conf write failed")
 	}, nil)
@@ -435,7 +417,7 @@ func TestUpdateGroupWhenServiceStoppedReturnsCatalogReadErrorWithMetadata(t *tes
 	options := newTestOptions(root)
 	options.ModuleConf = moduleConf
 	options.SingBoxPath = filepath.Join(root, "sing-box")
-	installRuntimeHooks(t, false, func(context.Context, Options) error { return nil })
+	installRuntimeHooks(t, &options, false, func(context.Context, Options) error { return nil })
 	installPersistenceHooks(t, nil, func(context.Context, string, string) (bool, error) {
 		return false, errors.New("Catalog read failed")
 	})
@@ -485,7 +467,7 @@ func TestUpdateGroupWhenServiceRunningUsesProviderWatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	reloadCalls := 0
-	installRuntimeHooks(t, true, func(context.Context, Options) error {
+	installRuntimeHooks(t, &options, true, func(context.Context, Options) error {
 		reloadCalls++
 		return nil
 	})
@@ -520,7 +502,7 @@ func TestUpdateGroupProviderWatchFailureDoesNotReload(t *testing.T) {
 		t.Fatal(err)
 	}
 	reloadCalls := 0
-	installRuntimeHooks(t, true, func(context.Context, Options) error {
+	installRuntimeHooks(t, &options, true, func(context.Context, Options) error {
 		reloadCalls++
 		return nil
 	})
@@ -565,7 +547,7 @@ func TestUpdateGroupRuntimeSyncFailureReturnsStructuredErrorAndKeepsProvider(t *
 	options.ModuleConf = moduleConf
 	options.SingBoxPath = filepath.Join(root, "sing-box")
 	reloadCalls := 0
-	installRuntimeHooks(t, true, func(context.Context, Options) error {
+	installRuntimeHooks(t, &options, true, func(context.Context, Options) error {
 		reloadCalls++
 		return errors.New("Service API unavailable")
 	})
@@ -641,7 +623,7 @@ func TestUpdateGroupRuntimeVerificationFailureReturnsStructuredError(t *testing.
 	options.ModuleConf = moduleConf
 	options.SingBoxPath = filepath.Join(root, "sing-box")
 	reloadCalls := 0
-	installRuntimeHooks(t, true, func(context.Context, Options) error {
+	installRuntimeHooks(t, &options, true, func(context.Context, Options) error {
 		reloadCalls++
 		return nil
 	})
@@ -699,7 +681,7 @@ func TestUpdateGroup304StoppedAndRunningStates(t *testing.T) {
 		options.ModuleConf = moduleConf
 		options.SingBoxPath = filepath.Join(root, "sing-box")
 		reloadCalls := 0
-		installRuntimeHooks(t, false, func(context.Context, Options) error { reloadCalls++; return nil })
+		installRuntimeHooks(t, &options, false, func(context.Context, Options) error { reloadCalls++; return nil })
 		if _, err := UpdateGroup(context.Background(), options, "fixture", now, nil); err != nil {
 			t.Fatal(err)
 		}
@@ -724,7 +706,7 @@ func TestUpdateGroup304StoppedAndRunningStates(t *testing.T) {
 		options.ModuleConf = moduleConf
 		options.SingBoxPath = filepath.Join(root, "sing-box")
 		reloadCalls := 0
-		installRuntimeHooks(t, true, func(context.Context, Options) error { reloadCalls++; return nil })
+		installRuntimeHooks(t, &options, true, func(context.Context, Options) error { reloadCalls++; return nil })
 		if _, err := UpdateGroup(context.Background(), options, "fixture", now, nil); err != nil {
 			t.Fatal(err)
 		}
@@ -750,7 +732,7 @@ func TestUpdateGroup304StoppedAndRunningStates(t *testing.T) {
 		options.SingBoxPath = filepath.Join(root, "sing-box")
 		reloadCalls := 0
 		reloadFailed := true
-		installRuntimeHooks(t, true, func(context.Context, Options) error {
+		installRuntimeHooks(t, &options, true, func(context.Context, Options) error {
 			reloadCalls++
 			if reloadFailed {
 				return errors.New("temporary Service API failure")

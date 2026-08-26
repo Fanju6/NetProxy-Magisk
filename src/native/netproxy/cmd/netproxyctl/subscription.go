@@ -1,5 +1,5 @@
 package main
 
 func (c *cli) subscription(args []string) int {
-	return c.forwardModule(args, "sub")
+	return c.runModuleCommand(args, "sub", runModuleSub)
 }
