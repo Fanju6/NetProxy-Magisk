@@ -24,23 +24,20 @@ jobs:
         id: pack
         uses: ./.github/actions/build-module
 
-      - name: 生成 update.json（模块自更新清单，随 Release 上传）
+      - name: 生成模块自更新清单
         env:
           REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
           COMMIT_COUNT: ${{ steps.pack.outputs.commit_count }}
           STANDARD_NAME: ${{ steps.pack.outputs.standard_name }}
         run: |
-          # 以仓库根的 update.json 为模板（保留 changelog 等静态字段），仅回填动态字段
-          # 模板与产物同名，先写临时文件再覆盖，避免重定向截断输入
-          tmp="$(mktemp)"
-          jq \
+          jq -n \
             --arg version "Module ${TAG}" \
             --argjson versionCode "${COMMIT_COUNT}" \
             --arg zipUrl "https://github.com/${REPO}/releases/download/${TAG}/${STANDARD_NAME}" \
-            '.version = $version | .versionCode = $versionCode | .zipUrl = $zipUrl' \
-            update.json > "$tmp"
-          mv "$tmp" update.json
+            --arg changelog "https://raw.githubusercontent.com/${REPO}/refs/heads/main/docs/changelog.md" \
+            '{version: $version, versionCode: $versionCode, zipUrl: $zipUrl, changelog: $changelog}' \
+            > update.json
           cat update.json
 
       - name: 发布 GitHub Release

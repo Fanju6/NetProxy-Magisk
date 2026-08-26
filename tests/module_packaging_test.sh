@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # 文件: tests/module_packaging_test.sh
-# 功能: 检查标准包与含管理器包的构建、发布和自更新命名契约。
+# 功能: 检查标准包、含管理器包与模块自更新清单的构建及发布契约。
 # 用法: sh tests/module_packaging_test.sh
 # 依赖: POSIX sh、grep
 
@@ -39,6 +39,7 @@ assert_not_contains "$BUILD_ACTION" 'netproxy-native|cmd/netproxy-native'
 
 assert_contains "$RELEASE_WORKFLOW" 'STANDARD_NAME: ${{ steps.pack.outputs.standard_name }}'
 assert_contains "$RELEASE_WORKFLOW" '${{ steps.pack.outputs.manager_name }}'
+assert_contains "$RELEASE_WORKFLOW" 'update.json'
 assert_contains "$RELEASE_WORKFLOW" '[标准包]'
 assert_contains "$RELEASE_WORKFLOW" '[含管理器包]'
 assert_not_contains "$RELEASE_WORKFLOW" 'full_name|lite_name|FULL_NAME|LITE_NAME'
