@@ -30,7 +30,7 @@ android {
         minSdk = 31
         targetSdk = 37
         versionCode = gitCommitCount()
-        versionName = "8.0.0"
+        versionName = "8.1.0"
         ndk {
             abiFilters += "arm64-v8a"
         }
