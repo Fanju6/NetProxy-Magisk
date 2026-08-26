@@ -118,6 +118,13 @@
       },
       {
         "rule_set": [
+          "google"
+        ],
+        "action": "route",
+        "server": "dns-proxy"
+      },
+      {
+        "rule_set": [
           "ChinaDomain"
         ],
         "action": "route",
