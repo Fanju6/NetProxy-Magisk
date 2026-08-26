@@ -15,7 +15,7 @@ EBPF_MODE="local"
 EBPF_NETWORK=""
 EBPF_UDP_TIMEOUT="5m"
 EBPF_TCP_SPLICE=0
-EBPF_BYPASS_RULE_SET="direct,ChinaIP"
+EBPF_BYPASS_RULE_SET="direct,cn-ip"
 ```
 
 `EBPF_MODE` 支持 `local`（本机 cgroup）、`shared`（下游接口 TC）和 `hybrid`（两者同时启用）。`EBPF_NETWORK` 留空表示 TCP 和 UDP，也可以填写 `tcp`、`udp` 或 `tcp,udp`。`EBPF_TCP_SPLICE` 只优化符合条件的 DIRECT TCP 连接，默认关闭；启用前应在目标内核上验证连接统计和半关闭行为。

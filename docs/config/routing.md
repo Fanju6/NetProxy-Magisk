@@ -30,15 +30,15 @@ NetProxy 8.0 的分流行为由四层共同决定：
 ```text
 /data/adb/modules/netproxy/config/singbox/rules/
 ├── local/     # block.json、direct.json、proxy.json 等用户规则
-└── remote/    # Ads_AWAvenue.srs、AppleCN.srs、ChinaDomain.srs、ChinaIP.srs、Proxy.srs
+└── remote/    # Ads_AWAvenue.json 与 MetaCubeX geosite/geoip 规则集
 ```
 
-`rule` 模式会同时使用静态路由配置和规则集。远程 `.srs` 由 sing-box Provider 更新，用户编辑器不应修改它们；需要自定义规则时修改 `rules/local/`。
+`rule` 模式会同时使用静态路由配置和规则集。远程 JSON/SRS 规则由 sing-box 自动更新，用户编辑器不应修改它们；需要自定义规则时修改 `rules/local/`。
 
 ## eBPF 提前绕过
 
 ```ini
-EBPF_BYPASS_RULE_SET="direct,ChinaIP"
+EBPF_BYPASS_RULE_SET="direct,cn-ip"
 ```
 
 只有可提取纯 IP CIDR 的规则集会被 eBPF 使用。提前绕过的流量不会进入 sing-box，因此不会再经过 Clash 模式和普通路由规则。进行严格 Global 测试时清空该值并重启服务。

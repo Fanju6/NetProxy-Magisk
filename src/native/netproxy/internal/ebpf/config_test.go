@@ -183,10 +183,10 @@ func TestCommaSeparatedValuesUseCommaAsTheOnlyListSeparator(t *testing.T) {
 		value string
 		want  []string
 	}{
-		{value: "direct, ChinaIP", want: []string{"direct", "ChinaIP"}},
-		{value: "direct ChinaIP", want: []string{"direct ChinaIP"}},
+		{value: "direct, cn-ip", want: []string{"direct", "cn-ip"}},
+		{value: "direct cn-ip", want: []string{"direct cn-ip"}},
 		{value: "wlan2，wlan0", want: []string{"wlan2", "wlan0"}},
-		{value: "direct,, ChinaIP,", want: []string{"direct", "ChinaIP"}},
+		{value: "direct,, cn-ip,", want: []string{"direct", "cn-ip"}},
 		{value: "  ", want: []string{}},
 	}
 	for _, test := range tests {

@@ -234,7 +234,7 @@ Key defaults:
 - `EBPF_MODE=local`
 - `EBPF_LOCAL_IPV6_MODE=auto`
 - `EBPF_BYPASS_PRIVATE_ADDRESS=1`
-- `EBPF_BYPASS_RULE_SET="direct,ChinaIP"` (comma-separated rule-set tags)
+- `EBPF_BYPASS_RULE_SET="direct,cn-ip"` (comma-separated rule-set tags)
 - `WIFI_AUTO_SWITCH=0`
 
 For startup failures, inspect the core log first:

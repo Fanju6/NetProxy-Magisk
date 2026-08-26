@@ -241,7 +241,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl help'
 | `EBPF_MODE` | `local` | eBPF 数据路径：local、shared 或 hybrid |
 | `EBPF_LOCAL_IPV6_MODE` | `auto` | 本机 IPv6 接管策略，支持始终、自动和关闭 |
 | `EBPF_BYPASS_PRIVATE_ADDRESS` | `1` | 默认绕过私网与特殊用途地址 |
-| `EBPF_BYPASS_RULE_SET` | `direct,ChinaIP` | 在内核侧提前绕过可提取 CIDR 的规则集，多个规则集使用英文逗号分隔 |
+| `EBPF_BYPASS_RULE_SET` | `direct,cn-ip` | 在内核侧提前绕过可提取 CIDR 的规则集，多个规则集使用英文逗号分隔 |
 | `WIFI_AUTO_SWITCH` | `0` | 默认关闭 WiFi SSID 自动切换 |
 
 ## 排障

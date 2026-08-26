@@ -22,7 +22,7 @@ func TestListConfigsUsesReadableRuntimeID(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(localRules, "direct.json"), []byte(`{"version":1,"rules":[]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(remoteRules, "Proxy.srs"), []byte{0x00, 0xff, 0x01}, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(remoteRules, "cn-ip.srs"), []byte{0x00, 0xff, 0x01}, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	const content = "{\"type\":\"ebpf\"}\n"
@@ -73,7 +73,7 @@ func TestListConfigsUsesReadableRuntimeID(t *testing.T) {
 	if localRuleDocument == nil || localRuleDocument.ID != "singbox/rules/local/direct.json" || localRuleDocument.Category != "rules" {
 		t.Fatalf("本地规则集文档契约错误: %#v", localRuleDocument)
 	}
-	if _, err := ReadConfig(options, "singbox/rules/remote/Proxy.srs"); err == nil {
+	if _, err := ReadConfig(options, "singbox/rules/remote/cn-ip.srs"); err == nil {
 		t.Fatal("远程 SRS 不应作为可编辑配置读取")
 	}
 

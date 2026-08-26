@@ -68,26 +68,19 @@
     ],
     "rules": [
       {
-        "clash_mode": "Direct",
-        "action": "route",
-        "server": "dns-direct"
-      },
-      {
         "clash_mode": "Global",
         "action": "route",
         "server": "dns-proxy"
       },
       {
-        "domain": [
-          "cloudflare-ech.com"
-        ],
+        "clash_mode": "Direct",
         "action": "route",
         "server": "dns-direct"
       },
       {
         "rule_set": [
           "direct",
-          "AppleCN"
+          "apple-cn"
         ],
         "action": "route",
         "server": "dns-direct"
@@ -110,7 +103,8 @@
           {
             "rule_set": [
               "block",
-              "Ads_AWAvenue"
+              "Ads_AWAvenue",
+              "category-ads-all"
             ]
           }
         ],
@@ -125,7 +119,7 @@
       },
       {
         "rule_set": [
-          "ChinaDomain"
+          "cn"
         ],
         "action": "route",
         "server": "dns-direct"

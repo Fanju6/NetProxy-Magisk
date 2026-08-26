@@ -290,7 +290,7 @@ internal class SettingsViewModel(
                 .takeIf { it in sharedIpv6Modes } ?: "always",
             localBypassPrivateAddress = enabled("EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS", true),
             sharedBypassPrivateAddress = enabled("EBPF_SHARED_BYPASS_PRIVATE_ADDRESS", true),
-            bypassRuleSet = value("EBPF_BYPASS_RULE_SET", "direct,ChinaIP"),
+            bypassRuleSet = value("EBPF_BYPASS_RULE_SET", "direct,cn-ip"),
             sharedInterfaces = value("EBPF_SHARED_INTERFACES", "wlan2"),
             sharedIncludeSourceCidrs = value("EBPF_SHARED_INCLUDE_SOURCE_CIDR", ""),
             sharedExcludeSourceCidrs = value("EBPF_SHARED_EXCLUDE_SOURCE_CIDR", ""),

@@ -14,35 +14,47 @@
         "path": "./rules/local/{tag}.json"
       },
       {
-        "tag": [
-          "Ads_AWAvenue",
-          "AppleCN",
-          "ChinaDomain",
-          "ChinaIP",
-          "Proxy"
-        ],
         "type": "remote",
+        "tag": "Ads_AWAvenue",
+        "format": "source",
+        "url": "https://raw.githubusercontent.com/TG-Twilight/AWAvenue-Ads-Rule/main/Filters/AWAvenue-Ads-Rule-Singbox.json",
+        "update_interval": "24h",
+        "path": "./rules/remote/Ads_AWAvenue.json"
+      },
+      {
+        "type": "remote",
+        "tag": [
+          "category-ads-all",
+          "apple-cn",
+          "google",
+          "geolocation-!cn",
+          "cn"
+        ],
         "format": "binary",
-        "url": "https://raw.githubusercontent.com/Repcz/Tool/X/sing-box/Rules/{tag}.srs",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/{tag}.srs",
         "update_interval": "24h",
         "path": "./rules/remote/{tag}.srs"
       },
       {
         "type": "remote",
-        "tag": "google",
+        "tag": "cn-ip",
         "format": "binary",
-        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/google.srs",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/cn.srs",
         "update_interval": "24h",
-        "path": "./source/remote/google.srs"
+        "path": "./rules/remote/cn-ip.srs"
+      },
+      {
+        "type": "remote",
+        "tag": "telegram-ip",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/telegram.srs",
+        "update_interval": "24h",
+        "path": "./rules/remote/telegram-ip.srs"
       }
     ],
     "rules": [
       {
-        "action": "sniff",
-        "timeout": "1s"
-      },
-      {
-        "action": "sniff-override-destination"
+        "action": "sniff"
       },
       {
         "type": "logical",
@@ -58,29 +70,24 @@
         "action": "hijack-dns"
       },
       {
-        "clash_mode": "Direct",
-        "action": "route",
-        "outbound": "direct"
-      },
-      {
         "clash_mode": "Global",
         "action": "route",
         "outbound": "Proxy"
       },
       {
-        "rule_set": [
-          "direct",
-          "AppleCN"
-        ],
+        "clash_mode": "Direct",
         "action": "route",
         "outbound": "direct"
       },
       {
-        "rule_set": [
-          "proxy"
-        ],
+        "rule_set": "proxy",
         "action": "route",
         "outbound": "Proxy"
+      },
+      {
+        "rule_set": "direct",
+        "action": "route",
+        "outbound": "direct"
       },
       {
         "type": "logical",
@@ -93,7 +100,8 @@
           {
             "rule_set": [
               "block",
-              "Ads_AWAvenue"
+              "Ads_AWAvenue",
+              "category-ads-all"
             ]
           }
         ],
@@ -108,28 +116,34 @@
       },
       {
         "rule_set": [
-          "ChinaDomain"
+          "apple-cn",
+          "cn"
         ],
         "action": "route",
         "outbound": "direct"
       },
       {
         "rule_set": [
-          "Proxy"
+          "geolocation-!cn"
         ],
         "action": "route",
         "outbound": "Proxy"
       },
       {
         "action": "resolve",
-        "match_only": true,
-        "strategy": "prefer_ipv4",
-        "server": "cloudflare"
+        "match_only": true
       },
       {
-        "rule_set": "ChinaIP",
+        "rule_set": "cn-ip",
         "action": "route",
         "outbound": "direct"
+      },
+      {
+        "rule_set": [
+          "telegram-ip"
+        ],
+        "action": "route",
+        "outbound": "Proxy"
       },
       {
         "ip_is_private": true,
@@ -137,6 +151,7 @@
       }
     ],
     "find_process": true,
+    "auto_detect_interface": true,
     "final": "Proxy"
   }
 }
