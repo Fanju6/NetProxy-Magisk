@@ -40,10 +40,17 @@ jobs:
             > update.json
           cat update.json
 
+      - name: 提取当前版本更新日志
+        run: |
+          node .github/scripts/extract-release-notes.mjs \
+            docs/changelog.md \
+            "${{ steps.pack.outputs.version }}" \
+            "$RUNNER_TEMP/release-notes.md"
+
       - name: 发布 GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          body_path: docs/changelog.md
+          body_path: ${{ runner.temp }}/release-notes.md
           files: |
             ${{ steps.pack.outputs.standard_name }}
             ${{ steps.pack.outputs.manager_name }}

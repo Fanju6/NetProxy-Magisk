@@ -39,6 +39,7 @@ run_shell_contracts() {
   sh "$ROOT/tests/module_scripts_test.sh"
   sh "$ROOT/tests/customize_hot_update_test.sh"
   sh "$ROOT/tests/module_packaging_test.sh"
+  sh "$ROOT/tests/release_notes_test.sh"
 }
 
 build_binaries
