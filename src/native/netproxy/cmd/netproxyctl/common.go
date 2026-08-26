@@ -31,8 +31,8 @@ func (c *cli) moduleArgs(action string, args ...string) []string {
 	return append(result, args...)
 }
 
-func (c *cli) controlArgs(action string, args ...string) []string {
-	result := []string{"control", action}
+func (c *cli) nodeReadArgs(action string, args ...string) []string {
+	result := []string{action}
 	result = append(result,
 		"--module-dir", c.moduleDir,
 	)

@@ -8,19 +8,19 @@ func (c *cli) node(args []string) int {
 	positionals := args[1:]
 	switch action {
 	case "list":
-		controlArgs := []string{"nodes", "--format", "json"}
+		readArgs := []string{"nodes", "--format", "json"}
 		if len(positionals) > 0 && positionals[0] != "" {
-			controlArgs = append(controlArgs, "--group", positionals[0])
+			readArgs = append(readArgs, "--group", positionals[0])
 		}
-		return c.runCommand(c.context(), runControl, c.controlArgs(controlArgs[0], controlArgs[1:]...)...)
+		return c.runCommand(c.context(), runNodeRead, c.nodeReadArgs(readArgs[0], readArgs[1:]...)...)
 	case "snapshot":
-		controlArgs := []string{"snapshot", "--format", "json"}
+		readArgs := []string{"snapshot", "--format", "json"}
 		if len(positionals) > 0 && positionals[0] != "" {
-			controlArgs = append(controlArgs, "--group", positionals[0])
+			readArgs = append(readArgs, "--group", positionals[0])
 		}
-		return c.runCommand(c.context(), runControl, c.controlArgs(controlArgs[0], controlArgs[1:]...)...)
+		return c.runCommand(c.context(), runNodeRead, c.nodeReadArgs(readArgs[0], readArgs[1:]...)...)
 	case "current":
-		return c.runCommand(c.context(), runControl, c.controlArgs("selection", "--format", "json")...)
+		return c.runCommand(c.context(), runNodeRead, c.nodeReadArgs("selection", "--format", "json")...)
 	case "show":
 		if len(positionals) < 1 {
 			return c.fail("usage.invalid", "用法: netproxyctl node show <分组>", 2)
@@ -63,14 +63,14 @@ func (c *cli) node(args []string) int {
 		}
 		return c.runCommand(c.context(), runModuleSelect, c.moduleArgs("select", positionals...)...)
 	case "delay":
-		controlArgs := []string{"delay", "--format", "json"}
+		readArgs := []string{"delay", "--format", "json"}
 		if len(positionals) > 0 && positionals[0] != "" {
-			controlArgs = append(controlArgs, "--target", positionals[0])
+			readArgs = append(readArgs, "--target", positionals[0])
 		}
 		if len(positionals) > 1 && positionals[1] != "" {
-			controlArgs = append(controlArgs, "--group", positionals[1])
+			readArgs = append(readArgs, "--group", positionals[1])
 		}
-		return c.runCommand(c.context(), runControl, c.controlArgs(controlArgs[0], controlArgs[1:]...)...)
+		return c.runCommand(c.context(), runNodeRead, c.nodeReadArgs(readArgs[0], readArgs[1:]...)...)
 	default:
 		return c.fail("usage.invalid", "用法: netproxyctl node list|snapshot|current|show|get|export|delay|add|import|edit|remove|use", 2)
 	}

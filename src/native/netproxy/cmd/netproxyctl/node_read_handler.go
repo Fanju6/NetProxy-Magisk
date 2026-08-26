@@ -12,12 +12,12 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 )
 
-func runControl(ctx context.Context, args []string) error {
+func runNodeRead(ctx context.Context, args []string) error {
 	if len(args) == 0 {
-		return errors.New("缺少控制面操作: nodes|snapshot|selection|delay")
+		return errors.New("缺少节点读取操作: nodes|snapshot|selection|delay")
 	}
 	action := args[0]
-	flags := newFlagSet("control " + action)
+	flags := newFlagSet("node-read " + action)
 	moduleDir := flags.String("module-dir", defaultModuleDir(), "模块根目录")
 	catalogRoot := flags.String("catalog-root", "", "Catalog 根目录")
 	moduleConfig := flags.String("module-config", "", "模块配置文件")
@@ -54,7 +54,7 @@ func runControl(ctx context.Context, args []string) error {
 		*singBox = layout.SingBox()
 	}
 	if *format != "json" {
-		return fmt.Errorf("control %s 不支持输出格式 %q", action, *format)
+		return fmt.Errorf("节点读取操作 %s 不支持输出格式 %q", action, *format)
 	}
 	options := service.Options{
 		CatalogRoot: *catalogRoot, ModuleConfig: *moduleConfig, StateFile: *stateFile,
@@ -94,6 +94,6 @@ func runControl(ctx context.Context, args []string) error {
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "node.delay", Message: "节点测速完成", Data: delay})
 		return nil
 	default:
-		return fmt.Errorf("未知控制面操作 %q", action)
+		return fmt.Errorf("未知节点读取操作 %q", action)
 	}
 }

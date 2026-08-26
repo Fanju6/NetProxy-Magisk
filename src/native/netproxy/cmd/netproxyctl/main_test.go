@@ -47,6 +47,15 @@ func TestModuleArgsKeepsOperationBeforeFlags(t *testing.T) {
 	}
 }
 
+func TestNodeReadArgsStartsWithOperation(t *testing.T) {
+	command := &cli{moduleDir: "/module"}
+	got := command.nodeReadArgs("nodes", "--format", "json")
+	want := []string{"nodes", "--module-dir", "/module", "--format", "json"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("node read args = %v, want %v", got, want)
+	}
+}
+
 func TestNodeImportArgsOnlyAcceptsFile(t *testing.T) {
 	got, ok := nodeImportArgs([]string{"nodes.yaml"})
 	if !ok || !reflect.DeepEqual(got, []string{"import", "nodes.yaml"}) {
