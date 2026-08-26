@@ -375,7 +375,7 @@ func Boot(ctx context.Context, options Options) error {
 }
 
 func ensureWorker(ctx context.Context, options Options) error {
-	executable := paths.New(options.ModuleDir).Native()
+	executable := paths.New(options.ModuleDir).Executable()
 	if _, err := worker.Start(ctx, workerOptions(options), executable); err != nil {
 		return err
 	}

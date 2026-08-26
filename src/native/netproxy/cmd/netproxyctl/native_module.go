@@ -319,7 +319,7 @@ func runModuleNode(ctx context.Context, args []string) error {
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "node.added", Message: "节点已加入本地配置", Data: data})
 	case "import":
 		if len(positionals) != 1 {
-			return errors.New("用法: netproxy-native module node import <文件>")
+			return errors.New("用法: netproxyctl __internal module node import <文件>")
 		}
 		data, err := moduleapp.NodeImport(ctx, options, positionals[0], *allowInsecure)
 		if err != nil {

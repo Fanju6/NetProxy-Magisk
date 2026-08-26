@@ -1,6 +1,6 @@
-# netproxy-native
+# netproxyctl
 
-`netproxy-native` 是 NetProxy 模块内部使用的原生组件，不作为独立通用工具发布。
+`netproxyctl` 是 NetProxy 的唯一 Go 可执行文件，同时承载公共 schema=1 CLI 和模块内部生命周期入口。
 
 跨组件职责、Catalog/Provider 状态和公开接口边界见仓库根目录的 [AGENTS.md](../../../AGENTS.md)。
 
@@ -20,7 +20,25 @@
 ```sh
 go test ./...
 go vet ./...
-CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build ./cmd/netproxy-native
+CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -pgo=auto ./cmd/netproxyctl
 ```
+
+正式构建会自动读取 `cmd/netproxyctl/default.pgo`。该 profile 由真实 Android
+设备上的只读工作负载生成，覆盖服务状态、节点快照和 Catalog 运行时投影；更新
+profile 时使用 `internal/pgoworkload`，不得把订阅、节点或设备数据写入仓库。
+
+```sh
+CGO_ENABLED=0 GOOS=android GOARCH=arm64 go test -c -trimpath \
+  -o netproxy-pgo-bench ./internal/pgoworkload
+adb push netproxy-pgo-bench /data/local/tmp/
+adb shell su -c 'NETPROXY_PGO_MODULE_DIR=/data/adb/modules/netproxy \
+  /data/local/tmp/netproxy-pgo-bench -test.run=^$ \
+  -test.bench=^BenchmarkAndroidPGO$ -test.benchtime=10s \
+  -test.cpuprofile=/data/local/tmp/default.pgo'
+adb pull /data/local/tmp/default.pgo cmd/netproxyctl/default.pgo
+```
+
+只有真实热点发生明显变化时才重新采样；更新后必须重新对比 `-pgo=off` 和
+`-pgo=auto` 的 Android arm64 产物。
 
 依赖的 reF1nd sing-box 版本必须与模块内核同步更新。

@@ -95,27 +95,9 @@ func TestUpdateModuleKeepsOriginalWhenCandidateIsInvalid(t *testing.T) {
 	}
 }
 
-func TestUpdateModuleIgnoresLegacyStaleLockDirectory(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "module.conf")
-	if err := os.WriteFile(path, []byte("OUTBOUND_MODE=rule\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(path+".lock", 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := UpdateModule(path, map[string]string{"OUTBOUND_MODE": "global"}); err != nil {
-		t.Fatalf("旧目录锁仍阻塞配置写入: %v", err)
-	}
-	config, err := LoadModule(path)
-	if err != nil || config.OutboundMode != "global" {
-		t.Fatalf("配置未更新: config=%+v err=%v", config, err)
-	}
-}
-
 func TestConfigLockRecoversAfterHolderExit(t *testing.T) {
 	root := t.TempDir()
-	lockPath := filepath.Join(root, "module.conf.lock.flock")
+	lockPath := filepath.Join(root, "module.conf.lock")
 	ready := filepath.Join(root, "ready")
 	command := exec.Command(os.Args[0], "-test.run=^TestConfigLockHelper$")
 	command.Env = append(os.Environ(),

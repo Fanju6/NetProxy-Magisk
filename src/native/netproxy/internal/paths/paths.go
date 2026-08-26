@@ -74,8 +74,8 @@ func (l Layout) Bin() string { return filepath.Join(l.moduleRoot, "bin") }
 // SingBox 返回 sing-box 二进制路径。
 func (l Layout) SingBox() string { return filepath.Join(l.Bin(), "sing-box") }
 
-// Native 返回 netproxy-native 二进制路径。
-func (l Layout) Native() string { return filepath.Join(l.Bin(), "netproxy-native") }
+// Executable 返回模块唯一 Go 可执行文件路径。
+func (l Layout) Executable() string { return filepath.Join(l.Bin(), "netproxyctl") }
 
 // ServiceLog 返回统一服务日志路径。
 func (l Layout) ServiceLog() string { return filepath.Join(l.Logs(), "service.log") }

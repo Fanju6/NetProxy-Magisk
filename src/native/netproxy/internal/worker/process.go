@@ -44,7 +44,7 @@ func Start(ctx context.Context, options Options, executable string) (Status, err
 	if executable == "" {
 		return Status{}, errors.New("Worker 可执行文件不能为空")
 	}
-	arguments := []string{"worker", "run"}
+	arguments := []string{"__internal", "worker", "run"}
 	arguments = appendWorkerFlags(arguments, options)
 	command := exec.CommandContext(ctx, executable, arguments...)
 	devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
@@ -108,7 +108,7 @@ func Stop(options Options) error {
 func appendWorkerFlags(arguments []string, options Options) []string {
 	arguments = append(arguments, "--root", options.Root, "--progress-dir", options.ProgressDir,
 		"--pid-file", options.PIDFile, "--log-file", options.LogFile,
-		"--module-conf", options.ModuleConf, "--native-path", options.NativePath,
+		"--module-conf", options.ModuleConf, "--executable", options.ExecutablePath,
 		"--sing-box", options.SingBoxPath, "--service-address", options.ServiceAddress,
 		"--service-secret", options.ServiceSecret)
 	return arguments

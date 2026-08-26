@@ -22,7 +22,7 @@ stop_worker_processes() {
       ''|*[!0-9]*) pid='' ;;
     esac
     if [ -n "$pid" ] && [ -r "/proc/$pid/cmdline" ] \
-      && grep -q "$MODDIR/bin/netproxy-native" "/proc/$pid/cmdline" 2> /dev/null; then
+      && grep -q "$MODDIR/bin/netproxyctl" "/proc/$pid/cmdline" 2> /dev/null; then
       kill -TERM "$pid" 2> /dev/null || true
     fi
     rm -f "$pid_file" "$pid_file.lock" 2> /dev/null || true
@@ -36,8 +36,8 @@ if [ -x "$MODDIR/netproxyctl" ]; then
 fi
 
 # 后台 Worker 独立于代理核心运行，卸载时单独停止。
-if [ -x "$MODDIR/bin/netproxy-native" ]; then
-  "$MODDIR/bin/netproxy-native" worker stop \
+if [ -x "$MODDIR/bin/netproxyctl" ]; then
+  "$MODDIR/bin/netproxyctl" __internal worker stop \
     --module-dir "$MODDIR" > /dev/null 2>&1 || true
 fi
 stop_worker_processes

@@ -36,7 +36,7 @@ NetProxy 8.0 是面向 Android Root 设备的 sing-box 透明代理模块。它�
 
 ```text
 /data/adb/modules/netproxy/
-├── bin/                         # sing-box、netproxyctl、netproxy-native
+├── bin/                         # sing-box、netproxyctl
 ├── config/
 │   ├── module.conf              # 模块启动、选择和出站模式
 │   ├── ebpf/ebpf.conf           # eBPF 入站与分应用设置

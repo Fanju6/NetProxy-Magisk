@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	json "encoding/json/v2"
@@ -72,7 +73,7 @@ type DelayResult struct {
 	Groups []serviceapi.Group `json:"groups"`
 }
 
-// Error 是控制操作可以直接返回给 netproxy-native 的结构化错误。
+// Error 是控制操作可以直接返回给 netproxyctl 的结构化错误。
 type Error struct {
 	Code    string
 	Message string
@@ -121,21 +122,22 @@ type stateFile struct {
 func ReadStatus(ctx context.Context, options Options) (Status, error) {
 	options = normalizeOptions(options)
 	state := readState(options.StateFile)
+	module := readModuleConfig(options.ModuleConfig)
 	status := Status{
 		State:                  state.State,
 		StartedAt:              state.StartedAt,
 		ReadyAt:                state.ReadyAt,
 		Error:                  state.Error,
 		OutboundMode:           unknownOutboundMode,
-		ConfiguredOutboundMode: readConfig(options.ModuleConfig, "OUTBOUND_MODE", "rule"),
-		SelectorMode:           readConfig(options.ModuleConfig, "SELECTOR_MODE", "urltest"),
-		ActiveGroupID:          readConfig(options.ModuleConfig, "ACTIVE_GROUP_ID", ""),
-		SelectedNodeRef:        readConfig(options.ModuleConfig, "SELECTED_NODE_REF", ""),
+		ConfiguredOutboundMode: module.OutboundMode,
+		SelectorMode:           module.SelectorMode,
+		ActiveGroupID:          module.ActiveGroupID,
+		SelectedNodeRef:        module.SelectedNodeRef,
 		CPUCount:               1,
 		WorkerState:            "stopped",
 	}
 
-	active, activeErr := readActiveGroup(ctx, options)
+	active, activeErr := readActiveGroup(ctx, options, module.ActiveGroupID)
 	if active != nil {
 		status.ActiveGroupName = active.Group.Name
 		status.ActiveGroupNodeCount = active.Group.NodeCount
@@ -206,6 +208,11 @@ func ReadGroups(ctx context.Context, options Options) ([]serviceapi.Group, error
 // ReadNodes 读取 Catalog 节点组，不依赖 sing-box 是否运行。
 func ReadNodes(ctx context.Context, options Options, groupID string) ([]catalog.GroupSnapshot, error) {
 	options = normalizeOptions(options)
+	module := readModuleConfig(options.ModuleConfig)
+	return readNodes(ctx, options, module, groupID, true)
+}
+
+func readNodes(ctx context.Context, options Options, module moduleconfig.ModuleConfig, groupID string, withNodes bool) ([]catalog.GroupSnapshot, error) {
 	if strings.TrimSpace(options.CatalogRoot) == "" {
 		return nil, errors.New("Catalog 根目录不能为空")
 	}
@@ -218,49 +225,78 @@ func ReadNodes(ctx context.Context, options Options, groupID string) ([]catalog.
 	}
 	return catalog.Scan(ctx, catalog.ScanOptions{
 		Root: options.CatalogRoot, GroupID: groupID,
-		ActiveGroup: readConfig(options.ModuleConfig, "ACTIVE_GROUP_ID", ""),
-		ProgressDir: options.ProgressDir, WithNodes: true,
+		ActiveGroup: module.ActiveGroupID,
+		ProgressDir: options.ProgressDir, WithNodes: withNodes,
 	})
 }
 
 // ReadSelection 读取当前分组、选择模式和运行时实际节点。
 func ReadSelection(ctx context.Context, options Options) (Selection, error) {
 	options = normalizeOptions(options)
-	groups, err := catalog.Scan(ctx, catalog.ScanOptions{
-		Root:        options.CatalogRoot,
-		ActiveGroup: readConfig(options.ModuleConfig, "ACTIVE_GROUP_ID", ""),
-		ProgressDir: options.ProgressDir, WithNodes: true,
-	})
+	module := readModuleConfig(options.ModuleConfig)
+	groups, err := readNodes(ctx, options, module, "", false)
 	if err != nil {
 		return Selection{}, err
 	}
-	return selectionFromGroups(ctx, options, groups), nil
+	runtimeGroups, _ := readRuntimeGroups(ctx, options)
+	return selectionFromRuntimeGroups(module, groups, runtimeGroups), nil
 }
 
 // ReadSnapshot 读取持久化节点并尽力合并运行时 Service API 状态。
 func ReadSnapshot(ctx context.Context, options Options, groupID string) (Snapshot, error) {
 	options = normalizeOptions(options)
-	allGroups, err := ReadNodes(ctx, options, "")
+	module := readModuleConfig(options.ModuleConfig)
+	allGroups, err := readNodes(ctx, options, module, "", true)
 	if err != nil {
 		return Snapshot{}, err
 	}
 	runtimeGroups, _ := readRuntimeGroups(ctx, options)
-	selection := selectionFromRuntimeGroups(options, allGroups, runtimeGroups)
+	selection := selectionFromRuntimeGroups(module, allGroups, runtimeGroups)
 	groups := allGroups
 	if strings.TrimSpace(groupID) != "" {
-		groups, err = ReadNodes(ctx, options, groupID)
-		if err != nil {
-			return Snapshot{}, err
+		resolved, resolveErr := resolveSnapshotGroup(allGroups, groupID)
+		if resolveErr != nil {
+			return Snapshot{}, resolveErr
+		}
+		groups = groups[:0]
+		for _, candidate := range allGroups {
+			if candidate.Group.ID == resolved {
+				groups = append(groups, candidate)
+				break
+			}
 		}
 	}
 	return Snapshot{Groups: groups, Selection: selection, RuntimeGroups: runtimeGroups}, nil
 }
 
+func resolveSnapshotGroup(groups []catalog.GroupSnapshot, query string) (string, error) {
+	for _, group := range groups {
+		if group.Group.ID == query {
+			return group.Group.ID, nil
+		}
+	}
+	match := ""
+	for _, group := range groups {
+		if group.Group.Name != query {
+			continue
+		}
+		if match != "" {
+			return "", fmt.Errorf("分组名称不唯一: %s", query)
+		}
+		match = group.Group.ID
+	}
+	if match == "" {
+		return "", fmt.Errorf("分组不存在: %s", query)
+	}
+	return match, nil
+}
+
 // ReadMode 读取模块模式，并在核心运行时补充当前 Service API 模式。
 func ReadMode(ctx context.Context, options Options) (ModeState, error) {
 	options = normalizeOptions(options)
+	module := readModuleConfig(options.ModuleConfig)
 	state := ModeState{
-		Mode:      normalizeModuleMode(readConfig(options.ModuleConfig, "OUTBOUND_MODE", "rule")),
+		Mode:      normalizeModuleMode(module.OutboundMode),
 		Available: []string{"rule", "global", "direct", "AllowAds"},
 	}
 	runtimeMode, err := readRuntimeMode(ctx, options)
@@ -544,60 +580,23 @@ func readState(path string) stateFile {
 	return state
 }
 
-func readConfig(path, key, fallback string) string {
-	if path == "" {
-		return fallback
+func readModuleConfig(path string) moduleconfig.ModuleConfig {
+	if path != "" {
+		if config, err := moduleconfig.LoadModule(path); err == nil {
+			return config
+		}
 	}
-	config, err := moduleconfig.LoadModule(path)
-	if err != nil {
-		return fallback
-	}
-	switch key {
-	case "AUTO_START":
-		return boolString(config.AutoStart)
-	case "OUTBOUND_MODE":
-		return config.OutboundMode
-	case "SELECTOR_MODE":
-		return config.SelectorMode
-	case "ACTIVE_GROUP_ID":
-		return config.ActiveGroupID
-	case "SELECTED_NODE_REF":
-		return config.SelectedNodeRef
-	case "WIFI_AUTO_SWITCH":
-		return boolString(config.WiFiAutoSwitch)
-	case "WIFI_SSID_MODE":
-		return config.WiFiSSIDMode
-	case "WIFI_SSID_LIST":
-		return config.WiFiSSIDList
-	case "PROXY_ON_CELLULAR":
-		return boolString(config.ProxyOnCellular)
-	default:
-		return fallback
-	}
+	return moduleconfig.DefaultModule()
 }
 
-func boolString(value bool) string {
-	if value {
-		return "1"
-	}
-	return "0"
-}
-
-func selectionFromGroups(ctx context.Context, options Options, groups []catalog.GroupSnapshot) Selection {
-	runtimeGroups, _ := readRuntimeGroups(ctx, options)
-	return selectionFromRuntimeGroups(options, groups, runtimeGroups)
-}
-
-func selectionFromRuntimeGroups(options Options, groups []catalog.GroupSnapshot, runtimeGroups []serviceapi.Group) Selection {
-	activeID := readConfig(options.ModuleConfig, "ACTIVE_GROUP_ID", "")
-	selector := normalizeModuleSelector(readConfig(options.ModuleConfig, "SELECTOR_MODE", "urltest"))
+func selectionFromRuntimeGroups(module moduleconfig.ModuleConfig, groups []catalog.GroupSnapshot, runtimeGroups []serviceapi.Group) Selection {
 	selection := Selection{
-		ActiveGroupID:   activeID,
-		SelectorMode:    selector,
-		SelectedNodeRef: readConfig(options.ModuleConfig, "SELECTED_NODE_REF", ""),
+		ActiveGroupID:   module.ActiveGroupID,
+		SelectorMode:    module.SelectorMode,
+		SelectedNodeRef: module.SelectedNodeRef,
 	}
 	for _, group := range groups {
-		if group.Group.ID != activeID {
+		if group.Group.ID != module.ActiveGroupID {
 			continue
 		}
 		selection.ActiveGroupName = group.Group.Name
@@ -605,7 +604,7 @@ func selectionFromRuntimeGroups(options Options, groups []catalog.GroupSnapshot,
 		selection.ActiveGroupNodeCount = group.Group.NodeCount
 		if group.Group.NodeCount == 0 {
 			selection.Selected = ""
-		} else if selector == "urltest" {
+		} else if module.SelectorMode == "urltest" {
 			selection.Selected = "Auto/" + group.Group.RuntimeTag
 		} else {
 			selection.Selected = selection.SelectedNodeRef
@@ -613,11 +612,11 @@ func selectionFromRuntimeGroups(options Options, groups []catalog.GroupSnapshot,
 		break
 	}
 	if selection.ActiveGroupName == "" {
-		selection.ActiveGroupName = activeID
+		selection.ActiveGroupName = module.ActiveGroupID
 	}
 	if selection.ActiveGroupRuntimeTag != "" {
 		runtimeGroup := "Auto/" + selection.ActiveGroupRuntimeTag
-		if selector == "manual" {
+		if module.SelectorMode == "manual" {
 			runtimeGroup = "Select/" + selection.ActiveGroupRuntimeTag
 		}
 		for _, group := range runtimeGroups {
@@ -654,13 +653,6 @@ func readRuntimeMode(ctx context.Context, options Options) (string, error) {
 		return "", err
 	}
 	return serviceModeToModuleMode(mode.Current)
-}
-
-func normalizeModuleSelector(value string) string {
-	if value == "manual" || value == "selector" {
-		return "manual"
-	}
-	return "urltest"
 }
 
 func normalizeModuleMode(value string) string {
@@ -702,11 +694,10 @@ func serviceModeToModuleMode(value string) (string, error) {
 	}
 }
 
-func readActiveGroup(ctx context.Context, options Options) (*catalog.GroupSnapshot, error) {
+func readActiveGroup(ctx context.Context, options Options, activeID string) (*catalog.GroupSnapshot, error) {
 	if options.CatalogRoot == "" {
 		return nil, nil
 	}
-	activeID := readConfig(options.ModuleConfig, "ACTIVE_GROUP_ID", "")
 	summary, err := catalog.ReadGroupSummary(ctx, options.CatalogRoot, activeID, options.ProgressDir)
 	if err != nil {
 		if summary.ID == "" {
@@ -725,16 +716,36 @@ func mergeRuntimeStatus(ctx context.Context, options Options, status *Status, ac
 	}
 	defer cancel()
 	defer client.Close()
-	modeContext, modeCancel := context.WithTimeout(requestContext, 500*time.Millisecond)
-	mode, modeErr := client.Mode(modeContext)
-	modeCancel()
+	var (
+		mode      serviceapi.Mode
+		modeErr   error
+		apiStatus serviceapi.Status
+		statusErr error
+		groups    []serviceapi.Group
+		groupsErr error
+		waitGroup sync.WaitGroup
+	)
+	waitGroup.Go(func() {
+		modeContext, modeCancel := context.WithTimeout(requestContext, 500*time.Millisecond)
+		defer modeCancel()
+		mode, modeErr = client.Mode(modeContext)
+	})
+	waitGroup.Go(func() {
+		apiStatus, statusErr = client.Status(requestContext)
+	})
+	if active != nil && active.Group.RuntimeTag != "" {
+		waitGroup.Go(func() {
+			groups, groupsErr = client.Groups(requestContext)
+		})
+	}
+	waitGroup.Wait()
+
 	if modeErr == nil {
 		if runtimeMode, mapErr := serviceModeToModuleMode(mode.Current); mapErr == nil {
 			status.OutboundMode = runtimeMode
 		}
 	}
-	apiStatus, err := client.Status(requestContext)
-	if err != nil {
+	if statusErr != nil {
 		return
 	}
 	status.MemoryBytes = apiStatus.Memory
@@ -749,16 +760,11 @@ func mergeRuntimeStatus(ctx context.Context, options Options, status *Status, ac
 	if runtimeTag == "" {
 		return
 	}
-	selector := status.SelectorMode
-	if selector == "auto" {
-		selector = "urltest"
-	}
 	runtimeGroup := "Auto/" + runtimeTag
-	if selector == "manual" {
+	if status.SelectorMode == "manual" {
 		runtimeGroup = "Select/" + runtimeTag
 	}
-	groups, err := client.Groups(requestContext)
-	if err != nil {
+	if groupsErr != nil {
 		return
 	}
 	for _, group := range groups {
@@ -780,20 +786,16 @@ type delayRequest struct {
 }
 
 func resolveDelayRequest(ctx context.Context, options Options, target, group string) (delayRequest, error) {
-	activeID := readConfig(options.ModuleConfig, "ACTIVE_GROUP_ID", "")
-	selector := readConfig(options.ModuleConfig, "SELECTOR_MODE", "urltest")
-	selected := readConfig(options.ModuleConfig, "SELECTED_NODE_REF", "")
+	module := readModuleConfig(options.ModuleConfig)
+	activeID := module.ActiveGroupID
 	if target == "" {
 		group = activeID
-		if selector == "manual" {
-			return runtimeNodeDelayRequest(ctx, options.CatalogRoot, selected)
+		if module.SelectorMode == "manual" {
+			return runtimeNodeDelayRequest(ctx, options.CatalogRoot, module.SelectedNodeRef)
 		}
 		target = "auto"
 	}
-	if target == "all" {
-		target = "auto"
-	}
-	if target == "auto" || target == "select" {
+	if target == "auto" {
 		if group == "" {
 			group = activeID
 		}
@@ -804,9 +806,6 @@ func resolveDelayRequest(ctx context.Context, options Options, target, group str
 		runtimeTag, err := catalog.RuntimeTag(options.CatalogRoot, resolvedGroup)
 		if err != nil {
 			return delayRequest{}, err
-		}
-		if target == "select" {
-			return delayRequest{Target: "Select/" + runtimeTag, GroupID: resolvedGroup}, nil
 		}
 		return delayRequest{Target: "Auto/" + runtimeTag, GroupID: resolvedGroup}, nil
 	}

@@ -26,6 +26,17 @@ type ModuleConfig struct {
 	ProxyOnCellular bool   `json:"proxy_on_cellular"`
 }
 
+// DefaultModule 返回全新配置使用的唯一默认值集合。
+func DefaultModule() ModuleConfig {
+	return ModuleConfig{
+		OutboundMode:    "rule",
+		SelectorMode:    "urltest",
+		ActiveGroupID:   "default",
+		WiFiSSIDMode:    "blacklist",
+		ProxyOnCellular: true,
+	}
+}
+
 // ReadStrict 读取受限的 KEY=value 配置，不执行任何 Shell 语义。
 func ReadStrict(path string) (map[string]string, error) {
 	content, err := os.ReadFile(path)
@@ -76,13 +87,7 @@ func LoadModule(path string) (ModuleConfig, error) {
 			return ModuleConfig{}, fmt.Errorf("不支持的 module.conf 配置键: %s", key)
 		}
 	}
-	config := ModuleConfig{
-		OutboundMode:    "rule",
-		SelectorMode:    "urltest",
-		ActiveGroupID:   "default",
-		WiFiSSIDMode:    "blacklist",
-		ProxyOnCellular: true,
-	}
+	config := DefaultModule()
 	if config.AutoStart, err = boolValue(values, "AUTO_START", config.AutoStart); err != nil {
 		return ModuleConfig{}, err
 	}
@@ -135,8 +140,7 @@ func UpdateValidated(path string, updates map[string]string, validate func(strin
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	// 使用新文件名避开旧版本崩溃后可能遗留的 .lock 目录。
-	lock, err := acquireLock(path + ".lock.flock")
+	lock, err := acquireLock(path + ".lock")
 	if err != nil {
 		return err
 	}

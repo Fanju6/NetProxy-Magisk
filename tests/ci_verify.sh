@@ -16,21 +16,17 @@ mkdir -p "$BUILD_DIR"
 # 构建主机测试程序与 Android arm64 产物
 #######################################
 build_binaries() {
-  printf '%s\n' '开始构建 netproxy-native 与 netproxyctl'
+  printf '%s\n' '开始构建 netproxyctl'
   (
     cd "$NATIVE_DIR"
     go test ./...
     go vet ./...
-    CGO_ENABLED=0 go build -trimpath -buildvcs=false \
-      -o "$BUILD_DIR/netproxy-native" ./cmd/netproxy-native
-    CGO_ENABLED=0 go build -trimpath -buildvcs=false \
+    CGO_ENABLED=0 go build -trimpath -buildvcs=false -pgo=auto \
       -o "$BUILD_DIR/netproxyctl" ./cmd/netproxyctl
     CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build \
-      -trimpath -buildvcs=false -o "$BUILD_DIR/netproxy-native-android" \
-      ./cmd/netproxy-native
-    CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build \
-      -trimpath -buildvcs=false -o "$BUILD_DIR/netproxyctl-android" \
+      -trimpath -buildvcs=false -pgo=auto -o "$BUILD_DIR/netproxyctl-android" \
       ./cmd/netproxyctl
+    go version -m "$BUILD_DIR/netproxyctl-android" | grep -q -- '-pgo=default.pgo'
   )
 }
 
@@ -39,7 +35,7 @@ build_binaries() {
 #######################################
 run_shell_contracts() {
   printf '%s\n' '开始执行 Shell 契约测试'
-  sh "$ROOT/tests/runtime_catalog_test.sh" "$BUILD_DIR/netproxy-native"
+  sh "$ROOT/tests/runtime_catalog_test.sh" "$BUILD_DIR/netproxyctl"
   sh "$ROOT/tests/module_scripts_test.sh"
   sh "$ROOT/tests/customize_hot_update_test.sh"
   sh "$ROOT/tests/module_packaging_test.sh"

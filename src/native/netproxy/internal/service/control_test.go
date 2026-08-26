@@ -27,6 +27,7 @@ func writeCatalogFixture(t *testing.T, root string) {
 		t.Fatal(err)
 	}
 	metadata := catalog.NewMetadata("default", "本地配置", "local", "", time.Now())
+	metadata.NodeCount = 1
 	if err := catalog.SaveMetadataAtomic(filepath.Join(groupDir, "meta.json"), metadata); err != nil {
 		t.Fatal(err)
 	}
@@ -142,6 +143,44 @@ func TestReadStatusUsesActualServiceAPIMode(t *testing.T) {
 	}
 }
 
+func TestReadStatusFetchesIndependentServiceAPISnapshotsConcurrently(t *testing.T) {
+	temp := t.TempDir()
+	catalogRoot := filepath.Join(temp, "catalog")
+	moduleConfig := filepath.Join(temp, "module.conf")
+	stateFile := filepath.Join(temp, "service.json")
+	writeCatalogFixture(t, catalogRoot)
+	if err := os.WriteFile(moduleConfig, []byte("OUTBOUND_MODE=rule\nSELECTOR_MODE=urltest\nACTIVE_GROUP_ID=default\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeReadyServiceState(t, stateFile, 123)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		time.Sleep(100 * time.Millisecond)
+		var payload []byte
+		if request.URL.Path == "/daemon.StartedService/GetClashModeStatus" {
+			payload = protowire.AppendTag(payload, 2, protowire.BytesType)
+			payload = protowire.AppendBytes(payload, []byte("Rule"))
+		}
+		writeServiceAPIFrame(t, writer, payload)
+	}))
+	defer server.Close()
+	withServiceProcess(t, 123)
+
+	started := time.Now()
+	status, err := ReadStatus(context.Background(), Options{
+		CatalogRoot: catalogRoot, ModuleConfig: moduleConfig, StateFile: stateFile,
+		ServiceAddress: server.URL, RequestTimeout: time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(started); elapsed >= 250*time.Millisecond {
+		t.Fatalf("Service API 独立快照仍在串行读取: %s", elapsed)
+	}
+	if status.OutboundMode != "rule" {
+		t.Fatalf("并发快照丢失模式: %#v", status)
+	}
+}
+
 func TestReadStatusServiceAPIFailureDoesNotUseConfiguredMode(t *testing.T) {
 	temp := t.TempDir()
 	moduleConfig := filepath.Join(temp, "module.conf")
@@ -223,12 +262,12 @@ func TestReadStatusOldSnapshotDoesNotClaimConfiguredMode(t *testing.T) {
 
 func TestProcessMatchingDoesNotMatchControlCommand(t *testing.T) {
 	if processMatches(os.Getpid(), "sing-box") {
-		t.Fatal("当前 netproxy-native 进程不应被识别为 sing-box")
+		t.Fatal("当前 netproxyctl 进程不应被识别为 sing-box")
 	}
 	if executableMatches("/data/adb/modules/netproxy/bin/sing-box", "/data/adb/modules/netproxy/bin/sing-box") != true {
 		t.Fatal("相同的可执行文件路径应匹配")
 	}
-	if executableMatches("/data/adb/modules/netproxy/bin/netproxy-native", "/data/adb/modules/netproxy/bin/sing-box") {
+	if executableMatches("/data/adb/modules/netproxy/bin/netproxyctl", "/data/adb/modules/netproxy/bin/sing-box") {
 		t.Fatal("不同的可执行文件不应匹配")
 	}
 	if executableMatches("/data/adb/modules/other/bin/sing-box", "/data/adb/modules/netproxy/bin/sing-box") {

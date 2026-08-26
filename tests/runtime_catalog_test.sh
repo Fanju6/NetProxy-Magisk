@@ -2,7 +2,7 @@
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-NETPROXY_NATIVE_BIN="${1:-$ROOT/src/module/bin/netproxy-native}"
+NETPROXYCTL_BIN="${1:-$ROOT/src/module/bin/netproxyctl}"
 TMP_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TMP_ROOT"' EXIT INT TERM
 
@@ -55,7 +55,7 @@ set_conf_values() {
 }
 
 prepare_runtime() {
-  "$NETPROXY_NATIVE_BIN" module prepare     --module-dir "$MODDIR" --catalog-root "$CATALOG_DIR"     --module-config "$MODULE_CONF" --ebpf-config "$EBPF_CONF"     --singbox-dir "$SINGBOX_DIR" --runtime-dir "$RUNTIME_DIR"     --state-file "$TMP_ROOT/dev/netproxy/service.json" > /dev/null
+  "$NETPROXYCTL_BIN" __internal module prepare     --module-dir "$MODDIR" --catalog-root "$CATALOG_DIR"     --module-config "$MODULE_CONF" --ebpf-config "$EBPF_CONF"     --singbox-dir "$SINGBOX_DIR" --runtime-dir "$RUNTIME_DIR"     --state-file "$TMP_ROOT/dev/netproxy/service.json" > /dev/null
 }
 
 json_contains() {
@@ -102,7 +102,7 @@ cp "$EBPF_CONF" "$INVALID_EBPF_CONF"
 sed -i 's/02:11:22:33:44:55/02:11:22:33:44:5G/' "$INVALID_EBPF_CONF"
 INVALID_EBPF_OUTPUT="$TMP_ROOT/invalid-ebpf.json"
 INVALID_EBPF_ERROR="$TMP_ROOT/invalid-ebpf.error"
-if "$NETPROXY_NATIVE_BIN" ebpf runtime \
+if "$NETPROXYCTL_BIN" __internal ebpf runtime \
   --config "$INVALID_EBPF_CONF" \
   --output "$INVALID_EBPF_OUTPUT" \
   --format json > /dev/null 2> "$INVALID_EBPF_ERROR"; then

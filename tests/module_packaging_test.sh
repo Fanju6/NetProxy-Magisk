@@ -29,7 +29,13 @@ assert_contains "$BUILD_ACTION" 'standard_name=NetProxy_${VERSION}_${COMMIT_COUN
 assert_contains "$BUILD_ACTION" 'manager_name=NetProxy_${VERSION}_${COMMIT_COUNT}_with-manager.zip'
 assert_contains "$BUILD_ACTION" '7z a -tzip -mx=9 "../../$STANDARD_NAME" . -x!"NetProxy.apk"'
 assert_contains "$BUILD_ACTION" '7z a -tzip -mx=9 "../../$MANAGER_NAME" .'
+assert_contains "$BUILD_ACTION" './cmd/netproxyctl'
 assert_not_contains "$BUILD_ACTION" 'full_name|lite_name|_lite'
+assert_not_contains "$BUILD_ACTION" 'netproxy-native|cmd/netproxy-native'
+[ ! -e "$ROOT/src/module/bin/netproxy-native" ] || {
+  printf '%s\n' '模块目录仍包含已删除的 netproxy-native' >&2
+  exit 1
+}
 
 assert_contains "$RELEASE_WORKFLOW" 'STANDARD_NAME: ${{ steps.pack.outputs.standard_name }}'
 assert_contains "$RELEASE_WORKFLOW" '${{ steps.pack.outputs.manager_name }}'

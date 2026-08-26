@@ -263,6 +263,56 @@ func TestBuildRuntimeFallbackAndEmpty(t *testing.T) {
 	}
 }
 
+func TestTargetedScanDoesNotParseOtherProviders(t *testing.T) {
+	root := t.TempDir()
+	writeGroup(t, root, "default", "本地配置", "local", "LOCAL")
+	writeGroup(t, root, "remote", "远程订阅", "subscription", "REMOTE")
+	if err := os.WriteFile(filepath.Join(root, "remote", "provider.json"), []byte(`{"outbounds":[`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	groups, err := Scan(context.Background(), ScanOptions{Root: root, GroupID: "default", WithNodes: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 1 || len(groups[0].Nodes) != 1 || groups[0].Nodes[0].Tag != "LOCAL" {
+		t.Fatalf("unexpected targeted scan: %#v", groups)
+	}
+}
+
+func TestBuildRuntimeUsesMetadataAndOnlyChecksManualTarget(t *testing.T) {
+	root := t.TempDir()
+	writeGroup(t, root, "default", "本地配置", "local", "LOCAL")
+	writeGroup(t, root, "remote", "远程订阅", "subscription", "REMOTE")
+	if err := os.WriteFile(filepath.Join(root, "remote", "provider.json"), []byte(`{"outbounds":[`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := BuildRuntime(context.Background(), RuntimeOptions{
+		Root: root, ProvidersOutput: filepath.Join(root, "providers.json"),
+		OutboundsOutput: filepath.Join(root, "outbounds.json"), ActiveGroup: "default",
+		SelectorMode: "manual", SelectedNodeRef: "default/LOCAL",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.SelectedNodeRef != "default/LOCAL" || result.NodeCount != 2 {
+		t.Fatalf("unexpected runtime summary: %#v", result)
+	}
+}
+
+func TestBuildRuntimeRejectsUnknownSelectorMode(t *testing.T) {
+	root := t.TempDir()
+	writeGroup(t, root, "default", "本地配置", "local", "NODE")
+	_, err := BuildRuntime(context.Background(), RuntimeOptions{
+		Root: root, ProvidersOutput: filepath.Join(root, "providers.json"),
+		OutboundsOutput: filepath.Join(root, "outbounds.json"), SelectorMode: "selector",
+	})
+	if err == nil || !strings.Contains(err.Error(), "未知节点选择模式") {
+		t.Fatalf("未知选择模式未被拒绝: %v", err)
+	}
+}
+
 func TestSchedule(t *testing.T) {
 	root := t.TempDir()
 	writeGroup(t, root, "due", "到期订阅", "subscription", "节点一")

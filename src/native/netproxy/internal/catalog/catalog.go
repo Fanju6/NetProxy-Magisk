@@ -106,7 +106,7 @@ func Scan(ctx context.Context, options ScanOptions) ([]GroupSnapshot, error) {
 		return nil, err
 	}
 	defer release()
-	groups, err := loadGroups(ctx, options.Root, true, options.WithNodes)
+	groups, err := loadGroups(ctx, options.Root, true)
 	if err != nil {
 		return nil, err
 	}
@@ -118,6 +118,13 @@ func Scan(ctx context.Context, options ScanOptions) ([]GroupSnapshot, error) {
 		}
 		if options.GroupID != "" && group.ID != options.GroupID {
 			continue
+		}
+		if options.WithNodes {
+			nodes, err := provider.InspectFile(ctx, group.ProviderPath)
+			if err != nil {
+				return nil, fmt.Errorf("读取分组 %s Provider: %w", group.ID, err)
+			}
+			group.Nodes = nodes
 		}
 		summary := summaryFor(group, options.ActiveGroup, options.ProgressDir)
 		nodes := []provider.NodeSummary{}
@@ -241,8 +248,8 @@ func GroupIDs(root, groupType string) ([]string, error) {
 	return ids, nil
 }
 
-// NewGroupID 为新订阅或本地文件分组生成不冲突的 ID。
-func NewGroupID(root, kind, source string) (string, error) {
+// NewSubscriptionGroupID 为新订阅生成不冲突的稳定 ID。
+func NewSubscriptionGroupID(root string) (string, error) {
 	if strings.TrimSpace(root) == "" {
 		return "", errors.New("Catalog 根目录不能为空")
 	}
@@ -251,58 +258,17 @@ func NewGroupID(root, kind, source string) (string, error) {
 		return "", err
 	}
 	defer release()
-	switch kind {
-	case "subscription":
-		for range 16 {
-			candidate := uuid.NewV4().String()
-			if _, err := os.Stat(filepath.Join(root, candidate)); err == nil {
-				continue
-			} else if os.IsNotExist(err) {
-				return candidate, nil
-			} else {
-				return "", err
-			}
+	for range 16 {
+		candidate := uuid.NewV4().String()
+		if _, err := os.Stat(filepath.Join(root, candidate)); err == nil {
+			continue
+		} else if os.IsNotExist(err) {
+			return candidate, nil
+		} else {
+			return "", err
 		}
-		return "", errors.New("无法生成不冲突的订阅分组 ID")
-	case "file", "local":
-		name := filepath.Base(strings.TrimSpace(source))
-		if name == "." || name == string(filepath.Separator) || name == "" {
-			name = fmt.Sprintf("%d", time.Now().Unix())
-		}
-		if extension := filepath.Ext(name); extension != "" {
-			name = strings.TrimSuffix(name, extension)
-		}
-		var builder strings.Builder
-		lastDash := false
-		for _, char := range strings.ToLower(name) {
-			valid := (char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '.' || char == '_' || char == '-'
-			if valid {
-				builder.WriteRune(char)
-				lastDash = false
-			} else if !lastDash {
-				builder.WriteByte('-')
-				lastDash = true
-			}
-		}
-		slug := strings.Trim(builder.String(), ".-")
-		if slug == "" {
-			slug = fmt.Sprintf("%d", time.Now().Unix())
-		}
-		base := "local-" + slug
-		candidate := base
-		for suffix := 2; ; suffix++ {
-			if _, err := os.Stat(filepath.Join(root, candidate)); err == nil {
-				candidate = fmt.Sprintf("%s-%d", base, suffix)
-				continue
-			} else if os.IsNotExist(err) {
-				return candidate, nil
-			} else {
-				return "", err
-			}
-		}
-	default:
-		return "", fmt.Errorf("未知 Catalog 分组 ID 类型: %s", kind)
 	}
+	return "", errors.New("无法生成不冲突的订阅分组 ID")
 }
 
 func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, error) {
@@ -325,7 +291,7 @@ func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, e
 		options.SelectedNodeRef = module.SelectedNodeRef
 		outboundMode = module.OutboundMode
 	}
-	groups, err := loadGroups(ctx, options.Root, false, true)
+	groups, err := loadGroups(ctx, options.Root, false)
 	if err != nil {
 		return RuntimeResult{}, err
 	}
@@ -346,11 +312,23 @@ func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, e
 		activeIndex = 0
 		active = groups[0].ID
 	}
-	selector := normalizeSelector(options.SelectorMode)
-	selected := options.SelectedNodeRef
-	if selector == "manual" && !containsNode(groups[activeIndex], selected) {
+	selector := options.SelectorMode
+	if selector == "" {
 		selector = "urltest"
-		selected = ""
+	}
+	if selector != "urltest" && selector != "manual" {
+		return RuntimeResult{}, fmt.Errorf("未知节点选择模式: %s", selector)
+	}
+	selected := options.SelectedNodeRef
+	if selector == "manual" {
+		contains, err := containsNode(ctx, groups[activeIndex], selected)
+		if err != nil {
+			return RuntimeResult{}, fmt.Errorf("检查活动节点引用失败: %w", err)
+		}
+		if !contains {
+			selector = "urltest"
+			selected = ""
+		}
 	}
 	if selector == "urltest" {
 		selected = ""
@@ -365,7 +343,7 @@ func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, e
 
 	nodeCount := 0
 	for _, group := range groups {
-		nodeCount += len(group.Nodes)
+		nodeCount += group.Metadata.NodeCount
 	}
 	result := RuntimeResult{
 		ActiveGroup:     active,
@@ -388,13 +366,16 @@ type loadedGroup struct {
 	hasNodes     bool
 }
 
-func loadGroups(ctx context.Context, root string, includeEmpty, withNodes bool) ([]*loadedGroup, error) {
+func loadGroups(ctx context.Context, root string, includeEmpty bool) ([]*loadedGroup, error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return nil, err
 	}
 	groups := make([]*loadedGroup, 0, len(entries))
 	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if !isGroupDir(entry) {
 			continue
 		}
@@ -404,24 +385,12 @@ func loadGroups(ctx context.Context, root string, includeEmpty, withNodes bool) 
 			return nil, fmt.Errorf("读取分组 %s 元数据: %w", entry.Name(), err)
 		}
 		providerPath := filepath.Join(groupDir, "provider.json")
-		if !withNodes {
-			groups = append(groups, &loadedGroup{
-				ID: entry.Name(), Metadata: metadata, ProviderPath: providerPath,
-				hasNodes: metadata.NodeCount > 0,
-			})
-			continue
-		}
-		document, err := provider.LoadAllowEmpty(ctx, providerPath)
-		if err != nil {
-			return nil, fmt.Errorf("读取分组 %s Provider: %w", entry.Name(), err)
-		}
-		nodes := provider.Inspect(document)
-		if !includeEmpty && len(nodes) == 0 {
+		if !includeEmpty && metadata.NodeCount <= 0 {
 			continue
 		}
 		groups = append(groups, &loadedGroup{
 			ID: entry.Name(), Metadata: metadata, ProviderPath: providerPath,
-			Nodes: nodes, hasNodes: len(nodes) > 0,
+			hasNodes: metadata.NodeCount > 0,
 		})
 	}
 	sort.Slice(groups, func(i, j int) bool { return groups[i].ID < groups[j].ID })
@@ -464,26 +433,12 @@ func findGroup(groups []*loadedGroup, id string) int {
 	return -1
 }
 
-func normalizeSelector(mode string) string {
-	switch mode {
-	case "manual", "selector":
-		return "manual"
-	default:
-		return "urltest"
-	}
-}
-
-func containsNode(group *loadedGroup, reference string) bool {
+func containsNode(ctx context.Context, group *loadedGroup, reference string) (bool, error) {
 	groupID, tag, found := strings.Cut(reference, "/")
 	if !found || groupID != group.ID || tag == "" {
-		return false
+		return false, nil
 	}
-	for _, node := range group.Nodes {
-		if node.Tag == tag {
-			return true
-		}
-	}
-	return false
+	return provider.FileContainsTag(ctx, group.ProviderPath, tag)
 }
 
 func writeRuntimeProviders(path string, groups []*loadedGroup) error {

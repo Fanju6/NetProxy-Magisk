@@ -40,7 +40,6 @@ readonly PRESERVE_CONFIGS="
 # 需要设置可执行权限的文件
 readonly EXECUTABLE_FILES="
     bin/sing-box
-    bin/netproxy-native
     bin/netproxyctl
     action.sh
     netproxyctl
@@ -320,7 +319,7 @@ cleanup_worker_state() {
     esac
 
     if [ -n "$pid" ] && [ -r "/proc/$pid/cmdline" ] \
-      && grep -q "$LIVE_DIR/bin/netproxy-native" "/proc/$pid/cmdline" 2> /dev/null; then
+      && grep -q "$LIVE_DIR/bin/netproxyctl" "/proc/$pid/cmdline" 2> /dev/null; then
       kill -TERM "$pid" 2> /dev/null || true
       wait_count=0
       while [ -d "/proc/$pid" ] && [ "$wait_count" -lt 10 ]; do
@@ -362,8 +361,8 @@ stop_proxy_if_running() {
   fi
 
   # 通过 Worker PID 文件停止后台调度，不按进程名误杀其他实例。
-  if [ -x "$LIVE_DIR/bin/netproxy-native" ]; then
-    "$LIVE_DIR/bin/netproxy-native" worker stop \
+  if [ -x "$LIVE_DIR/bin/netproxyctl" ]; then
+    "$LIVE_DIR/bin/netproxyctl" __internal worker stop \
       --module-dir "$LIVE_DIR" > /dev/null 2>&1 || true
   fi
   cleanup_worker_state
@@ -439,7 +438,7 @@ stage_is_valid() {
     && [ -f "$stage_dir/module.prop" ] \
     && grep -qx "id=$module_id" "$stage_dir/module.prop" \
     && [ -f "$stage_dir/netproxyctl" ] \
-    && [ -f "$stage_dir/bin/netproxy-native" ] \
+    && [ -f "$stage_dir/bin/netproxyctl" ] \
     && [ -f "$stage_dir/bin/sing-box" ]
 }
 
@@ -507,7 +506,7 @@ merge_live_state() {
 restore_live_service() {
   [ "$restart_service" = true ] || return 0
   [ -x "$live_dir/netproxyctl" ] || return 0
-  su -c "\"$live_dir/bin/netproxy-native\" worker start --module-dir \"$live_dir\"" > /dev/null 2>&1 || true
+  su -c "\"$live_dir/bin/netproxyctl\" __internal worker start --module-dir \"$live_dir\"" > /dev/null 2>&1 || true
   su -c "\"$live_dir/netproxyctl\" service start" > /dev/null 2>&1 || true
 }
 
@@ -562,8 +561,8 @@ rm -f "$live_dir/update"
 rm -rf "$backup_dir" 2> /dev/null || true
 write_log "INFO" "success" "-" "后台热更新已完成，无需重启设备"
 
-if [ -x "$live_dir/bin/netproxy-native" ]; then
-  su -c "\"$live_dir/bin/netproxy-native\" worker start --module-dir \"$live_dir\"" > /dev/null 2>&1 \
+if [ -x "$live_dir/bin/netproxyctl" ]; then
+  su -c "\"$live_dir/bin/netproxyctl\" __internal worker start --module-dir \"$live_dir\"" > /dev/null 2>&1 \
     || write_log "WARN" "failed" "worker.start_failed" "新版后台 Worker 启动失败"
 fi
 

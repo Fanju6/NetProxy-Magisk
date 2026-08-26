@@ -47,7 +47,7 @@ Provider  网络状态  sing-box
               eBPF 入站数据面
 ```
 
-当前模块根目录的 Shell 只有 `src/module/service.sh`，它把模块 service 阶段交给 `netproxy-native module boot`。Shell 不再作为公共业务层，也不再解析 JSON 或拼接运行时配置。
+当前模块根目录的 Shell 只有 `src/module/service.sh`，它把模块 service 阶段交给 `netproxyctl __internal module boot`。Shell 不再作为公共业务层，也不再解析 JSON 或拼接运行时配置。
 
 这不是简单的“把 Shell 改成 Go”：同时变化了事实源、服务边界、节点模型、运行时投影和客户端契约。
 
@@ -185,7 +185,7 @@ stopped -> preparing -> starting -> ready -> stopping -> stopped
 
 | 场景 | 7.2.0 命令 | 8.0 beta.7 命令 | 用户感知 |
 |---|---|---|---|
-| 启动前准备 | `initialize_runtime_context` + `scan_runtime_nodes` + `write_runtime_outbounds` | `netproxy-native module prepare` | 启动服务前生成运行时配置 |
+| 启动前准备 | `initialize_runtime_context` + `scan_runtime_nodes` + `write_runtime_outbounds` | `netproxyctl __internal module prepare` | 启动服务前生成运行时配置 |
 | 节点页加载 | `scripts/cli node list` | `netproxyctl catalog list` | 打开节点页并读取分组摘要 |
 | 仪表盘状态 | `scripts/cli service status` | `netproxyctl service status` | 首页轮询服务和当前配置状态 |
 | 停止服务时切换节点 | `scripts/core/switch.sh config` | `netproxyctl node use` | 选择节点并持久化选择状态 |

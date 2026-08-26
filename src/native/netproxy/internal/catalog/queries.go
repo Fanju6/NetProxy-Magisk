@@ -67,14 +67,14 @@ func GroupHasNodes(ctx context.Context, root, groupID string) (bool, error) {
 		return false, err
 	}
 	defer release()
-	document, err := loadGroupProvider(ctx, root, groupID)
+	hasNodes, err := provider.FileHasNodes(ctx, filepath.Join(root, groupID, "provider.json"))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
 		}
 		return false, err
 	}
-	return len(document.Outbounds)+len(document.Endpoints) > 0, nil
+	return hasNodes, nil
 }
 
 // GroupFirstTag 返回分组按标签排序后的第一个节点标签。
@@ -84,11 +84,10 @@ func GroupFirstTag(ctx context.Context, root, groupID string) (string, error) {
 		return "", err
 	}
 	defer release()
-	document, err := loadGroupProvider(ctx, root, groupID)
+	nodes, err := provider.InspectFile(ctx, filepath.Join(root, groupID, "provider.json"))
 	if err != nil {
 		return "", err
 	}
-	nodes := provider.Inspect(document)
 	if len(nodes) == 0 {
 		return "", nil
 	}
@@ -102,14 +101,14 @@ func GroupContainsTag(ctx context.Context, root, groupID, tag string) (bool, err
 		return false, err
 	}
 	defer release()
-	document, err := loadGroupProvider(ctx, root, groupID)
+	found, err := provider.FileContainsTag(ctx, filepath.Join(root, groupID, "provider.json"), tag)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
 		}
 		return false, err
 	}
-	return ProviderContainsTagDocument(document, tag), nil
+	return found, nil
 }
 
 // GroupNode 返回分组中指定节点的标准 Provider JSON。

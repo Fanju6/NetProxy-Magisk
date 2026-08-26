@@ -34,29 +34,21 @@ runs:
 
         version="$(sed -n 's/^version=//p' ../../module/module.prop | head -n 1)"
         commit="$(git -C ../../.. rev-parse --short HEAD)"
-        output_native="../../module/bin/netproxy-native"
         output_cli="../../module/bin/netproxyctl"
 
         CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -v \
           -trimpath \
           -buildvcs=false \
-          -ldflags="-s -w -buildid= -X main.version=${version} -X main.commit=${commit}" \
-          -o "$output_native" \
-          ./cmd/netproxy-native
-
-        CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -v \
-          -trimpath \
-          -buildvcs=false \
+          -pgo=auto \
           -ldflags="-s -w -buildid= -X main.version=${version} -X main.commit=${commit}" \
           -o "$output_cli" \
           ./cmd/netproxyctl
 
-        for output in "$output_native" "$output_cli"; do
-          test -s "$output"
-          chmod 0755 "$output"
-          file "$output" | grep -q 'ARM aarch64'
-        done
-        go version -m "$output_native" | grep -q 'github.com/reF1nd/sing-box'
+        test -s "$output_cli"
+        chmod 0755 "$output_cli"
+        file "$output_cli" | grep -q 'ARM aarch64'
+        go version -m "$output_cli" | grep -q 'github.com/reF1nd/sing-box'
+        go version -m "$output_cli" | grep -q -- '-pgo=default.pgo'
 
     - name: 配置 Node
       uses: actions/setup-node@v7

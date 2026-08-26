@@ -149,7 +149,7 @@ func TestReadStatusMissingActiveGroupDoesNotShowOtherGroup(t *testing.T) {
 	}
 }
 
-func TestReadStatusCorruptActiveProviderDegradesClearly(t *testing.T) {
+func TestReadStatusUsesMetadataWithoutParsingActiveProvider(t *testing.T) {
 	temp := t.TempDir()
 	catalogRoot := filepath.Join(temp, "catalog")
 	moduleConfig := filepath.Join(temp, "module.conf")
@@ -163,9 +163,8 @@ func TestReadStatusCorruptActiveProviderDegradesClearly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.ActiveGroupName != "本地配置" || status.ActiveGroupNodeCount != 0 ||
-		!strings.Contains(status.Error, "Provider") {
-		t.Fatalf("活动 Provider 损坏时未降级: %#v", status)
+	if status.ActiveGroupName != "本地配置" || status.ActiveGroupNodeCount != 3 || status.Error != "" {
+		t.Fatalf("状态轮询不应解析活动 Provider: %#v", status)
 	}
 }
 

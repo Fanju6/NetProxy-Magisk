@@ -675,7 +675,7 @@ func AddSubscription(ctx context.Context, options SubscriptionOptions) (result s
 	if err := ensureDefaultGroup(ctx, options.Options); err != nil {
 		return subscription.Result{}, err
 	}
-	groupID, err := catalog.NewGroupID(options.CatalogRoot, "subscription", options.URL)
+	groupID, err := catalog.NewSubscriptionGroupID(options.CatalogRoot)
 	if err != nil {
 		return subscription.Result{}, err
 	}
@@ -810,7 +810,7 @@ func workerOptions(options Options) worker.Options {
 		PIDFile:             options.WorkerPIDFile,
 		LogFile:             options.WorkerLogFile,
 		ModuleConf:          options.ModuleConfig,
-		NativePath:          paths.New(options.ModuleDir).Native(),
+		ExecutablePath:      paths.New(options.ModuleDir).Executable(),
 		SingBoxPath:         options.SingBoxPath,
 		ServiceAddress:      options.ServiceAddress,
 		ServiceSecret:       options.ServiceSecret,

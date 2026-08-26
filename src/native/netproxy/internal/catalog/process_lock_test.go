@@ -103,7 +103,7 @@ func TestCatalogProcessHelper(t *testing.T) {
 func TestCatalogMultiProcessMixedMutations(t *testing.T) {
 	root := t.TempDir()
 	groupID := "mixed"
-	if _, err := ImportGroup(context.Background(), ImportOptions{
+	if _, err := importTestGroup(testImportOptions{
 		Root: root, GroupID: groupID, Name: "mixed", Input: "socks://base.example:1080#BASE\n" +
 			"socks://edit.example:1081#EDIT_ME\nsocks://remove.example:1082#REMOVE_ME",
 	}); err != nil {
@@ -148,7 +148,7 @@ func TestCatalogMultiProcessMixedMutations(t *testing.T) {
 func TestCatalogMultiProcessSameGroupWrites(t *testing.T) {
 	root := t.TempDir()
 	groupID := "same-group"
-	if _, err := ImportGroup(context.Background(), ImportOptions{
+	if _, err := importTestGroup(testImportOptions{
 		Root: root, GroupID: groupID, Name: groupID, Input: "socks://base.example:1080#BASE",
 	}); err != nil {
 		t.Fatal(err)
@@ -178,7 +178,7 @@ func TestCatalogMultiProcessSameGroupWrites(t *testing.T) {
 func TestCatalogRecoverWaitsForActiveTransaction(t *testing.T) {
 	root := t.TempDir()
 	groupID := "recover-active"
-	if _, err := ImportGroup(context.Background(), ImportOptions{
+	if _, err := importTestGroup(testImportOptions{
 		Root: root, GroupID: groupID, Name: groupID, Input: "socks://old.example:1080#OLD",
 	}); err != nil {
 		t.Fatal(err)
@@ -228,7 +228,7 @@ func TestCatalogRecoverAfterEachRenameInterruption(t *testing.T) {
 			root := t.TempDir()
 			groupID := "rename-" + strings.ReplaceAll(point, "-", "")
 			groupDir := filepath.Join(root, groupID)
-			if _, err := ImportGroup(context.Background(), ImportOptions{
+			if _, err := importTestGroup(testImportOptions{
 				Root: root, GroupID: groupID, Name: groupID, Input: "socks://old.example:1080#OLD",
 			}); err != nil {
 				t.Fatal(err)

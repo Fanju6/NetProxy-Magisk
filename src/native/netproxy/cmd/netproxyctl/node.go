@@ -52,7 +52,7 @@ func (c *cli) node(args []string) int {
 			return c.fail("usage.invalid", "用法: netproxyctl node edit <分组/tag> <节点链接|文件>", 2)
 		}
 		return c.runNative(c.context(), c.moduleArgs("node", "edit", positionals[0], positionals[1])...)
-	case "remove", "rm":
+	case "remove":
 		if len(positionals) < 1 {
 			return c.fail("usage.invalid", "用法: netproxyctl node remove <分组/tag>", 2)
 		}

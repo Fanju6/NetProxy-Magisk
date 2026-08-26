@@ -32,7 +32,7 @@ write_stage_module() {
   mkdir -p "$STAGE/bin" "$STAGE/config/ebpf" "$STAGE/config/singbox/confdir" "$STAGE/data/catalog/default" "$STAGE/data/catalog/staging"
   printf '%s\n' 'id=netproxy' 'version=test-new' > "$STAGE/module.prop"
   : > "$STAGE/netproxyctl"
-  : > "$STAGE/bin/netproxy-native"
+  : > "$STAGE/bin/netproxyctl"
   : > "$STAGE/bin/sing-box"
   printf '%s\n' 'OUTBOUND_MODE=rule' > "$STAGE/config/module.conf"
   printf '%s\n' 'EBPF_LOCAL_DNS_MODE=off' > "$STAGE/config/ebpf/ebpf.conf"

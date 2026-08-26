@@ -23,9 +23,13 @@ type result struct {
 
 type cli struct {
 	moduleDir  string
-	nativePath string
 	commandCtx context.Context
 }
+
+var (
+	version = "development"
+	commit  = "unknown"
+)
 
 const (
 	defaultCommandTimeout = 30 * time.Second
@@ -39,15 +43,13 @@ func main() {
 
 func newCLI() *cli {
 	layout := paths.Default()
-	moduleDir := layout.Root()
-	nativePath := os.Getenv("NETPROXY_NATIVE_BIN")
-	if nativePath == "" {
-		nativePath = layout.Native()
-	}
-	return &cli{moduleDir: moduleDir, nativePath: nativePath}
+	return &cli{moduleDir: layout.Root()}
 }
 
 func (c *cli) run(ctx context.Context, args []string) int {
+	if len(args) > 0 && args[0] == "__internal" {
+		return c.runInternal(ctx, args[1:])
+	}
 	cleanArgs, timeout, err := parseCommandArgs(args)
 	if err != nil {
 		return c.fail("usage.invalid", err.Error(), 2)
@@ -92,6 +94,18 @@ func (c *cli) run(ctx context.Context, args []string) int {
 	default:
 		return c.fail("usage.invalid", "未知命令组，使用 netproxyctl help 查看帮助", 2)
 	}
+}
+
+func (c *cli) runInternal(ctx context.Context, args []string) int {
+	if err := runNativeCommand(ctx, args); err != nil {
+		if structured, ok := errors.AsType[*resultError](err); ok {
+			writeJSON(os.Stderr, result{Schema: 1, OK: false, Code: structured.Code, Message: structured.Message, Data: structured.Data})
+		} else {
+			writeJSON(os.Stderr, result{Schema: 1, OK: false, Code: "command.failed", Message: err.Error()})
+		}
+		return 1
+	}
+	return 0
 }
 
 func defaultTimeoutFor(args []string) time.Duration {

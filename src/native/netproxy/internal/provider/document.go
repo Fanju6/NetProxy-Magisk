@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -358,6 +359,139 @@ func Inspect(document Document) []NodeSummary {
 	}
 	sort.SliceStable(summaries, func(i, j int) bool { return summaries[i].Tag < summaries[j].Tag })
 	return summaries
+}
+
+// InspectFile 流式读取 Provider 的安全摘要，不构造完整协议配置。
+// Provider 的完整类型校验由写入事务和 sing-box check 负责；列表读取只需要公开字段。
+func InspectFile(ctx context.Context, path string) ([]NodeSummary, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	summaries := make([]NodeSummary, 0)
+	err = walkFileSummaries(ctx, file, func(summary NodeSummary) bool {
+		summaries = append(summaries, summary)
+		return true
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(summaries, func(i, j int) bool { return summaries[i].Tag < summaries[j].Tag })
+	return summaries, nil
+}
+
+// FileContainsTag 检查 Provider 是否包含指定节点，不保留其他节点内容。
+func FileContainsTag(ctx context.Context, path, tag string) (bool, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer file.Close()
+
+	found := false
+	err = walkFileSummaries(ctx, file, func(summary NodeSummary) bool {
+		found = summary.Tag == tag
+		return !found
+	})
+	return found, err
+}
+
+// FileHasNodes 判断 Provider 是否至少包含一个节点。
+func FileHasNodes(ctx context.Context, path string) (bool, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer file.Close()
+
+	hasNodes := false
+	err = walkFileSummaries(ctx, file, func(NodeSummary) bool {
+		hasNodes = true
+		return false
+	})
+	return hasNodes, err
+}
+
+type summaryFields struct {
+	Type       string `json:"type"`
+	Tag        string `json:"tag"`
+	Server     string `json:"server"`
+	ServerPort uint16 `json:"server_port"`
+}
+
+func walkFileSummaries(ctx context.Context, reader io.Reader, visit func(NodeSummary) bool) error {
+	decoder := jsontext.NewDecoder(reader)
+	token, err := decoder.ReadToken()
+	if err != nil {
+		return err
+	}
+	if token.Kind() != jsontext.KindBeginObject {
+		return errors.New("provider document must be a JSON object")
+	}
+	seenSections := make(map[string]struct{}, 2)
+	seenTags := make(map[string]struct{})
+	for decoder.PeekKind() != jsontext.KindEndObject {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		nameToken, err := decoder.ReadToken()
+		if err != nil {
+			return err
+		}
+		name := nameToken.String()
+		if _, exists := seenSections[name]; exists {
+			return fmt.Errorf("duplicate provider field %q", name)
+		}
+		seenSections[name] = struct{}{}
+		if name != "outbounds" && name != "endpoints" {
+			return fmt.Errorf("unsupported provider field %q", name)
+		}
+		begin, err := decoder.ReadToken()
+		if err != nil {
+			return err
+		}
+		if begin.Kind() != jsontext.KindBeginArray {
+			return fmt.Errorf("provider field %q must be an array", name)
+		}
+		for decoder.PeekKind() != jsontext.KindEndArray {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			var fields summaryFields
+			if err := json.UnmarshalDecode(decoder, &fields); err != nil {
+				return err
+			}
+			if strings.TrimSpace(fields.Type) == "" {
+				return fmt.Errorf("%s node is missing type", name)
+			}
+			if err := validateTag(fields.Tag, seenTags); err != nil {
+				return fmt.Errorf("%s node: %w", name, err)
+			}
+			summary := NodeSummary{Tag: fields.Tag, Protocol: fields.Type}
+			if name == "outbounds" {
+				summary.Server = displayServer(fields.Server)
+				summary.Port = fields.ServerPort
+			}
+			if !visit(summary) {
+				return nil
+			}
+		}
+		if _, err := decoder.ReadToken(); err != nil {
+			return err
+		}
+	}
+	if _, err := decoder.ReadToken(); err != nil {
+		return err
+	}
+	if _, err := decoder.ReadToken(); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("provider document contains multiple JSON values")
+		}
+		return err
+	}
+	return nil
 }
 
 func displayServer(server string) string {

@@ -15,7 +15,7 @@ import (
 func TestCatalogNodeMutationsCommitPair(t *testing.T) {
 	root := t.TempDir()
 	now := time.Unix(1_700_000_000, 0)
-	result, err := ImportGroup(context.Background(), ImportOptions{
+	result, err := importTestGroup(testImportOptions{
 		Root: root, GroupID: "local-test", Name: "本地配置",
 		Input: "socks://example.com:1080#FIRST", Now: now,
 	})
@@ -82,7 +82,7 @@ func TestCatalogNodeMutationsCommitPair(t *testing.T) {
 
 func TestCatalogNodeMutationRejectsMissingTag(t *testing.T) {
 	root := t.TempDir()
-	_, err := ImportGroup(context.Background(), ImportOptions{
+	_, err := importTestGroup(testImportOptions{
 		Root: root, GroupID: "local-test", Input: "socks://example.com:1080#FIRST",
 	})
 	if err != nil {
@@ -98,7 +98,7 @@ func TestCatalogNodeMutationRejectsMissingTag(t *testing.T) {
 
 func TestCatalogAppendFileKeepsExistingNodesAndNormalizesTags(t *testing.T) {
 	root := t.TempDir()
-	if _, err := ImportGroup(context.Background(), ImportOptions{
+	if _, err := importTestGroup(testImportOptions{
 		Root: root, GroupID: "default", Name: "本地配置",
 		Input: "socks://first.example:1080#NODE\nsocks://second.example:1081#NODE_2",
 	}); err != nil {
@@ -144,7 +144,7 @@ func TestCatalogAppendFileKeepsExistingNodesAndNormalizesTags(t *testing.T) {
 
 func TestCatalogNodeMutationsSerializePerGroup(t *testing.T) {
 	root := t.TempDir()
-	if _, err := ImportGroup(context.Background(), ImportOptions{
+	if _, err := importTestGroup(testImportOptions{
 		Root: root, GroupID: "concurrent", Name: "Concurrent", Input: "socks://example.com:1080#BASE",
 	}); err != nil {
 		t.Fatalf("import group: %v", err)
@@ -195,7 +195,7 @@ func TestConcurrentNodeEditsWithSubscriptionUpdate(t *testing.T) {
 	root := t.TempDir()
 	groupID := "concurrent-update"
 	now := time.Unix(1_700_000_000, 0)
-	if _, err := ImportGroup(context.Background(), ImportOptions{
+	if _, err := importTestGroup(testImportOptions{
 		Root: root, GroupID: groupID, Name: "并发测试", Input: "socks://base.example:1080#BASE", Now: now,
 	}); err != nil {
 		t.Fatalf("import group: %v", err)

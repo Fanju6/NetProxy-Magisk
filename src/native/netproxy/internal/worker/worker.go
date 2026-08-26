@@ -72,7 +72,7 @@ type Options struct {
 	PIDFile        string
 	LogFile        string
 	ModuleConf     string
-	NativePath     string
+	ExecutablePath string
 	SingBoxPath    string
 	ServiceAddress string
 	ServiceSecret  string
@@ -704,10 +704,10 @@ func fallbackMissingNode(ctx context.Context, options Options, groupID string, l
 }
 
 func reloadService(ctx context.Context, options Options) error {
-	if strings.TrimSpace(options.NativePath) == "" {
-		return errors.New("未配置 NetProxy 原生组件路径")
+	if strings.TrimSpace(options.ExecutablePath) == "" {
+		return errors.New("未配置 netproxyctl 路径")
 	}
-	command := exec.CommandContext(ctx, options.NativePath, reloadServiceArguments(options)...)
+	command := exec.CommandContext(ctx, options.ExecutablePath, reloadServiceArguments(options)...)
 	command.Stdout = io.Discard
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
@@ -723,7 +723,7 @@ func reloadService(ctx context.Context, options Options) error {
 func reloadServiceArguments(options Options) []string {
 	moduleDir := filepath.Dir(filepath.Dir(options.Root))
 	return []string{
-		"module", "service", "reload",
+		"__internal", "module", "service", "reload",
 		"--module-dir", moduleDir,
 		"--catalog-root", options.Root,
 		"--module-config", options.ModuleConf,

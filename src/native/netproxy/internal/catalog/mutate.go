@@ -36,16 +36,6 @@ type MutationOptions struct {
 	Now           time.Time
 }
 
-// ImportOptions 描述一次新的本地分组导入。
-type ImportOptions struct {
-	Root          string
-	GroupID       string
-	Name          string
-	Input         string
-	AllowInsecure bool
-	Now           time.Time
-}
-
 // GroupOptions 描述一个 Catalog 分组的初始化配置。
 type GroupOptions struct {
 	Root           string
@@ -170,7 +160,7 @@ func validateGroupOptions(options GroupOptions) error {
 		return errors.New("Catalog 分组类型不能为空")
 	}
 	switch options.Type {
-	case "local", "file", "subscription":
+	case "local", "subscription":
 	default:
 		return fmt.Errorf("未知 Catalog 分组类型: %s", options.Type)
 	}
@@ -308,46 +298,6 @@ func EditNode(ctx context.Context, options MutationOptions) (MutationResult, err
 	}
 	result := mutationResult(options, metadata, document, false)
 	return commitMutation(ctx, options.GroupDir, document, metadata, result, options.Now)
-}
-
-// ImportGroup 创建本地分组并原子写入 Provider 与元数据。
-func ImportGroup(ctx context.Context, options ImportOptions) (MutationResult, error) {
-	if !isValidGroupID(options.GroupID) {
-		return MutationResult{}, fmt.Errorf("非法分组 ID: %s", options.GroupID)
-	}
-	if strings.TrimSpace(options.Root) == "" || strings.TrimSpace(options.Input) == "" {
-		return MutationResult{}, errors.New("Catalog 根目录和输入内容不能为空")
-	}
-	release, err := acquireCatalogMutation(options.Root, options.GroupID)
-	if err != nil {
-		return MutationResult{}, err
-	}
-	defer release()
-	if options.Now.IsZero() {
-		options.Now = time.Now()
-	}
-	document, err := convertInput(ctx, options.Input, options.AllowInsecure)
-	if err != nil {
-		return MutationResult{}, err
-	}
-	if len(document.Outbounds)+len(document.Endpoints) == 0 {
-		return MutationResult{}, errors.New("输入内容中没有可用节点")
-	}
-	name := strings.TrimSpace(options.Name)
-	if name == "" {
-		name = options.GroupID
-	}
-	metadata := NewMetadata(options.GroupID, name, "file", "", options.Now)
-	result := mutationResultFor(options.GroupID, metadata, document, true)
-	return commitMutation(ctx, filepath.Join(options.Root, options.GroupID), document, metadata, result, options.Now)
-}
-
-func convertInput(ctx context.Context, input string, allowInsecure bool) (provider.Document, error) {
-	parsed, err := convert.Input(ctx, input, allowInsecure)
-	if err != nil {
-		return provider.Document{}, err
-	}
-	return parsed.Document, nil
 }
 
 func validateMutationOptions(options MutationOptions, requireTag bool) error {
