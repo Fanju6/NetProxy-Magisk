@@ -97,6 +97,29 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          base_tag="$(git tag --list 'v*' --sort=-version:refname | head -n 1)"
+          notes_file="$RUNNER_TEMP/nightly-notes.md"
+
+          {
+            echo "同步最新代码变更，仅保留最新版本的构建产物。"
+            echo
+            echo "版本: \`${{ steps.pack.outputs.version }}\` (build ${{ steps.pack.outputs.commit_count }})"
+            echo "构建时间: ${{ env.TIMESTAMP }}"
+            echo "提交: \`${{ env.SHORT_HASH }}\`"
+            echo
+            echo "## 提交记录"
+            echo
+            if [ -n "$base_tag" ]; then
+              git log --first-parent --pretty=format:"- %s ([%h](${{ github.server_url }}/${{ github.repository }}/commit/%H))" "$base_tag..$GITHUB_SHA"
+              echo
+              echo
+              echo "完整对比: ${{ github.server_url }}/${{ github.repository }}/compare/${base_tag}...nightly"
+            else
+              git log --first-parent --pretty=format:"- %s ([%h](${{ github.server_url }}/${{ github.repository }}/commit/%H))" "$GITHUB_SHA"
+              echo
+            fi
+          } > "$notes_file"
+
           # 删除已有的 nightly 发布和 Tag
           gh release delete nightly --cleanup-tag -y || true
           
@@ -106,13 +129,8 @@ jobs:
           # 创建新的 nightly 发布并上传资产
           gh release create nightly \
             --prerelease \
-            --generate-notes \
             --title "nightly Pre-release" \
-            --notes "同步最新代码变更，仅保留最新版本的构建产物。
-
-            版本: \`${{ steps.pack.outputs.version }}\` (build ${{ steps.pack.outputs.commit_count }})
-            构建时间: ${{ env.TIMESTAMP }}
-            提交: \`${{ env.SHORT_HASH }}\`" \
+            --notes-file "$notes_file" \
             "${{ steps.pack.outputs.standard_name }}" \
             "${{ steps.pack.outputs.manager_name }}"
 
