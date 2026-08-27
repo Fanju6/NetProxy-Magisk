@@ -206,11 +206,7 @@ internal fun SingBoxNodeEditScreen(
                         obfsType = obfsObj["type"]?.jsonPrimitive?.contentOrNull ?: "none"
                         obfsPassword = obfsObj["password"]?.jsonPrimitive?.contentOrNull ?: ""
                     }
-                    val serverPortsArray = outbound["server_ports"]?.jsonArray
-                    if (serverPortsArray != null) {
-                        serverPorts = serverPortsArray.mapNotNull { it.jsonPrimitive.contentOrNull }
-                            .joinToString(",")
-                    }
+                    serverPorts = outbound["server_ports"].listableStrings().joinToString(",")
                     hopInterval = outbound["hop_interval"]?.jsonPrimitive?.contentOrNull
                         ?.removeSuffix("s") ?: ""
 
@@ -232,10 +228,9 @@ internal fun SingBoxNodeEditScreen(
                         originalTransportJson = transport
                         transportType = transport["type"]?.jsonPrimitive?.contentOrNull ?: "none"
                         path = transport["path"]?.jsonPrimitive?.contentOrNull ?: ""
-                        val hostArray = transport["host"]?.jsonArray
-                        if (hostArray != null) {
-                            host = hostArray.mapNotNull { it.jsonPrimitive.contentOrNull }
-                                .joinToString(",")
+                        val transportHosts = transport["host"].listableStrings()
+                        if (transportHosts.isNotEmpty()) {
+                            host = transportHosts.joinToString(",")
                         } else {
                             val headers = transport["headers"]?.jsonObject
                             if (headers != null) {
@@ -255,11 +250,7 @@ internal fun SingBoxNodeEditScreen(
                         serverName = tls["server_name"]?.jsonPrimitive?.contentOrNull ?: ""
                         insecure = tls["insecure"]?.jsonPrimitive?.booleanOrNull ?: false
                         disableSni = tls["disable_sni"]?.jsonPrimitive?.booleanOrNull ?: false
-                        val alpnArray = tls["alpn"]?.jsonArray
-                        if (alpnArray != null) {
-                            alpn = alpnArray.mapNotNull { it.jsonPrimitive.contentOrNull }
-                                .joinToString(",")
-                        }
+                        alpn = tls["alpn"].listableStrings().joinToString(",")
                         val utls = tls["utls"]?.jsonObject
                         if (utls != null) {
                             originalUtlsJson = utls
@@ -281,11 +272,7 @@ internal fun SingBoxNodeEditScreen(
                         if (ech != null) {
                             originalEchJson = ech
                             echEnabled = ech["enabled"]?.jsonPrimitive?.booleanOrNull ?: false
-                            val echConfigArray = ech["config"]?.jsonArray
-                            if (echConfigArray != null) {
-                                echConfig =
-                                    echConfigArray.firstOrNull()?.jsonPrimitive?.contentOrNull ?: ""
-                            }
+                            echConfig = ech["config"].listableStrings().firstOrNull() ?: ""
                             echQueryServerName =
                                 ech["query_server_name"]?.jsonPrimitive?.contentOrNull ?: ""
                         }
@@ -804,5 +791,4 @@ internal fun SingBoxNodeEditScreen(
         }
     }
 }
-
 
