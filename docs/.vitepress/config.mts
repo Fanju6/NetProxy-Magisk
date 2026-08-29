@@ -96,6 +96,7 @@ export default defineConfig({
             { text: 'ebpf.conf', link: '/config/ebpf' },
             { text: 'sing-box 配置与运行时', link: '/config/singbox' },
             { text: '路由与 DNS', link: '/config/routing' },
+            { text: '策略分组配置', link: '/config/policy-groups' },
             { text: 'CLI', link: '/guide/cli' }
           ]
         }

@@ -1,0 +1,391 @@
+# 策略分组配置教程
+
+NetProxy 默认按节点来源生成 `Auto/<分组>` 和 `Select/<分组>`。如果希望进一步按地区整理节点，并为 AI、流媒体或社交应用单独选择出口，可以在 sing-box 配置中增加策略分组。
+
+本教程从零建立一套最小配置，再说明如何继续扩展。完成后可以得到这样的流量路径：
+
+```text
+本地节点与订阅
+      ↓
+Catalog Provider
+      ↓
+地区分组
+      ↓
+业务分组
+      ↓
+路由规则
+```
+
+策略分组只引用 NetProxy 已有的 Provider，不会复制节点，也不会创建新的 Catalog 分组。
+
+## 先理解三个概念
+
+### 地区分组
+
+地区分组从全部 Provider 中读取节点，再按节点名称筛选。例如：
+
+```json
+{
+  "type": "selector",
+  "tag": "Hong Kong",
+  "use_all_providers": true,
+  "include": "(?i)(🇭🇰|香港|港区|港區|hong[ _-]?kong|(^|[^a-z])hk([^a-z]|$))"
+}
+```
+
+- `use_all_providers`：读取 NetProxy 生成的全部 Provider。
+- `include`：只收入名称匹配该正则的节点。
+- `tag`：分组名称，也是其他配置引用它时使用的唯一标识。
+
+### 业务分组
+
+业务分组不直接匹配节点，而是让用户从 `Proxy`、地区分组、全部节点或 `direct` 中选择。例如：
+
+```json
+{
+  "type": "selector",
+  "tag": "Netflix",
+  "outbounds": [
+    "Proxy",
+    "Hong Kong",
+    "Japan",
+    "United States",
+    "All Proxies",
+    "direct"
+  ],
+  "default": "Proxy",
+  "interrupt_exist_connections": true
+}
+```
+
+### 路由规则
+
+路由规则负责判断流量属于哪个业务，再把连接交给对应的业务分组：
+
+```json
+{
+  "rule_set": [
+    "netflix",
+    "netflix-ip"
+  ],
+  "action": "route",
+  "outbound": "Netflix"
+}
+```
+
+`outbound` 必须与业务分组的 `tag` 完全一致。
+
+## 第一步：确定需要的分组
+
+初次使用不建议一次建立几十个分组。先选择两个或三个常用地区，再增加一两个确实需要单独控制的业务。
+
+本教程使用以下结构：
+
+| 类型 | 分组 |
+|---|---|
+| 地区 | Hong Kong、Japan、United States |
+| 节点集合 | All Proxies |
+| 业务 | AI、Netflix |
+| 兜底 | Final |
+
+其中 `Proxy` 是 NetProxy 已有的顶层选择器，不需要重复定义。
+
+## 第二步：创建策略分组文件
+
+在手机或电脑的文本编辑器中创建 `05_policy_groups.json`，填入以下完整内容：
+
+```json
+{
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "Hong Kong",
+      "use_all_providers": true,
+      "include": "(?i)(🇭🇰|香港|港区|港區|hong[ _-]?kong|(^|[^a-z])hk([^a-z]|$))",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "selector",
+      "tag": "Japan",
+      "use_all_providers": true,
+      "include": "(?i)(🇯🇵|日本|东京|東京|大阪|japan|(^|[^a-z])jp([^a-z]|$))",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "selector",
+      "tag": "United States",
+      "use_all_providers": true,
+      "include": "(?i)(🇺🇸|美国|美國|洛杉矶|洛杉磯|西雅图|西雅圖|达拉斯|達拉斯|硅谷|矽谷|united[ _-]?states|america|(^|[^a-z])us([^a-z]|$))",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "selector",
+      "tag": "All Proxies",
+      "use_all_providers": true,
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "selector",
+      "tag": "AI",
+      "outbounds": [
+        "Proxy",
+        "United States",
+        "Japan",
+        "Hong Kong",
+        "All Proxies",
+        "direct"
+      ],
+      "default": "Proxy",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "selector",
+      "tag": "Netflix",
+      "outbounds": [
+        "Proxy",
+        "United States",
+        "Japan",
+        "Hong Kong",
+        "All Proxies",
+        "direct"
+      ],
+      "default": "Proxy",
+      "interrupt_exist_connections": true
+    },
+    {
+      "type": "selector",
+      "tag": "Final",
+      "outbounds": [
+        "Proxy",
+        "United States",
+        "Japan",
+        "Hong Kong",
+        "All Proxies",
+        "direct"
+      ],
+      "default": "Proxy",
+      "interrupt_exist_connections": true
+    }
+  ]
+}
+```
+
+这里没有建立跨全部 Provider 的 `urltest`。`All Proxies` 只是手动选择器，不会额外对全部节点执行周期测速；NetProxy 原有的 `Auto/<分组>` 仍照常工作。
+
+将文件保存到手机：
+
+```text
+/sdcard/Download/05_policy_groups.json
+```
+
+## 第三步：备份当前路由
+
+修改路由前先备份：
+
+```sh
+su -c 'mkdir -p /sdcard/Download/NetProxy-backup && cp /data/adb/modules/netproxy/config/singbox/confdir/06_route.json /sdcard/Download/NetProxy-backup/06_route.json'
+```
+
+如果已经自定义过 `06_route.json`，后续需要在现有内容上添加规则，不要直接使用其他人的完整路由文件覆盖它。
+
+## 第四步：加入策略分组
+
+通过 NetProxy 的配置事务应用新文件：
+
+```sh
+su -c '/data/adb/modules/netproxy/netproxyctl config apply singbox/confdir/05_policy_groups.json /sdcard/Download/05_policy_groups.json'
+```
+
+`config apply` 会先组合现有静态配置、Catalog Provider 和运行时出站进行完整检查。检查通过后才会原子写入文件；核心正在运行时会自动重新加载。
+
+应用成功后，`05_policy_groups.json` 会出现在 Android 管理器的“内核设置”页面中，后续可以直接使用配置编辑器修改。
+
+## 第五步：添加业务规则集
+
+在 Android 管理器中打开：
+
+```text
+设置 → 内核设置 → 06_route.json
+```
+
+找到 `route.rule_set` 数组，在数组中增加下面两项：
+
+```json
+{
+  "type": "remote",
+  "tag": [
+    "category-ai-!cn",
+    "netflix"
+  ],
+  "format": "binary",
+  "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/{tag}.srs",
+  "update_interval": "24h",
+  "path": "./rules/remote/{tag}.srs"
+},
+{
+  "type": "remote",
+  "tag": "netflix-ip",
+  "format": "binary",
+  "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/netflix.srs",
+  "update_interval": "24h",
+  "path": "./rules/remote/netflix-ip.srs"
+}
+```
+
+如果 `category-ai-!cn`、`netflix` 或 `netflix-ip` 已经存在，就不要重复添加相同 tag。
+
+## 第六步：把流量送入业务分组
+
+继续在 `route.rules` 数组中增加：
+
+```json
+{
+  "rule_set": "category-ai-!cn",
+  "action": "route",
+  "outbound": "AI"
+},
+{
+  "rule_set": [
+    "netflix",
+    "netflix-ip"
+  ],
+  "action": "route",
+  "outbound": "Netflix"
+}
+```
+
+把业务规则放在 `geolocation-!cn` 等宽泛规则之前，否则流量可能先被前面的规则接走。
+
+最后把 `route.final` 修改为：
+
+```json
+"final": "Final"
+```
+
+保存时，Android 管理器会先校验整个 sing-box 配置。校验失败时不要强行覆盖，根据错误路径检查 JSON 逗号、重复 tag 和不存在的出站名称。
+
+## 第七步：检查并使用
+
+执行一次完整检查：
+
+```sh
+su -c '/data/adb/modules/netproxy/netproxyctl config check'
+```
+
+如果核心没有自动重新加载，可以手动重启：
+
+```sh
+su -c '/data/adb/modules/netproxy/netproxyctl service restart'
+```
+
+策略组可在以下面板中切换：
+
+- zashboard：`http://127.0.0.1:9999/ui/`
+- Service API Dashboard：`http://127.0.0.1:9090/dashboard/`
+- 默认密钥：`singbox`
+
+例如将 Netflix 切换为 United States，只会改变命中 Netflix 规则的连接。`interrupt_exist_connections` 会在切换后关闭该组已有连接，使新选择尽快生效。
+
+::: info Android 管理器中的节点页
+节点页展示的是 Catalog 分组和节点，不是任意 sing-box selector。自定义地区组与业务组应在 Dashboard 中管理，这是两类不同的数据。
+:::
+
+## 继续增加地区
+
+复制一个现有地区 selector，修改 `tag` 和 `include`。下面是常用匹配表达式：
+
+| 地区 | `tag` | `include` 关键词 |
+|---|---|---|
+| 台湾 | `Taiwan` | `🇹🇼`、台湾、臺灣、台北、Taiwan、TW |
+| 新加坡 | `Singapore` | `🇸🇬`、新加坡、狮城、Singapore、SG |
+| 香港 | `Hong Kong` | `🇭🇰`、香港、Hong Kong、HK |
+| 日本 | `Japan` | `🇯🇵`、日本、东京、大阪、Japan、JP |
+| 美国 | `United States` | `🇺🇸`、美国、洛杉矶、西雅图、United States、US |
+
+新增地区后，还要把它加入需要使用该地区的业务分组 `outbounds` 数组。
+
+正则应尽量匹配完整地区名、旗帜或有边界的缩写。不要只匹配“美”“新”等单个汉字，否则容易收入无关节点。
+
+## 继续增加业务
+
+增加一个业务通常需要三步：
+
+1. 在 `05_policy_groups.json` 中增加业务 selector。
+2. 在 `route.rule_set` 中声明对应规则资源。
+3. 在 `route.rules` 中把规则送到该 selector。
+
+常见规则 tag：
+
+| 业务 | Geosite tag | GeoIP tag | GeoIP 远程文件 |
+|---|---|---|---|
+| Google | `google` | `google-ip` | `google.srs` |
+| Telegram | `telegram` | `telegram-ip` | `telegram.srs` |
+| Twitter | `twitter` | `twitter-ip` | `twitter.srs` |
+| Netflix | `netflix` | `netflix-ip` | `netflix.srs` |
+| YouTube | `youtube` | 不需要 | - |
+| GitHub | `github` | 不需要 | - |
+| Spotify | `spotify` | 不需要 | - |
+| Bilibili | `bilibili` | 不需要 | - |
+
+Geosite 的通用下载模板：
+
+```text
+https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/{tag}.srs
+```
+
+GeoIP 的配置 tag 通常带 `-ip`，远程文件名则不带。例如：
+
+```json
+{
+  "type": "remote",
+  "tag": "google-ip",
+  "format": "binary",
+  "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/google.srs",
+  "update_interval": "24h",
+  "path": "./rules/remote/google-ip.srs"
+}
+```
+
+本地缓存文件名可以自定义，但 `route.rule_set` 中声明的 tag 和 `route.rules` 中引用的 tag 必须一致。
+
+## 恢复默认配置
+
+停止服务，删除附加分组文件并恢复备份：
+
+```sh
+su -c '/data/adb/modules/netproxy/netproxyctl service stop'
+su -c 'rm -f /data/adb/modules/netproxy/config/singbox/confdir/05_policy_groups.json'
+su -c '/data/adb/modules/netproxy/netproxyctl config apply singbox/confdir/06_route.json /sdcard/Download/NetProxy-backup/06_route.json'
+su -c '/data/adb/modules/netproxy/netproxyctl service start'
+```
+
+没有备份时，可以从同版本模块安装包中取出默认 `config/singbox/confdir/06_route.json`，再通过 `config apply` 恢复。不要覆盖整个 `config/singbox/`。
+
+## 常见问题
+
+### 地区组为空
+
+节点 tag 没有命中 `include`。先在节点页查看实际名称，再调整正则。
+
+### 配置检查提示出站不存在
+
+检查 `route.rules[].outbound` 是否与 `05_policy_groups.json` 中的 `tag` 完全一致，并确认策略分组文件已经成功应用。
+
+### 配置检查提示规则集重复
+
+默认路由可能已经声明了同名 tag。保留原定义，不要再添加第二份。
+
+### 首次启动提示规则集下载失败
+
+新增远程规则需要先下载 SRS 文件。检查网络、核心日志和 `rule-set-download` HTTP Client。
+
+### 路由结果与预期不同
+
+规则按顺序匹配。Global、Direct、本地 `proxy/direct/block` 和广告规则会优先生效；更具体的业务规则应放在宽泛的国外或国内规则之前。
+
+## 相关资料
+
+- [Selector 出站](https://sing-box.sagernet.org/configuration/outbound/selector/)
+- [路由规则](https://sing-box.sagernet.org/zh/configuration/route/rule/)
+- [规则动作](https://sing-box.sagernet.org/zh/configuration/route/rule_action/)
+- [规则集](https://sing-box.sagernet.org/configuration/rule-set/)
