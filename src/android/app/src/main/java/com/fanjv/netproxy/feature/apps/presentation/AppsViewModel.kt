@@ -237,9 +237,9 @@ internal class AppsViewModel(
                 .toList()
             val comparator = if (snapshot.appSelectedFirst) {
                 compareByDescending<AppInfoModel> { it.isProxied }
-                    .thenBy { it.label.lowercase() }
+                    .then(appLabelComparator)
             } else {
-                compareBy { it.label.lowercase() }
+                appLabelComparator
             }
             apps = apps.sortedWith(comparator)
             if (snapshot.appReverseSort) apps = apps.reversed()
@@ -307,4 +307,9 @@ internal class AppsViewModel(
         if (separator <= 0 || separator == value.lastIndex) return null
         return value.substring(separator + 1) to value.substring(0, separator)
     }
+}
+
+private val appLabelComparator = Comparator<AppInfoModel> { left, right ->
+    val labelComparison = left.label.compareTo(right.label, ignoreCase = true)
+    if (labelComparison != 0) labelComparison else left.id.compareTo(right.id)
 }
