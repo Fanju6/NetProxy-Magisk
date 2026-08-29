@@ -25,7 +25,6 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.NetworkPing
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.R
@@ -107,9 +107,9 @@ internal fun SubscriptionsScreen(
     val backdrop = rememberBlurBackdrop()
     val barColor = if (backdrop != null) Color.Transparent else colorScheme.surface
 
-    DisposableEffect(isActive) {
+    LifecycleResumeEffect(isActive) {
         viewModel.setVisible(isActive)
-        onDispose { if (isActive) viewModel.setVisible(false) }
+        onPauseOrDispose { if (isActive) viewModel.setVisible(false) }
     }
 
     val noticeText = if (state.error !is UiText.Empty) state.error else state.notice

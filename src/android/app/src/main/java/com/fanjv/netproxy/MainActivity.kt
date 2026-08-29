@@ -275,7 +275,7 @@ internal fun MainScreen(
                         }
                     ),
                 state = pagerState,
-                beyondViewportPageCount = 3,
+                beyondViewportPageCount = 1,
                 userScrollEnabled = destinations.size > 1
             ) { pageIndex ->
                 when (destinations[pageIndex]) {

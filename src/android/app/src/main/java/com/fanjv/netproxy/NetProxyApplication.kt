@@ -5,6 +5,7 @@ import android.content.pm.ApplicationInfo
 import android.os.Build
 import com.fanjv.netproxy.core.di.AppContainer
 import com.fanjv.netproxy.core.shell.ShellUtil
+import com.fanjv.netproxy.feature.apps.data.AppIconCache
 import org.lsposed.hiddenapibypass.HiddenApiBypass
 
 class NetProxyApplication : Application() {
@@ -35,5 +36,15 @@ class NetProxyApplication : Application() {
             val enablePredictiveBack = prefs.getBoolean("enable_predictive_back", false)
             setEnableOnBackInvokedCallback(applicationInfo, enablePredictiveBack)
         }
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        AppIconCache.trimMemory(level)
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        AppIconCache.clear()
     }
 }

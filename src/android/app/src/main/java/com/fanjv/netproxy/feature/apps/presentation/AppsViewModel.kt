@@ -39,6 +39,7 @@ internal class AppsViewModel(
     private var modelJob: Job? = null
     private var searchJob: Job? = null
     private val policyMutationMutex = Mutex()
+    private val packageLookupDispatcher = Dispatchers.IO.limitedParallelism(4)
     private var loaded = false
 
     fun load(force: Boolean = false) {
@@ -253,7 +254,7 @@ internal class AppsViewModel(
     private suspend fun resolveLabels(packageIds: List<Pair<String, String>>) {
         coroutineScope {
             packageIds.distinct().map { (packageName, userId) ->
-                async(Dispatchers.IO) {
+                async(packageLookupDispatcher) {
                     val key = "$userId:$packageName"
                     if (labels.containsKey(key)) return@async
                     val label = packageLabels.computeIfAbsent(packageName) {

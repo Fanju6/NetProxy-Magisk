@@ -1,46 +1,38 @@
 package com.fanjv.netproxy.feature.apps.data
 
+import android.content.ComponentCallbacks2
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.drawable.BitmapDrawable
-import android.graphics.drawable.Drawable
 import android.os.UserHandle
 import androidx.collection.LruCache
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.core.graphics.createBitmap
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.asCoroutineDispatcher
+import androidx.core.graphics.drawable.toBitmap
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.util.concurrent.Executors
 
-/** Loads and caches application icons without blocking the Compose thread. */
+/** 按界面尺寸加载应用图标，避免缓存 Launcher 使用的原始大图。 */
 object AppIconCache {
-    private val lruCache: LruCache<String, ImageBitmap>
-    private val dispatcher: CoroutineDispatcher
-
-    init {
-        val maxMemory = Runtime.getRuntime().maxMemory() / 1024
-        val availableCacheSize = (maxMemory / 8).toInt()
-        lruCache = object : LruCache<String, ImageBitmap>(availableCacheSize) {
-            override fun sizeOf(key: String, value: ImageBitmap): Int {
-                return (value.width * value.height * 4) / 1024
-            }
+    private const val MAX_CACHE_KB = 8 * 1024
+    private val dispatcher = Dispatchers.IO.limitedParallelism(2)
+    private val lruCache = object : LruCache<String, ImageBitmap>(MAX_CACHE_KB) {
+        override fun sizeOf(key: String, value: ImageBitmap): Int {
+            val bytes = value.width.toLong() * value.height * 4
+            return ((bytes + 1023) / 1024).coerceAtLeast(1).toInt()
         }
-
-        val threadCount = (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 4)
-        dispatcher = Executors.newFixedThreadPool(threadCount).asCoroutineDispatcher()
     }
 
-    private fun cacheKey(userId: String, packageName: String) = "$userId:$packageName"
+    private fun cacheKey(userId: String, packageName: String, sizePx: Int) =
+        "$userId:$packageName@$sizePx"
 
     suspend fun loadIcon(
         context: Context,
         packageName: String,
         userId: String,
+        sizePx: Int,
     ): ImageBitmap? {
-        val key = cacheKey(userId, packageName)
+        val targetSize = sizePx.coerceAtLeast(1)
+        val key = cacheKey(userId, packageName, targetSize)
         lruCache[key]?.let { return it }
 
         return withContext(dispatcher) {
@@ -58,7 +50,9 @@ object AppIconCache {
                         )
                     }
                     ?: baseIcon
-                val imageBitmap = drawable.toBitmap().asImageBitmap()
+                val imageBitmap = drawable
+                    .toBitmap(targetSize, targetSize, Bitmap.Config.ARGB_8888)
+                    .asImageBitmap()
                 lruCache.put(key, imageBitmap)
                 imageBitmap
             } catch (_: Exception) {
@@ -67,17 +61,9 @@ object AppIconCache {
         }
     }
 
-    private fun Drawable.toBitmap(): Bitmap {
-        if (this is BitmapDrawable && bitmap != null) return bitmap
-
-        val bitmap = if (intrinsicWidth <= 0 || intrinsicHeight <= 0) {
-            createBitmap(1, 1)
-        } else {
-            createBitmap(intrinsicWidth, intrinsicHeight)
-        }
-        val canvas = Canvas(bitmap)
-        setBounds(0, 0, canvas.width, canvas.height)
-        draw(canvas)
-        return bitmap
+    fun trimMemory(level: Int) {
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) lruCache.evictAll()
     }
+
+    fun clear() = lruCache.evictAll()
 }

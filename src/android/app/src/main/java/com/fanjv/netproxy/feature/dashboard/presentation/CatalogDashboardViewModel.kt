@@ -63,6 +63,7 @@ internal class CatalogDashboardViewModel(
     private val _state = MutableStateFlow(CatalogDashboardUiState())
     val state: StateFlow<CatalogDashboardUiState> = _state.asStateFlow()
     private var refreshJob: Job? = null
+    private var uptimeJob: Job? = null
     private var visible = false
     private var serviceTransitionRevision = 0L
     private val totalMemoryBytes = environment.totalMemoryBytes
@@ -82,18 +83,6 @@ internal class CatalogDashboardViewModel(
             }
             if (availability.moduleInstalled && visible) startPolling()
         }
-        viewModelScope.launch {
-            while (isActive) {
-                delay(1000)
-                _state.update { current ->
-                    if (current.readyAt <= 0 || current.serviceState != "ready") current
-                    else current.copy(
-                        uptimeSeconds = (System.currentTimeMillis() / 1000 - current.readyAt)
-                            .coerceAtLeast(0)
-                    )
-                }
-            }
-        }
     }
 
     fun refresh() {
@@ -104,11 +93,14 @@ internal class CatalogDashboardViewModel(
 
     fun setVisible(visible: Boolean) {
         this.visible = visible
-        if (visible && _state.value.moduleInstalled) {
-            startPolling()
+        if (visible) {
+            startUptimeTicker()
+            if (_state.value.moduleInstalled) startPolling()
         } else {
             refreshJob?.cancel()
             refreshJob = null
+            uptimeJob?.cancel()
+            uptimeJob = null
         }
     }
 
@@ -154,6 +146,22 @@ internal class CatalogDashboardViewModel(
             while (isActive) {
                 delay(5000)
                 refreshSnapshot()
+            }
+        }
+    }
+
+    private fun startUptimeTicker() {
+        uptimeJob?.cancel()
+        uptimeJob = viewModelScope.launch {
+            while (isActive) {
+                _state.update { current ->
+                    if (current.readyAt <= 0 || current.serviceState != "ready") current
+                    else current.copy(
+                        uptimeSeconds = (System.currentTimeMillis() / 1000 - current.readyAt)
+                            .coerceAtLeast(0)
+                    )
+                }
+                delay(1000)
             }
         }
     }

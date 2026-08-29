@@ -96,10 +96,13 @@ fun AppIcon(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    var icon by remember(packageName, userId) { mutableStateOf<ImageBitmap?>(null) }
+    val iconSizePx = with(LocalDensity.current) { 40.dp.roundToPx() }
+    var icon by remember(packageName, userId, iconSizePx) {
+        mutableStateOf<ImageBitmap?>(null)
+    }
 
-    LaunchedEffect(packageName, userId) {
-        icon = AppIconCache.loadIcon(context, packageName, userId)
+    LaunchedEffect(packageName, userId, iconSizePx) {
+        icon = AppIconCache.loadIcon(context, packageName, userId, iconSizePx)
     }
 
     Box(
