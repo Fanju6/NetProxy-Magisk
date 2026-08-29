@@ -2,12 +2,17 @@
   "name": "netproxy-docs",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "vitepress dev --host",
-    "build": "vitepress build",
+    "check:content": "node scripts/check-content.mjs",
+    "test": "vitest run",
+    "check": "npm run check:content && npm test",
+    "build": "npm run check && vitepress build",
     "preview": "vitepress preview"
   },
   "devDependencies": {
-    "vitepress": "^2.0.0-alpha.19"
+    "vitepress": "^2.0.0-alpha.19",
+    "vitest": "^3.2.4"
   }
 }

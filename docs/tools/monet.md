@@ -1,11 +1,14 @@
 ---
-title: 莫奈调色配置查看器
+title: 莫奈调色器
 aside: false
+pageClass: tool-page
 ---
 
-# N.svg 设计查看器
+# 莫奈调色器
 
-这是一个交互式的网页配置设计查看器，用于配置、调色、预览 NetProxy 的 `N.svg` 图标。支持基于 Android 12+ Monet (Material You) 引擎的种子色彩自动推导，也可以手动微调各项线条属性和渐变，并快速导出为 SVG 源码或 Android Vector Drawable (XML)。
+选择种子色生成 NetProxy 标志配色，也可以逐项调整线条、渐变、线宽、透明度和端点。完成后可复制 SVG 或 Android Vector XML，并直接下载 SVG 文件。
+
+所有处理均在当前浏览器页面中完成。
 
 <ClientOnly>
   <MonetEditor />

@@ -1,0 +1,132 @@
+:root {
+  --vp-c-brand-1: #007f6d;
+  --vp-c-brand-2: #006b5c;
+  --vp-c-brand-3: #00584c;
+  --vp-c-brand-soft: rgba(0, 127, 109, 0.14);
+  --vp-button-brand-bg: #007f6d;
+  --vp-button-brand-hover-bg: #006b5c;
+  --vp-button-brand-active-bg: #00584c;
+  --vp-home-hero-name-color: #006f60;
+  --vp-layout-max-width: 1480px;
+  --np-border: color-mix(in srgb, var(--vp-c-divider) 78%, transparent);
+  --np-surface: color-mix(in srgb, var(--vp-c-bg-soft) 72%, var(--vp-c-bg));
+}
+
+.dark {
+  --vp-c-brand-1: #55d6b7;
+  --vp-c-brand-2: #79e3c9;
+  --vp-c-brand-3: #a0ecd8;
+  --vp-c-brand-soft: rgba(85, 214, 183, 0.16);
+  --vp-home-hero-name-color: #65ddbf;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+.VPNavBarTitle .logo {
+  border-radius: 4px;
+}
+
+.VPHomeHero .image-bg {
+  display: none;
+}
+
+.VPHomeHero .image-container {
+  transform: none;
+}
+
+.VPHomeHero .image-src {
+  max-width: 250px;
+  max-height: 250px;
+}
+
+.VPHomeHero .tagline {
+  max-width: 640px;
+}
+
+.VPFeature,
+.vp-doc table,
+.vp-doc div[class*='language-'],
+.vp-doc .custom-block {
+  border-radius: 8px;
+}
+
+.VPFeature {
+  border: 1px solid var(--np-border);
+  background: var(--np-surface);
+}
+
+.vp-doc h1 {
+  letter-spacing: 0;
+  line-height: 1.18;
+}
+
+.vp-doc h2 {
+  margin-top: 40px;
+  border-top: 0;
+  padding-top: 0;
+}
+
+.vp-doc h3 {
+  margin-top: 28px;
+}
+
+.vp-doc table {
+  display: table;
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--np-border);
+}
+
+.vp-doc th {
+  background: var(--vp-c-bg-soft);
+}
+
+.vp-doc img:not(.VPImage) {
+  border: 1px solid var(--np-border);
+  border-radius: 8px;
+}
+
+.home-screenshot {
+  display: block;
+  width: min(100%, 860px);
+  margin: 48px auto 0;
+}
+
+.tool-page .container,
+.tool-page .content,
+.tool-page .content-container {
+  max-width: none !important;
+}
+
+@media (max-width: 640px) {
+  .VPHomeHero .image-src {
+    max-width: 170px;
+    max-height: 170px;
+  }
+
+  .vp-doc h2 {
+    margin-top: 32px;
+  }
+
+  .vp-doc table {
+    display: block;
+    overflow-x: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

@@ -1,52 +1,39 @@
 # Android 管理器
 
-NetProxy Android 管理器是 8.0 的原生图形化入口，源码位于仓库的 [`src/android`](https://github.com/Fanju6/NetProxy-Magisk/tree/main/src/android)。普通用户推荐从 [Google Play](https://play.google.com/store/apps/details?id=com.fanjv.netproxy) 安装和更新；含管理器模块包为没有 Google Play 的设备提供备用安装方式。
+Android 管理器是 NetProxy 的日常图形化入口。推荐从 [Google Play](https://play.google.com/store/apps/details?id=com.fanjv.netproxy) 安装和更新；含管理器模块包为无法使用 Google Play 的设备提供备用 APK。
 
-## 管理器负责什么
+管理器需要兼容的 NetProxy 模块与 Root 权限，不能脱离模块单独提供代理能力。
 
-- 仪表盘：服务状态、运行时间、流量、CPU、内存、当前分组和节点。
-- 节点：本地节点与订阅节点的浏览、选择、测速、编辑、导出和删除。
-- 订阅：添加、编辑、更新、流量信息、更新周期和历史记录。
-- 代理设置：出站模式、DNS 劫持、IPv6、分应用代理和共享网络。
-- 内核设置：编辑和校验 sing-box 静态配置，查看运行时配置。
-- 日志：查看 service.log、sing-box.log，导出脱敏诊断包。
-- 快捷设置磁贴：控制服务启动和停止。
+## 页面功能
 
-管理器不会直接读取 `/data/adb`、Catalog、PID 或 Shell 文本来推断业务状态。数据流固定为：
+| 页面 | 主要功能 |
+|---|---|
+| 仪表盘 | 服务状态、实际出站模式、活动分组、节点、流量和运行资源 |
+| 节点 | 分组浏览、选择、测速、添加、导入、编辑、导出和删除 |
+| 订阅 | 添加、编辑、更新、筛选、流量信息、周期与更新历史 |
+| 代理设置 | eBPF 接管、DNS、IPv6、共享网络、分应用与 Wi-Fi 策略 |
+| 内核设置 | 编辑并校验 sing-box 静态配置，查看只读运行时配置 |
+| 日志 | 查看结构化模块日志和核心日志，导出脱敏诊断包 |
 
-```text
-Compose -> ViewModel -> Repository -> NetProxyCtlClient -> netproxyctl
-```
+快捷设置磁贴可以控制服务。服务启停、配置和节点操作最终都通过模块的 `netproxyctl` 完成，页面不会直接读取模块文件、PID 或 Shell 文本推断状态。
 
-持久节点和订阅即使在服务停止时也能显示；流量、实际模式、运行时选中节点和连接等动态数据在服务 ready 后由 sing-box API 补充。
+## 状态边界
 
-## 运行要求
+- 节点、订阅和用户配置是持久数据，服务停止时仍可管理。
+- 当前实际节点、连接、流量和核心模式属于运行数据，核心运行后才完整。
+- 运行时配置由模块生成，管理器只读展示；应修改对应静态配置或设置，而不是编辑运行时文件。
 
-- Android 12 或更高版本
-- `arm64-v8a`
-- Magisk、KernelSU 或 APatch Root 环境
-- 已安装兼容的 NetProxy 8.0 模块
+## 多用户应用
 
-管理器不包含 sing-box 核心，不能脱离模块单独工作。
+分应用页面按 Android 用户分别列出应用。相同包名在主用户、应用分身或工作资料中是不同条目，保存格式为 `<用户ID>:<包名>`。修改后重启核心，模块会按当前安装状态重新解析 UID。
 
 ## 本地构建
 
-准备 Android SDK 37 和 JDK 21：
+仓库开发者可使用 JDK 21 和项目要求的 Android SDK 构建：
 
 ```bash
 cd src/android
 ./gradlew testDebugUnitTest lintDebug assembleDebug
 ```
 
-Windows PowerShell：
-
-```powershell
-cd src/android
-.\gradlew.bat testDebugUnitTest lintDebug assembleDebug
-```
-
-APK 位于 `app/build/outputs/apk/debug/`。本地构建不会覆盖模块内独立维护的 `src/module/NetProxy.apk`。
-
-## 编辑器与第三方源码
-
-内核设置使用内置 sing-box Schema、补全和校验能力；编辑器可以直接处理 reF1nd sing-box 配置字段。`third_party/scripta` 是固定源码快照，来源、许可证和 NetProxy 扩展说明见 [`third_party/scripta/NETPROXY.md`](https://github.com/Fanju6/NetProxy-Magisk/blob/main/src/android/third_party/scripta/NETPROXY.md)。
+本地构建不会覆盖模块内独立维护的 `src/module/NetProxy.apk`。

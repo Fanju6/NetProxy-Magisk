@@ -1,6 +1,6 @@
 # sing-box 配置
 
-NetProxy 8.0 的 sing-box 配置位于：
+NetProxy 的 sing-box 配置位于：
 
 ```text
 /data/adb/modules/netproxy/config/singbox/
@@ -26,7 +26,7 @@ runtime/           # 启动时生成的运行时配置
 `confdir/` 按职责保存 sing-box JSON 片段：
 
 - `01_log.json`：日志设置。
-- `02_experimental.json`：Clash API、缓存和外部 UI。
+- `02_experimental.json`：缓存、observability、Clash API 和外部 UI。
 - `03_dns.json`：DNS 服务器与 DNS 路由。
 - `04_inbounds.json`：用户自定义入站。
 - `06_route.json`：路由规则、规则集和出站选择。
@@ -59,6 +59,21 @@ runtime/           # 启动时生成的运行时配置
 - `runtime/ebpf.json`
 
 这些文件可以帮助排障，但会随 Catalog、选择状态和 eBPF 设置重新生成，不应直接编辑。
+
+## 临时运行状态
+
+短生命周期状态位于内存文件系统：
+
+```text
+/dev/netproxy/
+├── service.json       # 当前启动周期的服务状态
+├── worker.pid         # 后台 Worker PID
+├── subscriptions/     # 正在执行的订阅进度与取消标记
+├── delay/             # 离线测速临时会话
+└── wifi_state         # 最近一次 Wi-Fi 策略结果
+```
+
+这些文件在重启后可重新建立，不属于 sing-box 配置，也不会显示在内核配置编辑器中。`service.json` 只表示当前启动周期；连接、流量和实际节点仍以运行中的 API 为准。
 
 ## API 与 Dashboard
 

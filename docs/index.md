@@ -3,33 +3,35 @@ layout: home
 
 hero:
   name: NetProxy
-  text: Android 8.0 sing-box 透明代理模块
-  tagline: 以 reF1nd sing-box 为核心，使用 eBPF 接管本机与共享网络流量，统一管理节点、订阅、配置和运行状态。
+  text: Android sing-box 透明代理模块
+  tagline: 使用 eBPF 接管本机与共享网络流量，在一个模块中管理节点、订阅、分应用策略和运行状态。
   image:
     src: /N.svg
-    alt: NetProxy Logo
+    alt: NetProxy 标志
   actions:
     - theme: brand
+      text: 安装
+      link: /guide/installation
+    - theme: alt
       text: 快速开始
       link: /guide/quick-start
     - theme: alt
-      text: 安装与升级
-      link: /guide/installation
-    - theme: alt
-      text: GitHub
-      link: https://github.com/Fanju6/NetProxy-Magisk
+      text: 排查问题
+      link: /guide/faq
 
 features:
-  - title: sing-box 核心
-    details: 8.0 以 reF1nd sing-box 为核心，配置、运行时和控制接口都围绕 sing-box 组织。
-  - title: Android 管理器
-    details: 原生 Android 管理器负责仪表盘、节点、订阅、分应用代理、日志和常用配置编辑。
-  - title: CLI + 双 API
-    details: netproxyctl、Service API 与 Clash API 分工协作，分别覆盖模块管理、核心状态和第三方面板。
   - title: eBPF 透明代理
-    details: 通过 cgroup 与 TC eBPF 接管本机及共享网络流量，不依赖防火墙重定向规则。
+    details: 接管本机应用与热点、LAN 等共享网络流量，支持 TCP、UDP、IPv4 和 IPv6。
   - title: 节点与订阅
-    details: 支持单链接、文件和订阅三种导入方式，统一转为 sing-box 节点配置。
-  - title: 测试版文档
-    details: 文档覆盖 8.0 安装、Catalog、Provider、eBPF、配置参考和常见问题；V7 资料单独保留为历史迁移指南。
+    details: 管理本地节点和订阅，支持导入、筛选、自动更新、测速、编辑、导出与更新历史。
+  - title: 分应用代理
+    details: 按 Android 用户分别配置应用黑白名单，兼容多用户、应用分身和工作资料。
+  - title: Wi-Fi 自动策略
+    details: 结合 SSID 与真实出口判断，在 Wi-Fi、移动数据和双连接场景下自动评估出站模式。
+  - title: 多种管理入口
+    details: 使用 Android 管理器完成日常操作，也可通过终端 WebUI、CLI 和 sing-box 面板管理。
+  - title: 可审查的配置
+    details: 常用选项可视化，高级配置保留完整文件入口；检查失败不会覆盖上一份有效配置。
 ---
+
+<img class="home-screenshot" src="/Screenshot.jpg" alt="NetProxy Android 管理器界面" />

@@ -55,6 +55,8 @@ PROXY_ON_CELLULAR=1
 
 Wi-Fi 自动策略只改变运行时实际模式，不覆盖 `OUTBOUND_MODE` 保存的基础模式。Worker 会检查实际默认路由，避免 Wi-Fi 仍显示 connected 但流量已经走移动数据时误判。
 
+完整触发规则与排查方法见 [Wi-Fi 自动策略](/guide/wifi-policy)。
+
 ## 修改与检查
 
 ```sh
@@ -62,4 +64,4 @@ su -c '/data/adb/modules/netproxy/netproxyctl config check'
 su -c '/data/adb/modules/netproxy/netproxyctl service restart'
 ```
 
-节点和订阅不保存在 `module.conf`，而是在 `data/catalog/` 中维护。选择状态只使用分组 ID、节点 tag 和当前选择模式，不要把节点文件路径或 UID 写入 8.0 配置。
+节点和订阅不保存在 `module.conf`，而是在 `data/catalog/` 中维护。选择状态只使用分组 ID、节点 tag 和当前选择模式，不要把节点文件路径或 UID 写入该文件。

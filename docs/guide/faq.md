@@ -1,64 +1,48 @@
-# 常见问题
+# 常见问题与诊断
 
 ## 服务启动失败
 
-先查看两类日志：
+依次执行：
 
 ```sh
+su -c '/data/adb/modules/netproxy/netproxyctl config check'
+su -c '/data/adb/modules/netproxy/netproxyctl ebpf status configured'
 su -c '/data/adb/modules/netproxy/netproxyctl logs show service 100'
 su -c '/data/adb/modules/netproxy/netproxyctl logs show core 100'
 ```
 
-再确认：
+确认已有可用节点、活动分组有效，并查看错误来自静态配置、Provider、eBPF 能力还是核心启动。
 
-- `data/catalog/` 下有至少一个包含节点的分组。
-- `ACTIVE_GROUP_ID` 指向有效分组。
-- `config/ebpf/ebpf.conf` 没有无效的 eBPF 参数。
-- 内核具备 BPF、cgroup v2 和所需 Root 权限。
+## 订阅更新失败会清空节点吗
 
-```sh
-su -c '/data/adb/modules/netproxy/netproxyctl service status'
-su -c '/data/adb/modules/netproxy/netproxyctl config check'
-su -c '/data/adb/modules/netproxy/netproxyctl ebpf status configured'
-```
+不会。下载、转换或校验失败会保留上一版有效 Provider。若提示“已持久化但运行时未同步”，表示节点已经保存，但运行核心尚未确认新内容；可以重试更新或重启核心。
 
-## 订阅更新失败
+## 节点测速为什么全部超时
 
-订阅更新不要求 sing-box 正在运行。确认 URL 能返回节点内容、TLS 校验没有被错误关闭，并检查 `service.log` 的结构化错误。
+先确认节点本身可用。服务停止时会启动临时核心测速，首次准备可能比运行中稍慢；若所有节点同时超时，请检查核心日志、DNS、网络权限和 Provider 配置，而不是只提高超时时间。
 
-更新失败时旧 Provider 会继续保留；如果显示“已持久化但运行时未同步”，重启或 reload 服务会重试运行时应用，不需要重新添加订阅。
+## Global 模式为什么仍有直连
 
-## 切换节点没有立即生效
+`EBPF_BYPASS_RULE_SET`、私网绕过和应用名单可以在流量进入普通路由前放行。严格测试 Global 时清空提前绕过规则并重启核心，同时确认没有应用或共享网络筛选。
 
-同组切换优先通过 Service API 即时完成。跨分组切换、新增分组或 Provider 尚未加载时会受控 reload。确认服务状态已进入 `ready`，再查看 Service API Dashboard 的实际选择。
+## DNS 泄漏是什么
 
-## Global 仍有国内直连
-
-eBPF 的 `EBPF_BYPASS_RULE_SET` 会在进入 sing-box 前提前放行 IP CIDR。进行严格 Global 测试前清空该配置并重启服务：
-
-```text
-EBPF_BYPASS_RULE_SET=""
-```
-
-同时检查应用名单、私网绕过和路由规则。
-
-## 无法访问面板
-
-- zashboard：`http://127.0.0.1:9999/ui/`
-- sing-box Dashboard：`http://127.0.0.1:9090/dashboard/`
-
-两个地址都要求服务已启动，并使用密钥 `singbox`。API 默认只监听本机，不应直接从其他设备访问。
+检测站通常把“DNS 请求没有经过当前代理出口”称为 DNS 泄漏。默认配置的最终 DNS 使用 `dns-proxy`，不使用 FakeIP。需要让所有兜底解析也走代理时，可以调整 `03_dns.json`，代价是代理不可用时解析更依赖节点，并可能增加延迟。
 
 ## 应用分身没有生效
 
-分应用配置保存严格的 `用户ID:包名` 引用，由 Native 调用 Android package service 解析 UID。用户 0 和其他用户的同名包是独立条目；白名单会自动加入 UID 0。用户范围和包名列表使用英文逗号分隔。
+同一包名在不同 Android 用户下必须分别选择。保存格式为 `<用户ID>:<包名>`；修改后重启核心，让模块重新查询 UID。系统组件代发流量不一定属于目标应用 UID。
 
-## 如何提交诊断信息
+## Wi-Fi 策略没有触发
 
-不要直接上传包含节点凭据的原始目录。使用模块导出脱敏诊断包：
+策略根据 SSID 与实际默认出口评估。Wi-Fi 仍显示连接但流量已切到移动数据时，会按非 Wi-Fi 网络处理。查看 service 日志中的 `network` 和 Wi-Fi 策略事件，并确认后台 Worker 正在运行。
+
+## 如何安全反馈问题
+
+在 Android 管理器日志页导出诊断包，或运行：
 
 ```sh
 su -c '/data/adb/modules/netproxy/netproxyctl logs export /sdcard/Download/netproxy-diagnostics.tar.gz'
 ```
 
-诊断包包含管理器版本、模块版本、运行时配置摘要和脱敏日志，不包含 Catalog 节点凭据。
+诊断包会脱敏日志和运行时摘要，不导出 Catalog 节点数据。请附上设备型号、Android 版本、内核版本、Root 方案、模块版本和复现步骤，不要发送原始订阅 URL 或节点凭据。

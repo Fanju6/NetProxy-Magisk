@@ -1,6 +1,6 @@
 # 路由与 DNS
 
-NetProxy 8.0 的分流行为由四层共同决定：
+NetProxy 的分流行为由四层共同决定：
 
 1. `OUTBOUND_MODE` 出站模式。
 2. sing-box 路由规则与规则集。

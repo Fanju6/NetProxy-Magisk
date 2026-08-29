@@ -1,112 +1,54 @@
 # 快速开始
 
-这条路径用于完成最小闭环：检查服务、导入节点、启动核心、确认模式并打开面板。所有命令都需要 Root。
+推荐先用 Android 管理器完成第一次配置。CLI 适合没有管理器的环境和高级排查。
 
-## 1. 检查服务状态
+## 1. 添加节点
 
-```sh
-su -c '/data/adb/modules/netproxy/netproxyctl service status'
-```
+打开“节点”页，点击右上角菜单：
 
-服务状态从 `stopped`、`preparing`、`starting`、`ready`、`stopping`、`failed` 中取值。只有 `ready` 才表示 sing-box 与 eBPF 入站都已经就绪。
+- **添加节点**：粘贴单个节点链接，或使用图形编辑器填写配置。
+- **选择本地文件**：导入节点文本、Clash YAML 或 sing-box JSON；节点会追加到“本地配置”。
 
-## 2. 导入节点
+也可以直接前往“订阅”页添加 URL。订阅名称留空时会尝试从响应头或 URL 自动获取。
 
-导入单个链接：
+## 2. 选择节点
 
-```sh
-su -c '/data/adb/modules/netproxy/netproxyctl node add "vless://..."'
-```
+在节点页切换到目标分组：
 
-导入节点文件或 Clash YAML：
+- 选择 `Auto`，由该分组的 URLTest 自动选择。
+- 选择具体节点，进入手动模式。
+- 点击测速按钮可测试分组；正式服务停止时会使用短生命周期核心完成离线测速。
 
-```sh
-su -c '/data/adb/modules/netproxy/netproxyctl node import /sdcard/clash.yaml'
-```
+自动模式只选中 `Auto`，不会同时把其内部当前节点标记为手动选中。
 
-单链接和本地文件默认追加到 `default` 本地配置组。
+## 3. 启动服务
 
-## 3. 添加订阅
+回到仪表盘，点击服务开关。状态进入“运行中”后，sing-box API 与 eBPF 入站均已就绪。
 
-订阅名称可以省略，省略时会从响应头或 URL 自动获取：
+仪表盘显示实际出站模式、活动分组、当前节点、流量和运行资源。核心尚未运行时，动态数据可能为空；持久节点和订阅仍可浏览和编辑。
 
-```sh
-su -c '/data/adb/modules/netproxy/netproxyctl sub add 我的订阅 https://example.com/sub'
-su -c '/data/adb/modules/netproxy/netproxyctl sub update <分组 ID>'
-```
+## 4. 调整代理范围
 
-服务停止时也可以更新订阅。更新失败会保留上一版有效 Provider，不会清空现有节点。
+在“设置 → 代理设置”中可以配置：
 
-## 4. 查看与选择节点
+- 规则、全局、直连或允许广告模式
+- eBPF 本机、共享网络或混合接管
+- DNS、IPv6 与共享网络接口
+- 分应用黑白名单
+- Wi-Fi 自动策略
 
-```sh
-su -c '/data/adb/modules/netproxy/netproxyctl catalog list'
-su -c '/data/adb/modules/netproxy/netproxyctl node list'
-```
+修改这些设置后按页面提示重启核心，使运行时配置重新生成。
 
-自动测速选择：
+## 5. 遇到问题
 
-```sh
-su -c '/data/adb/modules/netproxy/netproxyctl node use auto default'
-```
+先打开“日志”页查看模块日志和核心日志。反馈问题时使用导出功能生成脱敏诊断包，不要直接发送 Catalog 或原始节点配置。
 
-手动选择：
-
-```sh
-su -c '/data/adb/modules/netproxy/netproxyctl node use default/<节点标签>'
-```
-
-分组测速：
-
-```sh
-su -c '/data/adb/modules/netproxy/netproxyctl node delay auto default'
-```
-
-## 5. 启动服务
-
-```sh
-su -c '/data/adb/modules/netproxy/netproxyctl service start'
-```
-
-启动完成后查看实际模式：
+没有管理器时，可从终端检查：
 
 ```sh
 su -c '/data/adb/modules/netproxy/netproxyctl service status'
-su -c '/data/adb/modules/netproxy/netproxyctl mode'
-```
-
-可用出站模式：
-
-- `rule`：按路由规则分流，默认模式。
-- `global`：尽量全部交给代理出站。
-- `direct`：全部直连。
-- `AllowAds`：使用允许广告的路由策略。
-
-例如切换到全局代理：
-
-```sh
-su -c '/data/adb/modules/netproxy/netproxyctl mode global'
-```
-
-## 6. 打开控制面板
-
-模块 WebUI 入口可从 Root 管理器的模块页面打开。服务启动后也可以直接使用：
-
-- NetProxy WebUI：通过模块 WebUI 入口打开
-- zashboard：`http://127.0.0.1:9999/ui/`
-- sing-box Service API Dashboard：`http://127.0.0.1:9090/dashboard/`
-
-两个 API 的默认密钥都是 `singbox`，默认仅监听本机。
-
-## 7. 遇到问题先看日志
-
-```sh
+su -c '/data/adb/modules/netproxy/netproxyctl config check'
 su -c '/data/adb/modules/netproxy/netproxyctl logs show service 100'
-su -c '/data/adb/modules/netproxy/netproxyctl logs show core 100'
 ```
 
-服务日志记录模块、订阅和 Worker 事件；核心日志保留 sing-box 原始输出。需要反馈问题时优先导出脱敏诊断包：
-
-```sh
-su -c '/data/adb/modules/netproxy/netproxyctl logs export /sdcard/Download/netproxy-diagnostics.tar.gz'
-```
+完整命令见 [CLI](/guide/cli)，常见故障见[常见问题与诊断](/guide/faq)。
