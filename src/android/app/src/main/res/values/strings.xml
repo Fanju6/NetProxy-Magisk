@@ -257,10 +257,6 @@
     <string name="settings_color_spec">配色规格</string>
     <string name="settings_enable_blur">启用页面模糊</string>
     <string name="settings_enable_blur_summary">控制顶部模糊和页面毛玻璃效果</string>
-    <string name="settings_floating_bottom_bar">悬浮底栏</string>
-    <string name="settings_floating_bottom_bar_summary">使用 Apple 风格的悬浮底栏</string>
-    <string name="settings_enable_glass">悬浮底栏玻璃效果</string>
-    <string name="settings_enable_glass_summary">为悬浮底栏启用模糊与玻璃材质</string>
     <string name="settings_smooth_corner">平滑圆角</string>
     <string name="settings_smooth_corner_summary">为界面启用 Miuix 平滑圆角效果</string>
     <string name="settings_enable_predictive_back">预测性返回手势</string>

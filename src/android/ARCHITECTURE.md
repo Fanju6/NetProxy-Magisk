@@ -57,6 +57,7 @@ feature/<name>/
 - Repository 负责命令组合与模块响应映射，不保存 Compose 状态。
 - `AppContainer` 只在应用入口创建长期依赖，不提供运行时服务定位。
 - Navigation3 条目拥有自己的 ViewModelStore；列表、详情和编辑页面使用独立 ViewModel。
+- `MainActivity` 组合主分页，`MainBottomBar` 是唯一底部导航实现；主题状态不参与导航结构选择。
 - 仪表盘快照合并放在纯 Kotlin reducer 中，避免异步响应在 UI 层互相覆盖。
 
 ## CLI 契约

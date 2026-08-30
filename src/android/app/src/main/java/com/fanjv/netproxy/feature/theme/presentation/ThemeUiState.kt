@@ -13,10 +13,7 @@ data class ThemeUiState(
     val colorSpec: String = ThemeColorSpec.Spec2021.name,
     val enableBlur: Boolean = true,
     val enablePredictiveBack: Boolean = false,
-    val enableFloatingBottomBar: Boolean = true,
-    val enableFloatingBottomBarBlur: Boolean = true,
     val enableSmoothCorner: Boolean = true,
     val pageScale: Float = 1.0f
 )
-
 

@@ -33,13 +33,11 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.MenuOpen
 import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.BlurOn
-import androidx.compose.material.icons.rounded.CallToAction
 import androidx.compose.material.icons.rounded.Colorize
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.RoundedCorner
 import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material.icons.rounded.Wallpaper
-import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -141,10 +139,7 @@ internal fun ThemeSettingsScreen(
             ) {
                 item(key = "theme_preview") {
                     Spacer(modifier = Modifier.height(32.dp))
-                    ThemePreviewCard(
-                        enableFloatingBottomBar = theme.enableFloatingBottomBar,
-                        enableFloatingBottomBarBlur = theme.enableFloatingBottomBarBlur,
-                    )
+                    ThemePreviewCard()
                     Spacer(modifier = Modifier.height(72.dp))
 
                     TabRow(
@@ -288,42 +283,6 @@ internal fun ThemeSettingsScreen(
                                 )
                             })
                         }
-                        add(CardItem("floatingBottomBar") {
-                            SwitchPreference(
-                                title = stringResource(R.string.settings_floating_bottom_bar),
-                                summary = stringResource(R.string.settings_floating_bottom_bar_summary),
-                                startAction = {
-                                    Icon(
-                                        Icons.Rounded.CallToAction,
-                                        modifier = Modifier.padding(end = 6.dp),
-                                        contentDescription = null,
-                                        tint = colorScheme.onBackground
-                                    )
-                                },
-                                checked = theme.enableFloatingBottomBar,
-                                onCheckedChange = viewModel::setEnableFloatingBottomBar
-                            )
-                        })
-                        if (theme.enableFloatingBottomBar &&
-                            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                        ) {
-                            add(CardItem("glass") {
-                                SwitchPreference(
-                                    title = stringResource(R.string.settings_enable_glass),
-                                    summary = stringResource(R.string.settings_enable_glass_summary),
-                                    startAction = {
-                                        Icon(
-                                            Icons.Rounded.WaterDrop,
-                                            modifier = Modifier.padding(end = 6.dp),
-                                            contentDescription = null,
-                                            tint = colorScheme.onBackground
-                                        )
-                                    },
-                                    checked = theme.enableFloatingBottomBarBlur,
-                                    onCheckedChange = viewModel::setEnableFloatingBottomBarBlur
-                                )
-                            })
-                        }
                         add(CardItem("smoothCorner") {
                             SwitchPreference(
                                 title = stringResource(R.string.settings_smooth_corner),
@@ -434,10 +393,7 @@ internal fun ThemeSettingsScreen(
 
 @SuppressLint("ConfigurationScreenWidthHeight")
 @Composable
-private fun ThemePreviewCard(
-    enableFloatingBottomBar: Boolean,
-    enableFloatingBottomBarBlur: Boolean,
-) {
+private fun ThemePreviewCard() {
     val configuration = LocalConfiguration.current
     val bgColor = colorScheme.surface
     val textColor = colorScheme.onBackground
@@ -686,72 +642,36 @@ private fun ThemePreviewCard(
                 Spacer(modifier = Modifier.height(36.dp))
             }
 
-            if (enableFloatingBottomBar) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+            ) {
                 Box(
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 8.dp),
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .height(26.dp)
-                            .clip(RoundedCornerShape(13.dp))
-                            .background(
-                                if (enableFloatingBottomBarBlur) navBarColor.copy(alpha = 0.5f) else navBarColor
-                            )
-                            .border(0.5.dp, textColor.copy(alpha = 0.1f), RoundedCornerShape(13.dp))
-                            .padding(horizontal = 10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        repeat(4) { index ->
-                            Box(
-                                modifier = Modifier
-                                    .size(11.dp)
-                                    .clip(RoundedCornerShape(2.dp))
-                                    .background(
-                                        if (index == 0) primaryColor else textColor.copy(
-                                            alpha = 0.5f
-                                        )
-                                    )
-                            )
-                        }
-                    }
-                }
-            } else {
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
                         .fillMaxWidth()
+                        .height(0.5.dp)
+                        .background(textColor.copy(alpha = 0.1f))
+                )
+                Row(
+                    modifier = Modifier
+                        .height(34.dp)
+                        .fillMaxWidth()
+                        .background(navBarColor)
+                        .padding(top = 2.dp, bottom = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(0.5.dp)
-                            .background(textColor.copy(alpha = 0.1f))
-                    )
-                    Row(
-                        modifier = Modifier
-                            .height(34.dp)
-                            .fillMaxWidth()
-                            .background(navBarColor)
-                            .padding(top = 2.dp, bottom = 6.dp),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        repeat(4) { index ->
-                            Box(
-                                modifier = Modifier
-                                    .size(13.dp)
-                                    .clip(RoundedCornerShape(3.dp))
-                                    .background(if (index == 0) navSelectedColor else navUnselectedColor)
-                            )
-                        }
+                    repeat(4) { index ->
+                        Box(
+                            modifier = Modifier
+                                .size(13.dp)
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(if (index == 0) navSelectedColor else navUnselectedColor)
+                        )
                     }
                 }
             }
         }
     }
 }
-
-

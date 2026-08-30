@@ -49,7 +49,7 @@ enum class ColorMode(val value: Int) {
     }
 }
 
-/** 应用主题设置快照（配色、动态色、关键色、圆角、模糊、预测式返回、浮动底栏等）。 */
+/** 应用主题设置快照（配色、动态色、关键色、圆角、模糊与预测式返回）。 */
 data class AppThemeSettings(
     val colorMode: ColorMode,
     val miuixMonet: Boolean,
@@ -59,8 +59,6 @@ data class AppThemeSettings(
     val enableSmoothCorner: Boolean,
     val enableBlur: Boolean,
     val enablePredictiveBack: Boolean,
-    val enableFloatingBottomBar: Boolean,
-    val enableFloatingBottomBarBlur: Boolean,
 )
 
 /** 从 SharedPreferences 读取并组装 [AppThemeSettings]。 */
@@ -102,8 +100,6 @@ object AppThemeController {
             enableSmoothCorner = prefs.getBoolean("enable_smooth_corner", true),
             enableBlur = prefs.getBoolean("enable_blur", true),
             enablePredictiveBack = prefs.getBoolean("enable_predictive_back", false),
-            enableFloatingBottomBar = prefs.getBoolean("enable_floating_bottom_bar", true),
-            enableFloatingBottomBarBlur = prefs.getBoolean("enable_floating_bottom_bar_blur", true),
         )
     }
 }
@@ -142,8 +138,6 @@ fun NetProxyTheme(
             LocalColorMode provides currentSettings.colorMode.value,
             LocalEnableBlur provides currentSettings.enableBlur,
             LocalEnablePredictiveBack provides currentSettings.enablePredictiveBack,
-            LocalEnableFloatingBottomBar provides currentSettings.enableFloatingBottomBar,
-            LocalEnableFloatingBottomBarBlur provides currentSettings.enableFloatingBottomBarBlur,
             LocalSquircleEnabled provides currentSettings.enableSmoothCorner,
             content = content,
         )
@@ -166,10 +160,6 @@ val LocalColorMode = staticCompositionLocalOf { ColorMode.SYSTEM.value }
 val LocalEnableBlur = staticCompositionLocalOf { true }
 
 val LocalEnablePredictiveBack = staticCompositionLocalOf { false }
-
-val LocalEnableFloatingBottomBar = staticCompositionLocalOf { true }
-
-val LocalEnableFloatingBottomBarBlur = staticCompositionLocalOf { true }
 
 /** 主题设置中可选的预设关键色。 */
 val keyColorOptions = listOf(

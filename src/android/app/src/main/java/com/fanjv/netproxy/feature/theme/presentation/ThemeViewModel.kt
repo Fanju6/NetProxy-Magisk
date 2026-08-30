@@ -17,12 +17,7 @@ internal class ThemeViewModel(
     fun setColorSpec(spec: String) = manager.setColorSpec(spec)
     fun setEnableBlur(enabled: Boolean) = manager.setEnableBlur(enabled)
     fun setEnablePredictiveBack(enabled: Boolean) = manager.setEnablePredictiveBack(enabled)
-    fun setEnableFloatingBottomBar(enabled: Boolean) = manager.setEnableFloatingBottomBar(enabled)
-    fun setEnableFloatingBottomBarBlur(enabled: Boolean) =
-        manager.setEnableFloatingBottomBarBlur(enabled)
-
     fun setEnableSmoothCorner(enabled: Boolean) = manager.setEnableSmoothCorner(enabled)
     fun setPageScale(scale: Float) = manager.setPageScale(scale)
 }
-
 

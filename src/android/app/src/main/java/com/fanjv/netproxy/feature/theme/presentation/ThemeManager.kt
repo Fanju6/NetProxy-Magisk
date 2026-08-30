@@ -29,8 +29,6 @@ class ThemeManager(prefs: SharedPreferences) {
                 colorSpec = p.colorSpec,
                 enableBlur = p.enableBlur,
                 enablePredictiveBack = p.enablePredictiveBack,
-                enableFloatingBottomBar = p.enableFloatingBottomBar,
-                enableFloatingBottomBarBlur = p.enableFloatingBottomBarBlur,
                 enableSmoothCorner = p.enableSmoothCorner,
                 pageScale = p.pageScale,
             )
@@ -73,16 +71,6 @@ class ThemeManager(prefs: SharedPreferences) {
         _state.update { it.copy(enablePredictiveBack = enabled) }
     }
 
-    fun setEnableFloatingBottomBar(enabled: Boolean) {
-        store.setEnableFloatingBottomBar(enabled)
-        _state.update { it.copy(enableFloatingBottomBar = enabled) }
-    }
-
-    fun setEnableFloatingBottomBarBlur(enabled: Boolean) {
-        store.setEnableFloatingBottomBarBlur(enabled)
-        _state.update { it.copy(enableFloatingBottomBarBlur = enabled) }
-    }
-
     fun setEnableSmoothCorner(enabled: Boolean) {
         store.setEnableSmoothCorner(enabled)
         _state.update { it.copy(enableSmoothCorner = enabled) }
@@ -93,5 +81,4 @@ class ThemeManager(prefs: SharedPreferences) {
         _state.update { it.copy(pageScale = scale) }
     }
 }
-
 
