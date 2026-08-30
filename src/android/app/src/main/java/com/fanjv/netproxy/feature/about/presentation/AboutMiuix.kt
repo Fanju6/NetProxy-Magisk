@@ -51,7 +51,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.createBitmap
-import com.fanjv.netproxy.core.ui.component.AdaptiveTopAppBar
 import com.fanjv.netproxy.core.ui.component.BackIconButton
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
@@ -63,6 +62,7 @@ import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
+import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
 import top.yukonga.miuix.kmp.blur.BlurBlendMode
@@ -117,7 +117,7 @@ internal fun AboutScreenMiuix(
                 else -> Color.Transparent
             }
             BlurredBar(backdrop = barBlurBackdrop.takeIf { blurActive }) {
-                AdaptiveTopAppBar(
+                SmallTopAppBar(
                     title = state.title,
                     scrollBehavior = topAppBarScrollBehavior,
                     color = barColor,
