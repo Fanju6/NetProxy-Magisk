@@ -30,8 +30,8 @@
       "ref": "sing",
       "sourcePath": "geo/geosite/apple-cn.srs",
       "metadataPath": "geo/geosite/apple-cn.json",
-      "currentCommit": "0b3efbf6fc8076742c2dd36eddb8791c8121aa71",
-      "currentSha256": "c4a06abd6cb57aee35d074c4624b79846893d1b5649c3c82965c7295b565becd"
+      "currentCommit": "81de87f6efc27e50e74eba29fb787f02e76df57a",
+      "currentSha256": "7bcb786a9bd4b84f554d377b5bc768360ae2a069451daa944e25501fe21499c0"
     },
     {
       "name": "google",
@@ -52,8 +52,8 @@
       "ref": "sing",
       "sourcePath": "geo/geosite/geolocation-!cn.srs",
       "metadataPath": "geo/geosite/geolocation-!cn.json",
-      "currentCommit": "0b3efbf6fc8076742c2dd36eddb8791c8121aa71",
-      "currentSha256": "07fdadb72275a94534170b4f6ed0573ae705bf30036821fff8c2ea958b47a53b"
+      "currentCommit": "81de87f6efc27e50e74eba29fb787f02e76df57a",
+      "currentSha256": "7fbcc67b97cc8baaddc0fd8e63741f36e3110131ff51fe8e700145c0307391f4"
     },
     {
       "name": "cn",
@@ -63,8 +63,8 @@
       "ref": "sing",
       "sourcePath": "geo/geosite/cn.srs",
       "metadataPath": "geo/geosite/cn.json",
-      "currentCommit": "0b3efbf6fc8076742c2dd36eddb8791c8121aa71",
-      "currentSha256": "7982400df65b86a351f8ba89fee92038be5aa172c2a9e988823abf80c4463fc2"
+      "currentCommit": "81de87f6efc27e50e74eba29fb787f02e76df57a",
+      "currentSha256": "338773a86c22959ad7664dc33d66e1bb01f1772d4e87147d6f399febfc6c2179"
     },
     {
       "name": "cn-ip",
@@ -74,8 +74,8 @@
       "ref": "sing",
       "sourcePath": "geo/geoip/cn.srs",
       "metadataPath": "geo/geoip/cn.json",
-      "currentCommit": "0b3efbf6fc8076742c2dd36eddb8791c8121aa71",
-      "currentSha256": "0570ff7818cca95be950ed97926ff7c8457bec9871b5a07de70da49746706216"
+      "currentCommit": "81de87f6efc27e50e74eba29fb787f02e76df57a",
+      "currentSha256": "ec0c240a4d86dac60881e8d5a03ded84fb54cb4d4a219463a8b59b3104112e52"
     },
     {
       "name": "telegram-ip",
@@ -110,7 +110,7 @@
       "path": "src/module/webroot/zashboard",
       "repo": "Zephyruso/zashboard",
       "assetPattern": "dist-no-fonts.zip",
-      "currentVersion": "v3.22.0"
+      "currentVersion": "v3.24.0"
     }
   ],
   "githubArchive": [
