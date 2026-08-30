@@ -5,13 +5,13 @@ go 1.27.0
 require (
 	github.com/sagernet/netlink v0.0.0-20260814022025-64455d367bbf
 	github.com/sagernet/sing v0.9.0-beta.4
-	github.com/sagernet/sing-box v1.14.0-rc.1-reF1nd
+	github.com/sagernet/sing-box v1.14.0-rc.4-reF1nd
 	golang.org/x/sys v0.47.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-replace github.com/sagernet/sing-box => github.com/reF1nd/sing-box v1.14.0-rc.1-reF1nd
+replace github.com/sagernet/sing-box => github.com/reF1nd/sing-box v1.14.0-rc.4-reF1nd
 
 require (
 	github.com/miekg/dns v1.1.72 // indirect

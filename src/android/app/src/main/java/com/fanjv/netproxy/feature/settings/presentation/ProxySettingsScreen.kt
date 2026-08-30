@@ -190,23 +190,11 @@ internal fun ProxySettingsScreen(
                                 onValueChange = viewModel::setLocalDnsMode
                             )
                         },
-                        CardItem("ipv6_mode") {
-                            val values = listOf("auto", "always", "off")
-                            OverlayDropdownPreference(
-                                title = stringResource(R.string.ebpf_local_ipv6_mode),
-                                items = listOf(
-                                    stringResource(R.string.ebpf_ipv6_mode_auto),
-                                    stringResource(R.string.ebpf_ipv6_mode_always),
-                                    stringResource(R.string.ebpf_ipv6_mode_off)
-                                ),
-                                selectedIndex = values.indexOf(settings.localIpv6Mode)
-                                    .coerceAtLeast(0),
-                                onSelectedIndexChange = {
-                                    viewModel.updateProxySetting(
-                                        "EBPF_LOCAL_IPV6_MODE",
-                                        values[it]
-                                    )
-                                }
+                        CardItem("ipv6") {
+                            SwitchPreference(
+                                title = stringResource(R.string.ebpf_local_ipv6),
+                                checked = settings.localIpv6,
+                                onCheckedChange = viewModel::setLocalIpv6
                             )
                         },
                         CardItem("private_address") {
@@ -253,22 +241,11 @@ internal fun ProxySettingsScreen(
                                 onValueChange = viewModel::setSharedDnsMode
                             )
                         },
-                        CardItem("ipv6_mode") {
-                            val values = listOf("always", "off")
-                            OverlayDropdownPreference(
-                                title = stringResource(R.string.ebpf_shared_ipv6_mode),
-                                items = listOf(
-                                    stringResource(R.string.ebpf_ipv6_mode_always),
-                                    stringResource(R.string.ebpf_ipv6_mode_off)
-                                ),
-                                selectedIndex = values.indexOf(settings.sharedIpv6Mode)
-                                    .coerceAtLeast(0),
-                                onSelectedIndexChange = {
-                                    viewModel.updateProxySetting(
-                                        "EBPF_SHARED_IPV6_MODE",
-                                        values[it]
-                                    )
-                                }
+                        CardItem("ipv6") {
+                            SwitchPreference(
+                                title = stringResource(R.string.ebpf_shared_ipv6),
+                                checked = settings.sharedIpv6,
+                                onCheckedChange = viewModel::setSharedIpv6
                             )
                         },
                         CardItem("private_address") {

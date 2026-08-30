@@ -29,4 +29,16 @@ class ProxySettingsTest {
         assertEquals(true, settings.localBypassPrivateAddress)
         assertEquals(false, settings.sharedBypassPrivateAddress)
     }
+
+    @Test
+    fun ipv6SwitchesAreIndependentForLocalAndSharedDataPaths() {
+        val settings = ProxySettings(
+            mode = "hybrid",
+            localIpv6 = false,
+            sharedIpv6 = true,
+        )
+
+        assertEquals(false, settings.localIpv6)
+        assertEquals(true, settings.sharedIpv6)
+    }
 }

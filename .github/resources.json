@@ -93,7 +93,7 @@
     "path": "src/module/bin/sing-box",
     "repo": "reF1nd/sing-box",
     "tagPattern": "^v[0-9].*-reF1nd$",
-    "currentVersion": "v1.14.0-rc.1-reF1nd",
+    "currentVersion": "v1.14.0-rc.4-reF1nd",
     "buildTags": [
       "with_quic",
       "with_utls",

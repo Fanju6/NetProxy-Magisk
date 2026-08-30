@@ -242,19 +242,18 @@ class SingBoxSchemaValidatorTest {
                         {
                           "type": "ebpf",
                           "mode": "hybrid",
-                          "tcp_splice": false,
                           "local": {
                             "dns_mode": "respect_policy",
+                            "ipv6": true,
                             "bypass_private_address": true
                           },
                           "shared": {
                             "dns_mode": "off",
                             "interface": ["wlan2"],
+                            "ipv6": false,
                             "bypass_private_address": false,
                             "advanced": {
-                              "data_plane": "auto",
-                              "routing_mark": 0,
-                              "routing_table": 0
+                              "tc_priority": 1
                             }
                           }
                         }

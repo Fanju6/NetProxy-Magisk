@@ -239,8 +239,10 @@ su -c '/data/adb/modules/netproxy/netproxyctl help'
 | `EBPF_LOCAL_DNS_MODE` | `hijack` | 本机数据路径的 DNS 处理模式 |
 | `EBPF_SHARED_DNS_MODE` | `hijack` | 共享网络数据路径的 DNS 处理模式 |
 | `EBPF_MODE` | `local` | eBPF 数据路径：local、shared 或 hybrid |
-| `EBPF_LOCAL_IPV6_MODE` | `auto` | 本机 IPv6 接管策略，支持始终、自动和关闭 |
-| `EBPF_BYPASS_PRIVATE_ADDRESS` | `1` | 默认绕过私网与特殊用途地址 |
+| `EBPF_LOCAL_IPV6` | `1` | 接管本机 IPv6 流量 |
+| `EBPF_SHARED_IPV6` | `1` | 接管共享网络 IPv6 流量 |
+| `EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS` | `1` | 本机流量默认绕过私网与特殊用途地址 |
+| `EBPF_SHARED_BYPASS_PRIVATE_ADDRESS` | `1` | 共享网络流量默认绕过私网与特殊用途地址 |
 | `EBPF_BYPASS_RULE_SET` | `direct,cn-ip` | 在内核侧提前绕过可提取 CIDR 的规则集，多个规则集使用英文逗号分隔 |
 | `WIFI_AUTO_SWITCH` | `0` | 默认关闭 WiFi SSID 自动切换 |
 

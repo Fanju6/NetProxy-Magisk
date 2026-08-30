@@ -8,27 +8,25 @@ import (
 	"testing"
 
 	json "encoding/json/v2"
+
+	"github.com/sagernet/sing-box/option"
 )
 
 func TestBuildRuntimeUsesNewLocalAndSharedSchema(t *testing.T) {
 	config := loadFixture(t, `EBPF_MODE="hybrid"
 EBPF_NETWORK="tcp,udp"
-EBPF_TCP_SPLICE=1
 EBPF_LOCAL_DNS_MODE="respect_policy"
-EBPF_LOCAL_IPV6_MODE="auto"
+EBPF_LOCAL_IPV6=0
 EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS=0
 EBPF_SHARED_DNS_MODE="off"
+EBPF_SHARED_IPV6=1
 EBPF_SHARED_BYPASS_PRIVATE_ADDRESS=0
 APP_PROXY_MODE="blacklist"
 BYPASS_APPS_LIST="0:com.android.chrome,10:org.telegram.messenger"
 EBPF_SHARED_INTERFACES="wlan2,wlan0"
 EBPF_SHARED_INCLUDE_SOURCE_CIDR="192.168.43.0/24,fd00::/64"
 EBPF_SHARED_INCLUDE_MAC_ADDRESS="02:11:22:33:44:55,AA:BB:CC:DD:EE:FF"
-EBPF_SHARED_STATE_CAPACITY=512
 EBPF_SHARED_TC_PRIORITY=7
-EBPF_SHARED_DATA_PLANE="socket_assign"
-EBPF_SHARED_ROUTING_MARK=1396834305
-EBPF_SHARED_ROUTING_TABLE=2026
 `)
 	inbound := runtimeInbound(t, config, func(refs []PackageRef) (PackageUIDResolution, error) {
 		return PackageUIDResolution{UIDs: []uint32{10123, 10124}}, nil
@@ -42,37 +40,33 @@ EBPF_SHARED_ROUTING_TABLE=2026
 	if _, exists := inbound["dns_mode"]; exists {
 		t.Fatalf("top-level dns_mode is no longer supported: %#v", inbound)
 	}
-	if inbound["tcp_splice"] != true {
-		t.Fatalf("tcp_splice was not emitted: %#v", inbound)
-	}
 	local := inbound["local"].(map[string]any)
-	if local["dns_mode"] != "respect_policy" || local["ipv6_mode"] != "auto" || local["bypass_private_address"] != false || local["include_uid"] != nil {
+	assertMatchesSingBoxOptions[option.EBPFLocalOptions](t, local)
+	if local["dns_mode"] != "respect_policy" || local["ipv6"] != false || local["bypass_private_address"] != false || local["include_uid"] != nil {
 		t.Fatalf("unexpected local fields: %#v", local)
 	}
 	if got := local["exclude_uid"].([]any); !reflect.DeepEqual(got, []any{float64(10123), float64(10124)}) {
 		t.Fatalf("unexpected resolved app UIDs: %#v", got)
 	}
 	shared := inbound["shared"].(map[string]any)
+	assertMatchesSingBoxOptions[option.EBPFSharedOptions](t, shared)
 	if shared["bypass_private_address"] != false {
 		t.Fatalf("unexpected shared private address policy: %#v", shared)
 	}
 	if shared["dns_mode"] != "off" {
 		t.Fatalf("unexpected shared DNS policy: %#v", shared)
 	}
+	if shared["ipv6"] != true {
+		t.Fatalf("unexpected shared IPv6 policy: %#v", shared)
+	}
 	if got := len(shared["interface"].([]any)); got != 2 {
 		t.Fatalf("unexpected shared interfaces: %d", got)
 	}
-	if shared["state_capacity"] != float64(512) {
-		t.Fatalf("unexpected shared state capacity: %#v", shared["state_capacity"])
-	}
 	advanced := shared["advanced"].(map[string]any)
-	if advanced["tc_priority"] != float64(7) ||
-		advanced["data_plane"] != "socket_assign" ||
-		advanced["routing_mark"] != float64(1396834305) ||
-		advanced["routing_table"] != float64(2026) {
+	if advanced["tc_priority"] != float64(7) {
 		t.Fatalf("unexpected shared advanced fields: %#v", advanced)
 	}
-	for _, key := range []string{"cgroup_enabled", "cgroup_ipv6_mode", "shared_network", "redirect_address", "map_capacity"} {
+	for _, key := range []string{"tcp_splice", "cgroup_enabled", "cgroup_ipv6_mode", "shared_network", "redirect_address", "map_capacity"} {
 		if _, ok := inbound[key]; ok {
 			t.Fatalf("legacy eBPF field %q is still emitted: %#v", key, inbound)
 		}
@@ -206,6 +200,14 @@ func TestLoadRejectsRemovedConfiguration(t *testing.T) {
 		"PROXY_APPS_LIST=\"com.example.app\"\n",
 		"EBPF_LOCAL_DNS_MODE=respect_bypass\n",
 		"EBPF_SHARED_DNS_MODE=respect_bypass\n",
+		"EBPF_TCP_SPLICE=1\n",
+		"EBPF_LOCAL_IPV6_MODE=auto\n",
+		"EBPF_LOCAL_STATE_CAPACITY=512\n",
+		"EBPF_SHARED_IPV6_MODE=always\n",
+		"EBPF_SHARED_STATE_CAPACITY=512\n",
+		"EBPF_SHARED_DATA_PLANE=auto\n",
+		"EBPF_SHARED_ROUTING_MARK=1\n",
+		"EBPF_SHARED_ROUTING_TABLE=2026\n",
 	} {
 		if _, err := Load(writeFixture(t, content)); err == nil {
 			t.Fatalf("removed or unscoped configuration unexpectedly loaded: %q", content)
@@ -227,14 +229,11 @@ APP_PROXY_ENABLE=0
 		t.Fatalf("unexpected default shared DNS mode: %#v", shared)
 	}
 	advanced := shared["advanced"].(map[string]any)
-	if advanced["tc_priority"] != float64(1) || advanced["data_plane"] != "auto" {
+	if advanced["tc_priority"] != float64(1) {
 		t.Fatalf("unexpected shared advanced defaults: %#v", advanced)
 	}
-	if _, exists := advanced["routing_mark"]; exists {
-		t.Fatalf("zero routing mark should use sing-box default: %#v", advanced)
-	}
-	if _, exists := advanced["routing_table"]; exists {
-		t.Fatalf("zero routing table should use sing-box default: %#v", advanced)
+	if len(advanced) != 1 {
+		t.Fatalf("removed shared advanced fields must not be emitted: %#v", advanced)
 	}
 }
 
@@ -258,6 +257,18 @@ func runtimeInbound(t *testing.T, config Config, resolve PackageUIDResolver) map
 		t.Fatal(err)
 	}
 	return document["inbounds"].([]any)[0].(map[string]any)
+}
+
+func assertMatchesSingBoxOptions[T any](t *testing.T, value any) {
+	t.Helper()
+	content, err := json.Marshal(value, json.Deterministic(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var options T
+	if err := json.Unmarshal(content, &options, json.RejectUnknownMembers(true)); err != nil {
+		t.Fatalf("生成字段不符合当前 sing-box eBPF 契约: %v", err)
+	}
 }
 
 func loadFixture(t *testing.T, content string) Config {

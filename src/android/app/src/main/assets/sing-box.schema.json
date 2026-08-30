@@ -3563,13 +3563,8 @@
         "cgroup_path": {
           "type": "string"
         },
-        "ipv6_mode": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "always",
-            "off"
-          ]
+        "ipv6": {
+          "type": "boolean"
         },
         "bypass_private_address": {
           "type": "boolean"
@@ -3672,11 +3667,6 @@
               }
             }
           ]
-        },
-        "state_capacity": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 1048576
         }
       },
       "additionalProperties": false
@@ -3688,24 +3678,6 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 65535
-        },
-        "data_plane": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "socket_assign",
-            "rewrite"
-          ]
-        },
-        "routing_mark": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 4294967295
-        },
-        "routing_table": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 4294967295
         }
       },
       "additionalProperties": false
@@ -3734,12 +3706,8 @@
             }
           ]
         },
-        "ipv6_mode": {
-          "type": "string",
-          "enum": [
-            "always",
-            "off"
-          ]
+        "ipv6": {
+          "type": "boolean"
         },
         "bypass_private_address": {
           "type": "boolean"
@@ -3795,11 +3763,6 @@
               }
             }
           ]
-        },
-        "state_capacity": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 1048576
         },
         "advanced": {
           "$ref": "#/$defs/EBPFSharedAdvancedOptions"
@@ -6511,9 +6474,6 @@
             },
             "shared": {
               "$ref": "#/$defs/EBPFSharedOptions"
-            },
-            "tcp_splice": {
-              "type": "boolean"
             }
           },
           "required": [
@@ -7222,9 +7182,6 @@
               "type": "string",
               "enum": [
                 "bbr",
-                "bbr_standard",
-                "bbr2",
-                "bbr2_variant",
                 "cubic",
                 "reno"
               ]
@@ -12532,9 +12489,6 @@
             },
             "ttl": {
               "$ref": "#/$defs/Duration"
-            },
-            "interrupt_exist_connections": {
-              "type": "boolean"
             },
             "strategy": {
               "type": "string"
