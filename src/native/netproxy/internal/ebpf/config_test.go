@@ -15,18 +15,22 @@ import (
 func TestBuildRuntimeUsesNewLocalAndSharedSchema(t *testing.T) {
 	config := loadFixture(t, `EBPF_MODE="hybrid"
 EBPF_NETWORK="tcp,udp"
+EBPF_TC_PRIORITY=7
 EBPF_LOCAL_DNS_MODE="respect_policy"
 EBPF_LOCAL_IPV6=0
 EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS=0
+EBPF_LOCAL_BYPASS_PORT="53,853"
+EBPF_LOCAL_BYPASS_PORT_RANGE="8000:8080"
 EBPF_SHARED_DNS_MODE="off"
 EBPF_SHARED_IPV6=1
 EBPF_SHARED_BYPASS_PRIVATE_ADDRESS=0
+EBPF_SHARED_BYPASS_PORT="67,68"
+EBPF_SHARED_BYPASS_PORT_RANGE="10000:10100"
 APP_PROXY_MODE="blacklist"
 BYPASS_APPS_LIST="0:com.android.chrome,10:org.telegram.messenger"
 EBPF_SHARED_INTERFACES="wlan2,wlan0"
 EBPF_SHARED_INCLUDE_SOURCE_CIDR="192.168.43.0/24,fd00::/64"
 EBPF_SHARED_INCLUDE_MAC_ADDRESS="02:11:22:33:44:55,AA:BB:CC:DD:EE:FF"
-EBPF_SHARED_TC_PRIORITY=7
 `)
 	inbound := runtimeInbound(t, config, func(refs []PackageRef) (PackageUIDResolution, error) {
 		return PackageUIDResolution{UIDs: []uint32{10123, 10124}}, nil
@@ -40,6 +44,9 @@ EBPF_SHARED_TC_PRIORITY=7
 	if _, exists := inbound["dns_mode"]; exists {
 		t.Fatalf("top-level dns_mode is no longer supported: %#v", inbound)
 	}
+	if inbound["tc_priority"] != float64(7) {
+		t.Fatalf("unexpected top-level TC priority: %#v", inbound)
+	}
 	local := inbound["local"].(map[string]any)
 	assertMatchesSingBoxOptions[option.EBPFLocalOptions](t, local)
 	if local["dns_mode"] != "respect_policy" || local["ipv6"] != false || local["bypass_private_address"] != false || local["include_uid"] != nil {
@@ -47,6 +54,12 @@ EBPF_SHARED_TC_PRIORITY=7
 	}
 	if got := local["exclude_uid"].([]any); !reflect.DeepEqual(got, []any{float64(10123), float64(10124)}) {
 		t.Fatalf("unexpected resolved app UIDs: %#v", got)
+	}
+	if got := local["bypass_port"].([]any); !reflect.DeepEqual(got, []any{float64(53), float64(853)}) {
+		t.Fatalf("unexpected local bypass ports: %#v", got)
+	}
+	if got := local["bypass_port_range"].([]any); !reflect.DeepEqual(got, []any{"8000:8080"}) {
+		t.Fatalf("unexpected local bypass port ranges: %#v", got)
 	}
 	shared := inbound["shared"].(map[string]any)
 	assertMatchesSingBoxOptions[option.EBPFSharedOptions](t, shared)
@@ -62,9 +75,14 @@ EBPF_SHARED_TC_PRIORITY=7
 	if got := len(shared["interface"].([]any)); got != 2 {
 		t.Fatalf("unexpected shared interfaces: %d", got)
 	}
-	advanced := shared["advanced"].(map[string]any)
-	if advanced["tc_priority"] != float64(7) {
-		t.Fatalf("unexpected shared advanced fields: %#v", advanced)
+	if _, exists := shared["advanced"]; exists {
+		t.Fatalf("removed shared advanced object is still emitted: %#v", shared)
+	}
+	if got := shared["bypass_port"].([]any); !reflect.DeepEqual(got, []any{float64(67), float64(68)}) {
+		t.Fatalf("unexpected shared bypass ports: %#v", got)
+	}
+	if got := shared["bypass_port_range"].([]any); !reflect.DeepEqual(got, []any{"10000:10100"}) {
+		t.Fatalf("unexpected shared bypass port ranges: %#v", got)
 	}
 	for _, key := range []string{"tcp_splice", "cgroup_enabled", "cgroup_ipv6_mode", "shared_network", "redirect_address", "map_capacity"} {
 		if _, ok := inbound[key]; ok {
@@ -150,7 +168,6 @@ func TestSharedModeOmitsLocalFields(t *testing.T) {
 	config := loadFixture(t, `EBPF_MODE="shared"
 EBPF_SHARED_INTERFACES="ap0"
 APP_PROXY_ENABLE=0
-EBPF_LOCAL_CGROUP_PATH=not-used
 EBPF_LOCAL_INCLUDE_UID=1234
 `)
 	inbound := runtimeInbound(t, config, nil)
@@ -208,6 +225,8 @@ func TestLoadRejectsRemovedConfiguration(t *testing.T) {
 		"EBPF_SHARED_DATA_PLANE=auto\n",
 		"EBPF_SHARED_ROUTING_MARK=1\n",
 		"EBPF_SHARED_ROUTING_TABLE=2026\n",
+		"EBPF_LOCAL_CGROUP_PATH=/sys/fs/cgroup\n",
+		"EBPF_SHARED_TC_PRIORITY=1\n",
 	} {
 		if _, err := Load(writeFixture(t, content)); err == nil {
 			t.Fatalf("removed or unscoped configuration unexpectedly loaded: %q", content)
@@ -218,22 +237,34 @@ func TestLoadRejectsRemovedConfiguration(t *testing.T) {
 	}
 }
 
-func TestSharedAdvancedDefaultsMatchSingBox(t *testing.T) {
+func TestTopLevelPriorityDefaultMatchesSingBox(t *testing.T) {
 	config := loadFixture(t, `EBPF_MODE="shared"
 EBPF_SHARED_INTERFACES="ap0"
 APP_PROXY_ENABLE=0
 `)
 	inbound := runtimeInbound(t, config, nil)
+	if inbound["tc_priority"] != float64(1) {
+		t.Fatalf("unexpected top-level TC priority: %#v", inbound)
+	}
 	shared := inbound["shared"].(map[string]any)
 	if shared["dns_mode"] != "hijack" {
 		t.Fatalf("unexpected default shared DNS mode: %#v", shared)
 	}
-	advanced := shared["advanced"].(map[string]any)
-	if advanced["tc_priority"] != float64(1) {
-		t.Fatalf("unexpected shared advanced defaults: %#v", advanced)
+	if _, exists := shared["advanced"]; exists {
+		t.Fatalf("removed shared advanced object is still emitted: %#v", shared)
 	}
-	if len(advanced) != 1 {
-		t.Fatalf("removed shared advanced fields must not be emitted: %#v", advanced)
+}
+
+func TestLoadRejectsInvalidBypassPorts(t *testing.T) {
+	for _, content := range []string{
+		"EBPF_LOCAL_BYPASS_PORT=0\n",
+		"EBPF_LOCAL_BYPASS_PORT=65536\n",
+		"EBPF_SHARED_BYPASS_PORT_RANGE=8000\n",
+		"EBPF_SHARED_BYPASS_PORT_RANGE=9000:8000\n",
+	} {
+		if _, err := Load(writeFixture(t, content)); err == nil {
+			t.Fatalf("invalid bypass port configuration unexpectedly loaded: %q", content)
+		}
 	}
 }
 

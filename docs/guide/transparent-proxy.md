@@ -6,11 +6,11 @@ NetProxy 使用 sing-box 的 eBPF 入站接管透明代理流量。eBPF 是入�
 
 | 模式 | 作用 |
 |---|---|
-| `local` | 通过 cgroup socket hook 接管本机应用 |
+| `local` | 通过当前默认出口接口的 TC 路径接管本机应用 |
 | `shared` | 通过 TC 接管热点或 LAN 下游接口 |
 | `hybrid` | 同时启用本机与共享网络接管 |
 
-local 和 shared 可以分别控制 DNS、IPv6、私网绕过和筛选条件。共享接口出现、消失或挂载被移除时，sing-box 会维护对应 TC attachment。
+local 和 shared 可以分别控制 DNS、IPv6、私网绕过、目标端口和筛选条件。local 会跟随默认出口变化；共享接口出现、消失或变为上游时，sing-box 会维护对应 TC attachment。
 
 ## 分应用代理
 

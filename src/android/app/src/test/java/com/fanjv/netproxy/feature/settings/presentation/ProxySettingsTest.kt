@@ -41,4 +41,20 @@ class ProxySettingsTest {
         assertEquals(false, settings.localIpv6)
         assertEquals(true, settings.sharedIpv6)
     }
+
+    @Test
+    fun portBypassIsIndependentForLocalAndSharedDataPaths() {
+        val settings = ProxySettings(
+            mode = "hybrid",
+            localBypassPorts = "53,853",
+            localBypassPortRanges = "8000:8080",
+            sharedBypassPorts = "67,68",
+            sharedBypassPortRanges = "10000:10100",
+        )
+
+        assertEquals("53,853", settings.localBypassPorts)
+        assertEquals("8000:8080", settings.localBypassPortRanges)
+        assertEquals("67,68", settings.sharedBypassPorts)
+        assertEquals("10000:10100", settings.sharedBypassPortRanges)
+    }
 }

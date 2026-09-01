@@ -29,9 +29,9 @@ var allowedKeys = map[string]bool{
 	"EBPF_MODE":                          true,
 	"EBPF_NETWORK":                       true,
 	"EBPF_UDP_TIMEOUT":                   true,
+	"EBPF_TC_PRIORITY":                   true,
 	"EBPF_BYPASS_RULE_SET":               true,
 	"EBPF_LOCAL_DNS_MODE":                true,
-	"EBPF_LOCAL_CGROUP_PATH":             true,
 	"EBPF_LOCAL_IPV6":                    true,
 	"EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS":  true,
 	"EBPF_LOCAL_INCLUDE_UID":             true,
@@ -41,6 +41,8 @@ var allowedKeys = map[string]bool{
 	"EBPF_LOCAL_INCLUDE_ANDROID_USER":    true,
 	"EBPF_LOCAL_INCLUDE_PACKAGE":         true,
 	"EBPF_LOCAL_EXCLUDE_PACKAGE":         true,
+	"EBPF_LOCAL_BYPASS_PORT":             true,
+	"EBPF_LOCAL_BYPASS_PORT_RANGE":       true,
 	"EBPF_SHARED_DNS_MODE":               true,
 	"EBPF_SHARED_INTERFACES":             true,
 	"EBPF_SHARED_IPV6":                   true,
@@ -49,7 +51,8 @@ var allowedKeys = map[string]bool{
 	"EBPF_SHARED_EXCLUDE_SOURCE_CIDR":    true,
 	"EBPF_SHARED_INCLUDE_MAC_ADDRESS":    true,
 	"EBPF_SHARED_EXCLUDE_MAC_ADDRESS":    true,
-	"EBPF_SHARED_TC_PRIORITY":            true,
+	"EBPF_SHARED_BYPASS_PORT":            true,
+	"EBPF_SHARED_BYPASS_PORT_RANGE":      true,
 	"APP_PROXY_ENABLE":                   true,
 	"APP_PROXY_MODE":                     true,
 	"PROXY_APPS_LIST":                    true,
@@ -61,6 +64,7 @@ type Config struct {
 	Mode           string
 	Network        []string
 	UDPTimeout     string
+	TCPriority     uint16
 	BypassRuleSets []string
 	Local          LocalConfig
 	Shared         SharedConfig
@@ -73,7 +77,6 @@ type Config struct {
 // LocalConfig 描述 sing-box eBPF 的本机数据路径。
 type LocalConfig struct {
 	DNSMode              string
-	CgroupPath           string
 	IPv6                 bool
 	BypassPrivateAddress bool
 	IncludeUID           []uint32
@@ -83,6 +86,8 @@ type LocalConfig struct {
 	IncludeAndroidUser   []int
 	IncludePackage       []string
 	ExcludePackage       []string
+	BypassPort           []uint16
+	BypassPortRange      []string
 }
 
 // SharedConfig 描述 sing-box eBPF 的共享网络数据路径。
@@ -95,7 +100,8 @@ type SharedConfig struct {
 	ExcludeSourceCIDR    []string
 	IncludeMACAddress    []string
 	ExcludeMACAddress    []string
-	TCPriority           uint16
+	BypassPort           []uint16
+	BypassPortRange      []string
 }
 
 // PackageRef 是一个带 Android 用户范围的应用包名。
@@ -138,6 +144,7 @@ func Load(path string) (Config, error) {
 	config := Config{
 		Mode:           defaultMode,
 		UDPTimeout:     defaultUDPTimeout,
+		TCPriority:     defaultTCPriority,
 		BypassRuleSets: []string{"direct", "cn-ip"},
 		Local: LocalConfig{
 			DNSMode:              defaultDNSMode,
@@ -149,7 +156,6 @@ func Load(path string) (Config, error) {
 			Interfaces:           []string{defaultSharedIface},
 			IPv6:                 true,
 			BypassPrivateAddress: true,
-			TCPriority:           defaultTCPriority,
 		},
 		AppProxyEnable: true,
 		AppProxyMode:   "blacklist",
@@ -158,10 +164,13 @@ func Load(path string) (Config, error) {
 	config.Mode = valueOr(values, "EBPF_MODE", config.Mode)
 	config.Network = CommaSeparated(valueOr(values, "EBPF_NETWORK", ""))
 	config.UDPTimeout = valueOr(values, "EBPF_UDP_TIMEOUT", config.UDPTimeout)
+	config.TCPriority, parseErr = tcpPriority(values, "EBPF_TC_PRIORITY")
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
 	config.BypassRuleSets = CommaSeparated(valueOr(values, "EBPF_BYPASS_RULE_SET", "direct,cn-ip"))
 
 	config.Local.DNSMode = valueOr(values, "EBPF_LOCAL_DNS_MODE", config.Local.DNSMode)
-	config.Local.CgroupPath = valueOr(values, "EBPF_LOCAL_CGROUP_PATH", "")
 	config.Local.IPv6, parseErr = boolValue(values, "EBPF_LOCAL_IPV6", config.Local.IPv6)
 	if parseErr != nil {
 		return Config{}, parseErr
@@ -198,6 +207,14 @@ func Load(path string) (Config, error) {
 	if parseErr != nil {
 		return Config{}, parseErr
 	}
+	config.Local.BypassPort, parseErr = parsePorts(values, "EBPF_LOCAL_BYPASS_PORT")
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
+	config.Local.BypassPortRange, parseErr = parsePortRanges(values, "EBPF_LOCAL_BYPASS_PORT_RANGE")
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
 	config.Shared.DNSMode = valueOr(values, "EBPF_SHARED_DNS_MODE", config.Shared.DNSMode)
 	config.Shared.Interfaces = CommaSeparated(valueOr(values, "EBPF_SHARED_INTERFACES", defaultSharedIface))
 	config.Shared.IPv6, parseErr = boolValue(values, "EBPF_SHARED_IPV6", config.Shared.IPv6)
@@ -224,7 +241,11 @@ func Load(path string) (Config, error) {
 	if parseErr != nil {
 		return Config{}, parseErr
 	}
-	config.Shared.TCPriority, parseErr = tcpPriority(values, "EBPF_SHARED_TC_PRIORITY")
+	config.Shared.BypassPort, parseErr = parsePorts(values, "EBPF_SHARED_BYPASS_PORT")
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
+	config.Shared.BypassPortRange, parseErr = parsePortRanges(values, "EBPF_SHARED_BYPASS_PORT_RANGE")
 	if parseErr != nil {
 		return Config{}, parseErr
 	}
@@ -305,13 +326,13 @@ func (c Config) BuildWithResolver(resolve PackageUIDResolver) (BuildResult, erro
 		Mode:          c.Mode,
 		Network:       c.Network,
 		UDPTimeout:    c.UDPTimeout,
+		TCPriority:    c.TCPriority,
 		BypassRuleSet: c.BypassRuleSets,
 	}
 	missing := make([]PackageRef, 0)
 	if localEnabled {
 		local := LocalRuntime{
 			DNSMode:              c.Local.DNSMode,
-			CgroupPath:           c.Local.CgroupPath,
 			IPv6:                 c.Local.IPv6,
 			BypassPrivateAddress: c.Local.BypassPrivateAddress,
 			IncludeUID:           append([]uint32{}, c.Local.IncludeUID...),
@@ -321,6 +342,8 @@ func (c Config) BuildWithResolver(resolve PackageUIDResolver) (BuildResult, erro
 			IncludeAndroidUser:   append([]int{}, c.Local.IncludeAndroidUser...),
 			IncludePackage:       append([]string{}, c.Local.IncludePackage...),
 			ExcludePackage:       append([]string{}, c.Local.ExcludePackage...),
+			BypassPort:           append([]uint16{}, c.Local.BypassPort...),
+			BypassPortRange:      append([]string{}, c.Local.BypassPortRange...),
 		}
 		if c.AppProxyEnable {
 			if resolve == nil {
@@ -358,9 +381,8 @@ func (c Config) BuildWithResolver(resolve PackageUIDResolver) (BuildResult, erro
 			ExcludeSourceCIDR:    c.Shared.ExcludeSourceCIDR,
 			IncludeMACAddress:    c.Shared.IncludeMACAddress,
 			ExcludeMACAddress:    c.Shared.ExcludeMACAddress,
-			Advanced: SharedAdvancedRuntime{
-				TCPriority: c.Shared.TCPriority,
-			},
+			BypassPort:           c.Shared.BypassPort,
+			BypassPortRange:      c.Shared.BypassPortRange,
 		}
 	}
 	return BuildResult{
@@ -381,6 +403,7 @@ type Inbound struct {
 	Mode          string
 	Network       []string
 	UDPTimeout    string
+	TCPriority    uint16
 	BypassRuleSet []string
 	Local         *LocalRuntime
 	Shared        *SharedRuntime
@@ -389,7 +412,6 @@ type Inbound struct {
 // LocalRuntime 是仅在 local 或 hybrid 模式输出的字段。
 type LocalRuntime struct {
 	DNSMode              string   `json:"dns_mode,omitempty"`
-	CgroupPath           string   `json:"cgroup_path,omitempty"`
 	IPv6                 bool     `json:"ipv6"`
 	BypassPrivateAddress bool     `json:"bypass_private_address"`
 	IncludeUID           []uint32 `json:"include_uid,omitempty"`
@@ -399,24 +421,22 @@ type LocalRuntime struct {
 	IncludeAndroidUser   []int    `json:"include_android_user,omitempty"`
 	IncludePackage       []string `json:"include_package,omitempty"`
 	ExcludePackage       []string `json:"exclude_package,omitempty"`
+	BypassPort           []uint16 `json:"bypass_port,omitempty"`
+	BypassPortRange      []string `json:"bypass_port_range,omitempty"`
 }
 
 // SharedRuntime 是仅在 shared 或 hybrid 模式输出的字段。
 type SharedRuntime struct {
-	DNSMode              string                `json:"dns_mode,omitempty"`
-	Interface            []string              `json:"interface,omitempty"`
-	IPv6                 bool                  `json:"ipv6"`
-	BypassPrivateAddress bool                  `json:"bypass_private_address"`
-	IncludeSourceCIDR    []string              `json:"include_source_cidr,omitempty"`
-	ExcludeSourceCIDR    []string              `json:"exclude_source_cidr,omitempty"`
-	IncludeMACAddress    []string              `json:"include_mac_address,omitempty"`
-	ExcludeMACAddress    []string              `json:"exclude_mac_address,omitempty"`
-	Advanced             SharedAdvancedRuntime `json:"advanced"`
-}
-
-// SharedAdvancedRuntime 是 shared 数据路径的高级内核参数。
-type SharedAdvancedRuntime struct {
-	TCPriority uint16 `json:"tc_priority,omitzero"`
+	DNSMode              string   `json:"dns_mode,omitempty"`
+	Interface            []string `json:"interface,omitempty"`
+	IPv6                 bool     `json:"ipv6"`
+	BypassPrivateAddress bool     `json:"bypass_private_address"`
+	IncludeSourceCIDR    []string `json:"include_source_cidr,omitempty"`
+	ExcludeSourceCIDR    []string `json:"exclude_source_cidr,omitempty"`
+	IncludeMACAddress    []string `json:"include_mac_address,omitempty"`
+	ExcludeMACAddress    []string `json:"exclude_mac_address,omitempty"`
+	BypassPort           []uint16 `json:"bypass_port,omitempty"`
+	BypassPortRange      []string `json:"bypass_port_range,omitempty"`
 }
 
 // MarshalJSON 只输出与当前 mode 对应的数据路径，避免 sing-box 拒绝无效字段。
@@ -426,6 +446,7 @@ func (i Inbound) MarshalJSON() ([]byte, error) {
 		"tag":             i.Tag,
 		"mode":            i.Mode,
 		"udp_timeout":     i.UDPTimeout,
+		"tc_priority":     i.TCPriority,
 		"bypass_rule_set": i.BypassRuleSet,
 	}
 	if len(i.Network) > 0 {
@@ -573,6 +594,20 @@ func parseUint32List(values map[string]string, key string) ([]uint32, error) {
 	return uniqueUint32(result), nil
 }
 
+func parsePorts(values map[string]string, key string) ([]uint16, error) {
+	items := CommaSeparated(values[key])
+	result := make([]uint16, 0, len(items))
+	for _, item := range items {
+		value, err := strconv.ParseUint(item, 10, 16)
+		if err != nil || value == 0 {
+			return nil, validationError("ebpf.port_invalid", key, key+" 必须是 1 到 65535 之间的端口")
+		}
+		result = append(result, uint16(value))
+	}
+	slices.Sort(result)
+	return slices.Compact(result), nil
+}
+
 func parseIntList(values map[string]string, key string) ([]int, error) {
 	items := CommaSeparated(values[key])
 	result := make([]int, 0, len(items))
@@ -597,6 +632,22 @@ func parseRanges(values map[string]string, key string) ([]string, error) {
 		endValue, endErr := strconv.ParseUint(end, 10, 32)
 		if startErr != nil || endErr != nil || startValue > endValue {
 			return nil, validationError("ebpf.uid_range_invalid", key, key+" 的范围无效")
+		}
+	}
+	return items, nil
+}
+
+func parsePortRanges(values map[string]string, key string) ([]string, error) {
+	items := CommaSeparated(values[key])
+	for _, item := range items {
+		start, end, found := strings.Cut(item, ":")
+		if !found || start == "" || end == "" {
+			return nil, validationError("ebpf.port_range_invalid", key, key+" 必须使用 start:end 格式")
+		}
+		startValue, startErr := strconv.ParseUint(start, 10, 16)
+		endValue, endErr := strconv.ParseUint(end, 10, 16)
+		if startErr != nil || endErr != nil || startValue == 0 || startValue > endValue {
+			return nil, validationError("ebpf.port_range_invalid", key, key+" 必须是 1 到 65535 之间的有效端口范围")
 		}
 	}
 	return items, nil

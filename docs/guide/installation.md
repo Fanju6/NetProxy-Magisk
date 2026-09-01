@@ -4,8 +4,8 @@
 
 - Android 12 或更高版本的 `arm64-v8a` 设备
 - Magisk、KernelSU 或 APatch，以及可用的 Root 权限
-- 支持 BPF、cgroup v2 和 cgroup socket hook 的内核
-- 使用共享网络代理时，还需要 TC eBPF 能力
+- 支持 BPF、TC classifier、透明 socket 与 socket lookup 的内核
+- local 模式还需要 veth 和策略路由能力
 
 NetProxy 不提供 TPROXY 或 REDIRECT 回退。内核能力不足时，透明代理入站无法启动。
 

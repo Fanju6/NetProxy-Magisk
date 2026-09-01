@@ -229,6 +229,22 @@ internal class SettingsViewModel(
                     proxySettings = settings.copy(sharedBypassPrivateAddress = value == "1")
                 )
 
+                "EBPF_LOCAL_BYPASS_PORT" -> current.copy(
+                    proxySettings = settings.copy(localBypassPorts = value)
+                )
+
+                "EBPF_LOCAL_BYPASS_PORT_RANGE" -> current.copy(
+                    proxySettings = settings.copy(localBypassPortRanges = value)
+                )
+
+                "EBPF_SHARED_BYPASS_PORT" -> current.copy(
+                    proxySettings = settings.copy(sharedBypassPorts = value)
+                )
+
+                "EBPF_SHARED_BYPASS_PORT_RANGE" -> current.copy(
+                    proxySettings = settings.copy(sharedBypassPortRanges = value)
+                )
+
                 "EBPF_BYPASS_RULE_SET" -> current.copy(
                     proxySettings = settings.copy(bypassRuleSet = value)
                 )
@@ -294,6 +310,10 @@ internal class SettingsViewModel(
             sharedIpv6 = enabled("EBPF_SHARED_IPV6", true),
             localBypassPrivateAddress = enabled("EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS", true),
             sharedBypassPrivateAddress = enabled("EBPF_SHARED_BYPASS_PRIVATE_ADDRESS", true),
+            localBypassPorts = value("EBPF_LOCAL_BYPASS_PORT", ""),
+            localBypassPortRanges = value("EBPF_LOCAL_BYPASS_PORT_RANGE", ""),
+            sharedBypassPorts = value("EBPF_SHARED_BYPASS_PORT", ""),
+            sharedBypassPortRanges = value("EBPF_SHARED_BYPASS_PORT_RANGE", ""),
             bypassRuleSet = value("EBPF_BYPASS_RULE_SET", "direct,cn-ip"),
             sharedInterfaces = value("EBPF_SHARED_INTERFACES", "wlan2"),
             sharedIncludeSourceCidrs = value("EBPF_SHARED_INCLUDE_SOURCE_CIDR", ""),
@@ -313,6 +333,10 @@ internal class SettingsViewModel(
             "EBPF_NETWORK",
             "EBPF_LOCAL_DNS_MODE",
             "EBPF_SHARED_DNS_MODE",
+            "EBPF_LOCAL_BYPASS_PORT",
+            "EBPF_LOCAL_BYPASS_PORT_RANGE",
+            "EBPF_SHARED_BYPASS_PORT",
+            "EBPF_SHARED_BYPASS_PORT_RANGE",
             "EBPF_BYPASS_RULE_SET",
             "EBPF_SHARED_INTERFACES",
             "EBPF_SHARED_INCLUDE_SOURCE_CIDR",
@@ -324,6 +348,10 @@ internal class SettingsViewModel(
         val modes = setOf("local", "shared", "hybrid")
         val commaSeparatedKeys = setOf(
             "EBPF_BYPASS_RULE_SET",
+            "EBPF_LOCAL_BYPASS_PORT",
+            "EBPF_LOCAL_BYPASS_PORT_RANGE",
+            "EBPF_SHARED_BYPASS_PORT",
+            "EBPF_SHARED_BYPASS_PORT_RANGE",
             "EBPF_SHARED_INTERFACES",
             "EBPF_SHARED_INCLUDE_SOURCE_CIDR",
             "EBPF_SHARED_EXCLUDE_SOURCE_CIDR",

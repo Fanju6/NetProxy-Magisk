@@ -11,7 +11,7 @@ import (
 
 func TestResolveProbeOptionsUsesConfiguredScope(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ebpf.conf")
-	content := "EBPF_MODE=hybrid\nEBPF_NETWORK=\"tcp,udp\"\nEBPF_LOCAL_CGROUP_PATH=/sys/fs/cgroup\nEBPF_SHARED_INTERFACES=\"wlan2,wlan0\"\n"
+	content := "EBPF_MODE=hybrid\nEBPF_NETWORK=\"tcp,udp\"\nEBPF_SHARED_INTERFACES=\"wlan2,wlan0\"\n"
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -23,7 +23,7 @@ func TestResolveProbeOptionsUsesConfiguredScope(t *testing.T) {
 	if options.CoreMode != "all" {
 		t.Fatalf("expected all mode, got %q", options.CoreMode)
 	}
-	want := []string{"tools", "ebpf", "status", "--mode", "all", "--network", "tcp,udp", "--cgroup", "/sys/fs/cgroup", "--interface", "wlan2", "--json"}
+	want := []string{"tools", "ebpf", "status", "--mode", "all", "--network", "tcp,udp", "--interface", "wlan2", "--json"}
 	if !reflect.DeepEqual(options.Args(), want) {
 		t.Fatalf("unexpected probe args: %#v", options.Args())
 	}
@@ -31,7 +31,7 @@ func TestResolveProbeOptionsUsesConfiguredScope(t *testing.T) {
 
 func TestResolveProbeOptionsSupportsExplicitScopes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ebpf.conf")
-	if err := os.WriteFile(path, []byte("EBPF_LOCAL_CGROUP_PATH=/sys/fs/cgroup\nEBPF_SHARED_INTERFACES=wlan2\nEBPF_NETWORK=tcp,udp\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("EBPF_LOCAL_IPV6=0\nEBPF_SHARED_IPV6=1\nEBPF_SHARED_INTERFACES=wlan2\nEBPF_NETWORK=tcp,udp\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -39,7 +39,7 @@ func TestResolveProbeOptionsSupportsExplicitScopes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if local.CoreMode != "local" || !reflect.DeepEqual(local.Args(), []string{"tools", "ebpf", "status", "--mode", "local", "--network", "tcp,udp", "--cgroup", "/sys/fs/cgroup", "--json"}) {
+	if local.CoreMode != "local" || !reflect.DeepEqual(local.Args(), []string{"tools", "ebpf", "status", "--mode", "local", "--network", "tcp,udp", "--ipv6=false", "--json"}) {
 		t.Fatalf("unexpected local options: %#v", local)
 	}
 
@@ -47,7 +47,7 @@ func TestResolveProbeOptionsSupportsExplicitScopes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if shared.CoreMode != "shared-network" || !reflect.DeepEqual(shared.Args(), []string{"tools", "ebpf", "status", "--mode", "shared-network", "--interface", "wlan2", "--json"}) {
+	if shared.CoreMode != "shared" || !reflect.DeepEqual(shared.Args(), []string{"tools", "ebpf", "status", "--mode", "shared", "--network", "tcp,udp", "--interface", "wlan2", "--json"}) {
 		t.Fatalf("unexpected shared options: %#v", shared)
 	}
 }
@@ -61,11 +61,14 @@ func TestFormatProbeOutputReturnsCapabilityReport(t *testing.T) {
   "network": ["tcp", "udp"],
   "findings": [],
   "active_programs": [{"id": 12, "name": "netproxy", "type": "sched_cls", "map_count": 4}],
-  "summary": {"pass": 8, "warn": 1, "fail": 0, "unknown": 2, "required_failures": 0},
+  "summary": {"pass": 8, "warn": 1, "fail": 0, "unknown": 2, "required_failures": 0, "required_unknowns": 2, "required_issues": 2},
   "result": "inconclusive"
 }`)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if report.Summary.RequiredUnknowns != 2 || report.Summary.RequiredIssues != 2 {
+		t.Fatalf("stable probe summary was not preserved: %#v", report.Summary)
 	}
 	output := FormatProbeOutput(report, nil)
 	for _, expected := range []string{

@@ -35,7 +35,7 @@
 
 ## Overview
 
-NetProxy 8.0 is a system-wide transparent proxy module for rooted Android devices. Its embedded sing-box core captures local and shared-network traffic through cgroup and TC eBPF, and can be managed through the Android app, module WebUI, CLI, Service API Dashboard, or zashboard.
+NetProxy 8.0 is a system-wide transparent proxy module for rooted Android devices. Its embedded sing-box core captures local and shared-network traffic through TC eBPF and can be managed through the Android app, module WebUI, CLI, Service API Dashboard, or zashboard.
 
 Supported root environments: **Magisk, KernelSU, and APatch**.
 
@@ -76,8 +76,8 @@ Both APIs listen on loopback by default. LAN access requires an explicit listene
 
 ## Features
 
-- cgroup eBPF interception for local TCP, UDP, and DNS traffic
-- No iptables/nftables rules or policy routing
+- TC eBPF interception for local and shared-network TCP, UDP, and DNS traffic
+- No iptables or nftables rules; sing-box manages local attachments and policy routing
 - Per-app blacklist / whitelist routing
 - Wi-Fi hotspot and USB tethering support
 - Node links, node files, Clash YAML, and subscriptions
@@ -100,7 +100,7 @@ Each release provides two packages:
 Both packages have identical proxy capabilities. The manager APK is an independent release asset; normal Android builds do not overwrite it.
 
 > [!IMPORTANT]
-> The eBPF inbound requires kernel BPF support, cgroup v2, and cgroup socket attachment. Shared-network proxying additionally requires usable TC eBPF support. Unsupported kernels cannot start this version.
+> The eBPF inbound requires kernel BPF, TC classifier, transparent socket, and socket lookup support. Local interception also requires veth and policy-routing capabilities. Unsupported kernels cannot start this version.
 
 1. Download the latest ZIP from [Releases](https://github.com/Fanju6/NetProxy-Magisk/releases).
 2. Flash it with Magisk, KernelSU, or APatch.
@@ -213,7 +213,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl help'
 | Path | Purpose |
 |------|---------|
 | `config/module.conf` | Startup, mode, selected node, selector, and subscription scheduling |
-| `config/ebpf/ebpf.conf` | eBPF inbound, per-app rules, shared networks, and map capacities |
+| `config/ebpf/ebpf.conf` | eBPF inbound, per-app rules, shared networks, and kernel bypass policies |
 | `config/singbox/confdir/` | Shared sing-box DNS, route, and Clash API configuration |
 | `data/catalog/<group-id>/` | Node and subscription groups (`meta.json` + `provider.json`) |
 | `runtime/` | Generated Provider, outbound, and eBPF files; do not edit manually |

@@ -10,5 +10,6 @@ func newTestOptions(root string) Options {
 	options.ProgressDir = filepath.Join(testDevRoot, "subscriptions")
 	options.WorkerPIDFile = filepath.Join(testDevRoot, "worker.pid")
 	options.WiFiStateFile = filepath.Join(testDevRoot, "wifi_state")
+	options.ServiceAddress = "127.0.0.1:0"
 	return options
 }

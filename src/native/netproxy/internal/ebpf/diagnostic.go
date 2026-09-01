@@ -15,7 +15,7 @@ type ProbeOptions struct {
 	RequestedMode string
 	CoreMode      string
 	Network       []string
-	CgroupPath    string
+	IPv6          bool
 	Interface     string
 }
 
@@ -36,16 +36,14 @@ func ResolveProbeOptions(path, requestedMode string) (ProbeOptions, error) {
 		case "hybrid":
 			coreMode = "all"
 		case "shared":
-			coreMode = "shared-network"
+			coreMode = "shared"
 		default:
 			coreMode = "local"
 		}
-	} else if requested == "shared" {
-		coreMode = "shared-network"
 	}
 
 	switch coreMode {
-	case "all", "local", "shared-network":
+	case "all", "local", "shared":
 	default:
 		return ProbeOptions{}, fmt.Errorf("eBPF 检查范围无效: %s", requestedMode)
 	}
@@ -53,6 +51,12 @@ func ResolveProbeOptions(path, requestedMode string) (ProbeOptions, error) {
 	network := append([]string{}, config.Network...)
 	if len(network) == 0 {
 		network = []string{"tcp", "udp"}
+	}
+	ipv6 := config.Local.IPv6
+	if coreMode == "shared" {
+		ipv6 = config.Shared.IPv6
+	} else if coreMode == "all" {
+		ipv6 = config.Local.IPv6 || config.Shared.IPv6
 	}
 	interfaceName := ""
 	if len(config.Shared.Interfaces) > 0 {
@@ -62,7 +66,7 @@ func ResolveProbeOptions(path, requestedMode string) (ProbeOptions, error) {
 		RequestedMode: requested,
 		CoreMode:      coreMode,
 		Network:       network,
-		CgroupPath:    strings.TrimSpace(config.Local.CgroupPath),
+		IPv6:          ipv6,
 		Interface:     interfaceName,
 	}, nil
 }
@@ -70,15 +74,13 @@ func ResolveProbeOptions(path, requestedMode string) (ProbeOptions, error) {
 // Args 返回 sing-box tools ebpf status 的参数。
 func (o ProbeOptions) Args() []string {
 	args := []string{"tools", "ebpf", "status", "--mode", o.CoreMode}
-	if (o.CoreMode == "all" || o.CoreMode == "local") && len(o.Network) > 0 {
+	if len(o.Network) > 0 {
 		args = append(args, "--network", strings.Join(o.Network, ","))
 	}
-	if o.CoreMode == "all" || o.CoreMode == "local" {
-		if o.CgroupPath != "" {
-			args = append(args, "--cgroup", o.CgroupPath)
-		}
+	if !o.IPv6 {
+		args = append(args, "--ipv6=false")
 	}
-	if o.CoreMode == "all" || o.CoreMode == "shared-network" {
+	if o.CoreMode == "all" || o.CoreMode == "shared" {
 		if o.Interface != "" {
 			args = append(args, "--interface", o.Interface)
 		}
@@ -108,6 +110,7 @@ type ProbeReport struct {
 	Architecture     string         `json:"architecture"`
 	Mode             string         `json:"mode"`
 	Network          []string       `json:"network"`
+	IPv6             bool           `json:"ipv6"`
 	Findings         []ProbeFinding `json:"findings"`
 	ActivePrograms   []ProbeProgram `json:"active_programs"`
 	ActiveStateError string         `json:"active_state_error,omitempty"`
@@ -139,6 +142,8 @@ type ProbeSummary struct {
 	Fail             int `json:"fail"`
 	Unknown          int `json:"unknown"`
 	RequiredFailures int `json:"required_failures"`
+	RequiredUnknowns int `json:"required_unknowns"`
+	RequiredIssues   int `json:"required_issues"`
 }
 
 // ParseProbeReport 解析并检查 sing-box JSON 诊断报告。
@@ -150,7 +155,7 @@ func ParseProbeReport(raw string) (ProbeReport, error) {
 	if err := json.Unmarshal([]byte(raw), &report); err != nil {
 		return ProbeReport{}, fmt.Errorf("解析 sing-box eBPF JSON 诊断报告失败: %w", err)
 	}
-	if report.Mode != "all" && report.Mode != "local" && report.Mode != "shared-network" {
+	if report.Mode != "all" && report.Mode != "local" && report.Mode != "shared" {
 		return ProbeReport{}, fmt.Errorf("sing-box eBPF JSON 诊断报告模式无效: %q", report.Mode)
 	}
 	if report.Result != "supported" && report.Result != "inconclusive" && report.Result != "unsupported" {
@@ -163,9 +168,9 @@ func ParseProbeReport(raw string) (ProbeReport, error) {
 func FormatProbeOutput(report ProbeReport, probeErr error) string {
 	coreMode := report.Mode
 	scope := map[string]string{
-		"local":          "本机应用流量",
-		"shared-network": "热点与共享网络",
-		"all":            "本机应用流量、热点与共享网络",
+		"local":  "本机应用流量",
+		"shared": "热点与共享网络",
+		"all":    "本机应用流量、热点与共享网络",
 	}[coreMode]
 	if scope == "" {
 		scope = coreMode
@@ -198,14 +203,14 @@ func FormatProbeOutput(report ProbeReport, probeErr error) string {
 
 	commonFail := hasFailedScope(report.Findings, "common")
 	localFail := hasFailedScope(report.Findings, "local")
-	sharedFail := hasFailedScope(report.Findings, "shared-network")
+	sharedFail := hasFailedScope(report.Findings, "shared")
 	if report.Summary.Fail > 0 || probeErr != nil {
 		builder.WriteString("\n问题定位:\n")
 		if commonFail {
 			builder.WriteString("  - 基础 eBPF 权限或内核能力不满足。\n")
 		}
 		if localFail {
-			builder.WriteString("  - 本机 cgroup eBPF 能力不满足。\n")
+			builder.WriteString("  - 本机 TC 路径或策略路由能力不满足。\n")
 		}
 		if sharedFail {
 			builder.WriteString("  - 热点接口或 TC eBPF 能力不满足。\n")

@@ -3560,9 +3560,6 @@
             "off"
           ]
         },
-        "cgroup_path": {
-          "type": "string"
-        },
         "ipv6": {
           "type": "boolean"
         },
@@ -3667,17 +3664,36 @@
               }
             }
           ]
-        }
-      },
-      "additionalProperties": false
-    },
-    "EBPFSharedAdvancedOptions": {
-      "type": "object",
-      "properties": {
-        "tc_priority": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535
+        },
+        "bypass_port": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65535
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 65535
+              }
+            }
+          ]
+        },
+        "bypass_port_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
         }
       },
       "additionalProperties": false
@@ -3764,8 +3780,35 @@
             }
           ]
         },
-        "advanced": {
-          "$ref": "#/$defs/EBPFSharedAdvancedOptions"
+        "bypass_port": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65535
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 65535
+              }
+            }
+          ]
+        },
+        "bypass_port_range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
         }
       },
       "additionalProperties": false
@@ -6453,6 +6496,11 @@
             },
             "udp_timeout": {
               "$ref": "#/$defs/UDPTimeout"
+            },
+            "tc_priority": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
             },
             "bypass_rule_set": {
               "anyOf": [

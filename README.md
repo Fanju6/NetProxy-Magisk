@@ -35,7 +35,7 @@
 
 ## 项目简介
 
-NetProxy 8.0 是面向已 Root Android 设备的系统级透明代理模块。模块以内置 sing-box 为代理核心，通过 cgroup 与 TC eBPF 接管本机及共享网络流量，并提供 Android 管理器、模块 WebUI、CLI、Service API Dashboard 与 zashboard 等入口。
+NetProxy 8.0 是面向已 Root Android 设备的系统级透明代理模块。模块以内置 sing-box 为代理核心，通过 TC eBPF 接管本机及共享网络流量，并提供 Android 管理器、模块 WebUI、CLI、Service API Dashboard 与 zashboard 等入口。
 
 支持 **Magisk、KernelSU 与 APatch**。节点、订阅、路由、DNS 和透明代理配置均保存在模块目录中，不依赖 VPN 模式运行。
 
@@ -76,8 +76,8 @@ Clash API 与 Service API 默认只监听本机。需要从其他设备访问时
 
 ## 核心能力
 
-- 使用 cgroup eBPF 接管本机 TCP、UDP 与 DNS 流量
-- 不修改 iptables、nftables 或策略路由
+- 使用 TC eBPF 接管本机与共享网络的 TCP、UDP 和 DNS 流量
+- 不修改 iptables 或 nftables；本机路径的 attachment 和策略路由由 sing-box 管理
 - 分应用黑名单 / 白名单、热点和 USB 共享代理
 - 单节点链接、节点文件、Clash YAML 与订阅导入
 - 手动节点选择与 URLTest 自动测速
@@ -99,7 +99,7 @@ Release 页面提供以下两个版本：
 两个包的代理能力完全一致。标准包也是模块自更新的默认下载目标；只有需要随模块刷入管理器时才选择**含管理器包**。
 
 > [!IMPORTANT]
-> eBPF 入站需要内核启用 BPF、cgroup v2 与 cgroup socket attach 能力。热点共享还需要可用的 TC eBPF 支持；不满足要求的内核无法启动本版本。
+> eBPF 入站需要内核启用 BPF、TC classifier、透明 socket 与 socket lookup 等能力；本机路径还需要 veth 和策略路由支持。不满足要求的内核无法启动本版本。
 
 1. 从 [Releases](https://github.com/Fanju6/NetProxy-Magisk/releases) 下载最新模块 ZIP。
 2. 在 Magisk、KernelSU 或 APatch 中刷入模块。
@@ -218,7 +218,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl help'
 | 路径 | 用途 |
 |------|------|
 | `config/module.conf` | 开机启动、出站模式、当前节点、选择模式和订阅调度 |
-| `config/ebpf/ebpf.conf` | eBPF 入站、分应用、共享网络与 Map 容量 |
+| `config/ebpf/ebpf.conf` | eBPF 入站、分应用、共享网络与内核绕过策略 |
 | `config/singbox/confdir/` | 通用 sing-box 配置，包括 DNS、路由和 Clash API |
 | `data/catalog/<分组 ID>/` | 节点与订阅分组，含 `meta.json` 与 `provider.json` |
 | `runtime/` | 启动时生成的 Provider、出站和 eBPF 配置，不应手动编辑 |
@@ -257,7 +257,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl logs show core 100'
 su -c '/data/adb/modules/netproxy/netproxyctl logs export /sdcard/Download/netproxy-diagnostics.tar.gz'
 ```
 
-启动失败时优先检查 `sing-box.log`。出现 eBPF 加载错误时，请检查内核 BPF / cgroup 能力、Root 授权与 `ebpf.conf`；手写节点无法加载时，重点检查顶层是否为 `outbounds`、协议字段是否为 `type`、JSON 语法是否正确，以及节点标签是否冲突。
+启动失败时优先检查 `sing-box.log`。出现 eBPF 加载错误时，请检查内核 BPF / TC 能力、Root 授权与 `ebpf.conf`；手写节点无法加载时，重点检查顶层是否为 `outbounds`、协议字段是否为 `type`、JSON 语法是否正确，以及节点标签是否冲突。
 
 更完整的安装、配置和排障说明请访问 [NetProxy 文档](https://www.netproxy.store/)。
 

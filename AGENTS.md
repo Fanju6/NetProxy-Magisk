@@ -299,7 +299,7 @@ eBPF 只负责透明代理入站。停止服务由 sing-box 关闭并清理其 e
 
 分应用配置保存 `<user-id>:<package>`，Go eBPF 运行时生成器通过 Android package service 查询 UID 后生成 `include_uid` 或 `exclude_uid`。应用安装、重装、UID 变化或用户范围变化后，通过配置 reload 重新解析，不维护模块侧 UID 缓存；白名单自动包含 UID 0。
 
-本机 cgroup 与热点 shared-network 由 `EBPF_MODE` 选择。`local` 只输出 local 字段，`shared` 只输出 shared 字段，`hybrid` 同时输出两者；`shared` 与 `hybrid` 必须配置至少一个下游接口。
+本机默认出口与热点下游接口由 `EBPF_MODE` 选择。`local` 只输出 local 字段，`shared` 只输出 shared 字段，`hybrid` 同时输出两者；两条数据路径均由 sing-box 管理 TC attachment，`shared` 与 `hybrid` 必须配置至少一个下游接口。
 
 ## sing-box 配置组合
 

@@ -6,8 +6,8 @@ NetProxy 是面向 Android Root 设备的 sing-box 透明代理模块。它通�
 
 - Android 12 及以上的 `arm64-v8a` 设备
 - Magisk、KernelSU 或 APatch
-- 支持 BPF、cgroup v2 与 cgroup socket hook 的内核
-- 使用共享网络代理时，还需要 TC eBPF 能力
+- 支持 BPF、TC classifier、透明 socket 与 socket lookup 的内核
+- local 模式还需要 veth 和策略路由能力
 
 NetProxy 只提供 eBPF 透明代理入站，没有 TPROXY 或 REDIRECT 回退。厂商内核可能关闭或回移部分 BPF 能力，不能只凭 Android 或 Linux 版本判断是否兼容；请使用内置 [eBPF 能力探测](/config/ebpf#能力探测)确认。
 

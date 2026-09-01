@@ -203,6 +203,38 @@ internal fun ProxySettingsScreen(
                                 checked = settings.localBypassPrivateAddress,
                                 onCheckedChange = viewModel::setLocalBypassPrivateAddress
                             )
+                        },
+                        CardItem("bypass_ports") {
+                            val label = stringResource(R.string.ebpf_local_bypass_ports)
+                            ArrowPreference(
+                                title = label,
+                                summary = settings.localBypassPorts.ifBlank {
+                                    stringResource(R.string.not_set)
+                                },
+                                onClick = {
+                                    editValue(
+                                        "EBPF_LOCAL_BYPASS_PORT",
+                                        label,
+                                        settings.localBypassPorts
+                                    )
+                                }
+                            )
+                        },
+                        CardItem("bypass_port_ranges") {
+                            val label = stringResource(R.string.ebpf_local_bypass_port_ranges)
+                            ArrowPreference(
+                                title = label,
+                                summary = settings.localBypassPortRanges.ifBlank {
+                                    stringResource(R.string.not_set)
+                                },
+                                onClick = {
+                                    editValue(
+                                        "EBPF_LOCAL_BYPASS_PORT_RANGE",
+                                        label,
+                                        settings.localBypassPortRanges
+                                    )
+                                }
+                            )
                         }
                     )
                 )
@@ -253,6 +285,38 @@ internal fun ProxySettingsScreen(
                                 title = stringResource(R.string.ebpf_bypass_private_address),
                                 checked = settings.sharedBypassPrivateAddress,
                                 onCheckedChange = viewModel::setSharedBypassPrivateAddress
+                            )
+                        },
+                        CardItem("bypass_ports") {
+                            val label = stringResource(R.string.ebpf_shared_bypass_ports)
+                            ArrowPreference(
+                                title = label,
+                                summary = settings.sharedBypassPorts.ifBlank {
+                                    stringResource(R.string.not_set)
+                                },
+                                onClick = {
+                                    editValue(
+                                        "EBPF_SHARED_BYPASS_PORT",
+                                        label,
+                                        settings.sharedBypassPorts
+                                    )
+                                }
+                            )
+                        },
+                        CardItem("bypass_port_ranges") {
+                            val label = stringResource(R.string.ebpf_shared_bypass_port_ranges)
+                            ArrowPreference(
+                                title = label,
+                                summary = settings.sharedBypassPortRanges.ifBlank {
+                                    stringResource(R.string.not_set)
+                                },
+                                onClick = {
+                                    editValue(
+                                        "EBPF_SHARED_BYPASS_PORT_RANGE",
+                                        label,
+                                        settings.sharedBypassPortRanges
+                                    )
+                                }
                             )
                         },
                         CardItem("interfaces") {
@@ -402,6 +466,10 @@ internal fun ProxySettingsScreen(
         var value by remember(editingValue) { mutableStateOf(editingValue) }
         val usesListHint = editingKey in listOf(
             "EBPF_BYPASS_RULE_SET",
+            "EBPF_LOCAL_BYPASS_PORT",
+            "EBPF_LOCAL_BYPASS_PORT_RANGE",
+            "EBPF_SHARED_BYPASS_PORT",
+            "EBPF_SHARED_BYPASS_PORT_RANGE",
             "EBPF_SHARED_INTERFACES",
             "EBPF_SHARED_INCLUDE_SOURCE_CIDR",
             "EBPF_SHARED_EXCLUDE_SOURCE_CIDR",
@@ -411,6 +479,12 @@ internal fun ProxySettingsScreen(
         )
         val valueHint = when (editingKey) {
             "EBPF_BYPASS_RULE_SET" -> stringResource(R.string.settings_hint_rule_sets)
+            "EBPF_LOCAL_BYPASS_PORT",
+            "EBPF_SHARED_BYPASS_PORT" -> stringResource(R.string.settings_hint_ports)
+
+            "EBPF_LOCAL_BYPASS_PORT_RANGE",
+            "EBPF_SHARED_BYPASS_PORT_RANGE" -> stringResource(R.string.settings_hint_port_ranges)
+
             "EBPF_SHARED_INTERFACES" -> stringResource(R.string.settings_hint_interfaces)
             "EBPF_SHARED_INCLUDE_SOURCE_CIDR",
             "EBPF_SHARED_EXCLUDE_SOURCE_CIDR" -> stringResource(R.string.settings_hint_cidrs)

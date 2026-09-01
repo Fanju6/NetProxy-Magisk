@@ -135,6 +135,14 @@ jobs:
           go version -m .sing-box-source/sing-box | grep -q 'with_gvisor'
           go version -m .sing-box-source/sing-box | grep -q 'with_tailscale'
 
+          # 上游标签可能未提交重新生成后的 Schema，必须按同一源码与构建标签现场生成。
+          (
+            unset GOOS GOARCH CGO_ENABLED
+            make -C .sing-box-source schema
+          )
+          jq -e '."$defs".EBPFLocalOptions.properties.bypass_port' \
+            .sing-box-source/docs/schema.json >/dev/null
+
           install -m 0755 .sing-box-source/sing-box "$SING_BOX_TARGET"
           install -m 0644 .sing-box-source/docs/schema.json \
             src/android/app/src/main/assets/sing-box.schema.json
