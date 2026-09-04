@@ -230,13 +230,11 @@ func validateConfigJournal(options Options, journal configApplyJournal) error {
 
 func isSingBoxStaticPath(singBoxDir, path string) bool {
 	path = filepath.Clean(path)
-	for _, root := range []string{paths.SingBoxConfDir(singBoxDir), paths.SingBoxLocalRulesDir(singBoxDir)} {
-		relative, err := filepath.Rel(filepath.Clean(root), path)
-		if err == nil && relative != "." && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-			return true
-		}
+	if path == filepath.Clean(paths.SingBoxConfig(singBoxDir)) {
+		return true
 	}
-	return false
+	relative, err := filepath.Rel(paths.SingBoxLocalRulesDir(singBoxDir), path)
+	return err == nil && filepath.Dir(relative) == "." && filepath.Ext(relative) == ".json"
 }
 
 func restoreConfigSnapshots(journal configApplyJournal) error {

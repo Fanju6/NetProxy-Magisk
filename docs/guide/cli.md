@@ -101,9 +101,10 @@ su -c '/data/adb/modules/netproxy/netproxyctl ebpf status configured'
 su -c '/data/adb/modules/netproxy/netproxyctl ebpf status all --raw'
 
 su -c '/data/adb/modules/netproxy/netproxyctl config list'
-su -c '/data/adb/modules/netproxy/netproxyctl config read 03_dns.json'
+su -c '/data/adb/modules/netproxy/netproxyctl config read singbox/dns'
+su -c '/data/adb/modules/netproxy/netproxyctl config read singbox/config.json'
 su -c '/data/adb/modules/netproxy/netproxyctl config check'
-su -c '/data/adb/modules/netproxy/netproxyctl config validate 03_dns.json /sdcard/candidate.json'
+su -c '/data/adb/modules/netproxy/netproxyctl config validate singbox/dns /sdcard/candidate.json'
 
 su -c '/data/adb/modules/netproxy/netproxyctl logs show service 100'
 su -c '/data/adb/modules/netproxy/netproxyctl logs show core 100'
@@ -111,3 +112,13 @@ su -c '/data/adb/modules/netproxy/netproxyctl logs export /sdcard/Download/netpr
 ```
 
 `ebpf status` 默认返回整理后的能力诊断，`--raw` 返回 sing-box 原始输出。诊断包不会导出 Catalog 节点内容。
+
+`config list` 同时列出主配置、分区、本地规则和只读运行时。`singbox/dns` 的候选内容必须使用 `{"dns": {...}}`，`{}` 表示删除该字段；不能包含其他分区。完整替换使用 `singbox/config.json`。
+
+`config read` 返回 `content` 和 `revision`。编辑期间需要防止覆盖并发修改时，在目标前传入读到的版本：
+
+```sh
+su -c '/data/adb/modules/netproxy/netproxyctl config apply --revision <读到的revision> singbox/dns /sdcard/candidate.json'
+```
+
+版本不一致返回 `config.conflict`，不保存；成功响应包含新的 `revision`。分区版本只跟踪该分区，整份配置版本跟踪整个文件。省略 `--revision` 表示主动覆盖所选目标，但分区写入仍不会覆盖其他字段。

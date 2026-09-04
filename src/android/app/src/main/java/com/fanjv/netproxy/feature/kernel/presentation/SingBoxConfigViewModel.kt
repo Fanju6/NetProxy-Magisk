@@ -35,7 +35,8 @@ internal class SingBoxConfigViewModel(
                                         "runtime" -> SingBoxDocumentCategory.Runtime
                                         else -> SingBoxDocumentCategory.Config
                                     },
-                                    editable = document.editable
+                                    editable = document.editable,
+                                    section = document.section
                                 )
                             },
                             isLoadingDocuments = false,
@@ -57,15 +58,17 @@ internal class SingBoxConfigViewModel(
                 it.copy(
                     activeDocumentId = id,
                     activeDocumentContent = "",
+                    activeDocumentRevision = "",
                     isLoadingDocument = true,
                     documentLoadError = false
                 )
             }
-            runCatching { repository.read(id) }
-                .onSuccess { content ->
+            runCatching { repository.readSnapshot(id) }
+                .onSuccess { snapshot ->
                     _state.update { state ->
                         if (state.activeDocumentId != id) state else state.copy(
-                            activeDocumentContent = content,
+                            activeDocumentContent = snapshot.content,
+                            activeDocumentRevision = snapshot.revision,
                             isLoadingDocument = false,
                             documentLoadError = false
                         )
@@ -85,18 +88,24 @@ internal class SingBoxConfigViewModel(
     fun saveDocument(
         id: String,
         content: String,
+        expectedRevision: String,
         onComplete: (SingBoxDocumentSaveResult) -> Unit = {}
     ) {
         viewModelScope.launch {
-            runCatching { repository.apply(id, content) }
-                .onSuccess {
+            runCatching {
+                val state = _state.value
+                check(state.activeDocumentId == id && expectedRevision.isNotEmpty())
+                repository.apply(id, content, expectedRevision)
+            }
+                .onSuccess { revision ->
                     _state.update { state ->
                         if (state.activeDocumentId != id) state else state.copy(
                             activeDocumentContent = content,
+                            activeDocumentRevision = revision,
                             documentLoadError = false
                         )
                     }
-                    onComplete(SingBoxDocumentSaveResult(success = true))
+                    onComplete(SingBoxDocumentSaveResult(success = true, revision = revision))
                 }
                 .onFailure { error ->
                     onComplete(
@@ -122,4 +131,3 @@ internal class SingBoxConfigViewModel(
         }
     }
 }
-

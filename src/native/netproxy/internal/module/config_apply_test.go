@@ -84,7 +84,7 @@ func configApplyOptions(t *testing.T) (Options, string, string, map[string]strin
 	options.StateFile = filepath.Join(root, "state", "service.json")
 	options.LogDir = filepath.Join(root, "logs")
 	options.SingBoxPath = fakeSingBox(t)
-	if err := os.MkdirAll(filepath.Join(options.SingBoxDir, "confdir"), 0o700); err != nil {
+	if err := os.MkdirAll(options.SingBoxDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(options.CatalogRoot, 0o700); err != nil {
@@ -102,7 +102,7 @@ func configApplyOptions(t *testing.T) (Options, string, string, map[string]strin
 	if err := os.WriteFile(options.EBPFConfig, []byte("\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	destination := filepath.Join(options.SingBoxDir, "confdir", "01_test.json")
+	destination := filepath.Join(options.SingBoxDir, "config.json")
 	oldStatic := "{\"version\":1,\"old\":true}\n"
 	newStatic := "{\"version\":1,\"new\":true}\n"
 	if err := os.WriteFile(destination, []byte(oldStatic), 0o600); err != nil {
@@ -166,7 +166,7 @@ func TestApplyConfigValidateOnlyDoesNotModifyRuntime(t *testing.T) {
 	options, destination, source, runtimeContent := configApplyOptions(t)
 	isolateConfigApplyHooks(t, false)
 	withFakeSingBoxResult(t, false, func() {
-		if err := ApplyConfig(context.Background(), options, "singbox/confdir/01_test.json", source, true); err != nil {
+		if _, err := ApplyConfig(context.Background(), options, "singbox/config.json", source, true, ""); err != nil {
 			t.Fatalf("validate config: %v", err)
 		}
 	})
@@ -195,7 +195,7 @@ func TestApplyConfigSingBoxCheckFailureDoesNotReplaceConfig(t *testing.T) {
 	options, destination, source, runtimeContent := configApplyOptions(t)
 	isolateConfigApplyHooks(t, false)
 	withFakeSingBoxResult(t, true, func() {
-		if err := ApplyConfig(context.Background(), options, "singbox/confdir/01_test.json", source, false); err == nil {
+		if _, err := ApplyConfig(context.Background(), options, "singbox/config.json", source, false, ""); err == nil {
 			t.Fatal("sing-box check failure was accepted")
 		}
 	})
@@ -213,7 +213,7 @@ func TestApplyConfigSavesWhenServiceIsStopped(t *testing.T) {
 	options, destination, source, runtimeContent := configApplyOptions(t)
 	isolateConfigApplyHooks(t, false)
 	withFakeSingBoxResult(t, false, func() {
-		if err := ApplyConfig(context.Background(), options, "singbox/confdir/01_test.json", source, false); err != nil {
+		if _, err := ApplyConfig(context.Background(), options, "singbox/config.json", source, false, ""); err != nil {
 			t.Fatalf("apply config: %v", err)
 		}
 	})
@@ -242,7 +242,7 @@ func TestApplyConfigReloadSuccessCommitsRuntime(t *testing.T) {
 		return nil
 	}
 	withFakeSingBoxResult(t, false, func() {
-		if err := ApplyConfig(context.Background(), options, "singbox/confdir/01_test.json", source, false); err != nil {
+		if _, err := ApplyConfig(context.Background(), options, "singbox/config.json", source, false, ""); err != nil {
 			t.Fatalf("apply and reload config: %v", err)
 		}
 	})
@@ -277,7 +277,7 @@ func TestApplyConfigReloadFailureRestoresStaticAndRuntime(t *testing.T) {
 		return nil
 	}
 	withFakeSingBoxResult(t, false, func() {
-		if err := ApplyConfig(context.Background(), options, "singbox/confdir/01_test.json", source, false); err == nil {
+		if _, err := ApplyConfig(context.Background(), options, "singbox/config.json", source, false, ""); err == nil {
 			t.Fatal("reload failure was accepted")
 		}
 	})
@@ -313,7 +313,7 @@ func TestApplyConfigCommitFailureRestoresAndReloadsOldRuntime(t *testing.T) {
 	}
 	failCommittedJournalWrite(t)
 	withFakeSingBoxResult(t, false, func() {
-		if err := ApplyConfig(context.Background(), options, "singbox/confdir/01_test.json", source, false); err == nil || !strings.Contains(err.Error(), "提交配置事务失败") {
+		if _, err := ApplyConfig(context.Background(), options, "singbox/config.json", source, false, ""); err == nil || !strings.Contains(err.Error(), "提交配置事务失败") {
 			t.Fatalf("unexpected committed journal failure: %v", err)
 		}
 	})
@@ -345,7 +345,7 @@ func TestApplyConfigCommitFailureReportsRollbackErrors(t *testing.T) {
 		if err := restoreConfigSnapshot(snapshot); err != nil {
 			return err
 		}
-		if filepath.Base(snapshot.Path) == "01_test.json" {
+		if filepath.Base(snapshot.Path) == "config.json" {
 			return errors.New("模拟磁盘恢复失败")
 		}
 		return nil
@@ -356,7 +356,7 @@ func TestApplyConfigCommitFailureReportsRollbackErrors(t *testing.T) {
 	}
 	failCommittedJournalWrite(t)
 	withFakeSingBoxResult(t, false, func() {
-		err := ApplyConfig(context.Background(), options, "singbox/confdir/01_test.json", source, false)
+		_, err := ApplyConfig(context.Background(), options, "singbox/config.json", source, false, "")
 		if err == nil {
 			t.Fatal("commit rollback failure was accepted")
 		}
@@ -419,7 +419,7 @@ func TestApplyConfigDiskWriteFailureDoesNotReplaceConfig(t *testing.T) {
 		return errors.New("模拟磁盘写入失败")
 	}
 	withFakeSingBoxResult(t, false, func() {
-		if err := ApplyConfig(context.Background(), options, "singbox/confdir/01_test.json", source, false); err == nil {
+		if _, err := ApplyConfig(context.Background(), options, "singbox/config.json", source, false, ""); err == nil {
 			t.Fatal("disk write failure was accepted")
 		}
 	})

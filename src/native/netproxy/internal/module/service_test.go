@@ -14,7 +14,7 @@ func TestServiceStartFailureReportsCheckError(t *testing.T) {
 	root := t.TempDir()
 	options := newTestOptions(root)
 	options.StateFile = filepath.Join(root, "state", "service.json")
-	if err := os.MkdirAll(filepath.Join(options.SingBoxDir, "confdir"), 0o700); err != nil {
+	if err := os.MkdirAll(options.SingBoxDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(options.CatalogRoot, 0o700); err != nil {
@@ -48,7 +48,7 @@ func TestServiceStartFailureReportsCheckError(t *testing.T) {
 func TestCheckServiceRejectsMissingBinary(t *testing.T) {
 	root := t.TempDir()
 	options := newTestOptions(root)
-	if err := os.MkdirAll(filepath.Join(options.SingBoxDir, "confdir"), 0o700); err != nil {
+	if err := os.MkdirAll(options.SingBoxDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(options.CatalogRoot, 0o700); err != nil {
@@ -244,10 +244,13 @@ func TestStartServiceDoesNotReachReadyAfterStateWriteFailure(t *testing.T) {
 	options := newTestOptions(root)
 	options.StateFile = filepath.Join(root, "state", "service.json")
 	options.SingBoxPath = filepath.Join(root, "sing-box")
-	if err := os.MkdirAll(filepath.Join(options.SingBoxDir, "confdir"), 0o700); err != nil {
+	if err := os.MkdirAll(options.SingBoxDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(options.SingBoxPath, []byte("fake"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(options.SingBoxDir, "config.json"), []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(options.CatalogRoot, 0o700); err != nil {
@@ -315,7 +318,7 @@ func TestStopServiceAttemptsFinalStateAfterStoppingWriteFailure(t *testing.T) {
 func TestPrepareDoesNotPersistSelectionBeforeCheck(t *testing.T) {
 	root := t.TempDir()
 	options := newTestOptions(root)
-	if err := os.MkdirAll(filepath.Join(options.SingBoxDir, "confdir"), 0o700); err != nil {
+	if err := os.MkdirAll(options.SingBoxDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(options.CatalogRoot, 0o700); err != nil {

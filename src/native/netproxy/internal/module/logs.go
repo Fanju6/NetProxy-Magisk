@@ -112,9 +112,9 @@ func ExportLogs(options Options, destination string) error {
 	files = append(files,
 		archiveFile{source: options.ModuleConfig, name: "config/module.conf", redact: true},
 		archiveFile{source: options.EBPFConfig, name: "config/ebpf.conf", redact: true},
+		archiveFile{source: paths.SingBoxConfig(options.SingBoxDir), name: "config/singbox/config.json", redact: true},
 	)
 	for _, directory := range []struct{ path, name string }{
-		{paths.SingBoxConfDir(options.SingBoxDir), "config/singbox/confdir"},
 		{paths.SingBoxLocalRulesDir(options.SingBoxDir), "config/singbox/rules/local"},
 	} {
 		appendDirectoryFiles(&files, directory.path, directory.name, true, false)

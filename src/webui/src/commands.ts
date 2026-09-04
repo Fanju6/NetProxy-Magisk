@@ -126,6 +126,11 @@ export const COMMANDS = {
   config check                        检查全部配置
   config validate <目标> <内容文件>   校验配置
   config apply <目标> <内容文件>      应用配置
+
+  完整配置：singbox/config.json
+  分区目标：singbox/dns、singbox/inbounds、singbox/route 等
+  分区内容保留顶层字段，例如 {"dns":{...}}；{} 删除该分区。
+  apply/validate 在目标前加 --revision <读取值>，避免覆盖并发修改。
 `,
   },
   logs: {

@@ -2,7 +2,9 @@ package module
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json/jsontext"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -30,6 +32,24 @@ type ConfigDocument struct {
 	Filename string `json:"filename"`
 	Category string `json:"category"`
 	Editable bool   `json:"editable"`
+	Section  string `json:"section,omitempty"`
+}
+
+var ErrConfigConflict = errors.New("配置已被修改，请重新加载后再保存")
+
+var configSections = map[string]bool{
+	"log": true, "experimental": true, "dns": true, "inbounds": true,
+	"route": true, "http_clients": true, "services": true, "outbounds": true,
+	"providers": false, "endpoints": false, "ntp": false,
+	"certificate": false, "certificate_providers": false, "network_namespaces": false,
+}
+
+func configSection(target string) string {
+	section, hasPrefix := strings.CutPrefix(target, "singbox/")
+	if _, exists := configSections[section]; hasPrefix && exists {
+		return section
+	}
+	return ""
 }
 
 // ListConfigs 返回所有可管理的配置文件，不读取运行时 JSON 内容。
@@ -38,33 +58,34 @@ func ListConfigs(options Options) ([]ConfigDocument, error) {
 		return nil, err
 	}
 	result := make([]ConfigDocument, 0)
-	for _, item := range []struct {
-		dir        string
-		pathPrefix string
-		category   string
-		editable   bool
-	}{
-		{paths.SingBoxConfDir(options.SingBoxDir), "confdir", "config", true},
-		{paths.SingBoxLocalRulesDir(options.SingBoxDir), "rules/local", "rules", true},
-	} {
-		entries, err := os.ReadDir(item.dir)
-		if os.IsNotExist(err) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		for _, entry := range entries {
-			if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+	if _, err := os.Stat(paths.SingBoxConfig(options.SingBoxDir)); err == nil {
+		result = append(result, ConfigDocument{ID: "singbox/config.json", Filename: "config.json", Category: "config", Editable: true})
+		// 主配置损坏时仍提供完整编辑入口，避免用户无法打开文件进行修复。
+		content, _ := os.ReadFile(paths.SingBoxConfig(options.SingBoxDir))
+		object, _ := configObject(content)
+		for section, alwaysListed := range configSections {
+			if _, exists := object[section]; !alwaysListed && !exists {
 				continue
 			}
-			result = append(result, ConfigDocument{
-				ID:       "singbox/" + filepath.ToSlash(filepath.Join(item.pathPrefix, entry.Name())),
-				Filename: entry.Name(),
-				Category: item.category,
-				Editable: item.editable,
-			})
+			result = append(result, ConfigDocument{ID: "singbox/" + section, Filename: section, Category: "config", Editable: true, Section: section})
 		}
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+	entries, err := os.ReadDir(paths.SingBoxLocalRulesDir(options.SingBoxDir))
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		result = append(result, ConfigDocument{
+			ID:       "singbox/rules/local/" + entry.Name(),
+			Filename: entry.Name(),
+			Category: "rules",
+			Editable: true,
+		})
 	}
 	for _, name := range []string{"providers.json", "outbounds.json", "ebpf.json"} {
 		path := filepath.Join(options.RuntimeDir, name)
@@ -96,11 +117,87 @@ func ReadConfig(options Options, target string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return map[string]string{"target": target, "content": string(content)}, nil
+	if section := configSection(target); section != "" {
+		object, err := configObject(content)
+		if err != nil {
+			return nil, err
+		}
+		content, err = sectionContent(object, section)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return map[string]string{"target": target, "content": string(content), "revision": configRevision(content)}, nil
+}
+
+func configRevision(content []byte) string {
+	return fmt.Sprintf("%x", sha256.Sum256(content))
+}
+
+func configObject(content []byte) (map[string]jsontext.Value, error) {
+	var object map[string]jsontext.Value
+	if err := json.Unmarshal(content, &object); err != nil {
+		return nil, fmt.Errorf("配置必须是有效 JSON 对象: %w", err)
+	}
+	if object == nil {
+		return nil, errors.New("配置必须是 JSON 对象，不能为 null")
+	}
+	return object, nil
+}
+
+func sectionContent(object map[string]jsontext.Value, section string) ([]byte, error) {
+	fragment := make(map[string]jsontext.Value)
+	if value, exists := object[section]; exists {
+		fragment[section] = value
+	}
+	return json.Marshal(fragment, json.Deterministic(true), jsontext.WithIndent("  "))
+}
+
+func prepareConfigEdit(current, replacement []byte, section, expectedRevision string) ([]byte, string, error) {
+	var object map[string]jsontext.Value
+	var err error
+	if section != "" {
+		object, err = configObject(current)
+		if err != nil {
+			return nil, "", err
+		}
+		if expectedRevision != "" {
+			current, err = sectionContent(object, section)
+			if err != nil {
+				return nil, "", err
+			}
+		}
+	}
+	if expectedRevision != "" && configRevision(current) != expectedRevision {
+		return nil, "", ErrConfigConflict
+	}
+	if section == "" {
+		return replacement, configRevision(replacement), nil
+	}
+	fragment, err := configObject(replacement)
+	if err != nil {
+		return nil, "", err
+	}
+	for key := range fragment {
+		if key != section {
+			return nil, "", fmt.Errorf("当前编辑器只允许修改 %s，不能包含 %s", section, key)
+		}
+	}
+	replacement, err = json.Marshal(fragment, json.Deterministic(true), jsontext.WithIndent("  "))
+	if err != nil {
+		return nil, "", err
+	}
+	if value, exists := fragment[section]; exists {
+		object[section] = value
+	} else {
+		delete(object, section)
+	}
+	merged, err := json.Marshal(object, json.Deterministic(true), jsontext.WithIndent("  "))
+	return merged, configRevision(replacement), err
 }
 
 // ApplyConfig 通过候选文件、校验和原子替换应用配置。
-func ApplyConfig(ctx context.Context, options Options, target, source string, validateOnly bool) (err error) {
+func ApplyConfig(ctx context.Context, options Options, target, source string, validateOnly bool, expectedRevision string) (revision string, err error) {
 	event := "config.apply"
 	message := "配置保存"
 	if validateOnly {
@@ -110,100 +207,119 @@ func ApplyConfig(ctx context.Context, options Options, target, source string, va
 	defer func() { logOperation(options, "config", event, message, false, err) }()
 	destination, err := ResolveConfig(options, target)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if strings.HasPrefix(target, "runtime/") {
-		return errors.New("运行时配置只读")
+		return "", errors.New("运行时配置只读")
 	}
-	if _, err := os.Stat(source); err != nil {
-		return fmt.Errorf("配置内容文件不存在: %w", err)
+	replacement, err := os.ReadFile(source)
+	if err != nil {
+		return "", fmt.Errorf("配置内容文件不存在: %w", err)
 	}
 	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
-		return err
+		return "", err
 	}
 	if err := options.validate(); err != nil {
-		return err
-	}
-	candidate, err := os.CreateTemp(filepath.Dir(destination), ".config-candidate-")
-	if err != nil {
-		return err
-	}
-	candidatePath := candidate.Name()
-	defer os.Remove(candidatePath)
-	if err := candidate.Close(); err != nil {
-		return err
-	}
-	if err := copyFile(candidatePath, source, 0o600); err != nil {
-		return err
+		return "", err
 	}
 	var lifecycleLock *lifecycleLock
 	if !validateOnly {
 		lifecycleLock, err = acquireLifecycleLock(options.StateFile)
 		if err != nil {
-			return err
+			return "", err
 		}
 		defer lifecycleLock.release()
 		if err := recoverConfigApply(ctx, options); err != nil {
-			return err
+			return "", err
 		}
 	}
-	if err := ValidateConfig(ctx, options, target, candidatePath); err != nil {
-		return err
+	// 锁内读取最新主配置后只替换目标分区，不能把客户端的整份旧快照写回。
+	section := configSection(target)
+	var current []byte
+	if section != "" || expectedRevision != "" {
+		current, err = os.ReadFile(destination)
+		if err != nil {
+			return "", err
+		}
+	}
+	content, revision, err := prepareConfigEdit(current, replacement, section, expectedRevision)
+	if err != nil {
+		return "", err
+	}
+	candidate, err := os.CreateTemp(filepath.Dir(destination), ".config-candidate-")
+	if err != nil {
+		return "", err
+	}
+	candidatePath := candidate.Name()
+	defer os.Remove(candidatePath)
+	if err := candidate.Close(); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(candidatePath, content, 0o600); err != nil {
+		return "", err
+	}
+	if section != "" {
+		err = validateSingBoxTree(ctx, options, candidatePath)
+	} else {
+		err = validateConfig(ctx, options, target, candidatePath, content)
+	}
+	if err != nil {
+		return "", err
 	}
 	if validateOnly {
-		return nil
+		return revision, nil
 	}
 	transaction, err := beginConfigApply(options, destination)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := os.Rename(candidatePath, destination); err != nil {
 		_ = transaction.rollback()
-		return err
+		return "", err
 	}
 	if err := transaction.setPhase("static_replaced"); err != nil {
 		rollbackErr := transaction.rollback()
 		if rollbackErr != nil {
-			return fmt.Errorf("记录配置应用阶段失败: %v；回滚失败: %w", err, rollbackErr)
+			return "", fmt.Errorf("记录配置应用阶段失败: %v；回滚失败: %w", err, rollbackErr)
 		}
-		return fmt.Errorf("记录配置应用阶段失败: %w", err)
+		return "", fmt.Errorf("记录配置应用阶段失败: %w", err)
 	}
 	if !configProcessRunning(options.SingBoxPath) {
 		if err := transaction.commit(); err != nil {
 			rollbackErr := transaction.rollback()
 			if rollbackErr != nil {
-				return fmt.Errorf("提交配置事务失败: %v；回滚失败: %w", err, rollbackErr)
+				return "", fmt.Errorf("提交配置事务失败: %v；回滚失败: %w", err, rollbackErr)
 			}
-			return fmt.Errorf("提交配置事务失败: %w", err)
+			return "", fmt.Errorf("提交配置事务失败: %w", err)
 		}
-		return nil
+		return revision, nil
 	}
 	if err := transaction.setPhase("reload_started"); err != nil {
 		rollbackErr := transaction.rollback()
 		if rollbackErr != nil {
-			return fmt.Errorf("记录配置 reload 阶段失败: %v；回滚失败: %w", err, rollbackErr)
+			return "", fmt.Errorf("记录配置 reload 阶段失败: %v；回滚失败: %w", err, rollbackErr)
 		}
-		return fmt.Errorf("记录配置 reload 阶段失败: %w", err)
+		return "", fmt.Errorf("记录配置 reload 阶段失败: %w", err)
 	}
 	if err := configReload(ctx, options); err != nil {
 		restoreErr := transaction.restore()
 		if restoreErr != nil {
-			return fmt.Errorf("配置 reload 失败: %v；恢复旧配置失败: %w", err, restoreErr)
+			return "", fmt.Errorf("配置 reload 失败: %v；恢复旧配置失败: %w", err, restoreErr)
 		}
 		if configProcessRunning(options.SingBoxPath) {
 			if restoreErr := configRestoreReload(ctx, options, transaction.journal); restoreErr != nil {
-				return fmt.Errorf("配置 reload 失败，且运行实例恢复失败: %v；%w", err, restoreErr)
+				return "", fmt.Errorf("配置 reload 失败，且运行实例恢复失败: %v；%w", err, restoreErr)
 			}
 		}
 		if cleanupErr := transaction.cleanup(); cleanupErr != nil {
-			return fmt.Errorf("配置 reload 失败，旧配置已恢复但清理事务失败: %v；%w", err, cleanupErr)
+			return "", fmt.Errorf("配置 reload 失败，旧配置已恢复但清理事务失败: %v；%w", err, cleanupErr)
 		}
-		return fmt.Errorf("配置 reload 失败，已恢复旧配置: %w", err)
+		return "", fmt.Errorf("配置 reload 失败，已恢复旧配置: %w", err)
 	}
 	if err := transaction.commit(); err != nil {
-		return rollbackAfterCommitFailure(ctx, options, transaction, err)
+		return "", rollbackAfterCommitFailure(ctx, options, transaction, err)
 	}
-	return nil
+	return revision, nil
 }
 
 func rollbackAfterCommitFailure(ctx context.Context, options Options, transaction *configApplyTransaction, commitErr error) error {
@@ -229,8 +345,7 @@ func rollbackAfterCommitFailure(ctx context.Context, options Options, transactio
 	return fmt.Errorf("提交配置事务失败: %w；%s", commitErr, strings.Join(details, "；"))
 }
 
-// ValidateConfig 校验 module.conf、ebpf.conf 或 sing-box JSON。
-func ValidateConfig(ctx context.Context, options Options, target, candidate string) error {
+func validateConfig(ctx context.Context, options Options, target, candidate string, content []byte) error {
 	switch target {
 	case "module":
 		_, err := moduleconfig.LoadModule(candidate)
@@ -239,57 +354,29 @@ func ValidateConfig(ctx context.Context, options Options, target, candidate stri
 		_, err := ebpf.Load(candidate)
 		return err
 	}
-	if !strings.HasPrefix(target, "singbox/") && !strings.HasPrefix(target, "runtime/") {
-		return errors.New("不支持的配置目标")
-	}
-	if strings.HasPrefix(target, "runtime/") && !isRuntimeConfigName(strings.TrimPrefix(target, "runtime/")) {
-		return errors.New("不支持的运行时文件")
-	}
-	if strings.HasPrefix(target, "singbox/") &&
-		!strings.HasPrefix(target, "singbox/confdir/") &&
-		!strings.HasPrefix(target, "singbox/rules/local/") {
-		return errors.New("不支持的 sing-box 配置目标")
-	}
-	content, err := os.ReadFile(candidate)
-	if err != nil {
-		return err
-	}
 	if !jsontext.Value(content).IsValid() {
 		return errors.New("配置不是有效 JSON")
 	}
-	if strings.HasPrefix(target, "singbox/confdir/") {
-		return validateSingBoxTree(ctx, options, target, candidate)
+	if target == "singbox/config.json" {
+		if _, err := configObject(content); err != nil {
+			return err
+		}
+		return validateSingBoxTree(ctx, options, candidate)
 	}
 	return nil
 }
 
 // validateSingBoxTree 在临时配置树中检查候选静态配置，避免直接覆盖用户正在使用的文件。
-func validateSingBoxTree(ctx context.Context, options Options, target, candidate string) error {
+func validateSingBoxTree(ctx context.Context, options Options, candidate string) error {
 	temporary, err := os.MkdirTemp("", "netproxy-config-check-")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(temporary)
-	for _, directory := range []struct{ source, destination string }{
-		{paths.SingBoxConfDir(options.SingBoxDir), paths.SingBoxConfDir(temporary)},
-		{paths.SingBoxRulesDir(options.SingBoxDir), paths.SingBoxRulesDir(temporary)},
-	} {
-		if err := copyDirectory(directory.source, directory.destination); err != nil {
-			return err
-		}
-	}
-	targetPath, err := ResolveConfig(options, target)
-	if err != nil {
+	if err := copyDirectory(paths.SingBoxRulesDir(options.SingBoxDir), paths.SingBoxRulesDir(temporary)); err != nil {
 		return err
 	}
-	relative, err := filepath.Rel(paths.SingBoxConfDir(options.SingBoxDir), targetPath)
-	if err != nil {
-		return err
-	}
-	candidatePath := filepath.Join(paths.SingBoxConfDir(temporary), relative)
-	if err := os.MkdirAll(filepath.Dir(candidatePath), 0o700); err != nil {
-		return err
-	}
+	candidatePath := paths.SingBoxConfig(temporary)
 	if err := copyFile(candidatePath, candidate, 0o600); err != nil {
 		return err
 	}
@@ -299,7 +386,7 @@ func validateSingBoxTree(ctx context.Context, options Options, target, candidate
 	if err != nil {
 		return err
 	}
-	command := exec.CommandContext(ctx, options.SingBoxPath, "check", "-C", paths.SingBoxConfDir(temporary),
+	command := exec.CommandContext(ctx, options.SingBoxPath, "check", "-c", candidatePath,
 		"-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.EBPF)
 	command.Dir = temporary
 	command.Stdout = os.Stderr
@@ -344,6 +431,11 @@ func ResolveConfig(options Options, target string) (string, error) {
 		return options.ModuleConfig, nil
 	case "ebpf":
 		return options.EBPFConfig, nil
+	case "singbox/config.json":
+		return paths.SingBoxConfig(options.SingBoxDir), nil
+	}
+	if configSection(target) != "" {
+		return paths.SingBoxConfig(options.SingBoxDir), nil
 	}
 	if !strings.HasPrefix(target, "singbox/") && !strings.HasPrefix(target, "runtime/") {
 		return "", errors.New("不支持的配置目标")
@@ -356,9 +448,8 @@ func ResolveConfig(options Options, target string) (string, error) {
 	}
 	relative := filepath.FromSlash(strings.TrimPrefix(target, prefix))
 	parts := strings.Split(filepath.ToSlash(relative), "/")
-	validSingBoxPath := len(parts) == 2 && parts[0] == "confdir" && filepath.Ext(parts[1]) == ".json" && parts[1] != "" && parts[1][0] != '.'
 	validLocalRulePath := len(parts) == 3 && parts[0] == "rules" && parts[1] == "local" && filepath.Ext(parts[2]) == ".json" && parts[2] != "" && parts[2][0] != '.'
-	if prefix == "singbox/" && !validSingBoxPath && !validLocalRulePath {
+	if prefix == "singbox/" && !validLocalRulePath {
 		return "", errors.New("配置目标路径无效")
 	}
 	if prefix == "runtime/" && (len(parts) != 1 || filepath.Ext(parts[0]) != ".json" || parts[0] == "" || parts[0][0] == '.') {

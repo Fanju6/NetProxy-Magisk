@@ -56,7 +56,7 @@ assert_contains "$CI_WORKFLOW" 'needs: [module, android]'
 assert_contains "$CI_WORKFLOW" "needs.module.result == 'success'"
 assert_contains "$CI_WORKFLOW" "needs.android.result == 'success' || needs.android.result == 'skipped'"
 assert_contains "$CI_WORKFLOW" 'compression-level: 0'
-assert_contains "$CI_WORKFLOW" '            src/module/config/singbox/confdir'
+assert_contains "$CI_WORKFLOW" '            src/module/config/singbox'
 assert_contains "$CI_WORKFLOW" '--target "$GITHUB_SHA"'
 assert_not_contains "$CI_WORKFLOW" 'full_name|lite_name'
 

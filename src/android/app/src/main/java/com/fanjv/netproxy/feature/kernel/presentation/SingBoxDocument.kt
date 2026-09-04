@@ -13,6 +13,7 @@ data class SingBoxDocument(
     val filename: String,
     val category: SingBoxDocumentCategory,
     val editable: Boolean,
+    val section: String = "",
 )
 
 /** sing-box 配置文件保存结果。 */
@@ -20,5 +21,5 @@ data class SingBoxDocumentSaveResult(
     val success: Boolean,
     val errorMessage: String? = null,
     val restored: Boolean = false,
+    val revision: String = "",
 )
-

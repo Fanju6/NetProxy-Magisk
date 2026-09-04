@@ -27,7 +27,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl logs show core 100'
 
 ## DNS 泄漏是什么
 
-检测站通常把“DNS 请求没有经过当前代理出口”称为 DNS 泄漏。默认配置的最终 DNS 使用 `dns-proxy`，不使用 FakeIP。需要让所有兜底解析也走代理时，可以调整 `03_dns.json`，代价是代理不可用时解析更依赖节点，并可能增加延迟。
+检测站通常把“DNS 请求没有经过当前代理出口”称为 DNS 泄漏。默认配置的最终 DNS 使用 `dns-proxy`，不使用 FakeIP。需要调整解析出口时，可以编辑 `config.json` 的 `dns` 分区；经代理解析意味着代理不可用时解析更依赖节点，并可能增加延迟。
 
 ## 应用分身没有生效
 

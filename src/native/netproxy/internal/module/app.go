@@ -147,8 +147,8 @@ func Check(ctx context.Context, options Options, allowEmpty bool) (PrepareResult
 	if options.SingBoxPath == "" {
 		return prepared, errors.New("sing-box 路径为空")
 	}
-	confDir := paths.SingBoxConfDir(options.SingBoxDir)
-	command := exec.CommandContext(ctx, options.SingBoxPath, "check", "-C", confDir,
+	configPath := paths.SingBoxConfig(options.SingBoxDir)
+	command := exec.CommandContext(ctx, options.SingBoxPath, "check", "-c", configPath,
 		"-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.EBPF)
 	command.Dir = options.SingBoxDir
 	command.Stdout = os.Stderr

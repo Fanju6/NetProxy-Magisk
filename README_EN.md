@@ -214,7 +214,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl help'
 |------|---------|
 | `config/module.conf` | Startup, mode, selected node, selector, and subscription scheduling |
 | `config/ebpf/ebpf.conf` | eBPF inbound, per-app rules, shared networks, and kernel bypass policies |
-| `config/singbox/confdir/` | Shared sing-box DNS, route, and Clash API configuration |
+| `config/singbox/config.json` | Static sing-box configuration; the manager supports editing DNS, inbounds, routing, and other sections |
 | `data/catalog/<group-id>/` | Node and subscription groups (`meta.json` + `provider.json`) |
 | `runtime/` | Generated Provider, outbound, and eBPF files; do not edit manually |
 | `config/singbox/rules/local/` | Editable local route rule sets |

@@ -11,7 +11,7 @@ TEST_MODULE="$TMP_ROOT/module"
 MODULE_CONF="$TEST_MODULE/config/module.conf"
 CATALOG_DIR="$TEST_MODULE/data/catalog"
 SINGBOX_DIR="$MODDIR/config/singbox"
-MIXED_INBOUND_FILE="$SINGBOX_DIR/confdir/04_inbounds.json"
+MIXED_INBOUND_FILE="$SINGBOX_DIR/config.json"
 SUBSCRIPTION_UPDATE_SOURCE="$ROOT/src/native/netproxy/internal/subscription/update.go"
 CATALOG_LIST_OUTPUT="$TMP_ROOT/catalog-list.json"
 CATALOG_SHOW_OUTPUT="$TMP_ROOT/catalog-show.json"
@@ -41,10 +41,9 @@ NETPROXY_MODULE_DIR="$TEST_MODULE" SUB_RUNTIME_DIR="$TMP_ROOT/subscriptions" \
 grep -q '"code":"catalog.show"' "$CATALOG_SHOW_OUTPUT"
 grep -q '"tag":"SOCKS"' "$CATALOG_SHOW_OUTPUT"
 
-grep -q '"external_controller": "127.0.0.1:9999"' "$SINGBOX_DIR/confdir/02_experimental.json"
-grep -q '"listen": "127.0.0.1"' "$SINGBOX_DIR/confdir/08_services.json"
-grep -q '"secret": "singbox"' "$SINGBOX_DIR/confdir/02_experimental.json"
-grep -q '"secret": "singbox"' "$SINGBOX_DIR/confdir/08_services.json"
+grep -q '"external_controller": "127.0.0.1:9999"' "$SINGBOX_DIR/config.json"
+grep -q '"listen": "127.0.0.1"' "$SINGBOX_DIR/config.json"
+grep -q '"secret": "singbox"' "$SINGBOX_DIR/config.json"
 
 # mixed 7080 仅供本机订阅下载使用，不得暴露到通配 IPv4/IPv6 地址。
 grep -q '"tag": "mixed_in"' "$MIXED_INBOUND_FILE"

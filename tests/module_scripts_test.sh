@@ -68,7 +68,7 @@ check_mksh_compatible_helpers() {
 check_removed_legacy_ebpf_assets() {
   [ ! -e "$MODULE_DIR/bin/bpftool" ]
   ! grep -Rqi 'fakeip\|fake-ip\|198\.18\.0\.0/15\|fc00::/18\|store_fakeip' \
-    "$MODULE_DIR/config/singbox/confdir"
+    "$MODULE_DIR/config/singbox/config.json"
 }
 
 #######################################
@@ -110,9 +110,11 @@ check_install_choices() {
 #######################################
 check_install_order() {
   main_flow="$(sed -n '/unzip -o "\$ZIPFILE" "module.prop"/,/else$/p' "$MODULE_DIR/customize.sh")"
+  choice_line="$(printf '%s\n' "$main_flow" | grep -n '^choose_install_mode || exit 1$' | head -n 1 | cut -d: -f1)"
   stop_line="$(printf '%s\n' "$main_flow" | grep -n 'stop_proxy_if_running' | head -n 1 | cut -d: -f1)"
   manager_line="$(printf '%s\n' "$main_flow" | grep -n 'install_bundled_manager' | head -n 1 | cut -d: -f1)"
-  [ -n "$stop_line" ] && [ -n "$manager_line" ] && [ "$stop_line" -lt "$manager_line" ]
+  [ -n "$choice_line" ] && [ -n "$stop_line" ] && [ -n "$manager_line" ] \
+    && [ "$choice_line" -lt "$stop_line" ] && [ "$stop_line" -lt "$manager_line" ]
 }
 
 check_shell_syntax

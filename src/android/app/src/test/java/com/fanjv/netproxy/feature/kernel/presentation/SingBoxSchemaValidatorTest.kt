@@ -346,20 +346,19 @@ class SingBoxSchemaValidatorTest {
             File("src/main/assets/sing-box.schema.json"),
             File("app/src/main/assets/sing-box.schema.json"),
         ).first(File::isFile)
-        val configDirectory = sequenceOf(
-            File("../module/config/singbox/confdir"),
-            File("../../module/config/singbox/confdir"),
-            File("src/module/config/singbox/confdir"),
-        ).first(File::isDirectory)
+        val configFile = sequenceOf(
+            File("../module/config/singbox/config.json"),
+            File("../../module/config/singbox/config.json"),
+            File("src/module/config/singbox/config.json"),
+        ).first(File::isFile)
         val validator = SingBoxSchemaValidator(schemaFile.readText())
 
-        val failures = configDirectory.listFiles { file -> file.extension == "json" }
-            .orEmpty()
-            .sortedBy(File::getName)
-            .mapNotNull { file ->
-                (validator.validate(file.readText()) as? SingBoxSchemaValidationResult.Invalid)
-                    ?.let { file.name to it.issues.joinToString { issue -> issue.message } }
-            }
+        val config = singBoxSchemaJson.parseToJsonElement(configFile.readText()).jsonObject
+        val documents = listOf(config) + config.map { (key, value) -> JsonObject(mapOf(key to value)) }
+        val failures = documents.mapNotNull { document ->
+            (validator.validate(document.toString()) as? SingBoxSchemaValidationResult.Invalid)
+                ?.issues?.joinToString { it.message }
+        }
 
         assertTrue("静态配置校验失败：$failures", failures.isEmpty())
     }

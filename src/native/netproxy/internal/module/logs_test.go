@@ -24,7 +24,7 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 	singboxDir := filepath.Join(root, "config", "singbox")
 	runtimeDir := filepath.Join(root, "runtime")
 	catalogRoot := filepath.Join(root, "data", "catalog", "group")
-	for _, dir := range []string{logDir, filepath.Dir(moduleConfig), filepath.Dir(ebpfConfig), filepath.Join(singboxDir, "confdir"), runtimeDir, catalogRoot} {
+	for _, dir := range []string{logDir, filepath.Dir(moduleConfig), filepath.Dir(ebpfConfig), singboxDir, runtimeDir, catalogRoot} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -48,7 +48,7 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 	if err := os.WriteFile(stateFile, []byte(`{"state":"ready"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(singboxDir, "confdir", "08_services.json"), []byte(`{"secret":"secret-config"}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(singboxDir, "config.json"), []byte(`{"secret":"secret-config"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(catalogRoot, "meta.json"), []byte(`{"url":"https://example.test/sub?token=secret-token","hwid":"secret-hwid","custom_headers":{"Authorization":"Bearer secret-bearer"}}`), 0o600); err != nil {

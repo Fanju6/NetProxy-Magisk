@@ -219,7 +219,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl help'
 |------|------|
 | `config/module.conf` | 开机启动、出站模式、当前节点、选择模式和订阅调度 |
 | `config/ebpf/ebpf.conf` | eBPF 入站、分应用、共享网络与内核绕过策略 |
-| `config/singbox/confdir/` | 通用 sing-box 配置，包括 DNS、路由和 Clash API |
+| `config/singbox/config.json` | sing-box 静态主配置；管理器支持 DNS、入站、路由等分区编辑 |
 | `data/catalog/<分组 ID>/` | 节点与订阅分组，含 `meta.json` 与 `provider.json` |
 | `runtime/` | 启动时生成的 Provider、出站和 eBPF 配置，不应手动编辑 |
 | `config/singbox/rules/local/` | 可编辑的本地路由规则集 |

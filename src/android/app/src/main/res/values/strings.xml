@@ -281,6 +281,10 @@
     <string name="singbox_documents_load_failed">无法读取 sing-box 配置文件</string>
     <string name="singbox_documents_empty">没有找到可编辑的 sing-box 配置文件</string>
     <string name="singbox_document_log">日志</string>
+    <string name="singbox_document_full">完整配置</string>
+    <string name="singbox_document_full_summary">查看或替换全部静态配置</string>
+    <string name="singbox_document_outbounds">自定义出站</string>
+    <string name="singbox_document_outbounds_summary">额外的出站与策略分组，不含 Catalog 自动生成项</string>
     <string name="singbox_document_log_summary">日志等级与输出位置</string>
     <string name="singbox_document_experimental">实验功能</string>
     <string name="singbox_document_experimental_summary">缓存与 Clash API</string>
@@ -298,7 +302,7 @@
     <string name="singbox_document_services_summary">Service API 与 Dashboard</string>
     <string name="singbox_document_source_summary">本地规则集源文件</string>
     <string name="singbox_document_runtime_summary">由模块启动时自动生成</string>
-    <string name="singbox_document_custom_summary">自定义配置片段</string>
+    <string name="singbox_document_custom_summary">主配置中的独立分区</string>
     <string name="json_format_short">格式</string>
     <string name="json_format_error">JSON 格式错误，无法格式化</string>
     <string name="json_syntax_error">JSON 语法错误</string>

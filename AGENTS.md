@@ -31,7 +31,7 @@
 - eBPF 是 sing-box 的入站实现，不是独立代理核心。服务、模式和节点切换文案继续使用“服务”或“sing-box”，不要泛化为“eBPF 服务”。
 - 分应用策略持久化严格的 `<user-id>:<package>` 引用，Android 每个用户独立展示；Go 通过 Android package service 查询 UID，运行时生成 `include_uid` / `exclude_uid`。
 - `EBPF_MODE` 只允许 `local`、`shared` 或 `hybrid`；local/shared 专属字段只能在对应数据路径启用时输出。
-- Service API 与 Clash API 的固定监听和密钥位于 `02_experimental.json`、`08_services.json`。不要重新引入运行时随机 bootstrap，现有 WebUI 依赖固定入口。
+- Service API 与 Clash API 的固定监听和密钥位于 `config/singbox/config.json` 的 `services` 与 `experimental.clash_api`。不要重新引入运行时随机 bootstrap，现有 WebUI 依赖固定入口。
 - 服务状态只允许 `stopped/preparing/starting/ready/stopping/failed`。`ready_at` 只能在 sing-box API 与 eBPF 入站均就绪后写入。
 - `service status` 的 `outbound_mode` 表示核心当前实际生效模式；用户在 `module.conf` 中保存的基础模式由 `configured_outbound_mode` 表示。Wi-Fi 自动切换不得覆盖基础模式。
 
@@ -71,6 +71,7 @@ src/module/service.sh
 - Native JSON 编解码统一使用 Go 标准库 `encoding/json/v2` 与 `encoding/json/jsontext`，依赖严格字段匹配、重复键拒绝和 UTF-8 校验；持久文件与 `schema=1` 输出必须显式传入 `json.Deterministic(true)`，不要回退到 v1 或设置 `GOEXPERIMENT=nojsonv2`。
 - `cmd/netproxyctl/default.pgo` 只使用真实 Android 上的只读工作负载生成；正式构建保持 `-pgo=auto`，更新 profile 前必须确认不含订阅、节点或设备数据，并对比非 PGO 产物。
 - Provider 修改必须保持完整校验、稳定 tag、`0600` 权限和原子替换。错误必须返回结构化 diagnostics，不允许空输出加成功退出码。
+- sing-box 静态事实源只有 `config/singbox/config.json`。分区编辑由 Go 在配置事务锁内替换指定顶层字段，保留其他字段和数组顺序；客户端使用读取时的 `revision`，同分区冲突返回 `config.conflict`。不能在 Android 中把整份旧快照合并写回。
 - 新增协议或修复解析缺陷时补充不含真实凭据的 fixture/golden 测试。
 
 ## Android 管理器
@@ -157,7 +158,7 @@ Android Root、开机启动、模块命令、快捷设置磁贴、eBPF、热点�
 以下写法看起来不规范，但都是上一版已被证伪写法的替代品。不要以「重构」或「统一风格」为由改回去。
 
 - 分应用策略按 `<user-id>:<package>` 保存并在 Go 中按用户查询 UID——把多个 Android 用户合并成包名或直接把包名交给 sing-box 会在应用分身场景下静默漏配。
-- Service API 与 Clash API 使用 `02_experimental.json`、`08_services.json` 中的固定监听与密钥——改回运行时随机 bootstrap 会让 WebUI 连不上核心且无任何报错。
+- Service API 与 Clash API 使用主配置中 `services`、`experimental.clash_api` 的固定监听与密钥——改回运行时随机 bootstrap 会让 WebUI 连不上核心且无任何报错。
 - Android 依赖由 `AppContainer` 与 `NetProxyViewModelFactory` 手工构造——引入 Hilt/Koin 需先有全项目架构决策。
 - Provider 与 selector 的默认值必须落到 `Auto/<group>`——回退到 `direct` 会让用户以为已代理而实际直连。
 - `src/module/NetProxy.apk` 由独立流程维护——本地 Android 构建覆盖它会把调试包发进正式模块。
@@ -200,7 +201,7 @@ NetProxy 不维护通用独立控制守护进程。唯一长期 Go 进程是模�
 | 模块设置 | `src/module/config/module.conf` | 保存活动分组、选择模式和出站模式 |
 | eBPF 设置 | `src/module/config/ebpf/ebpf.conf` | 由运行时生成 sing-box eBPF inbound |
 | 节点与订阅 | `src/module/data/catalog/<group-id>/` | `meta.json` + `provider.json` |
-| sing-box 静态配置 | `src/module/config/singbox/confdir/` | 按编号组合加载 |
+| sing-box 静态配置 | `src/module/config/singbox/config.json` | 单一主配置，支持整份或按顶层字段编辑 |
 | sing-box 运行时配置 | `src/module/runtime/` | 启动或检查时生成，不由客户端编辑 |
 | 服务状态 | `/dev/netproxy/service.json` | 本次启动周期的状态快照；缺失时按 stopped 处理 |
 | 实时核心状态 | Service API / Clash API | 连接、流量、测速和实际选择 |
@@ -303,13 +304,17 @@ eBPF 只负责透明代理入站。停止服务由 sing-box 关闭并清理其 e
 
 ## sing-box 配置组合
 
-Go 生命周期控制器通过 `-C config/singbox/confdir` 加载静态配置，并追加运行时文件：
+Go 生命周期控制器通过 `-c config/singbox/config.json` 加载静态配置，并追加运行时文件：
 
 - `providers.json`：Catalog Local Provider 投影。
 - `outbounds.json`：Auto/Select/Proxy 出站图。
 - `ebpf.json`：由 `ebpf.conf` 生成的透明代理入站。
 
-`confdir` 中的编号文件按职责拆分：日志、实验特性/Clash API、DNS、用户入站、路由、HTTP Client 和 Service API。运行时文件由脚本生成，用户配置编辑器只能修改受管理的静态文档。
+主配置包含日志、实验特性/Clash API、DNS、用户入站、路由、HTTP Client 和 Service API。Android 的分区是 `config list` 返回的逻辑文档，不对应额外磁盘文件；完整编辑入口保留所有受核心支持的字段。运行时文件由 Go 生成并只读展示。
+
+`config read` 返回 `content` 和 `revision`；`config apply/validate --revision <值> <目标> <候选文件>` 检测并发修改。`singbox/dns` 等分区使用带顶层键的 JSON，空对象删除该字段；`singbox/config.json` 替换整份主配置。保存后的 revision 对应本次实际写入内容，不通过无锁重新读取生成。
+
+保留数据安装要求现有 `config/singbox/config.json`，缺失时在停止服务前中止；用户需先备份，再明确选择全新安装。热切换前重新复制最新主配置，不进行格式迁移。默认配置的更新不能自动覆盖用户主配置。
 
 当前控制入口是稳定产品契约：
 

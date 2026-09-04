@@ -80,7 +80,7 @@ tasks.withType<Test>().configureEach {
     inputs.file(layout.projectDirectory.file("src/main/assets/sing-box.schema.json"))
         .withPropertyName("singBoxSchema")
         .withPathSensitivity(PathSensitivity.RELATIVE)
-    inputs.dir(rootProject.layout.projectDirectory.dir("../module/config/singbox/confdir"))
+    inputs.file(rootProject.layout.projectDirectory.file("../module/config/singbox/config.json"))
         .withPropertyName("moduleStaticConfigs")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 }

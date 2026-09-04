@@ -1,0 +1,335 @@
+{
+  "log": {
+    "disabled": false,
+    "level": "info",
+    "output": "/data/adb/modules/netproxy/logs/sing-box.log",
+    "timestamp": true
+  },
+  "experimental": {
+    "cache_file": {
+      "enabled": true,
+      "path": "/data/adb/modules/netproxy/config/singbox/cache.db"
+    },
+    "observability": {
+      "enabled": true
+    },
+    "clash_api": {
+      "default_mode": "Rule",
+      "external_controller": "127.0.0.1:9999",
+      "secret": "singbox",
+      "external_ui": "/data/adb/modules/netproxy/webroot/zashboard",
+      "external_ui_download_url": "https://github.com/Zephyruso/zashboard/releases/latest/download/dist.zip"
+    }
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "hosts",
+        "tag": "hosts",
+        "predefined": {
+          "doh.pub": [
+            "120.53.53.53",
+            "1.12.12.12"
+          ],
+          "cloudflare-dns.com": [
+            "1.1.1.1",
+            "1.0.0.1"
+          ],
+          "dns.google": [
+            "8.8.8.8",
+            "8.8.4.4"
+          ],
+          "dns.alidns.com": [
+            "223.5.5.5",
+            "223.6.6.6"
+          ]
+        }
+      },
+      {
+        "tag": "dns-proxy",
+        "type": "group",
+        "servers": [
+          "cloudflare",
+          "google"
+        ]
+      },
+      {
+        "tag": "dns-direct",
+        "type": "group",
+        "servers": [
+          "ali",
+          "tencent"
+        ]
+      },
+      {
+        "tag": "cloudflare",
+        "type": "https",
+        "server": "cloudflare-dns.com",
+        "domain_resolver": "hosts",
+        "detour": "Proxy"
+      },
+      {
+        "tag": "google",
+        "type": "https",
+        "server": "dns.google",
+        "domain_resolver": "hosts",
+        "detour": "Proxy"
+      },
+      {
+        "tag": "ali",
+        "type": "https",
+        "server": "dns.alidns.com",
+        "domain_resolver": "hosts"
+      },
+      {
+        "tag": "tencent",
+        "type": "https",
+        "server": "doh.pub",
+        "domain_resolver": "hosts"
+      }
+    ],
+    "rules": [
+      {
+        "clash_mode": "Global",
+        "action": "route",
+        "server": "dns-proxy"
+      },
+      {
+        "clash_mode": "Direct",
+        "action": "route",
+        "server": "dns-direct"
+      },
+      {
+        "rule_set": [
+          "direct",
+          "apple-cn"
+        ],
+        "action": "route",
+        "server": "dns-direct"
+      },
+      {
+        "rule_set": [
+          "proxy"
+        ],
+        "action": "route",
+        "server": "dns-proxy"
+      },
+      {
+        "type": "logical",
+        "mode": "and",
+        "rules": [
+          {
+            "clash_mode": "AllowAds",
+            "invert": true
+          },
+          {
+            "rule_set": [
+              "block",
+              "Ads_AWAvenue",
+              "category-ads-all"
+            ]
+          }
+        ],
+        "action": "reject"
+      },
+      {
+        "rule_set": [
+          "google"
+        ],
+        "action": "route",
+        "server": "dns-proxy"
+      },
+      {
+        "rule_set": [
+          "cn"
+        ],
+        "action": "route",
+        "server": "dns-direct"
+      }
+    ],
+    "final": "dns-proxy",
+    "optimistic": true,
+    "strategy": "prefer_ipv4"
+  },
+  "inbounds": [
+    {
+      "type": "mixed",
+      "tag": "mixed_in",
+      "listen": "127.0.0.1",
+      "listen_port": 7080
+    }
+  ],
+  "route": {
+    "default_domain_resolver": "dns-direct",
+    "default_http_client": "rule-set-download",
+    "rule_set": [
+      {
+        "tag": [
+          "block",
+          "direct",
+          "proxy"
+        ],
+        "type": "local",
+        "format": "source",
+        "path": "./rules/local/{tag}.json"
+      },
+      {
+        "type": "remote",
+        "tag": "Ads_AWAvenue",
+        "format": "source",
+        "url": "https://raw.githubusercontent.com/TG-Twilight/AWAvenue-Ads-Rule/main/Filters/AWAvenue-Ads-Rule-Singbox.json",
+        "update_interval": "24h",
+        "path": "./rules/remote/Ads_AWAvenue.json"
+      },
+      {
+        "type": "remote",
+        "tag": [
+          "category-ads-all",
+          "apple-cn",
+          "google",
+          "geolocation-!cn",
+          "cn"
+        ],
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/{tag}.srs",
+        "update_interval": "24h",
+        "path": "./rules/remote/{tag}.srs"
+      },
+      {
+        "type": "remote",
+        "tag": "cn-ip",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/cn.srs",
+        "update_interval": "24h",
+        "path": "./rules/remote/cn-ip.srs"
+      },
+      {
+        "type": "remote",
+        "tag": "telegram-ip",
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/telegram.srs",
+        "update_interval": "24h",
+        "path": "./rules/remote/telegram-ip.srs"
+      }
+    ],
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "type": "logical",
+        "mode": "or",
+        "rules": [
+          {
+            "port": 53
+          },
+          {
+            "protocol": "dns"
+          }
+        ],
+        "action": "hijack-dns"
+      },
+      {
+        "clash_mode": "Global",
+        "action": "route",
+        "outbound": "Proxy"
+      },
+      {
+        "clash_mode": "Direct",
+        "action": "route",
+        "outbound": "direct"
+      },
+      {
+        "rule_set": "proxy",
+        "action": "route",
+        "outbound": "Proxy"
+      },
+      {
+        "rule_set": "direct",
+        "action": "route",
+        "outbound": "direct"
+      },
+      {
+        "type": "logical",
+        "mode": "and",
+        "rules": [
+          {
+            "clash_mode": "AllowAds",
+            "invert": true
+          },
+          {
+            "rule_set": [
+              "block",
+              "Ads_AWAvenue",
+              "category-ads-all"
+            ]
+          }
+        ],
+        "action": "reject"
+      },
+      {
+        "rule_set": [
+          "google"
+        ],
+        "action": "route",
+        "outbound": "Proxy"
+      },
+      {
+        "rule_set": [
+          "apple-cn",
+          "cn"
+        ],
+        "action": "route",
+        "outbound": "direct"
+      },
+      {
+        "rule_set": [
+          "geolocation-!cn"
+        ],
+        "action": "route",
+        "outbound": "Proxy"
+      },
+      {
+        "action": "resolve",
+        "match_only": true
+      },
+      {
+        "rule_set": "cn-ip",
+        "action": "route",
+        "outbound": "direct"
+      },
+      {
+        "rule_set": [
+          "telegram-ip"
+        ],
+        "action": "route",
+        "outbound": "Proxy"
+      },
+      {
+        "ip_is_private": true,
+        "outbound": "direct"
+      }
+    ],
+    "auto_detect_interface": true,
+    "final": "Proxy"
+  },
+  "http_clients": [
+    {
+      "tag": "rule-set-download",
+      "detour": "Proxy"
+    }
+  ],
+  "services": [
+    {
+      "type": "api",
+      "listen": "127.0.0.1",
+      "listen_port": 9090,
+      "secret": "singbox",
+      "dashboard": {
+        "enabled": true,
+        "path": "/data/adb/modules/netproxy/webroot/sing-box-dashboard",
+        "download_url": "https://github.com/SagerNet/sing-box-dashboard/archive/refs/heads/gh-pages.zip"
+      }
+    }
+  ]
+}

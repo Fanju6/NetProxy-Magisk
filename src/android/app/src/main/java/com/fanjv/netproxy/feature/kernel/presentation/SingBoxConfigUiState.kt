@@ -9,8 +9,8 @@ data class SingBoxConfigUiState(
     val documentsError: Boolean = false,
     val activeDocumentId: String? = null,
     val activeDocumentContent: String = "",
+    val activeDocumentRevision: String = "",
     val isLoadingDocument: Boolean = false,
     val documentLoadError: Boolean = false
 )
-
 

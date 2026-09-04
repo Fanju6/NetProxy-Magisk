@@ -4,6 +4,7 @@ import com.fanjv.netproxy.core.command.CommandFileStore
 import com.fanjv.netproxy.core.command.NetProxyCtlClient
 import com.fanjv.netproxy.core.command.ShellConfigFile
 import com.fanjv.netproxy.feature.settings.model.ManagedConfigDocument
+import com.fanjv.netproxy.feature.settings.model.ConfigSnapshot
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.decodeFromJsonElement
@@ -27,9 +28,10 @@ internal class ConfigRepository(
         client.json.decodeFromJsonElement(client.execute("config", "list").data)
 
     suspend fun read(target: String): String =
-        client.execute("config", "read", target).data.jsonObject["content"]
-            ?.jsonPrimitive?.content
-            ?: error("模块没有返回配置内容")
+        readSnapshot(target).content
+
+    suspend fun readSnapshot(target: String): ConfigSnapshot =
+        client.json.decodeFromJsonElement(client.execute("config", "read", target).data)
 
     suspend fun updateValue(
         target: String,
@@ -51,9 +53,15 @@ internal class ConfigRepository(
             apply(target, content)
         }
 
-    suspend fun apply(target: String, content: String) =
+    suspend fun apply(target: String, content: String, revision: String? = null): String =
         commandFiles.withTextFile("netproxy-config-", ".conf", content) { source ->
-            client.execute("config", "apply", target, source.absolutePath)
+            val arguments = buildList {
+                add("apply")
+                if (revision != null) addAll(listOf("--revision", revision))
+                addAll(listOf(target, source.absolutePath))
+            }
+            client.execute("config", *arguments.toTypedArray()).data.jsonObject["revision"]
+                ?.jsonPrimitive?.content ?: error("模块没有返回配置版本")
         }
 
     suspend fun check() {

@@ -98,8 +98,8 @@ func (l Layout) DelayDir() string { return filepath.Join(l.DevRoot(), "delay") }
 // WiFiState 返回 Wi-Fi 自动策略状态文件路径。
 func (l Layout) WiFiState() string { return filepath.Join(l.DevRoot(), "wifi_state") }
 
-// SingBoxConfDir 返回给定 sing-box 配置根目录下的配置片段目录。
-func SingBoxConfDir(singBoxDir string) string { return filepath.Join(singBoxDir, "confdir") }
+// SingBoxConfig 返回给定 sing-box 配置根目录下的静态主配置。
+func SingBoxConfig(singBoxDir string) string { return filepath.Join(singBoxDir, "config.json") }
 
 // SingBoxRulesDir 返回给定 sing-box 配置根目录下的规则资源目录。
 func SingBoxRulesDir(singBoxDir string) string { return filepath.Join(singBoxDir, "rules") }

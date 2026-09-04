@@ -90,9 +90,9 @@ Catalog Provider
 
 其中 `Proxy` 是 NetProxy 已有的顶层选择器，不需要重复定义。
 
-## 第二步：创建策略分组文件
+## 第二步：准备自定义出站
 
-在手机或电脑的文本编辑器中创建 `05_policy_groups.json`，填入以下完整内容：
+在手机或电脑的文本编辑器中创建 `policy-groups.json`，填入以下内容，作为主配置 `outbounds` 分区的候选值：
 
 ```json
 {
@@ -175,37 +175,37 @@ Catalog Provider
 将文件保存到手机：
 
 ```text
-/sdcard/Download/05_policy_groups.json
+/sdcard/Download/policy-groups.json
 ```
 
-## 第三步：备份当前路由
+## 第三步：备份当前主配置
 
-修改路由前先备份：
+修改前先备份，备份可能包含敏感配置，不要公开分享：
 
 ```sh
-su -c 'mkdir -p /sdcard/Download/NetProxy-backup && cp /data/adb/modules/netproxy/config/singbox/confdir/06_route.json /sdcard/Download/NetProxy-backup/06_route.json'
+su -c 'mkdir -p /sdcard/Download/NetProxy-backup && cp /data/adb/modules/netproxy/config/singbox/config.json /sdcard/Download/NetProxy-backup/config.json'
 ```
 
-如果已经自定义过 `06_route.json`，后续需要在现有内容上添加规则，不要直接使用其他人的完整路由文件覆盖它。
+如果主配置已经有自定义 `outbounds`，先在“内核设置 → 自定义出站”中取出原内容，把上述分组追加到已有数组后再保存，不要覆盖原有出站。后续路由也应在现有规则上扩展。
 
 ## 第四步：加入策略分组
 
-通过 NetProxy 的配置事务应用新文件：
+主配置还没有自定义出站时，可以通过配置事务应用候选分区：
 
 ```sh
-su -c '/data/adb/modules/netproxy/netproxyctl config apply singbox/confdir/05_policy_groups.json /sdcard/Download/05_policy_groups.json'
+su -c '/data/adb/modules/netproxy/netproxyctl config apply singbox/outbounds /sdcard/Download/policy-groups.json'
 ```
 
-`config apply` 会先组合现有静态配置、Catalog Provider 和运行时出站进行完整检查。检查通过后才会原子写入文件；核心正在运行时会自动重新加载。
+`config apply` 会把候选 `outbounds` 放入主配置，与 Catalog Provider 和运行时出站一起检查。通过后原子保存主配置；核心正在运行时会自动重新加载。其他顶层字段不受影响。
 
-应用成功后，`05_policy_groups.json` 会出现在 Android 管理器的“内核设置”页面中，后续可以直接使用配置编辑器修改。
+后续在 Android 管理器“内核设置 → 自定义出站”中修改即可。候选文件只是导入输入，不会作为独立配置文件部署到模块。
 
 ## 第五步：添加业务规则集
 
 在 Android 管理器中打开：
 
 ```text
-设置 → 内核设置 → 06_route.json
+设置 → 内核设置 → 路由
 ```
 
 找到 `route.rule_set` 数组，在数组中增加下面两项：
@@ -310,7 +310,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl service restart'
 
 增加一个业务通常需要三步：
 
-1. 在 `05_policy_groups.json` 中增加业务 selector。
+1. 在“自定义出站”的 `outbounds` 数组中增加业务 selector。
 2. 在 `route.rule_set` 中声明对应规则资源。
 3. 在 `route.rules` 中把规则送到该 selector。
 
@@ -350,16 +350,15 @@ GeoIP 的配置 tag 通常带 `-ip`，远程文件名则不带。例如：
 
 ## 恢复默认配置
 
-停止服务，删除附加分组文件并恢复备份：
+停止服务，通过一次事务恢复完整备份，避免先删出站造成路由引用失效：
 
 ```sh
 su -c '/data/adb/modules/netproxy/netproxyctl service stop'
-su -c 'rm -f /data/adb/modules/netproxy/config/singbox/confdir/05_policy_groups.json'
-su -c '/data/adb/modules/netproxy/netproxyctl config apply singbox/confdir/06_route.json /sdcard/Download/NetProxy-backup/06_route.json'
+su -c '/data/adb/modules/netproxy/netproxyctl config apply singbox/config.json /sdcard/Download/NetProxy-backup/config.json'
 su -c '/data/adb/modules/netproxy/netproxyctl service start'
 ```
 
-没有备份时，可以从同版本模块安装包中取出默认 `config/singbox/confdir/06_route.json`，再通过 `config apply` 恢复。不要覆盖整个 `config/singbox/`。
+没有备份时，可以从同版本模块安装包中取出默认 `config/singbox/config.json`，再通过 `config apply singbox/config.json` 恢复，但这会重置所有静态配置修改。Catalog 节点和本地规则不会因此被删除。
 
 ## 常见问题
 
@@ -369,7 +368,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl service start'
 
 ### 配置检查提示出站不存在
 
-检查 `route.rules[].outbound` 是否与 `05_policy_groups.json` 中的 `tag` 完全一致，并确认策略分组文件已经成功应用。
+检查 `route.rules[].outbound` 是否与主配置 `outbounds` 中的 `tag` 完全一致，并确认自定义出站已经成功保存。
 
 ### 配置检查提示规则集重复
 

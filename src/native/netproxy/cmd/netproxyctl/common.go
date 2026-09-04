@@ -74,6 +74,9 @@ func (c *cli) help() {
 node import <文件> 会将文件中的全部节点追加到 default 本地配置组。
 默认命令超时为 30 秒，service start 默认 120 秒；订阅变更由各订阅下载超时控制。
 所有命令均可使用 --timeout 显式覆盖。
+配置目标：singbox/config.json 为完整主配置，singbox/dns、singbox/inbounds、singbox/route 等为分区。
+config read 返回 revision；config apply/validate 可在目标前传 --revision <值> 检测并发修改。
+分区内容保留顶层字段，例如 {"dns":{...}}；{} 删除该分区，不影响其他字段。
 stdout 只包含 schema=1 结果，运行日志写入 stderr。`)
 }
 

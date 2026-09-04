@@ -109,6 +109,8 @@ internal fun SingBoxJsonEditScreen(
     var hasLoaded by remember(documentId, controller) {
         mutableStateOf(controller.getText().isNotEmpty() || controller.isModified)
     }
+    // 重建页面后保留草稿的版本，不能用重新读取的版本替旧草稿通过冲突检查。
+    var documentRevision by rememberSaveable(documentId) { mutableStateOf("") }
     var isSaving by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf("") }
     var schemaIssues by remember { mutableStateOf(emptyList<SingBoxSchemaIssue>()) }
@@ -123,7 +125,7 @@ internal fun SingBoxJsonEditScreen(
     var contextHelp by remember(documentId) { mutableStateOf<SingBoxSchemaContextHelp?>(null) }
 
     val document = configState.documents.firstOrNull { it.id == documentId }
-    val displayFilename = document?.filename ?: documentId.substringAfterLast('/')
+    val displayFilename = document?.let { documentTitle(it) } ?: documentId.substringAfterLast('/')
     val isEditable = document?.editable ?: !documentId.startsWith("runtime/")
     val usesRootSchema = document?.category != SingBoxDocumentCategory.LocalRule &&
             !documentId.startsWith("singbox/rules/local/")
@@ -145,13 +147,14 @@ internal fun SingBoxJsonEditScreen(
             configState.documentLoadError
         ) return@LaunchedEffect
         controller.setDocument(configState.activeDocumentContent)
+        documentRevision = configState.activeDocumentRevision
         hasLoaded = true
     }
 
     val formatError = stringResource(R.string.json_format_error)
     val syntaxError = stringResource(R.string.json_syntax_error)
     val savedMessage = stringResource(R.string.json_saved)
-    val canSave = isEditable && hasLoaded && controller.isModified &&
+    val canSave = isEditable && hasLoaded && documentRevision.isNotEmpty() && controller.isModified &&
             !controller.isComposing && !isSaving
 
     val documentVersion = controller.documentVersion
@@ -232,6 +235,7 @@ internal fun SingBoxJsonEditScreen(
 
     fun saveDocument() {
         val version = controller.documentVersion
+        val expectedRevision = documentRevision
         val text = controller.getText(controller.lineEnding)
         val parsed = parseJsonObjectOrError(text) { errorText = it } ?: return
         saveErrorText = ""
@@ -242,6 +246,7 @@ internal fun SingBoxJsonEditScreen(
         val onComplete: (SingBoxDocumentSaveResult) -> Unit = { result ->
             isSaving = false
             if (result.success) {
+                documentRevision = result.revision
                 controller.markSaved(version)
                 coroutineScope.launch {
                     snackbarHostState.showSnackbar(savedMessage)
@@ -271,6 +276,7 @@ internal fun SingBoxJsonEditScreen(
                     viewModel.saveDocument(
                         documentId,
                         singBoxJsonPretty.encodeToString(parsed),
+                        expectedRevision,
                         onComplete,
                     )
                 }

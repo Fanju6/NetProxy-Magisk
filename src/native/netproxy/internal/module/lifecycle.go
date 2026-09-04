@@ -395,16 +395,19 @@ func validateLifecycleOptions(options Options) error {
 		return err
 	}
 	for name, path := range map[string]string{
-		"sing-box 二进制":  options.SingBoxPath,
-		"sing-box 配置目录": paths.SingBoxConfDir(options.SingBoxDir),
-		"Catalog":       options.CatalogRoot,
+		"sing-box 二进制": options.SingBoxPath,
+		"sing-box 主配置": paths.SingBoxConfig(options.SingBoxDir),
+		"Catalog":      options.CatalogRoot,
 	} {
 		info, err := os.Stat(path)
 		if err != nil {
 			return fmt.Errorf("%s不可用: %w", name, err)
 		}
-		if name != "sing-box 二进制" && !info.IsDir() {
+		if name == "Catalog" && !info.IsDir() {
 			return fmt.Errorf("%s不是目录: %s", name, path)
+		}
+		if name != "Catalog" && !info.Mode().IsRegular() {
+			return fmt.Errorf("%s不是普通文件: %s", name, path)
 		}
 	}
 	if _, err := os.Stat(options.EBPFConfig); err != nil {
@@ -429,7 +432,7 @@ func newSingBoxCommand(options Options, prepared PrepareResult) (*exec.Cmd, *os.
 	if err != nil {
 		return nil, nil, err
 	}
-	command := exec.Command(options.SingBoxPath, "run", "-C", paths.SingBoxConfDir(options.SingBoxDir),
+	command := exec.Command(options.SingBoxPath, "run", "-c", paths.SingBoxConfig(options.SingBoxDir),
 		"-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.EBPF)
 	command.Dir = options.SingBoxDir
 	command.Stdout = logFile
@@ -439,7 +442,7 @@ func newSingBoxCommand(options Options, prepared PrepareResult) (*exec.Cmd, *os.
 }
 
 func checkPreparedConfiguration(ctx context.Context, options Options, prepared PrepareResult) error {
-	command := exec.CommandContext(ctx, options.SingBoxPath, "check", "-C", paths.SingBoxConfDir(options.SingBoxDir),
+	command := exec.CommandContext(ctx, options.SingBoxPath, "check", "-c", paths.SingBoxConfig(options.SingBoxDir),
 		"-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.EBPF)
 	command.Dir = options.SingBoxDir
 	command.Stdout = os.Stderr

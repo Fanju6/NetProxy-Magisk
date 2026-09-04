@@ -55,7 +55,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
-/** sing-box 配置工作台：配置文件是唯一编辑入口。 */
+/** 主配置分区、本地规则和只读运行时共用配置工作台。 */
 @Composable
 internal fun SingBoxKernelSettingsScreen(
     viewModel: SingBoxConfigViewModel = com.fanjv.netproxy.core.di.netProxyViewModel(),
@@ -74,9 +74,9 @@ internal fun SingBoxKernelSettingsScreen(
     val configDocuments = state.documents.filter {
         it.category == SingBoxDocumentCategory.Config
     }
-    val commonNames = setOf("03_dns.json", "04_inbounds.json", "06_route.json")
-    val commonDocuments = configDocuments.filter { it.filename in commonNames }
-    val advancedDocuments = configDocuments.filterNot { it.filename in commonNames }
+    val commonSections = setOf("dns", "inbounds", "route")
+    val commonDocuments = configDocuments.filter { it.section in commonSections }
+    val advancedDocuments = configDocuments.filterNot { it.section in commonSections }
     val localRuleDocuments = state.documents.filter {
         it.category == SingBoxDocumentCategory.LocalRule
     }
@@ -245,29 +245,33 @@ private fun androidx.compose.foundation.lazy.LazyListScope.documentSection(
 }
 
 @Composable
-private fun documentTitle(document: SingBoxDocument): String = when (document.filename) {
-    "01_log.json" -> stringResource(R.string.singbox_document_log)
-    "02_experimental.json" -> stringResource(R.string.singbox_document_experimental)
-    "03_dns.json" -> stringResource(R.string.singbox_document_dns)
-    "04_inbounds.json" -> stringResource(R.string.singbox_document_inbounds)
-    "05_providers.json" -> stringResource(R.string.singbox_document_providers)
-    "06_route.json" -> stringResource(R.string.singbox_document_route)
-    "07_http_clients.json" -> stringResource(R.string.singbox_document_http_clients)
-    "08_services.json" -> stringResource(R.string.singbox_document_services)
+internal fun documentTitle(document: SingBoxDocument): String = when (document.section.ifEmpty { document.id }) {
+    "singbox/config.json" -> stringResource(R.string.singbox_document_full)
+    "outbounds" -> stringResource(R.string.singbox_document_outbounds)
+    "log" -> stringResource(R.string.singbox_document_log)
+    "experimental" -> stringResource(R.string.singbox_document_experimental)
+    "dns" -> stringResource(R.string.singbox_document_dns)
+    "inbounds" -> stringResource(R.string.singbox_document_inbounds)
+    "providers" -> stringResource(R.string.singbox_document_providers)
+    "route" -> stringResource(R.string.singbox_document_route)
+    "http_clients" -> stringResource(R.string.singbox_document_http_clients)
+    "services" -> stringResource(R.string.singbox_document_services)
     else -> document.filename
 }
 
 @Composable
 private fun documentSummary(document: SingBoxDocument): String {
-    val description = when (document.filename) {
-        "01_log.json" -> stringResource(R.string.singbox_document_log_summary)
-        "02_experimental.json" -> stringResource(R.string.singbox_document_experimental_summary)
-        "03_dns.json" -> stringResource(R.string.singbox_document_dns_summary)
-        "04_inbounds.json" -> stringResource(R.string.singbox_document_inbounds_summary)
-        "05_providers.json" -> stringResource(R.string.singbox_document_providers_summary)
-        "06_route.json" -> stringResource(R.string.singbox_document_route_summary)
-        "07_http_clients.json" -> stringResource(R.string.singbox_document_http_clients_summary)
-        "08_services.json" -> stringResource(R.string.singbox_document_services_summary)
+    val description = when (document.section.ifEmpty { document.id }) {
+        "singbox/config.json" -> stringResource(R.string.singbox_document_full_summary)
+        "outbounds" -> stringResource(R.string.singbox_document_outbounds_summary)
+        "log" -> stringResource(R.string.singbox_document_log_summary)
+        "experimental" -> stringResource(R.string.singbox_document_experimental_summary)
+        "dns" -> stringResource(R.string.singbox_document_dns_summary)
+        "inbounds" -> stringResource(R.string.singbox_document_inbounds_summary)
+        "providers" -> stringResource(R.string.singbox_document_providers_summary)
+        "route" -> stringResource(R.string.singbox_document_route_summary)
+        "http_clients" -> stringResource(R.string.singbox_document_http_clients_summary)
+        "services" -> stringResource(R.string.singbox_document_services_summary)
         else -> when (document.category) {
             SingBoxDocumentCategory.LocalRule -> stringResource(R.string.singbox_document_source_summary)
             SingBoxDocumentCategory.Runtime -> stringResource(R.string.singbox_document_runtime_summary)

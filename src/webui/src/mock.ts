@@ -24,6 +24,23 @@ const NODE = { tag: 'demo-node', protocol: 'socks', server: 'example.test', port
 let serviceState = 'stopped'
 let outboundMode = 'rule'
 
+const STATIC_CONFIG: Record<string, unknown> = {
+  log: { level: 'info' },
+  dns: { final: 'dns-proxy' },
+  inbounds: [],
+  route: { final: 'Proxy' },
+  experimental: {},
+  http_clients: [],
+  services: [],
+}
+
+const CONFIG_DOCUMENTS = [
+  { id: 'singbox/config.json', filename: 'config.json', category: 'config', editable: true },
+  ...[...Object.keys(STATIC_CONFIG), 'outbounds'].map(section => ({
+    id: `singbox/${section}`, filename: section, category: 'config', editable: true, section,
+  })),
+]
+
 function response<T>(code: string, message: string, data?: T): CtlResult<T> {
   return { schema: CONTRACT_SCHEMA, ok: true, code, message, ...(data === undefined ? {} : { data }) }
 }
@@ -150,7 +167,19 @@ function execute(args: string[]): CtlResult<unknown> {
   }
 
   if (command === 'config' && action === 'list') {
-    return response('config.list', 'sing-box 配置列表', [])
+    return response('config.list', 'sing-box 配置列表', CONFIG_DOCUMENTS)
+  }
+  if (command === 'config' && action === 'read') {
+    const document = CONFIG_DOCUMENTS.find(item => item.id === clean[2])
+    if (!document) return failure('command.failed', '不支持的配置目标')
+    const content = document.filename === 'config.json'
+      ? STATIC_CONFIG
+      : Object.prototype.hasOwnProperty.call(STATIC_CONFIG, document.filename)
+        ? { [document.filename]: STATIC_CONFIG[document.filename] }
+        : {}
+    return response('config.read', '配置内容', {
+      target: document.id, content: JSON.stringify(content, null, 2), revision: `mock-${document.filename}-1`,
+    })
   }
 
   if (command === 'logs' && action === 'show') {

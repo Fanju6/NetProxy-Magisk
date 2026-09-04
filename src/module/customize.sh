@@ -31,7 +31,7 @@ readonly DATA_DIR="$LIVE_DIR/data"
 
 readonly PRESERVE_CONFIGS="
     module.conf
-    singbox/confdir
+    singbox/config.json
     singbox/rules/local/direct.json
     singbox/rules/local/proxy.json
     singbox/rules/local/block.json
@@ -130,7 +130,7 @@ set_perm_recursive() {
 #######################################
 has_existing_user_data() {
   [ -f "$CONFIG_DIR/module.conf" ] \
-    || [ -d "$CONFIG_DIR/singbox/confdir" ] \
+    || [ -f "$CONFIG_DIR/singbox/config.json" ] \
     || [ -d "$DATA_DIR/catalog" ]
 }
 
@@ -138,7 +138,7 @@ has_existing_user_data() {
 # 选择安装方式。
 # 参数: 无
 # 全局: 写入 INSTALL_MODE
-# 返回: 始终返回 0。
+# 返回: 0=已选择，1=选择保留数据但缺少主配置。
 #######################################
 choose_install_mode() {
   if ! has_existing_user_data; then
@@ -157,6 +157,11 @@ choose_install_mode() {
     INSTALL_MODE=fresh
     print_step "已选择全新安装"
   else
+    if [ ! -f "$CONFIG_DIR/singbox/config.json" ]; then
+      print_error "现有数据缺少 config/singbox/config.json，无法保留配置"
+      print_error "请先导出节点、记录订阅与个人设置，再选择全新安装"
+      return 1
+    fi
     INSTALL_MODE=preserve
     print_step "已选择保留现有数据"
   fi
@@ -484,18 +489,21 @@ copy_catalog_state() {
 merge_live_state() {
   [ "$install_mode" = "preserve" ] || return 0
   [ -d "$live_dir" ] || return 0
+  [ -f "$live_dir/config/singbox/config.json" ] || return 1
   if [ -d "$live_dir/data/catalog" ]; then
     copy_catalog_state "$live_dir/data/catalog" "$stage_dir/data/catalog" || return 1
   fi
 
   for config_item in \
     module.conf \
-    singbox/confdir \
+    singbox/config.json \
     singbox/rules/local/direct.json \
     singbox/rules/local/proxy.json \
     singbox/rules/local/block.json; do
     copy_persistent_entry "$live_dir/config/$config_item" "$stage_dir/config/$config_item" || return 1
   done
+
+  chmod 0600 "$stage_dir/config/singbox/config.json" || return 1
 }
 
 #######################################
@@ -602,6 +610,7 @@ set_permissions() {
 
   # 用户配置与 Catalog 包含节点凭据、订阅地址和应用名单，仅允许 root 读取。
   [ ! -f "$MODPATH/config/module.conf" ] || chmod 0600 "$MODPATH/config/module.conf" 2> /dev/null || return 1
+  [ ! -f "$MODPATH/config/singbox/config.json" ] || chmod 0600 "$MODPATH/config/singbox/config.json" 2> /dev/null || return 1
   [ ! -f "$MODPATH/config/ebpf/ebpf.conf" ] || chmod 0600 "$MODPATH/config/ebpf/ebpf.conf" 2> /dev/null || return 1
   [ ! -d "$MODPATH/data/catalog" ] \
     || set_perm_recursive "$MODPATH/data/catalog" 0 0 0700 0600 || return 1
@@ -736,7 +745,7 @@ ui_print ""
 ui_print "  版本: $(grep_prop version "$TMPDIR/module.prop" 2> /dev/null || echo "未知")"
 
 # 先停止旧服务，再替换模块文件，避免运行中的进程继续使用旧文件。
-choose_install_mode
+choose_install_mode || exit 1
 if [ "${BOOTMODE:-false}" = true ] && ! stop_proxy_if_running; then
   print_title "安装失败"
   ui_print ""

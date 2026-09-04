@@ -528,6 +528,7 @@ func runModuleConfig(ctx context.Context, args []string) error {
 	}
 	flags := newFlagSet("module config")
 	values := bindModuleFlags(flags)
+	revision := flags.String("revision", "", "读取配置时返回的 revision，阻止覆盖并发修改")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -560,11 +561,14 @@ func runModuleConfig(ctx context.Context, args []string) error {
 		if len(positionals) < 2 {
 			return errors.New("config 操作需要目标和内容文件")
 		}
-		err := moduleapp.ApplyConfig(ctx, options, positionals[0], positionals[1], action == "validate")
+		savedRevision, err := moduleapp.ApplyConfig(ctx, options, positionals[0], positionals[1], action == "validate", *revision)
 		if err != nil {
+			if errors.Is(err, moduleapp.ErrConfigConflict) {
+				return &resultError{Code: "config.conflict", Message: err.Error()}
+			}
 			return err
 		}
-		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "config." + action, Message: "配置检查通过", Data: map[string]string{"target": positionals[0]}})
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "config." + action, Message: "配置检查通过", Data: map[string]string{"target": positionals[0], "revision": savedRevision}})
 	default:
 		return fmt.Errorf("未知 config 操作 %q", action)
 	}

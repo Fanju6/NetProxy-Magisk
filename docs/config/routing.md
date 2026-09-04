@@ -23,7 +23,7 @@ NetProxy 的分流行为由四层共同决定：
 
 ### `AllowAds`
 
-使用允许广告的路由策略，在保持主要代理分流的同时放行广告规则所匹配的请求。具体行为以当前 `06_route.json` 为准。
+使用允许广告的路由策略，在保持主要代理分流的同时放行广告规则所匹配的请求。具体行为以当前 `config.json` 的 `route` 分区为准。
 
 ## 规则集位置
 
@@ -55,12 +55,12 @@ EBPF_BYPASS_RULE_SET="direct,cn-ip"
 - `respect_policy`：仅在流量通过对应数据路径的 UID、来源和地址策略后接管。
 - `off`：不由 eBPF 入站接管 DNS。
 
-sing-box 侧 DNS 服务器、域名解析策略和 DNS 路由位于 `config/singbox/confdir/03_dns.json`。默认 DNS A/AAAA 查询使用真实的 `dns-proxy` 服务器组，不使用 FakeIP 地址池。DNS 最终出站由 DNS 配置和 `OUTBOUND_MODE` 共同决定；若将兜底 DNS 设置为直连，解析请求可能不经过代理，这是可预期的配置取舍，不等同于核心故障。
+sing-box 侧 DNS 服务器、域名解析策略和 DNS 路由位于 `config/singbox/config.json` 的 `dns` 分区。默认 DNS A/AAAA 查询使用真实的 `dns-proxy` 服务器组，不使用 FakeIP 地址池。DNS 最终出站由 DNS 配置和 `OUTBOUND_MODE` 共同决定；若将兜底 DNS 设置为直连，解析请求可能不经过代理，这是可预期的配置取舍，不等同于核心故障。
 
 ## 排查顺序
 
 1. 查看 `service status` 的实际 `outbound_mode`。
 2. 确认 `EBPF_BYPASS_RULE_SET`、私网绕过和应用名单。
 3. 检查 `rules/local/` 与 `rules/remote/` 是否存在且可读。
-4. 检查 `03_dns.json` 的 DNS 服务器和最终出站。
+4. 检查 `dns` 分区的 DNS 服务器和最终出站。
 5. 查看 sing-box 核心日志和 Service API Dashboard 的连接结果。
