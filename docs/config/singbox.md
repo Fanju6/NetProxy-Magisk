@@ -26,7 +26,7 @@ runtime/           # 启动时生成的运行时配置
 `config.json` 按 sing-box 顶层字段组织配置：
 
 - `log`：日志设置。
-- `experimental`：缓存、observability、Clash API 和外部 UI。
+- `experimental`：缓存、Clash API 和外部 UI。
 - `dns`：DNS 服务器与 DNS 路由。
 - `inbounds`：用户自定义入站。
 - `route`：路由规则、规则集和出站选择。
@@ -34,6 +34,18 @@ runtime/           # 启动时生成的运行时配置
 - `services`：Service API 与 Dashboard。
 
 运行时节点 Provider、Auto / Select / Proxy 选择器和 eBPF 入站由 Native 组件生成，不应在主配置中重复定义。主配置可以增加独立命名的自定义出站和[策略分组](./policy-groups)。
+
+### 默认配置来源
+
+默认配置参考 [CHIZI-0618 的上游配置](https://gist.github.com/CHIZI-0618/35f59df7b17bf66ea988d775aaf76152/a950e96dbe9bea70a1cd7905c9d74b21bf0d86a0)。DNS 服务器、匹配顺序、规则集标签与模板、HTTP Client 和路由选项保持一致，包括 `find_process: true`；observability 不额外默认开启。
+
+仅保留以下部署差异：
+
+- 日志、缓存、Dashboard 与规则文件使用模块目录。
+- mixed 入站和两个 API 仅监听本机，端口保持 `7080`、`9999`（Clash）与 `9090`（Service）。
+- 不复制上游的示例 Provider、出站和 eBPF 入站，继续由 Catalog 与 `ebpf.conf` 生成。eBPF 的模式、应用与热点策略按用户设置生效，不套用示例中的 `hybrid` 和旧 IPv6 字段。
+
+远程规则使用 `geosite/` 与 `geoip/` 标签，内置文件放在 `rules/remote/geosite/` 与 `rules/remote/geoip/`。保留个人主配置时不会自动替换其规则标签；如需采用新默认规则，应同时更新主配置和 `EBPF_BYPASS_RULE_SET`，默认绕过标签为 `geoip/cn`。
 
 ### 在管理器中编辑
 

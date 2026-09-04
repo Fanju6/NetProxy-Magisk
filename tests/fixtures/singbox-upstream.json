@@ -3,31 +3,31 @@
   "log": {
     "disabled": false,
     "level": "info",
-    "output": "/data/adb/modules/netproxy/logs/sing-box.log",
+    "output": "sing-box.log",
     "timestamp": true
   },
   "experimental": {
     "cache_file": {
       "enabled": true,
-      "path": "/data/adb/modules/netproxy/config/singbox/cache.db"
+      "path": "cache.db"
     },
     "clash_api": {
       "default_mode": "Rule",
-      "external_controller": "127.0.0.1:9999",
+      "external_controller": "0.0.0.0:9090",
       "secret": "singbox",
-      "external_ui": "/data/adb/modules/netproxy/webroot/zashboard",
+      "external_ui": "zashboard",
       "external_ui_download_url": "https://github.com/Zephyruso/zashboard/releases/download/v3.22.0/dist-cdn-fonts.zip"
     }
   },
   "services": [
     {
       "type": "api",
-      "listen": "127.0.0.1",
-      "listen_port": 9090,
+      "listen": "::",
+      "listen_port": 9999,
       "secret": "singbox",
       "dashboard": {
         "enabled": true,
-        "path": "/data/adb/modules/netproxy/webroot/sing-box-dashboard",
+        "path": "dashboard",
         "http_client": "s-download"
       }
     }
@@ -163,21 +163,70 @@
     {
       "type": "mixed",
       "tag": "mixed-in",
-      "listen": "127.0.0.1",
+      "listen": "::",
       "listen_port": 7080
+    },
+    {
+      "type": "ebpf",
+      "tag": "ebpf-in",
+      "mode": "hybrid",
+      "bypass_rule_set": [
+        "geoip/cn"
+      ],
+      "local": {
+        "dns_mode": "respect_policy",
+        "ipv6_mode": "auto",
+        "include_package": [],
+        "exclude_package": []
+      },
+      "shared": {
+        "dns_mode": "respect_policy",
+        "interface": [
+          "wlan2"
+        ],
+        "ipv6_mode": "always"
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "tag": "direct",
+      "type": "direct"
+    },
+    {
+      "tag": "Proxy",
+      "type": "selector",
+      "outbounds": [
+        "direct"
+      ],
+      "default": "direct",
+      "use_all_providers": true,
+      "interrupt_exist_connections": true
+    }
+  ],
+  "providers": [
+    {
+      "tag": "Provider1",
+      "type": "remote",
+      "url": "url",
+      "exclude": "节点|剩余|套餐|客服|官网",
+      "path": "./source/Provider1.json",
+      "update_interval": "24h",
+      "user_agent": "clash.meta/alpha/mihomo",
+      "health_check": {"enabled":true,"url":"http://cp.cloudflare.com/generate_204","interval":"30m","timeout":"3s"}
     }
   ],
   "route": {
     "default_domain_resolver": "dns-direct",
     "rule_set": [
-      { "type": "local", "tag": ["block", "direct", "proxy"], "format": "source", "path": "./rules/local/{tag}.json" },
+      { "type": "local", "tag": ["block", "direct", "proxy"], "format": "source", "path": "./source/{tag}.json" },
       {
         "type": "remote",
         "tag": "Ads_AWAvenue",
         "format": "source",
         "url": "https://raw.githubusercontent.com/TG-Twilight/AWAvenue-Ads-Rule/main/Filters/AWAvenue-Ads-Rule-Singbox.json",
         "update_interval": "24h",
-        "path": "./rules/remote/Ads_AWAvenue.json"
+        "path": "./source/rule_set/Ads_AWAvenue.json"
       },
       {
         "type": "remote",
@@ -185,7 +234,7 @@
         "format": "binary",
         "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/{tag}.srs",
         "update_interval": "24h",
-        "path": "./rules/remote/{tag}.srs"
+        "path": "./source/rule_set/{tag}.srs"
       }
     ],
     "rules": [

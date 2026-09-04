@@ -314,7 +314,7 @@ internal class SettingsViewModel(
             localBypassPortRanges = value("EBPF_LOCAL_BYPASS_PORT_RANGE", ""),
             sharedBypassPorts = value("EBPF_SHARED_BYPASS_PORT", ""),
             sharedBypassPortRanges = value("EBPF_SHARED_BYPASS_PORT_RANGE", ""),
-            bypassRuleSet = value("EBPF_BYPASS_RULE_SET", "direct,cn-ip"),
+            bypassRuleSet = value("EBPF_BYPASS_RULE_SET", "geoip/cn"),
             sharedInterfaces = value("EBPF_SHARED_INTERFACES", "wlan2"),
             sharedIncludeSourceCidrs = value("EBPF_SHARED_INCLUDE_SOURCE_CIDR", ""),
             sharedExcludeSourceCidrs = value("EBPF_SHARED_EXCLUDE_SOURCE_CIDR", ""),

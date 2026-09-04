@@ -16,7 +16,7 @@ data class ProxySettings(
     val localBypassPortRanges: String = "",
     val sharedBypassPorts: String = "",
     val sharedBypassPortRanges: String = "",
-    val bypassRuleSet: String = "direct,cn-ip",
+    val bypassRuleSet: String = "geoip/cn",
     val sharedInterfaces: String = "wlan2",
     val sharedIncludeSourceCidrs: String = "",
     val sharedExcludeSourceCidrs: String = "",

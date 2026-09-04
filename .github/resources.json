@@ -12,8 +12,8 @@
       "currentSha256": "a26880aeff442ae15b841516df48ce9184e34080a2a232c17beff38287c3400d"
     },
     {
-      "name": "category-ads-all",
-      "path": "src/module/config/singbox/rules/remote/category-ads-all.srs",
+      "name": "geosite/category-ads-all",
+      "path": "src/module/config/singbox/rules/remote/geosite/category-ads-all.srs",
       "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/category-ads-all.srs",
       "repo": "MetaCubeX/meta-rules-dat",
       "ref": "sing",
@@ -23,8 +23,8 @@
       "currentSha256": "022fff435d74e42ff02a4be9c26ee106d02e088d27444cd43ff42efde61909b3"
     },
     {
-      "name": "apple-cn",
-      "path": "src/module/config/singbox/rules/remote/apple-cn.srs",
+      "name": "geosite/apple-cn",
+      "path": "src/module/config/singbox/rules/remote/geosite/apple-cn.srs",
       "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/apple-cn.srs",
       "repo": "MetaCubeX/meta-rules-dat",
       "ref": "sing",
@@ -34,8 +34,19 @@
       "currentSha256": "c4a06abd6cb57aee35d074c4624b79846893d1b5649c3c82965c7295b565becd"
     },
     {
-      "name": "google",
-      "path": "src/module/config/singbox/rules/remote/google.srs",
+      "name": "geosite/category-ai-!cn",
+      "path": "src/module/config/singbox/rules/remote/geosite/category-ai-!cn.srs",
+      "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/category-ai-%21cn.srs",
+      "repo": "MetaCubeX/meta-rules-dat",
+      "ref": "sing",
+      "sourcePath": "geo/geosite/category-ai-!cn.srs",
+      "metadataPath": "geo/geosite/category-ai-!cn.json",
+      "currentCommit": "8d48edb493bc756a525b0d5ece108f83f74a3b65",
+      "currentSha256": "e4d64e54584c14ae72a30967fbb8a2e625249e8ae5751239f5462daa989ca168"
+    },
+    {
+      "name": "geosite/google",
+      "path": "src/module/config/singbox/rules/remote/geosite/google.srs",
       "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/google.srs",
       "repo": "MetaCubeX/meta-rules-dat",
       "ref": "sing",
@@ -45,8 +56,8 @@
       "currentSha256": "5e3d9b807fa235d50a54fc55ec2f587cc2908345e4fb9ad833811e3f636faba1"
     },
     {
-      "name": "geolocation-!cn",
-      "path": "src/module/config/singbox/rules/remote/geolocation-!cn.srs",
+      "name": "geosite/geolocation-!cn",
+      "path": "src/module/config/singbox/rules/remote/geosite/geolocation-!cn.srs",
       "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/geolocation-%21cn.srs",
       "repo": "MetaCubeX/meta-rules-dat",
       "ref": "sing",
@@ -56,8 +67,8 @@
       "currentSha256": "07fdadb72275a94534170b4f6ed0573ae705bf30036821fff8c2ea958b47a53b"
     },
     {
-      "name": "cn",
-      "path": "src/module/config/singbox/rules/remote/cn.srs",
+      "name": "geosite/cn",
+      "path": "src/module/config/singbox/rules/remote/geosite/cn.srs",
       "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/cn.srs",
       "repo": "MetaCubeX/meta-rules-dat",
       "ref": "sing",
@@ -67,8 +78,8 @@
       "currentSha256": "7982400df65b86a351f8ba89fee92038be5aa172c2a9e988823abf80c4463fc2"
     },
     {
-      "name": "cn-ip",
-      "path": "src/module/config/singbox/rules/remote/cn-ip.srs",
+      "name": "geoip/cn",
+      "path": "src/module/config/singbox/rules/remote/geoip/cn.srs",
       "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/cn.srs",
       "repo": "MetaCubeX/meta-rules-dat",
       "ref": "sing",
@@ -78,8 +89,8 @@
       "currentSha256": "0570ff7818cca95be950ed97926ff7c8457bec9871b5a07de70da49746706216"
     },
     {
-      "name": "telegram-ip",
-      "path": "src/module/config/singbox/rules/remote/telegram-ip.srs",
+      "name": "geoip/telegram",
+      "path": "src/module/config/singbox/rules/remote/geoip/telegram.srs",
       "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/telegram.srs",
       "repo": "MetaCubeX/meta-rules-dat",
       "ref": "sing",

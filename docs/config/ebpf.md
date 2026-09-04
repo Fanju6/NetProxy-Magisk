@@ -15,7 +15,7 @@ EBPF_MODE="local"
 EBPF_NETWORK=""
 EBPF_UDP_TIMEOUT="5m"
 EBPF_TC_PRIORITY=1
-EBPF_BYPASS_RULE_SET="direct,cn-ip"
+EBPF_BYPASS_RULE_SET="geoip/cn"
 ```
 
 `EBPF_MODE` 支持 `local`（当前默认出口接口）、`shared`（下游接口）和 `hybrid`（两者同时启用）。两条数据路径均由 sing-box 使用 TC 管理。`EBPF_NETWORK` 留空表示 TCP 和 UDP，也可以填写 `tcp`、`udp` 或 `tcp,udp`。`EBPF_TC_PRIORITY` 用于与同一接口上的其他 TC filter 协调顺序，通常保持默认值。

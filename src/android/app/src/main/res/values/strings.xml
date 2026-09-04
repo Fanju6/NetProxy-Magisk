@@ -375,7 +375,7 @@
     <string name="ebpf_shared_exclude_mac_addresses">排除来源 MAC 地址</string>
     <string name="restart_core">重启核心</string>
     <string name="ebpf_diagnostics">eBPF 诊断</string>
-    <string name="settings_hint_rule_sets">多个规则集标签请用英文逗号分隔，例如 direct,cn-ip</string>
+    <string name="settings_hint_rule_sets">多个规则集标签请用英文逗号分隔，例如 direct,geoip/cn</string>
     <string name="settings_hint_ports">多个目标端口请用英文逗号分隔，例如 53,853</string>
     <string name="settings_hint_port_ranges">目标端口范围使用 start:end，多个范围请用英文逗号分隔，例如 8000:8080,10000:10100</string>
     <string name="settings_hint_interfaces">多个接口名称请用英文逗号分隔，例如 wlan2,wlan0</string>

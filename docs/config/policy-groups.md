@@ -208,31 +208,24 @@ su -c '/data/adb/modules/netproxy/netproxyctl config apply singbox/outbounds /sd
 设置 → 内核设置 → 路由
 ```
 
-找到 `route.rule_set` 数组，在数组中增加下面两项：
+找到 `route.rule_set` 中使用 `https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/{tag}.srs` 的远程规则项，在它的 `tag` 数组末尾追加 `geosite/netflix` 与 `geoip/netflix`。保留其他字段和原有标签，完整数组如下：
 
 ```json
-{
-  "type": "remote",
-  "tag": [
-    "category-ai-!cn",
-    "netflix"
-  ],
-  "format": "binary",
-  "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/{tag}.srs",
-  "update_interval": "24h",
-  "path": "./rules/remote/{tag}.srs"
-},
-{
-  "type": "remote",
-  "tag": "netflix-ip",
-  "format": "binary",
-  "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/netflix.srs",
-  "update_interval": "24h",
-  "path": "./rules/remote/netflix-ip.srs"
-}
+[
+  "geosite/category-ads-all",
+  "geosite/apple-cn",
+  "geosite/category-ai-!cn",
+  "geosite/google",
+  "geosite/geolocation-!cn",
+  "geosite/cn",
+  "geoip/cn",
+  "geoip/telegram",
+  "geosite/netflix",
+  "geoip/netflix"
+]
 ```
 
-如果 `category-ai-!cn`、`netflix` 或 `netflix-ip` 已经存在，就不要重复添加相同 tag。
+`geosite/category-ai-!cn` 已由默认配置提供，不必重复添加。如果 Netflix 标签已经存在，也不要再追加。
 
 ## 第六步：把流量送入业务分组
 
@@ -240,21 +233,21 @@ su -c '/data/adb/modules/netproxy/netproxyctl config apply singbox/outbounds /sd
 
 ```json
 {
-  "rule_set": "category-ai-!cn",
+  "rule_set": "geosite/category-ai-!cn",
   "action": "route",
   "outbound": "AI"
 },
 {
   "rule_set": [
-    "netflix",
-    "netflix-ip"
+    "geosite/netflix",
+    "geoip/netflix"
   ],
   "action": "route",
   "outbound": "Netflix"
 }
 ```
 
-把业务规则放在 `geolocation-!cn` 等宽泛规则之前，否则流量可能先被前面的规则接走。
+把业务规则插在广告拒绝规则之后、默认的 `geosite/category-ai-!cn` / `geosite/google` 代理规则之前。不能只放在 `geosite/geolocation-!cn` 之前，否则 AI 流量已经被前面的默认规则送往 `Proxy`，不会进入新建的 `AI` 分组。
 
 最后把 `route.final` 修改为：
 
@@ -318,31 +311,31 @@ su -c '/data/adb/modules/netproxy/netproxyctl service restart'
 
 | 业务 | Geosite tag | GeoIP tag | GeoIP 远程文件 |
 |---|---|---|---|
-| Google | `google` | `google-ip` | `google.srs` |
-| Telegram | `telegram` | `telegram-ip` | `telegram.srs` |
-| Twitter | `twitter` | `twitter-ip` | `twitter.srs` |
-| Netflix | `netflix` | `netflix-ip` | `netflix.srs` |
-| YouTube | `youtube` | 不需要 | - |
-| GitHub | `github` | 不需要 | - |
-| Spotify | `spotify` | 不需要 | - |
-| Bilibili | `bilibili` | 不需要 | - |
+| Google | `geosite/google` | `geoip/google` | `google.srs` |
+| Telegram | `geosite/telegram` | `geoip/telegram` | `telegram.srs` |
+| Twitter | `geosite/twitter` | `geoip/twitter` | `twitter.srs` |
+| Netflix | `geosite/netflix` | `geoip/netflix` | `netflix.srs` |
+| YouTube | `geosite/youtube` | 不需要 | - |
+| GitHub | `geosite/github` | 不需要 | - |
+| Spotify | `geosite/spotify` | 不需要 | - |
+| Bilibili | `geosite/bilibili` | 不需要 | - |
 
-Geosite 的通用下载模板：
+Geosite 与 GeoIP 共用下载模板，`{tag}` 包含 `geosite/` 或 `geoip/` 前缀：
 
 ```text
-https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/{tag}.srs
+https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/{tag}.srs
 ```
 
-GeoIP 的配置 tag 通常带 `-ip`，远程文件名则不带。例如：
+例如增加 `geoip/google`，可以直接追加到现有远程规则的标签数组；需要单独声明时使用：
 
 ```json
 {
   "type": "remote",
-  "tag": "google-ip",
+  "tag": "geoip/google",
   "format": "binary",
   "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geoip/google.srs",
   "update_interval": "24h",
-  "path": "./rules/remote/google-ip.srs"
+  "path": "./rules/remote/geoip/google.srs"
 }
 ```
 
@@ -376,7 +369,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl service start'
 
 ### 首次启动提示规则集下载失败
 
-新增远程规则需要先下载 SRS 文件。检查网络、核心日志和 `rule-set-download` HTTP Client。
+新增远程规则需要先下载 SRS 文件。检查网络、核心日志和 `s-download` HTTP Client。
 
 ### 路由结果与预期不同
 

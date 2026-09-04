@@ -12,6 +12,13 @@ import (
 	"github.com/sagernet/sing-box/option"
 )
 
+func TestDefaultBypassRuleSet(t *testing.T) {
+	config := loadFixture(t, "")
+	if !reflect.DeepEqual(config.BypassRuleSets, []string{"geoip/cn"}) {
+		t.Fatalf("默认绕过规则必须引用已声明的 GeoIP 标签: %v", config.BypassRuleSets)
+	}
+}
+
 func TestBuildRuntimeUsesNewLocalAndSharedSchema(t *testing.T) {
 	config := loadFixture(t, `EBPF_MODE="hybrid"
 EBPF_NETWORK="tcp,udp"

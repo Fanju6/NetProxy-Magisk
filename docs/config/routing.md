@@ -30,7 +30,7 @@ NetProxy 的分流行为由四层共同决定：
 ```text
 /data/adb/modules/netproxy/config/singbox/rules/
 ├── local/     # block.json、direct.json、proxy.json 等用户规则
-└── remote/    # Ads_AWAvenue.json 与 MetaCubeX geosite/geoip 规则集
+└── remote/    # Ads_AWAvenue.json，geosite/ 与 geoip/ 下的 SRS 规则集
 ```
 
 `rule` 模式会同时使用静态路由配置和规则集。远程 JSON/SRS 规则由 sing-box 自动更新，用户编辑器不应修改它们；需要自定义规则时修改 `rules/local/`。
@@ -40,7 +40,7 @@ NetProxy 的分流行为由四层共同决定：
 ## eBPF 提前绕过
 
 ```ini
-EBPF_BYPASS_RULE_SET="direct,cn-ip"
+EBPF_BYPASS_RULE_SET="geoip/cn"
 ```
 
 只有可提取纯 IP CIDR 的规则集会被 eBPF 使用。提前绕过的流量不会进入 sing-box，因此不会再经过 Clash 模式和普通路由规则。进行严格 Global 测试时清空该值并重启服务。
@@ -56,6 +56,8 @@ EBPF_BYPASS_RULE_SET="direct,cn-ip"
 - `off`：不由 eBPF 入站接管 DNS。
 
 sing-box 侧 DNS 服务器、域名解析策略和 DNS 路由位于 `config/singbox/config.json` 的 `dns` 分区。默认 DNS A/AAAA 查询使用真实的 `dns-proxy` 服务器组，不使用 FakeIP 地址池。DNS 最终出站由 DNS 配置和 `OUTBOUND_MODE` 共同决定；若将兜底 DNS 设置为直连，解析请求可能不经过代理，这是可预期的配置取舍，不等同于核心故障。
+
+默认规则模式下，`geosite/category-ai-!cn`（境外 AI）与 `geosite/google` 规则集在中国域名分流前匹配，DNS 查询与连接均走代理。`geosite/cn` 域名使用直连 DNS，随后匹配的 `geosite/geolocation-!cn` 域名使用代理 DNS；未命中规则的查询仍以 `dns-proxy` 兜底。自定义直连、代理和广告规则保持更高的匹配优先级。
 
 ## 排查顺序
 

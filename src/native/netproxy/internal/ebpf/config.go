@@ -145,7 +145,7 @@ func Load(path string) (Config, error) {
 		Mode:           defaultMode,
 		UDPTimeout:     defaultUDPTimeout,
 		TCPriority:     defaultTCPriority,
-		BypassRuleSets: []string{"direct", "cn-ip"},
+		BypassRuleSets: []string{"geoip/cn"},
 		Local: LocalConfig{
 			DNSMode:              defaultDNSMode,
 			IPv6:                 true,
@@ -168,7 +168,7 @@ func Load(path string) (Config, error) {
 	if parseErr != nil {
 		return Config{}, parseErr
 	}
-	config.BypassRuleSets = CommaSeparated(valueOr(values, "EBPF_BYPASS_RULE_SET", "direct,cn-ip"))
+	config.BypassRuleSets = CommaSeparated(valueOr(values, "EBPF_BYPASS_RULE_SET", "geoip/cn"))
 
 	config.Local.DNSMode = valueOr(values, "EBPF_LOCAL_DNS_MODE", config.Local.DNSMode)
 	config.Local.IPv6, parseErr = boolValue(values, "EBPF_LOCAL_IPV6", config.Local.IPv6)

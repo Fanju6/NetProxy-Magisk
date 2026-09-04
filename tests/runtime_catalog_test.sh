@@ -46,11 +46,13 @@ grep -q '"listen": "127.0.0.1"' "$SINGBOX_DIR/config.json"
 grep -q '"secret": "singbox"' "$SINGBOX_DIR/config.json"
 
 # mixed 7080 仅供本机订阅下载使用，不得暴露到通配 IPv4/IPv6 地址。
-grep -q '"tag": "mixed_in"' "$MIXED_INBOUND_FILE"
+grep -q '"tag": "mixed-in"' "$MIXED_INBOUND_FILE"
 grep -q '"listen": "127.0.0.1"' "$MIXED_INBOUND_FILE"
 grep -q '"listen_port": 7080' "$MIXED_INBOUND_FILE"
 ! grep -Eq '"listen"[[:space:]]*:[[:space:]]*"(0\.0\.0\.0|::)"' "$MIXED_INBOUND_FILE"
 grep -q 'options.ProxyURL = "http://127.0.0.1:7080"' "$SUBSCRIPTION_UPDATE_SOURCE"
 ! grep -Eq 'ProxyURL = "http://(0\.0\.0\.0|::):7080"' "$SUBSCRIPTION_UPDATE_SOURCE"
+
+node --test "$ROOT/tests/default_config_test.mjs"
 
 printf '%s\n' "runtime catalog test passed"
