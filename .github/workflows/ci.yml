@@ -10,12 +10,13 @@ on:
       - 'src/android/**'
       - 'src/webui/**'
       - 'tests/**'
-      - '.github/workflows/ci.yml'
-      - '.github/actions/build-module/**'
+      - '.github/workflows/**'
+      - '.github/actions/**'
       - '.github/scripts/**'
+      - '.gitattributes'
 
 permissions:
-  contents: write
+  contents: read
 
 # 同一分支的新推送取消尚未完成的旧构建
 concurrency:
@@ -23,75 +24,112 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
-    name: 验证 Go、Shell、WebUI 与 Android
+  changes:
+    name: 判断受影响组件
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      module: ${{ steps.changes.outputs.module }}
+      android: ${{ steps.changes.outputs.android }}
     steps:
       - name: 拉取代码
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          sparse-checkout: .github/scripts
 
-      - name: 配置 Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: src/native/netproxy/go.mod
-          cache-dependency-path: src/native/netproxy/go.sum
+      - name: 计算验证范围
+        id: changes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node .github/scripts/ci-changes.mjs
 
-      - name: 执行 Go 与 Shell 契约测试
-        run: sh tests/ci_verify.sh
-
-      - name: 配置 Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: src/webui/package-lock.json
-
-      - name: 构建 WebUI
-        working-directory: src/webui
-        run: |
-          npm ci --no-audit --no-fund
-          npm run build
-
-      - name: 配置 Android 构建环境
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: 21
-
-      - name: 配置 Gradle
-        uses: gradle/actions/setup-gradle@v5
-
-      - name: 配置 Android SDK
-        uses: android-actions/setup-android@v4
-
-      - name: 安装 Android SDK 组件
-        run: sdkmanager 'platforms;android-37.0' 'build-tools;37.0.0' --channel=1
-
-      - name: 执行 Android 单元测试与 Lint
-        working-directory: src/android
-        run: ./gradlew testDebugUnitTest lintDebug --no-daemon
-
-  build:
-    name: 构建与发布开发包
-    needs: verify
+  module:
+    name: 验证并构建模块
+    needs: changes
+    if: needs.changes.outputs.module == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.pack.outputs.version }}
+      commit_count: ${{ steps.pack.outputs.commit_count }}
+      standard_name: ${{ steps.pack.outputs.standard_name }}
+      manager_name: ${{ steps.pack.outputs.manager_name }}
     steps:
       - name: 拉取代码
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          filter: blob:none
+
+      - name: 构建并打包模块
+        id: pack
+        uses: ./.github/actions/build-module
+
+      - name: 保存已验证的模块包
+        uses: actions/upload-artifact@v7
+        with:
+          name: module-packages
+          path: |
+            ${{ steps.pack.outputs.standard_name }}
+            ${{ steps.pack.outputs.manager_name }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+
+  android:
+    name: 验证 Android 管理器
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: 拉取 Android 源码与构建配置
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          sparse-checkout: |
+            src/android
+            .github/actions/verify-android
+
+      - name: 执行 Android 验证
+        uses: ./.github/actions/verify-android
+
+  publish:
+    name: 发布已验证的开发包
+    needs: [module, android]
+    if: >-
+      always() && !cancelled() && needs.module.result == 'success' &&
+      (needs.android.result == 'success' || needs.android.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.module.outputs.version }}
+      COMMIT_COUNT: ${{ needs.module.outputs.commit_count }}
+      STANDARD_NAME: ${{ needs.module.outputs.standard_name }}
+      MANAGER_NAME: ${{ needs.module.outputs.manager_name }}
+    steps:
+      - name: 拉取提交记录
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          sparse-checkout: .github/scripts
+
+      - name: 下载本次运行的模块包
+        uses: actions/download-artifact@v8
+        with:
+          name: module-packages
 
       - name: 设置构建元信息
         run: |
           echo "TIMESTAMP=$(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M:%S')" >> "$GITHUB_ENV"
           echo "SHORT_HASH=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
           echo "COMMIT_MESSAGE=$(git log -1 --format=%s "$GITHUB_SHA")" >> "$GITHUB_ENV"
-
-      - name: 构建并打包模块
-        id: pack
-        uses: ./.github/actions/build-module
 
       - name: 发布 Pre-release 到 GitHub Release
         env:
@@ -103,7 +141,7 @@ jobs:
           {
             echo "同步最新代码变更，仅保留最新版本的构建产物。"
             echo
-            echo "版本: \`${{ steps.pack.outputs.version }}\` (build ${{ steps.pack.outputs.commit_count }})"
+            echo "版本: \`${VERSION}\` (build ${COMMIT_COUNT})"
             echo "构建时间: ${{ env.TIMESTAMP }}"
             echo "提交: \`${{ env.SHORT_HASH }}\`"
             echo
@@ -128,11 +166,12 @@ jobs:
           
           # 创建新的 nightly 发布并上传资产
           gh release create nightly \
+            --target "$GITHUB_SHA" \
             --prerelease \
             --title "nightly Pre-release" \
             --notes-file "$notes_file" \
-            "${{ steps.pack.outputs.standard_name }}" \
-            "${{ steps.pack.outputs.manager_name }}"
+            "$STANDARD_NAME" \
+            "$MANAGER_NAME"
 
       - name: Telegram 构建成功通知
         if: success()
@@ -145,15 +184,21 @@ jobs:
           message: |
             **持续集成构建成功**
 
-            版本: `${{ steps.pack.outputs.version }}` (build ${{ steps.pack.outputs.commit_count }})
+            版本: `${{ needs.module.outputs.version }}` (build ${{ needs.module.outputs.commit_count }})
             说明: ${{ env.COMMIT_MESSAGE }}
 
             [下载开发包](${{ github.server_url }}/${{ github.repository }}/releases/tag/nightly)
             [提交记录](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})
             [构建日志](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
 
+  failure:
+    name: 通知验证或发布失败
+    needs: [changes, module, android, publish]
+    if: always() && contains(needs.*.result, 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
       - name: 失败通知
-        if: failure()
         uses: cbrgm/telegram-github-action@v1
         with:
           token: ${{ secrets.TG_BOT_TOKEN }}
@@ -164,6 +209,4 @@ jobs:
             **持续集成失败！**
 
             提交: `${{ github.sha }}`
-            说明: ${{ env.COMMIT_MESSAGE }}
-
             [点击查看构建日志](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})

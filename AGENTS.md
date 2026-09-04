@@ -355,9 +355,11 @@ Go 生命周期控制器通过 `-C config/singbox/confdir` 加载静态配置，
 
 ## 构建与发布
 
-- 构建动作先测试并交叉编译 `netproxyctl`，再构建 WebUI，最后打包模块。
+- 构建动作一次完成 Go/Shell 验证、`netproxyctl` 与 WebUI 构建，复用已验证的 ARM64 产物打包；开发包发布等待本次模块构建与受影响的 Android 验证通过，不在发布阶段重建。
+- CI 变更范围从同分支上次成功验证的提交计算，不能只比较本次 push：前一轮被取消或失败的改动仍须验证；基线不可用时执行全部检查。
+- 版本计数与更新日志所需的 checkout 保留完整提交历史；可使用 `blob:none` 或稀疏检出减少历史文件下载。KernelSU 源码镜像仍须获取完整对象，不能套用部分克隆。
 - 标准包不包含 `NetProxy.apk`；文件名带 `_with-manager` 的包仅额外携带该 APK，代理能力保持一致。
-- Android 管理器不由普通模块 CI 构建或发布，Google Play 是推荐更新渠道；内置 APK 为无 Play 环境保留。
+- Android 受影响时由 CI 并行执行单元测试与 Lint，但不生成或替换含管理器包的 APK；纯 Android 改动不发布模块开发包。Google Play 是推荐更新渠道，内置 APK 为无 Play 环境保留。
 - `update-resources.yml` 统一维护内核、规则、Web 资源、Go/npm/Gradle/Android 依赖；高风险或大版本更新进入报告，不自动静默升级。
 
 ## 安全边界

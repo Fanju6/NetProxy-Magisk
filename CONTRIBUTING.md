@@ -16,7 +16,7 @@ Android 管理器通过 `netproxyctl` 的 `schema=1` JSON 契约访问模块。�
 
 ## Android 管理器
 
-Android 管理器不会在普通模块 CI 中自动构建，本地检查是唯一防线。修改 Android 源码的贡献者需要在提交前完成本地检查；涉及 Root、模块命令、快捷设置磁贴、多用户与应用分身、Navigation 动画或 eBPF 时还需真机验证。
+CI 按变更范围执行 Android 单元测试与 Lint，并启用 Gradle 构建缓存；模块构建与 Android 验证并行，开发包只在相关检查通过后发布。纯 Android 改动不重打模块包，CI 也不替换独立维护的 `src/module/NetProxy.apk`。修改 Android 源码仍需在提交前完成本地构建；涉及 Root、模块命令、快捷设置磁贴、多用户与应用分身、Navigation 动画或 eBPF 时还需真机验证。
 
 ## Pull Request
 

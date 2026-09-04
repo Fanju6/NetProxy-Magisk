@@ -10,15 +10,21 @@ permissions:
   contents: write
   actions: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
     name: 构建并发布 Release
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: 拉取代码
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          filter: blob:none
 
       - name: 构建并打包模块
         id: pack

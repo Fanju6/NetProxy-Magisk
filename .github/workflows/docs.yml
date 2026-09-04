@@ -23,11 +23,13 @@ jobs:
   build:
     name: 构建文档
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: 拉取代码
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          sparse-checkout: docs
 
       - name: 配置 Node
         uses: actions/setup-node@v7
@@ -40,7 +42,7 @@ jobs:
         uses: actions/configure-pages@v6
 
       - name: 安装依赖
-        run: npm ci
+        run: npm ci --no-audit --no-fund
         working-directory: docs
 
       - name: 用 VitePress 构建

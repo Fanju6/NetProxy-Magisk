@@ -2,7 +2,7 @@
 # 文件: tests/ci_verify.sh
 # 功能: 构建原生组件并执行 Go、Shell 管理接口契约测试
 # 用法: sh tests/ci_verify.sh
-# 依赖: Go、POSIX sh、file、grep、sed
+# 依赖: Go、Node.js、7z、POSIX sh、file、grep、sed
 
 set -eu
 
@@ -24,9 +24,11 @@ build_binaries() {
     CGO_ENABLED=0 go build -trimpath -buildvcs=false -pgo=auto \
       -o "$BUILD_DIR/netproxyctl" ./cmd/netproxyctl
     CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build \
-      -trimpath -buildvcs=false -pgo=auto -o "$BUILD_DIR/netproxyctl-android" \
+      -trimpath -buildvcs=false -pgo=auto -ldflags='-s -w -buildid=' -o "$BUILD_DIR/netproxyctl-android" \
       ./cmd/netproxyctl
     go version -m "$BUILD_DIR/netproxyctl-android" | grep -q -- '-pgo=default.pgo'
+    go version -m "$BUILD_DIR/netproxyctl-android" | grep -q 'github.com/reF1nd/sing-box'
+    file "$BUILD_DIR/netproxyctl-android" | grep -q 'ARM aarch64'
   )
 }
 
@@ -44,4 +46,5 @@ run_shell_contracts() {
 
 build_binaries
 run_shell_contracts
+node --test "$ROOT"/.github/scripts/*.test.mjs
 printf '%s\n' 'Go 与 Shell 契约测试全部通过'

@@ -1,5 +1,5 @@
 name: 构建并打包模块
-description: 构建 WebUI、写入 versionCode，并打出标准包与含管理器包
+description: 一次完成 Go/Shell 验证、ARM64 与 WebUI 构建，再打出标准包与含管理器包
 
 # 被 ci.yml 与 release.yml 复用的共享打包逻辑（调用前需已 checkout，且 fetch-depth: 0 以便统计提交数）
 outputs:
@@ -23,30 +23,17 @@ runs:
       uses: actions/setup-go@v7
       with:
         go-version-file: src/native/netproxy/go.mod
-        cache-dependency-path: src/native/netproxy/go.sum
+        cache: false
 
-    - name: 构建 NetProxy 原生组件
-      shell: bash
-      working-directory: src/native/netproxy
-      run: |
-        set -euo pipefail
-        go test ./...
-
-        output_cli="../../module/bin/netproxyctl"
-
-        CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -v \
-          -trimpath \
-          -buildvcs=false \
-          -pgo=auto \
-          -ldflags="-s -w -buildid=" \
-          -o "$output_cli" \
-          ./cmd/netproxyctl
-
-        test -s "$output_cli"
-        chmod 0755 "$output_cli"
-        file "$output_cli" | grep -q 'ARM aarch64'
-        go version -m "$output_cli" | grep -q 'github.com/reF1nd/sing-box'
-        go version -m "$output_cli" | grep -q -- '-pgo=default.pgo'
+    - name: 缓存 Go 依赖与编译结果
+      uses: actions/cache@v6
+      with:
+        path: |
+          ~/go/pkg/mod
+          ~/.cache/go-build
+        key: ${{ runner.os }}-${{ runner.arch }}-native-${{ hashFiles('src/native/netproxy/go.mod') }}-${{ hashFiles('src/native/netproxy/go.sum', 'src/native/netproxy/**/*.go', 'src/native/netproxy/**/*.pgo', 'tests/ci_verify.sh', '.github/actions/build-module/action.yml') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ runner.arch }}-native-${{ hashFiles('src/native/netproxy/go.mod') }}-
 
     - name: 配置 Node
       uses: actions/setup-node@v7
@@ -55,11 +42,20 @@ runs:
         cache: npm
         cache-dependency-path: src/webui/package-lock.json
 
+    - name: 验证并构建 NetProxy 原生组件
+      shell: bash
+      env:
+        NETPROXY_CI_BUILD_DIR: ${{ runner.temp }}/netproxy-build
+      run: |
+        set -euo pipefail
+        sh tests/ci_verify.sh
+        install -m 0755 "$NETPROXY_CI_BUILD_DIR/netproxyctl-android" src/module/bin/netproxyctl
+
     - name: 构建 WebUI（产物 → src/module/webroot/netproxy）
       shell: bash
       working-directory: src/webui
       run: |
-        npm ci
+        npm ci --no-audit --no-fund
         npm run build
 
     - name: 计算版本并写入 module.prop
@@ -78,12 +74,8 @@ runs:
 
     - name: 打包模块（标准 / 含管理器）
       shell: bash
-      working-directory: src/module
       env:
         STANDARD_NAME: ${{ steps.meta.outputs.standard_name }}
         MANAGER_NAME: ${{ steps.meta.outputs.manager_name }}
       run: |
-        # 标准包不内置 Android 管理器，代理、CLI 和 Web 面板能力完整。
-        7z a -tzip -mx=9 "../../$STANDARD_NAME" . -x!"NetProxy.apk"
-        # 含管理器包只额外携带安装阶段可选安装的 Android APK。
-        7z a -tzip -mx=9 "../../$MANAGER_NAME" .
+        sh .github/scripts/package-module.sh src/module "$GITHUB_WORKSPACE" "$STANDARD_NAME" "$MANAGER_NAME"

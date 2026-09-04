@@ -9,9 +9,14 @@ on:
     types: [published]
   workflow_dispatch:
 
+concurrency:
+  group: sync-kernelsu-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
+
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: 拉取代码
         uses: actions/checkout@v7

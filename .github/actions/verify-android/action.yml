@@ -1,0 +1,28 @@
+name: 验证 Android 管理器
+description: 复用托管 Ubuntu 的 SDK，启用 Gradle 构建缓存并执行单元测试和 Lint
+
+runs:
+  using: composite
+  steps:
+    - name: 配置 Android JDK
+      uses: actions/setup-java@v6
+      with:
+        distribution: temurin
+        java-version: 21
+
+    - name: 配置 Gradle 缓存
+      uses: gradle/actions/setup-gradle@v5
+
+    - name: 确认 Android SDK 组件
+      shell: bash
+      run: |
+        if [ ! -f "$ANDROID_HOME/platforms/android-37.0/android.jar" ] ||
+           [ ! -x "$ANDROID_HOME/build-tools/37.0.0/aapt2" ]; then
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            'platforms;android-37.0' 'build-tools;37.0.0' --channel=1
+        fi
+
+    - name: 执行 Android 单元测试与 Lint
+      shell: bash
+      working-directory: src/android
+      run: ./gradlew testDebugUnitTest lintDebug --build-cache --parallel --no-daemon
