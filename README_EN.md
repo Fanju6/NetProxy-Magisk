@@ -35,7 +35,7 @@
 
 ## Overview
 
-NetProxy 8.0 is a system-wide transparent proxy module for rooted Android devices. Its embedded sing-box core captures local and shared-network traffic through TC eBPF and can be managed through the Android app, module WebUI, CLI, Service API Dashboard, or zashboard.
+NetProxy 8.0 is a system-wide transparent proxy module for rooted Android devices. Its embedded sing-box core captures local and shared-network traffic through eBPF and can be managed through the Android app, module WebUI, CLI, Service API Dashboard, or zashboard.
 
 Supported root environments: **Magisk, KernelSU, and APatch**.
 
@@ -76,8 +76,8 @@ Both APIs listen on loopback by default. LAN access requires an explicit listene
 
 ## Features
 
-- TC eBPF interception for local and shared-network TCP, UDP, and DNS traffic
-- No iptables or nftables rules; sing-box manages local attachments and policy routing
+- eBPF interception for local and shared-network TCP, UDP, and DNS traffic
+- No iptables or nftables rules; sing-box manages cgroup or TC attachments and policy routing
 - Per-app blacklist / whitelist routing
 - Wi-Fi hotspot and USB tethering support
 - Node links, node files, Clash YAML, and subscriptions
@@ -229,14 +229,17 @@ Key defaults:
 - `SELECTOR_MODE=urltest`
 - `ACTIVE_GROUP_ID=default`
 - `EBPF_NETWORK=""` (TCP and UDP)
+- `EBPF_LOCAL_ENABLED=1`
+- `EBPF_LOCAL_DATA_PLANE=cgroup`
+- `EBPF_SHARED_ENABLED=0`
+- `EBPF_SHARED_DATA_PLANE=packet_rewrite`
 - `EBPF_LOCAL_DNS_MODE=hijack`
 - `EBPF_SHARED_DNS_MODE=hijack`
-- `EBPF_MODE=local`
 - `EBPF_LOCAL_IPV6=1`
 - `EBPF_SHARED_IPV6=1`
 - `EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS=1`
 - `EBPF_SHARED_BYPASS_PRIVATE_ADDRESS=1`
-- `EBPF_BYPASS_RULE_SET="direct,cn-ip"` (comma-separated rule-set tags)
+- `EBPF_BYPASS_RULE_SET="geoip/cn"` (comma-separated rule-set tags)
 - `WIFI_AUTO_SWITCH=0`
 
 For startup failures, inspect the core log first:

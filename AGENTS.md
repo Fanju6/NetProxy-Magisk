@@ -30,7 +30,7 @@
 - 自动选择必须落到 `Auto/<group>`，Provider/selector 的默认值绝不能静默回退到 `direct`。
 - eBPF 是 sing-box 的入站实现，不是独立代理核心。服务、模式和节点切换文案继续使用“服务”或“sing-box”，不要泛化为“eBPF 服务”。
 - 分应用策略持久化严格的 `<user-id>:<package>` 引用，Android 每个用户独立展示；Go 通过 Android package service 查询 UID，运行时生成 `include_uid` / `exclude_uid`。
-- `EBPF_MODE` 只允许 `local`、`shared` 或 `hybrid`；local/shared 专属字段只能在对应数据路径启用时输出。
+- eBPF 数据路径由 `EBPF_LOCAL_ENABLED` 与 `EBPF_SHARED_ENABLED` 独立启用，至少开启一条；本机 `data_plane` 只允许 `cgroup/tc`，共享网络只允许 `packet_rewrite/socket_assign`，禁用路径不得输出其他运行时字段。
 - Service API 与 Clash API 的固定监听和密钥位于 `config/singbox/config.json` 的 `services` 与 `experimental.clash_api`。不要重新引入运行时随机 bootstrap，现有 WebUI 依赖固定入口。
 - 服务状态只允许 `stopped/preparing/starting/ready/stopping/failed`。`ready_at` 只能在 sing-box API 与 eBPF 入站均就绪后写入。
 - `service status` 的 `outbound_mode` 表示核心当前实际生效模式；用户在 `module.conf` 中保存的基础模式由 `configured_outbound_mode` 表示。Wi-Fi 自动切换不得覆盖基础模式。
@@ -300,7 +300,7 @@ eBPF 只负责透明代理入站。停止服务由 sing-box 关闭并清理其 e
 
 分应用配置保存 `<user-id>:<package>`，Go eBPF 运行时生成器通过 Android package service 查询 UID 后生成 `include_uid` 或 `exclude_uid`。应用安装、重装、UID 变化或用户范围变化后，通过配置 reload 重新解析，不维护模块侧 UID 缓存；白名单自动包含 UID 0。
 
-本机默认出口与热点下游接口由 `EBPF_MODE` 选择。`local` 只输出 local 字段，`shared` 只输出 shared 字段，`hybrid` 同时输出两者；两条数据路径均由 sing-box 管理 TC attachment，`shared` 与 `hybrid` 必须配置至少一个下游接口。
+本机与热点下游接管分别由 `EBPF_LOCAL_ENABLED`、`EBPF_SHARED_ENABLED` 控制。本机默认使用 cgroup socket hook，也可选择跟随默认接口的 TC；共享网络默认使用以太网 `packet_rewrite`，raw-IP、PPP 或隧道接口可选择 `socket_assign`。启用共享网络时必须配置至少一个下游接口。
 
 ## sing-box 配置组合
 

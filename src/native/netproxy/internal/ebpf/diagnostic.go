@@ -12,14 +12,16 @@ import (
 
 // ProbeOptions 描述 sing-box eBPF 能力检查所需的运行参数。
 type ProbeOptions struct {
-	RequestedMode string
-	CoreMode      string
-	Network       []string
-	IPv6          bool
-	Interface     string
+	RequestedMode   string
+	CoreMode        string
+	LocalDataPlane  string
+	SharedDataPlane string
+	Network         []string
+	IPv6            bool
+	Interface       string
 }
 
-// ResolveProbeOptions 根据当前 eBPF 配置解析能力检查范围，并拒绝旧配置字段。
+// ResolveProbeOptions 根据当前 eBPF 配置解析能力检查范围与数据平面。
 func ResolveProbeOptions(path, requestedMode string) (ProbeOptions, error) {
 	config, err := Load(path)
 	if err != nil {
@@ -32,10 +34,10 @@ func ResolveProbeOptions(path, requestedMode string) (ProbeOptions, error) {
 	}
 	coreMode := requested
 	if requested == "configured" {
-		switch config.Mode {
-		case "hybrid":
+		switch {
+		case config.Local.Enabled && config.Shared.Enabled:
 			coreMode = "all"
-		case "shared":
+		case config.Shared.Enabled:
 			coreMode = "shared"
 		default:
 			coreMode = "local"
@@ -63,17 +65,25 @@ func ResolveProbeOptions(path, requestedMode string) (ProbeOptions, error) {
 		interfaceName = config.Shared.Interfaces[0]
 	}
 	return ProbeOptions{
-		RequestedMode: requested,
-		CoreMode:      coreMode,
-		Network:       network,
-		IPv6:          ipv6,
-		Interface:     interfaceName,
+		RequestedMode:   requested,
+		CoreMode:        coreMode,
+		LocalDataPlane:  config.Local.DataPlane,
+		SharedDataPlane: config.Shared.DataPlane,
+		Network:         network,
+		IPv6:            ipv6,
+		Interface:       interfaceName,
 	}, nil
 }
 
 // Args 返回 sing-box tools ebpf status 的参数。
 func (o ProbeOptions) Args() []string {
 	args := []string{"tools", "ebpf", "status", "--mode", o.CoreMode}
+	if o.CoreMode == "all" || o.CoreMode == "local" {
+		args = append(args, "--local-data-plane", o.LocalDataPlane)
+	}
+	if o.CoreMode == "all" || o.CoreMode == "shared" {
+		args = append(args, "--shared-data-plane", o.SharedDataPlane)
+	}
 	if len(o.Network) > 0 {
 		args = append(args, "--network", strings.Join(o.Network, ","))
 	}
@@ -109,6 +119,8 @@ type ProbeReport struct {
 	KernelRelease    string         `json:"kernel_release"`
 	Architecture     string         `json:"architecture"`
 	Mode             string         `json:"mode"`
+	LocalDataPlane   string         `json:"local_data_plane,omitempty"`
+	SharedDataPlane  string         `json:"shared_data_plane,omitempty"`
 	Network          []string       `json:"network"`
 	IPv6             bool           `json:"ipv6"`
 	Findings         []ProbeFinding `json:"findings"`
@@ -158,6 +170,12 @@ func ParseProbeReport(raw string) (ProbeReport, error) {
 	if report.Mode != "all" && report.Mode != "local" && report.Mode != "shared" {
 		return ProbeReport{}, fmt.Errorf("sing-box eBPF JSON 诊断报告模式无效: %q", report.Mode)
 	}
+	if (report.Mode == "all" || report.Mode == "local") && report.LocalDataPlane != "cgroup" && report.LocalDataPlane != "tc" {
+		return ProbeReport{}, fmt.Errorf("sing-box eBPF JSON 诊断报告本机数据平面无效: %q", report.LocalDataPlane)
+	}
+	if (report.Mode == "all" || report.Mode == "shared") && report.SharedDataPlane != "packet_rewrite" && report.SharedDataPlane != "socket_assign" {
+		return ProbeReport{}, fmt.Errorf("sing-box eBPF JSON 诊断报告共享数据平面无效: %q", report.SharedDataPlane)
+	}
 	if report.Result != "supported" && report.Result != "inconclusive" && report.Result != "unsupported" {
 		return ProbeReport{}, fmt.Errorf("sing-box eBPF JSON 诊断报告结论无效: %q", report.Result)
 	}
@@ -195,6 +213,12 @@ func FormatProbeOutput(report ProbeReport, probeErr error) string {
 	if report.Architecture != "" {
 		fmt.Fprintf(&builder, "设备架构: %s\n", report.Architecture)
 	}
+	if report.LocalDataPlane != "" {
+		fmt.Fprintf(&builder, "本机数据平面: %s\n", report.LocalDataPlane)
+	}
+	if report.SharedDataPlane != "" {
+		fmt.Fprintf(&builder, "共享数据平面: %s\n", report.SharedDataPlane)
+	}
 	builder.WriteString("\n检查统计:\n")
 	fmt.Fprintf(&builder, "  通过: %d 项\n", report.Summary.Pass)
 	fmt.Fprintf(&builder, "  警告: %d 项\n", report.Summary.Warn)
@@ -210,7 +234,7 @@ func FormatProbeOutput(report ProbeReport, probeErr error) string {
 			builder.WriteString("  - 基础 eBPF 权限或内核能力不满足。\n")
 		}
 		if localFail {
-			builder.WriteString("  - 本机 TC 路径或策略路由能力不满足。\n")
+			builder.WriteString("  - 本机 cgroup/TC 数据路径能力不满足。\n")
 		}
 		if sharedFail {
 			builder.WriteString("  - 热点接口或 TC eBPF 能力不满足。\n")

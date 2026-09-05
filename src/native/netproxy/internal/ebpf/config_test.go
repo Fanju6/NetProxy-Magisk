@@ -19,8 +19,27 @@ func TestDefaultBypassRuleSet(t *testing.T) {
 	}
 }
 
-func TestBuildRuntimeUsesNewLocalAndSharedSchema(t *testing.T) {
-	config := loadFixture(t, `EBPF_MODE="hybrid"
+func TestDefaultRuntimeUsesLocalCgroupOnly(t *testing.T) {
+	config := loadFixture(t, "")
+	inbound := runtimeInbound(t, config, nil)
+	local := inbound["local"].(map[string]any)
+	assertMatchesSingBoxOptions[option.EBPFLocalOptions](t, local)
+	if local["enabled"] != true || local["data_plane"] != "cgroup" {
+		t.Fatalf("unexpected default local data path: %#v", local)
+	}
+	shared := inbound["shared"].(map[string]any)
+	assertMatchesSingBoxOptions[option.EBPFSharedOptions](t, shared)
+	if !reflect.DeepEqual(shared, map[string]any{"enabled": false}) {
+		t.Fatalf("unexpected default shared data path: %#v", shared)
+	}
+}
+
+func TestBuildRuntimeUsesEnabledLocalAndSharedDataPlanes(t *testing.T) {
+	config := loadFixture(t, `EBPF_LOCAL_ENABLED=1
+EBPF_LOCAL_DATA_PLANE="cgroup"
+EBPF_LOCAL_CGROUP_PATH="/sys/fs/cgroup"
+EBPF_SHARED_ENABLED=1
+EBPF_SHARED_DATA_PLANE="socket_assign"
 EBPF_NETWORK="tcp,udp"
 EBPF_TC_PRIORITY=7
 EBPF_LOCAL_DNS_MODE="respect_policy"
@@ -42,8 +61,8 @@ EBPF_SHARED_INCLUDE_MAC_ADDRESS="02:11:22:33:44:55,AA:BB:CC:DD:EE:FF"
 	inbound := runtimeInbound(t, config, func(refs []PackageRef) (PackageUIDResolution, error) {
 		return PackageUIDResolution{UIDs: []uint32{10123, 10124}}, nil
 	})
-	if inbound["mode"] != "hybrid" {
-		t.Fatalf("unexpected base inbound: %#v", inbound)
+	if _, exists := inbound["mode"]; exists {
+		t.Fatalf("removed mode field is still emitted: %#v", inbound)
 	}
 	if _, exists := inbound["bypass_private_address"]; exists {
 		t.Fatalf("top-level bypass_private_address is no longer supported: %#v", inbound)
@@ -56,6 +75,9 @@ EBPF_SHARED_INCLUDE_MAC_ADDRESS="02:11:22:33:44:55,AA:BB:CC:DD:EE:FF"
 	}
 	local := inbound["local"].(map[string]any)
 	assertMatchesSingBoxOptions[option.EBPFLocalOptions](t, local)
+	if local["enabled"] != true || local["data_plane"] != "cgroup" || local["cgroup_path"] != "/sys/fs/cgroup" {
+		t.Fatalf("unexpected local data plane: %#v", local)
+	}
 	if local["dns_mode"] != "respect_policy" || local["ipv6"] != false || local["bypass_private_address"] != false || local["include_uid"] != nil {
 		t.Fatalf("unexpected local fields: %#v", local)
 	}
@@ -70,6 +92,9 @@ EBPF_SHARED_INCLUDE_MAC_ADDRESS="02:11:22:33:44:55,AA:BB:CC:DD:EE:FF"
 	}
 	shared := inbound["shared"].(map[string]any)
 	assertMatchesSingBoxOptions[option.EBPFSharedOptions](t, shared)
+	if shared["enabled"] != true || shared["data_plane"] != "socket_assign" {
+		t.Fatalf("unexpected shared data plane: %#v", shared)
+	}
 	if shared["bypass_private_address"] != false {
 		t.Fatalf("unexpected shared private address policy: %#v", shared)
 	}
@@ -171,18 +196,21 @@ PROXY_APPS_LIST="0:com.example.removed,10:com.example.otherremoved"
 	}
 }
 
-func TestSharedModeOmitsLocalFields(t *testing.T) {
-	config := loadFixture(t, `EBPF_MODE="shared"
+func TestDisabledLocalPathOnlyEmitsEnablement(t *testing.T) {
+	config := loadFixture(t, `EBPF_LOCAL_ENABLED=0
+EBPF_SHARED_ENABLED=1
 EBPF_SHARED_INTERFACES="ap0"
 APP_PROXY_ENABLE=0
 EBPF_LOCAL_INCLUDE_UID=1234
 `)
 	inbound := runtimeInbound(t, config, nil)
-	if _, ok := inbound["local"]; ok {
-		t.Fatalf("shared mode emitted local fields: %#v", inbound)
+	local := inbound["local"].(map[string]any)
+	assertMatchesSingBoxOptions[option.EBPFLocalOptions](t, local)
+	if !reflect.DeepEqual(local, map[string]any{"enabled": false}) {
+		t.Fatalf("disabled local path emitted settings: %#v", local)
 	}
 	if shared := inbound["shared"].(map[string]any); shared["interface"].([]any)[0] != "ap0" {
-		t.Fatalf("unexpected shared mode: %#v", shared)
+		t.Fatalf("unexpected shared data path: %#v", shared)
 	}
 }
 
@@ -216,6 +244,7 @@ func TestCommaSeparatedValuesUseCommaAsTheOnlyListSeparator(t *testing.T) {
 
 func TestLoadRejectsRemovedConfiguration(t *testing.T) {
 	for _, content := range []string{
+		"EBPF_MODE=local\n",
 		"EBPF_DNS_MODE=hijack\n",
 		"EBPF_CGROUP_ENABLED=1\n",
 		"EBPF_SHARED_NETWORK=1\n",
@@ -229,23 +258,22 @@ func TestLoadRejectsRemovedConfiguration(t *testing.T) {
 		"EBPF_LOCAL_STATE_CAPACITY=512\n",
 		"EBPF_SHARED_IPV6_MODE=always\n",
 		"EBPF_SHARED_STATE_CAPACITY=512\n",
-		"EBPF_SHARED_DATA_PLANE=auto\n",
 		"EBPF_SHARED_ROUTING_MARK=1\n",
 		"EBPF_SHARED_ROUTING_TABLE=2026\n",
-		"EBPF_LOCAL_CGROUP_PATH=/sys/fs/cgroup\n",
 		"EBPF_SHARED_TC_PRIORITY=1\n",
 	} {
 		if _, err := Load(writeFixture(t, content)); err == nil {
 			t.Fatalf("removed or unscoped configuration unexpectedly loaded: %q", content)
 		}
 	}
-	if _, err := Load(writeFixture(t, "EBPF_MODE=shared\nEBPF_NETWORK=tcp\nEBPF_SHARED_DNS_MODE=hijack\nEBPF_SHARED_INTERFACES=ap0\n")); err != nil {
+	if _, err := Load(writeFixture(t, "EBPF_LOCAL_ENABLED=0\nEBPF_SHARED_ENABLED=1\nEBPF_NETWORK=tcp\nEBPF_SHARED_DNS_MODE=hijack\nEBPF_SHARED_INTERFACES=ap0\n")); err != nil {
 		t.Fatalf("shared TCP-only DNS interception should be accepted: %v", err)
 	}
 }
 
 func TestTopLevelPriorityDefaultMatchesSingBox(t *testing.T) {
-	config := loadFixture(t, `EBPF_MODE="shared"
+	config := loadFixture(t, `EBPF_LOCAL_ENABLED=0
+EBPF_SHARED_ENABLED=1
 EBPF_SHARED_INTERFACES="ap0"
 APP_PROXY_ENABLE=0
 `)
@@ -259,6 +287,21 @@ APP_PROXY_ENABLE=0
 	}
 	if _, exists := shared["advanced"]; exists {
 		t.Fatalf("removed shared advanced object is still emitted: %#v", shared)
+	}
+}
+
+func TestLoadRejectsInvalidEnablementAndDataPlanes(t *testing.T) {
+	for _, content := range []string{
+		"EBPF_LOCAL_ENABLED=0\nEBPF_SHARED_ENABLED=0\n",
+		"EBPF_LOCAL_DATA_PLANE=auto\n",
+		"EBPF_LOCAL_DATA_PLANE=tc\nEBPF_LOCAL_CGROUP_PATH=/sys/fs/cgroup\n",
+		"EBPF_LOCAL_CGROUP_PATH=relative\n",
+		"EBPF_SHARED_ENABLED=1\nEBPF_SHARED_DATA_PLANE=auto\n",
+		"EBPF_SHARED_ENABLED=1\nEBPF_SHARED_INTERFACES=\n",
+	} {
+		if _, err := Load(writeFixture(t, content)); err == nil {
+			t.Fatalf("invalid enablement or data plane unexpectedly loaded: %q", content)
+		}
 	}
 }
 

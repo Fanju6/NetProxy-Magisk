@@ -17,20 +17,23 @@ import (
 )
 
 const (
-	defaultMode        = "local"
-	defaultUDPTimeout  = "5m"
-	defaultSharedIface = "wlan2"
-	defaultDNSMode     = "hijack"
-	defaultTCPriority  = 1
-	maxTCPriority      = 65535
+	defaultUDPTimeout      = "5m"
+	defaultSharedIface     = "wlan2"
+	defaultDNSMode         = "hijack"
+	defaultLocalDataPlane  = "cgroup"
+	defaultSharedDataPlane = "packet_rewrite"
+	defaultTCPriority      = 1
+	maxTCPriority          = 65535
 )
 
 var allowedKeys = map[string]bool{
-	"EBPF_MODE":                          true,
 	"EBPF_NETWORK":                       true,
 	"EBPF_UDP_TIMEOUT":                   true,
 	"EBPF_TC_PRIORITY":                   true,
 	"EBPF_BYPASS_RULE_SET":               true,
+	"EBPF_LOCAL_ENABLED":                 true,
+	"EBPF_LOCAL_DATA_PLANE":              true,
+	"EBPF_LOCAL_CGROUP_PATH":             true,
 	"EBPF_LOCAL_DNS_MODE":                true,
 	"EBPF_LOCAL_IPV6":                    true,
 	"EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS":  true,
@@ -43,6 +46,8 @@ var allowedKeys = map[string]bool{
 	"EBPF_LOCAL_EXCLUDE_PACKAGE":         true,
 	"EBPF_LOCAL_BYPASS_PORT":             true,
 	"EBPF_LOCAL_BYPASS_PORT_RANGE":       true,
+	"EBPF_SHARED_ENABLED":                true,
+	"EBPF_SHARED_DATA_PLANE":             true,
 	"EBPF_SHARED_DNS_MODE":               true,
 	"EBPF_SHARED_INTERFACES":             true,
 	"EBPF_SHARED_IPV6":                   true,
@@ -61,7 +66,6 @@ var allowedKeys = map[string]bool{
 
 // Config 描述 ebpf.conf 的类型化配置。
 type Config struct {
-	Mode           string
 	Network        []string
 	UDPTimeout     string
 	TCPriority     uint16
@@ -76,6 +80,9 @@ type Config struct {
 
 // LocalConfig 描述 sing-box eBPF 的本机数据路径。
 type LocalConfig struct {
+	Enabled              bool
+	DataPlane            string
+	CgroupPath           string
 	DNSMode              string
 	IPv6                 bool
 	BypassPrivateAddress bool
@@ -92,6 +99,8 @@ type LocalConfig struct {
 
 // SharedConfig 描述 sing-box eBPF 的共享网络数据路径。
 type SharedConfig struct {
+	Enabled              bool
+	DataPlane            string
 	DNSMode              string
 	Interfaces           []string
 	IPv6                 bool
@@ -142,16 +151,19 @@ func Load(path string) (Config, error) {
 		}
 	}
 	config := Config{
-		Mode:           defaultMode,
 		UDPTimeout:     defaultUDPTimeout,
 		TCPriority:     defaultTCPriority,
 		BypassRuleSets: []string{"geoip/cn"},
 		Local: LocalConfig{
+			Enabled:              true,
+			DataPlane:            defaultLocalDataPlane,
 			DNSMode:              defaultDNSMode,
 			IPv6:                 true,
 			BypassPrivateAddress: true,
 		},
 		Shared: SharedConfig{
+			Enabled:              false,
+			DataPlane:            defaultSharedDataPlane,
 			DNSMode:              defaultDNSMode,
 			Interfaces:           []string{defaultSharedIface},
 			IPv6:                 true,
@@ -161,7 +173,6 @@ func Load(path string) (Config, error) {
 		AppProxyMode:   "blacklist",
 	}
 	var parseErr error
-	config.Mode = valueOr(values, "EBPF_MODE", config.Mode)
 	config.Network = CommaSeparated(valueOr(values, "EBPF_NETWORK", ""))
 	config.UDPTimeout = valueOr(values, "EBPF_UDP_TIMEOUT", config.UDPTimeout)
 	config.TCPriority, parseErr = tcpPriority(values, "EBPF_TC_PRIORITY")
@@ -170,6 +181,12 @@ func Load(path string) (Config, error) {
 	}
 	config.BypassRuleSets = CommaSeparated(valueOr(values, "EBPF_BYPASS_RULE_SET", "geoip/cn"))
 
+	config.Local.Enabled, parseErr = boolValue(values, "EBPF_LOCAL_ENABLED", config.Local.Enabled)
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
+	config.Local.DataPlane = valueOr(values, "EBPF_LOCAL_DATA_PLANE", config.Local.DataPlane)
+	config.Local.CgroupPath = valueOr(values, "EBPF_LOCAL_CGROUP_PATH", "")
 	config.Local.DNSMode = valueOr(values, "EBPF_LOCAL_DNS_MODE", config.Local.DNSMode)
 	config.Local.IPv6, parseErr = boolValue(values, "EBPF_LOCAL_IPV6", config.Local.IPv6)
 	if parseErr != nil {
@@ -215,6 +232,11 @@ func Load(path string) (Config, error) {
 	if parseErr != nil {
 		return Config{}, parseErr
 	}
+	config.Shared.Enabled, parseErr = boolValue(values, "EBPF_SHARED_ENABLED", config.Shared.Enabled)
+	if parseErr != nil {
+		return Config{}, parseErr
+	}
+	config.Shared.DataPlane = valueOr(values, "EBPF_SHARED_DATA_PLANE", config.Shared.DataPlane)
 	config.Shared.DNSMode = valueOr(values, "EBPF_SHARED_DNS_MODE", config.Shared.DNSMode)
 	config.Shared.Interfaces = CommaSeparated(valueOr(values, "EBPF_SHARED_INTERFACES", defaultSharedIface))
 	config.Shared.IPv6, parseErr = boolValue(values, "EBPF_SHARED_IPV6", config.Shared.IPv6)
@@ -269,10 +291,10 @@ func Load(path string) (Config, error) {
 	return config, nil
 }
 
-// Validate 检查新 eBPF 配置之间的组合约束。
+// Validate 检查 eBPF 配置之间的组合约束。
 func (c Config) Validate() error {
-	if c.Mode != "local" && c.Mode != "shared" && c.Mode != "hybrid" {
-		return validationError("ebpf.mode_invalid", "EBPF_MODE", "eBPF 模式只能是 local、shared 或 hybrid")
+	if !c.Local.Enabled && !c.Shared.Enabled {
+		return validationError("ebpf.path_required", "EBPF_LOCAL_ENABLED", "本机或共享网络至少需要启用一条 eBPF 数据路径")
 	}
 	for _, network := range c.Network {
 		if network != "tcp" && network != "udp" {
@@ -288,10 +310,20 @@ func (c Config) Validate() error {
 	if !validDNSMode(c.Shared.DNSMode) {
 		return validationError("ebpf.shared_dns_mode_invalid", "EBPF_SHARED_DNS_MODE", "共享网络 DNS 模式只能是 hijack、respect_policy 或 off")
 	}
-	if c.Mode == "shared" || c.Mode == "hybrid" {
-		if len(c.Shared.Interfaces) == 0 {
-			return validationError("ebpf.shared_interface_required", "EBPF_SHARED_INTERFACES", "共享网络模式至少需要一个下游接口")
-		}
+	if c.Local.DataPlane != "cgroup" && c.Local.DataPlane != "tc" {
+		return validationError("ebpf.local_data_plane_invalid", "EBPF_LOCAL_DATA_PLANE", "本机数据平面只能是 cgroup 或 tc")
+	}
+	if c.Local.CgroupPath != "" && c.Local.DataPlane != "cgroup" {
+		return validationError("ebpf.local_cgroup_path_invalid", "EBPF_LOCAL_CGROUP_PATH", "本机 cgroup 路径仅适用于 cgroup 数据平面")
+	}
+	if c.Local.CgroupPath != "" && !strings.HasPrefix(c.Local.CgroupPath, "/") {
+		return validationError("ebpf.local_cgroup_path_invalid", "EBPF_LOCAL_CGROUP_PATH", "本机 cgroup 路径必须是绝对路径")
+	}
+	if c.Shared.DataPlane != "packet_rewrite" && c.Shared.DataPlane != "socket_assign" {
+		return validationError("ebpf.shared_data_plane_invalid", "EBPF_SHARED_DATA_PLANE", "共享网络数据平面只能是 packet_rewrite 或 socket_assign")
+	}
+	if c.Shared.Enabled && len(c.Shared.Interfaces) == 0 {
+		return validationError("ebpf.shared_interface_required", "EBPF_SHARED_INTERFACES", "启用共享网络时至少需要一个下游接口")
 	}
 	if c.AppProxyMode != "blacklist" && c.AppProxyMode != "whitelist" {
 		return validationError("ebpf.app_mode_invalid", "APP_PROXY_MODE", "分应用代理模式只能是 blacklist 或 whitelist")
@@ -318,20 +350,21 @@ func (c Config) BuildWithResolver(resolve PackageUIDResolver) (BuildResult, erro
 	if err := c.Validate(); err != nil {
 		return BuildResult{}, err
 	}
-	localEnabled := c.Mode == "local" || c.Mode == "hybrid"
-	sharedEnabled := c.Mode == "shared" || c.Mode == "hybrid"
 	inbound := Inbound{
 		Type:          "ebpf",
 		Tag:           "ebpf-in",
-		Mode:          c.Mode,
 		Network:       c.Network,
 		UDPTimeout:    c.UDPTimeout,
 		TCPriority:    c.TCPriority,
 		BypassRuleSet: c.BypassRuleSets,
 	}
 	missing := make([]PackageRef, 0)
-	if localEnabled {
+	inbound.Local = &LocalRuntime{Enabled: c.Local.Enabled}
+	if c.Local.Enabled {
 		local := LocalRuntime{
+			Enabled:              true,
+			DataPlane:            c.Local.DataPlane,
+			CgroupPath:           c.Local.CgroupPath,
 			DNSMode:              c.Local.DNSMode,
 			IPv6:                 c.Local.IPv6,
 			BypassPrivateAddress: c.Local.BypassPrivateAddress,
@@ -371,8 +404,11 @@ func (c Config) BuildWithResolver(resolve PackageUIDResolver) (BuildResult, erro
 		local.ExcludeUID = uniqueUint32(local.ExcludeUID)
 		inbound.Local = &local
 	}
-	if sharedEnabled {
+	inbound.Shared = &SharedRuntime{Enabled: c.Shared.Enabled}
+	if c.Shared.Enabled {
 		inbound.Shared = &SharedRuntime{
+			Enabled:              true,
+			DataPlane:            c.Shared.DataPlane,
 			DNSMode:              c.Shared.DNSMode,
 			Interface:            c.Shared.Interfaces,
 			IPv6:                 c.Shared.IPv6,
@@ -400,7 +436,6 @@ type Runtime struct {
 type Inbound struct {
 	Type          string
 	Tag           string
-	Mode          string
 	Network       []string
 	UDPTimeout    string
 	TCPriority    uint16
@@ -409,8 +444,11 @@ type Inbound struct {
 	Shared        *SharedRuntime
 }
 
-// LocalRuntime 是仅在 local 或 hybrid 模式输出的字段。
+// LocalRuntime 描述已启用的本机数据路径。
 type LocalRuntime struct {
+	Enabled              bool     `json:"enabled"`
+	DataPlane            string   `json:"data_plane,omitempty"`
+	CgroupPath           string   `json:"cgroup_path,omitempty"`
 	DNSMode              string   `json:"dns_mode,omitempty"`
 	IPv6                 bool     `json:"ipv6"`
 	BypassPrivateAddress bool     `json:"bypass_private_address"`
@@ -425,8 +463,10 @@ type LocalRuntime struct {
 	BypassPortRange      []string `json:"bypass_port_range,omitempty"`
 }
 
-// SharedRuntime 是仅在 shared 或 hybrid 模式输出的字段。
+// SharedRuntime 描述已启用的共享网络数据路径。
 type SharedRuntime struct {
+	Enabled              bool     `json:"enabled"`
+	DataPlane            string   `json:"data_plane,omitempty"`
 	DNSMode              string   `json:"dns_mode,omitempty"`
 	Interface            []string `json:"interface,omitempty"`
 	IPv6                 bool     `json:"ipv6"`
@@ -439,12 +479,11 @@ type SharedRuntime struct {
 	BypassPortRange      []string `json:"bypass_port_range,omitempty"`
 }
 
-// MarshalJSON 只输出与当前 mode 对应的数据路径，避免 sing-box 拒绝无效字段。
+// MarshalJSON 只为已启用的数据路径输出设置，避免 disabled 路径携带无效字段。
 func (i Inbound) MarshalJSON() ([]byte, error) {
 	value := map[string]any{
 		"type":            i.Type,
 		"tag":             i.Tag,
-		"mode":            i.Mode,
 		"udp_timeout":     i.UDPTimeout,
 		"tc_priority":     i.TCPriority,
 		"bypass_rule_set": i.BypassRuleSet,
@@ -453,10 +492,18 @@ func (i Inbound) MarshalJSON() ([]byte, error) {
 		value["network"] = i.Network
 	}
 	if i.Local != nil {
-		value["local"] = i.Local
+		if i.Local.Enabled {
+			value["local"] = i.Local
+		} else {
+			value["local"] = map[string]bool{"enabled": false}
+		}
 	}
 	if i.Shared != nil {
-		value["shared"] = i.Shared
+		if i.Shared.Enabled {
+			value["shared"] = i.Shared
+		} else {
+			value["shared"] = map[string]bool{"enabled": false}
+		}
 	}
 	return json.Marshal(value, json.Deterministic(true))
 }

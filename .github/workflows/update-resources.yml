@@ -142,7 +142,15 @@ jobs:
             unset GOOS GOARCH CGO_ENABLED
             make -C .sing-box-source schema
           )
-          jq -e '."$defs".EBPFLocalOptions.properties.bypass_port' \
+          jq -e '
+            ."$defs".EBPFLocalOptions.properties.enabled and
+            ."$defs".EBPFLocalOptions.properties.data_plane and
+            ."$defs".EBPFLocalOptions.properties.cgroup_path and
+            ."$defs".EBPFLocalOptions.properties.bypass_port and
+            ."$defs".EBPFSharedOptions.properties.enabled and
+            ."$defs".EBPFSharedOptions.properties.data_plane and
+            (."$defs".EBPFInboundOptions.properties | has("mode") | not)
+          ' \
             .sing-box-source/docs/schema.json >/dev/null
 
           install -m 0755 .sing-box-source/sing-box "$SING_BOX_TARGET"

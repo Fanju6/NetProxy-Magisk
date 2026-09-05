@@ -348,10 +348,10 @@
     <string name="ebpf_network_all">TCP + UDP</string>
     <string name="ebpf_network_tcp">仅 TCP</string>
     <string name="ebpf_network_udp">仅 UDP</string>
-    <string name="ebpf_mode">代理范围</string>
-    <string name="ebpf_mode_local">仅本机网络</string>
-    <string name="ebpf_mode_shared">仅热点与共享网络</string>
-    <string name="ebpf_mode_hybrid">本机网络与共享网络</string>
+    <string name="ebpf_data_paths">代理范围</string>
+    <string name="ebpf_data_paths_local">仅本机网络</string>
+    <string name="ebpf_data_paths_shared">仅热点与共享网络</string>
+    <string name="ebpf_data_paths_both">本机网络与共享网络</string>
     <string name="ebpf_local_settings">本机网络</string>
     <string name="ebpf_local_dns_mode">本机网络 DNS 模式</string>
     <string name="ebpf_shared_dns_mode">共享网络 DNS 模式</string>

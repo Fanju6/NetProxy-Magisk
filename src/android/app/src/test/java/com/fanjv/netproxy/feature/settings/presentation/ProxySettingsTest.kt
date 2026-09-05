@@ -7,7 +7,8 @@ class ProxySettingsTest {
     @Test
     fun dnsModesAreIndependentForLocalAndSharedDataPaths() {
         val settings = ProxySettings(
-            mode = "hybrid",
+            localEnabled = true,
+            sharedEnabled = true,
             network = "tcp",
             localDnsMode = "respect_policy",
             sharedDnsMode = "off",
@@ -21,7 +22,8 @@ class ProxySettingsTest {
     @Test
     fun privateAddressBypassIsIndependentForLocalAndSharedDataPaths() {
         val settings = ProxySettings(
-            mode = "hybrid",
+            localEnabled = true,
+            sharedEnabled = true,
             localBypassPrivateAddress = true,
             sharedBypassPrivateAddress = false,
         )
@@ -33,7 +35,8 @@ class ProxySettingsTest {
     @Test
     fun ipv6SwitchesAreIndependentForLocalAndSharedDataPaths() {
         val settings = ProxySettings(
-            mode = "hybrid",
+            localEnabled = true,
+            sharedEnabled = true,
             localIpv6 = false,
             sharedIpv6 = true,
         )
@@ -45,7 +48,8 @@ class ProxySettingsTest {
     @Test
     fun portBypassIsIndependentForLocalAndSharedDataPaths() {
         val settings = ProxySettings(
-            mode = "hybrid",
+            localEnabled = true,
+            sharedEnabled = true,
             localBypassPorts = "53,853",
             localBypassPortRanges = "8000:8080",
             sharedBypassPorts = "67,68",
@@ -56,5 +60,12 @@ class ProxySettingsTest {
         assertEquals("8000:8080", settings.localBypassPortRanges)
         assertEquals("67,68", settings.sharedBypassPorts)
         assertEquals("10000:10100", settings.sharedBypassPortRanges)
+    }
+
+    @Test
+    fun dataPathSelectionIsDerivedFromEnablement() {
+        assertEquals("local", ProxySettings(localEnabled = true, sharedEnabled = false).dataPathSelection)
+        assertEquals("shared", ProxySettings(localEnabled = false, sharedEnabled = true).dataPathSelection)
+        assertEquals("both", ProxySettings(localEnabled = true, sharedEnabled = true).dataPathSelection)
     }
 }

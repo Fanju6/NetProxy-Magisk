@@ -147,17 +147,17 @@ internal fun ProxySettingsScreen(
                     keyPrefix = "ebpf_core",
                     title = { stringResource(R.string.ebpf_core_settings) },
                     items = listOf(
-                        CardItem("mode") {
-                            val values = listOf("local", "shared", "hybrid")
+                        CardItem("data_paths") {
+                            val values = listOf("local", "shared", "both")
                             OverlayDropdownPreference(
-                                title = stringResource(R.string.ebpf_mode),
+                                title = stringResource(R.string.ebpf_data_paths),
                                 items = listOf(
-                                    stringResource(R.string.ebpf_mode_local),
-                                    stringResource(R.string.ebpf_mode_shared),
-                                    stringResource(R.string.ebpf_mode_hybrid)
+                                    stringResource(R.string.ebpf_data_paths_local),
+                                    stringResource(R.string.ebpf_data_paths_shared),
+                                    stringResource(R.string.ebpf_data_paths_both)
                                 ),
-                                selectedIndex = values.indexOf(settings.mode).coerceAtLeast(0),
-                                onSelectedIndexChange = { viewModel.setMode(values[it]) }
+                                selectedIndex = values.indexOf(settings.dataPathSelection).coerceAtLeast(0),
+                                onSelectedIndexChange = { viewModel.setDataPaths(values[it]) }
                             )
                         },
                         CardItem("network") {

@@ -241,9 +241,10 @@ class SingBoxSchemaValidatorTest {
                       "inbounds": [
                         {
                           "type": "ebpf",
-                          "mode": "hybrid",
                           "tc_priority": 1,
                           "local": {
+                            "enabled": true,
+                            "data_plane": "cgroup",
                             "dns_mode": "respect_policy",
                             "ipv6": true,
                             "bypass_private_address": true,
@@ -251,6 +252,8 @@ class SingBoxSchemaValidatorTest {
                             "bypass_port_range": ["8000:8080"]
                           },
                           "shared": {
+                            "enabled": true,
+                            "data_plane": "packet_rewrite",
                             "dns_mode": "off",
                             "interface": ["wlan2"],
                             "ipv6": false,
@@ -286,8 +289,7 @@ class SingBoxSchemaValidatorTest {
                         {
                           "type": "ebpf",
                           "mode": "local",
-                          "dns_mode": "hijack",
-                          "local": { "dns_mode": "respect_bypass" }
+                          "local": { "enabled": true, "data_plane": "cgroup" }
                         }
                       ]
                     }

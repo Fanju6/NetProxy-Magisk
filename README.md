@@ -35,7 +35,7 @@
 
 ## 项目简介
 
-NetProxy 8.0 是面向已 Root Android 设备的系统级透明代理模块。模块以内置 sing-box 为代理核心，通过 TC eBPF 接管本机及共享网络流量，并提供 Android 管理器、模块 WebUI、CLI、Service API Dashboard 与 zashboard 等入口。
+NetProxy 8.0 是面向已 Root Android 设备的系统级透明代理模块。模块以内置 sing-box 为代理核心，通过 eBPF 接管本机及共享网络流量，并提供 Android 管理器、模块 WebUI、CLI、Service API Dashboard 与 zashboard 等入口。
 
 支持 **Magisk、KernelSU 与 APatch**。节点、订阅、路由、DNS 和透明代理配置均保存在模块目录中，不依赖 VPN 模式运行。
 
@@ -76,7 +76,7 @@ Clash API 与 Service API 默认只监听本机。需要从其他设备访问时
 
 ## 核心能力
 
-- 使用 TC eBPF 接管本机与共享网络的 TCP、UDP 和 DNS 流量
+- 使用 eBPF 接管本机与共享网络的 TCP、UDP 和 DNS 流量
 - 不修改 iptables 或 nftables；本机路径的 attachment 和策略路由由 sing-box 管理
 - 分应用黑名单 / 白名单、热点和 USB 共享代理
 - 单节点链接、节点文件、Clash YAML 与订阅导入
@@ -236,14 +236,17 @@ su -c '/data/adb/modules/netproxy/netproxyctl help'
 | `SELECTOR_MODE` | `urltest` | 自动测速选择 |
 | `ACTIVE_GROUP_ID` | `default` | 当前生效的节点分组 |
 | `EBPF_NETWORK` | 空 | 同时接管 TCP 与 UDP |
+| `EBPF_LOCAL_ENABLED` | `1` | 接管本机应用流量 |
+| `EBPF_LOCAL_DATA_PLANE` | `cgroup` | 本机使用 cgroup socket hook 接管 |
+| `EBPF_SHARED_ENABLED` | `0` | 默认不接管热点与共享网络 |
+| `EBPF_SHARED_DATA_PLANE` | `packet_rewrite` | 共享网络使用以太网报文改写 |
 | `EBPF_LOCAL_DNS_MODE` | `hijack` | 本机数据路径的 DNS 处理模式 |
 | `EBPF_SHARED_DNS_MODE` | `hijack` | 共享网络数据路径的 DNS 处理模式 |
-| `EBPF_MODE` | `local` | eBPF 数据路径：local、shared 或 hybrid |
 | `EBPF_LOCAL_IPV6` | `1` | 接管本机 IPv6 流量 |
 | `EBPF_SHARED_IPV6` | `1` | 接管共享网络 IPv6 流量 |
 | `EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS` | `1` | 本机流量默认绕过私网与特殊用途地址 |
 | `EBPF_SHARED_BYPASS_PRIVATE_ADDRESS` | `1` | 共享网络流量默认绕过私网与特殊用途地址 |
-| `EBPF_BYPASS_RULE_SET` | `direct,cn-ip` | 在内核侧提前绕过可提取 CIDR 的规则集，多个规则集使用英文逗号分隔 |
+| `EBPF_BYPASS_RULE_SET` | `geoip/cn` | 在内核侧提前绕过可提取 CIDR 的规则集，多个规则集使用英文逗号分隔 |
 | `WIFI_AUTO_SWITCH` | `0` | 默认关闭 WiFi SSID 自动切换 |
 
 ## 排障
@@ -257,7 +260,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl logs show core 100'
 su -c '/data/adb/modules/netproxy/netproxyctl logs export /sdcard/Download/netproxy-diagnostics.tar.gz'
 ```
 
-启动失败时优先检查 `sing-box.log`。出现 eBPF 加载错误时，请检查内核 BPF / TC 能力、Root 授权与 `ebpf.conf`；手写节点无法加载时，重点检查顶层是否为 `outbounds`、协议字段是否为 `type`、JSON 语法是否正确，以及节点标签是否冲突。
+启动失败时优先检查 `sing-box.log`。出现 eBPF 加载错误时，请根据所选数据平面检查 cgroup v2 或 BPF / TC 能力、Root 授权与 `ebpf.conf`；手写节点无法加载时，重点检查顶层是否为 `outbounds`、协议字段是否为 `type`、JSON 语法是否正确，以及节点标签是否冲突。
 
 更完整的安装、配置和排障说明请访问 [NetProxy 文档](https://www.netproxy.store/)。
 

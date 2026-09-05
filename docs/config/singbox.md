@@ -43,7 +43,7 @@ runtime/           # 启动时生成的运行时配置
 
 - 日志、缓存、Dashboard 与规则文件使用模块目录。
 - mixed 入站和两个 API 仅监听本机，端口保持 `7080`、`9999`（Clash）与 `9090`（Service）。
-- 不复制上游的示例 Provider、出站和 eBPF 入站，继续由 Catalog 与 `ebpf.conf` 生成。eBPF 的模式、应用与热点策略按用户设置生效，不套用示例中的 `hybrid` 和旧 IPv6 字段。
+- 不复制上游的示例 Provider、出站和 eBPF 入站，继续由 Catalog 与 `ebpf.conf` 生成。eBPF 的启用路径、数据平面、应用与热点策略按用户设置生效。
 
 远程规则使用 `geosite/` 与 `geoip/` 标签，内置文件放在 `rules/remote/geosite/` 与 `rules/remote/geoip/`。保留个人主配置时不会自动替换其规则标签；如需采用新默认规则，应同时更新主配置和 `EBPF_BYPASS_RULE_SET`，默认绕过标签为 `geoip/cn`。
 

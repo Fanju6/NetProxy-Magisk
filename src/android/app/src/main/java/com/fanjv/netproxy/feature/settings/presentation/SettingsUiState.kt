@@ -4,7 +4,8 @@ import androidx.compose.runtime.Immutable
 
 @Immutable
 data class ProxySettings(
-    val mode: String = "local",
+    val localEnabled: Boolean = true,
+    val sharedEnabled: Boolean = false,
     val network: String = "",
     val localDnsMode: String = "hijack",
     val sharedDnsMode: String = "hijack",
@@ -26,7 +27,14 @@ data class ProxySettings(
     val wifiSsidMode: String = "blacklist",
     val wifiSsidList: String = "",
     val proxyOnCellular: Boolean = true
-)
+) {
+    val dataPathSelection: String
+        get() = when {
+            localEnabled && sharedEnabled -> "both"
+            sharedEnabled -> "shared"
+            else -> "local"
+        }
+}
 
 @Immutable
 data class SettingsUiState(

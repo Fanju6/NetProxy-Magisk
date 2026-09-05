@@ -53,3 +53,12 @@ test('eBPF 默认绕过引用与上游和静态规则一致', () => {
   const tags = config.route.rule_set.flatMap(rule => list(rule.tag))
   for (const tag of bypass) assert.ok(tags.includes(tag), `${tag} 未在静态配置声明`)
 })
+
+test('eBPF 默认配置使用显式数据路径和新版数据平面', () => {
+  const ebpf = readFileSync(new URL('src/module/config/ebpf/ebpf.conf', root), 'utf8')
+  assert.match(ebpf, /^EBPF_LOCAL_ENABLED=1$/m)
+  assert.match(ebpf, /^EBPF_LOCAL_DATA_PLANE="cgroup"$/m)
+  assert.match(ebpf, /^EBPF_SHARED_ENABLED=0$/m)
+  assert.match(ebpf, /^EBPF_SHARED_DATA_PLANE="packet_rewrite"$/m)
+  assert.doesNotMatch(ebpf, /^EBPF_MODE=/m)
+})

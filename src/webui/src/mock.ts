@@ -163,7 +163,29 @@ function execute(args: string[]): CtlResult<unknown> {
   }
 
   if (command === 'ebpf' && action === 'status') {
-    return response('ebpf.status', 'eBPF 能力诊断', { mode: clean[2] || 'configured', summary: '开发预览 mock' })
+    const requestedMode = clean[2] || 'configured'
+    const reportMode = requestedMode === 'configured' ? 'local' : requestedMode
+    const localDataPlane = reportMode === 'local' || reportMode === 'all' ? 'cgroup' : undefined
+    const sharedDataPlane = reportMode === 'shared' || reportMode === 'all' ? 'packet_rewrite' : undefined
+    return response('ebpf.status', 'eBPF 能力检查完成', {
+      mode: requestedMode,
+      raw: false,
+      content: '结论: 检测通过',
+      report: {
+        platform: 'android',
+        kernel_release: 'mock',
+        architecture: 'arm64',
+        mode: reportMode,
+        ...(localDataPlane ? { local_data_plane: localDataPlane } : {}),
+        ...(sharedDataPlane ? { shared_data_plane: sharedDataPlane } : {}),
+        network: ['tcp', 'udp'],
+        ipv6: true,
+        findings: [],
+        active_programs: [],
+        summary: { pass: 1, warn: 0, fail: 0, unknown: 0, required_failures: 0, required_unknowns: 0, required_issues: 0 },
+        result: 'supported',
+      },
+    })
   }
 
   if (command === 'config' && action === 'list') {
