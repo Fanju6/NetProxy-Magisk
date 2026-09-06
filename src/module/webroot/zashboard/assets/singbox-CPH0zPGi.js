@@ -1,1 +1,0 @@
-import{h as e,m as t}from"./index-CFApER2D.js";var n=async()=>{e.value=[],t.value=[]};export{n as fetchRules};
