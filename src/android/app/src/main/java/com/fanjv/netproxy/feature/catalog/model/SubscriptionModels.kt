@@ -16,6 +16,8 @@ internal data class SubscriptionEditorState(
     @SerialName("update_interval") val updateInterval: Long = 86400,
     @SerialName("interval_source") val intervalSource: String = "default",
     @SerialName("update_via_proxy") val updateViaProxy: String = "auto",
+    @SerialName("front_proxy") val frontProxy: String = "",
+    @SerialName("landing_proxy") val landingProxy: String = "",
     val include: String = "",
     val exclude: String = "",
     @SerialName("allow_insecure") val allowInsecure: Boolean = false,
@@ -31,10 +33,17 @@ internal data class SubscriptionDraft(
     val autoUpdate: Boolean = true,
     val updateIntervalSeconds: Long = 86400,
     val updateViaProxy: String = "auto",
+    val frontProxy: String = "",
+    val landingProxy: String = "",
     val include: String = "",
     val exclude: String = "",
     val allowInsecure: Boolean = false,
     val timeoutSeconds: Int = 60
+)
+
+internal data class SubscriptionProxyOption(
+    val reference: String,
+    val label: String
 )
 
 @Serializable
@@ -46,4 +55,3 @@ internal data class SubscriptionHistoryEntry(
     @SerialName("node_count") val nodeCount: Int? = null,
     val revision: Long? = null
 )
-

@@ -68,6 +68,8 @@ su -c '/data/adb/modules/netproxy/netproxyctl node delay auto default'
 su -c '/data/adb/modules/netproxy/netproxyctl node export default/<节点标签>'
 
 su -c '/data/adb/modules/netproxy/netproxyctl sub add https://example.com/sub'
+su -c '/data/adb/modules/netproxy/netproxyctl sub add --front-proxy default/<前置节点> --landing-proxy default/<落地节点> https://example.com/sub'
+su -c '/data/adb/modules/netproxy/netproxyctl sub edit --front-proxy default/<前置节点> --landing-proxy default/<落地节点> <分组 ID>'
 su -c '/data/adb/modules/netproxy/netproxyctl sub list'
 su -c '/data/adb/modules/netproxy/netproxyctl sub update <分组 ID>'
 su -c '/data/adb/modules/netproxy/netproxyctl sub update-all'
@@ -75,7 +77,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl sub history <分组 ID>'
 su -c '/data/adb/modules/netproxy/netproxyctl sub cancel <分组 ID>'
 ```
 
-节点引用固定为 `<分组ID>/<tag>`。自定义订阅 Header 使用 `--headers-file`，避免鉴权信息出现在 `/proc/<pid>/cmdline`。
+节点引用固定为 `<分组ID>/<tag>`。`--front-proxy` 和 `--landing-proxy` 接受同一格式的节点引用，连接顺序为“前置代理 -> 订阅节点 -> 落地代理”；在 `sub edit` 中传空字符串可清除对应设置。被代理链引用的节点或分组不能直接删除，订阅更新也不会提交会破坏现有引用的节点列表。自定义订阅 Header 使用 `--headers-file`，避免鉴权信息出现在 `/proc/<pid>/cmdline`。
 
 ## 分应用与网络策略
 

@@ -46,6 +46,41 @@ func TestEditUpdatesSchedulingWithoutDownloading(t *testing.T) {
 	}
 }
 
+func TestEditProxyChainOnlyRequiresRuntimeSync(t *testing.T) {
+	root := t.TempDir()
+	now := time.Unix(1_700_000_000, 0)
+	for id, tag := range map[string]string{"editable": "PRIMARY", "hop": "HOP"} {
+		groupDir := filepath.Join(root, id)
+		metadata := catalog.NewMetadata(id, id, "subscription", "https://example.test/"+id, now)
+		metadata.NodeCount = 1
+		if err := catalog.SaveMetadataAtomic(filepath.Join(groupDir, "meta.json"), metadata); err != nil {
+			t.Fatal(err)
+		}
+		content := `{"outbounds":[{"type":"socks","tag":"` + tag + `","server":"127.0.0.1","server_port":1080}]}`
+		if err := provider.WriteAtomic(filepath.Join(groupDir, "provider.json"), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	front := "hop/HOP"
+	result, err := Edit(context.Background(), EditOptions{
+		Root: root, GroupID: "editable", FrontProxy: &front, DeferUpdate: true, Now: now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.RuntimeChanged || result.RequiresUpdate {
+		t.Fatalf("unexpected edit result: %+v", result)
+	}
+	metadata, err := catalog.LoadMetadata(filepath.Join(root, "editable", "meta.json"), "editable")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata.FrontProxy != front {
+		t.Fatalf("front proxy was not persisted: %+v", metadata)
+	}
+}
+
 func TestEditKeepsMetadataAfterPersistedUpdateHistoryFailure(t *testing.T) {
 	root, groupID, groupDir, server := newEditableSubscription(t)
 	if err := os.Mkdir(filepath.Join(groupDir, "history.jsonl"), 0o700); err != nil {
