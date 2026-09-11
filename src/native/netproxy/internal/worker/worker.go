@@ -515,7 +515,7 @@ func applyUpdateEffects(ctx context.Context, options Options, result subscriptio
 	if !workerProcessRunning(options.SingBoxPath) {
 		return subscription.RuntimeSyncNotRunning, false, nil
 	}
-	hasProxyChains, err := catalog.HasProxyChains(options.Root)
+	hasProxyChains, err := catalog.HasProxyChains(ctx, options.Root)
 	if err != nil {
 		return subscription.RuntimeSyncFailed, false, err
 	}

@@ -582,7 +582,7 @@ func syncCatalogChange(ctx context.Context, options Options, groupID string, str
 			return err
 		}
 	}
-	hasProxyChains, err := catalog.HasProxyChains(options.CatalogRoot)
+	hasProxyChains, err := catalog.HasProxyChains(ctx, options.CatalogRoot)
 	if err != nil {
 		return err
 	}

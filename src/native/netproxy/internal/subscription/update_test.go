@@ -120,7 +120,7 @@ func TestUpdateKeepsProviderUsedByProxyChain(t *testing.T) {
 		_, _ = writer.Write([]byte(`{"outbounds":[{"type":"socks","tag":"NEW","server":"127.0.0.1","server_port":1081}]}`))
 	}))
 	defer server.Close()
-	if err := catalog.SaveMetadataAtomic(filepath.Join(targetDir, "meta.json"), catalog.Metadata{
+	if err := catalog.SaveMetadataAtomic(context.Background(), filepath.Join(targetDir, "meta.json"), catalog.Metadata{
 		Schema: 1, ID: targetID, Name: "链路节点订阅", Type: "subscription", URL: server.URL,
 		Timeout: 5, NodeCount: 1,
 	}); err != nil {
@@ -135,7 +135,7 @@ func TestUpdateKeepsProviderUsedByProxyChain(t *testing.T) {
 	if err := os.MkdirAll(consumerDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := catalog.SaveMetadataAtomic(filepath.Join(consumerDir, "meta.json"), catalog.Metadata{
+	if err := catalog.SaveMetadataAtomic(context.Background(), filepath.Join(consumerDir, "meta.json"), catalog.Metadata{
 		Schema: 1, ID: "consumer", Name: "使用链路的订阅", Type: "subscription",
 		URL: "https://example.com/sub", FrontProxy: "target/PROXY", NodeCount: 1,
 	}); err != nil {

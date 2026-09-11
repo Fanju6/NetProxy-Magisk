@@ -320,13 +320,13 @@ func TestBuildRuntimeCreatesSubscriptionProxyChain(t *testing.T) {
 	writeGroup(t, root, "landing", "落地节点", "local", "LANDING")
 	writeGroup(t, root, "remote", "远程订阅", "subscription", "REMOTE")
 	metaPath := filepath.Join(root, "remote", "meta.json")
-	metadata, err := LoadMetadata(metaPath, "remote")
+	metadata, err := LoadMetadata(context.Background(), metaPath, "remote")
 	if err != nil {
 		t.Fatal(err)
 	}
 	metadata.FrontProxy = "front/FRONT"
 	metadata.LandingProxy = "landing/LANDING"
-	if err := SaveMetadataAtomic(metaPath, metadata); err != nil {
+	if err := SaveMetadataAtomic(context.Background(), metaPath, metadata); err != nil {
 		t.Fatal(err)
 	}
 
@@ -411,12 +411,12 @@ func TestProxyReferenceTargetsProtectCatalogMutations(t *testing.T) {
 	writeGroup(t, root, "target", "链路节点", "local", "PROXY")
 	writeGroup(t, root, "consumer", "使用链路的订阅", "subscription", "REMOTE")
 	metaPath := filepath.Join(root, "consumer", "meta.json")
-	metadata, err := LoadMetadata(metaPath, "consumer")
+	metadata, err := LoadMetadata(context.Background(), metaPath, "consumer")
 	if err != nil {
 		t.Fatal(err)
 	}
 	metadata.FrontProxy = "target/PROXY"
-	if err := SaveMetadataAtomic(metaPath, metadata); err != nil {
+	if err := SaveMetadataAtomic(context.Background(), metaPath, metadata); err != nil {
 		t.Fatal(err)
 	}
 
@@ -435,15 +435,15 @@ func TestProxyReferenceTargetsProtectCatalogMutations(t *testing.T) {
 		t.Fatalf("referenced node rename was not rejected: %v", err)
 	}
 
-	if err := DeleteGroup(root, "target"); err == nil || !strings.Contains(err.Error(), "使用链路的订阅") {
+	if err := DeleteGroup(context.Background(), root, "target"); err == nil || !strings.Contains(err.Error(), "使用链路的订阅") {
 		t.Fatalf("referenced group removal was not rejected: %v", err)
 	}
 
 	metadata.FrontProxy = ""
-	if err := SaveMetadataAtomic(metaPath, metadata); err != nil {
+	if err := SaveMetadataAtomic(context.Background(), metaPath, metadata); err != nil {
 		t.Fatal(err)
 	}
-	if err := DeleteGroup(root, "target"); err != nil {
+	if err := DeleteGroup(context.Background(), root, "target"); err != nil {
 		t.Fatalf("unused group removal failed: %v", err)
 	}
 }

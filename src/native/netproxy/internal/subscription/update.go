@@ -470,7 +470,7 @@ func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 	metadata.RuntimeSyncPending = metadata.RuntimeSyncPending || current.RuntimeSyncPending || options.RuntimeSyncPending
 	if err := catalog.ValidateProxyReferenceTargetsLocked(ctx, options.Root, options.GroupID, filtered, ""); err != nil {
 		commitReleaseRoot()
-		return updateFailure(options, metadata, groupDir, started, response, "subscription.proxy_ref_in_use", "订阅更新会破坏正在使用的代理链节点", err)
+		return updateFailure(ctx, options, metadata, groupDir, started, response, "subscription.proxy_ref_in_use", "订阅更新会破坏正在使用的代理链节点", err)
 	}
 	if err := catalog.SaveMetadataAtomicLocked(metadataPath, metadata); err != nil {
 		commitReleaseRoot()

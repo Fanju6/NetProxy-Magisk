@@ -26,7 +26,7 @@ func ValidateProxyReference(ctx context.Context, root, reference string) error {
 	if strings.TrimSpace(reference) == "" {
 		return nil
 	}
-	release, err := acquireCatalogRootAndRecover(root)
+	release, err := acquireCatalogRootAndRecover(ctx, root)
 	if err != nil {
 		return err
 	}
@@ -36,6 +36,9 @@ func ValidateProxyReference(ctx context.Context, root, reference string) error {
 
 // ValidateProxyReferenceLocked 在调用方已持有 Catalog 根锁时校验代理链节点。
 func ValidateProxyReferenceLocked(ctx context.Context, root, reference string) error {
+	if strings.TrimSpace(reference) == "" {
+		return nil
+	}
 	document, err := loadProxyReferenceLocked(ctx, root, reference)
 	if err != nil {
 		return err
@@ -91,8 +94,8 @@ func ValidateProxyReferenceTargetsLocked(ctx context.Context, root, groupID stri
 }
 
 // HasProxyChains 返回 Catalog 中是否存在需要重建运行时 Provider 的代理链。
-func HasProxyChains(root string) (bool, error) {
-	release, err := acquireCatalogRootAndRecover(root)
+func HasProxyChains(ctx context.Context, root string) (bool, error) {
+	release, err := acquireCatalogRootAndRecover(ctx, root)
 	if err != nil {
 		return false, err
 	}
