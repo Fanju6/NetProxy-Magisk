@@ -1,21 +1,12 @@
 # 控制面板与 API
 
-NetProxy 提供三个边界不同的本机入口，它们不是三套独立配置。
+NetProxy 提供两个边界不同的本机入口，它们不是两套独立配置。
 
 ## 模块 WebUI
 
 从 KernelSU、Magisk 或 APatch 的模块详情页打开。当前 WebUI 是终端式界面：它提供命令补全、执行历史和易读结果渲染，所有操作仍统一调用 `netproxyctl`。
 
 它适合无 Android 管理器的临时操作和排障，不维护另一份节点或订阅数据库。
-
-## zashboard
-
-zashboard 使用 Clash API，适合观察代理组、当前选择、连接、流量和延迟：
-
-- 地址：`http://127.0.0.1:9999/ui/`
-- Secret：`singbox`
-
-它主要面向核心运行状态，不替代模块的持久订阅和配置管理。
 
 ## Service API Dashboard
 

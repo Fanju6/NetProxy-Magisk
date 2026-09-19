@@ -35,7 +35,7 @@
 
 ## Overview
 
-NetProxy 8.0 is a system-wide transparent proxy module for rooted Android devices. Its embedded sing-box core captures local and shared-network traffic through eBPF and can be managed through the Android app, module WebUI, CLI, Service API Dashboard, or zashboard.
+NetProxy 8.0 is a system-wide transparent proxy module for rooted Android devices. Its embedded sing-box core captures local and shared-network traffic through eBPF and can be managed through the Android app, module WebUI, CLI, or Service API Dashboard.
 
 Supported root environments: **Magisk, KernelSU, and APatch**.
 
@@ -57,12 +57,11 @@ The Android Manager and module share the `schema=1` `netproxyctl` JSON contract 
 | [**Android Manager**](https://play.google.com/store/apps/details?id=com.fanjv.netproxy) ([source](src/android/)) | Service, nodes, subscriptions, per-app rules, configuration, and logs |
 | **Module WebUI** | Open the NetProxy portal from the KernelSU, Magisk, or APatch module page |
 | **CLI** | Terminal management, automation, and diagnostics |
-| **Clash API + zashboard** | Runtime groups, connections, delay tests, and mode control |
+| **Clash API** | Compatible third-party client access to runtime state and proxy groups |
 
 Default local endpoints:
 
 - Clash Controller: `http://127.0.0.1:9999`
-- zashboard: `http://127.0.0.1:9999/ui/`
 - sing-box Service API Dashboard: `http://127.0.0.1:9090/dashboard/`
 - Secret: `singbox`
 
@@ -84,7 +83,7 @@ Both APIs listen on loopback by default. LAN access requires an explicit listene
 - Manual selector and URLTest automatic selection
 - Rule, Global, Direct, and AllowAds modes
 - Wi-Fi SSID based switching between the configured mode and Direct
-- Clash API, zashboard, connection control, and delay tests
+- Clash API, connection control, and delay tests
 - Scheduled subscription updates and rule-set bypass
 - Automatic cleanup of eBPF programs, maps, and TC attachments
 
@@ -94,7 +93,7 @@ Each release provides two packages:
 
 | Package | Filename | Contents | Recommended for |
 |---------|----------|----------|-----------------|
-| **Standard** | `NetProxy_<version>_<build>.zip` | sing-box, the NetProxy native component, zashboard, CLI, eBPF, and the module WebUI | The default choice when the manager is installed separately |
+| **Standard** | `NetProxy_<version>_<build>.zip` | sing-box, the NetProxy native component, CLI, eBPF, and the module WebUI | The default choice when the manager is installed separately |
 | **With manager** | `NetProxy_<version>_<build>_with-manager.zip` | Everything in Standard plus the optional manager APK | Devices without Google Play or users who want to install the APK during module installation |
 
 Both packages have identical proxy capabilities. The manager APK is an independent release asset; normal Android builds do not overwrite it.
@@ -258,7 +257,6 @@ See the [NetProxy documentation](https://www.netproxy.store/) for complete insta
 | [SagerNet/sing-box](https://github.com/SagerNet/sing-box) | Upstream sing-box project |
 | [Proxylink](https://github.com/Fanju6/Proxylink) | Original project behind NetProxy's internal node conversion support |
 | [AsteriskNG](https://github.com/Asterisk4Magisk/AsteriskNG) | Android eBPF implementation reference |
-| [zashboard](https://github.com/Zephyruso/zashboard) | Clash API dashboard |
 | [v2rayNG](https://github.com/2dust/v2rayNG) | Node parsing reference |
 
 ---

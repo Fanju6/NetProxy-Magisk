@@ -4,7 +4,6 @@ import { fileURLToPath } from 'node:url'
 
 const REPORT_FILES = {
   rules: 'rules.json',
-  zashboard: 'zashboard.json',
   dashboard: 'sing-box-dashboard.json',
   singBox: 'sing-box.json',
   npm: 'npm.json',
@@ -108,21 +107,6 @@ function renderRules(lines, rules) {
     }
   }
 
-  lines.push('')
-}
-
-function renderZashboard(lines, item) {
-  if (!item) return
-  lines.push('##### zashboard', '')
-  lines.push(`- 版本：${markdownLink(`${item.currentVersion || '初始'} → ${item.latestVersion}`, item.releaseUrl)}`)
-  if (item.releaseName && item.releaseName !== item.latestVersion) {
-    lines.push(`- 发布名称：${item.releaseName}`)
-  }
-  if (item.publishedAt) lines.push(`- 发布时间：${formatDate(item.publishedAt)}`)
-  lines.push(`- 模块目录：\`${item.path}\``)
-  if (item.assetSize) lines.push(`- 发布包大小：${formatBytes(item.assetSize)}`)
-  if (item.assetSha256) lines.push(`- 发布包 SHA-256：\`${item.assetSha256}\``)
-  appendReleaseNotes(lines, item.releaseNotes, item.releaseUrl)
   lines.push('')
 }
 
@@ -246,7 +230,7 @@ function renderActions(lines, actions) {
 
 export function buildReport(data, context = {}) {
   const rules = Array.isArray(data.rules) ? data.rules : []
-  const dashboards = [data.zashboard, data.dashboard].filter(Boolean)
+  const dashboard = data.dashboard
   const npmProjects = Array.isArray(data.npm) ? data.npm : []
   const npmDirectChanges = npmProjects.reduce((total, project) => total + (project.changes?.length || 0), 0)
   const npmLockChanges = npmProjects.reduce((total, project) => total + (project.lockfileChangeCount || 0), 0)
@@ -258,7 +242,7 @@ export function buildReport(data, context = {}) {
 
   const categories = [
     { id: 'rules', label: '规则资源', changed: rules.length > 0, result: `${rules.length} 个文件` },
-    { id: 'web', label: 'Web 面板', changed: dashboards.length > 0, result: `${dashboards.length} 个面板` },
+    { id: 'web', label: 'Web 面板', changed: Boolean(dashboard), result: '1 个面板' },
     { id: 'core', label: 'sing-box 内核', changed: Boolean(data.singBox), result: '1 个版本' },
     {
       id: 'npm',
@@ -284,13 +268,12 @@ export function buildReport(data, context = {}) {
 
   const changedCategories = categories.filter((category) => category.changed)
   const npmItemCount = npmDirectChanges > 0 ? npmDirectChanges : npmProjects.length
-  const itemCount = rules.length + dashboards.length + (data.singBox ? 1 : 0) + npmItemCount + androidUpdated.length + actions.length
+  const itemCount = rules.length + (dashboard ? 1 : 0) + (data.singBox ? 1 : 0) + npmItemCount + androidUpdated.length + actions.length
   const titleParts = []
 
   if (rules.length === 1) titleParts.push(`${rules[0].name || path.basename(rules[0].path, '.srs')} 规则`)
   else if (rules.length > 1) titleParts.push(`${rules.length} 项规则资源`)
-  if (dashboards.length === 1) titleParts.push(dashboards[0].name)
-  else if (dashboards.length > 1) titleParts.push('Web 面板')
+  if (dashboard) titleParts.push(dashboard.name)
   if (data.singBox) titleParts.push('sing-box 内核')
   if (npmProjects.length > 0) titleParts.push('npm 依赖')
   if (androidUpdated.length > 0) titleParts.push('Android 依赖')
@@ -324,10 +307,9 @@ export function buildReport(data, context = {}) {
   if (changedCategories.length > 0) {
     lines.push('### 更新详情', '')
     renderRules(lines, rules)
-    if (dashboards.length > 0) {
+    if (dashboard) {
       lines.push('#### Web 面板', '')
-      renderZashboard(lines, data.zashboard)
-      renderDashboard(lines, data.dashboard)
+      renderDashboard(lines, dashboard)
     }
     renderSingBox(lines, data.singBox)
     renderNpm(lines, npmProjects)
@@ -351,7 +333,6 @@ export function buildReport(data, context = {}) {
 export function loadReport(reportDir) {
   return {
     rules: readJson(reportDir, 'rules', []),
-    zashboard: readJson(reportDir, 'zashboard', null),
     dashboard: readJson(reportDir, 'dashboard', null),
     singBox: readJson(reportDir, 'singBox', null),
     npm: readJson(reportDir, 'npm', []),

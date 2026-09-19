@@ -14,7 +14,7 @@
 | 订阅 | Shell 下载、转换和调度 | Go 事务更新 + 唯一 Worker | 支持条件请求、更新状态和失败保留 |
 | 控制入口 | 旧 Shell CLI 和文本输出 | `netproxyctl` + `schema=1` JSON | Android、WebUI 和终端使用同一契约 |
 | 运行时切换 | Shell 改配置或重启相关路径 | Service API/Provider 热更新 | 同组切换通常不需要重启核心 |
-| 管理界面 | 旧 WebUI 和内置 APK | Android 管理器、模块 WebUI、Service Dashboard、zashboard | 管理入口更多，但各自职责分离 |
+| 管理界面 | 旧 WebUI 和内置 APK | Android 管理器、模块 WebUI、Service Dashboard | 管理入口更多，但各自职责分离 |
 | 规则资源 | 混合 source、tproxy 和内置资源 | local rules、remote SRS、Catalog、runtime 分离 | 用户配置和内置资源边界更清晰 |
 | 发行包 | 单一旧模块布局 | 标准包与含管理器包 | 可以不安装内置 APK |
 
@@ -268,7 +268,7 @@ su -c /data/adb/modules/netproxy/netproxyctl service status
 |---|---|---|
 | NetProxy CLI | 模块路径 | Android、WebUI、终端 |
 | Service API | `127.0.0.1:9090` | sing-box Dashboard、运行时控制 |
-| Clash API | `127.0.0.1:9999` | zashboard、第三方 Clash 客户端 |
+| Clash API | `127.0.0.1:9999` | 第三方 Clash 客户端 |
 | mixed 入站 | `127.0.0.1:7080` | 订阅下载的本机代理路径 |
 
 Android 和 WebUI 不再读取 `module.conf`、Catalog、PID 或旧日志文本来猜测业务状态。
@@ -296,12 +296,11 @@ Compose -> ViewModel -> Repository -> NetProxyCtlClient -> netproxyctl
 
 ### WebUI
 
-当前 WebUI 是原生 TypeScript 终端式入口，所有 Root 命令经 `src/webui/src/exec.ts` 调用 `netproxyctl`。模块 WebUI 还提供两个独立面板入口：
+当前 WebUI 是原生 TypeScript 终端式入口，所有 Root 命令经 `src/webui/src/exec.ts` 调用 `netproxyctl`。模块 WebUI 还提供一个独立面板入口：
 
 - sing-box Service API Dashboard；
-- Clash API zashboard。
 
-三者职责不同，不把 zashboard 当作 Android 管理器内部数据源，也不让 WebUI 直接拼接模块路径。
+两者职责不同，WebUI 不直接拼接模块路径。
 
 ## 8. 配置和资源布局
 
@@ -319,7 +318,7 @@ config/                 用户可编辑配置
 
 data/catalog/           节点和订阅事实源
 runtime/                启动时生成的 providers/outbounds/ebpf
-webroot/                模块 WebUI、Dashboard、zashboard
+webroot/                模块 WebUI、Service Dashboard
 ```
 
 规则进一步区分：

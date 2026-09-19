@@ -362,18 +362,6 @@
             <span class="entry-chevron" aria-hidden="true"></span>
           </a>
 
-          <a class="entry" href="http://127.0.0.1:9999/ui/">
-            <picture>
-              <source media="(prefers-color-scheme: dark)" srcset="./zashboard/favicon-dark.svg" />
-              <img class="entry-icon" src="./zashboard/favicon.svg" alt="" />
-            </picture>
-            <span>
-              <span class="entry-title">zashboard</span>
-              <span class="entry-description">代理组、规则与流量</span>
-            </span>
-            <span class="entry-chevron" aria-hidden="true"></span>
-          </a>
-
           <a class="entry" href="http://127.0.0.1:9090/dashboard/">
             <img class="entry-icon" src="./sing-box-dashboard/favicon.svg" alt="" />
             <span>
@@ -447,17 +435,6 @@
           }
         }
 
-        function syncZashboardInsets() {
-          syncPanelInsets(
-            "netproxy-zashboard-style",
-            "@media (max-width: 1023px) {" +
-            "#app-content .need-blur.fixed.top-0 {" +
-            "padding-top: max(36px, var(--safe-area-inset-top, 0px), env(safe-area-inset-top, 0px));" +
-            "}" +
-            "}"
-          );
-        }
-
         function syncServiceDashboardInsets() {
           syncPanelInsets(
             "netproxy-service-dashboard-style",
@@ -508,14 +485,7 @@
           }
         }
 
-        if (port === "9999") {
-          document.title = "zashboard";
-          createFrame(
-            "./zashboard/index.html#/setup?hostname=127.0.0.1&port=9999&secret=singbox",
-            "zashboard",
-            syncZashboardInsets
-          );
-        } else if (port === "9090") {
+        if (port === "9090") {
           document.title = "sing-box Dashboard";
           configureServiceDashboard();
           createFrame(

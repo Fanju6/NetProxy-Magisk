@@ -116,14 +116,6 @@
       "with_ebpf"
     ]
   },
-  "githubRelease": [
-    {
-      "path": "src/module/webroot/zashboard",
-      "repo": "Zephyruso/zashboard",
-      "assetPattern": "dist-no-fonts.zip",
-      "currentVersion": "v3.26.0"
-    }
-  ],
   "githubArchive": [
     {
       "path": "src/module/webroot/sing-box-dashboard",

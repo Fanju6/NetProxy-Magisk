@@ -15,7 +15,8 @@ test('默认配置仅保留部署与运行时生成所需的上游差异', () =>
   expected.log.output = '/data/adb/modules/netproxy/logs/sing-box.log'
   expected.experimental.cache_file.path = '/data/adb/modules/netproxy/config/singbox/cache.db'
   expected.experimental.clash_api.external_controller = '127.0.0.1:9999'
-  expected.experimental.clash_api.external_ui = '/data/adb/modules/netproxy/webroot/zashboard'
+  delete expected.experimental.clash_api.external_ui
+  delete expected.experimental.clash_api.external_ui_download_url
   expected.services[0].listen = '127.0.0.1'
   expected.services[0].listen_port = 9090
   expected.services[0].dashboard.path = '/data/adb/modules/netproxy/webroot/sing-box-dashboard'

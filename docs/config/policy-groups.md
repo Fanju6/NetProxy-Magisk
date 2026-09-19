@@ -273,14 +273,13 @@ su -c '/data/adb/modules/netproxy/netproxyctl service restart'
 
 策略组可在以下面板中切换：
 
-- zashboard：`http://127.0.0.1:9999/ui/`
 - Service API Dashboard：`http://127.0.0.1:9090/dashboard/`
 - 默认密钥：`singbox`
 
 例如将 Netflix 切换为 United States，只会改变命中 Netflix 规则的连接。`interrupt_exist_connections` 会在切换后关闭该组已有连接，使新选择尽快生效。
 
 ::: info Android 管理器中的节点页
-节点页展示的是 Catalog 分组和节点，不是任意 sing-box selector。自定义地区组与业务组应在 Dashboard 中管理，这是两类不同的数据。
+节点页展示的是 Catalog 分组和节点，不是任意 sing-box selector。自定义地区组与业务组应在 Service API Dashboard 中管理，这是两类不同的数据。
 :::
 
 ## 继续增加地区

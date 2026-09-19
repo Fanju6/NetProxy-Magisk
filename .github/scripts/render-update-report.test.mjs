@@ -43,3 +43,18 @@ test('只有人工升级时不会伪报自动更新', () => {
   assert.match(report.body, /无自动更新，1 项待人工/)
   assert.match(report.body, /#### Android 依赖/)
 })
+
+test('Web 面板更新只渲染 sing-box Dashboard', () => {
+  const report = buildReport({
+    dashboard: {
+      name: 'sing-box Dashboard',
+      currentCommit: '1234567890abcdef',
+      latestCommit: 'abcdef1234567890',
+      path: 'src/module/webroot/sing-box-dashboard',
+    },
+  })
+
+  assert.match(report.title, /sing-box Dashboard/)
+  assert.match(report.body, /1 个面板/)
+  assert.match(report.body, /src\/module\/webroot\/sing-box-dashboard/)
+})

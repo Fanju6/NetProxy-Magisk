@@ -35,7 +35,7 @@
 
 ## 项目简介
 
-NetProxy 8.0 是面向已 Root Android 设备的系统级透明代理模块。模块以内置 sing-box 为代理核心，通过 eBPF 接管本机及共享网络流量，并提供 Android 管理器、模块 WebUI、CLI、Service API Dashboard 与 zashboard 等入口。
+NetProxy 8.0 是面向已 Root Android 设备的系统级透明代理模块。模块以内置 sing-box 为代理核心，通过 eBPF 接管本机及共享网络流量，并提供 Android 管理器、模块 WebUI、CLI 与 Service API Dashboard 等入口。
 
 支持 **Magisk、KernelSU 与 APatch**。节点、订阅、路由、DNS 和透明代理配置均保存在模块目录中，不依赖 VPN 模式运行。
 
@@ -55,14 +55,13 @@ Android 管理器与模块共用 `netproxyctl` 的 `schema=1` JSON 契约，但�
 | 入口 | 适合场景 |
 |------|----------|
 | [**Android 管理器**](https://play.google.com/store/apps/details?id=com.fanjv.netproxy)（[源码](src/android/)） | 日常使用，管理服务、节点、订阅、分应用代理、配置与日志 |
-| **模块 WebUI** | 从 KernelSU、Magisk 或 APatch 的模块页面进入 NetProxy、zashboard 与 sing-box Dashboard |
+| **模块 WebUI** | 从 KernelSU、Magisk 或 APatch 的模块页面进入 NetProxy 与 sing-box Dashboard |
 | **CLI** | 终端操作、自动化和故障排查 |
-| **Clash API + zashboard** | 查看代理组、连接与延迟，进行运行时控制 |
+| **Clash API** | 供兼容的第三方客户端查看运行时状态与控制代理组 |
 
 Clash API 默认配置：
 
 - Controller：`http://127.0.0.1:9999`
-- zashboard：`http://127.0.0.1:9999/ui/`
 - sing-box Service API Dashboard：`http://127.0.0.1:9090/dashboard/`
 - Secret：`singbox`
 
@@ -83,7 +82,7 @@ Clash API 与 Service API 默认只监听本机。需要从其他设备访问时
 - 手动节点选择与 URLTest 自动测速
 - Rule、Global、Direct、AllowAds 出站模式
 - 按 WiFi SSID 在基础模式与 Direct 之间自动切换
-- Clash API、zashboard、连接管理与节点测速
+- Clash API、连接管理与节点测速
 - 订阅定时更新和规则集提前绕过
 - 自动清理 eBPF 程序、Map 与 TC 挂载
 
@@ -93,7 +92,7 @@ Release 页面提供以下两个版本：
 
 | 版本 | 文件名 | 包含内容 | 适用设备 |
 |------|--------|----------|----------|
-| **标准包** | `NetProxy_<版本>_<构建号>.zip` | sing-box、NetProxy 原生组件、模块 WebUI、zashboard、CLI 与 eBPF | 默认推荐；通过 Google Play 安装管理器，或使用 CLI / WebUI |
+| **标准包** | `NetProxy_<版本>_<构建号>.zip` | sing-box、NetProxy 原生组件、模块 WebUI、CLI 与 eBPF | 默认推荐；通过 Google Play 安装管理器，或使用 CLI / WebUI |
 | **含管理器包** | `NetProxy_<版本>_<构建号>_with-manager.zip` | 标准包全部内容，以及刷入时可选安装的 Android 管理器 APK | 无法使用 Google Play、需要随模块安装管理器的设备 |
 
 两个包的代理能力完全一致。标准包也是模块自更新的默认下载目标；只有需要随模块刷入管理器时才选择**含管理器包**。
@@ -272,7 +271,6 @@ su -c '/data/adb/modules/netproxy/netproxyctl logs export /sdcard/Download/netpr
 | [SagerNet/sing-box](https://github.com/SagerNet/sing-box) | 上游 sing-box 项目 |
 | [Proxylink](https://github.com/Fanju6/Proxylink) | NetProxy 内部节点转换能力的原始项目 |
 | [AsteriskNG](https://github.com/Asterisk4Magisk/AsteriskNG) | Android eBPF 实现参考 |
-| [zashboard](https://github.com/Zephyruso/zashboard) | Clash API 控制面板 |
 | [v2rayNG](https://github.com/2dust/v2rayNG) | 节点解析实现参考 |
 
 ---

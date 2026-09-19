@@ -29,7 +29,6 @@ NetProxy 只提供 eBPF 透明代理入站，没有 TPROXY 或 REDIRECT 回退�
 | Android 管理器 | 日常状态、节点、订阅、代理设置、配置和日志 |
 | 模块 WebUI | Root 管理器内的终端式命令界面 |
 | `netproxyctl` | 终端操作、自动化和故障排查 |
-| zashboard | Clash API 的代理组、连接和流量视图 |
 | Service API Dashboard | sing-box 原生状态、连接和可观测性数据 |
 
 持久节点和订阅在服务停止时仍可管理；流量、连接、实际出站模式和运行时选择等信息在核心运行后由 API 提供。
