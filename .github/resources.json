@@ -63,8 +63,8 @@
       "ref": "sing",
       "sourcePath": "geo/geosite/geolocation-!cn.srs",
       "metadataPath": "geo/geosite/geolocation-!cn.json",
-      "currentCommit": "cf0c13b4aec0cb2ddb287cba7963fb4671d0098c",
-      "currentSha256": "9afe1d4e171a6a7c7601c5505995480a6119c6b79787c9fbd01c228313efd626"
+      "currentCommit": "3a7489c90f4014c99153a3dbd1bbc0732c5721dd",
+      "currentSha256": "8476a9de1fd29d95bd8332c86e7bac832f465e5eea644ffb5af2f1f35cd878df"
     },
     {
       "name": "geosite/cn",
@@ -74,8 +74,8 @@
       "ref": "sing",
       "sourcePath": "geo/geosite/cn.srs",
       "metadataPath": "geo/geosite/cn.json",
-      "currentCommit": "ff12703ce5252a6b54298a835729f3abdd61ba6e",
-      "currentSha256": "a95a9d84e6213c919b21d2cd4beb471baceb1e26877f00fec325d8741d026667"
+      "currentCommit": "3a7489c90f4014c99153a3dbd1bbc0732c5721dd",
+      "currentSha256": "265b60680d291447ef98f80513c7ed350efe7047ae6cde77a7a9578b623cbd1b"
     },
     {
       "name": "geoip/cn",
@@ -85,8 +85,8 @@
       "ref": "sing",
       "sourcePath": "geo/geoip/cn.srs",
       "metadataPath": "geo/geoip/cn.json",
-      "currentCommit": "ff12703ce5252a6b54298a835729f3abdd61ba6e",
-      "currentSha256": "f7ff340fe2e0f7b88d6bd009978a3c90a18ec302ceb6f7dea8e72ef8e474734d"
+      "currentCommit": "3a7489c90f4014c99153a3dbd1bbc0732c5721dd",
+      "currentSha256": "412585ab8d9f05701a11cf6b040e85719510696d0879389d5a8ef8d8764b04dd"
     },
     {
       "name": "geoip/telegram",
@@ -104,7 +104,7 @@
     "path": "src/module/bin/sing-box",
     "repo": "reF1nd/sing-box",
     "tagPattern": "^v[0-9].*-reF1nd$",
-    "currentVersion": "v1.15.0-alpha.3-reF1nd",
+    "currentVersion": "v1.15.0-alpha.6-reF1nd",
     "buildTags": [
       "with_quic",
       "with_utls",
@@ -121,8 +121,8 @@
       "path": "src/module/webroot/sing-box-dashboard",
       "repo": "SagerNet/sing-box-dashboard",
       "ref": "gh-pages",
-      "currentCommit": "c285014d351a685d8a100db0d5bf47ad9bdad76f",
-      "currentSourceCommit": "c4c39ac92c74a76664d43ecc5d3213f6182c7cf2"
+      "currentCommit": "1f56683b9adf952b47957f5bb758d9ca7837cef0",
+      "currentSourceCommit": "9c498355c9973187b04c09991e2aca8100fd00ec"
     }
   ]
 }
