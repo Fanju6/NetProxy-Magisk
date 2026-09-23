@@ -582,7 +582,11 @@ func syncCatalogChange(ctx context.Context, options Options, groupID string, str
 			return err
 		}
 	}
-	if structureChanged && service.ProcessRunning(options.SingBoxPath) {
+	hasProxyChains, err := catalog.HasProxyChains(ctx, options.CatalogRoot)
+	if err != nil {
+		return err
+	}
+	if (structureChanged || hasProxyChains) && service.ProcessRunning(options.SingBoxPath) {
 		_, reloadErr := ManageService(ctx, options, "reload")
 		return reloadErr
 	}
@@ -674,6 +678,8 @@ type SubscriptionOptions struct {
 	UpdateInterval int64
 	IntervalSource string
 	UpdateViaProxy string
+	FrontProxy     string
+	LandingProxy   string
 	Include        string
 	Exclude        string
 	AllowInsecure  bool
@@ -691,11 +697,16 @@ func AddSubscription(ctx context.Context, options SubscriptionOptions) (result s
 	if err := ensureDefaultGroup(ctx, options.Options); err != nil {
 		return subscription.Result{}, err
 	}
+	for role, reference := range map[string]string{"前置代理": options.FrontProxy, "落地代理": options.LandingProxy} {
+		if err := catalog.ValidateProxyReference(ctx, options.CatalogRoot, reference); err != nil {
+			return subscription.Result{}, fmt.Errorf("%s无效: %w", role, err)
+		}
+	}
 	groupID, err := catalog.NewSubscriptionGroupID(ctx, options.CatalogRoot)
 	if err != nil {
 		return subscription.Result{}, err
 	}
-	if err := catalog.InitializeGroup(ctx, catalog.GroupOptions{Root: options.CatalogRoot, GroupID: groupID, Name: options.Name, Type: "subscription", URL: options.URL, UserAgent: options.UserAgent, HWID: options.HWID, CustomHeaders: options.Headers, AutoUpdate: options.AutoUpdate, UpdateInterval: options.UpdateInterval, IntervalSource: options.IntervalSource, UpdateViaProxy: options.UpdateViaProxy, Include: options.Include, Exclude: options.Exclude, AllowInsecure: options.AllowInsecure, Timeout: options.Timeout}); err != nil {
+	if err := catalog.InitializeGroup(ctx, catalog.GroupOptions{Root: options.CatalogRoot, GroupID: groupID, Name: options.Name, Type: "subscription", URL: options.URL, UserAgent: options.UserAgent, HWID: options.HWID, CustomHeaders: options.Headers, AutoUpdate: options.AutoUpdate, UpdateInterval: options.UpdateInterval, IntervalSource: options.IntervalSource, UpdateViaProxy: options.UpdateViaProxy, FrontProxy: options.FrontProxy, LandingProxy: options.LandingProxy, Include: options.Include, Exclude: options.Exclude, AllowInsecure: options.AllowInsecure, Timeout: options.Timeout}); err != nil {
 		return subscription.Result{}, err
 	}
 	workerOptions := workerOptions(options.Options)
@@ -745,7 +756,7 @@ func EditSubscription(ctx context.Context, options Options, query string, edit s
 	if err != nil {
 		return edited, err
 	}
-	if !edited.RequiresUpdate && !edited.NameChanged {
+	if !edited.RequiresUpdate && !edited.NameChanged && !edited.RuntimeChanged {
 		if !service.ProcessRunning(options.SingBoxPath) {
 			if err := subscription.RecordRuntimeSyncNotRunning(ctx, options.CatalogRoot, groupID, edit.Now); err != nil {
 				return edited, err

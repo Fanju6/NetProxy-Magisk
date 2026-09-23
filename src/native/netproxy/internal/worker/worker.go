@@ -515,7 +515,11 @@ func applyUpdateEffects(ctx context.Context, options Options, result subscriptio
 	if !workerProcessRunning(options.SingBoxPath) {
 		return subscription.RuntimeSyncNotRunning, false, nil
 	}
-	reloaded := forceReload || result.StructureChanged || activated
+	hasProxyChains, err := catalog.HasProxyChains(ctx, options.Root)
+	if err != nil {
+		return subscription.RuntimeSyncFailed, false, err
+	}
+	reloaded := forceReload || result.StructureChanged || activated || hasProxyChains
 	if reloaded {
 		if options.ReloadService == nil {
 			return subscription.RuntimeSyncFailed, true, errors.New("未配置服务 reload 回调")
@@ -616,6 +620,9 @@ func runtimeProviderMatches(outbounds []serviceapi.GroupItem, runtimeTag string,
 	present := make(map[string]struct{}, len(expected))
 	for _, outbound := range outbounds {
 		if after, ok := strings.CutPrefix(outbound.Tag, prefix); ok {
+			if catalog.IsInternalChainNodeTag(after) {
+				continue
+			}
 			present[after] = struct{}{}
 		}
 	}

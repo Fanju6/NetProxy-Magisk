@@ -109,6 +109,58 @@ func TestUpdateAndNotModified(t *testing.T) {
 	}
 }
 
+func TestUpdateKeepsProviderUsedByProxyChain(t *testing.T) {
+	root := t.TempDir()
+	targetID := "target"
+	targetDir := filepath.Join(root, targetID)
+	if err := os.MkdirAll(targetDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = writer.Write([]byte(`{"outbounds":[{"type":"socks","tag":"NEW","server":"127.0.0.1","server_port":1081}]}`))
+	}))
+	defer server.Close()
+	if err := catalog.SaveMetadataAtomic(context.Background(), filepath.Join(targetDir, "meta.json"), catalog.Metadata{
+		Schema: 1, ID: targetID, Name: "链路节点订阅", Type: "subscription", URL: server.URL,
+		Timeout: 5, NodeCount: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	oldProvider := []byte(`{"outbounds":[{"type":"socks","tag":"PROXY","server":"127.0.0.1","server_port":1080}]}` + "\n")
+	if err := provider.WriteAtomic(filepath.Join(targetDir, "provider.json"), oldProvider, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	consumerDir := filepath.Join(root, "consumer")
+	if err := os.MkdirAll(consumerDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := catalog.SaveMetadataAtomic(context.Background(), filepath.Join(consumerDir, "meta.json"), catalog.Metadata{
+		Schema: 1, ID: "consumer", Name: "使用链路的订阅", Type: "subscription",
+		URL: "https://example.com/sub", FrontProxy: "target/PROXY", NodeCount: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := provider.WriteAtomic(filepath.Join(consumerDir, "provider.json"), []byte(`{"outbounds":[{"type":"socks","tag":"REMOTE","server":"127.0.0.1","server_port":1082}]}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Update(context.Background(), UpdateOptions{
+		Root: root, GroupID: targetID, Now: time.Unix(1_700_000_000, 0),
+	})
+	var subscriptionErr *Error
+	if !errors.As(err, &subscriptionErr) || subscriptionErr.Code != "subscription.proxy_ref_in_use" {
+		t.Fatalf("proxy reference breaking update was not rejected: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(targetDir, "provider.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != string(oldProvider) {
+		t.Fatalf("rejected update replaced referenced Provider: %s", content)
+	}
+}
+
 func TestUpdateDoesNotHoldCatalogRootDuringDownload(t *testing.T) {
 	root := t.TempDir()
 	now := time.Unix(1_700_700_000, 0)

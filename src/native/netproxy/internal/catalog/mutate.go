@@ -50,6 +50,8 @@ type GroupOptions struct {
 	UpdateInterval int64
 	IntervalSource string
 	UpdateViaProxy string
+	FrontProxy     string
+	LandingProxy   string
 	Include        string
 	Exclude        string
 	AllowInsecure  bool
@@ -189,6 +191,8 @@ func buildGroupMetadata(options GroupOptions) (Metadata, error) {
 		metadata.IntervalSource = options.IntervalSource
 	}
 	metadata.UpdateViaProxy = options.UpdateViaProxy
+	metadata.FrontProxy = options.FrontProxy
+	metadata.LandingProxy = options.LandingProxy
 	metadata.Include = options.Include
 	metadata.Exclude = options.Exclude
 	metadata.AllowInsecure = options.AllowInsecure
@@ -259,6 +263,9 @@ func RemoveNode(ctx context.Context, options MutationOptions) (MutationResult, e
 	if !provider.Remove(&document, options.Tag) {
 		return MutationResult{}, fmt.Errorf("未找到节点标签 %q", options.Tag)
 	}
+	if err := ValidateProxyReferenceTargetsLocked(ctx, filepath.Dir(options.GroupDir), options.GroupID, document, ""); err != nil {
+		return MutationResult{}, err
+	}
 	metadata, err := loadMutationMetadata(options)
 	if err != nil {
 		return MutationResult{}, err
@@ -292,6 +299,9 @@ func EditNode(ctx context.Context, options MutationOptions) (MutationResult, err
 		return MutationResult{}, err
 	}
 	provider.Append(&document, source.Document)
+	if err := ValidateProxyReferenceTargetsLocked(ctx, filepath.Dir(options.GroupDir), options.GroupID, document, ""); err != nil {
+		return MutationResult{}, err
+	}
 	metadata, err := loadMutationMetadata(options)
 	if err != nil {
 		return MutationResult{}, err

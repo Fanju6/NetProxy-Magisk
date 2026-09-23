@@ -79,6 +79,7 @@ Clash API 与 Service API 默认只监听本机。需要从其他设备访问时
 - 不修改 iptables 或 nftables；本机路径的 attachment 和策略路由由 sing-box 管理
 - 分应用黑名单 / 白名单、热点和 USB 共享代理
 - 单节点链接、节点文件、Clash YAML 与订阅导入
+- 订阅级前置代理与落地代理链，可从任意 Catalog 分组选择节点
 - 手动节点选择与 URLTest 自动测速
 - Rule、Global、Direct、AllowAds 出站模式
 - 按 WiFi SSID 在基础模式与 Direct 之间自动切换
@@ -139,6 +140,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl mode rule'
 
 ```sh
 su -c '/data/adb/modules/netproxy/netproxyctl sub add https://example.com/sub'
+su -c '/data/adb/modules/netproxy/netproxyctl sub add --front-proxy default/<前置节点> --landing-proxy default/<落地节点> https://example.com/sub'
 su -c '/data/adb/modules/netproxy/netproxyctl sub list'
 su -c '/data/adb/modules/netproxy/netproxyctl sub update <分组 ID>'
 ```
@@ -204,7 +206,7 @@ netproxyctl [--json] config list|read|check|validate|apply
 netproxyctl [--json] logs show|clear|export
 ```
 
-节点引用固定为 `<分组 ID>/<节点标签>`。自动模式用 `node use auto [分组]`，分组测速用 `node delay auto [分组]`。`sub add` 可省略名称（`sub add <URL>`），此时按 Profile-Title、文件名、URL 主机名的顺序自动取名。所有命令默认有超时，订阅变更由下载超时控制，也可使用 `--timeout` 覆盖。
+节点引用固定为 `<分组 ID>/<节点标签>`。自动模式用 `node use auto [分组]`，分组测速用 `node delay auto [分组]`。`sub add` 和 `sub edit` 可用 `--front-proxy`、`--landing-proxy` 设置订阅级代理链，编辑时传空字符串可清除。实际连接顺序为“前置代理 -> 订阅节点 -> 落地代理”。`sub add` 可省略名称（`sub add <URL>`），此时按 Profile-Title、文件名、URL 主机名的顺序自动取名。所有命令默认有超时，订阅变更由下载超时控制，也可使用 `--timeout` 覆盖。
 
 查看完整中文帮助：
 

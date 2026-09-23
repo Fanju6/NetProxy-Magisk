@@ -210,6 +210,9 @@ func DeleteGroup(ctx context.Context, root, groupID string) error {
 	if _, err := os.Stat(groupDir); err != nil {
 		return err
 	}
+	if err := ValidateProxyReferenceTargetsLocked(context.Background(), root, groupID, provider.Document{}, groupID); err != nil {
+		return err
+	}
 	return os.RemoveAll(groupDir)
 }
 

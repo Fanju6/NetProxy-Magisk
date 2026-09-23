@@ -10,6 +10,7 @@ import com.fanjv.netproxy.core.ui.toUiText
 import com.fanjv.netproxy.feature.catalog.data.SubscriptionRepository
 import com.fanjv.netproxy.feature.catalog.model.SubscriptionDraft
 import com.fanjv.netproxy.feature.catalog.model.SubscriptionEditorState
+import com.fanjv.netproxy.feature.catalog.model.SubscriptionProxyOption
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,6 +25,7 @@ internal data class SubscriptionEditorUiState(
     val id: String = "",
     val original: SubscriptionEditorState? = null,
     val draft: SubscriptionDraft = SubscriptionDraft(name = "", url = ""),
+    val proxyOptions: List<SubscriptionProxyOption> = emptyList(),
     val headersText: String = "",
     val loading: Boolean = false,
     val saving: Boolean = false,
@@ -43,21 +45,21 @@ internal class SubscriptionEditorViewModel(
     val state: StateFlow<SubscriptionEditorUiState> = _state.asStateFlow()
 
     fun load(id: String) {
-        if (id.isBlank()) {
-            _state.value = SubscriptionEditorUiState()
-            return
-        }
         viewModelScope.launch {
             _state.update { it.copy(loading = true, saved = false, error = UiText.Empty) }
-            runCatching { repository.readEditor(id) }
-                .onSuccess { editor ->
+            runCatching {
+                val editor = id.takeIf(String::isNotBlank)?.let { repository.readEditor(it) }
+                editor to repository.proxyOptions()
+            }
+                .onSuccess { (editor, proxyOptions) ->
                     _state.value = SubscriptionEditorUiState(
                         id = id,
                         original = editor,
-                        draft = editor.toDraft(),
-                        headersText = editor.customHeaders.entries.joinToString("\n") { (key, value) ->
+                        draft = editor?.toDraft() ?: SubscriptionDraft(name = "", url = ""),
+                        proxyOptions = proxyOptions,
+                        headersText = editor?.customHeaders?.entries?.joinToString("\n") { (key, value) ->
                             "$key: ${value.jsonPrimitive.content}"
-                        }
+                        }.orEmpty()
                     )
                 }
                 .onFailure { error ->
@@ -204,6 +206,8 @@ internal class SubscriptionEditorViewModel(
         autoUpdate = autoUpdate,
         updateIntervalSeconds = updateInterval,
         updateViaProxy = updateViaProxy,
+        frontProxy = frontProxy,
+        landingProxy = landingProxy,
         include = include,
         exclude = exclude,
         allowInsecure = allowInsecure,

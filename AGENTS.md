@@ -27,6 +27,7 @@
 - Catalog 是持久节点事实源：每组使用 `data/catalog/<group-id>/meta.json` 与 `provider.json`。`staging/` 只存事务临时文件，不得作为持久状态读取。
 - `ACTIVE_GROUP_ID` 保存分组 ID；`SELECTOR_MODE` 只允许 `urltest` 或 `manual`；`SELECTED_NODE_REF` 只在手动模式保存 `<group-id>/<tag>`。
 - Provider 的运行时显示标签来自分组名称；名称冲突时才附加分组 ID。用户界面不得直接显示 UUID 代替可读名称。
+- 订阅级代理链以 `front_proxy`、`landing_proxy` 保存稳定的 `<group-id>/<tag>` 引用；持久 Provider 不写入链路改造，运行时使用隔离副本生成“前置 -> 订阅节点 -> 落地”链路，并从 Auto/Select 隐藏内部节点。
 - 自动选择必须落到 `Auto/<group>`，Provider/selector 的默认值绝不能静默回退到 `direct`。
 - eBPF 是 sing-box 的入站实现，不是独立代理核心。服务、模式和节点切换文案继续使用“服务”或“sing-box”，不要泛化为“eBPF 服务”。
 - 分应用策略持久化严格的 `<user-id>:<package>` 引用，Android 每个用户独立展示；Go 通过 Android package service 查询 UID，运行时生成 `include_uid` / `exclude_uid`。
@@ -228,6 +229,7 @@ data/catalog/
 - `default` 是固定本地分组，接收单链接和本地文件导入。
 - URL 订阅使用稳定的随机分组 ID；显示名称保存在 `meta.json`。
 - `provider.json` 是标准 sing-box Provider 文档，也是节点内容事实源。
+- `meta.json` 可保存订阅级 `front_proxy` 与 `landing_proxy` 节点引用；运行时副本写入 `runtime/providers/`，不得反向覆盖持久 Provider。
 - 本地与订阅节点都可直接编辑、导出和删除；订阅再次更新时会按远端内容重新生成该组 Provider。
 - `history.jsonl` 只记录脱敏后的更新结果，默认保留最近 20 条。
 - `staging/` 用于锁、下载、转换和校验的临时事务。进程崩溃后可清理，业务代码不得依赖其中内容恢复节点状态。
