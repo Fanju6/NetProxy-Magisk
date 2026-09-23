@@ -111,6 +111,10 @@ func Prepare(ctx context.Context, options Options, allowEmpty bool) (PrepareResu
 	if err != nil {
 		return PrepareResult{}, err
 	}
+	if readWiFiState(options.WiFiStateFile) == "bypassed" {
+		config.Local.DNSMode = "off"
+		config.Shared.DNSMode = "off"
+	}
 	missingPackages, err := ebpf.WriteAtomic(ctx, ebpfPath, config)
 	if err != nil {
 		return PrepareResult{}, err
