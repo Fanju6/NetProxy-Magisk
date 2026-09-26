@@ -16,7 +16,7 @@ Android 管理器通过 `netproxyctl` 的 `schema=1` JSON 契约访问模块。�
 
 ## Android 管理器
 
-CI 按变更范围执行 Android 单元测试与 Lint，并启用 Gradle 构建缓存；模块构建与 Android 验证并行，开发包只在相关检查通过后发布。纯 Android 改动不重打模块包，CI 也不替换独立维护的 `src/module/NetProxy.apk`。修改 Android 源码仍需在提交前完成本地构建；涉及 Root、模块命令、快捷设置磁贴、多用户与应用分身、Navigation 动画或 eBPF 时还需真机验证。
+CI 按变更范围执行 Android 单元测试与 Lint，并启用 Gradle 构建缓存。模块打包 Action 从当前源码构建 CI 管理器 APK，以每次运行生成的临时密钥签名后放入含管理器包；该 APK 不提交到仓库。Android 源码改动会同时触发模块重打包。CI 管理器版本带提交短哈希，并在仪表盘服务状态卡片上方常驻显示测试提示；正式 Google Play 构建不带 CI 标记。每次签名不同，更新前需卸载旧版且会清除应用本地数据。修改 Android 源码仍需在提交前完成本地构建；涉及 Root、模块命令、快捷设置磁贴、多用户与应用分身、Navigation 动画或 eBPF 时还需真机验证。
 
 ## Pull Request
 

@@ -1,5 +1,5 @@
 name: 构建并打包模块
-description: 一次完成 Go/Shell 验证、ARM64 与 WebUI 构建，再打出标准包与含管理器包
+description: 验证并构建模块、WebUI 和 CI 管理器，再打出标准包与含管理器包
 
 # 被 ci.yml 与 release.yml 复用的共享打包逻辑（调用前需已 checkout，且 fetch-depth: 0 以便统计提交数）
 outputs:
@@ -65,12 +65,85 @@ runs:
         COMMIT_COUNT=$(git rev-list --count HEAD)
         sed -i "s/^versionCode=.*/versionCode=$COMMIT_COUNT/" src/module/module.prop
         VERSION=$(grep '^version=' src/module/module.prop | cut -d= -f2)
+        MANAGER_VERSION="${VERSION#v}"
+        SHORT_SHA="${GITHUB_SHA::7}"
         {
           echo "version=$VERSION"
+          echo "manager_version=$MANAGER_VERSION"
+          echo "short_sha=$SHORT_SHA"
           echo "commit_count=$COMMIT_COUNT"
           echo "standard_name=NetProxy_${VERSION}_${COMMIT_COUNT}.zip"
           echo "manager_name=NetProxy_${VERSION}_${COMMIT_COUNT}_with-manager.zip"
         } >> "$GITHUB_OUTPUT"
+
+    - name: 配置管理器 Android 构建环境
+      uses: actions/setup-java@v6
+      with:
+        distribution: temurin
+        java-version: 26
+
+    - name: 配置 Gradle 缓存
+      uses: gradle/actions/setup-gradle@v5
+
+    - name: 确认 Android SDK 组件
+      shell: bash
+      run: |
+        if [ ! -f "$ANDROID_HOME/platforms/android-37.0/android.jar" ] ||
+           [ ! -x "$ANDROID_HOME/build-tools/37.0.0/aapt2" ]; then
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            'platforms;android-37.0' 'build-tools;37.0.0' --channel=1
+        fi
+
+    - name: 构建标记为 CI 的管理器
+      shell: bash
+      working-directory: src/android
+      env:
+        MANAGER_VERSION: ${{ steps.meta.outputs.manager_version }}
+        BUILD_ID: ${{ steps.meta.outputs.short_sha }}
+      run: |
+        ./gradlew :app:assembleRelease --build-cache --parallel --no-daemon \
+          -PnetproxyManagerCi=true \
+          -PnetproxyManagerBuildId="$BUILD_ID" \
+          -PnetproxyManagerVersion="$MANAGER_VERSION"
+
+    - name: 使用本次运行的临时密钥签名管理器
+      shell: bash
+      env:
+        MANAGER_VERSION: ${{ steps.meta.outputs.manager_version }}
+        BUILD_ID: ${{ steps.meta.outputs.short_sha }}
+        COMMIT_COUNT: ${{ steps.meta.outputs.commit_count }}
+      run: |
+        set -euo pipefail
+        umask 077
+        KEYSTORE="$RUNNER_TEMP/netproxy-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.p12"
+        UNSIGNED_APK="src/android/app/build/outputs/apk/release/app-release-unsigned.apk"
+        SIGNED_APK="$RUNNER_TEMP/NetProxy.apk"
+        PASSWORD="$(openssl rand -hex 24)"
+        trap 'rm -f "$KEYSTORE" "$SIGNED_APK" "$SIGNED_APK.idsig"' EXIT
+
+        APK_INFO="$("$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$UNSIGNED_APK")"
+        printf '%s\n' "$APK_INFO" | grep -F "name='com.fanjv.netproxy'"
+        printf '%s\n' "$APK_INFO" | grep -F "versionCode='$COMMIT_COUNT'"
+        printf '%s\n' "$APK_INFO" | grep -F "versionName='${MANAGER_VERSION}-ci.${BUILD_ID}'"
+
+        keytool -genkeypair -noprompt \
+          -keystore "$KEYSTORE" \
+          -storetype PKCS12 \
+          -storepass "$PASSWORD" \
+          -keypass "$PASSWORD" \
+          -alias netproxy-ci \
+          -keyalg RSA -keysize 2048 -validity 3650 \
+          -dname "CN=NetProxy CI, OU=Continuous Integration, O=NetProxy"
+
+        "$ANDROID_HOME/build-tools/37.0.0/apksigner" sign \
+          --ks "$KEYSTORE" \
+          --ks-key-alias netproxy-ci \
+          --ks-pass "pass:$PASSWORD" \
+          --key-pass "pass:$PASSWORD" \
+          --v4-signing-enabled false \
+          --out "$SIGNED_APK" "$UNSIGNED_APK"
+        "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose "$SIGNED_APK"
+        install -m 0644 "$SIGNED_APK" src/module/NetProxy.apk
 
     - name: 打包模块（标准 / 含管理器）
       shell: bash

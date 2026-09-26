@@ -6,8 +6,9 @@ export function classifyChanges(paths) {
   const shared = paths.some((path) =>
     path.startsWith('.github/') || path === '.gitattributes')
   const native = paths.some((path) => path.startsWith('src/native/netproxy/'))
+  const android = paths.some((path) => path.startsWith('src/android/'))
   return {
-    module: shared || native || paths.some((path) =>
+    module: shared || native || android || paths.some((path) =>
       path.startsWith('src/module/') || path.startsWith('src/webui/') || path.startsWith('tests/')),
     android: shared || native || paths.some((path) =>
       path.startsWith('src/android/') || path.startsWith('src/module/config/')),

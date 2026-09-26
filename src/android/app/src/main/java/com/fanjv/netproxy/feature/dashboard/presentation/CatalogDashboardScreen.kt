@@ -23,14 +23,17 @@ import androidx.compose.material.icons.rounded.Router
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.R
+import com.fanjv.netproxy.core.app.isSignedWithGooglePlayKey
 import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BlurredBar
@@ -63,6 +66,10 @@ internal fun CatalogDashboardScreen(
     viewModel: CatalogDashboardViewModel = netProxyViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current.applicationContext
+    val showNonPlaySignatureWarning = remember(context) {
+        !isSignedWithGooglePlayKey(context)
+    }
     val snackbarHostState = rememberAppSnackbarHostState()
     val scrollBehavior = MiuixScrollBehavior()
     val backdrop = rememberBlurBackdrop()
@@ -111,6 +118,15 @@ internal fun CatalogDashboardScreen(
                 contentPadding = innerPadding,
                 overscrollEffect = null
             ) {
+                if (showNonPlaySignatureWarning) {
+                    item {
+                        DashboardWarning(
+                            "${stringResource(R.string.non_play_build_warning_title)}\n" +
+                                stringResource(R.string.non_play_build_warning_summary)
+                        )
+                    }
+                }
+
                 if (state.rootChecked && !state.rootGranted) {
                     item {
                         DashboardWarning(noRootMessage)

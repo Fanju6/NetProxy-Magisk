@@ -101,6 +101,9 @@ check_install_choices() {
   grep -q 'MANAGER_PACKAGE="com.fanjv.netproxy"' "$MODULE_DIR/customize.sh"
   grep -q 'get_installed_manager_version' "$MODULE_DIR/customize.sh"
   grep -q 'dumpsys package' "$MODULE_DIR/customize.sh"
+  grep -q '随附 CI 版使用独立签名' "$MODULE_DIR/customize.sh"
+  grep -q '卸载会清除管理器本地数据' "$MODULE_DIR/customize.sh"
+  grep -q 'Google Play 更新' "$MODULE_DIR/customize.sh"
   ! grep -q 'am start -a android.intent.action.VIEW' "$MODULE_DIR/customize.sh"
   grep -q 'getevent -lqc 1 > "\$event_file"' "$MODULE_DIR/customize.sh"
 }

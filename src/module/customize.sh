@@ -700,6 +700,8 @@ install_bundled_manager() {
     ui_print "  已安装 NetProxy 管理器"
     ui_print "  当前版本: $installed_version"
     ui_print "  为避免覆盖现有安装，跳过随附 APK"
+    ui_print "  随附 CI 版使用独立签名；如需安装新版，请先卸载旧版并重新刷入"
+    ui_print "  卸载会清除管理器本地数据，日常使用建议通过 Google Play 更新"
     rm -f "$MODPATH/NetProxy.apk"
     return 0
   fi

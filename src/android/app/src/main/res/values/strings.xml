@@ -9,6 +9,8 @@
     <string name="value_label">值</string>
     <string name="modify_label">修改 %1$s</string>
     <string name="read_only">只读</string>
+    <string name="non_play_build_warning_title">非 Google Play 版本</string>
+    <string name="non_play_build_warning_summary">此版本未使用 Google Play 应用签名密钥签名。建议通过 Google Play 安装正式版。</string>
 
     <!-- Common actions and labels -->
     <string name="common_add">添加</string>

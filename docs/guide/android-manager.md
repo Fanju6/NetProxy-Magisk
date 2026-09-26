@@ -29,11 +29,11 @@ Android 管理器是 NetProxy 的日常图形化入口。推荐从 [Google Play]
 
 ## 本地构建
 
-仓库开发者可使用 JDK 21 和项目要求的 Android SDK 构建：
+仓库开发者可使用 JDK 26 和 Android SDK 37 构建：
 
 ```bash
 cd src/android
 ./gradlew testDebugUnitTest lintDebug assembleDebug
 ```
 
-本地构建不会覆盖模块内独立维护的 `src/module/NetProxy.apk`。
+含管理器模块包中的 APK 由 CI 根据当前源码构建，并以每次 CI 运行生成的临时签名签名。CI 版会显示提交短哈希，并在仪表盘服务状态卡片上方常驻显示测试构建警告；正式 Google Play 构建不带 CI 标记。由于签名每次不同，不能直接覆盖旧 CI 版；重新安装前需卸载旧版，卸载会清除管理器本地数据。日常使用建议从 Google Play 安装和更新。

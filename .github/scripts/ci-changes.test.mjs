@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { checksForEvent, classifyChanges, lastVerifiedCommit } from './ci-changes.mjs'
 
-test('纯 Android 修改不重打模块包', () => {
-  assert.deepEqual(classifyChanges(['src/android/app/src/main/MainActivity.kt']), { module: false, android: true })
+test('Android 修改会重建内置管理器并执行 Android 验证', () => {
+  assert.deepEqual(classifyChanges(['src/android/app/src/main/MainActivity.kt']), { module: true, android: true })
 })
 
 test('Native 与默认配置变化仍验证 Android 调用方', () => {
@@ -12,8 +12,8 @@ test('Native 与默认配置变化仍验证 Android 调用方', () => {
   }
 })
 
-test('模块、WebUI 和测试变化无需安装 Android 工具链', () => {
-  for (const path of ['src/module/customize.sh', 'src/module/NetProxy.apk', 'src/webui/src/exec.ts', 'tests/ci_verify.sh']) {
+test('模块、WebUI 和测试变化仅由打包任务构建内置管理器', () => {
+  for (const path of ['src/module/customize.sh', 'src/webui/src/exec.ts', 'tests/ci_verify.sh']) {
     assert.deepEqual(classifyChanges([path]), { module: true, android: false })
   }
 })

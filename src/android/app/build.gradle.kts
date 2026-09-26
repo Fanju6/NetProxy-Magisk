@@ -19,6 +19,16 @@ fun gitCommitCount(): Int {
     }.getOrDefault(1)
 }
 
+val ciManagerBuild = providers.gradleProperty("netproxyManagerCi").orNull == "true"
+val managerVersion = providers.gradleProperty("netproxyManagerVersion").orNull
+    ?: rootProject.file("../module/module.prop").takeIf { it.isFile }?.useLines { lines ->
+        lines.firstOrNull { it.startsWith("version=") }
+            ?.substringAfter('=')
+            ?.removePrefix("v")
+    }
+    ?: "8.1.1"
+val managerBuildId = providers.gradleProperty("netproxyManagerBuildId").orNull ?: "local"
+
 android {
     namespace = "com.fanjv.netproxy"
     compileSdk {
@@ -35,7 +45,7 @@ android {
         minSdk = 26
         targetSdk = 37
         versionCode = gitCommitCount()
-        versionName = "8.1.0"
+        versionName = if (ciManagerBuild) "$managerVersion-ci.$managerBuildId" else managerVersion
         ndk {
             abiFilters += "arm64-v8a"
         }

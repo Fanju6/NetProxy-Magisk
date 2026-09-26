@@ -11,6 +11,9 @@ src/module/webroot/netproxy/
 # 本地构建的 NetProxy 原生组件
 src/module/bin/netproxyctl
 
+# CI 打包时临时生成的含管理器发行资产
+src/module/NetProxy.apk
+
 # 测试用临时目录
 .tmp/
 
