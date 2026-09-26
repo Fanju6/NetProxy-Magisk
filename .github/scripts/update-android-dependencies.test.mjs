@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  ANDROID_DEPENDENCIES,
   compareVersions,
   isStableVersion,
   parseCatalogVersions,
@@ -9,6 +10,12 @@ import {
   selectAutomaticTarget,
   updateCatalogVersion,
 } from './update-android-dependencies.mjs'
+
+test('Miuix 需人工评估 API 迁移后再升级', () => {
+  const miuix = ANDROID_DEPENDENCIES.find(({ id }) => id === 'miuix')
+  assert.ok(miuix)
+  assert.equal(miuix.policy, 'manual')
+})
 
 test('版本比较支持语义版本与日期版本', () => {
   assert.equal(compareVersions('1.14.0', '1.13.9'), 1)

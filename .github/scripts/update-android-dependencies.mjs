@@ -65,13 +65,6 @@ export const ANDROID_DEPENDENCIES = [
     source: moduleSource('androidx.lifecycle', 'lifecycle-runtime-ktx', ['google'], 'https://developer.android.com/jetpack/androidx/releases/lifecycle'),
   },
   {
-    id: 'navigation3',
-    name: 'AndroidX Navigation3',
-    policy: 'auto-minor',
-    refs: [ref(MAIN_CATALOG, 'navigation3')],
-    source: moduleSource('androidx.navigation3', 'navigation3-runtime', ['google'], 'https://developer.android.com/jetpack/androidx/releases/navigation3'),
-  },
-  {
     id: 'navigation-event',
     name: 'AndroidX Navigation Event',
     policy: 'auto-minor',
@@ -95,7 +88,7 @@ export const ANDROID_DEPENDENCIES = [
   {
     id: 'miuix',
     name: 'Miuix',
-    policy: 'auto-minor',
+    policy: 'manual',
     refs: [ref(MAIN_CATALOG, 'miuix')],
     source: moduleSource('top.yukonga.miuix.kmp', 'miuix-ui-android', ['central'], 'https://github.com/compose-miuix-ui/miuix/releases'),
   },
