@@ -68,7 +68,7 @@ internal class NetProxyViewModelFactory(
         } as T
 }
 
-/** 使用当前 Navigation3 条目的 ViewModelStore 获取已注入依赖的 ViewModel。 */
+/** 使用当前 Miuix Nav 条目的 ViewModelStore 获取已注入依赖的 ViewModel。 */
 @Composable
 internal inline fun <reified T : ViewModel> netProxyViewModel(): T {
     val application = LocalContext.current.applicationContext as NetProxyApplication

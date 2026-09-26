@@ -2,19 +2,18 @@ package com.fanjv.netproxy.navigation
 
 import android.os.Parcelable
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.saveable.Saver
-import androidx.compose.runtime.saveable.listSaver
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.navigation3.runtime.NavKey
 import kotlinx.parcelize.Parcelize
 import kotlinx.serialization.Serializable
+import top.yukonga.miuix.kmp.nav.core.NavBackStack
+import top.yukonga.miuix.kmp.nav.core.NavKey
+import top.yukonga.miuix.kmp.nav.core.rememberNavBackStack
 
 /**
- * 类型安全的导航键（Navigation3），以及后退栈持有者和向各屏幕暴露它的 CompositionLocal。
+ * 类型安全的 Miuix Nav 路由，以及后退栈持有者和向页面暴露它的 CompositionLocal。
  */
+@Serializable
 sealed interface Route : NavKey, Parcelable {
     @Parcelize
     @Serializable
@@ -66,38 +65,23 @@ sealed interface Route : NavKey, Parcelable {
  * 持有后退栈的简单导航助手。
  */
 class Navigator(
-    initialKey: NavKey
+    val backStack: NavBackStack,
 ) {
-    val backStack: SnapshotStateList<NavKey> = mutableStateListOf(initialKey)
-
     fun push(key: NavKey) {
         backStack.add(key)
     }
 
     fun pop() {
         if (backStack.size > 1) {
-            backStack.removeAt(backStack.lastIndex)
+            backStack.removeLastOrNull()
         }
-    }
-
-    companion object {
-        val Saver: Saver<Navigator, Any> = listSaver(
-            save = { it.backStack.toList() },
-            restore = { savedList ->
-                val navigator = Navigator(savedList.firstOrNull() ?: Route.Main)
-                navigator.backStack.clear()
-                navigator.backStack.addAll(savedList)
-                navigator
-            }
-        )
     }
 }
 
 @Composable
-fun rememberNavigator(startRoute: NavKey): Navigator {
-    return rememberSaveable(startRoute, saver = Navigator.Saver) {
-        Navigator(startRoute)
-    }
+fun rememberNavigator(startRoute: Route): Navigator {
+    val backStack = rememberNavBackStack<Route>(startRoute)
+    return remember(backStack) { Navigator(backStack) }
 }
 
 val LocalNavigator = staticCompositionLocalOf<Navigator> {

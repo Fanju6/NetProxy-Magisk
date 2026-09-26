@@ -47,7 +47,7 @@ src/android/
 app/src/main/java/com/fanjv/netproxy/
 ├── core/                 # 命令契约、依赖容器、模块路径和共享 UI
 ├── feature/              # dashboard、nodes、subscriptions 等功能域
-├── navigation/           # Navigation3 路由与主导航状态
+├── navigation/           # Miuix Nav 路由与主导航状态
 ├── MainActivity.kt       # Android 与 Compose 入口
 └── NetProxyApplication.kt
 ```
@@ -62,7 +62,7 @@ Compose UI -> ViewModel -> Repository -> NetProxyCtlClient -> netproxyctl
 
 ## 本地构建
 
-准备 Android SDK 37 和 JDK 21，然后从仓库根目录执行：
+准备 Android SDK 37 和 JDK 26，然后从仓库根目录执行：
 
 ```bash
 cd src/android

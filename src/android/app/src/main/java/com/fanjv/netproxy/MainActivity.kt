@@ -1,5 +1,6 @@
 package com.fanjv.netproxy
 
+import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -24,10 +25,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
-import androidx.navigation3.runtime.entryProvider
-import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
-import androidx.navigation3.ui.NavDisplay
 import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
@@ -71,6 +68,7 @@ import com.fanjv.netproxy.navigation.rememberNavigator
 import top.yukonga.miuix.kmp.basic.NavigationItem
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.nav.core.NavDisplay
 import top.yukonga.miuix.kmp.theme.ThemeColorSpec
 import top.yukonga.miuix.kmp.theme.ThemePaletteStyle
 
@@ -80,11 +78,18 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        window.attributes = window.attributes.apply {
-            layoutInDisplayCutoutMode =
-                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                } else {
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                }
+            }
         }
-        window.isNavigationBarContrastEnforced = false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
 
         setContent {
             val themeViewModel: ThemeViewModel = netProxyViewModel()
@@ -116,7 +121,9 @@ class MainActivity : ComponentActivity() {
                     isAppearanceLightStatusBars = !darkMode
                     isAppearanceLightNavigationBars = !darkMode
                 }
-                window.isNavigationBarContrastEnforced = false
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    window.isNavigationBarContrastEnforced = false
+                }
             }
 
             CompositionLocalProvider(LocalDensity provides density) {
@@ -139,64 +146,54 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
         Scaffold {
             NavDisplay(
                 backStack = navigator.backStack,
-                entryDecorators = listOf(
-                    rememberSaveableStateHolderNavEntryDecorator(),
-                    rememberViewModelStoreNavEntryDecorator()
-                ),
                 onBack = { navigator.pop() },
-                entryProvider = entryProvider {
-                    entry<Main> { MainScreen(themeViewModel, catalogNodesViewModel) }
-                    entry<Apps> {
-                        AppsScreen(
-                            onBack = { navigator.pop() }
-                        )
-                    }
-                    entry<SubscriptionDetails> {
-                        SubscriptionDetailsScreen(
-                            id = it.id,
-                            onBack = { navigator.pop() }
-                        )
-                    }
-                    entry<SubscriptionEdit> {
-                        SubscriptionEditorScreen(
-                            id = it.id,
-                            onBack = { navigator.pop() }
-                        )
-                    }
-                    entry<NodeEdit> {
-                        SingBoxNodeEditScreen(
-                            viewModel = catalogNodesViewModel,
-                            nodeRef = it.nodeRef,
-                            onBack = { navigator.pop() }
-                        )
-                    }
-                    entry<ProxySettings> {
-                        ProxySettingsScreen(
-                            onBack = { navigator.pop() },
-                            bottomPadding = 0.dp
-                        )
-                    }
-                    entry<KernelSettings> {
-                        SingBoxKernelSettingsScreen(
-                            onBack = { navigator.pop() }
-                        )
-                    }
-                    entry<JsonEdit> {
-                        SingBoxJsonEditScreen(
-                            documentId = it.documentId,
-                            onBack = { navigator.pop() }
-                        )
-                    }
-                    entry<ThemeSettings> { ThemeSettingsScreen(viewModel = themeViewModel) }
-                    entry<About> { AboutScreen() }
-                    entry<Logs> {
-                        LogsScreen(
-                            onBack = { navigator.pop() }
-                        )
-                    }
+            ) {
+                entry<Main> { MainScreen(themeViewModel, catalogNodesViewModel) }
+                entry<Apps> {
+                    AppsScreen(onBack = { navigator.pop() })
                 }
-
-            )
+                entry<SubscriptionDetails> {
+                    SubscriptionDetailsScreen(
+                        id = it.id,
+                        onBack = { navigator.pop() }
+                    )
+                }
+                entry<SubscriptionEdit> {
+                    SubscriptionEditorScreen(
+                        id = it.id,
+                        onBack = { navigator.pop() }
+                    )
+                }
+                entry<NodeEdit> {
+                    SingBoxNodeEditScreen(
+                        viewModel = catalogNodesViewModel,
+                        nodeRef = it.nodeRef,
+                        onBack = { navigator.pop() }
+                    )
+                }
+                entry<ProxySettings> {
+                    ProxySettingsScreen(
+                        onBack = { navigator.pop() },
+                        bottomPadding = 0.dp
+                    )
+                }
+                entry<KernelSettings> {
+                    SingBoxKernelSettingsScreen(
+                        onBack = { navigator.pop() }
+                    )
+                }
+                entry<JsonEdit> {
+                    SingBoxJsonEditScreen(
+                        documentId = it.documentId,
+                        onBack = { navigator.pop() }
+                    )
+                }
+                entry<ThemeSettings> { ThemeSettingsScreen(viewModel = themeViewModel) }
+                entry<About> { AboutScreen() }
+                entry<Logs> {
+                    LogsScreen(onBack = { navigator.pop() })
+                }
+            }
         }
     }
 }
