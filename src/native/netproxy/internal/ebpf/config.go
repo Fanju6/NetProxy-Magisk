@@ -34,7 +34,6 @@ var allowedKeys = map[string]bool{
 	"EBPF_NETWORK":                       true,
 	"EBPF_UDP_TIMEOUT":                   true,
 	"EBPF_TC_PRIORITY":                   true,
-	"EBPF_BYPASS_RULE_SET":               true,
 	"EBPF_LOCAL_ENABLED":                 true,
 	"EBPF_LOCAL_DATA_PLANE":              true,
 	"EBPF_LOCAL_CGROUP_PATH":             true,
@@ -50,6 +49,7 @@ var allowedKeys = map[string]bool{
 	"EBPF_LOCAL_EXCLUDE_PACKAGE":         true,
 	"EBPF_LOCAL_BYPASS_PORT":             true,
 	"EBPF_LOCAL_BYPASS_PORT_RANGE":       true,
+	"EBPF_LOCAL_BYPASS_RULE_SET":         true,
 	"EBPF_SHARED_ENABLED":                true,
 	"EBPF_SHARED_DATA_PLANE":             true,
 	"EBPF_SHARED_DNS_MODE":               true,
@@ -62,6 +62,7 @@ var allowedKeys = map[string]bool{
 	"EBPF_SHARED_EXCLUDE_MAC_ADDRESS":    true,
 	"EBPF_SHARED_BYPASS_PORT":            true,
 	"EBPF_SHARED_BYPASS_PORT_RANGE":      true,
+	"EBPF_SHARED_BYPASS_RULE_SET":        true,
 	"APP_PROXY_ENABLE":                   true,
 	"APP_PROXY_MODE":                     true,
 	"PROXY_APPS_LIST":                    true,
@@ -73,7 +74,6 @@ type Config struct {
 	Network        []string
 	UDPTimeout     string
 	TCPriority     uint16
-	BypassRuleSets []string
 	Local          LocalConfig
 	Shared         SharedConfig
 	AppProxyEnable bool
@@ -99,6 +99,7 @@ type LocalConfig struct {
 	ExcludePackage       []string
 	BypassPort           []uint16
 	BypassPortRange      []string
+	BypassRuleSet        []string
 }
 
 // SharedConfig 描述 sing-box eBPF 的共享网络数据路径。
@@ -115,6 +116,7 @@ type SharedConfig struct {
 	ExcludeMACAddress    []string
 	BypassPort           []uint16
 	BypassPortRange      []string
+	BypassRuleSet        []string
 }
 
 // PackageRef 是一个带 Android 用户范围的应用包名。
@@ -155,15 +157,15 @@ func Load(path string) (Config, error) {
 		}
 	}
 	config := Config{
-		UDPTimeout:     defaultUDPTimeout,
-		TCPriority:     defaultTCPriority,
-		BypassRuleSets: []string{"geoip/cn"},
+		UDPTimeout: defaultUDPTimeout,
+		TCPriority: defaultTCPriority,
 		Local: LocalConfig{
 			Enabled:              true,
 			DataPlane:            defaultLocalDataPlane,
 			DNSMode:              defaultDNSMode,
 			IPv6:                 true,
 			BypassPrivateAddress: true,
+			BypassRuleSet:        []string{"geoip/cn"},
 		},
 		Shared: SharedConfig{
 			Enabled:              false,
@@ -172,6 +174,7 @@ func Load(path string) (Config, error) {
 			Interfaces:           []string{defaultSharedIface},
 			IPv6:                 true,
 			BypassPrivateAddress: true,
+			BypassRuleSet:        []string{"geoip/cn"},
 		},
 		AppProxyEnable: true,
 		AppProxyMode:   "blacklist",
@@ -183,8 +186,6 @@ func Load(path string) (Config, error) {
 	if parseErr != nil {
 		return Config{}, parseErr
 	}
-	config.BypassRuleSets = CommaSeparated(valueOr(values, "EBPF_BYPASS_RULE_SET", "geoip/cn"))
-
 	config.Local.Enabled, parseErr = boolValue(values, "EBPF_LOCAL_ENABLED", config.Local.Enabled)
 	if parseErr != nil {
 		return Config{}, parseErr
@@ -236,6 +237,7 @@ func Load(path string) (Config, error) {
 	if parseErr != nil {
 		return Config{}, parseErr
 	}
+	config.Local.BypassRuleSet = CommaSeparated(valueOr(values, "EBPF_LOCAL_BYPASS_RULE_SET", "geoip/cn"))
 	config.Shared.Enabled, parseErr = boolValue(values, "EBPF_SHARED_ENABLED", config.Shared.Enabled)
 	if parseErr != nil {
 		return Config{}, parseErr
@@ -275,6 +277,7 @@ func Load(path string) (Config, error) {
 	if parseErr != nil {
 		return Config{}, parseErr
 	}
+	config.Shared.BypassRuleSet = CommaSeparated(valueOr(values, "EBPF_SHARED_BYPASS_RULE_SET", "geoip/cn"))
 
 	config.AppProxyEnable, parseErr = boolValue(values, "APP_PROXY_ENABLE", config.AppProxyEnable)
 	if parseErr != nil {
@@ -365,10 +368,9 @@ func (c Config) BuildWithResolver(resolve PackageUIDResolver) (BuildResult, erro
 		Type: "ebpf",
 		Tag:  "ebpf-in",
 		EBPFInboundOptions: option.EBPFInboundOptions{
-			Network:       option.NetworkList(strings.Join(c.Network, "\n")),
-			UDPTimeout:    option.UDPTimeoutCompat(udpTimeout),
-			TCPriority:    option.EBPFTCPriority(c.TCPriority),
-			BypassRuleSet: c.BypassRuleSets,
+			Network:    option.NetworkList(strings.Join(c.Network, "\n")),
+			UDPTimeout: option.UDPTimeoutCompat(udpTimeout),
+			TCPriority: option.EBPFTCPriority(c.TCPriority),
 		},
 	}
 	missing := make([]PackageRef, 0)
@@ -390,6 +392,7 @@ func (c Config) BuildWithResolver(resolve PackageUIDResolver) (BuildResult, erro
 			ExcludePackage:       append([]string{}, c.Local.ExcludePackage...),
 			BypassPort:           append([]uint16{}, c.Local.BypassPort...),
 			BypassPortRange:      append([]string{}, c.Local.BypassPortRange...),
+			BypassRuleSet:        append([]string{}, c.Local.BypassRuleSet...),
 		}
 		if c.AppProxyEnable {
 			if resolve == nil {
@@ -432,6 +435,7 @@ func (c Config) BuildWithResolver(resolve PackageUIDResolver) (BuildResult, erro
 			ExcludeMACAddress:    c.Shared.ExcludeMACAddress,
 			BypassPort:           c.Shared.BypassPort,
 			BypassPortRange:      c.Shared.BypassPortRange,
+			BypassRuleSet:        c.Shared.BypassRuleSet,
 		}
 	}
 	return BuildResult{

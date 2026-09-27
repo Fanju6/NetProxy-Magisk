@@ -8,8 +8,8 @@ export function checkEbpfSchema(schema) {
   const inbound = branches[0].properties
   assert.equal(Object.hasOwn(inbound, 'mode'), false, 'eBPF 不再使用 mode')
   for (const [field, name, required] of [
-    ['local', 'EBPFLocalOptions', ['enabled', 'data_plane', 'cgroup_path', 'bypass_port', 'bypass_port_range']],
-    ['shared', 'EBPFSharedOptions', ['enabled', 'data_plane', 'interface', 'bypass_port', 'bypass_port_range']],
+    ['local', 'EBPFLocalOptions', ['enabled', 'data_plane', 'cgroup_path', 'bypass_port', 'bypass_port_range', 'bypass_rule_set']],
+    ['shared', 'EBPFSharedOptions', ['enabled', 'data_plane', 'interface', 'bypass_port', 'bypass_port_range', 'bypass_rule_set']],
   ]) {
     assert.equal(inbound[field]?.$ref, '#/$defs/' + name, 'eBPF 分支引用错误: ' + field)
     const properties = definitions[name]?.properties

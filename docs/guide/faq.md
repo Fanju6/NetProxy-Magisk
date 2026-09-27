@@ -23,7 +23,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl logs show core 100'
 
 ## Global 模式为什么仍有直连
 
-`EBPF_BYPASS_RULE_SET`、私网绕过和应用名单可以在流量进入普通路由前放行。严格测试 Global 时清空提前绕过规则并重启核心，同时确认没有应用或共享网络筛选。
+`EBPF_LOCAL_BYPASS_RULE_SET`、`EBPF_SHARED_BYPASS_RULE_SET`、私网绕过和应用名单可以在流量进入普通路由前放行。严格测试 Global 时清空已启用数据路径的提前绕过规则并重启核心，同时确认没有应用或共享网络筛选。
 
 ## DNS 泄漏是什么
 

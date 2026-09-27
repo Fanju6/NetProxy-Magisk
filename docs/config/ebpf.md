@@ -14,7 +14,6 @@ eBPF 透明代理配置位于：
 EBPF_NETWORK=""
 EBPF_UDP_TIMEOUT="5m"
 EBPF_TC_PRIORITY=1
-EBPF_BYPASS_RULE_SET="geoip/cn"
 ```
 
 `EBPF_NETWORK` 留空表示 TCP 和 UDP，也可以填写 `tcp`、`udp` 或 `tcp,udp`。`EBPF_TC_PRIORITY` 用于协调 TC 数据平面与同一接口上的其他 filter，通常保持默认值。
@@ -39,6 +38,7 @@ EBPF_LOCAL_CGROUP_PATH=""
 EBPF_LOCAL_DNS_MODE="hijack"
 EBPF_LOCAL_IPV6=1
 EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS=1
+EBPF_LOCAL_BYPASS_RULE_SET="geoip/cn"
 EBPF_LOCAL_INCLUDE_UID=""
 EBPF_LOCAL_INCLUDE_UID_RANGE=""
 EBPF_LOCAL_EXCLUDE_UID=""
@@ -49,6 +49,8 @@ EBPF_LOCAL_EXCLUDE_PACKAGE=""
 EBPF_LOCAL_BYPASS_PORT=""
 EBPF_LOCAL_BYPASS_PORT_RANGE=""
 ```
+
+`EBPF_LOCAL_BYPASS_RULE_SET` 只对本机流量生效；多个规则集使用英文逗号分隔。
 
 `EBPF_LOCAL_DATA_PLANE` 支持：
 
@@ -86,6 +88,7 @@ EBPF_SHARED_DNS_MODE="hijack"
 EBPF_SHARED_INTERFACES="wlan2"
 EBPF_SHARED_IPV6=1
 EBPF_SHARED_BYPASS_PRIVATE_ADDRESS=1
+EBPF_SHARED_BYPASS_RULE_SET="geoip/cn"
 EBPF_SHARED_INCLUDE_SOURCE_CIDR=""
 EBPF_SHARED_EXCLUDE_SOURCE_CIDR=""
 EBPF_SHARED_INCLUDE_MAC_ADDRESS=""
@@ -101,7 +104,7 @@ EBPF_SHARED_BYPASS_PORT_RANGE=""
 - `packet_rewrite`：默认值，适用于 Android 热点和普通以太网接口。
 - `socket_assign`：适用于 raw-IP、PPP 或隧道类接口。
 
-`EBPF_SHARED_DNS_MODE`、IPv6、私网绕过和目标端口设置只作用于共享网络。来源 CIDR 与 MAC 地址可进一步限制哪些下游设备进入代理。共享网络不会创建热点、DHCP、NAT、IPv6 RA 或 IP 转发，这些仍由 Android 或系统网络栈负责。
+`EBPF_SHARED_DNS_MODE`、IPv6、私网绕过、目标端口和 `EBPF_SHARED_BYPASS_RULE_SET` 只作用于共享网络。来源 CIDR 与 MAC 地址可进一步限制哪些下游设备进入代理。共享网络不会创建热点、DHCP、NAT、IPv6 RA 或 IP 转发，这些仍由 Android 或系统网络栈负责。
 
 ## 能力探测
 

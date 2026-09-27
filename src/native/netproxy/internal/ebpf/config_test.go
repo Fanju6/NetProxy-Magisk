@@ -12,10 +12,13 @@ import (
 	"github.com/sagernet/sing-box/option"
 )
 
-func TestDefaultBypassRuleSet(t *testing.T) {
+func TestDefaultBypassRuleSets(t *testing.T) {
 	config := loadFixture(t, "")
-	if !reflect.DeepEqual(config.BypassRuleSets, []string{"geoip/cn"}) {
-		t.Fatalf("默认绕过规则必须引用已声明的 GeoIP 标签: %v", config.BypassRuleSets)
+	if !reflect.DeepEqual(config.Local.BypassRuleSet, []string{"geoip/cn"}) {
+		t.Fatalf("本机默认绕过规则必须引用已声明的 GeoIP 标签: %v", config.Local.BypassRuleSet)
+	}
+	if !reflect.DeepEqual(config.Shared.BypassRuleSet, []string{"geoip/cn"}) {
+		t.Fatalf("共享网络默认绕过规则必须引用已声明的 GeoIP 标签: %v", config.Shared.BypassRuleSet)
 	}
 }
 
@@ -47,11 +50,13 @@ EBPF_LOCAL_IPV6=0
 EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS=0
 EBPF_LOCAL_BYPASS_PORT="53,853"
 EBPF_LOCAL_BYPASS_PORT_RANGE="8000:8080"
+EBPF_LOCAL_BYPASS_RULE_SET="geoip/cn,geosite/private"
 EBPF_SHARED_DNS_MODE="off"
 EBPF_SHARED_IPV6=1
 EBPF_SHARED_BYPASS_PRIVATE_ADDRESS=0
 EBPF_SHARED_BYPASS_PORT="67,68"
 EBPF_SHARED_BYPASS_PORT_RANGE="10000:10100"
+EBPF_SHARED_BYPASS_RULE_SET="geosite/private"
 APP_PROXY_MODE="blacklist"
 BYPASS_APPS_LIST="0:com.android.chrome,10:org.telegram.messenger"
 EBPF_SHARED_INTERFACES="wlan2,wlan0"
@@ -90,6 +95,9 @@ EBPF_SHARED_INCLUDE_MAC_ADDRESS="02:11:22:33:44:55,AA:BB:CC:DD:EE:FF"
 	if got := local["bypass_port_range"].([]any); !reflect.DeepEqual(got, []any{"8000:8080"}) {
 		t.Fatalf("unexpected local bypass port ranges: %#v", got)
 	}
+	if got := local["bypass_rule_set"].([]any); !reflect.DeepEqual(got, []any{"geoip/cn", "geosite/private"}) {
+		t.Fatalf("unexpected local bypass rule sets: %#v", got)
+	}
 	shared := inbound["shared"].(map[string]any)
 	assertMatchesSingBoxOptions[option.EBPFSharedOptions](t, shared)
 	if shared["enabled"] != true || shared["data_plane"] != "socket_assign" {
@@ -115,6 +123,12 @@ EBPF_SHARED_INCLUDE_MAC_ADDRESS="02:11:22:33:44:55,AA:BB:CC:DD:EE:FF"
 	}
 	if got := shared["bypass_port_range"].([]any); !reflect.DeepEqual(got, []any{"10000:10100"}) {
 		t.Fatalf("unexpected shared bypass port ranges: %#v", got)
+	}
+	if got := shared["bypass_rule_set"].([]any); !reflect.DeepEqual(got, []any{"geosite/private"}) {
+		t.Fatalf("unexpected shared bypass rule sets: %#v", got)
+	}
+	if _, exists := inbound["bypass_rule_set"]; exists {
+		t.Fatalf("legacy global bypass rule set is still emitted: %#v", inbound)
 	}
 	for _, key := range []string{"tcp_splice", "cgroup_enabled", "cgroup_ipv6_mode", "shared_network", "redirect_address", "map_capacity"} {
 		if _, ok := inbound[key]; ok {
@@ -245,6 +259,7 @@ func TestCommaSeparatedValuesUseCommaAsTheOnlyListSeparator(t *testing.T) {
 func TestLoadRejectsRemovedConfiguration(t *testing.T) {
 	for _, content := range []string{
 		"EBPF_MODE=local\n",
+		"EBPF_BYPASS_RULE_SET=geoip/cn\n",
 		"EBPF_DNS_MODE=hijack\n",
 		"EBPF_CGROUP_ENABLED=1\n",
 		"EBPF_SHARED_NETWORK=1\n",

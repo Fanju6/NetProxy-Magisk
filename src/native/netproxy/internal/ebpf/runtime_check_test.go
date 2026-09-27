@@ -17,7 +17,7 @@ func TestRuntimeWithTargetSingBoxCheck(t *testing.T) {
 	}
 	for _, mode := range []string{"local", "shared", "both"} {
 		t.Run(mode, func(t *testing.T) {
-			content := "EBPF_BYPASS_RULE_SET=\"\"\nEBPF_NETWORK=\"tcp,udp\"\n"
+			content := "EBPF_LOCAL_BYPASS_RULE_SET=\"\"\nEBPF_SHARED_BYPASS_RULE_SET=\"\"\nEBPF_NETWORK=\"tcp,udp\"\n"
 			switch mode {
 			case "local":
 				content += "EBPF_LOCAL_ENABLED=1\nEBPF_SHARED_ENABLED=0\n"

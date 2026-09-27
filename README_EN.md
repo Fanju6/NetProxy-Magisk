@@ -238,7 +238,8 @@ Key defaults:
 - `EBPF_SHARED_IPV6=1`
 - `EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS=1`
 - `EBPF_SHARED_BYPASS_PRIVATE_ADDRESS=1`
-- `EBPF_BYPASS_RULE_SET="geoip/cn"` (comma-separated rule-set tags)
+- `EBPF_LOCAL_BYPASS_RULE_SET="geoip/cn"` (local traffic rule sets)
+- `EBPF_SHARED_BYPASS_RULE_SET="geoip/cn"` (shared-network traffic rule sets)
 - `WIFI_AUTO_SWITCH=0`
 
 For startup failures, inspect the core log first:

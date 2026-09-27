@@ -169,13 +169,13 @@
     {
       "type": "ebpf",
       "tag": "ebpf-in",
-      "bypass_rule_set": [
-        "geoip/cn"
-      ],
       "local": {
         "enabled": true,
         "data_plane": "cgroup",
         "dns_mode": "respect_policy",
+        "bypass_rule_set": [
+          "geoip/cn"
+        ],
         "ipv6": true,
         "include_package": [],
         "exclude_package": []
@@ -184,6 +184,9 @@
         "enabled": true,
         "data_plane": "packet_rewrite",
         "dns_mode": "respect_policy",
+        "bypass_rule_set": [
+          "geoip/cn"
+        ],
         "interface": [
           "wlan2"
         ],

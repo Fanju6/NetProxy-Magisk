@@ -235,26 +235,19 @@ internal fun ProxySettingsScreen(
                                     )
                                 }
                             )
-                        }
-                    )
-                )
-
-                groupedCardSection(
-                    keyPrefix = "ebpf_bypass",
-                    title = { stringResource(R.string.ebpf_bypass_settings) },
-                    items = listOf(
-                        CardItem("rule_sets") {
+                        },
+                        CardItem("bypass_rule_sets") {
                             val label = stringResource(R.string.ebpf_bypass_rule_sets)
                             ArrowPreference(
                                 title = label,
-                                summary = settings.bypassRuleSet.ifBlank {
+                                summary = settings.localBypassRuleSet.ifBlank {
                                     stringResource(R.string.not_set)
                                 },
                                 onClick = {
                                     editValue(
-                                        "EBPF_BYPASS_RULE_SET",
+                                        "EBPF_LOCAL_BYPASS_RULE_SET",
                                         label,
-                                        settings.bypassRuleSet
+                                        settings.localBypassRuleSet
                                     )
                                 }
                             )
@@ -315,6 +308,22 @@ internal fun ProxySettingsScreen(
                                         "EBPF_SHARED_BYPASS_PORT_RANGE",
                                         label,
                                         settings.sharedBypassPortRanges
+                                    )
+                                }
+                            )
+                        },
+                        CardItem("bypass_rule_sets") {
+                            val label = stringResource(R.string.ebpf_bypass_rule_sets)
+                            ArrowPreference(
+                                title = label,
+                                summary = settings.sharedBypassRuleSet.ifBlank {
+                                    stringResource(R.string.not_set)
+                                },
+                                onClick = {
+                                    editValue(
+                                        "EBPF_SHARED_BYPASS_RULE_SET",
+                                        label,
+                                        settings.sharedBypassRuleSet
                                     )
                                 }
                             )
@@ -465,7 +474,8 @@ internal fun ProxySettingsScreen(
     ) {
         var value by remember(editingValue) { mutableStateOf(editingValue) }
         val usesListHint = editingKey in listOf(
-            "EBPF_BYPASS_RULE_SET",
+            "EBPF_LOCAL_BYPASS_RULE_SET",
+            "EBPF_SHARED_BYPASS_RULE_SET",
             "EBPF_LOCAL_BYPASS_PORT",
             "EBPF_LOCAL_BYPASS_PORT_RANGE",
             "EBPF_SHARED_BYPASS_PORT",
@@ -478,7 +488,8 @@ internal fun ProxySettingsScreen(
             "WIFI_SSID_LIST"
         )
         val valueHint = when (editingKey) {
-            "EBPF_BYPASS_RULE_SET" -> stringResource(R.string.settings_hint_rule_sets)
+            "EBPF_LOCAL_BYPASS_RULE_SET",
+            "EBPF_SHARED_BYPASS_RULE_SET" -> stringResource(R.string.settings_hint_rule_sets)
             "EBPF_LOCAL_BYPASS_PORT",
             "EBPF_SHARED_BYPASS_PORT" -> stringResource(R.string.settings_hint_ports)
 

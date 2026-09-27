@@ -49,10 +49,14 @@ test('默认远程规则有对应的内置文件与更新来源', () => {
 
 test('eBPF 默认绕过引用与上游和静态规则一致', () => {
   const ebpf = readFileSync(new URL('src/module/config/ebpf/ebpf.conf', root), 'utf8')
-  const bypass = ebpf.match(/^EBPF_BYPASS_RULE_SET="([^"]*)"/m)[1].split(',')
-  assert.deepEqual(bypass, upstream.inbounds.find(inbound => inbound.type === 'ebpf').bypass_rule_set)
+  const localBypass = ebpf.match(/^EBPF_LOCAL_BYPASS_RULE_SET="([^"]*)"/m)[1].split(',')
+  const sharedBypass = ebpf.match(/^EBPF_SHARED_BYPASS_RULE_SET="([^"]*)"/m)[1].split(',')
+  const inbound = upstream.inbounds.find(inbound => inbound.type === 'ebpf')
+  assert.deepEqual(localBypass, inbound.local.bypass_rule_set)
+  assert.deepEqual(sharedBypass, inbound.shared.bypass_rule_set)
+  assert.doesNotMatch(ebpf, /^EBPF_BYPASS_RULE_SET=/m)
   const tags = config.route.rule_set.flatMap(rule => list(rule.tag))
-  for (const tag of bypass) assert.ok(tags.includes(tag), `${tag} 未在静态配置声明`)
+  for (const tag of [...localBypass, ...sharedBypass]) assert.ok(tags.includes(tag), `${tag} 未在静态配置声明`)
 })
 
 test('eBPF 默认配置使用显式数据路径和新版数据平面', () => {

@@ -260,8 +260,12 @@ internal class SettingsViewModel(
                     proxySettings = settings.copy(sharedBypassPortRanges = value)
                 )
 
-                "EBPF_BYPASS_RULE_SET" -> current.copy(
-                    proxySettings = settings.copy(bypassRuleSet = value)
+                "EBPF_LOCAL_BYPASS_RULE_SET" -> current.copy(
+                    proxySettings = settings.copy(localBypassRuleSet = value)
+                )
+
+                "EBPF_SHARED_BYPASS_RULE_SET" -> current.copy(
+                    proxySettings = settings.copy(sharedBypassRuleSet = value)
                 )
 
                 "EBPF_SHARED_INTERFACES" -> current.copy(
@@ -329,7 +333,8 @@ internal class SettingsViewModel(
             localBypassPortRanges = value("EBPF_LOCAL_BYPASS_PORT_RANGE", ""),
             sharedBypassPorts = value("EBPF_SHARED_BYPASS_PORT", ""),
             sharedBypassPortRanges = value("EBPF_SHARED_BYPASS_PORT_RANGE", ""),
-            bypassRuleSet = value("EBPF_BYPASS_RULE_SET", "geoip/cn"),
+            localBypassRuleSet = value("EBPF_LOCAL_BYPASS_RULE_SET", "geoip/cn"),
+            sharedBypassRuleSet = value("EBPF_SHARED_BYPASS_RULE_SET", "geoip/cn"),
             sharedInterfaces = value("EBPF_SHARED_INTERFACES", "wlan2"),
             sharedIncludeSourceCidrs = value("EBPF_SHARED_INCLUDE_SOURCE_CIDR", ""),
             sharedExcludeSourceCidrs = value("EBPF_SHARED_EXCLUDE_SOURCE_CIDR", ""),
@@ -351,7 +356,8 @@ internal class SettingsViewModel(
             "EBPF_LOCAL_BYPASS_PORT_RANGE",
             "EBPF_SHARED_BYPASS_PORT",
             "EBPF_SHARED_BYPASS_PORT_RANGE",
-            "EBPF_BYPASS_RULE_SET",
+            "EBPF_LOCAL_BYPASS_RULE_SET",
+            "EBPF_SHARED_BYPASS_RULE_SET",
             "EBPF_SHARED_INTERFACES",
             "EBPF_SHARED_INCLUDE_SOURCE_CIDR",
             "EBPF_SHARED_EXCLUDE_SOURCE_CIDR",
@@ -360,7 +366,8 @@ internal class SettingsViewModel(
         )
         val dnsModes = setOf("hijack", "respect_policy", "off")
         val commaSeparatedKeys = setOf(
-            "EBPF_BYPASS_RULE_SET",
+            "EBPF_LOCAL_BYPASS_RULE_SET",
+            "EBPF_SHARED_BYPASS_RULE_SET",
             "EBPF_LOCAL_BYPASS_PORT",
             "EBPF_LOCAL_BYPASS_PORT_RANGE",
             "EBPF_SHARED_BYPASS_PORT",

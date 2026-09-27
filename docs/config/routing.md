@@ -4,7 +4,7 @@ NetProxy 的分流行为由四层共同决定：
 
 1. `OUTBOUND_MODE` 出站模式。
 2. sing-box 路由规则与规则集。
-3. eBPF 入站的应用、私网和 CIDR 提前绕过。
+3. eBPF 入站按本机和共享网络分别执行的应用、私网和 CIDR 提前绕过。
 4. Wi-Fi 自动策略对运行时模式的临时评估。
 
 ## 出站模式
@@ -15,7 +15,7 @@ NetProxy 的分流行为由四层共同决定：
 
 ### `global`
 
-尽量全部交给代理出站，适合测试节点或判断规则问题。若 eBPF 仍启用 `EBPF_BYPASS_RULE_SET`，命中的 IP 会在进入 sing-box 前直连，因此 Global 不一定代表绝对全代理。
+尽量全部交给代理出站，适合测试节点或判断规则问题。若启用路径仍配置 `EBPF_LOCAL_BYPASS_RULE_SET` 或 `EBPF_SHARED_BYPASS_RULE_SET`，命中的 IP 会在进入 sing-box 前直连，因此 Global 不一定代表绝对全代理。
 
 ### `direct`
 
@@ -40,10 +40,11 @@ NetProxy 的分流行为由四层共同决定：
 ## eBPF 提前绕过
 
 ```ini
-EBPF_BYPASS_RULE_SET="geoip/cn"
+EBPF_LOCAL_BYPASS_RULE_SET="geoip/cn"
+EBPF_SHARED_BYPASS_RULE_SET="geoip/cn"
 ```
 
-只有可提取纯 IP CIDR 的规则集会被 eBPF 使用。提前绕过的流量不会进入 sing-box，因此不会再经过 Clash 模式和普通路由规则。进行严格 Global 测试时清空该值并重启服务。
+两项分别控制本机和共享网络，只对对应启用的数据路径生效；多个规则集使用英文逗号分隔。只有可提取纯 IP CIDR 的规则集会被 eBPF 使用。提前绕过的流量不会进入 sing-box，因此不会再经过普通路由规则。进行严格 Global 测试时清空实际启用路径对应的规则集并重启核心。
 
 应用黑白名单、私网绕过和共享网络来源过滤也可能在进入普通路由前改变流量路径，排障时需要一并确认。
 
@@ -62,7 +63,7 @@ sing-box 侧 DNS 服务器、域名解析策略和 DNS 路由位于 `config/sing
 ## 排查顺序
 
 1. 查看 `service status` 的实际 `outbound_mode`。
-2. 确认 `EBPF_BYPASS_RULE_SET`、私网绕过和应用名单。
+2. 确认 `EBPF_LOCAL_BYPASS_RULE_SET`、`EBPF_SHARED_BYPASS_RULE_SET`、私网绕过和应用名单。
 3. 检查 `rules/local/` 与 `rules/remote/` 是否存在且可读。
 4. 检查 `dns` 分区的 DNS 服务器和最终出站。
 5. 查看 sing-box 核心日志和 Service API Dashboard 的连接结果。

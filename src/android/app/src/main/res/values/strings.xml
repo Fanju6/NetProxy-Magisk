@@ -363,7 +363,6 @@
     <string name="ebpf_local_ipv6">本机网络 IPv6 接管</string>
     <string name="ebpf_local_bypass_ports">本机绕过目标端口</string>
     <string name="ebpf_local_bypass_port_ranges">本机绕过目标端口范围</string>
-    <string name="ebpf_bypass_settings">内核提前绕过</string>
     <string name="ebpf_bypass_private_address">绕过私网与特殊用途地址</string>
     <string name="ebpf_bypass_rule_sets">绕过规则集</string>
     <string name="ebpf_shared_settings">热点与共享网络</string>

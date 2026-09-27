@@ -245,7 +245,8 @@ su -c '/data/adb/modules/netproxy/netproxyctl help'
 | `EBPF_SHARED_IPV6` | `1` | 接管共享网络 IPv6 流量 |
 | `EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS` | `1` | 本机流量默认绕过私网与特殊用途地址 |
 | `EBPF_SHARED_BYPASS_PRIVATE_ADDRESS` | `1` | 共享网络流量默认绕过私网与特殊用途地址 |
-| `EBPF_BYPASS_RULE_SET` | `geoip/cn` | 在内核侧提前绕过可提取 CIDR 的规则集，多个规则集使用英文逗号分隔 |
+| `EBPF_LOCAL_BYPASS_RULE_SET` | `geoip/cn` | 本机流量在内核侧提前绕过可提取 CIDR 的规则集 |
+| `EBPF_SHARED_BYPASS_RULE_SET` | `geoip/cn` | 共享网络流量在内核侧提前绕过可提取 CIDR 的规则集 |
 | `WIFI_AUTO_SWITCH` | `0` | 默认关闭 WiFi SSID 自动切换 |
 
 ## 排障
