@@ -757,10 +757,10 @@
           "type": "string"
         },
         "inet4_bind_address": {
-          "type": "string"
+          "$ref": "#/$defs/IPAddress"
         },
         "inet6_bind_address": {
-          "type": "string"
+          "$ref": "#/$defs/IPAddress"
         },
         "bind_address_no_port": {
           "type": "boolean"
@@ -807,6 +807,9 @@
         },
         "tcp_keep_alive_count": {
           "type": "integer"
+        },
+        "udp_gso": {
+          "type": "boolean"
         },
         "udp_fragment": {
           "type": "boolean"
@@ -932,7 +935,7 @@
           ]
         },
         "client_subnet": {
-          "type": "string"
+          "$ref": "#/$defs/IPAddressOrPrefix"
         }
       },
       "additionalProperties": false
@@ -1160,12 +1163,12 @@
                 "query_client_subnet": {
                   "anyOf": [
                     {
-                      "type": "string"
+                      "$ref": "#/$defs/IPAddressOrPrefix"
                     },
                     {
                       "type": "array",
                       "items": {
-                        "type": "string"
+                        "$ref": "#/$defs/IPAddressOrPrefix"
                       }
                     }
                   ]
@@ -1299,12 +1302,12 @@
                 "source_ip_cidr": {
                   "anyOf": [
                     {
-                      "type": "string"
+                      "$ref": "#/$defs/IPAddressOrPrefix"
                     },
                     {
                       "type": "array",
                       "items": {
-                        "type": "string"
+                        "$ref": "#/$defs/IPAddressOrPrefix"
                       }
                     }
                   ]
@@ -1526,12 +1529,12 @@
                   "additionalProperties": {
                     "anyOf": [
                       {
-                        "type": "string"
+                        "$ref": "#/$defs/IPAddressOrPrefix"
                       },
                       {
                         "type": "array",
                         "items": {
-                          "type": "string"
+                          "$ref": "#/$defs/IPAddressOrPrefix"
                         }
                       }
                     ]
@@ -1545,12 +1548,12 @@
                   "additionalProperties": {
                     "anyOf": [
                       {
-                        "type": "string"
+                        "$ref": "#/$defs/IPAddressOrPrefix"
                       },
                       {
                         "type": "array",
                         "items": {
-                          "type": "string"
+                          "$ref": "#/$defs/IPAddressOrPrefix"
                         }
                       }
                     ]
@@ -1559,12 +1562,12 @@
                 "default_interface_address": {
                   "anyOf": [
                     {
-                      "type": "string"
+                      "$ref": "#/$defs/IPAddressOrPrefix"
                     },
                     {
                       "type": "array",
                       "items": {
-                        "type": "string"
+                        "$ref": "#/$defs/IPAddressOrPrefix"
                       }
                     }
                   ]
@@ -1608,6 +1611,38 @@
                     }
                   ]
                 },
+                "dns_server_address": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/IPAddressOrPrefix"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/$defs/IPAddressOrPrefix"
+                        }
+                      }
+                    ]
+                  }
+                },
+                "dns_search_domain": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  }
+                },
                 "rule_set": {
                   "anyOf": [
                     {
@@ -1639,12 +1674,12 @@
                 "ip_cidr": {
                   "anyOf": [
                     {
-                      "type": "string"
+                      "$ref": "#/$defs/IPAddressOrPrefix"
                     },
                     {
                       "type": "array",
                       "items": {
-                        "type": "string"
+                        "$ref": "#/$defs/IPAddressOrPrefix"
                       }
                     }
                   ]
@@ -1780,7 +1815,7 @@
               "maximum": 4294967295
             },
             "client_subnet": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddressOrPrefix"
             },
             "remove_client_subnet": {
               "type": "boolean"
@@ -1821,7 +1856,7 @@
               "maximum": 4294967295
             },
             "client_subnet": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddressOrPrefix"
             },
             "remove_client_subnet": {
               "type": "boolean"
@@ -1869,7 +1904,7 @@
               "maximum": 4294967295
             },
             "client_subnet": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddressOrPrefix"
             },
             "remove_client_subnet": {
               "type": "boolean"
@@ -1984,10 +2019,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -2034,6 +2069,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -2113,13 +2151,13 @@
               "type": "string"
             },
             "inet4_range": {
-              "type": "string",
+              "$ref": "#/$defs/IPPrefix",
               "examples": [
                 "198.18.0.0/15"
               ]
             },
             "inet6_range": {
-              "type": "string",
+              "$ref": "#/$defs/IPPrefix",
               "examples": [
                 "fc00::/18"
               ]
@@ -2169,10 +2207,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -2219,6 +2257,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -2321,7 +2362,7 @@
                   {
                     "type": "array",
                     "items": {
-                      "type": "string"
+                      "$ref": "#/$defs/IPAddress"
                     }
                   }
                 ]
@@ -2350,10 +2391,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -2400,6 +2441,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -2487,10 +2531,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -2537,6 +2581,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -2620,10 +2667,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -2670,6 +2717,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -2814,10 +2864,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -2864,6 +2914,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -2987,10 +3040,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -3037,6 +3090,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -3112,10 +3168,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -3162,6 +3218,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -3240,10 +3299,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -3290,6 +3349,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -3399,10 +3461,10 @@
           "type": "string"
         },
         "inet4_bind_address": {
-          "type": "string"
+          "$ref": "#/$defs/IPAddress"
         },
         "inet6_bind_address": {
-          "type": "string"
+          "$ref": "#/$defs/IPAddress"
         },
         "bind_address_no_port": {
           "type": "boolean"
@@ -3449,6 +3511,9 @@
         },
         "tcp_keep_alive_count": {
           "type": "integer"
+        },
+        "udp_gso": {
+          "type": "boolean"
         },
         "udp_fragment": {
           "type": "boolean"
@@ -3538,7 +3603,7 @@
               "maximum": 4294967295
             },
             "client_subnet": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddressOrPrefix"
             }
           },
           "required": [
@@ -3592,6 +3657,21 @@
         },
         "bypass_private_address": {
           "type": "boolean"
+        },
+        "bypass_rule_set": {
+          "anyOf": [
+            {
+              "type": "string",
+              "x-tag-reference": "rule_set"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "x-tag-reference": "rule_set"
+              }
+            }
+          ]
         },
         "include_uid": {
           "anyOf": [
@@ -3765,15 +3845,30 @@
         "bypass_private_address": {
           "type": "boolean"
         },
-        "include_source_cidr": {
+        "bypass_rule_set": {
           "anyOf": [
             {
-              "type": "string"
+              "type": "string",
+              "x-tag-reference": "rule_set"
             },
             {
               "type": "array",
               "items": {
-                "type": "string"
+                "type": "string",
+                "x-tag-reference": "rule_set"
+              }
+            }
+          ]
+        },
+        "include_source_cidr": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IPPrefix"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/IPPrefix"
               }
             }
           ]
@@ -3781,12 +3876,12 @@
         "exclude_source_cidr": {
           "anyOf": [
             {
-              "type": "string"
+              "$ref": "#/$defs/IPPrefix"
             },
             {
               "type": "array",
               "items": {
-                "type": "string"
+                "$ref": "#/$defs/IPPrefix"
               }
             }
           ]
@@ -3856,7 +3951,7 @@
           "type": "object",
           "properties": {
             "type": {
-              "const": "openconnect"
+              "const": "masque-client"
             },
             "tag": {
               "type": "string"
@@ -3869,10 +3964,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -3919,6 +4014,480 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
+            },
+            "udp_fragment": {
+              "type": "boolean"
+            },
+            "domain_resolver": {
+              "$ref": "#/$defs/DomainResolver"
+            },
+            "network_strategy": {
+              "type": "string",
+              "enum": [
+                "default",
+                "fallback",
+                "hybrid"
+              ]
+            },
+            "network_type": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/InterfaceType"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/InterfaceType"
+                  }
+                }
+              ]
+            },
+            "fallback_network_type": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/InterfaceType"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/InterfaceType"
+                  }
+                }
+              ]
+            },
+            "fallback_delay": {
+              "$ref": "#/$defs/Duration"
+            },
+            "server": {
+              "type": "string"
+            },
+            "server_port": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65535
+            },
+            "inner_domain_resolver": {
+              "$ref": "#/$defs/DomainResolver"
+            },
+            "system": {
+              "type": "boolean"
+            },
+            "gso": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string"
+            },
+            "mtu": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            "udp_mapping": {
+              "type": "string",
+              "enum": [
+                "",
+                "endpoint_independent",
+                "address_dependent",
+                "address_and_port_dependent"
+              ]
+            },
+            "udp_filtering": {
+              "type": "string",
+              "enum": [
+                "",
+                "endpoint_independent",
+                "address_dependent",
+                "address_and_port_dependent"
+              ]
+            },
+            "udp_nat_max": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            "username": {
+              "type": "string"
+            },
+            "password": {
+              "type": "string"
+            },
+            "tls": {
+              "$ref": "#/$defs/OutboundTLSOptions"
+            },
+            "path": {
+              "type": "string"
+            },
+            "headers": {
+              "$ref": "#/$defs/HTTPHeader"
+            },
+            "version": {
+              "type": "integer",
+              "enum": [
+                0,
+                1,
+                2,
+                3
+              ]
+            },
+            "disable_version_fallback": {
+              "type": "boolean"
+            },
+            "advertise_routes": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/IPPrefix"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/IPPrefix"
+                  }
+                }
+              ]
+            },
+            "udp_timeout": {
+              "$ref": "#/$defs/Duration"
+            },
+            "on_demand": {
+              "type": "boolean"
+            },
+            "idle_timeout": {
+              "$ref": "#/$defs/Duration"
+            },
+            "keep_alive_period": {
+              "$ref": "#/$defs/Duration"
+            },
+            "stream_receive_window": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "connection_receive_window": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "max_concurrent_streams": {
+              "type": "integer"
+            },
+            "initial_packet_size": {
+              "type": "integer"
+            },
+            "disable_path_mtu_discovery": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "masque-server"
+            },
+            "tag": {
+              "type": "string"
+            },
+            "listen": {
+              "$ref": "#/$defs/IPAddress"
+            },
+            "listen_port": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65535
+            },
+            "bind_interface": {
+              "type": "string"
+            },
+            "routing_mark": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "reuse_addr": {
+              "type": "boolean"
+            },
+            "netns": {
+              "type": "string",
+              "x-tag-reference": "network_namespace"
+            },
+            "disable_tcp_keep_alive": {
+              "type": "boolean"
+            },
+            "tcp_keep_alive": {
+              "$ref": "#/$defs/Duration"
+            },
+            "tcp_keep_alive_interval": {
+              "$ref": "#/$defs/Duration"
+            },
+            "tcp_keep_alive_count": {
+              "type": "integer"
+            },
+            "tcp_fast_open": {
+              "type": "boolean"
+            },
+            "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "udp_gso": {
+              "type": "boolean"
+            },
+            "udp_fragment": {
+              "type": "boolean"
+            },
+            "udp_timeout": {
+              "$ref": "#/$defs/UDPTimeout"
+            },
+            "detour": {
+              "type": "string",
+              "x-tag-reference": "inbound"
+            },
+            "proxy_protocol": {
+              "type": "boolean"
+            },
+            "proxy_protocol_accept_no_header": {
+              "type": "boolean"
+            },
+            "inner_domain_resolver": {
+              "$ref": "#/$defs/DomainResolver"
+            },
+            "system": {
+              "type": "boolean"
+            },
+            "gso": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string"
+            },
+            "mtu": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            "udp_mapping": {
+              "type": "string",
+              "enum": [
+                "",
+                "endpoint_independent",
+                "address_dependent",
+                "address_and_port_dependent"
+              ]
+            },
+            "udp_filtering": {
+              "type": "string",
+              "enum": [
+                "",
+                "endpoint_independent",
+                "address_dependent",
+                "address_and_port_dependent"
+              ]
+            },
+            "udp_nat_max": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            "users": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/User"
+              }
+            },
+            "version": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "enum": [
+                    1,
+                    2,
+                    3
+                  ]
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "enum": [
+                      1,
+                      2,
+                      3
+                    ]
+                  }
+                }
+              ]
+            },
+            "tls": {
+              "$ref": "#/$defs/InboundTLSOptions"
+            },
+            "path": {
+              "type": "string"
+            },
+            "address": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/IPPrefix"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/IPPrefix"
+                  }
+                }
+              ]
+            },
+            "advertise_routes": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/IPPrefix"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/IPPrefix"
+                  }
+                }
+              ]
+            },
+            "idle_timeout": {
+              "$ref": "#/$defs/Duration"
+            },
+            "keep_alive_period": {
+              "$ref": "#/$defs/Duration"
+            },
+            "stream_receive_window": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "connection_receive_window": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "max_concurrent_streams": {
+              "type": "integer"
+            },
+            "initial_packet_size": {
+              "type": "integer"
+            },
+            "disable_path_mtu_discovery": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "openconnect"
+            },
+            "tag": {
+              "type": "string"
+            },
+            "detour": {
+              "type": "string",
+              "x-tag-reference": "outbound"
+            },
+            "bind_interface": {
+              "type": "string"
+            },
+            "inet4_bind_address": {
+              "$ref": "#/$defs/IPAddress"
+            },
+            "inet6_bind_address": {
+              "$ref": "#/$defs/IPAddress"
+            },
+            "bind_address_no_port": {
+              "type": "boolean"
+            },
+            "protect_path": {
+              "type": "string"
+            },
+            "routing_mark": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4294967295
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "reuse_addr": {
+              "type": "boolean"
+            },
+            "netns": {
+              "type": "string",
+              "x-tag-reference": "network_namespace"
+            },
+            "connect_timeout": {
+              "$ref": "#/$defs/Duration"
+            },
+            "tcp_fast_open": {
+              "type": "boolean"
+            },
+            "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "disable_tcp_keep_alive": {
+              "type": "boolean"
+            },
+            "tcp_keep_alive": {
+              "$ref": "#/$defs/Duration"
+            },
+            "tcp_keep_alive_interval": {
+              "$ref": "#/$defs/Duration"
+            },
+            "tcp_keep_alive_count": {
+              "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -4158,10 +4727,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -4208,6 +4777,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -4330,21 +4902,21 @@
             "address": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/$defs/IPPrefix"
                 },
                 {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "$ref": "#/$defs/IPPrefix"
                   }
                 }
               ]
             },
             "peer_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "peer_address_ipv6": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "topology": {
               "type": "string",
@@ -4495,18 +5067,18 @@
             "routes": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/$defs/IPPrefix"
                 },
                 {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "$ref": "#/$defs/IPPrefix"
                   }
                 }
               ]
             },
             "route_gateway": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "route_metric": {
               "type": "integer"
@@ -4589,7 +5161,7 @@
               "type": "string"
             },
             "listen": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "listen_port": {
               "type": "integer",
@@ -4634,6 +5206,9 @@
               "type": "boolean"
             },
             "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "udp_gso": {
               "type": "boolean"
             },
             "udp_fragment": {
@@ -4720,21 +5295,21 @@
             "address": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/$defs/IPPrefix"
                 },
                 {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "$ref": "#/$defs/IPPrefix"
                   }
                 }
               ]
             },
             "peer_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "peer_address_ipv6": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "topology": {
               "type": "string",
@@ -4873,10 +5448,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -4923,6 +5498,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -4997,7 +5575,7 @@
             "advertise_routes": {
               "type": "array",
               "items": {
-                "type": "string"
+                "$ref": "#/$defs/IPPrefix"
               }
             },
             "advertise_exit_node": {
@@ -5112,12 +5690,12 @@
             "address": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/$defs/IPPrefix"
                 },
                 {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "$ref": "#/$defs/IPPrefix"
                   }
                 }
               ]
@@ -5179,10 +5757,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -5229,6 +5807,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -5344,10 +5925,10 @@
           "type": "string"
         },
         "inet4_bind_address": {
-          "type": "string"
+          "$ref": "#/$defs/IPAddress"
         },
         "inet6_bind_address": {
-          "type": "string"
+          "$ref": "#/$defs/IPAddress"
         },
         "bind_address_no_port": {
           "type": "boolean"
@@ -5394,6 +5975,9 @@
         },
         "tcp_keep_alive_count": {
           "type": "integer"
+        },
+        "udp_gso": {
+          "type": "boolean"
         },
         "udp_fragment": {
           "type": "boolean"
@@ -5520,10 +6104,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -5570,6 +6154,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -5818,12 +6405,12 @@
             "source_ip_cidr": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddressOrPrefix"
                 },
                 {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "$ref": "#/$defs/IPAddressOrPrefix"
                   }
                 }
               ]
@@ -5831,12 +6418,12 @@
             "ip_cidr": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddressOrPrefix"
                 },
                 {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "$ref": "#/$defs/IPAddressOrPrefix"
                   }
                 }
               ]
@@ -6022,12 +6609,12 @@
               "additionalProperties": {
                 "anyOf": [
                   {
-                    "type": "string"
+                    "$ref": "#/$defs/IPAddressOrPrefix"
                   },
                   {
                     "type": "array",
                     "items": {
-                      "type": "string"
+                      "$ref": "#/$defs/IPAddressOrPrefix"
                     }
                   }
                 ]
@@ -6036,12 +6623,12 @@
             "default_interface_address": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddressOrPrefix"
                 },
                 {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "$ref": "#/$defs/IPAddressOrPrefix"
                   }
                 }
               ]
@@ -6243,6 +6830,18 @@
       },
       "additionalProperties": false
     },
+    "IPAddress": {
+      "type": "string",
+      "pattern": "^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3}|(?:(?:[0-9A-Fa-f]{1,4}:){6}(?:[0-9A-Fa-f]{1,4}:[0-9A-Fa-f]{1,4}|(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3})|::(?:[0-9A-Fa-f]{1,4}:){5}(?:[0-9A-Fa-f]{1,4}:[0-9A-Fa-f]{1,4}|(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3})|(?:[0-9A-Fa-f]{1,4})?::(?:[0-9A-Fa-f]{1,4}:){4}(?:[0-9A-Fa-f]{1,4}:[0-9A-Fa-f]{1,4}|(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3})|(?:(?:[0-9A-Fa-f]{1,4}:)?[0-9A-Fa-f]{1,4})?::(?:[0-9A-Fa-f]{1,4}:){3}(?:[0-9A-Fa-f]{1,4}:[0-9A-Fa-f]{1,4}|(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3})|(?:(?:[0-9A-Fa-f]{1,4}:){0,2}[0-9A-Fa-f]{1,4})?::(?:[0-9A-Fa-f]{1,4}:){2}(?:[0-9A-Fa-f]{1,4}:[0-9A-Fa-f]{1,4}|(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3})|(?:(?:[0-9A-Fa-f]{1,4}:){0,3}[0-9A-Fa-f]{1,4})?::[0-9A-Fa-f]{1,4}:(?:[0-9A-Fa-f]{1,4}:[0-9A-Fa-f]{1,4}|(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3})|(?:(?:[0-9A-Fa-f]{1,4}:){0,4}[0-9A-Fa-f]{1,4})?::(?:[0-9A-Fa-f]{1,4}:[0-9A-Fa-f]{1,4}|(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3})|(?:(?:[0-9A-Fa-f]{1,4}:){0,5}[0-9A-Fa-f]{1,4})?::[0-9A-Fa-f]{1,4}|(?:(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4})?::)(?:%.+)?)$"
+    },
+    "IPAddressOrPrefix": {
+      "type": "string",
+      "pattern": "^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3}(?:/(?:3[0-2]|[12]?[0-9]))?|(?:(?:[0-9A-Fa-f]{1,4}:){6}(?:[0-9A-Fa-f]{1,4}:[0-9A-Fa-f]{1,4}|(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3})|::(?:[0-9A-Fa-f]{1,4}:){5}(?:[0-9A-Fa-f]{1,4}:[0-9A-Fa-f]{1,4}|(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3})|(?:[0-9A-Fa-f]{1,4})?::(?:[0-9A-Fa-f]{1,4}:){4}(?:[0-9A-Fa-f]{1,4}:[0-9A-Fa-f]{1,4}|(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3})|(?:(?:[0-9A-Fa-f]{1,4}:)?[0-9A-Fa-f]{1,4})?::(?:[0-9A-Fa-f]{1,4}:){3}(?:[0-9A-Fa-f]{1,4}:[0-9A-Fa-f]{1,4}|(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3})|(?:(?:[0-9A-Fa-f]{1,4}:){0,2}[0-9A-Fa-f]{1,4})?::(?:[0-9A-Fa-f]{1,4}:){2}(?:[0-9A-Fa-f]{1,4}:[0-9A-Fa-f]{1,4}|(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3})|(?:(?:[0-9A-Fa-f]{1,4}:){0,3}[0-9A-Fa-f]{1,4})?::[0-9A-Fa-f]{1,4}:(?:[0-9A-Fa-f]{1,4}:[0-9A-Fa-f]{1,4}|(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3})|(?:(?:[0-9A-Fa-f]{1,4}:){0,4}[0-9A-Fa-f]{1,4})?::(?:[0-9A-Fa-f]{1,4}:[0-9A-Fa-f]{1,4}|(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3})|(?:(?:[0-9A-Fa-f]{1,4}:){0,5}[0-9A-Fa-f]{1,4})?::[0-9A-Fa-f]{1,4}|(?:(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4})?::)(?:/(?:12[0-8]|1[01][0-9]|[1-9]?[0-9])|%.+)?)$"
+    },
+    "IPPrefix": {
+      "type": "string",
+      "pattern": "^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3}/(?:3[0-2]|[12]?[0-9])|(?:(?:[0-9A-Fa-f]{1,4}:){6}(?:[0-9A-Fa-f]{1,4}:[0-9A-Fa-f]{1,4}|(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3})|::(?:[0-9A-Fa-f]{1,4}:){5}(?:[0-9A-Fa-f]{1,4}:[0-9A-Fa-f]{1,4}|(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3})|(?:[0-9A-Fa-f]{1,4})?::(?:[0-9A-Fa-f]{1,4}:){4}(?:[0-9A-Fa-f]{1,4}:[0-9A-Fa-f]{1,4}|(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3})|(?:(?:[0-9A-Fa-f]{1,4}:)?[0-9A-Fa-f]{1,4})?::(?:[0-9A-Fa-f]{1,4}:){3}(?:[0-9A-Fa-f]{1,4}:[0-9A-Fa-f]{1,4}|(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3})|(?:(?:[0-9A-Fa-f]{1,4}:){0,2}[0-9A-Fa-f]{1,4})?::(?:[0-9A-Fa-f]{1,4}:){2}(?:[0-9A-Fa-f]{1,4}:[0-9A-Fa-f]{1,4}|(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3})|(?:(?:[0-9A-Fa-f]{1,4}:){0,3}[0-9A-Fa-f]{1,4})?::[0-9A-Fa-f]{1,4}:(?:[0-9A-Fa-f]{1,4}:[0-9A-Fa-f]{1,4}|(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3})|(?:(?:[0-9A-Fa-f]{1,4}:){0,4}[0-9A-Fa-f]{1,4})?::(?:[0-9A-Fa-f]{1,4}:[0-9A-Fa-f]{1,4}|(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:\\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])){3})|(?:(?:[0-9A-Fa-f]{1,4}:){0,5}[0-9A-Fa-f]{1,4})?::[0-9A-Fa-f]{1,4}|(?:(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4})?::)/(?:12[0-8]|1[01][0-9]|[1-9]?[0-9]))$"
+    },
     "Inbound": {
       "oneOf": [
         {
@@ -6255,7 +6854,7 @@
               "type": "string"
             },
             "listen": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "listen_port": {
               "type": "integer",
@@ -6300,6 +6899,9 @@
               "type": "boolean"
             },
             "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "udp_gso": {
               "type": "boolean"
             },
             "udp_fragment": {
@@ -6425,7 +7027,7 @@
               "type": "string"
             },
             "listen": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "listen_port": {
               "type": "integer",
@@ -6470,6 +7072,9 @@
               "type": "boolean"
             },
             "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "udp_gso": {
               "type": "boolean"
             },
             "udp_fragment": {
@@ -6605,7 +7210,7 @@
               "type": "string"
             },
             "listen": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "listen_port": {
               "type": "integer",
@@ -6650,6 +7255,9 @@
               "type": "boolean"
             },
             "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "udp_gso": {
               "type": "boolean"
             },
             "udp_fragment": {
@@ -6680,8 +7288,68 @@
             "set_system_proxy": {
               "type": "boolean"
             },
+            "version": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "enum": [
+                    1,
+                    2,
+                    3
+                  ]
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "enum": [
+                      1,
+                      2,
+                      3
+                    ]
+                  }
+                }
+              ]
+            },
             "tls": {
               "$ref": "#/$defs/InboundTLSOptions"
+            },
+            "idle_timeout": {
+              "$ref": "#/$defs/Duration"
+            },
+            "keep_alive_period": {
+              "$ref": "#/$defs/Duration"
+            },
+            "stream_receive_window": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "connection_receive_window": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "max_concurrent_streams": {
+              "type": "integer"
+            },
+            "initial_packet_size": {
+              "type": "integer"
+            },
+            "disable_path_mtu_discovery": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -6699,7 +7367,7 @@
               "type": "string"
             },
             "listen": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "listen_port": {
               "type": "integer",
@@ -6744,6 +7412,9 @@
               "type": "boolean"
             },
             "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "udp_gso": {
               "type": "boolean"
             },
             "udp_fragment": {
@@ -6855,7 +7526,7 @@
               "type": "string"
             },
             "listen": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "listen_port": {
               "type": "integer",
@@ -6900,6 +7571,9 @@
               "type": "boolean"
             },
             "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "udp_gso": {
               "type": "boolean"
             },
             "udp_fragment": {
@@ -7108,7 +7782,7 @@
               "type": "string"
             },
             "listen": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "listen_port": {
               "type": "integer",
@@ -7153,6 +7827,9 @@
               "type": "boolean"
             },
             "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "udp_gso": {
               "type": "boolean"
             },
             "udp_fragment": {
@@ -7202,7 +7879,7 @@
               "type": "string"
             },
             "listen": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "listen_port": {
               "type": "integer",
@@ -7247,6 +7924,9 @@
               "type": "boolean"
             },
             "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "udp_gso": {
               "type": "boolean"
             },
             "udp_fragment": {
@@ -7319,7 +7999,7 @@
               "type": "string"
             },
             "listen": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "listen_port": {
               "type": "integer",
@@ -7364,6 +8044,9 @@
               "type": "boolean"
             },
             "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "udp_gso": {
               "type": "boolean"
             },
             "udp_fragment": {
@@ -7398,7 +8081,7 @@
               "type": "string"
             },
             "listen": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "listen_port": {
               "type": "integer",
@@ -7443,6 +8126,9 @@
               "type": "boolean"
             },
             "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "udp_gso": {
               "type": "boolean"
             },
             "udp_fragment": {
@@ -7543,7 +8229,7 @@
               "type": "string"
             },
             "listen": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "listen_port": {
               "type": "integer",
@@ -7588,6 +8274,9 @@
               "type": "boolean"
             },
             "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "udp_gso": {
               "type": "boolean"
             },
             "udp_fragment": {
@@ -7665,7 +8354,7 @@
                   "const": 5
                 },
                 "listen": {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddress"
                 },
                 "listen_port": {
                   "type": "integer",
@@ -7710,6 +8399,9 @@
                   "type": "boolean"
                 },
                 "tcp_multi_path": {
+                  "type": "boolean"
+                },
+                "udp_gso": {
                   "type": "boolean"
                 },
                 "udp_fragment": {
@@ -7771,7 +8463,7 @@
                   "const": 6
                 },
                 "listen": {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddress"
                 },
                 "listen_port": {
                   "type": "integer",
@@ -7816,6 +8508,9 @@
                   "type": "boolean"
                 },
                 "tcp_multi_path": {
+                  "type": "boolean"
+                },
+                "udp_gso": {
                   "type": "boolean"
                 },
                 "udp_fragment": {
@@ -7877,7 +8572,7 @@
               "type": "string"
             },
             "listen": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "listen_port": {
               "type": "integer",
@@ -7922,6 +8617,9 @@
               "type": "boolean"
             },
             "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "udp_gso": {
               "type": "boolean"
             },
             "udp_fragment": {
@@ -8070,10 +8768,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -8120,6 +8818,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -8180,7 +8881,7 @@
               "type": "string"
             },
             "listen": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "listen_port": {
               "type": "integer",
@@ -8225,6 +8926,9 @@
               "type": "boolean"
             },
             "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "udp_gso": {
               "type": "boolean"
             },
             "udp_fragment": {
@@ -8303,7 +9007,7 @@
               "type": "string"
             },
             "listen": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "listen_port": {
               "type": "integer",
@@ -8348,6 +9052,9 @@
               "type": "boolean"
             },
             "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "udp_gso": {
               "type": "boolean"
             },
             "udp_fragment": {
@@ -8406,7 +9113,7 @@
               "type": "string"
             },
             "listen": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "listen_port": {
               "type": "integer",
@@ -8451,6 +9158,9 @@
               "type": "boolean"
             },
             "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "udp_gso": {
               "type": "boolean"
             },
             "udp_fragment": {
@@ -8562,7 +9272,7 @@
             "address": {
               "anyOf": [
                 {
-                  "type": "string",
+                  "$ref": "#/$defs/IPPrefix",
                   "examples": [
                     "172.19.0.1/30",
                     "fdfe:dcba:9876::1/126"
@@ -8571,7 +9281,7 @@
                 {
                   "type": "array",
                   "items": {
-                    "type": "string",
+                    "$ref": "#/$defs/IPPrefix",
                     "examples": [
                       "172.19.0.1/30",
                       "fdfe:dcba:9876::1/126"
@@ -8591,12 +9301,12 @@
             "dns_address": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddress"
                 },
                 {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "$ref": "#/$defs/IPAddress"
                   }
                 }
               ]
@@ -8678,12 +9388,12 @@
             "loopback_address": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddress"
                 },
                 {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "$ref": "#/$defs/IPAddress"
                   }
                 }
               ]
@@ -8694,12 +9404,12 @@
             "route_address": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/$defs/IPPrefix"
                 },
                 {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "$ref": "#/$defs/IPPrefix"
                   }
                 }
               ]
@@ -8720,12 +9430,12 @@
             "route_exclude_address": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/$defs/IPPrefix"
                 },
                 {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "$ref": "#/$defs/IPPrefix"
                   }
                 }
               ]
@@ -8942,7 +9652,7 @@
               "type": "string"
             },
             "listen": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "listen_port": {
               "type": "integer",
@@ -8987,6 +9697,9 @@
               "type": "boolean"
             },
             "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "udp_gso": {
               "type": "boolean"
             },
             "udp_fragment": {
@@ -9036,7 +9749,7 @@
               "type": "string"
             },
             "listen": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "listen_port": {
               "type": "integer",
@@ -9081,6 +9794,9 @@
               "type": "boolean"
             },
             "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "udp_gso": {
               "type": "boolean"
             },
             "udp_fragment": {
@@ -9181,10 +9897,10 @@
           "type": "string"
         },
         "inet4_bind_address": {
-          "type": "string"
+          "$ref": "#/$defs/IPAddress"
         },
         "inet6_bind_address": {
-          "type": "string"
+          "$ref": "#/$defs/IPAddress"
         },
         "bind_address_no_port": {
           "type": "boolean"
@@ -9231,6 +9947,9 @@
         },
         "tcp_keep_alive_count": {
           "type": "integer"
+        },
+        "udp_gso": {
+          "type": "boolean"
         },
         "udp_fragment": {
           "type": "boolean"
@@ -9467,6 +10186,43 @@
             }
           ]
         },
+        "client_certificate_sha256": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 255
+                  }
+                }
+              ]
+            },
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 255
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
         "client_certificate_public_key_sha256": {
           "anyOf": [
             {
@@ -9609,10 +10365,10 @@
           "type": "string"
         },
         "inet4_bind_address": {
-          "type": "string"
+          "$ref": "#/$defs/IPAddress"
         },
         "inet6_bind_address": {
-          "type": "string"
+          "$ref": "#/$defs/IPAddress"
         },
         "bind_address_no_port": {
           "type": "boolean"
@@ -9659,6 +10415,9 @@
         },
         "tcp_keep_alive_count": {
           "type": "integer"
+        },
+        "udp_gso": {
+          "type": "boolean"
         },
         "udp_fragment": {
           "type": "boolean"
@@ -9756,12 +10515,12 @@
             "query_client_subnet": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddressOrPrefix"
                 },
                 {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "$ref": "#/$defs/IPAddressOrPrefix"
                   }
                 }
               ]
@@ -9895,12 +10654,12 @@
             "source_ip_cidr": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddressOrPrefix"
                 },
                 {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "$ref": "#/$defs/IPAddressOrPrefix"
                   }
                 }
               ]
@@ -10122,12 +10881,12 @@
               "additionalProperties": {
                 "anyOf": [
                   {
-                    "type": "string"
+                    "$ref": "#/$defs/IPAddressOrPrefix"
                   },
                   {
                     "type": "array",
                     "items": {
-                      "type": "string"
+                      "$ref": "#/$defs/IPAddressOrPrefix"
                     }
                   }
                 ]
@@ -10141,12 +10900,12 @@
               "additionalProperties": {
                 "anyOf": [
                   {
-                    "type": "string"
+                    "$ref": "#/$defs/IPAddressOrPrefix"
                   },
                   {
                     "type": "array",
                     "items": {
-                      "type": "string"
+                      "$ref": "#/$defs/IPAddressOrPrefix"
                     }
                   }
                 ]
@@ -10155,12 +10914,12 @@
             "default_interface_address": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddressOrPrefix"
                 },
                 {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "$ref": "#/$defs/IPAddressOrPrefix"
                   }
                 }
               ]
@@ -10204,6 +10963,38 @@
                 }
               ]
             },
+            "dns_server_address": {
+              "type": "object",
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/IPAddressOrPrefix"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/IPAddressOrPrefix"
+                    }
+                  }
+                ]
+              }
+            },
+            "dns_search_domain": {
+              "type": "object",
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
+            },
             "rule_set": {
               "anyOf": [
                 {
@@ -10235,12 +11026,12 @@
             "ip_cidr": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddressOrPrefix"
                 },
                 {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "$ref": "#/$defs/IPAddressOrPrefix"
                   }
                 }
               ]
@@ -10506,12 +11297,12 @@
             "source_ip_cidr": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddressOrPrefix"
                 },
                 {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "$ref": "#/$defs/IPAddressOrPrefix"
                   }
                 }
               ]
@@ -10522,12 +11313,12 @@
             "ip_cidr": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddressOrPrefix"
                 },
                 {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "$ref": "#/$defs/IPAddressOrPrefix"
                   }
                 }
               ]
@@ -10749,12 +11540,12 @@
               "additionalProperties": {
                 "anyOf": [
                   {
-                    "type": "string"
+                    "$ref": "#/$defs/IPAddressOrPrefix"
                   },
                   {
                     "type": "array",
                     "items": {
-                      "type": "string"
+                      "$ref": "#/$defs/IPAddressOrPrefix"
                     }
                   }
                 ]
@@ -10768,12 +11559,12 @@
               "additionalProperties": {
                 "anyOf": [
                   {
-                    "type": "string"
+                    "$ref": "#/$defs/IPAddressOrPrefix"
                   },
                   {
                     "type": "array",
                     "items": {
-                      "type": "string"
+                      "$ref": "#/$defs/IPAddressOrPrefix"
                     }
                   }
                 ]
@@ -10782,12 +11573,12 @@
             "default_interface_address": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddressOrPrefix"
                 },
                 {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "$ref": "#/$defs/IPAddressOrPrefix"
                   }
                 }
               ]
@@ -10830,6 +11621,38 @@
                   }
                 }
               ]
+            },
+            "dns_server_address": {
+              "type": "object",
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/IPAddressOrPrefix"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/IPAddressOrPrefix"
+                    }
+                  }
+                ]
+              }
+            },
+            "dns_search_domain": {
+              "type": "object",
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              }
             },
             "rule_set": {
               "anyOf": [
@@ -11689,12 +12512,12 @@
         "routes": {
           "anyOf": [
             {
-              "type": "string"
+              "$ref": "#/$defs/IPPrefix"
             },
             {
               "type": "array",
               "items": {
-                "type": "string"
+                "$ref": "#/$defs/IPPrefix"
               }
             }
           ]
@@ -11702,12 +12525,12 @@
         "dns": {
           "anyOf": [
             {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             {
               "type": "array",
               "items": {
-                "type": "string"
+                "$ref": "#/$defs/IPAddress"
               }
             }
           ]
@@ -11816,10 +12639,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -11866,6 +12689,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -12007,10 +12833,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -12057,6 +12883,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -12137,10 +12966,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -12187,6 +13016,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -12253,6 +13085,55 @@
             },
             "headers": {
               "$ref": "#/$defs/HTTPHeader"
+            },
+            "version": {
+              "type": "integer",
+              "enum": [
+                0,
+                1,
+                2,
+                3
+              ]
+            },
+            "disable_version_fallback": {
+              "type": "boolean"
+            },
+            "idle_timeout": {
+              "$ref": "#/$defs/Duration"
+            },
+            "keep_alive_period": {
+              "$ref": "#/$defs/Duration"
+            },
+            "stream_receive_window": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "connection_receive_window": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "max_concurrent_streams": {
+              "type": "integer"
+            },
+            "initial_packet_size": {
+              "type": "integer"
+            },
+            "disable_path_mtu_discovery": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -12277,10 +13158,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -12327,6 +13208,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -12528,10 +13412,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -12578,6 +13462,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -12852,10 +13739,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -12902,6 +13789,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -13111,10 +14001,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -13161,6 +14051,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -13317,10 +14210,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -13367,6 +14260,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -13461,10 +14357,10 @@
                   "type": "string"
                 },
                 "inet4_bind_address": {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddress"
                 },
                 "inet6_bind_address": {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddress"
                 },
                 "bind_address_no_port": {
                   "type": "boolean"
@@ -13511,6 +14407,9 @@
                 },
                 "tcp_keep_alive_count": {
                   "type": "integer"
+                },
+                "udp_gso": {
+                  "type": "boolean"
                 },
                 "udp_fragment": {
                   "type": "boolean"
@@ -13631,10 +14530,10 @@
                   "type": "string"
                 },
                 "inet4_bind_address": {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddress"
                 },
                 "inet6_bind_address": {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddress"
                 },
                 "bind_address_no_port": {
                   "type": "boolean"
@@ -13681,6 +14580,9 @@
                 },
                 "tcp_keep_alive_count": {
                   "type": "integer"
+                },
+                "udp_gso": {
+                  "type": "boolean"
                 },
                 "udp_fragment": {
                   "type": "boolean"
@@ -13801,10 +14703,10 @@
                   "type": "string"
                 },
                 "inet4_bind_address": {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddress"
                 },
                 "inet6_bind_address": {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddress"
                 },
                 "bind_address_no_port": {
                   "type": "boolean"
@@ -13851,6 +14753,9 @@
                 },
                 "tcp_keep_alive_count": {
                   "type": "integer"
+                },
+                "udp_gso": {
+                  "type": "boolean"
                 },
                 "udp_fragment": {
                   "type": "boolean"
@@ -13971,10 +14876,10 @@
                   "type": "string"
                 },
                 "inet4_bind_address": {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddress"
                 },
                 "inet6_bind_address": {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddress"
                 },
                 "bind_address_no_port": {
                   "type": "boolean"
@@ -14021,6 +14926,9 @@
                 },
                 "tcp_keep_alive_count": {
                   "type": "integer"
+                },
+                "udp_gso": {
+                  "type": "boolean"
                 },
                 "udp_fragment": {
                   "type": "boolean"
@@ -14140,10 +15048,10 @@
                   "type": "string"
                 },
                 "inet4_bind_address": {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddress"
                 },
                 "inet6_bind_address": {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddress"
                 },
                 "bind_address_no_port": {
                   "type": "boolean"
@@ -14190,6 +15098,9 @@
                 },
                 "tcp_keep_alive_count": {
                   "type": "integer"
+                },
+                "udp_gso": {
+                  "type": "boolean"
                 },
                 "udp_fragment": {
                   "type": "boolean"
@@ -14309,10 +15220,10 @@
                   "type": "string"
                 },
                 "inet4_bind_address": {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddress"
                 },
                 "inet6_bind_address": {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddress"
                 },
                 "bind_address_no_port": {
                   "type": "boolean"
@@ -14359,6 +15270,9 @@
                 },
                 "tcp_keep_alive_count": {
                   "type": "integer"
+                },
+                "udp_gso": {
+                  "type": "boolean"
                 },
                 "udp_fragment": {
                   "type": "boolean"
@@ -14478,10 +15392,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -14528,6 +15442,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -14666,10 +15583,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -14716,6 +15633,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -14982,10 +15902,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -15032,6 +15952,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -15099,10 +16022,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -15149,6 +16072,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -15234,10 +16160,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -15284,6 +16210,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -15392,10 +16321,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -15442,6 +16371,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -15666,10 +16598,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -15716,6 +16648,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -15830,10 +16765,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -15880,6 +16815,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -16198,6 +17136,43 @@
         "certificate_path": {
           "type": "string"
         },
+        "certificate_sha256": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 255
+                  }
+                }
+              ]
+            },
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 255
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
         "certificate_public_key_sha256": {
           "anyOf": [
             {
@@ -16235,6 +17210,9 @@
             }
           ]
         },
+        "certificate_pin_sha256": {
+          "type": "string"
+        },
         "client_certificate": {
           "anyOf": [
             {
@@ -16265,9 +17243,6 @@
           ]
         },
         "client_key_path": {
-          "type": "string"
-        },
-        "certificate_pin_sha256": {
           "type": "string"
         },
         "fragment": {
@@ -16365,10 +17340,10 @@
           "type": "string"
         },
         "inet4_bind_address": {
-          "type": "string"
+          "$ref": "#/$defs/IPAddress"
         },
         "inet6_bind_address": {
-          "type": "string"
+          "$ref": "#/$defs/IPAddress"
         },
         "protect_path": {
           "type": "string"
@@ -16402,6 +17377,9 @@
         },
         "tcp_keep_alive_interval": {
           "$ref": "#/$defs/Duration"
+        },
+        "udp_gso": {
+          "type": "boolean"
         },
         "udp_fragment": {
           "type": "boolean"
@@ -17227,12 +18205,12 @@
                 "source_ip_cidr": {
                   "anyOf": [
                     {
-                      "type": "string"
+                      "$ref": "#/$defs/IPAddressOrPrefix"
                     },
                     {
                       "type": "array",
                       "items": {
-                        "type": "string"
+                        "$ref": "#/$defs/IPAddressOrPrefix"
                       }
                     }
                   ]
@@ -17243,12 +18221,12 @@
                 "ip_cidr": {
                   "anyOf": [
                     {
-                      "type": "string"
+                      "$ref": "#/$defs/IPAddressOrPrefix"
                     },
                     {
                       "type": "array",
                       "items": {
-                        "type": "string"
+                        "$ref": "#/$defs/IPAddressOrPrefix"
                       }
                     }
                   ]
@@ -17470,12 +18448,12 @@
                   "additionalProperties": {
                     "anyOf": [
                       {
-                        "type": "string"
+                        "$ref": "#/$defs/IPAddressOrPrefix"
                       },
                       {
                         "type": "array",
                         "items": {
-                          "type": "string"
+                          "$ref": "#/$defs/IPAddressOrPrefix"
                         }
                       }
                     ]
@@ -17489,12 +18467,12 @@
                   "additionalProperties": {
                     "anyOf": [
                       {
-                        "type": "string"
+                        "$ref": "#/$defs/IPAddressOrPrefix"
                       },
                       {
                         "type": "array",
                         "items": {
-                          "type": "string"
+                          "$ref": "#/$defs/IPAddressOrPrefix"
                         }
                       }
                     ]
@@ -17503,12 +18481,12 @@
                 "default_interface_address": {
                   "anyOf": [
                     {
-                      "type": "string"
+                      "$ref": "#/$defs/IPAddressOrPrefix"
                     },
                     {
                       "type": "array",
                       "items": {
-                        "type": "string"
+                        "$ref": "#/$defs/IPAddressOrPrefix"
                       }
                     }
                   ]
@@ -17551,6 +18529,38 @@
                       }
                     }
                   ]
+                },
+                "dns_server_address": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/IPAddressOrPrefix"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/$defs/IPAddressOrPrefix"
+                        }
+                      }
+                    ]
+                  }
+                },
+                "dns_search_domain": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  }
                 },
                 "rule_set": {
                   "anyOf": [
@@ -17765,10 +18775,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -17815,6 +18825,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -18055,7 +19068,7 @@
               "maximum": 4294967295
             },
             "client_subnet": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddressOrPrefix"
             },
             "match_only": {
               "type": "boolean"
@@ -18302,7 +19315,7 @@
               "type": "string"
             },
             "listen": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "listen_port": {
               "type": "integer",
@@ -18347,6 +19360,9 @@
               "type": "boolean"
             },
             "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "udp_gso": {
               "type": "boolean"
             },
             "udp_fragment": {
@@ -18442,7 +19458,7 @@
               "type": "string"
             },
             "listen": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "listen_port": {
               "type": "integer",
@@ -18487,6 +19503,9 @@
               "type": "boolean"
             },
             "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "udp_gso": {
               "type": "boolean"
             },
             "udp_fragment": {
@@ -18539,7 +19558,7 @@
               "type": "string"
             },
             "listen": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "listen_port": {
               "type": "integer",
@@ -18584,6 +19603,9 @@
               "type": "boolean"
             },
             "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "udp_gso": {
               "type": "boolean"
             },
             "udp_fragment": {
@@ -18667,10 +19689,10 @@
                           "type": "string"
                         },
                         "inet4_bind_address": {
-                          "type": "string"
+                          "$ref": "#/$defs/IPAddress"
                         },
                         "inet6_bind_address": {
-                          "type": "string"
+                          "$ref": "#/$defs/IPAddress"
                         },
                         "bind_address_no_port": {
                           "type": "boolean"
@@ -18717,6 +19739,9 @@
                         },
                         "tcp_keep_alive_count": {
                           "type": "integer"
+                        },
+                        "udp_gso": {
+                          "type": "boolean"
                         },
                         "udp_fragment": {
                           "type": "boolean"
@@ -18852,10 +19877,10 @@
                             "type": "string"
                           },
                           "inet4_bind_address": {
-                            "type": "string"
+                            "$ref": "#/$defs/IPAddress"
                           },
                           "inet6_bind_address": {
-                            "type": "string"
+                            "$ref": "#/$defs/IPAddress"
                           },
                           "bind_address_no_port": {
                             "type": "boolean"
@@ -18902,6 +19927,9 @@
                           },
                           "tcp_keep_alive_count": {
                             "type": "integer"
+                          },
+                          "udp_gso": {
+                            "type": "boolean"
                           },
                           "udp_fragment": {
                             "type": "boolean"
@@ -19056,7 +20084,7 @@
                       "type": "boolean"
                     },
                     "listen": {
-                      "type": "string"
+                      "$ref": "#/$defs/IPAddress"
                     },
                     "listen_port": {
                       "type": "integer",
@@ -19103,6 +20131,9 @@
                     "tcp_multi_path": {
                       "type": "boolean"
                     },
+                    "udp_gso": {
+                      "type": "boolean"
+                    },
                     "udp_fragment": {
                       "type": "boolean"
                     },
@@ -19140,7 +20171,7 @@
               "type": "string"
             },
             "listen": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "listen_port": {
               "type": "integer",
@@ -19185,6 +20216,9 @@
               "type": "boolean"
             },
             "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "udp_gso": {
               "type": "boolean"
             },
             "udp_fragment": {
@@ -19259,7 +20293,7 @@
               "type": "string"
             },
             "listen": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "listen_port": {
               "type": "integer",
@@ -19304,6 +20338,9 @@
               "type": "boolean"
             },
             "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "udp_gso": {
               "type": "boolean"
             },
             "udp_fragment": {
@@ -19399,7 +20436,7 @@
               "type": "string"
             },
             "listen": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "listen_port": {
               "type": "integer",
@@ -19444,6 +20481,9 @@
               "type": "boolean"
             },
             "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "udp_gso": {
               "type": "boolean"
             },
             "udp_fragment": {
@@ -19478,7 +20518,7 @@
               "type": "string"
             },
             "listen": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "listen_port": {
               "type": "integer",
@@ -19523,6 +20563,9 @@
               "type": "boolean"
             },
             "tcp_multi_path": {
+              "type": "boolean"
+            },
+            "udp_gso": {
               "type": "boolean"
             },
             "udp_fragment": {
@@ -19576,10 +20619,10 @@
               "type": "string"
             },
             "inet4_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "inet6_bind_address": {
-              "type": "string"
+              "$ref": "#/$defs/IPAddress"
             },
             "bind_address_no_port": {
               "type": "boolean"
@@ -19626,6 +20669,9 @@
             },
             "tcp_keep_alive_count": {
               "type": "integer"
+            },
+            "udp_gso": {
+              "type": "boolean"
             },
             "udp_fragment": {
               "type": "boolean"
@@ -19709,7 +20755,7 @@
                   ]
                 },
                 "listen": {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddress"
                 },
                 "listen_port": {
                   "type": "integer",
@@ -19754,6 +20800,9 @@
                   "type": "boolean"
                 },
                 "tcp_multi_path": {
+                  "type": "boolean"
+                },
+                "udp_gso": {
                   "type": "boolean"
                 },
                 "udp_fragment": {
@@ -19797,7 +20846,7 @@
                   "const": "dynamic"
                 },
                 "listen": {
-                  "type": "string"
+                  "$ref": "#/$defs/IPAddress"
                 },
                 "listen_port": {
                   "type": "integer",
@@ -19842,6 +20891,9 @@
                   "type": "boolean"
                 },
                 "tcp_multi_path": {
+                  "type": "boolean"
+                },
+                "udp_gso": {
                   "type": "boolean"
                 },
                 "udp_fragment": {
@@ -19890,10 +20942,10 @@
           "type": "string"
         },
         "inet4_bind_address": {
-          "type": "string"
+          "$ref": "#/$defs/IPAddress"
         },
         "inet6_bind_address": {
-          "type": "string"
+          "$ref": "#/$defs/IPAddress"
         },
         "bind_address_no_port": {
           "type": "boolean"
@@ -19940,6 +20992,9 @@
         },
         "tcp_keep_alive_count": {
           "type": "integer"
+        },
+        "udp_gso": {
+          "type": "boolean"
         },
         "udp_fragment": {
           "type": "boolean"
@@ -20369,12 +21424,12 @@
         "allowed_ips": {
           "anyOf": [
             {
-              "type": "string"
+              "$ref": "#/$defs/IPPrefix"
             },
             {
               "type": "array",
               "items": {
-                "type": "string"
+                "$ref": "#/$defs/IPPrefix"
               }
             }
           ]
