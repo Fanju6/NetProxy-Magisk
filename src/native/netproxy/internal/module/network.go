@@ -96,6 +96,7 @@ func EvaluateNetwork(ctx context.Context, options Options, networkType, ssid str
 		result.Reason = "网络策略未变化"
 		return result, nil
 	}
+	targetChanged := previousState != target
 	modeChanged := result.RuntimeMode != modeToRuntime(desiredMode)
 	if modeChanged {
 		if service.ProcessRunning(options.SingBoxPath) {
@@ -109,7 +110,12 @@ func EvaluateNetwork(ctx context.Context, options Options, networkType, ssid str
 	if err := writeWiFiState(options.WiFiStateFile, target); err != nil {
 		return result, err
 	}
-	result.Changed = previousState != target || modeChanged
+	if targetChanged && service.ProcessRunning(options.SingBoxPath) {
+		if err := ReloadService(ctx, options); err != nil {
+			return result, err
+		}
+	}
+	result.Changed = targetChanged || modeChanged
 	if target == "bypassed" {
 		result.Reason = "已切换为绕过代理"
 	} else {
