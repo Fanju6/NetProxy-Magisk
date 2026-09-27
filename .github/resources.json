@@ -8,8 +8,8 @@
       "ref": "main",
       "sourcePath": "Filters/AWAvenue-Ads-Rule-Singbox.json",
       "metadataPath": "Filters/AWAvenue-Ads-Rule-Singbox.json",
-      "currentCommit": "62bc1e4727b3df27d1ca95f6352ebad8589229b5",
-      "currentSha256": "0ce3b6dd500bb15251b5ef673a615dd997b909715a8d1a419080e2c0f26a1362"
+      "currentCommit": "a5599253ba5240e1c8dc60dfc9ddade8e7b96c79",
+      "currentSha256": "23cab6d71cc577b18d8081ad4db3a13baf2f5196378c05893494464074d04fa1"
     },
     {
       "name": "geosite/category-ads-all",
@@ -19,8 +19,8 @@
       "ref": "sing",
       "sourcePath": "geo/geosite/category-ads-all.srs",
       "metadataPath": "geo/geosite/category-ads-all.json",
-      "currentCommit": "ff12703ce5252a6b54298a835729f3abdd61ba6e",
-      "currentSha256": "8757ac0121b6f4af473a00e9d764650602d21b8a04ba95b1f11f7a9b46db5098"
+      "currentCommit": "6fea7d2d9bc4c7f85d2b8ff46d3f3250d09c0d12",
+      "currentSha256": "4f75ea1833fd50671201330f3fc4c411651ff7fe4b7721ad46d15444d89f9948"
     },
     {
       "name": "geosite/apple-cn",
@@ -41,8 +41,8 @@
       "ref": "sing",
       "sourcePath": "geo/geosite/category-ai-!cn.srs",
       "metadataPath": "geo/geosite/category-ai-!cn.json",
-      "currentCommit": "8d48edb493bc756a525b0d5ece108f83f74a3b65",
-      "currentSha256": "e4d64e54584c14ae72a30967fbb8a2e625249e8ae5751239f5462daa989ca168"
+      "currentCommit": "6fea7d2d9bc4c7f85d2b8ff46d3f3250d09c0d12",
+      "currentSha256": "8435970c6a07c0faa3363c64167e5dedebedad5a9ab0a3046e2b7a71ecec6d3a"
     },
     {
       "name": "geosite/google",
@@ -52,8 +52,8 @@
       "ref": "sing",
       "sourcePath": "geo/geosite/google.srs",
       "metadataPath": "geo/geosite/google.json",
-      "currentCommit": "0b3efbf6fc8076742c2dd36eddb8791c8121aa71",
-      "currentSha256": "5e3d9b807fa235d50a54fc55ec2f587cc2908345e4fb9ad833811e3f636faba1"
+      "currentCommit": "6fea7d2d9bc4c7f85d2b8ff46d3f3250d09c0d12",
+      "currentSha256": "91e7a1583ccaaa2ccb1ce6e50dc23df034a0606b22b1a7a08a45d5a4ef0b4044"
     },
     {
       "name": "geosite/geolocation-!cn",
@@ -63,8 +63,8 @@
       "ref": "sing",
       "sourcePath": "geo/geosite/geolocation-!cn.srs",
       "metadataPath": "geo/geosite/geolocation-!cn.json",
-      "currentCommit": "3a7489c90f4014c99153a3dbd1bbc0732c5721dd",
-      "currentSha256": "8476a9de1fd29d95bd8332c86e7bac832f465e5eea644ffb5af2f1f35cd878df"
+      "currentCommit": "6fea7d2d9bc4c7f85d2b8ff46d3f3250d09c0d12",
+      "currentSha256": "ab3ae99f4d9fddc2f6f0392c8f1f4d6e5013840079f21e4b481472a596421214"
     },
     {
       "name": "geosite/cn",
@@ -74,8 +74,8 @@
       "ref": "sing",
       "sourcePath": "geo/geosite/cn.srs",
       "metadataPath": "geo/geosite/cn.json",
-      "currentCommit": "3a7489c90f4014c99153a3dbd1bbc0732c5721dd",
-      "currentSha256": "265b60680d291447ef98f80513c7ed350efe7047ae6cde77a7a9578b623cbd1b"
+      "currentCommit": "6fea7d2d9bc4c7f85d2b8ff46d3f3250d09c0d12",
+      "currentSha256": "705073519f2690529afc5fac23b8dd7f84d3b090b2757e4f1077ae5cf6669e90"
     },
     {
       "name": "geoip/cn",
@@ -85,8 +85,8 @@
       "ref": "sing",
       "sourcePath": "geo/geoip/cn.srs",
       "metadataPath": "geo/geoip/cn.json",
-      "currentCommit": "3a7489c90f4014c99153a3dbd1bbc0732c5721dd",
-      "currentSha256": "412585ab8d9f05701a11cf6b040e85719510696d0879389d5a8ef8d8764b04dd"
+      "currentCommit": "6fea7d2d9bc4c7f85d2b8ff46d3f3250d09c0d12",
+      "currentSha256": "adde4f1a650a0ecdc5bb32d30307ea20beedd53ae0c6b7d4bf4a8f40008b71b1"
     },
     {
       "name": "geoip/telegram",
@@ -104,7 +104,7 @@
     "path": "src/module/bin/sing-box",
     "repo": "reF1nd/sing-box",
     "tagPattern": "^v[0-9].*-reF1nd$",
-    "currentVersion": "v1.15.0-alpha.6-reF1nd",
+    "currentVersion": "v1.15.0-alpha.8-reF1nd",
     "buildTags": [
       "with_quic",
       "with_utls",
