@@ -7166,21 +7166,6 @@
               "minimum": 1,
               "maximum": 65535
             },
-            "bypass_rule_set": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "x-tag-reference": "rule_set"
-                },
-                {
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "x-tag-reference": "rule_set"
-                  }
-                }
-              ]
-            },
             "local": {
               "$ref": "#/$defs/EBPFLocalOptions"
             },
