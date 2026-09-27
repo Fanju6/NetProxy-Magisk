@@ -26,7 +26,7 @@ val managerVersion = providers.gradleProperty("netproxyManagerVersion").orNull
             ?.substringAfter('=')
             ?.removePrefix("v")
     }
-    ?: "8.1.1"
+    ?: "8.2.0"
 val managerBuildId = providers.gradleProperty("netproxyManagerBuildId").orNull ?: "local"
 
 android {
