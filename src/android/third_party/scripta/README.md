@@ -81,7 +81,7 @@ dependencies {
 }
 ```
 
-复合构建保住 scripta 自己的版本目录与插件集；你的 Kotlin/AGP/Compose 版本需与之对齐。库唯一的外部依赖是 `org.jetbrains.compose.foundation:foundation`。本仓库工具链：Kotlin 2.4.0、Compose Multiplatform 1.11.1、AGP 9.2.1、Gradle 9.6.1、JDK 21。
+复合构建保住 scripta 自己的版本目录与插件集；你的 Kotlin/AGP/Compose 版本需与之对齐。库唯一的外部依赖是 `org.jetbrains.compose.foundation:foundation`。本仓库工具链：Kotlin 2.4.20、Compose Multiplatform 1.12.1、AGP 9.4.1、Gradle 9.8.0、JDK 21。
 
 ### 最小用法
 

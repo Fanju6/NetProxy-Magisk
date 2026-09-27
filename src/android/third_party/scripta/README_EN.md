@@ -81,7 +81,7 @@ dependencies {
 }
 ```
 
-A composite build keeps scripta's own version catalog and plugin set intact; align your Kotlin/AGP/Compose versions with the toolchain below. The library's only external dependency is `org.jetbrains.compose.foundation:foundation`. Toolchain used by this repo: Kotlin 2.4.0, Compose Multiplatform 1.11.1, AGP 9.2.1, Gradle 9.6.1, JDK 21.
+A composite build keeps scripta's own version catalog and plugin set intact; align your Kotlin/AGP/Compose versions with the toolchain below. The library's only external dependency is `org.jetbrains.compose.foundation:foundation`. Toolchain used by this repo: Kotlin 2.4.20, Compose Multiplatform 1.12.1, AGP 9.4.1, Gradle 9.8.0, JDK 21.
 
 ### Minimal usage
 
