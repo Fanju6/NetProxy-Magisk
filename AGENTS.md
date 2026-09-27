@@ -40,7 +40,7 @@
 - `src/module/netproxyctl` 只负责定位 `bin/netproxyctl`；公共实现位于 `src/native/netproxy/cmd/netproxyctl`。Shell 不再保留公共命令 dispatcher。
 - 命令组权威清单：`service catalog node sub mode network app ebpf config logs`。新增命令组必须同时更新 Go CLI、Android `NetProxyCtlClient`、WebUI `src/exec.ts` 和契约测试。
 - `scripts/` 不承载运行时业务；配置、Catalog、状态和 Service API 业务统一由 Go 实现。
-- 根目录 `service.sh` 只保留 Magisk/KernelSU/APatch 开机桥接；运行时配置、服务生命周期、节点切换、订阅事务和调度由 `netproxyctl __internal` 负责。
+- 根目录 `service.sh` 负责模块开机桥接；`emulated-soft-reboot.sh` 仅供 KernelSU 在软重启前同步停止 Worker 与 sing-box，避免旧 eBPF cgroup 挂载阻塞 netd。运行时配置、节点切换、订阅事务和调度由 Go 负责。
 - Go Worker 负责 Android 网络变化采集、Wi-Fi 状态读取和策略评估。
 - `customize.sh` 在已开机安装时不得提前覆盖 live 模块目录；必须等待管理器写入 `update` 标记后再由脱离安装器 cgroup 的 Shell 完成目录切换。任何校验或切换失败都保留 `modules_update`，交回管理器下次开机处理。
 - 设备上的调用形式是 `su -c /data/adb/modules/netproxy/netproxyctl [--json] <命令组> <命令>`；文档和排查步骤按此形式给出，不要写成裸 `netproxyctl`，它不在 PATH 里。
@@ -51,13 +51,14 @@
 
 ```text
 src/module/service.sh
+src/module/emulated-soft-reboot.sh  # 仅 KernelSU 软重启前生命周期钩子
 ```
 
 ## Shell 约定
 
 - 运行时脚本面向 Android `/system/bin/sh`，只写 POSIX/mksh 可执行语法，不使用 Bash 数组、`[[ ]]`、进程替换或 Bash 专属选项。
 - 参数和路径始终双引号包裹；跨进程传递复杂数据时使用文件或 JSON，不使用 `eval` 拼装命令。
-- 公共业务能力统一放在 Go；Shell 只保留根目录 `service.sh` 的 Magisk 开机桥接，不要在 `netproxyctl`、service 和 worker 中复制配置、Catalog、API 或进程管理逻辑。
+- 公共业务能力统一放在 Go；Shell 只保留 `service.sh` 开机桥接和 `emulated-soft-reboot.sh` 的固定停服生命周期调用，不要在 Shell 中复制配置、Catalog、API 或进程管理逻辑。
 - 配置写入使用候选文件、校验和原子替换。订阅更新失败必须保留上一版有效 Provider。
 - 新增可执行文件时同步检查 `customize.sh` 权限列表和模块打包结果。
 

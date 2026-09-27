@@ -32,6 +32,40 @@ check_service_bridge() {
 }
 
 #######################################
+# 确认 KSU 软重启前先停 Worker，再让 sing-box 释放 eBPF 挂载
+# 参数: 无
+# 返回: 0=调用顺序正确，1=桥接行为不符合生命周期契约。
+#######################################
+check_soft_reboot_bridge() {
+  test_dir="$(mktemp -d)"
+  test_module="$test_dir/module"
+  call_log="$test_dir/calls.log"
+  mkdir -p "$test_module/bin"
+  cp "$MODULE_DIR/emulated-soft-reboot.sh" "$test_module/"
+  printf '%s\n' \
+    '#!/bin/sh' \
+    'printf "%s\n" "$*" >> "$CALL_LOG"' \
+    'case "$1:$2" in' \
+    '  __internal:worker) exit "${WORKER_EXIT:-0}" ;;' \
+    '  service:stop) exit "${SERVICE_EXIT:-0}" ;;' \
+    'esac' > "$test_module/bin/netproxyctl"
+  chmod +x "$test_module/bin/netproxyctl"
+
+  CALL_LOG="$call_log" sh "$test_module/emulated-soft-reboot.sh"
+  [ "$(sed -n '1p' "$call_log")" = "__internal worker stop --module-dir $test_module" ]
+  [ "$(sed -n '2p' "$call_log")" = 'service stop' ]
+
+  : > "$call_log"
+  if CALL_LOG="$call_log" WORKER_EXIT=1 \
+    sh "$test_module/emulated-soft-reboot.sh" 2> /dev/null; then
+    printf '%s\n' 'Worker 停止失败时软重启桥接应返回失败' >&2
+    return 1
+  fi
+  [ "$(wc -l < "$call_log")" -eq 2 ]
+  rm -rf "$test_dir"
+}
+
+#######################################
 # 确认管理器操作按钮不在 Shell 中推断服务状态
 #######################################
 check_action_bridge() {
@@ -122,6 +156,7 @@ check_install_order() {
 
 check_shell_syntax
 check_service_bridge
+check_soft_reboot_bridge
 check_action_bridge
 check_runtime_scripts
 check_mksh_compatible_helpers

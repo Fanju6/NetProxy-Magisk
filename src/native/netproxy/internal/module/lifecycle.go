@@ -353,9 +353,11 @@ func Boot(ctx context.Context, options Options) error {
 		return err
 	}
 	logService(options, "INFO", "module.boot", "started", "NetProxy 开机服务启动")
-	if err := exec.CommandContext(ctx, "resetprop", "-w", "sys.boot_completed").Run(); err != nil {
+	logService(options, "INFO", "module.boot", "waiting", "等待 Android 启动完成")
+	if err := newBootCompletedWaitCommand(ctx).Run(); err != nil {
 		return fmt.Errorf("等待系统启动完成失败: %w", err)
 	}
+	logService(options, "INFO", "module.boot", "ready", "Android 启动完成")
 	config, err := moduleconfig.LoadModule(options.ModuleConfig)
 	if err != nil {
 		return fmt.Errorf("加载模块配置失败: %w", err)
@@ -372,6 +374,10 @@ func Boot(ctx context.Context, options Options) error {
 	}
 	logService(options, "INFO", "module.boot", "success", "开机服务流程结束")
 	return nil
+}
+
+func newBootCompletedWaitCommand(ctx context.Context) *exec.Cmd {
+	return exec.CommandContext(ctx, "resetprop", "-w", "sys.boot_completed", "0")
 }
 
 func ensureWorker(ctx context.Context, options Options) error {
