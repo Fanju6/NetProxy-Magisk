@@ -64,7 +64,8 @@ func TestReadStatusFastPathSkipsInactiveProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.ActiveGroupName != "本地配置" || status.ActiveGroupNodeCount != 2 || status.SelectedNodeRef != "default/ACTIVE" {
+	if status.ActiveGroupName != "本地配置" || status.ActiveGroupRuntimeTag != "本地配置" ||
+		status.ActiveGroupNodeCount != 2 || status.SelectedNodeRef != "default/ACTIVE" {
 		t.Fatalf("活动分组摘要错误: %#v", status)
 	}
 	if strings.Contains(status.Error, "remote") {

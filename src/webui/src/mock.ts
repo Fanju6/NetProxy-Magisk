@@ -62,9 +62,10 @@ function serviceStatus() {
     selector_mode: 'urltest',
     active_group_id: 'default',
     active_group_name: '本地配置',
+    active_group_runtime_tag: '本地配置',
     active_group_node_count: 1,
     selected_node_ref: '',
-    runtime_selected: 'Auto/本地配置',
+    runtime_selected: serviceState === 'ready' ? '本地配置/demo-node' : '',
     memory_bytes: 0,
     process_cpu_ticks: 0,
     system_cpu_ticks: 0,
@@ -91,7 +92,7 @@ function selection() {
     selector_mode: 'urltest',
     selected_node_ref: '',
     selected: 'Auto/本地配置',
-    runtime_selected: 'Auto/本地配置',
+    runtime_selected: serviceState === 'ready' ? '本地配置/demo-node' : '',
   }
 }
 

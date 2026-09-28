@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -23,7 +22,6 @@ import androidx.compose.ui.unit.sp
 import com.fanjv.netproxy.R
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
-import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
@@ -40,7 +38,6 @@ internal fun NodeCard(
     selected: Boolean,
     enabled: Boolean,
     itemSize: Int,
-    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null
 ) {
@@ -82,16 +79,6 @@ internal fun NodeCard(
             .fillMaxWidthCompat()
             .padding(innerPadding)) {
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                if (icon != null) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .padding(end = 8.dp)
-                            .size(18.dp),
-                        tint = colorScheme.primary
-                    )
-                }
                 Text(
                     text = title,
                     modifier = Modifier.weight(1f),
@@ -109,20 +96,22 @@ internal fun NodeCard(
             }
             Spacer(Modifier.height(if (itemSize == 0) 8.dp else if (itemSize == 1) 4.dp else 2.dp))
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                Text(
-                    text = protocol,
-                    modifier = Modifier.weight(1f),
-                    color = if (selected) colorScheme.primary else colorScheme.onSurfaceVariantActions,
-                    style = MiuixTheme.textStyles.body2.copy(
-                        fontSize = when (itemSize) {
-                            1 -> 11.sp
-                            2 -> 10.sp
-                            else -> 12.sp
-                        }
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                if (protocol.isNotBlank()) {
+                    Text(
+                        text = protocol,
+                        modifier = Modifier.weight(1f),
+                        color = if (selected) colorScheme.primary else colorScheme.onSurfaceVariantActions,
+                        style = MiuixTheme.textStyles.body2.copy(
+                            fontSize = when (itemSize) {
+                                1 -> 11.sp
+                                2 -> 10.sp
+                                else -> 12.sp
+                            }
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 if (latency != null) {
                     Text(
                         text = latencyLabel(latency),
@@ -137,7 +126,7 @@ internal fun NodeCard(
                             fontWeight = FontWeight.Medium
                         )
                     )
-                } else {
+                } else if (summary.isNotBlank()) {
                     Text(
                         text = summary,
                         modifier = Modifier

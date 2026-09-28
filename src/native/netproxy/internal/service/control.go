@@ -52,6 +52,7 @@ type Status struct {
 	SelectorMode           string `json:"selector_mode"`
 	ActiveGroupID          string `json:"active_group_id"`
 	ActiveGroupName        string `json:"active_group_name"`
+	ActiveGroupRuntimeTag  string `json:"active_group_runtime_tag"`
 	ActiveGroupNodeCount   int    `json:"active_group_node_count"`
 	SelectedNodeRef        string `json:"selected_node_ref"`
 	RuntimeSelected        string `json:"runtime_selected"`
@@ -140,6 +141,7 @@ func ReadStatus(ctx context.Context, options Options) (Status, error) {
 	active, activeErr := readActiveGroup(ctx, options, module.ActiveGroupID)
 	if active != nil {
 		status.ActiveGroupName = active.Group.Name
+		status.ActiveGroupRuntimeTag = active.Group.RuntimeTag
 		status.ActiveGroupNodeCount = active.Group.NodeCount
 	}
 	if activeErr != nil {

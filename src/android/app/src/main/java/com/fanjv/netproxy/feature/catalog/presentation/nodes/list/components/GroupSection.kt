@@ -35,7 +35,6 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.ExpandLess
 import top.yukonga.miuix.kmp.icon.extended.ExpandMore
-import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.PressFeedbackType
@@ -49,6 +48,7 @@ internal fun CatalogNodeGrid(
     activeGroupId: String,
     selectedRef: String,
     selectorMode: String,
+    runtimeSelectedNode: String,
     latencies: Map<String, String>,
     busy: Boolean,
     columns: Int,
@@ -62,6 +62,7 @@ internal fun CatalogNodeGrid(
     nestedScrollConnection: NestedScrollConnection
 ) {
     val automaticSelected = selectorMode == "urltest" && activeGroupId == group.group.id
+    val selectedAutoNode = runtimeSelectedNode.takeIf { automaticSelected && it.isNotBlank() }
     val sortedNodes = remember(group.nodes, sortMode, latencies) {
         sortCatalogNodes(group.nodes, sortMode, group.group.id, latencies)
     }
@@ -80,13 +81,12 @@ internal fun CatalogNodeGrid(
         item {
             NodeCard(
                 title = stringResource(R.string.node_auto_fastest),
-                summary = stringResource(R.string.node_auto_test),
-                protocol = "AUTO",
+                summary = if (selectedAutoNode == null) stringResource(R.string.node_auto_test) else "",
+                protocol = selectedAutoNode ?: "AUTO",
                 latency = latencies["Auto/${group.group.id}"],
                 selected = automaticSelected,
                 enabled = !busy && group.nodes.isNotEmpty(),
                 itemSize = itemSize,
-                icon = MiuixIcons.Refresh,
                 onClick = onAuto
             )
         }
@@ -124,6 +124,7 @@ internal fun CatalogGroupList(
     activeGroupId: String,
     selectedRef: String,
     selectorMode: String,
+    runtimeSelectedNode: String,
     latencies: Map<String, String>,
     busy: Boolean,
     columns: Int,
@@ -177,15 +178,22 @@ internal fun CatalogGroupList(
                             row.forEach { node ->
                                 Box(Modifier.weight(1f)) {
                                     if (node == null) {
+                                        val automaticSelected = selectorMode == "urltest" && activeGroupId == groupId
+                                        val selectedAutoNode = runtimeSelectedNode.takeIf {
+                                            automaticSelected && it.isNotBlank()
+                                        }
                                         NodeCard(
                                             title = stringResource(R.string.node_auto_fastest),
-                                            summary = stringResource(R.string.node_auto_test),
-                                            protocol = "AUTO",
+                                            summary = if (selectedAutoNode == null) {
+                                                stringResource(R.string.node_auto_test)
+                                            } else {
+                                                ""
+                                            },
+                                            protocol = selectedAutoNode ?: "AUTO",
                                             latency = latencies["Auto/$groupId"],
-                                            selected = selectorMode == "urltest" && activeGroupId == groupId,
+                                            selected = automaticSelected,
                                             enabled = !busy && group.nodes.isNotEmpty(),
                                             itemSize = itemSize,
-                                            icon = MiuixIcons.Refresh,
                                             onClick = { onAuto(groupId) }
                                         )
                                     } else {

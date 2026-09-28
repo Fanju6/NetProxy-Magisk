@@ -60,6 +60,7 @@ import com.fanjv.netproxy.core.ui.resolve
 import com.fanjv.netproxy.feature.catalog.model.CatalogNode
 import com.fanjv.netproxy.feature.catalog.model.CatalogNodeGroup
 import com.fanjv.netproxy.feature.catalog.presentation.nodes.CatalogNodesViewModel
+import com.fanjv.netproxy.feature.catalog.presentation.nodes.selectedAutoNodeTag
 import com.fanjv.netproxy.feature.catalog.presentation.nodes.list.components.CatalogGroupList
 import com.fanjv.netproxy.feature.catalog.presentation.nodes.list.components.CatalogNodeGrid
 import com.fanjv.netproxy.feature.catalog.presentation.nodes.list.components.EmptyState
@@ -95,6 +96,11 @@ internal fun CatalogNodesScreen(
     viewModel: CatalogNodesViewModel = netProxyViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val selectedAutoNode = remember(state.groups, state.selection) {
+        state.groups.firstOrNull { it.group.id == state.selection.activeGroupId }
+            ?.let { selectedAutoNodeTag(it, state.selection) }
+            .orEmpty()
+    }
     val navigator = LocalNavigator.current
     val context = LocalContext.current
     val scrollBehavior = MiuixScrollBehavior()
@@ -293,6 +299,7 @@ internal fun CatalogNodesScreen(
                             activeGroupId = state.selection.activeGroupId,
                             selectedRef = state.selection.selected,
                             selectorMode = state.selection.selectorMode,
+                            runtimeSelectedNode = selectedAutoNode,
                             latencies = state.latencies,
                             busy = state.operation.isNotEmpty(),
                             columns = layoutDensity + 1,
@@ -311,6 +318,7 @@ internal fun CatalogNodesScreen(
                             activeGroupId = state.selection.activeGroupId,
                             selectedRef = state.selection.selected,
                             selectorMode = state.selection.selectorMode,
+                            runtimeSelectedNode = selectedAutoNode,
                             latencies = state.latencies,
                             busy = state.operation.isNotEmpty(),
                             columns = layoutDensity + 1,

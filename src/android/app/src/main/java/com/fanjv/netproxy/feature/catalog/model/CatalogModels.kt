@@ -59,7 +59,9 @@ internal data class CatalogNodeGroup(
 internal data class CurrentNodeSelection(
     @SerialName("active_group_id") val activeGroupId: String = "",
     @SerialName("selector_mode") val selectorMode: String = "urltest",
-    val selected: String = ""
+    val selected: String = "",
+    @SerialName("active_group_runtime_tag") val activeGroupRuntimeTag: String = "",
+    @SerialName("runtime_selected") val runtimeSelected: String = ""
 )
 
 @Serializable

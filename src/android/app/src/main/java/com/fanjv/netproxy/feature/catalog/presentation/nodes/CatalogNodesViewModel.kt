@@ -97,7 +97,7 @@ internal class CatalogNodesViewModel(
         _state.update { it.copy(selectedGroupId = id) }
     }
 
-    fun useAuto(groupId: String) = runOperation("select", refreshAfter = false) {
+    fun useAuto(groupId: String) = runOperation("select") {
         repository.selectAuto(groupId)
         _state.update {
             it.copy(
@@ -371,3 +371,17 @@ internal class CatalogNodesViewModel(
 
 internal fun groupAutoDelay(measured: Map<String, String>, nodeTargets: List<String>): String? =
     nodeTargets.mapNotNull { measured[it]?.toIntOrNull() }.minOrNull()?.toString()
+
+internal fun selectedAutoNodeTag(
+    group: CatalogNodeGroup,
+    selection: CurrentNodeSelection
+): String {
+    if (selection.selectorMode != "urltest" || selection.activeGroupId != group.group.id) return ""
+    val prefix = selection.activeGroupRuntimeTag.takeIf(String::isNotBlank)?.let { "$it/" } ?: return ""
+    val nodeTag = selection.runtimeSelected
+        .takeIf { it.startsWith(prefix) }
+        ?.removePrefix(prefix)
+        ?.takeIf(String::isNotBlank)
+        ?: return ""
+    return nodeTag.takeIf { tag -> group.nodes.any { it.tag == tag } }.orEmpty()
+}

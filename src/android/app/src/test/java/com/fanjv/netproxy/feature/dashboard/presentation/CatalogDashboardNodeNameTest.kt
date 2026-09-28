@@ -47,11 +47,21 @@ class CatalogDashboardNodeNameTest {
     }
 
     @Test
-    fun `automatic mode hides internal runtime node`() {
+    fun `automatic mode shows selected node without runtime group prefix`() {
         val status = status(
             selectorMode = "urltest",
-            runtimeSelected = "香港 01"
+            runtimeSelected = "group-id/香港 01"
         )
+
+        assertEquals("香港 01 · Auto-Fastest", dashboardNodeName(status))
+    }
+
+    @Test
+    fun `automatic mode hides stale selection when service is stopped`() {
+        val status = status(
+            selectorMode = "urltest",
+            runtimeSelected = "group-id/香港 01"
+        ).copy(state = "stopped")
 
         assertEquals("测试订阅/Auto-Fastest", dashboardNodeName(status))
     }
@@ -76,6 +86,7 @@ class CatalogDashboardNodeNameTest {
         selectorMode = selectorMode,
         activeGroupId = "group-id",
         activeGroupName = "测试订阅",
+        activeGroupRuntimeTag = "group-id",
         activeGroupNodeCount = 2,
         selectedNodeRef = selectedNodeRef,
         runtimeSelected = runtimeSelected

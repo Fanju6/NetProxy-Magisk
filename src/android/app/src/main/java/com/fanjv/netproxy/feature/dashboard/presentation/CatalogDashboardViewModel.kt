@@ -295,13 +295,29 @@ internal fun dashboardNodeName(service: ServiceStatusSnapshot): String {
     if (service.activeGroupNodeCount <= 0) return ""
 
     val groupName = service.activeGroupName.ifBlank { service.activeGroupId }
-    val automatic = service.selectorMode == "urltest" || service.selectorMode == "auto"
-    val nodeName = if (automatic) {
-        "Auto-Fastest"
-    } else {
-        service.selectedNodeRef
-            .substringAfter('/', service.selectedNodeRef)
-            .ifBlank { service.runtimeSelected.substringAfter('/', service.runtimeSelected) }
+    val automatic = service.selectorMode == "urltest"
+    if (automatic) {
+        val selected = if (service.state == "ready") {
+            runtimeSelectedNodeTag(
+                service.activeGroupRuntimeTag,
+                service.runtimeSelected
+            )
+        } else {
+            ""
+        }
+        if (selected.isNotBlank()) return "$selected · Auto-Fastest"
+        return "$groupName/Auto-Fastest"
     }
+    val nodeName = service.selectedNodeRef
+        .substringAfter('/', service.selectedNodeRef)
+        .ifBlank { service.runtimeSelected.substringAfter('/', service.runtimeSelected) }
     return listOf(groupName, nodeName).filter(String::isNotBlank).joinToString("/")
+}
+
+internal fun runtimeSelectedNodeTag(runtimeTag: String, selected: String): String {
+    if (runtimeTag.isBlank()) return ""
+    val prefix = "$runtimeTag/"
+    return selected.removePrefix(prefix)
+        .takeIf { selected.startsWith(prefix) && it.isNotBlank() }
+        .orEmpty()
 }
