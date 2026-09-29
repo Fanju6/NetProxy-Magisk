@@ -62,7 +62,7 @@ Compose UI -> ViewModel -> Repository -> NetProxyCtlClient -> netproxyctl
 
 ## 本地构建
 
-准备 Android SDK 37 和 JDK 26，然后从仓库根目录执行：
+准备 Android SDK 37 和 JDK 25，然后从仓库根目录执行：
 
 ```bash
 cd src/android
