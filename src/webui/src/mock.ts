@@ -4,6 +4,8 @@ const GROUP_DEFAULTS = {
   auto_update: false,
   update_interval: 0,
   update_via_proxy: 'auto',
+  front_proxy: '',
+  landing_proxy: '',
   usage: null,
   profile_title: '',
   profile_web_page_url: '',

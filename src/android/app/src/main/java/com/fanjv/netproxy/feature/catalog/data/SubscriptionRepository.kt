@@ -2,9 +2,11 @@ package com.fanjv.netproxy.feature.catalog.data
 
 import com.fanjv.netproxy.feature.catalog.model.CatalogGroupSummary
 import com.fanjv.netproxy.feature.catalog.model.CatalogNodeGroup
+import com.fanjv.netproxy.feature.catalog.model.CatalogNodesSnapshot
 import com.fanjv.netproxy.feature.catalog.model.SubscriptionDraft
 import com.fanjv.netproxy.feature.catalog.model.SubscriptionEditorState
 import com.fanjv.netproxy.feature.catalog.model.SubscriptionHistoryEntry
+import com.fanjv.netproxy.feature.catalog.model.SubscriptionProxyOption
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -24,6 +26,16 @@ internal class SubscriptionRepository(
 
     suspend fun readEditor(id: String): SubscriptionEditorState =
         catalog.decode("sub", "show", "--private", id)
+
+    suspend fun proxyOptions(): List<SubscriptionProxyOption> =
+        catalog.decode<CatalogNodesSnapshot>("node", "snapshot").groups.flatMap { group ->
+            group.nodes.map { node ->
+                SubscriptionProxyOption(
+                    reference = "${group.group.id}/${node.tag}",
+                    label = "${group.group.name} / ${node.tag}"
+                )
+            }
+        }
 
     suspend fun add(draft: SubscriptionDraft): JsonElement =
         withHeadersFile(draft.customHeaders) { headersFile ->
@@ -60,6 +72,12 @@ internal class SubscriptionRepository(
             }
             if (original.updateViaProxy != updated.updateViaProxy) {
                 args += listOf("--via-proxy", updated.updateViaProxy)
+            }
+            if (original.frontProxy != updated.frontProxy) {
+                args += listOf("--front-proxy", updated.frontProxy)
+            }
+            if (original.landingProxy != updated.landingProxy) {
+                args += listOf("--landing-proxy", updated.landingProxy)
             }
             if (original.include != updated.include) args += listOf("--include", updated.include)
             if (original.exclude != updated.exclude) args += listOf("--exclude", updated.exclude)
@@ -113,6 +131,10 @@ internal class SubscriptionRepository(
         if (headersFile != null) args += listOf("--headers-file", headersFile.absolutePath)
         args += listOf("--interval", draft.updateIntervalSeconds.toString())
         args += listOf("--via-proxy", draft.updateViaProxy)
+        if (draft.frontProxy.isNotBlank()) args += listOf("--front-proxy", draft.frontProxy)
+        if (draft.landingProxy.isNotBlank()) {
+            args += listOf("--landing-proxy", draft.landingProxy)
+        }
         if (draft.include.isNotBlank()) args += listOf("--include", draft.include)
         if (draft.exclude.isNotBlank()) args += listOf("--exclude", draft.exclude)
         if (draft.allowInsecure) {
