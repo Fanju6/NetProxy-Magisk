@@ -2,9 +2,10 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
-    <meta name="color-scheme" content="dark" />
-    <meta name="theme-color" content="#181818" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#181818" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f0f0f0" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
@@ -13,24 +14,58 @@
   </head>
   <body>
     <div id="root">
-      <div class="term" id="terminal">
-        <div class="out" id="output"></div>
-        <div class="iline">
-          <span class="prompt">❯ </span>
-          <input id="command-input" class="inp" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+      <main class="term" id="terminal">
+        <header class="header">
+          <div class="brand">
+            <h1><button id="service-status" class="service-status" type="button" title="检测中 · 点击查看服务状态"><span>NetProxy</span><span class="state-dot" aria-hidden="true"></span><span id="service-state" class="sr-only">检测中</span></button></h1>
+            <span id="environment" class="environment" title="仅使用模拟数据" hidden>开发预览</span>
+          </div>
+        </header>
+        <div class="transcript">
+          <section class="out" id="output" aria-label="终端输出" tabindex="0">
+            <div id="welcome" class="welcome">
+              <h2>命令终端</h2>
+              <p class="welcome-hint"><code>help</code> 查看命令 <span aria-hidden="true">/</span> <code>Tab</code> 补全</p>
+              <div class="shortcuts" aria-label="常用命令">
+                <button type="button" data-command="service status"><code>service status</code><span>服务状态</span></button>
+                <button type="button" data-command="node current"><code>node current</code><span>当前节点</span></button>
+                <button type="button" data-command="catalog list"><code>catalog list</code><span>查看分组</span></button>
+                <button type="button" data-command="help"><code>help</code><span>命令帮助</span></button>
+              </div>
+            </div>
+          </section>
+          <button id="latest" class="latest" type="button" hidden>↓ 回到最新</button>
         </div>
-        <div class="vk">
-          <button id="complete" class="vkbtn" type="button">Tab</button>
-          <button id="history-prev" class="vkbtn" type="button">↑</button>
-          <button id="history-next" class="vkbtn" type="button">↓</button>
-          <button id="run" class="vkbtn run" type="button">↵</button>
-        </div>
-        <div class="bar">
-          <span id="service-status" class="bar-status">服务: <b id="service-state">检测中</b></span>
-          <span id="environment" class="dim"></span>
-        </div>
-      </div>
+        <form id="command-form" class="composer" aria-label="执行命令">
+          <div id="suggestions" class="suggestions" role="group" aria-label="补全候选" hidden></div>
+          <div class="iline">
+            <span class="prompt" aria-hidden="true">❯</span>
+            <input id="command-input" class="inp" aria-label="命令" aria-controls="suggestions" placeholder="输入命令…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="send" />
+            <button id="run" class="run" type="submit" disabled aria-label="执行命令" title="执行命令"><span aria-hidden="true">↵</span></button>
+          </div>
+          <div class="toolbar">
+            <div class="keys" aria-label="输入辅助">
+              <button id="complete" class="tool" type="button" title="补全命令">Tab</button>
+              <button id="history-prev" class="tool" type="button" disabled aria-label="上一条命令" title="上一条命令">↑</button>
+              <button id="history-next" class="tool" type="button" disabled aria-label="下一条命令" title="下一条命令">↓</button>
+            </div>
+            <div class="tools">
+              <button id="copy" class="tool" type="button" disabled>复制结果</button>
+              <button id="clear" class="tool" type="button" disabled>清空</button>
+            </div>
+          </div>
+        </form>
+        <p id="announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
+      </main>
     </div>
+    <template id="command-entry">
+      <article class="entry" data-state="running">
+        <div class="entry-heading">
+          <pre class="entry-command"></pre>
+          <span class="entry-state">执行中</span>
+        </div>
+      </article>
+    </template>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

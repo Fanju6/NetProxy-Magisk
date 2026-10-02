@@ -1,10 +1,17 @@
 export interface CompletionResult { completed: string; candidates: string[] }
 
-import { parseCommandTokens, quoteCommandToken } from './command'
-import { COMMANDS, HELP_TOPICS, ROOT_COMPLETIONS, VALUE_COMPLETIONS, type CommandName } from './commands'
+import { parseCommandTokens, quoteCommandToken } from './command.ts'
+import { COMMANDS, HELP_TOPICS, ROOT_COMPLETIONS, VALUE_COMPLETIONS, type CommandName } from './commands.ts'
 
 const NODE_OPS = ['list', 'show', 'get', 'export', 'edit', 'remove']
 const SUB_OPS = ['activate', 'update', 'show', 'edit', 'remove', 'history', 'cancel']
+
+export function replaceCompletion(input: string, candidate: string): string {
+  const tokens = parseCommandTokens(input)
+  const last = tokens[tokens.length - 1]
+  const token = last?.end === input.length ? last : undefined
+  return (token ? input.slice(0, token.start) : input) + quoteCommandToken(candidate) + ' '
+}
 
 function lcp(items: string[]): string {
   let p = items[0] || ''
@@ -16,7 +23,7 @@ export function complete(input: string, knownGroups: string[] = [], knownSubs: s
   if (input.startsWith('!')) return { completed: input, candidates: [] }
   const parsed = parseCommandTokens(input)
   const toks = parsed.map(token => token.value)
-  const trailing = input.endsWith(' ')
+  const trailing = parsed.length > 0 && parsed[parsed.length - 1].end < input.length
   const n = trailing ? toks.length : Math.max(0, toks.length - 1)
   const currentToken = trailing ? undefined : parsed[parsed.length - 1]
   const cur = currentToken?.value || ''

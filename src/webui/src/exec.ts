@@ -12,7 +12,7 @@ const useMock = import.meta.env.DEV && !inKsu
 const shq = (v: string) => `'${v.replace(/'/g, `'"'"'`)}'`
 
 async function run(cmd: string): Promise<ExecResult> {
-  if (!inKsu) return { out: '', err: '[非 KernelSU 环境]\n请在 KernelSU WebUI 中打开此页面执行命令。', code: 0 }
+  if (!inKsu) return { out: '', err: '[非 KernelSU 环境]\n请在 KernelSU WebUI 中打开此页面执行命令。', code: 1 }
   try { const r = await exec(cmd); return { out: r.stdout, err: r.stderr, code: r.errno } }
   catch (e: any) { return { out: '', err: e?.message || String(e), code: -1 } }
 }
