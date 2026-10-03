@@ -35,7 +35,7 @@
 
 ## 项目简介
 
-NetProxy 8.0 是面向已 Root Android 设备的系统级透明代理模块。模块以内置 sing-box 为代理核心，通过 eBPF 接管本机及共享网络流量，并提供 Android 管理器、模块 WebUI、CLI 与 Service API Dashboard 等入口。
+NetProxy 是面向已 Root Android 设备的系统级透明代理模块。模块以内置 sing-box 为代理核心，通过 eBPF 接管本机及共享网络流量，并提供 Android 管理器、模块 WebUI、CLI 与 Service API Dashboard 等入口。
 
 支持 **Magisk、KernelSU 与 APatch**。节点、订阅、路由、DNS 和透明代理配置均保存在模块目录中，不依赖 VPN 模式运行。
 

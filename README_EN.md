@@ -35,7 +35,7 @@
 
 ## Overview
 
-NetProxy 8.0 is a system-wide transparent proxy module for rooted Android devices. Its embedded sing-box core captures local and shared-network traffic through eBPF and can be managed through the Android app, module WebUI, CLI, or Service API Dashboard.
+NetProxy is a system-wide transparent proxy module for rooted Android devices. Its embedded sing-box core captures local and shared-network traffic through eBPF and can be managed through the Android app, module WebUI, CLI, or Service API Dashboard.
 
 Supported root environments: **Magisk, KernelSU, and APatch**.
 
