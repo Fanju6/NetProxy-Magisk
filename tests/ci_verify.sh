@@ -39,7 +39,7 @@ run_shell_contracts() {
   printf '%s\n' '开始执行 Shell 契约测试'
   sh "$ROOT/tests/runtime_catalog_test.sh" "$BUILD_DIR/netproxyctl"
   sh "$ROOT/tests/module_scripts_test.sh"
-  sh "$ROOT/tests/customize_hot_update_test.sh"
+  sh "$ROOT/tests/customize_hot_update_test.sh" "$BUILD_DIR/netproxyctl"
   sh "$ROOT/tests/module_packaging_test.sh"
   sh "$ROOT/tests/release_notes_test.sh"
 }

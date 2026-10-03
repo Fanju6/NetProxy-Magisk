@@ -318,7 +318,9 @@ Go 生命周期控制器通过 `-c config/singbox/config.json` 加载静态配�
 
 `config read` 返回 `content` 和 `revision`；`config apply/validate --revision <值> <目标> <候选文件>` 检测并发修改。`singbox/dns` 等分区使用带顶层键的 JSON，空对象删除该字段；`singbox/config.json` 替换整份主配置。保存后的 revision 对应本次实际写入内容，不通过无锁重新读取生成。
 
-保留数据安装要求现有 `config/singbox/config.json`，缺失时在停止服务前中止；用户需先备份，再明确选择全新安装。热切换前重新复制最新主配置，不进行格式迁移。默认配置的更新不能自动覆盖用户主配置。
+安装只处理当前数据布局，不读取、转换或清理旧版配置。保留现有数据包含整个用户配置目录（包括核心持久状态）、Catalog 与日志，但 `config/singbox/rules/remote` 始终使用本次安装包的内置规则；仅保留节点与订阅包含 Catalog 与日志；全新安装使用包内默认内容。保留模式要求对应数据完整，不能因缺失而静默回退默认配置。热切换前重新复制最新数据，不复制 Catalog staging 或可重建的运行时文件。
+
+安装快照与目录切换使用 Go 的生命周期、配置文件和 Catalog OS 锁，分组锁先于根锁；任一锁忙立即中止。Android mksh 调用外部 `flock` 时必须显式传递锁描述符（如 `9>&9`），否则会因 `Bad file descriptor` 回退。目录切换必须保留锁文件 inode，否则等待中的 Go 命令会与新命令使用两套锁。前台准备不停止服务，后台停服或切换失败尝试恢复提交前的 Worker 与服务；原先停止的服务不得自动开启。
 
 当前控制入口是稳定产品契约：
 

@@ -110,7 +110,6 @@ check_removed_legacy_ebpf_assets() {
 #######################################
 check_worker_lifecycle() {
   ! grep -q 'pkill -f' "$MODULE_DIR/customize.sh"
-  grep -q 'cleanup_worker_state' "$MODULE_DIR/customize.sh"
   grep -q 'worker stop' "$MODULE_DIR/customize.sh"
   grep -q -- '--module-dir' "$MODULE_DIR/customize.sh"
   grep -q 'worker stop' "$MODULE_DIR/uninstall.sh"
@@ -118,7 +117,7 @@ check_worker_lifecycle() {
   grep -q -- '--module-dir' "$MODULE_DIR/uninstall.sh"
   ! grep -q 'sync_to_live\|restart_proxy_if_needed' "$MODULE_DIR/customize.sh"
   grep -q 'schedule_hot_update' "$MODULE_DIR/customize.sh"
-  grep -q 'NETPROXY_HOT_UPDATE_WORKER_BEGIN' "$MODULE_DIR/customize.sh"
+  grep -q 'with_user_data_locks commit_hot_update' "$MODULE_DIR/customize.sh"
 }
 
 #######################################
@@ -128,30 +127,31 @@ check_install_choices() {
   grep -q 'choose_install_mode' "$MODULE_DIR/customize.sh"
   grep -q '保留现有数据' "$MODULE_DIR/customize.sh"
   grep -q '全新安装' "$MODULE_DIR/customize.sh"
-  grep -q '\[ "$(wait_volume_key 10)" = "down" \]' "$MODULE_DIR/customize.sh"
+  grep -q '仅保留节点与订阅' "$MODULE_DIR/customize.sh"
   grep -q 'install_bundled_manager' "$MODULE_DIR/customize.sh"
   grep -q 'print_title "安装 NetProxy 管理器"' "$MODULE_DIR/customize.sh"
   grep -q '\[ ! -f "\$MODPATH/NetProxy.apk" \]' "$MODULE_DIR/customize.sh"
-  grep -q 'MANAGER_PACKAGE="com.fanjv.netproxy"' "$MODULE_DIR/customize.sh"
+  grep -q 'MANAGER_PACKAGE=com.fanjv.netproxy' "$MODULE_DIR/customize.sh"
   grep -q 'get_installed_manager_version' "$MODULE_DIR/customize.sh"
   grep -q 'dumpsys package' "$MODULE_DIR/customize.sh"
   grep -q '随附 CI 版使用独立签名' "$MODULE_DIR/customize.sh"
   grep -q '卸载会清除管理器本地数据' "$MODULE_DIR/customize.sh"
   grep -q 'Google Play 更新' "$MODULE_DIR/customize.sh"
   ! grep -q 'am start -a android.intent.action.VIEW' "$MODULE_DIR/customize.sh"
-  grep -q 'getevent -lqc 1 > "\$event_file"' "$MODULE_DIR/customize.sh"
+  grep -q 'getevent -lq > "\$INSTALL_TMP/keys"' "$MODULE_DIR/customize.sh"
 }
 
 #######################################
-# 确认安装前先停止旧服务，再进入管理器安装区块
+# 确认前台只准备与检查配置，停服由后台提交执行
 #######################################
 check_install_order() {
-  main_flow="$(sed -n '/unzip -o "\$ZIPFILE" "module.prop"/,/else$/p' "$MODULE_DIR/customize.sh")"
+  main_flow="$(sed -n '/^INSTALL_TMP=/,$p' "$MODULE_DIR/customize.sh")"
   choice_line="$(printf '%s\n' "$main_flow" | grep -n '^choose_install_mode || exit 1$' | head -n 1 | cut -d: -f1)"
-  stop_line="$(printf '%s\n' "$main_flow" | grep -n 'stop_proxy_if_running' | head -n 1 | cut -d: -f1)"
+  snapshot_line="$(printf '%s\n' "$main_flow" | grep -n '^synchronize_user_data' | head -n 1 | cut -d: -f1)"
   manager_line="$(printf '%s\n' "$main_flow" | grep -n 'install_bundled_manager' | head -n 1 | cut -d: -f1)"
-  [ -n "$choice_line" ] && [ -n "$stop_line" ] && [ -n "$manager_line" ] \
-    && [ "$choice_line" -lt "$stop_line" ] && [ "$stop_line" -lt "$manager_line" ]
+  [ -n "$choice_line" ] && [ -n "$snapshot_line" ] && [ -n "$manager_line" ] \
+    && [ "$choice_line" -lt "$manager_line" ] && [ "$manager_line" -lt "$snapshot_line" ]
+  ! printf '%s\n' "$main_flow" | grep -q 'stop_proxy_if_running'
 }
 
 check_shell_syntax

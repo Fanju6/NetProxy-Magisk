@@ -1,57 +1,36 @@
 #!/system/bin/sh
 #######################################
 # 文件: customize.sh
-# 功能: NetProxy 模块安装脚本，由 Magisk/KernelSU/APatch 在刷入模块时执行：
-#       备份/恢复用户状态、解压和校验新模块；在已开机环境中等待管理器
-#       写入更新标记后，以原子目录切换立即应用更新，无需重启设备。
-# 用法: 由管理器在安装模块时自动调用 (SKIPUNZIP=1 表示自行解压)。
-# 说明: 运行于管理器提供的 busybox 环境，依赖 ui_print/grep_prop 等管理器函数。
+# 功能: 选择安装模式、准备模块，在安装器结束后热切换模块目录。
+# 用法: 由模块管理器加载；--apply-update 仅供本脚本后台提交使用。
+# 依赖: 管理器 ui_print/grep_prop、BusyBox、Android su/getevent/pm。
 #######################################
 
-SKIPUNZIP=1  # 跳过管理器自动解压，由本脚本手动控制解压流程
+SKIPUNZIP=1
+umask 077
+readonly MODULE_ID=netproxy
+readonly MANAGER_PACKAGE=com.fanjv.netproxy
+readonly CONFIG_ENTRIES="config/module.conf config/ebpf/ebpf.conf config/singbox/config.json config/singbox/rules/local"
+readonly EXECUTABLE_FILES="bin/sing-box bin/netproxyctl action.sh netproxyctl service.sh emulated-soft-reboot.sh uninstall.sh"
 
-################################################################################
-# 常量定义
-################################################################################
-
-readonly MODULE_ID="netproxy"                       # 模块 ID
-readonly MANAGER_PACKAGE="com.fanjv.netproxy"       # Android 管理器包名
-readonly LIVE_DIR="/data/adb/modules/$MODULE_ID"    # 已安装模块的运行目录
-readonly CONFIG_DIR="$LIVE_DIR/config"              # 运行目录下的配置目录
-readonly BACKUP_DIR="$TMPDIR/netproxy_backup"       # 配置备份临时目录
-
-# 全局状态: 安装前代理服务是否处于运行状态
-PROXY_WAS_RUNNING=false
-
-# 安装方式: preserve=保留现有用户数据，fresh=使用包内默认数据。
 INSTALL_MODE=fresh
+LIVE_DIR=/data/adb/modules/netproxy
+PROXY_WAS_RUNNING=false
+SERVICE_STOPPED=false
+BACKGROUND=false
+KEY_PID=""
 
-# 需要保留的配置文件/目录 (相对于 config/)
-readonly DATA_DIR="$LIVE_DIR/data"
+if [ "${1:-}" = --apply-update ]; then
+  [ "$#" -eq 5 ] || exit 2
+  BACKGROUND=true
+  INSTALLER_PID="$2"
+  MODPATH="$3"
+  LIVE_DIR="$4"
+  INSTALL_MODE="$5"
+fi
 
-readonly PRESERVE_CONFIGS="
-    module.conf
-    singbox/config.json
-    singbox/rules/local/direct.json
-    singbox/rules/local/proxy.json
-    singbox/rules/local/block.json
-"
-
-# 需要设置可执行权限的文件
-readonly EXECUTABLE_FILES="
-    bin/sing-box
-    bin/netproxyctl
-    action.sh
-    netproxyctl
-    service.sh
-    uninstall.sh
-"
-
-################################################################################
-# 工具函数
-################################################################################
-
-# 打印带分隔线的标题。参数: $1 标题文本
+# 参数: $1 标题。
+# 返回: 0=已输出。
 print_title() {
   ui_print ""
   ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -59,86 +38,80 @@ print_title() {
   ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━"
 }
 
-# 打印步骤提示。参数: $1 文本
-print_step() {
-  ui_print "▶ $1"
-}
+# 参数: $1 提示。
+# 返回: 0=已输出。
+print_step() { ui_print "▶ $1"; }
+# 参数: $1 提示。
+# 返回: 0=已输出。
+print_ok() { ui_print "  ✓ $1"; }
+# 参数: $1 提示。
+# 返回: 0=已输出。
+print_warn() { ui_print "  ⚠ $1"; }
+# 参数: $1 提示。
+# 返回: 0=已输出。
+print_error() { ui_print "  ✗ $1"; }
 
-# 打印成功提示。参数: $1 文本
-print_ok() {
-  ui_print "  ✓ $1"
-}
-
-# 打印警告提示。参数: $1 文本
-print_warn() {
-  ui_print "  ⚠ $1"
-}
-
-# 打印错误提示。参数: $1 文本
-print_error() {
-  ui_print "  ✗ $1"
-}
-
-# 判断目录是否存在且非空。参数: $1 目录；返回: 0=非空
-dir_not_empty() {
-  [ -d "$1" ] && [ "$(ls -A "$1" 2> /dev/null)" ]
-}
-
-#######################################
-# 设置单个文件的属主、权限与 SELinux 上下文
-# 参数:
-#   $1 路径  $2 属主  $3 属组  $4 权限  $5 SELinux 上下文 (可选)
-# 返回: 任一步失败返回 1
-#######################################
-set_perm() {
-  chown "$2:$3" "$1" || return 1
-  chmod "$4" "$1" || return 1
-  local CON="$5"
-  # 未指定上下文时使用默认系统文件上下文
-  [ -z "$CON" ] && CON="u:object_r:system_file:s0"
-  chcon "$CON" "$1" || return 1
+# 参数: 无。
+# 返回: 0=监听进程已回收。
+stop_key_listener() {
+  if [ -n "$KEY_PID" ]; then
+    kill "$KEY_PID" 2>/dev/null || true
+    wait "$KEY_PID" 2>/dev/null || true
+    if [ "$KEY_FD" = 8 ]; then exec 8<&-; else exec 9<&-; fi
+  fi
+  KEY_PID=""
 }
 
 #######################################
-# 递归设置目录的属主、权限与上下文
-# 参数:
-#   $1 目录  $2 属主  $3 属组  $4 目录权限  $5 文件权限  $6 上下文 (可选)
-# 返回: 0=完成，1=任一项设置失败。
+# 参数: $1 等待秒数。
+# 返回: 0=完成，1=事件文件失败；写入 VOLUME_KEY。
 #######################################
-set_perm_recursive() {
-  # 先设置所有子目录权限
-  # 模块路径由安装包控制，不包含换行；使用 POSIX read，兼容 Android mksh。
-  find "$1" -type d -print 2>/dev/null | while IFS= read -r dir; do
-    set_perm "$dir" "$2" "$3" "$4" "$6" || exit 1
-  done || return 1
-
-  # 再设置所有文件与符号链接权限
-  find "$1" \( -type f -o -type l \) -print 2>/dev/null | while IFS= read -r file; do
-    set_perm "$file" "$2" "$3" "$5" "$6" || exit 1
-  done || return 1
-  return 0
+wait_volume_key() {
+  local remaining="$1" event count
+  VOLUME_KEY=timeout
+  if [ -z "$KEY_PID" ]; then
+    : > "$INSTALL_TMP/keys" || return 1
+    getevent -lq > "$INSTALL_TMP/keys" 2>/dev/null &
+    KEY_PID=$!
+    # Recovery 的 ui_print 使用 OUTFD，不能覆盖或关闭安装器的输出描述符。
+    KEY_FD=9
+    [ "${OUTFD:-}" != 9 ] || KEY_FD=8
+    if [ "$KEY_FD" = 8 ]; then exec 8<"$INSTALL_TMP/keys"; else exec 9<"$INSTALL_TMP/keys"; fi
+  fi
+  while [ "$remaining" -gt 0 ]; do
+    count=0
+    while [ "$count" -lt 1000 ] && IFS= read -r event <&"$KEY_FD"; do
+      count=$((count + 1))
+      # getevent 会补齐尾部空格；只处理 DOWN，避免 UP 或长按重复改变选项。
+      case "$event" in
+        *EV_KEY*KEY_VOLUMEUP*DOWN*|*EV_KEY*KEY_VOLUMEUP*00000001*) VOLUME_KEY=up; return 0 ;;
+        *EV_KEY*KEY_VOLUMEDOWN*DOWN*|*EV_KEY*KEY_VOLUMEDOWN*00000001*) VOLUME_KEY=down; return 0 ;;
+      esac
+    done
+    sleep 1
+    remaining=$((remaining - 1))
+  done
 }
 
-################################################################################
-# 核心函数
-################################################################################
-
-#######################################
-# 判断是否存在可由用户保留的数据。
-# 参数: 无
-# 返回: 0=存在，1=不存在。
-#######################################
+# 参数: 无。
+# 返回: 0=存在用户数据，1=首次安装。
 has_existing_user_data() {
-  [ -f "$CONFIG_DIR/module.conf" ] \
-    || [ -f "$CONFIG_DIR/singbox/config.json" ] \
-    || [ -d "$DATA_DIR/catalog" ]
+  [ -f "$LIVE_DIR/config/module.conf" ] || [ -d "$LIVE_DIR/data/catalog" ]
+}
+
+# 参数: 无。
+# 返回: 0=已输出当前模式。
+print_install_mode() {
+  case "$INSTALL_MODE" in
+    preserve) print_step "当前选择：保留现有数据" ;;
+    nodes) print_step "当前选择：仅保留节点与订阅（配置恢复默认）" ;;
+    fresh) print_step "当前选择：全新安装（不保留现有数据）" ;;
+  esac
 }
 
 #######################################
-# 选择安装方式。
-# 参数: 无
-# 全局: 写入 INSTALL_MODE
-# 返回: 0=已选择，1=选择保留数据但缺少主配置。
+# 参数: 无。
+# 返回: 0=确认完成，1=取消或当前格式的数据不完整。
 #######################################
 choose_install_mode() {
   if ! has_existing_user_data; then
@@ -146,645 +119,468 @@ choose_install_mode() {
     print_step "未发现现有用户数据，将执行全新安装"
     return 0
   fi
-
+  INSTALL_MODE=preserve
   print_title "选择安装方式"
   ui_print ""
-  ui_print "  [音量+] 保留现有数据 (默认)"
-  ui_print "  [音量-] 全新安装"
+  ui_print "  1. 保留现有数据（默认）"
+  ui_print "  2. 仅保留节点与订阅"
+  ui_print "  3. 全新安装"
   ui_print ""
-
-  if [ "$(wait_volume_key 10)" = "down" ]; then
-    INSTALL_MODE=fresh
-    print_step "已选择全新安装"
-  else
-    if [ ! -f "$CONFIG_DIR/singbox/config.json" ]; then
-      print_error "现有数据缺少 config/singbox/config.json，无法保留配置"
-      print_error "请先导出节点、记录订阅与个人设置，再选择全新安装"
-      return 1
-    fi
-    INSTALL_MODE=preserve
-    print_step "已选择保留现有数据"
-  fi
-}
-
-#######################################
-# 复制持久 Catalog 状态，忽略事务 staging 目录。
-# 参数: $1 源 Catalog 目录  $2 目标 Catalog 目录
-# 返回: 0=成功，1=复制失败。
-#######################################
-copy_catalog_state() {
-  local source_dir="$1"
-  local target_dir="$2"
-  local group_dir
-
-  [ -d "$source_dir" ] || return 1
-  rm -rf "$target_dir" 2> /dev/null || return 1
-  mkdir -p "$target_dir" || return 1
-
-  for group_dir in "$source_dir"/*; do
-    [ -e "$group_dir" ] || continue
-    [ "$(basename "$group_dir")" = staging ] && continue
-    cp -r "$group_dir" "$target_dir/" 2> /dev/null || return 1
+  ui_print "  [音量+] 循环选择  [音量-] 确认"
+  ui_print "  未操作时，10 秒后保留现有数据"
+  print_install_mode
+  local timeout=10 interacted=false
+  while :; do
+    wait_volume_key "$timeout" || return 1
+    case "$VOLUME_KEY" in
+      up)
+        case "$INSTALL_MODE" in
+          preserve) INSTALL_MODE=nodes ;;
+          nodes) INSTALL_MODE=fresh ;;
+          fresh) INSTALL_MODE=preserve ;;
+        esac
+        interacted=true
+        timeout=20
+        print_install_mode
+        ;;
+      down)
+        if [ "$INSTALL_MODE" != fresh ]; then break; fi
+        stop_key_listener
+        print_warn "全新安装将清除节点、订阅、配置和模块日志"
+        ui_print "  [音量-] 再次确认  [音量+] 返回选择；10 秒无操作取消安装"
+        wait_volume_key 10 || return 1
+        case "$VOLUME_KEY" in
+          down) break ;;
+          up) INSTALL_MODE=preserve; interacted=true; timeout=20; print_install_mode ;;
+          *) print_error "未确认全新安装，已取消"; return 1 ;;
+        esac
+        ;;
+      *)
+        if [ "$interacted" = true ]; then
+          print_error "选择超时，已取消安装，现有数据未修改"
+          return 1
+        fi
+        break
+        ;;
+    esac
   done
-  return 0
-}
-
-#######################################
-# 备份现有配置到临时目录
-# 参数: 无
-# 全局: 读取 INSTALL_MODE / CONFIG_DIR / PRESERVE_CONFIGS / BACKUP_DIR
-# 返回: 0=成功或全新安装跳过，1=失败。
-#######################################
-backup_catalog_data() {
-  [ -d "$DATA_DIR/catalog" ] || return 0
-  mkdir -p "$BACKUP_DIR/data" || return 1
-  if copy_catalog_state "$DATA_DIR/catalog" "$BACKUP_DIR/data/catalog"; then
-    return 0
-  fi
-  print_error "Catalog 数据备份失败"
-  return 1
-}
-
-restore_catalog_data() {
-  [ -d "$BACKUP_DIR/data/catalog" ] || return 0
-  mkdir -p "$MODPATH/data" || return 1
-  if copy_catalog_state "$BACKUP_DIR/data/catalog" "$MODPATH/data/catalog"; then
-    return 0
-  fi
-  print_error "Catalog 数据恢复失败"
-  return 1
-}
-
-backup_config() {
-  if [ "$INSTALL_MODE" != "preserve" ]; then
-    print_step "全新安装不保留现有数据"
-    return 0
-  fi
-
-  print_step "备份现有用户数据..."
-  print_warn "eBPF 入站配置已更新，将使用新版本默认 ebpf.conf"
-
-  mkdir -p "$BACKUP_DIR" || return 1
-  backup_catalog_data || return 1
-
-  # 逐项备份需保留的配置
-  local config_item
-  for config_item in $PRESERVE_CONFIGS; do
-    local src="$CONFIG_DIR/$config_item"
-    local dst="$BACKUP_DIR/$config_item"
-
-    if [ -e "$src" ]; then
-      mkdir -p "$(dirname "$dst")"
-      if cp -r "$src" "$dst" 2> /dev/null; then
-        print_ok "已备份: $config_item"
-      else
-        print_error "备份失败: $config_item"
-        return 1
-      fi
-    fi
-  done
-
-  return 0
-}
-
-#######################################
-# 解压模块文件到安装目录
-# 参数: 无
-# 全局: 读取 ZIPFILE / MODPATH
-# 返回: 成功 0，失败 1
-#######################################
-extract_module() {
-  print_step "解压模块文件..."
-
-  # 解压到安装临时目录，排除 META-INF 目录
-  if ! unzip -o "$ZIPFILE" -x "META-INF/*" -d "$MODPATH" > /dev/null 2>&1; then
-    print_error "解压失败"
+  stop_key_listener
+  if [ "$INSTALL_MODE" != fresh ] && [ ! -d "$LIVE_DIR/data/catalog" ]; then
+    print_error "当前 Catalog 不存在，无法保留节点与订阅"
     return 1
   fi
-
-  print_ok "模块文件已解压"
-  return 0
+  if [ "$INSTALL_MODE" = preserve ]; then
+    local entry
+    for entry in $CONFIG_ENTRIES; do
+      [ -e "$LIVE_DIR/$entry" ] || {
+        print_error "当前用户配置不完整：$entry；请重新选择安装方式"
+        return 1
+      }
+    done
+  fi
+  print_ok "安装方式已确认"
 }
 
 #######################################
-# 将备份的配置恢复到新解压的模块目录
-# 参数: 无
-# 全局: 读取 INSTALL_MODE / BACKUP_DIR / PRESERVE_CONFIGS / MODPATH
-# 返回: 0=成功或无备份时跳过，1=失败。
+# 参数: $1 目录，$2 目录权限，$3 文件权限。
+# 返回: 0=成功，1=失败。
 #######################################
-restore_config() {
-  [ "$INSTALL_MODE" = "preserve" ] || return 0
-  restore_catalog_data || return 1
+set_directory_permissions() {
+  [ -d "$1" ] || return 0
+  find "$1" -type d -exec chmod "$2" {} + \
+    && find "$1" -type f -exec chmod "$3" {} +
+}
 
-  # 无备份则跳过
-  if ! dir_not_empty "$BACKUP_DIR"; then
-    return 0
+# 参数: 无。
+# 返回: 0=成功，1=权限设置失败。
+set_permissions() {
+  chown -R 0:0 "$MODPATH" && chcon -R u:object_r:system_file:s0 "$MODPATH" || return 1
+  local entry
+  for entry in config data runtime logs; do
+    set_directory_permissions "$MODPATH/$entry" 0700 0600 || return 1
+  done
+  # 不能先把用户配置设为公开可读，再收紧权限；中途失败会暴露凭据。
+  find "$MODPATH" \( -path "$MODPATH/config" -o -path "$MODPATH/data" \
+    -o -path "$MODPATH/runtime" -o -path "$MODPATH/logs" \) -prune \
+    -o -type d -exec chmod 0755 {} + -o -type f -exec chmod 0644 {} + || return 1
+  for entry in $EXECUTABLE_FILES; do
+    [ ! -f "$MODPATH/$entry" ] || chmod 0755 "$MODPATH/$entry" || return 1
+  done
+}
+
+# 参数: 无。
+# 返回: 0=包结构有效，1=缺少当前模块所需文件。
+validate_stage() {
+  grep -qx "id=$MODULE_ID" "$MODPATH/module.prop" || return 1
+  local entry
+  for entry in bin/netproxyctl bin/sing-box netproxyctl service.sh \
+    config/module.conf config/ebpf/ebpf.conf config/singbox/config.json \
+    data/catalog/default/meta.json data/catalog/default/provider.json; do
+    [ -s "$MODPATH/$entry" ] || return 1
+  done
+}
+
+#######################################
+# 参数: 无。
+# 返回: 0=已停服或没有安装，1=停止失败。
+#######################################
+stop_proxy_if_running() {
+  has_existing_user_data || return 0
+  [ -x "$LIVE_DIR/bin/netproxyctl" ] || return 1
+  if pidof -s "$LIVE_DIR/bin/sing-box" >/dev/null 2>&1; then
+    PROXY_WAS_RUNNING=true
   fi
+  # Worker 可能独立运行；即使核心已停止，也必须确认调度进程已退出。
+  SERVICE_STOPPED=true
+  "$LIVE_DIR/bin/netproxyctl" __internal worker stop --module-dir "$LIVE_DIR" >/dev/null 2>&1 \
+    && "$LIVE_DIR/netproxyctl" service stop >/dev/null 2>&1
+}
 
-  print_step "恢复配置文件..."
+# 参数: 无。
+# 返回: 0=成功或无需恢复，1=恢复失败。
+restore_live_service() {
+  [ "$SERVICE_STOPPED" = true ] || return 0
+  local result=0
+  su -c "\"$LIVE_DIR/bin/netproxyctl\" __internal worker start --module-dir \"$LIVE_DIR\"" >/dev/null 2>&1 || result=1
+  if [ "$PROXY_WAS_RUNNING" = true ]; then
+    su -c "\"$LIVE_DIR/netproxyctl\" service start" >/dev/null 2>&1 || result=1
+  fi
+  return "$result"
+}
 
-  # 逐项恢复，覆盖解压出的默认配置
-  local config_item
-  for config_item in $PRESERVE_CONFIGS; do
-    local src="$BACKUP_DIR/$config_item"
-    local dst="$MODPATH/config/$config_item"
+#######################################
+# 参数: $1 目标 Catalog。
+# 返回: 0=复制完成，1=分组不完整或复制失败。
+#######################################
+copy_catalog_state() {
+  local target="$1" group file
+  mkdir -p "$target" || return 1
+  for group in "$LIVE_DIR/data/catalog"/*; do
+    [ -d "$group" ] || continue
+    [ "${group##*/}" != staging ] || continue
+    [ -f "$group/meta.json" ] && [ -f "$group/provider.json" ] || return 1
+    mkdir -p "$target/${group##*/}" || return 1
+    for file in meta.json provider.json history.jsonl; do
+      [ ! -f "$group/$file" ] || cp -p "$group/$file" "$target/${group##*/}/" || return 1
+    done
+  done
+}
 
-    if [ -e "$src" ]; then
-      # 创建父目录
-      mkdir -p "$(dirname "$dst")"
-      # 删除目标 (防止目录嵌套)
-      rm -rf "$dst" 2> /dev/null
-      # 复制回配置
-      if cp -r "$src" "$dst" 2> /dev/null; then
-        print_ok "已恢复: $config_item"
-      else
-        print_error "恢复失败: $config_item"
-        return 1
+# 参数: 无。
+# 返回: 0=输出保留清单，1=安装模式无效。
+persistent_entries() {
+  case "$INSTALL_MODE" in
+    preserve) printf '%s\n' config data/catalog logs ;;
+    nodes) printf '%s\n' data/catalog logs ;;
+    fresh) ;;
+    *) return 1 ;;
+  esac
+}
+
+#######################################
+# 参数: $1 快照目录。
+# 返回: 0=回退成功，1=回退失败（保留快照）。
+#######################################
+rollback_snapshot() {
+  local snapshot="$1" entry failed=0
+  while IFS= read -r entry; do
+    rm -rf "$MODPATH/$entry" || { failed=1; continue; }
+    [ ! -e "$snapshot/previous/$entry" ] \
+      || mv "$snapshot/previous/$entry" "$MODPATH/$entry" || failed=1
+  done < "$snapshot/applied"
+  return "$failed"
+}
+
+#######################################
+# 参数: 无。
+# 返回: 0=成功，1=复制或恢复失败；调用方必须持有数据锁。
+#######################################
+copy_user_data_locked() {
+  [ "$INSTALL_MODE" != fresh ] || return 0
+  local snapshot entries entry failed=false
+  [ -d "$LIVE_DIR/data/catalog" ] || return 1
+  [ ! -e "$LIVE_DIR/runtime/.config-apply" ] || return 1
+  if [ "$INSTALL_MODE" = preserve ]; then
+    for entry in $CONFIG_ENTRIES; do
+      [ -e "$LIVE_DIR/$entry" ] || return 1
+    done
+  fi
+  entries="$(persistent_entries)" || return 1
+  snapshot="$(mktemp -d "$MODPATH/.install-state.XXXXXX")" || return 1
+  : > "$snapshot/applied" || return 1
+  for entry in $entries; do
+    [ -e "$LIVE_DIR/$entry" ] || continue
+    mkdir -p "$snapshot/current/$(dirname "$entry")" || { failed=true; break; }
+    if [ "$entry" = data/catalog ]; then
+      copy_catalog_state "$snapshot/current/$entry" || { failed=true; break; }
+    else
+      cp -a "$LIVE_DIR/$entry" "$snapshot/current/$entry" || { failed=true; break; }
+      if [ "$entry" = config ]; then
+        # 用户配置可包含核心持久状态；仅内置远程规则由本次安装包提供。
+        rm -rf "$snapshot/current/config/singbox/rules/remote" \
+          && cp -a "$MODPATH/config/singbox/rules/remote" "$snapshot/current/config/singbox/rules/remote" \
+          || { failed=true; break; }
       fi
     fi
   done
-
-  return 0
+  if [ "$failed" = false ]; then
+    for entry in $entries; do
+      [ -e "$snapshot/current/$entry" ] || continue
+      mkdir -p "$snapshot/previous/$(dirname "$entry")" "$MODPATH/$(dirname "$entry")" \
+        || { failed=true; break; }
+      if [ -e "$MODPATH/$entry" ]; then
+        mv "$MODPATH/$entry" "$snapshot/previous/$entry" || { failed=true; break; }
+      fi
+      if ! printf '%s\n' "$entry" >> "$snapshot/applied"; then
+        [ ! -e "$snapshot/previous/$entry" ] || mv "$snapshot/previous/$entry" "$MODPATH/$entry" || return 1
+        failed=true
+        break
+      fi
+      mv "$snapshot/current/$entry" "$MODPATH/$entry" || { failed=true; break; }
+    done
+  fi
+  if [ "$failed" = true ]; then
+    rollback_snapshot "$snapshot" || return 1
+    rm -rf "$snapshot"
+    return 1
+  fi
+  rm -rf "$snapshot"
 }
 
 #######################################
-# 清理安装前残留的后台 Worker 状态。
-# 参数: 无
-# 返回: 始终返回 0；只处理 /dev/netproxy 下由本模块记录的 Worker PID。
+# 参数: 锁文件列表、--、持锁回调。
+# 返回: 0=成功，非零=锁忙或操作失败。
 #######################################
-cleanup_worker_state() {
-  [ -d /dev/netproxy ] || return 0
+with_catalog_group_locks() (
+  [ "$1" != -- ] || { shift; "$@"; exit "$?"; }
+  exec 4>"$1"
+  flock -n 4 4>&4 || exit 1
+  shift
+  # 每层父 Shell 保留一个文件描述符，覆盖整个快照与目录切换。
+  with_catalog_group_locks "$@"
+)
 
-  # 统一处理 /dev/netproxy 下的 Worker PID 文件，避免状态残留。
-  for pid_file in /dev/netproxy/*worker.pid; do
-    [ -f "$pid_file" ] || continue
-    pid="$(cat "$pid_file" 2> /dev/null || true)"
-    case "$pid" in
-      ''|*[!0-9]*) pid='' ;;
-    esac
+# 参数: $@ 持锁回调。
+# 返回: 0=成功，非零=根锁忙或操作失败。
+with_catalog_root_lock() {
+  flock -n 5 5>&5 || return 1
+  "$@"
+}
 
-    if [ -n "$pid" ] && [ -r "/proc/$pid/cmdline" ] \
-      && grep -q "$LIVE_DIR/bin/netproxyctl" "/proc/$pid/cmdline" 2> /dev/null; then
-      kill -TERM "$pid" 2> /dev/null || true
-      wait_count=0
-      while [ -d "/proc/$pid" ] && [ "$wait_count" -lt 10 ]; do
-        sleep 1
-        wait_count=$((wait_count + 1))
-      done
-    fi
-
-    rm -f "$pid_file" "$pid_file.lock" 2> /dev/null || true
+#######################################
+# 参数: $@ 持锁期间执行的函数。
+# 返回: 0=成功，非零=锁忙或操作失败。
+#######################################
+with_user_data_locks() (
+  has_existing_user_data || { "$@"; exit "$?"; }
+  # 与 Go 使用同一 inode 和固定顺序；不能通过删除锁文件解除互斥。
+  mkdir -p /dev/netproxy || exit 1
+  exec 9>/dev/netproxy/service.lock.flock
+  # mksh 默认关闭外部命令的额外描述符，必须显式重定向传给 flock。
+  flock -n 9 9>&9 || exit 1
+  exec 8>"$LIVE_DIR/config/ebpf/ebpf.conf.lock"
+  flock -n 8 8>&8 || exit 1
+  exec 7>"$LIVE_DIR/config/module.conf.lock"
+  flock -n 7 7>&7 || exit 1
+  exec 6>"$LIVE_DIR/config/singbox/config.json.lock"
+  flock -n 6 6>&6 || exit 1
+  local digest file
+  digest="$(printf '%s\000root' "$LIVE_DIR/data/catalog" | sha256sum | cut -c1-16)"
+  [ "${#digest}" -eq 16 ] || exit 1
+  CATALOG_LOCK="data/.catalog.netproxy-$digest.lock"
+  exec 5>"$LIVE_DIR/$CATALOG_LOCK"
+  set -- -- with_catalog_root_lock "$@"
+  for file in "$LIVE_DIR/data"/.catalog.netproxy-*.lock; do
+    [ "$file" = "$LIVE_DIR/$CATALOG_LOCK" ] || set -- "$file" "$@"
   done
+  # 分组锁先于根锁；任一锁忙立即中止，不与仍在运行的命令互相等待。
+  with_catalog_group_locks "$@"
+)
 
-  rm -rf /dev/netproxy/*worker.pid.lock 2> /dev/null || true
-  return 0
+# 参数: 无。
+# 返回: 0=当前事务已恢复且快照完成，1=失败。
+synchronize_user_data() {
+  [ "$INSTALL_MODE" = fresh ] || "$LIVE_DIR/netproxyctl" catalog list >/dev/null 2>&1 || return 1
+  with_user_data_locks copy_user_data_locked
 }
 
 #######################################
-# 安装前停止正在运行的代理服务
-# 参数: 无
-# 全局: 检测 sing-box 进程，置 PROXY_WAS_RUNNING
-# 返回: 0
-#######################################
-stop_proxy_if_running() {
-  # 运行目录不存在 (首次安装) 则无需停止
-  if [ ! -d "$LIVE_DIR" ]; then
-    return 0
-  fi
-
-  # 检测当前 sing-box 进程。
-  if pidof -s "$LIVE_DIR/bin/sing-box" > /dev/null 2>&1; then
-    PROXY_WAS_RUNNING=true
-    print_step "检测到代理服务正在运行，停止服务..."
-    if "$LIVE_DIR/netproxyctl" service stop > /dev/null 2>&1; then
-      print_ok "服务已停止"
-    else
-      print_error "服务停止失败，取消本次安装"
-      PROXY_WAS_RUNNING=false
-      return 1
-    fi
-  fi
-
-  # 通过 Worker PID 文件停止后台调度，不按进程名误杀其他实例。
-  if [ -x "$LIVE_DIR/bin/netproxyctl" ]; then
-    "$LIVE_DIR/bin/netproxyctl" __internal worker stop \
-      --module-dir "$LIVE_DIR" > /dev/null 2>&1 || true
-  fi
-  cleanup_worker_state
-
-  return 0
-}
-
-#######################################
-# 在新会话中以 root 执行后台 Shell。
-# 参数: 透传给 su 的参数。
-# 返回: 不返回，exec 到后台 root Shell。
+# 参数: 透传 su 参数。
+# 返回: exec 后由 root Shell 决定。
 #######################################
 launch_detached_root_shell() {
-  if command -v setsid > /dev/null 2>&1; then
-    exec setsid nohup su "$@"
-  fi
+  if command -v setsid >/dev/null 2>&1; then exec setsid nohup su "$@"; fi
   exec nohup su "$@"
 }
 
+# 参数: $1 级别，$2 结果，$3 错误码，$4 固定消息。
+# 返回: 0=完成。
+write_log() {
+  [ -d "$LIVE_DIR" ] || return 0
+  mkdir -p "$LIVE_DIR/logs" 2>/dev/null || return 0
+  printf '[%s] [%s] [module] [module.update] [%s] [%s] %s\n' \
+    "$(date '+%Y-%m-%d %H:%M:%S')" "$1" "$2" "$3" "$4" >> "$LIVE_DIR/logs/service.log" 2>/dev/null || true
+}
+
 #######################################
-# 在 KernelSU 写入 update 标记后提交暂存模块。
-# 参数: 无
-# 全局: 读取 MODPATH / LIVE_DIR / PROXY_WAS_RUNNING / INSTALL_MODE / MODULE_ID
-# 返回: 0=已安排后台提交，1=无法安排，保留 KernelSU 下次开机更新
+# 参数: 无。
+# 返回: 0=已切换，1=切换失败（保留当前模块与暂存目录）。
 #######################################
-schedule_hot_update() {
-  if ! command -v su > /dev/null 2>&1; then
-    print_warn "无法启动后台热更新，将在下次开机时由管理器完成更新"
+commit_hot_update() {
+  local backup_dir="$(dirname "$LIVE_DIR")/.netproxy.install-backup.$$" entry
+  copy_user_data_locked && set_permissions || return 1
+  rm -f "$MODPATH/data"/.catalog.netproxy-*.lock || return 1
+  # 等待中的 Go 命令必须继续使用原来的锁，而不是目录切换后的第二个锁。
+  if has_existing_user_data; then
+    for entry in config/ebpf/ebpf.conf.lock config/module.conf.lock config/singbox/config.json.lock; do
+      ln -f "$LIVE_DIR/$entry" "$MODPATH/$entry" || return 1
+    done
+    for entry in "$LIVE_DIR/data"/.catalog.netproxy-*.lock; do
+      ln -f "$entry" "$MODPATH/data/${entry##*/}" || return 1
+    done
+  fi
+  [ ! -e "$backup_dir" ] || return 1
+  rm -f "$MODPATH/update" || return 1
+  mv "$LIVE_DIR" "$backup_dir" || return 1
+  if ! mv "$MODPATH" "$LIVE_DIR"; then
+    mv "$backup_dir" "$LIVE_DIR" || write_log ERROR failed module.restore_failed "模块目录恢复失败，请勿重启并检查安装目录"
     return 1
   fi
-
-  # setsid 和 nohup 先脱离安装器会话，su 再迁出管理器 cgroup。Worker 从标准
-  # 输入读取，避免 customize.sh 被安装器清理后发生脚本文件竞争；它只在安装器
-  # 退出且 update 标记出现后提交。
-  (
-    launch_detached_root_shell -c "/system/bin/sh -s -- '$$' '$MODPATH' '$LIVE_DIR' '$PROXY_WAS_RUNNING' '$INSTALL_MODE' '$MODULE_ID'" <<'NETPROXY_HOT_UPDATE_WORKER'
-# NETPROXY_HOT_UPDATE_WORKER_BEGIN
-set -u
-
-[ "$#" -eq 6 ] || exit 2
-installer_pid="$1"
-stage_dir="$2"
-live_dir="$3"
-restart_service="$4"
-install_mode="$5"
-module_id="$6"
-log_file="$live_dir/logs/service.log"
-
-case "$install_mode" in
-  preserve|fresh) ;;
-  *) exit 2 ;;
-esac
-
-#######################################
-# 写入后台热更新日志。
-# 参数: $1 日志级别，$2 结果，$3 错误码或 -，$4 日志正文
-# 返回: 始终返回 0，不影响更新回退。
-#######################################
-write_log() {
-  mkdir -p "$(dirname "$log_file")" 2> /dev/null || return 0
-  printf '[%s] [%s] [module] [module.update] [%s] [%s] %s\n' \
-    "$(date '+%Y-%m-%d %H:%M:%S' 2> /dev/null || printf 'unknown-time')" "$1" "$2" "$3" "$4" \
-    >> "$log_file" 2> /dev/null || true
-}
-
-#######################################
-# 校验待提交模块包含最小运行入口。
-# 参数: 无
-# 返回: 0=有效，1=无效。
-#######################################
-stage_is_valid() {
-  [ -d "$stage_dir" ] \
-    && [ -f "$stage_dir/module.prop" ] \
-    && grep -qx "id=$module_id" "$stage_dir/module.prop" \
-    && [ -f "$stage_dir/netproxyctl" ] \
-    && [ -f "$stage_dir/bin/netproxyctl" ] \
-    && [ -f "$stage_dir/bin/sing-box" ]
-}
-
-#######################################
-# 原子替换前复制一项最新持久状态。
-# 参数: $1 源路径  $2 目标路径
-# 返回: 0=成功或源不存在，1=复制失败。
-#######################################
-copy_persistent_entry() {
-  source_path="$1"
-  target_path="$2"
-  [ -e "$source_path" ] || return 0
-  rm -rf "$target_path" 2> /dev/null || return 1
-  mkdir -p "$(dirname "$target_path")" || return 1
-  cp -af "$source_path" "$target_path"
-}
-
-#######################################
-# 复制持久 Catalog 状态，忽略事务 staging 目录。
-# 参数: $1 源 Catalog 目录  $2 目标 Catalog 目录
-# 返回: 0=成功，1=复制失败。
-#######################################
-copy_catalog_state() {
-  source_dir="$1"
-  target_dir="$2"
-  [ -d "$source_dir" ] || return 1
-  rm -rf "$target_dir" 2> /dev/null || return 1
-  mkdir -p "$target_dir" || return 1
-
-  for group_dir in "$source_dir"/*; do
-    [ -e "$group_dir" ] || continue
-    [ "$(basename "$group_dir")" = staging ] && continue
-    cp -r "$group_dir" "$target_dir/" 2> /dev/null || return 1
-  done
+  rm -rf "$backup_dir" || write_log WARN failed module.backup_cleanup_failed "安装备份未能删除，新版本已应用"
   return 0
 }
 
 #######################################
-# 合并 live 目录在安装期间新增的用户状态。
-# 参数: 无
-# 返回: 0=成功或全新安装跳过，1=任一项复制失败。
+# 参数: 无。
+# 返回: 0=完成，1=热切换未完成，保留管理器更新路径。
 #######################################
-merge_live_state() {
-  [ "$install_mode" = "preserve" ] || return 0
-  [ -d "$live_dir" ] || return 0
-  [ -f "$live_dir/config/singbox/config.json" ] || return 1
-  if [ -d "$live_dir/data/catalog" ]; then
-    copy_catalog_state "$live_dir/data/catalog" "$stage_dir/data/catalog" || return 1
-  fi
-
-  for config_item in \
-    module.conf \
-    singbox/config.json \
-    singbox/rules/local/direct.json \
-    singbox/rules/local/proxy.json \
-    singbox/rules/local/block.json; do
-    copy_persistent_entry "$live_dir/config/$config_item" "$stage_dir/config/$config_item" || return 1
-  done
-
-  chmod 0600 "$stage_dir/config/singbox/config.json" || return 1
-}
-
-#######################################
-# 热提交失败时恢复更新前正在运行的服务。
-# 参数: 无
-# 返回: 始终返回 0，不覆盖原始失败原因。
-#######################################
-restore_live_service() {
-  [ "$restart_service" = true ] || return 0
-  [ -x "$live_dir/netproxyctl" ] || return 0
-  su -c "\"$live_dir/bin/netproxyctl\" __internal worker start --module-dir \"$live_dir\"" > /dev/null 2>&1 || true
-  su -c "\"$live_dir/netproxyctl\" service start" > /dev/null 2>&1 || true
-}
-
-#######################################
-# 记录失败并保留管理器的下次开机更新路径。
-# 参数: $1 失败原因
-# 返回: 不返回，退出后台 Shell。
-#######################################
-fail_hot_update() {
-  write_log "WARN" "failed" "module.update_failed" "后台热更新未提交: $1；保留待更新目录，下次开机将由管理器完成更新"
-  restore_live_service
-  exit 0
-}
-
-# KernelSU 在 customize.sh 返回后才写 live/update 并完成自己的清理。
-elapsed=0
-while [ -d "/proc/$installer_pid" ]; do
-  [ "$elapsed" -lt 30 ] || fail_hot_update "等待安装器退出超时"
-  sleep 1
-  elapsed=$((elapsed + 1))
-done
-
-elapsed=0
-while [ ! -f "$live_dir/update" ]; do
-  [ "$elapsed" -lt 30 ] || fail_hot_update "未检测到更新标记"
-  sleep 1
-  elapsed=$((elapsed + 1))
-done
-
-# 给管理器完成 module.prop 复制和暂存目录清理留出稳定窗口。
-sleep 3
-stage_is_valid || fail_hot_update "暂存模块校验失败"
-[ -f "$live_dir/update" ] || fail_hot_update "更新标记已被撤销"
-merge_live_state || fail_hot_update "合并最新用户数据失败"
-
-module_parent="$(dirname "$live_dir")"
-backup_dir="$module_parent/.${module_id}.hot-update.$$"
-rm -rf "$backup_dir" 2> /dev/null || fail_hot_update "无法清理旧热更新备份"
-
-if [ -e "$live_dir" ] && ! mv "$live_dir" "$backup_dir"; then
-  fail_hot_update "无法备份当前模块"
-fi
-
-if ! mv "$stage_dir" "$live_dir"; then
-  if [ -e "$backup_dir" ] && [ ! -e "$live_dir" ]; then
-    mv "$backup_dir" "$live_dir" || true
-  fi
-  fail_hot_update "无法切换新模块，已尝试恢复旧模块"
-fi
-
-rm -f "$live_dir/update"
-rm -rf "$backup_dir" 2> /dev/null || true
-write_log "INFO" "success" "-" "后台热更新已完成，无需重启设备"
-
-if [ -x "$live_dir/bin/netproxyctl" ]; then
-  su -c "\"$live_dir/bin/netproxyctl\" __internal worker start --module-dir \"$live_dir\"" > /dev/null 2>&1 \
-    || write_log "WARN" "failed" "worker.start_failed" "新版后台 Worker 启动失败"
-fi
-
-if [ "$restart_service" = true ]; then
-  if su -c "\"$live_dir/netproxyctl\" service start" > /dev/null 2>&1; then
-    write_log "INFO" "success" "-" "后台热更新后服务已恢复"
-  else
-    write_log "WARN" "failed" "service.start_failed" "后台热更新后服务未启动，请在管理器中检查节点配置"
-  fi
-fi
-# NETPROXY_HOT_UPDATE_WORKER_END
-NETPROXY_HOT_UPDATE_WORKER
-  ) > /dev/null 2>&1 &
-
-  return 0
-}
-
-#######################################
-# 设置模块文件权限
-# 参数: 无
-# 全局: 读取 EXECUTABLE_FILES / MODPATH
-# 返回: 0
-#######################################
-set_permissions() {
-  print_step "设置文件权限..."
-
-  # 先设置默认权限，再单独放开真正需要执行的入口。
-  set_perm_recursive "$MODPATH" 0 0 0755 0644 || return 1
-
-  local file
-  for file in $EXECUTABLE_FILES; do
-    local path="$MODPATH/$file"
-    if [ -e "$path" ]; then
-      chmod 0755 "$path" 2> /dev/null || return 1
-    fi
-  done
-
-  # 用户配置与 Catalog 包含节点凭据、订阅地址和应用名单，仅允许 root 读取。
-  [ ! -f "$MODPATH/config/module.conf" ] || chmod 0600 "$MODPATH/config/module.conf" 2> /dev/null || return 1
-  [ ! -f "$MODPATH/config/singbox/config.json" ] || chmod 0600 "$MODPATH/config/singbox/config.json" 2> /dev/null || return 1
-  [ ! -f "$MODPATH/config/ebpf/ebpf.conf" ] || chmod 0600 "$MODPATH/config/ebpf/ebpf.conf" 2> /dev/null || return 1
-  [ ! -d "$MODPATH/data/catalog" ] \
-    || set_perm_recursive "$MODPATH/data/catalog" 0 0 0700 0600 || return 1
-  [ ! -d "$MODPATH/runtime" ] \
-    || set_perm_recursive "$MODPATH/runtime" 0 0 0700 0600 || return 1
-
-  print_ok "权限设置完成"
-  return 0
-}
-
-#######################################
-# 在限定时间内等待用户按音量键
-# 参数:
-#   $1  超时秒数 (可选，默认 10)
-# 返回: 标准输出打印 up / down / timeout
-#######################################
-wait_volume_key() {
-  local timeout="${1:-10}"
-  local key event_file event_pid
-
-  event_file="${TMPDIR:-/data/local/tmp}/netproxy_volume_key.$$"
-
-  # 每秒轮询一次按键事件，避免无按键时被 getevent 无限阻塞。
-  while [ "$timeout" -gt 0 ]; do
-    : > "$event_file" || break
-    getevent -lqc 1 > "$event_file" 2> /dev/null &
-    event_pid=$!
+apply_hot_update() {
+  local elapsed=0
+  case "$INSTALL_MODE" in preserve|nodes|fresh) ;; *) return 1 ;; esac
+  while [ -d "/proc/$INSTALLER_PID" ] || [ ! -f "$LIVE_DIR/update" ]; do
+    [ "$elapsed" -lt 60 ] || return 1
     sleep 1
-    key=$(cat "$event_file" 2> /dev/null)
-    kill "$event_pid" 2> /dev/null || true
-    wait "$event_pid" 2> /dev/null || true
-    rm -f "$event_file"
-    key=$(printf '%s\n' "$key" | grep -E "KEY_VOLUME(UP|DOWN)" | head -1)
-
-    if echo "$key" | grep -q "VOLUMEUP"; then
-      printf "up\n"
-      return 0
-    elif echo "$key" | grep -q "VOLUMEDOWN"; then
-      printf "down\n"
-      return 0
-    fi
-
-    timeout=$((timeout - 1))
+    elapsed=$((elapsed + 1))
   done
-
-  # 超时未按键
-  printf "timeout\n"
+  # 管理器在 customize.sh 返回后仍会复制 module.prop 并写入 update。
+  sleep 3
+  validate_stage && [ -f "$LIVE_DIR/update" ] || return 1
+  stop_proxy_if_running || return 1
+  [ "$INSTALL_MODE" = fresh ] || "$LIVE_DIR/netproxyctl" catalog list >/dev/null 2>&1 || return 1
+  with_user_data_locks commit_hot_update || return 1
+  write_log INFO success - "后台热更新已完成，无需重启设备"
+  SERVICE_STOPPED=true
+  restore_live_service || write_log WARN failed service.restore_failed "新版已应用，后台 Worker 或服务恢复失败，请在管理器中检查"
 }
 
-#######################################
-# 读取已安装管理器的版本信息。
-# 参数: 无
-# 返回: 0=标准输出版本信息，1=管理器未安装或无法读取。
-#######################################
+# 参数: 无。
+# 返回: 0=已安排，1=无法启动后台 Shell。
+schedule_hot_update() {
+  command -v su >/dev/null 2>&1 || return 1
+  # stdin 持有脚本内容，安装器删除 customize.sh 或临时目录不影响后台提交。
+  (launch_detached_root_shell -c "/system/bin/sh -s -- --apply-update '$$' '$MODPATH' '$LIVE_DIR' '$INSTALL_MODE'" \
+    < "$MODPATH/customize.sh") >/dev/null 2>&1 &
+}
+
+# 参数: 无。
+# 返回: 0=版本已输出，1=应用未安装。
 get_installed_manager_version() {
   local package_dump version_name version_code
-
-  pm path "$MANAGER_PACKAGE" > /dev/null 2>&1 || return 1
-  package_dump="$(dumpsys package "$MANAGER_PACKAGE" 2> /dev/null)" || return 1
+  pm path "$MANAGER_PACKAGE" >/dev/null 2>&1 || return 1
+  package_dump="$(dumpsys package "$MANAGER_PACKAGE" 2>/dev/null)" || return 1
   version_name="$(printf '%s\n' "$package_dump" | sed -n 's/^[[:space:]]*versionName=\([^[:space:]]*\).*/\1/p' | head -n 1)"
   version_code="$(printf '%s\n' "$package_dump" | sed -n 's/^[[:space:]]*versionCode=\([0-9][0-9]*\).*/\1/p' | head -n 1)"
-
-  [ -n "$version_name" ] || version_name="未知"
-  [ -n "$version_code" ] || version_code="未知"
-  printf '%s (versionCode %s)\n' "$version_name" "$version_code"
+  printf '%s (versionCode %s)\n' "${version_name:-未知}" "${version_code:-未知}"
 }
 
-#######################################
-# 按安装包内容选择是否安装随附管理器。
-# 参数: 无
-# 全局: 读取 MODPATH
-# 返回: 始终返回 0。
-#######################################
+# 参数: 无。
+# 返回: 0=完成（管理器安装失败不阻塞），1=随附 APK 清理失败。
 install_bundled_manager() {
   local installed_version
-
   print_title "安装 NetProxy 管理器"
   ui_print ""
-
   if [ ! -f "$MODPATH/NetProxy.apk" ]; then
     ui_print "  本安装包未随附 NetProxy 管理器"
     ui_print "  可稍后从 Google Play 安装管理器"
     return 0
   fi
-
   if installed_version="$(get_installed_manager_version)"; then
-    ui_print "  已安装 NetProxy 管理器"
-    ui_print "  当前版本: $installed_version"
-    ui_print "  为避免覆盖现有安装，跳过随附 APK"
-    ui_print "  随附 CI 版使用独立签名；如需安装新版，请先卸载旧版并重新刷入"
-    ui_print "  卸载会清除管理器本地数据，日常使用建议通过 Google Play 更新"
-    rm -f "$MODPATH/NetProxy.apk"
-    return 0
-  fi
-
-  ui_print "  本包随附 NetProxy 管理器 APK"
-  ui_print "  [音量+] 安装 (默认)"
-  ui_print "  [音量-] 跳过"
-  ui_print ""
-
-  if [ "$(wait_volume_key 10)" = "down" ]; then
-    print_step "已跳过管理器安装"
-    rm -f "$MODPATH/NetProxy.apk"
-    return 0
-  fi
-
-  print_step "正在安装随附管理器..."
-  if pm install -r "$MODPATH/NetProxy.apk" > /dev/null 2>&1; then
-    print_ok "管理器安装成功"
+    ui_print "  当前版本：$installed_version"
+    ui_print "  已安装管理器，跳过随附 APK"
+    ui_print "  随附 CI 版使用独立签名，不能覆盖现有安装"
+    ui_print "  卸载会清除管理器本地数据，建议通过 Google Play 更新"
   else
-    print_warn "管理器安装失败，可稍后手动安装或使用 Google Play"
+    ui_print "  [音量+] 安装（默认）  [音量-] 跳过"
+    stop_key_listener
+    if wait_volume_key 10 && [ "$VOLUME_KEY" != down ]; then
+      if pm install "$MODPATH/NetProxy.apk" >/dev/null 2>&1; then
+        print_ok "管理器安装成功"
+      else
+        print_warn "管理器安装失败，可稍后通过 Google Play 安装"
+      fi
+    else
+      print_step "已跳过管理器安装"
+    fi
+    stop_key_listener
   fi
-
-  # 随附 APK 仅用于刷入时安装，成功或跳过后都不保留在模块目录。
   rm -f "$MODPATH/NetProxy.apk"
-
-  return 0
 }
 
-# 清理安装过程产生的临时文件
-cleanup() {
-  rm -rf "$BACKUP_DIR" 2> /dev/null
+# 参数: 无。
+# 返回: 安装退出码；回收按键监听和临时文件。
+finish_install() {
+  local result="$?"
+  trap - EXIT HUP INT TERM
+  stop_key_listener
+  [ ! -d "${INSTALL_TMP:-}" ] || rm -rf "$INSTALL_TMP"
+  return "$result"
 }
 
-################################################################################
-# 主流程
-################################################################################
+if [ "$BACKGROUND" = true ]; then
+  if ! apply_hot_update; then
+    write_log WARN failed module.update_failed "后台热更新未提交，保留暂存模块，由管理器下次开机处理"
+    restore_live_service || write_log WARN failed service.restore_failed "安装前的 Worker 或服务恢复失败"
+    exit 1
+  fi
+  exit 0
+fi
 
-# 预解压 module.prop 以读取版本号 (须在打印版本前完成)
-unzip -o "$ZIPFILE" "module.prop" -d "$TMPDIR" > /dev/null 2>&1
+INSTALL_TMP="$(mktemp -d "$TMPDIR/netproxy-install.XXXXXX")" || exit 1
+trap finish_install EXIT
+trap 'exit 1' HUP INT TERM
 
+# Recovery 可以直接写入空的最终目录；升级仍必须使用独立暂存目录。
+[ -d "$MODPATH" ] || exit 1
+if [ "$(cd "$MODPATH" && pwd -P)" = "$LIVE_DIR" ]; then
+  [ "${BOOTMODE:-false}" != true ] && ! has_existing_user_data || exit 1
+fi
+unzip -o "$ZIPFILE" module.prop -d "$INSTALL_TMP" >/dev/null 2>&1 || exit 1
+grep -qx "id=$MODULE_ID" "$INSTALL_TMP/module.prop" || exit 1
 print_title "NetProxy - sing-box 透明代理"
 ui_print ""
-ui_print "  版本: $(grep_prop version "$TMPDIR/module.prop" 2> /dev/null || echo "未知")"
-
-# 先停止旧服务，再替换模块文件，避免运行中的进程继续使用旧文件。
+ui_print "  版本: $(grep_prop version "$INSTALL_TMP/module.prop")"
 choose_install_mode || exit 1
-if [ "${BOOTMODE:-false}" = true ] && ! stop_proxy_if_running; then
-  print_title "安装失败"
-  ui_print ""
-  ui_print "  旧服务未能安全停止，已取消模块替换"
-  ui_print ""
-  exit 1
+print_title "准备安装"
+print_step "解压与校验安装包..."
+unzip -o "$ZIPFILE" -x 'META-INF/*' -d "$MODPATH" >/dev/null 2>&1 \
+  && validate_stage && set_permissions || { print_error "安装包或权限检查失败"; exit 1; }
+install_bundled_manager || { print_error "随附 APK 清理失败"; exit 1; }
+print_title "安装模块"
+ui_print "  安装完成前请勿修改模块配置、节点或订阅"
+synchronize_user_data && set_permissions || { print_error "保留用户数据或权限设置失败"; exit 1; }
+if [ "${BOOTMODE:-false}" = true ]; then
+  NETPROXY_MODULE_DIR="$MODPATH" "$MODPATH/bin/netproxyctl" config check > "$INSTALL_TMP/check.log" 2>&1 \
+    || { print_error "配置检查失败，未替换当前模块；请检查安装模式与当前配置"; exit 1; }
+  print_ok "模块配置检查通过"
 fi
 
-# 按顺序执行安装步骤，任一失败则进入失败分支
-if backup_config \
-  && extract_module \
-  && restore_config \
-  && set_permissions; then
-
-  cleanup
-
-  install_bundled_manager
-
-  if [ "${BOOTMODE:-false}" = true ]; then
-    if schedule_hot_update; then
-      print_title "安装完成"
-      ui_print "  正在后台应用新版本，无需重启设备"
-      ui_print "  接下来约 3 秒请不要重启；若现在重启，"
-      ui_print "  KernelSU 将在开机时按标准流程继续更新"
-    else
-      print_title "安装完成，将在下次开机时应用更新"
-    fi
-  else
-    print_title "安装完成，请重启设备"
-  fi
+if [ "${BOOTMODE:-false}" = true ] && schedule_hot_update; then
+  print_title "安装完成"
+  ui_print "  正在后台应用新版本，无需重启设备"
+  ui_print "  接下来约 3 秒请不要重启；若立即重启，"
+  ui_print "  模块管理器将按标准流程应用暂存模块"
 else
-  # 安装失败：清理并提示反馈
-  cleanup
-  print_title "安装失败"
-  ui_print ""
-  ui_print "  请检查上述错误信息"
-  ui_print "  并在 GitHub Issues 反馈"
-  ui_print ""
-  exit 1
+  print_title "安装完成"
+  ui_print "  请重启设备应用新版本"
 fi
+finish_install

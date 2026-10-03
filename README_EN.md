@@ -103,7 +103,7 @@ Both packages have identical proxy capabilities. The manager APK is an independe
 
 1. Download the latest ZIP from [Releases](https://github.com/Fanju6/NetProxy-Magisk/releases).
 2. Flash it with Magisk, KernelSU, or APatch.
-3. On an existing installation, choose **Keep existing data** or **Fresh installation**. Timeout keeps existing data.
+3. On an existing installation, choose **Keep existing data**, **Keep nodes and subscriptions only**, or **Fresh installation**. Volume Up cycles through the choices; Volume Down confirms. Without input, existing data is kept by default.
 4. If the package includes an APK, choose whether to install it; otherwise install the manager from Google Play when available.
 5. A live installation is applied without a reboot. Recovery installation still requires a reboot.
 6. Import and select a node before starting the service.
