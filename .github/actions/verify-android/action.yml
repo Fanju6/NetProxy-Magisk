@@ -1,9 +1,23 @@
-name: 验证 Android 管理器
-description: 复用托管 Ubuntu 的 SDK，启用 Gradle 构建缓存并执行单元测试和 Lint
+name: 构建与验证 Android 管理器
+description: 共用 Android 环境与 Gradle 调用，按需验证并生成临时签名的 CI 管理器
+
+inputs:
+  build-manager:
+    description: 是否构建并签名当前源码的 CI 管理器
+    default: 'false'
+  verify:
+    description: 是否执行 Android 单元测试与 Lint
+    default: 'true'
 
 runs:
   using: composite
   steps:
+    - name: 计算管理器构建元信息
+      if: inputs.build-manager == 'true'
+      id: meta
+      shell: bash
+      run: sh .github/scripts/build-metadata.sh >> "$GITHUB_OUTPUT"
+
     - name: 配置 Android JDK
       uses: actions/setup-java@v6
       with:
@@ -22,7 +36,64 @@ runs:
             'platforms;android-37.0' 'build-tools;37.0.0' --channel=1
         fi
 
-    - name: 执行 Android 单元测试与 Lint
+    - name: 构建管理器并执行所需验证
       shell: bash
       working-directory: src/android
-      run: ./gradlew testDebugUnitTest lintDebug --build-cache --parallel --no-daemon
+      env:
+        BUILD_MANAGER: ${{ inputs.build-manager }}
+        VERIFY_ANDROID: ${{ inputs.verify }}
+        MANAGER_VERSION: ${{ steps.meta.outputs.manager_version }}
+        BUILD_ID: ${{ steps.meta.outputs.short_sha }}
+      run: |
+        set --
+        if [ "$BUILD_MANAGER" = true ]; then
+          set -- :app:assembleRelease \
+            -PnetproxyManagerCi=true \
+            -PnetproxyManagerBuildId="$BUILD_ID" \
+            -PnetproxyManagerVersion="$MANAGER_VERSION"
+        fi
+        if [ "$VERIFY_ANDROID" = true ]; then
+          set -- "$@" testDebugUnitTest lintDebug
+        fi
+        test "$#" -gt 0
+        ./gradlew "$@" --build-cache --parallel --no-daemon
+
+    - name: 使用本次运行的临时密钥签名管理器
+      if: inputs.build-manager == 'true'
+      shell: bash
+      env:
+        MANAGER_VERSION: ${{ steps.meta.outputs.manager_version }}
+        BUILD_ID: ${{ steps.meta.outputs.short_sha }}
+        COMMIT_COUNT: ${{ steps.meta.outputs.commit_count }}
+      run: |
+        set -euo pipefail
+        umask 077
+        KEYSTORE="$RUNNER_TEMP/netproxy-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.p12"
+        UNSIGNED_APK="src/android/app/build/outputs/apk/release/app-release-unsigned.apk"
+        SIGNED_APK="$RUNNER_TEMP/NetProxy.apk"
+        PASSWORD="$(openssl rand -hex 24)"
+        trap 'rm -f "$KEYSTORE" "$SIGNED_APK" "$SIGNED_APK.idsig"' EXIT
+
+        APK_INFO="$("$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$UNSIGNED_APK")"
+        printf '%s\n' "$APK_INFO" | grep -F "name='com.fanjv.netproxy'"
+        printf '%s\n' "$APK_INFO" | grep -F "versionCode='$COMMIT_COUNT'"
+        printf '%s\n' "$APK_INFO" | grep -F "versionName='${MANAGER_VERSION}-ci.${BUILD_ID}'"
+
+        keytool -genkeypair -noprompt \
+          -keystore "$KEYSTORE" \
+          -storetype PKCS12 \
+          -storepass "$PASSWORD" \
+          -keypass "$PASSWORD" \
+          -alias netproxy-ci \
+          -keyalg RSA -keysize 2048 -validity 3650 \
+          -dname "CN=NetProxy CI, OU=Continuous Integration, O=NetProxy"
+
+        "$ANDROID_HOME/build-tools/37.0.0/apksigner" sign \
+          --ks "$KEYSTORE" \
+          --ks-key-alias netproxy-ci \
+          --ks-pass "pass:$PASSWORD" \
+          --key-pass "pass:$PASSWORD" \
+          --v4-signing-enabled false \
+          --out "$SIGNED_APK" "$UNSIGNED_APK"
+        "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose "$SIGNED_APK"
+        install -m 0644 "$SIGNED_APK" src/module/NetProxy.apk

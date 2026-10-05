@@ -15,27 +15,51 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  build:
+    name: 并行构建模块与管理器
+    uses: ./.github/workflows/build-module.yml
+
   release:
-    name: 构建并发布 Release
+    name: 汇合并发布 Release
+    needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 10
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      COMMIT_COUNT: ${{ needs.build.outputs.commit_count }}
+      STANDARD_NAME: ${{ needs.build.outputs.standard_name }}
+      MANAGER_NAME: ${{ needs.build.outputs.manager_name }}
     steps:
-      - name: 拉取代码
+      - name: 拉取发布脚本与更新日志
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
-          filter: blob:none
+          sparse-checkout: |
+            .github/scripts
+            docs
 
-      - name: 构建并打包模块
-        id: pack
-        uses: ./.github/actions/build-module
+      - name: 配置发布脚本 Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: 下载本次运行的标准模块包
+        uses: actions/download-artifact@v8
+        with:
+          name: module-standard
+
+      - name: 下载本次运行的管理器
+        uses: actions/download-artifact@v8
+        with:
+          name: manager-apk
+          path: manager
+
+      - name: 复用标准包生成含管理器包
+        run: sh .github/scripts/package-manager.sh "$STANDARD_NAME" manager/NetProxy.apk "$MANAGER_NAME"
 
       - name: 生成模块自更新清单
         env:
           REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
-          COMMIT_COUNT: ${{ steps.pack.outputs.commit_count }}
-          STANDARD_NAME: ${{ steps.pack.outputs.standard_name }}
         run: |
           jq -n \
             --arg version "Module ${TAG}" \
@@ -50,7 +74,7 @@ jobs:
         run: |
           node .github/scripts/extract-release-notes.mjs \
             docs/changelog.md \
-            "${{ steps.pack.outputs.version }}" \
+            "$VERSION" \
             "$RUNNER_TEMP/release-notes.md"
 
       - name: 发布 GitHub Release
@@ -58,8 +82,8 @@ jobs:
         with:
           body_path: ${{ runner.temp }}/release-notes.md
           files: |
-            ${{ steps.pack.outputs.standard_name }}
-            ${{ steps.pack.outputs.manager_name }}
+            ${{ env.STANDARD_NAME }}
+            ${{ env.MANAGER_NAME }}
             update.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -79,8 +103,8 @@ jobs:
             [查看更新日志并下载](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }})
 
             **直接下载:**
-            [标准包](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.pack.outputs.standard_name }})
-            [含管理器包](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.pack.outputs.manager_name }})
+            [标准包](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ env.STANDARD_NAME }})
+            [含管理器包](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ env.MANAGER_NAME }})
 
       - name: 触发同步到 KernelSU 仓库
         if: github.ref_type == 'tag'
@@ -90,8 +114,14 @@ jobs:
         # 故在此显式 dispatch（workflow_dispatch 是该限制的官方例外，GITHUB_TOKEN 可触发）。
         run: gh workflow run sync-kernelsu.yml
 
+  failure:
+    name: 通知构建或发布失败
+    needs: [build, release]
+    if: always() && contains(needs.*.result, 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
       - name: 失败通知
-        if: failure()
         uses: cbrgm/telegram-github-action@v1
         with:
           token: ${{ secrets.TG_BOT_TOKEN }}

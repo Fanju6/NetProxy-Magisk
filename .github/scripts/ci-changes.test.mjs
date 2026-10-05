@@ -12,7 +12,7 @@ test('Native 与默认配置变化仍验证 Android 调用方', () => {
   }
 })
 
-test('模块、WebUI 和测试变化仅由打包任务构建内置管理器', () => {
+test('模块、WebUI 和测试变化仍构建管理器，但不重复执行 Android 验证', () => {
   for (const path of ['src/module/customize.sh', 'src/webui/src/exec.ts', 'tests/ci_verify.sh']) {
     assert.deepEqual(classifyChanges([path]), { module: true, android: false })
   }

@@ -1,0 +1,84 @@
+name: 并行构建模块与管理器
+
+on:
+  workflow_call:
+    inputs:
+      verify-android:
+        description: 是否同时执行 Android 单元测试与 Lint
+        type: boolean
+        default: false
+    outputs:
+      version:
+        value: ${{ jobs.module.outputs.version }}
+      commit_count:
+        value: ${{ jobs.module.outputs.commit_count }}
+      standard_name:
+        value: ${{ jobs.module.outputs.standard_name }}
+      manager_name:
+        value: ${{ jobs.module.outputs.manager_name }}
+
+permissions:
+  contents: read
+
+jobs:
+  module:
+    name: 验证并构建标准模块
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.pack.outputs.version }}
+      commit_count: ${{ steps.pack.outputs.commit_count }}
+      standard_name: ${{ steps.pack.outputs.standard_name }}
+      manager_name: ${{ steps.pack.outputs.manager_name }}
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: 构建并打包标准模块
+        id: pack
+        uses: ./.github/actions/build-module
+
+      - name: 保存已验证的标准模块包
+        uses: actions/upload-artifact@v7
+        with:
+          name: module-standard
+          path: ${{ steps.pack.outputs.standard_name }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+          overwrite: true
+
+  android:
+    name: 构建与验证 Android 管理器
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: 拉取 Android 源码与构建配置
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          sparse-checkout: |
+            src/android
+            src/module/config/singbox
+            .github/actions/verify-android
+            .github/scripts
+
+      - name: 构建并签名管理器，按需执行验证
+        uses: ./.github/actions/verify-android
+        with:
+          build-manager: 'true'
+          verify: ${{ inputs.verify-android }}
+
+      - name: 保存本次签名的管理器
+        uses: actions/upload-artifact@v7
+        with:
+          name: manager-apk
+          path: src/module/NetProxy.apk
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+          overwrite: true

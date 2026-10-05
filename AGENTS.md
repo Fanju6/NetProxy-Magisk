@@ -87,7 +87,7 @@ src/module/emulated-soft-reboot.sh  # 仅 KernelSU 软重启前生命周期钩�
 - Miuix Nav 是页面导航状态唯一所有者。主分页动画必须从真实当前页开始，禁止通过临时目标页制造过渡。
 - 主分页底部导航由 `MainBottomBar` 单一实现统一承载；主题偏好不改变其结构或布局形态。
 - `third_party/scripta` 是带来源记录的固定源码快照。修改其代码时保留来源、许可证和 NetProxy 扩展说明，不把它悄悄替换成浮动远程依赖。
-- 含管理器模块包的 `NetProxy.apk` 由共享 CI 打包 Action 从当前 Android 源码构建并使用本次运行的临时密钥签名；不得提交或手工维护该生成物。标准包必须排除该 APK。
+- 含管理器模块包的 `NetProxy.apk` 由独立 Android 任务通过共享 Action 从当前源码构建，并使用本次运行的临时密钥签名；不得提交或手工维护该生成物。标准包必须排除该 APK。
 
 ## WebUI
 
@@ -366,12 +366,12 @@ Go 生命周期控制器通过 `-c config/singbox/config.json` 加载静态配�
 
 ## 构建与发布
 
-- 共享模块构建 Action 完成 Go/Shell 验证、`netproxyctl`、WebUI 和 CI 管理器构建后打包；管理器 APK 使用仅限本次运行的签名，Android 源码变化必须触发模块重打包。CI 标记构建在仪表盘常驻显示警告，正式 Google Play 构建不带该标记。开发包发布等待本次模块构建与受影响的 Android 验证通过，不在发布阶段重建。
+- CI 与 Release 共用 `build-module.yml` 的并行任务图；标准模块任务完成 Go/Shell 验证、`netproxyctl`、WebUI 与标准包，Android 任务构建并临时签名当前源码的 APK。发布任务仅汇合本次运行的产物并追加 APK，不重新编译。Android 源码变化必须触发模块重打包；任一构建或所需验证失败均不得发布。
 - CI 变更范围从同分支上次成功验证的提交计算，不能只比较本次 push：前一轮被取消或失败的改动仍须验证；基线不可用时执行全部检查。
 - 版本计数与更新日志所需的 checkout 保留完整提交历史；可使用 `blob:none` 或稀疏检出减少历史文件下载。KernelSU 源码镜像仍须获取完整对象，不能套用部分克隆。
 - 标准包不包含 `NetProxy.apk`；文件名带 `_with-manager` 的包仅额外携带该 APK，代理能力保持一致。
 - 模块使用 ZIP 容器和 XZ 9 压缩；含管理器包复用标准包的压缩数据，以 Store 追加 APK。CI 上传归档时不再进行外层压缩。
-- Android 受影响时由 CI 并行执行单元测试与 Lint；模块构建同时生成当前源码对应的含管理器 APK。Google Play 是推荐更新渠道，临时签名的 CI APK 为无 Play 环境保留。
+- Android 受影响时，CI 在管理器构建任务中使用同一次 Gradle 调用执行单元测试、Lint 与 Release 构建；仅需模块打包时仍构建当前管理器，不额外执行 Android 验证。资源维护复用纯验证模式，不构建 APK。Google Play 是推荐更新渠道，临时签名的 CI APK 为无 Play 环境保留。
 - `update-resources.yml` 统一维护内核、规则、Web 资源、Go/npm/Gradle/Android 依赖；高风险或大版本更新进入报告，不自动静默升级。
 
 ## 安全边界
