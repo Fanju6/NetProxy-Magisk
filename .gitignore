@@ -5,6 +5,10 @@
 *.iml
 CLAUDE.local.md
 
+# 本地安装的 Agent 技能与安装记录
+/.agents/skills/
+/skills-lock.json
+
 # NetProxy WebUI 构建产物
 src/module/webroot/netproxy/
 
