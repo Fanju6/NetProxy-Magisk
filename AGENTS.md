@@ -370,6 +370,7 @@ Go 生命周期控制器通过 `-c config/singbox/config.json` 加载静态配�
 - CI 变更范围从同分支上次成功验证的提交计算，不能只比较本次 push：前一轮被取消或失败的改动仍须验证；基线不可用时执行全部检查。
 - 版本计数与更新日志所需的 checkout 保留完整提交历史；可使用 `blob:none` 或稀疏检出减少历史文件下载。KernelSU 源码镜像仍须获取完整对象，不能套用部分克隆。
 - 标准包不包含 `NetProxy.apk`；文件名带 `_with-manager` 的包仅额外携带该 APK，代理能力保持一致。
+- 模块使用 ZIP 容器和 XZ 9 压缩；含管理器包复用标准包的压缩数据，以 Store 追加 APK。CI 上传归档时不再进行外层压缩。
 - Android 受影响时由 CI 并行执行单元测试与 Lint；模块构建同时生成当前源码对应的含管理器 APK。Google Play 是推荐更新渠道，临时签名的 CI APK 为无 Play 环境保留。
 - `update-resources.yml` 统一维护内核、规则、Web 资源、Go/npm/Gradle/Android 依赖；高风险或大版本更新进入报告，不自动静默升级。
 

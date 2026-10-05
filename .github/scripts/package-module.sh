@@ -20,7 +20,7 @@ test ! -e "$manager"
 
 (
   cd "$module_dir"
-  7z a -tzip -mx=5 "$standard" . -x!NetProxy.apk
+  7z a -tzip -mm=XZ -mx=9 "$standard" . -x!NetProxy.apk
   cp "$standard" "$manager"
   # APK 自身已压缩；追加时不重新压缩标准包内的核心和 Web 资源。
   7z a -tzip -mx=0 "$manager" NetProxy.apk

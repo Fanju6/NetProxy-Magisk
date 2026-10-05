@@ -2,7 +2,7 @@
 # 文件: tests/module_packaging_test.sh
 # 功能: 验证两种模块包的内容差异以及构建、发布契约。
 # 用法: sh tests/module_packaging_test.sh
-# 依赖: POSIX sh、7z、grep、cmp、mktemp
+# 依赖: POSIX sh、7z、grep、cmp、cp、mktemp
 
 set -eu
 
@@ -29,6 +29,7 @@ assert_not_contains() {
 assert_contains "$BUILD_ACTION" 'standard_name=NetProxy_${VERSION}_${COMMIT_COUNT}.zip'
 assert_contains "$BUILD_ACTION" 'manager_name=NetProxy_${VERSION}_${COMMIT_COUNT}_with-manager.zip'
 assert_contains "$BUILD_ACTION" 'sh .github/scripts/package-module.sh'
+assert_contains "$ROOT/.github/scripts/package-module.sh" '7z a -tzip -mm=XZ -mx=9'
 assert_contains "$BUILD_ACTION" 'sh tests/ci_verify.sh'
 assert_contains "$BUILD_ACTION" 'install -m 0755 "$NETPROXY_CI_BUILD_DIR/netproxyctl-android" src/module/bin/netproxyctl'
 assert_contains "$BUILD_ACTION" './gradlew :app:assembleRelease'
@@ -100,9 +101,16 @@ TEMP="$(mktemp -d)"
 trap 'rm -rf "$TEMP"' EXIT HUP INT TERM
 mkdir -p "$TEMP/module/config/singbox" "$TEMP/module/runtime" "$TEMP/module/bin"
 printf 'id=netproxy\nversion=test\n' > "$TEMP/module/module.prop"
-printf 'binary fixture\n' > "$TEMP/module/bin/netproxyctl"
+# 小文件可能自动使用 Store；可压缩内容才能验证实际压缩方法。
+{
+  count=0
+  while [ "$count" -lt 128 ]; do
+    printf '%s\n' 'anonymous module packaging fixture: core and manager compression verification'
+    count=$((count + 1))
+  done
+} > "$TEMP/module/bin/netproxyctl"
 printf '{}\n' > "$TEMP/module/config/singbox/config.json"
-printf 'manager fixture\n' > "$TEMP/module/NetProxy.apk"
+cp "$TEMP/module/bin/netproxyctl" "$TEMP/module/NetProxy.apk"
 : > "$TEMP/module/runtime/.gitkeep"
 
 sh "$ROOT/.github/scripts/package-module.sh" "$TEMP/module" "$TEMP/output" standard.zip manager.zip > "$TEMP/package.log"
@@ -110,6 +118,11 @@ for name in standard manager; do
   7z l -slt "$TEMP/output/$name.zip" | tr '\\' '/' > "$TEMP/$name.list"
   assert_contains "$TEMP/$name.list" 'Path = module.prop'
   assert_contains "$TEMP/$name.list" 'Path = runtime/.gitkeep'
+  7z l -slt "$TEMP/output/$name.zip" bin/netproxyctl > "$TEMP/core.list"
+  grep -Eiq '^Method = xz$' "$TEMP/core.list" || {
+    printf '%s\n' '模块核心未使用 XZ 压缩' >&2
+    exit 1
+  }
   for file in module.prop bin/netproxyctl config/singbox/config.json; do
     7z x -so "$TEMP/output/$name.zip" "$file" > "$TEMP/extracted"
     cmp "$TEMP/module/$file" "$TEMP/extracted"
@@ -117,6 +130,8 @@ for name in standard manager; do
 done
 assert_not_contains "$TEMP/standard.list" '^Path = NetProxy[.]apk$'
 assert_contains "$TEMP/manager.list" 'Path = NetProxy.apk'
+7z l -slt "$TEMP/output/manager.zip" NetProxy.apk > "$TEMP/apk.list"
+assert_contains "$TEMP/apk.list" 'Method = Store'
 7z x -so "$TEMP/output/manager.zip" NetProxy.apk > "$TEMP/extracted"
 cmp "$TEMP/module/NetProxy.apk" "$TEMP/extracted"
 if sh "$ROOT/.github/scripts/package-module.sh" "$TEMP/module" "$TEMP/output" standard.zip manager.zip >/dev/null 2>&1; then

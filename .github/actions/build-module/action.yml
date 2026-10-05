@@ -145,7 +145,7 @@ runs:
         "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose "$SIGNED_APK"
         install -m 0644 "$SIGNED_APK" src/module/NetProxy.apk
 
-    - name: 打包模块（标准 / 含管理器）
+    - name: 打包模块（ZIP + XZ 9，标准 / 含管理器）
       shell: bash
       env:
         STANDARD_NAME: ${{ steps.meta.outputs.standard_name }}
