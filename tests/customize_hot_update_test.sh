@@ -70,6 +70,8 @@ reset_modules() {
   write_module "$STAGE" package
   write_module "$LIVE" current
   mkdir -p "$LIVE/data/catalog/staging" "$LIVE/data/catalog/subscription"
+  mkdir -p "$LIVE/config/telemetry"
+  printf '%s\n' 'current-telemetry-queue' > "$LIVE/config/telemetry/state.json"
   printf '%s\n' 'temporary' > "$LIVE/data/catalog/staging/download.tmp"
   printf '%s\n' 'subscription-meta' > "$LIVE/data/catalog/subscription/meta.json"
   printf '%s\n' 'subscription-provider' > "$LIVE/data/catalog/subscription/provider.json"
@@ -183,12 +185,14 @@ test_snapshot_modes() (
       assert_value "$STAGE/config/singbox/rules/local/custom.json" current-local
       assert_value "$STAGE/config/singbox/cache.db" current-cache
       assert_value "$STAGE/config/singbox/custom-state/state.json" current-state
+      assert_value "$STAGE/config/telemetry/state.json" current-telemetry-queue
     else
       assert_value "$STAGE/config/ebpf/ebpf.conf" package-ebpf
       assert_value "$STAGE/config/module.conf" package-module
       assert_value "$STAGE/config/singbox/rules/local/custom.json" package-local
       assert_value "$STAGE/config/singbox/cache.db" package-cache
       assert_value "$STAGE/config/singbox/custom-state/state.json" package-state
+      [ ! -e "$STAGE/config/telemetry/state.json" ]
     fi
     assert_value "$STAGE/config/singbox/rules/remote/test.srs" package-remote
     assert_value "$STAGE/runtime/providers.json" package-runtime

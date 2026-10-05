@@ -840,6 +840,61 @@ func TestRunExitsWhenNoAutomaticSubscription(t *testing.T) {
 	}
 }
 
+type testTelemetryTask struct {
+	started, notified, stopped chan struct{}
+}
+
+func (task *testTelemetryTask) Run(ctx context.Context, _ func() bool, _ func()) {
+	close(task.started)
+	<-ctx.Done()
+	close(task.stopped)
+}
+
+func (task *testTelemetryTask) Notify() { task.notified <- struct{}{} }
+
+func TestTelemetrySharesWorkerLifecycleWithoutSubscriptions(t *testing.T) {
+	options := newTestOptions(t.TempDir())
+	options.ModuleConf = filepath.Join(t.TempDir(), "module.conf")
+	if err := os.WriteFile(options.ModuleConf, []byte("ACTIVE_GROUP_ID=default\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	task := &testTelemetryTask{make(chan struct{}), make(chan struct{}, 1), make(chan struct{})}
+	options.Telemetry = task
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	wake := make(chan struct{}, 1)
+	done := make(chan error, 1)
+	go func() { done <- Run(ctx, options, wake, log.New(io.Discard, "", 0)) }()
+	select {
+	case <-task.started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("无订阅时统计任务未启动")
+	}
+	wake <- struct{}{}
+	select {
+	case <-task.notified:
+	case <-time.After(3 * time.Second):
+		t.Fatal("统计任务未收到 Worker 唤醒")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("统计任务阻塞 Worker 退出")
+	}
+	select {
+	case <-task.stopped:
+	default:
+		t.Fatal("统计任务遗留后台 goroutine")
+	}
+	if _, err := os.Stat(options.PIDFile); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("统计 Worker 退出后 PID 未清理")
+	}
+}
+
 func TestRunUsesControllableClockForWakeCancelAndRestart(t *testing.T) {
 	requests := make(chan struct{}, 4)
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {

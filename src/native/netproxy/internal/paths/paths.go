@@ -68,6 +68,15 @@ func (l Layout) Logs() string { return filepath.Join(l.moduleRoot, "logs") }
 // ModuleProp 返回模块元信息文件路径。
 func (l Layout) ModuleProp() string { return filepath.Join(l.moduleRoot, "module.prop") }
 
+// IsLive 判断当前目录是否为安装后的正式模块，而非安装器暂存目录。
+func (l Layout) IsLive() bool { return l.moduleRoot == "/data/adb/modules/netproxy" }
+
+// TelemetryState 返回不参与配置编辑与日志导出的设备统计状态。
+func (l Layout) TelemetryState() string { return filepath.Join(l.Config(), "telemetry", "state.json") }
+
+// TelemetryLock 返回目录热切换期间仍保持同一 inode 的统计锁。
+func (l Layout) TelemetryLock() string { return filepath.Join(l.DevRoot(), "telemetry.lock.flock") }
+
 // Bin 返回原生二进制目录。
 func (l Layout) Bin() string { return filepath.Join(l.moduleRoot, "bin") }
 

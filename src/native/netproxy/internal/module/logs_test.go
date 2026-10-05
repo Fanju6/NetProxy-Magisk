@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/logfile"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 )
 
 type limitedArchiveWriter struct {
@@ -101,6 +102,13 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(catalogRoot, "provider.json"), []byte(`{"outbounds":[{"type":"hysteria","tag":"hy","auth_str":"secret-hysteria-auth"}],"endpoints":[{"type":"wireguard","tag":"wg","private_key":"secret-private-key","pre_shared_key":"secret-wireguard-psk"}]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	telemetryPath := paths.New(root).TelemetryState()
+	if err := os.MkdirAll(filepath.Dir(telemetryPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(telemetryPath, []byte(`{"pending":[{"uuid":"private-telemetry-event"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	destination := filepath.Join(root, "export", "diagnostics.tar.gz")
 	options := Options{
@@ -179,11 +187,14 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 			"secret-bearer", "secret-token", "secret-hwid", "secret-config",
 			"secret-log-uuid", "secret-log-auth", "secret-hysteria-auth", "secret-private-key",
 			"secret-wireguard-psk", "secret-office", "secret-home", "secret.app.one",
-			"secret.app.two", "secret.app.three",
+			"secret.app.two", "secret.app.three", "private-telemetry-event",
 		} {
 			if strings.Contains(string(content), secret) {
 				t.Fatalf("诊断包泄露敏感值 %q，文件 %s，内容 %s", secret, header.Name, content)
 			}
+		}
+		if strings.Contains(header.Name, "telemetry") {
+			t.Fatal("诊断包不应包含设备统计状态")
 		}
 	}
 	if !seenRuntime {

@@ -384,6 +384,8 @@ with_user_data_locks() (
   flock -n 7 7>&7 || exit 1
   exec 6>"$LIVE_DIR/config/singbox/config.json.lock"
   flock -n 6 6>&6 || exit 1
+  exec 3>/dev/netproxy/telemetry.lock.flock
+  flock -n 3 3>&3 || exit 1
   local digest file
   digest="$(printf '%s\000root' "$LIVE_DIR/data/catalog" | sha256sum | cut -c1-16)"
   [ "${#digest}" -eq 16 ] || exit 1

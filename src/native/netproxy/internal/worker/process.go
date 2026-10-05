@@ -23,22 +23,22 @@ func RunProcess(ctx context.Context, options Options, logger *log.Logger) error 
 	return Run(processContext, options, wake, logger)
 }
 
-// Start 启动一个脱离当前命令通道的 Worker；没有自动订阅时不会驻留。
+// Start 启动唯一 Worker；没有订阅、网络监听或安装统计任务时才退出。
 func Start(ctx context.Context, options Options, executable string) (Status, error) {
 	if err := validateOptions(options); err != nil {
 		return Status{}, err
 	}
-	if status, err := ReadStatus(ctx, options); err == nil {
-		if status.State == "running" {
-			return status, nil
+	if pid := readPID(options.PIDFile); pid > 0 && isWorkerProcessPID(pid) {
+		if options.Telemetry != nil {
+			_ = wakeProcess(pid)
 		}
-		_ = os.Remove(options.PIDFile)
+		return Status{State: "running", PID: pid}, nil
 	}
 	nearest, err := NextUpdate(ctx, options.Root, options.Now())
-	if err != nil {
+	if err != nil && options.Telemetry == nil {
 		return Status{}, err
 	}
-	if nearest == 0 && !(options.NetworkWatchEnabled && options.NetworkEvaluate != nil) {
+	if nearest == 0 && !(options.NetworkWatchEnabled && options.NetworkEvaluate != nil) && options.Telemetry == nil {
 		return Status{State: "stopped", Nearest: 0}, nil
 	}
 	if executable == "" {
@@ -46,7 +46,11 @@ func Start(ctx context.Context, options Options, executable string) (Status, err
 	}
 	arguments := []string{"__internal", "worker", "run"}
 	arguments = appendWorkerFlags(arguments, options)
-	command := exec.CommandContext(ctx, executable, arguments...)
+	// 调用方 context 只约束启动确认；成功驻留后不能因公共命令返回而杀死 Worker。
+	if err := ctx.Err(); err != nil {
+		return Status{}, err
+	}
+	command := exec.Command(executable, arguments...)
 	devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
 	if err != nil {
 		return Status{}, err
@@ -62,8 +66,10 @@ func Start(ctx context.Context, options Options, executable string) (Status, err
 	pid := command.Process.Pid
 	if err := waitForWorkerPID(ctx, options.PIDFile, pid, workerStartTimeout); err != nil {
 		_ = terminateProcess(pid)
+		_ = command.Process.Release()
 		return Status{}, err
 	}
+	_ = command.Process.Release()
 	return Status{State: "running", PID: pid, Nearest: nearest}, nil
 }
 

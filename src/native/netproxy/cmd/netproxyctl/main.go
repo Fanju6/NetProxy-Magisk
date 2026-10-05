@@ -91,7 +91,22 @@ func (c *cli) run(ctx context.Context, args []string) int {
 	default:
 		return c.fail("usage.invalid", "未知命令组，使用 netproxyctl help 查看帮助", 2)
 	}
-	return c.runCommand(commandCtx, handler, args[1:]...)
+	status := c.runCommand(commandCtx, handler, args[1:]...)
+	if status != 2 && !skipActivity(args) {
+		stop := len(args) > 1 && args[0] == "service" && (args[1] == "stop" || args[1] == "toggle")
+		moduleapp.RecordActivity(commandCtx, c.options, !stop)
+	}
+	return status
+}
+
+func skipActivity(args []string) bool {
+	for _, arg := range args {
+		if arg == "help" || arg == "-h" || arg == "--help" {
+			return true
+		}
+	}
+	return len(args) > 1 && ((args[0] == "service" && args[1] == "check") ||
+		(args[0] == "config" && (args[1] == "check" || args[1] == "validate")))
 }
 
 func (c *cli) runInternal(ctx context.Context, args []string) int {

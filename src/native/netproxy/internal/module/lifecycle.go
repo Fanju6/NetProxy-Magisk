@@ -104,7 +104,7 @@ func ManageService(ctx context.Context, options Options, action string) (Service
 }
 
 // StartService 生成运行时配置，启动 sing-box，并在控制面和 eBPF 就绪后写入 ready 状态。
-func StartService(ctx context.Context, options Options) error {
+func StartService(ctx context.Context, options Options) (err error) {
 	if err := validateLifecycleOptions(options); err != nil {
 		return err
 	}
@@ -158,11 +158,19 @@ func StartService(ctx context.Context, options Options) error {
 	if err != nil {
 		return failServiceStart(options, 0, 0, "sing-box 进程启动失败", err)
 	}
+	attemptedAt := time.Now()
+	stage := "launch"
+	defer func() {
+		if ctx.Err() == nil {
+			_ = options.Telemetry.RecordStart(time.Now(), time.Since(attemptedAt), stage, err == nil)
+		}
+	}()
 	if err := command.Start(); err != nil {
 		_ = logFile.Close()
 		return failServiceStart(options, 0, 0, "sing-box 进程启动失败", err)
 	}
 	pid := command.Process.Pid
+	stage = "cgroup"
 	if err := ensureSingBoxRootCgroup(pid); err != nil {
 		_ = logFile.Close()
 		return failServiceStart(options, pid, 0, "sing-box 无法加入 root cgroup", err)
@@ -170,21 +178,25 @@ func StartService(ctx context.Context, options Options) error {
 	_ = command.Process.Release()
 	_ = logFile.Close()
 	startedAt := time.Now().Unix()
+	stage = "state"
 	if err := writeServiceState(options.StateFile, "starting", int64(pid), startedAt, 0, ""); err != nil {
 		return failServiceStateWrite(options, pid, startedAt, "starting", err)
 	}
 
+	stage = "ready"
 	actualStartedAt, err := waitForServiceReady(ctx, options, pid, serviceReadyTimeout, 0)
 	if err != nil {
 		return failServiceStart(options, pid, startedAt, "核心或控制接口未在限定时间内就绪", err)
 	}
 	startedAt = actualStartedAt
+	stage = "selection"
 	syncOptions := options
 	syncOptions.SkipServiceReload = true
 	if _, err := SyncSelection(ctx, syncOptions); err != nil {
 		return failServiceStart(options, pid, startedAt, "运行时节点选择同步失败", err)
 	}
 	readyAt := time.Now().Unix()
+	stage = "state"
 	if err := writeServiceState(options.StateFile, "ready", int64(pid), startedAt, readyAt, ""); err != nil {
 		return failServiceStateWrite(options, pid, startedAt, "ready", err)
 	}

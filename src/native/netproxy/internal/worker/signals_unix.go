@@ -9,6 +9,8 @@ import (
 	"syscall"
 )
 
+func wakeProcess(pid int) error { return syscall.Kill(pid, syscall.SIGUSR1) }
+
 func withSignals(ctx context.Context) (context.Context, <-chan struct{}, func()) {
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGTERM, syscall.SIGINT)
 	wake := make(chan struct{}, 1)

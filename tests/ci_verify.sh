@@ -17,6 +17,12 @@ mkdir -p "$BUILD_DIR"
 #######################################
 build_binaries() {
   printf '%s\n' '开始构建 netproxyctl'
+  if [ "${NETPROXY_TELEMETRY_REQUIRED:-0}" = 1 ]; then
+    case "${POSTHOG_PROJECT_TOKEN:-}" in phc_*) ;; *) printf '%s\n' '缺少 PostHog Project Token' >&2; return 1 ;; esac
+    case "$POSTHOG_PROJECT_TOKEN" in *[!A-Za-z0-9_]*) printf '%s\n' '无效的 PostHog Project Token' >&2; return 1 ;; esac
+    [ "${#POSTHOG_PROJECT_TOKEN}" -gt 4 ] && [ "${#POSTHOG_PROJECT_TOKEN}" -le 256 ] || return 1
+    case "${POSTHOG_HOST:-}" in https://us.i.posthog.com|https://eu.i.posthog.com) ;; *) printf '%s\n' '无效的 PostHog ingestion host' >&2; return 1 ;; esac
+  fi
   (
     cd "$NATIVE_DIR"
     go test ./...
@@ -24,7 +30,9 @@ build_binaries() {
     CGO_ENABLED=0 go build -trimpath -buildvcs=false -pgo=auto \
       -o "$BUILD_DIR/netproxyctl" ./cmd/netproxyctl
     CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build \
-      -trimpath -buildvcs=false -pgo=auto -ldflags='-s -w -buildid=' -o "$BUILD_DIR/netproxyctl-android" \
+      -trimpath -buildvcs=false -pgo=auto \
+      -ldflags="-s -w -buildid= -X github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/telemetry.ProjectToken=${POSTHOG_PROJECT_TOKEN:-} -X github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/telemetry.IngestionHost=${POSTHOG_HOST:-}" \
+      -o "$BUILD_DIR/netproxyctl-android" \
       ./cmd/netproxyctl
     go version -m "$BUILD_DIR/netproxyctl-android" | grep -q -- '-pgo=default.pgo'
     go version -m "$BUILD_DIR/netproxyctl-android" | grep -q 'github.com/reF1nd/sing-box'

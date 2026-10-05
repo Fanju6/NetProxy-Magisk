@@ -83,6 +83,11 @@ type Options struct {
 	NetworkDebounceInterval time.Duration
 	Now                     func() time.Time
 	NewTimer                TimerFactory
+	CoreRunning             func() bool
+	Telemetry               interface {
+		Run(context.Context, func() bool, func())
+		Notify()
+	}
 }
 
 // Summary 是一次调度轮次的结果。
@@ -132,6 +137,17 @@ func Run(ctx context.Context, options Options, wake <-chan struct{}, logger *log
 		return err
 	}
 	defer releasePID(options.PIDFile)
+	background, cancelBackground := context.WithCancel(ctx)
+	var telemetryDone chan struct{}
+	if options.Telemetry != nil {
+		telemetryDone = make(chan struct{})
+		go func() {
+			defer close(telemetryDone)
+			options.Telemetry.Run(background, options.CoreRunning, func() {
+				logWorker(logger, "WARN", "telemetry.upload", "waiting", "设备统计暂未完成，将稍后重试")
+			})
+		}()
+	}
 
 	networkWatchEnabled := options.NetworkWatchEnabled && options.NetworkEvaluate != nil
 	var networkDone chan struct{}
@@ -139,11 +155,15 @@ func Run(ctx context.Context, options Options, wake <-chan struct{}, logger *log
 		networkDone = make(chan struct{})
 		go func() {
 			defer close(networkDone)
-			runNetworkWatcher(ctx, options, logger)
+			runNetworkWatcher(background, options, logger)
 		}()
 		logWorker(logger, "INFO", "network.watch", "started", "Android 网络事件监听已启动")
 	}
 	defer func() {
+		cancelBackground()
+		if telemetryDone != nil {
+			<-telemetryDone
+		}
 		if networkDone != nil {
 			<-networkDone
 		}
@@ -188,7 +208,7 @@ func Run(ctx context.Context, options Options, wake <-chan struct{}, logger *log
 				failure = true
 			}
 		}
-		if nearest == 0 && !networkWatchEnabled {
+		if nearest == 0 && !networkWatchEnabled && options.Telemetry == nil {
 			logWorker(logger, "INFO", "worker.run", "stopped", "没有启用自动更新的订阅，Worker 退出")
 			return nil
 		}
@@ -203,24 +223,24 @@ func Run(ctx context.Context, options Options, wake <-chan struct{}, logger *log
 			delay = time.Second
 		}
 		timer := newTimer(options, delay)
-		if failure {
+	wait:
+		for {
 			select {
 			case <-ctx.Done():
 				stopTimer(timer)
 				logWorker(logger, "INFO", "worker.run", "stopped", "后台 Worker 已停止")
 				return nil
+			case <-wake:
+				if options.Telemetry != nil {
+					options.Telemetry.Notify()
+				}
+				if !failure {
+					stopTimer(timer)
+					break wait
+				}
 			case <-timer.C():
+				break wait
 			}
-			continue
-		}
-		select {
-		case <-ctx.Done():
-			stopTimer(timer)
-			logWorker(logger, "INFO", "worker.run", "stopped", "后台 Worker 已停止")
-			return nil
-		case <-wake:
-			stopTimer(timer)
-		case <-timer.C():
 		}
 	}
 }

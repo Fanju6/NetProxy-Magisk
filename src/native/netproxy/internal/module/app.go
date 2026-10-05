@@ -20,6 +20,7 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/telemetry"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/worker"
 )
 
@@ -44,6 +45,7 @@ type Options struct {
 	WiFiStateFile      string
 	SkipServiceReload  bool
 	RequestTimeout     time.Duration
+	Telemetry          *telemetry.Reporter
 	configEditors      map[string]*moduleconfig.Editor
 }
 
@@ -67,6 +69,7 @@ func NewOptions(moduleDir string) Options {
 		WorkerLogFile:  layout.ServiceLog(),
 		WiFiStateFile:  layout.WiFiState(),
 		RequestTimeout: 8 * time.Second,
+		Telemetry:      telemetry.New(layout),
 	}
 }
 
@@ -839,7 +842,24 @@ func workerOptions(options Options) worker.Options {
 			return err
 		},
 	}
+	if options.Telemetry != nil {
+		workerOptions.Telemetry = options.Telemetry
+		workerOptions.CoreRunning = func() bool {
+			state, err := ReadServiceState(options.StateFile)
+			return err == nil && state.State == "ready" && state.PID > 0 && service.FindProcess(options.SingBoxPath, int(state.PID)) == int(state.PID)
+		}
+	}
 	return workerOptions
+}
+
+// RecordActivity 仅记录公共客户端的活跃；停服入口不能重新启动刚被软重启钩子停止的 Worker。
+func RecordActivity(ctx context.Context, options Options, startWorker bool) {
+	if options.Telemetry == nil || ctx.Err() != nil {
+		return
+	}
+	if added, err := options.Telemetry.RecordActive(time.Now()); added && err == nil && startWorker {
+		_ = ensureWorker(ctx, options)
+	}
 }
 
 func hostName(rawURL string) string {

@@ -9,6 +9,7 @@ import (
 
 	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/worker"
 )
 
@@ -107,6 +108,13 @@ func configureWorkerCallbacks(options *worker.Options, moduleDir, catalogRoot, m
 	moduleOptions.ProgressDir = progressDir
 	moduleOptions.WorkerPIDFile = pidFile
 	options.NetworkWatchEnabled = true
+	if moduleOptions.Telemetry != nil {
+		options.Telemetry = moduleOptions.Telemetry
+		options.CoreRunning = func() bool {
+			state, err := moduleapp.ReadServiceState(moduleOptions.StateFile)
+			return err == nil && state.State == "ready" && state.PID > 0 && service.FindProcess(options.SingBoxPath, int(state.PID)) == int(state.PID)
+		}
+	}
 	options.ReloadService = func(ctx context.Context) error {
 		return moduleapp.ReloadService(ctx, moduleOptions)
 	}

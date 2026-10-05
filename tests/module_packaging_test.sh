@@ -53,7 +53,15 @@ assert_contains "$ROOT/src/android/app/src/main/java/com/fanjv/netproxy/core/app
 assert_contains "$ROOT/src/android/app/src/main/java/com/fanjv/netproxy/core/app/AppSignature.kt" 'signingCertificateHistory'
 assert_contains "$ROOT/.gitignore" 'src/module/NetProxy.apk'
 assert_contains "$VERIFY_SCRIPT" './cmd/netproxyctl'
-assert_contains "$VERIFY_SCRIPT" "-ldflags='-s -w -buildid='"
+assert_contains "$VERIFY_SCRIPT" '-ldflags="-s -w -buildid='
+assert_contains "$VERIFY_SCRIPT" 'internal/telemetry.ProjectToken=${POSTHOG_PROJECT_TOKEN:-}'
+assert_contains "$VERIFY_SCRIPT" 'internal/telemetry.IngestionHost=${POSTHOG_HOST:-}'
+assert_contains "$BUILD_ACTION" "NETPROXY_TELEMETRY_REQUIRED: '1'"
+assert_contains "$BUILD_ACTION" 'POSTHOG_PROJECT_TOKEN: ${{ inputs.posthog-project-token }}'
+assert_contains "$BUILD_ACTION" 'POSTHOG_HOST: ${{ inputs.posthog-host }}'
+assert_contains "$SHARED_WORKFLOW" 'posthog-project-token: ${{ vars.POSTHOG_PROJECT_TOKEN }}'
+assert_contains "$SHARED_WORKFLOW" 'posthog-host: ${{ vars.POSTHOG_HOST }}'
+assert_not_contains "$BUILD_ACTION" '\$\{\{[[:space:]]*vars\.'
 assert_not_contains "$BUILD_ACTION" 'full_name|lite_name|_lite'
 assert_not_contains "$BUILD_ACTION" 'netproxy-native|cmd/netproxy-native'
 [ ! -e "$ROOT/src/module/bin/netproxy-native" ] || {

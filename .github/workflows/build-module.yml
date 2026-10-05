@@ -40,6 +40,9 @@ jobs:
       - name: 构建并打包标准模块
         id: pack
         uses: ./.github/actions/build-module
+        with:
+          posthog-project-token: ${{ vars.POSTHOG_PROJECT_TOKEN }}
+          posthog-host: ${{ vars.POSTHOG_HOST }}
 
       - name: 保存已验证的标准模块包
         uses: actions/upload-artifact@v7

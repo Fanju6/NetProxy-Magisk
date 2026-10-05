@@ -20,6 +20,19 @@ func TestWriteJSONPreservesEmptyDataObject(t *testing.T) {
 	}
 }
 
+func TestActivityExcludesHelpAndInstallationChecks(t *testing.T) {
+	for _, args := range [][]string{{"service", "check"}, {"config", "validate"}, {"config", "check"}, {"sub", "--help"}} {
+		if !skipActivity(args) {
+			t.Fatalf("帮助或安装检查被计为活跃: %v", args)
+		}
+	}
+	for _, args := range [][]string{{"service", "status"}, {"service", "stop"}, {"node", "list"}, {"config", "read", "module"}} {
+		if skipActivity(args) {
+			t.Fatalf("有效客户端操作未被计为活跃: %v", args)
+		}
+	}
+}
+
 func TestBareEBPFUsesConfiguredStatus(t *testing.T) {
 	command := &cli{options: moduleapp.NewOptions(t.TempDir())}
 	implicit := command.ebpf(context.Background(), nil)

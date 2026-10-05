@@ -28,7 +28,7 @@ const maxSubscriptionSize = 20 << 20
 // 不带内核版本号，避免内核升级后 UA 失真。
 const defaultUserAgent = "sing-box"
 
-// Android may leave resolv.conf pointing at a loopback DNS listener owned by the stopped core.
+// Android 的纯 Go DNS 可能指向未监听的 loopback；直连 HTTP 请求共用备用解析。
 var fallbackDNSServers = []string{
 	"223.5.5.5:53",
 	"119.29.29.29:53",
@@ -102,7 +102,7 @@ func Subscription(ctx context.Context, request Request) (Response, error) {
 	}
 	transport := &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
-		DialContext:           subscriptionDialContext,
+		DialContext:           DialContext,
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          16,
 		IdleConnTimeout:       90 * time.Second,
@@ -176,14 +176,15 @@ func Subscription(ctx context.Context, request Request) (Response, error) {
 	return Response{Body: body, Metadata: metadata}, nil
 }
 
-func subscriptionDialContext(ctx context.Context, network, address string) (net.Conn, error) {
+// DialContext 为 HTTP 请求共用系统与备用 DNS 解析，保留调用方的取消和截止时间。
+func DialContext(ctx context.Context, network, address string) (net.Conn, error) {
 	dialer := &net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}
 	host, port, err := net.SplitHostPort(address)
 	if err != nil || net.ParseIP(host) != nil {
 		return dialer.DialContext(ctx, network, address)
 	}
 
-	addresses, err := lookupIPAddresses(ctx, host, subscriptionResolvers())
+	addresses, err := lookupIPAddresses(ctx, host, httpResolvers())
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +263,7 @@ func stripRedirectHeaders(request *http.Request) {
 	}
 }
 
-func subscriptionResolvers() []ipResolver {
+func httpResolvers() []ipResolver {
 	resolvers := []ipResolver{net.DefaultResolver}
 	for _, server := range fallbackDNSServers {
 		resolvers = append(resolvers, &net.Resolver{
