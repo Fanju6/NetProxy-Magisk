@@ -8,7 +8,7 @@
 - 含管理器模块包附带管理器 APK，供无法使用 Google Play 的设备安装。
 - 标准模块包不包含管理器 APK。
 
-含管理器模块包中的 APK 由仓库 CI 从当前源码构建并临时签名，APK 本身不提交到仓库。每次 CI 运行使用不同签名，无法覆盖旧 CI 版；重新安装前需卸载旧版，卸载会清除管理器本地数据。仪表盘根据 APK 签名证书识别 Google Play 应用签名；其他签名会常驻显示测试版警告。
+含管理器模块包中的 APK 由仓库 CI 从当前源码构建，使用固定密钥签名，APK 和签名材料不提交到仓库。后续使用同一密钥的构建可以直接覆盖升级。管理器不检查安装来源或签名证书，也不显示来源警告；CI 版本名仍带提交短哈希，便于定位构建。
 
 ## 功能
 
@@ -76,7 +76,7 @@ cd src/android
 .\gradlew.bat testDebugUnitTest lintDebug assembleDebug
 ```
 
-调试 APK 位于 `app/build/outputs/apk/debug/`。本地 Release APK 未签名；正式 Google Play 发布由 Play 的正式签名链路负责。模块含管理器包由 CI 使用仅限单次运行的密钥签名，不需要仓库保存签名密钥。
+调试 APK 位于 `app/build/outputs/apk/debug/`。本地 Release APK 未签名；模块含管理器包由 CI 使用 GitHub Secrets 中的固定密钥签名。密钥库以 Base64 放入 `ANDROID_KEYSTORE_BASE64`，密码和别名分别放入 `ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_PASSWORD`、`ANDROID_KEY_ALIAS`，不得写入源码或本地构建配置后提交。
 
 ## 第三方源码
 

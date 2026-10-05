@@ -1,5 +1,5 @@
 name: 构建与验证 Android 管理器
-description: 共用 Android 环境与 Gradle 调用，按需验证并生成临时签名的 CI 管理器
+description: 共用 Android 环境与 Gradle 调用，按需验证并用固定密钥签名管理器
 
 inputs:
   build-manager:
@@ -8,6 +8,14 @@ inputs:
   verify:
     description: 是否执行 Android 单元测试与 Lint
     default: 'true'
+  signing-keystore-base64:
+    description: 固定签名密钥库的 Base64 内容，通过 GitHub Secrets 传入
+  signing-store-password:
+    description: 密钥库密码，通过 GitHub Secrets 传入
+  signing-key-alias:
+    description: 固定签名私钥别名，通过 GitHub Secrets 传入
+  signing-key-password:
+    description: 私钥密码，通过 GitHub Secrets 传入
 
 runs:
   using: composite
@@ -16,7 +24,17 @@ runs:
       if: inputs.build-manager == 'true'
       id: meta
       shell: bash
-      run: sh .github/scripts/build-metadata.sh >> "$GITHUB_OUTPUT"
+      env:
+        SIGNING_KEYSTORE_BASE64: ${{ inputs.signing-keystore-base64 }}
+        SIGNING_STORE_PASSWORD: ${{ inputs.signing-store-password }}
+        SIGNING_KEY_ALIAS: ${{ inputs.signing-key-alias }}
+        SIGNING_KEY_PASSWORD: ${{ inputs.signing-key-password }}
+      run: |
+        : "${SIGNING_KEYSTORE_BASE64:?缺少固定签名密钥库}"
+        : "${SIGNING_STORE_PASSWORD:?缺少密钥库密码}"
+        : "${SIGNING_KEY_ALIAS:?缺少签名私钥别名}"
+        : "${SIGNING_KEY_PASSWORD:?缺少私钥密码}"
+        sh .github/scripts/build-metadata.sh >> "$GITHUB_OUTPUT"
 
     - name: 配置 Android JDK
       uses: actions/setup-java@v6
@@ -58,20 +76,23 @@ runs:
         test "$#" -gt 0
         ./gradlew "$@" --build-cache --parallel --no-daemon
 
-    - name: 使用本次运行的临时密钥签名管理器
+    - name: 使用固定密钥签名管理器
       if: inputs.build-manager == 'true'
       shell: bash
       env:
         MANAGER_VERSION: ${{ steps.meta.outputs.manager_version }}
         BUILD_ID: ${{ steps.meta.outputs.short_sha }}
         COMMIT_COUNT: ${{ steps.meta.outputs.commit_count }}
+        SIGNING_KEYSTORE_BASE64: ${{ inputs.signing-keystore-base64 }}
+        SIGNING_STORE_PASSWORD: ${{ inputs.signing-store-password }}
+        SIGNING_KEY_ALIAS: ${{ inputs.signing-key-alias }}
+        SIGNING_KEY_PASSWORD: ${{ inputs.signing-key-password }}
       run: |
         set -euo pipefail
         umask 077
-        KEYSTORE="$RUNNER_TEMP/netproxy-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.p12"
+        KEYSTORE="$RUNNER_TEMP/netproxy-signing.jks"
         UNSIGNED_APK="src/android/app/build/outputs/apk/release/app-release-unsigned.apk"
         SIGNED_APK="$RUNNER_TEMP/NetProxy.apk"
-        PASSWORD="$(openssl rand -hex 24)"
         trap 'rm -f "$KEYSTORE" "$SIGNED_APK" "$SIGNED_APK.idsig"' EXIT
 
         APK_INFO="$("$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$UNSIGNED_APK")"
@@ -79,20 +100,13 @@ runs:
         printf '%s\n' "$APK_INFO" | grep -F "versionCode='$COMMIT_COUNT'"
         printf '%s\n' "$APK_INFO" | grep -F "versionName='${MANAGER_VERSION}-ci.${BUILD_ID}'"
 
-        keytool -genkeypair -noprompt \
-          -keystore "$KEYSTORE" \
-          -storetype PKCS12 \
-          -storepass "$PASSWORD" \
-          -keypass "$PASSWORD" \
-          -alias netproxy-ci \
-          -keyalg RSA -keysize 2048 -validity 3650 \
-          -dname "CN=NetProxy CI, OU=Continuous Integration, O=NetProxy"
+        printf '%s' "$SIGNING_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
 
         "$ANDROID_HOME/build-tools/37.0.0/apksigner" sign \
           --ks "$KEYSTORE" \
-          --ks-key-alias netproxy-ci \
-          --ks-pass "pass:$PASSWORD" \
-          --key-pass "pass:$PASSWORD" \
+          --ks-key-alias "$SIGNING_KEY_ALIAS" \
+          --ks-pass env:SIGNING_STORE_PASSWORD \
+          --key-pass env:SIGNING_KEY_PASSWORD \
           --v4-signing-enabled false \
           --out "$SIGNED_APK" "$UNSIGNED_APK"
         "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose "$SIGNED_APK"

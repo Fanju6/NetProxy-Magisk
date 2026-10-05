@@ -16,7 +16,7 @@ Android 管理器通过 `netproxyctl` 的 `schema=1` JSON 契约访问模块。�
 
 ## Android 管理器
 
-CI 的管理器任务与标准模块构建并行启动，按变更范围在同一次 Gradle 调用中执行 Android 单元测试、Lint 和 Release 构建，并启用构建缓存。管理器 APK 使用每次运行生成的临时密钥签名，发布阶段仅将其追加到标准包，不重复编译或压缩；该 APK 不提交到仓库。Android 源码改动会同时触发模块重打包。CI 管理器版本带提交短哈希，并在仪表盘服务状态卡片上方常驻显示测试提示；正式 Google Play 构建不带 CI 标记。每次签名不同，更新前需卸载旧版且会清除应用本地数据。修改 Android 源码仍需在提交前完成本地构建；涉及 Root、模块命令、快捷设置磁贴、多用户与应用分身、Navigation 动画或 eBPF 时还需真机验证。
+CI 的管理器任务与标准模块构建并行启动，按变更范围在同一次 Gradle 调用中执行 Android 单元测试、Lint 和 Release 构建，并启用构建缓存。管理器 APK 使用 GitHub Secrets 提供的固定密钥签名，发布阶段仅将其追加到标准包，不重复编译或压缩；该 APK 和签名材料不提交到仓库。Android 源码改动会同时触发模块重打包。CI 管理器版本带提交短哈希，不显示安装来源或签名警告；使用同一固定密钥的后续构建可以覆盖升级。构建需要 `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS` 和 `ANDROID_KEY_PASSWORD`，纯验证任务不需要签名材料。修改 Android 源码仍需在提交前完成本地构建；涉及 Root、模块命令、快捷设置磁贴、多用户与应用分身、Navigation 动画或 eBPF 时还需真机验证。
 
 ## Pull Request
 

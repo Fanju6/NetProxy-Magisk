@@ -40,17 +40,15 @@ assert_contains "$ANDROID_ACTION" 'set -- :app:assembleRelease'
 assert_contains "$ANDROID_ACTION" 'set -- "$@" testDebugUnitTest lintDebug'
 assert_contains "$ANDROID_ACTION" './gradlew "$@" --build-cache --parallel --no-daemon'
 assert_contains "$ANDROID_ACTION" '-PnetproxyManagerCi=true'
-assert_contains "$ANDROID_ACTION" 'keytool -genkeypair -noprompt'
-assert_contains "$ANDROID_ACTION" 'GITHUB_RUN_ATTEMPT'
-assert_contains "$ANDROID_ACTION" 'openssl rand -hex 24'
-assert_contains "$ANDROID_ACTION" '-storetype PKCS12'
+assert_contains "$ANDROID_ACTION" 'printf '\''%s'\'' "$SIGNING_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"'
+assert_contains "$ANDROID_ACTION" '--ks-key-alias "$SIGNING_KEY_ALIAS"'
+assert_contains "$ANDROID_ACTION" '--ks-pass env:SIGNING_STORE_PASSWORD'
+assert_contains "$ANDROID_ACTION" '--key-pass env:SIGNING_KEY_PASSWORD'
 assert_contains "$ANDROID_ACTION" 'versionName='\''${MANAGER_VERSION}-ci.${BUILD_ID}'\'''
 assert_contains "$ANDROID_ACTION" '--v4-signing-enabled false'
 assert_contains "$ANDROID_ACTION" 'apksigner" verify --verbose'
 assert_contains "$ANDROID_ACTION" 'install -m 0644 "$SIGNED_APK" src/module/NetProxy.apk'
 assert_contains "$ROOT/src/android/app/build.gradle.kts" 'versionName = if (ciManagerBuild)'
-assert_contains "$ROOT/src/android/app/src/main/java/com/fanjv/netproxy/core/app/AppSignature.kt" 'GOOGLE_PLAY_APP_SIGNING_SHA256'
-assert_contains "$ROOT/src/android/app/src/main/java/com/fanjv/netproxy/core/app/AppSignature.kt" 'signingCertificateHistory'
 assert_contains "$ROOT/.gitignore" 'src/module/NetProxy.apk'
 assert_contains "$VERIFY_SCRIPT" './cmd/netproxyctl'
 assert_contains "$VERIFY_SCRIPT" '-ldflags="-s -w -buildid='
@@ -116,6 +114,10 @@ for workflow in "$CI_WORKFLOW" "$RELEASE_WORKFLOW"; do
   assert_contains "$workflow" 'uses: ./.github/workflows/build-module.yml'
   assert_contains "$workflow" 'name: module-standard'
   assert_contains "$workflow" 'name: manager-apk'
+  for secret in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+    assert_contains "$workflow" "$secret: \${{ secrets.$secret }}"
+    assert_contains "$SHARED_WORKFLOW" "\${{ secrets.$secret }}"
+  done
 done
 assert_contains "$SHARED_WORKFLOW" "build-manager: 'true'"
 assert_contains "$SHARED_WORKFLOW" 'verify: ${{ inputs.verify-android }}'

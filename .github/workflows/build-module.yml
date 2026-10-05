@@ -7,6 +7,15 @@ on:
         description: 是否同时执行 Android 单元测试与 Lint
         type: boolean
         default: false
+    secrets:
+      ANDROID_KEYSTORE_BASE64:
+        required: true
+      ANDROID_KEYSTORE_PASSWORD:
+        required: true
+      ANDROID_KEY_ALIAS:
+        required: true
+      ANDROID_KEY_PASSWORD:
+        required: true
     outputs:
       version:
         value: ${{ jobs.module.outputs.version }}
@@ -75,6 +84,10 @@ jobs:
         with:
           build-manager: 'true'
           verify: ${{ inputs.verify-android }}
+          signing-keystore-base64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          signing-store-password: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          signing-key-alias: ${{ secrets.ANDROID_KEY_ALIAS }}
+          signing-key-password: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
       - name: 保存本次签名的管理器
         uses: actions/upload-artifact@v7

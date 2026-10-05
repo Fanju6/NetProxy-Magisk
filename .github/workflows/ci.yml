@@ -52,6 +52,11 @@ jobs:
     needs: changes
     if: needs.changes.outputs.module == 'true'
     uses: ./.github/workflows/build-module.yml
+    secrets:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     with:
       verify-android: ${{ needs.changes.outputs.android == 'true' }}
 
