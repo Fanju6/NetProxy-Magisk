@@ -160,6 +160,10 @@
     <string name="subscription_editor_network_auto">自动</string>
     <string name="subscription_editor_network_proxy">始终通过代理</string>
     <string name="subscription_editor_network_direct">始终直连</string>
+    <string name="subscription_editor_front_proxy">前置代理</string>
+    <string name="subscription_editor_landing_proxy">落地代理</string>
+    <string name="subscription_editor_proxy_none">不使用</string>
+    <string name="subscription_editor_proxy_missing">不可用 · %1$s</string>
     <string name="subscription_editor_filter_section">筛选与连接</string>
     <string name="subscription_editor_include">仅保留（正则，可选）</string>
     <string name="subscription_editor_exclude">排除（正则，可选）</string>

@@ -14,6 +14,8 @@ internal data class CatalogGroupSummary(
     @SerialName("auto_update") val autoUpdate: Boolean = false,
     @SerialName("update_interval") val updateInterval: Long = 86400,
     @SerialName("update_via_proxy") val updateViaProxy: String = "auto",
+    @SerialName("front_proxy") val frontProxy: String = "",
+    @SerialName("landing_proxy") val landingProxy: String = "",
     val usage: SubscriptionUsage? = null,
     @SerialName("profile_title") val profileTitle: String = "",
     @SerialName("profile_web_page_url") val profileWebPageUrl: String = "",

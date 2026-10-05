@@ -828,6 +828,70 @@ internal fun SubscriptionEditorScreen(
                                 }
                             }
                         )
+                        val proxyNone = stringResource(R.string.subscription_editor_proxy_none)
+                        val frontMissingLabel = if (
+                            draft.frontProxy.isNotBlank() &&
+                            state.proxyOptions.none { it.reference == draft.frontProxy }
+                        ) {
+                            stringResource(
+                                R.string.subscription_editor_proxy_missing,
+                                draft.frontProxy
+                            )
+                        } else {
+                            null
+                        }
+                        val frontValues = buildList {
+                            add("")
+                            addAll(state.proxyOptions.map { it.reference })
+                            if (draft.frontProxy.isNotBlank() && draft.frontProxy !in this) {
+                                add(draft.frontProxy)
+                            }
+                        }
+                        val frontLabels = buildList {
+                            add(proxyNone)
+                            addAll(state.proxyOptions.map { it.label })
+                            frontMissingLabel?.let(::add)
+                        }
+                        OverlayDropdownPreference(
+                            title = stringResource(R.string.subscription_editor_front_proxy),
+                            items = frontLabels,
+                            selectedIndex = frontValues.indexOf(draft.frontProxy).coerceAtLeast(0),
+                            onSelectedIndexChange = { index ->
+                                viewModel.update { it.copy(frontProxy = frontValues[index]) }
+                            }
+                        )
+                        val landingMissingLabel = if (
+                            draft.landingProxy.isNotBlank() &&
+                            state.proxyOptions.none { it.reference == draft.landingProxy }
+                        ) {
+                            stringResource(
+                                R.string.subscription_editor_proxy_missing,
+                                draft.landingProxy
+                            )
+                        } else {
+                            null
+                        }
+                        val landingValues = buildList {
+                            add("")
+                            addAll(state.proxyOptions.map { it.reference })
+                            if (draft.landingProxy.isNotBlank() && draft.landingProxy !in this) {
+                                add(draft.landingProxy)
+                            }
+                        }
+                        val landingLabels = buildList {
+                            add(proxyNone)
+                            addAll(state.proxyOptions.map { it.label })
+                            landingMissingLabel?.let(::add)
+                        }
+                        OverlayDropdownPreference(
+                            title = stringResource(R.string.subscription_editor_landing_proxy),
+                            items = landingLabels,
+                            selectedIndex = landingValues.indexOf(draft.landingProxy)
+                                .coerceAtLeast(0),
+                            onSelectedIndexChange = { index ->
+                                viewModel.update { it.copy(landingProxy = landingValues[index]) }
+                            }
+                        )
                     }
                 }
                 item { SectionLabel(stringResource(R.string.subscription_editor_filter_section)) }

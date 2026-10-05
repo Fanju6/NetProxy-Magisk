@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -310,6 +311,140 @@ func TestBuildRuntimeRejectsUnknownSelectorMode(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "未知节点选择模式") {
 		t.Fatalf("未知选择模式未被拒绝: %v", err)
+	}
+}
+
+func TestBuildRuntimeCreatesSubscriptionProxyChain(t *testing.T) {
+	root := t.TempDir()
+	writeGroup(t, root, "front", "前置节点", "local", "FRONT")
+	writeGroup(t, root, "landing", "落地节点", "local", "LANDING")
+	writeGroup(t, root, "remote", "远程订阅", "subscription", "REMOTE")
+	metaPath := filepath.Join(root, "remote", "meta.json")
+	metadata, err := LoadMetadata(context.Background(), metaPath, "remote")
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata.FrontProxy = "front/FRONT"
+	metadata.LandingProxy = "landing/LANDING"
+	if err := SaveMetadataAtomic(context.Background(), metaPath, metadata); err != nil {
+		t.Fatal(err)
+	}
+
+	runtimeDir := filepath.Join(root, "runtime")
+	providersPath := filepath.Join(runtimeDir, "providers.json")
+	outboundsPath := filepath.Join(runtimeDir, "outbounds.json")
+	if _, err := BuildRuntime(context.Background(), RuntimeOptions{
+		Root: root, ProvidersOutput: providersPath, OutboundsOutput: outboundsPath,
+		ActiveGroup: "remote",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	providers := readFile(t, providersPath)
+	chainPath := filepath.Join(runtimeDir, "providers", "remote.json")
+	if !strings.Contains(providers, chainPath) {
+		t.Fatalf("runtime provider did not use chain copy: %s", providers)
+	}
+	outbounds := readFile(t, outboundsPath)
+	if !strings.Contains(outbounds, `"exclude": "^远程订阅/__netproxy_chain__/"`) {
+		t.Fatalf("runtime groups did not hide internal chain nodes: %s", outbounds)
+	}
+
+	var chain struct {
+		Outbounds []map[string]jsontext.Value `json:"outbounds"`
+	}
+	if err := json.Unmarshal([]byte(readFile(t, chainPath)), &chain); err != nil {
+		t.Fatal(err)
+	}
+	detours := map[string]string{}
+	for _, outbound := range chain.Outbounds {
+		var tag, detour string
+		if err := json.Unmarshal(outbound["tag"], &tag); err != nil {
+			t.Fatal(err)
+		}
+		if raw := outbound["detour"]; len(raw) > 0 {
+			if err := json.Unmarshal(raw, &detour); err != nil {
+				t.Fatal(err)
+			}
+		}
+		detours[tag] = detour
+	}
+	if detours[chainNodePrefix+"/front"] != "" ||
+		detours[chainNodePrefix+"/base/0"] != chainNodePrefix+"/front" ||
+		detours["REMOTE"] != chainNodePrefix+"/base/0" {
+		t.Fatalf("unexpected proxy chain detours: %#v", detours)
+	}
+	if strings.Contains(readFile(t, filepath.Join(root, "remote", "provider.json")), "detour") {
+		t.Fatal("persistent subscription provider was modified")
+	}
+	if singBoxPath := os.Getenv("NETPROXY_TEST_SING_BOX"); singBoxPath != "" {
+		configPath := filepath.Join(runtimeDir, "config.json")
+		if err := os.WriteFile(configPath, []byte(`{"log":{"disabled":true}}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		command := exec.Command(singBoxPath, "check", "-c", configPath, "-c", providersPath, "-c", outboundsPath)
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("sing-box rejected proxy chain runtime: %v\n%s", err, output)
+		}
+	}
+}
+
+func TestValidateProxyReferenceRejectsNestedDetour(t *testing.T) {
+	root := t.TempDir()
+	writeGroup(t, root, "nested", "已有链路", "local", "BASE")
+	path := filepath.Join(root, "nested", "provider.json")
+	content := `{"outbounds":[
+		{"type":"socks","tag":"UPSTREAM","server":"example.com","server_port":1080},
+		{"type":"socks","tag":"BASE","server":"example.com","server_port":1081,"detour":"UPSTREAM"}
+	]}`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateProxyReference(context.Background(), root, "nested/BASE"); err == nil ||
+		!strings.Contains(err.Error(), "已包含 detour") {
+		t.Fatalf("nested detour was not rejected: %v", err)
+	}
+}
+
+func TestProxyReferenceTargetsProtectCatalogMutations(t *testing.T) {
+	root := t.TempDir()
+	writeGroup(t, root, "target", "链路节点", "local", "PROXY")
+	writeGroup(t, root, "consumer", "使用链路的订阅", "subscription", "REMOTE")
+	metaPath := filepath.Join(root, "consumer", "meta.json")
+	metadata, err := LoadMetadata(context.Background(), metaPath, "consumer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata.FrontProxy = "target/PROXY"
+	if err := SaveMetadataAtomic(context.Background(), metaPath, metadata); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = RemoveNode(context.Background(), MutationOptions{
+		GroupDir: filepath.Join(root, "target"), GroupID: "target", Tag: "PROXY",
+	})
+	if err == nil || !strings.Contains(err.Error(), "使用链路的订阅") {
+		t.Fatalf("referenced node removal was not rejected: %v", err)
+	}
+
+	_, err = EditNode(context.Background(), MutationOptions{
+		GroupDir: filepath.Join(root, "target"), GroupID: "target", Tag: "PROXY",
+		Input: `{"outbounds":[{"type":"socks","tag":"RENAMED","server":"example.com","server_port":1081}]}`,
+	})
+	if err == nil || !strings.Contains(err.Error(), "使用链路的订阅") {
+		t.Fatalf("referenced node rename was not rejected: %v", err)
+	}
+
+	if err := DeleteGroup(context.Background(), root, "target"); err == nil || !strings.Contains(err.Error(), "使用链路的订阅") {
+		t.Fatalf("referenced group removal was not rejected: %v", err)
+	}
+
+	metadata.FrontProxy = ""
+	if err := SaveMetadataAtomic(context.Background(), metaPath, metadata); err != nil {
+		t.Fatal(err)
+	}
+	if err := DeleteGroup(context.Background(), root, "target"); err != nil {
+		t.Fatalf("unused group removal failed: %v", err)
 	}
 }
 
