@@ -41,8 +41,8 @@
       "ref": "sing",
       "sourcePath": "geo/geosite/category-ai-!cn.srs",
       "metadataPath": "geo/geosite/category-ai-!cn.json",
-      "currentCommit": "6fea7d2d9bc4c7f85d2b8ff46d3f3250d09c0d12",
-      "currentSha256": "8435970c6a07c0faa3363c64167e5dedebedad5a9ab0a3046e2b7a71ecec6d3a"
+      "currentCommit": "1bbe90f849505bcbcea530d8fbc127ad7877eb2a",
+      "currentSha256": "ecd8c691ff2728d4f479f621dab170c92d757ba916606efe37bf392111762dc1"
     },
     {
       "name": "geosite/google",
@@ -52,8 +52,8 @@
       "ref": "sing",
       "sourcePath": "geo/geosite/google.srs",
       "metadataPath": "geo/geosite/google.json",
-      "currentCommit": "6fea7d2d9bc4c7f85d2b8ff46d3f3250d09c0d12",
-      "currentSha256": "91e7a1583ccaaa2ccb1ce6e50dc23df034a0606b22b1a7a08a45d5a4ef0b4044"
+      "currentCommit": "1bbe90f849505bcbcea530d8fbc127ad7877eb2a",
+      "currentSha256": "1f1a046775fbf136da45ab4435cee9450e0b98cab1f429e79d54604f073f8b15"
     },
     {
       "name": "geosite/geolocation-!cn",
@@ -63,8 +63,8 @@
       "ref": "sing",
       "sourcePath": "geo/geosite/geolocation-!cn.srs",
       "metadataPath": "geo/geosite/geolocation-!cn.json",
-      "currentCommit": "6fea7d2d9bc4c7f85d2b8ff46d3f3250d09c0d12",
-      "currentSha256": "ab3ae99f4d9fddc2f6f0392c8f1f4d6e5013840079f21e4b481472a596421214"
+      "currentCommit": "1bbe90f849505bcbcea530d8fbc127ad7877eb2a",
+      "currentSha256": "aee00314baca6c625ed6b944269301e2af5a7152585bc02b16829e7dee537fe8"
     },
     {
       "name": "geosite/cn",
@@ -74,8 +74,8 @@
       "ref": "sing",
       "sourcePath": "geo/geosite/cn.srs",
       "metadataPath": "geo/geosite/cn.json",
-      "currentCommit": "6fea7d2d9bc4c7f85d2b8ff46d3f3250d09c0d12",
-      "currentSha256": "705073519f2690529afc5fac23b8dd7f84d3b090b2757e4f1077ae5cf6669e90"
+      "currentCommit": "1bbe90f849505bcbcea530d8fbc127ad7877eb2a",
+      "currentSha256": "66f3c2324558f166b1ecb1237fdeac29f98af8b9e84d18f501c44445f97e25be"
     },
     {
       "name": "geoip/cn",
@@ -85,8 +85,8 @@
       "ref": "sing",
       "sourcePath": "geo/geoip/cn.srs",
       "metadataPath": "geo/geoip/cn.json",
-      "currentCommit": "6fea7d2d9bc4c7f85d2b8ff46d3f3250d09c0d12",
-      "currentSha256": "adde4f1a650a0ecdc5bb32d30307ea20beedd53ae0c6b7d4bf4a8f40008b71b1"
+      "currentCommit": "1bbe90f849505bcbcea530d8fbc127ad7877eb2a",
+      "currentSha256": "ac82bac86a7f9f873b4e016765f9ee5afe0152da52049b72c16f459572c317ee"
     },
     {
       "name": "geoip/telegram",
@@ -121,8 +121,8 @@
       "path": "src/module/webroot/sing-box-dashboard",
       "repo": "SagerNet/sing-box-dashboard",
       "ref": "gh-pages",
-      "currentCommit": "1f56683b9adf952b47957f5bb758d9ca7837cef0",
-      "currentSourceCommit": "9c498355c9973187b04c09991e2aca8100fd00ec"
+      "currentCommit": "edca5a83ccd91f474d7942b990b360e12292b4a8",
+      "currentSourceCommit": "f231354bc786dfcffcf09f6ec771bc5683050194"
     }
   ]
 }
