@@ -28,7 +28,10 @@ func testReporter(t testing.TB) *Reporter {
 	return &Reporter{statePath: filepath.Join(root, "config", "telemetry", "state.json"),
 		lockPath: filepath.Join(root, "dev", "telemetry.lock.flock"), version: "v8.2.1", versionCode: "42",
 		identify: func(context.Context) (string, error) { return hashDeviceID("0123456789abcdef") },
-		token:    "phc_fixture", wake: make(chan struct{}, 1), client: newUploadClient()}
+		inspect: func(context.Context) compatibility {
+			return compatibility{RootFramework: "kernelsu", AndroidAPI: "36", KernelSeries: "6.6", Manufacturer: "oneplus"}
+		},
+		token: "phc_fixture", wake: make(chan struct{}, 1), client: newUploadClient()}
 }
 
 func TestUploadClientUsesSharedDNSAndCancellation(t *testing.T) {
@@ -69,7 +72,7 @@ func TestActivityDayVersionWithoutDeviceLookup(t *testing.T) {
 	}
 	s := loadState(t, r)
 	info := s.Pending[0]
-	if info.Properties.DistinctID != "" || info.Timestamp.Location() != time.UTC || info.Properties.PersonProfile || !info.Properties.DisableGeoIP {
+	if info.Properties.DistinctID != "" || info.Properties.RootFramework != "" || info.Properties.AndroidAPI != "" || info.Properties.KernelSeries != "" || info.Properties.Manufacturer != "" || info.Timestamp.Location() != time.UTC || info.Properties.PersonProfile || !info.Properties.DisableGeoIP {
 		t.Fatalf("统计身份或隐私属性错误: %+v", info)
 	}
 	if added, err := r.RecordActive(first.Add(30 * time.Second)); added || err != nil {
@@ -87,8 +90,44 @@ func TestActivityDayVersionWithoutDeviceLookup(t *testing.T) {
 		t.Fatalf("活跃去重错误: %+v", s)
 	}
 	for _, e := range s.Pending {
-		if e.Properties.DistinctID != "" || len(e.UUID) != 36 {
-			t.Fatal("事件包含设备标识或未生成独立 UUID")
+		if e.Properties.DistinctID != "" || e.Properties.RootFramework != "" || e.Properties.AndroidAPI != "" || e.Properties.KernelSeries != "" || e.Properties.Manufacturer != "" || len(e.UUID) != 36 {
+			t.Fatal("事件包含设备摘要或未生成独立 UUID")
+		}
+	}
+}
+
+func TestCompatibilityNormalization(t *testing.T) {
+	if rootFramework(func(path string) bool { return path == "/data/adb/ksud" }) != "kernelsu" {
+		t.Fatal("KernelSU 未正确归类")
+	}
+	if rootFramework(func(path string) bool { return path == "/data/adb/apd" }) != "apatch" {
+		t.Fatal("APatch 未正确归类")
+	}
+	if rootFramework(func(path string) bool { return path == "/data/adb/magisk/busybox" }) != "magisk" {
+		t.Fatal("Magisk 未正确归类")
+	}
+	if rootFramework(func(path string) bool { return path == "/data/adb/ksud" || path == "/data/adb/magisk/busybox" }) != "multiple" {
+		t.Fatal("多框架特征未保守归类")
+	}
+	if rootFramework(func(path string) bool { return path == "/sbin/.magisk" }) != "unknown" {
+		t.Fatal("临时 Magisk 路径不应作为框架特征")
+	}
+	if rootFramework(func(string) bool { return false }) != "unknown" {
+		t.Fatal("未知 Root 方案未正确归类")
+	}
+	for input, want := range map[string]string{"36\n": "36", "0": "unknown", "x": "unknown"} {
+		if got := androidAPI(input); got != want {
+			t.Fatalf("Android API 归类错误: %q = %q", input, got)
+		}
+	}
+	for input, want := range map[string]string{"6.6.47-gki": "6.6", "5.10": "5.10", "broken": "unknown"} {
+		if got := kernelSeries(input); got != want {
+			t.Fatalf("内核版本归类错误: %q = %q", input, got)
+		}
+	}
+	for input, want := range map[string]string{"OnePlus": "oneplus", "Redmi": "xiaomi", "Samsung Electronics": "samsung", "": "unknown", "Fairphone": "other"} {
+		if got := manufacturer(input); got != want {
+			t.Fatalf("厂商归类错误: %q = %q", input, got)
 		}
 	}
 }
@@ -185,7 +224,7 @@ func TestUploadSnapshotDoesNotOverwriteConcurrentCLI(t *testing.T) {
 		if req.Method != http.MethodPost || req.URL.Path != "/batch/" || req.Header.Get("Content-Type") != "application/json" {
 			t.Error("PostHog API 请求格式错误")
 		}
-		if err := json.Unmarshal(content, &batch); err != nil || batch.Token != r.token || len(batch.Batch) != 1 || batch.Batch[0].UUID != original.UUID || batch.Batch[0].Properties.DistinctID == "" {
+		if err := json.Unmarshal(content, &batch); err != nil || batch.Token != r.token || len(batch.Batch) != 1 || batch.Batch[0].UUID != original.UUID || batch.Batch[0].Properties.DistinctID == "" || batch.Batch[0].Properties.RootFramework != "kernelsu" || batch.Batch[0].Properties.AndroidAPI != "36" || batch.Batch[0].Properties.KernelSeries != "6.6" || batch.Batch[0].Properties.Manufacturer != "oneplus" {
 			t.Errorf("事件快照或 UUID 改变: %v", err)
 		}
 		if err := r.RecordStart(now, time.Second, "ready", true); err != nil {
@@ -383,6 +422,43 @@ func TestUploadRejectsRedirectAndCancels(t *testing.T) {
 	}
 	if len(loadState(t, r).Pending) != 1 {
 		t.Fatal("取消删除了待发送事件")
+	}
+}
+
+func TestCanceledUploadDoesNotCacheCompatibility(t *testing.T) {
+	r := testReporter(t)
+	var inspected atomic.Int32
+	r.inspect = func(context.Context) compatibility {
+		inspected.Add(1)
+		return compatibility{RootFramework: "magisk", AndroidAPI: "35", KernelSeries: "6.1", Manufacturer: "xiaomi"}
+	}
+	received := make(chan properties, 1)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var batch struct {
+			Batch []event `json:"batch"`
+		}
+		content, _ := io.ReadAll(req.Body)
+		if err := json.Unmarshal(content, &batch); err != nil || len(batch.Batch) != 1 {
+			t.Error("未收到完整统计批次")
+		} else {
+			received <- batch.Batch[0].Properties
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	r.endpoint, r.client = server.URL, server.Client()
+	events := []event{{UUID: "fixture", Name: "module_active", Timestamp: time.Now()}}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := r.send(ctx, events, time.Now()); err == nil || inspected.Load() != 0 {
+		t.Fatal("取消上传仍采集或缓存了兼容性摘要")
+	}
+	if _, err := r.send(context.Background(), events, time.Now()); err != nil || inspected.Load() != 1 {
+		t.Fatalf("后续正常上传未采集兼容性摘要: %v", err)
+	}
+	properties := <-received
+	if properties.RootFramework != "magisk" || properties.AndroidAPI != "35" || properties.KernelSeries != "6.1" || properties.Manufacturer != "xiaomi" {
+		t.Fatalf("上传缺少兼容性摘要: %+v", properties)
 	}
 }
 

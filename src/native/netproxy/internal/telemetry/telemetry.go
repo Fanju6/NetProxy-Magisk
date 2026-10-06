@@ -19,6 +19,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/fetch"
@@ -42,6 +43,10 @@ type properties struct {
 	DistinctID     string `json:"distinct_id,omitzero"`
 	Version        string `json:"module_version"`
 	VersionCode    string `json:"module_version_code"`
+	RootFramework  string `json:"root_framework,omitzero"`
+	AndroidAPI     string `json:"android_api,omitzero"`
+	KernelSeries   string `json:"kernel_series,omitzero"`
+	Manufacturer   string `json:"manufacturer,omitzero"`
 	PersonProfile  bool   `json:"$process_person_profile"`
 	DisableGeoIP   bool   `json:"$geoip_disable"`
 	Result         string `json:"result,omitzero"`
@@ -65,6 +70,14 @@ type state struct {
 	NextAttempt time.Time `json:"next_attempt"`
 }
 
+// compatibility 是有限桶的设备兼容性摘要，不保存或上传机型、完整内核版本等可识别信息。
+type compatibility struct {
+	RootFramework string
+	AndroidAPI    string
+	KernelSeries  string
+	Manufacturer  string
+}
+
 // Reporter 由 CLI 与唯一 Worker 共用同一状态文件；HTTP 只在 Worker 中执行。
 type Reporter struct {
 	statePath, lockPath, token, endpoint string
@@ -73,6 +86,9 @@ type Reporter struct {
 	wake                                 chan struct{}
 	deviceID                             string
 	identify                             func(context.Context) (string, error)
+	inspect                              func(context.Context) compatibility
+	compatibility                        compatibility
+	inspectOnce                          sync.Once
 }
 
 // New 只为当前 live 模块的 Android 正式构建创建上报器，排除安装暂存与 Host 测试。
@@ -100,6 +116,7 @@ func New(layout paths.Layout) *Reporter {
 		token: ProjectToken, endpoint: strings.TrimRight(IngestionHost, "/") + "/batch/",
 		version: version, versionCode: code, wake: make(chan struct{}, 1),
 		identify: readDeviceID,
+		inspect:  readCompatibility,
 		client:   newUploadClient(),
 	}
 }
@@ -142,6 +159,100 @@ func hashDeviceID(value string) (string, error) {
 	}
 	hash := sha256.Sum256(fmt.Appendf(nil, "NetProxy:telemetry:%016x", id))
 	return fmt.Sprintf("%x", hash), nil
+}
+
+func readCompatibility(ctx context.Context) compatibility {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	return compatibility{
+		RootFramework: rootFramework(func(path string) bool {
+			_, err := os.Stat(path)
+			return err == nil
+		}),
+		AndroidAPI:   androidAPI(readSystemValue(ctx, "/system/bin/getprop", "ro.build.version.sdk")),
+		KernelSeries: kernelSeries(readSystemValue(ctx, "/system/bin/uname", "-r")),
+		Manufacturer: manufacturer(readSystemValue(ctx, "/system/bin/getprop", "ro.product.manufacturer")),
+	}
+}
+
+func readSystemValue(ctx context.Context, command string, args ...string) string {
+	if ctx.Err() != nil {
+		return ""
+	}
+	output, err := exec.CommandContext(ctx, command, args...).Output()
+	if err != nil || ctx.Err() != nil {
+		return ""
+	}
+	return string(output)
+}
+
+func rootFramework(exists func(string) bool) string {
+	detected := ""
+	for _, candidate := range []struct{ name, path string }{
+		{"kernelsu", "/data/adb/ksud"},
+		{"apatch", "/data/adb/apd"},
+		{"magisk", "/data/adb/magisk/busybox"},
+	} {
+		if !exists(candidate.path) {
+			continue
+		}
+		if detected != "" {
+			return "multiple"
+		}
+		detected = candidate.name
+	}
+	if detected == "" {
+		return "unknown"
+	}
+	return detected
+}
+
+func androidAPI(value string) string {
+	api, err := strconv.ParseUint(strings.TrimSpace(value), 10, 8)
+	if err != nil || api == 0 {
+		return "unknown"
+	}
+	return strconv.FormatUint(api, 10)
+}
+
+func kernelSeries(value string) string {
+	major, minor, _ := strings.Cut(strings.TrimSpace(value), ".")
+	minor, _, _ = strings.Cut(minor, ".")
+	if _, err := strconv.ParseUint(major, 10, 8); err != nil {
+		return "unknown"
+	}
+	if _, err := strconv.ParseUint(minor, 10, 8); err != nil {
+		return "unknown"
+	}
+	return major + "." + minor
+}
+
+func manufacturer(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	switch {
+	case value == "":
+		return "unknown"
+	case strings.Contains(value, "oneplus"):
+		return "oneplus"
+	case strings.Contains(value, "xiaomi"), strings.Contains(value, "redmi"), strings.Contains(value, "poco"):
+		return "xiaomi"
+	case strings.Contains(value, "samsung"):
+		return "samsung"
+	case strings.Contains(value, "google"):
+		return "google"
+	case strings.Contains(value, "huawei"):
+		return "huawei"
+	case strings.Contains(value, "honor"):
+		return "honor"
+	case strings.Contains(value, "oppo"):
+		return "oppo"
+	case strings.Contains(value, "vivo"):
+		return "vivo"
+	case strings.Contains(value, "realme"):
+		return "realme"
+	default:
+		return "other"
+	}
 }
 
 // ValidCredentials 验证构建接入参数，不允许 Personal API Key 或非 HTTPS 地址。
@@ -371,9 +482,20 @@ func (r *Reporter) send(ctx context.Context, events []event, now time.Time) (tim
 		}
 		r.deviceID = id
 	}
+	if ctx.Err() == nil {
+		r.inspectOnce.Do(func() {
+			if r.inspect != nil {
+				r.compatibility = r.inspect(ctx)
+			}
+		})
+	}
 	// 身份只在 Worker 中派生，CLI 和离线队列均不保存设备标识。
 	for i := range events {
 		events[i].Properties.DistinctID = r.deviceID
+		events[i].Properties.RootFramework = r.compatibility.RootFramework
+		events[i].Properties.AndroidAPI = r.compatibility.AndroidAPI
+		events[i].Properties.KernelSeries = r.compatibility.KernelSeries
+		events[i].Properties.Manufacturer = r.compatibility.Manufacturer
 	}
 	content, err := json.Marshal(struct {
 		Token string  `json:"token"`
