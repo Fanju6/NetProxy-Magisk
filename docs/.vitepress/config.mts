@@ -49,10 +49,23 @@ export default defineConfig({
         ]
       },
       { text: '更新日志', link: '/changelog' },
+      { text: '奶屁伙伴', link: '/mascot/' },
       { text: 'GitHub', link: 'https://github.com/Fanju6/NetProxy-Magisk' }
     ],
 
     sidebar: {
+      '/mascot/': [
+        {
+          text: '奶屁伙伴',
+          items: [
+            { text: '两位伙伴与工坊故事', link: '/mascot/' },
+            { text: '奶屁龙', link: '/mascot/dragon' },
+            { text: '奶屁娘', link: '/mascot/niang' },
+            { text: '表情包', link: '/mascot/stickers' },
+            { text: '创作规范', link: '/mascot/production' }
+          ]
+        }
+      ],
       '/guide/': [
         {
           text: '开始使用',

@@ -94,6 +94,58 @@ html {
   margin: 48px auto 0;
 }
 
+.mascot-pair,
+.mascot-gallery {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin: 24px 0;
+}
+
+.mascot-pair figure,
+.mascot-gallery figure {
+  min-width: 0;
+  margin: 0;
+  text-align: center;
+}
+
+.vp-doc .mascot-pair img,
+.vp-doc .mascot-gallery img,
+.mascot-pair object {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+}
+
+.mascot-pair object {
+  aspect-ratio: 966 / 848;
+}
+
+.mascot-gallery {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.mascot-gallery img {
+  aspect-ratio: 1;
+  object-fit: contain;
+}
+
+.mascot-pair figcaption,
+.mascot-gallery figcaption {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--vp-c-text-2);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .mascot-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mascot-pair { gap: 12px; }
+}
+
 .tool-page .container,
 .tool-page .content,
 .tool-page .content-container {

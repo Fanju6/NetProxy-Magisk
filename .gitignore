@@ -1,4 +1,5 @@
 *.zip
+!/docs/public/mascots/naipi-stickers.zip
 
 # IDE 与本地工具
 .idea/

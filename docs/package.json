@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "vitepress dev --host",
     "check:content": "node scripts/check-content.mjs",
+    "check:mascots": "node scripts/build-mascots.mjs --check",
+    "build:mascots": "node scripts/build-mascots.mjs",
     "test": "vitest run",
-    "check": "npm run check:content && npm test",
+    "check": "npm run check:content && npm run check:mascots && npm test",
     "build": "npm run check && vitepress build",
     "preview": "vitepress preview"
   },

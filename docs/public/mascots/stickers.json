@@ -1,0 +1,242 @@
+[
+  {
+    "character": "dragon",
+    "name": "奶屁龙",
+    "caption": "收到",
+    "slug": "received",
+    "vector": "dragon/stickers/01-received.svg",
+    "file": "dragon/stickers/01-received.png"
+  },
+  {
+    "character": "dragon",
+    "name": "奶屁龙",
+    "caption": "开挖！",
+    "slug": "digging",
+    "vector": "dragon/stickers/02-digging.svg",
+    "file": "dragon/stickers/02-digging.png"
+  },
+  {
+    "character": "dragon",
+    "name": "奶屁龙",
+    "caption": "通了！",
+    "slug": "connected",
+    "vector": "dragon/stickers/03-connected.svg",
+    "file": "dragon/stickers/03-connected.png"
+  },
+  {
+    "character": "dragon",
+    "name": "奶屁龙",
+    "caption": "先歇会",
+    "slug": "rest",
+    "vector": "dragon/stickers/04-rest.svg",
+    "file": "dragon/stickers/04-rest.png"
+  },
+  {
+    "character": "dragon",
+    "name": "奶屁龙",
+    "caption": "我来康康",
+    "slug": "check",
+    "vector": "dragon/stickers/05-check.svg",
+    "file": "dragon/stickers/05-check.png"
+  },
+  {
+    "character": "dragon",
+    "name": "奶屁龙",
+    "caption": "正在测速",
+    "slug": "speedtest",
+    "vector": "dragon/stickers/06-speedtest.svg",
+    "file": "dragon/stickers/06-speedtest.png"
+  },
+  {
+    "character": "dragon",
+    "name": "奶屁龙",
+    "caption": "怎么还没好",
+    "slug": "waiting",
+    "vector": "dragon/stickers/07-waiting.svg",
+    "file": "dragon/stickers/07-waiting.png"
+  },
+  {
+    "character": "dragon",
+    "name": "奶屁龙",
+    "caption": "没网了",
+    "slug": "offline",
+    "vector": "dragon/stickers/08-offline.svg",
+    "file": "dragon/stickers/08-offline.png"
+  },
+  {
+    "character": "dragon",
+    "name": "奶屁龙",
+    "caption": "不许偷跑",
+    "slug": "caught",
+    "vector": "dragon/stickers/09-caught.svg",
+    "file": "dragon/stickers/09-caught.png"
+  },
+  {
+    "character": "dragon",
+    "name": "奶屁龙",
+    "caption": "好耶！",
+    "slug": "yay",
+    "vector": "dragon/stickers/10-yay.svg",
+    "file": "dragon/stickers/10-yay.png"
+  },
+  {
+    "character": "dragon",
+    "name": "奶屁龙",
+    "caption": "谢谢投喂",
+    "slug": "thanks",
+    "vector": "dragon/stickers/11-thanks.svg",
+    "file": "dragon/stickers/11-thanks.png"
+  },
+  {
+    "character": "dragon",
+    "name": "奶屁龙",
+    "caption": "晚安",
+    "slug": "goodnight",
+    "vector": "dragon/stickers/12-goodnight.svg",
+    "file": "dragon/stickers/12-goodnight.png"
+  },
+  {
+    "character": "dragon",
+    "name": "奶屁龙",
+    "caption": "啊？",
+    "slug": "confused",
+    "vector": "dragon/stickers/13-confused.svg",
+    "file": "dragon/stickers/13-confused.png"
+  },
+  {
+    "character": "dragon",
+    "name": "奶屁龙",
+    "caption": "等一下！",
+    "slug": "panic",
+    "vector": "dragon/stickers/14-panic.svg",
+    "file": "dragon/stickers/14-panic.png"
+  },
+  {
+    "character": "dragon",
+    "name": "奶屁龙",
+    "caption": "收工",
+    "slug": "done",
+    "vector": "dragon/stickers/15-done.svg",
+    "file": "dragon/stickers/15-done.png"
+  },
+  {
+    "character": "dragon",
+    "name": "奶屁龙",
+    "caption": "贴贴",
+    "slug": "love",
+    "vector": "dragon/stickers/16-love.svg",
+    "file": "dragon/stickers/16-love.png"
+  },
+  {
+    "character": "niang",
+    "name": "奶屁娘",
+    "caption": "哼",
+    "slug": "hmph",
+    "file": "niang/stickers/01-hmph.png"
+  },
+  {
+    "character": "niang",
+    "name": "奶屁娘",
+    "caption": "就这？",
+    "slug": "really",
+    "file": "niang/stickers/02-really.png"
+  },
+  {
+    "character": "niang",
+    "name": "奶屁娘",
+    "caption": "你再说一遍",
+    "slug": "repeat",
+    "file": "niang/stickers/03-repeat.png"
+  },
+  {
+    "character": "niang",
+    "name": "奶屁娘",
+    "caption": "本小姐出手",
+    "slug": "my-turn",
+    "file": "niang/stickers/04-my-turn.png"
+  },
+  {
+    "character": "niang",
+    "name": "奶屁娘",
+    "caption": "还不更新？",
+    "slug": "update",
+    "file": "niang/stickers/05-update.png"
+  },
+  {
+    "character": "niang",
+    "name": "奶屁娘",
+    "caption": "才不是担心你",
+    "slug": "care",
+    "file": "niang/stickers/06-care.png"
+  },
+  {
+    "character": "niang",
+    "name": "奶屁娘",
+    "caption": "给我看看配置",
+    "slug": "config",
+    "file": "niang/stickers/07-config.png"
+  },
+  {
+    "character": "niang",
+    "name": "奶屁娘",
+    "caption": "我全都要",
+    "slug": "all",
+    "file": "niang/stickers/08-all.png"
+  },
+  {
+    "character": "niang",
+    "name": "奶屁娘",
+    "caption": "下次一定",
+    "slug": "later",
+    "file": "niang/stickers/09-later.png"
+  },
+  {
+    "character": "niang",
+    "name": "奶屁娘",
+    "caption": "优雅收工",
+    "slug": "done",
+    "file": "niang/stickers/10-done.png"
+  },
+  {
+    "character": "niang",
+    "name": "奶屁娘",
+    "caption": "退下吧",
+    "slug": "leave",
+    "file": "niang/stickers/11-leave.png"
+  },
+  {
+    "character": "niang",
+    "name": "奶屁娘",
+    "caption": "收到",
+    "slug": "received",
+    "file": "niang/stickers/12-received.png"
+  },
+  {
+    "character": "niang",
+    "name": "奶屁娘",
+    "caption": "日志呢？",
+    "slug": "logs",
+    "file": "niang/stickers/13-logs.png"
+  },
+  {
+    "character": "niang",
+    "name": "奶屁娘",
+    "caption": "谢谢投喂",
+    "slug": "thanks",
+    "file": "niang/stickers/14-thanks.png"
+  },
+  {
+    "character": "niang",
+    "name": "奶屁娘",
+    "caption": "晚安",
+    "slug": "goodnight",
+    "file": "niang/stickers/15-goodnight.png"
+  },
+  {
+    "character": "niang",
+    "name": "奶屁娘",
+    "caption": "交给我",
+    "slug": "leave-it",
+    "file": "niang/stickers/16-leave-it.png"
+  }
+]
