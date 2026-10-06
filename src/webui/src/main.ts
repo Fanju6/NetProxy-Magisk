@@ -7,13 +7,25 @@ import { getHelp } from './help'
 import { createPoller } from './polling'
 import './style.css'
 
-const STATE_MAP: Record<string, { label: string; color: string }> = {
-  ready: { label: '运行中', color: 'var(--good)' },
-  stopped: { label: '未运行', color: 'var(--secondary)' },
-  failed: { label: '启动失败', color: 'var(--danger)' },
-  starting: { label: '启动中', color: 'var(--medium)' },
-  stopping: { label: '停止中', color: 'var(--medium)' },
-  preparing: { label: '准备中', color: 'var(--medium)' },
+// WebUI 持有自身的奶屁龙素材，模块构建不依赖 docs 目录。
+const dragonDigRaised = './mascots/dragon/dig-raised.svg'
+const dragonDigStrike = './mascots/dragon/dig-strike.svg'
+const dragonSleepFirst = './mascots/dragon/sleep-a.svg'
+const dragonSleepSecond = './mascots/dragon/sleep-b.svg'
+const dragonFailedFirst = './mascots/dragon/failed-a.svg'
+const dragonFailedSecond = './mascots/dragon/failed-b.svg'
+const dragonWaitingFirst = './mascots/dragon/waiting-a.svg'
+const dragonWaitingSecond = './mascots/dragon/waiting-b.svg'
+
+type MascotState = { first: string; second: string }
+
+const STATE_MAP: Record<string, MascotState> = {
+  ready: { first: dragonDigRaised, second: dragonDigStrike },
+  stopped: { first: dragonSleepFirst, second: dragonSleepSecond },
+  failed: { first: dragonFailedFirst, second: dragonFailedSecond },
+  preparing: { first: dragonWaitingFirst, second: dragonWaitingSecond },
+  starting: { first: dragonWaitingFirst, second: dragonWaitingSecond },
+  stopping: { first: dragonWaitingFirst, second: dragonWaitingSecond },
 }
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -34,8 +46,9 @@ const runButton = byId<HTMLButtonElement>('run')
 const copyButton = byId<HTMLButtonElement>('copy')
 const clearButton = byId<HTMLButtonElement>('clear')
 const latestButton = byId<HTMLButtonElement>('latest')
-const serviceStatus = byId<HTMLButtonElement>('service-status')
-const serviceState = byId<HTMLElement>('service-state')
+const mascot = byId<HTMLElement>('mascot')
+const mascotAction = byId<HTMLImageElement>('mascot-action')
+const mascotImpact = byId<HTMLImageElement>('mascot-impact')
 const announcement = byId<HTMLElement>('announcement')
 const entryTemplate = byId<HTMLTemplateElement>('command-entry')
 const history: string[] = []
@@ -49,9 +62,26 @@ let lastResult = ''
 let knownGroups: string[] = []
 let knownSubscriptions: string[] = []
 let completionRevision = 0
+let mascotActionSource = ''
+let mascotImpactSource = ''
 
 function announce(message: string) {
   announcement.textContent = message
+}
+
+function updateMascotLayer(image: HTMLImageElement, source: string | undefined, currentSource: string): string {
+  image.hidden = !source
+  if (source && source !== currentSource) image.src = source
+  return source ?? currentSource
+}
+
+function updateMascot(state?: MascotState, stateName?: string) {
+  if (stateName) mascot.dataset.state = stateName
+  else delete mascot.dataset.state
+  if (state) mascot.dataset.animated = 'true'
+  else delete mascot.dataset.animated
+  mascotActionSource = updateMascotLayer(mascotAction, state?.first, mascotActionSource)
+  mascotImpactSource = updateMascotLayer(mascotImpact, state?.second, mascotImpactSource)
 }
 
 function updateControls() {
@@ -61,7 +91,6 @@ function updateControls() {
   nextButton.disabled = busy || historyIndex === -1
   clearButton.disabled = busy || !output.querySelector('.entry')
   copyButton.disabled = !lastResult
-  serviceStatus.disabled = busy
 }
 
 function scrollToLatest(force = false) {
@@ -107,10 +136,9 @@ async function refreshCompletions() {
 const statusPoller = createPoller(
   () => ctlJson<{ state?: string }>(['service', 'status']),
   result => {
-    const state = result.ok ? STATE_MAP[result.data?.state || ''] : undefined
-    serviceState.textContent = state?.label || '不可用'
-    serviceStatus.style.setProperty('--state-color', state?.color || 'var(--danger)')
-    serviceStatus.title = `${serviceState.textContent} · 点击查看服务状态${result.ok ? '' : '：' + result.message}`
+    const stateName = result.ok ? result.data?.state : undefined
+    const state = stateName ? STATE_MAP[stateName] : undefined
+    updateMascot(state, stateName)
   },
 )
 
@@ -284,7 +312,6 @@ document.addEventListener('click', event => {
 completeButton.addEventListener('click', completeInput)
 previousButton.addEventListener('click', () => moveHistory(-1))
 nextButton.addEventListener('click', () => moveHistory(1))
-serviceStatus.addEventListener('click', () => { void run('service status') })
 clearButton.addEventListener('click', clearOutput)
 copyButton.addEventListener('click', async () => {
   const value = lastResult

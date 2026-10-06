@@ -75,11 +75,8 @@ code, pre { font-family: var(--mono); }
 .header, .toolbar { justify-content: space-between; }
 .header { min-height: 52px; padding-top: calc(3px + var(--inset-top)); padding-bottom: 3px; border-bottom: 1px solid var(--border); }
 .brand { min-width: 0; }
-.brand h1 { flex: none; }
+.brand h1 { display: flex; align-items: center; flex: none; min-height: 44px; }
 .environment { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--secondary); }
-.service-status { display: inline-flex; align-items: center; gap: 8px; padding: 0; border: 0; background: transparent; font: inherit; }
-.service-status:hover:not(:disabled), .service-status:active:not(:disabled) { background: transparent; }
-.state-dot { flex: none; width: 7px; height: 7px; background: var(--state-color, var(--secondary)); border-radius: 50%; }
 .transcript { position: relative; flex: 1; min-height: 0; }
 .out { height: 100%; padding: 24px calc(var(--gutter) + var(--inset-right)) 24px calc(var(--gutter) + var(--inset-left)); overflow: auto; overscroll-behavior: contain; overflow-wrap: anywhere; scrollbar-width: thin; scrollbar-color: var(--secondary) transparent; }
 .welcome { max-width: 480px; margin-bottom: 24px; }
@@ -100,7 +97,12 @@ code, pre { font-family: var(--mono); }
 .entry[data-state="running"] .entry-state::before { content: ""; width: 10px; height: 10px; border: 1.5px solid var(--border); border-top-color: var(--medium); border-radius: 50%; animation: spin .7s linear infinite; }
 .out pre + pre { margin-top: 8px; }
 .out .help { color: var(--secondary); }
-.latest { position: absolute; right: calc(var(--gutter) + var(--inset-right)); bottom: 12px; font-size: 12px; }
+.mascot { position: absolute; right: calc(var(--gutter) + var(--inset-right) + 4px); bottom: -1px; z-index: 1; width: 112px; pointer-events: none; user-select: none; -webkit-user-select: none; }
+.mascot-base { display: block; width: 100%; height: auto; }
+.mascot-action, .mascot-impact { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; }
+.mascot[data-animated="true"] .mascot-action:not([hidden]) { animation: mascot-state-first .72s steps(1, end) infinite; }
+.mascot[data-animated="true"] .mascot-impact:not([hidden]) { animation: mascot-state-second .72s steps(1, end) infinite; }
+.latest { position: absolute; right: calc(var(--gutter) + var(--inset-right)); bottom: 120px; z-index: 2; font-size: 12px; }
 .composer { position: relative; padding-top: 10px; padding-bottom: calc(6px + var(--inset-bottom)); border-top: 1px solid var(--border); }
 .iline { padding: 4px 4px 4px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); }
 .iline:focus-within { border-color: var(--secondary); }
@@ -119,16 +121,26 @@ code, pre { font-family: var(--mono); }
 .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes mascot-state-first { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes mascot-state-second { 0%, 49% { opacity: 0; } 50%, 100% { opacity: 1; } }
 @media (hover: hover) and (pointer: fine) {
   button:hover:not(:disabled) { background: var(--hover); }
 }
-@media (max-width: 480px) { .term { --gutter: 16px; } }
+@media (max-width: 480px) {
+  .term { --gutter: 16px; }
+  .mascot { right: calc(var(--gutter) + var(--inset-right) + 2px); width: 80px; }
+  .latest { bottom: 88px; }
+}
 @media (max-height: 480px) {
   .composer { padding-top: 4px; padding-bottom: calc(4px + var(--inset-bottom)); }
   .environment { display: none; }
   .out { padding-top: 12px; }
+  .mascot { display: none; }
+  .latest { bottom: 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .run:active:not(:disabled) { transform: none; }
   .entry[data-state="running"] .entry-state::before { animation: none; border-color: var(--medium); }
+  .mascot[data-animated="true"] .mascot-action:not([hidden]) { animation: none; opacity: 1; }
+  .mascot[data-animated="true"] .mascot-impact:not([hidden]) { animation: none; }
 }
