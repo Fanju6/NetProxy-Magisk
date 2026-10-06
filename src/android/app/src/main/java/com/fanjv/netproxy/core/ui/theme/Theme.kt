@@ -49,6 +49,14 @@ enum class ColorMode(val value: Int) {
     }
 }
 
+object AppThemeDefaults {
+    val colorMode = ColorMode.MONET_SYSTEM
+    const val miuixMonet = true
+    val keyColor = 0xFF00BCD4.toInt()
+    val paletteStyle = ThemePaletteStyle.TonalSpot
+    val colorSpec = ThemeColorSpec.Spec2025
+}
+
 /** 应用主题设置快照（配色、动态色、关键色、圆角、模糊与预测式返回）。 */
 data class AppThemeSettings(
     val colorMode: ColorMode,
@@ -65,9 +73,9 @@ data class AppThemeSettings(
 object AppThemeController {
     fun getAppThemeSettings(context: Context): AppThemeSettings {
         val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
-        var colorModeValue = prefs.getInt("color_mode", ColorMode.SYSTEM.value)
+        var colorModeValue = prefs.getInt("color_mode", AppThemeDefaults.colorMode.value)
         val miuixMonet = if (prefs.contains("miuix_monet")) {
-            prefs.getBoolean("miuix_monet", false)
+            prefs.getBoolean("miuix_monet", AppThemeDefaults.miuixMonet)
         } else {
             colorModeValue in ColorMode.MONET_SYSTEM.value..ColorMode.MONET_DARK.value
         }
@@ -80,21 +88,21 @@ object AppThemeController {
 
         val paletteStyle = runCatching {
             ThemePaletteStyle.valueOf(
-                prefs.getString("color_style", ThemePaletteStyle.TonalSpot.name)
-                    ?: ThemePaletteStyle.TonalSpot.name
+                prefs.getString("color_style", AppThemeDefaults.paletteStyle.name)
+                    ?: AppThemeDefaults.paletteStyle.name
             )
-        }.getOrDefault(ThemePaletteStyle.TonalSpot)
+        }.getOrDefault(AppThemeDefaults.paletteStyle)
         val colorSpec = runCatching {
             ThemeColorSpec.valueOf(
-                prefs.getString("color_spec", ThemeColorSpec.Spec2021.name)
-                    ?: ThemeColorSpec.Spec2021.name
+                prefs.getString("color_spec", AppThemeDefaults.colorSpec.name)
+                    ?: AppThemeDefaults.colorSpec.name
             )
-        }.getOrDefault(ThemeColorSpec.Spec2021)
+        }.getOrDefault(AppThemeDefaults.colorSpec)
 
         return AppThemeSettings(
             colorMode = ColorMode.fromValue(colorModeValue),
             miuixMonet = miuixMonet,
-            keyColor = prefs.getInt("key_color", 0),
+            keyColor = prefs.getInt("key_color", AppThemeDefaults.keyColor),
             paletteStyle = paletteStyle,
             colorSpec = colorSpec,
             enableSmoothCorner = prefs.getBoolean("enable_smooth_corner", true),
@@ -132,7 +140,7 @@ fun NetProxyTheme(
     )
 
     MiuixTheme(
-        colors = controller.currentColors(),
+        controller = controller,
     ) {
         CompositionLocalProvider(
             LocalColorMode provides currentSettings.colorMode.value,

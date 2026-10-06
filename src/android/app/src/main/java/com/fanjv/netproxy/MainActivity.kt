@@ -29,6 +29,7 @@ import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
 import com.fanjv.netproxy.core.di.netProxyViewModel
+import com.fanjv.netproxy.core.ui.theme.AppThemeDefaults
 import com.fanjv.netproxy.core.ui.theme.AppThemeSettings
 import com.fanjv.netproxy.core.ui.theme.ColorMode
 import com.fanjv.netproxy.core.ui.theme.NetProxyTheme
@@ -96,9 +97,9 @@ class MainActivity : ComponentActivity() {
 
             val themeState by themeViewModel.state.collectAsStateWithLifecycle()
             val paletteStyle = runCatching { ThemePaletteStyle.valueOf(themeState.colorStyle) }
-                .getOrDefault(ThemePaletteStyle.TonalSpot)
+                .getOrDefault(AppThemeDefaults.paletteStyle)
             val colorSpec = runCatching { ThemeColorSpec.valueOf(themeState.colorSpec) }
-                .getOrDefault(ThemeColorSpec.Spec2021)
+                .getOrDefault(AppThemeDefaults.colorSpec)
             val systemDensity = LocalDensity.current
             val density = remember(systemDensity, themeState.pageScale) {
                 Density(systemDensity.density * themeState.pageScale, systemDensity.fontScale)

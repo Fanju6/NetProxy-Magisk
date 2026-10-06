@@ -2,29 +2,28 @@ package com.fanjv.netproxy.feature.theme.presentation
 
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import com.fanjv.netproxy.core.ui.theme.AppThemeDefaults
 import com.fanjv.netproxy.core.ui.theme.ColorMode
-import top.yukonga.miuix.kmp.theme.ThemeColorSpec
-import top.yukonga.miuix.kmp.theme.ThemePaletteStyle
 
 /** 主题偏好的 SharedPreferences 读写适配器。 */
 internal class ThemePreferenceStore(
     private val prefs: SharedPreferences
 ) {
     fun read(): ThemePreferencesSnapshot {
-        val colorMode = prefs.getInt("color_mode", ColorMode.SYSTEM.value)
+        val colorMode = prefs.getInt("color_mode", AppThemeDefaults.colorMode.value)
         val miuixMonet = if (prefs.contains("miuix_monet")) {
-            prefs.getBoolean("miuix_monet", false)
+            prefs.getBoolean("miuix_monet", AppThemeDefaults.miuixMonet)
         } else {
             colorMode in ColorMode.MONET_SYSTEM.value..ColorMode.MONET_DARK.value
         }
         return ThemePreferencesSnapshot(
             colorMode = colorMode,
             miuixMonet = miuixMonet,
-            keyColor = prefs.getInt("key_color", 0),
-            colorStyle = prefs.getString("color_style", ThemePaletteStyle.TonalSpot.name)
-                ?: ThemePaletteStyle.TonalSpot.name,
-            colorSpec = prefs.getString("color_spec", ThemeColorSpec.Spec2021.name)
-                ?: ThemeColorSpec.Spec2021.name,
+            keyColor = prefs.getInt("key_color", AppThemeDefaults.keyColor),
+            colorStyle = prefs.getString("color_style", AppThemeDefaults.paletteStyle.name)
+                ?: AppThemeDefaults.paletteStyle.name,
+            colorSpec = prefs.getString("color_spec", AppThemeDefaults.colorSpec.name)
+                ?: AppThemeDefaults.colorSpec.name,
             enableBlur = prefs.getBoolean("enable_blur", true),
             enablePredictiveBack = prefs.getBoolean("enable_predictive_back", false),
             enableSmoothCorner = prefs.getBoolean("enable_smooth_corner", true),
@@ -76,4 +75,3 @@ internal data class ThemePreferencesSnapshot(
     val enableSmoothCorner: Boolean,
     val pageScale: Float,
 )
-

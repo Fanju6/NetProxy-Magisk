@@ -236,7 +236,7 @@
     <string name="settings_theme_mode_light">浅色</string>
     <string name="settings_theme_mode_dark">深色</string>
     <string name="settings_key_color">强调色</string>
-    <string name="settings_key_color_default">默认</string>
+    <string name="settings_key_color_default">系统配色</string>
     <string name="color_blue">蓝色</string>
     <string name="color_red">红色</string>
     <string name="color_green">绿色</string>
