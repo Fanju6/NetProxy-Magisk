@@ -126,6 +126,18 @@ private class SingBoxSchemaEngine(
             evaluatedProperties += result.evaluatedProperties
         }
 
+        schema["if"].asSchemaObject()?.let { condition ->
+            val result = validateValue(value, condition, path, visitedRefs, depth + 1)
+            if (result.issues.isEmpty()) {
+                evaluatedProperties += result.evaluatedProperties
+                schema["then"].asSchemaObject()?.let { branch ->
+                    val applied = validateValue(value, branch, path, visitedRefs, depth + 1)
+                    issues += applied.issues
+                    evaluatedProperties += applied.evaluatedProperties
+                }
+            }
+        }
+
         validateCombination(value, schema, path, "oneOf", visitedRefs, depth)?.let { result ->
             issues += result.issues
             evaluatedProperties += result.evaluatedProperties
@@ -417,10 +429,18 @@ private class SingBoxSchemaEngine(
         depth: Int,
         issues: MutableList<SingBoxSchemaIssue>,
     ) {
-        val itemSchema = schema["items"].asSchemaObject() ?: return
-        value.forEachIndexed { index, item ->
-            val result = validateValue(item, itemSchema, "$path/$index", visitedRefs, depth + 1)
-            issues += result.issues
+        schema["items"].asSchemaObject()?.let { itemSchema ->
+            value.forEachIndexed { index, item ->
+                val result = validateValue(item, itemSchema, "$path/$index", visitedRefs, depth + 1)
+                issues += result.issues
+            }
+        }
+        schema["contains"].asSchemaObject()?.let { containsSchema ->
+            val matches = value.withIndex().any { (index, item) ->
+                validateValue(item, containsSchema, "$path/$index", visitedRefs, depth + 1)
+                    .issues.isEmpty()
+            }
+            if (!matches) issues += issue(path, "数组至少需要一个符合要求的元素")
         }
     }
 
