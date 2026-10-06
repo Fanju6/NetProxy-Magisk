@@ -89,14 +89,7 @@ Both APIs listen on loopback by default. LAN access requires an explicit listene
 
 ## Installation
 
-Each release provides two packages:
-
-| Package | Filename | Contents | Recommended for |
-|---------|----------|----------|-----------------|
-| **Standard** | `NetProxy_<version>_<build>.zip` | sing-box, the NetProxy native component, CLI, eBPF, and the module WebUI | The default choice when the manager is installed separately |
-| **With manager** | `NetProxy_<version>_<build>_with-manager.zip` | Everything in Standard plus the optional manager APK | Devices without Google Play or users who want to install the APK during module installation |
-
-Both packages have identical proxy capabilities. The manager APK is an independent release asset; normal Android builds do not overwrite it.
+Release and CI builds provide one package: `NetProxy_<version>_<build>.zip`. It includes sing-box, the NetProxy native component, CLI, eBPF, the module WebUI, and the Android manager APK built from the current source. Module updates download the same package; installing the bundled manager is optional.
 
 > [!IMPORTANT]
 > The eBPF inbound requires kernel BPF, TC classifier, transparent socket, and socket lookup support. Local interception also requires veth and policy-routing capabilities. Unsupported kernels cannot start this version.
@@ -104,7 +97,7 @@ Both packages have identical proxy capabilities. The manager APK is an independe
 1. Download the latest ZIP from [Releases](https://github.com/Fanju6/NetProxy-Magisk/releases).
 2. Flash it with Magisk, KernelSU, or APatch.
 3. On an existing installation, choose **Keep existing data**, **Keep nodes and subscriptions only**, or **Fresh installation**. Volume Up cycles through the choices; Volume Down confirms. Without input, existing data is kept by default.
-4. If the package includes an APK, choose whether to install it; otherwise install the manager from Google Play when available.
+4. For the manager, Volume Up installs or updates, Volume Down skips, and no input for 10 seconds defaults to installation. Existing installations are not automatically skipped. Installation failures do not block the module installation or uninstall the existing app.
 5. A live installation is applied without a reboot. Recovery installation still requires a reboot.
 6. Import and select a node before starting the service.
 

@@ -88,14 +88,7 @@ Clash API 与 Service API 默认只监听本机。需要从其他设备访问时
 
 ## 安装
 
-Release 页面提供以下两个版本：
-
-| 版本 | 文件名 | 包含内容 | 适用设备 |
-|------|--------|----------|----------|
-| **标准包** | `NetProxy_<版本>_<构建号>.zip` | sing-box、NetProxy 原生组件、模块 WebUI、CLI 与 eBPF | 默认推荐；通过 Google Play 安装管理器，或使用 CLI / WebUI |
-| **含管理器包** | `NetProxy_<版本>_<构建号>_with-manager.zip` | 标准包全部内容，以及刷入时可选安装的 Android 管理器 APK | 无法使用 Google Play、需要随模块安装管理器的设备 |
-
-两个包的代理能力完全一致。标准包也是模块自更新的默认下载目标；只有需要随模块刷入管理器时才选择**含管理器包**。
+Release 与 CI 统一提供 `NetProxy_<版本>_<构建号>.zip`，包含 sing-box、NetProxy 原生组件、模块 WebUI、CLI、eBPF 与当前源码构建的 Android 管理器 APK。模块自更新也下载此包；刷入时可自行选择是否安装管理器。
 
 > [!IMPORTANT]
 > eBPF 入站需要内核启用 BPF、TC classifier、透明 socket 与 socket lookup 等能力；本机路径还需要 veth 和策略路由支持。不满足要求的内核无法启动本版本。
@@ -103,7 +96,7 @@ Release 页面提供以下两个版本：
 1. 从 [Releases](https://github.com/Fanju6/NetProxy-Magisk/releases) 下载最新模块 ZIP。
 2. 在 Magisk、KernelSU 或 APatch 中刷入模块。
 3. 更新已有模块时，可选择“保留现有数据”“仅保留节点与订阅”或“全新安装”；音量键加循环选择、音量键减确认，未操作时默认保留现有数据。
-4. 含管理器包会提供随附 APK 的安装选项；标准包会显示从 Google Play 安装管理器的提示。
+4. 管理器安装时，音量键加选择安装或更新，音量键减选择跳过，10 秒未操作默认安装。已有管理器也会按选择尝试覆盖更新，不自动跳过；安装失败不影响模块安装，也不会卸载现有应用。
 5. 已开机刷入会在后台应用新版本，无需重启；Recovery 刷入完成后需要重启设备。
 6. 导入并选择节点，再通过管理器、模块 WebUI 或 CLI 启动服务。
 

@@ -272,41 +272,51 @@ test_service_failures() (
 
 test_manager_install() (
   reset_modules
+  INSTALL_TMP="$WORKDIR/install"
+  mkdir -p "$INSTALL_TMP"
   pm() {
     printf 'pm %s\n' "$*" >> "$CALL_LOG"
-    case "$1" in
-      path) return "${INSTALLED:-1}" ;;
-      install) return "${MANAGER_INSTALL_EXIT:-0}" ;;
-    esac
+    [ "$1" = install ] && [ "$2" = -r ] || return 1
+    if [ "${MANAGER_INSTALL_EXIT:-0}" != 0 ]; then
+      printf 'Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE]' >&2
+      return "$MANAGER_INSTALL_EXIT"
+    fi
   }
-  dumpsys() { printf 'versionName=8.2.0\nversionCode=123\n'; }
+  dumpsys() { printf 'unexpected dumpsys call\n' >> "$CALL_LOG"; return 1; }
   wait_volume_key() { VOLUME_KEY="$CHOICE"; }
-  install_bundled_manager > "$WORKDIR/manager"
+  if install_bundled_manager > "$WORKDIR/manager"; then exit 1; fi
   grep -Fq '安装 NetProxy 管理器' "$WORKDIR/manager"
-  grep -Fq '未随附' "$WORKDIR/manager"
+  grep -Fq '缺少' "$WORKDIR/manager"
   [ ! -s "$CALL_LOG" ]
+  : > "$STAGE/NetProxy.apk"
+  if install_bundled_manager > "$WORKDIR/manager"; then exit 1; fi
   for CHOICE in down timeout up; do
     : > "$CALL_LOG"
-    : > "$STAGE/NetProxy.apk"
+    printf 'manager fixture\n' > "$STAGE/NetProxy.apk"
     install_bundled_manager > "$WORKDIR/manager"
     [ ! -e "$STAGE/NetProxy.apk" ]
-    if [ "$CHOICE" = down ]; then ! grep -q '^pm install ' "$CALL_LOG"; else grep -q '^pm install ' "$CALL_LOG"; fi
+    if [ "$CHOICE" = down ]; then
+      [ ! -s "$CALL_LOG" ]
+      grep -Fq '已跳过管理器安装' "$WORKDIR/manager"
+    else
+      grep -Fxq "pm install -r $STAGE/NetProxy.apk" "$CALL_LOG"
+      [ "$(wc -l < "$CALL_LOG")" -eq 1 ]
+      grep -Fq '管理器安装成功' "$WORKDIR/manager"
+    fi
   done
-  : > "$CALL_LOG"
-  : > "$STAGE/NetProxy.apk"
-  INSTALLED=0
+  # 重复安装仍直接调用覆盖安装，不读取已安装版本或自动跳过。
+  printf 'manager fixture\n' > "$STAGE/NetProxy.apk"
   install_bundled_manager > "$WORKDIR/manager"
-  ! grep -q '^pm install ' "$CALL_LOG"
-  grep -Fq '8.2.0 (versionCode 123)' "$WORKDIR/manager"
-  [ ! -e "$STAGE/NetProxy.apk" ]
-  INSTALLED=1
+  [ "$(wc -l < "$CALL_LOG")" -eq 2 ]
   MANAGER_INSTALL_EXIT=1
   CHOICE=up
-  : > "$STAGE/NetProxy.apk"
+  printf 'manager fixture\n' > "$STAGE/NetProxy.apk"
   install_bundled_manager > "$WORKDIR/manager"
   grep -Fq '管理器安装失败' "$WORKDIR/manager"
+  grep -Fq 'INSTALL_FAILED_UPDATE_INCOMPATIBLE' "$WORKDIR/manager"
+  grep -Fq '未卸载或清除现有应用' "$WORKDIR/manager"
   [ ! -e "$STAGE/NetProxy.apk" ]
-  : > "$STAGE/NetProxy.apk"
+  printf 'manager fixture\n' > "$STAGE/NetProxy.apk"
   rm() { return 1; }
   if install_bundled_manager > "$WORKDIR/manager"; then exit 1; fi
   [ -f "$STAGE/NetProxy.apk" ]
@@ -315,6 +325,7 @@ test_manager_install() (
 test_hot_update() (
   for mode in preserve nodes fresh; do
     reset_modules
+    [ ! -e "$STAGE/NetProxy.apk" ]
     INSTALL_MODE="$mode"
     INSTALLER_PID=99999999
     sleep() { :; }

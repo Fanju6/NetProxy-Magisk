@@ -9,7 +9,6 @@
 SKIPUNZIP=1
 umask 077
 readonly MODULE_ID=netproxy
-readonly MANAGER_PACKAGE=com.fanjv.netproxy
 readonly CONFIG_ENTRIES="config/module.conf config/ebpf/ebpf.conf config/singbox/config.json config/singbox/rules/local"
 readonly EXECUTABLE_FILES="bin/sing-box bin/netproxyctl action.sh netproxyctl service.sh emulated-soft-reboot.sh uninstall.sh"
 
@@ -485,45 +484,32 @@ schedule_hot_update() {
 }
 
 # 参数: 无。
-# 返回: 0=版本已输出，1=应用未安装。
-get_installed_manager_version() {
-  local package_dump version_name version_code
-  pm path "$MANAGER_PACKAGE" >/dev/null 2>&1 || return 1
-  package_dump="$(dumpsys package "$MANAGER_PACKAGE" 2>/dev/null)" || return 1
-  version_name="$(printf '%s\n' "$package_dump" | sed -n 's/^[[:space:]]*versionName=\([^[:space:]]*\).*/\1/p' | head -n 1)"
-  version_code="$(printf '%s\n' "$package_dump" | sed -n 's/^[[:space:]]*versionCode=\([0-9][0-9]*\).*/\1/p' | head -n 1)"
-  printf '%s (versionCode %s)\n' "${version_name:-未知}" "${version_code:-未知}"
-}
-
-# 参数: 无。
-# 返回: 0=完成（管理器安装失败不阻塞），1=随附 APK 清理失败。
+# 返回: 0=完成（APK 安装失败不阻塞），1=包损坏、按键读取或 APK 清理失败。
 install_bundled_manager() {
-  local installed_version
+  local install_log="$INSTALL_TMP/manager-install.log" line
   print_title "安装 NetProxy 管理器"
   ui_print ""
-  if [ ! -f "$MODPATH/NetProxy.apk" ]; then
-    ui_print "  本安装包未随附 NetProxy 管理器"
-    ui_print "  可稍后从 Google Play 安装管理器"
-    return 0
+  if [ ! -s "$MODPATH/NetProxy.apk" ]; then
+    print_error "安装包缺少 NetProxy 管理器 APK"
+    return 1
   fi
-  if installed_version="$(get_installed_manager_version)"; then
-    ui_print "  当前版本：$installed_version"
-    ui_print "  已安装管理器，跳过随附 APK"
-    ui_print "  随附 CI 版使用独立签名，不能覆盖现有安装"
-    ui_print "  卸载会清除管理器本地数据，建议通过 Google Play 更新"
+  ui_print "  [音量+] 安装或更新（默认）"
+  ui_print "  [音量-] 跳过"
+  ui_print "  10 秒未操作，默认安装"
+  stop_key_listener
+  wait_volume_key 10 || return 1
+  stop_key_listener
+  if [ "$VOLUME_KEY" = down ]; then
+    print_step "已跳过管理器安装"
   else
-    ui_print "  [音量+] 安装（默认）  [音量-] 跳过"
-    stop_key_listener
-    if wait_volume_key 10 && [ "$VOLUME_KEY" != down ]; then
-      if pm install "$MODPATH/NetProxy.apk" >/dev/null 2>&1; then
-        print_ok "管理器安装成功"
-      else
-        print_warn "管理器安装失败，可稍后通过 Google Play 安装"
-      fi
+    if pm install -r "$MODPATH/NetProxy.apk" > "$install_log" 2>&1; then
+      print_ok "管理器安装成功"
     else
-      print_step "已跳过管理器安装"
+      print_warn "管理器安装失败，模块安装继续；未卸载或清除现有应用"
+      while IFS= read -r line || [ -n "$line" ]; do
+        ui_print "  $line"
+      done < "$install_log"
     fi
-    stop_key_listener
   fi
   rm -f "$MODPATH/NetProxy.apk"
 }
@@ -565,8 +551,9 @@ choose_install_mode || exit 1
 print_title "准备安装"
 print_step "解压与校验安装包..."
 unzip -o "$ZIPFILE" -x 'META-INF/*' -d "$MODPATH" >/dev/null 2>&1 \
-  && validate_stage && set_permissions || { print_error "安装包或权限检查失败"; exit 1; }
-install_bundled_manager || { print_error "随附 APK 清理失败"; exit 1; }
+  && [ -s "$MODPATH/NetProxy.apk" ] && validate_stage && set_permissions \
+  || { print_error "安装包或权限检查失败"; exit 1; }
+install_bundled_manager || { print_error "管理器安装步骤失败"; exit 1; }
 print_title "安装模块"
 ui_print "  安装完成前请勿修改模块配置、节点或订阅"
 synchronize_user_data && set_permissions || { print_error "保留用户数据或权限设置失败"; exit 1; }

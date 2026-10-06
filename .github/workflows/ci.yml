@@ -72,8 +72,7 @@ jobs:
     env:
       VERSION: ${{ needs.build.outputs.version }}
       COMMIT_COUNT: ${{ needs.build.outputs.commit_count }}
-      STANDARD_NAME: ${{ needs.build.outputs.standard_name }}
-      MANAGER_NAME: ${{ needs.build.outputs.manager_name }}
+      MODULE_NAME: ${{ needs.build.outputs.module_name }}
     steps:
       - name: 拉取提交记录
         uses: actions/checkout@v7
@@ -81,19 +80,10 @@ jobs:
           fetch-depth: 0
           sparse-checkout: .github/scripts
 
-      - name: 下载本次运行的标准模块包
+      - name: 下载本次运行的完整模块包
         uses: actions/download-artifact@v8
         with:
-          name: module-standard
-
-      - name: 下载本次运行的管理器
-        uses: actions/download-artifact@v8
-        with:
-          name: manager-apk
-          path: manager
-
-      - name: 复用标准包生成含管理器包
-        run: sh .github/scripts/package-manager.sh "$STANDARD_NAME" manager/NetProxy.apk "$MANAGER_NAME"
+          name: module-package
 
       - name: 设置构建元信息
         run: |
@@ -140,8 +130,7 @@ jobs:
             --prerelease \
             --title "nightly Pre-release" \
             --notes-file "$notes_file" \
-            "$STANDARD_NAME" \
-            "$MANAGER_NAME"
+            "$MODULE_NAME"
 
       - name: Telegram 构建成功通知
         if: success()

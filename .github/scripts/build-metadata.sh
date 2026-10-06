@@ -14,5 +14,4 @@ SHORT_SHA="$(git rev-parse HEAD | cut -c1-7)"
 
 printf 'version=%s\nmanager_version=%s\nshort_sha=%s\ncommit_count=%s\n' \
   "$VERSION" "${VERSION#v}" "$SHORT_SHA" "$COMMIT_COUNT"
-printf 'standard_name=NetProxy_%s_%s.zip\nmanager_name=NetProxy_%s_%s_with-manager.zip\n' \
-  "$VERSION" "$COMMIT_COUNT" "$VERSION" "$COMMIT_COUNT"
+printf 'module_name=NetProxy_%s_%s.zip\n' "$VERSION" "$COMMIT_COUNT"

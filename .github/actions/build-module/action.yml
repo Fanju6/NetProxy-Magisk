@@ -1,5 +1,5 @@
-name: 构建标准模块包
-description: 验证并构建原生组件与 WebUI，生成 XZ 压缩的标准模块包
+name: 构建模块内容
+description: 验证并构建原生组件与 WebUI，生成等待追加管理器的 XZ 模块内容
 
 inputs:
   posthog-project-token:
@@ -17,12 +17,9 @@ outputs:
   commit_count:
     description: 提交数，用作 versionCode
     value: ${{ steps.meta.outputs.commit_count }}
-  standard_name:
-    description: 标准包文件名
-    value: ${{ steps.meta.outputs.standard_name }}
-  manager_name:
-    description: 含管理器包文件名
-    value: ${{ steps.meta.outputs.manager_name }}
+  module_name:
+    description: 模块包文件名
+    value: ${{ steps.meta.outputs.module_name }}
 
 runs:
   using: composite
@@ -74,11 +71,11 @@ runs:
       shell: bash
       run: sh .github/scripts/build-metadata.sh >> "$GITHUB_OUTPUT"
 
-    - name: 打包标准模块（ZIP + XZ 9）
+    - name: 压缩模块内容（ZIP + XZ 9）
       shell: bash
       env:
-        STANDARD_NAME: ${{ steps.meta.outputs.standard_name }}
+        MODULE_NAME: ${{ steps.meta.outputs.module_name }}
         COMMIT_COUNT: ${{ steps.meta.outputs.commit_count }}
       run: |
         sed -i "s/^versionCode=.*/versionCode=$COMMIT_COUNT/" src/module/module.prop
-        sh .github/scripts/package-module.sh src/module "$GITHUB_WORKSPACE" "$STANDARD_NAME"
+        sh .github/scripts/package-module.sh src/module "$GITHUB_WORKSPACE" "$MODULE_NAME"

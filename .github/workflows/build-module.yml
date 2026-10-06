@@ -21,24 +21,21 @@ on:
         value: ${{ jobs.module.outputs.version }}
       commit_count:
         value: ${{ jobs.module.outputs.commit_count }}
-      standard_name:
-        value: ${{ jobs.module.outputs.standard_name }}
-      manager_name:
-        value: ${{ jobs.module.outputs.manager_name }}
+      module_name:
+        value: ${{ jobs.module.outputs.module_name }}
 
 permissions:
   contents: read
 
 jobs:
   module:
-    name: 验证并构建标准模块
+    name: 验证并构建模块内容
     runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
       version: ${{ steps.pack.outputs.version }}
       commit_count: ${{ steps.pack.outputs.commit_count }}
-      standard_name: ${{ steps.pack.outputs.standard_name }}
-      manager_name: ${{ steps.pack.outputs.manager_name }}
+      module_name: ${{ steps.pack.outputs.module_name }}
     steps:
       - name: 拉取代码
         uses: actions/checkout@v7
@@ -46,18 +43,18 @@ jobs:
           fetch-depth: 0
           filter: blob:none
 
-      - name: 构建并打包标准模块
+      - name: 构建并压缩模块内容
         id: pack
         uses: ./.github/actions/build-module
         with:
           posthog-project-token: ${{ vars.POSTHOG_PROJECT_TOKEN }}
           posthog-host: ${{ vars.POSTHOG_HOST }}
 
-      - name: 保存已验证的标准模块包
+      - name: 保存已验证的模块内容
         uses: actions/upload-artifact@v7
         with:
-          name: module-standard
-          path: ${{ steps.pack.outputs.standard_name }}
+          name: module-content
+          path: ${{ steps.pack.outputs.module_name }}
           if-no-files-found: error
           compression-level: 0
           retention-days: 3
@@ -94,6 +91,43 @@ jobs:
         with:
           name: manager-apk
           path: src/module/NetProxy.apk
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+          overwrite: true
+
+  package:
+    name: 汇合模块与管理器
+    needs: [module, android]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      MODULE_NAME: ${{ needs.module.outputs.module_name }}
+    steps:
+      - name: 拉取打包脚本
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+
+      - name: 下载本次模块内容
+        uses: actions/download-artifact@v8
+        with:
+          name: module-content
+
+      - name: 下载本次签名管理器
+        uses: actions/download-artifact@v8
+        with:
+          name: manager-apk
+          path: manager
+
+      - name: 完成唯一模块包
+        run: sh .github/scripts/complete-module.sh "$MODULE_NAME" manager/NetProxy.apk
+
+      - name: 保存最终模块包
+        uses: actions/upload-artifact@v7
+        with:
+          name: module-package
+          path: ${{ env.MODULE_NAME }}
           if-no-files-found: error
           compression-level: 0
           retention-days: 3

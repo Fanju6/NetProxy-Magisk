@@ -25,15 +25,14 @@ jobs:
       ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
   release:
-    name: 汇合并发布 Release
+    name: 发布 Release
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       VERSION: ${{ needs.build.outputs.version }}
       COMMIT_COUNT: ${{ needs.build.outputs.commit_count }}
-      STANDARD_NAME: ${{ needs.build.outputs.standard_name }}
-      MANAGER_NAME: ${{ needs.build.outputs.manager_name }}
+      MODULE_NAME: ${{ needs.build.outputs.module_name }}
     steps:
       - name: 拉取发布脚本与更新日志
         uses: actions/checkout@v7
@@ -47,19 +46,10 @@ jobs:
         with:
           node-version: 24
 
-      - name: 下载本次运行的标准模块包
+      - name: 下载本次运行的完整模块包
         uses: actions/download-artifact@v8
         with:
-          name: module-standard
-
-      - name: 下载本次运行的管理器
-        uses: actions/download-artifact@v8
-        with:
-          name: manager-apk
-          path: manager
-
-      - name: 复用标准包生成含管理器包
-        run: sh .github/scripts/package-manager.sh "$STANDARD_NAME" manager/NetProxy.apk "$MANAGER_NAME"
+          name: module-package
 
       - name: 生成模块自更新清单
         env:
@@ -69,7 +59,7 @@ jobs:
           jq -n \
             --arg version "Module ${TAG}" \
             --argjson versionCode "${COMMIT_COUNT}" \
-            --arg zipUrl "https://github.com/${REPO}/releases/download/${TAG}/${STANDARD_NAME}" \
+            --arg zipUrl "https://github.com/${REPO}/releases/download/${TAG}/${MODULE_NAME}" \
             --arg changelog "https://raw.githubusercontent.com/${REPO}/refs/heads/main/docs/changelog.md" \
             '{version: $version, versionCode: $versionCode, zipUrl: $zipUrl, changelog: $changelog}' \
             > update.json
@@ -87,8 +77,7 @@ jobs:
         with:
           body_path: ${{ runner.temp }}/release-notes.md
           files: |
-            ${{ env.STANDARD_NAME }}
-            ${{ env.MANAGER_NAME }}
+            ${{ env.MODULE_NAME }}
             update.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -108,8 +97,7 @@ jobs:
             [查看更新日志并下载](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }})
 
             **直接下载:**
-            [标准包](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ env.STANDARD_NAME }})
-            [含管理器包](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ env.MANAGER_NAME }})
+            [模块包](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ env.MODULE_NAME }})
 
       - name: 触发同步到 KernelSU 仓库
         if: github.ref_type == 'tag'
