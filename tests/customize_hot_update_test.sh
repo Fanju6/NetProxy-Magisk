@@ -466,6 +466,7 @@ test_installer_entrypoints() (
     printf '#!/bin/sh\nexit 0\n' > "$mocks/$name"
   done
   printf '#!/bin/sh\nexit "${TEST_PIDOF:-1}"\n' > "$mocks/pidof"
+  printf '%s\n' '#!/bin/sh' '[ "$#" -eq 3 ] && [ "$1" = install ] && [ "$2" = -r ] && [ -s "$3" ]' > "$mocks/pm"
   printf '%s\n' '#!/bin/sh' '[ "$1" = -c ] || exit 1' \
     'case "$2" in */system/bin/sh*) exit 0 ;; esac' 'exec sh -c "$2"' > "$mocks/su"
   chmod +x "$mocks"/*
@@ -496,12 +497,15 @@ test_installer_entrypoints() (
   FIXTURE="$WORKDIR/package"
   export FIXTURE
   cp -a "$STAGE" "$FIXTURE"
+  printf 'manager fixture\n' > "$FIXTURE/NetProxy.apk"
   rm -rf "$LIVE" "$STAGE"
   mkdir -p "$STAGE"
   BOOTMODE=false
   export BOOTMODE
   run_foreground
   [ ! -e "$LIVE" ]
+  [ ! -e "$STAGE/NetProxy.apk" ]
+  grep -Fq '管理器安装成功' "$WORKDIR/install-output"
   assert_value "$STAGE/config/ebpf/ebpf.conf" package-ebpf
   [ ! -s "$CALL_LOG" ]
 
