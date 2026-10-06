@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -21,6 +22,10 @@ type archiveFile struct {
 	name   string
 	redact bool
 	tail   int64
+}
+
+type exportTarget struct {
+	info fs.FileInfo
 }
 
 // LogSnapshot 是 logs.show 对客户端返回的文本和结构化日志快照。
@@ -85,6 +90,10 @@ func ExportLogs(options Options, destination string) error {
 	if strings.TrimSpace(destination) == "" {
 		return fmt.Errorf("诊断包路径不能为空")
 	}
+	target, err := inspectExportTarget(destination)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
 		return err
 	}
@@ -93,14 +102,28 @@ func ExportLogs(options Options, destination string) error {
 		return err
 	}
 	defer os.Remove(file.Name())
-	if err := file.Chmod(0o600); err != nil {
-		return errors.Join(err, file.Close())
-	}
 	archiveErr := writeLogArchive(options, file)
-	if err := errors.Join(archiveErr, file.Close()); err != nil {
+	if err := errors.Join(archiveErr, file.Sync(), file.Close()); err != nil {
+		return err
+	}
+	if err := applyExportTargetMetadata(file.Name(), target); err != nil {
 		return err
 	}
 	return os.Rename(file.Name(), destination)
+}
+
+func inspectExportTarget(destination string) (exportTarget, error) {
+	info, err := os.Lstat(destination)
+	if errors.Is(err, os.ErrNotExist) {
+		return exportTarget{}, nil
+	}
+	if err != nil {
+		return exportTarget{}, err
+	}
+	if !info.Mode().IsRegular() {
+		return exportTarget{}, fmt.Errorf("诊断包目标不是普通文件")
+	}
+	return exportTarget{info: info}, nil
 }
 
 func writeLogArchive(options Options, output io.Writer) (err error) {

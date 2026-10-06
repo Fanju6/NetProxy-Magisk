@@ -58,6 +58,52 @@ func TestFailedLogExportPreservesDestination(t *testing.T) {
 	}
 }
 
+func TestExportLogsPreservesExistingDestinationPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 不提供 POSIX 文件权限语义")
+	}
+	options := NewOptions(t.TempDir())
+	destination := filepath.Join(options.ModuleDir, "diagnostic.tar.gz")
+	if err := os.WriteFile(destination, []byte("previous export"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(destination, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ExportLogs(options, destination); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o644 {
+		t.Fatalf("已有目标文件权限未保留: %o", info.Mode().Perm())
+	}
+}
+
+func TestExportLogsRejectsSymbolicDestination(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows 创建符号链接需要额外权限")
+	}
+	options := NewOptions(t.TempDir())
+	target := filepath.Join(options.ModuleDir, "target.tar.gz")
+	if err := os.WriteFile(target, []byte("previous export"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(options.ModuleDir, "diagnostic.tar.gz")
+	if err := os.Symlink(target, destination); err != nil {
+		t.Fatal(err)
+	}
+	if err := ExportLogs(options, destination); err == nil || !strings.Contains(err.Error(), "不是普通文件") {
+		t.Fatalf("符号链接目标未被拒绝: %v", err)
+	}
+	content, err := os.ReadFile(target)
+	if err != nil || string(content) != "previous export" {
+		t.Fatalf("符号链接指向的文件被破坏: %q %v", content, err)
+	}
+}
+
 func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "module.prop"), []byte("version=v8.0.0-test\nversionCode=5\n"), 0o600); err != nil {
