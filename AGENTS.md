@@ -86,6 +86,7 @@ src/module/service.sh
 - 遵循现有 miuix 视觉和交互：二级页使用 `AdaptiveTopAppBar`，分组标题使用 miuix `SmallTitle`，列表保持 Lazy item 粒度，卡片优先复用 `groupedCardItems`。有 miuix 对应组件时不另造 Material 风格替代品。
 - Miuix Nav 是页面导航状态唯一所有者。主分页动画必须从真实当前页开始，禁止通过临时目标页制造过渡。
 - 主分页底部导航由 `MainBottomBar` 单一实现统一承载；主题偏好不改变其结构或布局形态。
+- 管理器由 Android 原生资源自动匹配中文、英语和俄语，英文是默认资源；界面文案放入字符串资源，不自行保存或强制覆盖系统语言。补全与校验逻辑不得依据翻译后的文本判断类型或错误分类。
 - `third_party/scripta` 是带来源记录的固定源码快照。修改其代码时保留来源、许可证和 NetProxy 扩展说明，不把它悄悄替换成浮动远程依赖。
 - 模块包必须包含 `NetProxy.apk`，由独立 Android 任务通过共享 Action 从当前源码构建，并使用 GitHub Secrets 中的固定密钥签名；不得提交签名材料或手工维护该生成物。安装器不检查已安装版本，音量键选择安装或更新、跳过，10 秒无操作默认执行 `pm install -r`；失败不卸载应用或清除数据，也不阻塞模块安装。
 

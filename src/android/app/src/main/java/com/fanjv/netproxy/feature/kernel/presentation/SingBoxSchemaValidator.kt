@@ -1,6 +1,8 @@
 package com.fanjv.netproxy.feature.kernel.presentation
 
 import android.content.Context
+import androidx.annotation.StringRes
+import com.fanjv.netproxy.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
@@ -19,6 +21,7 @@ data class SingBoxSchemaIssue(
     val instancePath: String,
     val line: Int?,
     val column: Int?,
+    internal val branchSummary: Boolean = false,
 )
 
 sealed interface SingBoxSchemaValidationResult {
@@ -34,14 +37,13 @@ sealed interface SingBoxSchemaValidationResult {
 }
 
 /** 使用内置 reF1nd sing-box Schema 校验配置，不访问网络。 */
-class SingBoxSchemaValidator private constructor(
+class SingBoxSchemaValidator internal constructor(
     private val schemaProvider: () -> String,
+    private val text: SchemaText,
 ) {
     constructor(context: Context) : this({
         context.assets.open(SCHEMA_ASSET).bufferedReader().use { it.readText() }
-    })
-
-    internal constructor(schemaContent: String) : this({ schemaContent })
+    }, SchemaText { id, args -> context.getString(id, *args) })
 
     private val schemaRoot by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         runCatching { singBoxSchemaJson.parseToJsonElement(schemaProvider()).jsonObject }
@@ -52,7 +54,7 @@ class SingBoxSchemaValidator private constructor(
             val document = runCatching { singBoxSchemaJson.parseToJsonElement(rawJson) }
                 .getOrElse { error ->
                     return@withContext SingBoxSchemaValidationResult.Invalid(
-                        listOf(jsonSyntaxIssue(rawJson, error)),
+                        listOf(jsonSyntaxIssue(rawJson, error, text)),
                     )
                 }
             val schema = schemaRoot.getOrElse { error ->
@@ -61,7 +63,7 @@ class SingBoxSchemaValidator private constructor(
                 )
             }
             val sourceIndex = buildJsonSourceIndex(rawJson)
-            val issues = SingBoxSchemaEngine(schema, sourceIndex)
+            val issues = SingBoxSchemaEngine(schema, sourceIndex, text)
                 .validate(document)
                 .compactSchemaIssues()
 
@@ -86,6 +88,7 @@ class SingBoxSchemaValidator private constructor(
 private class SingBoxSchemaEngine(
     root: JsonObject,
     private val sourceIndex: Map<String, JsonSourcePosition>,
+    private val text: SchemaText,
 ) {
     private val references = SingBoxSchemaReferenceResolver(root)
 
@@ -103,7 +106,7 @@ private class SingBoxSchemaEngine(
     ): ValidationOutcome {
         if (depth > MAX_SCHEMA_DEPTH) {
             return ValidationOutcome(
-                issues = listOf(issue(path, "配置层级过深，无法继续校验")),
+                issues = listOf(issue(path, R.string.schema_too_deep)),
             )
         }
 
@@ -170,11 +173,9 @@ private class SingBoxSchemaEngine(
         if (allowedTypes.isEmpty() || valueMatchesTypes(value, allowedTypes)) return null
         return issue(
             path,
-            "应为${allowedTypes.joinToString("或") { localizedType(it) }}，实际为${
-                localizedType(
-                    jsonType(value)
-                )
-            }",
+            R.string.schema_type_mismatch,
+            allowedTypes.joinToString(text(R.string.schema_type_or)) { text.typeLabel(it) },
+            text.typeLabel(jsonType(value)),
         )
     }
 
@@ -184,13 +185,14 @@ private class SingBoxSchemaEngine(
         path: String,
     ): SingBoxSchemaIssue? {
         schema["const"]?.let { expected ->
-            if (value != expected) return issue(path, "值必须为 ${displayJsonValue(expected)}")
+            if (value != expected) return issue(path, R.string.schema_const, displayJsonValue(expected))
         }
         val allowedValues = schema["enum"] as? JsonArray
         if (allowedValues != null && value !in allowedValues) {
             return issue(
                 path,
-                "值不在允许范围内：${allowedValues.joinToString { displayJsonValue(it) }}"
+                R.string.schema_enum,
+                allowedValues.joinToString { displayJsonValue(it) }
             )
         }
         return null
@@ -205,10 +207,10 @@ private class SingBoxSchemaEngine(
         if (jsonType(value) !in NUMBER_TYPES) return
         val number = value.jsonPrimitive.content.toBigDecimalOrNull() ?: return
         schema["minimum"].asDecimal()?.let { minimum ->
-            if (number < minimum) issues += issue(path, "数值不能小于 $minimum")
+            if (number < minimum) issues += issue(path, R.string.schema_number_minimum, minimum)
         }
         schema["maximum"].asDecimal()?.let { maximum ->
-            if (number > maximum) issues += issue(path, "数值不能大于 $maximum")
+            if (number > maximum) issues += issue(path, R.string.schema_number_maximum, maximum)
         }
     }
 
@@ -223,7 +225,7 @@ private class SingBoxSchemaEngine(
             val matches =
                 runCatching { Regex(pattern).containsMatchIn(value.jsonPrimitive.content) }
                     .getOrDefault(true)
-            if (!matches) issues += issue(path, "字符串格式不符合要求")
+            if (!matches) issues += issue(path, R.string.schema_string_pattern)
         }
     }
 
@@ -253,7 +255,7 @@ private class SingBoxSchemaEngine(
                     issues = listOf(
                         issue(
                             path,
-                            if (validResults.isEmpty()) "不匹配任何可用配置类型" else "同时匹配多个配置类型",
+                            if (validResults.isEmpty()) R.string.schema_no_type else R.string.schema_multiple_types,
                         ),
                     ),
                 )
@@ -263,7 +265,7 @@ private class SingBoxSchemaEngine(
                 validResults.isNotEmpty() -> validResults.first()
                 hasDiscriminator && results.size == 1 -> results.single()
                 else -> ValidationOutcome(
-                    issues = listOf(issue(path, "不符合任何允许的配置格式")),
+                    issues = listOf(issue(path, R.string.schema_no_format)),
                 )
             }
         }
@@ -352,7 +354,7 @@ private class SingBoxSchemaEngine(
         val required = schema["required"].asStringSet()
 
         required.filterNot(value::containsKey).forEach { name ->
-            issues += issue(path, "缺少必填字段 \"$name\"")
+            issues += issue(path, R.string.schema_missing_field, name)
         }
         properties.forEach { (name, propertySchema) ->
             val propertyValue = value[name] ?: return@forEach
@@ -388,7 +390,8 @@ private class SingBoxSchemaEngine(
                 (additionalProperties as? JsonPrimitive)?.booleanOrNull == false -> {
                     issues += issue(
                         "$path/${escapeJsonPointerSegment(name)}",
-                        "不允许字段 \"$name\""
+                        R.string.schema_unknown_field,
+                        name
                     )
                 }
 
@@ -417,7 +420,7 @@ private class SingBoxSchemaEngine(
     ) {
         if ((schema["unevaluatedProperties"] as? JsonPrimitive)?.booleanOrNull != false) return
         value.keys.filterNot(evaluatedProperties::contains).forEach { name ->
-            issues += issue("$path/${escapeJsonPointerSegment(name)}", "不允许字段 \"$name\"")
+            issues += issue("$path/${escapeJsonPointerSegment(name)}", R.string.schema_unknown_field, name)
         }
     }
 
@@ -440,17 +443,19 @@ private class SingBoxSchemaEngine(
                 validateValue(item, containsSchema, "$path/$index", visitedRefs, depth + 1)
                     .issues.isEmpty()
             }
-            if (!matches) issues += issue(path, "数组至少需要一个符合要求的元素")
+            if (!matches) issues += issue(path, R.string.schema_contains)
         }
     }
 
-    private fun issue(path: String, message: String): SingBoxSchemaIssue {
+    private fun issue(path: String, @StringRes message: Int, vararg args: Any): SingBoxSchemaIssue {
         val location = sourceIndex[path] ?: sourceIndex[path.substringBeforeLast('/', "")]
         return SingBoxSchemaIssue(
-            message = message,
+            message = text(message, *args),
             instancePath = path,
             line = location?.line,
             column = location?.column,
+            branchSummary = message == R.string.schema_no_type ||
+                message == R.string.schema_multiple_types || message == R.string.schema_no_format,
         )
     }
 
@@ -466,14 +471,14 @@ private data class ValidationOutcome(
     val evaluatedProperties: Set<String> = emptySet(),
 )
 
-private fun jsonSyntaxIssue(rawJson: String, error: Throwable): SingBoxSchemaIssue {
+private fun jsonSyntaxIssue(rawJson: String, error: Throwable, text: SchemaText): SingBoxSchemaIssue {
     val offset = JSON_OFFSET_REGEX.find(error.message.orEmpty())
         ?.groupValues
         ?.getOrNull(1)
         ?.toIntOrNull()
     val location = offset?.let { sourcePositionAt(rawJson, it) }
     return SingBoxSchemaIssue(
-        message = "JSON 语法错误：${error.message ?: "无法解析配置"}",
+        message = text(R.string.schema_syntax_error, error.message ?: text(R.string.schema_parse_failed)),
         instancePath = "",
         line = location?.line,
         column = location?.column,
@@ -489,7 +494,7 @@ private fun List<SingBoxSchemaIssue>.compactSchemaIssues(): List<SingBoxSchemaIs
             if (issues.size <= MAX_ISSUES_PER_PATH) {
                 issues
             } else {
-                issues.filterNot { it.message.isBranchSummary() }
+                issues.filterNot { it.branchSummary }
                     .ifEmpty { issues.take(1) }
                     .take(MAX_ISSUES_PER_PATH)
             }
@@ -497,9 +502,6 @@ private fun List<SingBoxSchemaIssue>.compactSchemaIssues(): List<SingBoxSchemaIs
         .sortedWith(compareBy({ it.line ?: Int.MAX_VALUE }, { it.column ?: Int.MAX_VALUE }))
         .take(MAX_VISIBLE_SCHEMA_ISSUES)
 }
-
-private fun String.isBranchSummary(): Boolean =
-    "配置类型" in this || "允许的配置格式" in this
 
 private fun JsonElement?.asSchemaObject(): JsonObject? = this as? JsonObject
 
@@ -535,17 +537,6 @@ private fun jsonType(value: JsonElement): String = when (value) {
 private fun valueMatchesTypes(value: JsonElement, allowedTypes: Set<String>): Boolean {
     val actualType = jsonType(value)
     return actualType in allowedTypes || actualType == "integer" && "number" in allowedTypes
-}
-
-private fun localizedType(type: String): String = when (type) {
-    "string" -> "字符串"
-    "integer" -> "整数"
-    "number" -> "数字"
-    "boolean" -> "布尔值"
-    "object" -> "对象"
-    "array" -> "数组"
-    "null" -> "空值"
-    else -> type
 }
 
 private fun displayJsonValue(value: JsonElement): String =

@@ -68,6 +68,11 @@ android {
         includeInBundle = false
     }
 
+    androidResources {
+        generateLocaleConfig = true
+        localeFilters += listOf("en", "zh", "ru")
+    }
+
     lint {
         abortOnError = true
         checkReleaseBuilds = false
@@ -103,6 +108,9 @@ tasks.withType<Test>().configureEach {
         .withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.file(rootProject.layout.projectDirectory.file("../module/config/singbox/config.json"))
         .withPropertyName("moduleStaticConfigs")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.files(fileTree("src/main/res") { include("values*/strings.xml", "resources.properties") })
+        .withPropertyName("localizedStrings")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 }
 

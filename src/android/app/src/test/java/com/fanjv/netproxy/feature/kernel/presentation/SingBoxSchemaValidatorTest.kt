@@ -11,7 +11,9 @@ import org.junit.Test
 import java.io.File
 
 class SingBoxSchemaValidatorTest {
-    private val validator = SingBoxSchemaValidator(TEST_SCHEMA)
+    private fun validator(schema: String) = SingBoxSchemaValidator({ schema }, localizedSchemaText("zh"))
+
+    private val validator = validator(TEST_SCHEMA)
 
     @Test
     fun validDocumentPassesDeclaredSchema() = runBlocking {
@@ -44,7 +46,7 @@ class SingBoxSchemaValidatorTest {
 
     @Test
     fun branchValidationReturnsTheSelectedProtocolFieldError() = runBlocking {
-        val branchValidator = SingBoxSchemaValidator(BRANCH_SCHEMA)
+        val branchValidator = validator(BRANCH_SCHEMA)
 
         val result = branchValidator.validate(
             """
@@ -65,7 +67,7 @@ class SingBoxSchemaValidatorTest {
 
     @Test
     fun durationPatternRequiresUnitsAndAllowsCompoundValues() = runBlocking {
-        val durationValidator = SingBoxSchemaValidator(DURATION_SCHEMA)
+        val durationValidator = validator(DURATION_SCHEMA)
 
         assertEquals(
             SingBoxSchemaValidationResult.Valid,
@@ -80,7 +82,7 @@ class SingBoxSchemaValidatorTest {
 
     @Test
     fun h3VersionConstraintOnlyAppliesWhenCongestionControlIsPresent() = runBlocking {
-        val conditionalValidator = SingBoxSchemaValidator(
+        val conditionalValidator = validator(
             """
                 {
                   "type": "object",
@@ -126,7 +128,7 @@ class SingBoxSchemaValidatorTest {
 
     @Test
     fun containsValidatesReferencedSchemaEvenWithoutItems() = runBlocking {
-        val containsValidator = SingBoxSchemaValidator(
+        val containsValidator = validator(
             """
                 {
                   "type": "array",
@@ -145,7 +147,7 @@ class SingBoxSchemaValidatorTest {
 
     @Test
     fun containsDoesNotSkipItemValidation() = runBlocking {
-        val containsValidator = SingBoxSchemaValidator(
+        val containsValidator = validator(
             """{"type":"array","items":{"type":"integer"},"contains":{"const":3}}""",
         )
 
@@ -156,7 +158,7 @@ class SingBoxSchemaValidatorTest {
 
     @Test
     fun conditionalBranchTracksEvaluatedProperties() = runBlocking {
-        val conditionalValidator = SingBoxSchemaValidator(
+        val conditionalValidator = validator(
             """
                 {
                   "type": "object",
@@ -184,7 +186,7 @@ class SingBoxSchemaValidatorTest {
             File("src/main/assets/sing-box.schema.json"),
             File("app/src/main/assets/sing-box.schema.json"),
         ).first(File::isFile)
-        val bundledValidator = SingBoxSchemaValidator(schemaFile.readText())
+        val bundledValidator = validator(schemaFile.readText())
 
         assertEquals(
             SingBoxSchemaValidationResult.Valid,
@@ -227,7 +229,7 @@ class SingBoxSchemaValidatorTest {
 
     @Test
     fun allOfTracksEvaluatedPropertiesBeforeRejectingUnknownField() = runBlocking {
-        val branchValidator = SingBoxSchemaValidator(BRANCH_SCHEMA)
+        val branchValidator = validator(BRANCH_SCHEMA)
 
         val result = branchValidator.validate(
             """
@@ -279,7 +281,7 @@ class SingBoxSchemaValidatorTest {
 
     @Test
     fun anyOfAndPropertyNamesValidateTheirSelectedBranch() = runBlocking {
-        val branchValidator = SingBoxSchemaValidator(BRANCH_SCHEMA)
+        val branchValidator = validator(BRANCH_SCHEMA)
 
         val result = branchValidator.validate(
             """
@@ -304,7 +306,7 @@ class SingBoxSchemaValidatorTest {
             File("src/main/assets/sing-box.schema.json"),
             File("app/src/main/assets/sing-box.schema.json"),
         ).first(File::isFile)
-        val bundledValidator = SingBoxSchemaValidator(schemaFile.readText())
+        val bundledValidator = validator(schemaFile.readText())
         val result = bundledValidator.validate(
             """
                 {
@@ -331,7 +333,7 @@ class SingBoxSchemaValidatorTest {
             File("src/main/assets/sing-box.schema.json"),
             File("app/src/main/assets/sing-box.schema.json"),
         ).first(File::isFile)
-        val bundledValidator = SingBoxSchemaValidator(schemaFile.readText())
+        val bundledValidator = validator(schemaFile.readText())
 
         assertEquals(
             SingBoxSchemaValidationResult.Valid,
@@ -404,7 +406,7 @@ class SingBoxSchemaValidatorTest {
             File("src/main/assets/sing-box.schema.json"),
             File("app/src/main/assets/sing-box.schema.json"),
         ).first(File::isFile)
-        val bundledValidator = SingBoxSchemaValidator(schemaFile.readText())
+        val bundledValidator = validator(schemaFile.readText())
         val result = bundledValidator.validate(
             """
                 {
@@ -454,7 +456,7 @@ class SingBoxSchemaValidatorTest {
             File("../../module/config/singbox/config.json"),
             File("src/module/config/singbox/config.json"),
         ).first(File::isFile)
-        val validator = SingBoxSchemaValidator(schemaFile.readText())
+        val validator = validator(schemaFile.readText())
 
         val config = singBoxSchemaJson.parseToJsonElement(configFile.readText()).jsonObject
         val documents = listOf(config) + config.map { (key, value) -> JsonObject(mapOf(key to value)) }

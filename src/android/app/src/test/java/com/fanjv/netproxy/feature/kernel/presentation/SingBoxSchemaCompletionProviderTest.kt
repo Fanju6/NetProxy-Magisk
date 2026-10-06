@@ -9,7 +9,7 @@ import top.yukonga.scripta.editor.completion.CompletionRequest
 import top.yukonga.scripta.editor.text.TextPosition
 
 class SingBoxSchemaCompletionProviderTest {
-    private val provider = SingBoxSchemaCompletionProvider(TEST_SCHEMA)
+    private val provider = SingBoxSchemaCompletionProvider({ TEST_SCHEMA }, localizedSchemaText("zh"))
 
     @Test
     fun `property completion follows type discriminator`() = runBlocking {
@@ -165,5 +165,4 @@ class SingBoxSchemaCompletionProviderTest {
         """.trimIndent()
     }
 }
-
 

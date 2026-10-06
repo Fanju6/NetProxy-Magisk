@@ -549,15 +549,15 @@ fun LogItemCard(item: LogItem, type: LogType) {
 fun NativeComponentBadge(component: String) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     val label = when (component) {
-        "service" -> "服务"
-        "worker" -> "后台"
-        "subscription" -> "订阅"
-        "node" -> "节点"
-        "mode" -> "模式"
-        "app" -> "应用"
-        "config" -> "配置"
-        "network" -> "网络"
-        "module" -> "模块"
+        "service" -> stringResource(R.string.log_component_service)
+        "worker" -> stringResource(R.string.log_component_worker)
+        "subscription" -> stringResource(R.string.subscriptions)
+        "node" -> stringResource(R.string.nodes)
+        "mode" -> stringResource(R.string.log_component_mode)
+        "app" -> stringResource(R.string.apps)
+        "config" -> stringResource(R.string.log_component_config)
+        "network" -> stringResource(R.string.log_component_network)
+        "module" -> stringResource(R.string.log_component_module)
         else -> component
     }
     NativeBadge(
@@ -571,32 +571,32 @@ fun NativeComponentBadge(component: String) {
 fun NativeEventBadge(event: String) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     val label = when (event) {
-        "service.start" -> "启动"
-        "service.stop" -> "停止"
-        "service.reload" -> "重载"
+        "service.start" -> stringResource(R.string.log_event_start)
+        "service.stop" -> stringResource(R.string.log_event_stop)
+        "service.reload" -> stringResource(R.string.log_event_reload)
         "worker.start", "worker.run" -> "Worker"
-        "network.watch" -> "网络监听"
-        "network.read" -> "网络读取"
-        "network.policy" -> "网络策略"
-        "subscription.add" -> "添加订阅"
-        "subscription.edit" -> "编辑订阅"
-        "subscription.update" -> "更新订阅"
-        "subscription.update-all" -> "更新全部"
-        "subscription.remove" -> "删除订阅"
-        "subscription.runtime-sync" -> "运行时同步"
-        "subscription.effect" -> "订阅副作用"
-        "subscription.schedule" -> "订阅调度"
-        "node.append" -> "添加节点"
-        "node.import" -> "导入节点"
-        "node.edit" -> "编辑节点"
-        "node.remove" -> "删除节点"
-        "node.select", "node.selection" -> "选择节点"
-        "mode.apply" -> "切换模式"
-        "app-policy.update" -> "应用策略"
-        "config.apply" -> "保存配置"
-        "config.validate" -> "校验配置"
-        "module.boot" -> "开机流程"
-        "module.update" -> "模块更新"
+        "network.watch" -> stringResource(R.string.log_event_network_watch)
+        "network.read" -> stringResource(R.string.log_event_network_read)
+        "network.policy" -> stringResource(R.string.log_event_network_policy)
+        "subscription.add" -> stringResource(R.string.log_event_subscription_add)
+        "subscription.edit" -> stringResource(R.string.subscription_editor_edit_title)
+        "subscription.update" -> stringResource(R.string.log_event_subscription_update)
+        "subscription.update-all" -> stringResource(R.string.log_event_subscription_update_all)
+        "subscription.remove" -> stringResource(R.string.log_event_subscription_remove)
+        "subscription.runtime-sync" -> stringResource(R.string.log_event_runtime_sync)
+        "subscription.effect" -> stringResource(R.string.log_event_effect)
+        "subscription.schedule" -> stringResource(R.string.log_event_schedule)
+        "node.append" -> stringResource(R.string.node_add)
+        "node.import" -> stringResource(R.string.log_event_node_import)
+        "node.edit" -> stringResource(R.string.node_edit)
+        "node.remove" -> stringResource(R.string.node_delete)
+        "node.select", "node.selection" -> stringResource(R.string.log_event_node_select)
+        "mode.apply" -> stringResource(R.string.log_event_mode_apply)
+        "app-policy.update" -> stringResource(R.string.log_event_app_policy)
+        "config.apply" -> stringResource(R.string.log_event_config_apply)
+        "config.validate" -> stringResource(R.string.log_event_config_validate)
+        "module.boot" -> stringResource(R.string.log_event_boot)
+        "module.update" -> stringResource(R.string.log_event_module_update)
         else -> event
     }
     NativeBadge(
@@ -611,26 +611,26 @@ fun NativeResultBadge(result: String) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     val (label, backgroundColor, textColor) = when (result) {
         "success", "recovered" -> if (isDark) {
-            Triple("成功", Color(0xFF1B5E20).copy(alpha = 0.3f), Color(0xFF81C784))
+            Triple(stringResource(R.string.log_result_success), Color(0xFF1B5E20).copy(alpha = 0.3f), Color(0xFF81C784))
         } else {
-            Triple("成功", Color(0xFFE8F5E9), Color(0xFF2E7D32))
+            Triple(stringResource(R.string.log_result_success), Color(0xFFE8F5E9), Color(0xFF2E7D32))
         }
 
         "failed", "forced" -> if (isDark) {
-            Triple("失败", Color(0xFFB71C1C).copy(alpha = 0.3f), Color(0xFFE57373))
+            Triple(stringResource(R.string.log_result_failed), Color(0xFFB71C1C).copy(alpha = 0.3f), Color(0xFFE57373))
         } else {
-            Triple("失败", Color(0xFFFFEBEE), Color(0xFFC62828))
+            Triple(stringResource(R.string.log_result_failed), Color(0xFFFFEBEE), Color(0xFFC62828))
         }
 
         "persisted", "fallback" -> if (isDark) {
             Triple(
-                if (result == "persisted") "已保存" else "已回退",
+                if (result == "persisted") stringResource(R.string.log_result_persisted) else stringResource(R.string.log_result_fallback),
                 Color(0xFFE65100).copy(alpha = 0.3f),
                 Color(0xFFFFB74D)
             )
         } else {
             Triple(
-                if (result == "persisted") "已保存" else "已回退",
+                if (result == "persisted") stringResource(R.string.log_result_persisted) else stringResource(R.string.log_result_fallback),
                 Color(0xFFFFF3E0),
                 Color(0xFFE65100)
             )
@@ -638,13 +638,13 @@ fun NativeResultBadge(result: String) {
 
         "started", "already-running" -> if (isDark) {
             Triple(
-                if (result == "started") "进行中" else "已运行",
+                if (result == "started") stringResource(R.string.log_result_started) else stringResource(R.string.log_result_running),
                 Color(0xFF0D47A1).copy(alpha = 0.3f),
                 Color(0xFF64B5F6)
             )
         } else {
             Triple(
-                if (result == "started") "进行中" else "已运行",
+                if (result == "started") stringResource(R.string.log_result_started) else stringResource(R.string.log_result_running),
                 Color(0xFFE3F2FD),
                 Color(0xFF1976D2)
             )
@@ -652,13 +652,13 @@ fun NativeResultBadge(result: String) {
 
         "stopped", "skipped" -> if (isDark) {
             Triple(
-                if (result == "stopped") "已停止" else "已跳过",
+                if (result == "stopped") stringResource(R.string.log_result_stopped) else stringResource(R.string.log_result_skipped),
                 Color(0xFF37474F).copy(alpha = 0.3f),
                 Color(0xFFB0BEC5)
             )
         } else {
             Triple(
-                if (result == "stopped") "已停止" else "已跳过",
+                if (result == "stopped") stringResource(R.string.log_result_stopped) else stringResource(R.string.log_result_skipped),
                 Color(0xFFF5F5F5),
                 Color(0xFF616161)
             )

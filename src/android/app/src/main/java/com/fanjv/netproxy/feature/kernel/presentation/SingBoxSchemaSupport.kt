@@ -1,5 +1,7 @@
 package com.fanjv.netproxy.feature.kernel.presentation
 
+import androidx.annotation.StringRes
+import com.fanjv.netproxy.R
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -8,6 +10,21 @@ import kotlinx.serialization.json.jsonPrimitive
 
 /** sing-box Schema 与编辑器共用的 JSON 解析器。 */
 internal val singBoxSchemaJson = Json { ignoreUnknownKeys = true }
+
+internal fun interface SchemaText {
+    operator fun invoke(@StringRes id: Int, vararg args: Any): String
+}
+
+internal fun SchemaText.typeLabel(type: String): String = when (type) {
+    "string" -> invoke(R.string.schema_type_string)
+    "integer" -> invoke(R.string.schema_type_integer)
+    "number" -> invoke(R.string.schema_type_number)
+    "boolean" -> invoke(R.string.schema_type_boolean)
+    "object" -> invoke(R.string.schema_type_object)
+    "array" -> invoke(R.string.schema_type_array)
+    "null" -> invoke(R.string.schema_type_null)
+    else -> type
+}
 
 /** JSON 文本中的一基行列位置，供补全和校验结果统一使用。 */
 internal data class JsonSourcePosition(
