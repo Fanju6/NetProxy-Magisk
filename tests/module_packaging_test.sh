@@ -60,6 +60,7 @@ assert_contains "$PR_VERIFY_WORKFLOW" 'sh tests/verify.sh quick'
 assert_contains "$PR_VERIFY_WORKFLOW" 'sh tests/verify.sh webui --check-generated'
 assert_contains "$PR_VERIFY_WORKFLOW" "build-manager: 'false'"
 assert_contains "$PR_VERIFY_WORKFLOW" "assemble-debug: 'true'"
+assert_contains "$PR_VERIFY_WORKFLOW" 'cache-dependency-path: src/native/netproxy/go.sum'
 assert_not_contains "$PR_VERIFY_WORKFLOW" 'ANDROID_KEYSTORE_BASE64'
 assert_not_contains "$PR_VERIFY_WORKFLOW" 'TG_BOT_TOKEN'
 assert_contains "$VERIFY_SCRIPT" '-ldflags="-s -w -buildid='
