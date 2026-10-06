@@ -20,9 +20,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Fanju6/NetProxy-Magisk/releases">下载模块</a> ·
+  <a href="https://github.com/Fanju6/NetProxy-Magisk/releases">下载模块与管理器</a> ·
   <a href="https://www.netproxy.store/">使用文档</a> ·
-  <a href="https://play.google.com/store/apps/details?id=com.fanjv.netproxy">Android 管理器</a> ·
   <a href="src/android/">管理器源码</a> ·
   <a href="https://t.me/NetProxy_Magisk">Telegram</a>
 </p>
@@ -48,13 +47,13 @@ src/webui/           模块 WebUI
 src/android/         Android 管理器
 ```
 
-Android 管理器与模块共用 `netproxyctl` 的 `schema=1` JSON 契约，但保持独立的本地构建流程。仓库 CI 不编译或发布管理器，推荐通过 Google Play 安装更新；另提供含管理器 APK 的模块包，供无法使用 Google Play 的设备安装。Android 构建说明见 [管理器源码](src/android/)。
+Android 管理器与模块共用 `netproxyctl` 的 `schema=1` JSON 契约，但保持独立的源码与构建流程。仓库 CI 会从当前源码构建并使用固定签名的管理器 APK，再与模块汇合为唯一发行包；刷入时可选择是否安装或更新管理器。Android 构建说明见 [管理器源码](src/android/)。
 
 ## 管理入口
 
 | 入口 | 适合场景 |
 |------|----------|
-| [**Android 管理器**](https://play.google.com/store/apps/details?id=com.fanjv.netproxy)（[源码](src/android/)） | 日常使用，管理服务、节点、订阅、分应用代理、配置与日志 |
+| **Android 管理器**（随模块包提供；[源码](src/android/)） | 日常使用，管理服务、节点、订阅、分应用代理、配置与日志 |
 | **模块 WebUI** | 从 KernelSU、Magisk 或 APatch 的模块页面进入 NetProxy 与 sing-box Dashboard |
 | **CLI** | 终端操作、自动化和故障排查 |
 | **Clash API** | 供兼容的第三方客户端查看运行时状态与控制代理组 |
@@ -88,7 +87,7 @@ Clash API 与 Service API 默认只监听本机。需要从其他设备访问时
 
 ## 安装
 
-Release 与 CI 统一提供 `NetProxy_<版本>_<构建号>.zip`，包含 sing-box、NetProxy 原生组件、模块 WebUI、CLI、eBPF 与当前源码构建的 Android 管理器 APK。模块自更新也下载此包；刷入时可自行选择是否安装管理器。
+Release 与 CI 构建统一提供唯一的 `NetProxy_<版本>_<构建号>.zip`，其中包含 sing-box、NetProxy 原生组件、模块 WebUI、CLI、eBPF 与当前源码构建、固定签名的 Android 管理器 APK。模块自更新也下载此包；刷入时可自行选择是否安装管理器。
 
 > [!IMPORTANT]
 > eBPF 入站需要内核启用 BPF、TC classifier、透明 socket 与 socket lookup 等能力；本机路径还需要 veth 和策略路由支持。不满足要求的内核无法启动本版本。

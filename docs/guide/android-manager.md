@@ -1,6 +1,6 @@
 # Android 管理器
 
-Android 管理器是 NetProxy 的日常图形化入口。推荐从 [Google Play](https://play.google.com/store/apps/details?id=com.fanjv.netproxy) 安装和更新；含管理器模块包为无法使用 Google Play 的设备提供备用 APK。
+Android 管理器是 NetProxy 的日常图形化入口，随每个 Release 与 CI 模块包提供。刷入模块时可选择安装或更新管理器，也可跳过；跳过不会影响模块安装。
 
 管理器需要兼容的 NetProxy 模块与 Root 权限，不能脱离模块单独提供代理能力。
 
@@ -36,4 +36,4 @@ cd src/android
 ./gradlew testDebugUnitTest lintDebug assembleDebug
 ```
 
-含管理器模块包中的 APK 由 CI 根据当前源码构建，并使用固定密钥签名；后续同签名版本可以直接覆盖升级。CI 版本名保留提交短哈希，管理器不显示安装来源或签名警告。如果设备上安装的是不同签名的旧版本，需要先卸载再安装；卸载会清除管理器本地数据，不影响模块保存的配置、节点和订阅。
+模块包中的 APK 由 CI 根据当前源码构建，并使用固定密钥签名；后续同签名版本可以直接覆盖升级。CI 版本名保留提交短哈希，管理器不显示安装来源或签名警告。如果设备上安装的是不同签名的旧版本，需要先卸载再安装；卸载会清除管理器本地数据，不影响模块保存的配置、节点和订阅。

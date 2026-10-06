@@ -20,9 +20,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Fanju6/NetProxy-Magisk/releases">Releases</a> ·
+  <a href="https://github.com/Fanju6/NetProxy-Magisk/releases">Module & Manager</a> ·
   <a href="https://www.netproxy.store/">Documentation</a> ·
-  <a href="https://play.google.com/store/apps/details?id=com.fanjv.netproxy">Android Manager</a> ·
   <a href="src/android/">Manager Source</a> ·
   <a href="https://t.me/NetProxy_Magisk">Telegram</a>
 </p>
@@ -48,13 +47,13 @@ src/webui/           Module WebUI
 src/android/         Android Manager
 ```
 
-The Android Manager and module share the `schema=1` `netproxyctl` JSON contract while keeping separate local build workflows. Repository CI does not build or publish the manager; Google Play is the recommended installation and update channel. A module package with the manager APK is also available for devices without Google Play access. See the [manager source](src/android/) for local build instructions.
+The Android Manager and module share the `schema=1` `netproxyctl` JSON contract while keeping separate source and build workflows. Repository CI builds the manager APK from the current source with the fixed signing key, then combines it with the module as the single distribution package. Flashing the module lets you choose whether to install or update the manager. See the [manager source](src/android/) for local build instructions.
 
 ## Management
 
 | Interface | Purpose |
 |-----------|---------|
-| [**Android Manager**](https://play.google.com/store/apps/details?id=com.fanjv.netproxy) ([source](src/android/)) | Service, nodes, subscriptions, per-app rules, configuration, and logs |
+| **Android Manager** (bundled with the module; [source](src/android/)) | Service, nodes, subscriptions, per-app rules, configuration, and logs |
 | **Module WebUI** | Open the NetProxy portal from the KernelSU, Magisk, or APatch module page |
 | **CLI** | Terminal management, automation, and diagnostics |
 | **Clash API** | Compatible third-party client access to runtime state and proxy groups |
@@ -89,7 +88,7 @@ Both APIs listen on loopback by default. LAN access requires an explicit listene
 
 ## Installation
 
-Release and CI builds provide one package: `NetProxy_<version>_<build>.zip`. It includes sing-box, the NetProxy native component, CLI, eBPF, the module WebUI, and the Android manager APK built from the current source. Module updates download the same package; installing the bundled manager is optional.
+Release and CI builds provide one package: `NetProxy_<version>_<build>.zip`. It includes sing-box, the NetProxy native component, CLI, eBPF, the module WebUI, and the Android manager APK built from the current source with the fixed signing key. Module updates download the same package; installing the bundled manager is optional.
 
 > [!IMPORTANT]
 > The eBPF inbound requires kernel BPF, TC classifier, transparent socket, and socket lookup support. Local interception also requires veth and policy-routing capabilities. Unsupported kernels cannot start this version.

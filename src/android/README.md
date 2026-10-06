@@ -4,11 +4,10 @@
 
 ## 获取应用
 
-- 推荐通过 [Google Play](https://play.google.com/store/apps/details?id=com.fanjv.netproxy) 安装和更新。
-- 含管理器模块包附带管理器 APK，供无法使用 Google Play 的设备安装。
-- 标准模块包不包含管理器 APK。
+- 从 [Releases](https://github.com/Fanju6/NetProxy-Magisk/releases) 下载模块包获取管理器。
+- 每个 Release 与 CI 模块包都包含管理器 APK；刷入时可选择安装或更新，也可跳过。
 
-含管理器模块包中的 APK 由仓库 CI 从当前源码构建，使用固定密钥签名，APK 和签名材料不提交到仓库。后续使用同一密钥的构建可以直接覆盖升级。管理器不检查安装来源或签名证书，也不显示来源警告；CI 版本名仍带提交短哈希，便于定位构建。
+模块包中的 APK 由仓库 CI 从当前源码构建，使用固定密钥签名，APK 和签名材料不提交到仓库。后续使用同一密钥的构建可以直接覆盖升级。管理器不检查安装来源或签名证书，也不显示来源警告；CI 版本名仍带提交短哈希，便于定位构建。
 
 ## 功能
 
@@ -76,7 +75,7 @@ cd src/android
 .\gradlew.bat testDebugUnitTest lintDebug assembleDebug
 ```
 
-调试 APK 位于 `app/build/outputs/apk/debug/`。本地 Release APK 未签名；模块含管理器包由 CI 使用 GitHub Secrets 中的固定密钥签名。密钥库以 Base64 放入 `ANDROID_KEYSTORE_BASE64`，密码和别名分别放入 `ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_PASSWORD`、`ANDROID_KEY_ALIAS`，不得写入源码或本地构建配置后提交。
+调试 APK 位于 `app/build/outputs/apk/debug/`。本地 Release APK 未签名；模块包中的管理器由 CI 使用 GitHub Secrets 中的固定密钥签名。密钥库以 Base64 放入 `ANDROID_KEYSTORE_BASE64`，密码和别名分别放入 `ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_PASSWORD`、`ANDROID_KEY_ALIAS`，不得写入源码或本地构建配置后提交。
 
 ## 第三方源码
 
