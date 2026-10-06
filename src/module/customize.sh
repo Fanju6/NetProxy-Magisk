@@ -486,7 +486,7 @@ schedule_hot_update() {
 # 参数: 无。
 # 返回: 0=完成（APK 安装失败不阻塞），1=包损坏、按键读取或 APK 清理失败。
 install_bundled_manager() {
-  local install_log="$INSTALL_TMP/manager-install.log" line
+  local install_output
   print_title "安装 NetProxy 管理器"
   ui_print ""
   if [ ! -s "$MODPATH/NetProxy.apk" ]; then
@@ -502,13 +502,12 @@ install_bundled_manager() {
   if [ "$VOLUME_KEY" = down ]; then
     print_step "已跳过管理器安装"
   else
-    if pm install -r "$MODPATH/NetProxy.apk" > "$install_log" 2>&1; then
+    # PackageManager 经 Binder 接收输出描述符，不能直接写入安装器的 system_file 日志。
+    if install_output="$(pm install -r "$MODPATH/NetProxy.apk" < /dev/null 2>&1)"; then
       print_ok "管理器安装成功"
     else
       print_warn "管理器安装失败，模块安装继续；未卸载或清除现有应用"
-      while IFS= read -r line || [ -n "$line" ]; do
-        ui_print "  $line"
-      done < "$install_log"
+      ui_print "  $install_output"
     fi
   fi
   rm -f "$MODPATH/NetProxy.apk"
