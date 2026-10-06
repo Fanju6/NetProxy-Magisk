@@ -40,7 +40,7 @@
 - `src/module/netproxyctl` 只负责定位 `bin/netproxyctl`；公共实现位于 `src/native/netproxy/cmd/netproxyctl`。Shell 不再保留公共命令 dispatcher。
 - 命令组权威清单：`service catalog node sub mode network app ebpf config logs`。新增命令组必须同时更新 Go CLI、Android `NetProxyCtlClient`、WebUI `src/exec.ts` 和契约测试。
 - `scripts/` 不承载运行时业务；配置、Catalog、状态和 Service API 业务统一由 Go 实现。
-- 根目录 `service.sh` 负责模块开机桥接；`emulated-soft-reboot.sh` 仅供 KernelSU 在软重启前同步停止 Worker 与 sing-box，避免旧 eBPF cgroup 挂载阻塞 netd。运行时配置、节点切换、订阅事务和调度由 Go 负责。
+- 根目录 `service.sh` 负责模块开机桥接；运行时配置、节点切换、订阅事务和调度由 Go 负责。
 - Go Worker 负责 Android 网络变化采集、Wi-Fi 状态读取和策略评估。
 - `customize.sh` 在已开机安装时不得提前覆盖 live 模块目录；必须等待管理器写入 `update` 标记后再由脱离安装器 cgroup 的 Shell 完成目录切换。任何校验或切换失败都保留 `modules_update`，交回管理器下次开机处理。
 - 设备上的调用形式是 `su -c /data/adb/modules/netproxy/netproxyctl [--json] <命令组> <命令>`；文档和排查步骤按此形式给出，不要写成裸 `netproxyctl`，它不在 PATH 里。
@@ -51,14 +51,13 @@
 
 ```text
 src/module/service.sh
-src/module/emulated-soft-reboot.sh  # 仅 KernelSU 软重启前生命周期钩子
 ```
 
 ## Shell 约定
 
 - 运行时脚本面向 Android `/system/bin/sh`，只写 POSIX/mksh 可执行语法，不使用 Bash 数组、`[[ ]]`、进程替换或 Bash 专属选项。
 - 参数和路径始终双引号包裹；跨进程传递复杂数据时使用文件或 JSON，不使用 `eval` 拼装命令。
-- 公共业务能力统一放在 Go；Shell 只保留 `service.sh` 开机桥接和 `emulated-soft-reboot.sh` 的固定停服生命周期调用，不要在 Shell 中复制配置、Catalog、API 或进程管理逻辑。
+- 公共业务能力统一放在 Go；运行时 Shell 只保留 `service.sh` 开机桥接，不要在 Shell 中复制配置、Catalog、API 或进程管理逻辑。
 - 配置写入使用候选文件、校验和原子替换。订阅更新失败必须保留上一版有效 Provider。
 - 新增可执行文件时同步检查 `customize.sh` 权限列表和模块打包结果。
 
@@ -67,7 +66,7 @@ src/module/emulated-soft-reboot.sh  # 仅 KernelSU 软重启前生命周期钩�
 - `src/native/netproxy` 是 Catalog、Provider、订阅事务、配置、eBPF 运行时、Service API 与 sing-box 生命周期的业务事实源；Shell 只负责模块 service 阶段进入 Go 的平台桥接。
 - 模块、配置、Catalog、运行时、日志、二进制与 `/dev/netproxy` 状态路径统一由 `internal/paths.Layout` 推导。生产代码不得自行拼接这些布局；测试和用户指定的导入、导出、临时路径仍可显式注入。
 - 允许且仅允许一个 Go Worker。它承载订阅调度、可选的 Android 网络监听和设备统计，不能演变为通用控制守护进程、REST 服务或第二个代理核心。
-- 设备统计只从 Go 公共命令与真实核心启动采集 `module_active`、`service_start_result`，不增加 Android/WebUI SDK。Worker 以 Root 查询用户 0 的 `ANDROID_ID`，用固定 NetProxy 命名空间的 SHA-256 派生设备身份，每个 Worker 成功读取后只缓存在内存；读取失败不得回退随机身份。CLI 不查询设备标识，`config/telemetry/state.json` 只保存每日去重和有界队列，不进入编辑器、日志或诊断包；原始标识不得落盘或上传，Token 只由构建注入。损坏状态不得静默覆盖，系统查询和网络请求不得持有状态锁，上传不得阻塞业务命令。停服入口不得为统计重新启动 Worker，否则 KernelSU 软重启会重新挂载已清理的 eBPF。
+- 设备统计只从 Go 公共命令与真实核心启动采集 `module_active`、`service_start_result`，不增加 Android/WebUI SDK。Worker 以 Root 查询用户 0 的 `ANDROID_ID`，用固定 NetProxy 命名空间的 SHA-256 派生设备身份，每个 Worker 成功读取后只缓存在内存；读取失败不得回退随机身份。CLI 不查询设备标识，`config/telemetry/state.json` 只保存每日去重和有界队列，不进入编辑器、日志或诊断包；原始标识不得落盘或上传，Token 只由构建注入。损坏状态不得静默覆盖，系统查询和网络请求不得持有状态锁，上传不得阻塞业务命令。停服入口不得为统计重新启动 Worker，以免停服操作产生后台启动副作用。
 - 使用 reF1nd sing-box 的类型定义解析、生成和校验 Provider，不通过字符串替换拼接协议配置。
 - reF1nd 依赖版本必须与打包的 sing-box 内核兼容；升级时同时验证转换 fixtures、Provider 和 Service API。
 - Native JSON 编解码统一使用 Go 标准库 `encoding/json/v2` 与 `encoding/json/jsontext`，依赖严格字段匹配、重复键拒绝和 UTF-8 校验；持久文件与 `schema=1` 输出必须显式传入 `json.Deterministic(true)`，不要回退到 v1 或设置 `GOEXPERIMENT=nojsonv2`。

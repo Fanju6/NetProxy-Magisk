@@ -10,7 +10,7 @@ SKIPUNZIP=1
 umask 077
 readonly MODULE_ID=netproxy
 readonly CONFIG_ENTRIES="config/module.conf config/ebpf/ebpf.conf config/singbox/config.json config/singbox/rules/local"
-readonly EXECUTABLE_FILES="bin/sing-box bin/netproxyctl action.sh netproxyctl service.sh emulated-soft-reboot.sh uninstall.sh"
+readonly EXECUTABLE_FILES="bin/sing-box bin/netproxyctl action.sh netproxyctl service.sh uninstall.sh"
 
 INSTALL_MODE=fresh
 LIVE_DIR=/data/adb/modules/netproxy

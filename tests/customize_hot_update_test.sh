@@ -59,7 +59,7 @@ write_module() {
     'esac' > "$target/bin/netproxyctl"
   cp "$target/bin/netproxyctl" "$target/netproxyctl"
   printf '%s\n' 'core fixture' > "$target/bin/sing-box"
-  for file in service.sh action.sh emulated-soft-reboot.sh uninstall.sh; do
+  for file in service.sh action.sh uninstall.sh; do
     printf '%s\n' '#!/bin/sh' > "$target/$file"
   done
   chmod +x "$target/bin/netproxyctl" "$target/netproxyctl"
@@ -245,7 +245,6 @@ test_permissions() (
       done
       [ "$(stat -c '%a' "$STAGE/config")" = 700 ]
       [ "$(stat -c '%a' "$STAGE/service.sh")" = 755 ]
-      [ "$(stat -c '%a' "$STAGE/emulated-soft-reboot.sh")" = 755 ]
       ;;
   esac
   chcon() { return 1; }

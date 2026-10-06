@@ -852,7 +852,7 @@ func workerOptions(options Options) worker.Options {
 	return workerOptions
 }
 
-// RecordActivity 仅记录公共客户端的活跃；停服入口不能重新启动刚被软重启钩子停止的 Worker。
+// RecordActivity 仅记录公共客户端的活跃；停服入口不能为统计重新启动 Worker。
 func RecordActivity(ctx context.Context, options Options, startWorker bool) {
 	if options.Telemetry == nil || ctx.Err() != nil {
 		return
