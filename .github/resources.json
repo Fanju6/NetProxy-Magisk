@@ -63,8 +63,8 @@
       "ref": "sing",
       "sourcePath": "geo/geosite/geolocation-!cn.srs",
       "metadataPath": "geo/geosite/geolocation-!cn.json",
-      "currentCommit": "1bbe90f849505bcbcea530d8fbc127ad7877eb2a",
-      "currentSha256": "aee00314baca6c625ed6b944269301e2af5a7152585bc02b16829e7dee537fe8"
+      "currentCommit": "9e4267fddfa0719523d4e125347dac7a324f7639",
+      "currentSha256": "6adeaca419926dec293d3bc3f059ae670d7977a13f3950641b52ac918c693809"
     },
     {
       "name": "geosite/cn",
@@ -104,7 +104,7 @@
     "path": "src/module/bin/sing-box",
     "repo": "reF1nd/sing-box",
     "tagPattern": "^v[0-9].*-reF1nd$",
-    "currentVersion": "v1.15.0-alpha.9-reF1nd",
+    "currentVersion": "v1.15.0-alpha.10-reF1nd",
     "buildTags": [
       "with_quic",
       "with_utls",
