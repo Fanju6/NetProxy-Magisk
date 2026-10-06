@@ -553,7 +553,7 @@ jobs:
         if: steps.android.outputs.changed == 'true' || steps.singbox_check.outputs.changed == 'true'
         uses: ./.github/actions/verify-android
 
-      - name: 更新 GitHub Actions
+      - name: 检查 GitHub Actions 更新
         id: actions
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -598,14 +598,7 @@ jobs:
               continue
             fi
 
-            echo "更新 ${action}: ${current} → ${latest_major}"
-            escaped_action="${action//./\.}"
-            grep -RlE \
-              --include='*.yml' \
-              --include='*.yaml' \
-              "${escaped_action}@${current}([^0-9]|$)" \
-              .github |
-              xargs -r sed -i -E "s#${escaped_action}@${current}([^0-9]|$)#${action}@${latest_major}\1#g"
+            echo "发现 ${action} 可升级: ${current} → ${latest_major}（待人工验证）"
 
             release_url="$(jq -r '.html_url // empty' <<< "$release_json")"
             if [ -z "$release_url" ]; then
@@ -620,6 +613,7 @@ jobs:
               --arg publishedAt "$(jq -r '.published_at // empty' <<< "$release_json")" \
               --arg releaseUrl "$release_url" \
               --arg repositoryUrl "https://github.com/${action}" \
+              --arg reason "工具链升级需人工验证" \
               '{
                 name: $name,
                 current: $current,
@@ -628,7 +622,8 @@ jobs:
                 releaseName: $releaseName,
                 publishedAt: $publishedAt,
                 releaseUrl: $releaseUrl,
-                repositoryUrl: $repositoryUrl
+                repositoryUrl: $repositoryUrl,
+                reason: $reason
               }')"
             report="$(jq --argjson entry "$entry" '. + [$entry]' <<< "$report")"
           done <<< "$specs"

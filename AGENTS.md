@@ -108,6 +108,8 @@ src/module/service.sh
 
 每次改动至少运行 `git diff --check`，并按影响范围执行：
 
+本地可通过 `sh tests/verify.sh quick|webui|android|docs|full` 编排下列既有检查；它不自动暂存、提交或发布。WebUI 构建产物需要在提交前同步时，额外使用 `--check-generated` 确认工作区结果已进入 Git 索引。
+
 ```sh
 # Go 原生组件
 (cd src/native/netproxy && go test ./... && go vet ./...)
@@ -369,12 +371,14 @@ Go 生命周期控制器通过 `-c config/singbox/config.json` 加载静态配�
 ## 构建与发布
 
 - CI 与 Release 共用 `build-module.yml` 的并行任务图；模块任务完成 Go/Shell 验证、`netproxyctl`、WebUI 与内容压缩，Android 任务构建并用固定密钥签名当前源码的 APK。共享工作流等待两者成功后汇合为唯一模块包，发布任务只下载最终产物，不重新编译或打包。Android 源码变化必须触发模块重打包；任一构建或所需验证失败均不得发布。
+- `verify.yml` 面向 Pull Request 与手动源码验证，只读取公开源码并按变更范围执行 Native、WebUI、Android 或文档检查；它不得读取签名、发布、Telegram 或统计 Secrets，不得打包、上传或发布产物。只有 `main` 上的 `ci.yml` 和 tag 发布工作流可以构建签名管理器与模块包。
 - CI 变更范围从同分支上次成功验证的提交计算，不能只比较本次 push：前一轮被取消或失败的改动仍须验证；基线不可用时执行全部检查。
 - 版本计数与更新日志所需的 checkout 保留完整提交历史；可使用 `blob:none` 或稀疏检出减少历史文件下载。KernelSU 源码镜像仍须获取完整对象，不能套用部分克隆。
 - 模块只发布 `NetProxy_<版本>_<构建号>.zip`，必须包含本次构建的管理器 APK。APK 只在首次解压检查时必需，用户安装或跳过后均清理，热切换校验不得要求它仍然存在。
 - 模块使用 ZIP 容器和 XZ 9 压缩；汇合任务直接向模块内容归档以 Store 追加 APK，不复制第二份发行包。CI 上传归档时不再进行外层压缩。
 - Android 受影响时，CI 在管理器构建任务中使用同一次 Gradle 调用执行单元测试、Lint 与 Release 构建；仅需模块打包时仍构建当前管理器，不额外执行 Android 验证。资源维护复用纯验证模式，不构建 APK，也不需要签名密钥。固定签名由 `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` 四个 GitHub Secrets 注入；缺失时构建失败，不生成替代密钥。CI 版本名保留提交短哈希，仅用于区分构建。
-- `update-resources.yml` 统一维护内核、规则、Web 资源、Go/npm/Gradle/Android 依赖；高风险或大版本更新进入报告，不自动静默升级。
+- Release 只能从与 `src/module/module.prop` 的 `version=` 和 `docs/changelog.md` 对应章节完全一致的 `v<版本号>` tag 启动；预检失败时不得开始签名构建或创建 Release。
+- `update-resources.yml` 统一维护内核、规则、Web 资源、Go/npm/Gradle/Android 依赖；规则与 Web 资源属于内容更新，sing-box 属于核心更新，工具链大版本进入报告。GitHub Actions 更新只报告、不由定时任务静默改写。
 - Composite Action 的仓库 Variables 由调用工作流通过 inputs 显式传入；在 Action 清单中直接读取 `vars` 会导致 Runner 加载失败，尚未开始构建就退出。
 
 ## 安全边界

@@ -58,3 +58,21 @@ test('Web 面板更新只渲染 sing-box Dashboard', () => {
   assert.match(report.body, /1 个面板/)
   assert.match(report.body, /src\/module\/webroot\/sing-box-dashboard/)
 })
+
+test('GitHub Actions 更新只作为人工处理候选项', () => {
+  const report = buildReport({
+    actions: [{
+      name: 'actions/checkout',
+      current: 'v6',
+      latestMajor: 'v7',
+      latestRelease: 'v7.1.0',
+      repositoryUrl: 'https://github.com/actions/checkout',
+      releaseUrl: 'https://github.com/actions/checkout/releases/tag/v7.1.0',
+    }],
+  })
+
+  assert.equal(report.title, 'chore(维护): 更新资源、内核与依赖')
+  assert.match(report.body, /1 项待人工升级/)
+  assert.match(report.body, /GitHub Actions（待人工升级）/)
+  assert.match(report.body, /仅生成报告，不自动升级 GitHub Actions/)
+})

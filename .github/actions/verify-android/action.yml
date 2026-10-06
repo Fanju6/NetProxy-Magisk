@@ -8,6 +8,9 @@ inputs:
   verify:
     description: 是否执行 Android 单元测试与 Lint
     default: 'true'
+  assemble-debug:
+    description: 是否额外构建 Debug APK
+    default: 'false'
   signing-keystore-base64:
     description: 固定签名密钥库的 Base64 内容，通过 GitHub Secrets 传入
   signing-store-password:
@@ -60,6 +63,7 @@ runs:
       env:
         BUILD_MANAGER: ${{ inputs.build-manager }}
         VERIFY_ANDROID: ${{ inputs.verify }}
+        ASSEMBLE_DEBUG: ${{ inputs.assemble-debug }}
         MANAGER_VERSION: ${{ steps.meta.outputs.manager_version }}
         BUILD_ID: ${{ steps.meta.outputs.short_sha }}
       run: |
@@ -72,6 +76,9 @@ runs:
         fi
         if [ "$VERIFY_ANDROID" = true ]; then
           set -- "$@" testDebugUnitTest lintDebug
+        fi
+        if [ "$ASSEMBLE_DEBUG" = true ]; then
+          set -- "$@" :app:assembleDebug
         fi
         test "$#" -gt 0
         ./gradlew "$@" --build-cache --parallel --no-daemon

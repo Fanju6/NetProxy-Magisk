@@ -214,18 +214,35 @@ function renderAndroid(lines, report) {
 
 function renderActions(lines, actions) {
   if (actions.length === 0) return
-  lines.push('#### GitHub Actions', '')
+  lines.push('#### GitHub Actions（待人工升级）', '')
   for (const action of actions) {
     const name = markdownLink(action.name, action.repositoryUrl)
     const release = markdownLink(action.latestRelease || action.latestMajor, action.releaseUrl)
     const publishedAt = formatDate(action.publishedAt)
-    lines.push(`- ${name}：\`${action.current}\` → \`${action.latestMajor}\``)
+    lines.push(`- ${name}：\`${action.current}\` → \`${action.latestMajor}\`（工具链升级需人工验证）`)
     lines.push(`  - 最新发布：${release}${publishedAt ? `，${publishedAt}` : ''}`)
     if (action.releaseName && action.releaseName !== action.latestRelease) {
       lines.push(`  - 发布名称：${action.releaseName}`)
     }
   }
   lines.push('')
+}
+
+function reviewRequirements(data, npmProjects, androidUpdated, actions) {
+  const requirements = []
+  if (data.singBox) {
+    requirements.push('**核心更新**：核对 sing-box 上游变更、Schema、Native 测试和必要的真机 eBPF 验证。')
+  }
+  if (npmProjects.length > 0 || androidUpdated.length > 0) {
+    requirements.push('**依赖更新**：核对锁文件与构建输出；Android 依赖还需完成单测、Lint 与构建。')
+  }
+  if (actions.length > 0) {
+    requirements.push('**工具链候选项**：仅生成报告，不自动升级 GitHub Actions；请在独立变更中人工处理。')
+  }
+  if (requirements.length === 0 && (data.rules?.length > 0 || data.dashboard)) {
+    requirements.push('**内容更新**：核对上游提交、文件校验和与构建结果。')
+  }
+  return requirements
 }
 
 export function buildReport(data, context = {}) {
@@ -263,12 +280,18 @@ export function buildReport(data, context = {}) {
             : '无更新',
       showResultWhenUnchanged: androidManual.length > 0 || androidDiagnostics.length > 0,
     },
-    { id: 'actions', label: 'GitHub Actions', changed: actions.length > 0, result: `${actions.length} 个 Action` },
+    {
+      id: 'actions',
+      label: 'GitHub Actions',
+      changed: false,
+      result: actions.length > 0 ? `${actions.length} 项待人工升级` : '无更新',
+      showResultWhenUnchanged: actions.length > 0,
+    },
   ]
 
   const changedCategories = categories.filter((category) => category.changed)
   const npmItemCount = npmDirectChanges > 0 ? npmDirectChanges : npmProjects.length
-  const itemCount = rules.length + (dashboard ? 1 : 0) + (data.singBox ? 1 : 0) + npmItemCount + androidUpdated.length + actions.length
+  const itemCount = rules.length + (dashboard ? 1 : 0) + (data.singBox ? 1 : 0) + npmItemCount + androidUpdated.length
   const titleParts = []
 
   if (rules.length === 1) titleParts.push(`${rules[0].name || path.basename(rules[0].path, '.srs')} 规则`)
@@ -277,7 +300,6 @@ export function buildReport(data, context = {}) {
   if (data.singBox) titleParts.push('sing-box 内核')
   if (npmProjects.length > 0) titleParts.push('npm 依赖')
   if (androidUpdated.length > 0) titleParts.push('Android 依赖')
-  if (actions.length > 0) titleParts.push('GitHub Actions')
 
   let title = `chore(维护): 更新 ${joinChinese(titleParts)}`
   if (titleParts.length === 0 || title.length > 72) {
@@ -315,9 +337,17 @@ export function buildReport(data, context = {}) {
     renderNpm(lines, npmProjects)
     renderAndroid(lines, android)
     renderActions(lines, actions)
-  } else if (androidManual.length > 0 || androidDiagnostics.length > 0) {
+  } else if (androidManual.length > 0 || androidDiagnostics.length > 0 || actions.length > 0) {
     lines.push('### 检查详情', '')
     renderAndroid(lines, android)
+    renderActions(lines, actions)
+  }
+
+  const requirements = reviewRequirements(data, npmProjects, androidUpdated, actions)
+  if (requirements.length > 0) {
+    lines.push('### 审查要求', '')
+    for (const requirement of requirements) lines.push(`- ${requirement}`)
+    lines.push('')
   }
 
   if (Array.isArray(data.verification) && data.verification.length > 0) {

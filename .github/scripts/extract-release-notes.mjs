@@ -1,4 +1,5 @@
 import { readFile, writeFile } from "node:fs/promises"
+import { pathToFileURL } from "node:url"
 
 const versionPattern = String.raw`\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?`
 const releaseHeadingPatterns = [
@@ -7,7 +8,7 @@ const releaseHeadingPatterns = [
   new RegExp(`^##\\s+🎉\\s+v?(${versionPattern})(?=\\s|[（(]|$)`, "u"),
 ]
 
-function normalizeVersion(value) {
+export function normalizeVersion(value) {
   const match = value.trim().match(new RegExp(`^v?(${versionPattern})$`, "u"))
   if (!match) {
     throw new Error(`无效版本号: ${value}`)
@@ -25,7 +26,7 @@ function releaseVersion(line) {
   return null
 }
 
-function extractReleaseNotes(markdown, rawVersion) {
+export function extractReleaseNotes(markdown, rawVersion) {
   const version = normalizeVersion(rawVersion)
   const lines = markdown.replaceAll("\r\n", "\n").split("\n")
   const matchingHeadings = []
@@ -70,7 +71,9 @@ async function main() {
   await writeFile(outputPath, notes, "utf8")
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error))
-  process.exitCode = 1
-})
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error))
+    process.exitCode = 1
+  })
+}

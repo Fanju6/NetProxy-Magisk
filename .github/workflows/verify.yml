@@ -1,0 +1,195 @@
+name: 拉取请求验证
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/module/**'
+      - 'src/native/netproxy/**'
+      - 'src/android/**'
+      - 'src/webui/**'
+      - 'docs/**'
+      - 'tests/**'
+      - '.github/actions/**'
+      - '.github/scripts/**'
+      - '.github/resources.json'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/build-module.yml'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/update-resources.yml'
+      - '.github/workflows/verify.yml'
+      - '.github/workflows/docs.yml'
+      - '.gitattributes'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: 判断验证范围
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      core: ${{ steps.changes.outputs.core }}
+      webui: ${{ steps.changes.outputs.webui }}
+      android: ${{ steps.changes.outputs.android }}
+      docs: ${{ steps.changes.outputs.docs }}
+    steps:
+      - name: 拉取范围判断脚本
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          sparse-checkout: .github/scripts
+
+      - name: 计算验证范围
+        id: changes
+        env:
+          NETPROXY_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          NETPROXY_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node .github/scripts/ci-changes.mjs
+
+  core:
+    name: 验证 Native 与模块契约
+    needs: changes
+    if: needs.changes.outputs.core == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: 拉取源码
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: 配置 Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: src/native/netproxy/go.mod
+          cache: true
+
+      - name: 配置 Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: 执行核心验证
+        run: sh tests/verify.sh quick
+
+  webui:
+    name: 验证 WebUI 与生成产物
+    needs: changes
+    if: needs.changes.outputs.webui == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 拉取 WebUI 源码与模块产物
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            src/webui
+            src/module/webroot/netproxy
+            tests/verify.sh
+
+      - name: 配置 Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: src/webui/package-lock.json
+
+      - name: 构建并检查 WebUI 产物
+        run: sh tests/verify.sh webui --check-generated
+
+  android:
+    name: 验证 Android 管理器
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: 拉取 Android 源码与构建配置
+        uses: actions/checkout@v7
+        with:
+          filter: blob:none
+          sparse-checkout: |
+            src/android
+            src/module/config/singbox
+            .github/actions/verify-android
+
+      - name: 执行 Android 单测、Lint 与 Debug 构建
+        uses: ./.github/actions/verify-android
+        with:
+          build-manager: 'false'
+          verify: 'true'
+          assemble-debug: 'true'
+
+  docs:
+    name: 验证文档站
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 拉取文档站
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            docs
+            tests/verify.sh
+
+      - name: 配置 Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+
+      - name: 构建文档站
+        run: sh tests/verify.sh docs
+
+  summary:
+    name: 汇总验证结果
+    needs: [changes, core, webui, android, docs]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 输出验证摘要
+        env:
+          CORE_ENABLED: ${{ needs.changes.outputs.core }}
+          WEBUI_ENABLED: ${{ needs.changes.outputs.webui }}
+          ANDROID_ENABLED: ${{ needs.changes.outputs.android }}
+          DOCS_ENABLED: ${{ needs.changes.outputs.docs }}
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CORE_RESULT: ${{ needs.core.result }}
+          WEBUI_RESULT: ${{ needs.webui.result }}
+          ANDROID_RESULT: ${{ needs.android.result }}
+          DOCS_RESULT: ${{ needs.docs.result }}
+        run: |
+          set -eu
+          {
+            echo '## 验证范围'
+            echo
+            echo "范围判断任务：${CHANGES_RESULT:-unknown}"
+            echo
+            echo '| 范围 | 是否执行 | 结果 |'
+            echo '| --- | --- | --- |'
+            echo "| Native / 模块 | ${CORE_ENABLED:-false} | ${CORE_RESULT:-skipped} |"
+            echo "| WebUI | ${WEBUI_ENABLED:-false} | ${WEBUI_RESULT:-skipped} |"
+            echo "| Android | ${ANDROID_ENABLED:-false} | ${ANDROID_RESULT:-skipped} |"
+            echo "| 文档站 | ${DOCS_ENABLED:-false} | ${DOCS_RESULT:-skipped} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for result in "$CHANGES_RESULT" "$CORE_RESULT" "$WEBUI_RESULT" "$ANDROID_RESULT" "$DOCS_RESULT"; do
+            case "$result" in
+              failure|cancelled)
+                printf '%s\n' "验证任务失败或被取消: $result" >&2
+                exit 1
+                ;;
+            esac
+          done

@@ -10,9 +10,14 @@ on:
       - 'src/android/**'
       - 'src/webui/**'
       - 'tests/**'
-      - '.github/workflows/**'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/build-module.yml'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/update-resources.yml'
+      - '.github/workflows/verify.yml'
       - '.github/actions/**'
       - '.github/scripts/**'
+      - '.github/resources.json'
       - '.gitattributes'
 
 permissions:

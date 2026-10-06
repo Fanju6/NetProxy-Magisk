@@ -15,8 +15,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  preflight:
+    name: 验证发布版本与更新日志
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 拉取发布元数据
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            .github/scripts
+            docs
+            src/module/module.prop
+
+      - name: 配置发布脚本 Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: 检查 tag、模块版本与更新日志
+        env:
+          TAG: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          test "$REF_TYPE" = tag || {
+            echo '发布工作流只能从已有的 v<版本号> tag 运行。' >&2
+            exit 1
+          }
+          node .github/scripts/release-preflight.mjs \
+            src/module/module.prop docs/changelog.md "$TAG"
+
   build:
     name: 并行构建模块与管理器
+    needs: preflight
     uses: ./.github/workflows/build-module.yml
     secrets:
       ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -26,7 +57,7 @@ jobs:
 
   release:
     name: 发布 Release
-    needs: build
+    needs: [preflight, build]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -109,7 +140,7 @@ jobs:
 
   failure:
     name: 通知构建或发布失败
-    needs: [build, release]
+    needs: [preflight, build, release]
     if: always() && contains(needs.*.result, 'failure')
     runs-on: ubuntu-latest
     timeout-minutes: 5

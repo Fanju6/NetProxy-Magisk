@@ -1,0 +1,97 @@
+name: 缺陷报告
+description: 提交可复现的 NetProxy 问题，帮助我们更快定位原因。
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。GitHub Issue 公开可见，请勿提交订阅链接、节点链接、UUID、密码、请求头、诊断包中的未脱敏内容或签名材料。
+
+        优先附上由管理器导出的脱敏诊断包；没有管理器时，请提供下方环境信息、复现步骤和必要日志。
+
+  - type: input
+    id: version
+    attributes:
+      label: NetProxy 版本与构建号
+      description: 请填写模块详情或管理器设置中显示的完整版本，例如 v8.2.2（build 123）。
+      placeholder: v8.2.2（build 123）
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: 受影响的部分
+      multiple: true
+      options:
+        - 模块安装、升级或卸载
+        - 服务启动、停止或重载
+        - 节点、订阅或测速
+        - eBPF、分应用或共享网络
+        - Wi-Fi 自动策略或网络切换
+        - Android 管理器
+        - 模块 WebUI
+        - 其他或无法判断
+    validations:
+      required: true
+
+  - type: dropdown
+    id: root_framework
+    attributes:
+      label: Root 框架
+      options:
+        - KernelSU
+        - Magisk
+        - APatch
+        - 其他
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: 设备与系统环境
+      description: 请填写设备型号、Android 版本、内核版本和 Root 框架版本。
+      placeholder: OnePlus 13 / Android 16 / Linux 6.6.x / KernelSU 3.x
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为与实际结果
+      description: 请分别说明你原本希望发生什么，以及实际看到了什么错误、提示或异常行为。
+      placeholder: |
+        预期：启动服务后应用流量被正常代理。
+        实际：服务进入 failed，管理器提示……
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 最小复现步骤
+      description: 从模块安装、配置到触发问题，按顺序写出其他人可以重复操作的步骤。请避免贴出私密节点信息。
+      placeholder: |
+        1. …
+        2. …
+        3. …
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 脱敏诊断信息（可选）
+      description: 可拖入管理器导出的脱敏诊断包，或粘贴与问题直接相关的日志片段。请说明问题发生的大致时间。
+      render: text
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: 隐私检查
+      options:
+        - label: 我确认未提交订阅地址、节点凭据、Token、请求头、完整未脱敏配置或其他私密信息。
+          required: true
+        - label: 我确认已先阅读文档和常见问题，并尝试使用最新模块版本复现。
+          required: true

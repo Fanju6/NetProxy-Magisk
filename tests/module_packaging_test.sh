@@ -14,6 +14,8 @@ RELEASE_WORKFLOW="$ROOT/.github/workflows/release.yml"
 CI_WORKFLOW="$ROOT/.github/workflows/ci.yml"
 SHARED_WORKFLOW="$ROOT/.github/workflows/build-module.yml"
 VERIFY_SCRIPT="$ROOT/tests/ci_verify.sh"
+DEVELOPER_VERIFY_SCRIPT="$ROOT/tests/verify.sh"
+PR_VERIFY_WORKFLOW="$ROOT/.github/workflows/verify.yml"
 
 assert_contains() {
   grep -Fq -- "$2" "$1" || {
@@ -51,6 +53,15 @@ assert_contains "$ANDROID_ACTION" 'install -m 0644 "$SIGNED_APK" src/module/NetP
 assert_contains "$ROOT/src/android/app/build.gradle.kts" 'versionName = if (ciManagerBuild)'
 assert_contains "$ROOT/.gitignore" 'src/module/NetProxy.apk'
 assert_contains "$VERIFY_SCRIPT" './cmd/netproxyctl'
+assert_contains "$DEVELOPER_VERIFY_SCRIPT" 'quick|webui|android|docs|full'
+assert_contains "$DEVELOPER_VERIFY_SCRIPT" 'NETPROXY_VERIFY_GENERATED'
+assert_contains "$PR_VERIFY_WORKFLOW" 'pull_request:'
+assert_contains "$PR_VERIFY_WORKFLOW" 'sh tests/verify.sh quick'
+assert_contains "$PR_VERIFY_WORKFLOW" 'sh tests/verify.sh webui --check-generated'
+assert_contains "$PR_VERIFY_WORKFLOW" "build-manager: 'false'"
+assert_contains "$PR_VERIFY_WORKFLOW" "assemble-debug: 'true'"
+assert_not_contains "$PR_VERIFY_WORKFLOW" 'ANDROID_KEYSTORE_BASE64'
+assert_not_contains "$PR_VERIFY_WORKFLOW" 'TG_BOT_TOKEN'
 assert_contains "$VERIFY_SCRIPT" '-ldflags="-s -w -buildid='
 assert_contains "$VERIFY_SCRIPT" 'internal/telemetry.ProjectToken=${POSTHOG_PROJECT_TOKEN:-}'
 assert_contains "$VERIFY_SCRIPT" 'internal/telemetry.IngestionHost=${POSTHOG_HOST:-}'
@@ -91,7 +102,10 @@ find "$ROOT/src/module/webroot" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' |
 
 assert_contains "$RELEASE_WORKFLOW" 'MODULE_NAME: ${{ needs.build.outputs.module_name }}'
 assert_contains "$RELEASE_WORKFLOW" '${{ env.MODULE_NAME }}'
-assert_contains "$RELEASE_WORKFLOW" 'needs: build'
+assert_contains "$RELEASE_WORKFLOW" 'needs: preflight'
+assert_contains "$RELEASE_WORKFLOW" 'needs: [preflight, build]'
+assert_contains "$RELEASE_WORKFLOW" 'release-preflight.mjs'
+assert_contains "$RELEASE_WORKFLOW" '发布工作流只能从已有的 v<版本号> tag 运行。'
 assert_contains "$RELEASE_WORKFLOW" 'update.json'
 assert_contains "$RELEASE_WORKFLOW" 'releases/download/${TAG}/${MODULE_NAME}'
 assert_contains "$RELEASE_WORKFLOW" 'extract-release-notes.mjs'

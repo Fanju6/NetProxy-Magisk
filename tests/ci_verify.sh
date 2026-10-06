@@ -55,4 +55,10 @@ run_shell_contracts() {
 build_binaries
 run_shell_contracts
 node --test "$ROOT"/.github/scripts/*.test.mjs
+sh -n "$ROOT/tests/verify.sh"
+sh "$ROOT/tests/verify.sh" --help >/dev/null
+if sh "$ROOT/tests/verify.sh" invalid >/dev/null 2>&1; then
+  printf '%s\n' '开发验证脚本不应接受未知范围' >&2
+  exit 1
+fi
 printf '%s\n' 'Go 与 Shell 契约测试全部通过'
