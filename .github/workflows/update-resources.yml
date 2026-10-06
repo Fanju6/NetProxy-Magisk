@@ -134,7 +134,6 @@ jobs:
           file .sing-box-source/sing-box | grep -q 'ARM aarch64'
           go version -m .sing-box-source/sing-box | grep -q "${LATEST_VERSION#v}"
           go version -m .sing-box-source/sing-box | grep -q 'with_ebpf'
-          go version -m .sing-box-source/sing-box | grep -q 'with_gvisor'
           go version -m .sing-box-source/sing-box | grep -q 'with_tailscale'
 
           # 上游标签可能未提交重新生成后的 Schema，必须按同一源码与构建标签现场生成。
