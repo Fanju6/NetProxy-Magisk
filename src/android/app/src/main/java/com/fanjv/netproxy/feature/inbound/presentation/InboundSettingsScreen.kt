@@ -171,7 +171,6 @@ internal fun InboundSettingsScreen(
                         CardItem("apps") {
                             ArrowPreference(
                                 title = stringResource(R.string.proxy_apps),
-                                summary = stringResource(R.string.proxy_mode_summary),
                                 enabled = enabled,
                                 onClick = { if (state.editable) navigator.push(Route.Apps) }
                             )
@@ -256,7 +255,11 @@ internal fun InboundSettingsScreen(
     OverlayDialog(show = state.diagnostic != null, title = stringResource(R.string.ebpf_diagnostics),
         onDismissRequest = viewModel::dismissDiagnostic) {
         Column {
-            Text(state.diagnostic.orEmpty(), Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()).padding(vertical = 16.dp))
+            Text(
+                state.diagnostic.orEmpty(),
+                Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()).padding(vertical = 16.dp),
+                style = MiuixTheme.textStyles.body2
+            )
             TextButton(stringResource(android.R.string.ok), modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.textButtonColorsPrimary(), onClick = viewModel::dismissDiagnostic)
         }
