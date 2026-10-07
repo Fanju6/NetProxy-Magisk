@@ -46,6 +46,8 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Link
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -218,7 +220,7 @@ internal fun CatalogDashboardScreen(
                             },
                             startAction = {
                                 Icon(
-                                    imageVector = Icons.Rounded.Router,
+                                    imageVector = MiuixIcons.Link,
                                     contentDescription = null,
                                     modifier = Modifier.padding(end = 12.dp),
                                     tint = colorScheme.primary
