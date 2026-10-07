@@ -11,7 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
@@ -37,16 +37,15 @@ type ConfigDocument struct {
 
 var ErrConfigConflict = errors.New("配置已被修改，请重新加载后再保存")
 
-var configSections = map[string]struct{}{
-	"log": {}, "experimental": {}, "dns": {}, "inbounds": {},
-	"route": {}, "http_clients": {}, "services": {}, "outbounds": {},
-	"providers": {}, "endpoints": {}, "ntp": {},
-	"certificate": {}, "certificate_providers": {}, "network_namespaces": {},
+var configSections = []string{
+	"log", "dns", "ntp", "certificate", "certificate_providers",
+	"http_clients", "network_namespaces", "endpoints", "inbounds", "outbounds",
+	"providers", "route", "services", "experimental",
 }
 
 func configSection(target string) string {
 	section, hasPrefix := strings.CutPrefix(target, "singbox/")
-	if _, exists := configSections[section]; hasPrefix && exists {
+	if hasPrefix && slices.Contains(configSections, section) {
 		return section
 	}
 	return ""
@@ -60,7 +59,7 @@ func ListConfigs(options Options) ([]ConfigDocument, error) {
 	result := make([]ConfigDocument, 0)
 	if _, err := os.Stat(paths.SingBoxConfig(options.SingBoxDir)); err == nil {
 		result = append(result, ConfigDocument{ID: "singbox/config.json", Filename: "config.json", Category: "config", Editable: true})
-		for section := range configSections {
+		for _, section := range configSections {
 			result = append(result, ConfigDocument{ID: "singbox/" + section, Filename: section, Category: "config", Editable: true, Section: section})
 		}
 	} else if !os.IsNotExist(err) {
@@ -81,7 +80,7 @@ func ListConfigs(options Options) ([]ConfigDocument, error) {
 			Editable: true,
 		})
 	}
-	for _, name := range []string{"providers.json", "outbounds.json", "ebpf.json"} {
+	for _, name := range []string{"ebpf.json", "outbounds.json", "providers.json"} {
 		path := filepath.Join(options.RuntimeDir, name)
 		info, err := os.Stat(path)
 		if os.IsNotExist(err) {
@@ -97,7 +96,6 @@ func ListConfigs(options Options) ([]ConfigDocument, error) {
 			ID: "runtime/" + name, Filename: name, Category: "runtime", Editable: false,
 		})
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
 	return result, nil
 }
 

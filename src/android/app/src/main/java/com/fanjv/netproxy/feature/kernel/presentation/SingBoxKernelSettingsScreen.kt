@@ -73,7 +73,7 @@ internal fun SingBoxKernelSettingsScreen(
 
     val configDocuments = state.documents.filter {
         it.category == SingBoxDocumentCategory.Config
-    }.sortedBy { it.id != "singbox/config.json" }
+    }
     val localRuleDocuments = state.documents.filter {
         it.category == SingBoxDocumentCategory.LocalRule
     }

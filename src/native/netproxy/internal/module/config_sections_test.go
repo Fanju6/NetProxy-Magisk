@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -200,7 +201,11 @@ func TestConfigListExposesAllSectionsWithoutWritingDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	sections := make(map[string]ConfigDocument)
+	var configIDs []string
 	for _, document := range documents {
+		if document.Category == "config" {
+			configIDs = append(configIDs, document.ID)
+		}
 		if document.Section == "" {
 			continue
 		}
@@ -211,12 +216,14 @@ func TestConfigListExposesAllSectionsWithoutWritingDefaults(t *testing.T) {
 	}
 	optionsType := reflect.TypeFor[option.Options]()
 	expectedCount := 0
+	expectedIDs := []string{"singbox/config.json"}
 	for field := range optionsType.Fields() {
 		section, _, _ := strings.Cut(field.Tag.Get("json"), ",")
 		if section == "-" || section == "$schema" {
 			continue
 		}
 		expectedCount++
+		expectedIDs = append(expectedIDs, "singbox/"+section)
 		document, exists := sections[section]
 		if !exists || document.ID != "singbox/"+section || !document.Editable || document.Category != "config" {
 			t.Fatalf("上游分区没有有效编辑入口: %s: %+v", section, document)
@@ -228,6 +235,9 @@ func TestConfigListExposesAllSectionsWithoutWritingDefaults(t *testing.T) {
 	}
 	if len(sections) != expectedCount {
 		t.Fatalf("分区与上游字段不一致: 实际 %d，预期 %d", len(sections), expectedCount)
+	}
+	if !slices.Equal(configIDs, expectedIDs) {
+		t.Fatalf("配置入口应完整配置置顶，其余按上游定义排序:\n实际: %v\n预期: %v", configIDs, expectedIDs)
 	}
 	after, err := os.ReadFile(destination)
 	if err != nil || !bytes.Equal(after, initial) {
