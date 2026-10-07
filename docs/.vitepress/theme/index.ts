@@ -1,6 +1,7 @@
 import DefaultTheme from 'vitepress/theme'
 import MonetEditor from './components/MonetEditor.vue'
 import GachaSimulator from './components/GachaSimulator.vue'
+import SupporterWall from './components/SupporterWall.vue'
 import './styles.css'
 import './tooling.css'
 
@@ -9,5 +10,6 @@ export default {
   enhanceApp({ app }) {
     app.component('MonetEditor', MonetEditor)
     app.component('GachaSimulator', GachaSimulator)
+    app.component('SupporterWall', SupporterWall)
   }
 }

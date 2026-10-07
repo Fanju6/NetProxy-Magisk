@@ -35,3 +35,5 @@ features:
 ---
 
 <img class="home-screenshot" src="/Screenshot.jpg" alt="NetProxy Android 管理器界面" />
+
+感谢每一位支持 NetProxy 的伙伴。[去通路工坊看看股东名册](/mascot/supporters)。

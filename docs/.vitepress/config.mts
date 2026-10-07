@@ -62,6 +62,7 @@ export default defineConfig({
             { text: '奶屁龙', link: '/mascot/dragon' },
             { text: '奶屁娘', link: '/mascot/niang' },
             { text: '表情包', link: '/mascot/stickers' },
+            { text: '股东名册', link: '/mascot/supporters' },
             { text: '创作规范', link: '/mascot/production' }
           ]
         }
