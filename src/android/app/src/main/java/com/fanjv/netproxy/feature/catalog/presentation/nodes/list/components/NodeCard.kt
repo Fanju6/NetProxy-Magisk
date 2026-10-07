@@ -11,11 +11,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -51,10 +55,40 @@ internal fun NodeCard(
         2 -> 8.dp
         else -> 16.dp
     }
+    val titleFontSize = when (itemSize) {
+        1 -> 13
+        2 -> 12
+        else -> 14
+    }
+    val detailFontSize = when (itemSize) {
+        1 -> 11
+        2 -> 10
+        else -> 12
+    }
+    val lineHeightStyle = LineHeightStyle(
+        alignment = LineHeightStyle.Alignment.Center,
+        trim = LineHeightStyle.Trim.None
+    )
+    val titleStyle = MiuixTheme.textStyles.body1.copy(
+        fontSize = titleFontSize.sp,
+        lineHeight = (titleFontSize + 6).sp,
+        platformStyle = PlatformTextStyle(includeFontPadding = false),
+        lineHeightStyle = lineHeightStyle
+    )
+    val detailStyle = MiuixTheme.textStyles.body2.copy(
+        fontSize = detailFontSize.sp,
+        lineHeight = (detailFontSize + 6).sp,
+        platformStyle = PlatformTextStyle(includeFontPadding = false),
+        lineHeightStyle = lineHeightStyle
+    )
+    val valueStyle = detailStyle.copy(fontSize = (detailFontSize - 1).sp)
+    val density = LocalDensity.current
+    val titleHeight = with(density) { titleStyle.lineHeight.toDp() }
+    val detailHeight = with(density) { detailStyle.lineHeight.toDp() }
     val shape = RoundedCornerShape(cornerRadius)
     Card(
         modifier = Modifier
-            .fillMaxWidthCompat()
+            .fillMaxWidth()
             .graphicsLayer {
                 this.shape = shape
                 clip = true
@@ -76,38 +110,33 @@ internal fun NodeCard(
         showIndication = true
     ) {
         Column(modifier = Modifier
-            .fillMaxWidthCompat()
+            .fillMaxWidth()
             .padding(innerPadding)) {
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            // 内容槽独立于文字度量，避免中文、emoji 和测速状态改变卡片高度。
+            Row(
+                modifier = Modifier.height(titleHeight),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
                     text = title,
                     modifier = Modifier.weight(1f),
                     color = if (selected) colorScheme.primary else colorScheme.onSurface,
-                    style = MiuixTheme.textStyles.body1.copy(
-                        fontSize = when (itemSize) {
-                            1 -> 13.sp
-                            2 -> 12.sp
-                            else -> 14.sp
-                        }
-                    ),
+                    style = titleStyle,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
             Spacer(Modifier.height(if (itemSize == 0) 8.dp else if (itemSize == 1) 4.dp else 2.dp))
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth().height(detailHeight),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 if (protocol.isNotBlank()) {
                     Text(
                         text = protocol,
                         modifier = Modifier.weight(1f),
                         color = if (selected) colorScheme.primary else colorScheme.onSurfaceVariantActions,
-                        style = MiuixTheme.textStyles.body2.copy(
-                            fontSize = when (itemSize) {
-                                1 -> 11.sp
-                                2 -> 10.sp
-                                else -> 12.sp
-                            }
-                        ),
+                        style = detailStyle,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -117,14 +146,9 @@ internal fun NodeCard(
                         text = latencyLabel(latency),
                         modifier = Modifier.padding(start = 8.dp),
                         color = latencyColor(latency),
-                        style = MiuixTheme.textStyles.body2.copy(
-                            fontSize = when (itemSize) {
-                                1 -> 10.sp
-                                2 -> 9.sp
-                                else -> 11.sp
-                            },
-                            fontWeight = FontWeight.Medium
-                        )
+                        style = valueStyle.copy(fontWeight = FontWeight.Medium),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 } else if (summary.isNotBlank()) {
                     Text(
@@ -133,13 +157,7 @@ internal fun NodeCard(
                             .padding(start = 8.dp)
                             .weight(1f),
                         color = colorScheme.onSurfaceVariantSummary,
-                        style = MiuixTheme.textStyles.body2.copy(
-                            fontSize = when (itemSize) {
-                                1 -> 10.sp
-                                2 -> 9.sp
-                                else -> 11.sp
-                            }
-                        ),
+                        style = valueStyle,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -167,7 +185,3 @@ private fun latencyColor(value: String): Color = when (value) {
         else -> if (MiuixTheme.isDynamicColor) colorScheme.error else Color(0xFFF05252)
     }
 }
-
-private fun Modifier.fillMaxWidthCompat(): Modifier = fillMaxWidth()
-
-
