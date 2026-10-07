@@ -35,6 +35,7 @@ print_title() {
   ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━"
   ui_print "  $1"
   ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━"
+  ui_print ""
 }
 
 # 参数: $1 提示。
@@ -98,14 +99,47 @@ has_existing_user_data() {
   [ -f "$LIVE_DIR/config/module.conf" ] || [ -d "$LIVE_DIR/data/catalog" ]
 }
 
-# 参数: 无。
-# 返回: 0=已输出当前模式。
-print_install_mode() {
-  case "$INSTALL_MODE" in
-    preserve) print_step "当前选择：保留现有数据" ;;
-    nodes) print_step "当前选择：仅保留节点与订阅（配置恢复默认）" ;;
-    fresh) print_step "当前选择：全新安装（不保留现有数据）" ;;
-  esac
+#######################################
+# 参数: $1 初始等待秒数，$2... 按顺序排列的选项，首项为默认。
+# 返回: 0=已确认或未操作时采用默认，1=读取失败或操作后超时；写入 VOLUME_CHOICE。
+#######################################
+choose_volume_option() {
+  local timeout="$1" option index=1
+  shift
+  VOLUME_CHOICE=1
+  for option do
+    if [ "$index" -eq 1 ]; then ui_print "  $index. $option（默认）";
+    else ui_print "  $index. $option"; fi
+    index=$((index + 1))
+  done
+  ui_print ""
+  ui_print "  [音量+] 循环选择  [音量-] 确认"
+  if [ "$timeout" -eq 10 ]; then ui_print "  10 秒未操作，默认选择：$1";
+  else ui_print "  20 秒内未确认将取消安装"; fi
+  print_step "当前选择：$1"
+  stop_key_listener
+  while :; do
+    wait_volume_key "$timeout" || { stop_key_listener; return 1; }
+    case "$VOLUME_KEY" in
+      up)
+        VOLUME_CHOICE=$((VOLUME_CHOICE % $# + 1))
+        timeout=20
+        index=1
+        for option do
+          [ "$index" -ne "$VOLUME_CHOICE" ] || print_step "当前选择：$option"
+          index=$((index + 1))
+        done
+        ;;
+      down) break ;;
+      *)
+        [ "$timeout" -ne 10 ] || break
+        stop_key_listener
+        print_error "选择超时，已取消安装，现有数据未修改"
+        return 1
+        ;;
+    esac
+  done
+  stop_key_listener
 }
 
 #######################################
@@ -120,50 +154,26 @@ choose_install_mode() {
   fi
   INSTALL_MODE=preserve
   print_title "选择安装方式"
-  ui_print ""
-  ui_print "  1. 保留现有数据（默认）"
-  ui_print "  2. 仅保留节点与订阅"
-  ui_print "  3. 全新安装"
-  ui_print ""
-  ui_print "  [音量+] 循环选择  [音量-] 确认"
-  ui_print "  未操作时，10 秒后保留现有数据"
-  print_install_mode
-  local timeout=10 interacted=false
+  local timeout=10
   while :; do
-    wait_volume_key "$timeout" || return 1
+    choose_volume_option "$timeout" "保留现有数据" "仅保留节点与订阅（配置恢复默认）" \
+      "全新安装（不保留现有数据）" || return 1
+    case "$VOLUME_CHOICE" in
+      1) INSTALL_MODE=preserve ;;
+      2) INSTALL_MODE=nodes ;;
+      3) INSTALL_MODE=fresh ;;
+    esac
+    [ "$INSTALL_MODE" = fresh ] || break
+    print_warn "全新安装将清除节点、订阅、配置和模块日志"
+    ui_print "  [音量-] 再次确认  [音量+] 返回选择；10 秒无操作取消安装"
+    wait_volume_key 10 || { stop_key_listener; return 1; }
+    stop_key_listener
     case "$VOLUME_KEY" in
-      up)
-        case "$INSTALL_MODE" in
-          preserve) INSTALL_MODE=nodes ;;
-          nodes) INSTALL_MODE=fresh ;;
-          fresh) INSTALL_MODE=preserve ;;
-        esac
-        interacted=true
-        timeout=20
-        print_install_mode
-        ;;
-      down)
-        if [ "$INSTALL_MODE" != fresh ]; then break; fi
-        stop_key_listener
-        print_warn "全新安装将清除节点、订阅、配置和模块日志"
-        ui_print "  [音量-] 再次确认  [音量+] 返回选择；10 秒无操作取消安装"
-        wait_volume_key 10 || return 1
-        case "$VOLUME_KEY" in
-          down) break ;;
-          up) INSTALL_MODE=preserve; interacted=true; timeout=20; print_install_mode ;;
-          *) print_error "未确认全新安装，已取消"; return 1 ;;
-        esac
-        ;;
-      *)
-        if [ "$interacted" = true ]; then
-          print_error "选择超时，已取消安装，现有数据未修改"
-          return 1
-        fi
-        break
-        ;;
+      down) break ;;
+      up) timeout=20 ;;
+      *) print_error "未确认全新安装，已取消"; return 1 ;;
     esac
   done
-  stop_key_listener
   if [ "$INSTALL_MODE" != fresh ] && [ ! -d "$LIVE_DIR/data/catalog" ]; then
     print_error "当前 Catalog 不存在，无法保留节点与订阅"
     return 1
@@ -489,18 +499,12 @@ schedule_hot_update() {
 install_bundled_manager() {
   local install_output
   print_title "安装 NetProxy 管理器"
-  ui_print ""
   if [ ! -s "$MODPATH/NetProxy.apk" ]; then
     print_error "安装包缺少 NetProxy 管理器 APK"
     return 1
   fi
-  ui_print "  [音量+] 安装或更新（默认）"
-  ui_print "  [音量-] 跳过"
-  ui_print "  10 秒未操作，默认安装"
-  stop_key_listener
-  wait_volume_key 10 || return 1
-  stop_key_listener
-  if [ "$VOLUME_KEY" = down ]; then
+  choose_volume_option 10 "安装或更新管理器" "跳过管理器安装" || return 1
+  if [ "$VOLUME_CHOICE" -eq 2 ]; then
     print_step "已跳过管理器安装"
   else
     # PackageManager 经 Binder 接收输出描述符，不能直接写入安装器的 system_file 日志。
@@ -545,7 +549,6 @@ fi
 unzip -o "$ZIPFILE" module.prop -d "$INSTALL_TMP" >/dev/null 2>&1 || exit 1
 grep -qx "id=$MODULE_ID" "$INSTALL_TMP/module.prop" || exit 1
 print_title "NetProxy - sing-box 透明代理"
-ui_print ""
 ui_print "  版本: $(grep_prop version "$INSTALL_TMP/module.prop")"
 choose_install_mode || exit 1
 print_title "准备安装"

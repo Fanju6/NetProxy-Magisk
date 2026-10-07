@@ -109,7 +109,9 @@ check_install_choices() {
   grep -q 'print_title "安装 NetProxy 管理器"' "$MODULE_DIR/customize.sh"
   grep -q '\[ -s "\$MODPATH/NetProxy.apk" \]' "$MODULE_DIR/customize.sh"
   grep -q 'pm install -r "\$MODPATH/NetProxy.apk"' "$MODULE_DIR/customize.sh"
-  grep -q '10 秒未操作，默认安装' "$MODULE_DIR/customize.sh"
+  grep -q '10 秒未操作，默认选择' "$MODULE_DIR/customize.sh"
+  grep -q 'choose_volume_option 10 "安装或更新管理器" "跳过管理器安装"' "$MODULE_DIR/customize.sh"
+  ! grep -q '\[音量-\] 跳过' "$MODULE_DIR/customize.sh"
   ! grep -q 'am start -a android.intent.action.VIEW' "$MODULE_DIR/customize.sh"
   grep -q 'getevent -lq > "\$INSTALL_TMP/keys"' "$MODULE_DIR/customize.sh"
 }

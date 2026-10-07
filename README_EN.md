@@ -96,7 +96,7 @@ Release and CI builds provide one package: `NetProxy_<version>_<build>.zip`. It 
 1. Download the latest ZIP from [Releases](https://github.com/Fanju6/NetProxy-Magisk/releases).
 2. Flash it with Magisk, KernelSU, or APatch.
 3. On an existing installation, choose **Keep existing data**, **Keep nodes and subscriptions only**, or **Fresh installation**. Volume Up cycles through the choices; Volume Down confirms. Without input, existing data is kept by default.
-4. For the manager, Volume Up installs or updates, Volume Down skips, and no input for 10 seconds defaults to installation. Existing installations are not automatically skipped. Installation failures do not block the module installation or uninstall the existing app.
+4. For the manager, Volume Up cycles between install/update and skip; Volume Down confirms. No input for 10 seconds defaults to installation; after changing the selection, not confirming within 20 seconds cancels the installation. Existing installations are not automatically skipped. Installation failures do not block the module installation or uninstall the existing app.
 5. A live installation is applied without a reboot. Recovery installation still requires a reboot.
 6. Import and select a node before starting the service.
 

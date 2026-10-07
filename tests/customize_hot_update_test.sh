@@ -97,20 +97,41 @@ assert_value() { grep -Fxq "$2" "$1"; }
 # 返回: 0=JSON 快照匹配，1=内容不一致或文件不可读。
 assert_inbound() { assert_value "$1" "$(inbound_fixture "$2")"; }
 
+# 参数: $1 等待秒数。
+# 返回: 0=写入下一个测试按键，1=模拟读取失败。
+next_test_key() {
+  printf '%s\n' "$1" >> "$WORKDIR/timeouts"
+  VOLUME_KEY="${CHOICES%% *}"
+  if [ "$CHOICES" = "$VOLUME_KEY" ]; then CHOICES=timeout; else CHOICES="${CHOICES#* }"; fi
+  [ "$VOLUME_KEY" != error ]
+}
+
+test_title_spacing() (
+  for title in '选择安装方式' '准备安装' '安装 NetProxy 管理器' '安装模块' '安装完成'; do
+    { print_title "$title"; print_step '内容'; } > "$WORKDIR/title"
+    awk '
+      NR == 1 || NR == 5 { if ($0 != "") exit 1 }
+      NR == 2 { border = $0 }
+      NR == 4 { if ($0 != border) exit 1 }
+      NR == 6 { if ($0 != "▶ 内容") exit 1 }
+      END { if (NR != 6) exit 1 }
+    ' "$WORKDIR/title"
+  done
+)
+
 test_install_choices() (
   reset_modules
-  wait_volume_key() {
-    printf '%s\n' "$1" >> "$WORKDIR/timeouts"
-    VOLUME_KEY="${CHOICES%% *}"
-    if [ "$CHOICES" = "$VOLUME_KEY" ]; then CHOICES=timeout; else CHOICES="${CHOICES#* }"; fi
-  }
+  wait_volume_key() { next_test_key "$@"; }
   for pair in 'timeout:preserve' 'down:preserve' 'up down:nodes' \
     'up up down down:fresh' 'up up up down:preserve' 'up up down up down:preserve'; do
     CHOICES="${pair%:*}"
     choose_install_mode > "$WORKDIR/menu"
     [ "$INSTALL_MODE" = "${pair##*:}" ]
+    [ "$(sed -n '5p' "$WORKDIR/menu")" = '' ]
+    [ "$(sed -n '6p' "$WORKDIR/menu")" = '  1. 保留现有数据（默认）' ]
+    grep -Fq '[音量+] 循环选择  [音量-] 确认' "$WORKDIR/menu"
   done
-  for CHOICES in 'up timeout' 'up up timeout' 'up up down timeout'; do
+  for CHOICES in 'up timeout' 'up up timeout' 'up up down timeout' 'up up down up timeout' 'error'; do
     if choose_install_mode > "$WORKDIR/menu"; then
       printf '%s\n' '操作后超时不能自动确认安装' >&2
       exit 1
@@ -324,19 +345,23 @@ test_manager_install() (
     fi
   }
   dumpsys() { printf 'unexpected dumpsys call\n' >> "$CALL_LOG"; return 1; }
-  wait_volume_key() { VOLUME_KEY="$CHOICE"; }
+  wait_volume_key() { next_test_key "$@"; }
   if install_bundled_manager > "$WORKDIR/manager"; then exit 1; fi
   grep -Fq '安装 NetProxy 管理器' "$WORKDIR/manager"
   grep -Fq '缺少' "$WORKDIR/manager"
   [ ! -s "$CALL_LOG" ]
   : > "$STAGE/NetProxy.apk"
   if install_bundled_manager > "$WORKDIR/manager"; then exit 1; fi
-  for CHOICE in down timeout up; do
+  for pair in 'down:install' 'timeout:install' 'up down:skip' 'up up down:install'; do
+    CHOICES="${pair%:*}"
     : > "$CALL_LOG"
     printf 'manager fixture\n' > "$STAGE/NetProxy.apk"
     install_bundled_manager > "$WORKDIR/manager"
     [ ! -e "$STAGE/NetProxy.apk" ]
-    if [ "$CHOICE" = down ]; then
+    [ "$(sed -n '5p' "$WORKDIR/manager")" = '' ]
+    [ "$(sed -n '6p' "$WORKDIR/manager")" = '  1. 安装或更新管理器（默认）' ]
+    grep -Fq '[音量+] 循环选择  [音量-] 确认' "$WORKDIR/manager"
+    if [ "${pair##*:}" = skip ]; then
       [ ! -s "$CALL_LOG" ]
       grep -Fq '已跳过管理器安装' "$WORKDIR/manager"
     else
@@ -345,18 +370,32 @@ test_manager_install() (
       grep -Fq '管理器安装成功' "$WORKDIR/manager"
     fi
   done
+  for CHOICES in 'up timeout' 'error'; do
+    : > "$CALL_LOG"
+    printf 'manager fixture\n' > "$STAGE/NetProxy.apk"
+    if install_bundled_manager > "$WORKDIR/manager"; then exit 1; fi
+    [ ! -s "$CALL_LOG" ]
+    [ -f "$STAGE/NetProxy.apk" ]
+    assert_value "$LIVE/config/module.conf" current-module
+  done
   # 重复安装仍直接调用覆盖安装，不读取已安装版本或自动跳过。
+  CHOICES=down
+  : > "$CALL_LOG"
+  printf 'manager fixture\n' > "$STAGE/NetProxy.apk"
+  install_bundled_manager > "$WORKDIR/manager"
+  CHOICES=down
   printf 'manager fixture\n' > "$STAGE/NetProxy.apk"
   install_bundled_manager > "$WORKDIR/manager"
   [ "$(wc -l < "$CALL_LOG")" -eq 2 ]
   MANAGER_INSTALL_EXIT=1
-  CHOICE=up
+  CHOICES=down
   printf 'manager fixture\n' > "$STAGE/NetProxy.apk"
   install_bundled_manager > "$WORKDIR/manager"
   grep -Fq '管理器安装失败' "$WORKDIR/manager"
   grep -Fq 'INSTALL_FAILED_UPDATE_INCOMPATIBLE' "$WORKDIR/manager"
   grep -Fq '未卸载或清除现有应用' "$WORKDIR/manager"
   [ ! -e "$STAGE/NetProxy.apk" ]
+  CHOICES=timeout
   printf 'manager fixture\n' > "$STAGE/NetProxy.apk"
   rm() { return 1; }
   if install_bundled_manager > "$WORKDIR/manager"; then exit 1; fi
@@ -595,6 +634,7 @@ test_installer_entrypoints() (
   ! grep -q '^service start$' "$CALL_LOG"
 )
 
+test_title_spacing
 test_install_choices
 test_key_events
 test_key_output_descriptor
