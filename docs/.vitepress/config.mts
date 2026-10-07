@@ -4,7 +4,7 @@ const siteUrl = 'https://www.netproxy.store'
 
 export default defineConfig({
   title: 'NetProxy',
-  description: 'Android sing-box 透明代理模块，支持 eBPF 或 Root TUN、节点与订阅、分应用代理和共享网络。',
+  description: 'Android sing-box 透明代理模块，支持 eBPF 与 TUN、节点与订阅、分应用代理和共享网络。',
   lang: 'zh-CN',
   base: '/',
   cleanUrls: true,
@@ -15,13 +15,9 @@ export default defineConfig({
 
   head: [
     ['link', { rel: 'icon', href: '/N.svg' }],
-    ['link', { rel: 'canonical', href: siteUrl }],
     ['meta', { name: 'theme-color', content: '#008a73' }],
     ['meta', { property: 'og:type', content: 'website' }],
     ['meta', { property: 'og:site_name', content: 'NetProxy' }],
-    ['meta', { property: 'og:title', content: 'NetProxy' }],
-    ['meta', { property: 'og:description', content: 'Android sing-box 透明代理模块' }],
-    ['meta', { property: 'og:url', content: siteUrl }],
     ['meta', { property: 'og:image', content: `${siteUrl}/Screenshot.jpg` }],
     ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
     [
@@ -34,6 +30,18 @@ export default defineConfig({
     ]
   ],
 
+  transformPageData(pageData, { siteConfig }) {
+    const path = pageData.relativePath.replace(/(^|\/)index\.md$/, '/').replace(/\.md$/, '')
+    const url = new URL(path, `${siteUrl}/`).href
+    pageData.frontmatter.head = [
+      ...(pageData.frontmatter.head ?? []),
+      ['link', { rel: 'canonical', href: url }],
+      ['meta', { property: 'og:url', content: url }],
+      ['meta', { property: 'og:title', content: pageData.title || siteConfig.site.title }],
+      ['meta', { property: 'og:description', content: pageData.description || siteConfig.site.description }]
+    ]
+  },
+
   themeConfig: {
     logo: '/N.svg',
     siteTitle: 'NetProxy',
@@ -41,17 +49,34 @@ export default defineConfig({
     nav: [
       { text: '开始使用', link: '/guide/introduction' },
       { text: '配置参考', link: '/config/module' },
-      {
-        text: '互动工具',
-        items: [
-          { text: '莫奈调色器', link: '/tools/monet' },
-          { text: '祈愿模拟器', link: '/tools/gacha' }
-        ]
-      },
       { text: '更新日志', link: '/changelog' },
-      { text: '设备统计', link: '/statistics' },
-      { text: '奶屁伙伴', link: '/mascot/' },
-      { text: 'GitHub', link: 'https://github.com/Fanju6/NetProxy-Magisk' }
+      {
+        text: '更多',
+        items: [
+          {
+            text: '项目',
+            items: [
+              { text: '设备统计', link: '/statistics' },
+              { text: '设计理念', link: '/guide/philosophy' }
+            ]
+          },
+          {
+            text: '奶屁伙伴',
+            items: [
+              { text: '伙伴介绍', link: '/mascot/' },
+              { text: '表情包', link: '/mascot/stickers' },
+              { text: '股东名册', link: '/mascot/supporters' }
+            ]
+          },
+          {
+            text: '互动工具',
+            items: [
+              { text: '莫奈调色器', link: '/tools/monet' },
+              { text: '祈愿模拟器', link: '/tools/gacha' }
+            ]
+          }
+        ]
+      }
     ],
 
     sidebar: {
@@ -110,7 +135,7 @@ export default defineConfig({
             { text: 'module.conf', link: '/config/module' },
             { text: '入站配置', link: '/config/inbound' },
             { text: 'eBPF 原生参数', link: '/config/ebpf' },
-            { text: 'Root TUN 原生参数', link: '/config/tun' },
+            { text: 'TUN 原生参数', link: '/config/tun' },
             { text: 'sing-box 配置与运行时', link: '/config/singbox' },
             { text: '路由与 DNS', link: '/config/routing' },
             { text: '策略分组配置', link: '/config/policy-groups' },

@@ -1,6 +1,10 @@
-# Root TUN 原生参数
+---
+description: NetProxy TUN 入站的原生参数、接口筛选、DNS 接管、路由范围与 pre-match 绕过规则。
+---
 
-TUN 是 sing-box 的透明代理入站，使用 Root 与 `auto_redirect`，不是 Android VpnService。参数保存在 `config/inbound/inbound.json` 的 `tun` 对象；切换方法见 [入站配置](/config/inbound)。
+# TUN 原生参数
+
+TUN 是 sing-box 的透明代理入站，在 NetProxy 中通过 Root 权限运行 `auto_route` 与 `auto_redirect`，接管本机及共享网络流量。参数保存在 `config/inbound/inbound.json` 的 `tun` 对象；切换方法见 [入站配置](/config/inbound)。
 
 ## 默认参数
 

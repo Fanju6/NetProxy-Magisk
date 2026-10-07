@@ -8,11 +8,12 @@ const historyAllowlist = new Set([
   'guide/upgrade-v7.md'
 ])
 const bannedCurrentPhrases = [
-  /Android 8\.0/,
+  /Android\s+8\.0\s+sing-box/i,
   /NetProxy 8\.0/,
   /当前 8\.0/,
   /测试阶段/,
   /测试版文档/,
+  /root\s+tun/i,
   /以 reF1nd[^。\n]*为核心/
 ]
 
@@ -49,7 +50,7 @@ for (const file of markdownFiles) {
 
   if (!historyAllowlist.has(name)) {
     for (const pattern of bannedCurrentPhrases) {
-      if (pattern.test(content)) failures.push(`${name}: 当前文档包含版本绑定文案 ${pattern}`)
+      if (pattern.test(content)) failures.push(`${name}: 当前文档包含过期表述 ${pattern}`)
     }
   }
 

@@ -1,3 +1,7 @@
+---
+description: 使用 Android 管理器导入节点、添加订阅、选择节点并启动 NetProxy。
+---
+
 # 快速开始
 
 推荐先用 Android 管理器完成第一次配置。CLI 适合没有管理器的环境和高级排查。
@@ -34,7 +38,7 @@
 | 入口 | 可配置内容 |
 |---|---|
 | 仪表盘 → 出站模式 | 规则、全局、直连或允许广告模式 |
-| 设置 → 入站设置 | eBPF / Root TUN、DNS 接管、IPv6、接口、绕过与分应用代理，详见[入站配置](/config/inbound) |
+| 设置 → 入站设置 | eBPF / TUN、DNS 接管、IPv6、接口、绕过与分应用代理，详见[入站配置](/config/inbound) |
 | 设置 → 网络匹配 | Wi-Fi 名称匹配与非 Wi-Fi 网络策略，详见[Wi-Fi 自动策略](/guide/wifi-policy) |
 | 设置 → 内核配置 | sing-box 主配置、DNS、路由与本地规则，详见[配置参考](/config/singbox) |
 

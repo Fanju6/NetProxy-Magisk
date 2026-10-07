@@ -22,7 +22,7 @@
 
 ## 运行要求
 
-- Android 12 或更高版本
+- Android 8.0（API 26）或更高版本
 - `arm64-v8a` 设备
 - Magisk、KernelSU 或 APatch Root 环境
 - 已安装兼容版本的 NetProxy 模块

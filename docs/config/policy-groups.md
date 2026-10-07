@@ -1,8 +1,12 @@
+---
+description: 在 NetProxy 中创建地区与业务策略分组，配置规则集、路由并在面板中切换出口。
+---
+
 # 策略分组配置教程
 
 NetProxy 默认按节点来源生成 `Auto/<分组>` 和 `Select/<分组>`。如果希望进一步按地区整理节点，并为 AI、流媒体或社交应用单独选择出口，可以在 sing-box 配置中增加策略分组。
 
-本教程从零建立一套最小配置，再说明如何继续扩展。完成后可以得到这样的流量路径：
+本教程从零建立一套最小配置，再说明如何继续扩展。节点按以下关系组织：
 
 ```text
 本地节点与订阅
@@ -12,9 +16,9 @@ Catalog Provider
 地区分组
       ↓
 业务分组
-      ↓
-路由规则
 ```
+
+实际流量由路由规则送入业务分组，再按分组的选择使用代理节点或直连。
 
 策略分组只引用 NetProxy 已有的 Provider，不会复制节点，也不会创建新的 Catalog 分组。
 
@@ -65,8 +69,8 @@ Catalog Provider
 ```json
 {
   "rule_set": [
-    "netflix",
-    "netflix-ip"
+    "geosite/netflix",
+    "geoip/netflix"
   ],
   "action": "route",
   "outbound": "Netflix"
@@ -186,7 +190,7 @@ Catalog Provider
 su -c 'mkdir -p /sdcard/Download/NetProxy-backup && cp /data/adb/modules/netproxy/config/singbox/config.json /sdcard/Download/NetProxy-backup/config.json'
 ```
 
-如果主配置已经有自定义 `outbounds`，先在“内核设置 → 自定义出站”中取出原内容，把上述分组追加到已有数组后再保存，不要覆盖原有出站。后续路由也应在现有规则上扩展。
+如果主配置已经有自定义 `outbounds`，先在“设置 → 内核配置 → 主配置 → 自定义出站”中取出原内容，把上述分组追加到已有数组后再保存，不要覆盖原有出站。后续路由也应在现有规则上扩展。
 
 ## 第四步：加入策略分组
 
@@ -198,14 +202,14 @@ su -c '/data/adb/modules/netproxy/netproxyctl config apply singbox/outbounds /sd
 
 `config apply` 会把候选 `outbounds` 放入主配置，与 Catalog Provider 和运行时出站一起检查。通过后原子保存主配置；核心正在运行时会自动重新加载。其他顶层字段不受影响。
 
-后续在 Android 管理器“内核设置 → 自定义出站”中修改即可。候选文件只是导入输入，不会作为独立配置文件部署到模块。
+后续在 Android 管理器“设置 → 内核配置 → 主配置 → 自定义出站”中修改即可。候选文件只是导入输入，不会作为独立配置文件部署到模块。
 
 ## 第五步：添加业务规则集
 
 在 Android 管理器中打开：
 
 ```text
-设置 → 内核设置 → 路由
+设置 → 内核配置 → 主配置 → 路由
 ```
 
 找到 `route.rule_set` 中使用 `https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/{tag}.srs` 的远程规则项，在它的 `tag` 数组末尾追加 `geosite/netflix` 与 `geoip/netflix`。保留其他字段和原有标签，完整数组如下：

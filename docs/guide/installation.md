@@ -1,12 +1,16 @@
+---
+description: NetProxy 的设备要求、模块安装、数据保留方式、管理器安装与升级步骤。
+---
+
 # 安装与升级
 
 ## 安装前准备
 
-- Android 12 或更高版本的 `arm64-v8a` 设备
+- `arm64-v8a` Android 设备；使用管理器需 Android 8.0（API 26）或更高版本
 - Magisk、KernelSU 或 APatch，以及可用的 Root 权限
-- 满足所选 eBPF 或 Root TUN 入站要求的内核与网络能力
+- 满足所选 eBPF 或 TUN 入站要求的内核与网络能力
 
-默认选择 eBPF；需要 BPF、cgroup/TC 等相应数据平面能力。Root TUN 使用 auto_route 与 auto_redirect，需要目标设备具备相应 TUN、路由、iptables/ip6tables 和 NFQUEUE 能力。不会在失败后自动切换后端，要求与验证边界见[入站配置](/config/inbound)。
+默认使用 eBPF，需要 BPF、cgroup/TC 等相应数据平面能力。TUN 使用 `auto_route` 与 `auto_redirect`，需要目标设备具备相应 TUN、路由、iptables/ip6tables 和 NFQUEUE 能力。要求与验证边界见[入站配置](/config/inbound)。
 
 ## 安装包
 
