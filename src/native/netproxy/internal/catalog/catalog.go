@@ -90,7 +90,6 @@ type RuntimeResult struct {
 	ActiveGroupTag  string `json:"active_group_tag"`
 	SelectorMode    string `json:"selector_mode"`
 	SelectedNodeRef string `json:"selected_node_ref"`
-	OutboundMode    string `json:"outbound_mode,omitempty"`
 	GroupCount      int    `json:"group_count"`
 	NodeCount       int    `json:"node_count"`
 }
@@ -280,7 +279,6 @@ func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, e
 		return RuntimeResult{}, err
 	}
 	defer release()
-	outboundMode := ""
 	if options.ModuleConfig != "" {
 		module, err := moduleconfig.LoadModule(options.ModuleConfig)
 		if err != nil {
@@ -289,7 +287,6 @@ func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, e
 		options.ActiveGroup = module.ActiveGroupID
 		options.SelectorMode = module.SelectorMode
 		options.SelectedNodeRef = module.SelectedNodeRef
-		outboundMode = module.OutboundMode
 	}
 	groups, err := loadGroups(ctx, options.Root, false)
 	if err != nil {
@@ -302,7 +299,7 @@ func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, e
 		if err := writeEmptyRuntime(options); err != nil {
 			return RuntimeResult{}, err
 		}
-		return RuntimeResult{SelectorMode: "urltest", OutboundMode: outboundMode}, nil
+		return RuntimeResult{SelectorMode: "urltest"}, nil
 	}
 
 	assignRuntimeTags(groups)
@@ -350,7 +347,6 @@ func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, e
 		ActiveGroupTag:  groups[activeIndex].RuntimeTag,
 		SelectorMode:    selector,
 		SelectedNodeRef: selected,
-		OutboundMode:    outboundMode,
 		GroupCount:      len(groups),
 		NodeCount:       nodeCount,
 	}

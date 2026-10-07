@@ -13,6 +13,7 @@ import (
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/inbound"
 	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 )
 
@@ -39,6 +40,9 @@ type commandHandler func(context.Context, []string) error
 
 func (c *cli) runCommand(ctx context.Context, handler commandHandler, args ...string) int {
 	if err := handler(ctx, args); err != nil {
+		if structured, ok := errors.AsType[*service.Error](err); ok {
+			return c.failData(structured.Code, structured.Message, structured.Data, 1)
+		}
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return c.fail("command.timeout", "命令执行超时", 124)
 		}
@@ -76,7 +80,7 @@ func (c *cli) help() {
   netproxyctl [--json] [--timeout <秒|时长>] catalog list|show <分组>
   netproxyctl [--json] [--timeout <秒|时长>] node list|current|show|get|export|delay|add|import|edit|remove|use
   netproxyctl [--json] [--timeout <秒|时长>] sub list|show|add|edit|update|update-all|activate|remove|history|cancel
-  netproxyctl [--json] [--timeout <秒|时长>] mode [rule|global|direct|AllowAds]
+  netproxyctl [--json] [--timeout <秒|时长>] mode [模式名称]（不带参数列出配置中的模式）
   netproxyctl [--json] [--timeout <秒|时长>] network evaluate --type <wifi|not_wifi> [--ssid <名称>]
   netproxyctl [--json] [--timeout <秒|时长>] app list|mode|add|remove|enable|disable
   netproxyctl [--json] [--timeout <秒|时长>] ebpf status [configured|all|local|shared] [--raw]

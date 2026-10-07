@@ -16,7 +16,6 @@ import (
 // ModuleConfig 描述 module.conf 中由运行时使用的全部设置。
 type ModuleConfig struct {
 	AutoStart       bool   `json:"auto_start"`
-	OutboundMode    string `json:"outbound_mode"`
 	SelectorMode    string `json:"selector_mode"`
 	ActiveGroupID   string `json:"active_group_id"`
 	SelectedNodeRef string `json:"selected_node_ref"`
@@ -29,7 +28,6 @@ type ModuleConfig struct {
 // DefaultModule 返回全新配置使用的唯一默认值集合。
 func DefaultModule() ModuleConfig {
 	return ModuleConfig{
-		OutboundMode:    "rule",
 		SelectorMode:    "urltest",
 		ActiveGroupID:   "default",
 		WiFiSSIDMode:    "blacklist",
@@ -77,7 +75,7 @@ func LoadModule(path string) (ModuleConfig, error) {
 		return ModuleConfig{}, err
 	}
 	allowed := map[string]bool{
-		"AUTO_START": true, "OUTBOUND_MODE": true, "SELECTOR_MODE": true,
+		"AUTO_START": true, "SELECTOR_MODE": true,
 		"ACTIVE_GROUP_ID": true, "SELECTED_NODE_REF": true,
 		"WIFI_AUTO_SWITCH": true, "WIFI_SSID_MODE": true,
 		"WIFI_SSID_LIST": true, "PROXY_ON_CELLULAR": true,
@@ -90,9 +88,6 @@ func LoadModule(path string) (ModuleConfig, error) {
 	config := DefaultModule()
 	if config.AutoStart, err = boolValue(values, "AUTO_START", config.AutoStart); err != nil {
 		return ModuleConfig{}, err
-	}
-	if config.OutboundMode = valueOr(values, "OUTBOUND_MODE", config.OutboundMode); config.OutboundMode != "rule" && config.OutboundMode != "global" && config.OutboundMode != "direct" && config.OutboundMode != "AllowAds" {
-		return ModuleConfig{}, fmt.Errorf("OUTBOUND_MODE 无效: %s", config.OutboundMode)
 	}
 	if config.SelectorMode = valueOr(values, "SELECTOR_MODE", config.SelectorMode); config.SelectorMode != "urltest" && config.SelectorMode != "manual" {
 		return ModuleConfig{}, fmt.Errorf("SELECTOR_MODE 无效: %s", config.SelectorMode)

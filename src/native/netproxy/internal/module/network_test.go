@@ -17,12 +17,11 @@ func TestContainsSSID(t *testing.T) {
 	}
 }
 
-func TestEvaluateNetworkPersistsModeAndState(t *testing.T) {
+func TestEvaluateNetworkPreservesDefaultAndPersistsPolicyState(t *testing.T) {
 	root := t.TempDir()
 	modulePath := filepath.Join(root, "module.conf")
 	statePath := filepath.Join(root, "wifi_state")
 	content := `AUTO_START=1
-OUTBOUND_MODE=rule
 SELECTOR_MODE=urltest
 ACTIVE_GROUP_ID=default
 SELECTED_NODE_REF=""
@@ -35,6 +34,7 @@ PROXY_ON_CELLULAR=1
 		t.Fatal(err)
 	}
 	options := newTestOptions(root)
+	writeModeConfig(t, options, "Rule")
 	options.ModuleConfig = modulePath
 	options.WiFiStateFile = statePath
 	options.SingBoxPath = filepath.Join(root, "missing-sing-box")
@@ -43,7 +43,7 @@ PROXY_ON_CELLULAR=1
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Target != "bypassed" || result.DesiredMode != "direct" || !result.Changed {
+	if result.Target != "bypassed" || result.DesiredMode != "Direct" || !result.Changed {
 		t.Fatalf("黑名单网络评估错误: %+v", result)
 	}
 	if value, _ := os.ReadFile(statePath); string(value) != "bypassed\n" {
@@ -61,7 +61,7 @@ PROXY_ON_CELLULAR=1
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Target != "proxying" || result.DesiredMode != "rule" {
+	if result.Target != "proxying" || result.DesiredMode != "Rule" {
 		t.Fatalf("代理网络评估错误: %+v", result)
 	}
 
@@ -79,7 +79,6 @@ func TestEvaluateNetworkClearsDisabledOverride(t *testing.T) {
 	modulePath := filepath.Join(root, "module.conf")
 	statePath := filepath.Join(root, "wifi_state")
 	content := `AUTO_START=1
-OUTBOUND_MODE=rule
 SELECTOR_MODE=urltest
 ACTIVE_GROUP_ID=default
 SELECTED_NODE_REF=""
@@ -96,6 +95,7 @@ PROXY_ON_CELLULAR=1
 	}
 
 	options := newTestOptions(root)
+	writeModeConfig(t, options, "Rule")
 	options.ModuleConfig = modulePath
 	options.WiFiStateFile = statePath
 	options.SingBoxPath = filepath.Join(root, "missing-sing-box")

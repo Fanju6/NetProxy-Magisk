@@ -37,7 +37,8 @@
 - Service API 与 Clash API 的固定监听和密钥位于 `config/singbox/config.json` 的 `services` 与 `experimental.clash_api`。不要重新引入运行时随机 bootstrap，现有 WebUI 依赖固定入口。
 - 服务状态只允许 `stopped/preparing/starting/ready/stopping/failed`。`ready_at` 只能在 sing-box API 与所选入站均就绪后写入。
 - `service status` 的 `configured_backend` 是入站持久选择字符串；`active_backend` 仅在 ready、实际 PID 与启动记录匹配、API 毫秒级启动身份一致时非空，否则必须为 null。不从当前模板猜测旧核心后端，也不增加后端 PID/锁/状态文件。
-- `service status` 的 `outbound_mode` 表示核心当前实际生效模式；用户在 `module.conf` 中保存的基础模式由 `configured_outbound_mode` 表示。Wi-Fi 自动切换不得覆盖基础模式。
+- 出站模式的唯一持久事实源是主配置 `experimental.clash_api.default_mode`；可选列表复用内核 `clashmode.CalculateModeList` 并包含默认模式，使用原生名称，不保留模块字段或固定四模式映射。`service status.outbound_mode` 表示实际模式，`configured_outbound_mode` 表示默认模式，`available_outbound_modes` 表示配置中的模式列表。停止时显示默认模式；运行中 API 不可用时显示 `unknown`。Wi-Fi 策略只修改运行时，不覆盖默认模式。
+- 模式保存与网络策略应用按生命周期锁、配置文件锁顺序串行执行；运行中仅使用 API 并回读确认，失败保留已保存默认模式并返回 `mode.runtime_sync_failed`，不得重载兜底。内核会恢复缓存模式，启动和重载必须在写入 ready 前校准当前网络所需模式；不能删除缓存或禁用其他缓存功能来规避模式恢复。
 
 ## 命令入口与脚本布局
 
@@ -212,7 +213,8 @@ NetProxy 不维护通用独立控制守护进程。唯一长期 Go 进程是模�
 | 数据 | 唯一事实源 | 说明 |
 |---|---|---|
 | 模块版本 | `src/module/module.prop` | `versionCode` 由打包工作流写入 |
-| 模块设置 | `src/module/config/module.conf` | 保存活动分组、选择模式和出站模式 |
+| 模块设置 | `src/module/config/module.conf` | 保存活动分组、节点选择和 Wi-Fi 策略 |
+| 默认出站模式 | `config/singbox/config.json` 的 `experimental.clash_api.default_mode` | 可选模式来自 route/DNS 规则与默认模式；API 报告运行时实际模式 |
 | 设备统计队列 | `config/telemetry/state.json` | 每日去重和离线队列；设备身份由 Worker 从系统派生，不作为用户配置展示 |
 | 入站与应用策略 | `src/module/config/inbound/inbound.json` | backend、app 与 eBPF/TUN 原生对象；只生成当前所选入站 |
 | 节点与订阅 | `src/module/data/catalog/<group-id>/` | `meta.json` + `provider.json` |
@@ -262,13 +264,12 @@ data/catalog/
 ACTIVE_GROUP_ID="default"
 SELECTOR_MODE=urltest
 SELECTED_NODE_REF=""
-OUTBOUND_MODE=rule
 ```
 
 - 自动模式下 `SELECTED_NODE_REF` 必须为空，实际选中节点由 Service API 报告。
 - 手动模式保存 `<group-id>/<tag>`，不保存文件路径。
 - 手动节点在 Provider 更新后消失时回退该组 Auto。
-- 出站模式支持 `rule`、`global`、`direct` 和 `AllowAds`，客户端必须保持同一顺序和语义。
+- 出站模式使用主配置与内核生成的原生列表；客户端翻译已知模式的显示文案，自定义名称原样显示。模式切换保存默认值，当前 Wi-Fi 绕过策略仍可使实际模式为 `Direct`。
 
 ## 订阅事务
 
@@ -307,7 +308,7 @@ stopped -> preparing -> starting -> ready -> stopping -> stopped
 2. 生成 providers、outbounds 与唯一 inbound runtime 配置。
 3. 运行 sing-box 配置检查。
 4. 启动 sing-box 并等待 Service API 与当前所选入站就绪，记录实际 backend 与实例身份。
-5. 写入 `ready_at`，客户端从此时开始显示完整运行时间。
+5. 校准实际出站模式，消除缓存覆盖并应用当前网络策略，再写入 `ready_at`。
 
 eBPF 与 TUN 只负责透明代理入站。停止服务由 sing-box 关闭并清理当前入站的程序、Map、TC 挂载或 TUN 与路由规则；PID 消失不代表接管资源必然清理。切换不新增 switching 状态，也不创建第二个核心或 Worker。
 

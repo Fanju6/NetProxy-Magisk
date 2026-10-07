@@ -32,6 +32,7 @@ internal data class CatalogDashboardUiState(
     val readyAt: Long = 0,
     val uptimeSeconds: Long = 0,
     val outboundMode: String = "unknown",
+    val availableOutboundModes: List<String> = emptyList(),
     val activeGroupId: String = "",
     val currentNode: String = "",
     val downloadBytesPerSecond: Long = 0,
@@ -125,7 +126,7 @@ internal class CatalogDashboardViewModel(
     }
 
     fun setMode(mode: String) {
-        if (!canControlService()) return
+        if (!canControlService() || mode !in _state.value.availableOutboundModes) return
         runOperation("mode") {
             repository.setMode(mode)
             UiText.Resource(R.string.dashboard_mode_changed)

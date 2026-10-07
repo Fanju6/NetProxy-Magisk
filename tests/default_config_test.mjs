@@ -28,7 +28,14 @@ test('默认配置仅保留部署与运行时生成所需的上游差异', () =>
   for (const rule of expected.route.rule_set) {
     rule.path = rule.path.replace('./source/rule_set/', './rules/remote/').replace('./source/', './rules/local/')
   }
+  expected.route.rules.push({ clash_mode: 'Rule', action: 'route', outbound: expected.route.final })
   assert.deepEqual(config, expected)
+})
+
+test('默认规则显式提供 Rule，保存其他默认模式后仍可切回', () => {
+  const rule = config.route.rules.at(-1)
+  assert.deepEqual(rule, { clash_mode: 'Rule', action: 'route', outbound: config.route.final })
+  assert.equal(config.experimental.clash_api.default_mode, 'Rule')
 })
 
 test('默认远程规则有对应的内置文件与更新来源', () => {

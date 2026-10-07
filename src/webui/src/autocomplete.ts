@@ -19,7 +19,7 @@ function lcp(items: string[]): string {
   return p
 }
 
-export function complete(input: string, knownGroups: string[] = [], knownSubs: string[] = []): CompletionResult {
+export function complete(input: string, knownGroups: string[] = [], knownSubs: string[] = [], knownModes: string[] = []): CompletionResult {
   if (input.startsWith('!')) return { completed: input, candidates: [] }
   const parsed = parseCommandTokens(input)
   const toks = parsed.map(token => token.value)
@@ -32,7 +32,7 @@ export function complete(input: string, knownGroups: string[] = [], knownSubs: s
   if (n === 0) {
     cands = ROOT_COMPLETIONS.filter(c => c.startsWith(cur))
   } else if (n === 1) {
-    cands = (toks[0] === 'help' ? HELP_TOPICS : COMMANDS[toks[0] as CommandName]?.actions || []).filter(c => c.startsWith(cur))
+    cands = (toks[0] === 'help' ? HELP_TOPICS : toks[0] === 'mode' ? knownModes : COMMANDS[toks[0] as CommandName]?.actions || []).filter(c => c.startsWith(cur))
   } else if (n >= 2) {
     const [cmd, sub] = toks
     if (cmd === 'node' && (sub === 'use' || sub === 'delay')) {

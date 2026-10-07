@@ -20,7 +20,7 @@ ${COMMAND_NAMES.map(name => `  ${COMMANDS[name].overview}`).join('\n')}
 示例:
   service start
   node use auto default
-  mode rule
+  mode Rule
   sub update-all
   node delay auto default
 

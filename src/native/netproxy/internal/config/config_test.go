@@ -50,7 +50,7 @@ func TestReadStrictRejectsShellLikeInputAndDuplicateKeys(t *testing.T) {
 
 func TestLoadModuleDefaultsAndValidation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "module.conf")
-	content := "AUTO_START=0\nOUTBOUND_MODE=AllowAds\nSELECTOR_MODE=urltest\nACTIVE_GROUP_ID=default\nSELECTED_NODE_REF=\nWIFI_AUTO_SWITCH=1\nWIFI_SSID_MODE=whitelist\nWIFI_SSID_LIST=TestWiFi\nPROXY_ON_CELLULAR=0\n"
+	content := "AUTO_START=0\nSELECTOR_MODE=urltest\nACTIVE_GROUP_ID=default\nSELECTED_NODE_REF=\nWIFI_AUTO_SWITCH=1\nWIFI_SSID_MODE=whitelist\nWIFI_SSID_LIST=TestWiFi\nPROXY_ON_CELLULAR=0\n"
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestLoadModuleDefaultsAndValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !config.WiFiAutoSwitch || config.OutboundMode != "AllowAds" || config.WiFiSSIDMode != "whitelist" || config.ProxyOnCellular {
+	if !config.WiFiAutoSwitch || config.WiFiSSIDMode != "whitelist" || config.ProxyOnCellular {
 		t.Fatalf("unexpected module config: %#v", config)
 	}
 
@@ -67,6 +67,13 @@ func TestLoadModuleDefaultsAndValidation(t *testing.T) {
 	}
 	if _, err := LoadModule(path); err == nil {
 		t.Fatal("expected unknown module key to fail")
+	}
+
+	if err := os.WriteFile(path, []byte("OUTBOUND_MODE=rule\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadModule(path); err == nil {
+		t.Fatal("接受了已移除的模块出站模式字段")
 	}
 
 	for _, selector := range []string{"auto", "selector"} {
@@ -81,11 +88,11 @@ func TestLoadModuleDefaultsAndValidation(t *testing.T) {
 
 func TestUpdateModuleKeepsOriginalWhenCandidateIsInvalid(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "module.conf")
-	original := "AUTO_START=0\nOUTBOUND_MODE=rule\nACTIVE_GROUP_ID=default\n"
+	original := "AUTO_START=0\nACTIVE_GROUP_ID=default\n"
 	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := UpdateModule(context.Background(), path, map[string]string{"OUTBOUND_MODE": "invalid"}); err == nil {
+	if err := UpdateModule(context.Background(), path, map[string]string{"SELECTOR_MODE": "invalid"}); err == nil {
 		t.Fatal("expected typed update to fail")
 	}
 	content, err := os.ReadFile(path)

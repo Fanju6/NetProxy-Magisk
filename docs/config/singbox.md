@@ -35,6 +35,23 @@ runtime/           # 启动时生成的运行时配置
 
 运行时节点 Provider、Auto / Select / Proxy 选择器和受管透明代理入站由 Native 组件生成，不应在主配置中重复定义。主配置可添加 mixed、HTTP 等其他入站，但不能额外定义受管 eBPF/TUN 或占用 `netproxy-in`；冲突会明确报错。主配置可以增加独立命名的自定义出站和[策略分组](./policy-groups)。
 
+### 出站模式
+
+`experimental.clash_api.default_mode` 保存默认模式，默认配置为 `Rule`。可选模式由主配置中路由与 DNS 规则的 `clash_mode` 条件和默认模式共同决定，支持自定义名称。
+
+默认规则提供 `Rule`（规则分流）、`Global`（全局代理）、`Direct`（直连）和 `AllowAds`（允许广告）。模式的实际行为由对应规则决定；仅添加名称不会自动创建代理或直连规则。
+
+自定义配置应在规则中显式保留希望长期使用的模式。只作为 `default_mode` 存在、未被规则引用的名称，在改为其他默认模式后将不再出现在列表中。
+
+```sh
+su -c '/data/adb/modules/netproxy/netproxyctl mode'
+su -c '/data/adb/modules/netproxy/netproxyctl mode Global'
+```
+
+管理器和 WebUI 使用同一模式列表。切换模式会原子保存 `default_mode`；服务运行时，通过 API 应用当前网络策略并确认结果，不重载核心。同步失败会明确提示默认模式已经保存，运行中的核心未确认同步。
+
+Wi-Fi 策略只临时使用 `Direct` 或保存的默认模式，不写回主配置。sing-box 缓存仍正常使用；启动或重载后，NetProxy 会在服务就绪前校准实际模式，避免缓存覆盖默认模式或残留上次网络的绕过状态。
+
 ### 默认配置来源
 
 默认配置参考 [CHIZI-0618 的上游配置](https://gist.github.com/CHIZI-0618/35f59df7b17bf66ea988d775aaf76152/a950e96dbe9bea70a1cd7905c9d74b21bf0d86a0)。DNS 服务器、匹配顺序、规则集标签与模板、HTTP Client 和路由选项保持一致，包括 `find_process: true`；observability 不额外默认开启。
@@ -44,6 +61,7 @@ runtime/           # 启动时生成的运行时配置
 - 日志、缓存、Dashboard 与规则文件使用模块目录。
 - mixed 入站和两个 API 仅监听本机，端口保持 `7080`、`9999`（Clash）与 `9090`（Service）。
 - 不复制上游的示例 Provider、出站和 eBPF 入站，继续由 Catalog 与 `config/inbound/inbound.json` 生成。只输出选中的 eBPF 或 TUN，应用与接口策略按所选后端的原生语义生效。
+- 路由末尾显式保留 `Rule` 的 Proxy 兜底，与原 `route.final` 行为一致，便于修改默认模式后继续切回规则模式。
 
 远程规则使用 `geosite/` 与 `geoip/` 标签，内置文件放在 `rules/remote/geosite/` 与 `rules/remote/geoip/`。保留个人主配置时不会自动替换其规则标签；如需采用新默认规则，应同时更新主配置和入站 `ebpf.local.bypass_rule_set`、`ebpf.shared.bypass_rule_set`，默认绕过标签均为 `geoip/cn`。TUN 的接管/绕过规则集按其原生字段单独配置。
 

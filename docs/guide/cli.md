@@ -47,13 +47,15 @@ su -c '/data/adb/modules/netproxy/netproxyctl service restart'
 su -c '/data/adb/modules/netproxy/netproxyctl service reload'
 
 su -c '/data/adb/modules/netproxy/netproxyctl mode'
-su -c '/data/adb/modules/netproxy/netproxyctl mode rule'
-su -c '/data/adb/modules/netproxy/netproxyctl mode global'
-su -c '/data/adb/modules/netproxy/netproxyctl mode direct'
+su -c '/data/adb/modules/netproxy/netproxyctl mode Rule'
+su -c '/data/adb/modules/netproxy/netproxyctl mode Global'
+su -c '/data/adb/modules/netproxy/netproxyctl mode Direct'
 su -c '/data/adb/modules/netproxy/netproxyctl mode AllowAds'
 ```
 
-`service status.data.outbound_mode` 是核心当前实际模式；`configured_outbound_mode` 是保存的基础模式。Wi-Fi 策略只改变运行时结果，不覆盖基础模式。
+`mode` 返回主配置默认模式、可选模式及运行时实际模式。模式名称与内核一致，来自主配置规则，不限定为以上四种。
+
+`service status.data.outbound_mode` 是核心当前实际模式；`configured_outbound_mode` 来自主配置的 `experimental.clash_api.default_mode`，`available_outbound_modes` 是可选模式列表。服务停止时显示默认模式，运行时 API 不可用则显示 `unknown`。Wi-Fi 策略只改变运行时结果，不覆盖默认模式。
 
 `configured_backend` 是保存入站选择的字符串；`active_backend` 可为空，仅在 `ready`、实际 PID 与启动记录匹配、API 毫秒级启动身份一致时非空，否则为 `null`，不能用保存值猜测当前后端。
 

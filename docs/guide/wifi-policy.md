@@ -1,6 +1,6 @@
 # Wi-Fi 自动策略
 
-Wi-Fi 自动策略根据当前网络临时选择基础出站模式或 Direct，不会覆盖你保存的基础 `OUTBOUND_MODE`。
+Wi-Fi 自动策略根据当前网络临时使用默认出站模式或 `Direct`，不会覆盖主配置中保存的 `experimental.clash_api.default_mode`。
 
 ## 配置项
 
@@ -17,6 +17,8 @@ PROXY_ON_CELLULAR=1
 - 多个 SSID 使用英文逗号分隔。
 
 Android 管理器会以更直观的开关和名单编辑这些值。
+
+主配置需要包含 `Direct` 模式及其直连规则。自定义配置缺少该模式时，策略会报告错误，不自动新增规则或改变默认模式。
 
 ## 如何判断当前网络
 

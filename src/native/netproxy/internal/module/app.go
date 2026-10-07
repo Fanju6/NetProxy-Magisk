@@ -48,6 +48,7 @@ type Options struct {
 	WiFiStateFile      string
 	SkipServiceReload  bool
 	RequestTimeout     time.Duration
+	NetworkStateReader worker.NetworkStateReader
 	Telemetry          *telemetry.Reporter
 	configEditors      map[string]*moduleconfig.Editor
 }
@@ -341,38 +342,6 @@ func retryRuntimeSelection(ctx context.Context, client *serviceapi.Client, optio
 		lastErr = context.DeadlineExceeded
 	}
 	return lastErr
-}
-
-// ApplyMode 持久化出站模式，并优先使用 Service API 同步运行实例。
-func ApplyMode(ctx context.Context, options Options, mode string) (err error) {
-	persisted := false
-	defer func() { logOperation(options, "mode", "mode.apply", "出站模式切换", persisted, err) }()
-	if mode != "rule" && mode != "global" && mode != "direct" && mode != "AllowAds" {
-		return fmt.Errorf("未知出站模式: %s", mode)
-	}
-	if err := options.updateModule(ctx, map[string]string{"OUTBOUND_MODE": mode}); err != nil {
-		return err
-	}
-	persisted = true
-	if !service.ProcessRunning(options.SingBoxPath) {
-		return nil
-	}
-	mapped := map[string]string{"rule": "Rule", "global": "Global", "direct": "Direct", "AllowAds": "AllowAds"}[mode]
-	client, err := serviceapi.New(options.ServiceAddress, options.ServiceSecret)
-	if err == nil {
-		requestContext, cancel := context.WithTimeout(ctx, minTimeout(options.RequestTimeout, 4*time.Second))
-		err = client.SetMode(requestContext, mapped)
-		cancel()
-		client.Close()
-		if err == nil {
-			return nil
-		}
-	}
-	if options.SkipServiceReload {
-		return fmt.Errorf("Service API 模式切换失败，跳过嵌套服务 reload: %w", err)
-	}
-	_, reloadErr := ManageService(ctx, options, "reload")
-	return reloadErr
 }
 
 // UpdateApp 在同一入站文件锁内修改最新应用策略，不应用到运行实例。

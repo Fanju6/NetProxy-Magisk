@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json/jsontext"
 	json "encoding/json/v2"
 	"os"
@@ -9,11 +10,45 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/inbound"
 	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 )
+
+func TestRuntimeModeFailureKeepsPersistedStateAfterTimeout(t *testing.T) {
+	capture, err := os.CreateTemp(t.TempDir(), "stdout-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer capture.Close()
+	previous := os.Stdout
+	os.Stdout = capture
+	defer func() { os.Stdout = previous }()
+	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+	defer cancel()
+	status := (&cli{}).runCommand(ctx, func(context.Context, []string) error {
+		return &service.Error{Code: "mode.runtime_sync_failed", Message: "已保存但未同步", Data: map[string]any{"persisted": true, "mode": "Office"}}
+	})
+	payload, err := os.ReadFile(capture.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		Schema int    `json:"schema"`
+		OK     bool   `json:"ok"`
+		Code   string `json:"code"`
+		Data   struct {
+			Persisted bool   `json:"persisted"`
+			Mode      string `json:"mode"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(payload, &response); err != nil || status != 1 || response.Schema != 1 || response.OK || response.Code != "mode.runtime_sync_failed" || !response.Data.Persisted || response.Data.Mode != "Office" {
+		t.Fatalf("超时覆盖了持久化失败语义: exit=%d response=%s error=%v", status, payload, err)
+	}
+}
 
 func TestPublicCommandsKeepSingleJSONContract(t *testing.T) {
 	root := t.TempDir()
@@ -23,7 +58,7 @@ func TestPublicCommandsKeepSingleJSONContract(t *testing.T) {
 	options.WorkerPIDFile = filepath.Join(root, "state", "worker.pid")
 	options.WiFiStateFile = filepath.Join(root, "state", "wifi_state")
 	for path, content := range map[string]string{
-		options.ModuleConfig:                             "ACTIVE_GROUP_ID=default\nSELECTOR_MODE=urltest\nOUTBOUND_MODE=rule\n",
+		options.ModuleConfig:                             "ACTIVE_GROUP_ID=default\nSELECTOR_MODE=urltest\n",
 		options.InboundConfig:                            `{"backend":"ebpf","app":{"enabled":false,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]},"ebpf":{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true},"shared":{"enabled":false}},"tun":{"type":"tun","tag":"netproxy-in","interface_name":"netproxy","address":["172.19.0.1/30"],"auto_route":true,"auto_redirect":true}}`,
 		filepath.Join(options.SingBoxDir, "config.json"): "{}\n",
 	} {
@@ -50,6 +85,9 @@ func TestPublicCommandsKeepSingleJSONContract(t *testing.T) {
 		{"node current", "node.current", 0},
 		{"sub list", "subscription.list", 0},
 		{"mode", "mode.current", 0},
+		{"mode Rule", "mode.changed", 0},
+		{"mode global", "mode.invalid", 1},
+		{"mode Rule extra", "usage.invalid", 2},
 		{"network evaluate --type not_wifi", "network.evaluated", 0},
 		{"app list", "app.list", 0},
 		{"config list", "config.list", 0},
@@ -92,6 +130,9 @@ func TestPublicCommandsKeepSingleJSONContract(t *testing.T) {
 				var data map[string]jsontext.Value
 				if err := json.Unmarshal(response.Data, &data); err != nil || string(data["state"]) != `"stopped"` {
 					t.Fatalf("服务状态必须直接位于 data: %s: %v", response.Data, err)
+				}
+				if string(data["configured_outbound_mode"]) != `"Rule"` || string(data["available_outbound_modes"]) != `["Rule"]` {
+					t.Fatalf("模式字段未使用主配置: %s", response.Data)
 				}
 			}
 		})

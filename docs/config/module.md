@@ -6,24 +6,13 @@
 /data/adb/modules/netproxy/config/module.conf
 ```
 
-它保存模块级启动、节点选择、出站模式和 Wi-Fi 自动策略。推荐通过 Android 管理器修改；手动编辑后应使用 `netproxyctl` 检查并重启服务。
+它保存模块级启动、节点选择和 Wi-Fi 自动策略。推荐通过 Android 管理器修改；手动编辑后应使用 `netproxyctl` 检查并重启服务。默认出站模式位于 [sing-box 主配置](./singbox#出站模式)。
 
 ## 基础配置
 
 ### `AUTO_START`
 
 开机是否自动启动服务：`1` 启用，`0` 禁用。默认值为 `0`。
-
-### `OUTBOUND_MODE`
-
-支持四种模式：
-
-| 值 | 行为 |
-|----|------|
-| `rule` | 按 sing-box 路由规则分流，默认值 |
-| `global` | 尽量全部交给代理出站 |
-| `direct` | 全部直连 |
-| `AllowAds` | 使用允许广告的路由策略 |
 
 ### 节点选择
 
@@ -53,7 +42,7 @@ PROXY_ON_CELLULAR=1
 - `WIFI_SSID_LIST` 使用英文逗号分隔。
 - `PROXY_ON_CELLULAR=1` 表示非 Wi-Fi 网络使用基础模式；`0` 表示使用 Direct。
 
-Wi-Fi 自动策略只改变运行时实际模式，不覆盖 `OUTBOUND_MODE` 保存的基础模式。Worker 会检查实际默认路由，避免 Wi-Fi 仍显示 connected 但流量已经走移动数据时误判。
+Wi-Fi 自动策略只改变运行时实际模式，不覆盖主配置的 `experimental.clash_api.default_mode`。Worker 会检查实际默认路由，避免 Wi-Fi 仍显示 connected 但流量已经走移动数据时误判。绕过网络需要主配置包含 `Direct` 模式及其直连规则。
 
 完整触发规则与排查方法见 [Wi-Fi 自动策略](/guide/wifi-policy)。
 

@@ -16,7 +16,7 @@ internal class ServiceRepository(
     }
 
     suspend fun setMode(mode: String) {
-        require(mode in setOf("rule", "global", "direct", "AllowAds"))
+        require(mode.isNotBlank())
         client.execute("mode", mode)
     }
 }

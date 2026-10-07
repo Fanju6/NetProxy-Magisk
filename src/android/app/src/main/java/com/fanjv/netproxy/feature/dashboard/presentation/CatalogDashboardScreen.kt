@@ -181,18 +181,24 @@ internal fun CatalogDashboardScreen(
                 item { Spacer(Modifier.height(12.dp)) }
                 item {
                     Card(modifier = Modifier.fillMaxWidth()) {
-                        val modeValues = listOf("rule", "global", "direct", "AllowAds")
-                        val modeLabels = listOf(
-                            stringResource(R.string.dashboard_mode_rule),
-                            stringResource(R.string.dashboard_mode_global),
-                            stringResource(R.string.dashboard_mode_direct),
-                            stringResource(R.string.dashboard_mode_allow_ads)
-                        )
+                        val modeValues = state.availableOutboundModes
+                        val modeLabels = modeValues.map { mode ->
+                            when (mode) {
+                                "Rule" -> stringResource(R.string.dashboard_mode_rule)
+                                "Global" -> stringResource(R.string.dashboard_mode_global)
+                                "Direct" -> stringResource(R.string.dashboard_mode_direct)
+                                "AllowAds" -> stringResource(R.string.dashboard_mode_allow_ads)
+                                else -> mode
+                            }
+                        }
                         val selectedModeIndex = modeValues.indexOf(state.outboundMode)
                         val modeItems = if (selectedModeIndex >= 0) {
                             modeLabels
                         } else {
-                            listOf(stringResource(R.string.dashboard_mode_unknown)) + modeLabels
+                            listOf(
+                                if (state.outboundMode == "unknown") stringResource(R.string.dashboard_mode_unknown)
+                                else state.outboundMode
+                            ) + modeLabels
                         }
                         OverlayDropdownPreference(
                             title = stringResource(R.string.dashboard_outbound_mode),

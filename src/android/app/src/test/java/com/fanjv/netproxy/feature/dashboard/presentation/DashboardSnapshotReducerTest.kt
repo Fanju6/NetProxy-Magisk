@@ -60,12 +60,24 @@ class DashboardSnapshotReducerTest {
 
         val state = reducer.reduce(
             CatalogDashboardUiState(),
-            service(outboundMode = "direct", configuredOutboundMode = "rule"),
+            service(outboundMode = "Direct", configuredOutboundMode = "Rule"),
             1_000,
             "--"
         )
 
-        assertEquals("direct", state.outboundMode)
+        assertEquals("Direct", state.outboundMode)
+    }
+
+    @Test
+    fun `preserves custom modes from native status`() {
+        val snapshot = service(outboundMode = "Office").copy(
+            availableOutboundModes = listOf("Office", "Direct")
+        )
+        val state = DashboardSnapshotReducer(1).reduce(
+            CatalogDashboardUiState(), snapshot, 1_000, "--"
+        )
+        assertEquals("Office", state.outboundMode)
+        assertEquals(listOf("Office", "Direct"), state.availableOutboundModes)
     }
 
     private fun service(
@@ -76,7 +88,7 @@ class DashboardSnapshotReducerTest {
         processTicks: Long = 10,
         systemTicks: Long = 100,
         memory: Long = 0,
-        outboundMode: String = "rule",
+        outboundMode: String = "Rule",
         configuredOutboundMode: String = outboundMode
     ) = ServiceStatusSnapshot(
         state = "ready",

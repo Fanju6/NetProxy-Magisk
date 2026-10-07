@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 )
 
 var fakeSingBoxBuild struct {
@@ -515,7 +516,7 @@ func TestConfigApplyHoldsWriterLockAndReloadBorrowsIt(t *testing.T) {
 			}
 			return fmt.Errorf("reload 期间其他写入未被阻止: %v", err)
 		}
-		return locked.updateModule(context.Background(), map[string]string{"OUTBOUND_MODE": "global"})
+		return locked.updateModule(context.Background(), map[string]string{"PROXY_ON_CELLULAR": "0"})
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -528,7 +529,7 @@ func TestConfigApplyHoldsWriterLockAndReloadBorrowsIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	config, err := moduleconfig.LoadModule(options.ModuleConfig)
-	if err != nil || config.OutboundMode != "global" || config.AutoStart {
+	if err != nil || config.ProxyOnCellular || config.AutoStart {
 		t.Fatalf("配置变更丢失: %+v %v", config, err)
 	}
 }
@@ -572,14 +573,14 @@ func TestConfigApplyRejectsRevisionAfterInternalWrite(t *testing.T) {
 	if err := os.WriteFile(source, []byte("AUTO_START=0\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := moduleconfig.UpdateModule(context.Background(), options.ModuleConfig, map[string]string{"OUTBOUND_MODE": "global"}); err != nil {
+	if err := moduleconfig.UpdateModule(context.Background(), options.ModuleConfig, map[string]string{"PROXY_ON_CELLULAR": "0"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ApplyConfig(context.Background(), options, "module", source, false, configRevision(original)); err == nil {
 		t.Fatal("过期配置覆盖成功")
 	}
 	config, err := moduleconfig.LoadModule(options.ModuleConfig)
-	if err != nil || config.OutboundMode != "global" {
+	if err != nil || config.ProxyOnCellular {
 		t.Fatalf("内部写入丢失: %+v %v", config, err)
 	}
 }

@@ -142,6 +142,9 @@ func StartService(ctx context.Context, options Options) (err error) {
 		if state.PID == int64(pid) && state.CoreStartedAtMillis == startedAt && state.ActiveBackend != "" {
 			identity = append(identity, ServiceIdentity{state.ActiveBackend, startedAt})
 		}
+		if _, err := syncConfiguredMode(ctx, options); err != nil {
+			return err
+		}
 		if err := writeServiceState(options.StateFile, "ready", int64(pid), startedAt/1000, readyAt, "", identity...); err != nil {
 			return err
 		}
@@ -211,6 +214,10 @@ func startPreparedService(ctx context.Context, options Options, prepared Prepare
 	syncOptions.SkipServiceReload = true
 	if _, err := SyncSelection(ctx, syncOptions); err != nil {
 		return failServiceStart(options, pid, startedAt, "运行时节点选择同步失败", err)
+	}
+	stage = "mode"
+	if _, err := syncConfiguredMode(ctx, options); err != nil {
+		return failServiceStart(options, pid, startedAt, "运行时出站模式同步失败", err)
 	}
 	readyAt := time.Now().Unix()
 	stage = "state"
@@ -370,6 +377,9 @@ func reloadPreparedService(ctx context.Context, options Options, prepared Prepar
 		if _, err := SyncSelection(ctx, syncOptions); err != nil {
 			return restoreReloadState(ctx, options, pid, startedAt/1000, state.ReadyAt, err)
 		}
+	}
+	if _, err := syncConfiguredMode(ctx, options); err != nil {
+		return restoreReloadState(ctx, options, pid, startedAt/1000, state.ReadyAt, err)
 	}
 	if err := writeServiceState(options.StateFile, "ready", int64(pid), startedAt/1000, time.Now().Unix(), "", ServiceIdentity{prepared.Backend, startedAt}); err != nil {
 		return err

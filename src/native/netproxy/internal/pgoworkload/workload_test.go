@@ -26,6 +26,7 @@ func BenchmarkAndroidPGO(b *testing.B) {
 	options := service.Options{
 		CatalogRoot:    layout.Catalog(),
 		ModuleConfig:   layout.ModuleConfig(),
+		SingBoxConfig:  paths.SingBoxConfig(layout.SingBoxDir()),
 		StateFile:      layout.ServiceState(),
 		ProgressDir:    layout.ProgressDir(),
 		WorkerPIDFile:  layout.WorkerPID(),

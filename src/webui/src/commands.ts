@@ -71,13 +71,13 @@ configured_backend 是保存的入站；active_backend 仅在 ready 且 PID/API 
   },
   mode: {
     overview: 'mode <模式>     出站模式',
-    actions: ['rule', 'global', 'direct', 'AllowAds'],
+    actions: [],
     help: `mode - 出站模式
 
-  mode rule       规则分流
-  mode global     全局代理
-  mode direct     全局直连
-  mode AllowAds   允许广告规则
+  mode            查看默认模式、实际模式与可选模式
+  mode <模式名称> 保存主配置默认模式，运行时应用网络策略
+
+可选模式来自主配置的路由与 DNS 规则，名称与内核一致。
 `,
   },
   network: {

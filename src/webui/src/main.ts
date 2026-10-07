@@ -62,6 +62,7 @@ let scrollFrame = 0
 let lastResult = ''
 let knownGroups: string[] = []
 let knownSubscriptions: string[] = []
+let knownModes: string[] = []
 let completionRevision = 0
 let mascotActionSource = ''
 let mascotImpactSource = ''
@@ -137,11 +138,12 @@ async function refreshCompletions() {
 }
 
 const statusPoller = createPoller(
-  () => ctlJson<{ state?: string }>(['service', 'status']),
+  () => ctlJson<{ state?: string; available_outbound_modes?: string[] }>(['service', 'status']),
   result => {
     const stateName = result.ok ? result.data?.state : undefined
     const state = stateName ? STATE_MAP[stateName] : undefined
     updateMascot(state, stateName)
+    if (result.ok && Array.isArray(result.data?.available_outbound_modes)) knownModes = result.data.available_outbound_modes
   },
 )
 
@@ -241,7 +243,7 @@ async function run(raw: string) {
 
 function completeInput(): boolean {
   if (busy || composing) return false
-  const result = complete(input.value, knownGroups, knownSubscriptions)
+  const result = complete(input.value, knownGroups, knownSubscriptions, knownModes)
   if (!result.candidates.length) { closeSuggestions(); return false }
   setInput(result.completed)
   if (result.candidates.length > 1) {

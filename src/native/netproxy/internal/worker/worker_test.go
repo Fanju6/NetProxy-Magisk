@@ -118,7 +118,7 @@ func prepareWorkerFixture(t *testing.T, serverURL string, now time.Time) (string
 		t.Fatal(err)
 	}
 	moduleConf := filepath.Join(root, "module.conf")
-	content := "ACTIVE_GROUP_ID=\"default\"\nSELECTOR_MODE=urltest\nOUTBOUND_MODE=rule\n"
+	content := "ACTIVE_GROUP_ID=\"default\"\nSELECTOR_MODE=urltest\n"
 	if err := os.WriteFile(moduleConf, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -462,7 +462,7 @@ func TestUpdateGroupWhenServiceRunningUsesProviderWatch(t *testing.T) {
 	options := newTestOptions(root)
 	options.ModuleConf = moduleConf
 	options.SingBoxPath = filepath.Join(root, "sing-box")
-	if err := os.WriteFile(moduleConf, []byte("ACTIVE_GROUP_ID=fixture\nSELECTOR_MODE=urltest\nOUTBOUND_MODE=rule\n"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConf, []byte("ACTIVE_GROUP_ID=fixture\nSELECTOR_MODE=urltest\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := provider.WriteAtomic(filepath.Join(root, "fixture", "provider.json"), []byte(`{"outbounds":[{"type":"socks","tag":"old-node","server":"127.0.0.1","server_port":1080}]}`+"\n"), 0o600); err != nil {
@@ -497,7 +497,7 @@ func TestUpdateGroupProviderWatchFailureDoesNotReload(t *testing.T) {
 	options := newTestOptions(root)
 	options.ModuleConf = moduleConf
 	options.SingBoxPath = filepath.Join(root, "sing-box")
-	if err := os.WriteFile(moduleConf, []byte("ACTIVE_GROUP_ID=fixture\nSELECTOR_MODE=urltest\nOUTBOUND_MODE=rule\n"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConf, []byte("ACTIVE_GROUP_ID=fixture\nSELECTOR_MODE=urltest\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := provider.WriteAtomic(filepath.Join(root, "fixture", "provider.json"), []byte(`{"outbounds":[{"type":"socks","tag":"old-node","server":"127.0.0.1","server_port":1080}]}`+"\n"), 0o600); err != nil {
@@ -1063,7 +1063,7 @@ func TestRunDueContinuesAfterOneSubscriptionFails(t *testing.T) {
 
 	root := t.TempDir()
 	moduleConf := filepath.Join(root, "module.conf")
-	if err := os.WriteFile(moduleConf, []byte("ACTIVE_GROUP_ID=\"good\"\nSELECTOR_MODE=urltest\nOUTBOUND_MODE=rule\n"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConf, []byte("ACTIVE_GROUP_ID=\"good\"\nSELECTOR_MODE=urltest\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	for _, item := range []struct {

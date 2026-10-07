@@ -30,6 +30,11 @@ func TestStatusBackendRequiresMatchingInstance(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
+			modulePath := filepath.Join(root, "module.conf")
+			if err := os.WriteFile(modulePath, []byte(""), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			modePath := modeConfigFixture(t, root, "Rule")
 			withServiceProcess(t, test.pid)
 			inboundPath := filepath.Join(root, "inbound.json")
 			content := `{"backend":"tun","app":{"enabled":false,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]},"ebpf":{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true}},"tun":{"type":"tun","tag":"netproxy-in","interface_name":"netproxy","address":["172.19.0.1/30"],"auto_route":true,"auto_redirect":true}}`
@@ -54,7 +59,7 @@ func TestStatusBackendRequiresMatchingInstance(t *testing.T) {
 				writeServiceAPIFrame(t, writer, payload)
 			}))
 			defer server.Close()
-			status, err := ReadStatus(t.Context(), Options{CatalogRoot: filepath.Join(root, "catalog"), StateFile: statePath, InboundConfig: inboundPath, ServiceAddress: server.URL})
+			status, err := ReadStatus(t.Context(), Options{ModuleConfig: modulePath, SingBoxConfig: modePath, CatalogRoot: filepath.Join(root, "catalog"), StateFile: statePath, InboundConfig: inboundPath, ServiceAddress: server.URL})
 			if err != nil {
 				t.Fatal(err)
 			}

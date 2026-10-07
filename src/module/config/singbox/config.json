@@ -252,6 +252,11 @@
       {
         "ip_is_private": true,
         "outbound": "direct"
+      },
+      {
+        "clash_mode": "Rule",
+        "action": "route",
+        "outbound": "Proxy"
       }
     ],
     "find_process": true,

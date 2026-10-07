@@ -22,7 +22,8 @@ const GROUPS = [
 
 const NODE = { tag: 'demo-node', protocol: 'socks', server: 'example.test', port: 1080 }
 let serviceState = 'stopped'
-let outboundMode = 'rule'
+const availableModes = ['AllowAds', 'Rule', 'Global', 'Direct']
+let outboundMode = 'Rule'
 let runtimePrepared = false
 
 const INBOUND_CONFIG = {
@@ -92,6 +93,7 @@ function serviceStatus() {
     error: '',
     outbound_mode: outboundMode,
     configured_outbound_mode: outboundMode,
+    available_outbound_modes: availableModes,
     ...backendStatus,
     selector_mode: 'urltest',
     active_group_id: 'default',
@@ -179,7 +181,8 @@ function execute(args: string[]): CtlResult<unknown> {
   }
 
   if (command === 'mode') {
-    if (!action) return response('mode.current', '当前出站模式', { mode: outboundMode, available: ['rule', 'global', 'direct', 'AllowAds'] })
+    if (!action) return response('mode.current', '当前出站模式', { mode: outboundMode, available: availableModes })
+    if (!availableModes.includes(action)) return failure('mode.invalid', '配置中不存在出站模式: ' + action)
     outboundMode = action
     return response('mode.changed', '出站模式已切换', { mode: outboundMode })
   }

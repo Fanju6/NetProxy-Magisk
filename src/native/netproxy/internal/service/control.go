@@ -30,6 +30,7 @@ var serviceFindProcess = FindProcess
 type Options struct {
 	CatalogRoot    string
 	ModuleConfig   string
+	SingBoxConfig  string
 	InboundConfig  string
 	StateFile      string
 	ProgressDir    string
@@ -43,33 +44,34 @@ type Options struct {
 
 // Status 是仪表盘使用的服务状态快照，字段与 netproxyctl schema=1 保持一致。
 type Status struct {
-	State                  string  `json:"state"`
-	ConfiguredBackend      string  `json:"configured_backend"`
-	ActiveBackend          *string `json:"active_backend"`
-	PID                    *int    `json:"pid"`
-	StartedAt              int64   `json:"started_at"`
-	ReadyAt                int64   `json:"ready_at"`
-	UptimeSeconds          int64   `json:"uptime_seconds"`
-	Error                  string  `json:"error"`
-	OutboundMode           string  `json:"outbound_mode"`
-	ConfiguredOutboundMode string  `json:"configured_outbound_mode"`
-	SelectorMode           string  `json:"selector_mode"`
-	ActiveGroupID          string  `json:"active_group_id"`
-	ActiveGroupName        string  `json:"active_group_name"`
-	ActiveGroupRuntimeTag  string  `json:"active_group_runtime_tag"`
-	ActiveGroupNodeCount   int     `json:"active_group_node_count"`
-	SelectedNodeRef        string  `json:"selected_node_ref"`
-	RuntimeSelected        string  `json:"runtime_selected"`
-	MemoryBytes            uint64  `json:"memory_bytes"`
-	ProcessCPUTicks        uint64  `json:"process_cpu_ticks"`
-	SystemCPUTicks         uint64  `json:"system_cpu_ticks"`
-	CPUCount               int     `json:"cpu_count"`
-	ConnectionsIn          int32   `json:"connections_in"`
-	ConnectionsOut         int32   `json:"connections_out"`
-	UploadTotal            int64   `json:"upload_total"`
-	DownloadTotal          int64   `json:"download_total"`
-	WorkerState            string  `json:"worker_state"`
-	WorkerPID              *int    `json:"worker_pid"`
+	State                  string   `json:"state"`
+	ConfiguredBackend      string   `json:"configured_backend"`
+	ActiveBackend          *string  `json:"active_backend"`
+	PID                    *int     `json:"pid"`
+	StartedAt              int64    `json:"started_at"`
+	ReadyAt                int64    `json:"ready_at"`
+	UptimeSeconds          int64    `json:"uptime_seconds"`
+	Error                  string   `json:"error"`
+	OutboundMode           string   `json:"outbound_mode"`
+	ConfiguredOutboundMode string   `json:"configured_outbound_mode"`
+	AvailableOutboundModes []string `json:"available_outbound_modes"`
+	SelectorMode           string   `json:"selector_mode"`
+	ActiveGroupID          string   `json:"active_group_id"`
+	ActiveGroupName        string   `json:"active_group_name"`
+	ActiveGroupRuntimeTag  string   `json:"active_group_runtime_tag"`
+	ActiveGroupNodeCount   int      `json:"active_group_node_count"`
+	SelectedNodeRef        string   `json:"selected_node_ref"`
+	RuntimeSelected        string   `json:"runtime_selected"`
+	MemoryBytes            uint64   `json:"memory_bytes"`
+	ProcessCPUTicks        uint64   `json:"process_cpu_ticks"`
+	SystemCPUTicks         uint64   `json:"system_cpu_ticks"`
+	CPUCount               int      `json:"cpu_count"`
+	ConnectionsIn          int32    `json:"connections_in"`
+	ConnectionsOut         int32    `json:"connections_out"`
+	UploadTotal            int64    `json:"upload_total"`
+	DownloadTotal          int64    `json:"download_total"`
+	WorkerState            string   `json:"worker_state"`
+	WorkerPID              *int     `json:"worker_pid"`
 }
 
 // DelayResult 是一次节点测速请求及其最新分组状态。
@@ -129,14 +131,22 @@ type stateFile struct {
 func ReadStatus(ctx context.Context, options Options) (Status, error) {
 	options = normalizeOptions(options)
 	state := readState(options.StateFile)
-	module := readModuleConfig(options.ModuleConfig)
+	module, err := moduleconfig.LoadModule(options.ModuleConfig)
+	if err != nil {
+		return Status{}, err
+	}
+	modes, err := moduleconfig.LoadModes(options.SingBoxConfig)
+	if err != nil {
+		return Status{}, err
+	}
 	status := Status{
 		State:                  state.State,
 		StartedAt:              state.StartedAt,
 		ReadyAt:                state.ReadyAt,
 		Error:                  state.Error,
 		OutboundMode:           unknownOutboundMode,
-		ConfiguredOutboundMode: module.OutboundMode,
+		ConfiguredOutboundMode: modes.Mode,
+		AvailableOutboundModes: modes.Available,
 		SelectorMode:           module.SelectorMode,
 		ActiveGroupID:          module.ActiveGroupID,
 		SelectedNodeRef:        module.SelectedNodeRef,
@@ -306,19 +316,18 @@ func resolveSnapshotGroup(groups []catalog.GroupSnapshot, query string) (string,
 	return match, nil
 }
 
-// ReadMode 读取模块模式，并在核心运行时补充当前 Service API 模式。
+// ReadMode 读取主配置模式，并在核心运行时补充当前 Service API 模式。
 func ReadMode(ctx context.Context, options Options) (ModeState, error) {
 	options = normalizeOptions(options)
-	module := readModuleConfig(options.ModuleConfig)
-	state := ModeState{
-		Mode:      normalizeModuleMode(module.OutboundMode),
-		Available: []string{"rule", "global", "direct", "AllowAds"},
+	modes, err := moduleconfig.LoadModes(options.SingBoxConfig)
+	if err != nil {
+		return ModeState{}, err
 	}
-	runtimeMode, err := readRuntimeMode(ctx, options)
-	if err == nil {
-		state.RuntimeMode = runtimeMode
+	state := ModeState{Mode: modes.Mode, Available: modes.Available}
+	if ProcessRunning(options.SingBoxPath) {
+		state.RuntimeMode, _ = readRuntimeMode(ctx, options)
 	}
-	return state, nil
+	return state, ctx.Err()
 }
 
 // ReadRuntimeMode 读取 Service API 当前出站模式。
@@ -326,19 +335,25 @@ func ReadRuntimeMode(ctx context.Context, options Options) (string, error) {
 	return readRuntimeMode(ctx, normalizeOptions(options))
 }
 
-// SetMode 将模块模式映射为 Service API 模式并提交。
+// SetMode 提交内核原生模式，并确认内核没有静默拒绝该模式。
 func SetMode(ctx context.Context, options Options, mode string) error {
-	runtimeMode, err := moduleModeToServiceMode(mode)
-	if err != nil {
-		return err
-	}
 	client, requestContext, cancel, err := newClient(ctx, options)
 	if err != nil {
 		return err
 	}
 	defer cancel()
 	defer client.Close()
-	return client.SetMode(requestContext, runtimeMode)
+	if err := client.SetMode(requestContext, mode); err != nil {
+		return err
+	}
+	actual, err := client.Mode(requestContext)
+	if err != nil {
+		return err
+	}
+	if actual.Current != mode {
+		return fmt.Errorf("核心模式未生效: 期望 %s，实际 %s", mode, actual.Current)
+	}
+	return nil
 }
 
 // CloseAllConnections 关闭核心当前维护的全部连接。
@@ -499,6 +514,9 @@ func delayResultProgress(target string, outbounds []serviceapi.GroupItem) (expec
 
 func normalizeOptions(options Options) Options {
 	layout := paths.Default()
+	if options.SingBoxConfig == "" {
+		options.SingBoxConfig = paths.SingBoxConfig(layout.SingBoxDir())
+	}
 	if options.ServiceAddress == "" {
 		options.ServiceAddress = "127.0.0.1:9090"
 	}
@@ -667,46 +685,10 @@ func readRuntimeMode(ctx context.Context, options Options) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return serviceModeToModuleMode(mode.Current)
-}
-
-func normalizeModuleMode(value string) string {
-	switch value {
-	case "rule", "global", "direct", "AllowAds":
-		return value
-	default:
-		return "rule"
+	if mode.Current == "" {
+		return "", errors.New("核心未返回当前模式")
 	}
-}
-
-func moduleModeToServiceMode(value string) (string, error) {
-	switch value {
-	case "rule":
-		return "Rule", nil
-	case "global":
-		return "Global", nil
-	case "direct":
-		return "Direct", nil
-	case "AllowAds":
-		return "AllowAds", nil
-	default:
-		return "", fmt.Errorf("未知出站模式: %s", value)
-	}
-}
-
-func serviceModeToModuleMode(value string) (string, error) {
-	switch value {
-	case "Rule":
-		return "rule", nil
-	case "Global":
-		return "global", nil
-	case "Direct":
-		return "direct", nil
-	case "AllowAds":
-		return "AllowAds", nil
-	default:
-		return "", fmt.Errorf("未知 Service API 模式: %s", value)
-	}
+	return mode.Current, nil
 }
 
 func readActiveGroup(ctx context.Context, options Options, activeID string) (*catalog.GroupSnapshot, error) {
@@ -765,10 +747,8 @@ func mergeRuntimeStatus(ctx context.Context, options Options, status *Status, ac
 		status.ActiveBackend = &backend
 	}
 
-	if modeErr == nil {
-		if runtimeMode, mapErr := serviceModeToModuleMode(mode.Current); mapErr == nil {
-			status.OutboundMode = runtimeMode
-		}
+	if modeErr == nil && mode.Current != "" {
+		status.OutboundMode = mode.Current
 	}
 	if statusErr != nil {
 		return

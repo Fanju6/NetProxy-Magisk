@@ -48,6 +48,18 @@ test('格式化只改变 JSON 排版，文本、错误和危险字符保持原�
   assert.equal(formatCtlOutput('not { json'), 'not { json')
 })
 
+test('模式补全仅使用配置列表，保留自定义名称和空格', () => {
+  const modes = ['Rule', 'Direct', 'Office Network']
+  assert.deepEqual(complete('mode ', [], [], modes).candidates, modes)
+  assert.deepEqual(complete('mode ').candidates, [])
+  assert.equal(complete('mode Off', [], [], modes).completed, 'mode "Office Network" ')
+  const run = (...args) => decodeCtlResult(mockCtl(args))
+  assert.equal(run('mode', 'global').ok, false)
+  assert.equal(run('mode', 'Global').data.mode, 'Global')
+  assert.deepEqual(run('mode').data.available, run('service', 'status').data.available_outbound_modes)
+  run('mode', 'Rule')
+})
+
 test('入站帮助与补全只使用公共配置目标，诊断仍保留 ebpf status', () => {
   const targets = ['inbound', 'inbound/backend', 'inbound/ebpf', 'inbound/tun']
   for (const action of ['read', 'apply', 'validate']) {

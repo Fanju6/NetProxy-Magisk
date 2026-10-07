@@ -2,7 +2,7 @@
 
 NetProxy 的分流行为由四层共同决定：
 
-1. `OUTBOUND_MODE` 出站模式。
+1. 主配置 `experimental.clash_api.default_mode` 与规则的 `clash_mode` 条件。
 2. sing-box 路由规则与规则集。
 3. 所选入站的应用、接口和地址筛选；eBPF 的本机/共享网络提前绕过或 TUN 的原生路由范围。
 4. Wi-Fi 自动策略对运行时模式的临时评估。
@@ -66,7 +66,7 @@ eBPF 的 `local.dns_mode` 与 `shared.dns_mode` 分别控制两条数据路径�
 
 本机默认 `respect_policy`，共享默认 `hijack`。TUN 使用自己的 `dns_mode`：默认 `hijack`，也有 `disabled` 与高级 `native`；`dns_address` 默认由上游推导，不能把 native 当作 Android 系统全局 DNS 设置。
 
-sing-box 侧 DNS 服务器、域名解析策略和 DNS 路由位于 `config/singbox/config.json` 的 `dns` 分区。默认 DNS A/AAAA 查询使用真实的 `dns-proxy` 服务器组，不使用 FakeIP 地址池。DNS 最终出站由 DNS 配置和 `OUTBOUND_MODE` 共同决定；若将兜底 DNS 设置为直连，解析请求可能不经过代理，这是可预期的配置取舍，不等同于核心故障。
+sing-box 侧 DNS 服务器、域名解析策略和 DNS 路由位于 `config/singbox/config.json` 的 `dns` 分区。默认 DNS A/AAAA 查询使用真实的 `dns-proxy` 服务器组，不使用 FakeIP 地址池。DNS 最终出站由 DNS 配置和核心实际模式共同决定；若将兜底 DNS 设置为直连，解析请求可能不经过代理，这是可预期的配置取舍，不等同于核心故障。
 
 默认规则模式下，`geosite/category-ai-!cn`（境外 AI）与 `geosite/google` 规则集在中国域名分流前匹配，DNS 查询与连接均走代理。`geosite/cn` 域名使用直连 DNS，随后匹配的 `geosite/geolocation-!cn` 域名使用代理 DNS；未命中规则的查询仍以 `dns-proxy` 兜底。自定义直连、代理和广告规则保持更高的匹配优先级。
 

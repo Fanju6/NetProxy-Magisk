@@ -15,10 +15,11 @@ import (
 
 func writeStatusModule(t *testing.T, path, activeID, selector, selected string) {
 	t.Helper()
-	content := "OUTBOUND_MODE=rule\nSELECTOR_MODE=" + selector + "\nACTIVE_GROUP_ID=" + activeID + "\nSELECTED_NODE_REF=\"" + selected + "\"\n"
+	content := "SELECTOR_MODE=" + selector + "\nACTIVE_GROUP_ID=" + activeID + "\nSELECTED_NODE_REF=\"" + selected + "\"\n"
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	modeConfigFixture(t, filepath.Dir(path), "Rule")
 }
 
 func writeStatusGroup(t *testing.T, root, groupID, name string, nodeCount int, providerContent []byte) {
@@ -43,9 +44,10 @@ func statusFixtureProvider(tag string) []byte {
 
 func statusOptions(root, moduleConfig string) Options {
 	return Options{
-		CatalogRoot:  root,
-		ModuleConfig: moduleConfig,
-		SingBoxPath:  filepath.Join(root, "missing-sing-box"),
+		CatalogRoot:   root,
+		ModuleConfig:  moduleConfig,
+		SingBoxConfig: filepath.Join(filepath.Dir(moduleConfig), "config.json"),
+		SingBoxPath:   filepath.Join(root, "missing-sing-box"),
 	}
 }
 

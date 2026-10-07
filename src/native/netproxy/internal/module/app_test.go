@@ -99,7 +99,7 @@ func TestUpdateAllSubscriptionsPreservesStructuredFailure(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(options.ModuleConfig), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=default\nSELECTOR_MODE=urltest\nOUTBOUND_MODE=rule\n"), 0o600); err != nil {
+	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=default\nSELECTOR_MODE=urltest\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := catalog.InitializeGroup(context.Background(), catalog.GroupOptions{
@@ -215,7 +215,7 @@ func TestEditSubscriptionSchedulingOnlyDoesNotReload(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(options.ModuleConfig), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=default\nSELECTOR_MODE=urltest\nOUTBOUND_MODE=rule\n"), 0o600); err != nil {
+	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=default\nSELECTOR_MODE=urltest\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Unix(1_700_450_000, 0)
@@ -256,7 +256,7 @@ func TestEditSubscriptionHistoryFailureKeepsProviderAndMetadata(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(options.ModuleConfig), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=default\nSELECTOR_MODE=urltest\nOUTBOUND_MODE=rule\n"), 0o600); err != nil {
+	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=default\nSELECTOR_MODE=urltest\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := catalog.InitializeGroup(context.Background(), catalog.GroupOptions{

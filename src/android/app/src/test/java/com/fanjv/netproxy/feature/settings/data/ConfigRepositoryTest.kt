@@ -31,10 +31,10 @@ class ConfigRepositoryTest {
         val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
             calls.add(args)
             if (args[1] == "read") {
-                NetProxyCtlOutput(true, listOf("""{"schema":1,"ok":true,"code":"config.read","message":"配置内容","data":{"target":"module","content":"AUTO_START=0\nOUTBOUND_MODE=rule\n","revision":"read-revision"}}"""), emptyList())
+                NetProxyCtlOutput(true, listOf("""{"schema":1,"ok":true,"code":"config.read","message":"配置内容","data":{"target":"module","content":"AUTO_START=0\n","revision":"read-revision"}}"""), emptyList())
             } else {
                 assertEquals(listOf("config", "apply", "--revision", "read-revision", "module"), args.dropLast(1))
-                assertEquals("AUTO_START=1\nOUTBOUND_MODE=rule\n", File(args.last()).readText())
+                assertEquals("AUTO_START=1\n", File(args.last()).readText())
                 NetProxyCtlOutput(false, listOf("""{"schema":1,"ok":false,"code":"config.conflict","message":"配置已被修改，请重新加载后再保存"}"""), emptyList())
             }
         })

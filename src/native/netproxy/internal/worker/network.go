@@ -20,10 +20,10 @@ const (
 	networkErrorRepeatEvery   = 100
 )
 
-var errNetworkUnavailable = errors.New("Android 网络尚未就绪")
+var ErrNetworkUnavailable = errors.New("Android 网络尚未就绪")
 
 func networkUnavailable(format string, args ...any) error {
-	return fmt.Errorf("%w: %s", errNetworkUnavailable, fmt.Sprintf(format, args...))
+	return fmt.Errorf("%w: %s", ErrNetworkUnavailable, fmt.Sprintf(format, args...))
 }
 
 type repeatedNetworkError struct {
@@ -89,7 +89,7 @@ type networkEvaluationResult struct {
 func runNetworkWatcher(ctx context.Context, options Options, logger *log.Logger) {
 	reader := options.NetworkStateReader
 	if reader == nil {
-		reader = getNetworkState
+		reader = ReadNetworkState
 	}
 	eventSource := options.NetworkEventSource
 	if eventSource == nil {
@@ -241,7 +241,7 @@ func readAndEvaluateNetworkState(
 }
 
 func logNetworkReadFailure(logger *log.Logger, repeated *repeatedNetworkError, message string, err error) {
-	if errors.Is(err, errNetworkUnavailable) {
+	if errors.Is(err, ErrNetworkUnavailable) {
 		logWorker(logger, "INFO", "network.read", "waiting", "网络尚未就绪：等待 Android 默认路由")
 		return
 	}
@@ -276,7 +276,7 @@ func evaluateNetworkState(parent context.Context, options Options, state Network
 type networkCommandFunc func(context.Context, string, ...string) (string, error)
 type activeNetworkReader func(context.Context) (string, error)
 
-func getNetworkState(ctx context.Context) (NetworkState, error) {
+func ReadNetworkState(ctx context.Context) (NetworkState, error) {
 	return getNetworkStateWith(ctx, androidCommand, readActiveNetworkInterface)
 }
 
