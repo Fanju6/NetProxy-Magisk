@@ -146,10 +146,16 @@ html {
   .mascot-pair { gap: 12px; }
 }
 
-.tool-page .container,
-.tool-page .content,
-.tool-page .content-container {
+:is(.tool-page, .statistics-page) :is(.container, .content, .content-container) {
   max-width: none !important;
+}
+
+.statistics-dashboard {
+  display: block;
+  width: 100%;
+  height: clamp(640px, 80svh, 960px);
+  margin-top: 24px;
+  border: 0;
 }
 
 @media (max-width: 640px) {

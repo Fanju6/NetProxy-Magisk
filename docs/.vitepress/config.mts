@@ -49,6 +49,7 @@ export default defineConfig({
         ]
       },
       { text: '更新日志', link: '/changelog' },
+      { text: '设备统计', link: '/statistics' },
       { text: '奶屁伙伴', link: '/mascot/' },
       { text: 'GitHub', link: 'https://github.com/Fanju6/NetProxy-Magisk' }
     ],
