@@ -1,10 +1,28 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { checkBuild } from '../scripts/check-build.mjs'
 import { decodeCtlResult } from '../src/contract.ts'
 import { createPoller } from '../src/polling.ts'
 import { complete, replaceCompletion } from '../src/autocomplete.ts'
 import { parseCommandLine } from '../src/command.ts'
 import { formatCtlOutput } from '../src/format.ts'
+
+test('构建检查拒绝缺失或空的页面资源及运行时角色帧', t => {
+  const root = mkdtempSync(join(tmpdir(), 'netproxy-webui-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  writeFileSync(join(root, 'index.html'), '<script src="./main.js"></script><link href="https://mui.kernelsu.org/internal/insets.css">')
+  assert.throws(() => checkBuild(root), /ENOENT/)
+  writeFileSync(join(root, 'main.js'), 'const frame="./mascots/dragon/sleep-a.svg"')
+  assert.throws(() => checkBuild(root), /ENOENT/)
+  mkdirSync(join(root, 'mascots/dragon'), { recursive: true })
+  writeFileSync(join(root, 'mascots/dragon/sleep-a.svg'), '')
+  assert.throws(() => checkBuild(root), /资源无效/)
+  writeFileSync(join(root, 'mascots/dragon/sleep-a.svg'), '<svg/>')
+  assert.doesNotThrow(() => checkBuild(root))
+})
 
 test('补全使用当前 Catalog，候选替换保留空格、引号与反斜杠', () => {
   const groups = ['default', 'Kitty Network', 'Kitty "Lab"\\Node']

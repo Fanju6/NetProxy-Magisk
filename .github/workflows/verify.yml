@@ -88,12 +88,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: 拉取 WebUI 源码与模块产物
+      - name: 拉取 WebUI 源码
         uses: actions/checkout@v7
         with:
           sparse-checkout: |
             src/webui
-            src/module/webroot/netproxy
             tests/verify.sh
 
       - name: 配置 Node
@@ -104,7 +103,7 @@ jobs:
           cache-dependency-path: src/webui/package-lock.json
 
       - name: 构建并检查 WebUI 产物
-        run: sh tests/verify.sh webui --check-generated
+        run: sh tests/verify.sh webui
 
   android:
     name: 验证 Android 管理器

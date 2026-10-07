@@ -26,7 +26,7 @@ sh tests/verify.sh docs     # 文档内容检查、单测与构建
 sh tests/verify.sh full     # 发布前全量验证
 ```
 
-WebUI 修改需要提交构建后的模块页面时，使用 `sh tests/verify.sh webui --check-generated`。该选项只确认工作区生成结果与 Git 索引一致；请自行检查和暂存生成文件。
+WebUI 构建会检查页面引用的脚本、样式和角色素材是否完整。只提交源码，模块页面由 CI 构建并打包。
 
 GitHub Pull Request 会运行同一套无密钥验证。来自 Fork 的代码不会读取签名、发布或 Telegram Secrets，也不会生成 Nightly 包；合入 `main` 后才由现有 CI 构建签名管理器和模块包。
 

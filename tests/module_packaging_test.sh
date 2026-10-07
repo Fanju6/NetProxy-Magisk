@@ -54,10 +54,9 @@ assert_contains "$ROOT/src/android/app/build.gradle.kts" 'versionName = if (ciMa
 assert_contains "$ROOT/.gitignore" 'src/module/NetProxy.apk'
 assert_contains "$VERIFY_SCRIPT" './cmd/netproxyctl'
 assert_contains "$DEVELOPER_VERIFY_SCRIPT" 'quick|webui|android|docs|full'
-assert_contains "$DEVELOPER_VERIFY_SCRIPT" 'NETPROXY_VERIFY_GENERATED'
 assert_contains "$PR_VERIFY_WORKFLOW" 'pull_request:'
 assert_contains "$PR_VERIFY_WORKFLOW" 'sh tests/verify.sh quick'
-assert_contains "$PR_VERIFY_WORKFLOW" 'sh tests/verify.sh webui --check-generated'
+assert_contains "$PR_VERIFY_WORKFLOW" 'sh tests/verify.sh webui'
 assert_contains "$PR_VERIFY_WORKFLOW" "build-manager: 'false'"
 assert_contains "$PR_VERIFY_WORKFLOW" "assemble-debug: 'true'"
 assert_contains "$PR_VERIFY_WORKFLOW" 'cache-dependency-path: src/native/netproxy/go.sum'

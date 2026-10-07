@@ -108,7 +108,7 @@ src/module/service.sh
 
 每次改动至少运行 `git diff --check`，并按影响范围执行：
 
-本地可通过 `sh tests/verify.sh quick|webui|android|docs|full` 编排下列既有检查；它不自动暂存、提交或发布。WebUI 构建产物需要在提交前同步时，额外使用 `--check-generated` 确认工作区结果已进入 Git 索引。
+本地可通过 `sh tests/verify.sh quick|webui|android|docs|full` 编排下列既有检查；它不自动暂存、提交或发布。WebUI 构建检查页面引用的本地资源是否完整，生成产物由 CI 打包，不纳入 Git。
 
 ```sh
 # Go 原生组件
