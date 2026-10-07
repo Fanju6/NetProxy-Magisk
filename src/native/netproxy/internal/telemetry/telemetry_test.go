@@ -28,7 +28,7 @@ func testReporter(t testing.TB) *Reporter {
 	return &Reporter{statePath: filepath.Join(root, "config", "telemetry", "state.json"),
 		lockPath: filepath.Join(root, "dev", "telemetry.lock.flock"), version: "v8.2.1", versionCode: "42",
 		identify: func(context.Context) (string, error) { return hashDeviceID("0123456789abcdef") },
-		inspect: func(context.Context) compatibility {
+		inspect: func(context.Context, compatibility) compatibility {
 			return compatibility{RootFramework: "kernelsu", AndroidAPI: "36", KernelSeries: "6.6", Manufacturer: "oneplus"}
 		},
 		token: "phc_fixture", wake: make(chan struct{}, 1), client: newUploadClient()}
@@ -428,7 +428,7 @@ func TestUploadRejectsRedirectAndCancels(t *testing.T) {
 func TestCanceledUploadDoesNotCacheCompatibility(t *testing.T) {
 	r := testReporter(t)
 	var inspected atomic.Int32
-	r.inspect = func(context.Context) compatibility {
+	r.inspect = func(context.Context, compatibility) compatibility {
 		inspected.Add(1)
 		return compatibility{RootFramework: "magisk", AndroidAPI: "35", KernelSeries: "6.1", Manufacturer: "xiaomi"}
 	}
@@ -459,6 +459,52 @@ func TestCanceledUploadDoesNotCacheCompatibility(t *testing.T) {
 	properties := <-received
 	if properties.RootFramework != "magisk" || properties.AndroidAPI != "35" || properties.KernelSeries != "6.1" || properties.Manufacturer != "xiaomi" {
 		t.Fatalf("上传缺少兼容性摘要: %+v", properties)
+	}
+}
+
+func TestCompatibilityRetriesFailedFieldsAndCachesSuccessfulUnknown(t *testing.T) {
+	r := testReporter(t)
+	calls := 0
+	r.inspect = func(_ context.Context, current compatibility) compatibility {
+		calls++
+		if calls == 1 {
+			return compatibility{RootFramework: "kernelsu", Manufacturer: "unknown"}
+		}
+		if current.RootFramework != "kernelsu" || current.Manufacturer != "unknown" || current.AndroidAPI != "" {
+			t.Fatalf("成功字段未缓存或失败字段被缓存: %+v", current)
+		}
+		current.AndroidAPI, current.KernelSeries = "36", "6.6"
+		return current
+	}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	r.endpoint, r.client = server.URL, server.Client()
+	for index := range 3 {
+		events := []event{{UUID: "fixture", Name: "module_active", Timestamp: time.Now()}}
+		if _, err := r.send(context.Background(), events, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		expectedAPI := "36"
+		if index == 0 {
+			expectedAPI = "unknown"
+		}
+		if events[0].Properties.AndroidAPI != expectedAPI || events[0].Properties.Manufacturer != "unknown" {
+			t.Fatalf("上传摘要异常: %+v", events[0].Properties)
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("完整摘要仍重复采集: %d", calls)
+	}
+}
+
+func TestCompatibilityCancellationPreservesSuccessfulFields(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	current := compatibility{RootFramework: "kernelsu", AndroidAPI: "36", Manufacturer: "other"}
+	if got := readCompatibility(ctx, current); got != current {
+		t.Fatalf("取消后成功字段丢失或失败查询不可重试: %+v", got)
 	}
 }
 

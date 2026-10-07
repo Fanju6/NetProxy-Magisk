@@ -3,6 +3,7 @@ package telemetry
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -19,7 +20,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/fetch"
@@ -86,9 +86,8 @@ type Reporter struct {
 	wake                                 chan struct{}
 	deviceID                             string
 	identify                             func(context.Context) (string, error)
-	inspect                              func(context.Context) compatibility
+	inspect                              func(context.Context, compatibility) compatibility
 	compatibility                        compatibility
-	inspectOnce                          sync.Once
 }
 
 // New 只为当前 live 模块的 Android 正式构建创建上报器，排除安装暂存与 Host 测试。
@@ -161,21 +160,28 @@ func hashDeviceID(value string) (string, error) {
 	return fmt.Sprintf("%x", hash), nil
 }
 
-func readCompatibility(ctx context.Context) compatibility {
+func readCompatibility(ctx context.Context, current compatibility) compatibility {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	return compatibility{
-		RootFramework: rootFramework(func(path string) bool {
+	if current.RootFramework == "" {
+		current.RootFramework = rootFramework(func(path string) bool {
 			_, err := os.Stat(path)
 			return err == nil
-		}),
-		AndroidAPI:   androidAPI(readSystemValue(ctx, "/system/bin/getprop", "ro.build.version.sdk")),
-		KernelSeries: kernelSeries(readSystemValue(ctx, "/system/bin/uname", "-r")),
-		Manufacturer: manufacturer(readSystemValue(ctx, "/system/bin/getprop", "ro.product.manufacturer")),
+		})
 	}
+	if current.AndroidAPI == "" {
+		current.AndroidAPI = readSystemValue(ctx, androidAPI, "/system/bin/getprop", "ro.build.version.sdk")
+	}
+	if current.KernelSeries == "" {
+		current.KernelSeries = readSystemValue(ctx, kernelSeries, "/system/bin/uname", "-r")
+	}
+	if current.Manufacturer == "" {
+		current.Manufacturer = readSystemValue(ctx, manufacturer, "/system/bin/getprop", "ro.product.manufacturer")
+	}
+	return current
 }
 
-func readSystemValue(ctx context.Context, command string, args ...string) string {
+func readSystemValue(ctx context.Context, normalize func(string) string, command string, args ...string) string {
 	if ctx.Err() != nil {
 		return ""
 	}
@@ -183,7 +189,7 @@ func readSystemValue(ctx context.Context, command string, args ...string) string
 	if err != nil || ctx.Err() != nil {
 		return ""
 	}
-	return string(output)
+	return normalize(string(output))
 }
 
 func rootFramework(exists func(string) bool) string {
@@ -482,20 +488,18 @@ func (r *Reporter) send(ctx context.Context, events []event, now time.Time) (tim
 		}
 		r.deviceID = id
 	}
-	if ctx.Err() == nil {
-		r.inspectOnce.Do(func() {
-			if r.inspect != nil {
-				r.compatibility = r.inspect(ctx)
-			}
-		})
+	if ctx.Err() == nil && r.inspect != nil && (r.compatibility.RootFramework == "" ||
+		r.compatibility.AndroidAPI == "" || r.compatibility.KernelSeries == "" || r.compatibility.Manufacturer == "") {
+		// 查询失败保留空值，下次既有上传机会只重试缺失字段；成功的 unknown 也可缓存。
+		r.compatibility = r.inspect(ctx, r.compatibility)
 	}
 	// 身份只在 Worker 中派生，CLI 和离线队列均不保存设备标识。
 	for i := range events {
 		events[i].Properties.DistinctID = r.deviceID
-		events[i].Properties.RootFramework = r.compatibility.RootFramework
-		events[i].Properties.AndroidAPI = r.compatibility.AndroidAPI
-		events[i].Properties.KernelSeries = r.compatibility.KernelSeries
-		events[i].Properties.Manufacturer = r.compatibility.Manufacturer
+		events[i].Properties.RootFramework = cmp.Or(r.compatibility.RootFramework, "unknown")
+		events[i].Properties.AndroidAPI = cmp.Or(r.compatibility.AndroidAPI, "unknown")
+		events[i].Properties.KernelSeries = cmp.Or(r.compatibility.KernelSeries, "unknown")
+		events[i].Properties.Manufacturer = cmp.Or(r.compatibility.Manufacturer, "unknown")
 	}
 	content, err := json.Marshal(struct {
 		Token string  `json:"token"`
