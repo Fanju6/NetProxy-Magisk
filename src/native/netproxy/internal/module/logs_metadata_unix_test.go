@@ -10,9 +10,15 @@ import (
 )
 
 func TestExportLogsPreservesExistingDestinationOwnership(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("跨 UID 导出验证需要 Root")
+	}
 	options := NewOptions(t.TempDir())
 	destination := filepath.Join(options.ModuleDir, "diagnostic.tar.gz")
 	if err := os.WriteFile(destination, []byte("previous export"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chown(destination, 10001, 10002); err != nil {
 		t.Fatal(err)
 	}
 	before, err := os.Stat(destination)
@@ -36,5 +42,8 @@ func TestExportLogsPreservesExistingDestinationOwnership(t *testing.T) {
 	}
 	if beforeStat.Uid != afterStat.Uid || beforeStat.Gid != afterStat.Gid {
 		t.Fatalf("已有目标文件所有者未保留: %d:%d -> %d:%d", beforeStat.Uid, beforeStat.Gid, afterStat.Uid, afterStat.Gid)
+	}
+	if after.Mode().Perm() != 0o600 || after.Size() == 0 {
+		t.Fatalf("导出权限或内容异常: mode=%v size=%d", after.Mode(), after.Size())
 	}
 }
