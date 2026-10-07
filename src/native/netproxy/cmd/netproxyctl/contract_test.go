@@ -20,8 +20,8 @@ func TestPublicCommandsKeepSingleJSONContract(t *testing.T) {
 	options.WorkerPIDFile = filepath.Join(root, "state", "worker.pid")
 	options.WiFiStateFile = filepath.Join(root, "state", "wifi_state")
 	for path, content := range map[string]string{
-		options.ModuleConfig: "ACTIVE_GROUP_ID=default\nSELECTOR_MODE=urltest\nOUTBOUND_MODE=rule\n",
-		options.EBPFConfig:   "EBPF_LOCAL_ENABLED=1\nEBPF_SHARED_ENABLED=0\nAPP_PROXY_ENABLE=0\nAPP_PROXY_MODE=blacklist\n",
+		options.ModuleConfig:                             "ACTIVE_GROUP_ID=default\nSELECTOR_MODE=urltest\nOUTBOUND_MODE=rule\n",
+		options.InboundConfig:                            `{"backend":"ebpf","app":{"enabled":false,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]},"ebpf":{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true},"shared":{"enabled":false}},"tun":{"type":"tun","tag":"netproxy-in","interface_name":"netproxy","address":["172.19.0.1/30"],"auto_route":true,"auto_redirect":true}}`,
 		filepath.Join(options.SingBoxDir, "config.json"): "{}\n",
 	} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {

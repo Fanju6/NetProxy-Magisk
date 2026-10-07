@@ -111,11 +111,11 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 	}
 	logDir := filepath.Join(root, "logs")
 	moduleConfig := filepath.Join(root, "config", "module.conf")
-	ebpfConfig := filepath.Join(root, "config", "ebpf", "ebpf.conf")
+	inboundConfig := filepath.Join(root, "config", "inbound", "inbound.json")
 	singboxDir := filepath.Join(root, "config", "singbox")
 	runtimeDir := filepath.Join(root, "runtime")
 	catalogRoot := filepath.Join(root, "data", "catalog", "group")
-	for _, dir := range []string{logDir, filepath.Dir(moduleConfig), filepath.Dir(ebpfConfig), singboxDir, runtimeDir, catalogRoot} {
+	for _, dir := range []string{logDir, filepath.Dir(moduleConfig), filepath.Dir(inboundConfig), singboxDir, runtimeDir, catalogRoot} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -126,10 +126,10 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 	if err := os.WriteFile(moduleConfig, []byte("SUB_URL=https://example.test/sub?token=secret-token\nWIFI_SSID_LIST=\"secret-office,secret-home\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(ebpfConfig, []byte("PROXY_APPS_LIST=\"0:secret.app.one,10:secret.app.two\"\nBYPASS_APPS_LIST=\"0:secret.app.three\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(inboundConfig, []byte(`{"app":{"proxy_apps":["0:secret.app.one","10:secret.app.two"],"bypass_apps":["0:secret.app.three"]}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(runtimeDir, "ebpf.json"), []byte(`{"type":"ebpf","tag":"runtime"}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(runtimeDir, "inbound.json"), []byte(`{"type":"ebpf","tag":"runtime"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	stateFile := filepath.Join(root, "dev", "netproxy", "service.json")
@@ -163,7 +163,7 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 		ManagerVersionCode: "29",
 		CatalogRoot:        catalogRoot,
 		ModuleConfig:       moduleConfig,
-		EBPFConfig:         ebpfConfig,
+		InboundConfig:      inboundConfig,
 		SingBoxDir:         singboxDir,
 		RuntimeDir:         runtimeDir,
 		StateFile:          stateFile,
@@ -206,7 +206,7 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(header.Name, "runtime/ebpf.json") {
+		if strings.Contains(header.Name, "runtime/inbound.json") {
 			seenRuntime = true
 		}
 		if header.Name == "state/service.json" {

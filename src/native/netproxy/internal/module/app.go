@@ -3,6 +3,8 @@ package module
 
 import (
 	"context"
+	"encoding/json/jsontext"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/url"
@@ -15,13 +17,14 @@ import (
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/ebpf"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/inbound"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/telemetry"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/worker"
+	"github.com/sagernet/sing-box/option"
 )
 
 // Options 描述模块目录、运行时目录和平台适配器路径。
@@ -31,7 +34,7 @@ type Options struct {
 	ManagerVersionCode string
 	CatalogRoot        string
 	ModuleConfig       string
-	EBPFConfig         string
+	InboundConfig      string
 	SingBoxPath        string
 	SingBoxDir         string
 	RuntimeDir         string
@@ -56,7 +59,7 @@ func NewOptions(moduleDir string) Options {
 		ModuleDir:      layout.Root(),
 		CatalogRoot:    layout.Catalog(),
 		ModuleConfig:   layout.ModuleConfig(),
-		EBPFConfig:     layout.EBPFConfig(),
+		InboundConfig:  layout.InboundConfig(),
 		SingBoxPath:    layout.SingBox(),
 		SingBoxDir:     layout.SingBoxDir(),
 		RuntimeDir:     layout.Runtime(),
@@ -78,7 +81,8 @@ type PrepareResult struct {
 	catalog.RuntimeResult
 	Providers string `json:"providers"`
 	Outbounds string `json:"outbounds"`
-	EBPF      string `json:"ebpf"`
+	Inbound   string `json:"inbound"`
+	Backend   string `json:"backend"`
 }
 
 // AppPolicy 描述分应用代理的持久设置。
@@ -89,7 +93,7 @@ type AppPolicy struct {
 	BypassApps string `json:"bypass_apps"`
 }
 
-// Prepare 生成 Catalog、出站和 eBPF 运行时配置，并同步规范化选择状态。
+// Prepare 生成 Catalog、出站和当前受管入站运行时配置。
 func Prepare(ctx context.Context, options Options, allowEmpty bool) (PrepareResult, error) {
 	if err := options.validate(); err != nil {
 		return PrepareResult{}, err
@@ -101,7 +105,36 @@ func Prepare(ctx context.Context, options Options, allowEmpty bool) (PrepareResu
 	}
 	providers := filepath.Join(options.RuntimeDir, "providers.json")
 	outbounds := filepath.Join(options.RuntimeDir, "outbounds.json")
-	ebpfPath := filepath.Join(options.RuntimeDir, "ebpf.json")
+	inboundPath := filepath.Join(options.RuntimeDir, "inbound.json")
+	config, err := inbound.Load(options.InboundConfig)
+	if err != nil {
+		return PrepareResult{}, err
+	}
+	if err := validateManagedInbound(options, config); err != nil {
+		return PrepareResult{}, err
+	}
+	if config.Backend == "tun" {
+		groups, err := catalog.GroupIDs(ctx, options.CatalogRoot, "all")
+		if err != nil {
+			return PrepareResult{}, err
+		}
+		for _, id := range groups {
+			document, err := catalog.GroupProvider(ctx, options.CatalogRoot, id)
+			if err != nil {
+				return PrepareResult{}, err
+			}
+			for _, outbound := range document.Outbounds {
+				if dialer, ok := outbound.Options.(option.DialerOptionsWrapper); ok && dialer.TakeDialerOptions().RoutingMark != 0 {
+					return PrepareResult{}, tunRoutingMarkConflict("catalog.routing_mark")
+				}
+			}
+			for _, endpoint := range document.Endpoints {
+				if dialer, ok := endpoint.Options.(option.DialerOptionsWrapper); ok && dialer.TakeDialerOptions().RoutingMark != 0 {
+					return PrepareResult{}, tunRoutingMarkConflict("catalog.routing_mark")
+				}
+			}
+		}
+	}
 	runtime, err := catalog.BuildRuntime(ctx, catalog.RuntimeOptions{
 		Root: options.CatalogRoot, ModuleConfig: options.ModuleConfig,
 		ProvidersOutput: providers, OutboundsOutput: outbounds,
@@ -110,18 +143,14 @@ func Prepare(ctx context.Context, options Options, allowEmpty bool) (PrepareResu
 	if err != nil {
 		return PrepareResult{}, err
 	}
-	config, err := ebpf.Load(options.EBPFConfig)
-	if err != nil {
-		return PrepareResult{}, err
-	}
-	missingPackages, err := ebpf.WriteAtomic(ctx, ebpfPath, config)
+	missingPackages, err := inbound.WriteAtomic(ctx, inboundPath, config)
 	if err != nil {
 		return PrepareResult{}, err
 	}
 	for _, ref := range missingPackages {
-		logService(options, "WARN", "ebpf.package", "skipped", "分应用代理跳过未安装应用: %s", ref.String())
+		logService(options, "WARN", "inbound.package", "skipped", "分应用代理跳过未安装应用: %s", ref.String())
 	}
-	return PrepareResult{RuntimeResult: runtime, Providers: providers, Outbounds: outbounds, EBPF: ebpfPath}, nil
+	return PrepareResult{RuntimeResult: runtime, Providers: providers, Outbounds: outbounds, Inbound: inboundPath, Backend: config.Backend}, nil
 }
 
 func syncRuntimeSelection(ctx context.Context, options Options, runtime catalog.RuntimeResult) error {
@@ -163,7 +192,7 @@ func Check(ctx context.Context, options Options, allowEmpty bool) (PrepareResult
 	}
 	configPath := paths.SingBoxConfig(options.SingBoxDir)
 	command := exec.CommandContext(ctx, options.SingBoxPath, "check", "-c", configPath,
-		"-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.EBPF)
+		"-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.Inbound)
 	command.Dir = options.SingBoxDir
 	command.Stdout = os.Stderr
 	command.Stderr = os.Stderr
@@ -346,70 +375,89 @@ func ApplyMode(ctx context.Context, options Options, mode string) (err error) {
 	return reloadErr
 }
 
-// UpdateApp 按类型化 eBPF 配置修改分应用策略。
+// UpdateApp 在同一入站文件锁内修改最新应用策略，不应用到运行实例。
 func UpdateApp(ctx context.Context, options Options, action, value string) (data AppPolicy, err error) {
 	persisted := false
 	defer func() { logOperation(options, "app", "app-policy.update", "分应用策略更新", persisted, err) }()
-	editor, err := moduleconfig.Lock(ctx, options.EBPFConfig)
+	editor, err := moduleconfig.Lock(ctx, options.InboundConfig)
 	if err != nil {
 		return AppPolicy{}, err
 	}
 	defer editor.Release()
-	config, err := ebpf.Load(options.EBPFConfig)
+	// 待恢复快照会覆盖入站文件，恢复完成前不能接收新的名单写入。
+	if _, err := os.Stat(configTransactionPath(options)); err == nil {
+		return AppPolicy{}, errors.New("存在未完成的配置事务，请先检查服务配置以恢复")
+	} else if !os.IsNotExist(err) {
+		return AppPolicy{}, err
+	}
+	content, err := os.ReadFile(options.InboundConfig)
 	if err != nil {
 		return AppPolicy{}, err
 	}
-	updates := map[string]string{}
+	config, err := inbound.Parse(content)
+	if err != nil {
+		return AppPolicy{}, err
+	}
+	policy := config.App
 	switch action {
 	case "mode":
 		if value != "blacklist" && value != "whitelist" {
 			return AppPolicy{}, errors.New("应用模式应为 blacklist 或 whitelist")
 		}
-		updates["APP_PROXY_ENABLE"] = "1"
-		updates["APP_PROXY_MODE"] = moduleconfig.Quote(value)
+		policy.Enabled = true
+		policy.Mode = value
 	case "add":
-		ref, err := ebpf.ParsePackageRef(value)
+		ref, err := inbound.ParsePackageRef(value)
 		if err != nil {
 			return AppPolicy{}, err
 		}
-		if config.AppProxyMode == "whitelist" {
-			updates["PROXY_APPS_LIST"] = moduleconfig.Quote(addPackageRef(config.ProxyPackages, ref))
+		if policy.Mode == "whitelist" {
+			policy.ProxyApps = addPackageRef(policy.ProxyApps, ref.String())
 		} else {
-			updates["BYPASS_APPS_LIST"] = moduleconfig.Quote(addPackageRef(config.BypassPackages, ref))
+			policy.BypassApps = addPackageRef(policy.BypassApps, ref.String())
 		}
-		updates["APP_PROXY_ENABLE"] = "1"
+		policy.Enabled = true
 	case "remove":
-		ref, err := ebpf.ParsePackageRef(value)
+		ref, err := inbound.ParsePackageRef(value)
 		if err != nil {
 			return AppPolicy{}, err
 		}
-		updates["PROXY_APPS_LIST"] = moduleconfig.Quote(removePackageRef(config.ProxyPackages, ref))
-		updates["BYPASS_APPS_LIST"] = moduleconfig.Quote(removePackageRef(config.BypassPackages, ref))
+		policy.ProxyApps = slices.DeleteFunc(policy.ProxyApps, func(item string) bool { return item == ref.String() })
+		policy.BypassApps = slices.DeleteFunc(policy.BypassApps, func(item string) bool { return item == ref.String() })
 	case "enable", "disable":
-		updates["APP_PROXY_ENABLE"] = map[string]string{"enable": "1", "disable": "0"}[action]
+		policy.Enabled = action == "enable"
 	default:
 		return AppPolicy{}, fmt.Errorf("未知应用操作: %s", action)
 	}
-	if err := editor.Update(updates, func(candidate string) error {
-		_, validateErr := ebpf.Load(candidate)
-		return validateErr
-	}); err != nil {
-		return AppPolicy{}, err
-	}
-	persisted = true
-	config, err = ebpf.Load(options.EBPFConfig)
+	object, err := configObject(content)
 	if err != nil {
 		return AppPolicy{}, err
 	}
+	object["app"], err = json.Marshal(policy, json.Deterministic(true))
+	if err != nil {
+		return AppPolicy{}, err
+	}
+	content, err = json.Marshal(object, json.Deterministic(true), jsontext.WithIndent("  "))
+	if err != nil {
+		return AppPolicy{}, err
+	}
+	config, err = inbound.Parse(content)
+	if err != nil {
+		return AppPolicy{}, err
+	}
+	if err := writeConfigAtomic(options.InboundConfig, content, 0o600); err != nil {
+		return AppPolicy{}, err
+	}
+	persisted = true
 	return appPolicy(config), nil
 }
 
-func appPolicy(config ebpf.Config) AppPolicy {
+func appPolicy(config inbound.Config) AppPolicy {
 	return AppPolicy{
-		Enabled:    config.AppProxyEnable,
-		Mode:       config.AppProxyMode,
-		ProxyApps:  joinPackageRefs(config.ProxyPackages),
-		BypassApps: joinPackageRefs(config.BypassPackages),
+		Enabled:    config.App.Enabled,
+		Mode:       config.App.Mode,
+		ProxyApps:  strings.Join(config.App.ProxyApps, ","),
+		BypassApps: strings.Join(config.App.BypassApps, ","),
 	}
 }
 
@@ -625,7 +673,7 @@ func splitReference(reference string) (string, string, error) {
 }
 
 func (options Options) validate() error {
-	for name, value := range map[string]string{"模块配置": options.ModuleConfig, "Catalog": options.CatalogRoot, "eBPF 配置": options.EBPFConfig} {
+	for name, value := range map[string]string{"模块配置": options.ModuleConfig, "Catalog": options.CatalogRoot, "入站配置": options.InboundConfig} {
 		if strings.TrimSpace(value) == "" {
 			return fmt.Errorf("%s路径不能为空", name)
 		}
@@ -640,29 +688,11 @@ func minTimeout(value, fallback time.Duration) time.Duration {
 	return value
 }
 
-func addPackageRef(current []ebpf.PackageRef, value ebpf.PackageRef) string {
+func addPackageRef(current []string, value string) []string {
 	if slices.Contains(current, value) {
-		return joinPackageRefs(current)
+		return current
 	}
-	return joinPackageRefs(append(append([]ebpf.PackageRef{}, current...), value))
-}
-
-func removePackageRef(current []ebpf.PackageRef, value ebpf.PackageRef) string {
-	items := make([]ebpf.PackageRef, 0, len(current))
-	for _, ref := range current {
-		if ref != value {
-			items = append(items, ref)
-		}
-	}
-	return joinPackageRefs(items)
-}
-
-func joinPackageRefs(values []ebpf.PackageRef) string {
-	items := make([]string, 0, len(values))
-	for _, value := range values {
-		items = append(items, value.String())
-	}
-	return strings.Join(items, ",")
+	return append(current, value)
 }
 
 // SubscriptionOptions 描述订阅业务的公共路径和 Service 适配器。
@@ -872,7 +902,7 @@ func hostName(rawURL string) string {
 
 // LoadAppPolicy 读取分应用代理设置。
 func LoadAppPolicy(configPath string) (AppPolicy, error) {
-	config, err := ebpf.Load(configPath)
+	config, err := inbound.Load(configPath)
 	if err != nil {
 		return AppPolicy{}, err
 	}

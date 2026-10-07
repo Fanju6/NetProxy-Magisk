@@ -1,4 +1,4 @@
-import { CONTRACT_SCHEMA, type CtlResult, type ExecResult } from './contract'
+import { CONTRACT_SCHEMA, type CtlResult, type ExecResult, type InboundBackend, type ServiceBackendStatus } from './contract.ts'
 
 const GROUP_DEFAULTS = {
   auto_update: false,
@@ -23,6 +23,28 @@ const GROUPS = [
 const NODE = { tag: 'demo-node', protocol: 'socks', server: 'example.test', port: 1080 }
 let serviceState = 'stopped'
 let outboundMode = 'rule'
+let runtimePrepared = false
+
+const INBOUND_CONFIG = {
+  backend: 'ebpf' as InboundBackend,
+  app: { enabled: true, mode: 'blacklist', proxy_apps: [] as string[], bypass_apps: [] as string[] },
+  ebpf: {
+    type: 'ebpf', tag: 'netproxy-in', network: ['tcp', 'udp'], udp_timeout: '5m', tc_priority: 1,
+    local: {
+      enabled: true, data_plane: 'cgroup', dns_mode: 'respect_policy', ipv6: true,
+      bypass_private_address: true, bypass_rule_set: ['geoip/cn'],
+    },
+    shared: {
+      enabled: false, data_plane: 'packet_rewrite', dns_mode: 'hijack', interface: ['wlan2'],
+      ipv6: true, bypass_private_address: true, bypass_rule_set: ['geoip/cn'],
+    },
+  },
+  tun: {
+    type: 'tun', tag: 'netproxy-in', interface_name: 'netproxy',
+    address: ['172.19.0.1/30', 'fdfe:dcba:9876::1/126'],
+    auto_route: true, auto_redirect: true, dns_mode: 'hijack',
+  },
+}
 
 const STATIC_CONFIG: Record<string, unknown> = {
   log: { level: 'info' },
@@ -35,9 +57,16 @@ const STATIC_CONFIG: Record<string, unknown> = {
 }
 
 const CONFIG_DOCUMENTS = [
+  { id: 'inbound', filename: 'inbound.json', category: 'inbound', editable: true },
+  ...['backend', 'ebpf', 'tun'].map(section => ({
+    id: `inbound/${section}`, filename: section, category: 'inbound', editable: true, section,
+  })),
   { id: 'singbox/config.json', filename: 'config.json', category: 'config', editable: true },
   ...[...Object.keys(STATIC_CONFIG), 'outbounds'].map(section => ({
     id: `singbox/${section}`, filename: section, category: 'config', editable: true, section,
+  })),
+  ...['inbound.json', 'providers.json', 'outbounds.json'].map(filename => ({
+    id: `runtime/${filename}`, filename, category: 'runtime', editable: false,
   })),
 ]
 
@@ -50,15 +79,20 @@ function failure(code: string, message: string): CtlResult<Record<string, never>
 }
 
 function serviceStatus() {
+  const backendStatus: ServiceBackendStatus = {
+    configured_backend: INBOUND_CONFIG.backend,
+    active_backend: serviceState === 'ready' ? INBOUND_CONFIG.backend : null,
+  }
   return {
     state: serviceState,
-    pid: null,
-    started_at: serviceState === 'ready' ? 1_700_000_000_000 : 0,
-    ready_at: serviceState === 'ready' ? 1_700_000_005_000 : 0,
+    pid: serviceState === 'ready' ? 4242 : null,
+    started_at: serviceState === 'ready' ? 1_700_000_000 : 0,
+    ready_at: serviceState === 'ready' ? 1_700_000_005 : 0,
     uptime_seconds: serviceState === 'ready' ? 120 : 0,
     error: '',
     outbound_mode: outboundMode,
     configured_outbound_mode: outboundMode,
+    ...backendStatus,
     selector_mode: 'urltest',
     active_group_id: 'default',
     active_group_name: '本地配置',
@@ -117,7 +151,10 @@ function execute(args: string[]): CtlResult<unknown> {
   const action = clean[1]
 
   if (command === 'service') {
-    if (action === 'start' || action === 'restart') serviceState = 'ready'
+    if (action === 'start' || action === 'restart') {
+      serviceState = 'ready'
+      runtimePrepared = true
+    }
     if (action === 'stop') serviceState = 'stopped'
     if (action === 'status') return response('service.status', '服务状态', serviceStatus())
     return response(`service.${action || 'status'}`, '服务操作完成', { action, status: serviceStatus() })
@@ -148,7 +185,10 @@ function execute(args: string[]): CtlResult<unknown> {
   }
 
   if (command === 'app' && action === 'list') {
-    return response('app.list', '分应用代理配置', { enabled: false, mode: 'blacklist', proxy_apps: '', bypass_apps: '' })
+    return response('app.list', '分应用代理配置', {
+      enabled: INBOUND_CONFIG.app.enabled, mode: INBOUND_CONFIG.app.mode,
+      proxy_apps: INBOUND_CONFIG.app.proxy_apps.join(','), bypass_apps: INBOUND_CONFIG.app.bypass_apps.join(','),
+    })
   }
 
   if (command === 'network' && action === 'evaluate') {
@@ -190,16 +230,21 @@ function execute(args: string[]): CtlResult<unknown> {
   }
 
   if (command === 'config' && action === 'list') {
-    return response('config.list', 'sing-box 配置列表', CONFIG_DOCUMENTS)
+    const documents = runtimePrepared ? CONFIG_DOCUMENTS : CONFIG_DOCUMENTS.filter(item => item.category !== 'runtime')
+    return response('config.list', '配置列表', documents)
   }
   if (command === 'config' && action === 'read') {
     const document = CONFIG_DOCUMENTS.find(item => item.id === clean[2])
     if (!document) return failure('command.failed', '不支持的配置目标')
-    const content = document.filename === 'config.json'
-      ? STATIC_CONFIG
-      : Object.prototype.hasOwnProperty.call(STATIC_CONFIG, document.filename)
-        ? { [document.filename]: STATIC_CONFIG[document.filename] }
-        : {}
+    if (document.category === 'runtime' && !runtimePrepared) return failure('command.failed', '尚未生成运行时配置')
+    let content: unknown = {}
+    if (document.id === 'inbound') content = INBOUND_CONFIG
+    else if (document.category === 'inbound') content = { [document.filename]: INBOUND_CONFIG[document.filename as keyof typeof INBOUND_CONFIG] }
+    else if (document.id === 'runtime/inbound.json') content = { inbounds: [{ ...INBOUND_CONFIG.ebpf, shared: { enabled: false } }] }
+    else if (document.id === 'runtime/providers.json') content = { providers: [] }
+    else if (document.id === 'runtime/outbounds.json') content = { outbounds: [] }
+    else if (document.id === 'singbox/config.json') content = STATIC_CONFIG
+    else if (Object.prototype.hasOwnProperty.call(STATIC_CONFIG, document.filename)) content = { [document.filename]: STATIC_CONFIG[document.filename] }
     return response('config.read', '配置内容', {
       target: document.id, content: JSON.stringify(content, null, 2), revision: `mock-${document.filename}-1`,
     })

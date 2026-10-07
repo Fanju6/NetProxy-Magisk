@@ -32,14 +32,20 @@ chcon() { :; }
 pidof() { [ "${TEST_RUNNING:-false}" = true ]; }
 su() { [ "$1" = -c ]; sh -c "$2"; }
 
+# 参数: $1 TUN 接口名，用于区分快照来源。
+# 返回: 0=输出不含真实凭据的当前入站 JSON。
+inbound_fixture() {
+  printf '{"backend":"ebpf","app":{"enabled":true,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]},"ebpf":{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true},"shared":{"enabled":false}},"tun":{"type":"tun","tag":"netproxy-in","interface_name":"%s","address":["172.19.0.1/30","fdfe:dcba:9876::1/126"],"auto_route":true,"auto_redirect":true,"dns_mode":"hijack"}}\n' "$1"
+}
+
 write_module() {
   target="$1" label="$2"
-  mkdir -p "$target/bin" "$target/config/ebpf" "$target/config/singbox/rules/local" \
+  mkdir -p "$target/bin" "$target/config/inbound" "$target/config/singbox/rules/local" \
     "$target/config/singbox/rules/remote" "$target/config/singbox/custom-state" \
     "$target/data/catalog/default" "$target/runtime" "$target/logs"
   printf 'id=netproxy\nversion=%s\n' "$label" > "$target/module.prop"
   printf '%s\n' "$label-module" > "$target/config/module.conf"
-  printf '%s\n' "$label-ebpf" > "$target/config/ebpf/ebpf.conf"
+  inbound_fixture "$label" > "$target/config/inbound/inbound.json"
   printf '%s\n' "$label-config" > "$target/config/singbox/config.json"
   printf '%s\n' "$label-local" > "$target/config/singbox/rules/local/custom.json"
   printf '%s\n' "$label-remote" > "$target/config/singbox/rules/remote/test.srs"
@@ -87,6 +93,9 @@ reset_modules() {
 }
 
 assert_value() { grep -Fxq "$2" "$1"; }
+# 参数: $1 入站文件，$2 快照来源接口名。
+# 返回: 0=JSON 快照匹配，1=内容不一致或文件不可读。
+assert_inbound() { assert_value "$1" "$(inbound_fixture "$2")"; }
 
 test_install_choices() (
   reset_modules
@@ -179,7 +188,7 @@ test_snapshot_modes() (
       assert_value "$STAGE/logs/service.log" current-log
     fi
     if [ "$mode" = preserve ]; then
-      assert_value "$STAGE/config/ebpf/ebpf.conf" current-ebpf
+      assert_inbound "$STAGE/config/inbound/inbound.json" current
       assert_value "$STAGE/config/module.conf" current-module
       assert_value "$STAGE/config/singbox/config.json" current-config
       assert_value "$STAGE/config/singbox/rules/local/custom.json" current-local
@@ -187,7 +196,7 @@ test_snapshot_modes() (
       assert_value "$STAGE/config/singbox/custom-state/state.json" current-state
       assert_value "$STAGE/config/telemetry/state.json" current-telemetry-queue
     else
-      assert_value "$STAGE/config/ebpf/ebpf.conf" package-ebpf
+      assert_inbound "$STAGE/config/inbound/inbound.json" package
       assert_value "$STAGE/config/module.conf" package-module
       assert_value "$STAGE/config/singbox/rules/local/custom.json" package-local
       assert_value "$STAGE/config/singbox/cache.db" package-cache
@@ -217,7 +226,7 @@ test_snapshot_rename_failure() (
   }
   if copy_user_data_locked; then exit 1; fi
   assert_value "$STAGE/config/module.conf" package-module
-  assert_value "$STAGE/config/ebpf/ebpf.conf" package-ebpf
+  assert_inbound "$STAGE/config/inbound/inbound.json" package
   assert_value "$STAGE/config/singbox/cache.db" package-cache
   [ -z "$(find "$STAGE" -name '.install-state.*' -print)" ]
 )
@@ -234,13 +243,46 @@ test_missing_current_data() (
   if copy_user_data_locked; then exit 1; fi
 )
 
+# 参数: 无。
+# 返回: 0=缺失入站时安装模式与包校验符合契约，非零=回归失败。
+test_missing_inbound() (
+  reset_modules
+  rm -rf "$LIVE/config/inbound"
+  wait_volume_key() { VOLUME_KEY=timeout; }
+  if choose_install_mode > "$WORKDIR/menu"; then exit 1; fi
+  grep -Fq 'config/inbound/inbound.json' "$WORKDIR/menu"
+  grep -Fq '请选择仅保留节点与订阅或全新安装' "$WORKDIR/menu"
+  if copy_user_data_locked; then exit 1; fi
+  assert_inbound "$STAGE/config/inbound/inbound.json" package
+  for mode in nodes fresh; do
+    INSTALL_MODE="$mode"
+    if command -v flock >/dev/null 2>&1; then
+      with_user_data_locks commit_hot_update
+      assert_inbound "$LIVE/config/inbound/inbound.json" package
+      if [ "$mode" = nodes ]; then
+        assert_value "$LIVE/data/catalog/default/provider.json" current-provider
+        assert_value "$LIVE/logs/service.log" current-log
+      else
+        assert_value "$LIVE/data/catalog/default/provider.json" package-provider
+      fi
+    else
+      copy_user_data_locked
+      assert_inbound "$STAGE/config/inbound/inbound.json" package
+    fi
+    reset_modules
+    rm -rf "$LIVE/config/inbound"
+  done
+  rm "$STAGE/config/inbound/inbound.json"
+  if validate_stage; then exit 1; fi
+)
+
 test_permissions() (
   reset_modules
   set_permissions
   case "$(uname -s)" in
     MINGW*|MSYS*) printf '%s\n' 'NTFS 权限位不作断言，权限断言需在 Linux 执行' ;;
     *)
-      for file in config/module.conf config/ebpf/ebpf.conf data/catalog/default/provider.json logs/service.log; do
+      for file in config/module.conf config/inbound/inbound.json data/catalog/default/provider.json logs/service.log; do
         [ "$(stat -c '%a' "$STAGE/$file")" = 600 ]
       done
       [ "$(stat -c '%a' "$STAGE/config")" = 700 ]
@@ -330,7 +372,7 @@ test_hot_update() (
     sleep() { :; }
     with_user_data_locks() {
       CATALOG_LOCK=data/.catalog.netproxy-test.lock
-      for entry in config/ebpf/ebpf.conf.lock config/module.conf.lock config/singbox/config.json.lock "$CATALOG_LOCK"; do
+      for entry in config/inbound/inbound.json.lock config/module.conf.lock config/singbox/config.json.lock "$CATALOG_LOCK"; do
         : > "$LIVE/$entry"
       done
       "$@"
@@ -372,7 +414,7 @@ test_hot_update_latest_data() (
   }
   with_user_data_locks() {
     CATALOG_LOCK=data/.catalog.netproxy-test.lock
-    for entry in config/ebpf/ebpf.conf.lock config/module.conf.lock config/singbox/config.json.lock "$CATALOG_LOCK"; do
+    for entry in config/inbound/inbound.json.lock config/module.conf.lock config/singbox/config.json.lock "$CATALOG_LOCK"; do
       : > "$LIVE/$entry"
     done
     "$@"
@@ -393,7 +435,7 @@ test_hot_update_latest_data() (
 test_hot_rename_failure() (
   reset_modules
   CATALOG_LOCK=data/.catalog.netproxy-test.lock
-  for entry in config/ebpf/ebpf.conf.lock config/module.conf.lock config/singbox/config.json.lock "$CATALOG_LOCK"; do
+  for entry in config/inbound/inbound.json.lock config/module.conf.lock config/singbox/config.json.lock "$CATALOG_LOCK"; do
     : > "$LIVE/$entry"
   done
   mv() {
@@ -402,7 +444,7 @@ test_hot_rename_failure() (
   }
   if commit_hot_update; then exit 1; fi
   assert_value "$LIVE/module.prop" version=current
-  assert_value "$LIVE/config/ebpf/ebpf.conf" current-ebpf
+  assert_inbound "$LIVE/config/inbound/inbound.json" current
   [ -f "$LIVE/update" ] && [ -d "$STAGE" ]
 )
 
@@ -416,7 +458,8 @@ test_linux_locks() (
   catalog_lock="$(find "$LIVE/data" -name '.catalog.netproxy-*.lock')"
   inode="$(stat -c '%i' "$catalog_lock")"
   config_inode="$(stat -c '%i' "$LIVE/config/module.conf.lock")"
-  for busy in "$catalog_lock" "$LIVE/config/module.conf.lock" "$WORKDIR/state/service.lock.flock"; do
+  inbound_inode="$(stat -c '%i' "$LIVE/config/inbound/inbound.json.lock")"
+  for busy in "$catalog_lock" "$LIVE/config/module.conf.lock" "$LIVE/config/inbound/inbound.json.lock" "$WORKDIR/state/service.lock.flock"; do
     (
       exec 3>"$busy"
       flock -n 3 3>&3
@@ -433,6 +476,7 @@ test_linux_locks() (
   with_user_data_locks commit_hot_update
   [ "$(stat -c '%i' "$LIVE/data/${catalog_lock##*/}")" = "$inode" ]
   [ "$(stat -c '%i' "$LIVE/config/module.conf.lock")" = "$config_inode" ]
+  [ "$(stat -c '%i' "$LIVE/config/inbound/inbound.json.lock")" = "$inbound_inode" ]
   [ -f "$LIVE/data/${group_lock##*/}" ]
 )
 
@@ -440,6 +484,7 @@ test_native_catalog_lock() (
   [ -n "$NATIVE_CTL" ] && command -v flock >/dev/null 2>&1 || exit 0
   reset_modules
   cp "$ROOT/src/module/config/module.conf" "$LIVE/config/module.conf"
+  cp "$ROOT/src/module/config/inbound/inbound.json" "$LIVE/config/inbound/inbound.json"
   cp "$ROOT/src/module/data/catalog/default/meta.json" "$LIVE/data/catalog/default/meta.json"
   cp "$ROOT/src/module/data/catalog/default/provider.json" "$LIVE/data/catalog/default/provider.json"
   rm -rf "$LIVE/data/catalog/subscription"
@@ -506,22 +551,22 @@ test_installer_entrypoints() (
   [ ! -e "$LIVE" ]
   [ ! -e "$STAGE/NetProxy.apk" ]
   grep -Fq '管理器安装成功' "$WORKDIR/install-output"
-  assert_value "$STAGE/config/ebpf/ebpf.conf" package-ebpf
+  assert_inbound "$STAGE/config/inbound/inbound.json" package
   [ ! -s "$CALL_LOG" ]
 
   original_stage="$STAGE"
   STAGE="$LIVE"
   mkdir -p "$LIVE"
   run_foreground
-  assert_value "$LIVE/config/ebpf/ebpf.conf" package-ebpf
+  assert_inbound "$LIVE/config/inbound/inbound.json" package
   [ ! -s "$CALL_LOG" ]
   if run_foreground; then exit 1; fi
-  assert_value "$LIVE/config/ebpf/ebpf.conf" package-ebpf
+  assert_inbound "$LIVE/config/inbound/inbound.json" package
   STAGE="$original_stage"
 
   reset_modules
   run_foreground
-  assert_value "$STAGE/config/ebpf/ebpf.conf" current-ebpf
+  assert_inbound "$STAGE/config/inbound/inbound.json" current
   assert_value "$LIVE/module.prop" version=current
 
   reset_modules
@@ -545,7 +590,7 @@ test_installer_entrypoints() (
   # 安装器可以清理 customize.sh，后台只依赖已经打开的标准输入。
   sh -s -- --apply-update 99999999 "$STAGE" "$LIVE" preserve < "$script"
   [ ! -e "$STAGE" ] && [ ! -e "$LIVE/update" ]
-  assert_value "$LIVE/config/ebpf/ebpf.conf" current-ebpf
+  assert_inbound "$LIVE/config/inbound/inbound.json" current
   grep -q '^__internal worker start' "$CALL_LOG"
   ! grep -q '^service start$' "$CALL_LOG"
 )
@@ -557,6 +602,7 @@ test_snapshot_modes
 test_snapshot_failure
 test_snapshot_rename_failure
 test_missing_current_data
+test_missing_inbound
 test_permissions
 test_service_failures
 test_manager_install

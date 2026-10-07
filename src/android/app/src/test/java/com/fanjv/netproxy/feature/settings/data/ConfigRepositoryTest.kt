@@ -49,4 +49,15 @@ class ConfigRepositoryTest {
         assertEquals(2, calls.size)
         assertTrue(temporaryFolder.root.listFiles()!!.isEmpty())
     }
+
+    @Test fun nativeInboundValidationCarriesRevisionAndCleansCandidate() = runBlocking {
+        val content = """{"tun":{"type":"tun","tag":"netproxy-in"}}"""
+        val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
+            assertEquals(listOf("config", "validate", "--revision", "tun-revision", "inbound/tun"), args.dropLast(1))
+            assertEquals(content, File(args.last()).readText())
+            NetProxyCtlOutput(true, listOf("""{"schema":1,"ok":true,"code":"config.validated","message":"","data":{}}"""), emptyList())
+        })
+        ConfigRepository(client, CommandFileStore(temporaryFolder.root)).validate("inbound/tun", content, "tun-revision")
+        assertTrue(temporaryFolder.root.listFiles()!!.isEmpty())
+    }
 }

@@ -234,7 +234,14 @@ private fun androidx.compose.foundation.lazy.LazyListScope.documentSection(
 }
 
 @Composable
-internal fun documentTitle(document: SingBoxDocument): String = when (document.section.ifEmpty { document.id }) {
+internal fun documentTitle(document: SingBoxDocument): String = when (
+    if (document.id == "inbound" || document.id.startsWith("inbound/")) document.id
+    else document.section.ifEmpty { document.id }
+) {
+    "inbound" -> stringResource(R.string.inbound_full_json)
+    "inbound/backend" -> stringResource(R.string.inbound_backend)
+    "inbound/ebpf" -> stringResource(R.string.ebpf_core_settings)
+    "inbound/tun" -> stringResource(R.string.tun_settings)
     "singbox/config.json" -> stringResource(R.string.singbox_document_full)
     "outbounds" -> stringResource(R.string.singbox_document_outbounds)
     "log" -> stringResource(R.string.singbox_document_log)
@@ -275,6 +282,7 @@ private fun documentSummary(document: SingBoxDocument): String {
             SingBoxDocumentCategory.LocalRule -> stringResource(R.string.singbox_document_source_summary)
             SingBoxDocumentCategory.Runtime -> stringResource(R.string.singbox_document_runtime_summary)
             SingBoxDocumentCategory.Config -> stringResource(R.string.singbox_document_custom_summary)
+            SingBoxDocumentCategory.Inbound -> stringResource(R.string.inbound_full_json)
         }
     }
     return if (document.editable) {

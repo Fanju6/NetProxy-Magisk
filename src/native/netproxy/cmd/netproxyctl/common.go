@@ -11,6 +11,7 @@ import (
 	json "encoding/json/v2"
 
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/inbound"
 	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 )
@@ -43,6 +44,12 @@ func (c *cli) runCommand(ctx context.Context, handler commandHandler, args ...st
 		}
 		if structured, ok := errors.AsType[*resultError](err); ok {
 			return c.failData(structured.Code, structured.Message, structured.Data, structured.Status)
+		}
+		if structured, ok := errors.AsType[*inbound.ValidationError](err); ok && len(structured.Diagnostics) > 0 {
+			return c.failData(structured.Diagnostics[0].Code, err.Error(), map[string]any{"diagnostics": structured.Diagnostics}, 1)
+		}
+		if errors.Is(err, moduleapp.ErrForcedTermination) {
+			return c.fail("inbound.cleanup_unconfirmed", err.Error(), 1)
 		}
 		return c.fail("command.failed", err.Error(), 1)
 	}

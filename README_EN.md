@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>System-wide sing-box transparent proxy module for Android</strong><br>
-  eBPF, TCP / UDP, per-app routing, subscriptions, and dual control APIs
+  eBPF or Root TUN, TCP / UDP, per-app routing, subscriptions, and dual control APIs
 </p>
 
 <p align="center">
@@ -34,7 +34,7 @@
 
 ## Overview
 
-NetProxy is a system-wide transparent proxy module for rooted Android devices. Its embedded sing-box core captures local and shared-network traffic through eBPF and can be managed through the Android app, module WebUI, CLI, or Service API Dashboard.
+NetProxy is a system-wide transparent proxy module for rooted Android devices. Its embedded sing-box core captures traffic through the selected eBPF or Root TUN + auto_redirect inbound and can be managed through the Android app, terminal-style module WebUI, CLI, or Service API Dashboard. Only one managed inbound runs at a time; both native templates are retained without automatic fallback. Root TUN is not an Android VpnService.
 
 Supported root environments: **Magisk, KernelSU, and APatch**.
 
@@ -74,8 +74,8 @@ Both APIs listen on loopback by default. LAN access requires an explicit listene
 
 ## Features
 
-- eBPF interception for local and shared-network TCP, UDP, and DNS traffic
-- No iptables or nftables rules; sing-box manages cgroup or TC attachments and policy routing
+- eBPF or Root TUN interception for TCP, UDP, and DNS traffic
+- sing-box manages eBPF attachments, TUN routing, and auto_redirect
 - Per-app blacklist / whitelist routing
 - Wi-Fi hotspot and USB tethering support
 - Node links, node files, Clash YAML, and subscriptions
@@ -84,14 +84,14 @@ Both APIs listen on loopback by default. LAN access requires an explicit listene
 - Wi-Fi SSID based switching between the configured mode and Direct
 - Clash API, connection control, and delay tests
 - Scheduled subscription updates and rule-set bypass
-- Automatic cleanup of eBPF programs, maps, and TC attachments
+- Core-managed inbound cleanup; switching stops when cleanup cannot be confirmed
 
 ## Installation
 
-Release and CI builds provide one package: `NetProxy_<version>_<build>.zip`. It includes sing-box, the NetProxy native component, CLI, eBPF, the module WebUI, and the Android manager APK built from the current source with the fixed signing key. Module updates download the same package; installing the bundled manager is optional.
+Release and CI builds provide one package: `NetProxy_<version>_<build>.zip`. It includes sing-box, the NetProxy native component, CLI, managed inbound configuration, the module WebUI, and the Android manager APK built from the current source with the fixed signing key. Module updates download the same package; installing the bundled manager is optional.
 
 > [!IMPORTANT]
-> The eBPF inbound requires kernel BPF, TC classifier, transparent socket, and socket lookup support. Local interception also requires veth and policy-routing capabilities. Unsupported kernels cannot start this version.
+> eBPF is the initial backend and requires the capabilities of its chosen cgroup/TC data plane. Root TUN requires the corresponding TUN, routing, iptables/ip6tables, and NFQUEUE capabilities. A configuration check does not prove device support, and startup failure never selects another backend automatically.
 
 1. Download the latest ZIP from [Releases](https://github.com/Fanju6/NetProxy-Magisk/releases).
 2. Flash it with Magisk, KernelSU, or APatch.
@@ -101,6 +101,8 @@ Release and CI builds provide one package: `NetProxy_<version>_<build>.zip`. It 
 6. Import and select a node before starting the service.
 
 `AUTO_START` is disabled by default. Enable it from the manager after confirming that your node and configuration work, or set `AUTO_START=1` in `config/module.conf`.
+
+Keeping all data requires the current `config/inbound/inbound.json`, main configuration, and Catalog. If the inbound file is missing, explicitly choose **Keep nodes and subscriptions only** or **Fresh installation**. The installer does not detect versions, migrate old files, or silently supply defaults. Nodes-only mode keeps Catalog and logs while restoring packaged configuration.
 
 ## Quick Start
 
@@ -181,16 +183,16 @@ Important rules:
 ## CLI Overview
 
 ```text
-netproxyctl [--json] [--timeout <seconds|duration>] service status|start|stop|restart|reload|check|toggle
-netproxyctl [--json] catalog list|show <group>
-netproxyctl [--json] node list|current|show|add|import|export|edit|remove|use|delay
-netproxyctl [--json] sub list|show|add|edit|update|update-all|activate|remove|history|cancel
-netproxyctl [--json] mode [rule|global|direct|AllowAds]
-netproxyctl [--json] network evaluate --type <wifi|not_wifi> [--ssid <name>]
-netproxyctl [--json] app list|mode|add|remove|enable|disable
-netproxyctl [--json] ebpf status [configured|all|local|shared] [--raw]
-netproxyctl [--json] config list|read|check|validate|apply
-netproxyctl [--json] logs show|clear|export
+su -c '/data/adb/modules/netproxy/netproxyctl [--json] [--timeout <seconds|duration>] service status|start|stop|restart|reload|check|toggle'
+su -c '/data/adb/modules/netproxy/netproxyctl [--json] catalog list|show <group>'
+su -c '/data/adb/modules/netproxy/netproxyctl [--json] node list|current|show|add|import|export|edit|remove|use|delay'
+su -c '/data/adb/modules/netproxy/netproxyctl [--json] sub list|show|add|edit|update|update-all|activate|remove|history|cancel'
+su -c '/data/adb/modules/netproxy/netproxyctl [--json] mode [rule|global|direct|AllowAds]'
+su -c '/data/adb/modules/netproxy/netproxyctl [--json] network evaluate --type <wifi|not_wifi> [--ssid <name>]'
+su -c '/data/adb/modules/netproxy/netproxyctl [--json] app list|mode|add|remove|enable|disable'
+su -c '/data/adb/modules/netproxy/netproxyctl [--json] ebpf status [configured|all|local|shared] [--raw]'
+su -c '/data/adb/modules/netproxy/netproxyctl [--json] config list|read|check|validate|apply'
+su -c '/data/adb/modules/netproxy/netproxyctl [--json] logs show|clear|export'
 ```
 
 Node references are always `<group-id>/<tag>`. Use `node use auto [group]` for automatic mode and `node delay auto [group]` for group latency tests. The name argument of `sub add` is optional (`sub add <URL>`); it is then derived from Profile-Title, the response filename, or the URL host. Commands use a 30-second default timeout, except `service start` (120 seconds); subscription mutations use their download timeout.
@@ -204,10 +206,10 @@ su -c '/data/adb/modules/netproxy/netproxyctl help'
 | Path | Purpose |
 |------|---------|
 | `config/module.conf` | Startup, mode, selected node, selector, and subscription scheduling |
-| `config/ebpf/ebpf.conf` | eBPF inbound, per-app rules, shared networks, and kernel bypass policies |
+| `config/inbound/inbound.json` | Single source for backend, shared app policy, and native eBPF/TUN parameters |
 | `config/singbox/config.json` | Static sing-box configuration; the manager supports editing DNS, inbounds, routing, and other sections |
 | `data/catalog/<group-id>/` | Node and subscription groups (`meta.json` + `provider.json`) |
-| `runtime/` | Generated Provider, outbound, and eBPF files; do not edit manually |
+| `runtime/` | Generated providers.json, outbounds.json, and the single inbound.json; do not edit or preserve during installation |
 | `config/singbox/rules/local/` | Editable local route rule sets |
 | `config/singbox/rules/remote/` | Built-in SRS rule resources managed by remote providers |
 | `logs/service.log` | Module service, subscription updates, and transparent proxy logs |
@@ -219,20 +221,23 @@ Key defaults:
 - `OUTBOUND_MODE=rule`
 - `SELECTOR_MODE=urltest`
 - `ACTIVE_GROUP_ID=default`
-- `EBPF_NETWORK=""` (TCP and UDP)
-- `EBPF_LOCAL_ENABLED=1`
-- `EBPF_LOCAL_DATA_PLANE=cgroup`
-- `EBPF_SHARED_ENABLED=0`
-- `EBPF_SHARED_DATA_PLANE=packet_rewrite`
-- `EBPF_LOCAL_DNS_MODE=hijack`
-- `EBPF_SHARED_DNS_MODE=hijack`
-- `EBPF_LOCAL_IPV6=1`
-- `EBPF_SHARED_IPV6=1`
-- `EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS=1`
-- `EBPF_SHARED_BYPASS_PRIVATE_ADDRESS=1`
-- `EBPF_LOCAL_BYPASS_RULE_SET="geoip/cn"` (local traffic rule sets)
-- `EBPF_SHARED_BYPASS_RULE_SET="geoip/cn"` (shared-network traffic rule sets)
+- `backend: "ebpf"`
+- `app: {"enabled":true,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]}`
+- `ebpf.network: ["tcp", "udp"]`, `udp_timeout: "5m"`, `tc_priority: 1`
+- `ebpf.local.enabled: true`, `data_plane: "cgroup"`, `dns_mode: "respect_policy"`
+- `ebpf.shared.enabled: false`, `data_plane: "packet_rewrite"`, `dns_mode: "hijack"`, `interface: ["wlan2"]`
+- Both eBPF paths retain `ipv6: true`, `bypass_private_address: true`, `bypass_rule_set: ["geoip/cn"]`
+- `tun.interface_name: "netproxy"`, `address: ["172.19.0.1/30", "fdfe:dcba:9876::1/126"]`
+- `tun.auto_route: true`, `auto_redirect: true`, `dns_mode: "hijack"`; no forced MTU, stack, strict_route, or marks
 - `WIFI_AUTO_SWITCH=0`
+
+Both native objects include their matching `type` and the fixed `tag: "netproxy-in"`. Disabled eBPF paths retain preferences but emit only `enabled: false` at runtime. Shared app policy stores strict `<user-id>:<package>` string arrays; Go resolves current UIDs per Android user. Restart the service after app changes; local UIDs do not filter hotspot clients.
+
+The four `config list` targets under `category=inbound` are `inbound`, `inbound/backend`, `inbound/ebpf`, and `inbound/tun`. Section candidates retain the corresponding top-level key and use the read revision. They cannot be deleted with `{}`. The old `config ebpf` target is removed; `runtime/inbound.json` is read-only. The main configuration must not define extra managed eBPF/TUN inbounds or occupy `netproxy-in`.
+
+`configured_backend` is the saved selection; `active_backend` is non-null only in ready state with a matching actual PID and millisecond API startup identity. Prepare results use `providers/outbounds/inbound` paths plus `backend`, not the old `ebpf` path. A forced kill aborts switching and retains the journal until device reboot and recovery; no fallback cleanup is performed. See [inbound configuration](https://www.netproxy.store/config/inbound).
+
+Keep `ebpf status` for eBPF capability diagnostics. There is no `tun status` command; inspect configuration checks, actual startup, and core logs instead.
 
 For startup failures, inspect the core log first:
 

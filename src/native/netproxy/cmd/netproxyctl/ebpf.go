@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/ebpf"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/inbound"
 	"os"
 )
 
@@ -26,12 +26,20 @@ func (c *cli) ebpf(ctx context.Context, args []string) error {
 				return usageError("用法: netproxyctl ebpf status [configured|all|local|shared] [--raw]")
 			}
 		}
-		options, err := ebpf.ResolveProbeOptions(c.options.EBPFConfig, mode)
+		config, err := inbound.Load(c.options.InboundConfig)
+		if err != nil {
+			return err
+		}
+		native, err := config.EBPFOptions()
+		if err != nil {
+			return err
+		}
+		options, err := inbound.ResolveProbeOptions(native, mode)
 		if err != nil {
 			return &resultError{Code: "ebpf.status_failed", Message: err.Error()}
 		}
-		probeOutput, probeErr := ebpf.RunProbe(ctx, c.options.SingBoxPath, options)
-		report, parseErr := ebpf.ParseProbeReport(probeOutput)
+		probeOutput, probeErr := inbound.RunProbe(ctx, c.options.SingBoxPath, native, mode)
+		report, parseErr := inbound.ParseProbeReport(probeOutput)
 		if parseErr != nil {
 			return &resultError{
 				Code:    "ebpf.status_invalid",
@@ -41,7 +49,7 @@ func (c *cli) ebpf(ctx context.Context, args []string) error {
 		}
 		content := probeOutput
 		if !raw {
-			content = ebpf.FormatProbeOutput(report, probeErr)
+			content = inbound.FormatProbeOutput(report, probeErr)
 		}
 		data := map[string]any{
 			"mode":    options.RequestedMode,

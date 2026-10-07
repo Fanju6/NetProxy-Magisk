@@ -143,7 +143,7 @@ func writeLogArchive(options Options, output io.Writer) (err error) {
 	}
 	files = append(files,
 		archiveFile{source: options.ModuleConfig, name: "config/module.conf", redact: true},
-		archiveFile{source: options.EBPFConfig, name: "config/ebpf.conf", redact: true},
+		archiveFile{source: options.InboundConfig, name: "config/inbound.json", redact: true},
 		archiveFile{source: paths.SingBoxConfig(options.SingBoxDir), name: "config/singbox/config.json", redact: true},
 	)
 	for _, directory := range []struct{ path, name string }{
@@ -156,7 +156,7 @@ func writeLogArchive(options Options, output io.Writer) (err error) {
 		"config/singbox/rules/remote", false, false,
 	)
 	appendDirectoryFiles(&files, options.CatalogRoot, "data/catalog", true, true)
-	for _, name := range []string{"providers.json", "outbounds.json", "ebpf.json"} {
+	for _, name := range []string{"providers.json", "outbounds.json", "inbound.json"} {
 		files = append(files, archiveFile{
 			source: filepath.Join(options.RuntimeDir, name),
 			name:   "runtime/" + name,

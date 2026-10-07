@@ -1,4 +1,4 @@
-package ebpf
+package inbound
 
 import (
 	"context"
@@ -23,14 +23,7 @@ func TestPackageQueryPreservesCancellation(t *testing.T) {
 
 func TestPackageQueryStopsRunningCommand(t *testing.T) {
 	directory := t.TempDir()
-	binary := filepath.Join(directory, "cmd")
-	if runtime.GOOS == "windows" {
-		binary += ".exe"
-	}
-	build := exec.Command("go", "build", "-o", binary, "./testdata/fake-package")
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("构建查询桩: %v %s", err, output)
-	}
+	buildFakeCommand(t, directory)
 	started := filepath.Join(directory, "started")
 	t.Setenv("NETPROXY_PACKAGE_STARTED", started)
 	t.Setenv("PATH", directory+string(os.PathListSeparator)+os.Getenv("PATH"))
@@ -64,6 +57,58 @@ func TestPackageQueryStopsRunningCommand(t *testing.T) {
 	}
 }
 
+func buildFakeCommand(t *testing.T, directory string) string {
+	t.Helper()
+	binary := filepath.Join(directory, "cmd")
+	if runtime.GOOS == "windows" {
+		binary += ".exe"
+	}
+	build := exec.Command("go", "build", "-o", binary, "./testdata/fake-package")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("构建查询桩: %v %s", err, output)
+	}
+	return binary
+}
+
+func TestCommandContextQueriesEachUserOnceAndReportsMissing(t *testing.T) {
+	directory := t.TempDir()
+	buildFakeCommand(t, directory)
+	logPath := filepath.Join(directory, "queries")
+	t.Setenv("NETPROXY_TEST_COMMAND_MODE", "packages")
+	t.Setenv("NETPROXY_TEST_COMMAND_LOG", logPath)
+	t.Setenv("PATH", directory+string(os.PathListSeparator)+os.Getenv("PATH"))
+	for _, backend := range []string{"ebpf", "tun"} {
+		config := fixture(t, backend, "", "")
+		config.App = AppPolicy{Enabled: true, Mode: "whitelist", ProxyApps: []string{"10:com.example.app", "0:com.example.app", "10:com.example.shared", "0:com.example.app", "10:com.example.missing"}}
+		built, err := config.Build(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		include, ranges, _, _ := builtFilters(t, built)
+		if !reflect.DeepEqual(include, []uint32{0, 10123, 1010123}) || len(ranges) != 0 {
+			t.Fatalf("多用户或共享 UID 投影错误: %v %v", include, ranges)
+		}
+		if !reflect.DeepEqual(built.MissingPackages, []PackageRef{{UserID: 10, Package: "com.example.missing"}}) {
+			t.Fatal(built)
+		}
+	}
+	log, err := os.ReadFile(logPath)
+	if err != nil || string(log) != "10\n0\n10\n0\n" {
+		t.Fatalf("不是每次按用户一次查询: %q %v", log, err)
+	}
+	config := fixture(t, "tun", "", "")
+	config.App = AppPolicy{Enabled: true, Mode: "whitelist", ProxyApps: []string{"10:com.example.app", "10:com.example.missing"}}
+	missing, err := WriteAtomic(t.Context(), filepath.Join(directory, "runtime.json"), config)
+	if err != nil || !reflect.DeepEqual(missing, []PackageRef{{UserID: 10, Package: "com.example.missing"}}) {
+		t.Fatal(missing, err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := ResolvePackageUIDs(ctx, nil); !errors.Is(err, context.Canceled) {
+		t.Fatal("空名单查询吞掉取消", err)
+	}
+}
+
 func TestParsePackageUIDsAcceptsPackageRowsAndIgnoresOtherOutput(t *testing.T) {
 	got, err := parsePackageUIDs(strings.Join([]string{
 		"Packages:",
@@ -91,7 +136,7 @@ func TestParsePackageUIDsRejectsMalformedPackageRows(t *testing.T) {
 	} {
 		_, err := parsePackageUIDs(output)
 		var validation *ValidationError
-		if !errors.As(err, &validation) || len(validation.Diagnostics) != 1 || validation.Diagnostics[0].Code != "ebpf.package_list_invalid" {
+		if !errors.As(err, &validation) || len(validation.Diagnostics) != 1 || validation.Diagnostics[0].Code != "inbound.package_list_invalid" {
 			t.Fatalf("malformed package output %q returned unexpected error: %v", output, err)
 		}
 	}
@@ -150,14 +195,14 @@ func TestParsePackageUIDCommandResultTreatsStderrAsFailure(t *testing.T) {
 		{
 			name:        "successful command with error stderr",
 			stderr:      "Error: unknown user",
-			wantCode:    "ebpf.package_list_failed",
+			wantCode:    "inbound.package_list_failed",
 			wantMessage: "Error: unknown user",
 		},
 		{
 			name:        "non zero command",
 			stderr:      "permission denied",
 			commandErr:  errors.New("exit status 1"),
-			wantCode:    "ebpf.package_list_failed",
+			wantCode:    "inbound.package_list_failed",
 			wantMessage: "exit status 1: permission denied",
 		},
 	}

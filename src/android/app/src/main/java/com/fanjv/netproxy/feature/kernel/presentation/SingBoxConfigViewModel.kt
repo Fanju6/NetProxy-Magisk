@@ -3,8 +3,11 @@ package com.fanjv.netproxy.feature.kernel.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fanjv.netproxy.core.module.ServiceRepository
+import com.fanjv.netproxy.core.command.NetProxyCtlException
 import com.fanjv.netproxy.core.ui.userMessage
 import com.fanjv.netproxy.feature.settings.data.ConfigRepository
+import com.fanjv.netproxy.feature.inbound.data.InboundRepository
+import com.fanjv.netproxy.feature.inbound.data.InboundSwitchConfirmationRequired
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,7 +17,8 @@ import kotlinx.coroutines.launch
 /** 通过 netproxyctl 配置事务驱动 sing-box 配置工作台。 */
 internal class SingBoxConfigViewModel(
     private val repository: ConfigRepository,
-    private val serviceRepository: ServiceRepository
+    private val serviceRepository: ServiceRepository,
+    private val inboundRepository: InboundRepository
 ) : ViewModel() {
     private val _state = MutableStateFlow(SingBoxConfigUiState())
     val state: StateFlow<SingBoxConfigUiState> = _state.asStateFlow()
@@ -30,9 +34,10 @@ internal class SingBoxConfigViewModel(
                                 SingBoxDocument(
                                     id = document.id,
                                     filename = document.filename,
-                                    category = when (document.category) {
-                                        "rules" -> SingBoxDocumentCategory.LocalRule
-                                        "runtime" -> SingBoxDocumentCategory.Runtime
+                                    category = when {
+                                        document.id == "inbound" || document.id.startsWith("inbound/") -> SingBoxDocumentCategory.Inbound
+                                        document.category == "rules" -> SingBoxDocumentCategory.LocalRule
+                                        document.category == "runtime" -> SingBoxDocumentCategory.Runtime
                                         else -> SingBoxDocumentCategory.Config
                                     },
                                     editable = document.editable,
@@ -89,13 +94,20 @@ internal class SingBoxConfigViewModel(
         id: String,
         content: String,
         expectedRevision: String,
+        confirmBackendSwitch: Boolean = false,
         onComplete: (SingBoxDocumentSaveResult) -> Unit = {}
     ) {
         viewModelScope.launch {
             runCatching {
                 val state = _state.value
                 check(state.activeDocumentId == id && expectedRevision.isNotEmpty())
-                repository.apply(id, content, expectedRevision)
+                if (id == "inbound" || id.startsWith("inbound/")) {
+                    if (!confirmBackendSwitch && inboundRepository.requiresSwitchConfirmation(id, content)) {
+                        onComplete(SingBoxDocumentSaveResult(success = false, confirmationRequired = true))
+                        return@launch
+                    }
+                    inboundRepository.apply(id, content, expectedRevision, confirmBackendSwitch)
+                } else repository.apply(id, content, expectedRevision)
             }
                 .onSuccess { revision ->
                     _state.update { state ->
@@ -108,11 +120,16 @@ internal class SingBoxConfigViewModel(
                     onComplete(SingBoxDocumentSaveResult(success = true, revision = revision))
                 }
                 .onFailure { error ->
+                    if (error is InboundSwitchConfirmationRequired) {
+                        onComplete(SingBoxDocumentSaveResult(success = false, confirmationRequired = true))
+                        return@onFailure
+                    }
                     onComplete(
                         SingBoxDocumentSaveResult(
                             success = false,
                             errorMessage = error.userMessage(),
-                            restored = true
+                            errorCode = (error as? NetProxyCtlException)?.resultCode.orEmpty(),
+                            restored = false
                         )
                     )
                 }

@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AppRegistration
+import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.ContactPage
 import androidx.compose.material.icons.rounded.Memory
@@ -98,10 +98,10 @@ internal fun SettingsScreen(
                     keyPrefix = "settings_entries",
                     outerTopPadding = 12.dp,
                     items = listOf(
-                        CardItem("proxy") {
+                        CardItem("inbound") {
                             ArrowPreference(
-                                title = stringResource(R.string.proxy_settings),
-                                summary = stringResource(R.string.proxy_settings_summary),
+                                title = stringResource(R.string.inbound_settings),
+                                summary = stringResource(R.string.inbound_settings_summary),
                                 startAction = {
                                     Icon(
                                         imageVector = Icons.Rounded.Router,
@@ -110,22 +110,22 @@ internal fun SettingsScreen(
                                         tint = colorScheme.onBackground
                                     )
                                 },
-                                onClick = { navigator.push(Route.ProxySettings) }
+                                onClick = { navigator.push(Route.InboundSettings) }
                             )
                         },
-                        CardItem("apps") {
+                        CardItem("network") {
                             ArrowPreference(
-                                title = stringResource(R.string.proxy_apps),
-                                summary = stringResource(R.string.proxy_mode_summary),
+                                title = stringResource(R.string.network_matching),
+                                summary = stringResource(R.string.network_matching_summary),
                                 startAction = {
                                     Icon(
-                                        imageVector = Icons.Rounded.AppRegistration,
+                                        imageVector = Icons.Rounded.Wifi,
                                         contentDescription = null,
                                         modifier = Modifier.padding(end = 6.dp),
                                         tint = colorScheme.onBackground
                                     )
                                 },
-                                onClick = { navigator.push(Route.Apps) }
+                                onClick = { navigator.push(Route.NetworkMatching) }
                             )
                         },
                         CardItem("kernel") {
@@ -163,6 +163,7 @@ internal fun SettingsScreen(
                                     )
                                 },
                                 checked = settings.autoStartEnabled,
+                                enabled = settings.hasLoaded && !settings.isLoading && !settings.isSaving,
                                 onCheckedChange = { viewModel.setAutoStartEnabled(it) }
                             )
                         },

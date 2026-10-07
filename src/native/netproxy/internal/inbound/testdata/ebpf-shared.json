@@ -1,0 +1,10 @@
+{
+  "backend": "ebpf",
+  "app": {"enabled": true, "mode": "whitelist", "proxy_apps": ["10:com.example.app"], "bypass_apps": []},
+  "ebpf": {
+    "type": "ebpf", "tag": "netproxy-in", "network": "tcp",
+    "local": {"enabled": false, "data_plane": "cgroup", "include_uid": 123},
+    "shared": {"enabled": true, "interface": "ap0", "data_plane": "packet_rewrite", "dns_mode": "hijack", "ipv6": false, "bypass_private_address": false, "include_source_cidr": "192.168.43.0/24", "bypass_port": [67, 68], "bypass_port_range": "8000:8080", "bypass_rule_set": "geoip/cn"}
+  },
+  "tun": {"type": "tun", "tag": "netproxy-in", "address": "172.19.0.1/30", "auto_route": true, "auto_redirect": true}
+}

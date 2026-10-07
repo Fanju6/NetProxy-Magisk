@@ -3,6 +3,7 @@ package com.fanjv.netproxy.feature.kernel.presentation
 /** sing-box 配置工作台中的文件分类。 */
 enum class SingBoxDocumentCategory {
     Config,
+    Inbound,
     LocalRule,
     Runtime,
 }
@@ -22,4 +23,6 @@ data class SingBoxDocumentSaveResult(
     val errorMessage: String? = null,
     val restored: Boolean = false,
     val revision: String = "",
+    val confirmationRequired: Boolean = false,
+    val errorCode: String = "",
 )

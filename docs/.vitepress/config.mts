@@ -4,7 +4,7 @@ const siteUrl = 'https://www.netproxy.store'
 
 export default defineConfig({
   title: 'NetProxy',
-  description: 'Android sing-box 透明代理模块，支持 eBPF、节点与订阅、分应用代理和共享网络。',
+  description: 'Android sing-box 透明代理模块，支持 eBPF 或 Root TUN、节点与订阅、分应用代理和共享网络。',
   lang: 'zh-CN',
   base: '/',
   cleanUrls: true,
@@ -80,7 +80,7 @@ export default defineConfig({
           items: [
             { text: 'Android 管理器', link: '/guide/android-manager' },
             { text: '节点与订阅', link: '/guide/nodes-subscriptions' },
-            { text: 'eBPF 与分应用代理', link: '/guide/transparent-proxy' },
+            { text: '透明代理与分应用策略', link: '/guide/transparent-proxy' },
             { text: 'Wi-Fi 自动策略', link: '/guide/wifi-policy' },
             { text: '控制面板与 API', link: '/guide/control-panel' }
           ]
@@ -106,7 +106,9 @@ export default defineConfig({
           text: '配置参考',
           items: [
             { text: 'module.conf', link: '/config/module' },
-            { text: 'ebpf.conf', link: '/config/ebpf' },
+            { text: '入站配置', link: '/config/inbound' },
+            { text: 'eBPF 原生参数', link: '/config/ebpf' },
+            { text: 'Root TUN 原生参数', link: '/config/tun' },
             { text: 'sing-box 配置与运行时', link: '/config/singbox' },
             { text: '路由与 DNS', link: '/config/routing' },
             { text: '策略分组配置', link: '/config/policy-groups' },

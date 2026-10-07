@@ -162,7 +162,7 @@ internal fun AppsScreen(
                     searchStatus.TopAppBarAnim(backgroundColor = barColor) {
                         TopAppBar(
                             color = barColor,
-                            title = stringResource(R.string.apps),
+                            title = stringResource(R.string.proxy_apps),
                             scrollBehavior = scrollBehavior,
                             navigationIcon = {
                                 onBack?.let { BackIconButton(onClick = it) }
@@ -334,7 +334,7 @@ internal fun AppsScreen(
                                         else 2
 
                                         OverlayDropdownPreference(
-                                            title = stringResource(R.string.proxy_apps),
+                                            title = stringResource(R.string.app_proxy_mode),
                                             summary = stringResource(R.string.proxy_mode_summary),
                                             items = modes,
                                             selectedIndex = selectedIndex,

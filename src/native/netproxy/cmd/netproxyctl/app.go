@@ -15,7 +15,7 @@ func (c *cli) app(ctx context.Context, args []string) error {
 	action := args[0]
 	positionals := args[1:]
 	if action == "list" {
-		data, err := moduleapp.LoadAppPolicy(options.EBPFConfig)
+		data, err := moduleapp.LoadAppPolicy(options.InboundConfig)
 		if err != nil {
 			return err
 		}

@@ -1,0 +1,10 @@
+{
+  "backend": "ebpf",
+  "app": {"enabled": true, "mode": "blacklist", "proxy_apps": [], "bypass_apps": []},
+  "ebpf": {
+    "type": "ebpf", "tag": "netproxy-in", "udp_timeout": "5m", "tc_priority": 1,
+    "local": {"enabled": true, "data_plane": "cgroup", "dns_mode": "respect_policy", "ipv6": true, "bypass_private_address": true, "bypass_rule_set": "geoip/cn"},
+    "shared": {"enabled": false, "interface": "wlan2", "data_plane": "packet_rewrite", "dns_mode": "hijack", "ipv6": true, "bypass_private_address": true, "bypass_rule_set": "geoip/cn"}
+  },
+  "tun": {"type": "tun", "tag": "netproxy-in", "address": "172.19.0.1/30", "auto_route": true, "auto_redirect": true}
+}

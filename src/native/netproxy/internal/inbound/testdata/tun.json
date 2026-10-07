@@ -1,0 +1,9 @@
+{
+  "backend": "tun",
+  "app": {"enabled": false, "mode": "blacklist", "proxy_apps": [], "bypass_apps": []},
+  "ebpf": {"type": "ebpf", "tag": "netproxy-in", "local": {"enabled": true}, "shared": {"enabled": false}},
+  "tun": {
+    "type": "tun", "tag": "netproxy-in", "interface_name": "netproxy", "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"], "auto_route": true, "auto_redirect": true, "dns_mode": "hijack", "strict_route": true,
+    "include_interface": "wlan0", "route_exclude_address": "10.0.0.0/8", "route_exclude_address_set": "geoip/cn", "exclude_uid": [100, 100], "exclude_uid_range": "200:300", "exclude_mac_address": "02:11:22:33:44:55", "udp_timeout": "2m", "mtu": 1400
+  }
+}

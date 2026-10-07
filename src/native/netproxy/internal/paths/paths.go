@@ -53,8 +53,8 @@ func (l Layout) Catalog() string { return filepath.Join(l.Data(), "catalog") }
 // ModuleConfig 返回模块配置文件路径。
 func (l Layout) ModuleConfig() string { return filepath.Join(l.Config(), "module.conf") }
 
-// EBPFConfig 返回 eBPF 配置文件路径。
-func (l Layout) EBPFConfig() string { return filepath.Join(l.Config(), "ebpf", "ebpf.conf") }
+// InboundConfig 返回受管入站配置文件路径。
+func (l Layout) InboundConfig() string { return filepath.Join(l.Config(), "inbound", "inbound.json") }
 
 // SingBoxDir 返回 sing-box 静态配置根目录。
 func (l Layout) SingBoxDir() string { return filepath.Join(l.Config(), "singbox") }

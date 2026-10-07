@@ -9,6 +9,10 @@ set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 BUILD_DIR="${NETPROXY_CI_BUILD_DIR:-$ROOT/.tmp/ci}"
 NATIVE_DIR="$ROOT/src/native/netproxy"
+HOST_BIN="$BUILD_DIR/netproxyctl"
+if [ "$(go env GOOS)" = windows ]; then
+  HOST_BIN="$HOST_BIN.exe"
+fi
 
 mkdir -p "$BUILD_DIR"
 
@@ -28,7 +32,7 @@ build_binaries() {
     go test ./...
     go vet ./...
     CGO_ENABLED=0 go build -trimpath -buildvcs=false -pgo=auto \
-      -o "$BUILD_DIR/netproxyctl" ./cmd/netproxyctl
+      -o "$HOST_BIN" ./cmd/netproxyctl
     CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build \
       -trimpath -buildvcs=false -pgo=auto \
       -ldflags="-s -w -buildid= -X github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/telemetry.ProjectToken=${POSTHOG_PROJECT_TOKEN:-} -X github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/telemetry.IngestionHost=${POSTHOG_HOST:-}" \
@@ -45,9 +49,9 @@ build_binaries() {
 #######################################
 run_shell_contracts() {
   printf '%s\n' '开始执行 Shell 契约测试'
-  sh "$ROOT/tests/runtime_catalog_test.sh" "$BUILD_DIR/netproxyctl"
+  sh "$ROOT/tests/runtime_catalog_test.sh" "$HOST_BIN"
   sh "$ROOT/tests/module_scripts_test.sh"
-  sh "$ROOT/tests/customize_hot_update_test.sh" "$BUILD_DIR/netproxyctl"
+  sh "$ROOT/tests/customize_hot_update_test.sh" "$HOST_BIN"
   sh "$ROOT/tests/module_packaging_test.sh"
   sh "$ROOT/tests/release_notes_test.sh"
 }

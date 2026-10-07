@@ -45,7 +45,8 @@ import com.fanjv.netproxy.feature.dashboard.presentation.CatalogDashboardScreen
 import com.fanjv.netproxy.feature.kernel.presentation.SingBoxJsonEditScreen
 import com.fanjv.netproxy.feature.kernel.presentation.SingBoxKernelSettingsScreen
 import com.fanjv.netproxy.feature.logs.presentation.LogsScreen
-import com.fanjv.netproxy.feature.settings.presentation.ProxySettingsScreen
+import com.fanjv.netproxy.feature.inbound.presentation.InboundSettingsScreen
+import com.fanjv.netproxy.feature.settings.presentation.NetworkMatchingScreen
 import com.fanjv.netproxy.feature.settings.presentation.SettingsScreen
 import com.fanjv.netproxy.feature.theme.presentation.ThemeSettingsScreen
 import com.fanjv.netproxy.feature.theme.presentation.ThemeViewModel
@@ -60,7 +61,8 @@ import com.fanjv.netproxy.navigation.Route.KernelSettings
 import com.fanjv.netproxy.navigation.Route.Logs
 import com.fanjv.netproxy.navigation.Route.Main
 import com.fanjv.netproxy.navigation.Route.NodeEdit
-import com.fanjv.netproxy.navigation.Route.ProxySettings
+import com.fanjv.netproxy.navigation.Route.InboundSettings
+import com.fanjv.netproxy.navigation.Route.NetworkMatching
 import com.fanjv.netproxy.navigation.Route.SubscriptionDetails
 import com.fanjv.netproxy.navigation.Route.SubscriptionEdit
 import com.fanjv.netproxy.navigation.Route.ThemeSettings
@@ -172,11 +174,14 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
                         onBack = { navigator.pop() }
                     )
                 }
-                entry<ProxySettings> {
-                    ProxySettingsScreen(
+                entry<InboundSettings> {
+                    InboundSettingsScreen(
                         onBack = { navigator.pop() },
                         bottomPadding = 0.dp
                     )
+                }
+                entry<NetworkMatching> {
+                    NetworkMatchingScreen(onBack = { navigator.pop() })
                 }
                 entry<KernelSettings> {
                     SingBoxKernelSettingsScreen(

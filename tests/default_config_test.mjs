@@ -6,6 +6,7 @@ import { test } from 'node:test'
 const root = new URL('../', import.meta.url)
 const readJSON = path => JSON.parse(readFileSync(new URL(path, root), 'utf8'))
 const config = readJSON('src/module/config/singbox/config.json')
+const managed = readJSON('src/module/config/inbound/inbound.json')
 const upstream = readJSON('tests/fixtures/singbox-upstream.json')
 const resources = readJSON('.github/resources.json').raw
 const list = value => value === undefined ? [] : Array.isArray(value) ? value : [value]
@@ -48,22 +49,39 @@ test('默认远程规则有对应的内置文件与更新来源', () => {
 })
 
 test('eBPF 默认绕过引用与上游和静态规则一致', () => {
-  const ebpf = readFileSync(new URL('src/module/config/ebpf/ebpf.conf', root), 'utf8')
-  const localBypass = ebpf.match(/^EBPF_LOCAL_BYPASS_RULE_SET="([^"]*)"/m)[1].split(',')
-  const sharedBypass = ebpf.match(/^EBPF_SHARED_BYPASS_RULE_SET="([^"]*)"/m)[1].split(',')
+  const localBypass = managed.ebpf.local.bypass_rule_set
+  const sharedBypass = managed.ebpf.shared.bypass_rule_set
   const inbound = upstream.inbounds.find(inbound => inbound.type === 'ebpf')
   assert.deepEqual(localBypass, inbound.local.bypass_rule_set)
   assert.deepEqual(sharedBypass, inbound.shared.bypass_rule_set)
-  assert.doesNotMatch(ebpf, /^EBPF_BYPASS_RULE_SET=/m)
+  assert.equal(Object.hasOwn(managed.ebpf, 'bypass_rule_set'), false)
   const tags = config.route.rule_set.flatMap(rule => list(rule.tag))
   for (const tag of [...localBypass, ...sharedBypass]) assert.ok(tags.includes(tag), `${tag} 未在静态配置声明`)
 })
 
-test('eBPF 默认配置使用显式数据路径和新版数据平面', () => {
-  const ebpf = readFileSync(new URL('src/module/config/ebpf/ebpf.conf', root), 'utf8')
-  assert.match(ebpf, /^EBPF_LOCAL_ENABLED=1$/m)
-  assert.match(ebpf, /^EBPF_LOCAL_DATA_PLANE="cgroup"$/m)
-  assert.match(ebpf, /^EBPF_SHARED_ENABLED=0$/m)
-  assert.match(ebpf, /^EBPF_SHARED_DATA_PLANE="packet_rewrite"$/m)
-  assert.doesNotMatch(ebpf, /^EBPF_MODE=/m)
+test('单一入站默认保留 eBPF 原生语义和禁用共享路径偏好', () => {
+  assert.deepEqual(Object.keys(managed), ['backend', 'app', 'ebpf', 'tun'])
+  assert.equal(managed.backend, 'ebpf')
+  assert.deepEqual(managed.app, { enabled: true, mode: 'blacklist', proxy_apps: [], bypass_apps: [] })
+  assert.deepEqual(managed.ebpf, {
+    type: 'ebpf', tag: 'netproxy-in', network: ['tcp', 'udp'], udp_timeout: '5m', tc_priority: 1,
+    local: {
+      enabled: true, data_plane: 'cgroup', dns_mode: 'respect_policy', ipv6: true,
+      bypass_private_address: true, bypass_rule_set: ['geoip/cn'],
+    },
+    shared: {
+      enabled: false, data_plane: 'packet_rewrite', dns_mode: 'hijack', interface: ['wlan2'],
+      ipv6: true, bypass_private_address: true, bypass_rule_set: ['geoip/cn'],
+    },
+  })
+})
+
+test('TUN 默认只固定必需接管参数，不覆盖上游可选默认', () => {
+  assert.deepEqual(managed.tun, {
+    type: 'tun', tag: 'netproxy-in', interface_name: 'netproxy',
+    address: ['172.19.0.1/30', 'fdfe:dcba:9876::1/126'],
+    auto_route: true, auto_redirect: true, dns_mode: 'hijack',
+  })
+  assert.equal(config.route.auto_detect_interface, true)
+  assert.ok(config.inbounds.every(inbound => !['ebpf', 'tun'].includes(inbound.type) && inbound.tag !== 'netproxy-in'))
 })

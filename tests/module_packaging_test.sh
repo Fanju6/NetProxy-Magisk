@@ -153,7 +153,7 @@ assert_contains "$TEMP/metadata" "module_name=NetProxy_${version}_${commit_count
 assert_contains "$TEMP/metadata" "manager_version=${version#v}"
 assert_contains "$TEMP/metadata" "short_sha=$short_sha"
 assert_contains "$TEMP/metadata" "commit_count=$commit_count"
-mkdir -p "$TEMP/module/config/singbox" "$TEMP/module/runtime" "$TEMP/module/bin"
+mkdir -p "$TEMP/module/config/singbox" "$TEMP/module/config/inbound" "$TEMP/module/runtime" "$TEMP/module/bin"
 printf 'id=netproxy\nversion=test\n' > "$TEMP/module/module.prop"
 # 小文件可能自动使用 Store；可压缩内容才能验证实际压缩方法。
 {
@@ -164,6 +164,7 @@ printf 'id=netproxy\nversion=test\n' > "$TEMP/module/module.prop"
   done
 } > "$TEMP/module/bin/netproxyctl"
 printf '{}\n' > "$TEMP/module/config/singbox/config.json"
+cp "$ROOT/src/module/config/inbound/inbound.json" "$TEMP/module/config/inbound/inbound.json"
 : > "$TEMP/module/runtime/.gitkeep"
 
 sh "$ROOT/.github/scripts/package-module.sh" "$TEMP/module" "$TEMP/output" module.zip > "$TEMP/package.log"
@@ -184,6 +185,8 @@ cp "$TEMP/module/bin/netproxyctl" "$TEMP/module/NetProxy.apk"
 sh "$ROOT/.github/scripts/complete-module.sh" "$TEMP/output/module.zip" "$TEMP/module/NetProxy.apk" >> "$TEMP/package.log"
 7z l -slt "$TEMP/output/module.zip" | tr '\\' '/' > "$TEMP/module.list"
 assert_contains "$TEMP/module.list" 'Path = module.prop'
+assert_contains "$TEMP/module.list" 'Path = config/inbound/inbound.json'
+assert_not_contains "$TEMP/module.list" 'Path = config/ebpf/ebpf.conf'
 assert_contains "$TEMP/module.list" 'Path = runtime/.gitkeep'
 assert_contains "$TEMP/module.list" 'Path = NetProxy.apk'
 [ "$(find "$TEMP/output" -type f | wc -l)" -eq 1 ]
@@ -195,7 +198,7 @@ grep -Eiq '^Method = xz$' "$TEMP/core.list" || {
 grep -E '^(Packed Size|CRC|Method) = ' "$TEMP/before.core" > "$TEMP/before.compression"
 grep -E '^(Packed Size|CRC|Method) = ' "$TEMP/core.list" > "$TEMP/after.compression"
 cmp "$TEMP/before.compression" "$TEMP/after.compression"
-for file in module.prop bin/netproxyctl config/singbox/config.json NetProxy.apk; do
+for file in module.prop bin/netproxyctl config/singbox/config.json config/inbound/inbound.json NetProxy.apk; do
   7z x -so "$TEMP/output/module.zip" "$file" > "$TEMP/extracted"
   cmp "$TEMP/module/$file" "$TEMP/extracted"
 done

@@ -16,6 +16,13 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 )
 
+const testInboundConfig = `{
+  "backend": "ebpf",
+  "app": {"enabled": false, "mode": "blacklist", "proxy_apps": [], "bypass_apps": []},
+  "ebpf": {"type": "ebpf", "tag": "netproxy-in", "local": {"enabled": true}, "shared": {"enabled": false}},
+  "tun": {"type": "tun", "tag": "netproxy-in", "interface_name": "netproxy", "address": ["172.19.0.1/30"], "auto_route": true, "auto_redirect": true}
+}`
+
 func TestNodeImportAppendsToDefaultGroup(t *testing.T) {
 	root := t.TempDir()
 	options := newTestOptions(root)
@@ -72,8 +79,8 @@ func TestNodeImportAppendsToDefaultGroup(t *testing.T) {
 }
 
 func TestLoadAppPolicyReturnsTypedSettings(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "ebpf.conf")
-	content := "APP_PROXY_ENABLE=1\nAPP_PROXY_MODE=\"whitelist\"\nPROXY_APPS_LIST=\"0:com.example.one,10:com.example.two\"\nBYPASS_APPS_LIST=\"0:com.example.three\"\n"
+	path := filepath.Join(t.TempDir(), "inbound.json")
+	content := strings.Replace(testInboundConfig, `"enabled": false, "mode": "blacklist", "proxy_apps": [], "bypass_apps": []`, `"enabled": true, "mode": "whitelist", "proxy_apps": ["0:com.example.one","10:com.example.two"], "bypass_apps": ["0:com.example.three"]`, 1)
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}

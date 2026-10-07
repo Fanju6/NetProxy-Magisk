@@ -31,8 +31,8 @@ class SingBoxSchemaCompletionProvider internal constructor(
     private val schemaProvider: () -> String,
     private val text: SchemaText,
 ) : CompletionProvider {
-    constructor(context: Context) : this({
-        context.assets.open(SCHEMA_ASSET).bufferedReader().use { it.readText() }
+    constructor(context: Context, documentId: String = "") : this({
+        context.assets.open(SCHEMA_ASSET).bufferedReader().use { editorSchema(it.readText(), documentId) }
     }, SchemaText { id, args -> context.getString(id, *args) })
 
     private val navigator by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {

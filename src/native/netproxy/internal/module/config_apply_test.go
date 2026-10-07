@@ -99,10 +99,10 @@ func configApplyOptions(t *testing.T) (Options, string, string, map[string]strin
 	if err := os.WriteFile(options.ModuleConfig, []byte("\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Dir(options.EBPFConfig), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(options.InboundConfig), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(options.EBPFConfig, []byte("\n"), 0o600); err != nil {
+	if err := os.WriteFile(options.InboundConfig, []byte(testInboundConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	destination := filepath.Join(options.SingBoxDir, "config.json")
@@ -116,7 +116,7 @@ func configApplyOptions(t *testing.T) (Options, string, string, map[string]strin
 		t.Fatal(err)
 	}
 	runtimeContent := map[string]string{}
-	for _, name := range []string{"providers.json", "outbounds.json", "ebpf.json"} {
+	for _, name := range []string{"providers.json", "outbounds.json", "inbound.json"} {
 		content := "old-" + name + "\n"
 		runtimeContent[name] = content
 		if err := os.MkdirAll(options.RuntimeDir, 0o700); err != nil {
@@ -473,7 +473,7 @@ func TestConfigRollbackFailureKeepsSnapshotsForRetry(t *testing.T) {
 	}
 	failure := errors.New("模拟恢复中断")
 	configSnapshotRestore = func(snapshot configFileSnapshot) error {
-		if filepath.Base(snapshot.Path) == "ebpf.json" {
+		if filepath.Base(snapshot.Path) == "inbound.json" {
 			return failure
 		}
 		return restoreConfigSnapshot(snapshot)
@@ -553,7 +553,7 @@ func TestConcurrentAppAddsKeepEveryPackage(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	policy, err := LoadAppPolicy(options.EBPFConfig)
+	policy, err := LoadAppPolicy(options.InboundConfig)
 	if err != nil {
 		t.Fatal(err)
 	}

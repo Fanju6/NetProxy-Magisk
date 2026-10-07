@@ -6,12 +6,12 @@
 
 ```sh
 su -c '/data/adb/modules/netproxy/netproxyctl config check'
-su -c '/data/adb/modules/netproxy/netproxyctl ebpf status configured'
+su -c '/data/adb/modules/netproxy/netproxyctl service status'
 su -c '/data/adb/modules/netproxy/netproxyctl logs show service 100'
 su -c '/data/adb/modules/netproxy/netproxyctl logs show core 100'
 ```
 
-确认已有可用节点、活动分组有效，并查看错误来自静态配置、Provider、eBPF 能力还是核心启动。
+确认已有可用节点、活动分组有效，并查看错误来自静态配置、Provider、所选入站能力还是核心启动。eBPF 可补充执行 `su -c '/data/adb/modules/netproxy/netproxyctl ebpf status configured'`；TUN 没有独立 status 命令，配置 check 通过不代表实际设备能力足够。失败不会自动换后端。
 
 ## 订阅更新失败会清空节点吗
 
@@ -23,7 +23,11 @@ su -c '/data/adb/modules/netproxy/netproxyctl logs show core 100'
 
 ## Global 模式为什么仍有直连
 
-`EBPF_LOCAL_BYPASS_RULE_SET`、`EBPF_SHARED_BYPASS_RULE_SET`、私网绕过和应用名单可以在流量进入普通路由前放行。严格测试 Global 时清空已启用数据路径的提前绕过规则并重启核心，同时确认没有应用或共享网络筛选。
+eBPF 的 `local.bypass_rule_set`、`shared.bypass_rule_set`、私网绕过和应用名单可以在普通路由前放行；TUN 的原生路由范围、接口和地址排除也会影响接管。严格测试 Global 时检查实际后端的绕过与筛选并重启核心，而不是只修改出站模式。
+
+## 升级提示缺少 inbound.json
+
+保留全数据要求当前 `config/inbound/inbound.json` 完整。安装器不检测版本或迁移旧文件，也不静默补默认；选择“仅保留节点与订阅”可保留 Catalog 与日志、恢复默认配置，或主动选择“全新安装”。
 
 ## DNS 泄漏是什么
 

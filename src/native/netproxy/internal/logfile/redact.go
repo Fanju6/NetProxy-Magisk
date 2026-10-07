@@ -25,6 +25,7 @@ var (
 		"private_key_passphrase": {}, "private_key_path": {}, "proxy_authorization": {},
 		"psk": {}, "public_key": {}, "secret": {}, "short_id": {}, "token": {},
 		"url": {}, "user_agent": {}, "username": {}, "uuid": {},
+		"proxy_apps": {}, "bypass_apps": {}, "include_package": {}, "exclude_package": {},
 	}
 )
 

@@ -4,7 +4,7 @@ layout: home
 hero:
   name: NetProxy
   text: Android sing-box 透明代理模块
-  tagline: 使用 eBPF 接管本机与共享网络流量，在一个模块中管理节点、订阅、分应用策略和运行状态。
+  tagline: 选择 eBPF 或 Root TUN 接管流量，统一管理节点、订阅、分应用策略和运行状态。
   image:
     src: /N.svg
     alt: NetProxy 标志
@@ -20,8 +20,8 @@ hero:
       link: /guide/faq
 
 features:
-  - title: eBPF 透明代理
-    details: 接管本机应用与热点、LAN 等共享网络流量，支持 TCP、UDP、IPv4 和 IPv6。
+  - title: 可选透明代理入站
+    details: eBPF 或 Root TUN + auto_redirect，一次只启用一个，分别保存原生参数。
   - title: 节点与订阅
     details: 管理本地节点和订阅，支持导入、筛选、自动更新、测速、编辑、导出与更新历史。
   - title: 分应用代理

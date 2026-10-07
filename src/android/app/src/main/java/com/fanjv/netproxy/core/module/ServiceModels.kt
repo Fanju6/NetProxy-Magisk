@@ -13,6 +13,8 @@ internal data class ServiceStatusSnapshot(
     val error: String = "",
     @SerialName("outbound_mode") val outboundMode: String = "unknown",
     @SerialName("configured_outbound_mode") val configuredOutboundMode: String = "rule",
+    @SerialName("configured_backend") val configuredBackend: String = "",
+    @SerialName("active_backend") val activeBackend: String? = null,
     @SerialName("selector_mode") val selectorMode: String = "urltest",
     @SerialName("active_group_id") val activeGroupId: String = "",
     @SerialName("active_group_name") val activeGroupName: String = "",

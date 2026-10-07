@@ -143,6 +143,9 @@ func defaultTimeoutFor(args []string) time.Duration {
 	if len(args) > 1 && args[0] == "service" && args[1] == "start" {
 		return serviceStartTimeout
 	}
+	if len(args) > 1 && (args[0] == "config" && args[1] == "apply" || args[0] == "service" && (args[1] == "restart" || args[1] == "reload")) {
+		return serviceStartTimeout
+	}
 	return defaultCommandTimeout
 }
 

@@ -202,7 +202,8 @@
 
     <!-- Apps Control -->
     <string name="apps">应用</string>
-    <string name="proxy_apps">分应用设置</string>
+    <string name="proxy_apps">分应用代理</string>
+    <string name="app_proxy_mode">应用代理模式</string>
     <string name="no_apps_found">未找到应用</string>
     <string name="show_system_apps">显示系统应用</string>
     <string name="proxy_mode_summary">选择如何过滤需要走代理的应用</string>
@@ -215,8 +216,10 @@
     <string name="app_show_package_name">显示包名</string>
 
     <!-- Settings: Main -->
-    <string name="proxy_settings">入站设置</string>
-    <string name="proxy_settings_summary">配置 eBPF 接管与 Wi-Fi 策略</string>
+    <string name="inbound_settings">入站设置</string>
+    <string name="inbound_settings_summary">配置透明代理接管与分应用策略</string>
+    <string name="network_matching">网络匹配</string>
+    <string name="network_matching_summary">按 Wi-Fi 名称匹配代理策略</string>
     <string name="auto_start">开机自启</string>
     <string name="auto_start_summary">系统启动时自动开启服务</string>
 
@@ -290,7 +293,7 @@
     <string name="singbox_document_dns">DNS</string>
     <string name="singbox_document_dns_summary">DNS 服务器、分流与缓存</string>
     <string name="singbox_document_inbounds">入站</string>
-    <string name="singbox_document_inbounds_summary">额外的 mixed、SOCKS、HTTP 等入站</string>
+    <string name="singbox_document_inbounds_summary">自定义 mixed、SOCKS、HTTP 等监听。透明代理 eBPF/TUN 请在入站设置中管理，netproxy-in 为保留标签。</string>
     <string name="singbox_document_providers">Provider</string>
     <string name="singbox_document_providers_summary">动态出站与订阅 Provider</string>
     <string name="singbox_document_endpoints">端点</string>
@@ -383,12 +386,12 @@
     <string name="ebpf_shared_exclude_mac_addresses">排除来源 MAC 地址</string>
     <string name="restart_core">重启核心</string>
     <string name="ebpf_diagnostics">eBPF 诊断</string>
-    <string name="settings_hint_rule_sets">多个规则集标签请用英文逗号分隔，例如 direct,geoip/cn</string>
-    <string name="settings_hint_ports">多个目标端口请用英文逗号分隔，例如 53,853</string>
-    <string name="settings_hint_port_ranges">目标端口范围使用 start:end，多个范围请用英文逗号分隔，例如 8000:8080,10000:10100</string>
-    <string name="settings_hint_interfaces">多个接口名称请用英文逗号分隔，例如 wlan2,wlan0</string>
-    <string name="settings_hint_cidrs">多个 CIDR 请用英文逗号分隔，例如 192.168.0.0/16,10.0.0.0/8</string>
-    <string name="settings_hint_macs">多个 MAC 地址请用英文逗号分隔</string>
+    <string name="settings_hint_rule_sets">每行一个规则集标签，例如 direct 或 geoip/cn</string>
+    <string name="settings_hint_ports">每行一个目标端口，例如 53 或 853</string>
+    <string name="settings_hint_port_ranges">每行一个 start:end 格式的端口范围，例如 8000:8080</string>
+    <string name="settings_hint_interfaces">每行一个接口名称，例如 wlan2 或 wlan0</string>
+    <string name="settings_hint_cidrs">每行一个 CIDR，例如 192.168.0.0/16 或 10.0.0.0/8</string>
+    <string name="settings_hint_macs">每行一个 MAC 地址</string>
     <string name="settings_hint_ssids">多个 SSID 请用英文逗号分隔</string>
     <!-- Apps: user scope labels -->
     <string name="app_users_label">用户 %1$s</string>
@@ -534,4 +537,44 @@
     <string name="log_event_subscription_update_all">更新全部</string>
     <string name="log_event_subscription_remove">删除订阅</string>
     <string name="log_result_stopped">已停止</string>
+    <string name="inbound_general">通用设置</string>
+    <string name="inbound_backend">入站后端</string>
+    <string name="inbound_full_json">编辑完整入站 JSON</string>
+    <string name="inbound_switch_title">切换入站后端？</string>
+    <string name="inbound_switch_warning">服务将重启，连接会短暂中断。</string>
+    <string name="inbound_reload">重新加载设置</string>
+    <string name="inbound_applying">正在应用入站配置</string>
+    <string name="inbound_draft">未确认的更改</string>
+    <string name="inbound_draft_hint">这些更改尚未确认。请重新加载设置并核对后，再决定是否应用。</string>
+    <string name="inbound_choices_failed">接口或规则集候选加载失败，请重新加载；接口也可手动填写。</string>
+    <string name="inbound_advanced">高级设置</string>
+    <string name="inbound_invalid_value">请检查输入值、筛选选项或规则集标签后再保存。</string>
+    <string name="inbound_filter_mode">筛选方式</string>
+    <string name="inbound_filter_all">不限制</string>
+    <string name="inbound_filter_include">仅包含</string>
+    <string name="inbound_filter_exclude">排除</string>
+    <string name="tun_settings">TUN 入站</string>
+    <string name="tun_dns">DNS 处理</string>
+    <string name="tun_dns_disabled">禁用</string>
+    <string name="tun_dns_native">原生（在 JSON 中编辑）</string>
+    <string name="tun_ipv6">接管 IPv6</string>
+    <string name="tun_interfaces">接管接口</string>
+    <string name="tun_exclude_addresses">绕过网段</string>
+    <string name="tun_exclude_rule_sets">绕过 IP 规则集</string>
+    <string name="tun_strict_route">严格路由</string>
+    <string name="tun_strict_route_hint">严格执行接管路由，将绑定接口的流量纳入代理。</string>
+    <string name="tun_address">TUN 地址（CIDR）</string>
+    <string name="tun_interface_name">TUN 接口名称</string>
+    <string name="tun_mtu">MTU</string>
+    <string name="tun_udp_timeout">UDP 超时</string>
+    <string name="tun_route_address">接管目标网段</string>
+    <string name="tun_route_rule_sets">接管 IP 规则集</string>
+    <string name="tun_mac">源 MAC 筛选</string>
+    <string name="tun_rule_set_hint">请选择主配置中的规则集标签，所选规则集必须包含 IP 规则。</string>
+    <string name="inbound_conflict">配置已被修改，请重新加载后再保存。</string>
+    <string name="inbound_apply_unconfirmed">运行中的服务尚未确认已保存的入站，请重新加载检查状态。</string>
+    <string name="tun_ipv6_hint">通过 TUN 接管 IPv6 流量。</string>
+    <string name="tun_udp_timeout_hint">时长（如 5m）或秒数</string>
+    <string name="inbound_apply_backend">应用已选后端</string>
+    <string name="inbound_restart_required">保存的后端与运行实例不同。请在入站设置中应用或重启服务，重新加载不能切换后端。</string>
 </resources>

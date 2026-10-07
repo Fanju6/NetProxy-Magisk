@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 )
 
@@ -30,6 +31,15 @@ func serviceProcessAlive(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
-	_, err := os.Stat(filepath.Join("/proc", strconv.Itoa(pid)))
-	return err == nil
+	content, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
+	if err != nil {
+		return false
+	}
+	_, fields, found := strings.CutLast(string(content), ")")
+	if !found {
+		return false
+	}
+	state := strings.Fields(fields)
+	// 当前命令仍是父进程时，已经完成退出的核心可能短暂保留为僵尸。
+	return len(state) > 0 && state[0] != "Z" && state[0] != "X"
 }

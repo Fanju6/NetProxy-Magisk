@@ -140,6 +140,10 @@ internal class NetProxyCtlClient(
                 NO_OUTER_TIMEOUT
             } else if (arguments.firstOrNull() == "service" && arguments.getOrNull(1) == "start") {
                 SERVICE_START_TIMEOUT_MILLIS
+            } else if (arguments.firstOrNull() == "config" && arguments.getOrNull(1) == "apply" &&
+                arguments.any { it == "inbound" || it.startsWith("inbound/") }
+            ) {
+                INBOUND_APPLY_TIMEOUT_MILLIS
             } else {
                 DEFAULT_TIMEOUT_MILLIS
             }
@@ -150,6 +154,7 @@ internal class NetProxyCtlClient(
         const val NO_OUTER_TIMEOUT = 0L
         const val DEFAULT_TIMEOUT_MILLIS = 30_000L
         const val SERVICE_START_TIMEOUT_MILLIS = 120_000L
+        const val INBOUND_APPLY_TIMEOUT_MILLIS = 120_000L
         val TRANSPORT_ERROR_CODES = setOf(
             "transport.invalid_output",
             "transport.invalid_json"

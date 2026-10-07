@@ -1,22 +1,24 @@
-package ebpf
+package inbound
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/sagernet/sing-box/option"
 )
 
 func TestResolveProbeOptionsUsesConfiguredScope(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "ebpf.conf")
-	content := "EBPF_LOCAL_ENABLED=1\nEBPF_LOCAL_DATA_PLANE=cgroup\nEBPF_SHARED_ENABLED=1\nEBPF_SHARED_DATA_PLANE=packet_rewrite\nEBPF_NETWORK=\"tcp,udp\"\nEBPF_SHARED_INTERFACES=\"wlan2,wlan0\"\n"
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+	config := fixture(t, "ebpf", `{"type":"ebpf","tag":"netproxy-in","network":["tcp","udp"],"local":{"enabled":true},"shared":{"enabled":true,"interface":["wlan2","wlan0"]}}`, "")
+	native, err := config.EBPFOptions()
+	if err != nil {
 		t.Fatal(err)
 	}
-
-	options, err := ResolveProbeOptions(path, "configured")
+	options, err := ResolveProbeOptions(native, "configured")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,13 +31,69 @@ func TestResolveProbeOptionsUsesConfiguredScope(t *testing.T) {
 	}
 }
 
-func TestResolveProbeOptionsSupportsExplicitScopes(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "ebpf.conf")
-	if err := os.WriteFile(path, []byte("EBPF_LOCAL_ENABLED=1\nEBPF_LOCAL_DATA_PLANE=tc\nEBPF_SHARED_ENABLED=1\nEBPF_SHARED_DATA_PLANE=socket_assign\nEBPF_LOCAL_IPV6=0\nEBPF_SHARED_IPV6=1\nEBPF_SHARED_INTERFACES=wlan2\nEBPF_NETWORK=tcp,udp\n"), 0o600); err != nil {
+func TestProbeNativeDefaultsAndInvalidScopes(t *testing.T) {
+	defaults, err := ResolveProbeOptions(option.EBPFInboundOptions{}, "")
+	if err != nil || defaults.CoreMode != "local" || defaults.LocalDataPlane != "cgroup" || defaults.SharedDataPlane != "packet_rewrite" || !defaults.IPv6 || !reflect.DeepEqual(defaults.Network, []string{"tcp", "udp"}) {
+		t.Fatal(defaults, err)
+	}
+	config := fixture(t, "ebpf", `{"type":"ebpf","tag":"netproxy-in","local":{"enabled":false,"ipv6":false},"shared":{"enabled":true,"interface":"wlan2","ipv6":false}}`, "")
+	native, _ := config.EBPFOptions()
+	shared, err := ResolveProbeOptions(native, "configured")
+	if err != nil || shared.CoreMode != "shared" || shared.IPv6 || shared.Interface != "wlan2" {
+		t.Fatal(shared, err)
+	}
+	if all, err := ResolveProbeOptions(native, "all"); err != nil || all.CoreMode != "all" {
+		t.Fatal(all, err)
+	}
+	for _, scope := range []string{"legacy", "tun", "disabled"} {
+		if _, err := ResolveProbeOptions(native, scope); err == nil {
+			t.Fatalf("接受非法诊断范围: %s", scope)
+		}
+	}
+}
+
+func TestRunProbeUsesNativeOptionsAndPropagatesCancellation(t *testing.T) {
+	directory := t.TempDir()
+	binary := buildFakeCommand(t, directory)
+	logPath := filepath.Join(directory, "probe-args")
+	t.Setenv("NETPROXY_TEST_COMMAND_MODE", "probe")
+	t.Setenv("NETPROXY_TEST_COMMAND_LOG", logPath)
+	native := option.EBPFInboundOptions{}
+	output, err := RunProbe(t.Context(), binary, native, "configured")
+	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := ParseProbeReport(output); err != nil {
+		t.Fatal(err)
+	}
+	args, err := os.ReadFile(logPath)
+	options, _ := ResolveProbeOptions(native, "configured")
+	if err != nil || string(args) != strings.Join(options.Args(), "\n") {
+		t.Fatal(string(args), err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := RunProbe(ctx, binary, native, "configured"); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	if _, err := RunProbe(t.Context(), "", native, "configured"); err == nil {
+		t.Fatal("接受空核心路径")
+	}
+	if _, err := RunProbe(t.Context(), binary, native, "legacy"); err == nil {
+		t.Fatal("接受非法检查范围")
+	}
+	if _, err := RunProbe(t.Context(), filepath.Join(directory, "missing"), native, "configured"); err == nil {
+		t.Fatal("诊断进程失败被吞掉")
+	}
+}
 
-	local, err := ResolveProbeOptions(path, "local")
+func TestResolveProbeOptionsSupportsExplicitScopes(t *testing.T) {
+	config := fixture(t, "ebpf", `{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true,"data_plane":"tc","ipv6":false},"shared":{"enabled":true,"data_plane":"socket_assign","ipv6":true,"interface":"wlan2"}}`, "")
+	native, err := config.EBPFOptions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	local, err := ResolveProbeOptions(native, "local")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +101,7 @@ func TestResolveProbeOptionsSupportsExplicitScopes(t *testing.T) {
 		t.Fatalf("unexpected local options: %#v", local)
 	}
 
-	shared, err := ResolveProbeOptions(path, "shared")
+	shared, err := ResolveProbeOptions(native, "shared")
 	if err != nil {
 		t.Fatal(err)
 	}

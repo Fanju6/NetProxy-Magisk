@@ -26,7 +26,7 @@ func TestListConfigsUsesReadableRuntimeID(t *testing.T) {
 		t.Fatal(err)
 	}
 	const content = "{\"type\":\"ebpf\"}\n"
-	if err := os.WriteFile(filepath.Join(options.RuntimeDir, "ebpf.json"), []byte(content), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(options.RuntimeDir, "inbound.json"), []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -51,7 +51,7 @@ func TestListConfigsUsesReadableRuntimeID(t *testing.T) {
 	}
 	var runtimeDocument *ConfigDocument
 	for index := range documents {
-		if documents[index].Filename == "ebpf.json" {
+		if documents[index].ID == "runtime/inbound.json" {
 			runtimeDocument = &documents[index]
 			break
 		}
@@ -59,7 +59,7 @@ func TestListConfigsUsesReadableRuntimeID(t *testing.T) {
 	if runtimeDocument == nil {
 		t.Fatal("运行时配置未出现在配置列表")
 	}
-	if runtimeDocument.ID != "runtime/ebpf.json" {
+	if runtimeDocument.ID != "runtime/inbound.json" {
 		t.Fatalf("运行时配置 ID 错误: %q", runtimeDocument.ID)
 	}
 

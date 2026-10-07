@@ -69,6 +69,12 @@ internal class ConfigRepository(
         client.execute("config", "check")
     }
 
+    suspend fun validate(target: String, content: String, revision: String) {
+        commandFiles.withTextFile("netproxy-config-", ".json", content) { source ->
+            client.execute("config", "validate", "--revision", revision, target, source.absolutePath)
+        }
+    }
+
     suspend fun ebpfStatus(mode: String = "configured"): String =
         client.execute("ebpf", "status", mode).data.jsonObject["content"]
             ?.jsonPrimitive?.content

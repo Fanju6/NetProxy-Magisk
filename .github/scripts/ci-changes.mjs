@@ -33,11 +33,12 @@ export function classifyChanges(paths) {
     path.startsWith('src/webui/') || path.startsWith('src/module/webroot/netproxy/'))
   const androidSource = paths.some((path) => path.startsWith('src/android/'))
   const moduleConfig = paths.some((path) => path.startsWith('src/module/config/'))
+  const inboundConfig = paths.some((path) => path.startsWith('src/module/config/inbound/'))
   const docs = paths.some((path) =>
     path.startsWith('docs/') || path === '.github/workflows/docs.yml')
   const core = shared || moduleFiles || native || tests
   const android = shared || native || androidSource || moduleConfig
-  const webui = shared || webuiSource
+  const webui = shared || webuiSource || inboundConfig
 
   return {
     module: core || webui || android,

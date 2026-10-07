@@ -206,7 +206,7 @@ func TestConfigListExposesAllSectionsWithoutWritingDefaults(t *testing.T) {
 		if document.Category == "config" {
 			configIDs = append(configIDs, document.ID)
 		}
-		if document.Section == "" {
+		if document.Section == "" || document.Category != "config" {
 			continue
 		}
 		if _, duplicate := sections[document.Section]; duplicate {

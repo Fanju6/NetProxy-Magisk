@@ -4,6 +4,7 @@ import androidx.annotation.StringRes
 import com.fanjv.netproxy.R
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -46,7 +47,11 @@ internal class SingBoxSchemaReferenceResolver(
         var target: JsonElement = root
         ref.removePrefix("#/").split('/').forEach { rawSegment ->
             val segment = rawSegment.replace("~1", "/").replace("~0", "~")
-            target = (target as? JsonObject)?.get(segment) ?: return null
+            target = when (val current = target) {
+                is JsonObject -> current[segment]
+                is JsonArray -> segment.toIntOrNull()?.let(current::getOrNull)
+                else -> null
+            } ?: return null
         }
         return ref to (target as? JsonObject ?: return null)
     }

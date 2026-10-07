@@ -12,11 +12,17 @@ test('Android 修改会重建模块并执行 Android 验证', () => {
 })
 
 test('Native 与默认配置变化仍验证 Android 调用方', () => {
-  for (const path of ['src/native/netproxy/internal/module/app.go', 'src/module/config/ebpf/ebpf.conf']) {
+  for (const path of ['src/native/netproxy/internal/module/app.go', 'src/module/config/singbox/config.json']) {
     assert.deepEqual(classifyChanges([path]), {
       module: true, core: true, webui: false, android: true, docs: false,
     })
   }
+})
+
+test('入站默认配置变化同步验证 WebUI mock 与 Android 调用方', () => {
+  assert.deepEqual(classifyChanges(['src/module/config/inbound/inbound.json']), {
+    module: true, core: true, webui: true, android: true, docs: false,
+  })
 })
 
 test('模块、WebUI 和测试按各自范围验证', () => {

@@ -16,6 +16,7 @@ import (
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/inbound"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/worker"
@@ -29,6 +30,7 @@ var serviceFindProcess = FindProcess
 type Options struct {
 	CatalogRoot    string
 	ModuleConfig   string
+	InboundConfig  string
 	StateFile      string
 	ProgressDir    string
 	DelayDir       string
@@ -41,31 +43,33 @@ type Options struct {
 
 // Status 是仪表盘使用的服务状态快照，字段与 netproxyctl schema=1 保持一致。
 type Status struct {
-	State                  string `json:"state"`
-	PID                    *int   `json:"pid"`
-	StartedAt              int64  `json:"started_at"`
-	ReadyAt                int64  `json:"ready_at"`
-	UptimeSeconds          int64  `json:"uptime_seconds"`
-	Error                  string `json:"error"`
-	OutboundMode           string `json:"outbound_mode"`
-	ConfiguredOutboundMode string `json:"configured_outbound_mode"`
-	SelectorMode           string `json:"selector_mode"`
-	ActiveGroupID          string `json:"active_group_id"`
-	ActiveGroupName        string `json:"active_group_name"`
-	ActiveGroupRuntimeTag  string `json:"active_group_runtime_tag"`
-	ActiveGroupNodeCount   int    `json:"active_group_node_count"`
-	SelectedNodeRef        string `json:"selected_node_ref"`
-	RuntimeSelected        string `json:"runtime_selected"`
-	MemoryBytes            uint64 `json:"memory_bytes"`
-	ProcessCPUTicks        uint64 `json:"process_cpu_ticks"`
-	SystemCPUTicks         uint64 `json:"system_cpu_ticks"`
-	CPUCount               int    `json:"cpu_count"`
-	ConnectionsIn          int32  `json:"connections_in"`
-	ConnectionsOut         int32  `json:"connections_out"`
-	UploadTotal            int64  `json:"upload_total"`
-	DownloadTotal          int64  `json:"download_total"`
-	WorkerState            string `json:"worker_state"`
-	WorkerPID              *int   `json:"worker_pid"`
+	State                  string  `json:"state"`
+	ConfiguredBackend      string  `json:"configured_backend"`
+	ActiveBackend          *string `json:"active_backend"`
+	PID                    *int    `json:"pid"`
+	StartedAt              int64   `json:"started_at"`
+	ReadyAt                int64   `json:"ready_at"`
+	UptimeSeconds          int64   `json:"uptime_seconds"`
+	Error                  string  `json:"error"`
+	OutboundMode           string  `json:"outbound_mode"`
+	ConfiguredOutboundMode string  `json:"configured_outbound_mode"`
+	SelectorMode           string  `json:"selector_mode"`
+	ActiveGroupID          string  `json:"active_group_id"`
+	ActiveGroupName        string  `json:"active_group_name"`
+	ActiveGroupRuntimeTag  string  `json:"active_group_runtime_tag"`
+	ActiveGroupNodeCount   int     `json:"active_group_node_count"`
+	SelectedNodeRef        string  `json:"selected_node_ref"`
+	RuntimeSelected        string  `json:"runtime_selected"`
+	MemoryBytes            uint64  `json:"memory_bytes"`
+	ProcessCPUTicks        uint64  `json:"process_cpu_ticks"`
+	SystemCPUTicks         uint64  `json:"system_cpu_ticks"`
+	CPUCount               int     `json:"cpu_count"`
+	ConnectionsIn          int32   `json:"connections_in"`
+	ConnectionsOut         int32   `json:"connections_out"`
+	UploadTotal            int64   `json:"upload_total"`
+	DownloadTotal          int64   `json:"download_total"`
+	WorkerState            string  `json:"worker_state"`
+	WorkerPID              *int    `json:"worker_pid"`
 }
 
 // DelayResult 是一次节点测速请求及其最新分组状态。
@@ -112,11 +116,13 @@ type ModeState struct {
 }
 
 type stateFile struct {
-	State     string `json:"state"`
-	PID       int    `json:"pid"`
-	StartedAt int64  `json:"started_at"`
-	ReadyAt   int64  `json:"ready_at"`
-	Error     string `json:"error"`
+	State               string `json:"state"`
+	PID                 int    `json:"pid"`
+	StartedAt           int64  `json:"started_at"`
+	ReadyAt             int64  `json:"ready_at"`
+	Error               string `json:"error"`
+	ActiveBackend       string `json:"active_backend"`
+	CoreStartedAtMillis int64  `json:"core_started_at_millis"`
 }
 
 // ReadStatus 读取模块状态并在服务就绪时合并 Service API 快照。
@@ -136,6 +142,13 @@ func ReadStatus(ctx context.Context, options Options) (Status, error) {
 		SelectedNodeRef:        module.SelectedNodeRef,
 		CPUCount:               1,
 		WorkerState:            "stopped",
+	}
+	if options.InboundConfig != "" {
+		config, err := inbound.Load(options.InboundConfig)
+		if err != nil {
+			return Status{}, err
+		}
+		status.ConfiguredBackend = config.Backend
 	}
 
 	active, activeErr := readActiveGroup(ctx, options, module.ActiveGroupID)
@@ -188,7 +201,7 @@ func ReadStatus(ctx context.Context, options Options) (Status, error) {
 	}
 
 	if status.State == "ready" {
-		mergeRuntimeStatus(ctx, options, &status, active)
+		mergeRuntimeStatus(ctx, options, &status, active, state)
 	} else if status.State == "stopped" {
 		// 服务未运行时没有核心实时模式，展示持久化配置作为下一次启动模式。
 		status.OutboundMode = status.ConfiguredOutboundMode
@@ -710,7 +723,7 @@ func readActiveGroup(ctx context.Context, options Options, activeID string) (*ca
 	return &catalog.GroupSnapshot{Group: summary}, nil
 }
 
-func mergeRuntimeStatus(ctx context.Context, options Options, status *Status, active *catalog.GroupSnapshot) {
+func mergeRuntimeStatus(ctx context.Context, options Options, status *Status, active *catalog.GroupSnapshot, state stateFile) {
 	status.OutboundMode = unknownOutboundMode
 	client, requestContext, cancel, err := newClient(ctx, options)
 	if err != nil {
@@ -719,14 +732,20 @@ func mergeRuntimeStatus(ctx context.Context, options Options, status *Status, ac
 	defer cancel()
 	defer client.Close()
 	var (
-		mode      serviceapi.Mode
-		modeErr   error
-		apiStatus serviceapi.Status
-		statusErr error
-		groups    []serviceapi.Group
-		groupsErr error
-		waitGroup sync.WaitGroup
+		mode        serviceapi.Mode
+		modeErr     error
+		apiStatus   serviceapi.Status
+		statusErr   error
+		groups      []serviceapi.Group
+		groupsErr   error
+		waitGroup   sync.WaitGroup
+		started     serviceapi.StartedAt
+		identityErr error
 	)
+	confirmedIdentity := status.PID != nil && state.PID == *status.PID && state.CoreStartedAtMillis > 0 && (state.ActiveBackend == "ebpf" || state.ActiveBackend == "tun")
+	if confirmedIdentity {
+		waitGroup.Go(func() { started, identityErr = client.StartedAt(requestContext) })
+	}
 	waitGroup.Go(func() {
 		modeContext, modeCancel := context.WithTimeout(requestContext, 500*time.Millisecond)
 		defer modeCancel()
@@ -741,6 +760,10 @@ func mergeRuntimeStatus(ctx context.Context, options Options, status *Status, ac
 		})
 	}
 	waitGroup.Wait()
+	if confirmedIdentity && identityErr == nil && started.UnixMilli == state.CoreStartedAtMillis {
+		backend := state.ActiveBackend
+		status.ActiveBackend = &backend
+	}
 
 	if modeErr == nil {
 		if runtimeMode, mapErr := serviceModeToModuleMode(mode.Current); mapErr == nil {

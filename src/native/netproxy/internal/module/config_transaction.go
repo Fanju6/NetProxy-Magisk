@@ -9,10 +9,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	json "encoding/json/v2"
 
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/inbound"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 )
 
@@ -29,10 +31,14 @@ type configFileSnapshot struct {
 }
 
 type configApplyJournal struct {
-	Version int                  `json:"version"`
-	Phase   string               `json:"phase"`
-	Static  []configFileSnapshot `json:"static"`
-	Runtime []configFileSnapshot `json:"runtime"`
+	Version    int                  `json:"version"`
+	Phase      string               `json:"phase"`
+	Static     []configFileSnapshot `json:"static"`
+	Runtime    []configFileSnapshot `json:"runtime"`
+	WasRunning bool                 `json:"was_running"`
+	Backend    string               `json:"backend"`
+	Action     string               `json:"action"`
+	BootID     string               `json:"boot_id"`
 }
 
 type configApplyTransaction struct {
@@ -92,11 +98,31 @@ func beginConfigApply(options Options, destination string) (*configApplyTransact
 		directory:   directory,
 		journalPath: filepath.Join(directory, "journal.json"),
 		journal: configApplyJournal{
-			Version: 1,
-			Phase:   "prepared",
-			Static:  make([]configFileSnapshot, 0, 2),
-			Runtime: make([]configFileSnapshot, 0, 3),
+			Version:    2,
+			Phase:      "prepared",
+			WasRunning: configProcessRunning(options.SingBoxPath),
+			Action:     "none",
+			BootID:     currentBootID(),
+			Static:     make([]configFileSnapshot, 0, 2),
+			Runtime:    make([]configFileSnapshot, 0, 3),
 		},
+	}
+	if transaction.journal.WasRunning {
+		transaction.journal.Action = "reload"
+	}
+	config, err := inbound.Load(options.InboundConfig)
+	if err != nil {
+		_ = os.RemoveAll(directory)
+		return nil, err
+	}
+	transaction.journal.Backend = config.Backend
+	state, err := ReadServiceState(options.StateFile)
+	if err != nil {
+		_ = os.RemoveAll(directory)
+		return nil, err
+	}
+	if transaction.journal.WasRunning && state.ActiveBackend != "" {
+		transaction.journal.Backend = state.ActiveBackend
 	}
 	staticPaths := uniqueConfigPaths(destination, options.ModuleConfig)
 	for index, path := range staticPaths {
@@ -107,7 +133,7 @@ func beginConfigApply(options Options, destination string) (*configApplyTransact
 		}
 		transaction.journal.Static = append(transaction.journal.Static, snapshot)
 	}
-	for index, name := range []string{"providers.json", "outbounds.json", "ebpf.json"} {
+	for index, name := range []string{"providers.json", "outbounds.json", "inbound.json"} {
 		path := filepath.Join(options.RuntimeDir, name)
 		snapshot, err := createConfigSnapshot(directory, fmt.Sprintf("runtime-%d", index), path)
 		if err != nil {
@@ -222,7 +248,7 @@ func recoverConfigApply(ctx context.Context, options Options) error {
 	if err := json.Unmarshal(content, &journal); err != nil {
 		return fmt.Errorf("读取配置应用事务失败: %w", err)
 	}
-	if journal.Version != 1 || journal.Phase == "" {
+	if journal.Version != 2 || journal.Phase == "" {
 		return errors.New("配置应用事务版本或阶段无效")
 	}
 	if journal.Phase == "committed" || journal.Phase == "rolled_back" {
@@ -241,26 +267,67 @@ func recoverConfigApply(ctx context.Context, options Options) error {
 	}
 	defer release()
 	options = lockedOptions
-	if err := restoreConfigSnapshots(journal); err != nil {
-		return fmt.Errorf("恢复配置应用事务失败: %w", err)
+	transaction := configApplyTransaction{directory: directory, journalPath: filepath.Join(directory, "journal.json"), journal: journal}
+	return restoreConfigApply(ctx, options, &transaction, reloadConfigSnapshot)
+}
+
+func currentBootID() string {
+	content, _ := os.ReadFile("/proc/sys/kernel/random/boot_id")
+	return strings.TrimSpace(string(content))
+}
+
+func rollbackConfigApply(options Options, transaction *configApplyTransaction, cause error) error {
+	// 旧实例已受影响后，调用方取消也不能跳过有界恢复。
+	ctx, cancel := context.WithTimeout(context.Background(), 2*serviceReadyTimeout+2*serviceStopTimeout+10*time.Second)
+	defer cancel()
+	if errors.Is(cause, ErrForcedTermination) {
+		journalErr := transaction.setPhase("cleanup_failed")
+		return errors.Join(cause, journalErr, transaction.restore())
 	}
-	if journal.Phase == "reload_started" && configProcessRunning(options.SingBoxPath) {
-		prepared := prepareFromConfigJournal(options, journal)
-		if err := reloadPreparedService(ctx, options, prepared, false); err != nil {
-			return fmt.Errorf("恢复配置后重新加载旧运行时失败: %w", err)
+	return errors.Join(cause, restoreConfigApply(ctx, options, transaction, configRestoreReload))
+}
+
+func restoreConfigApply(ctx context.Context, options Options, transaction *configApplyTransaction, restoreRuntime func(context.Context, Options, configApplyJournal) error) error {
+	journal := transaction.journal
+	if journal.Phase == "cleanup_failed" {
+		bootID := currentBootID()
+		if bootID == "" || journal.BootID == "" || bootID == journal.BootID {
+			return ErrForcedTermination
 		}
 	}
-	transaction := configApplyTransaction{directory: directory, journalPath: filepath.Join(directory, "journal.json"), journal: journal}
-	return transaction.cleanup()
+	affectedRuntime := journal.Action == "switch" && journal.Phase != "prepared" || journal.Action == "reload" && journal.Phase == "reload_started" || journal.Phase == "cleanup_failed"
+	if affectedRuntime && configProcessRunning(options.SingBoxPath) {
+		if err := configStop(ctx, options); err != nil {
+			if errors.Is(err, ErrForcedTermination) {
+				return errors.Join(err, transaction.setPhase("cleanup_failed"))
+			}
+			return fmt.Errorf("停止候选运行实例失败: %w", err)
+		}
+	}
+	if err := transaction.restore(); err != nil {
+		return fmt.Errorf("磁盘恢复失败: %w", err)
+	}
+	if affectedRuntime && journal.WasRunning {
+		if err := restoreRuntime(ctx, options, journal); err != nil {
+			if errors.Is(err, ErrForcedTermination) {
+				return errors.Join(err, transaction.setPhase("cleanup_failed"))
+			}
+			return fmt.Errorf("旧 runtime 恢复失败: %w", err)
+		}
+	}
+	if err := transaction.cleanup(); err != nil {
+		return fmt.Errorf("事务清理失败: %w", err)
+	}
+	return nil
 }
 
 func validateConfigJournal(options Options, journal configApplyJournal) error {
 	allowedStatic := make(map[string]struct{})
-	for _, path := range uniqueConfigPaths(options.ModuleConfig, options.EBPFConfig) {
+	for _, path := range uniqueConfigPaths(options.ModuleConfig, options.InboundConfig) {
 		allowedStatic[path] = struct{}{}
 	}
 	allowedRuntime := make(map[string]struct{})
-	for _, name := range []string{"providers.json", "outbounds.json", "ebpf.json"} {
+	for _, name := range []string{"providers.json", "outbounds.json", "inbound.json"} {
 		allowedRuntime[filepath.Clean(filepath.Join(options.RuntimeDir, name))] = struct{}{}
 	}
 	for _, snapshot := range journal.Static {
@@ -331,15 +398,15 @@ func restoreConfigSnapshot(snapshot configFileSnapshot) error {
 }
 
 func prepareFromConfigJournal(options Options, journal configApplyJournal) PrepareResult {
-	prepared := PrepareResult{}
+	prepared := PrepareResult{Backend: journal.Backend}
 	for _, snapshot := range journal.Runtime {
 		switch filepath.Base(snapshot.Path) {
 		case "providers.json":
 			prepared.Providers = snapshot.Path
 		case "outbounds.json":
 			prepared.Outbounds = snapshot.Path
-		case "ebpf.json":
-			prepared.EBPF = snapshot.Path
+		case "inbound.json":
+			prepared.Inbound = snapshot.Path
 		}
 	}
 	return prepared

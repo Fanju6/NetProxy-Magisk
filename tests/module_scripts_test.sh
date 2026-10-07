@@ -72,6 +72,17 @@ check_removed_legacy_ebpf_assets() {
 }
 
 #######################################
+# 参数: 无。
+# 返回: 0=通过，1=默认布局或安装锁仍使用旧路径。
+#######################################
+check_inbound_layout() {
+  [ -s "$MODULE_DIR/config/inbound/inbound.json" ]
+  [ ! -e "$MODULE_DIR/config/ebpf/ebpf.conf" ]
+  grep -Fq 'config/inbound/inbound.json.lock' "$MODULE_DIR/customize.sh"
+  ! grep -q 'config/ebpf\|ebpf.conf' "$MODULE_DIR/customize.sh"
+}
+
+#######################################
 # 确认升级/卸载只通过 PID 感知的 Worker 入口操作
 #######################################
 check_worker_lifecycle() {
@@ -122,6 +133,7 @@ check_action_bridge
 check_runtime_scripts
 check_mksh_compatible_helpers
 check_removed_legacy_ebpf_assets
+check_inbound_layout
 check_worker_lifecycle
 check_install_choices
 check_install_order

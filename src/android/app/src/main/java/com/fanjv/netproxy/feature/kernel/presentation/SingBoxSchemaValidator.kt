@@ -41,8 +41,8 @@ class SingBoxSchemaValidator internal constructor(
     private val schemaProvider: () -> String,
     private val text: SchemaText,
 ) {
-    constructor(context: Context) : this({
-        context.assets.open(SCHEMA_ASSET).bufferedReader().use { it.readText() }
+    constructor(context: Context, documentId: String = "") : this({
+        context.assets.open(SCHEMA_ASSET).bufferedReader().use { editorSchema(it.readText(), documentId) }
     }, SchemaText { id, args -> context.getString(id, *args) })
 
     private val schemaRoot by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {

@@ -17,16 +17,19 @@ func TestServiceStartFailureReportsCheckError(t *testing.T) {
 	if err := os.MkdirAll(options.SingBoxDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(options.SingBoxDir, "config.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(options.CatalogRoot, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(options.ModuleConfig, []byte("\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Dir(options.EBPFConfig), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(options.InboundConfig), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(options.EBPFConfig, []byte("\n"), 0o600); err != nil {
+	if err := os.WriteFile(options.InboundConfig, []byte(testInboundConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -36,7 +39,7 @@ func TestServiceStartFailureReportsCheckError(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "sing-box 配置检查失败") {
 		t.Fatalf("无效 sing-box 检查未返回明确错误: %v", err)
 	}
-	for _, name := range []string{"providers.json", "outbounds.json", "ebpf.json"} {
+	for _, name := range []string{"providers.json", "outbounds.json", "inbound.json"} {
 		if info, statErr := os.Stat(filepath.Join(options.RuntimeDir, name)); statErr != nil || info.Size() == 0 {
 			t.Fatalf("配置检查失败前未生成可校验的运行时文件 %s: %v", name, statErr)
 		}
@@ -57,10 +60,10 @@ func TestCheckServiceRejectsMissingBinary(t *testing.T) {
 	if err := os.WriteFile(options.ModuleConfig, []byte("\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Dir(options.EBPFConfig), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(options.InboundConfig), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(options.EBPFConfig, []byte("\n"), 0o600); err != nil {
+	if err := os.WriteFile(options.InboundConfig, []byte(testInboundConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	options.StateFile = filepath.Join(root, "state", "service.json")
@@ -162,7 +165,7 @@ func TestWriteServiceStateReportsAtomicReplaceFailure(t *testing.T) {
 func TestFailedServiceStartPreservesStateWriteError(t *testing.T) {
 	original := writeServiceState
 	stateErr := errors.New("state atomic replace failed")
-	writeServiceState = func(string, string, int64, int64, int64, string) error { return stateErr }
+	writeServiceState = func(string, string, int64, int64, int64, string, ...ServiceIdentity) error { return stateErr }
 	t.Cleanup(func() { writeServiceState = original })
 
 	options := newTestOptions(t.TempDir())
@@ -202,7 +205,7 @@ func TestStartStateWriteFailureStopsAndConvergesState(t *testing.T) {
 			stopError := errors.New("sing-box stop failed")
 			originalWrite, originalTerminate := writeServiceState, terminateServiceForStart
 			var states []string
-			writeServiceState = func(path, state string, pid, startedAt, readyAt int64, message string) error {
+			writeServiceState = func(path, state string, pid, startedAt, readyAt int64, message string, identity ...ServiceIdentity) error {
 				states = append(states, state)
 				if state == "failed" {
 					if test.failedError != nil {
@@ -259,17 +262,17 @@ func TestStartServiceDoesNotReachReadyAfterStateWriteFailure(t *testing.T) {
 	if err := os.WriteFile(options.ModuleConfig, []byte("\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Dir(options.EBPFConfig), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(options.InboundConfig), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(options.EBPFConfig, []byte("{}\n"), 0o600); err != nil {
+	if err := os.WriteFile(options.InboundConfig, []byte(testInboundConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	original := writeServiceState
 	stateErr := errors.New("preparing state write failed")
 	readySeen := false
-	writeServiceState = func(_ string, state string, _ int64, _ int64, _ int64, _ string) error {
+	writeServiceState = func(_ string, state string, _ int64, _ int64, _ int64, _ string, _ ...ServiceIdentity) error {
 		if state == "ready" {
 			readySeen = true
 		}
@@ -298,7 +301,7 @@ func TestStopServiceAttemptsFinalStateAfterStoppingWriteFailure(t *testing.T) {
 	var states []string
 	original := writeServiceState
 	stateErr := errors.New("stopping state write failed")
-	writeServiceState = func(_ string, state string, _ int64, _ int64, _ int64, _ string) error {
+	writeServiceState = func(_ string, state string, _ int64, _ int64, _ int64, _ string, _ ...ServiceIdentity) error {
 		states = append(states, state)
 		if state == "stopping" {
 			return stateErr
@@ -327,10 +330,10 @@ func TestPrepareDoesNotPersistSelectionBeforeCheck(t *testing.T) {
 	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=missing\nSELECTOR_MODE=manual\nSELECTED_NODE_REF=missing/node\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Dir(options.EBPFConfig), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(options.InboundConfig), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(options.EBPFConfig, []byte("{}\n"), 0o600); err != nil {
+	if err := os.WriteFile(options.InboundConfig, []byte(testInboundConfig), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

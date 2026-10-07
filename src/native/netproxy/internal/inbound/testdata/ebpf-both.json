@@ -1,0 +1,10 @@
+{
+  "backend": "ebpf",
+  "app": {"enabled": false, "mode": "blacklist", "proxy_apps": [], "bypass_apps": []},
+  "ebpf": {
+    "type": "ebpf", "tag": "netproxy-in", "network": ["udp", "tcp"], "udp_timeout": "5m", "tc_priority": 7, "udp_fragment": false,
+    "local": {"enabled": true, "data_plane": "tc", "dns_mode": "off", "ipv6": false, "bypass_private_address": false, "include_uid": [100, 101, 102], "include_uid_range": ["102:104"], "bypass_port": 853, "bypass_port_range": "8000:8080", "bypass_rule_set": ["geoip/cn", "test-private"], "bypass_exclude": "10.1.0.0/16"},
+    "shared": {"enabled": true, "interface": ["wlan2", "wlan0"], "data_plane": "socket_assign", "dns_mode": "respect_policy", "ipv6": true, "bypass_private_address": true, "include_source_cidr": ["192.168.43.0/24", "fd00::/64"], "exclude_source_cidr": "192.168.43.2/32", "include_mac_address": "02:11:22:33:44:55", "bypass_rule_set": "test-private", "bypass_exclude": "192.168.43.0/24"}
+  },
+  "tun": {"type": "tun", "tag": "netproxy-in", "address": "172.19.0.1/30", "auto_route": true, "auto_redirect": true}
+}

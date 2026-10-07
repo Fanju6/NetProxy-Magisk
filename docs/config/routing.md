@@ -4,7 +4,7 @@ NetProxy 的分流行为由四层共同决定：
 
 1. `OUTBOUND_MODE` 出站模式。
 2. sing-box 路由规则与规则集。
-3. eBPF 入站按本机和共享网络分别执行的应用、私网和 CIDR 提前绕过。
+3. 所选入站的应用、接口和地址筛选；eBPF 的本机/共享网络提前绕过或 TUN 的原生路由范围。
 4. Wi-Fi 自动策略对运行时模式的临时评估。
 
 ## 出站模式
@@ -15,7 +15,7 @@ NetProxy 的分流行为由四层共同决定：
 
 ### `global`
 
-尽量全部交给代理出站，适合测试节点或判断规则问题。若启用路径仍配置 `EBPF_LOCAL_BYPASS_RULE_SET` 或 `EBPF_SHARED_BYPASS_RULE_SET`，命中的 IP 会在进入 sing-box 前直连，因此 Global 不一定代表绝对全代理。
+尽量全部交给代理出站，适合测试节点或判断规则问题。eBPF 启用路径的 `bypass_rule_set` 或 TUN 的 `route_exclude_address` 等绕过仍会生效，因此 Global 不一定代表绝对全代理。
 
 ### `direct`
 
@@ -39,22 +39,32 @@ NetProxy 的分流行为由四层共同决定：
 
 ## eBPF 提前绕过
 
-```ini
-EBPF_LOCAL_BYPASS_RULE_SET="geoip/cn"
-EBPF_SHARED_BYPASS_RULE_SET="geoip/cn"
+以下只展示 `inbound.json` 中的绕过字段，编辑时保留其他原生参数：
+
+```json
+{
+  "ebpf": {
+    "local": { "bypass_rule_set": ["geoip/cn"] },
+    "shared": { "bypass_rule_set": ["geoip/cn"] }
+  }
+}
 ```
 
-两项分别控制本机和共享网络，只对对应启用的数据路径生效；多个规则集使用英文逗号分隔。只有可提取纯 IP CIDR 的规则集会被 eBPF 使用。提前绕过的流量不会进入 sing-box，因此不会再经过普通路由规则。进行严格 Global 测试时清空实际启用路径对应的规则集并重启核心。
+两项分别控制本机和共享网络，只对对应启用的数据路径生效；多个规则集使用 JSON 字符串数组。只有可提取纯 IP CIDR 的规则集会被 eBPF 使用。提前绕过的流量不会进入 sing-box，因此不会再经过普通路由规则。进行严格 Global 测试时清空实际启用路径对应的规则集并重启核心。
 
 应用黑白名单、私网绕过和共享网络来源过滤也可能在进入普通路由前改变流量路径，排障时需要一并确认。
 
+TUN 使用 `route_address`、`route_exclude_address` 及对应规则集等原生字段，不把 eBPF bypass 字段转换过去。TUN 端口绕过使用主配置的 `action: "bypass"` pre-match 规则，必须位于 sniff 等终止 pre-match 的规则之前，详见 [TUN 参数](/config/tun)。
+
 ## DNS
 
-`EBPF_LOCAL_DNS_MODE` 与 `EBPF_SHARED_DNS_MODE` 分别控制两条数据路径是否接管 TCP / UDP 53：
+eBPF 的 `local.dns_mode` 与 `shared.dns_mode` 分别控制两条数据路径是否接管 TCP / UDP 53：
 
 - `hijack`：接管 DNS 请求，交给 sing-box DNS 路由。
 - `respect_policy`：仅在流量通过对应数据路径的 UID、来源和地址策略后接管。
 - `off`：不由 eBPF 入站接管 DNS。
+
+本机默认 `respect_policy`，共享默认 `hijack`。TUN 使用自己的 `dns_mode`：默认 `hijack`，也有 `disabled` 与高级 `native`；`dns_address` 默认由上游推导，不能把 native 当作 Android 系统全局 DNS 设置。
 
 sing-box 侧 DNS 服务器、域名解析策略和 DNS 路由位于 `config/singbox/config.json` 的 `dns` 分区。默认 DNS A/AAAA 查询使用真实的 `dns-proxy` 服务器组，不使用 FakeIP 地址池。DNS 最终出站由 DNS 配置和 `OUTBOUND_MODE` 共同决定；若将兜底 DNS 设置为直连，解析请求可能不经过代理，这是可预期的配置取舍，不等同于核心故障。
 
@@ -62,8 +72,8 @@ sing-box 侧 DNS 服务器、域名解析策略和 DNS 路由位于 `config/sing
 
 ## 排查顺序
 
-1. 查看 `service status` 的实际 `outbound_mode`。
-2. 确认 `EBPF_LOCAL_BYPASS_RULE_SET`、`EBPF_SHARED_BYPASS_RULE_SET`、私网绕过和应用名单。
+1. 查看 `service status` 的实际 `outbound_mode` 与 `active_backend`，未确认后端时不要从模板猜测。
+2. 确认当前后端的原生绕过、接口、地址筛选和共用应用名单。
 3. 检查 `rules/local/` 与 `rules/remote/` 是否存在且可读。
 4. 检查 `dns` 分区的 DNS 服务器和最终出站。
 5. 查看 sing-box 核心日志和 Service API Dashboard 的连接结果。

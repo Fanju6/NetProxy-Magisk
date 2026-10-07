@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Android 系统级 sing-box 透明代理模块</strong><br>
-  支持 eBPF、TCP / UDP、分应用代理、节点订阅与双控制 API
+  支持 eBPF 或 Root TUN、TCP / UDP、分应用代理、节点订阅与双控制 API
 </p>
 
 <p align="center">
@@ -34,9 +34,9 @@
 
 ## 项目简介
 
-NetProxy 是面向已 Root Android 设备的系统级透明代理模块。模块以内置 sing-box 为代理核心，通过 eBPF 接管本机及共享网络流量，并提供 Android 管理器、模块 WebUI、CLI 与 Service API Dashboard 等入口。
+NetProxy 是面向已 Root Android 设备的系统级透明代理模块。模块以内置 sing-box 为代理核心，通过所选 eBPF 或 Root TUN + auto_redirect 入站接管流量，并提供 Android 管理器、模块 WebUI、CLI 与 Service API Dashboard 等入口。一次只运行一个受管入站，分别保存两套原生参数，不在失败后自动换后端。
 
-支持 **Magisk、KernelSU 与 APatch**。节点、订阅、路由、DNS 和透明代理配置均保存在模块目录中，不依赖 VPN 模式运行。
+支持 **Magisk、KernelSU 与 APatch**。节点、订阅、路由、DNS 和透明代理配置均保存在模块目录中，不使用非 Root Android VpnService。
 
 ## 源码结构
 
@@ -74,8 +74,8 @@ Clash API 与 Service API 默认只监听本机。需要从其他设备访问时
 
 ## 核心能力
 
-- 使用 eBPF 接管本机与共享网络的 TCP、UDP 和 DNS 流量
-- 不修改 iptables 或 nftables；本机路径的 attachment 和策略路由由 sing-box 管理
+- 使用 eBPF 或 Root TUN 接管 TCP、UDP 和 DNS 流量
+- eBPF attachment、TUN 自动路由与 auto_redirect 接管由 sing-box 管理
 - 分应用黑名单 / 白名单、热点和 USB 共享代理
 - 单节点链接、节点文件、Clash YAML 与订阅导入
 - 手动节点选择与 URLTest 自动测速
@@ -83,14 +83,14 @@ Clash API 与 Service API 默认只监听本机。需要从其他设备访问时
 - 按 WiFi SSID 在基础模式与 Direct 之间自动切换
 - Clash API、连接管理与节点测速
 - 订阅定时更新和规则集提前绕过
-- 自动清理 eBPF 程序、Map 与 TC 挂载
+- 由核心清理所选入站资源，切换清理未确认时中止并保留恢复信息
 
 ## 安装
 
-Release 与 CI 构建统一提供唯一的 `NetProxy_<版本>_<构建号>.zip`，其中包含 sing-box、NetProxy 原生组件、模块 WebUI、CLI、eBPF 与当前源码构建、固定签名的 Android 管理器 APK。模块自更新也下载此包；刷入时可自行选择是否安装管理器。
+Release 与 CI 构建统一提供唯一的 `NetProxy_<版本>_<构建号>.zip`，其中包含 sing-box、NetProxy 原生组件、模块 WebUI、CLI、受管入站配置与当前源码构建、固定签名的 Android 管理器 APK。模块自更新也下载此包；刷入时可自行选择是否安装管理器。
 
 > [!IMPORTANT]
-> eBPF 入站需要内核启用 BPF、TC classifier、透明 socket 与 socket lookup 等能力；本机路径还需要 veth 和策略路由支持。不满足要求的内核无法启动本版本。
+> 默认后端为 eBPF，按数据平面需要 BPF、cgroup/TC、透明 socket、veth 与策略路由等能力。Root TUN 需要对应 TUN、路由、iptables/ip6tables 与 NFQUEUE 能力；配置 check 通过不能代替实际启动验证。不满足所选后端要求时明确失败，不自动回退。
 
 1. 从 [Releases](https://github.com/Fanju6/NetProxy-Magisk/releases) 下载最新模块 ZIP。
 2. 在 Magisk、KernelSU 或 APatch 中刷入模块。
@@ -100,6 +100,8 @@ Release 与 CI 构建统一提供唯一的 `NetProxy_<版本>_<构建号>.zip`�
 6. 导入并选择节点，再通过管理器、模块 WebUI 或 CLI 启动服务。
 
 模块默认 `AUTO_START=0`。确认节点与配置可用后，可在管理器中启用开机启动，或将 `config/module.conf` 中的 `AUTO_START` 改为 `1`。
+
+“保留现有数据”要求当前 `config/inbound/inbound.json` 与主配置、Catalog 完整。缺少入站文件时请主动选择“仅保留节点与订阅”或“全新安装”；安装器不检测版本、不转换旧配置、不静默补默认。节点模式保留 Catalog 与日志，配置恢复包内默认。
 
 ## 快速开始
 
@@ -184,16 +186,16 @@ su -c '/data/adb/modules/netproxy/netproxyctl node use default/fr-socks'
 ## CLI 命令
 
 ```text
-netproxyctl [--json] [--timeout <秒|时长>] service status|start|stop|restart|reload|check|toggle
-netproxyctl [--json] catalog list|show <分组>
-netproxyctl [--json] node list|current|show|add|import|export|edit|remove|use|delay
-netproxyctl [--json] sub list|show|add|edit|update|update-all|activate|remove|history|cancel
-netproxyctl [--json] mode [rule|global|direct|AllowAds]
-netproxyctl [--json] network evaluate --type <wifi|not_wifi> [--ssid <名称>]
-netproxyctl [--json] app list|mode|add|remove|enable|disable
-netproxyctl [--json] ebpf status [configured|all|local|shared] [--raw]
-netproxyctl [--json] config list|read|check|validate|apply
-netproxyctl [--json] logs show|clear|export
+su -c '/data/adb/modules/netproxy/netproxyctl [--json] [--timeout <秒|时长>] service status|start|stop|restart|reload|check|toggle'
+su -c '/data/adb/modules/netproxy/netproxyctl [--json] catalog list|show <分组>'
+su -c '/data/adb/modules/netproxy/netproxyctl [--json] node list|current|show|add|import|export|edit|remove|use|delay'
+su -c '/data/adb/modules/netproxy/netproxyctl [--json] sub list|show|add|edit|update|update-all|activate|remove|history|cancel'
+su -c '/data/adb/modules/netproxy/netproxyctl [--json] mode [rule|global|direct|AllowAds]'
+su -c '/data/adb/modules/netproxy/netproxyctl [--json] network evaluate --type <wifi|not_wifi> [--ssid <名称>]'
+su -c '/data/adb/modules/netproxy/netproxyctl [--json] app list|mode|add|remove|enable|disable'
+su -c '/data/adb/modules/netproxy/netproxyctl [--json] ebpf status [configured|all|local|shared] [--raw]'
+su -c '/data/adb/modules/netproxy/netproxyctl [--json] config list|read|check|validate|apply'
+su -c '/data/adb/modules/netproxy/netproxyctl [--json] logs show|clear|export'
 ```
 
 节点引用固定为 `<分组 ID>/<节点标签>`。自动模式用 `node use auto [分组]`，分组测速用 `node delay auto [分组]`。`sub add` 可省略名称（`sub add <URL>`），此时按 Profile-Title、文件名、URL 主机名的顺序自动取名。所有命令默认有超时，订阅变更由下载超时控制，也可使用 `--timeout` 覆盖。
@@ -209,10 +211,10 @@ su -c '/data/adb/modules/netproxy/netproxyctl help'
 | 路径 | 用途 |
 |------|------|
 | `config/module.conf` | 开机启动、出站模式、当前节点、选择模式和订阅调度 |
-| `config/ebpf/ebpf.conf` | eBPF 入站、分应用、共享网络与内核绕过策略 |
+| `config/inbound/inbound.json` | 唯一 backend、共用应用策略及 eBPF/TUN 原生参数 |
 | `config/singbox/config.json` | sing-box 静态主配置；管理器支持 DNS、入站、路由等分区编辑 |
 | `data/catalog/<分组 ID>/` | 节点与订阅分组，含 `meta.json` 与 `provider.json` |
-| `runtime/` | 启动时生成的 Provider、出站和 eBPF 配置，不应手动编辑 |
+| `runtime/` | 生成的 providers.json、outbounds.json 与唯一 inbound.json，不编辑、不在安装时保留 |
 | `config/singbox/rules/local/` | 可编辑的本地路由规则集 |
 | `config/singbox/rules/remote/` | 由远程 Provider 管理的内置 SRS 规则资源 |
 | `logs/service.log` | 模块服务、订阅更新与透明代理日志 |
@@ -226,20 +228,27 @@ su -c '/data/adb/modules/netproxy/netproxyctl help'
 | `OUTBOUND_MODE` | `rule` | 规则分流 |
 | `SELECTOR_MODE` | `urltest` | 自动测速选择 |
 | `ACTIVE_GROUP_ID` | `default` | 当前生效的节点分组 |
-| `EBPF_NETWORK` | 空 | 同时接管 TCP 与 UDP |
-| `EBPF_LOCAL_ENABLED` | `1` | 接管本机应用流量 |
-| `EBPF_LOCAL_DATA_PLANE` | `cgroup` | 本机使用 cgroup socket hook 接管 |
-| `EBPF_SHARED_ENABLED` | `0` | 默认不接管热点与共享网络 |
-| `EBPF_SHARED_DATA_PLANE` | `packet_rewrite` | 共享网络使用以太网报文改写 |
-| `EBPF_LOCAL_DNS_MODE` | `hijack` | 本机数据路径的 DNS 处理模式 |
-| `EBPF_SHARED_DNS_MODE` | `hijack` | 共享网络数据路径的 DNS 处理模式 |
-| `EBPF_LOCAL_IPV6` | `1` | 接管本机 IPv6 流量 |
-| `EBPF_SHARED_IPV6` | `1` | 接管共享网络 IPv6 流量 |
-| `EBPF_LOCAL_BYPASS_PRIVATE_ADDRESS` | `1` | 本机流量默认绕过私网与特殊用途地址 |
-| `EBPF_SHARED_BYPASS_PRIVATE_ADDRESS` | `1` | 共享网络流量默认绕过私网与特殊用途地址 |
-| `EBPF_LOCAL_BYPASS_RULE_SET` | `geoip/cn` | 本机流量在内核侧提前绕过可提取 CIDR 的规则集 |
-| `EBPF_SHARED_BYPASS_RULE_SET` | `geoip/cn` | 共享网络流量在内核侧提前绕过可提取 CIDR 的规则集 |
+| `backend` | `ebpf` | 初始受管入站，主动切换可选 `tun` |
+| `app.enabled / mode` | `true / blacklist` | 共用应用策略，两个名单均为 JSON 字符串数组 |
+| `ebpf.network` | `["tcp", "udp"]` | 同时接管 TCP 与 UDP |
+| `ebpf.local.enabled / data_plane` | `true / cgroup` | 本机使用 cgroup socket hook 接管 |
+| `ebpf.shared.enabled / data_plane` | `false / packet_rewrite` | 保存共享参数偏好，默认不启用 |
+| `ebpf.local.dns_mode` | `respect_policy` | DNS 遵循本机筛选与绕过策略 |
+| `ebpf.shared.dns_mode` | `hijack` | 启用共享路径时使用的 DNS 偏好 |
+| `ebpf.local / shared.ipv6` | `true` | 各自保存 IPv6 接管参数 |
+| `ebpf.local / shared.bypass_private_address` | `true` | 各自绕过私网与特殊用途地址 |
+| `ebpf.local / shared.bypass_rule_set` | `["geoip/cn"]` | 提前绕过可提取 CIDR 的规则集 |
+| `tun.interface_name` | `netproxy` | TUN 接口名 |
+| `tun.address` | `["172.19.0.1/30", "fdfe:dcba:9876::1/126"]` | TUN 地址前缀 |
+| `tun.auto_route / auto_redirect` | `true / true` | 受管 TUN 必需开关 |
+| `tun.dns_mode` | `hijack` | DNS 默认接管；不额外指定 MTU、stack、strict_route 或 mark |
 | `WIFI_AUTO_SWITCH` | `0` | 默认关闭 WiFi SSID 自动切换 |
+
+两个原生对象都包含匹配的 `type` 和固定 `tag: "netproxy-in"`。禁用 eBPF 路径可保存全部偏好，运行时只输出 `enabled: false`。应用引用为严格 `<用户ID>:<包名>`，由 Go 按用户查 UID；修改应用名单后重启服务应用，不用本机 UID 筛选热点客户端。
+
+`config list` 的 `category=inbound` 包含 `inbound`、`inbound/backend`、`inbound/ebpf`、`inbound/tun` 四个目标。分区使用对应顶层键并携带读取的 revision，不能用 `{}` 删除，也没有旧 `config ebpf` 目标；生成物只读目标为 `runtime/inbound.json`。主配置不得重复定义受管 eBPF/TUN 或占用 `netproxy-in`。
+
+`service status` 的 `configured_backend` 是保存选择；`active_backend` 仅在 ready、实际 PID 与 API 毫秒级启动身份匹配时非空，否则为 `null`。Prepare 路径字段为 `providers/outbounds/inbound`，另有 `backend`。强杀后的切换中止并保留 journal，需设备重启后再恢复，不做兜底清理。完整配置说明见[入站文档](https://www.netproxy.store/config/inbound)。
 
 ## 排障
 
@@ -252,7 +261,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl logs show core 100'
 su -c '/data/adb/modules/netproxy/netproxyctl logs export /sdcard/Download/netproxy-diagnostics.tar.gz'
 ```
 
-启动失败时优先检查 `sing-box.log`。出现 eBPF 加载错误时，请根据所选数据平面检查 cgroup v2 或 BPF / TC 能力、Root 授权与 `ebpf.conf`；手写节点无法加载时，重点检查顶层是否为 `outbounds`、协议字段是否为 `type`、JSON 语法是否正确，以及节点标签是否冲突。
+启动失败时优先检查 `sing-box.log`。eBPF 按所选数据平面检查 cgroup v2 或 BPF/TC；TUN 检查实际平台能力与路由条件，两者参数都在 `inbound.json`。保留 `ebpf status` 诊断，没有 `tun status` 命令。手写节点无法加载时，检查顶层 `outbounds`、协议字段 `type`、JSON 语法与节点标签冲突。
 
 更完整的安装、配置和排障说明请访问 [NetProxy 文档](https://www.netproxy.store/)。
 

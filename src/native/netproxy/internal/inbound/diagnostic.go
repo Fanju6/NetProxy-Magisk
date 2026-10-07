@@ -1,4 +1,4 @@
-package ebpf
+package inbound
 
 import (
 	"context"
@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	json "encoding/json/v2"
+
+	"github.com/sagernet/sing-box/option"
 )
 
 // ProbeOptions 描述 sing-box eBPF 能力检查所需的运行参数。
@@ -22,12 +24,8 @@ type ProbeOptions struct {
 }
 
 // ResolveProbeOptions 根据当前 eBPF 配置解析能力检查范围与数据平面。
-func ResolveProbeOptions(path, requestedMode string) (ProbeOptions, error) {
-	config, err := Load(path)
-	if err != nil {
-		return ProbeOptions{}, fmt.Errorf("读取 eBPF 配置失败: %w", err)
-	}
-
+func ResolveProbeOptions(config option.EBPFInboundOptions, requestedMode string) (ProbeOptions, error) {
+	localEnabled, sharedEnabled := config.EffectiveEnablement()
 	requested := strings.ToLower(strings.TrimSpace(requestedMode))
 	if requested == "" {
 		requested = "configured"
@@ -35,9 +33,9 @@ func ResolveProbeOptions(path, requestedMode string) (ProbeOptions, error) {
 	coreMode := requested
 	if requested == "configured" {
 		switch {
-		case config.Local.Enabled && config.Shared.Enabled:
+		case localEnabled && sharedEnabled:
 			coreMode = "all"
-		case config.Shared.Enabled:
+		case sharedEnabled:
 			coreMode = "shared"
 		default:
 			coreMode = "local"
@@ -50,25 +48,22 @@ func ResolveProbeOptions(path, requestedMode string) (ProbeOptions, error) {
 		return ProbeOptions{}, fmt.Errorf("eBPF 检查范围无效: %s", requestedMode)
 	}
 
-	network := append([]string{}, config.Network...)
-	if len(network) == 0 {
-		network = []string{"tcp", "udp"}
-	}
-	ipv6 := config.Local.IPv6
+	network := config.Network.Build()
+	ipv6 := enabledByDefault(config.Local.IPv6)
 	if coreMode == "shared" {
-		ipv6 = config.Shared.IPv6
+		ipv6 = enabledByDefault(config.Shared.IPv6)
 	} else if coreMode == "all" {
-		ipv6 = config.Local.IPv6 || config.Shared.IPv6
+		ipv6 = enabledByDefault(config.Local.IPv6) || enabledByDefault(config.Shared.IPv6)
 	}
 	interfaceName := ""
-	if len(config.Shared.Interfaces) > 0 {
-		interfaceName = config.Shared.Interfaces[0]
+	if len(config.Shared.Interface) > 0 {
+		interfaceName = config.Shared.Interface[0]
 	}
 	return ProbeOptions{
 		RequestedMode:   requested,
 		CoreMode:        coreMode,
-		LocalDataPlane:  config.Local.DataPlane,
-		SharedDataPlane: config.Shared.DataPlane,
+		LocalDataPlane:  localDataPlane(config.Local.DataPlane),
+		SharedDataPlane: sharedDataPlane(config.Shared.DataPlane),
 		Network:         network,
 		IPv6:            ipv6,
 		Interface:       interfaceName,
@@ -99,7 +94,14 @@ func (o ProbeOptions) Args() []string {
 }
 
 // RunProbe 调用 sing-box 内置的 eBPF 内核能力检查。
-func RunProbe(ctx context.Context, singBoxPath string, options ProbeOptions) (string, error) {
+func RunProbe(ctx context.Context, singBoxPath string, config option.EBPFInboundOptions, requestedMode string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	options, err := ResolveProbeOptions(config, requestedMode)
+	if err != nil {
+		return "", err
+	}
 	if strings.TrimSpace(singBoxPath) == "" {
 		return "", fmt.Errorf("sing-box 路径为空")
 	}
@@ -107,6 +109,9 @@ func RunProbe(ctx context.Context, singBoxPath string, options ProbeOptions) (st
 	var stderr strings.Builder
 	command.Stderr = &stderr
 	output, err := command.Output()
+	if ctx.Err() != nil {
+		return string(output), ctx.Err()
+	}
 	if err != nil && strings.TrimSpace(stderr.String()) != "" {
 		err = fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
 	}

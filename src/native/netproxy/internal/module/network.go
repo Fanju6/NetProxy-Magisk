@@ -130,6 +130,7 @@ func ApplyRuntimeMode(ctx context.Context, options Options, mode string) error {
 func networkControlOptions(options Options) service.Options {
 	return service.Options{
 		ModuleConfig:   options.ModuleConfig,
+		InboundConfig:  options.InboundConfig,
 		CatalogRoot:    options.CatalogRoot,
 		StateFile:      options.StateFile,
 		ProgressDir:    options.ProgressDir,

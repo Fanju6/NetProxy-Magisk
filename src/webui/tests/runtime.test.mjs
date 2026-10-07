@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { checkBuild } from '../scripts/check-build.mjs'
@@ -9,6 +9,8 @@ import { createPoller } from '../src/polling.ts'
 import { complete, replaceCompletion } from '../src/autocomplete.ts'
 import { parseCommandLine } from '../src/command.ts'
 import { formatCtlOutput } from '../src/format.ts'
+import { mockCtl } from '../src/mock.ts'
+import { COMMANDS } from '../src/commands.ts'
 
 test('构建检查拒绝缺失或空的页面资源及运行时角色帧', t => {
   const root = mkdtempSync(join(tmpdir(), 'netproxy-webui-'))
@@ -44,6 +46,57 @@ test('格式化只改变 JSON 排版，文本、错误和危险字符保持原�
   assert.deepEqual(JSON.parse(formatCtlOutput(raw)), JSON.parse(raw))
   assert.equal(formatCtlOutput('shell output\n'), 'shell output\n')
   assert.equal(formatCtlOutput('not { json'), 'not { json')
+})
+
+test('入站帮助与补全只使用公共配置目标，诊断仍保留 ebpf status', () => {
+  const targets = ['inbound', 'inbound/backend', 'inbound/ebpf', 'inbound/tun']
+  for (const action of ['read', 'apply', 'validate']) {
+    assert.deepEqual(complete(`config ${action} in`).candidates, targets)
+    assert.ok(!complete(`config ${action} `).candidates.includes('ebpf'))
+    assert.deepEqual(complete(`config ${action} ebpf`).candidates, [])
+  }
+  assert.deepEqual(complete('config read runtime/in').candidates, ['runtime/inbound.json'])
+  assert.deepEqual(complete('config apply runtime/').candidates, [])
+  assert.deepEqual(complete('ebpf ').candidates, ['status'])
+  assert.deepEqual(complete('tun ').candidates, [])
+  assert.match(COMMANDS.config.help, /不能用 \{\} 删除/)
+  assert.match(COMMANDS.service.help, /active_backend.*ready.*PID\/API/)
+})
+
+test('mock 同步单文件模板、分区与真实后端状态边界', () => {
+  const run = (...args) => decodeCtlResult(mockCtl(args))
+  const defaults = JSON.parse(readFileSync(new URL('../../module/config/inbound/inbound.json', import.meta.url)))
+  run('service', 'stop')
+  assert.equal(run('service', 'status').data.configured_backend, 'ebpf')
+  assert.equal(run('service', 'status').data.active_backend, null)
+  assert.deepEqual(JSON.parse(run('config', 'read', 'inbound').data.content), defaults)
+  assert.deepEqual(run('config', 'list').data.filter(item => item.category === 'inbound').map(item => item.id), [
+    'inbound', 'inbound/backend', 'inbound/ebpf', 'inbound/tun',
+  ])
+  for (const section of ['backend', 'ebpf', 'tun']) {
+    const result = run('config', 'read', `inbound/${section}`)
+    assert.deepEqual(JSON.parse(result.data.content), { [section]: defaults[section] })
+    assert.ok(result.data.revision)
+  }
+  assert.deepEqual(run('app', 'list').data, { enabled: true, mode: 'blacklist', proxy_apps: '', bypass_apps: '' })
+  assert.equal(run('config', 'read', 'ebpf').ok, false)
+  assert.equal(run('config', 'read', 'runtime/ebpf.json').ok, false)
+  assert.equal(run('tun', 'status').ok, false)
+  assert.equal(run('ebpf', 'status').ok, true)
+  assert.equal(run('config', 'read', 'runtime/inbound.json').ok, false)
+  run('service', 'start')
+  assert.equal(run('service', 'status').data.active_backend, 'ebpf')
+  assert.equal(run('service', 'status').data.pid, 4242)
+  const runtime = JSON.parse(run('config', 'read', 'runtime/inbound.json').data.content)
+  assert.equal(runtime.inbounds.length, 1)
+  assert.equal(runtime.inbounds[0].tag, 'netproxy-in')
+  assert.deepEqual(runtime.inbounds[0].shared, { enabled: false })
+  assert.deepEqual(run('config', 'list').data.filter(item => item.category === 'runtime').map(item => [item.id, item.editable]), [
+    ['runtime/inbound.json', false], ['runtime/providers.json', false], ['runtime/outbounds.json', false],
+  ])
+  run('service', 'stop')
+  assert.equal(run('service', 'status').data.active_backend, null)
+  assert.equal(run('config', 'read', 'runtime/inbound.json').ok, true)
 })
 
 test('JSON 与进程退出状态必须同时成功，结构化失败保留', () => {

@@ -1,6 +1,7 @@
 package module
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json/jsontext"
@@ -15,15 +16,18 @@ import (
 	"strings"
 
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/ebpf"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/inbound"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
+	"github.com/sagernet/sing-box/option"
 )
 
 var (
 	configProcessRunning = service.ProcessRunning
 	configReload         = reloadAppliedConfig
 	configRestoreReload  = reloadConfigSnapshot
+	configStop           = StopService
+	configStart          = startAppliedConfig
 )
 
 // ConfigDocument 是配置工作台可见的文件摘要。
@@ -44,6 +48,9 @@ var configSections = []string{
 }
 
 func configSection(target string) string {
+	if section, found := strings.CutPrefix(target, "inbound/"); found && (section == "backend" || section == "ebpf" || section == "tun") {
+		return section
+	}
 	section, hasPrefix := strings.CutPrefix(target, "singbox/")
 	if hasPrefix && slices.Contains(configSections, section) {
 		return section
@@ -57,6 +64,10 @@ func ListConfigs(options Options) ([]ConfigDocument, error) {
 		return nil, err
 	}
 	result := make([]ConfigDocument, 0)
+	result = append(result, ConfigDocument{ID: "inbound", Filename: "inbound.json", Category: "inbound", Editable: true})
+	for _, section := range []string{"backend", "ebpf", "tun"} {
+		result = append(result, ConfigDocument{ID: "inbound/" + section, Filename: section, Category: "inbound", Editable: true, Section: section})
+	}
 	if _, err := os.Stat(paths.SingBoxConfig(options.SingBoxDir)); err == nil {
 		result = append(result, ConfigDocument{ID: "singbox/config.json", Filename: "config.json", Category: "config", Editable: true})
 		for _, section := range configSections {
@@ -80,7 +91,7 @@ func ListConfigs(options Options) ([]ConfigDocument, error) {
 			Editable: true,
 		})
 	}
-	for _, name := range []string{"ebpf.json", "outbounds.json", "providers.json"} {
+	for _, name := range []string{"inbound.json", "outbounds.json", "providers.json"} {
 		path := filepath.Join(options.RuntimeDir, name)
 		info, err := os.Stat(path)
 		if os.IsNotExist(err) {
@@ -224,20 +235,31 @@ func ApplyConfig(ctx context.Context, options Options, target, source string, va
 		if err := recoverConfigApply(ctx, options); err != nil {
 			return "", err
 		}
-		var release func()
-		options, release, err = lockConfigFiles(ctx, options, destination, options.ModuleConfig)
-		if err != nil {
-			return "", err
-		}
-		defer release()
 	}
+	var release func()
+	options, release, err = lockConfigFiles(ctx, options, destination, options.ModuleConfig, options.InboundConfig, paths.SingBoxConfig(options.SingBoxDir))
+	if err != nil {
+		return "", err
+	}
+	defer release()
 	// 锁内读取最新主配置后只替换目标分区，不能把客户端的整份旧快照写回。
 	section := configSection(target)
 	var current []byte
-	if section != "" || expectedRevision != "" {
+	inboundTarget := target == "inbound" || strings.HasPrefix(target, "inbound/")
+	if section != "" || expectedRevision != "" || inboundTarget {
 		current, err = os.ReadFile(destination)
 		if err != nil {
 			return "", err
+		}
+	}
+	if inboundTarget && section != "" {
+		fragment, err := configObject(replacement)
+		if err != nil {
+			return "", err
+		}
+		value, found := fragment[section]
+		if !found || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return "", errors.New("入站分区必需，不能删除或设置为 null")
 		}
 	}
 	content, revision, err := prepareConfigEdit(current, replacement, section, expectedRevision)
@@ -256,7 +278,9 @@ func ApplyConfig(ctx context.Context, options Options, target, source string, va
 	if err := os.WriteFile(candidatePath, content, 0o600); err != nil {
 		return "", err
 	}
-	if section != "" {
+	if inboundTarget {
+		err = validateInboundTree(ctx, options, candidatePath, content, section)
+	} else if section != "" {
 		err = validateSingBoxTree(ctx, options, candidatePath)
 	} else {
 		err = validateConfig(ctx, options, target, candidatePath, content)
@@ -267,39 +291,80 @@ func ApplyConfig(ctx context.Context, options Options, target, source string, va
 	if validateOnly {
 		return revision, nil
 	}
+	applyRuntime := true
+	switchBackend := false
+	if inboundTarget {
+		previous, parseErr := inbound.Parse(current)
+		if parseErr != nil {
+			return "", parseErr
+		}
+		next, parseErr := inbound.Parse(content)
+		if parseErr != nil {
+			return "", parseErr
+		}
+		oldEffective, effectiveErr := previous.EffectiveContent()
+		if effectiveErr != nil {
+			return "", effectiveErr
+		}
+		newEffective, effectiveErr := next.EffectiveContent()
+		if effectiveErr != nil {
+			return "", effectiveErr
+		}
+		applyRuntime = !bytes.Equal(oldEffective, newEffective)
+		switchBackend = previous.Backend != next.Backend
+		if configProcessRunning(options.SingBoxPath) {
+			state, stateErr := ReadServiceState(options.StateFile)
+			if stateErr != nil {
+				return "", stateErr
+			}
+			if state.ActiveBackend != "" {
+				switchBackend = state.ActiveBackend != next.Backend
+				applyRuntime = applyRuntime || switchBackend
+			}
+		}
+	}
 	transaction, err := beginConfigApply(options, destination)
 	if err != nil {
 		return "", err
 	}
-	if err := os.Rename(candidatePath, destination); err != nil {
+	if !applyRuntime {
+		transaction.journal.Action = "none"
+	}
+	if switchBackend && transaction.journal.WasRunning {
+		transaction.journal.Action = "switch"
+	}
+	if err := transaction.writeJournal(); err != nil {
 		return "", errors.Join(err, transaction.rollback())
 	}
-	if err := transaction.setPhase("static_replaced"); err != nil {
-		return "", errors.Join(fmt.Errorf("记录配置应用阶段失败: %w", err), transaction.rollback())
+	if transaction.journal.Action == "switch" {
+		if err := transaction.setPhase("switch_started"); err != nil {
+			return "", errors.Join(err, transaction.rollback())
+		}
+		if err := configStop(ctx, options); err != nil {
+			return "", rollbackConfigApply(options, transaction, err)
+		}
 	}
-	if !configProcessRunning(options.SingBoxPath) {
+	if err := os.Rename(candidatePath, destination); err != nil {
+		return "", rollbackConfigApply(options, transaction, err)
+	}
+	if err := transaction.setPhase("static_replaced"); err != nil {
+		return "", rollbackConfigApply(options, transaction, fmt.Errorf("记录配置应用阶段失败: %w", err))
+	}
+	if !transaction.journal.WasRunning || !applyRuntime {
 		if err := transaction.commit(); err != nil {
 			return "", errors.Join(fmt.Errorf("提交配置事务失败: %w", err), transaction.rollback())
 		}
 		return revision, nil
 	}
 	if err := transaction.setPhase("reload_started"); err != nil {
-		return "", errors.Join(fmt.Errorf("记录配置 reload 阶段失败: %w", err), transaction.rollback())
+		return "", rollbackConfigApply(options, transaction, fmt.Errorf("记录配置 reload 阶段失败: %w", err))
 	}
-	if err := configReload(ctx, options); err != nil {
-		restoreErr := transaction.restore()
-		if restoreErr != nil {
-			return "", errors.Join(fmt.Errorf("配置 reload 失败: %w", err), fmt.Errorf("恢复旧配置失败: %w", restoreErr))
-		}
-		if configProcessRunning(options.SingBoxPath) {
-			if restoreErr := configRestoreReload(ctx, options, transaction.journal); restoreErr != nil {
-				return "", errors.Join(fmt.Errorf("配置 reload 失败: %w", err), fmt.Errorf("运行实例恢复失败: %w", restoreErr))
-			}
-		}
-		if cleanupErr := transaction.cleanup(); cleanupErr != nil {
-			return "", errors.Join(fmt.Errorf("配置 reload 失败: %w", err), fmt.Errorf("旧配置已恢复但清理事务失败: %w", cleanupErr))
-		}
-		return "", fmt.Errorf("配置 reload 失败，已恢复旧配置: %w", err)
+	apply := configReload
+	if transaction.journal.Action == "switch" {
+		apply = configStart
+	}
+	if err := apply(ctx, options); err != nil {
+		return "", rollbackConfigApply(options, transaction, fmt.Errorf("配置应用失败: %w", err))
 	}
 	if target == "module" {
 		// reload 可能校正已失效的节点选择，revision 必须对应锁内最终内容。
@@ -316,35 +381,13 @@ func ApplyConfig(ctx context.Context, options Options, target, source string, va
 }
 
 func rollbackAfterCommitFailure(ctx context.Context, options Options, transaction *configApplyTransaction, commitErr error) error {
-	diskErr := transaction.restore()
-	var runtimeErr error
-	if diskErr == nil && configProcessRunning(options.SingBoxPath) {
-		runtimeErr = configRestoreReload(ctx, options, transaction.journal)
-	}
-	var cleanupErr error
-	if diskErr == nil && runtimeErr == nil {
-		cleanupErr = transaction.cleanup()
-	}
-	result := fmt.Errorf("提交配置事务失败: %w", commitErr)
-	if diskErr != nil {
-		result = errors.Join(result, fmt.Errorf("磁盘恢复失败: %w", diskErr))
-	}
-	if runtimeErr != nil {
-		result = errors.Join(result, fmt.Errorf("旧 runtime reload 失败: %w", runtimeErr))
-	}
-	if cleanupErr != nil {
-		result = errors.Join(result, fmt.Errorf("事务清理失败: %w", cleanupErr))
-	}
-	return result
+	return rollbackConfigApply(options, transaction, fmt.Errorf("提交配置事务失败: %w", commitErr))
 }
 
 func validateConfig(ctx context.Context, options Options, target, candidate string, content []byte) error {
 	switch target {
 	case "module":
 		_, err := moduleconfig.LoadModule(candidate)
-		return err
-	case "ebpf":
-		_, err := ebpf.Load(candidate)
 		return err
 	}
 	if !jsontext.Value(content).IsValid() {
@@ -357,6 +400,123 @@ func validateConfig(ctx context.Context, options Options, target, candidate stri
 		return validateSingBoxTree(ctx, options, candidate)
 	}
 	return nil
+}
+
+func validateInboundTree(ctx context.Context, options Options, candidate string, content []byte, section string) error {
+	if section == "backend" {
+		if _, err := inbound.Parse(content); err != nil {
+			return err
+		}
+	} else if err := inbound.Validate(content, section); err != nil {
+		return err
+	}
+	temporary, err := os.MkdirTemp("", "netproxy-inbound-check-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(temporary)
+	checkOptions := options
+	checkOptions.RuntimeDir = temporary
+	checkOptions.InboundConfig = candidate
+	prepared, err := Prepare(ctx, checkOptions, true)
+	if err != nil {
+		return err
+	}
+	return checkPreparedConfiguration(ctx, checkOptions, prepared)
+}
+
+func validateManagedInbound(options Options, config inbound.Config) error {
+	content, err := os.ReadFile(paths.SingBoxConfig(options.SingBoxDir))
+	if err != nil {
+		return err
+	}
+	object, err := configObject(content)
+	if err != nil {
+		return err
+	}
+	var configured []struct {
+		Type string `json:"type"`
+		Tag  string `json:"tag"`
+	}
+	if raw, exists := object["inbounds"]; exists {
+		if err := json.Unmarshal(raw, &configured); err != nil {
+			return err
+		}
+	}
+	for _, entry := range configured {
+		if entry.Type == "ebpf" || entry.Type == "tun" || entry.Tag == inbound.Tag {
+			return &inbound.ValidationError{Diagnostics: []inbound.Diagnostic{{Level: "error", Code: "inbound.static_conflict", Field: "inbounds", Message: "主配置不能重复定义受管 eBPF/TUN 入站或占用 netproxy-in 标签"}}}
+		}
+	}
+	if config.Backend != "tun" {
+		return nil
+	}
+	var route struct {
+		AutoDetectInterface bool          `json:"auto_detect_interface"`
+		DefaultInterface    string        `json:"default_interface"`
+		DefaultMark         option.FwMark `json:"default_mark"`
+	}
+	if raw, exists := object["route"]; exists {
+		if err := json.Unmarshal(raw, &route); err != nil {
+			return err
+		}
+	}
+	if !route.AutoDetectInterface && route.DefaultInterface == "" {
+		return &inbound.ValidationError{Diagnostics: []inbound.Diagnostic{{Level: "error", Code: "tun.interface_required", Field: "route", Message: "TUN 需要 route.auto_detect_interface 或 route.default_interface 防止出口回环"}}}
+	}
+	if route.DefaultMark != 0 {
+		return tunRoutingMarkConflict("route.default_mark")
+	}
+	for _, key := range []string{"outbounds", "endpoints", "http_clients"} {
+		if raw, exists := object[key]; exists {
+			var entries []jsontext.Value
+			if err := json.Unmarshal(raw, &entries); err != nil {
+				return err
+			}
+			for _, entry := range entries {
+				if err := validateTUNDialerMark(entry, key+".routing_mark"); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if raw, exists := object["dns"]; exists {
+		var dns struct {
+			Servers []jsontext.Value `json:"servers"`
+		}
+		if err := json.Unmarshal(raw, &dns); err != nil {
+			return err
+		}
+		for _, entry := range dns.Servers {
+			if err := validateTUNDialerMark(entry, "dns.servers.routing_mark"); err != nil {
+				return err
+			}
+		}
+	}
+	if raw, exists := object["ntp"]; exists {
+		if err := validateTUNDialerMark(raw, "ntp.routing_mark"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateTUNDialerMark(content []byte, field string) error {
+	var dialer struct {
+		RoutingMark option.FwMark `json:"routing_mark"`
+	}
+	if err := json.Unmarshal(content, &dialer); err != nil {
+		return err
+	}
+	if dialer.RoutingMark != 0 {
+		return tunRoutingMarkConflict(field)
+	}
+	return nil
+}
+
+func tunRoutingMarkConflict(field string) error {
+	// 上游在首次拨号才执行冲突检查，check 通过不能证明此组合可运行。
+	return &inbound.ValidationError{Diagnostics: []inbound.Diagnostic{{Level: "error", Code: "tun.routing_mark_conflict", Field: field, Message: "TUN auto_redirect 不能与 default_mark 或 routing_mark 同时使用"}}}
 }
 
 // validateSingBoxTree 在临时配置树中检查候选静态配置，避免直接覆盖用户正在使用的文件。
@@ -375,12 +535,13 @@ func validateSingBoxTree(ctx context.Context, options Options, candidate string)
 	}
 	checkOptions := options
 	checkOptions.RuntimeDir = filepath.Join(temporary, "runtime")
+	checkOptions.SingBoxDir = temporary
 	prepared, err := Prepare(ctx, checkOptions, true)
 	if err != nil {
 		return err
 	}
 	command := exec.CommandContext(ctx, options.SingBoxPath, "check", "-c", candidatePath,
-		"-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.EBPF)
+		"-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.Inbound)
 	command.Dir = temporary
 	command.Stdout = os.Stderr
 	command.Stderr = os.Stderr
@@ -422,8 +583,8 @@ func ResolveConfig(options Options, target string) (string, error) {
 	switch target {
 	case "module":
 		return options.ModuleConfig, nil
-	case "ebpf":
-		return options.EBPFConfig, nil
+	case "inbound", "inbound/backend", "inbound/ebpf", "inbound/tun":
+		return options.InboundConfig, nil
 	case "singbox/config.json":
 		return paths.SingBoxConfig(options.SingBoxDir), nil
 	}
@@ -462,7 +623,7 @@ func ResolveConfig(options Options, target string) (string, error) {
 
 func isRuntimeConfigName(name string) bool {
 	switch name {
-	case "providers.json", "outbounds.json", "ebpf.json":
+	case "providers.json", "outbounds.json", "inbound.json":
 		return true
 	default:
 		return false

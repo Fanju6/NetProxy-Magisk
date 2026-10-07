@@ -53,6 +53,13 @@ feature/<name>/
 
 ## 状态所有权
 
+- `feature/inbound` 管理入站后端和原生 eBPF/TUN 表单，复用 `ConfigRepository` 的候选文件与分区 revision。唯一事实源为 `config/inbound/inbound.json`，表单更新只替换所拥有的原生字段并保留其余字段；冲突必须重新加载。
+- `SettingsViewModel` 管理模块开关与独立「网络匹配」页的 Wi-Fi 策略；入站页只依赖 `InboundViewModel`，分应用入口位于入站页。分应用仍使用原有 app 命令，保存后由用户重启服务。
+- 后端切换在服务运行时需要确认；只有配置与实际服务后端均确认后才显示成功。`active_backend` 保留内部校验，不作为常驻设置项展示，为 null 时不从配置推测。首次配置与选项读取完成后一次展示表单，刷新保留旧表单和正常颜色；保存取消在途刷新，避免旧结果覆盖新 revision，写入仍串行并检查冲突。完整入站 JSON 编辑位于入站页，包装 Schema 引用内置 sing-box 原生定义。
+- 入站列表输入每行一个值，候选勾选直接操作列表，不按逗号拆分原生标签或接口名。保存失败保留候选与原 revision 供用户核对；后续刷新失败时实际状态未知，不沿用旧 ready 快照或自动重试。
+- 入站保存不弹出整页加载框或改变表单颜色；耗时操作仅在对应项显示局部进度。编辑弹窗固定筛选方式、输入区和按钮，只有候选列表独立滚动，长输入在输入框内滚动。
+- 运行时受管入站唯一为 `runtime/inbound.json`，原有 providers/outbounds 仍单独保留并只读展示。
+
 - ViewModel 持有页面状态，并通过不可变 `StateFlow` 暴露。
 - Repository 负责命令组合与模块响应映射，不保存 Compose 状态。
 - `AppContainer` 只在应用入口创建长期依赖，不提供运行时服务定位。

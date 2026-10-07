@@ -19,6 +19,7 @@ export const COMMANDS = {
   service toggle      切换服务状态
 
 状态: stopped / preparing / starting / ready / stopping / failed
+configured_backend 是保存的入站；active_backend 仅在 ready 且 PID/API 毫秒启动身份一致时非空，否则为 null。
 `,
   },
   catalog: {
@@ -101,6 +102,8 @@ export const COMMANDS = {
   app remove <用户ID>:<包名>   移除指定用户的应用
   app enable                  启用分应用代理
   app disable                 禁用分应用代理
+
+共用名单保存在 inbound.json 的 app 对象，修改后重启服务应用；只筛选本机应用。
 `,
   },
   ebpf: {
@@ -114,6 +117,8 @@ export const COMMANDS = {
   ebpf status local                   检查本机数据路径
   ebpf status shared                  检查共享网络数据路径
   ebpf status all --raw               输出原始诊断信息
+
+只诊断 eBPF 能力，不代表实际 active_backend；TUN 通过配置检查、实际启动与日志确认。
 `,
   },
   config: {
@@ -127,10 +132,14 @@ export const COMMANDS = {
   config validate <目标> <内容文件>   校验配置
   config apply <目标> <内容文件>      应用配置
 
-  完整配置：singbox/config.json
-  分区目标：singbox/dns、singbox/inbounds、singbox/route 等
-  分区内容保留顶层字段，例如 {"dns":{...}}；{} 删除该分区。
+  完整配置：singbox/config.json、inbound
+  入站分区：inbound/backend、inbound/ebpf、inbound/tun
+  入站分区保留顶层字段，例如 {"backend":"tun"}；不能用 {} 删除。
+  核心分区：singbox/dns、singbox/inbounds、singbox/route 等
+  核心分区保留顶层字段，例如 {"dns":{...}}；{} 删除该分区。
+  只读运行时：runtime/inbound.json、runtime/providers.json、runtime/outbounds.json
   apply/validate 在目标前加 --revision <读取值>，避免覆盖并发修改。
+  切换强杀或清理未确认时中止并保留 journal，需要设备重启后再恢复。
 `,
   },
   logs: {
@@ -150,6 +159,11 @@ export type CommandName = keyof typeof COMMANDS
 export const COMMAND_NAMES = Object.keys(COMMANDS) as CommandName[]
 export const ROOT_COMPLETIONS = [...COMMAND_NAMES, 'help', 'clear', 'exit']
 export const HELP_TOPICS = [...COMMAND_NAMES, 'shell']
+const CONFIG_TARGETS = [
+  'inbound', 'inbound/backend', 'inbound/ebpf', 'inbound/tun', 'singbox/config.json',
+  'singbox/log', 'singbox/dns', 'singbox/inbounds', 'singbox/outbounds', 'singbox/route',
+  'singbox/experimental', 'singbox/http_clients', 'singbox/services',
+]
 
 export const VALUE_COMPLETIONS: Record<string, string[]> = {
   'app mode': ['blacklist', 'whitelist'],
@@ -158,4 +172,7 @@ export const VALUE_COMPLETIONS: Record<string, string[]> = {
   'logs clear': ['service', 'core'],
   'network evaluate': ['--type', '--ssid'],
   'network evaluate --type': ['wifi', 'not_wifi'],
+  'config read': [...CONFIG_TARGETS, 'runtime/inbound.json', 'runtime/providers.json', 'runtime/outbounds.json'],
+  'config apply': CONFIG_TARGETS,
+  'config validate': CONFIG_TARGETS,
 }
