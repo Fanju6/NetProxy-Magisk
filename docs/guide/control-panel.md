@@ -1,6 +1,6 @@
 # 控制面板与 API
 
-NetProxy 提供两个边界不同的本机入口，它们不是两套独立配置。
+模块 WebUI 用于模块操作，sing-box Dashboard 与 Clash API 用于核心运行时查看和控制。它们共用模块配置，不维护另一份节点数据。
 
 ## 模块 WebUI
 
@@ -16,6 +16,15 @@ sing-box Dashboard 使用 Service API，展示原生服务状态、节点组、�
 - Secret：`singbox`
 
 Android 管理器也通过 Service API 合并核心实时状态。
+
+## Clash API
+
+兼容的第三方 Clash 客户端可连接此 API，查看运行时状态和控制代理组：
+
+- Controller：`http://127.0.0.1:9999`
+- Secret：`singbox`
+
+Clash API 与 Service API 的监听和密钥均保存在 `config/singbox/config.json`，分别位于 `experimental.clash_api` 和 `services`。详情见[配置参考](/config/singbox#api-与-dashboard)。
 
 ## 安全边界
 

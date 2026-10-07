@@ -49,7 +49,7 @@ runtime/           # 启动时生成的运行时配置
 
 ### 在管理器中编辑
 
-进入“设置 → 内核设置”，可以分别打开 DNS、入站、路由等分区，也可以打开“完整配置”。分区是主配置的编辑视图，不是另一个磁盘文件。
+进入“设置 → 内核配置”，在“主配置”中分别打开 DNS、入站、路由等分区，也可以打开“完整配置”。分区是主配置的编辑视图，不是另一个磁盘文件。
 
 DNS 编辑器只显示 `{"dns": {...}}`。保存时 Go 只替换 `dns`，其他分区保持不变；不能在 DNS 编辑器中写入 `route` 等其他顶层字段。将内容改为 `{}` 会删除该分区，`null` 与删除不是一回事。
 
@@ -123,4 +123,4 @@ su -c '/data/adb/modules/netproxy/netproxyctl config apply --revision <读到的
 su -c '/data/adb/modules/netproxy/netproxyctl config check'
 ```
 
-管理器配置编辑器会先写候选文件，再执行 sing-box 检查和原子替换。不要手动修改 `runtime/`；需要调整 sing-box 行为时，应使用管理器内核设置或 `netproxyctl config` 的事务入口。
+管理器配置编辑器会先写候选文件，再执行 sing-box 检查和原子替换。不要手动修改 `runtime/`；需要调整 sing-box 行为时，应使用管理器内核配置或 `netproxyctl config` 的事务入口。

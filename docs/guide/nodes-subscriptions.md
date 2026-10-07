@@ -11,7 +11,41 @@
 - 导入不会覆盖已有节点；重复 tag 会自动生成稳定后缀。
 - 本地节点可测速、编辑、导出和删除。
 
-文件导入不会再按文件名创建额外的本地订阅组。
+文件导入不会按文件名创建额外分组。
+
+### 手写 sing-box 节点文件
+
+将节点放入顶层 `outbounds` 数组，不要直接把单个 outbound 对象作为文件根节点。例如，创建 UTF-8 编码的 `nodes.json`：
+
+```json
+{
+  "outbounds": [
+    {
+      "type": "socks",
+      "tag": "my-socks",
+      "server": "proxy.example.com",
+      "server_port": 1080,
+      "version": "5",
+      "username": "user",
+      "password": "password"
+    }
+  ]
+}
+```
+
+把示例服务器、端口和账号替换为自己的 SOCKS5 节点。`type` 是协议类型，`tag` 是节点名称；多个节点在同一数组中依次添加，不需要附带 DNS、路由或入站配置。
+
+在管理器“节点 → 添加 → 本地文件”中选择该文件，导入后在“本地配置”中选择节点。也可将文件放到手机 Download 目录，通过 CLI 导入和选择：
+
+```sh
+su -c '/data/adb/modules/netproxy/netproxyctl node import /sdcard/Download/nodes.json'
+su -c '/data/adb/modules/netproxy/netproxyctl node list'
+su -c '/data/adb/modules/netproxy/netproxyctl node use default/my-socks'
+```
+
+为节点使用清晰、独特的 `tag`，避免与 `direct`、`block`、`Proxy` 等运行时标签重名。导入时重名节点会生成后缀，请按实际名称选择。不要直接修改 Catalog 中的 `provider.json`，应通过管理器或 CLI 编辑节点。
+
+其他协议同样使用对应的 sing-box 出站字段，参考 [Outbound 文档](https://sing-box.sagernet.org/configuration/outbound/)。
 
 ## 订阅
 

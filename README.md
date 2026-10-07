@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Android 系统级 sing-box 透明代理模块</strong><br>
-  支持 eBPF 或 Root TUN、TCP / UDP、分应用代理、节点订阅与双控制 API
+  eBPF / TUN · 节点与订阅 · 分应用代理 · 共享网络
 </p>
 
 <p align="center">
@@ -34,37 +34,9 @@
 
 ## 项目简介
 
-NetProxy 是面向已 Root Android 设备的系统级透明代理模块。模块以内置 sing-box 为代理核心，通过所选 eBPF 或 Root TUN + auto_redirect 入站接管流量，并提供 Android 管理器、模块 WebUI、CLI 与 Service API Dashboard 等入口。一次只运行一个受管入站，分别保存两套原生参数，不在失败后自动换后端。
+NetProxy 是面向已 Root Android 设备的系统级透明代理模块，支持 **Magisk、KernelSU 与 APatch**。使用 sing-box，通过 eBPF 或 TUN + auto_redirect 接管流量。
 
-支持 **Magisk、KernelSU 与 APatch**。节点、订阅、路由、DNS 和透明代理配置均保存在模块目录中，不使用非 Root Android VpnService。
-
-## 源码结构
-
-```text
-src/module/          模块安装与运行文件
-src/native/netproxy/ 节点、订阅与 Catalog 原生组件
-src/webui/           模块 WebUI
-src/android/         Android 管理器
-```
-
-Android 管理器与模块共用 `netproxyctl` 的 `schema=1` JSON 契约，但保持独立的源码与构建流程。仓库 CI 会从当前源码构建并使用固定签名的管理器 APK，再与模块汇合为唯一发行包；刷入时可选择是否安装或更新管理器。Android 构建说明见 [管理器源码](src/android/)。
-
-## 管理入口
-
-| 入口 | 适合场景 |
-|------|----------|
-| **Android 管理器**（随模块包提供；[源码](src/android/)） | 日常使用，管理服务、节点、订阅、分应用代理、配置与日志 |
-| **模块 WebUI** | 从 KernelSU、Magisk 或 APatch 的模块页面进入 NetProxy 与 sing-box Dashboard |
-| **CLI** | 终端操作、自动化和故障排查 |
-| **Clash API** | 供兼容的第三方客户端查看运行时状态与控制代理组 |
-
-Clash API 默认配置：
-
-- Controller：`http://127.0.0.1:9999`
-- sing-box Service API Dashboard：`http://127.0.0.1:9090/dashboard/`
-- Secret：`singbox`
-
-Clash API 与 Service API 默认只监听本机。需要从其他设备访问时，请显式配置监听地址，并同时调整访问控制、密钥和 TLS；不要直接暴露默认端口。
+日常操作可使用随模块提供的 Android 管理器，也可通过终端式模块 WebUI、CLI 或 sing-box Dashboard 管理。节点与订阅在服务停止时仍可浏览和编辑。
 
 ## 界面预览
 
@@ -72,198 +44,67 @@ Clash API 与 Service API 默认只监听本机。需要从其他设备访问时
   <img src="docs/public/Screenshot.jpg" width="60%" alt="NetProxy Android 管理器界面预览" />
 </div>
 
-## 核心能力
+## 主要功能
 
-- 使用 eBPF 或 Root TUN 接管 TCP、UDP 和 DNS 流量
-- eBPF attachment、TUN 自动路由与 auto_redirect 接管由 sing-box 管理
-- 分应用黑名单 / 白名单、热点和 USB 共享代理
-- 单节点链接、节点文件、Clash YAML 与订阅导入
-- 手动节点选择与 URLTest 自动测速
-- Rule、Global、Direct、AllowAds 出站模式
-- 按 WiFi SSID 在基础模式与 Direct 之间自动切换
-- Clash API、连接管理与节点测速
-- 订阅定时更新和规则集提前绕过
-- 由核心清理所选入站资源，切换清理未确认时中止并保留恢复信息
+- **透明代理**：eBPF 或 TUN 接管 TCP、UDP 与 DNS，支持热点和 USB 共享网络。
+- **节点与订阅**：导入节点链接、节点文本、Clash YAML 和 sing-box JSON；支持订阅筛选、请求头、流量信息与自动更新。
+- **节点选择与测速**：手动选择或自动优选，服务停止时也可测速。
+- **分应用代理**：黑名单 / 白名单，按 Android 用户分别配置，支持应用分身。
+- **网络策略**：规则、全局、直连与允许广告模式，按 Wi-Fi 名称和实际出口自动切换。
+- **配置与诊断**：编辑 sing-box 配置、本地规则，查看运行时配置与日志，导出脱敏诊断包。
 
-## 安装
+## 安装与开始使用
 
-Release 与 CI 构建统一提供唯一的 `NetProxy_<版本>_<构建号>.zip`，其中包含 sing-box、NetProxy 原生组件、模块 WebUI、CLI、受管入站配置与当前源码构建、固定签名的 Android 管理器 APK。模块自更新也下载此包；刷入时可自行选择是否安装管理器。
+运行环境为 `arm64-v8a` Android 设备与 Magisk、KernelSU 或 APatch，使用 Root 权限接管流量。
 
-> [!IMPORTANT]
-> 默认后端为 eBPF，按数据平面需要 BPF、cgroup/TC、透明 socket、veth 与策略路由等能力。Root TUN 需要对应 TUN、路由、iptables/ip6tables 与 NFQUEUE 能力；配置 check 通过不能代替实际启动验证。不满足所选后端要求时明确失败，不自动回退。
+默认使用 eBPF，可在“设置 → 入站设置”中选择 TUN。设备能力要求与安装选项见[安装与升级](https://www.netproxy.store/guide/installation)。
 
-1. 从 [Releases](https://github.com/Fanju6/NetProxy-Magisk/releases) 下载最新模块 ZIP。
-2. 在 Magisk、KernelSU 或 APatch 中刷入模块。
-3. 更新已有模块时，可选择“保留现有数据”“仅保留节点与订阅”或“全新安装”；音量键加循环选择、音量键减确认，未操作时默认保留现有数据。
-4. 管理器安装时，音量键加循环选择安装或更新、跳过，音量键减确认，10 秒未操作默认安装；开始选择后，20 秒内未确认会取消安装。已有管理器也会按选择尝试覆盖更新，不自动跳过；安装失败不影响模块安装，也不会卸载现有应用。
-5. 已开机刷入会在后台应用新版本，无需重启；Recovery 刷入完成后需要重启设备。
-6. 导入并选择节点，再通过管理器、模块 WebUI 或 CLI 启动服务。
+1. 从 [Releases](https://github.com/Fanju6/NetProxy-Magisk/releases) 下载 `NetProxy_<版本>_<构建号>.zip`，内含模块和 Android 管理器。
+2. 在 Root 管理器中刷入，按提示选择数据保留方式及是否安装管理器；等待安装完成。
+3. 打开 Android 管理器并授予 Root 权限，在“节点”页导入节点，或在“订阅”页添加订阅。
+4. 在“节点”页选择分组与自动 / 手动节点，返回“仪表盘”开启服务。
 
-模块默认 `AUTO_START=0`。确认节点与配置可用后，可在管理器中启用开机启动，或将 `config/module.conf` 中的 `AUTO_START` 改为 `1`。
+服务默认手动启动，开机自启可在“设置”中开启。首次配置参阅[快速开始](https://www.netproxy.store/guide/quick-start)。
 
-“保留现有数据”要求当前 `config/inbound/inbound.json` 与主配置、Catalog 完整。缺少入站文件时请主动选择“仅保留节点与订阅”或“全新安装”；安装器不检测版本、不转换旧配置、不静默补默认。节点模式保留 Catalog 与日志，配置恢复包内默认。
+## 使用文档
 
-## 快速开始
+| 内容 | 文档 |
+|---|---|
+| 安装与首次配置 | [安装与升级](https://www.netproxy.store/guide/installation) · [快速开始](https://www.netproxy.store/guide/quick-start) |
+| 节点、订阅与测速 | [节点与订阅](https://www.netproxy.store/guide/nodes-subscriptions) |
+| 入站、分应用与共享网络 | [入站配置](https://www.netproxy.store/config/inbound) · [eBPF](https://www.netproxy.store/config/ebpf) · [TUN](https://www.netproxy.store/config/tun) |
+| 网络自动切换 | [Wi-Fi 自动策略](https://www.netproxy.store/guide/wifi-policy) |
+| 路由、DNS 与策略组 | [配置参考](https://www.netproxy.store/config/singbox) · [策略分组](https://www.netproxy.store/config/policy-groups) |
+| 终端、面板与第三方客户端 | [CLI](https://www.netproxy.store/guide/cli) · [控制面板与 API](https://www.netproxy.store/guide/control-panel) |
+| 故障排查与问题反馈 | [常见问题与诊断](https://www.netproxy.store/guide/faq) |
 
-以下命令均需要 Root 权限。
+[更新日志](https://www.netproxy.store/changelog) · [隐私政策](https://www.netproxy.store/privacy)
 
-```sh
-# 查看服务状态
-su -c '/data/adb/modules/netproxy/netproxyctl service status'
+## 奶屁伙伴
 
-# 导入单个节点链接
-su -c '/data/adb/modules/netproxy/netproxyctl node add "vless://..."'
+<p align="center">
+  <a href="https://www.netproxy.store/mascot/dragon"><img src="docs/public/mascots/dragon/base.svg" width="144" alt="薄荷色像素奶屁龙" /></a>
+  <a href="https://www.netproxy.store/mascot/niang"><img src="docs/public/mascots/niang/stickers/16-leave-it.png" width="144" alt="长发蓝蝴蝶结的奶屁娘：交给我" /></a>
+</p>
 
-# 导入节点文本或 Clash YAML
-su -c '/data/adb/modules/netproxy/netproxyctl node import /sdcard/clash.yaml'
+**奶屁龙**，通路工坊的开路员。爱挖洞，也爱打盹，偶尔会把出口挖到饼干柜里。
 
-# 查看并选择节点
-su -c '/data/adb/modules/netproxy/netproxyctl node list'
-su -c '/data/adb/modules/netproxy/netproxyctl node use <分组 ID>/<节点标签>'
+**奶屁娘**，通路工坊的主人。讲究、有点傲娇，嘴上问着“日志呢？”，手里已经递来一杯热饮。
 
-# 启动服务
-su -c '/data/adb/modules/netproxy/netproxyctl service start'
+[工坊故事](https://www.netproxy.store/mascot/) · [表情包](https://www.netproxy.store/mascot/stickers) · [股东名册](https://www.netproxy.store/mascot/supporters)
 
-# 查看或切换出站模式
-su -c '/data/adb/modules/netproxy/netproxyctl mode'
-su -c '/data/adb/modules/netproxy/netproxyctl mode rule'
-```
-
-添加订阅（名称可省略，留空时自动获取）：
-
-```sh
-su -c '/data/adb/modules/netproxy/netproxyctl sub add https://example.com/sub'
-su -c '/data/adb/modules/netproxy/netproxyctl sub list'
-su -c '/data/adb/modules/netproxy/netproxyctl sub update <分组 ID>'
-```
-
-## 节点配置格式
-
-推荐使用 Android 管理器或 CLI 导入节点。模块内置的原生组件会把单链接、节点文件、Clash YAML 和订阅转换为模块需要的 sing-box Provider。
-
-### 手写节点文件
-
-手写节点文件必须是一个完整的 sing-box 配置片段，顶层使用 `outbounds` 数组。不能直接把单个 outbound 对象作为文件根节点。
-
-下面是 SOCKS5 节点示例：
-
-```json
-{
-  "outbounds": [
-    {
-      "type": "socks",
-      "tag": "fr-socks",
-      "server": "proxy.example.com",
-      "server_port": 1080,
-      "version": "5",
-      "username": "user",
-      "password": "password"
-    }
-  ]
-}
-```
-
-将节点文件导入 `default` 分组：
-
-```sh
-su -c '/data/adb/modules/netproxy/netproxyctl node import /sdcard/fr-socks.json'
-```
-
-然后执行：
-
-```sh
-su -c '/data/adb/modules/netproxy/netproxyctl node list'
-su -c '/data/adb/modules/netproxy/netproxyctl node use default/fr-socks'
-```
-
-注意事项：
-
-- sing-box 出站协议字段是 `type`，不是 Xray 配置中的 `protocol`。
-- 本地文件导入后会将节点追加到 `default` 本地配置组；建议保证 `tag` 在该组中唯一。
-- 不要使用 `direct`、`block`、`Proxy` 或 `Auto-Fastest` 作为节点标签。
-- `data/catalog/` 中的 `provider.json` 由 Catalog 管理，不建议手动编辑；格式错误会导致对应分组无法加载。协议字段请以 [sing-box Outbound 文档](https://sing-box.sagernet.org/configuration/outbound/) 为准。
-
-## CLI 命令
+## 源码结构
 
 ```text
-su -c '/data/adb/modules/netproxy/netproxyctl [--json] [--timeout <秒|时长>] service status|start|stop|restart|reload|check|toggle'
-su -c '/data/adb/modules/netproxy/netproxyctl [--json] catalog list|show <分组>'
-su -c '/data/adb/modules/netproxy/netproxyctl [--json] node list|current|show|add|import|export|edit|remove|use|delay'
-su -c '/data/adb/modules/netproxy/netproxyctl [--json] sub list|show|add|edit|update|update-all|activate|remove|history|cancel'
-su -c '/data/adb/modules/netproxy/netproxyctl [--json] mode [rule|global|direct|AllowAds]'
-su -c '/data/adb/modules/netproxy/netproxyctl [--json] network evaluate --type <wifi|not_wifi> [--ssid <名称>]'
-su -c '/data/adb/modules/netproxy/netproxyctl [--json] app list|mode|add|remove|enable|disable'
-su -c '/data/adb/modules/netproxy/netproxyctl [--json] ebpf status [configured|all|local|shared] [--raw]'
-su -c '/data/adb/modules/netproxy/netproxyctl [--json] config list|read|check|validate|apply'
-su -c '/data/adb/modules/netproxy/netproxyctl [--json] logs show|clear|export'
+src/module/          模块安装与运行文件
+src/native/netproxy/ Go 原生组件
+src/webui/           终端式模块 WebUI
+src/android/         Android 管理器
+docs/                用户文档站
+tests/               契约与回归测试
 ```
 
-节点引用固定为 `<分组 ID>/<节点标签>`。自动模式用 `node use auto [分组]`，分组测速用 `node delay auto [分组]`。`sub add` 可省略名称（`sub add <URL>`），此时按 Profile-Title、文件名、URL 主机名的顺序自动取名。所有命令默认有超时，订阅变更由下载超时控制，也可使用 `--timeout` 覆盖。
-
-查看完整中文帮助：
-
-```sh
-su -c '/data/adb/modules/netproxy/netproxyctl help'
-```
-
-## 配置与日志
-
-| 路径 | 用途 |
-|------|------|
-| `config/module.conf` | 开机启动、出站模式、当前节点、选择模式和订阅调度 |
-| `config/inbound/inbound.json` | 唯一 backend、共用应用策略及 eBPF/TUN 原生参数 |
-| `config/singbox/config.json` | sing-box 静态主配置；管理器支持 DNS、入站、路由等分区编辑 |
-| `data/catalog/<分组 ID>/` | 节点与订阅分组，含 `meta.json` 与 `provider.json` |
-| `runtime/` | 生成的 providers.json、outbounds.json 与唯一 inbound.json，不编辑、不在安装时保留 |
-| `config/singbox/rules/local/` | 可编辑的本地路由规则集 |
-| `config/singbox/rules/remote/` | 由远程 Provider 管理的内置 SRS 规则资源 |
-| `logs/service.log` | 模块服务、订阅更新与透明代理日志 |
-| `logs/sing-box.log` | sing-box 核心日志 |
-
-常用默认值：
-
-| 配置项 | 默认值 | 说明 |
-|--------|--------|------|
-| `AUTO_START` | `0` | 默认不随开机启动 |
-| `OUTBOUND_MODE` | `rule` | 规则分流 |
-| `SELECTOR_MODE` | `urltest` | 自动测速选择 |
-| `ACTIVE_GROUP_ID` | `default` | 当前生效的节点分组 |
-| `backend` | `ebpf` | 初始受管入站，主动切换可选 `tun` |
-| `app.enabled / mode` | `true / blacklist` | 共用应用策略，两个名单均为 JSON 字符串数组 |
-| `ebpf.network` | `["tcp", "udp"]` | 同时接管 TCP 与 UDP |
-| `ebpf.local.enabled / data_plane` | `true / cgroup` | 本机使用 cgroup socket hook 接管 |
-| `ebpf.shared.enabled / data_plane` | `false / packet_rewrite` | 保存共享参数偏好，默认不启用 |
-| `ebpf.local.dns_mode` | `respect_policy` | DNS 遵循本机筛选与绕过策略 |
-| `ebpf.shared.dns_mode` | `hijack` | 启用共享路径时使用的 DNS 偏好 |
-| `ebpf.local / shared.ipv6` | `true` | 各自保存 IPv6 接管参数 |
-| `ebpf.local / shared.bypass_private_address` | `true` | 各自绕过私网与特殊用途地址 |
-| `ebpf.local / shared.bypass_rule_set` | `["geoip/cn"]` | 提前绕过可提取 CIDR 的规则集 |
-| `tun.interface_name` | `netproxy` | TUN 接口名 |
-| `tun.address` | `["172.19.0.1/30", "fdfe:dcba:9876::1/126"]` | TUN 地址前缀 |
-| `tun.auto_route / auto_redirect` | `true / true` | 受管 TUN 必需开关 |
-| `tun.dns_mode` | `hijack` | DNS 默认接管；不额外指定 MTU、stack、strict_route 或 mark |
-| `WIFI_AUTO_SWITCH` | `0` | 默认关闭 WiFi SSID 自动切换 |
-
-两个原生对象都包含匹配的 `type` 和固定 `tag: "netproxy-in"`。禁用 eBPF 路径可保存全部偏好，运行时只输出 `enabled: false`。应用引用为严格 `<用户ID>:<包名>`，由 Go 按用户查 UID；修改应用名单后重启服务应用，不用本机 UID 筛选热点客户端。
-
-`config list` 的 `category=inbound` 包含 `inbound`、`inbound/backend`、`inbound/ebpf`、`inbound/tun` 四个目标。分区使用对应顶层键并携带读取的 revision，不能用 `{}` 删除，也没有旧 `config ebpf` 目标；生成物只读目标为 `runtime/inbound.json`。主配置不得重复定义受管 eBPF/TUN 或占用 `netproxy-in`。
-
-`service status` 的 `configured_backend` 是保存选择；`active_backend` 仅在 ready、实际 PID 与 API 毫秒级启动身份匹配时非空，否则为 `null`。Prepare 路径字段为 `providers/outbounds/inbound`，另有 `backend`。强杀后的切换中止并保留 journal，需设备重启后再恢复，不做兜底清理。完整配置说明见[入站文档](https://www.netproxy.store/config/inbound)。
-
-## 排障
-
-```sh
-# 服务与核心日志
-su -c '/data/adb/modules/netproxy/netproxyctl logs show service 100'
-su -c '/data/adb/modules/netproxy/netproxyctl logs show core 100'
-
-# 诊断包（包含运行时配置摘要，敏感信息会脱敏）
-su -c '/data/adb/modules/netproxy/netproxyctl logs export /sdcard/Download/netproxy-diagnostics.tar.gz'
-```
-
-启动失败时优先检查 `sing-box.log`。eBPF 按所选数据平面检查 cgroup v2 或 BPF/TC；TUN 检查实际平台能力与路由条件，两者参数都在 `inbound.json`。保留 `ebpf status` 诊断，没有 `tun status` 命令。手写节点无法加载时，检查顶层 `outbounds`、协议字段 `type`、JSON 语法与节点标签冲突。
-
-更完整的安装、配置和排障说明请访问 [NetProxy 文档](https://www.netproxy.store/)。
+开发流程与验证方法见[贡献指南](CONTRIBUTING.md)，架构和跨组件契约见 [AGENTS.md](AGENTS.md)，管理器构建见 [Android 说明](src/android/README.md)。
 
 ## 鸣谢
 
@@ -275,24 +116,10 @@ su -c '/data/adb/modules/netproxy/netproxyctl logs export /sdcard/Download/netpr
 | [AsteriskNG](https://github.com/Asterisk4Magisk/AsteriskNG) | Android eBPF 实现参考 |
 | [v2rayNG](https://github.com/2dust/v2rayNG) | 节点解析实现参考 |
 
----
-
-### 历史鸣谢
-
-以下项目曾为 NetProxy 的早期版本提供核心能力或实现参考。
-
-| 项目 | 历史用途 |
-|------|----------|
-| ~~[CHIZI-0618/sing-box](https://github.com/CHIZI-0618/sing-box)~~ | 曾使用的 sing-box 分支 |
-| ~~[Xray-core](https://github.com/XTLS/Xray-core)~~ | 曾使用的代理核心 |
-| ~~[AndroidTProxyShell](https://github.com/CHIZI-0618/AndroidTProxyShell)~~ | TPROXY / REDIRECT 透明代理实现参考 |
-| ~~[IPSET_LKM](https://github.com/TanakaLun/IPSET_LKM)~~ | IPSET 内核模块与兼容性支持 |
-| ~~[KsuWebUIStandalone](https://github.com/KOWX712/KsuWebUIStandalone)~~ | WebUI 独立运行方案参考 |
+同时感谢曾为早期版本提供核心能力或实现参考的 [CHIZI-0618/sing-box](https://github.com/CHIZI-0618/sing-box)、[Xray-core](https://github.com/XTLS/Xray-core)、[AndroidTProxyShell](https://github.com/CHIZI-0618/AndroidTProxyShell)、[IPSET_LKM](https://github.com/TanakaLun/IPSET_LKM) 与 [KsuWebUIStandalone](https://github.com/KOWX712/KsuWebUIStandalone)。
 
 ## 交流与贡献
 
-- [贡献指南](CONTRIBUTING.md)
-- [架构说明与编码代理约束](AGENTS.md)
 - [Telegram 群组](https://t.me/NetProxy_Magisk)
 - [提交 Issue](https://github.com/Fanju6/NetProxy-Magisk/issues)
 - [提交 Pull Request](https://github.com/Fanju6/NetProxy-Magisk/pulls)

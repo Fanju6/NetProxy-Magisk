@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>System-wide sing-box transparent proxy module for Android</strong><br>
-  eBPF or Root TUN, TCP / UDP, per-app routing, subscriptions, and dual control APIs
+  eBPF / TUN · Nodes & subscriptions · Per-app proxy · Network sharing
 </p>
 
 <p align="center">
@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Fanju6/NetProxy-Magisk/releases">Module & Manager</a> ·
+  <a href="https://github.com/Fanju6/NetProxy-Magisk/releases">Download Module & Manager</a> ·
   <a href="https://www.netproxy.store/">Documentation</a> ·
   <a href="src/android/">Manager Source</a> ·
   <a href="https://t.me/NetProxy_Magisk">Telegram</a>
@@ -34,37 +34,9 @@
 
 ## Overview
 
-NetProxy is a system-wide transparent proxy module for rooted Android devices. Its embedded sing-box core captures traffic through the selected eBPF or Root TUN + auto_redirect inbound and can be managed through the Android app, terminal-style module WebUI, CLI, or Service API Dashboard. Only one managed inbound runs at a time; both native templates are retained without automatic fallback. Root TUN is not an Android VpnService.
+NetProxy is a system-wide transparent proxy module for rooted Android devices, supporting **Magisk, KernelSU, and APatch**. It uses sing-box to intercept traffic through eBPF or TUN + auto_redirect.
 
-Supported root environments: **Magisk, KernelSU, and APatch**.
-
-## Source Layout
-
-```text
-src/module/          Module installation and runtime files
-src/native/netproxy/ Native node, subscription, and Catalog component
-src/webui/           Module WebUI
-src/android/         Android Manager
-```
-
-The Android Manager and module share the `schema=1` `netproxyctl` JSON contract while keeping separate source and build workflows. Repository CI builds the manager APK from the current source with the fixed signing key, then combines it with the module as the single distribution package. Flashing the module lets you choose whether to install or update the manager. See the [manager source](src/android/) for local build instructions.
-
-## Management
-
-| Interface | Purpose |
-|-----------|---------|
-| **Android Manager** (bundled with the module; [source](src/android/)) | Service, nodes, subscriptions, per-app rules, configuration, and logs |
-| **Module WebUI** | Open the NetProxy portal from the KernelSU, Magisk, or APatch module page |
-| **CLI** | Terminal management, automation, and diagnostics |
-| **Clash API** | Compatible third-party client access to runtime state and proxy groups |
-
-Default local endpoints:
-
-- Clash Controller: `http://127.0.0.1:9999`
-- sing-box Service API Dashboard: `http://127.0.0.1:9090/dashboard/`
-- Secret: `singbox`
-
-Both APIs listen on loopback by default. LAN access requires an explicit listener, access-control, secret, and TLS review.
+Manage everyday tasks with the bundled Android Manager, terminal-style module WebUI, CLI, or sing-box Dashboard. Nodes and subscriptions remain available for browsing and editing when the service is stopped.
 
 ## Screenshot
 
@@ -74,210 +46,83 @@ Both APIs listen on loopback by default. LAN access requires an explicit listene
 
 ## Features
 
-- eBPF or Root TUN interception for TCP, UDP, and DNS traffic
-- sing-box manages eBPF attachments, TUN routing, and auto_redirect
-- Per-app blacklist / whitelist routing
-- Wi-Fi hotspot and USB tethering support
-- Node links, node files, Clash YAML, and subscriptions
-- Manual selector and URLTest automatic selection
-- Rule, Global, Direct, and AllowAds modes
-- Wi-Fi SSID based switching between the configured mode and Direct
-- Clash API, connection control, and delay tests
-- Scheduled subscription updates and rule-set bypass
-- Core-managed inbound cleanup; switching stops when cleanup cannot be confirmed
+- **Transparent proxy**: Intercept TCP, UDP, and DNS through eBPF or TUN, with hotspot and USB tethering support.
+- **Nodes and subscriptions**: Import node links, node text, Clash YAML, and sing-box JSON, with support for subscription filtering, custom request headers, usage information, and automatic updates.
+- **Node selection and latency tests**: Choose nodes manually or use automatic selection; run latency tests even when the service is stopped.
+- **Per-app proxy**: Configure blacklists and whitelists separately for each Android user, including cloned apps.
+- **Network policies**: Rule, Global, Direct, and Allow ads modes, with automatic switching based on Wi-Fi names and the actual network used.
+- **Configuration and diagnostics**: Edit sing-box configuration and local rules, view runtime configuration and logs, and export redacted diagnostic bundles.
 
-## Installation
+## Installation and Getting Started
 
-Release and CI builds provide one package: `NetProxy_<version>_<build>.zip`. It includes sing-box, the NetProxy native component, CLI, managed inbound configuration, the module WebUI, and the Android manager APK built from the current source with the fixed signing key. Module updates download the same package; installing the bundled manager is optional.
+Requires an `arm64-v8a` Android device with Magisk, KernelSU, or APatch. Traffic interception uses root privileges.
 
-> [!IMPORTANT]
-> eBPF is the initial backend and requires the capabilities of its chosen cgroup/TC data plane. Root TUN requires the corresponding TUN, routing, iptables/ip6tables, and NFQUEUE capabilities. A configuration check does not prove device support, and startup failure never selects another backend automatically.
+eBPF is selected by default. Choose TUN under **Settings → Inbound settings**. See [Installation and Upgrades](https://www.netproxy.store/guide/installation) for device requirements and installation options.
 
-1. Download the latest ZIP from [Releases](https://github.com/Fanju6/NetProxy-Magisk/releases).
-2. Flash it with Magisk, KernelSU, or APatch.
-3. On an existing installation, choose **Keep existing data**, **Keep nodes and subscriptions only**, or **Fresh installation**. Volume Up cycles through the choices; Volume Down confirms. Without input, existing data is kept by default.
-4. For the manager, Volume Up cycles between install/update and skip; Volume Down confirms. No input for 10 seconds defaults to installation; after changing the selection, not confirming within 20 seconds cancels the installation. Existing installations are not automatically skipped. Installation failures do not block the module installation or uninstall the existing app.
-5. A live installation is applied without a reboot. Recovery installation still requires a reboot.
-6. Import and select a node before starting the service.
+1. Download `NetProxy_<version>_<build>.zip` from [Releases](https://github.com/Fanju6/NetProxy-Magisk/releases). It includes the module and Android Manager.
+2. Flash it in your root manager, choose how to retain data and whether to install the Android Manager, then wait for installation to finish.
+3. Open the Android Manager and grant root access. Import nodes on the **Nodes** page or add a subscription on the **Subscriptions** page.
+4. On the **Nodes** page, choose a group and automatic or manual selection, then return to **Dashboard** to start the service.
 
-`AUTO_START` is disabled by default. Enable it from the manager after confirming that your node and configuration work, or set `AUTO_START=1` in `config/module.conf`.
+The service starts manually by default. Enable **Start on boot** in **Settings** for automatic startup. See [Quick Start](https://www.netproxy.store/guide/quick-start) for initial setup.
 
-Keeping all data requires the current `config/inbound/inbound.json`, main configuration, and Catalog. If the inbound file is missing, explicitly choose **Keep nodes and subscriptions only** or **Fresh installation**. The installer does not detect versions, migrate old files, or silently supply defaults. Nodes-only mode keeps Catalog and logs while restoring packaged configuration.
+## Documentation
 
-## Quick Start
+| Topic | Guide |
+|---|---|
+| Installation and initial setup | [Installation and Upgrades](https://www.netproxy.store/guide/installation) · [Quick Start](https://www.netproxy.store/guide/quick-start) |
+| Nodes, subscriptions, and latency tests | [Nodes and Subscriptions](https://www.netproxy.store/guide/nodes-subscriptions) |
+| Inbounds, per-app proxy, and network sharing | [Inbound Configuration](https://www.netproxy.store/config/inbound) · [eBPF](https://www.netproxy.store/config/ebpf) · [TUN](https://www.netproxy.store/config/tun) |
+| Automatic network switching | [Wi-Fi Policies](https://www.netproxy.store/guide/wifi-policy) |
+| Routing, DNS, and proxy groups | [Configuration Reference](https://www.netproxy.store/config/singbox) · [Proxy Groups](https://www.netproxy.store/config/policy-groups) |
+| Terminal, dashboards, and third-party clients | [CLI](https://www.netproxy.store/guide/cli) · [Control Panels and APIs](https://www.netproxy.store/guide/control-panel) |
+| Troubleshooting and issue reports | [FAQ and Diagnostics](https://www.netproxy.store/guide/faq) |
 
-All commands require root privileges.
+[Changelog](https://www.netproxy.store/changelog) · [Privacy Policy](https://www.netproxy.store/privacy)
 
-```sh
-# Import a node link
-su -c '/data/adb/modules/netproxy/netproxyctl node add "vless://..."'
+## Naipi Companions
 
-# Import a node list or Clash YAML
-su -c '/data/adb/modules/netproxy/netproxyctl node import /sdcard/clash.yaml'
+<p align="center">
+  <a href="https://www.netproxy.store/mascot/dragon"><img src="docs/public/mascots/dragon/base.svg" width="144" alt="Mint-green pixel-art Naipi Dragon" /></a>
+  <a href="https://www.netproxy.store/mascot/niang"><img src="docs/public/mascots/niang/stickers/16-leave-it.png" width="144" alt="Naipi Niang with long hair and a blue bow: Leave it to me" /></a>
+</p>
 
-# Select a node and start the service
-su -c '/data/adb/modules/netproxy/netproxyctl node list'
-su -c '/data/adb/modules/netproxy/netproxyctl node use <group-id>/<tag>'
-su -c '/data/adb/modules/netproxy/netproxyctl service start'
+**Naipi Dragon (奶屁龙)**, the trailblazer of the Pathway Workshop. Loves digging tunnels and taking naps, and occasionally digs an exit straight into the cookie cupboard.
 
-# Inspect status and runtime mode
-su -c '/data/adb/modules/netproxy/netproxyctl service status'
-su -c '/data/adb/modules/netproxy/netproxyctl mode'
-```
+**Naipi Niang (奶屁娘)**, the owner of the Pathway Workshop. Particular and a little proud, she asks "Where are the logs?" while already handing you a warm drink.
 
-Subscriptions (the name is optional and derived automatically when omitted):
+[Workshop Stories](https://www.netproxy.store/mascot/) · [Stickers](https://www.netproxy.store/mascot/stickers) · [Supporters](https://www.netproxy.store/mascot/supporters)
 
-```sh
-su -c '/data/adb/modules/netproxy/netproxyctl sub add https://example.com/sub'
-su -c '/data/adb/modules/netproxy/netproxyctl sub list'
-su -c '/data/adb/modules/netproxy/netproxyctl sub update <group-id>'
-```
-
-## Node Configuration Format
-
-Using the Android Manager or CLI importer is recommended. NetProxy's bundled native component converts node links, text files, Clash YAML, and subscriptions into sing-box Providers.
-
-### Manually written node files
-
-A manual node file must be a complete sing-box configuration fragment with a top-level `outbounds` array. A raw outbound object cannot be used as the document root.
-
-SOCKS5 example:
-
-```json
-{
-  "outbounds": [
-    {
-      "type": "socks",
-      "tag": "fr-socks",
-      "server": "proxy.example.com",
-      "server_port": 1080,
-      "version": "5",
-      "username": "user",
-      "password": "password"
-    }
-  ]
-}
-```
-
-Import the file into the `default` group:
-
-```sh
-su -c '/data/adb/modules/netproxy/netproxyctl node import /sdcard/fr-socks.json'
-```
-
-Then select it:
-
-```sh
-su -c '/data/adb/modules/netproxy/netproxyctl node list'
-su -c '/data/adb/modules/netproxy/netproxyctl node use default/fr-socks'
-```
-
-Important rules:
-
-- sing-box uses `type`; the Xray-style `protocol` field is invalid here.
-- File imports are appended to the `default` local Catalog group; use a unique `tag` within that group.
-- Do not use `direct`, `block`, `Proxy`, or `Auto-Fastest` as node tags.
-- File imports are appended to the `default` local Catalog group. Catalog `provider.json` files are managed by NetProxy and should not be edited manually.
-- Refer to the official [sing-box Outbound documentation](https://sing-box.sagernet.org/configuration/outbound/) for protocol fields.
-
-## CLI Overview
+## Source Layout
 
 ```text
-su -c '/data/adb/modules/netproxy/netproxyctl [--json] [--timeout <seconds|duration>] service status|start|stop|restart|reload|check|toggle'
-su -c '/data/adb/modules/netproxy/netproxyctl [--json] catalog list|show <group>'
-su -c '/data/adb/modules/netproxy/netproxyctl [--json] node list|current|show|add|import|export|edit|remove|use|delay'
-su -c '/data/adb/modules/netproxy/netproxyctl [--json] sub list|show|add|edit|update|update-all|activate|remove|history|cancel'
-su -c '/data/adb/modules/netproxy/netproxyctl [--json] mode [rule|global|direct|AllowAds]'
-su -c '/data/adb/modules/netproxy/netproxyctl [--json] network evaluate --type <wifi|not_wifi> [--ssid <name>]'
-su -c '/data/adb/modules/netproxy/netproxyctl [--json] app list|mode|add|remove|enable|disable'
-su -c '/data/adb/modules/netproxy/netproxyctl [--json] ebpf status [configured|all|local|shared] [--raw]'
-su -c '/data/adb/modules/netproxy/netproxyctl [--json] config list|read|check|validate|apply'
-su -c '/data/adb/modules/netproxy/netproxyctl [--json] logs show|clear|export'
+src/module/          Module installation and runtime files
+src/native/netproxy/ Native Go component
+src/webui/           Terminal-style module WebUI
+src/android/         Android Manager
+docs/                User documentation
+tests/               Contract and regression tests
 ```
 
-Node references are always `<group-id>/<tag>`. Use `node use auto [group]` for automatic mode and `node delay auto [group]` for group latency tests. The name argument of `sub add` is optional (`sub add <URL>`); it is then derived from Profile-Title, the response filename, or the URL host. Commands use a 30-second default timeout, except `service start` (120 seconds); subscription mutations use their download timeout.
-
-```sh
-su -c '/data/adb/modules/netproxy/netproxyctl help'
-```
-
-## Configuration and Logs
-
-| Path | Purpose |
-|------|---------|
-| `config/module.conf` | Startup, mode, selected node, selector, and subscription scheduling |
-| `config/inbound/inbound.json` | Single source for backend, shared app policy, and native eBPF/TUN parameters |
-| `config/singbox/config.json` | Static sing-box configuration; the manager supports editing DNS, inbounds, routing, and other sections |
-| `data/catalog/<group-id>/` | Node and subscription groups (`meta.json` + `provider.json`) |
-| `runtime/` | Generated providers.json, outbounds.json, and the single inbound.json; do not edit or preserve during installation |
-| `config/singbox/rules/local/` | Editable local route rule sets |
-| `config/singbox/rules/remote/` | Built-in SRS rule resources managed by remote providers |
-| `logs/service.log` | Module service, subscription updates, and transparent proxy logs |
-| `logs/sing-box.log` | sing-box core logs |
-
-Key defaults:
-
-- `AUTO_START=0`
-- `OUTBOUND_MODE=rule`
-- `SELECTOR_MODE=urltest`
-- `ACTIVE_GROUP_ID=default`
-- `backend: "ebpf"`
-- `app: {"enabled":true,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]}`
-- `ebpf.network: ["tcp", "udp"]`, `udp_timeout: "5m"`, `tc_priority: 1`
-- `ebpf.local.enabled: true`, `data_plane: "cgroup"`, `dns_mode: "respect_policy"`
-- `ebpf.shared.enabled: false`, `data_plane: "packet_rewrite"`, `dns_mode: "hijack"`, `interface: ["wlan2"]`
-- Both eBPF paths retain `ipv6: true`, `bypass_private_address: true`, `bypass_rule_set: ["geoip/cn"]`
-- `tun.interface_name: "netproxy"`, `address: ["172.19.0.1/30", "fdfe:dcba:9876::1/126"]`
-- `tun.auto_route: true`, `auto_redirect: true`, `dns_mode: "hijack"`; no forced MTU, stack, strict_route, or marks
-- `WIFI_AUTO_SWITCH=0`
-
-Both native objects include their matching `type` and the fixed `tag: "netproxy-in"`. Disabled eBPF paths retain preferences but emit only `enabled: false` at runtime. Shared app policy stores strict `<user-id>:<package>` string arrays; Go resolves current UIDs per Android user. Restart the service after app changes; local UIDs do not filter hotspot clients.
-
-The four `config list` targets under `category=inbound` are `inbound`, `inbound/backend`, `inbound/ebpf`, and `inbound/tun`. Section candidates retain the corresponding top-level key and use the read revision. They cannot be deleted with `{}`. The old `config ebpf` target is removed; `runtime/inbound.json` is read-only. The main configuration must not define extra managed eBPF/TUN inbounds or occupy `netproxy-in`.
-
-`configured_backend` is the saved selection; `active_backend` is non-null only in ready state with a matching actual PID and millisecond API startup identity. Prepare results use `providers/outbounds/inbound` paths plus `backend`, not the old `ebpf` path. A forced kill aborts switching and retains the journal until device reboot and recovery; no fallback cleanup is performed. See [inbound configuration](https://www.netproxy.store/config/inbound).
-
-Keep `ebpf status` for eBPF capability diagnostics. There is no `tun status` command; inspect configuration checks, actual startup, and core logs instead.
-
-For startup failures, inspect the core log first:
-
-```sh
-su -c '/data/adb/modules/netproxy/netproxyctl logs show core 100'
-```
-
-See the [NetProxy documentation](https://www.netproxy.store/) for complete installation, configuration, and troubleshooting guidance.
+See the [Contributing Guide](CONTRIBUTING.md) for development and verification, [AGENTS.md](AGENTS.md) for architecture and cross-component contracts, and the [Android README](src/android/README.md) for manager builds.
 
 ## Acknowledgments
 
 | Project | Role |
-|---------|------|
+|------|------|
 | [reF1nd/sing-box](https://github.com/reF1nd/sing-box) | Current proxy core |
 | [SagerNet/sing-box](https://github.com/SagerNet/sing-box) | Upstream sing-box project |
 | [Proxylink](https://github.com/Fanju6/Proxylink) | Original project behind NetProxy's internal node conversion support |
 | [AsteriskNG](https://github.com/Asterisk4Magisk/AsteriskNG) | Android eBPF implementation reference |
 | [v2rayNG](https://github.com/2dust/v2rayNG) | Node parsing reference |
 
----
-
-### Historical Acknowledgments
-
-The following projects powered or inspired earlier NetProxy releases. Their contributions remain acknowledged even though the related implementations have since been replaced.
-
-| Project | Historical role |
-|---------|-----------------|
-| ~~[CHIZI-0618/sing-box](https://github.com/CHIZI-0618/sing-box)~~ | Previously used sing-box branch |
-| ~~[Xray-core](https://github.com/XTLS/Xray-core)~~ | Previous proxy core |
-| ~~[AndroidTProxyShell](https://github.com/CHIZI-0618/AndroidTProxyShell)~~ | TPROXY / REDIRECT implementation reference |
-| ~~[IPSET_LKM](https://github.com/TanakaLun/IPSET_LKM)~~ | IPSET kernel module and compatibility support |
-| ~~[KsuWebUIStandalone](https://github.com/KOWX712/KsuWebUIStandalone)~~ | Standalone WebUI implementation reference |
+Thanks also to [CHIZI-0618/sing-box](https://github.com/CHIZI-0618/sing-box), [Xray-core](https://github.com/XTLS/Xray-core), [AndroidTProxyShell](https://github.com/CHIZI-0618/AndroidTProxyShell), [IPSET_LKM](https://github.com/TanakaLun/IPSET_LKM), and [KsuWebUIStandalone](https://github.com/KOWX712/KsuWebUIStandalone) for powering or inspiring earlier versions.
 
 ## Community and Contributing
 
-- [Contributing guide](CONTRIBUTING.md)
-- [Architecture and coding agent guide](AGENTS.md)
-- [Telegram group](https://t.me/NetProxy_Magisk)
-- [Issues](https://github.com/Fanju6/NetProxy-Magisk/issues)
-- [Pull requests](https://github.com/Fanju6/NetProxy-Magisk/pulls)
+- [Telegram Group](https://t.me/NetProxy_Magisk)
+- [Report an Issue](https://github.com/Fanju6/NetProxy-Magisk/issues)
+- [Submit a Pull Request](https://github.com/Fanju6/NetProxy-Magisk/pulls)
 
 ## License
 
