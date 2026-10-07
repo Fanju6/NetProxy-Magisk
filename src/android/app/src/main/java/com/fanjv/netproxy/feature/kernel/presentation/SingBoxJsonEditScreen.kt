@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalResources
@@ -101,9 +102,13 @@ internal fun SingBoxJsonEditScreen(
     val context = LocalContext.current
     val snackbarHostState = rememberAppSnackbarHostState()
     val resources = LocalResources.current
-    val schemaValidator = remember(context) { SingBoxSchemaValidator(context.applicationContext) }
-    val completionProvider = remember(context) {
-        SingBoxSchemaCompletionProvider(context.applicationContext)
+    val languageTags = LocalConfiguration.current.locales.toLanguageTags()
+    val schemaContext = remember(context, languageTags) {
+        context.createConfigurationContext(resources.configuration)
+    }
+    val schemaValidator = remember(schemaContext) { SingBoxSchemaValidator(schemaContext) }
+    val completionProvider = remember(schemaContext) {
+        SingBoxSchemaCompletionProvider(schemaContext)
     }
     val coroutineScope = rememberCoroutineScope()
     var hasLoaded by remember(documentId, controller) {
@@ -159,7 +164,7 @@ internal fun SingBoxJsonEditScreen(
 
     val documentVersion = controller.documentVersion
     val caret = controller.caret
-    LaunchedEffect(documentVersion, caret, usesRootSchema, hasLoaded) {
+    LaunchedEffect(documentVersion, caret, usesRootSchema, hasLoaded, completionProvider) {
         if (!hasLoaded || !usesRootSchema) {
             contextHelp = null
             return@LaunchedEffect
@@ -175,7 +180,7 @@ internal fun SingBoxJsonEditScreen(
         saveFailureDetail = ""
         showSaveFailureDialog = false
     }
-    LaunchedEffect(documentVersion, hasLoaded, isSaving, usesRootSchema) {
+    LaunchedEffect(documentVersion, hasLoaded, isSaving, usesRootSchema, schemaValidator) {
         errorText = ""
         schemaIssues = emptyList()
         showSchemaIssuesDialog = false
