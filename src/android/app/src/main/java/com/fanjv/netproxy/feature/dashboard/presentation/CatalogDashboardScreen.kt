@@ -202,7 +202,6 @@ internal fun CatalogDashboardScreen(
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Rounded.AltRoute,
                                     contentDescription = null,
-                                    modifier = Modifier.padding(end = 12.dp),
                                     tint = colorScheme.primary
                                 )
                             },
@@ -222,7 +221,6 @@ internal fun CatalogDashboardScreen(
                                 Icon(
                                     imageVector = MiuixIcons.Link,
                                     contentDescription = null,
-                                    modifier = Modifier.padding(end = 12.dp),
                                     tint = colorScheme.primary
                                 )
                             },
@@ -276,7 +274,7 @@ private fun ResourceUsageCard(
             )
             Text(
                 text = title,
-                modifier = Modifier.padding(start = 8.dp),
+                modifier = Modifier.weight(1f).padding(start = 8.dp),
                 style = MiuixTheme.textStyles.body2,
                 color = colorScheme.onSurfaceVariantSummary
             )
