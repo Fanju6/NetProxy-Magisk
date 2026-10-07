@@ -19,6 +19,10 @@ function isSharedBuildInput(path) {
 }
 
 export function classifyChanges(paths) {
+  if (paths.some((path) => [
+    'tests/verify.sh', '.github/scripts/ci-changes.mjs',
+    '.github/workflows/verify.yml', '.gitattributes',
+  ].includes(path))) return allChecks()
   const shared = paths.some(isSharedBuildInput)
   // WebUI 构建产物属于模块发布内容，但不需要触发 Native/Shell 核心验证。
   const moduleFiles = paths.some((path) =>

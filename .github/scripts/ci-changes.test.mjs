@@ -35,10 +35,16 @@ test('模块、WebUI 和测试按各自范围验证', () => {
 })
 
 test('工作流和公共构建输入变化执行所有产品范围验证', () => {
-  for (const path of ['.github/workflows/ci.yml', '.github/actions/build-module/action.yml', '.gitattributes']) {
+  for (const path of ['.github/workflows/ci.yml', '.github/actions/build-module/action.yml']) {
     assert.deepEqual(classifyChanges([path]), {
       module: true, core: true, webui: true, android: true, docs: false,
     })
+  }
+})
+
+test('统一验证入口与范围规则修改必须执行全部检查', () => {
+  for (const path of ['tests/verify.sh', '.github/scripts/ci-changes.mjs', '.github/workflows/verify.yml', '.gitattributes']) {
+    assert.deepEqual(classifyChanges([path]), allChecks)
   }
 })
 
