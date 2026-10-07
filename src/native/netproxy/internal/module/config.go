@@ -37,11 +37,11 @@ type ConfigDocument struct {
 
 var ErrConfigConflict = errors.New("配置已被修改，请重新加载后再保存")
 
-var configSections = map[string]bool{
-	"log": true, "experimental": true, "dns": true, "inbounds": true,
-	"route": true, "http_clients": true, "services": true, "outbounds": true,
-	"providers": false, "endpoints": false, "ntp": false,
-	"certificate": false, "certificate_providers": false, "network_namespaces": false,
+var configSections = map[string]struct{}{
+	"log": {}, "experimental": {}, "dns": {}, "inbounds": {},
+	"route": {}, "http_clients": {}, "services": {}, "outbounds": {},
+	"providers": {}, "endpoints": {}, "ntp": {},
+	"certificate": {}, "certificate_providers": {}, "network_namespaces": {},
 }
 
 func configSection(target string) string {
@@ -60,13 +60,7 @@ func ListConfigs(options Options) ([]ConfigDocument, error) {
 	result := make([]ConfigDocument, 0)
 	if _, err := os.Stat(paths.SingBoxConfig(options.SingBoxDir)); err == nil {
 		result = append(result, ConfigDocument{ID: "singbox/config.json", Filename: "config.json", Category: "config", Editable: true})
-		// 主配置损坏时仍提供完整编辑入口，避免用户无法打开文件进行修复。
-		content, _ := os.ReadFile(paths.SingBoxConfig(options.SingBoxDir))
-		object, _ := configObject(content)
-		for section, alwaysListed := range configSections {
-			if _, exists := object[section]; !alwaysListed && !exists {
-				continue
-			}
+		for section := range configSections {
 			result = append(result, ConfigDocument{ID: "singbox/" + section, Filename: section, Category: "config", Editable: true, Section: section})
 		}
 	} else if !os.IsNotExist(err) {

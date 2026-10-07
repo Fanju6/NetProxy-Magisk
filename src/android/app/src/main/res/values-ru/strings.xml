@@ -188,7 +188,7 @@
     <string name="clear_logs_failed">Не удалось очистить журналы</string>
     <string name="no_logs">Нет записей в журнале</string>
     <string name="apps">Приложения</string>
-    <string name="proxy_apps">Прокси для приложений</string>
+    <string name="proxy_apps">Настройки приложений</string>
     <string name="no_apps_found">Приложения не найдены</string>
     <string name="show_system_apps">Показывать системные приложения</string>
     <string name="proxy_mode_summary">Выберите, какие приложения используют прокси</string>
@@ -199,7 +199,7 @@
     <string name="app_selected_first">Выбранные в начале</string>
     <string name="app_reverse_sort">Обратный порядок</string>
     <string name="app_show_package_name">Показывать имена пакетов</string>
-    <string name="proxy_settings">Настройки прокси</string>
+    <string name="proxy_settings">Настройки входящих подключений</string>
     <string name="proxy_settings_summary">Настройка перехвата eBPF и правил Wi-Fi</string>
     <string name="auto_start">Запуск при загрузке</string>
     <string name="auto_start_summary">Запускать службу при загрузке системы</string>
@@ -245,10 +245,9 @@
     <string name="refresh_release">Отпустите для обновления</string>
     <string name="refresh_refresh">Обновление</string>
     <string name="refresh_complete">Обновление завершено</string>
-    <string name="kernel_settings">Настройки ядра</string>
+    <string name="kernel_settings">Конфигурация ядра</string>
     <string name="kernel_settings_summary">Редактирование и проверка конфигурации sing-box</string>
-    <string name="singbox_common_configs">Основные настройки</string>
-    <string name="singbox_advanced_configs">Дополнительные настройки</string>
+    <string name="singbox_main_config">Основная конфигурация</string>
     <string name="singbox_rule_files">Локальные наборы правил</string>
     <string name="singbox_runtime_configs">Рабочая конфигурация</string>
     <string name="singbox_check_all">Проверить всю конфигурацию</string>
@@ -270,6 +269,16 @@
     <string name="singbox_document_inbounds_summary">Дополнительные входящие mixed, SOCKS, HTTP и другие</string>
     <string name="singbox_document_providers">Провайдеры</string>
     <string name="singbox_document_providers_summary">Динамические исходящие подключения и провайдеры подписок</string>
+    <string name="singbox_document_endpoints">Конечные точки</string>
+    <string name="singbox_document_endpoints_summary">Конечные точки двунаправленных протоколов</string>
+    <string name="singbox_document_ntp">Синхронизация времени</string>
+    <string name="singbox_document_ntp_summary">Сервер NTP и интервал синхронизации</string>
+    <string name="singbox_document_certificate">Сертификаты</string>
+    <string name="singbox_document_certificate_summary">Доверенные сертификаты и хранилище сертификатов</string>
+    <string name="singbox_document_certificate_providers">Провайдеры сертификатов</string>
+    <string name="singbox_document_certificate_providers_summary">Выдача и продление сертификатов</string>
+    <string name="singbox_document_network_namespaces">Сетевые пространства имён</string>
+    <string name="singbox_document_network_namespaces_summary">Определения сетевых пространств имён</string>
     <string name="singbox_document_route">Маршрутизация</string>
     <string name="singbox_document_route_summary">Правила маршрутизации, наборы правил и исходящее подключение по умолчанию</string>
     <string name="singbox_document_http_clients">Клиенты HTTP</string>

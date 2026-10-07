@@ -6,8 +6,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/sagernet/sing-box/option"
 )
 
 func writeSectionSource(t *testing.T, content string) string {
@@ -150,9 +153,6 @@ func TestConfigListAndFullDocumentConflict(t *testing.T) {
 		foundFull = foundFull || document.ID == "singbox/config.json" && document.Section == ""
 		foundDNS = foundDNS || document.ID == "singbox/dns" && document.Section == "dns"
 		foundNTP = foundNTP || document.ID == "singbox/ntp" && document.Section == "ntp"
-		if document.ID == "singbox/providers" {
-			t.Fatal("缺失的可选分区不应出现在列表中")
-		}
 		if document.Editable {
 			if _, err := ReadConfig(options, document.ID); err != nil {
 				t.Fatalf("列表目标不可读: %s: %v", document.ID, err)
@@ -186,5 +186,51 @@ func TestConfigListAndFullDocumentConflict(t *testing.T) {
 		if _, err := ReadConfig(options, target); err == nil {
 			t.Fatalf("接受了非法配置目标: %s", target)
 		}
+	}
+}
+
+func TestConfigListExposesAllSectionsWithoutWritingDefaults(t *testing.T) {
+	options, destination, _, _ := configApplyOptions(t)
+	initial := []byte(`{}`)
+	if err := os.WriteFile(destination, initial, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	documents, err := ListConfigs(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sections := make(map[string]ConfigDocument)
+	for _, document := range documents {
+		if document.Section == "" {
+			continue
+		}
+		if _, duplicate := sections[document.Section]; duplicate {
+			t.Fatalf("分区重复: %s", document.Section)
+		}
+		sections[document.Section] = document
+	}
+	optionsType := reflect.TypeFor[option.Options]()
+	expectedCount := 0
+	for field := range optionsType.Fields() {
+		section, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+		if section == "-" || section == "$schema" {
+			continue
+		}
+		expectedCount++
+		document, exists := sections[section]
+		if !exists || document.ID != "singbox/"+section || !document.Editable || document.Category != "config" {
+			t.Fatalf("上游分区没有有效编辑入口: %s: %+v", section, document)
+		}
+		read, err := ReadConfig(options, document.ID)
+		if err != nil || read["content"] != "{}" || read["revision"] == "" {
+			t.Fatalf("未配置分区应返回可编辑空对象与版本: %s: %v, %v", section, read, err)
+		}
+	}
+	if len(sections) != expectedCount {
+		t.Fatalf("分区与上游字段不一致: 实际 %d，预期 %d", len(sections), expectedCount)
+	}
+	after, err := os.ReadFile(destination)
+	if err != nil || !bytes.Equal(after, initial) {
+		t.Fatalf("列举或读取分区不应写入默认字段: %s, %v", after, err)
 	}
 }

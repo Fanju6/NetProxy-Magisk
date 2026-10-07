@@ -188,7 +188,7 @@
     <string name="clear_logs_failed">Failed to clear logs</string>
     <string name="no_logs">No log entries</string>
     <string name="apps">Apps</string>
-    <string name="proxy_apps">Per-app proxy</string>
+    <string name="proxy_apps">Per-app settings</string>
     <string name="no_apps_found">No apps found</string>
     <string name="show_system_apps">Show system apps</string>
     <string name="proxy_mode_summary">Choose which apps use the proxy</string>
@@ -199,7 +199,7 @@
     <string name="app_selected_first">Selected first</string>
     <string name="app_reverse_sort">Reverse order</string>
     <string name="app_show_package_name">Show package names</string>
-    <string name="proxy_settings">Proxy settings</string>
+    <string name="proxy_settings">Inbound settings</string>
     <string name="proxy_settings_summary">Configure eBPF interception and Wi-Fi policies</string>
     <string name="auto_start">Start on boot</string>
     <string name="auto_start_summary">Start the service when the system boots</string>
@@ -245,10 +245,9 @@
     <string name="refresh_release">Release to refresh</string>
     <string name="refresh_refresh">Refreshing</string>
     <string name="refresh_complete">Refresh complete</string>
-    <string name="kernel_settings">Core settings</string>
+    <string name="kernel_settings">Core configuration</string>
     <string name="kernel_settings_summary">Edit and check sing-box configuration</string>
-    <string name="singbox_common_configs">Common configuration</string>
-    <string name="singbox_advanced_configs">Advanced configuration</string>
+    <string name="singbox_main_config">Main configuration</string>
     <string name="singbox_rule_files">Local rule sets</string>
     <string name="singbox_runtime_configs">Runtime configuration</string>
     <string name="singbox_check_all">Check all configuration</string>
@@ -270,6 +269,16 @@
     <string name="singbox_document_inbounds_summary">Extra mixed, SOCKS, HTTP and other inbounds</string>
     <string name="singbox_document_providers">Providers</string>
     <string name="singbox_document_providers_summary">Dynamic outbounds and subscription providers</string>
+    <string name="singbox_document_endpoints">Endpoints</string>
+    <string name="singbox_document_endpoints_summary">Bidirectional protocol endpoints</string>
+    <string name="singbox_document_ntp">Time synchronization</string>
+    <string name="singbox_document_ntp_summary">NTP server and synchronization interval</string>
+    <string name="singbox_document_certificate">Certificates</string>
+    <string name="singbox_document_certificate_summary">Trusted certificates and certificate store</string>
+    <string name="singbox_document_certificate_providers">Certificate providers</string>
+    <string name="singbox_document_certificate_providers_summary">Certificate issuance and renewal</string>
+    <string name="singbox_document_network_namespaces">Network namespaces</string>
+    <string name="singbox_document_network_namespaces_summary">Network namespace definitions</string>
     <string name="singbox_document_route">Routing</string>
     <string name="singbox_document_route_summary">Routing rules, rule sets and default outbound</string>
     <string name="singbox_document_http_clients">HTTP clients</string>

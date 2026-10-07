@@ -73,10 +73,7 @@ internal fun SingBoxKernelSettingsScreen(
 
     val configDocuments = state.documents.filter {
         it.category == SingBoxDocumentCategory.Config
-    }
-    val commonSections = setOf("dns", "inbounds", "route")
-    val commonDocuments = configDocuments.filter { it.section in commonSections }
-    val advancedDocuments = configDocuments.filterNot { it.section in commonSections }
+    }.sortedBy { it.id != "singbox/config.json" }
     val localRuleDocuments = state.documents.filter {
         it.category == SingBoxDocumentCategory.LocalRule
     }
@@ -176,19 +173,11 @@ internal fun SingBoxKernelSettingsScreen(
                     contentPadding = innerPadding,
                     overscrollEffect = null,
                 ) {
-                    if (commonDocuments.isNotEmpty()) {
+                    if (configDocuments.isNotEmpty()) {
                         documentSection(
-                            keyPrefix = "singbox_common",
-                            title = { stringResource(R.string.singbox_common_configs) },
-                            documents = commonDocuments,
-                            onOpen = { navigator.push(Route.JsonEdit(it.id)) },
-                        )
-                    }
-                    if (advancedDocuments.isNotEmpty()) {
-                        documentSection(
-                            keyPrefix = "singbox_advanced",
-                            title = { stringResource(R.string.singbox_advanced_configs) },
-                            documents = advancedDocuments,
+                            keyPrefix = "singbox_config",
+                            title = { stringResource(R.string.singbox_main_config) },
+                            documents = configDocuments,
                             onOpen = { navigator.push(Route.JsonEdit(it.id)) },
                         )
                     }
@@ -253,6 +242,11 @@ internal fun documentTitle(document: SingBoxDocument): String = when (document.s
     "dns" -> stringResource(R.string.singbox_document_dns)
     "inbounds" -> stringResource(R.string.singbox_document_inbounds)
     "providers" -> stringResource(R.string.singbox_document_providers)
+    "endpoints" -> stringResource(R.string.singbox_document_endpoints)
+    "ntp" -> stringResource(R.string.singbox_document_ntp)
+    "certificate" -> stringResource(R.string.singbox_document_certificate)
+    "certificate_providers" -> stringResource(R.string.singbox_document_certificate_providers)
+    "network_namespaces" -> stringResource(R.string.singbox_document_network_namespaces)
     "route" -> stringResource(R.string.singbox_document_route)
     "http_clients" -> stringResource(R.string.singbox_document_http_clients)
     "services" -> stringResource(R.string.singbox_document_services)
@@ -269,6 +263,11 @@ private fun documentSummary(document: SingBoxDocument): String {
         "dns" -> stringResource(R.string.singbox_document_dns_summary)
         "inbounds" -> stringResource(R.string.singbox_document_inbounds_summary)
         "providers" -> stringResource(R.string.singbox_document_providers_summary)
+        "endpoints" -> stringResource(R.string.singbox_document_endpoints_summary)
+        "ntp" -> stringResource(R.string.singbox_document_ntp_summary)
+        "certificate" -> stringResource(R.string.singbox_document_certificate_summary)
+        "certificate_providers" -> stringResource(R.string.singbox_document_certificate_providers_summary)
+        "network_namespaces" -> stringResource(R.string.singbox_document_network_namespaces_summary)
         "route" -> stringResource(R.string.singbox_document_route_summary)
         "http_clients" -> stringResource(R.string.singbox_document_http_clients_summary)
         "services" -> stringResource(R.string.singbox_document_services_summary)

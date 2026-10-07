@@ -202,7 +202,7 @@
 
     <!-- Apps Control -->
     <string name="apps">应用</string>
-    <string name="proxy_apps">分应用代理</string>
+    <string name="proxy_apps">分应用设置</string>
     <string name="no_apps_found">未找到应用</string>
     <string name="show_system_apps">显示系统应用</string>
     <string name="proxy_mode_summary">选择如何过滤需要走代理的应用</string>
@@ -215,7 +215,7 @@
     <string name="app_show_package_name">显示包名</string>
 
     <!-- Settings: Main -->
-    <string name="proxy_settings">代理设置</string>
+    <string name="proxy_settings">入站设置</string>
     <string name="proxy_settings_summary">配置 eBPF 接管与 Wi-Fi 策略</string>
     <string name="auto_start">开机自启</string>
     <string name="auto_start_summary">系统启动时自动开启服务</string>
@@ -269,10 +269,9 @@
     <string name="refresh_complete">刷新完成</string>
 
     <!-- Kernel Settings -->
-    <string name="kernel_settings">内核设置</string>
+    <string name="kernel_settings">内核配置</string>
     <string name="kernel_settings_summary">编辑与检查 sing-box 配置文件</string>
-    <string name="singbox_common_configs">常用配置</string>
-    <string name="singbox_advanced_configs">高级配置</string>
+    <string name="singbox_main_config">主配置</string>
     <string name="singbox_rule_files">本地规则集</string>
     <string name="singbox_runtime_configs">运行时配置</string>
     <string name="singbox_check_all">检查全部配置</string>
@@ -294,6 +293,16 @@
     <string name="singbox_document_inbounds_summary">额外的 mixed、SOCKS、HTTP 等入站</string>
     <string name="singbox_document_providers">Provider</string>
     <string name="singbox_document_providers_summary">动态出站与订阅 Provider</string>
+    <string name="singbox_document_endpoints">端点</string>
+    <string name="singbox_document_endpoints_summary">双向协议端点</string>
+    <string name="singbox_document_ntp">时间同步</string>
+    <string name="singbox_document_ntp_summary">NTP 服务器与同步周期</string>
+    <string name="singbox_document_certificate">证书</string>
+    <string name="singbox_document_certificate_summary">可信证书与证书存储</string>
+    <string name="singbox_document_certificate_providers">证书提供器</string>
+    <string name="singbox_document_certificate_providers_summary">证书签发与续期</string>
+    <string name="singbox_document_network_namespaces">网络命名空间</string>
+    <string name="singbox_document_network_namespaces_summary">网络命名空间定义</string>
     <string name="singbox_document_route">路由</string>
     <string name="singbox_document_route_summary">路由规则、规则集与默认出站</string>
     <string name="singbox_document_http_clients">HTTP 客户端</string>

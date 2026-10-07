@@ -113,21 +113,6 @@ internal fun SettingsScreen(
                                 onClick = { navigator.push(Route.ProxySettings) }
                             )
                         },
-                        CardItem("kernel") {
-                            ArrowPreference(
-                                title = stringResource(R.string.kernel_settings),
-                                summary = stringResource(R.string.kernel_settings_summary),
-                                startAction = {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Memory,
-                                        contentDescription = null,
-                                        modifier = Modifier.padding(end = 6.dp),
-                                        tint = colorScheme.onBackground
-                                    )
-                                },
-                                onClick = { navigator.push(Route.KernelSettings) }
-                            )
-                        },
                         CardItem("apps") {
                             ArrowPreference(
                                 title = stringResource(R.string.proxy_apps),
@@ -141,6 +126,21 @@ internal fun SettingsScreen(
                                     )
                                 },
                                 onClick = { navigator.push(Route.Apps) }
+                            )
+                        },
+                        CardItem("kernel") {
+                            ArrowPreference(
+                                title = stringResource(R.string.kernel_settings),
+                                summary = stringResource(R.string.kernel_settings_summary),
+                                startAction = {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Memory,
+                                        contentDescription = null,
+                                        modifier = Modifier.padding(end = 6.dp),
+                                        tint = colorScheme.onBackground
+                                    )
+                                },
+                                onClick = { navigator.push(Route.KernelSettings) }
                             )
                         },
                     ),
