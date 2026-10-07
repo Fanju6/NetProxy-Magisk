@@ -86,7 +86,7 @@ const faceUnderlay = body.match(/<g id="face-underlay"[^>]*>[\s\S]*?<\/g>/)?.[0]
 const wood = '#d6a866'
 const toolHandle = points => points.map(([x, y]) => rect(x, y, 24, 24, ink) + rect(x + 4, y + 4, 16, 16, wood)).join('')
 const toolHead = (x, y) => path(`M${x} ${y}h76v16h16v20h-28v-8h-52v8h-28v-20h16z`, ink) + path(`M${x + 4} ${y + 4}h68v12h16v8h-24v-8h-52v8h-24v-8h16z`, blue)
-const zMark = (x, y) => path(`M${x} ${y}h48v16h-20v16h-16v16h36v16h-48V48h20V32h16V16h-36z`, blue)
+const zMark = (x, y) => `<g transform="translate(${x} ${y})">${path('M0 0h48v16h-20v16h-16v16h36v16h-48V48h20V32h16V16H0z', blue)}</g>`
 const alertMark = (x, y) => rect(x, y, 24, 56, '#d65368') + rect(x, y + 76, 24, 24, '#d65368')
 const waitingDots = count => Array.from({ length: count }, (_, index) => rect(838 + index * 28, 302, 16, 16, blue)).join('')
 const diggingRaised = faceUnderlay + face('happy')
