@@ -99,6 +99,23 @@ test('mock 同步单文件模板、分区与真实后端状态边界', () => {
   assert.equal(run('config', 'read', 'runtime/inbound.json').ok, true)
 })
 
+test('eBPF mock 区分可读预检与显式原始报告', () => {
+  const readable = decodeCtlResult(mockCtl(['ebpf', 'status'])).data
+  assert.equal(readable.raw, false)
+  assert.match(readable.content, /能力预检通过/)
+  assert.match(readable.content, /尚未验证实际挂载/)
+  assert.equal(readable.report.result, 'preflight_passed')
+  assert.equal(readable.report.preflight, true)
+  assert.equal(readable.report.exact_object_load, true)
+  assert.equal(Object.hasOwn(readable.report, 'active_programs'), false)
+  for (const args of [['--raw'], ['shared', '--raw'], ['--raw', 'all']]) {
+    const raw = decodeCtlResult(mockCtl(['ebpf', 'status', ...args])).data
+    assert.equal(raw.raw, true)
+    assert.deepEqual(JSON.parse(raw.content), raw.report)
+    assert.ok(['configured', 'shared', 'all'].includes(raw.mode))
+  }
+})
+
 test('JSON 与进程退出状态必须同时成功，结构化失败保留', () => {
   const success = { schema: 1, ok: true, code: 'service.status', message: '服务状态', data: { state: 'ready' } }
   assert.deepEqual(decodeCtlResult({ out: JSON.stringify(success), err: '', code: 0 }), success)

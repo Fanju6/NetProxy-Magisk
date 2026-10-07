@@ -204,28 +204,31 @@ function execute(args: string[]): CtlResult<unknown> {
   }
 
   if (command === 'ebpf' && action === 'status') {
-    const requestedMode = clean[2] || 'configured'
+    const requestedMode = clean.slice(2).find(arg => arg !== '--raw') || 'configured'
+    const raw = clean.includes('--raw')
     const reportMode = requestedMode === 'configured' ? 'local' : requestedMode
     const localDataPlane = reportMode === 'local' || reportMode === 'all' ? 'cgroup' : undefined
     const sharedDataPlane = reportMode === 'shared' || reportMode === 'all' ? 'packet_rewrite' : undefined
+    const report = {
+      platform: 'android',
+      kernel_release: 'mock',
+      architecture: 'arm64',
+      mode: reportMode,
+      ...(localDataPlane ? { local_data_plane: localDataPlane } : {}),
+      ...(sharedDataPlane ? { shared_data_plane: sharedDataPlane } : {}),
+      network: ['tcp', 'udp'],
+      ipv6: true,
+      findings: [],
+      preflight: true,
+      exact_object_load: true,
+      summary: { pass: 1, warn: 0, fail: 0, unknown: 0, required_failures: 0, required_unknowns: 0, required_issues: 0 },
+      result: 'preflight_passed',
+    }
     return response('ebpf.status', 'eBPF 能力检查完成', {
       mode: requestedMode,
-      raw: false,
-      content: '结论: 检测通过',
-      report: {
-        platform: 'android',
-        kernel_release: 'mock',
-        architecture: 'arm64',
-        mode: reportMode,
-        ...(localDataPlane ? { local_data_plane: localDataPlane } : {}),
-        ...(sharedDataPlane ? { shared_data_plane: sharedDataPlane } : {}),
-        network: ['tcp', 'udp'],
-        ipv6: true,
-        findings: [],
-        active_programs: [],
-        summary: { pass: 1, warn: 0, fail: 0, unknown: 0, required_failures: 0, required_unknowns: 0, required_issues: 0 },
-        result: 'supported',
-      },
+      raw,
+      content: raw ? JSON.stringify(report, null, 2) : '结论: eBPF 能力预检通过\n尚未验证实际挂载与网络接管。',
+      report,
     })
   }
 

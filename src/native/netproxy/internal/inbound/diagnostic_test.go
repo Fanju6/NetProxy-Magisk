@@ -119,29 +119,34 @@ func TestFormatProbeOutputReturnsCapabilityReport(t *testing.T) {
   "local_data_plane": "cgroup",
   "shared_data_plane": "packet_rewrite",
   "network": ["tcp", "udp"],
-  "findings": [],
-  "active_programs": [{"id": 12, "name": "netproxy", "type": "sched_cls", "map_count": 4}],
-  "summary": {"pass": 8, "warn": 1, "fail": 0, "unknown": 2, "required_failures": 0, "required_unknowns": 2, "required_issues": 2},
-  "result": "inconclusive"
+  "ipv6": true,
+  "findings": [{"status":"WARN","scope":"shared","importance":"required","feature":"shared interface","reason":"temporarily_unavailable","detail":"interface wlan2 is absent"}],
+  "preflight": true,
+  "exact_object_load": true,
+  "summary": {"pass": 8, "warn": 1, "fail": 0, "unknown": 0, "required_failures": 0, "required_unknowns": 0, "required_issues": 0},
+  "result": "preflight_passed"
 }`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Summary.RequiredUnknowns != 2 || report.Summary.RequiredIssues != 2 {
-		t.Fatalf("stable probe summary was not preserved: %#v", report.Summary)
+	if !report.Preflight || !report.ExactObjectLoad || report.Findings[0].Reason != "temporarily_unavailable" {
+		t.Fatalf("预检状态和原因未完整解析: %#v", report)
 	}
 	output := FormatProbeOutput(report, nil)
 	for _, expected := range []string{
-		"结论: 无法完全确认，启动服务后可完成最终验证",
+		"结论: eBPF 能力预检通过，但有注意事项",
 		"检测范围: 本机应用流量、热点与共享网络",
 		"内核版本: 6.1.0",
 		"设备架构: arm64",
-		"本机数据平面: cgroup",
-		"共享数据平面: packet_rewrite",
-		"通过: 8 项",
-		"警告: 1 项",
-		"无法静态确认: 2 项",
-		"当前可见 sing-box eBPF 程序: 1 个",
+		"本机接管方式: 应用套接字（cgroup）",
+		"共享网络接管方式: 数据包重写",
+		"网络协议: TCP/UDP",
+		"IPv6: 检测",
+		"通过 8 项，警告 1 项，失败 0 项，未确认 0 项",
+		"警告 · 热点与共享网络 · 必要能力",
+		"所需接口或资源暂未就绪",
+		"interface wlan2 is absent",
+		"已检查所选 eBPF 程序能否加载，尚未验证实际挂载与网络接管",
 	} {
 		if !strings.Contains(output, expected) {
 			t.Fatalf("diagnostic output is missing %q: %s", expected, output)
@@ -151,12 +156,43 @@ func TestFormatProbeOutputReturnsCapabilityReport(t *testing.T) {
 	failure := FormatProbeOutput(ProbeReport{
 		Mode:           "local",
 		LocalDataPlane: "cgroup",
-		Findings:       []ProbeFinding{{Status: "FAIL", Scope: "common", Importance: "required"}},
+		Findings:       []ProbeFinding{{Status: "FAIL", Scope: "common", Importance: "required", Reason: "not_permitted", Feature: "BPF permissions", Detail: "operation not permitted"}},
 		Summary:        ProbeSummary{Fail: 1, RequiredFailures: 1},
 		Result:         "unsupported",
 	}, errors.New("probe failed"))
-	if !strings.Contains(failure, "基础 eBPF 权限或内核能力不满足") {
-		t.Fatalf("failure scope was not explained: %s", failure)
+	if !strings.Contains(failure, "基础能力") || !strings.Contains(failure, "权限不足，请检查 Root 授权和系统安全策略") || !strings.Contains(failure, "BPF permissions") {
+		t.Fatalf("失败范围与原因未说明: %s", failure)
+	}
+}
+
+func TestFormatProbeOutputDistinguishesPreflightResults(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		report  ProbeReport
+		err     error
+		want    string
+		missing string
+	}{
+		{"passed", ProbeReport{Result: "preflight_passed", ExactObjectLoad: true}, nil, "结论: eBPF 能力预检通过", "当前可见"},
+		{"inconclusive", ProbeReport{Result: "inconclusive", Summary: ProbeSummary{RequiredUnknowns: 1}}, errors.New("exit status 1"), "部分必要检查无法确认", "缺少必要"},
+		{"unsupported", ProbeReport{Result: "unsupported", Summary: ProbeSummary{RequiredFailures: 1}}, errors.New("exit status 1"), "缺少必要的 eBPF 能力", "结论: eBPF 能力预检通过"},
+		{"abnormal-exit", ProbeReport{Result: "preflight_passed"}, errors.New("command interrupted"), "诊断命令未正常完成", "结论: eBPF 能力预检通过"},
+		{"facility-only", ProbeReport{Result: "preflight_passed"}, nil, "本次仅检查基础能力", "已检查所选 eBPF 程序能否加载"},
+		{"optional-failure", ProbeReport{Result: "preflight_passed", Summary: ProbeSummary{Fail: 1}, Findings: []ProbeFinding{{Status: "FAIL", Scope: "local", Importance: "performance", Reason: "unsupported", Feature: "optional optimization"}}}, nil, "可选性能优化", "缺少必要"},
+		{"unknown-reason", ProbeReport{Result: "inconclusive", Findings: []ProbeFinding{{Status: "UNKNOWN", Scope: "local", Importance: "required", Reason: "new_reason", Feature: "cgroup hook", Detail: "additional probe detail"}}}, nil, "additional probe detail", "缺少必要"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			output := FormatProbeOutput(test.report, test.err)
+			if !strings.Contains(output, test.want) || strings.Contains(output, test.missing) {
+				t.Fatalf("诊断结论错误: %s", output)
+			}
+		})
+	}
+	for _, reason := range []string{"unsupported", "temporarily_unavailable", "verifier_rejected", "attach_conflict"} {
+		output := FormatProbeOutput(ProbeReport{Result: "unsupported", Findings: []ProbeFinding{{Status: "FAIL", Scope: "local", Importance: "required", Reason: reason}}}, nil)
+		if strings.Contains(output, reason) {
+			t.Fatalf("未解释机器原因: %s", output)
+		}
 	}
 }
 
@@ -168,6 +204,9 @@ func TestParseProbeReportRejectsInvalidReports(t *testing.T) {
 		`{"mode":"local","local_data_plane":"cgroup","result":"unknown"}`,
 		`{"mode":"local","local_data_plane":"legacy","result":"supported"}`,
 		`{"mode":"shared","shared_data_plane":"legacy","result":"supported"}`,
+		`{"mode":"local","local_data_plane":"cgroup","preflight":true,"result":"supported"}`,
+		`{"mode":"local","local_data_plane":"cgroup","result":"preflight_passed"}`,
+		`{"mode":"local","local_data_plane":"cgroup","preflight":true,"result":"preflight_passed","findings":[{"status":"unexpected"}]}`,
 	} {
 		if _, err := ParseProbeReport(content); err == nil {
 			t.Fatalf("invalid report was accepted: %q", content)

@@ -36,7 +36,15 @@ func main() {
 				panic(err)
 			}
 		}
-		fmt.Print(`{"mode":"local","local_data_plane":"cgroup","result":"supported"}`)
+		output := os.Getenv("NETPROXY_TEST_PROBE_REPORT")
+		if output == "" {
+			output = `{"mode":"local","local_data_plane":"cgroup","preflight":true,"exact_object_load":true,"result":"preflight_passed"}`
+		}
+		fmt.Print(output)
+		if os.Getenv("NETPROXY_TEST_PROBE_FAIL") == "1" {
+			fmt.Fprintln(os.Stderr, "capability probe failed")
+			os.Exit(1)
+		}
 		return
 	}
 	if err := os.WriteFile(os.Getenv("NETPROXY_PACKAGE_STARTED"), []byte("started"), 0o600); err != nil {

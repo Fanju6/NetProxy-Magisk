@@ -4,11 +4,14 @@ import (
 	"encoding/json/jsontext"
 	json "encoding/json/v2"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/inbound"
 	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
 )
 
@@ -90,6 +93,116 @@ func TestPublicCommandsKeepSingleJSONContract(t *testing.T) {
 				if err := json.Unmarshal(response.Data, &data); err != nil || string(data["state"]) != `"stopped"` {
 					t.Fatalf("服务状态必须直接位于 data: %s: %v", response.Data, err)
 				}
+			}
+		})
+	}
+}
+
+func TestEBPFDiagnosticJSONContract(t *testing.T) {
+	root := t.TempDir()
+	options := moduleapp.NewOptions(root)
+	options.Telemetry = nil
+	binary := filepath.Join(root, "fake-core")
+	if runtime.GOOS == "windows" {
+		binary += ".exe"
+	}
+	build := exec.Command("go", "build", "-o", binary, "../../internal/inbound/testdata/fake-package")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("构建诊断 fixture 失败: %v\n%s", err, output)
+	}
+	options.SingBoxPath = binary
+	if err := os.MkdirAll(filepath.Dir(options.InboundConfig), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	command := &cli{options: options}
+	t.Setenv("NETPROXY_TEST_COMMAND_MODE", "probe")
+	for _, test := range []struct {
+		name    string
+		backend string
+		result  string
+		raw     bool
+		fail    bool
+		code    string
+		want    string
+	}{
+		{"ebpf", "ebpf", "preflight_passed", false, false, "ebpf.status", "eBPF 能力预检通过"},
+		{"tun", "tun", "preflight_passed", false, false, "ebpf.status", "eBPF 能力预检通过"},
+		{"raw", "tun", "preflight_passed", true, false, "ebpf.status", ""},
+		{"inconclusive", "tun", "inconclusive", false, true, "ebpf.unsupported", "部分必要检查无法确认"},
+		{"unsupported", "ebpf", "unsupported", false, true, "ebpf.unsupported", "缺少必要的 eBPF 能力"},
+		{"nonzero", "tun", "preflight_passed", false, true, "ebpf.unsupported", "诊断命令未正常完成"},
+		{"required-result-without-exit", "tun", "inconclusive", false, false, "ebpf.unsupported", "部分必要检查无法确认"},
+		{"old-result", "ebpf", "supported", false, false, "ebpf.status_invalid", "无法读取 eBPF 诊断报告"},
+		{"invalid-raw", "tun", "supported", true, false, "ebpf.status_invalid", ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			config := `{"backend":"` + test.backend + `","app":{"enabled":false,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]},"ebpf":{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true},"shared":{"enabled":false}},"tun":{"type":"tun","tag":"netproxy-in","interface_name":"netproxy","address":["172.19.0.1/30"],"auto_route":true,"auto_redirect":true}}`
+			if err := os.WriteFile(options.InboundConfig, []byte(config), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			report := inbound.ProbeReport{Mode: "local", LocalDataPlane: "cgroup", Network: []string{"tcp", "udp"}, Preflight: true, ExactObjectLoad: true, Result: test.result}
+			if test.result == "inconclusive" {
+				report.Summary.RequiredUnknowns = 1
+			} else if test.result == "unsupported" {
+				report.Summary.RequiredFailures = 1
+			}
+			payload, err := json.Marshal(report, json.Deterministic(true))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("NETPROXY_TEST_PROBE_REPORT", string(payload))
+			t.Setenv("NETPROXY_TEST_PROBE_FAIL", map[bool]string{true: "1", false: "0"}[test.fail])
+			capture, err := os.CreateTemp(t.TempDir(), "stdout-")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer capture.Close()
+			args := []string{"ebpf", "status", "configured"}
+			if test.raw {
+				args = append(args, "--raw")
+			}
+			previous := os.Stdout
+			var status int
+			func() {
+				os.Stdout = capture
+				defer func() { os.Stdout = previous }()
+				status = command.run(t.Context(), args)
+			}()
+			output, err := os.ReadFile(capture.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+			var response struct {
+				Schema int    `json:"schema"`
+				OK     bool   `json:"ok"`
+				Code   string `json:"code"`
+				Data   struct {
+					Raw     bool                `json:"raw"`
+					Content string              `json:"content"`
+					Report  inbound.ProbeReport `json:"report"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(output, &response); err != nil {
+				t.Fatalf("stdout 不是单一 JSON: %v\n%s", err, output)
+			}
+			if response.Schema != 1 || response.Code != test.code || response.OK != (status == 0) || response.OK != (test.code == "ebpf.status") || response.Data.Raw != test.raw {
+				t.Fatalf("诊断契约错误: exit=%d\n%s", status, output)
+			}
+			if test.raw {
+				if response.Data.Content != string(payload) {
+					t.Fatalf("显式 raw 没有保留原始报告: %s", output)
+				}
+			} else if !strings.Contains(response.Data.Content, test.want) || jsontext.Value(response.Data.Content).IsValid() {
+				t.Fatalf("普通诊断没有返回可读正文: %s", output)
+			}
+			if test.code != "ebpf.status_invalid" && response.Data.Report.Result != test.result {
+				t.Fatalf("机器报告丢失: %s", output)
+			}
+			if current, err := os.ReadFile(options.InboundConfig); err != nil || string(current) != config {
+				t.Fatalf("诊断修改了保存的入站: %v\n%s", err, current)
+			}
+			if _, err := os.Stat(options.RuntimeDir); !os.IsNotExist(err) {
+				t.Fatalf("诊断不应生成运行时或启动服务: %v", err)
 			}
 		})
 	}

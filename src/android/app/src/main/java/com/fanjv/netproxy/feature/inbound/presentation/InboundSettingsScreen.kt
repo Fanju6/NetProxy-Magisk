@@ -114,9 +114,8 @@ internal fun InboundSettingsScreen(
                             onExpandedChange = { more = it },
                             contentDescription = stringResource(R.string.more_actions),
                             actions = listOf(
-                                TopBarMenuAction(stringResource(R.string.inbound_reload), enabled = !state.isSaving, onClick = viewModel::refresh),
                                 TopBarMenuAction(stringResource(R.string.restart_core), enabled = state.editable, onClick = viewModel::restart),
-                                TopBarMenuAction(stringResource(R.string.ebpf_diagnostics), enabled = state.backend == "ebpf" && !state.isDiagnosing, onClick = viewModel::diagnose)
+                                TopBarMenuAction(stringResource(R.string.ebpf_diagnostics), enabled = !state.isDiagnosing, onClick = viewModel::diagnose)
                             )
                         )
                     }

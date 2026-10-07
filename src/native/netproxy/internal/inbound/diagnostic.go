@@ -120,36 +120,29 @@ func RunProbe(ctx context.Context, singBoxPath string, config option.EBPFInbound
 
 // ProbeReport 是 sing-box tools ebpf status --json 的稳定报告结构。
 type ProbeReport struct {
-	Platform         string         `json:"platform"`
-	KernelRelease    string         `json:"kernel_release"`
-	Architecture     string         `json:"architecture"`
-	Mode             string         `json:"mode"`
-	LocalDataPlane   string         `json:"local_data_plane,omitempty"`
-	SharedDataPlane  string         `json:"shared_data_plane,omitempty"`
-	Network          []string       `json:"network"`
-	IPv6             bool           `json:"ipv6"`
-	Findings         []ProbeFinding `json:"findings"`
-	ActivePrograms   []ProbeProgram `json:"active_programs"`
-	ActiveStateError string         `json:"active_state_error,omitempty"`
-	Summary          ProbeSummary   `json:"summary"`
-	Result           string         `json:"result"`
+	Platform        string         `json:"platform"`
+	KernelRelease   string         `json:"kernel_release"`
+	Architecture    string         `json:"architecture"`
+	Mode            string         `json:"mode"`
+	LocalDataPlane  string         `json:"local_data_plane,omitempty"`
+	SharedDataPlane string         `json:"shared_data_plane,omitempty"`
+	Network         []string       `json:"network"`
+	IPv6            bool           `json:"ipv6"`
+	Findings        []ProbeFinding `json:"findings"`
+	Preflight       bool           `json:"preflight"`
+	ExactObjectLoad bool           `json:"exact_object_load"`
+	Summary         ProbeSummary   `json:"summary"`
+	Result          string         `json:"result"`
 }
 
 // ProbeFinding 是单项 eBPF 能力检测结果。
 type ProbeFinding struct {
 	Status     string `json:"status"`
+	Reason     string `json:"reason,omitempty"`
 	Scope      string `json:"scope"`
 	Importance string `json:"importance"`
 	Feature    string `json:"feature"`
 	Detail     string `json:"detail"`
-}
-
-// ProbeProgram 是内核中当前可见的 sing-box eBPF 程序摘要。
-type ProbeProgram struct {
-	ID       uint32 `json:"id"`
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	MapCount int    `json:"map_count"`
 }
 
 // ProbeSummary 是 eBPF 能力检测的统计结果。
@@ -181,94 +174,114 @@ func ParseProbeReport(raw string) (ProbeReport, error) {
 	if (report.Mode == "all" || report.Mode == "shared") && report.SharedDataPlane != "packet_rewrite" && report.SharedDataPlane != "socket_assign" {
 		return ProbeReport{}, fmt.Errorf("sing-box eBPF JSON 诊断报告共享数据平面无效: %q", report.SharedDataPlane)
 	}
-	if report.Result != "supported" && report.Result != "inconclusive" && report.Result != "unsupported" {
+	if !report.Preflight {
+		return ProbeReport{}, errors.New("sing-box 未返回 eBPF 能力预检报告")
+	}
+	if report.Result != "preflight_passed" && report.Result != "inconclusive" && report.Result != "unsupported" {
 		return ProbeReport{}, fmt.Errorf("sing-box eBPF JSON 诊断报告结论无效: %q", report.Result)
+	}
+	for _, finding := range report.Findings {
+		switch finding.Status {
+		case "PASS", "WARN", "FAIL", "UNKNOWN":
+		default:
+			return ProbeReport{}, fmt.Errorf("sing-box eBPF 检查项状态无效: %q", finding.Status)
+		}
 	}
 	return report, nil
 }
 
 // FormatProbeOutput 将结构化 eBPF 检测报告整理为用户可读的中文说明。
 func FormatProbeOutput(report ProbeReport, probeErr error) string {
-	coreMode := report.Mode
-	scope := map[string]string{
-		"local":  "本机应用流量",
-		"shared": "热点与共享网络",
-		"all":    "本机应用流量、热点与共享网络",
-	}[coreMode]
-	if scope == "" {
-		scope = coreMode
-	}
-
-	conclusion := "检测通过"
+	conclusion := "eBPF 能力预检通过"
 	switch {
-	case report.Result == "unsupported" || report.Summary.RequiredFailures > 0 || probeErr != nil:
-		conclusion = "未通过"
-	case report.Result == "inconclusive":
-		conclusion = "无法完全确认，启动服务后可完成最终验证"
-	case report.Summary.Warn > 0:
-		conclusion = "发现兼容性警告，建议启动服务进行最终验证"
+	case report.Result == "unsupported" || report.Summary.RequiredFailures > 0:
+		conclusion = "当前检测范围缺少必要的 eBPF 能力"
+	case report.Result == "inconclusive" || report.Summary.RequiredUnknowns > 0:
+		conclusion = "部分必要检查无法确认，尚不能判断是否可用"
+	case probeErr != nil:
+		conclusion = "诊断命令未正常完成，不能确认预检通过"
+	case report.Summary.Warn+report.Summary.Fail+report.Summary.Unknown > 0:
+		conclusion = "eBPF 能力预检通过，但有注意事项"
 	}
 
 	var builder strings.Builder
 	fmt.Fprintf(&builder, "结论: %s\n", conclusion)
-	fmt.Fprintf(&builder, "检测范围: %s\n", scope)
+	fmt.Fprintf(&builder, "检测范围: %s\n", probeScope(report.Mode))
 	if report.KernelRelease != "" {
 		fmt.Fprintf(&builder, "内核版本: %s\n", report.KernelRelease)
 	}
 	if report.Architecture != "" {
 		fmt.Fprintf(&builder, "设备架构: %s\n", report.Architecture)
 	}
+	planeNames := map[string]string{
+		"cgroup": "应用套接字（cgroup）", "tc": "网卡流量（TC）",
+		"packet_rewrite": "数据包重写", "socket_assign": "套接字分配",
+	}
 	if report.LocalDataPlane != "" {
-		fmt.Fprintf(&builder, "本机数据平面: %s\n", report.LocalDataPlane)
+		fmt.Fprintf(&builder, "本机接管方式: %s\n", planeNames[report.LocalDataPlane])
 	}
 	if report.SharedDataPlane != "" {
-		fmt.Fprintf(&builder, "共享数据平面: %s\n", report.SharedDataPlane)
+		fmt.Fprintf(&builder, "共享网络接管方式: %s\n", planeNames[report.SharedDataPlane])
 	}
-	builder.WriteString("\n检查统计:\n")
-	fmt.Fprintf(&builder, "  通过: %d 项\n", report.Summary.Pass)
-	fmt.Fprintf(&builder, "  警告: %d 项\n", report.Summary.Warn)
-	fmt.Fprintf(&builder, "  失败: %d 项\n", report.Summary.Fail)
-	fmt.Fprintf(&builder, "  无法静态确认: %d 项\n", report.Summary.Unknown)
+	fmt.Fprintf(&builder, "网络协议: %s\n", strings.ToUpper(strings.Join(report.Network, "/")))
+	ipv6 := "不检测"
+	if report.IPv6 {
+		ipv6 = "检测"
+	}
+	fmt.Fprintf(&builder, "IPv6: %s\n", ipv6)
+	fmt.Fprintf(&builder, "\n检查统计: 通过 %d 项，警告 %d 项，失败 %d 项，未确认 %d 项\n",
+		report.Summary.Pass, report.Summary.Warn, report.Summary.Fail, report.Summary.Unknown)
 
-	commonFail := hasFailedScope(report.Findings, "common")
-	localFail := hasFailedScope(report.Findings, "local")
-	sharedFail := hasFailedScope(report.Findings, "shared")
-	if report.Summary.Fail > 0 || probeErr != nil {
-		builder.WriteString("\n问题定位:\n")
-		if commonFail {
-			builder.WriteString("  - 基础 eBPF 权限或内核能力不满足。\n")
-		}
-		if localFail {
-			builder.WriteString("  - 本机 cgroup/TC 数据路径能力不满足。\n")
-		}
-		if sharedFail {
-			builder.WriteString("  - 热点接口或 TC eBPF 能力不满足。\n")
-		}
-		if !commonFail && !localFail && !sharedFail {
-			builder.WriteString("  - sing-box 未能完成 eBPF 能力检查，请查看服务日志。\n")
-		}
-		builder.WriteString("\n建议先检查 Root 授权、内核 eBPF 配置和服务日志。\n")
-	} else if report.Summary.Unknown > 0 {
-		builder.WriteString("\n说明:\n")
-		builder.WriteString("  “无法静态确认”不代表失败，部分能力只能在 sing-box 实际启动时验证。\n")
-	} else if coreMode == "local" {
-		builder.WriteString("\n当前未启用共享网络，本次没有检测热点接口。\n")
+	statusNames := map[string]string{"WARN": "警告", "FAIL": "失败", "UNKNOWN": "未确认"}
+	reasons := map[string]string{
+		"not_permitted":           "权限不足，请检查 Root 授权和系统安全策略。",
+		"unsupported":             "内核不支持所需能力，请核对内核配置或更换支持的内核。",
+		"temporarily_unavailable": "所需接口或资源暂未就绪，请就绪后重新检测。",
+		"verifier_rejected":       "内核拒绝加载 eBPF 程序，请结合核心日志排查。",
+		"attach_conflict":         "存在挂载或资源冲突，请检查其他接管程序。",
 	}
-
-	if len(report.ActivePrograms) > 0 {
-		fmt.Fprintf(&builder, "\n当前可见 sing-box eBPF 程序: %d 个。\n", len(report.ActivePrograms))
+	for _, finding := range report.Findings {
+		if finding.Status == "PASS" {
+			continue
+		}
+		importance := "必要能力"
+		if finding.Importance == "performance" {
+			importance = "可选性能优化"
+		}
+		fmt.Fprintf(&builder, "\n%s · %s · %s\n%s\n", statusNames[finding.Status], probeScope(finding.Scope), importance, finding.Feature)
+		if reason := reasons[finding.Reason]; reason != "" {
+			fmt.Fprintln(&builder, reason)
+		}
+		if finding.Detail != "" {
+			fmt.Fprintln(&builder, finding.Detail)
+		}
 	}
-	if report.ActiveStateError != "" {
-		builder.WriteString("\n无法确认当前已挂载的 eBPF 程序状态。\n")
+	if probeErr != nil && report.Result == "preflight_passed" {
+		fmt.Fprintf(&builder, "\n诊断命令错误: %s\n", probeErr)
+	}
+	if report.ExactObjectLoad {
+		builder.WriteString("\n已检查所选 eBPF 程序能否加载，尚未验证实际挂载与网络接管。\n")
+	} else {
+		builder.WriteString("\n本次仅检查基础能力，程序加载、实际挂载与网络接管仍需启动服务验证。\n")
 	}
 	return strings.TrimSpace(builder.String())
 }
 
-func hasFailedScope(findings []ProbeFinding, scope string) bool {
-	for _, finding := range findings {
-		if finding.Status == "FAIL" && finding.Scope == scope {
-			return true
-		}
+func probeScope(scope string) string {
+	switch scope {
+	case "common":
+		return "基础能力"
+	case "local":
+		return "本机应用流量"
+	case "shared":
+		return "热点与共享网络"
+	case "all":
+		return "本机应用流量、热点与共享网络"
+	case "tc":
+		return "网卡接管（TC）"
+	case "icmp_echo_reply":
+		return "ICMP 应答"
+	default:
+		return scope
 	}
-	return false
 }

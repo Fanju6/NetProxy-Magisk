@@ -33,6 +33,7 @@ class InboundViewModelTest {
     private var readFailure: String? = null
     private var statusFailure: String? = null
     private var restartFailure: String? = null
+    private var diagnosticFailure: String? = null
     private var onApply: () -> Unit = {}
     private var activeConfirmed = true
     private var actualBackendOverride: String? = null
@@ -55,6 +56,12 @@ class InboundViewModelTest {
                 args == listOf("service", "restart") -> {
                     if (restartFailure != null) throw NetProxyCtlException(restartFailure!!, "restart failed")
                     output("{}")
+                }
+                args == listOf("ebpf", "status", "configured") -> {
+                    val content = "结论: ${diagnosticFailure ?: "eBPF 能力预检通过"}"
+                    val data = JsonObject(mapOf("content" to JsonPrimitive(content), "report" to JsonObject(emptyMap())))
+                    if (diagnosticFailure != null) throw NetProxyCtlException("ebpf.unsupported", "预检未通过", data)
+                    output(data.toString())
                 }
                 args.take(2) == listOf("config", "read") -> {
                     if (args.last() == "singbox/config.json") {
@@ -97,6 +104,35 @@ class InboundViewModelTest {
 
     private suspend fun InboundViewModel.loaded() = withTimeout(5_000) { state.first { it.snapshot != null && !it.isLoading } }
     private suspend fun InboundViewModel.idle() = withTimeout(5_000) { state.first { !it.isSaving } }
+
+    @Test fun diagnosticsInBothBackendsUseReadableContentWithoutChangingService() = runBlocking {
+        for (selected in listOf("ebpf", "tun")) {
+            backend = selected
+            val vm = viewModel(this)
+            vm.refresh()
+            vm.loaded()
+            calls.clear()
+            vm.diagnose()
+            withTimeout(5_000) { vm.state.first { it.diagnostic != null } }
+            assertEquals("结论: eBPF 能力预检通过", vm.state.value.diagnostic)
+            assertEquals(listOf(listOf("ebpf", "status", "configured")), calls)
+            assertEquals(selected, vm.state.value.backend)
+            assertFalse(vm.state.value.isDiagnosing)
+            vm.dismissDiagnostic()
+            assertNull(vm.state.value.diagnostic)
+        }
+    }
+
+    @Test fun failedDiagnosticsShowTheReadableReportInsteadOfJsonOrGenericError() = runBlocking {
+        backend = "tun"
+        diagnosticFailure = "部分必要检查无法确认"
+        val vm = viewModel(this)
+        vm.diagnose()
+        withTimeout(5_000) { vm.state.first { it.diagnostic != null } }
+        assertEquals("结论: 部分必要检查无法确认", vm.state.value.diagnostic)
+        assertFalse(vm.state.value.isDiagnosing)
+        assertEquals(listOf(listOf("ebpf", "status", "configured")), calls)
+    }
 
     @Test fun initialLoadPublishesTheFormAndChoicesTogether() = runBlocking {
         choicesGate = CountDownLatch(1)
