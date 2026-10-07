@@ -49,3 +49,13 @@ test("发布预检拒绝缺少对应更新日志的 tag", () => {
     changelog,
   }), /找不到版本/)
 })
+
+test("发布预检拒绝只有标题或空白正文的更新日志", () => {
+  for (const body of ["", "\n \t\n"]) {
+    assert.throws(() => validateRelease({
+      tag: "v8.2.3",
+      moduleProp: "version=v8.2.3\n",
+      changelog: `## 版本 8.2.3\n${body}\n## 版本 8.2.2\n旧版说明`,
+    }), /更新日志为空/)
+  }
+})

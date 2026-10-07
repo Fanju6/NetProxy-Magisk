@@ -54,7 +54,7 @@ export function extractReleaseNotes(markdown, rawVersion) {
   }
 
   const notes = lines.slice(start, end).join("\n").trim()
-  if (notes.length === 0) {
+  if (lines.slice(start + 1, end).join("\n").trim().length === 0) {
     throw new Error(`版本 ${version} 的更新日志为空`)
   }
   return `${notes}\n`
