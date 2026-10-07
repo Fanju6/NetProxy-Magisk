@@ -17,15 +17,15 @@ const dragonFailedSecond = './mascots/dragon/failed-b.svg'
 const dragonWaitingFirst = './mascots/dragon/waiting-a.svg'
 const dragonWaitingSecond = './mascots/dragon/waiting-b.svg'
 
-type MascotState = { first: string; second: string }
+type MascotState = { label: string; first: string; second: string }
 
 const STATE_MAP: Record<string, MascotState> = {
-  ready: { first: dragonDigRaised, second: dragonDigStrike },
-  stopped: { first: dragonSleepFirst, second: dragonSleepSecond },
-  failed: { first: dragonFailedFirst, second: dragonFailedSecond },
-  preparing: { first: dragonWaitingFirst, second: dragonWaitingSecond },
-  starting: { first: dragonWaitingFirst, second: dragonWaitingSecond },
-  stopping: { first: dragonWaitingFirst, second: dragonWaitingSecond },
+  ready: { label: '服务运行中', first: dragonDigRaised, second: dragonDigStrike },
+  stopped: { label: '服务已停止', first: dragonSleepFirst, second: dragonSleepSecond },
+  failed: { label: '服务启动失败', first: dragonFailedFirst, second: dragonFailedSecond },
+  preparing: { label: '服务准备中', first: dragonWaitingFirst, second: dragonWaitingSecond },
+  starting: { label: '服务启动中', first: dragonWaitingFirst, second: dragonWaitingSecond },
+  stopping: { label: '服务停止中', first: dragonWaitingFirst, second: dragonWaitingSecond },
 }
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -50,6 +50,7 @@ const mascot = byId<HTMLElement>('mascot')
 const mascotAction = byId<HTMLImageElement>('mascot-action')
 const mascotImpact = byId<HTMLImageElement>('mascot-impact')
 const announcement = byId<HTMLElement>('announcement')
+const serviceState = byId<HTMLElement>('service-state')
 const entryTemplate = byId<HTMLTemplateElement>('command-entry')
 const history: string[] = []
 let historyIndex = -1
@@ -76,6 +77,8 @@ function updateMascotLayer(image: HTMLImageElement, source: string | undefined, 
 }
 
 function updateMascot(state?: MascotState, stateName?: string) {
+  const label = state?.label ?? '服务状态不可用'
+  if (serviceState.textContent !== label) serviceState.textContent = label
   if (stateName) mascot.dataset.state = stateName
   else delete mascot.dataset.state
   if (state) mascot.dataset.animated = 'true'
