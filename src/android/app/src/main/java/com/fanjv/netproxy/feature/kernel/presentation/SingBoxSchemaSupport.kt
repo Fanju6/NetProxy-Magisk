@@ -8,9 +8,22 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.coroutines.CancellationException
 
 /** sing-box Schema 与编辑器共用的 JSON 解析器。 */
 internal val singBoxSchemaJson = Json { ignoreUnknownKeys = true }
+
+internal class SingBoxEditorSchema(private val load: () -> JsonObject) {
+    val root: Result<JsonObject> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) { runCatching(load) }
+    val references: SingBoxSchemaReferenceResolver by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        SingBoxSchemaReferenceResolver(root.getOrThrow())
+    }
+
+    fun forDocument(documentId: String): SingBoxEditorSchema =
+        if (documentId == "inbound" || documentId.startsWith("inbound/")) {
+            SingBoxEditorSchema { editorSchema(root.getOrThrow(), documentId) }
+        } else this
+}
 
 internal fun interface SchemaText {
     operator fun invoke(@StringRes id: Int, vararg args: Any): String
@@ -77,34 +90,49 @@ internal fun sourcePositionAt(text: String, rawOffset: Int): JsonSourcePosition 
  * `kotlinx.serialization` 负责语法解析；此扫描器只保留位置，避免为 Android
  * 引入完整 JSON Schema 引擎及其 Jackson 依赖。
  */
-internal fun buildJsonSourceIndex(text: String): Map<String, JsonSourcePosition> =
-    runCatching { JsonSourceIndexer(text).build() }.getOrDefault(emptyMap())
+internal fun buildJsonSourceIndex(
+    text: CharSequence,
+    checkCancellation: () -> Unit = {},
+): Map<String, JsonSourcePosition> = try {
+    JsonSourceIndexer(text, checkCancellation).build()
+} catch (error: CancellationException) {
+    throw error
+} catch (_: IllegalArgumentException) {
+    emptyMap()
+} catch (_: IllegalStateException) {
+    emptyMap()
+}
 
 private class JsonSourceIndexer(
-    private val text: String,
+    private val text: CharSequence,
+    private val checkCancellation: () -> Unit,
 ) {
     private val positions = linkedMapOf<String, JsonSourcePosition>()
     private var index = 0
+    private var line = 1
+    private var column = 1
 
     fun build(): Map<String, JsonSourcePosition> {
+        checkCancellation()
         skipWhitespace()
         parseValue("")
         return positions
     }
 
     private fun parseValue(path: String) {
+        checkCancellation()
         skipWhitespace()
-        positions.putIfAbsent(path, sourcePositionAt(text, index))
+        positions.putIfAbsent(path, JsonSourcePosition(line, column))
         when (peek()) {
             '{' -> parseObject(path)
             '[' -> parseArray(path)
-            '"' -> consumeString()
+            '"' -> consumeString(decode = false)
             else -> consumePrimitive()
         }
     }
 
     private fun parseObject(path: String) {
-        index++
+        advance()
         skipWhitespace()
         if (consumeIf('}')) return
 
@@ -118,11 +146,11 @@ private class JsonSourceIndexer(
             if (consumeIf('}')) return
             require(consumeIf(',')) { "对象字段缺少逗号" }
         }
-        error("对象未闭合")
+        throw IllegalArgumentException("对象未闭合")
     }
 
     private fun parseArray(path: String) {
-        index++
+        advance()
         skipWhitespace()
         if (consumeIf(']')) return
 
@@ -134,43 +162,56 @@ private class JsonSourceIndexer(
             if (consumeIf(']')) return
             require(consumeIf(',')) { "数组元素缺少逗号" }
         }
-        error("数组未闭合")
+        throw IllegalArgumentException("数组未闭合")
     }
 
-    private fun consumeString(): String {
+    private fun consumeString(decode: Boolean = true): String {
         val start = index
         require(consumeIf('"')) { "字符串应以引号开始" }
         var escaped = false
         while (index < text.length) {
-            val current = text[index++]
+            val current = advance()
             if (!escaped && current == '"') {
-                val literal = text.substring(start, index)
+                if (!decode) return ""
+                val literal = text.subSequence(start, index).toString()
                 return singBoxSchemaJson.parseToJsonElement(literal).jsonPrimitive.content
             }
             escaped = !escaped && current == '\\'
             if (current != '\\') escaped = false
         }
-        error("字符串未闭合")
+        throw IllegalArgumentException("字符串未闭合")
     }
 
     private fun consumePrimitive() {
         val start = index
         while (index < text.length && text[index] !in ",]}" && !text[index].isWhitespace()) {
-            index++
+            advance()
         }
         require(index > start) { "缺少 JSON 值" }
     }
 
     private fun skipWhitespace() {
-        while (index < text.length && text[index].isWhitespace()) index++
+        while (index < text.length && text[index].isWhitespace()) advance()
     }
 
     private fun peek(): Char? = text.getOrNull(index)
 
     private fun consumeIf(expected: Char): Boolean {
         if (peek() != expected) return false
-        index++
+        advance()
         return true
+    }
+
+    private fun advance(): Char {
+        if (index and 1023 == 0) checkCancellation()
+        val current = text[index++]
+        if (current == '\n') {
+            line++
+            column = 1
+        } else {
+            column++
+        }
+        return current
     }
 }
 

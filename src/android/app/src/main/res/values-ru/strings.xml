@@ -293,7 +293,6 @@
     <string name="singbox_document_custom_summary">Отдельный раздел основной конфигурации</string>
     <string name="json_format_short">Формат</string>
     <string name="json_format_error">Некорректный JSON; форматирование невозможно</string>
-    <string name="json_syntax_error">Ошибка синтаксиса JSON</string>
     <string name="json_save_failed">Ошибка сохранения</string>
     <string name="json_save_failed_summary">Конфигурация не сохранена. Внесённые изменения сохранены в редакторе.</string>
     <string name="json_save_rolled_back">Проверка полной конфигурации не пройдена. Файл не сохранён; изменения остались в редакторе.</string>

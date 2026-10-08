@@ -1,10 +1,11 @@
 package com.fanjv.netproxy.feature.kernel.presentation
 
-import android.content.Context
 import androidx.annotation.StringRes
 import com.fanjv.netproxy.R
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -12,7 +13,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.math.BigDecimal
 
@@ -38,34 +38,37 @@ sealed interface SingBoxSchemaValidationResult {
 
 /** 使用内置 reF1nd sing-box Schema 校验配置，不访问网络。 */
 class SingBoxSchemaValidator internal constructor(
-    private val schemaProvider: () -> String,
+    private val schema: SingBoxEditorSchema,
     private val text: SchemaText,
 ) {
-    constructor(context: Context, documentId: String = "") : this({
-        context.assets.open(SCHEMA_ASSET).bufferedReader().use { editorSchema(it.readText(), documentId) }
-    }, SchemaText { id, args -> context.getString(id, *args) })
-
-    private val schemaRoot by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        runCatching { singBoxSchemaJson.parseToJsonElement(schemaProvider()).jsonObject }
-    }
-
     suspend fun validate(rawJson: String): SingBoxSchemaValidationResult =
         withContext(Dispatchers.Default) {
+            ensureActive()
             val document = runCatching { singBoxSchemaJson.parseToJsonElement(rawJson) }
                 .getOrElse { error ->
+                    if (error is CancellationException) throw error
                     return@withContext SingBoxSchemaValidationResult.Invalid(
                         listOf(jsonSyntaxIssue(rawJson, error, text)),
                     )
                 }
-            val schema = schemaRoot.getOrElse { error ->
+            validate(rawJson, document)
+        }
+
+    internal suspend fun validate(rawJson: String, document: JsonElement): SingBoxSchemaValidationResult =
+        withContext(Dispatchers.Default) {
+            ensureActive()
+            val root = schema.root.getOrElse { error ->
+                if (error is CancellationException) throw error
                 return@withContext SingBoxSchemaValidationResult.Unavailable(
                     error.message ?: error.javaClass.simpleName,
                 )
             }
-            val sourceIndex = buildJsonSourceIndex(rawJson)
-            val issues = SingBoxSchemaEngine(schema, sourceIndex, text)
+            val cancellation = { coroutineContext.ensureActive() }
+            val sourceIndex = buildJsonSourceIndex(rawJson, cancellation)
+            val issues = SingBoxSchemaEngine(root, schema.references, sourceIndex, text, cancellation)
                 .validate(document)
                 .compactSchemaIssues()
+            ensureActive()
 
             if (issues.isEmpty()) {
                 SingBoxSchemaValidationResult.Valid
@@ -74,9 +77,6 @@ class SingBoxSchemaValidator internal constructor(
             }
         }
 
-    private companion object {
-        const val SCHEMA_ASSET = "sing-box.schema.json"
-    }
 }
 
 /**
@@ -87,10 +87,11 @@ class SingBoxSchemaValidator internal constructor(
  */
 private class SingBoxSchemaEngine(
     root: JsonObject,
+    private val references: SingBoxSchemaReferenceResolver,
     private val sourceIndex: Map<String, JsonSourcePosition>,
     private val text: SchemaText,
+    private val checkCancellation: () -> Unit,
 ) {
-    private val references = SingBoxSchemaReferenceResolver(root)
 
     fun validate(document: JsonElement): List<SingBoxSchemaIssue> =
         validateValue(document, rootSchema, "").issues
@@ -104,6 +105,7 @@ private class SingBoxSchemaEngine(
         visitedRefs: Set<String> = emptySet(),
         depth: Int = 0,
     ): ValidationOutcome {
+        checkCancellation()
         if (depth > MAX_SCHEMA_DEPTH) {
             return ValidationOutcome(
                 issues = listOf(issue(path, R.string.schema_too_deep)),
@@ -307,6 +309,7 @@ private class SingBoxSchemaEngine(
         visitedRefs: Set<String>,
         depth: Int,
     ): Map<String, Set<JsonElement>> {
+        checkCancellation()
         if (depth > MAX_SCHEMA_DEPTH) return emptyMap()
         val result = linkedMapOf<String, Set<JsonElement>>()
         schema["properties"].asSchemaObject()?.let { properties ->
@@ -357,6 +360,7 @@ private class SingBoxSchemaEngine(
             issues += issue(path, R.string.schema_missing_field, name)
         }
         properties.forEach { (name, propertySchema) ->
+            checkCancellation()
             val propertyValue = value[name] ?: return@forEach
             val child = propertySchema.asSchemaObject() ?: return@forEach
             evaluatedProperties += name
@@ -385,6 +389,7 @@ private class SingBoxSchemaEngine(
 
         val additionalProperties = schema["additionalProperties"]
         value.forEach { (name, propertyValue) ->
+            checkCancellation()
             if (name in properties) return@forEach
             when {
                 (additionalProperties as? JsonPrimitive)?.booleanOrNull == false -> {
@@ -448,6 +453,7 @@ private class SingBoxSchemaEngine(
     }
 
     private fun issue(path: String, @StringRes message: Int, vararg args: Any): SingBoxSchemaIssue {
+        checkCancellation()
         val location = sourceIndex[path] ?: sourceIndex[path.substringBeforeLast('/', "")]
         return SingBoxSchemaIssue(
             message = text(message, *args),
@@ -471,7 +477,7 @@ private data class ValidationOutcome(
     val evaluatedProperties: Set<String> = emptySet(),
 )
 
-private fun jsonSyntaxIssue(rawJson: String, error: Throwable, text: SchemaText): SingBoxSchemaIssue {
+internal fun jsonSyntaxIssue(rawJson: String, error: Throwable, text: SchemaText): SingBoxSchemaIssue {
     val offset = JSON_OFFSET_REGEX.find(error.message.orEmpty())
         ?.groupValues
         ?.getOrNull(1)

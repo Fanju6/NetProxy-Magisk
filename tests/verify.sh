@@ -19,7 +19,7 @@ usage() {
 范围:
   quick    Go、Shell 契约与工作流脚本检查
   webui    WebUI 类型检查、单测与构建
-  android  Android 单测、Lint 与 Debug 构建
+  android  Android 单测、编辑器 Host/Desktop 测试、Lint 与 Debug 构建
   docs     文档内容检查、单测与构建
   full     执行全部范围
 
@@ -44,7 +44,7 @@ run_android() {
   printf '%s\n' '==> 验证 Android 管理器'
   (
     cd "$ROOT/src/android"
-    ./gradlew testDebugUnitTest lintDebug :app:assembleDebug --build-cache --parallel --no-daemon
+    ./gradlew testDebugUnitTest :scripta:editor:testAndroidHostTest :scripta:editor:desktopTest lintDebug :app:assembleDebug --build-cache --parallel --no-daemon
   )
 }
 

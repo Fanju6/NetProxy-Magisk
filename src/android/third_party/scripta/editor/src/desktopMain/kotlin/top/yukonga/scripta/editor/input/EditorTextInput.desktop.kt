@@ -39,7 +39,7 @@ import top.yukonga.scripta.editor.text.TextRange as EditorTextRange
  * Compose 的 DesktopTextInputService2 把 AWT InputMethodEvent 翻译成 commitText/setComposingText/
  * finishComposingText，回打到本 request 的 [ScriptaImeRequest.editText]；并跑 snapshotFlow 观测
  * state.selection / state.composition，在光标移动/外部编辑时自动结束预编辑——故这两个 getter 必须读
- * 引擎的快照 state（selectionOffsets/composingOffsets 分别读 engine.selection、engine.composing）。
+ * 引擎的快照 state（选区读 anchor/head，预编辑区间读 engine.composing）。
  */
 actual fun Modifier.editorTextInput(engine: EditorEngine, enabled: Boolean, caretRectInEditor: () -> Rect?): Modifier =
     if (enabled) this then EditorTextInputElement(engine, caretRectInEditor) else this
@@ -109,9 +109,9 @@ private class EditorTextInputNode(
 /**
  * 桌面的 [PlatformTextInputMethodRequest] actual（skikoMain 的富接口，非 Android 的
  * createInputConnection 单方法）：Compose 从 [state] 拉取文本/选区/预编辑区间与几何，向 [editText]
- * 推送提交/预编辑。全部成员在 1.11.1 被 @ExperimentalComposeUiApi 标注（见文件顶 @file:OptIn）。
+ * 推送提交/预编辑。selection/composition 必须随引擎快照更新，不能缓存输入会话的初值。
  */
-private class ScriptaImeRequest(
+internal class ScriptaImeRequest(
     private val engine: EditorEngine,
     private val cursorRectInRoot: () -> Rect?,
 ) : PlatformTextInputMethodRequest {
@@ -135,11 +135,15 @@ private class ScriptaImeRequest(
             )
 
         override fun toString(): String = engine.getText()
+        override val text: String get() = engine.getText()
 
         override val selection: TextRange
             get() {
-                val (s, e) = engine.selectionOffsets()
-                return TextRange(s, e)
+                // IME 回读必须保留 anchor/head，归一化会丢失反向选区的活动端。
+                return TextRange(
+                    engine.buffer.offsetAt(engine.selectionAnchor),
+                    engine.buffer.offsetAt(engine.caret),
+                )
             }
 
         override val composition: TextRange?
@@ -176,6 +180,15 @@ private class ScriptaImeRequest(
      */
     override val editText: (block: TextEditingScope.() -> Unit) -> Unit = { block ->
         block(object : TextEditingScope {
+            override fun setSelection(start: Int, end: Int) =
+                engine.setSelection(engine.buffer.positionAt(start), engine.buffer.positionAt(end), keepComposing = true)
+
+            override fun setComposingRegion(start: Int, end: Int) =
+                engine.setComposingRegion(
+                    start.coerceIn(0, engine.buffer.totalLength()),
+                    end.coerceIn(0, engine.buffer.totalLength()),
+                )
+
             override fun deleteSurroundingTextInCodePoints(lengthBeforeCursor: Int, lengthAfterCursor: Int) =
                 engine.deleteSurroundingTextInCodePoints(lengthBeforeCursor, lengthAfterCursor)
 

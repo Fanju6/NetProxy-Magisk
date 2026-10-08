@@ -317,7 +317,6 @@
     <string name="singbox_document_custom_summary">主配置中的独立分区</string>
     <string name="json_format_short">格式</string>
     <string name="json_format_error">JSON 格式错误，无法格式化</string>
-    <string name="json_syntax_error">JSON 语法错误</string>
     <string name="json_save_failed">保存失败</string>
     <string name="json_save_failed_summary">配置文件未保存，当前编辑内容已保留。</string>
     <string name="json_save_rolled_back">完整配置检查未通过，配置文件未保存，当前编辑内容已保留。</string>

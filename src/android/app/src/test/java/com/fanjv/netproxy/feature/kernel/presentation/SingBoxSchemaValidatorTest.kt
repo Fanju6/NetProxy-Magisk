@@ -11,7 +11,7 @@ import org.junit.Test
 import java.io.File
 
 class SingBoxSchemaValidatorTest {
-    private fun validator(schema: String) = SingBoxSchemaValidator({ schema }, localizedSchemaText("zh"))
+    private fun validator(schema: String) = SingBoxSchemaValidator(testEditorSchema(schema), localizedSchemaText("zh"))
 
     private val validator = validator(TEST_SCHEMA)
 

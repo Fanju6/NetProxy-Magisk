@@ -87,7 +87,7 @@ class InboundRepositoryTest {
                 output("""{"revision":"new-revision"}""")
             }
         }
-        assertEquals("new-revision", repo.apply("inbound/backend", """{"backend":"tun"}""", "backend-revision", true))
+        assertEquals("new-revision", repo.apply("inbound/backend", """{"backend":"tun"}""", "backend-revision", true).revision)
         assertTrue(folder.root.listFiles()!!.isEmpty())
     }
 
@@ -99,7 +99,7 @@ class InboundRepositoryTest {
             if (args.first() == "service") status("stopped", if (applied) "tun" else "ebpf", null)
             else { applied = true; output("""{"revision":"saved"}""") }
         }
-        assertEquals("saved", repo.apply("inbound/backend", """{"backend":"tun"}""", "read"))
+        assertEquals("saved", repo.apply("inbound/backend", """{"backend":"tun"}""", "read").revision)
         assertTrue(calls.filter { it.first() == "service" }.all { it == listOf("service", "status") })
     }
 
@@ -128,7 +128,7 @@ class InboundRepositoryTest {
                 output("""{"revision":"tun-saved"}""")
             }
         }
-        assertEquals("tun-saved", repo.apply("inbound/tun", """{"tun":{"type":"tun","tag":"netproxy-in"}}""", "tun-read"))
+        assertEquals("tun-saved", repo.apply("inbound/tun", """{"tun":{"type":"tun","tag":"netproxy-in"}}""", "tun-read").revision)
     }
 
     @Test fun conflictsAndNativeFailuresAreNotRetried() = runBlocking {
@@ -189,7 +189,7 @@ class InboundRepositoryTest {
                 output("""{"revision":"tun-saved"}""")
             }
         }
-        assertEquals("tun-saved", repo.apply("inbound/tun", """{"tun":{"type":"tun","tag":"netproxy-in"}}""", "tun-read"))
+        assertEquals("tun-saved", repo.apply("inbound/tun", """{"tun":{"type":"tun","tag":"netproxy-in"}}""", "tun-read").revision)
         assertEquals(3, calls.size)
         assertEquals(listOf("service", "status"), calls.first())
         assertEquals(listOf("service", "status"), calls.last())

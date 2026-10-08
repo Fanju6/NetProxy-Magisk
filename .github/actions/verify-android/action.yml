@@ -75,7 +75,7 @@ runs:
             -PnetproxyManagerVersion="$MANAGER_VERSION"
         fi
         if [ "$VERIFY_ANDROID" = true ]; then
-          set -- "$@" testDebugUnitTest lintDebug
+          set -- "$@" testDebugUnitTest :scripta:editor:testAndroidHostTest :scripta:editor:desktopTest lintDebug
         fi
         if [ "$ASSEMBLE_DEBUG" = true ]; then
           set -- "$@" :app:assembleDebug

@@ -8,4 +8,6 @@ This directory vendors the editor module from [YuKongA/scripta](https://github.c
 
 The NetProxy snapshot adds the mobile completion popup, symbol toolbar improvements, controller completion APIs, and related editor tests used by the Android configuration editor. It is vendored because the NetProxy snapshot is not available from the upstream Git repository and a submodule reference would therefore be impossible to initialize.
 
+Local NetProxy changes adapt the Desktop IME request to the current Compose text, selection, and composing-region APIs. Android Host and Desktop editor tests are included in local and CI Android verification.
+
 When updating this copy, import a complete reviewed source snapshot, preserve the upstream license, record the new base revision here, and run the Android editor and application tests.

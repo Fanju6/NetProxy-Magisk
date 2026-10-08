@@ -293,7 +293,6 @@
     <string name="singbox_document_custom_summary">Separate section in the main configuration</string>
     <string name="json_format_short">Format</string>
     <string name="json_format_error">Invalid JSON; cannot format</string>
-    <string name="json_syntax_error">JSON syntax error</string>
     <string name="json_save_failed">Save failed</string>
     <string name="json_save_failed_summary">Configuration was not saved. Your edits have been kept.</string>
     <string name="json_save_rolled_back">Full configuration check failed. Nothing was saved; your edits have been kept.</string>

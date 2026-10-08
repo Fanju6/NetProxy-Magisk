@@ -9,7 +9,7 @@ import top.yukonga.scripta.editor.completion.CompletionRequest
 import top.yukonga.scripta.editor.text.TextPosition
 
 class SingBoxSchemaCompletionProviderTest {
-    private val provider = SingBoxSchemaCompletionProvider({ TEST_SCHEMA }, localizedSchemaText("zh"))
+    private val provider = SingBoxSchemaCompletionProvider(testEditorSchema(TEST_SCHEMA), localizedSchemaText("zh"))
 
     @Test
     fun `property completion follows type discriminator`() = runBlocking {
@@ -87,7 +87,7 @@ class SingBoxSchemaCompletionProviderTest {
     }
 
     @Test
-    fun `context help exposes json path and chinese field meaning`() {
+    fun `context help exposes json path and chinese field meaning`() = runBlocking {
         val document = """
             {
               "inbounds": [
@@ -165,4 +165,3 @@ class SingBoxSchemaCompletionProviderTest {
         """.trimIndent()
     }
 }
-

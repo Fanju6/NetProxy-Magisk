@@ -39,9 +39,7 @@ internal data class InboundUiState(
     val isSaving: Boolean get() = applyingField != null
     val isInitialLoading: Boolean get() = snapshot == null && (isLoading || !requiresReload)
     val backend: String get() = snapshot?.backend.orEmpty()
-    val native: JsonObject get() = snapshot?.partitions?.get(backend)?.let {
-        inboundJson.parseToJsonElement(it.content).jsonObject.objectAt(backend)
-    } ?: JsonObject(emptyMap())
+    val native: JsonObject get() = snapshot?.native?.get(backend) ?: JsonObject(emptyMap())
     val hasConfiguration: Boolean get() = snapshot?.status != null && !requiresReload
     val editable: Boolean get() = hasConfiguration && !isSaving && pendingBackend == null
 }
@@ -147,14 +145,14 @@ internal class InboundViewModel(
         mutableState.update { it.copy(applyingField = field, error = "", errorCode = "") }
         viewModelScope.launch {
             try {
-                val revision = repository.apply("inbound/$partition", content, snapshot.revision, confirmed)
-                val status = repository.status()
+                val result = repository.apply("inbound/$partition", content, snapshot.revision, confirmed)
                 mutableState.update { current ->
                     val previous = current.snapshot!!
                     val updated = previous.copy(
                         backend = if (partition == "backend") value.textAt("backend") else previous.backend,
-                        partitions = previous.partitions + (partition to ConfigSnapshot(content, revision)),
-                        status = status
+                        partitions = previous.partitions + (partition to ConfigSnapshot(content, result.revision)),
+                        native = if (partition == "backend") previous.native else previous.native + (partition to value.objectAt(partition)),
+                        status = result.status
                     )
                     current.copy(snapshot = updated, applyingField = null)
                 }

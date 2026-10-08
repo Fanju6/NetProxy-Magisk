@@ -17,7 +17,8 @@ class InboundEditorSchemaTest {
     private val tun = """{"type":"tun","tag":"netproxy-in","address":["172.19.0.1/30","fdfe:dcba:9876::1/126"],"auto_route":true,"auto_redirect":true,"dns_mode":"hijack"}"""
     private val app = """{"enabled":true,"mode":"blacklist","proxy_apps":["0:com.example.client","10:com.example.client"],"bypass_apps":[]}"""
 
-    private fun validator(target: String) = SingBoxSchemaValidator({ editorSchema(source, target) }, localizedSchemaText(""))
+    private val schema = testEditorSchema(source)
+    private fun validator(target: String) = SingBoxSchemaValidator(schema.forDocument(target), localizedSchemaText(""))
 
     @Test fun fullWrapperRequiresExactlyFourFields() = runBlocking {
         val value = """{"backend":"ebpf","app":$app,"ebpf":$ebpf,"tun":$tun}"""
@@ -44,7 +45,7 @@ class InboundEditorSchemaTest {
 
     @Test fun originalDefinitionsAreReferencedWithoutNativeFieldCopies() {
         val original = singBoxSchemaJson.parseToJsonElement(source).jsonObject
-        val wrapped = singBoxSchemaJson.parseToJsonElement(editorSchema(source, "inbound")).jsonObject
+        val wrapped = editorSchema(original, "inbound")
         assertEquals(original["\$defs"], wrapped["\$defs"])
         for (type in listOf("tun", "ebpf")) {
             val schema = wrapped.getValue("properties").jsonObject.getValue(type).jsonObject
@@ -52,10 +53,10 @@ class InboundEditorSchemaTest {
             assertTrue(reference.getValue("\$ref").toString().contains("#/\$defs/Inbound/oneOf/"))
             assertNotNull(SingBoxSchemaReferenceResolver(wrapped).referencedSchema(reference, emptySet()))
         }
-        assertEquals(source, editorSchema(source, "runtime/inbound.json"))
-        assertEquals(source, editorSchema(source, "runtime/providers.json"))
-        assertEquals(source, editorSchema(source, "runtime/outbounds.json"))
-        assertEquals(source, editorSchema(source, "singbox/config.json"))
+        assertSame(original, editorSchema(original, "runtime/inbound.json"))
+        assertSame(original, editorSchema(original, "runtime/providers.json"))
+        assertSame(original, editorSchema(original, "runtime/outbounds.json"))
+        assertSame(original, editorSchema(original, "singbox/config.json"))
     }
 
     @Test fun nativeNumericAndUnknownFieldsAreCheckedByLockedSchema() = runBlocking {
@@ -75,7 +76,7 @@ class InboundEditorSchemaTest {
     }
 
     @Test fun completionFollowsNativeReferenceIntoTunAndEbpfLocal() = runBlocking {
-        val provider = SingBoxSchemaCompletionProvider({ editorSchema(source, "inbound") }, localizedSchemaText(""))
+        val provider = SingBoxSchemaCompletionProvider(schema.forDocument("inbound"), localizedSchemaText(""))
         for ((text, expected) in listOf(
             "{\"tun\":{\"rou" to "route_exclude_address",
             "{\"ebpf\":{\"local\":{\"dns" to "dns_mode",

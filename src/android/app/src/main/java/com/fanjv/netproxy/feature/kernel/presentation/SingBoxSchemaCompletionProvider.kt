@@ -1,8 +1,8 @@
 package com.fanjv.netproxy.feature.kernel.presentation
 
-import android.content.Context
 import com.fanjv.netproxy.R
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -10,7 +10,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import top.yukonga.scripta.editor.completion.CompletionItem
 import top.yukonga.scripta.editor.completion.CompletionItemKind
@@ -28,21 +27,19 @@ data class SingBoxSchemaContextHelp(
 
 /** 使用应用内置 sing-box Schema 提供字段名、枚举值和约束说明，不访问网络。 */
 class SingBoxSchemaCompletionProvider internal constructor(
-    private val schemaProvider: () -> String,
+    private val schema: SingBoxEditorSchema,
     private val text: SchemaText,
 ) : CompletionProvider {
-    constructor(context: Context, documentId: String = "") : this({
-        context.assets.open(SCHEMA_ASSET).bufferedReader().use { editorSchema(it.readText(), documentId) }
-    }, SchemaText { id, args -> context.getString(id, *args) })
-
     private val navigator by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        SchemaNavigator(singBoxSchemaJson.parseToJsonElement(schemaProvider()).jsonObject, text)
+        SchemaNavigator(schema.root.getOrThrow(), schema.references, text)
     }
 
     override suspend fun complete(request: CompletionRequest): CompletionResult? =
         withContext(Dispatchers.Default) {
+            ensureActive()
             val context =
-                JsonCursorAnalyzer.analyze(request.text, request.caret) ?: return@withContext null
+                JsonCursorAnalyzer.analyze(request.text, request.caret) { ensureActive() }
+                    ?: return@withContext null
             if (!request.explicit && !context.quoted && context.kind == CursorKind.Property) {
                 return@withContext null
             }
@@ -51,6 +48,7 @@ class SingBoxSchemaCompletionProvider internal constructor(
                 CursorKind.Property -> propertyItems(context)
                 CursorKind.Value -> valueItems(context)
             }
+            ensureActive()
             if (items.isEmpty() ||
                 (context.quoted && items.size == 1 && items.single().label == context.prefix)
             ) {
@@ -66,31 +64,35 @@ class SingBoxSchemaCompletionProvider internal constructor(
             )
         }
 
-    fun contextHelp(text: String, caret: TextPosition): SingBoxSchemaContextHelp? {
-        val context = JsonCursorAnalyzer.analyze(text, caret) ?: return null
-        return when (context.kind) {
-            CursorKind.Property -> {
-                val fields = navigator.properties(context.path, context.discriminators)
-                val field = fields[context.prefix] ?: fields.values
-                    .filter { it.name.startsWith(context.prefix, ignoreCase = true) }
-                    .singleOrNull()
-                SingBoxSchemaContextHelp(
-                    path = context.path.toDisplayPath(),
-                    field = field?.name,
-                    documentation = field?.documentation,
-                )
-            }
+    suspend fun contextHelp(text: String, caret: TextPosition): SingBoxSchemaContextHelp? =
+        withContext(Dispatchers.Default) {
+            ensureActive()
+            val context = JsonCursorAnalyzer.analyze(text, caret) { ensureActive() } ?: return@withContext null
+            val result = when (context.kind) {
+                CursorKind.Property -> {
+                    val fields = navigator.properties(context.path, context.discriminators)
+                    val field = fields[context.prefix] ?: fields.values
+                        .filter { it.name.startsWith(context.prefix, ignoreCase = true) }
+                        .singleOrNull()
+                    SingBoxSchemaContextHelp(
+                        path = context.path.toDisplayPath(),
+                        field = field?.name,
+                        documentation = field?.documentation,
+                    )
+                }
 
-            CursorKind.Value -> {
-                val valueSchema = navigator.valueSchema(context.path, context.discriminators)
-                SingBoxSchemaContextHelp(
-                    path = context.path.toDisplayPath(),
-                    field = (context.path.lastOrNull() as? JsonPathSegment.Property)?.name,
-                    documentation = valueSchema.documentation,
-                )
+                CursorKind.Value -> {
+                    val valueSchema = navigator.valueSchema(context.path, context.discriminators)
+                    SingBoxSchemaContextHelp(
+                        path = context.path.toDisplayPath(),
+                        field = (context.path.lastOrNull() as? JsonPathSegment.Property)?.name,
+                        documentation = valueSchema.documentation,
+                    )
+                }
             }
+            ensureActive()
+            result
         }
-    }
 
     private fun propertyItems(context: JsonCursorContext): List<CompletionItem> {
         val fields = navigator.properties(context.path, context.discriminators)
@@ -172,9 +174,6 @@ class SingBoxSchemaCompletionProvider internal constructor(
         return valueItems + templateItems
     }
 
-    private companion object {
-        const val SCHEMA_ASSET = "sing-box.schema.json"
-    }
 }
 
 private enum class CursorKind { Property, Value }
@@ -197,13 +196,14 @@ private data class JsonCursorContext(
 
 /** 容忍光标处未闭合字符串和未完成值的轻量 JSON 状态机。 */
 private object JsonCursorAnalyzer {
-    fun analyze(text: String, caret: TextPosition): JsonCursorContext? {
+    fun analyze(text: String, caret: TextPosition, checkCancellation: () -> Unit): JsonCursorContext? {
         val caretOffset = positionToOffset(text, caret)
         val stack = mutableListOf<JsonFrame>()
         val discriminators = linkedMapOf<List<JsonPathSegment>, String>()
         var index = 0
 
         while (index < caretOffset) {
+            checkCancellation()
             val char = text[index]
             if (char.isWhitespace()) {
                 index++
@@ -215,6 +215,7 @@ private object JsonCursorAnalyzer {
                 var cursor = contentStart
                 var escaped = false
                 while (cursor < caretOffset) {
+                    if (cursor and 1023 == 0) checkCancellation()
                     val current = text[cursor]
                     if (!escaped && current == '"') break
                     escaped = !escaped && current == '\\'
@@ -520,8 +521,11 @@ private data class SchemaTemplate(
 )
 
 /** 只解析本地 $ref；内置 Schema 不包含远程引用。 */
-private class SchemaNavigator(private val root: JsonObject, private val text: SchemaText) {
-    private val references = SingBoxSchemaReferenceResolver(root)
+private class SchemaNavigator(
+    private val root: JsonObject,
+    private val references: SingBoxSchemaReferenceResolver,
+    private val text: SchemaText,
+) {
     fun properties(
         path: List<JsonPathSegment>,
         discriminators: Map<List<JsonPathSegment>, String>,

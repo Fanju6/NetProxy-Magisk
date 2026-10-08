@@ -7,9 +7,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 
-internal fun editorSchema(source: String, documentId: String): String {
-    if (documentId != "inbound" && !documentId.startsWith("inbound/")) return source
-    val root = singBoxSchemaJson.parseToJsonElement(source).jsonObject
+internal fun editorSchema(root: JsonObject, documentId: String): JsonObject {
+    if (documentId != "inbound" && !documentId.startsWith("inbound/")) return root
     val definitions = root.getValue("\$defs").jsonObject
     val variants = definitions.getValue("Inbound").jsonObject.getValue("oneOf") as JsonArray
     fun nativeReference(type: String): JsonObject {
@@ -70,5 +69,5 @@ internal fun editorSchema(source: String, documentId: String): String {
         put("properties", JsonObject(properties.filterKeys { it in fields }))
         put("required", JsonArray(fields.map(::JsonPrimitive)))
         put("additionalProperties", false)
-    }.toString()
+    }
 }

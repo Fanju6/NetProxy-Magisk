@@ -44,7 +44,7 @@ class LocalizationResourcesTest {
         val schema = """{"type":"object","properties":{"port":{"type":"integer","minimum":1}},"additionalProperties":false}"""
         val expected = listOf("Value must not be less than 1", "数值不能小于 1", "Значение не должно быть меньше 1")
         for ((index, language) in listOf("", "zh", "ru").withIndex()) {
-            val validator = SingBoxSchemaValidator({ schema }, localizedSchemaText(language))
+            val validator = SingBoxSchemaValidator(testEditorSchema(schema), localizedSchemaText(language))
             assertEquals(SingBoxSchemaValidationResult.Valid, validator.validate("""{"port":443}"""))
             val result = validator.validate("""{"port":0}""") as SingBoxSchemaValidationResult.Invalid
             assertEquals(expected[index], result.issues.single().message)
@@ -64,7 +64,7 @@ class LocalizationResourcesTest {
         }"""
         for (language in listOf("", "zh", "ru")) {
             val text = localizedSchemaText(language)
-            val validator = SingBoxSchemaValidator({ schema }, text)
+            val validator = SingBoxSchemaValidator(testEditorSchema(schema), text)
             val result = validator.validate("{}") as SingBoxSchemaValidationResult.Invalid
             assertEquals(
                 listOf("first", "second", "third").map { text(R.string.schema_missing_field, it) },
@@ -80,7 +80,7 @@ class LocalizationResourcesTest {
         val document = """{"enabled": }"""
         for (language in listOf("", "zh", "ru")) {
             val text = localizedSchemaText(language)
-            val provider = SingBoxSchemaCompletionProvider({ schema }, text)
+            val provider = SingBoxSchemaCompletionProvider(testEditorSchema(schema), text)
             val result = requireNotNull(provider.complete(CompletionRequest(
                 text = document,
                 caret = TextPosition(0, document.indexOf('}')),

@@ -16,10 +16,14 @@ import java.util.Collections
 internal data class InboundSnapshot(
     val backend: String,
     val partitions: Map<String, ConfigSnapshot>,
-    val status: ServiceStatusSnapshot?
+    val status: ServiceStatusSnapshot?,
+    val native: Map<String, JsonObject> = partitions.filterKeys { it != "backend" }.mapValues { (key, snapshot) ->
+        inboundJson.parseToJsonElement(snapshot.content).jsonObject.objectAt(key)
+    }
 )
 
 internal data class InboundChoices(val interfaces: List<String>, val ruleSets: List<String>)
+internal data class InboundApplyResult(val revision: String, val status: ServiceStatusSnapshot)
 internal class InboundSwitchConfirmationRequired : IllegalStateException()
 
 internal fun ServiceStatusSnapshot.mayBeRunning(): Boolean =
@@ -38,7 +42,8 @@ internal class InboundRepository(
         val backend = inboundJson.parseToJsonElement(partitions.getValue("backend").content)
             .jsonObject.textAt("backend")
         check(backend in setOf("ebpf", "tun"))
-        return InboundSnapshot(backend, partitions, service.status())
+        val status = service.status()
+        return withContext(Dispatchers.Default) { InboundSnapshot(backend, partitions, status) }
     }
 
     suspend fun choices(): InboundChoices {
@@ -57,7 +62,7 @@ internal class InboundRepository(
         return service.status().requiresBackendSwitch(backend)
     }
 
-    suspend fun apply(target: String, content: String, revision: String, confirmBackendSwitch: Boolean = false): String {
+    suspend fun apply(target: String, content: String, revision: String, confirmBackendSwitch: Boolean = false): InboundApplyResult {
         require(revision.isNotBlank())
         val before = service.status()
         val requested = if (target in setOf("inbound", "inbound/backend")) {
@@ -76,7 +81,7 @@ internal class InboundRepository(
         ) {
             throw NetProxyCtlException("inbound.not_confirmed", "入站应用结果尚未确认，请重新加载")
         }
-        return result
+        return InboundApplyResult(result, after)
     }
 
     suspend fun status() = service.status()
