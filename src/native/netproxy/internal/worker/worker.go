@@ -465,11 +465,14 @@ func SyncEditedGroup(ctx context.Context, options Options, groupID string, now t
 
 func applyRuntimeSync(ctx context.Context, options Options, result subscription.Result, groupID string, logger *log.Logger, forceReload bool, now time.Time) (subscription.Result, error) {
 	runtimeState, runtimeAttempted, effectErr := applyUpdateEffects(ctx, options, result, groupID, forceReload)
+	// 已提交的同步状态必须落盘，取消只阻止运行时操作。
+	localContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
 	result.RuntimeSyncState = runtimeState
 	result.RuntimeSynced = runtimeState == subscription.RuntimeSyncApplied
 	if effectErr != nil {
 		if runtimeAttempted {
-			if err := subscription.RecordRuntimeSyncFailure(ctx, options.Root, result.GroupID, effectErr, now); err != nil {
+			if err := subscription.RecordRuntimeSyncFailure(localContext, options.Root, result.GroupID, effectErr, now); err != nil {
 				effectErr = errors.Join(effectErr, err)
 			}
 			result.RuntimeSyncPending = true
@@ -479,7 +482,7 @@ func applyRuntimeSync(ctx context.Context, options Options, result subscription.
 			return result, runtimeSyncFailure(result, effectErr)
 		}
 		pending := result.RuntimeSyncPending || runtimeState != subscription.RuntimeSyncNotRunning
-		if err := subscription.RecordPersistedEffectFailure(ctx, options.Root, result.GroupID, pending, effectErr, now); err != nil {
+		if err := subscription.RecordPersistedEffectFailure(localContext, options.Root, result.GroupID, pending, effectErr, now); err != nil {
 			effectErr = errors.Join(effectErr, err)
 		}
 		result.RuntimeSyncPending = pending
@@ -489,12 +492,12 @@ func applyRuntimeSync(ctx context.Context, options Options, result subscription.
 		return result, persistedEffectFailure(result, effectErr)
 	}
 	if runtimeState == subscription.RuntimeSyncNotRunning {
-		if err := subscription.RecordRuntimeSyncNotRunning(ctx, options.Root, result.GroupID, now); err != nil {
+		if err := subscription.RecordRuntimeSyncNotRunning(localContext, options.Root, result.GroupID, now); err != nil {
 			return result, persistedEffectFailure(result, err)
 		}
 	}
 	if runtimeState == subscription.RuntimeSyncApplied {
-		if err := subscription.RecordRuntimeSyncSuccess(ctx, options.Root, result.GroupID, now); err != nil {
+		if err := subscription.RecordRuntimeSyncSuccess(localContext, options.Root, result.GroupID, now); err != nil {
 			result.RuntimeSyncPending = true
 			return result, persistedEffectFailure(result, err)
 		}

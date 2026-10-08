@@ -26,8 +26,8 @@
 - Native 运行日志固定为 `[timestamp] [LEVEL] [component] [event] [result] [error_code] message`，成功或无错误码时写 `-`；消息必须在落盘前统一脱敏和限长。`logs show service` 的 `entries` 是 Android 展示事实源，不得回退到旧文本猜测。`logs show core` 保持 sing-box 文本，由客户端使用独立解析逻辑。
 - Catalog 是持久节点事实源：每组使用 `data/catalog/<group-id>/meta.json` 与 `provider.json`。`staging/` 只存事务临时文件，不得作为持久状态读取。
 - 节点选择只持久化 `ACTIVE_GROUP_ID` 与 `SELECTED_NODE_TAG`：空 tag 使用同组 Auto，非空 tag 手动选择。模式、节点引用和运行时标签由这两项派生，不读取旧选择字段或增加迁移逻辑。
-- 用户选节点按生命周期锁、配置文件锁串行保存和应用；启动与重载只同步已保存选择，不再次调用用户保存入口。普通 API 失败返回 `node.runtime_sync_failed` 并保留已保存选择，不重载兜底；Catalog 结构变化显式重载。
-- 本地节点变更与删除订阅先等待生命周期锁、恢复未完成配置事务，再提交 Catalog；提交后即使取消也要有界完成本地选择整理。提交后的本地或运行时失败分别返回 `node.persisted_effect_failed` / `node.runtime_sync_failed` 或对应的 `subscription.*`，并携带 `persisted=true`。Worker 通过 `SyncCatalog` 回调复用同一流程；pending 重试必须重新应用已保存选择，不能只验证 Provider 后清除 pending。
+- 用户选节点按生命周期锁、配置文件锁串行保存和应用；启动与重载只同步已保存选择，不再次调用用户保存入口。选择器 API 仅对临时通信或服务错误在总时限内重试，遵循请求取消；最终失败返回 `node.runtime_sync_failed` 并保留已保存选择，不重载兜底；Catalog 结构变化显式重载。
+- 本地节点变更与删除订阅先等待生命周期锁、恢复未完成配置事务，再提交 Catalog；提交后即使取消也要有界完成本地选择整理，Worker 同步必须在取锁前建立独立收尾上下文，并在锁内读取最新选择。订阅同步状态落盘同样有界且不受请求取消影响，运行时操作仍使用原请求上下文。提交后的本地或运行时失败分别返回 `node.persisted_effect_failed` / `node.runtime_sync_failed` 或对应的 `subscription.*`，并携带 `persisted=true`。Worker 通过 `SyncCatalog` 回调复用同一流程；pending 重试必须重新应用已保存选择，不能只验证 Provider 后清除 pending。
 - Provider 的运行时显示标签来自分组名称；名称冲突时才附加分组 ID。用户界面不得直接显示 UUID 代替可读名称。
 - 自动选择必须落到 `Auto/<group>`，Provider/selector 的默认值绝不能静默回退到 `direct`。
 - eBPF 与 TUN 都是 sing-box 的入站实现，不是独立代理核心。服务、模式和节点切换文案继续使用“服务”或“sing-box”，不要泛化为“eBPF 服务”或“TUN 服务”。

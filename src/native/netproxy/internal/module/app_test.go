@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -161,11 +162,14 @@ func TestCatalogSyncKeepsChoiceSavedWhileWaitingForConfigLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer editor.Release()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		_, _, err := SyncCatalog(t.Context(), options, "default", false)
+		_, _, err := SyncCatalog(ctx, options, "default", false)
 		done <- err
 	}()
+	cancel()
 	if err := editor.Update((moduleconfig.Selection{ActiveGroupID: "default", SelectedNodeTag: "NODE"}).Updates(), nil); err != nil {
 		t.Fatal(err)
 	}
@@ -222,6 +226,100 @@ func TestCatalogSyncFinishesSavedChoiceAfterCancellation(t *testing.T) {
 	module, err := moduleconfig.LoadModule(options.ModuleConfig)
 	if err != nil || module.ActiveGroupID != "default" || module.SelectedNodeTag != "" {
 		t.Fatalf("保留了已删除节点的引用: %+v %v", module, err)
+	}
+}
+
+func TestWorkerCancellationAfterCommitNormalizesSelection(t *testing.T) {
+	options := selectionFixture(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"outbounds":[{"type":"socks","tag":"NEW","server":"127.0.0.1","server_port":1080}]}`))
+	}))
+	defer server.Close()
+	const groupID = "subscription"
+	if err := catalog.InitializeGroup(t.Context(), catalog.GroupOptions{
+		Root: options.CatalogRoot, GroupID: groupID, Name: "fixture", Type: "subscription",
+		URL: server.URL, UpdateViaProxy: "never",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := catalog.AppendNode(t.Context(), catalog.MutationOptions{
+		GroupDir: filepath.Join(options.CatalogRoot, groupID), GroupID: groupID, Type: "subscription",
+		Input: "socks://127.0.0.1:1080#OLD",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SelectNode(t.Context(), options, groupID+"/OLD", ""); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	workerOptions := workerOptions(options)
+	workerOptions.SyncCatalog = func(ctx context.Context, group string, structural bool) (string, bool, error) {
+		cancel()
+		return SyncCatalog(ctx, options, group, structural)
+	}
+	result, err := worker.UpdateGroup(ctx, workerOptions, groupID, time.Now(), nil)
+	if err != nil || !result.Persisted || result.RuntimeSynced || result.RuntimeSyncPending || result.RuntimeSyncState != subscription.RuntimeSyncNotRunning {
+		t.Fatalf("提交后取消未完成本地状态整理: %+v %v", result, err)
+	}
+	module, err := moduleconfig.LoadModule(options.ModuleConfig)
+	if err != nil || module.ActiveGroupID != groupID || module.SelectedNodeTag != "" || module.WiFiSSIDList != "office" {
+		t.Fatalf("提交后取消保留了失效选择或覆盖网络设置: %+v %v", module, err)
+	}
+	metadata, err := catalog.PrivateMetadata(t.Context(), options.CatalogRoot, groupID)
+	if err != nil || metadata.RuntimeSyncState != subscription.RuntimeSyncNotRunning || metadata.LastError != "" {
+		t.Fatalf("提交后取消未落盘正确的订阅同步状态: %+v %v", metadata, err)
+	}
+	document, err := catalog.GroupProvider(t.Context(), options.CatalogRoot, groupID)
+	if err != nil || len(document.Outbounds) != 1 || document.Outbounds[0].Tag != "NEW" {
+		t.Fatalf("取消回滚了已提交 Provider: %+v %v", document, err)
+	}
+}
+
+func TestCatalogSyncCancelledSkipsRuntime(t *testing.T) {
+	options := selectionFixture(t)
+	if _, err := SelectNode(t.Context(), options, "default/NODE", ""); err != nil {
+		t.Fatal(err)
+	}
+	options, saved, release, err := lockCatalogChange(t.Context(), options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	if _, err := catalog.RemoveNode(t.Context(), catalog.MutationOptions{GroupDir: filepath.Join(options.CatalogRoot, "default"), GroupID: "default", Tag: "NODE"}); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("取消后仍调用了运行时 API")
+		_, _ = w.Write(make([]byte, 5))
+	}))
+	defer server.Close()
+	options.ServiceAddress = server.URL
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, attempted, err := syncCatalogChange(ctx, options, saved, "default", false, true)
+	if !errors.Is(err, context.Canceled) || !attempted {
+		t.Fatalf("运行时同步未保留原请求取消: %v %v", attempted, err)
+	}
+	module, err := moduleconfig.LoadModule(options.ModuleConfig)
+	if err != nil || module.SelectedNodeTag != "" {
+		t.Fatalf("运行时取消阻止了持久选择整理: %+v %v", module, err)
+	}
+}
+
+func TestCatalogSyncCleanupDeadlineIncludesLockWait(t *testing.T) {
+	options := selectionFixture(t)
+	lock, err := acquireLifecycleLock(options.StateFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.release()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	started := time.Now()
+	_, attempted, err := SyncCatalog(ctx, options, "default", false)
+	if !errors.Is(err, context.DeadlineExceeded) || attempted || time.Since(started) > 7*time.Second {
+		t.Fatalf("收尾等待锁没有遵循独立时限: attempted=%v elapsed=%v err=%v", attempted, time.Since(started), err)
 	}
 }
 
@@ -287,7 +385,7 @@ func TestSubscriptionPending304ReappliesSavedAutoSelection(t *testing.T) {
 				t.Errorf("重试未应用持久化的同组 Auto: %x %v", body, err)
 			}
 			if selectCalls == 1 {
-				http.Error(w, "selection rejected", http.StatusServiceUnavailable)
+				http.Error(w, "selection rejected", http.StatusBadRequest)
 				return
 			}
 			_, _ = w.Write(make([]byte, 5))
@@ -364,7 +462,7 @@ func TestSyncSelectionDoesNotSaveOrReload(t *testing.T) {
 				t.Errorf("同步调用了非选择接口: %s", r.URL.Path)
 			}
 			if fail {
-				http.Error(w, "selection rejected", http.StatusServiceUnavailable)
+				http.Error(w, "selection rejected", http.StatusBadRequest)
 				return
 			}
 			w.Header().Set("Content-Type", "application/grpc-web+proto")
@@ -384,6 +482,103 @@ func TestSyncSelectionDoesNotSaveOrReload(t *testing.T) {
 	}
 	if _, err := os.Stat(options.StateFile); !os.IsNotExist(err) {
 		t.Fatalf("API 失败触发了服务操作: %v", err)
+	}
+}
+
+func TestSyncRuntimeSelectorRetriesOnlyTemporaryFailures(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		httpStatus int
+		grpcStatus int
+		retry      bool
+		failAt     int32
+	}{
+		{"http-unavailable", http.StatusServiceUnavailable, 0, true, 1},
+		{"proxy-http-unavailable", http.StatusServiceUnavailable, 0, true, 2},
+		{"grpc-unavailable", 0, 14, true, 1},
+		{"request-timeout", 0, 0, true, 1},
+		{"http-unauthorized", http.StatusUnauthorized, 0, false, 1},
+		{"http-not-found", http.StatusNotFound, 0, false, 1},
+		{"grpc-not-found", 0, 5, false, 1},
+		{"grpc-permission-denied", 0, 7, false, 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				if r.URL.Path != "/daemon.StartedService/SelectOutbound" {
+					t.Errorf("重试触发了选择以外的 API: %s", r.URL.Path)
+				}
+				if calls.Add(1) == test.failAt {
+					switch {
+					case test.httpStatus != 0:
+						http.Error(w, "selection unavailable", test.httpStatus)
+					case test.grpcStatus != 0:
+						payload := []byte(fmt.Sprintf("grpc-status: %d\r\ngrpc-message: selection unavailable\r\n", test.grpcStatus))
+						frame := make([]byte, 5)
+						frame[0] = 0x80
+						binary.BigEndian.PutUint32(frame[1:], uint32(len(payload)))
+						_, _ = w.Write(append(frame, payload...))
+					default:
+						<-r.Context().Done()
+					}
+					return
+				}
+				_, _ = w.Write(make([]byte, 5))
+			}))
+			defer server.Close()
+			options := Options{ServiceAddress: server.URL, RequestTimeout: 3 * time.Second}
+			err := syncRuntimeSelector(t.Context(), options, "Select/fixture", "fixture/NODE")
+			wantCalls := test.failAt
+			if test.retry {
+				wantCalls += 2
+			}
+			if (err == nil) != test.retry || calls.Load() != wantCalls {
+				t.Fatalf("临时错误重试或永久错误停止异常: calls=%d err=%v", calls.Load(), err)
+			}
+		})
+	}
+}
+
+func TestSyncRuntimeSelectorHonorsTimeoutAndCancellation(t *testing.T) {
+	for _, scenario := range []string{"request-deadline", "configured-timeout", "cancel-before-request", "cancel-during-request"} {
+		t.Run(scenario, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			options := Options{RequestTimeout: 6 * time.Second}
+			wantErr := context.DeadlineExceeded
+			wantCalls := int32(1)
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				calls.Add(1)
+				if scenario == "cancel-during-request" {
+					cancel()
+				}
+				http.Error(w, "temporary failure", http.StatusServiceUnavailable)
+			}))
+			defer server.Close()
+			options.ServiceAddress = server.URL
+			switch scenario {
+			case "request-deadline":
+				ctx, cancel = context.WithTimeout(ctx, 100*time.Millisecond)
+				defer cancel()
+			case "configured-timeout":
+				options.RequestTimeout = 100 * time.Millisecond
+			case "cancel-before-request":
+				cancel()
+				wantErr, wantCalls = context.Canceled, 0
+			case "cancel-during-request":
+				wantErr = context.Canceled
+			}
+			started := time.Now()
+			err := syncRuntimeSelector(ctx, options, "Auto/fixture", "")
+			if !errors.Is(err, wantErr) || calls.Load() != wantCalls || time.Since(started) > time.Second {
+				t.Fatalf("重试未遵循总时限或请求取消: calls=%d elapsed=%v err=%v", calls.Load(), time.Since(started), err)
+			}
+			if scenario == "configured-timeout" && !strings.Contains(err.Error(), "HTTP 503") {
+				t.Fatalf("超时未保留最后一次 API 失败原因: %v", err)
+			}
+		})
 	}
 }
 

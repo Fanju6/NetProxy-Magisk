@@ -609,6 +609,48 @@ func TestUpdateGroupRuntimeSyncFailureReturnsStructuredErrorAndKeepsProvider(t *
 	}
 }
 
+func TestUpdateGroupCancellationAfterCommitRecordsFailure(t *testing.T) {
+	for _, runtimeAttempted := range []bool{false, true} {
+		t.Run(fmt.Sprint(runtimeAttempted), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(`{"outbounds":[{"type":"socks","tag":"NEW","server":"127.0.0.1","server_port":1080}]}`))
+			}))
+			defer server.Close()
+			now := time.Unix(1_700_425_000, 0)
+			root, moduleConf := prepareWorkerFixture(t, server.URL, now)
+			options := newTestOptions(root)
+			options.ModuleConf = moduleConf
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			options.SyncCatalog = func(ctx context.Context, _ string, _ bool) (string, bool, error) {
+				cancel()
+				return subscription.RuntimeSyncFailed, runtimeAttempted, ctx.Err()
+			}
+			result, err := UpdateGroup(ctx, options, "fixture", now, nil)
+			wantCode, wantMessage := "subscription.persisted_effect_failed", subscription.PersistedEffectFailureMessage
+			if runtimeAttempted {
+				wantCode, wantMessage = "subscription.runtime_sync_failed", subscription.RuntimeSyncFailureMessage
+			}
+			var syncErr *subscription.Error
+			if !result.Persisted || result.RuntimeSynced || !errors.As(err, &syncErr) || syncErr.Code != wantCode {
+				t.Fatalf("取消后丢失已提交状态或错误分类: %+v %v", result, err)
+			}
+			metadata, err := catalog.PrivateMetadata(t.Context(), root, "fixture")
+			if err != nil || metadata.RuntimeSyncPending != runtimeAttempted || !strings.Contains(metadata.LastError, wantMessage) || metadata.LastSuccessAt != now.UTC().Format(time.RFC3339) {
+				t.Fatalf("取消后未落盘失败状态或覆盖了下载成功时间: %+v %v", metadata, err)
+			}
+			history, err := subscription.LoadHistory(filepath.Join(root, "fixture", "history.jsonl"))
+			if err != nil || !historyContains(history, wantCode) {
+				t.Fatalf("取消后未落盘失败历史: %v %v", history, err)
+			}
+			document, err := provider.Load(t.Context(), filepath.Join(root, "fixture", "provider.json"))
+			if err != nil || len(document.Outbounds) != 1 || document.Outbounds[0].Tag != "NEW" {
+				t.Fatalf("取消后丢失已提交 Provider: %+v %v", document, err)
+			}
+		})
+	}
+}
+
 func TestUpdateGroupRuntimeVerificationFailureReturnsStructuredError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		_, _ = writer.Write([]byte(`{"outbounds":[{"type":"socks","tag":"verification-failure","server":"127.0.0.1","server_port":1080}]}`))

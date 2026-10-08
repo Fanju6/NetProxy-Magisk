@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -36,6 +37,16 @@ type Client struct {
 	baseURL    string
 	secret     string
 	httpClient *http.Client
+}
+
+type retryableError struct{ error }
+
+// IsRetryable 只识别临时通信和服务错误，不重试鉴权、选择目标或协议错误。
+func IsRetryable(err error) bool {
+	_, apiError := errors.AsType[*retryableError](err)
+	_, networkError := errors.AsType[*net.OpError](err)
+	return !errors.Is(err, context.Canceled) && (apiError || networkError || errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF))
 }
 
 type StartedAt struct {
@@ -292,7 +303,13 @@ func (c *Client) doRequest(ctx context.Context, method string, payload []byte, f
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
-		return nil, fmt.Errorf("Service API HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
+		err := fmt.Errorf("Service API HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
+		switch response.StatusCode {
+		case http.StatusRequestTimeout, http.StatusTooManyRequests, http.StatusInternalServerError,
+			http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+			return nil, &retryableError{err}
+		}
+		return nil, err
 	}
 
 	var firstData []byte
@@ -357,7 +374,12 @@ func parseTrailer(content []byte) error {
 		if statusMessage == "" {
 			statusMessage = "unknown error"
 		}
-		return fmt.Errorf("gRPC status %d: %s", statusCode, statusMessage)
+		err := fmt.Errorf("gRPC status %d: %s", statusCode, statusMessage)
+		switch statusCode {
+		case 4, 8, 10, 14: // DeadlineExceeded、ResourceExhausted、Aborted、Unavailable。
+			return &retryableError{err}
+		}
+		return err
 	}
 	return nil
 }

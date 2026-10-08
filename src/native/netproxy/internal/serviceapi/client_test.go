@@ -1,9 +1,12 @@
 package serviceapi
 
 import (
+	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -13,6 +16,54 @@ import (
 
 	"google.golang.org/protobuf/encoding/protowire"
 )
+
+func TestIsRetryable(t *testing.T) {
+	for _, test := range []struct {
+		err  error
+		want bool
+	}{
+		{nil, false},
+		{context.Canceled, false},
+		{context.DeadlineExceeded, true},
+		{io.EOF, true},
+		{io.ErrUnexpectedEOF, true},
+		{&net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection refused")}, true},
+		{&net.OpError{Op: "read", Net: "tcp", Err: context.Canceled}, false},
+		{errors.New("invalid protobuf payload"), false},
+	} {
+		if got := IsRetryable(test.err); got != test.want {
+			t.Errorf("IsRetryable(%v)=%v，预期 %v", test.err, got, test.want)
+		}
+	}
+	for _, code := range []int{0, 3, 4, 5, 7, 8, 10, 12, 14, 16} {
+		err := parseTrailer([]byte(fmt.Sprintf("grpc-status: %d\r\ngrpc-message: fixture\r\n", code)))
+		want := code == 4 || code == 8 || code == 10 || code == 14
+		if got := IsRetryable(fmt.Errorf("wrapped: %w", err)); got != want {
+			t.Errorf("gRPC status %d 重试分类错误: %v", code, err)
+		}
+	}
+}
+
+func TestHTTPRetryableStatus(t *testing.T) {
+	for _, code := range []int{400, 401, 403, 404, 408, 429, 500, 501, 502, 503, 504} {
+		t.Run(fmt.Sprint(code), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, "fixture", code)
+			}))
+			defer server.Close()
+			client, err := New(server.URL, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer client.Close()
+			err = client.Select(t.Context(), "Proxy", "Auto/fixture")
+			want := code == 408 || code == 429 || code == 500 || code == 502 || code == 503 || code == 504
+			if err == nil || IsRetryable(err) != want || !strings.HasPrefix(err.Error(), fmt.Sprintf("Service API HTTP %d:", code)) {
+				t.Fatalf("HTTP %d 重试分类或错误消息异常: %v", code, err)
+			}
+		})
+	}
+}
 
 func TestReadyChecksServiceAPIVersion(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

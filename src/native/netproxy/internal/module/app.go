@@ -279,7 +279,24 @@ func syncRuntimeSelector(ctx context.Context, options Options, active, inner str
 	defer client.Close()
 	requestContext, cancel := context.WithTimeout(ctx, minTimeout(options.RequestTimeout, 6*time.Second))
 	defer cancel()
-	return client.SelectGroup(requestContext, active, inner)
+	for {
+		if err := requestContext.Err(); err != nil {
+			return err
+		}
+		attemptContext, cancelAttempt := context.WithTimeout(requestContext, time.Second)
+		err := client.SelectGroup(attemptContext, active, inner)
+		cancelAttempt()
+		if err == nil || !serviceapi.IsRetryable(err) {
+			return err
+		}
+		timer := time.NewTimer(200 * time.Millisecond)
+		select {
+		case <-requestContext.Done():
+			timer.Stop()
+			return errors.Join(err, requestContext.Err())
+		case <-timer.C:
+		}
+	}
 }
 
 // UpdateApp 在同一入站文件锁内修改最新应用策略，不应用到运行实例。
@@ -533,18 +550,24 @@ func lockCatalogChange(ctx context.Context, options Options) (Options, modulecon
 
 // SyncCatalog 将 Worker 的持久化副作用串行化到服务生命周期，不在下载阶段持锁。
 func SyncCatalog(ctx context.Context, options Options, groupID string, structureChanged bool) (string, bool, error) {
-	options, saved, release, err := lockCatalogChange(ctx, options)
+	localContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	options, saved, release, err := lockCatalogChange(localContext, options)
 	if err != nil {
 		return "", false, err
 	}
 	defer release()
-	return syncCatalogChange(ctx, options, saved, groupID, structureChanged, service.ProcessRunning(options.SingBoxPath))
+	return applyCatalogChange(ctx, localContext, options, saved, groupID, structureChanged, service.ProcessRunning(options.SingBoxPath))
 }
 
 func syncCatalogChange(ctx context.Context, options Options, saved moduleconfig.Selection, preferredGroup string, structureChanged, running bool) (string, bool, error) {
 	// Catalog 已提交，取消只能停止运行时请求，不能留下指向已删除节点的持久选择。
 	localContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
+	return applyCatalogChange(ctx, localContext, options, saved, preferredGroup, structureChanged, running)
+}
+
+func applyCatalogChange(ctx, localContext context.Context, options Options, saved moduleconfig.Selection, preferredGroup string, structureChanged, running bool) (string, bool, error) {
 	selection, runtimeTag, err := catalog.NormalizeSelection(localContext, options.CatalogRoot, saved, preferredGroup)
 	if err != nil {
 		return "", false, err
