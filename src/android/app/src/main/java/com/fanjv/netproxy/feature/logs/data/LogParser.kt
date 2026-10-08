@@ -41,7 +41,10 @@ data class LogItem(
     val outboundFlow: OutboundFlow? = null,
     val event: String = "",
     val result: String = "",
-    val errorCode: String = ""
+    val errorCode: String = "",
+    val connectionId: String? = null,
+    val latency: String? = null,
+    val latencyMs: Int? = null
 )
 
 /** 将模块服务和内核日志转换为统一展示模型。 */
@@ -53,11 +56,17 @@ internal object LogParser {
 
     // 格式 2：INFO[0000] routing: message 或 INFO[0000] [12345] routing: message
     private val kernelLogPattern2 =
-        Pattern.compile("""^([A-Z]+)\[\d+]\s+(?:\[\d+]\s+)?([^:]+):\s+(.*)$""")
+        Pattern.compile("""^([A-Z]+)\[\d+]\s+([^:]+):\s+(.*)$""")
 
     // 格式 3：+0800 2026-05-31 16:12:12 INFO network: message
     private val kernelLogPattern3 =
         Pattern.compile("""^([+-]\d{4})\s+([\d\-:\s]+)\s+([A-Z]+)\s+([^:]+):\s+(.*)$""")
+
+    private val connectionPattern =
+        Pattern.compile("""^\[(\d+)(?:\s+([^]\s]+))?\s*]\s*(.*)$""")
+
+    private val latencyPattern =
+        Pattern.compile("""^(\d+(?:\.\d+)?)(ms|s)$""", Pattern.CASE_INSENSITIVE)
 
     // 路由日志：routed connection from X to Y [outbound]
     private val routingPattern =
@@ -96,40 +105,70 @@ internal object LogParser {
 
     private fun parseKernelLine(line: String): LogItem {
         val m3 = kernelLogPattern3.matcher(line)
-        return if (m3.matches()) {
-            val timestamp = formatDateTimeTimestamp(m3.group(2).orEmpty().trim())
-            val levelStr = m3.group(3).orEmpty()
-            val tag = m3.group(4).orEmpty()
-            val message = m3.group(5).orEmpty()
-            val level = parseLogLevel(levelStr)
-            val flow = parseOutboundFlow(message) ?: parseDetailOutboundFlow(message, tag)
-            LogItem(line, timestamp, level, tag, message, flow)
-        } else {
-            val m1 = kernelLogPattern1.matcher(line)
-            if (m1.matches()) {
-                val timestamp = formatIsoTimestamp(m1.group(1).orEmpty())
-                val levelStr = m1.group(2).orEmpty()
-                val tag = m1.group(3).orEmpty()
-                val message = m1.group(4).orEmpty()
-                val level = parseLogLevel(levelStr)
-                val flow =
-                    parseOutboundFlow(message) ?: parseDetailOutboundFlow(message, tag)
-                LogItem(line, timestamp, level, tag, message, flow)
-            } else {
-                val m2 = kernelLogPattern2.matcher(line)
-                if (m2.matches()) {
-                    val levelStr = m2.group(1).orEmpty()
-                    val tag = m2.group(2).orEmpty()
-                    val message = m2.group(3).orEmpty()
-                    val level = parseLogLevel(levelStr)
-                    val flow =
-                        parseOutboundFlow(message) ?: parseDetailOutboundFlow(message, tag)
-                    LogItem(line, "", level, tag, message, flow)
-                } else {
-                    LogItem(line, "", LogLevel.UNKNOWN, "Kernel", line)
-                }
-            }
+        if (m3.matches()) {
+            return kernelItem(
+                line,
+                formatDateTimeTimestamp(m3.group(2).orEmpty().trim()),
+                m3.group(3).orEmpty(),
+                m3.group(4).orEmpty(),
+                m3.group(5).orEmpty(),
+            )
         }
+        val m1 = kernelLogPattern1.matcher(line)
+        if (m1.matches()) {
+            return kernelItem(
+                line,
+                formatIsoTimestamp(m1.group(1).orEmpty()),
+                m1.group(2).orEmpty(),
+                m1.group(3).orEmpty(),
+                m1.group(4).orEmpty(),
+            )
+        }
+        val m2 = kernelLogPattern2.matcher(line)
+        if (m2.matches()) {
+            return kernelItem(
+                line, "", m2.group(1).orEmpty(), m2.group(2).orEmpty(), m2.group(3).orEmpty(),
+            )
+        }
+        return kernelItem(line, "", "", "Kernel", line)
+    }
+
+    private fun kernelItem(
+        rawLine: String,
+        timestamp: String,
+        level: String,
+        tag: String,
+        message: String,
+    ): LogItem {
+        val tagMatch = connectionPattern.matcher(tag)
+        val messageMatch = connectionPattern.matcher(message)
+        val connection = when {
+            tagMatch.matches() -> tagMatch
+            messageMatch.matches() -> messageMatch
+            else -> null
+        }
+        val cleanTag = if (connection === tagMatch) tagMatch.group(3).orEmpty() else tag
+        val cleanMessage = if (connection === messageMatch) messageMatch.group(3).orEmpty() else message
+        val latency = connection?.group(2)?.takeIf(String::isNotEmpty)
+        return LogItem(
+            rawLine = rawLine,
+            timestamp = timestamp,
+            level = parseLogLevel(level),
+            tag = cleanTag,
+            message = cleanMessage,
+            outboundFlow = parseOutboundFlow(cleanMessage) ?: parseDetailOutboundFlow(cleanMessage, cleanTag),
+            connectionId = connection?.group(1),
+            latency = latency,
+            latencyMs = latency?.let(::parseLatencyMs),
+        )
+    }
+
+    private fun parseLatencyMs(latency: String): Int? {
+        val match = latencyPattern.matcher(latency)
+        if (!match.matches()) return null
+        val value = match.group(1)?.toDoubleOrNull() ?: return null
+        val ms = if (match.group(2).equals("s", ignoreCase = true)) value * 1_000 else value
+        return ms.takeIf { it.isFinite() }?.toInt()
     }
 
     private fun Map<String, JsonElement>.requiredString(key: String): String =

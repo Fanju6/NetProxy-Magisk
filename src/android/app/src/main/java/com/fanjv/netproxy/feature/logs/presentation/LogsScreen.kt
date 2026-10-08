@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -60,15 +61,19 @@ import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BackIconButton
 import com.fanjv.netproxy.core.ui.component.BlurredBar
+import com.fanjv.netproxy.core.ui.component.CardItem
 import com.fanjv.netproxy.core.ui.component.deferredTopPadding
+import com.fanjv.netproxy.core.ui.component.groupedCardItems
 import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import com.fanjv.netproxy.core.ui.theme.LocalEnableBlur
+import com.fanjv.netproxy.core.ui.theme.isInDarkTheme
 import com.fanjv.netproxy.feature.logs.data.LogItem
 import com.fanjv.netproxy.feature.logs.data.LogLevel
 import com.fanjv.netproxy.feature.logs.data.LogType
 import com.fanjv.netproxy.feature.logs.data.OutboundFlow
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card
@@ -159,24 +164,27 @@ internal fun LogsScreen(
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
             try {
-                val logFile = withContext(Dispatchers.IO) {
-                    viewModel.createReport()
-                }
                 withContext(Dispatchers.IO) {
-                    val descriptor = context.contentResolver.openFileDescriptor(uri, "rwt")
-                        ?: error(saveLocationFailed)
-                    val copiedBytes =
-                        ParcelFileDescriptor.AutoCloseOutputStream(descriptor).use { output ->
-                            logFile.inputStream().use { input ->
-                                input.copyTo(output).also { output.flush() }
+                    val logFile = viewModel.createReport()
+                    try {
+                        val descriptor = context.contentResolver.openFileDescriptor(uri, "rwt")
+                            ?: error(saveLocationFailed)
+                        val copiedBytes =
+                            ParcelFileDescriptor.AutoCloseOutputStream(descriptor).use { output ->
+                                logFile.inputStream().use { input ->
+                                    input.copyTo(output).also { output.flush() }
+                                }
                             }
+                        check(copiedBytes == logFile.length() && copiedBytes > 0L) {
+                            saveEmptyFailed
                         }
-                    check(copiedBytes == logFile.length() && copiedBytes > 0L) {
-                        saveEmptyFailed
+                    } finally {
+                        logFile.delete()
                     }
                 }
                 showMessage(logSavedMessage)
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 showMessage(e.message ?: saveFailed, isError = true)
             }
         }
@@ -231,6 +239,7 @@ internal fun LogsScreen(
                                             )
                                         )
                                     } catch (e: Exception) {
+                                        if (e is CancellationException) throw e
                                         showMessage(
                                             e.message ?: shareFailedDetail.format(shareFailed),
                                             isError = true
@@ -313,9 +322,7 @@ internal fun LogsScreen(
                                             onSelectedIndexChange = {
                                                 scope.launch {
                                                     if (logs.isNotEmpty()) {
-                                                        val targetIndex =
-                                                            if (isCardView) logs.size - 1 else 0
-                                                        listState.animateScrollToItem(targetIndex)
+                                                        listState.animateScrollToItem(logs.lastIndex)
                                                     }
                                                 }
                                                 showMoreMenu = false
@@ -413,9 +420,7 @@ internal fun LogsScreen(
                             LogItemCard(item = item, type = currentType)
                         }
                     } else {
-                        item {
-                            RawLogsCard(logs = logs)
-                        }
+                        rawLogItems(logs = logs)
                     }
                 }
 
@@ -429,28 +434,6 @@ internal fun LogsScreen(
 
 @Composable
 fun LogItemCard(item: LogItem, type: LogType) {
-    var connId: String? = null
-    var latency: String? = null
-    var cleanTag = item.tag
-    var cleanMessage = item.message
-
-    if (type == LogType.KERNEL) {
-        val tagMatch = "^\\[(\\d+)(?:\\s+([^]\\s]+))?\\s*]\\s*(.*)$".toRegex().find(item.tag)
-        if (tagMatch != null) {
-            connId = tagMatch.groupValues[1]
-            latency = tagMatch.groupValues[2].takeIf { it.isNotEmpty() }
-            cleanTag = tagMatch.groupValues[3]
-        } else {
-            val msgMatch =
-                "^\\[(\\d+)(?:\\s+([^]\\s]+))?\\s*]\\s*(.*)$".toRegex().find(item.message)
-            if (msgMatch != null) {
-                connId = msgMatch.groupValues[1]
-                latency = msgMatch.groupValues[2].takeIf { it.isNotEmpty() }
-                cleanMessage = msgMatch.groupValues[3]
-            }
-        }
-    }
-
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -468,13 +451,13 @@ fun LogItemCard(item: LogItem, type: LogType) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     LogLevelBadge(level = item.level)
-                    if (cleanTag.isNotEmpty()) {
+                    if (item.tag.isNotEmpty()) {
                         Spacer(modifier = Modifier.width(8.dp))
                         if (type == LogType.SERVICE) {
-                            NativeComponentBadge(component = cleanTag)
+                            NativeComponentBadge(component = item.tag)
                         } else {
                             Text(
-                                text = cleanTag,
+                                text = item.tag,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
@@ -516,15 +499,15 @@ fun LogItemCard(item: LogItem, type: LogType) {
                 NativeErrorCodeBadge(errorCode = item.errorCode)
             }
 
-            if (connId != null) {
+            if (item.connectionId != null) {
                 Spacer(modifier = Modifier.height(6.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    ConnectionBadge(id = connId)
-                    if (latency != null) {
-                        LatencyBadge(latency = latency)
+                    LogBadge(text = "#${item.connectionId}", tone = LogBadgeTone.CONNECTION)
+                    if (item.latency != null) {
+                        LatencyBadge(latency = item.latency, latencyMs = item.latencyMs)
                     }
                 }
             }
@@ -535,7 +518,7 @@ fun LogItemCard(item: LogItem, type: LogType) {
                 OutboundFlowView(flow = item.outboundFlow)
             } else {
                 Text(
-                    text = cleanMessage,
+                    text = item.message,
                     fontSize = 13.sp,
                     color = MiuixTheme.colorScheme.onSurface,
                     lineHeight = 18.sp
@@ -547,7 +530,6 @@ fun LogItemCard(item: LogItem, type: LogType) {
 
 @Composable
 fun NativeComponentBadge(component: String) {
-    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     val label = when (component) {
         "service" -> stringResource(R.string.log_component_service)
         "worker" -> stringResource(R.string.log_component_worker)
@@ -560,16 +542,11 @@ fun NativeComponentBadge(component: String) {
         "module" -> stringResource(R.string.log_component_module)
         else -> component
     }
-    NativeBadge(
-        text = label,
-        backgroundColor = if (isDark) Color(0xFF283593).copy(alpha = 0.3f) else Color(0xFFE8EAF6),
-        textColor = if (isDark) Color(0xFF9FA8DA) else Color(0xFF3949AB)
-    )
+    LogBadge(text = label, tone = LogBadgeTone.COMPONENT)
 }
 
 @Composable
 fun NativeEventBadge(event: String) {
-    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     val label = when (event) {
         "service.start" -> stringResource(R.string.log_event_start)
         "service.stop" -> stringResource(R.string.log_event_stop)
@@ -599,82 +576,77 @@ fun NativeEventBadge(event: String) {
         "module.update" -> stringResource(R.string.log_event_module_update)
         else -> event
     }
-    NativeBadge(
-        text = label,
-        backgroundColor = if (isDark) Color(0xFF37474F).copy(alpha = 0.3f) else Color(0xFFECEFF1),
-        textColor = if (isDark) Color(0xFFB0BEC5) else Color(0xFF546E7A)
-    )
+    LogBadge(text = label, tone = LogBadgeTone.NEUTRAL)
 }
 
 @Composable
 fun NativeResultBadge(result: String) {
-    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
-    val (label, backgroundColor, textColor) = when (result) {
-        "success", "recovered" -> if (isDark) {
-            Triple(stringResource(R.string.log_result_success), Color(0xFF1B5E20).copy(alpha = 0.3f), Color(0xFF81C784))
-        } else {
-            Triple(stringResource(R.string.log_result_success), Color(0xFFE8F5E9), Color(0xFF2E7D32))
-        }
-
-        "failed", "forced" -> if (isDark) {
-            Triple(stringResource(R.string.log_result_failed), Color(0xFFB71C1C).copy(alpha = 0.3f), Color(0xFFE57373))
-        } else {
-            Triple(stringResource(R.string.log_result_failed), Color(0xFFFFEBEE), Color(0xFFC62828))
-        }
-
-        "persisted", "fallback" -> if (isDark) {
-            Triple(
-                if (result == "persisted") stringResource(R.string.log_result_persisted) else stringResource(R.string.log_result_fallback),
-                Color(0xFFE65100).copy(alpha = 0.3f),
-                Color(0xFFFFB74D)
-            )
-        } else {
-            Triple(
-                if (result == "persisted") stringResource(R.string.log_result_persisted) else stringResource(R.string.log_result_fallback),
-                Color(0xFFFFF3E0),
-                Color(0xFFE65100)
-            )
-        }
-
-        "started", "already-running" -> if (isDark) {
-            Triple(
-                if (result == "started") stringResource(R.string.log_result_started) else stringResource(R.string.log_result_running),
-                Color(0xFF0D47A1).copy(alpha = 0.3f),
-                Color(0xFF64B5F6)
-            )
-        } else {
-            Triple(
-                if (result == "started") stringResource(R.string.log_result_started) else stringResource(R.string.log_result_running),
-                Color(0xFFE3F2FD),
-                Color(0xFF1976D2)
-            )
-        }
-
-        "stopped", "skipped" -> if (isDark) {
-            Triple(
-                if (result == "stopped") stringResource(R.string.log_result_stopped) else stringResource(R.string.log_result_skipped),
-                Color(0xFF37474F).copy(alpha = 0.3f),
-                Color(0xFFB0BEC5)
-            )
-        } else {
-            Triple(
-                if (result == "stopped") stringResource(R.string.log_result_stopped) else stringResource(R.string.log_result_skipped),
-                Color(0xFFF5F5F5),
-                Color(0xFF616161)
-            )
-        }
-
-        else -> if (isDark) {
-            Triple(result, Color(0xFF37474F).copy(alpha = 0.3f), Color(0xFFB0BEC5))
-        } else {
-            Triple(result, Color(0xFFF5F5F5), Color(0xFF616161))
-        }
+    val (label, tone) = when (result) {
+        "success", "recovered" -> stringResource(R.string.log_result_success) to LogBadgeTone.SUCCESS
+        "failed", "forced" -> stringResource(R.string.log_result_failed) to LogBadgeTone.ERROR
+        "persisted" -> stringResource(R.string.log_result_persisted) to LogBadgeTone.WARNING
+        "fallback" -> stringResource(R.string.log_result_fallback) to LogBadgeTone.WARNING
+        "started" -> stringResource(R.string.log_result_started) to LogBadgeTone.INFO
+        "already-running" -> stringResource(R.string.log_result_running) to LogBadgeTone.INFO
+        "stopped" -> stringResource(R.string.log_result_stopped) to LogBadgeTone.NEUTRAL
+        "skipped" -> stringResource(R.string.log_result_skipped) to LogBadgeTone.NEUTRAL
+        else -> result to LogBadgeTone.NEUTRAL
     }
-    NativeBadge(text = label, backgroundColor = backgroundColor, textColor = textColor)
+    LogBadge(text = label, tone = tone)
+}
+
+private enum class LogBadgeTone {
+    INFO, SUCCESS, WARNING, ERROR, NEUTRAL, COMPONENT, CONNECTION, PRIMARY
 }
 
 @Composable
-private fun NativeBadge(text: String, backgroundColor: Color, textColor: Color) {
+private fun logBadgeColors(tone: LogBadgeTone): Pair<Color, Color> {
+    val isDark = isInDarkTheme()
+    return when (tone) {
+        LogBadgeTone.INFO -> if (isDark) {
+            Color(0xFF0D47A1).copy(alpha = 0.3f) to Color(0xFF64B5F6)
+        } else {
+            Color(0xFFE3F2FD) to Color(0xFF1976D2)
+        }
+        LogBadgeTone.SUCCESS -> if (isDark) {
+            Color(0xFF1B5E20).copy(alpha = 0.3f) to Color(0xFF81C784)
+        } else {
+            Color(0xFFE8F5E9) to Color(0xFF2E7D32)
+        }
+        LogBadgeTone.WARNING -> if (isDark) {
+            Color(0xFFE65100).copy(alpha = 0.3f) to Color(0xFFFFB74D)
+        } else {
+            Color(0xFFFFF3E0) to Color(0xFFE65100)
+        }
+        LogBadgeTone.ERROR -> if (isDark) {
+            Color(0xFFB71C1C).copy(alpha = 0.3f) to Color(0xFFE57373)
+        } else {
+            Color(0xFFFFEBEE) to Color(0xFFC62828)
+        }
+        LogBadgeTone.NEUTRAL -> if (isDark) {
+            Color(0xFF37474F).copy(alpha = 0.3f) to Color(0xFFB0BEC5)
+        } else {
+            Color(0xFFF5F5F5) to Color(0xFF616161)
+        }
+        LogBadgeTone.COMPONENT -> if (isDark) {
+            Color(0xFF283593).copy(alpha = 0.3f) to Color(0xFF9FA8DA)
+        } else {
+            Color(0xFFE8EAF6) to Color(0xFF3949AB)
+        }
+        LogBadgeTone.CONNECTION -> if (isDark) {
+            Color(0xFF4A148C).copy(alpha = 0.3f) to Color(0xFFBA68C8)
+        } else {
+            Color(0xFFF3E5F5) to Color(0xFF7B1FA2)
+        }
+        LogBadgeTone.PRIMARY -> MiuixTheme.colorScheme.primary.let { color ->
+            color.copy(alpha = if (isDark) 0.3f else 0.1f) to color
+        }
+    }
+}
+
+@Composable
+private fun LogBadge(text: String, tone: LogBadgeTone) {
+    val (backgroundColor, textColor) = logBadgeColors(tone)
     Box(
         modifier = Modifier
             .background(backgroundColor, RoundedCornerShape(4.dp))
@@ -693,120 +665,30 @@ private fun NativeBadge(text: String, backgroundColor: Color, textColor: Color) 
 
 @Composable
 private fun NativeErrorCodeBadge(errorCode: String) {
-    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
-    NativeBadge(
-        text = errorCode,
-        backgroundColor = if (isDark) Color(0xFF4A1414).copy(alpha = 0.45f) else Color(0xFFFFEBEE),
-        textColor = if (isDark) Color(0xFFEF9A9A) else Color(0xFFC62828)
-    )
+    LogBadge(text = errorCode, tone = LogBadgeTone.ERROR)
 }
 
 @Composable
-fun ConnectionBadge(id: String) {
-    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
-    val backgroundColor = if (isDark) Color(0xFF4A148C).copy(alpha = 0.3f) else Color(0xFFF3E5F5)
-    val textColor = if (isDark) Color(0xFFBA68C8) else Color(0xFF7B1FA2)
-
-    Box(
-        modifier = Modifier
-            .background(backgroundColor, RoundedCornerShape(4.dp))
-            .padding(horizontal = 6.dp, vertical = 2.dp)
-    ) {
-        Text(
-            text = "#$id",
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            color = textColor
-        )
+private fun LatencyBadge(latency: String, latencyMs: Int?) {
+    val tone = when {
+        latencyMs == null -> LogBadgeTone.NEUTRAL
+        latencyMs < 800 -> LogBadgeTone.SUCCESS
+        latencyMs < 1500 -> LogBadgeTone.WARNING
+        else -> LogBadgeTone.ERROR
     }
-}
-
-@Composable
-fun LatencyBadge(latency: String) {
-    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
-    val ms = parseLatencyMs(latency)
-    val (backgroundColor, textColor) = when {
-        ms < 800 -> if (isDark) Color(0xFF1B5E20).copy(alpha = 0.3f) to Color(0xFF81C784) else Color(
-            0xFFE8F5E9
-        ) to Color(0xFF2E7D32)
-
-        ms < 1500 -> if (isDark) Color(0xFFE65100).copy(alpha = 0.3f) to Color(0xFFFFB74D) else Color(
-            0xFFFFF3E0
-        ) to Color(0xFFE65100)
-
-        else -> if (isDark) Color(0xFFB71C1C).copy(alpha = 0.3f) to Color(0xFFE57373) else Color(
-            0xFFFFEBEE
-        ) to Color(0xFFC62828)
-    }
-
-    Box(
-        modifier = Modifier
-            .background(backgroundColor, RoundedCornerShape(4.dp))
-            .padding(horizontal = 6.dp, vertical = 2.dp)
-    ) {
-        Text(
-            text = latency,
-            style = MiuixTheme.textStyles.footnote2.copy(
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold
-            ),
-            color = textColor
-        )
-    }
-}
-
-fun parseLatencyMs(duration: String): Int {
-    return try {
-        val numberPart = duration.filter { it.isDigit() || it == '.' }
-        if (duration.endsWith("ms", ignoreCase = true)) {
-            numberPart.toDoubleOrNull()?.toInt() ?: 0
-        } else if (duration.endsWith("s", ignoreCase = true)) {
-            ((numberPart.toDoubleOrNull() ?: 0.0) * 1000).toInt()
-        } else {
-            0
-        }
-    } catch (_: Exception) {
-        0
-    }
+    LogBadge(text = latency, tone = tone)
 }
 
 @Composable
 fun LogLevelBadge(level: LogLevel) {
-    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
-    val (backgroundColor, textColor) = when (level) {
-        LogLevel.INFO -> if (isDark) Color(0xFF0D47A1).copy(alpha = 0.3f) to Color(0xFF64B5F6) else Color(
-            0xFFE3F2FD
-        ) to Color(0xFF1976D2)
-
-        LogLevel.WARN -> if (isDark) Color(0xFFE65100).copy(alpha = 0.3f) to Color(0xFFFFB74D) else Color(
-            0xFFFFF3E0
-        ) to Color(0xFFE65100)
-
-        LogLevel.ERROR -> if (isDark) Color(0xFFB71C1C).copy(alpha = 0.3f) to Color(0xFFE57373) else Color(
-            0xFFFFEBEE
-        ) to Color(0xFFC62828)
-
-        LogLevel.DEBUG -> if (isDark) Color(0xFF1B5E20).copy(alpha = 0.3f) to Color(0xFF81C784) else Color(
-            0xFFE8F5E9
-        ) to Color(0xFF2E7D32)
-
-        LogLevel.UNKNOWN -> if (isDark) Color(0xFF37474F).copy(alpha = 0.3f) to Color(0xFFB0BEC5) else Color(
-            0xFFF5F5F5
-        ) to Color(0xFF616161)
+    val tone = when (level) {
+        LogLevel.INFO -> LogBadgeTone.INFO
+        LogLevel.WARN -> LogBadgeTone.WARNING
+        LogLevel.ERROR -> LogBadgeTone.ERROR
+        LogLevel.DEBUG -> LogBadgeTone.SUCCESS
+        LogLevel.UNKNOWN -> LogBadgeTone.NEUTRAL
     }
-
-    Box(
-        modifier = Modifier
-            .background(backgroundColor, RoundedCornerShape(4.dp))
-            .padding(horizontal = 6.dp, vertical = 2.dp)
-    ) {
-        Text(
-            text = level.name,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            color = textColor
-        )
-    }
+    LogBadge(text = level.name, tone = tone)
 }
 
 @Composable
@@ -872,49 +754,26 @@ fun OutboundFlowView(flow: OutboundFlow) {
 
         Spacer(modifier = Modifier.height(6.dp))
 
-        val isDark = androidx.compose.foundation.isSystemInDarkTheme()
-        val outboundColor = when (flow.outbound.lowercase()) {
-            "direct" -> if (isDark) Color(0xFF81C784) else Color(0xFF2E7D32)
-            "block", "reject" -> if (isDark) Color(0xFFE57373) else Color(0xFFC62828)
-            else -> MiuixTheme.colorScheme.primary
-        }
-        val outboundBg = when (flow.outbound.lowercase()) {
-            "direct" -> if (isDark) Color(0xFF1B5E20).copy(alpha = 0.3f) else Color(0xFFE8F5E9)
-            "block", "reject" -> if (isDark) Color(0xFFB71C1C).copy(alpha = 0.3f) else Color(
-                0xFFFFEBEE
-            )
-
-            else -> MiuixTheme.colorScheme.primary.copy(alpha = if (isDark) 0.3f else 0.1f)
+        val outboundTone = when (flow.outbound.lowercase()) {
+            "direct" -> LogBadgeTone.SUCCESS
+            "block", "reject" -> LogBadgeTone.ERROR
+            else -> LogBadgeTone.PRIMARY
         }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.End
         ) {
-            Box(
-                modifier = Modifier
-                    .background(outboundBg, RoundedCornerShape(4.dp))
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
-            ) {
-                Text(
-                    text = flow.outbound.uppercase(),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = outboundColor
-                )
-            }
+            LogBadge(text = flow.outbound.uppercase(), tone = outboundTone)
         }
     }
 }
 
-@Composable
-fun RawLogsCard(logs: List<LogItem>) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        insideMargin = PaddingValues(12.dp)
-    ) {
-        Column {
-            logs.forEach { item ->
+private fun LazyListScope.rawLogItems(logs: List<LogItem>) {
+    groupedCardItems(
+        keyPrefix = "raw-log",
+        items = logs.mapIndexed { index, item ->
+            CardItem(key = index.toString()) {
                 Text(
                     text = item.rawLine,
                     fontFamily = FontFamily.Monospace,
@@ -922,9 +781,14 @@ fun RawLogsCard(logs: List<LogItem>) {
                     color = MiuixTheme.colorScheme.onSurface,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 1.dp)
+                        .padding(
+                            start = 12.dp,
+                            end = 12.dp,
+                            top = if (index == 0) 13.dp else 1.dp,
+                            bottom = if (index == logs.lastIndex) 13.dp else 1.dp,
+                        )
                 )
             }
         }
-    }
+    )
 }
