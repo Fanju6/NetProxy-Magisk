@@ -34,6 +34,21 @@ func testReporter(t testing.TB) *Reporter {
 		token: "phc_fixture", wake: make(chan struct{}, 1), client: newUploadClient()}
 }
 
+func TestStartFailureStages(t *testing.T) {
+	for _, stage := range []string{"launch", "cgroup", "state", "ready", "selection", "mode"} {
+		t.Run(stage, func(t *testing.T) {
+			r := testReporter(t)
+			if err := r.RecordStart(time.Now(), time.Second, stage, false); err != nil {
+				t.Fatal(err)
+			}
+			pending := loadState(t, r).Pending
+			if len(pending) != 1 || pending[0].Properties.FailureStage != stage || pending[0].Properties.Result != "failure" {
+				t.Fatalf("启动阶段未保留: %+v", pending)
+			}
+		})
+	}
+}
+
 func TestUploadClientUsesSharedDNSAndCancellation(t *testing.T) {
 	client := newUploadClient()
 	transport := client.Transport.(*http.Transport)

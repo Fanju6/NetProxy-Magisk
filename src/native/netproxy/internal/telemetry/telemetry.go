@@ -299,7 +299,7 @@ func (r *Reporter) RecordStart(now time.Time, duration time.Duration, stage stri
 	if r == nil {
 		return nil
 	}
-	if !slices.Contains([]string{"launch", "cgroup", "state", "ready", "selection"}, stage) {
+	if !slices.Contains([]string{"launch", "cgroup", "state", "ready", "selection", "mode"}, stage) {
 		return errors.New("无效的统计启动阶段")
 	}
 	result := "failure"
