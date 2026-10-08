@@ -122,11 +122,9 @@ func Subscription(ctx context.Context, request Request) (Response, error) {
 		transport.Proxy = http.ProxyURL(proxyURL)
 	}
 	client := &http.Client{
-		Transport: transport,
-		Timeout:   request.Timeout,
-		CheckRedirect: func(redirectRequest *http.Request, via []*http.Request) error {
-			return checkSubscriptionRedirect(redirectRequest, via)
-		},
+		Transport:     transport,
+		Timeout:       request.Timeout,
+		CheckRedirect: checkSubscriptionRedirect,
 	}
 	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodGet, request.URL, nil)
 	if err != nil {
@@ -209,6 +207,9 @@ func checkSubscriptionRedirect(request *http.Request, via []*http.Request) error
 	if !isHTTPSubscriptionScheme(request.URL.Scheme) {
 		return &RedirectError{Reason: "重定向目标协议不受支持"}
 	}
+	if len(via) >= 10 {
+		return &RedirectError{Reason: "重定向次数超过限制"}
+	}
 	if len(via) == 0 {
 		return nil
 	}
@@ -219,8 +220,12 @@ func checkSubscriptionRedirect(request *http.Request, via []*http.Request) error
 	if strings.EqualFold(previous.URL.Scheme, "https") && strings.EqualFold(request.URL.Scheme, "http") {
 		return &RedirectError{Reason: "禁止 HTTPS 降级到 HTTP"}
 	}
-	if !sameSubscriptionOrigin(previous.URL, request.URL) {
-		stripRedirectHeaders(request)
+	// net/http 每一跳都可能从初始请求复制 Header，跨域后的同源跳转也必须清除。
+	for _, source := range via {
+		if source == nil || !sameSubscriptionOrigin(source.URL, request.URL) {
+			stripRedirectHeaders(request)
+			break
+		}
 	}
 	return nil
 }
