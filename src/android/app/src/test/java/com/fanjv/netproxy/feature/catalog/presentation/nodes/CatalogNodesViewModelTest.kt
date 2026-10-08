@@ -105,6 +105,31 @@ class CatalogNodesViewModelTest {
         assertEquals(1, transport.calls.count { it[1] == "use" })
     }
 
+    @Test fun autoSelectionKeepsResolvedNodeUntilConfirmedSnapshotReplacesIt() = runBlocking {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var reads = 0
+        val initial = """{"selection":{"active_group_id":"default","selector_mode":"urltest","selected":"Auto/default","active_group_runtime_tag":"Local","runtime_selected":"Local/fast"}}"""
+        val transport = Transport { args ->
+            if (args[1] == "use") "{}"
+            else if (++reads == 1) initial
+            else {
+                entered.complete(Unit)
+                withTimeout(5_000) { release.await() }
+                initial.replace("Local/fast", "Local/faster")
+            }
+        }
+        val vm = model(this, transport)
+        vm.refresh(); settle()
+        vm.useAuto("default")
+        withTimeout(5_000) { entered.await() }
+        assertEquals("Local/fast", vm.state.value.selection.runtimeSelected)
+        assertEquals("Local", vm.state.value.selection.activeGroupRuntimeTag)
+        release.complete(Unit); settle()
+        assertEquals("Local/faster", vm.state.value.selection.runtimeSelected)
+        assertEquals(2, reads)
+    }
+
     @Test fun cancelledSelectionDoesNotPublishPageFailure() = runBlocking {
         val transport = Transport { throw CancellationException("page closed") }
         val vm = model(this, transport)

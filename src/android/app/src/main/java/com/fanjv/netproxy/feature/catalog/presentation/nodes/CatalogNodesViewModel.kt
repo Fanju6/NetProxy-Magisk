@@ -107,27 +107,25 @@ internal class CatalogNodesViewModel(
         _state.update { it.copy(selectedGroupId = id) }
     }
 
-    fun useAuto(groupId: String) = runOperation("select") {
+    fun useAuto(groupId: String) = runOperation("select", refreshAfter = false) {
         repository.selectAuto(groupId)
+        val snapshot = repository.snapshot()
         currentCoroutineContext().ensureActive()
         _state.update {
-            it.copy(
-                selection = CurrentNodeSelection(groupId, "urltest", "Auto/$groupId"),
-                selectedGroupId = groupId
-            )
+            it.withSnapshot(snapshot).copy(selectedGroupId = groupId)
         }
+        loaded = true
         UiText.Resource(R.string.node_switched_auto)
     }
 
-    fun useNode(groupId: String, tag: String) = runOperation("select") {
+    fun useNode(groupId: String, tag: String) = runOperation("select", refreshAfter = false) {
         repository.select("$groupId/$tag")
+        val snapshot = repository.snapshot()
         currentCoroutineContext().ensureActive()
         _state.update {
-            it.copy(
-                selection = CurrentNodeSelection(groupId, "manual", "$groupId/$tag"),
-                selectedGroupId = groupId
-            )
+            it.withSnapshot(snapshot).copy(selectedGroupId = groupId)
         }
+        loaded = true
         UiText.Resource(R.string.node_switched, listOf(tag))
     }
 
@@ -387,7 +385,7 @@ internal class CatalogNodesViewModel(
                             noticeId = it.noticeId + 1
                         )
                     }
-                    if ((error as? NetProxyCtlException)?.persisted == true) refresh(silent = true)
+                    if (name == "select" || (error as? NetProxyCtlException)?.persisted == true) refresh(silent = true)
                 }
         }
     }
