@@ -5,11 +5,17 @@ import androidx.lifecycle.viewModelScope
 import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.ui.UiText
 import com.fanjv.netproxy.core.ui.toUiText
-import com.fanjv.netproxy.core.ui.userMessage
 import com.fanjv.netproxy.feature.catalog.data.NodeRepository
 import com.fanjv.netproxy.feature.catalog.data.SubscriptionRepository
 import com.fanjv.netproxy.feature.catalog.model.CatalogNodeGroup
 import com.fanjv.netproxy.feature.catalog.model.SubscriptionHistoryEntry
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,37 +37,47 @@ internal data class SubscriptionDetailsUiState(
     val exportedNodeLinkId: Long = 0
 )
 
-/** 管理单个订阅的节点摘要、历史和详情页操作。 */
 internal class SubscriptionDetailsViewModel(
     private val repository: SubscriptionRepository,
-    private val nodeRepository: NodeRepository
-) : ViewModel() {
+    private val nodeRepository: NodeRepository,
+    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+) : ViewModel(scope) {
     private val _state = MutableStateFlow(SubscriptionDetailsUiState())
     val state: StateFlow<SubscriptionDetailsUiState> = _state.asStateFlow()
+    private var loadJob: Job? = null
+    private var operationJob: Job? = null
+    private var generation = 0L
+    private var currentId: String? = null
 
     fun load(id: String) {
-        viewModelScope.launch {
-            _state.update { it.copy(loading = true, error = UiText.Empty, details = null) }
-            runCatching {
+        if (_state.value.operation.isNotEmpty() && currentId == id) return
+        if (currentId != id) operationJob?.cancel()
+        loadJob?.cancel()
+        val request = ++generation
+        if (currentId != id) _state.value = SubscriptionDetailsUiState()
+        currentId = id
+        _state.update { it.copy(loading = true) }
+        loadJob = viewModelScope.launch {
+            try {
                 val details = repository.details(id)
-                val history = if (details.group.type == "subscription") {
-                    repository.history(id)
-                } else {
-                    emptyList()
-                }
-                details to history
-            }.onSuccess { (details, history) ->
-                _state.update {
+                val history = if (details.group.type == "subscription") repository.history(id) else emptyList()
+                currentCoroutineContext().ensureActive()
+                if (request == generation) _state.update {
                     it.copy(details = details, history = history, loading = false)
                 }
-            }.onFailure { error ->
-                _state.update {
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                currentCoroutineContext().ensureActive()
+                if (request == generation) _state.update {
                     it.copy(
                         loading = false,
-                        error = error.userMessage().toUiText(),
+                        error = if (it.error == UiText.Empty) error.toUiText() else it.error,
                         noticeId = it.noticeId + 1
                     )
                 }
+            } finally {
+                if (request == generation) _state.update { it.copy(loading = false) }
             }
         }
     }
@@ -78,74 +94,51 @@ internal class SubscriptionDetailsViewModel(
 
     fun remove(id: String, onRemoved: () -> Unit) = runOperation("remove", id) {
         repository.remove(id)
+        currentCoroutineContext().ensureActive()
         onRemoved()
         UiText.Resource(R.string.subscription_deleted)
     }
 
     fun testNode(groupId: String, tag: String) {
-        if (_state.value.operation.isNotEmpty()) return
         val nodeRef = "$groupId/$tag"
-        viewModelScope.launch {
-            _state.update {
-                it.copy(
-                    operation = "delay",
-                    error = UiText.Empty,
-                    latencies = it.latencies + (nodeRef to "testing")
-                )
-            }
-            runCatching { nodeRepository.testDelay(nodeRef) }
-                .onSuccess { result ->
-                    val delay = result.groups.asSequence()
-                        .flatMap { it.items.asSequence() }
-                        .mapNotNull { it.urlTestDelay?.takeIf { value -> value > 0 } }
-                        .firstOrNull()
-                    _state.update {
-                        it.copy(
-                            operation = "",
-                            latencies = it.latencies + (nodeRef to (delay?.toString()
-                                ?: "timeout")),
-                            notice = if (delay != null) {
-                                UiText.Resource(R.string.node_delay, listOf(delay))
-                            } else {
-                                UiText.Resource(R.string.node_delay_timeout)
-                            },
-                            noticeId = it.noticeId + 1
-                        )
-                    }
+        runOperation("delay", groupId, refresh = false) {
+            _state.update { it.copy(latencies = it.latencies + (nodeRef to "testing")) }
+            try {
+                val result = nodeRepository.testDelay(nodeRef)
+                currentCoroutineContext().ensureActive()
+                val delay = result.groups.asSequence()
+                    .flatMap { it.items.asSequence() }
+                    .mapNotNull { it.urlTestDelay?.takeIf { value -> value > 0 } }
+                    .firstOrNull()
+                _state.update { it.copy(latencies = it.latencies + (nodeRef to (delay?.toString() ?: "timeout"))) }
+                if (delay != null) UiText.Resource(R.string.node_delay, listOf(delay))
+                else UiText.Resource(R.string.node_delay_timeout)
+            } finally {
+                _state.update {
+                    if (it.latencies[nodeRef] == "testing") it.copy(latencies = it.latencies - nodeRef) else it
                 }
-                .onFailure(::publishError)
+            }
         }
     }
 
-    fun editNode(groupId: String, tag: String) {
-        if (_state.value.operation.isNotEmpty()) return
+    fun editNode(groupId: String, tag: String) = runOperation("export", groupId, refresh = false) {
         val nodeRef = "$groupId/$tag"
-        viewModelScope.launch {
-            _state.update { it.copy(operation = "export", error = UiText.Empty) }
-            runCatching { nodeRepository.export(nodeRef) }
-                .onSuccess { exported ->
-                    _state.update {
-                        it.copy(
-                            operation = "",
-                            editingNodeRef = nodeRef,
-                            editingNodeLink = exported.link
-                        )
-                    }
-                }
-                .onFailure(::publishError)
-        }
+        val exported = nodeRepository.export(nodeRef)
+        currentCoroutineContext().ensureActive()
+        _state.update { it.copy(editingNodeRef = nodeRef, editingNodeLink = exported.link) }
+        UiText.Empty
     }
 
     fun saveEditedNode(link: String) {
         val nodeRef = _state.value.editingNodeRef
         if (nodeRef.isBlank()) return
-        val groupId = nodeRef.substringBefore('/')
         if (link.isBlank()) {
             publishError(UiText.Resource(R.string.node_link_empty))
             return
         }
-        runNodeOperation("edit", groupId) {
+        runOperation("edit", nodeRef.substringBefore('/')) {
             nodeRepository.edit(nodeRef, link.trim())
+            currentCoroutineContext().ensureActive()
             _state.update { it.copy(editingNodeRef = "", editingNodeLink = "") }
             UiText.Resource(R.string.node_updated)
         }
@@ -156,35 +149,20 @@ internal class SubscriptionDetailsViewModel(
         _state.update { it.copy(editingNodeRef = "", editingNodeLink = "") }
     }
 
-    fun exportNode(groupId: String, tag: String) {
-        if (_state.value.operation.isNotEmpty()) return
-        viewModelScope.launch {
-            _state.update { it.copy(operation = "export", error = UiText.Empty) }
-            runCatching { nodeRepository.export("$groupId/$tag") }
-                .onSuccess { exported ->
-                    _state.update {
-                        it.copy(
-                            operation = "",
-                            exportedNodeLink = exported.link,
-                            exportedNodeLinkId = it.exportedNodeLinkId + 1
-                        )
-                    }
-                }
-                .onFailure(::publishError)
-        }
+    fun exportNode(groupId: String, tag: String) = runOperation("export", groupId, refresh = false) {
+        val exported = nodeRepository.export("$groupId/$tag")
+        currentCoroutineContext().ensureActive()
+        _state.update { it.copy(exportedNodeLink = exported.link, exportedNodeLinkId = it.exportedNodeLinkId + 1) }
+        UiText.Empty
     }
 
     fun nodeLinkCopied() {
         _state.update {
-            it.copy(
-                exportedNodeLink = "",
-                notice = UiText.Resource(R.string.node_link_copied),
-                noticeId = it.noticeId + 1
-            )
+            it.copy(exportedNodeLink = "", notice = UiText.Resource(R.string.node_link_copied), noticeId = it.noticeId + 1)
         }
     }
 
-    fun removeNode(groupId: String, tag: String) = runNodeOperation("remove-node", groupId) {
+    fun removeNode(groupId: String, tag: String) = runOperation("remove-node", groupId) {
         nodeRepository.remove("$groupId/$tag")
         UiText.Resource(R.string.node_deleted)
     }
@@ -193,63 +171,47 @@ internal class SubscriptionDetailsViewModel(
         _state.update { it.copy(notice = UiText.Empty, error = UiText.Empty) }
     }
 
-    private fun publishError(error: Throwable) {
-        publishError(error.userMessage().toUiText())
-    }
-
     private fun publishError(message: UiText) {
-        _state.update {
-            it.copy(
-                operation = "",
-                error = message,
-                noticeId = it.noticeId + 1
-            )
-        }
-    }
-
-    private fun runNodeOperation(
-        operation: String,
-        groupId: String,
-        action: suspend () -> UiText
-    ) {
-        if (_state.value.operation.isNotEmpty()) return
-        viewModelScope.launch {
-            _state.update { it.copy(operation = operation, error = UiText.Empty) }
-            runCatching { action() }
-                .onSuccess { message ->
-                    _state.update {
-                        it.copy(operation = "", notice = message, noticeId = it.noticeId + 1)
-                    }
-                    load(groupId)
-                }
-                .onFailure(::publishError)
-        }
+        _state.update { it.copy(error = message, noticeId = it.noticeId + 1) }
     }
 
     private fun runOperation(
         operation: String,
         id: String,
+        refresh: Boolean = true,
         action: suspend () -> UiText
     ) {
-        if (_state.value.operation.isNotEmpty()) return
-        viewModelScope.launch {
-            _state.update { it.copy(operation = operation, error = UiText.Empty) }
-            runCatching { action() }
-                .onSuccess { message ->
-                    _state.update {
-                        it.copy(operation = "", notice = message, noticeId = it.noticeId + 1)
-                    }
-                    if (operation != "remove") load(id)
+        if (_state.value.operation.isNotEmpty() || (currentId != null && currentId != id)) return
+        loadJob?.cancel()
+        currentId = id
+        val request = ++generation
+        _state.update { it.copy(operation = operation, loading = false, error = UiText.Empty) }
+        operationJob = viewModelScope.launch {
+            var shouldRefresh = false
+            try {
+                val message = action()
+                currentCoroutineContext().ensureActive()
+                if (request == generation) {
+                    _state.update { it.copy(notice = message, noticeId = it.noticeId + if (message != UiText.Empty) 1 else 0) }
+                    shouldRefresh = refresh && operation != "remove"
+                    if (operation == "remove") _state.update { it.copy(details = null, history = emptyList()) }
                 }
-                .onFailure { error ->
-                    _state.update {
-                        it.copy(
-                            operation = "",
-                            error = error.userMessage().toUiText(),
-                            noticeId = it.noticeId + 1
-                        )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                currentCoroutineContext().ensureActive()
+                if (request == generation) {
+                    publishError(error.toUiText())
+                    shouldRefresh = error.subscriptionPersisted()
+                    if (shouldRefresh && operation == "remove") {
+                        _state.update { it.copy(details = null, history = emptyList()) }
+                        shouldRefresh = false
                     }
                 }
+            } finally {
+                if (request == generation) _state.update { it.copy(operation = "") }
+            }
+            if (shouldRefresh && request == generation) load(id)
         }
     }
 }

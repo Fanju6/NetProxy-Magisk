@@ -9,66 +9,55 @@ import com.fanjv.netproxy.core.ui.UiTextException
 import com.fanjv.netproxy.core.ui.toUiText
 import com.fanjv.netproxy.feature.catalog.data.SubscriptionRepository
 import com.fanjv.netproxy.feature.catalog.model.SubscriptionDraft
-import com.fanjv.netproxy.feature.catalog.model.SubscriptionEditorState
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.jsonObject
 
-internal data class SubscriptionEditorUiState(
-    val id: String = "",
-    val original: SubscriptionEditorState? = null,
-    val draft: SubscriptionDraft = SubscriptionDraft(name = "", url = ""),
-    val headersText: String = "",
-    val loading: Boolean = false,
-    val saving: Boolean = false,
-    val saved: Boolean = false,
-    val persisted: Boolean = false,
-    val runtimeSyncState: String = "",
-    val runtimeSyncPending: Boolean = false,
-    val error: UiText = UiText.Empty,
-    val noticeId: Long = 0
-)
-
-/** 管理订阅新增和编辑事务，避免编辑状态泄漏到列表或详情页面。 */
 internal class SubscriptionEditorViewModel(
-    private val repository: SubscriptionRepository
-) : ViewModel() {
+    private val repository: SubscriptionRepository,
+    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+) : ViewModel(scope) {
     private val _state = MutableStateFlow(SubscriptionEditorUiState())
     val state: StateFlow<SubscriptionEditorUiState> = _state.asStateFlow()
+    private var loadJob: Job? = null
+    private var generation = 0L
+    private var routeId: String? = null
 
     fun load(id: String) {
-        if (id.isBlank()) {
-            _state.value = SubscriptionEditorUiState()
-            return
-        }
-        viewModelScope.launch {
-            _state.update { it.copy(loading = true, saved = false, error = UiText.Empty) }
-            runCatching { repository.readEditor(id) }
-                .onSuccess { editor ->
-                    _state.value = SubscriptionEditorUiState(
-                        id = id,
-                        original = editor,
-                        draft = editor.toDraft(),
-                        headersText = editor.customHeaders.entries.joinToString("\n") { (key, value) ->
-                            "$key: ${value.jsonPrimitive.content}"
-                        }
-                    )
+        if (_state.value.saving) return
+        if (routeId == id && (id.isBlank() || _state.value.original != null || loadJob?.isActive == true)) return
+        loadJob?.cancel()
+        val request = ++generation
+        if (routeId != id) _state.value = SubscriptionEditorUiState(id = id)
+        routeId = id
+        if (id.isBlank()) return
+        val snapshot = _state.value
+        _state.update { it.copy(loading = true, saved = false) }
+        loadJob = viewModelScope.launch {
+            try {
+                val editor = repository.readEditor(id)
+                currentCoroutineContext().ensureActive()
+                if (request == generation) _state.update { it.rebase(snapshot, editor) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                currentCoroutineContext().ensureActive()
+                if (request == generation) _state.update {
+                    it.copy(loading = false, error = error.toUiText(), noticeId = it.noticeId + 1)
                 }
-                .onFailure { error ->
-                    _state.update {
-                        it.copy(
-                            loading = false,
-                            error = error.toUiText(),
-                            noticeId = it.noticeId + 1
-                        )
-                    }
-                }
+            } finally {
+                if (request == generation) _state.update { it.copy(loading = false) }
+            }
         }
     }
 
@@ -81,50 +70,72 @@ internal class SubscriptionEditorViewModel(
     }
 
     fun save() {
-        if (_state.value.saving) return
+        if (_state.value.saving || _state.value.loading) return
+        loadJob?.cancel()
+        val request = ++generation
+        var snapshot = _state.value
+        _state.update { it.copy(saving = true, saved = false) }
         viewModelScope.launch {
-            val snapshot = _state.value
-            val draft = runCatching {
-                validate(snapshot.draft, snapshot.headersText, isNew = snapshot.original == null)
-            }
-                .getOrElse { error ->
-                    _state.update {
-                        it.copy(
-                            error = error.toUiText(),
-                            noticeId = it.noticeId + 1
-                        )
-                    }
-                    return@launch
+            var commandError: Exception? = null
+            try {
+                if (snapshot.baselineReadRequired || (snapshot.id.isNotBlank() && snapshot.original == null)) {
+                    if (snapshot.id.isBlank()) throw UiTextException(UiText.Resource(R.string.subscription_update_failed))
+                    val editor = repository.readEditor(snapshot.id)
+                    currentCoroutineContext().ensureActive()
+                    if (request != generation) return@launch
+                    snapshot = snapshot.recoverBaseline(editor)
+                    _state.update { it.recoverBaseline(editor) }
                 }
-            _state.update { it.copy(saving = true, error = UiText.Empty, saved = false) }
-            runCatching {
-                val original = snapshot.original
-                if (original == null) repository.add(draft)
-                else repository.edit(snapshot.id, original, draft)
-            }.onSuccess { data ->
-                val runtime = data.runtimeSyncOutcome()
+                val draft = validate(snapshot.draft, snapshot.headersText, isNew = snapshot.id.isBlank())
+                _state.update { it.copy(error = UiText.Empty) }
+                val data: JsonElement = try {
+                    if (snapshot.id.isBlank()) {
+                        check(!snapshot.persisted)
+                        repository.add(draft)
+                    } else {
+                        repository.edit(snapshot.id, requireNotNull(snapshot.original), draft)
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    if (!error.subscriptionPersisted()) throw error
+                    commandError = error
+                    (error as NetProxyCtlException).data
+                }
+                currentCoroutineContext().ensureActive()
+                if (request != generation) return@launch
+                val runtime = data.subscriptionOutcome()
+                val committedId = runtime.groupId.ifBlank { snapshot.id }
                 _state.update {
                     it.copy(
-                        saving = false,
-                        draft = draft,
-                        saved = true,
-                        persisted = runtime.persisted,
+                        id = committedId,
+                        baselineReadRequired = true,
+                        persisted = runtime.persisted || it.persisted,
                         runtimeSyncState = runtime.state,
-                        runtimeSyncPending = runtime.pending
+                        runtimeSyncPending = runtime.pending,
+                        error = commandError?.toUiText() ?: UiText.Empty,
+                        noticeId = it.noticeId + if (commandError != null) 1 else 0
                     )
                 }
-            }.onFailure { error ->
-                val runtime = (error as? NetProxyCtlException)?.data?.runtimeSyncOutcome()
-                _state.update {
+                if (committedId.isBlank()) throw UiTextException(UiText.Resource(R.string.subscription_update_failed))
+                val editor = repository.readEditor(committedId)
+                currentCoroutineContext().ensureActive()
+                if (request == generation) _state.update {
+                    val unchanged = it.sameInput(snapshot)
+                    it.rebase(snapshot, editor).copy(saved = commandError == null && unchanged)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                currentCoroutineContext().ensureActive()
+                if (request == generation) _state.update {
                     it.copy(
-                        saving = false,
-                        persisted = runtime?.persisted ?: it.persisted,
-                        runtimeSyncState = runtime?.state ?: it.runtimeSyncState,
-                        runtimeSyncPending = runtime?.pending ?: it.runtimeSyncPending,
-                        error = error.toUiText(),
+                        error = commandError?.toUiText() ?: error.toUiText(),
                         noticeId = it.noticeId + 1
                     )
                 }
+            } finally {
+                if (request == generation) _state.update { it.copy(saving = false) }
             }
         }
     }
@@ -179,34 +190,4 @@ internal class SubscriptionEditorViewModel(
             put(name, value)
         }
     }
-
-    private data class RuntimeSyncOutcome(
-        val persisted: Boolean,
-        val state: String,
-        val pending: Boolean
-    )
-
-    private fun JsonElement.runtimeSyncOutcome(): RuntimeSyncOutcome {
-        val objectValue = jsonObject
-        return RuntimeSyncOutcome(
-            persisted = objectValue["persisted"]?.jsonPrimitive?.booleanOrNull == true,
-            state = objectValue["runtime_sync_state"]?.jsonPrimitive?.content.orEmpty(),
-            pending = objectValue["runtime_sync_pending"]?.jsonPrimitive?.booleanOrNull == true
-        )
-    }
-
-    private fun SubscriptionEditorState.toDraft() = SubscriptionDraft(
-        name = name,
-        url = url,
-        userAgent = userAgent,
-        hwid = hwid,
-        customHeaders = customHeaders.mapValues { it.value.jsonPrimitive.content },
-        autoUpdate = autoUpdate,
-        updateIntervalSeconds = updateInterval,
-        updateViaProxy = updateViaProxy,
-        include = include,
-        exclude = exclude,
-        allowInsecure = allowInsecure,
-        timeoutSeconds = timeout
-    )
 }

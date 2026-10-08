@@ -45,34 +45,7 @@ internal class SubscriptionRepository(
         }
         val headersChanged = originalHeaders != updated.customHeaders
         return withHeadersFile(updated.customHeaders, required = headersChanged) { headersFile ->
-            val args = mutableListOf("sub", "edit")
-            if (original.name != updated.name) args += listOf("--name", updated.name)
-            if (original.url != updated.url) args += listOf("--url", updated.url)
-            if (original.userAgent != updated.userAgent) {
-                args += listOf("--user-agent", updated.userAgent)
-            }
-            if (original.hwid != updated.hwid) args += listOf("--hwid", updated.hwid)
-            if (headersChanged && headersFile != null) {
-                args += listOf("--headers-file", headersFile.absolutePath)
-            }
-            if (original.updateInterval != updated.updateIntervalSeconds) {
-                args += listOf("--interval", updated.updateIntervalSeconds.toString())
-            }
-            if (original.updateViaProxy != updated.updateViaProxy) {
-                args += listOf("--via-proxy", updated.updateViaProxy)
-            }
-            if (original.include != updated.include) args += listOf("--include", updated.include)
-            if (original.exclude != updated.exclude) args += listOf("--exclude", updated.exclude)
-            if (original.allowInsecure != updated.allowInsecure) {
-                args += "--allow-insecure=${updated.allowInsecure}"
-            }
-            if (original.timeout != updated.timeoutSeconds) {
-                args += listOf("--download-timeout", updated.timeoutSeconds.toString())
-            }
-            if (original.autoUpdate != updated.autoUpdate) {
-                args += "--auto-update=${updated.autoUpdate}"
-            }
-            args += id
+            val args = subscriptionEditArguments(id, original, updated, headersFile?.absolutePath)
             if (args.size > 3) catalog.execute(*args.toTypedArray()).data else JsonObject(emptyMap())
         }
     }
@@ -93,10 +66,6 @@ internal class SubscriptionRepository(
         val args = mutableListOf("sub", "remove", id)
         replacementGroupId.takeIf(String::isNotBlank)?.let(args::add)
         catalog.execute(*args.toTypedArray())
-    }
-
-    suspend fun cancelUpdate(id: String) {
-        catalog.execute("sub", "cancel", id)
     }
 
     suspend fun history(id: String): List<SubscriptionHistoryEntry> =
@@ -135,4 +104,42 @@ internal class SubscriptionRepository(
         )
         return catalog.withTextFile("netproxy-headers-", ".json", content, block)
     }
+}
+
+internal fun subscriptionEditArguments(
+    id: String,
+    original: SubscriptionEditorState,
+    updated: SubscriptionDraft,
+    headersPath: String?
+): List<String> {
+    val headersChanged = original.customHeaders.mapValues { it.value.jsonPrimitive.content } != updated.customHeaders
+    val args = mutableListOf("sub", "edit")
+    if (original.name != updated.name) args += listOf("--name", updated.name)
+    if (original.url != updated.url) args += listOf("--url", updated.url)
+    if (original.userAgent != updated.userAgent) {
+        args += listOf("--user-agent", updated.userAgent)
+    }
+    if (original.hwid != updated.hwid) args += listOf("--hwid", updated.hwid)
+    if (headersChanged && headersPath != null) {
+        args += listOf("--headers-file", headersPath)
+    }
+    if (original.updateInterval != updated.updateIntervalSeconds) {
+        args += listOf("--interval", updated.updateIntervalSeconds.toString())
+    }
+    if (original.updateViaProxy != updated.updateViaProxy) {
+        args += listOf("--via-proxy", updated.updateViaProxy)
+    }
+    if (original.include != updated.include) args += listOf("--include", updated.include)
+    if (original.exclude != updated.exclude) args += listOf("--exclude", updated.exclude)
+    if (original.allowInsecure != updated.allowInsecure) {
+        args += "--allow-insecure=${updated.allowInsecure}"
+    }
+    if (original.timeout != updated.timeoutSeconds) {
+        args += listOf("--download-timeout", updated.timeoutSeconds.toString())
+    }
+    if (original.autoUpdate != updated.autoUpdate) {
+        args += "--auto-update=${updated.autoUpdate}"
+    }
+    args += id
+    return args
 }

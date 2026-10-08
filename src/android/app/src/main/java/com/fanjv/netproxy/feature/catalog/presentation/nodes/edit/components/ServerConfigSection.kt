@@ -443,7 +443,7 @@ internal fun ServerConfigSection(
                         keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                         keyboardOptions = KeyboardOptions(
                             imeAction = ImeAction.Done,
-                            keyboardType = KeyboardType.Number
+                            keyboardType = KeyboardType.Text
                         )
                     )
                 }
@@ -530,7 +530,7 @@ internal fun ServerConfigSection(
                         keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                         keyboardOptions = KeyboardOptions(
                             imeAction = ImeAction.Done,
-                            keyboardType = KeyboardType.Number
+                            keyboardType = KeyboardType.Text
                         )
                     )
                 }
@@ -540,5 +540,4 @@ internal fun ServerConfigSection(
 
     }
 }
-
 

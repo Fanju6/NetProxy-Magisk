@@ -702,7 +702,7 @@ internal fun SubscriptionEditorScreen(
                 TopAppBar(
                     color = barColor,
                     title = stringResource(
-                        if (id.isBlank()) R.string.subscription_editor_add_title
+                        if (state.id.isBlank()) R.string.subscription_editor_add_title
                         else R.string.subscription_editor_edit_title
                     ),
                     scrollBehavior = scrollBehavior,
@@ -759,7 +759,7 @@ internal fun SubscriptionEditorScreen(
                             viewModel.update { it.copy(name = value) }
                         },
                         label = stringResource(
-                            if (id.isBlank()) R.string.subscription_editor_name_auto
+                            if (state.id.isBlank()) R.string.subscription_editor_name_auto
                             else R.string.subscription_editor_name
                         ),
                         modifier = Modifier.fillMaxWidth(),
@@ -780,8 +780,7 @@ internal fun SubscriptionEditorScreen(
                 }
                 item {
                     Card(modifier = Modifier.fillMaxWidth()) {
-                        val intervals =
-                            listOf(900L, 3600L, 21600L, 43200L, 86400L, 259200L, 604800L)
+                        val intervals = subscriptionIntervalOptions(draft.updateIntervalSeconds)
                         val intervalLabels = listOf(
                             stringResource(R.string.subscription_duration_minutes, 15),
                             stringResource(R.string.subscription_duration_hours, 1),
@@ -790,14 +789,13 @@ internal fun SubscriptionEditorScreen(
                             stringResource(R.string.subscription_duration_hours, 24),
                             stringResource(R.string.subscription_duration_days, 3),
                             stringResource(R.string.subscription_duration_days, 7)
-                        )
+                        ) + if (intervals.size > 7) {
+                            listOf(stringResource(R.string.subscription_interval_custom_seconds, draft.updateIntervalSeconds))
+                        } else emptyList()
                         OverlayDropdownPreference(
                             title = stringResource(R.string.subscription_editor_update_interval),
                             items = intervalLabels,
-                            // 未命中候选档位时回退到 24 小时；不可对索引取下限，
-                            // 否则 24 小时以下的档位会被一并抬高到该档
-                            selectedIndex = intervals.indexOf(draft.updateIntervalSeconds)
-                                .takeIf { it >= 0 } ?: intervals.indexOf(86400L),
+                            selectedIndex = intervals.indexOf(draft.updateIntervalSeconds),
                             onSelectedIndexChange = { index ->
                                 viewModel.update {
                                     it.copy(updateIntervalSeconds = intervals[index])

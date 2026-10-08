@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.dp
 import com.fanjv.netproxy.R
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.SmallTitle
+import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 
@@ -133,7 +134,14 @@ internal fun TlsConfigSection(
                 )
             }
             if (echEnabled) {
-                EditorField(echConfig, echConfigLabel, onEchConfigChange, onImeDone)
+                TextField(
+                    value = echConfig,
+                    onValueChange = onEchConfigChange,
+                    label = echConfigLabel,
+                    minLines = 2,
+                    maxLines = 4,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = 12.dp)
+                )
                 EditorField(
                     echQueryServerName,
                     echDnsServerNameLabel,
@@ -144,5 +152,4 @@ internal fun TlsConfigSection(
         }
     }
 }
-
 
