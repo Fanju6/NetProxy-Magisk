@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/logfile"
 )
 
 const (
@@ -93,7 +95,9 @@ func commitPairLocked(root, groupDir string, providerContent, metadataContent []
 		}
 		return errors.Join(err, rollback(txDir))
 	}
-	return os.RemoveAll(txDir)
+	// 数据已提交，临时文件清理失败不改变提交结果；下次恢复继续清理。
+	cleanupCompletedTransaction(txDir)
+	return nil
 }
 
 // Recover 清理启动前遗留的 Catalog 事务目录并恢复未完成提交。
@@ -146,7 +150,8 @@ func recoverTransaction(txDir string) error {
 		return discardUnstartedTransaction(txDir, errors.New("Catalog 事务日志不完整"))
 	}
 	if slices.Contains(lines[3:], "commit") || slices.Contains(lines[3:], "rolled_back") {
-		return os.RemoveAll(txDir)
+		cleanupCompletedTransaction(txDir)
+		return nil
 	}
 	return rollback(txDir)
 }
@@ -157,7 +162,7 @@ func discardUnstartedTransaction(txDir string, cause error) error {
 			return errors.Join(cause, err)
 		}
 	}
-	return os.RemoveAll(txDir)
+	return cleanupTransaction(txDir)
 }
 
 func moveExisting(groupDir, txDir, name string) error {
@@ -223,7 +228,27 @@ func rollback(txDir string) error {
 	if err := appendSynced(filepath.Join(txDir, journalName), []byte("rolled_back\n")); err != nil {
 		return err
 	}
+	cleanupCompletedTransaction(txDir)
+	return nil
+}
+
+func cleanupTransaction(txDir string) error {
+	// 完成标记必须晚于所有备份删除，否则清理中断会留下无法判定的事务。
+	for _, name := range []string{"provider.json.bak", "meta.json.bak"} {
+		if err := os.Remove(filepath.Join(txDir, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
 	return os.RemoveAll(txDir)
+}
+
+func cleanupCompletedTransaction(txDir string) {
+	if err := cleanupTransaction(txDir); err != nil {
+		fmt.Fprintln(os.Stderr, logfile.FormatEntry(logfile.Entry{
+			Level: "WARN", Component: "catalog", Event: "transaction.cleanup", Result: "pending",
+			Message: fmt.Sprintf("事务已完成，临时文件清理将重试: %v", err),
+		}))
+	}
 }
 
 func restoreTransactionFile(backup, target string) error {
@@ -278,9 +303,4 @@ func appendSynced(path string, content []byte) error {
 		return err
 	}
 	return file.Close()
-}
-
-func transactionFileExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && !info.IsDir()
 }

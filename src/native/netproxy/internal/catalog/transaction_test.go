@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -59,6 +60,109 @@ func TestRecoverRollsBackIncompletePair(t *testing.T) {
 	}
 	if _, err := os.Stat(stagingDir); !os.IsNotExist(err) {
 		t.Fatalf("staging transaction was not removed: %v", err)
+	}
+}
+
+func TestCompletedTransactionCleanupKeepsJournalUntilBackupsGone(t *testing.T) {
+	for _, phase := range []string{"commit", "rolled_back"} {
+		t.Run(phase, func(t *testing.T) {
+			root := t.TempDir()
+			writeGroup(t, root, "fixture", "Fixture", "local", "valid-node")
+			tx := filepath.Join(root, "staging", "catalog-cleanup")
+			blocked := filepath.Join(tx, "meta.json.bak")
+			if err := os.MkdirAll(blocked, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			for name, content := range map[string]string{
+				"journal":             "begin\nprovider\nmeta\n" + phase + "\n",
+				"provider.json.bak":   "old provider",
+				"meta.json.bak/block": "阻止备份删除",
+			} {
+				if err := os.WriteFile(filepath.Join(tx, name), []byte(content), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := cleanupTransaction(tx); err == nil {
+				t.Fatal("故障注入未阻止清理")
+			}
+			for range 2 {
+				if err := Recover(t.Context(), root); err != nil {
+					t.Fatalf("已完成事务阻塞有效 Catalog: %v", err)
+				}
+				if _, err := os.Stat(filepath.Join(tx, journalName)); err != nil {
+					t.Fatalf("备份尚未删除，完成标记已丢失: %v", err)
+				}
+			}
+			if err := os.Remove(filepath.Join(blocked, "block")); err != nil {
+				t.Fatal(err)
+			}
+			if err := Recover(t.Context(), root); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(tx); !os.IsNotExist(err) {
+				t.Fatalf("清理未完成: %v", err)
+			}
+			content, err := os.ReadFile(filepath.Join(root, "fixture", "provider.json"))
+			if err != nil || !strings.Contains(string(content), "valid-node") {
+				t.Fatalf("清理更改了已提交或恢复的 Provider: %v", err)
+			}
+		})
+	}
+}
+
+func TestCommitPairCleanupFailureStillReportsCommitted(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("使用 Windows 文件句柄注入拒绝删除")
+	}
+	root := t.TempDir()
+	writeGroup(t, root, "fixture", "Fixture", "local", "old-node")
+	oldHook := transactionRenameHook
+	var held *os.File
+	var txDir string
+	transactionRenameHook = func(stage string) {
+		if stage != "install-meta.json" {
+			return
+		}
+		entries, err := os.ReadDir(filepath.Join(root, stagingDirName))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), txPrefix) {
+				txDir = filepath.Join(root, stagingDirName, entry.Name())
+				held, err = os.Open(filepath.Join(txDir, "meta.json.bak"))
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
+	t.Cleanup(func() {
+		transactionRenameHook = oldHook
+		if held != nil {
+			_ = held.Close()
+		}
+	})
+	document := []byte(`{"outbounds":[{"type":"socks","tag":"new-node","server":"127.0.0.1","server_port":1080}]}`)
+	metadata := []byte(`{"id":"fixture","name":"Fixture","type":"local","revision":2,"node_count":1}`)
+	if err := CommitPair(t.Context(), root, filepath.Join(root, "fixture"), document, metadata); err != nil {
+		t.Fatalf("已提交数据被报为失败: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(txDir, journalName)); err != nil {
+		t.Fatalf("清理失败后 journal 未保留: %v", err)
+	}
+	if _, err := LoadMetadata(t.Context(), filepath.Join(root, "fixture", "meta.json"), "fixture"); err != nil {
+		t.Fatalf("已完成事务阻塞读取: %v", err)
+	}
+	if err := held.Close(); err != nil {
+		t.Fatal(err)
+	}
+	held = nil
+	if err := Recover(t.Context(), root); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(txDir); !os.IsNotExist(err) {
+		t.Fatalf("重试清理未删除目录: %v", err)
 	}
 }
 
