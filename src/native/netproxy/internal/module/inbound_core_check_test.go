@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -45,6 +46,92 @@ const targetCoreStaticConfig = `{
     ]
   }
 }`
+
+func TestTargetCoreStderrLogCapturesStartupReloadAndFailure(t *testing.T) {
+	core := targetCoreBinary(t)
+	options := NewOptions(t.TempDir())
+	options.SingBoxPath = core
+	prepared := PrepareResult{
+		Providers: filepath.Join(options.RuntimeDir, "providers.json"),
+		Outbounds: filepath.Join(options.RuntimeDir, "outbounds.json"),
+		Inbound:   filepath.Join(options.RuntimeDir, "inbound.json"),
+	}
+	files := map[string]string{
+		paths.SingBoxConfig(options.SingBoxDir): `{"log":{"output":"stderr","level":"info","timestamp":true},"outbounds":[{"type":"direct","tag":"direct"}]}`,
+		prepared.Providers:                      "{}", prepared.Outbounds: "{}", prepared.Inbound: "{}",
+	}
+	for path, content := range files {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		targetCoreWrite(t, path, []byte(content))
+	}
+	command, file, err := newSingBoxCommand(options, prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		_ = command.Process.Kill()
+		_ = command.Wait()
+		t.Fatal(err)
+	}
+	running := command
+	done := make(chan struct{})
+	go func() {
+		_ = running.Wait()
+		close(done)
+	}()
+	t.Cleanup(func() {
+		_ = running.Process.Kill()
+		<-done
+	})
+	path, err := LogFile(options, "core")
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForStarts := func(count int) {
+		t.Helper()
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			content := targetCoreRead(t, path)
+			if strings.Count(string(content), "sing-box started") == count {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("真实核心启动或重载日志缺失: %s", content)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	waitForStarts(1)
+	if runtime.GOOS != "windows" {
+		if err := signalServiceReload(running.Process.Pid); err != nil {
+			t.Fatal(err)
+		}
+		waitForStarts(2)
+	}
+	if err := running.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	<-done
+	targetCoreWrite(t, paths.SingBoxConfig(options.SingBoxDir), []byte(`{"log":{"output":"stderr"},"inbounds":[{"type":"netproxy-invalid-inbound"}]}`))
+	command, file, err = newSingBoxCommand(options, prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if err := command.Run(); err == nil {
+		t.Fatal("无效核心配置未返回错误")
+	}
+	content := targetCoreRead(t, path)
+	if !bytes.Contains(content, []byte("sing-box started")) || !bytes.Contains(content, []byte("FATAL")) || !bytes.Contains(content, []byte("netproxy-invalid-inbound")) || bytes.Contains(content, []byte("\x1b")) {
+		t.Fatalf("真实核心 FATAL 丢失或包含颜色控制符: %s", content)
+	}
+}
 
 func targetCoreBinary(t *testing.T) string {
 	t.Helper()

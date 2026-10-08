@@ -199,6 +199,51 @@ func TestApplyConfigValidateOnlyDoesNotModifyRuntime(t *testing.T) {
 	assertRuntimeContent(t, options, runtimeContent)
 }
 
+func TestLogOutputValidationDoesNotMigrateOrReplaceConfig(t *testing.T) {
+	for _, output := range []string{"stdout", "sing-box.log", "/data/adb/modules/netproxy/logs/sing-box.log"} {
+		t.Run(output, func(t *testing.T) {
+			options, destination, source, runtimeContent := configApplyOptions(t)
+			isolateConfigApplyHooks(t, false)
+			candidate := fmt.Sprintf(`{"log":{"output":%q}}`, output)
+			if err := os.WriteFile(source, []byte(candidate), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ApplyConfig(t.Context(), options, "singbox/config.json", source, false, ""); err == nil || !strings.Contains(err.Error(), `log.output 必须为 "stderr"`) {
+				t.Fatalf("不支持的日志输出未明确拒绝: %v", err)
+			}
+			if content, err := os.ReadFile(destination); err != nil || string(content) != "{\"version\":1,\"old\":true}\n" {
+				t.Fatalf("校验失败覆盖了主配置: %q %v", content, err)
+			}
+			assertRuntimeContent(t, options, runtimeContent)
+			if err := os.WriteFile(destination, []byte(candidate), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Prepare(t.Context(), options, true); err == nil || !strings.Contains(err.Error(), "log.output") {
+				t.Fatalf("启动准备接受了其他日志输出: %v", err)
+			}
+			if content, err := os.ReadFile(destination); err != nil || string(content) != candidate {
+				t.Fatalf("启动准备迁移了用户配置: %q %v", content, err)
+			}
+		})
+	}
+	for _, log := range []string{`{}`, `{"output":""}`, `{"output":"stderr","level":"debug","disabled":true,"timestamp":false}`} {
+		t.Run(log, func(t *testing.T) {
+			options, destination, source, _ := configApplyOptions(t)
+			isolateConfigApplyHooks(t, false)
+			candidate := `{"log":` + log + `}`
+			if err := os.WriteFile(source, []byte(candidate), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ApplyConfig(t.Context(), options, "singbox/config.json", source, false, ""); err != nil {
+				t.Fatal(err)
+			}
+			if content, err := os.ReadFile(destination); err != nil || string(content) != candidate {
+				t.Fatalf("原生日志偏好被改写: %q %v", content, err)
+			}
+		})
+	}
+}
+
 func TestCheckServiceUsesTemporaryRuntime(t *testing.T) {
 	options, _, _, runtimeContent := configApplyOptions(t)
 	isolateConfigApplyHooks(t, false)

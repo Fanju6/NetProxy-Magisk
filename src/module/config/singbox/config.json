@@ -3,7 +3,7 @@
   "log": {
     "disabled": false,
     "level": "info",
-    "output": "/data/adb/modules/netproxy/logs/sing-box.log",
+    "output": "stderr",
     "timestamp": true
   },
   "experimental": {

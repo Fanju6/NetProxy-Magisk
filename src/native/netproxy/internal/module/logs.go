@@ -71,18 +71,7 @@ func ClearLog(options Options, kind string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	if err := file.Chmod(0o600); err != nil {
-		_ = file.Close()
-		return err
-	}
-	return file.Close()
+	return logfile.Clear(path)
 }
 
 // ExportLogs 生成不包含节点凭据和订阅鉴权信息的诊断包。
@@ -133,11 +122,9 @@ func writeLogArchive(options Options, output io.Writer) (err error) {
 	files := make([]archiveFile, 0)
 	for _, kind := range []string{"service", "core"} {
 		path, _ := LogFile(options, kind)
-		if kind == "service" {
-			for index := logfile.BackupCount; index >= 1; index-- {
-				backup := fmt.Sprintf("%s.%d", path, index)
-				files = append(files, archiveFile{source: backup, name: "logs/" + filepath.Base(backup), redact: true, tail: logfile.MaxFileBytes})
-			}
+		for index := logfile.BackupCount; index >= 1; index-- {
+			backup := fmt.Sprintf("%s.%d", path, index)
+			files = append(files, archiveFile{source: backup, name: "logs/" + filepath.Base(backup), redact: true, tail: logfile.MaxFileBytes})
 		}
 		files = append(files, archiveFile{source: path, name: "logs/" + filepath.Base(path), redact: true, tail: logfile.MaxFileBytes})
 	}

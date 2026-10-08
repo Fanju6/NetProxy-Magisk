@@ -30,7 +30,7 @@ const (
 var (
 	offlineDelayRunner  = runOfflineDelay
 	offlineDelayCommand = func(ctx context.Context, executable, configPath, workingDir string, output *os.File) *exec.Cmd {
-		command := exec.CommandContext(ctx, executable, "run", "-c", configPath)
+		command := exec.CommandContext(ctx, executable, "run", "--disable-color", "-c", configPath)
 		command.Dir = workingDir
 		command.Stdout = output
 		command.Stderr = output
@@ -147,7 +147,7 @@ func writeOfflineDelayConfig(
 		}
 	}
 	config := map[string]any{
-		"log": map[string]any{"level": "error"},
+		"log": map[string]any{"level": "error", "output": "stderr"},
 		"dns": map[string]any{
 			"servers": []any{
 				map[string]any{

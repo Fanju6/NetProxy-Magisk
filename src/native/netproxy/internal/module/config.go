@@ -443,7 +443,7 @@ func validateConfig(ctx context.Context, options Options, target, candidate stri
 			return err
 		}
 		// 独立 check 只加载候选规则，不启动入站、不加载用户其他配置，也不下载远程规则。
-		command := exec.CommandContext(ctx, options.SingBoxPath, "check", "-c", "stdin")
+		command := exec.CommandContext(ctx, options.SingBoxPath, "check", "--disable-color", "-c", "stdin")
 		command.Stdin = bytes.NewReader(check)
 		if output, err := command.CombinedOutput(); err != nil {
 			if ctx.Err() != nil {
@@ -478,7 +478,7 @@ func validateInboundTree(ctx context.Context, options Options, candidate string,
 	return checkPreparedConfiguration(ctx, checkOptions, prepared)
 }
 
-func validateManagedInbound(options Options, config inbound.Config) error {
+func validateManagedConfig(options Options, config inbound.Config) error {
 	content, err := os.ReadFile(paths.SingBoxConfig(options.SingBoxDir))
 	if err != nil {
 		return err
@@ -486,6 +486,15 @@ func validateManagedInbound(options Options, config inbound.Config) error {
 	object, err := configObject(content)
 	if err != nil {
 		return err
+	}
+	if raw, exists := object["log"]; exists {
+		var log option.LogOptions
+		if err := json.Unmarshal(raw, &log); err != nil {
+			return fmt.Errorf("日志配置无效: %w", err)
+		}
+		if log.Output != "" && log.Output != "stderr" {
+			return errors.New(`log.output 必须为 "stderr"；核心日志由模块统一写入 logs/sing-box.log`)
+		}
 	}
 	var configured []struct {
 		Type string `json:"type"`
@@ -593,15 +602,7 @@ func validateSingBoxTree(ctx context.Context, options Options, candidate string)
 	if err != nil {
 		return err
 	}
-	command := exec.CommandContext(ctx, options.SingBoxPath, "check", "-c", candidatePath,
-		"-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.Inbound)
-	command.Dir = temporary
-	command.Stdout = os.Stderr
-	command.Stderr = os.Stderr
-	if err := command.Run(); err != nil {
-		return fmt.Errorf("sing-box 配置检查失败: %w", err)
-	}
-	return nil
+	return checkPreparedConfiguration(ctx, checkOptions, prepared)
 }
 
 func copyDirectory(source, destination string) error {

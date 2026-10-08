@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -123,6 +124,17 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(logDir, "service.log"), []byte("Authorization: Bearer secret-bearer\npayload={\"uuid\":\"secret-log-uuid\",\"auth_str\":\"secret-log-auth\"}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	for _, kind := range []string{"service", "core"} {
+		path, err := LogFile(Options{LogDir: logDir}, kind)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for index := 1; index <= logfile.BackupCount; index++ {
+			if err := os.WriteFile(fmt.Sprintf("%s.%d", path, index), []byte("Authorization: Bearer secret-bearer\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 	if err := os.WriteFile(moduleConfig, []byte("SUB_URL=https://example.test/sub?token=secret-token\nWIFI_SSID_LIST=\"secret-office,secret-home\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -194,6 +206,7 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 	seenRuntime := false
 	seenState := false
 	seenReadme := false
+	seenBackups := 0
 	for {
 		header, readErr := reader.Next()
 		if readErr == io.EOF {
@@ -214,6 +227,9 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 		}
 		if header.Name == "runtime/service.json" {
 			t.Fatal("服务状态不应归档为运行时配置")
+		}
+		if strings.HasPrefix(header.Name, "logs/") && (strings.HasSuffix(header.Name, ".1") || strings.HasSuffix(header.Name, ".2")) {
+			seenBackups++
 		}
 		if header.Name == "README.txt" {
 			seenReadme = true
@@ -251,6 +267,9 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 	}
 	if !seenReadme {
 		t.Fatal("诊断包未包含 README.txt")
+	}
+	if seenBackups != 2*logfile.BackupCount {
+		t.Fatalf("诊断包未包含全部模块和核心备份: %d", seenBackups)
 	}
 }
 

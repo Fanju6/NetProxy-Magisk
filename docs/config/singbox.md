@@ -35,6 +35,23 @@ runtime/           # 启动时生成的运行时配置
 
 运行时节点 Provider、Auto / Select / Proxy 选择器和受管透明代理入站由 Native 组件生成，不应在主配置中重复定义。主配置可添加 mixed、HTTP 等其他入站，但不能额外定义受管 eBPF/TUN 或占用 `netproxy-in`；冲突会明确报错。主配置可以增加独立命名的自定义出站和[策略分组](./policy-groups)。
 
+### 日志
+
+```json
+"log": {
+  "disabled": false,
+  "level": "info",
+  "output": "stderr",
+  "timestamp": true
+}
+```
+
+核心日志由 NetProxy 接收并追加到 `/data/adb/modules/netproxy/logs/sing-box.log`，模块操作记录在同目录的 `service.log`。管理器“日志”页可查看、清空和导出；读取与导出会脱敏。
+
+`output` 使用 `stderr`；省略时使用内核默认 stderr。其他值会被配置检查拒绝，请在“设置 → 内核配置 → 主配置 → 日志”中修改，不会自动转换旧设置。`level`、`disabled` 和 `timestamp` 按 sing-box 原生行为生效。
+
+重启服务保留核心日志。下次启动前，文件达到 4 MiB 时轮转，保留两份备份；运行中不轮转，因此这不是实时容量上限。清空会同时删除备份，不影响核心继续写入。原始日志仅供 Root 读取，分享问题时请使用脱敏诊断包。
+
 ### 出站模式
 
 `experimental.clash_api.default_mode` 保存默认模式，默认配置为 `Rule`。可选模式由主配置中路由与 DNS 规则的 `clash_mode` 条件和默认模式共同决定，支持自定义名称。
@@ -58,7 +75,7 @@ Wi-Fi 策略只临时使用 `Direct` 或保存的默认模式，不写回主配�
 
 仅保留以下部署差异：
 
-- 日志、缓存、Dashboard 与规则文件使用模块目录。
+- 核心日志输出到 `stderr`，由模块统一保存；缓存、Dashboard 与规则文件使用模块目录。
 - mixed 入站和两个 API 仅监听本机，端口保持 `7080`、`9999`（Clash）与 `9090`（Service）。
 - 不复制上游的示例 Provider、出站和 eBPF 入站，继续由 Catalog 与 `config/inbound/inbound.json` 生成。只输出选中的 eBPF 或 TUN，应用与接口策略按所选后端的原生语义生效。
 - 路由末尾显式保留 `Rule` 的 Proxy 兜底，与原 `route.final` 行为一致，便于修改默认模式后继续切回规则模式。

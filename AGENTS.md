@@ -24,6 +24,7 @@
 - `__internal` 只允许 `boot` 与 `worker start|stop|run` 这类进程生命周期入口。Catalog、节点、订阅、配置、eBPF、Service API 和服务操作必须由公共命令直接调用 Go 领域处理器，不得重新建立内部命令转发层。
 - 机器接口固定使用 `schema=1` JSON。stdout 只能包含结果 JSON，日志与诊断写 stderr；字段、错误码或状态语义变化必须同步检查 Shell、Go、Android、WebUI 和测试。
 - Native 运行日志固定为 `[timestamp] [LEVEL] [component] [event] [result] [error_code] message`，成功或无错误码时写 `-`；消息必须在落盘前统一脱敏和限长。`logs show service` 的 `entries` 是 Android 展示事实源，不得回退到旧文本猜测。`logs show core` 保持 sing-box 文本，由客户端使用独立解析逻辑。
+- 核心日志使用原生 `log.output=stderr`（省略时同样使用内核默认 stderr），Go 将 stdout/stderr 绑定同一个 `0600` 追加文件句柄并禁用颜色；不得让内核另开日志文件或使用随 CLI 退出的管道采集。核心退出后才允许在下次启动前轮转，清空必须截断当前 inode 并删除备份，不能重命名运行中的日志，否则继承句柄会继续写入不可见文件。
 - Catalog 是持久节点事实源：每组使用 `data/catalog/<group-id>/meta.json` 与 `provider.json`。`staging/` 只存事务临时文件，不得作为持久状态读取。
 - 节点选择只持久化 `ACTIVE_GROUP_ID` 与 `SELECTED_NODE_TAG`：空 tag 使用同组 Auto，非空 tag 手动选择。模式、节点引用和运行时标签由这两项派生，不读取旧选择字段或增加迁移逻辑。
 - 用户选节点按生命周期锁、配置文件锁串行保存和应用；启动与重载只同步已保存选择，不再次调用用户保存入口。选择器 API 仅对临时通信或服务错误在总时限内重试，遵循请求取消；最终失败返回 `node.runtime_sync_failed` 并保留已保存选择，不重载兜底；Catalog 结构变化显式重载。

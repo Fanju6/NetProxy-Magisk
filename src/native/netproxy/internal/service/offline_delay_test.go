@@ -41,6 +41,12 @@ func TestOfflineDelayConfigIsIsolatedAndUsesProviderSnapshot(t *testing.T) {
 	if err := json.Unmarshal(content, &config); err != nil {
 		t.Fatal(err)
 	}
+	var log struct {
+		Output string `json:"output"`
+	}
+	if err := json.Unmarshal(config["log"], &log); err != nil || log.Output != "stderr" {
+		t.Fatalf("离线测速未使用 stderr 日志: %+v %v", log, err)
+	}
 	for _, forbidden := range []string{"inbounds", "experimental", "endpoints"} {
 		if _, exists := config[forbidden]; exists {
 			t.Fatalf("离线测速配置不应包含 %s: %s", forbidden, content)

@@ -5,10 +5,107 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestProcessLogAppendsAndClearPreservesLiveHandle(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sing-box.log")
+	if err := os.WriteFile(path, []byte("previous start\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	file, err := OpenForProcess(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Fatalf("核心日志权限未校正: %o", info.Mode().Perm())
+	}
+	if _, err := file.WriteString("current start\n"); err != nil {
+		t.Fatal(err)
+	}
+	if content, err := os.ReadFile(path); err != nil || string(content) != "previous start\ncurrent start\n" {
+		t.Fatalf("启动未保留日志: %q %v", content, err)
+	}
+	for index := 1; index <= BackupCount; index++ {
+		if err := os.WriteFile(fmt.Sprintf("%s.%d", path, index), []byte("backup\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := Clear(path); err != nil {
+		t.Fatal(err)
+	}
+	current, err := os.Stat(path)
+	if err != nil || !os.SameFile(info, current) {
+		t.Fatalf("清空替换了正在使用的 inode: %v", err)
+	}
+	if _, err := file.WriteString("after clear\n"); err != nil {
+		t.Fatal(err)
+	}
+	content, err := TailLines(path, 20)
+	if err != nil || string(content) != "after clear\n" {
+		t.Fatalf("清空后出现空洞或旧备份: %q %v", content, err)
+	}
+	for index := 1; index <= BackupCount; index++ {
+		if _, err := os.Stat(fmt.Sprintf("%s.%d", path, index)); !os.IsNotExist(err) {
+			t.Fatalf("清空未删除备份 %d: %v", index, err)
+		}
+	}
+}
+
+func TestProcessLogRotatesOnlyWhenOpened(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "logs", "sing-box.log")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, bytes.Repeat([]byte("z"), int(MaxFileBytes)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for index := range BackupCount + 2 {
+		file, err := OpenForProcess(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		content := bytes.Repeat([]byte{byte('a' + index)}, int(MaxFileBytes)+1)
+		if _, err := file.Write(content); err != nil {
+			_ = file.Close()
+			t.Fatal(err)
+		}
+		if got, err := os.ReadFile(path); err != nil || !bytes.Equal(got, content) {
+			_ = file.Close()
+			t.Fatalf("运行中日志被轮转或截断: %v", err)
+		}
+		if err := file.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if index == 0 {
+			info, err := os.Stat(path + ".1")
+			if err != nil || info.Size() != MaxFileBytes {
+				t.Fatalf("达到阈值的原日志未完整保留: %v", err)
+			}
+			if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+				t.Fatalf("轮转前未校正备份权限: %o", info.Mode().Perm())
+			}
+		}
+	}
+	for index := 1; index <= BackupCount; index++ {
+		got, err := os.ReadFile(fmt.Sprintf("%s.%d", path, index))
+		want := bytes.Repeat([]byte{byte('a' + BackupCount + 1 - index)}, int(MaxFileBytes)+1)
+		if err != nil || !bytes.Equal(got, want) {
+			t.Fatalf("备份 %d 的顺序或内容异常: %v", index, err)
+		}
+	}
+	if _, err := os.Stat(path + ".3"); !os.IsNotExist(err) {
+		t.Fatalf("保留了多余备份: %v", err)
+	}
+}
 
 func TestAppendRotatesAndTailLinesReadsAcrossBackups(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "service.log")

@@ -218,4 +218,26 @@ class LogParserTest {
         assertNull(item.latency)
         assertNull(item.latencyMs)
     }
+
+    @Test
+    fun parseKernelKeepsStderrFatalAndPanicLinesReadable() {
+        val lines = listOf(
+            "+0800 2026-10-09 12:00:00 INFO network: updated default interface wlan0",
+            "FATAL[0000] startup: create service failed",
+            "panic: fixture panic",
+            "goroutine 1 [running]:",
+            "main.main()",
+        )
+
+        val items = LogParser.parseKernel(lines.joinToString("\n"))
+
+        assertEquals(lines, items.map(LogItem::rawLine))
+        assertEquals("10-09 12:00:00", items[0].timestamp)
+        assertEquals("network", items[0].tag)
+        assertEquals(LogLevel.INFO, items[0].level)
+        assertEquals(LogLevel.ERROR, items[1].level)
+        assertEquals("startup", items[1].tag)
+        assertEquals("create service failed", items[1].message)
+        assertEquals(lines.drop(2), items.drop(2).map(LogItem::message))
+    }
 }

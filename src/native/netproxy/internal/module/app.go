@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -109,7 +108,7 @@ func Prepare(ctx context.Context, options Options, allowEmpty bool) (PrepareResu
 	if err != nil {
 		return PrepareResult{}, err
 	}
-	if err := validateManagedInbound(options, config); err != nil {
+	if err := validateManagedConfig(options, config); err != nil {
 		return PrepareResult{}, err
 	}
 	if config.Backend == "tun" {
@@ -182,16 +181,7 @@ func Check(ctx context.Context, options Options, allowEmpty bool) (PrepareResult
 	if options.SingBoxPath == "" {
 		return prepared, errors.New("sing-box 路径为空")
 	}
-	configPath := paths.SingBoxConfig(options.SingBoxDir)
-	command := exec.CommandContext(ctx, options.SingBoxPath, "check", "-c", configPath,
-		"-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.Inbound)
-	command.Dir = options.SingBoxDir
-	command.Stdout = os.Stderr
-	command.Stderr = os.Stderr
-	if err := command.Run(); err != nil {
-		return prepared, fmt.Errorf("sing-box 配置检查失败: %w", err)
-	}
-	return prepared, nil
+	return prepared, checkPreparedConfiguration(ctx, options, prepared)
 }
 
 // SelectNode 更新持久选择，并在服务运行时通过 Service API 同步选择器。

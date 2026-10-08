@@ -173,23 +173,84 @@ func (writer *Writer) Write(content []byte) (int, error) {
 	return len(content), nil
 }
 
-// Prepare 创建日志目录和文件，并校正权限。
-func Prepare(path string) error {
+func openFile(path string, flags int) (*os.File, error) {
 	if strings.TrimSpace(path) == "" {
-		return errors.New("日志路径不能为空")
+		return nil, errors.New("日志路径不能为空")
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
+		return nil, err
 	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|flags, 0o600)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := file.Chmod(0o600); err != nil {
 		_ = file.Close()
+		return nil, err
+	}
+	return file, nil
+}
+
+// Prepare 创建日志目录和文件，并校正权限。
+func Prepare(path string) error {
+	file, err := openFile(path, os.O_APPEND)
+	if err != nil {
 		return err
 	}
 	return file.Close()
+}
+
+// OpenForProcess 返回可由子进程直接继承的追加句柄；调用前必须确认旧进程已退出，不能轮转仍在使用的 inode。
+func OpenForProcess(path string) (*os.File, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, errors.New("日志路径不能为空")
+	}
+	lock, err := acquire(path + ".lock")
+	if err != nil {
+		return nil, err
+	}
+	defer lock.Release()
+	file, err := openFile(path, os.O_APPEND)
+	if err != nil {
+		return nil, err
+	}
+	info, err := file.Stat()
+	if err != nil {
+		return nil, errors.Join(err, file.Close())
+	}
+	if info.Size() < MaxFileBytes {
+		return file, nil
+	}
+	if err := file.Close(); err != nil {
+		return nil, err
+	}
+	if err := rotate(path); err != nil {
+		return nil, err
+	}
+	return openFile(path, os.O_APPEND)
+}
+
+// Clear 截断当前 inode 并删除备份，正在运行的子进程继续通过原有追加句柄写入。
+func Clear(path string) (err error) {
+	if strings.TrimSpace(path) == "" {
+		return errors.New("日志路径不能为空")
+	}
+	lock, err := acquire(path + ".lock")
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
+	file, err := openFile(path, 0)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, file.Close()) }()
+	for index := 1; index <= BackupCount; index++ {
+		if err := os.Remove(fmt.Sprintf("%s.%d", path, index)); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return file.Truncate(0)
 }
 
 // Append 在跨进程锁内轮转并追加日志。
@@ -218,14 +279,11 @@ func Append(path string, content []byte) error {
 			return err
 		}
 	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	file, err := openFile(path, os.O_APPEND)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
-	if err := file.Chmod(0o600); err != nil {
-		return err
-	}
 	_, err = file.Write(content)
 	return err
 }

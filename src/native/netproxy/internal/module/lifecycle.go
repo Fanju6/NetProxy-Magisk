@@ -12,6 +12,7 @@ import (
 
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/inbound"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/logfile"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
@@ -498,12 +499,15 @@ func ensureLifecycleStateDir(options Options) error {
 }
 
 func newSingBoxCommand(options Options, prepared PrepareResult) (*exec.Cmd, *os.File, error) {
-	logPath := filepath.Join(options.LogDir, "sing-box.log")
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	logPath, err := LogFile(options, "core")
 	if err != nil {
 		return nil, nil, err
 	}
-	command := exec.Command(options.SingBoxPath, "run", "-c", paths.SingBoxConfig(options.SingBoxDir),
+	logFile, err := logfile.OpenForProcess(logPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	command := exec.Command(options.SingBoxPath, "run", "--disable-color", "-c", paths.SingBoxConfig(options.SingBoxDir),
 		"-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.Inbound)
 	command.Dir = options.SingBoxDir
 	command.Stdout = logFile
@@ -513,7 +517,7 @@ func newSingBoxCommand(options Options, prepared PrepareResult) (*exec.Cmd, *os.
 }
 
 func checkPreparedConfiguration(ctx context.Context, options Options, prepared PrepareResult) error {
-	command := exec.CommandContext(ctx, options.SingBoxPath, "check", "-c", paths.SingBoxConfig(options.SingBoxDir),
+	command := exec.CommandContext(ctx, options.SingBoxPath, "check", "--disable-color", "-c", paths.SingBoxConfig(options.SingBoxDir),
 		"-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.Inbound)
 	command.Dir = options.SingBoxDir
 	command.Stdout = os.Stderr
