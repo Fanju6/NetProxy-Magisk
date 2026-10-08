@@ -199,3 +199,47 @@ func TestReadStatusActiveGroupSwitchIsVisibleImmediately(t *testing.T) {
 		t.Fatalf("活动分组切换未立即可见: %#v, err=%v", status, err)
 	}
 }
+
+func TestSnapshotIgnoresUnrequestedProvider(t *testing.T) {
+	root := t.TempDir()
+	for _, id := range []string{"wanted", "unrelated"} {
+		dir := filepath.Join(root, id)
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		metadata := catalog.NewMetadata(id, "Group "+id, "local", "", time.Now())
+		metadata.NodeCount = 1
+		if err := catalog.SaveMetadataAtomic(t.Context(), filepath.Join(dir, "meta.json"), metadata); err != nil {
+			t.Fatal(err)
+		}
+		document := []byte(`{"outbounds":[{"type":"socks","tag":"node","server":"127.0.0.1","server_port":1080}]}`)
+		if err := provider.WriteAtomic(filepath.Join(dir, "provider.json"), document, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "unrelated", "provider.json"), []byte(`{"outbounds":[`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := catalog.Scan(t.Context(), catalog.ScanOptions{Root: root, WithNodes: true, GroupID: "wanted"}); err != nil {
+		t.Fatalf("targeted catalog scan failed: %v", err)
+	}
+	module := filepath.Join(t.TempDir(), "module.conf")
+	options := Options{CatalogRoot: root, ModuleConfig: module, SingBoxPath: filepath.Join(t.TempDir(), "not-running-singbox")}
+	for _, active := range []string{"wanted", "unrelated"} {
+		if err := os.WriteFile(module, []byte("ACTIVE_GROUP_ID=\""+active+"\"\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		for _, query := range []string{"wanted", "Group wanted"} {
+			snapshot, err := ReadSnapshot(t.Context(), options, query)
+			if err != nil || len(snapshot.Groups) != 1 || snapshot.Groups[0].Group.ID != "wanted" || len(snapshot.Groups[0].Nodes) != 1 {
+				t.Fatalf("目标分组读取错误: %+v %v", snapshot, err)
+			}
+			if snapshot.Selection.ActiveGroupID != active || snapshot.Selection.ActiveGroupName != "Group "+active || snapshot.Selection.ActiveGroupNodeCount != 1 {
+				t.Fatalf("读取目标分组影响了活动选择: %+v", snapshot.Selection)
+			}
+		}
+	}
+	if _, err := ReadSnapshot(t.Context(), options, "unrelated"); err == nil {
+		t.Fatal("目标 Provider 损坏未被发现")
+	}
+}

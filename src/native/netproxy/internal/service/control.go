@@ -270,50 +270,22 @@ func ReadSelection(ctx context.Context, options Options) (Selection, error) {
 // ReadSnapshot 读取持久化节点并尽力合并运行时 Service API 状态。
 func ReadSnapshot(ctx context.Context, options Options, groupID string) (Snapshot, error) {
 	options = normalizeOptions(options)
+	groupID = strings.TrimSpace(groupID)
 	module := readModuleConfig(options.ModuleConfig)
-	allGroups, err := readNodes(ctx, options, module, "", true)
+	groups, err := readNodes(ctx, options, module, groupID, true)
 	if err != nil {
 		return Snapshot{}, err
 	}
+	selectionGroups := groups
+	if groupID != "" && (len(groups) != 1 || groups[0].Group.ID != module.ActiveGroupID) {
+		selectionGroups, err = readNodes(ctx, options, module, "", false)
+		if err != nil {
+			return Snapshot{}, err
+		}
+	}
 	runtimeGroups, _ := readRuntimeGroups(ctx, options)
-	selection := selectionFromRuntimeGroups(module, allGroups, runtimeGroups)
-	groups := allGroups
-	if strings.TrimSpace(groupID) != "" {
-		resolved, resolveErr := resolveSnapshotGroup(allGroups, groupID)
-		if resolveErr != nil {
-			return Snapshot{}, resolveErr
-		}
-		groups = groups[:0]
-		for _, candidate := range allGroups {
-			if candidate.Group.ID == resolved {
-				groups = append(groups, candidate)
-				break
-			}
-		}
-	}
+	selection := selectionFromRuntimeGroups(module, selectionGroups, runtimeGroups)
 	return Snapshot{Groups: groups, Selection: selection, RuntimeGroups: runtimeGroups}, nil
-}
-
-func resolveSnapshotGroup(groups []catalog.GroupSnapshot, query string) (string, error) {
-	for _, group := range groups {
-		if group.Group.ID == query {
-			return group.Group.ID, nil
-		}
-	}
-	match := ""
-	for _, group := range groups {
-		if group.Group.Name != query {
-			continue
-		}
-		if match != "" {
-			return "", fmt.Errorf("分组名称不唯一: %s", query)
-		}
-		match = group.Group.ID
-	}
-	if match == "" {
-		return "", fmt.Errorf("分组不存在: %s", query)
-	}
-	return match, nil
 }
 
 // ReadMode 读取主配置模式，并在核心运行时补充当前 Service API 模式。
