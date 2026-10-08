@@ -974,3 +974,78 @@ func TestAcquireLockRecoversReusedPIDAndRejectsConcurrentHolder(t *testing.T) {
 	}
 	releaseLock(lockPath, second)
 }
+
+func TestUpdateFailurePreservesProviderValidators(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("If-None-Match") == `"v2"` {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", `"v2"`)
+		w.Header().Set("Last-Modified", "Wed, 08 Oct 2025 00:00:00 GMT")
+		_, _ = w.Write([]byte("not a subscription"))
+	}))
+	defer server.Close()
+	root := t.TempDir()
+	group := filepath.Join(root, "fixture")
+	if err := os.MkdirAll(group, 0700); err != nil {
+		t.Fatal(err)
+	}
+	metadata := catalog.NewMetadata("fixture", "Audit", "subscription", server.URL, time.Now())
+	metadata.ETag, metadata.Revision, metadata.NodeCount = `"v1"`, 1, 1
+	metadata.LastModified, metadata.LastSuccessAt = "Tue, 07 Oct 2025 00:00:00 GMT", "2025-10-07T00:00:00Z"
+	metadata.UpdateViaProxy = "never"
+	if err := catalog.SaveMetadataAtomic(t.Context(), filepath.Join(group, "meta.json"), metadata); err != nil {
+		t.Fatal(err)
+	}
+	old := []byte(`{"outbounds":[{"type":"socks","tag":"old-node","server":"127.0.0.1","server_port":1080}]}`)
+	if err := provider.WriteAtomic(filepath.Join(group, "provider.json"), old, 0600); err != nil {
+		t.Fatal(err)
+	}
+	options := UpdateOptions{Root: root, GroupID: "fixture", ProgressDir: filepath.Join(root, "progress"), Now: time.Now()}
+	_, firstErr := Update(t.Context(), options)
+	if firstErr == nil {
+		t.Fatal("expected conversion failure")
+	}
+	failed, err := catalog.LoadMetadata(context.Background(), filepath.Join(group, "meta.json"), "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, secondErr := Update(t.Context(), options)
+	after, err := catalog.LoadMetadata(context.Background(), filepath.Join(group, "meta.json"), "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("first error=%v; persisted ETag=%q; next result=%+v error=%v; last_error=%q revision=%d", firstErr, failed.ETag, result, secondErr, after.LastError, after.Revision)
+	if failed.ETag != metadata.ETag || failed.LastModified != metadata.LastModified {
+		t.Fatal("无效订阅替换了有效 Provider 的 HTTP 验证器")
+	}
+	if secondErr == nil || result.NotModified || after.LastError == "" || after.LastSuccessAt != metadata.LastSuccessAt {
+		t.Fatalf("再次请求误清除更新失败: result=%+v metadata=%+v err=%v", result, after, secondErr)
+	}
+	content, err := os.ReadFile(filepath.Join(group, "provider.json"))
+	if err != nil || string(content) != string(old) {
+		t.Fatalf("失败后旧 Provider 未保留: %v", err)
+	}
+}
+
+func TestUpdateAcceptedContentClearsAbsentValidators(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"outbounds":[{"type":"socks","tag":"node","server":"127.0.0.1","server_port":1080}]}`))
+	}))
+	defer server.Close()
+	root := t.TempDir()
+	groupDir := filepath.Join(root, "fixture")
+	metadata := catalog.NewMetadata("fixture", "Fixture", "subscription", server.URL, time.Now())
+	metadata.ETag, metadata.LastModified, metadata.UpdateViaProxy = `"old"`, "Tue, 07 Oct 2025 00:00:00 GMT", "never"
+	if err := catalog.SaveMetadataAtomic(t.Context(), filepath.Join(groupDir, "meta.json"), metadata); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Update(t.Context(), UpdateOptions{Root: root, GroupID: "fixture", ProgressDir: filepath.Join(root, "progress")}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := catalog.LoadMetadata(t.Context(), filepath.Join(groupDir, "meta.json"), "fixture")
+	if err != nil || after.ETag != "" || after.LastModified != "" {
+		t.Fatalf("新 Provider 沿用了过期验证器: %+v %v", after, err)
+	}
+}

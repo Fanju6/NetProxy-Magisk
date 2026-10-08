@@ -371,7 +371,7 @@ func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 		}
 		return updateFailure(ctx, options, metadata, groupDir, started, response, "subscription.convert_failed", "订阅下载或转换失败", fetchErr)
 	}
-	metadata = applyResponseMetadata(metadata, response.Metadata, options.Now)
+	metadata = applyResponseMetadata(metadata, response.Metadata)
 	metadata.Name = resolveName(metadata)
 
 	if response.Metadata.NotModified {
@@ -415,6 +415,7 @@ func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 	newNodeCount := len(filtered.Outbounds) + len(filtered.Endpoints)
 
 	metadata.NodeCount = newNodeCount
+	metadata.ETag, metadata.LastModified = response.Metadata.ETag, response.Metadata.LastModified
 	metadata.Revision++
 	metadata.LastAttemptAt = formatTime(options.Now)
 	metadata.LastSuccessAt = metadata.LastAttemptAt
@@ -530,7 +531,13 @@ func commitNotModified(ctx context.Context, options UpdateOptions, groupDir, met
 		clearProgress(options.ProgressDir, options.GroupID)
 		return Result{}, updateConflict(options.GroupID, initial, current)
 	}
-	metadata := applyResponseMetadata(current, response.Metadata, options.Now)
+	metadata := applyResponseMetadata(current, response.Metadata)
+	if response.Metadata.ETag != "" {
+		metadata.ETag = response.Metadata.ETag
+	}
+	if response.Metadata.LastModified != "" {
+		metadata.LastModified = response.Metadata.LastModified
+	}
 	metadata.Name = resolveName(metadata)
 	preserveRuntimeError := metadata.RuntimeSyncPending && isRuntimeSyncError(metadata.LastError)
 	metadata.LastAttemptAt = formatTime(options.Now)
@@ -637,7 +644,7 @@ func updateFailure(ctx context.Context, options UpdateOptions, metadata catalog.
 
 func updateFailureLocked(options UpdateOptions, metadata catalog.Metadata, groupDir string, started time.Time, response fetch.Response, code, message string, cause error) (Result, error) {
 	now := options.Now
-	metadata = applyResponseMetadata(metadata, response.Metadata, now)
+	metadata = applyResponseMetadata(metadata, response.Metadata)
 	metadata.LastAttemptAt = formatTime(now)
 	if !metadata.RuntimeSyncPending || !isRuntimeSyncError(metadata.LastError) {
 		metadata.LastError = message
@@ -693,15 +700,9 @@ func updateConflict(groupID string, expected, current catalog.Metadata) *Error {
 	}}
 }
 
-func applyResponseMetadata(metadata catalog.Metadata, response fetch.Metadata, now time.Time) catalog.Metadata {
+func applyResponseMetadata(metadata catalog.Metadata, response fetch.Metadata) catalog.Metadata {
 	if response.StatusCode > 0 {
 		metadata.LastStatusCode = response.StatusCode
-	}
-	if response.ETag != "" {
-		metadata.ETag = response.ETag
-	}
-	if response.LastModified != "" {
-		metadata.LastModified = response.LastModified
 	}
 	if response.ProfileTitle != "" {
 		metadata.ProfileTitle = response.ProfileTitle
@@ -727,7 +728,6 @@ func applyResponseMetadata(metadata catalog.Metadata, response fetch.Metadata, n
 		metadata.UpdateInterval = *response.UpdateIntervalSeconds
 		metadata.IntervalSource = "profile"
 	}
-	_ = now
 	return metadata
 }
 
