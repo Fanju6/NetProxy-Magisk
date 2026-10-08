@@ -504,6 +504,39 @@ func TestConfigRollbackFailureKeepsSnapshotsForRetry(t *testing.T) {
 	}
 }
 
+func TestAutoStartSaveDoesNotReloadRunningService(t *testing.T) {
+	options, _, _, runtimeContent := configApplyOptions(t)
+	isolateConfigApplyHooks(t, true)
+	configReload = func(context.Context, Options) error {
+		t.Fatal("开机自启触发了核心 reload")
+		return nil
+	}
+	for _, value := range []string{"1", "0"} {
+		snapshot, err := ReadConfig(options, "module")
+		if err != nil {
+			t.Fatal(err)
+		}
+		source := writeSectionSource(t, "AUTO_START="+value+"\n")
+		revision, err := ApplyConfig(t.Context(), options, "module", source, false, snapshot["revision"])
+		if err != nil {
+			t.Fatal(err)
+		}
+		applied, _ := ReadConfig(options, "module")
+		if revision != applied["revision"] {
+			t.Fatal("revision 没有对应保存内容")
+		}
+		assertRuntimeContent(t, options, runtimeContent)
+	}
+	reloads := 0
+	configReload = func(context.Context, Options) error { reloads++; return nil }
+	if _, err := ApplyConfig(t.Context(), options, "module", writeSectionSource(t, "WIFI_AUTO_SWITCH=1\n"), false, ""); err != nil {
+		t.Fatal(err)
+	}
+	if reloads != 1 {
+		t.Fatal("网络策略修改未应用到运行实例")
+	}
+}
+
 func TestConfigApplyHoldsWriterLockAndReloadBorrowsIt(t *testing.T) {
 	options, _, source, _ := configApplyOptions(t)
 	isolateConfigApplyHooks(t, true)

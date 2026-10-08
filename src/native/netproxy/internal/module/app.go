@@ -3,7 +3,6 @@ package module
 
 import (
 	"context"
-	"encoding/json/jsontext"
 	json "encoding/json/v2"
 	"errors"
 	"fmt"
@@ -299,21 +298,18 @@ func syncRuntimeSelector(ctx context.Context, options Options, active, inner str
 	}
 }
 
-// UpdateApp 在同一入站文件锁内修改最新应用策略，不应用到运行实例。
+// UpdateApp 在配置事务锁内修改最新应用策略，并应用到运行实例。
 func UpdateApp(ctx context.Context, options Options, action, value string) (data AppPolicy, err error) {
 	persisted := false
 	defer func() { logOperation(options, "app", "app-policy.update", "分应用策略更新", persisted, err) }()
-	editor, err := moduleconfig.Lock(ctx, options.InboundConfig)
+	if err := options.validate(); err != nil {
+		return AppPolicy{}, err
+	}
+	options, release, err := lockConfigApply(ctx, options, options.InboundConfig, false)
 	if err != nil {
 		return AppPolicy{}, err
 	}
-	defer editor.Release()
-	// 待恢复快照会覆盖入站文件，恢复完成前不能接收新的名单写入。
-	if _, err := os.Stat(configTransactionPath(options)); err == nil {
-		return AppPolicy{}, errors.New("存在未完成的配置事务，请先检查服务配置以恢复")
-	} else if !os.IsNotExist(err) {
-		return AppPolicy{}, err
-	}
+	defer release()
 	content, err := os.ReadFile(options.InboundConfig)
 	if err != nil {
 		return AppPolicy{}, err
@@ -353,26 +349,15 @@ func UpdateApp(ctx context.Context, options Options, action, value string) (data
 	default:
 		return AppPolicy{}, fmt.Errorf("未知应用操作: %s", action)
 	}
-	object, err := configObject(content)
+	content, err = json.Marshal(map[string]inbound.AppPolicy{"app": policy}, json.Deterministic(true))
 	if err != nil {
 		return AppPolicy{}, err
 	}
-	object["app"], err = json.Marshal(policy, json.Deterministic(true))
-	if err != nil {
-		return AppPolicy{}, err
-	}
-	content, err = json.Marshal(object, json.Deterministic(true), jsontext.WithIndent("  "))
-	if err != nil {
-		return AppPolicy{}, err
-	}
-	config, err = inbound.Parse(content)
-	if err != nil {
-		return AppPolicy{}, err
-	}
-	if err := writeConfigAtomic(options.InboundConfig, content, 0o600); err != nil {
+	if _, err := applyConfigLocked(ctx, options, "inbound/app", options.InboundConfig, content, false, ""); err != nil {
 		return AppPolicy{}, err
 	}
 	persisted = true
+	config.App = policy
 	return appPolicy(config), nil
 }
 

@@ -48,7 +48,7 @@ var configSections = []string{
 }
 
 func configSection(target string) string {
-	if section, found := strings.CutPrefix(target, "inbound/"); found && (section == "backend" || section == "ebpf" || section == "tun") {
+	if section, found := strings.CutPrefix(target, "inbound/"); found && (section == "backend" || section == "app" || section == "ebpf" || section == "tun") {
 		return section
 	}
 	section, hasPrefix := strings.CutPrefix(target, "singbox/")
@@ -65,7 +65,7 @@ func ListConfigs(options Options) ([]ConfigDocument, error) {
 	}
 	result := make([]ConfigDocument, 0)
 	result = append(result, ConfigDocument{ID: "inbound", Filename: "inbound.json", Category: "inbound", Editable: true})
-	for _, section := range []string{"backend", "ebpf", "tun"} {
+	for _, section := range []string{"backend", "app", "ebpf", "tun"} {
 		result = append(result, ConfigDocument{ID: "inbound/" + section, Filename: section, Category: "inbound", Editable: true, Section: section})
 	}
 	if _, err := os.Stat(paths.SingBoxConfig(options.SingBoxDir)); err == nil {
@@ -225,28 +225,49 @@ func ApplyConfig(ctx context.Context, options Options, target, source string, va
 	if err := options.validate(); err != nil {
 		return "", err
 	}
-	var lifecycleLock *lifecycleLock
-	if !validateOnly {
-		lifecycleLock, err = acquireLifecycleLock(options.StateFile)
-		if err != nil {
-			return "", err
-		}
-		defer lifecycleLock.release()
-		if err := recoverConfigApply(ctx, options); err != nil {
-			return "", err
-		}
-	}
-	var release func()
-	options, release, err = lockConfigFiles(ctx, options, destination, options.ModuleConfig, options.InboundConfig, paths.SingBoxConfig(options.SingBoxDir))
+	options, release, err := lockConfigApply(ctx, options, destination, validateOnly)
 	if err != nil {
 		return "", err
 	}
 	defer release()
+	return applyConfigLocked(ctx, options, target, destination, replacement, validateOnly, expectedRevision)
+}
+
+func lockConfigApply(ctx context.Context, options Options, destination string, validateOnly bool) (Options, func(), error) {
+	var lifecycle *lifecycleLock
+	var err error
+	if !validateOnly {
+		lifecycle, err = waitLifecycleLock(ctx, options.StateFile)
+		if err != nil {
+			return options, nil, err
+		}
+		if err := recoverConfigApply(ctx, options); err != nil {
+			lifecycle.release()
+			return options, nil, err
+		}
+	}
+	options, release, err := lockConfigFiles(ctx, options, destination, options.ModuleConfig, options.InboundConfig, paths.SingBoxConfig(options.SingBoxDir))
+	if err != nil {
+		if lifecycle != nil {
+			lifecycle.release()
+		}
+		return options, nil, err
+	}
+	return options, func() {
+		release()
+		if lifecycle != nil {
+			lifecycle.release()
+		}
+	}, nil
+}
+
+func applyConfigLocked(ctx context.Context, options Options, target, destination string, replacement []byte, validateOnly bool, expectedRevision string) (string, error) {
 	// 锁内读取最新主配置后只替换目标分区，不能把客户端的整份旧快照写回。
 	section := configSection(target)
 	var current []byte
 	inboundTarget := target == "inbound" || strings.HasPrefix(target, "inbound/")
 	if section != "" || expectedRevision != "" || inboundTarget {
+		var err error
 		current, err = os.ReadFile(destination)
 		if err != nil {
 			return "", err
@@ -293,6 +314,14 @@ func ApplyConfig(ctx context.Context, options Options, target, source string, va
 	}
 	applyRuntime := true
 	switchBackend := false
+	if target == "module" {
+		previous, previousErr := moduleconfig.LoadModule(destination)
+		next, nextErr := moduleconfig.LoadModule(candidatePath)
+		if previousErr == nil && nextErr == nil {
+			previous.AutoStart = next.AutoStart
+			applyRuntime = previous != next
+		}
+	}
 	if inboundTarget {
 		previous, parseErr := inbound.Parse(current)
 		if parseErr != nil {
@@ -427,7 +456,7 @@ func validateConfig(ctx context.Context, options Options, target, candidate stri
 }
 
 func validateInboundTree(ctx context.Context, options Options, candidate string, content []byte, section string) error {
-	if section == "backend" {
+	if section == "backend" || section == "app" {
 		if _, err := inbound.Parse(content); err != nil {
 			return err
 		}
@@ -607,7 +636,7 @@ func ResolveConfig(options Options, target string) (string, error) {
 	switch target {
 	case "module":
 		return options.ModuleConfig, nil
-	case "inbound", "inbound/backend", "inbound/ebpf", "inbound/tun":
+	case "inbound", "inbound/backend", "inbound/app", "inbound/ebpf", "inbound/tun":
 		return options.InboundConfig, nil
 	case "singbox/config.json":
 		return paths.SingBoxConfig(options.SingBoxDir), nil

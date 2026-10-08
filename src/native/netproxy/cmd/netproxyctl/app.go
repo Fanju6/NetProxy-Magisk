@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/inbound"
 	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
 )
 
@@ -26,16 +28,23 @@ func (c *cli) app(ctx context.Context, args []string) error {
 	if len(positionals) > 0 {
 		value = positionals[0]
 	}
+	switch action {
+	case "add", "remove":
+		if _, err := inbound.ParsePackageRef(value); err != nil {
+			return &resultError{Code: "app.package_invalid", Message: err.Error()}
+		}
+	case "mode":
+		if value != "blacklist" && value != "whitelist" {
+			return &resultError{Code: "app.mode_invalid", Message: "应用模式应为 blacklist 或 whitelist"}
+		}
+	}
 	data, err := moduleapp.UpdateApp(ctx, options, action, value)
 	if err != nil {
-		code := "app.update_failed"
-		switch action {
-		case "add", "remove":
-			code = "app.package_invalid"
-		case "mode":
-			code = "app.mode_invalid"
+		var validation *inbound.ValidationError
+		if errors.As(err, &validation) {
+			return err
 		}
-		return &resultError{Code: code, Message: err.Error()}
+		return &resultError{Code: "app.update_failed", Message: err.Error()}
 	}
 	code := "app." + action
 	message := "分应用代理设置已更新"

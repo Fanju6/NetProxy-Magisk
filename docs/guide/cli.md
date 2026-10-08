@@ -96,7 +96,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl network evaluate --type wifi --ssi
 
 应用引用必须是 `<用户ID>:<包名>`。配置保存引用而不是 UID；生成运行时配置时，Go 组件按指定用户向 Android package service 查询 UID。
 
-名单保存在 `inbound.json` 的共用 `app` 对象，命令参数不变；修改后重启服务应用，不按每次增删自动重启。只筛选本机应用，不识别热点客户端。
+名单保存在 `inbound.json` 的共用 `app` 对象。服务运行时，有效策略变化自动应用；批量修改可通过 `inbound/app` 分区一次保存。只筛选本机应用，不识别热点客户端。
 
 `network evaluate` 是高级排查入口。正常情况下后台 Worker 会根据 Android 网络事件自动评估，不需要定时手工调用。
 
@@ -125,7 +125,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl logs export /sdcard/Download/netpr
 
 `config list` 同时列出主配置、分区、本地规则和只读运行时。`singbox/dns` 的候选内容必须使用 `{"dns": {...}}`，`{}` 表示删除该字段；不能包含其他分区。完整替换使用 `singbox/config.json`。
 
-受管入站使用 `inbound` 完整目标与 `inbound/backend`、`inbound/ebpf`、`inbound/tun` 分区；分区保留对应顶层字段，例如 `{"backend":"tun"}`，不能用 `{}` 删除。它们共用同一磁盘文件，没有 `config ebpf` 目标。实际入站只读目标为 `runtime/inbound.json`，另保留 `runtime/providers.json` 与 `runtime/outbounds.json`。
+受管入站使用 `inbound` 完整目标与 `inbound/backend`、`inbound/app`、`inbound/ebpf`、`inbound/tun` 分区；分区保留对应顶层字段，例如 `{"backend":"tun"}`，不能用 `{}` 删除。它们共用同一磁盘文件，没有 `config ebpf` 目标。实际入站只读目标为 `runtime/inbound.json`，另保留 `runtime/providers.json` 与 `runtime/outbounds.json`。
 
 `config list` 的四个入站目标属于 `category: "inbound"`。运行时准备结果使用 `inbound` 路径字段与 `backend`，不再使用旧 `ebpf` 字段。切换强杀时中止并保留 journal，需要设备重启后再恢复，不做兜底清理。
 

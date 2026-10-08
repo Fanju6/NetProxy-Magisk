@@ -72,11 +72,11 @@ const success = (...args) => {
 };
 const documents = success('config', 'list');
 assert.deepEqual(documents.filter(item => item.category === 'inbound').map(item => item.id),
-  ['inbound', 'inbound/backend', 'inbound/ebpf', 'inbound/tun']);
+  ['inbound', 'inbound/backend', 'inbound/app', 'inbound/ebpf', 'inbound/tun']);
 assert.equal(new Set(documents.map(item => item.id)).size, documents.length);
 const inboundPath = join(moduleDir, 'config', 'inbound', 'inbound.json');
 const template = JSON.parse(readFileSync(inboundPath, 'utf8'));
-for (const target of ['inbound', 'inbound/backend', 'inbound/ebpf', 'inbound/tun']) {
+for (const target of ['inbound', 'inbound/backend', 'inbound/app', 'inbound/ebpf', 'inbound/tun']) {
   const document = documents.find(item => item.id === target);
   assert.equal(document.editable, true);
   const read = success('config', 'read', target);
@@ -98,7 +98,7 @@ for (const target of ['runtime/inbound.json', 'runtime/outbounds.json', 'runtime
   success('config', 'read', target);
   assert.equal(run('config', 'apply', target, inboundPath).ok, false);
 }
-for (const target of ['ebpf', 'runtime/ebpf.json', 'inbound/app']) {
+for (const target of ['ebpf', 'runtime/ebpf.json', 'inbound/unknown']) {
   assert.equal(run('config', 'read', target).ok, false);
   assert.equal(run('config', 'apply', target, inboundPath).ok, false);
 }

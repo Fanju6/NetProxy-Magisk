@@ -103,7 +103,7 @@ configured_backend 是保存的入站；active_backend 仅在 ready 且 PID/API 
   app enable                  启用分应用代理
   app disable                 禁用分应用代理
 
-共用名单保存在 inbound.json 的 app 对象，修改后重启服务应用；只筛选本机应用。
+共用名单保存在 inbound.json 的 app 对象，运行时修改自动应用；只筛选本机应用。
 `,
   },
   ebpf: {
@@ -133,7 +133,7 @@ configured_backend 是保存的入站；active_backend 仅在 ready 且 PID/API 
   config apply <目标> <内容文件>      应用配置
 
   完整配置：singbox/config.json、inbound
-  入站分区：inbound/backend、inbound/ebpf、inbound/tun
+  入站分区：inbound/backend、inbound/app、inbound/ebpf、inbound/tun
   入站分区保留顶层字段，例如 {"backend":"tun"}；不能用 {} 删除。
   核心分区：singbox/dns、singbox/inbounds、singbox/route 等
   核心分区保留顶层字段，例如 {"dns":{...}}；{} 删除该分区。
@@ -160,7 +160,7 @@ export const COMMAND_NAMES = Object.keys(COMMANDS) as CommandName[]
 export const ROOT_COMPLETIONS = [...COMMAND_NAMES, 'help', 'clear', 'exit']
 export const HELP_TOPICS = [...COMMAND_NAMES, 'shell']
 const CONFIG_TARGETS = [
-  'inbound', 'inbound/backend', 'inbound/ebpf', 'inbound/tun', 'singbox/config.json',
+  'inbound', 'inbound/backend', 'inbound/app', 'inbound/ebpf', 'inbound/tun', 'singbox/config.json',
   'singbox/log', 'singbox/dns', 'singbox/inbounds', 'singbox/outbounds', 'singbox/route',
   'singbox/experimental', 'singbox/http_clients', 'singbox/services',
 ]

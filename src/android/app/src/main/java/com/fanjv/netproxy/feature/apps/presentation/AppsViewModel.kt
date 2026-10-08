@@ -21,6 +21,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,6 +30,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 
 /** 管理 Android 应用清单与 netproxyctl 分应用策略。 */
@@ -37,6 +39,7 @@ internal class AppsViewModel(
     private val packageCatalog: AppPackageRepository,
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     private val modelDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val policyDebounceMillis: Long = 500,
 ) : ViewModel(scope) {
     private var labels = ConcurrentHashMap<String, String>()
     private var packageLabels = ConcurrentHashMap<String, String>()
@@ -53,6 +56,8 @@ internal class AppsViewModel(
     private var policyConfirmed = false
     private val pending = mutableListOf<PolicyIntent>()
     private val policyMutationMutex = Mutex()
+    private val policyChanges = Channel<Unit>(Channel.CONFLATED)
+    private var flushRequested = false
     private val packageLookupDispatcher = Dispatchers.IO.limitedParallelism(4)
     private var loaded = false
 
@@ -141,30 +146,29 @@ internal class AppsViewModel(
     private fun enqueue(intent: PolicyIntent) {
         pending += intent
         publishPolicy()
+        policyChanges.trySend(Unit)
         if (mutationJob?.isActive == true) return
         mutationJob = viewModelScope.launch {
             var failure = ""
             while (pending.isNotEmpty()) {
+                while (!flushRequested && withTimeoutOrNull(policyDebounceMillis) { policyChanges.receive() } != null) { }
+                flushRequested = false
                 policyMutationMutex.withLock {
-                    val intent = pending.first()
-                    // add/remove 操作当前确认模式，不能把失败模式下的勾选换成另一份名单。
-                    if (intent is PolicyIntent.Selection && (!policyConfirmed || intent.mode != confirmedConfig.mode)) {
-                        pending.removeAt(0)
-                        publishPolicy(failure)
-                        return@withLock
-                    }
+                    val count = pending.size
                     try {
-                        val config = when (intent) {
-                            is PolicyIntent.Settings -> if (intent.enabled && intent.mode != null) {
-                                repository.setMode(intent.mode)
-                            } else repository.setEnabled(intent.enabled)
-                            is PolicyIntent.Selection -> if (intent.selected) repository.add(intent.id)
-                                else repository.remove(intent.id)
+                        if (!policyConfirmed) {
+                            confirmedConfig = repository.config()
+                            policyConfirmed = true
                         }
+                        val config = pending.take(count).fold(confirmedConfig) { config, intent -> intent.applyTo(config) }
+                        val changed = config.enabled != confirmedConfig.enabled || config.mode != confirmedConfig.mode ||
+                            config.proxyApps.toSet() != confirmedConfig.proxyApps.toSet() ||
+                            config.bypassApps.toSet() != confirmedConfig.bypassApps.toSet()
+                        val applied = if (changed) repository.apply(config) else config
                         currentCoroutineContext().ensureActive()
-                        confirmedConfig = config
+                        confirmedConfig = applied
                         policyConfirmed = true
-                        failure = ""
+                        if (changed) failure = ""
                     } catch (error: Exception) {
                         if (error is CancellationException) throw error
                         currentCoroutineContext().ensureActive()
@@ -181,11 +185,23 @@ internal class AppsViewModel(
                         }
                     }
                     // 回读只确认已执行的写入，尚未执行的意图始终叠加在确认配置之上。
-                    pending.removeAt(0)
+                    pending.subList(0, count).clear()
                     publishPolicy(failure)
                 }
             }
         }
+    }
+
+    fun requestPolicyFlush() {
+        if (pending.isEmpty()) return
+        flushRequested = true
+        policyChanges.trySend(Unit)
+    }
+
+    suspend fun flushPolicy(): Boolean {
+        requestPolicyFlush()
+        mutationJob?.join()
+        return _state.value.error.isBlank()
     }
 
     fun setShowSystemApps(show: Boolean) {
@@ -265,7 +281,7 @@ internal class AppsViewModel(
         )
 
     private fun activeItems(config: AppProxyConfig): Set<String> =
-        activeItems(config.mode, parsePackages(config.proxyApps), parsePackages(config.bypassApps))
+        activeItems(config.mode, config.proxyApps.toSet(), config.bypassApps.toSet())
 
     private fun activeItems(
         mode: String,
@@ -273,13 +289,10 @@ internal class AppsViewModel(
         bypassApps: Set<String>
     ): Set<String> = if (mode == "blacklist") bypassApps else proxyApps
 
-    private fun parsePackages(value: String): Set<String> =
-        value.split(',').map(String::trim).filter(String::isNotBlank).toSet()
-
     private fun publishPolicy(error: String = "") {
         val config = pending.fold(confirmedConfig) { config, intent -> intent.applyTo(config) }
-        val proxyApps = parsePackages(config.proxyApps)
-        val bypassApps = parsePackages(config.bypassApps)
+        val proxyApps = config.proxyApps.toSet()
+        val bypassApps = config.bypassApps.toSet()
         _state.update {
             it.copy(
                 appProxyEnabled = config.enabled,
@@ -287,6 +300,7 @@ internal class AppsViewModel(
                 proxyApps = proxyApps,
                 bypassApps = bypassApps,
                 proxiedApps = activeItems(config.mode, proxyApps, bypassApps),
+                hasPendingPolicy = pending.isNotEmpty(),
                 error = error
             )
         }
@@ -311,9 +325,8 @@ internal class AppsViewModel(
         data class Selection(val id: String, val selected: Boolean, val mode: String) : PolicyIntent {
             override fun applyTo(config: AppProxyConfig): AppProxyConfig {
                 if (config.mode != mode) return config
-                val items = (if (config.mode == "blacklist") config.bypassApps else config.proxyApps)
-                    .split(',').filter(String::isNotBlank).toSet()
-                val updated = (if (selected) items + id else items - id).joinToString(",")
+                val items = (if (config.mode == "blacklist") config.bypassApps else config.proxyApps).toSet()
+                val updated = (if (selected) items + id else items - id).toList()
                 return if (config.mode == "blacklist") config.copy(bypassApps = updated)
                     else config.copy(proxyApps = updated)
             }

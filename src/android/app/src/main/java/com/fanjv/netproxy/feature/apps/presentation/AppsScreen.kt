@@ -1,5 +1,6 @@
 package com.fanjv.netproxy.feature.apps.presentation
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.basicMarquee
@@ -32,6 +33,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -52,6 +54,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.Lifecycle
+import kotlinx.coroutines.launch
 import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.core.ui.component.BackIconButton
@@ -143,6 +148,22 @@ internal fun AppsScreen(
     val searchStatus by viewModel.searchStatus
 
     LaunchedEffect(Unit) { viewModel.load() }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.requestPolicyFlush() }
+    val scope = rememberCoroutineScope()
+    var leaving by remember { mutableStateOf(false) }
+    val leave: () -> Unit = {
+        if (!leaving) {
+            if (!apps.hasPendingPolicy) onBack?.invoke()
+            else {
+                leaving = true
+                scope.launch {
+                    if (viewModel.flushPolicy()) onBack?.invoke()
+                    leaving = false
+                }
+            }
+        }
+    }
+    BackHandler(enabled = apps.hasPendingPolicy && onBack != null && searchStatus.isCollapsed()) { leave() }
 
     val scrollBehavior = MiuixScrollBehavior()
     val dynamicTopPadding =
@@ -166,7 +187,7 @@ internal fun AppsScreen(
                             title = stringResource(R.string.proxy_apps),
                             scrollBehavior = scrollBehavior,
                             navigationIcon = {
-                                onBack?.let { BackIconButton(onClick = it) }
+                                onBack?.let { BackIconButton(onClick = leave) }
                             },
                             actions = {
                                 val showTopPopup = remember { mutableStateOf(false) }
@@ -318,6 +339,9 @@ internal fun AppsScreen(
                                 ),
                                 overscrollEffect = null,
                             ) {
+                                if (apps.error.isNotBlank()) item("error") {
+                                    Text(apps.error, Modifier.padding(14.dp), color = colorScheme.error)
+                                }
                                 item {
                                     Card(
                                         modifier = Modifier

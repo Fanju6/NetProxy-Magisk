@@ -52,24 +52,24 @@ func inboundDisk(t *testing.T, options Options) []byte {
 	return content
 }
 
-func TestAppUpdateDoesNotOverwriteRecoverableInboundSnapshot(t *testing.T) {
-	options, original, _, _ := inboundApplyFixture(t, "ebpf", false)
-	transaction, err := beginConfigApply(options, options.InboundConfig)
+func TestAppUpdateRecoversInboundBeforeReadingLatestPolicy(t *testing.T) {
+	options, _, runtimeContent, _ := inboundApplyFixture(t, "ebpf", false)
+	_, err := beginConfigApply(options, options.InboundConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := UpdateApp(t.Context(), options, "add", "0:com.example.app"); err == nil {
-		t.Fatal("未完成的事务仍接受了名单写入")
-	}
-	if !bytes.Equal(inboundDisk(t, options), original) {
-		t.Fatal("待恢复的配置被改写")
-	}
-	if err := transaction.rollback(); err != nil {
+	if err := os.WriteFile(options.InboundConfig, []byte("interrupted"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := UpdateApp(t.Context(), options, "add", "0:com.example.app"); err != nil {
 		t.Fatal("恢复完成后名单仍不可写", err)
 	}
+	config, err := inbound.Load(options.InboundConfig)
+	if err != nil || !slices.Equal(config.App.BypassApps, []string{"0:com.example.app"}) {
+		t.Fatal("未在恢复的最新策略上修改", config, err)
+	}
+	assertRuntimeContent(t, options, runtimeContent)
+	assertInboundJournalAbsent(t, options)
 }
 
 func inboundJSONEqual(left, right []byte) bool {
@@ -133,7 +133,7 @@ func TestInboundConfigTargetsAndPartitionRevisions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, target := range []string{"inbound", "inbound/backend", "inbound/ebpf", "inbound/tun", "runtime/inbound.json"} {
+	for _, target := range []string{"inbound", "inbound/backend", "inbound/app", "inbound/ebpf", "inbound/tun", "runtime/inbound.json"} {
 		index := slices.IndexFunc(documents, func(document ConfigDocument) bool { return document.ID == target })
 		if index < 0 || documents[index].Editable == strings.HasPrefix(target, "runtime/") {
 			t.Fatalf("配置目标缺失或权限错误: %s", target)
@@ -146,7 +146,7 @@ func TestInboundConfigTargetsAndPartitionRevisions(t *testing.T) {
 			t.Fatal("分区没有共享事实源", path)
 		}
 	}
-	for _, target := range []string{"ebpf", "inbound/app", "inbound/unknown", "runtime/ebpf.json"} {
+	for _, target := range []string{"ebpf", "inbound/unknown", "runtime/ebpf.json"} {
 		if _, err := ResolveConfig(options, target); err == nil {
 			t.Fatalf("接受旧目标或非法分区: %s", target)
 		}
@@ -195,6 +195,48 @@ func TestInboundConfigTargetsAndPartitionRevisions(t *testing.T) {
 	}
 	assertRuntimeContent(t, options, runtimeContent)
 	assertInboundJournalAbsent(t, options)
+}
+
+func TestAppPartitionAppliesOnlyEffectiveChangesAndRollsBackFailures(t *testing.T) {
+	for _, backend := range []string{"ebpf", "tun"} {
+		t.Run(backend, func(t *testing.T) {
+			options, original, _, _ := inboundApplyFixture(t, backend, true)
+			if backend == "ebpf" {
+				object, _ := configObject(original)
+				object["ebpf"] = []byte(`{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true},"shared":{"enabled":false}}`)
+				content, _ := json.Marshal(object, json.Deterministic(true))
+				if err := os.WriteFile(options.InboundConfig, content, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			reloads := 0
+			configReload = func(context.Context, Options) error { reloads++; return nil }
+			snapshot, _ := ReadConfig(options, "inbound/app")
+			source := writeSectionSource(t, `{"app":{"enabled":true,"mode":"whitelist","proxy_apps":[],"bypass_apps":[]}}`)
+			revision, err := ApplyConfig(t.Context(), options, "inbound/app", source, false, snapshot["revision"])
+			if err != nil || reloads != 1 {
+				t.Fatal("有效应用策略没有自动 reload", reloads, err)
+			}
+			saved := inboundDisk(t, options)
+			if _, err := ApplyConfig(t.Context(), options, "inbound/app", source, false, revision); err != nil || reloads != 1 {
+				t.Fatal("相同策略仍 reload", reloads, err)
+			}
+			if _, err := ApplyConfig(t.Context(), options, "inbound/app", source, false, snapshot["revision"]); !errors.Is(err, ErrConfigConflict) {
+				t.Fatal("过期 app revision 没有拒绝", err)
+			}
+			failure := errors.New("模拟应用策略 reload 失败")
+			configReload = func(context.Context, Options) error { return failure }
+			configStop = func(context.Context, Options) error { return nil }
+			configRestoreReload = func(context.Context, Options, configApplyJournal) error { return nil }
+			if _, err := ApplyConfig(t.Context(), options, "inbound/app", writeSectionSource(t, `{"app":{"enabled":false,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]}}`), false, revision); !errors.Is(err, failure) {
+				t.Fatal("reload 错误丢失", err)
+			}
+			if !bytes.Equal(saved, inboundDisk(t, options)) {
+				t.Fatal("reload 失败未回滚应用策略")
+			}
+			assertInboundJournalAbsent(t, options)
+		})
+	}
 }
 
 func TestInboundUnselectedSaveDoesNotReload(t *testing.T) {

@@ -30,5 +30,6 @@ data class AppsUiState(
     val appShowPackageName: Boolean = true,
     val isLoadingApps: Boolean = false,
     val hasLoadedApps: Boolean = false,
+    val hasPendingPolicy: Boolean = false,
     val error: String = ""
 )

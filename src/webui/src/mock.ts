@@ -59,7 +59,7 @@ const STATIC_CONFIG: Record<string, unknown> = {
 
 const CONFIG_DOCUMENTS = [
   { id: 'inbound', filename: 'inbound.json', category: 'inbound', editable: true },
-  ...['backend', 'ebpf', 'tun'].map(section => ({
+  ...['backend', 'app', 'ebpf', 'tun'].map(section => ({
     id: `inbound/${section}`, filename: section, category: 'inbound', editable: true, section,
   })),
   { id: 'singbox/config.json', filename: 'config.json', category: 'config', editable: true },

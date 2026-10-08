@@ -84,7 +84,8 @@ src/module/service.sh
 - 配置应用按「生命周期锁 → 固定顺序的配置文件锁」执行。内部选择同步显式复用已持有的配置写入器，不能重复获取文件锁；所有配置写入共享同一路径锁，分应用增删必须在锁内读取最新名单。
 - Catalog 等待锁使用调用方 context，分组锁先于根锁。锁文件不保存业务或 owner 状态，互斥由操作系统文件锁保证。
 - sing-box 静态事实源只有 `config/singbox/config.json`。分区编辑由 Go 在配置事务锁内替换指定顶层字段，保留其他字段和数组顺序；客户端使用读取时的 `revision`，同分区冲突返回 `config.conflict`。不能在 Android 中把整份旧快照合并写回。
-- 入站复用 `config read/apply/validate` 的 `inbound`、`inbound/backend`、`inbound/ebpf`、`inbound/tun` 目标，不增加公共 inbound 命令组或旧 config ebpf 别名。入站分区必需，不能用 `{}` 删除；全部目标与 app 增删共用 `inbound.json.lock`，仅在锁内合并最新文件。
+- 入站复用 `config read/apply/validate` 的 `inbound`、`inbound/backend`、`inbound/app`、`inbound/ebpf`、`inbound/tun` 目标，不增加公共 inbound 命令组或旧 config ebpf 别名。入站分区必需，不能用 `{}` 删除；全部目标与 app 增删共用配置事务和 `inbound.json.lock`，仅在锁内合并最新文件。
+- `AUTO_START` 只影响下次开机，单独修改不得重载运行实例。分应用有效策略变化通过配置事务自动 reload，停止时只保存；管理器合并连续操作、使用 app 分区 revision，并在离页前提交待处理意图，不逐项增删后额外重启。
 - `ebpf status` 是保存的 eBPF 模板所选能力的预检，TUN 模式也可执行，不代表当前挂载状态。普通 `data.content` 始终是可读诊断，原始 JSON 仅在显式 `--raw` 时作为正文返回；预检通过不能表述为实际接管成功。
 - 启动只校验当前原生分区；保存分区校验该分区，完整保存校验两套格式，整份 JSON 损坏必须失败。未选分区变化不 reload，停止时保存不启动核心或 Worker。切换后端先停旧实例再启动新实例；强杀或清理未确认时中止并保留 journal，必须设备重启后再恢复，不增加兜底清理。
 - 新增协议或修复解析缺陷时补充不含真实凭据的 fixture/golden 测试。
@@ -323,7 +324,7 @@ eBPF 与 TUN 只负责透明代理入站。停止服务由 sing-box 关闭并清
 
 节点测速不要求正式服务处于 `ready`。服务停止时，Native 只允许启动不含透明代理入站、eBPF/TUN 和 Clash API 的短生命周期 sing-box 会话，使用目标 Provider 快照与随机 loopback Service API 完成测速；会话不得修改正式服务状态、选择状态或 Worker，结束和取消时必须清理进程与临时文件。
 
-分应用配置保存在入站文件的 `app` 对象，`proxy_apps` 与 `bypass_apps` 是严格 `<user-id>:<package>` 字符串数组。Go 通过 Android package service 按用户查询 UID 后合并到所选入站本机的 `include_uid` 或 `exclude_uid`，不写回原生模板。应用安装、重装、UID 变化或用户范围变化后，通过重启或配置 reload 重新解析，不维护模块侧 UID 缓存；白名单自动包含 UID 0。app 命令只保存，沿用由用户重启应用的行为。
+分应用配置保存在入站文件的 `app` 对象，`proxy_apps` 与 `bypass_apps` 是严格 `<user-id>:<package>` 字符串数组。Go 通过 Android package service 按用户查询 UID 后合并到所选入站本机的 `include_uid` 或 `exclude_uid`，不写回原生模板。应用安装、重装、UID 变化或用户范围变化后，通过重启或配置 reload 重新解析，不维护模块侧 UID 缓存；白名单自动包含 UID 0。app 命令和 app 分区保存均通过配置事务应用有效变化，失败回滚；关闭策略、未使用名单或仅 eBPF 共享路径的无效变化不 reload。
 
 app 关闭时保留原生 UID 筛选；开启时合并去重同向 UID/range，反向 UID/range 或非空原生 package/user 筛选必须明确拒绝歧义。仅启用 eBPF 共享网络时不查询应用 UID，不把本机应用名单当成热点客户端过滤器。
 
@@ -343,9 +344,9 @@ Go 生命周期控制器通过 `-c config/singbox/config.json` 加载静态配�
 
 `config read` 返回 `content` 和 `revision`；`config apply/validate --revision <值> <目标> <候选文件>` 检测并发修改。`singbox/dns` 等分区使用带顶层键的 JSON，空对象删除该字段；`singbox/config.json` 替换整份主配置。保存后的 revision 对应本次实际写入内容，不通过无锁重新读取生成。
 
-入站目标 `inbound` 替换完整四字段包装；`inbound/backend`、`inbound/ebpf`、`inbound/tun` 分别使用对应顶层键。分区 revision 只跟踪该分区，完整 revision 跟踪整个文件；入站分区不支持空对象删除，所有写入在同一个配置文件锁内合并最新其他字段。
+入站目标 `inbound` 替换完整四字段包装；`inbound/backend`、`inbound/app`、`inbound/ebpf`、`inbound/tun` 分别使用对应顶层键。分区 revision 只跟踪该分区，完整 revision 跟踪整个文件；入站分区不支持空对象删除，所有写入在同一个配置文件锁内合并最新其他字段。
 
-`config list` 的四个入站逻辑目标归类为 `category=inbound`；Prepare JSON 使用 `providers/outbounds/inbound` 路径字段与 `backend`，不保留旧 `ebpf` 路径字段。schema=1 字段与类别变化需同步 Shell、Go、Android、WebUI 与 tests。
+`config list` 的五个入站逻辑目标归类为 `category=inbound`；Prepare JSON 使用 `providers/outbounds/inbound` 路径字段与 `backend`，不保留旧 `ebpf` 路径字段。schema=1 字段与类别变化需同步 Shell、Go、Android、WebUI 与 tests。
 
 安装只处理当前数据布局，不读取、转换或清理旧版配置。保留现有数据包含整个用户配置目录（包括核心持久状态）、Catalog 与日志，但 `config/singbox/rules/remote` 始终使用本次安装包的内置规则；仅保留节点与订阅包含 Catalog 与日志；全新安装使用包内默认内容。保留模式要求对应数据完整，不能因缺失而静默回退默认配置。热切换前重新复制最新数据，不复制 Catalog staging 或可重建的运行时文件。
 

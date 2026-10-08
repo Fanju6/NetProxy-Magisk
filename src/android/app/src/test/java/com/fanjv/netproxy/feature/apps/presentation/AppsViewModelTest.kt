@@ -4,6 +4,8 @@ import com.fanjv.netproxy.core.command.NetProxyCtlClient
 import com.fanjv.netproxy.core.command.NetProxyCtlException
 import com.fanjv.netproxy.core.command.NetProxyCtlOutput
 import com.fanjv.netproxy.core.command.NetProxyCtlTransport
+import com.fanjv.netproxy.core.command.CommandFileStore
+import com.fanjv.netproxy.feature.settings.data.ConfigRepository
 import com.fanjv.netproxy.feature.apps.data.AppIconCache
 import com.fanjv.netproxy.feature.apps.data.AppPackageRepository
 import com.fanjv.netproxy.feature.apps.data.AppPolicyRepository
@@ -12,6 +14,7 @@ import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import java.io.File
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -29,37 +32,42 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.Rule
+import org.junit.rules.TemporaryFolder
 
 class AppsViewModelTest {
+    @get:Rule val folder = TemporaryFolder()
+
+    private fun policy(args: List<String>): AppProxyConfig = Json.decodeFromJsonElement(
+        AppProxyConfig.serializer(), Json.parseToJsonElement(File(args.last()).readText()).jsonObject.getValue("app"))
+
     private class Transport : NetProxyCtlTransport {
         @Volatile var config = AppProxyConfig(mode = "whitelist")
         val calls = CopyOnWriteArrayList<List<String>>()
         var before: suspend (List<String>) -> Unit = {}
         var after: suspend (List<String>) -> Unit = {}
+        private var revision = 0
+        private val json = Json { encodeDefaults = true }
 
         override suspend fun execute(arguments: List<String>, timeoutMillis: Long): NetProxyCtlOutput {
             calls += arguments
             before(arguments)
-            config = when (arguments[1]) {
-                "mode" -> config.copy(enabled = true, mode = arguments[2])
-                "enable" -> config.copy(enabled = true)
-                "disable" -> config.copy(enabled = false)
-                "add", "remove" -> {
-                    val items = (if (config.mode == "blacklist") config.bypassApps else config.proxyApps)
-                        .split(',').filter(String::isNotBlank).toSet()
-                    val updated = (if (arguments[1] == "add") items + arguments[2] else items - arguments[2])
-                        .joinToString(",")
-                    if (config.mode == "blacklist") config.copy(bypassApps = updated)
-                    else config.copy(proxyApps = updated)
-                }
-                else -> config
+            val result = if (arguments[1] == "apply") {
+                check(arguments[3] == revision.toString()) { "config.conflict" }
+                config = Json.decodeFromJsonElement(AppProxyConfig.serializer(),
+                    Json.parseToJsonElement(File(arguments.last()).readText()).jsonObject.getValue("app"))
+                revision++
+                """{"revision":"$revision"}"""
+            } else {
+                val content = json.encodeToString(mapOf("app" to config))
+                """{"revision":"$revision","content":${Json.encodeToString(content)}}"""
             }
-            val result = config
             after(arguments)
             return NetProxyCtlOutput(true, listOf(
-                """{"schema":1,"ok":true,"code":"app.test","message":"","data":${Json.encodeToString(result)}}"""
+                """{"schema":1,"ok":true,"code":"config.test","message":"","data":$result}"""
             ), emptyList())
         }
     }
@@ -83,9 +91,8 @@ class AppsViewModelTest {
 
     private fun model(scope: CoroutineScope, transport: Transport, catalog: AppPackageRepository = packages(),
         dispatcher: CoroutineDispatcher? = null): AppsViewModel {
-        val repository = AppPolicyRepository(NetProxyCtlClient(transport = transport))
-        return if (dispatcher == null) AppsViewModel(repository, catalog, scope)
-        else AppsViewModel(repository, catalog, scope, dispatcher)
+        val repository = AppPolicyRepository(ConfigRepository(NetProxyCtlClient(transport = transport), CommandFileStore(folder.root)))
+        return AppsViewModel(repository, catalog, scope, dispatcher ?: kotlinx.coroutines.Dispatchers.Default, policyDebounceMillis = 50)
     }
 
     private suspend fun AppsViewModel.loaded() = withTimeout(5_000) {
@@ -106,9 +113,9 @@ class AppsViewModelTest {
         val secondEntered = CompletableDeferred<Unit>()
         val secondRelease = CompletableDeferred<Unit>()
         transport.before = { args ->
-            if (args[1] == "add" && args[2] == "0:alpha.example") {
+            if (args[1] == "apply" && policy(args).proxyApps == listOf("0:alpha.example")) {
                 firstEntered.complete(Unit); withTimeout(10_000) { firstRelease.await() }
-            } else if (args[1] == "add") {
+            } else if (args[1] == "apply") {
                 secondEntered.complete(Unit); withTimeout(10_000) { secondRelease.await() }
             }
         }
@@ -121,11 +128,11 @@ class AppsViewModelTest {
         withTimeout(5_000) { secondEntered.await() }
         assertEquals(setOf("0:alpha.example", "0:beta.example"), vm.state.value.proxiedApps)
         assertFalse(vm.state.value.appProxyEnabled)
-        assertFalse(transport.calls.any { it[1] == "disable" })
+        assertTrue(transport.config.enabled)
         secondRelease.complete(Unit)
         settle()
         assertFalse(vm.state.value.appProxyEnabled)
-        assertEquals(listOf("list", "add", "add", "disable"), transport.calls.map { it[1] })
+        assertEquals(listOf("read", "apply", "apply"), transport.calls.map { it[1] })
     }
 
     @Test fun rapidDoubleToggleIsAppliedInOrderWithoutOldCheckmarkReturning() = runBlocking {
@@ -137,8 +144,8 @@ class AppsViewModelTest {
         val removeEntered = CompletableDeferred<Unit>()
         val removeRelease = CompletableDeferred<Unit>()
         transport.before = { args ->
-            if (args[1] == "add") { entered.complete(Unit); withTimeout(10_000) { release.await() } }
-            if (args[1] == "remove") { removeEntered.complete(Unit); withTimeout(10_000) { removeRelease.await() } }
+            if (args[1] == "apply" && policy(args).proxyApps.isNotEmpty()) { entered.complete(Unit); withTimeout(10_000) { release.await() } }
+            if (args[1] == "apply" && policy(args).proxyApps.isEmpty()) { removeEntered.complete(Unit); withTimeout(10_000) { removeRelease.await() } }
         }
         vm.toggle("0:alpha.example")
         withTimeout(5_000) { entered.await() }
@@ -149,7 +156,7 @@ class AppsViewModelTest {
         removeRelease.complete(Unit)
         settle()
         assertTrue(vm.state.value.proxiedApps.isEmpty())
-        assertEquals(listOf("list", "add", "remove"), transport.calls.map { it[1] })
+        assertEquals(listOf("read", "apply", "apply"), transport.calls.map { it[1] })
     }
 
     @Test fun failedWriteReadbackDoesNotOverwriteQueuedModeOrSelection() = runBlocking {
@@ -161,12 +168,11 @@ class AppsViewModelTest {
         val modeEntered = CompletableDeferred<Unit>()
         val modeRelease = CompletableDeferred<Unit>()
         transport.before = { args ->
-            when (args[1]) {
-                "disable" -> {
+            if (args[1] == "apply") {
+                if (!policy(args).enabled) {
                     entered.complete(Unit); withTimeout(10_000) { release.await() }
                     throw NetProxyCtlException("app.update_failed", "failed write")
-                }
-                "mode" -> { modeEntered.complete(Unit); withTimeout(10_000) { modeRelease.await() } }
+                } else { modeEntered.complete(Unit); withTimeout(10_000) { modeRelease.await() } }
             }
         }
         vm.setProxySettings(false)
@@ -181,9 +187,28 @@ class AppsViewModelTest {
         assertEquals("failed write", vm.state.value.error)
         modeRelease.complete(Unit)
         settle()
-        assertEquals("0:beta.example", transport.config.bypassApps)
+        assertEquals(listOf("0:beta.example"), transport.config.bypassApps)
         assertEquals("", vm.state.value.error)
-        assertEquals(listOf("list", "disable", "list", "mode", "add"), transport.calls.map { it[1] })
+        assertEquals(listOf("read", "apply", "read", "apply"), transport.calls.map { it[1] })
+    }
+
+    @Test fun quickChangesAreSavedAsOnePolicyAndReturningToOriginalDoesNotWrite() = runBlocking {
+        val transport = Transport()
+        val vm = model(this, transport)
+        vm.load(); vm.loaded()
+        vm.toggle("0:alpha.example")
+        vm.toggle("0:beta.example")
+        vm.setProxySettings(false)
+        assertTrue(vm.state.value.hasPendingPolicy)
+        assertTrue(vm.flushPolicy())
+        assertFalse(vm.state.value.hasPendingPolicy)
+        assertFalse(transport.config.enabled)
+        assertEquals(listOf("0:alpha.example", "0:beta.example"), transport.config.proxyApps)
+        assertEquals(1, transport.calls.count { it[1] == "apply" })
+        vm.toggle("0:alpha.example")
+        vm.toggle("0:alpha.example")
+        assertTrue(vm.flushPolicy())
+        assertEquals(1, transport.calls.count { it[1] == "apply" })
     }
 
     @Test fun oldReadbackDuringPackageLoadingCannotReplaceNewPolicy() = runBlocking {
@@ -211,14 +236,14 @@ class AppsViewModelTest {
 
     @Test fun failedModeDoesNotApplyDependentSelectionToOppositeListOrReplayIt() = runBlocking {
         val transport = Transport().apply {
-            config = AppProxyConfig(mode = "blacklist", bypassApps = "0:beta.example")
+            config = AppProxyConfig(mode = "blacklist", bypassApps = listOf("0:beta.example"))
         }
         val vm = model(this, transport)
         vm.load(); vm.loaded()
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         transport.before = { args ->
-            if (args[1] == "mode") {
+            if (args[1] == "apply") {
                 entered.complete(Unit)
                 withTimeout(10_000) { release.await() }
                 throw NetProxyCtlException("app.mode_invalid", "failed mode")
@@ -231,18 +256,18 @@ class AppsViewModelTest {
         release.complete(Unit)
         settle()
         assertEquals("blacklist", vm.state.value.appProxyMode)
-        assertEquals("0:beta.example", transport.config.bypassApps)
+        assertEquals(listOf("0:beta.example"), transport.config.bypassApps)
         assertTrue(vm.state.value.proxyApps.isEmpty())
         assertEquals("failed mode", vm.state.value.error)
-        assertEquals(listOf("list", "mode", "list"), transport.calls.map { it[1] })
+        assertEquals(listOf("read", "apply", "read"), transport.calls.map { it[1] })
         transport.before = {}
         vm.setProxySettings(true, "whitelist")
         settle()
         assertTrue(transport.config.proxyApps.isEmpty())
         vm.toggle("0:alpha.example")
         settle()
-        assertEquals("0:alpha.example", transport.config.proxyApps)
-        assertEquals("0:beta.example", transport.config.bypassApps)
+        assertEquals(listOf("0:alpha.example"), transport.config.proxyApps)
+        assertEquals(listOf("0:beta.example"), transport.config.bypassApps)
     }
 
     @Test fun newestFilterWinsWhenQueuedCalculationsRunInReverseOrder() = runBlocking {
@@ -267,28 +292,28 @@ class AppsViewModelTest {
     }
 
     @Test fun failedModeAndReadbackCannotApplySelectionUsingUnconfirmedMode() = runBlocking {
-        val transport = Transport()
+        val transport = Transport().apply { config = AppProxyConfig(mode = "blacklist") }
         val vm = model(this, transport)
         vm.load(); vm.loaded()
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         transport.before = { args ->
-            if (args[1] == "mode") {
+            if (args[1] == "apply") {
                 entered.complete(Unit)
                 withTimeout(10_000) { release.await() }
                 transport.config = AppProxyConfig(mode = "blacklist")
                 throw NetProxyCtlException("app.mode_invalid", "failed mode")
             }
-            if (args[1] == "list") throw NetProxyCtlException("app.read_failed", "failed readback")
+            if (args[1] == "read") throw NetProxyCtlException("app.read_failed", "failed readback")
         }
         vm.setProxySettings(true, "whitelist")
         withTimeout(5_000) { entered.await() }
         vm.toggle("0:alpha.example")
         release.complete(Unit)
         settle()
-        assertFalse(transport.calls.any { it[1] == "add" || it[1] == "remove" })
-        assertEquals("", transport.config.bypassApps)
-        assertEquals("failed mode", vm.state.value.error)
+        assertEquals(1, transport.calls.count { it[1] == "apply" })
+        assertTrue(transport.config.bypassApps.isEmpty())
+        assertTrue(vm.state.value.error.isNotBlank())
     }
 
     @Test fun cancellationStopsCpuFilteringBeforeTraversingRemainingApps() = runBlocking {

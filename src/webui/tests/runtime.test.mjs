@@ -68,7 +68,7 @@ test('模式补全仅使用配置列表，保留自定义名称和空格', () =>
 })
 
 test('入站帮助与补全只使用公共配置目标，诊断仍保留 ebpf status', () => {
-  const targets = ['inbound', 'inbound/backend', 'inbound/ebpf', 'inbound/tun']
+  const targets = ['inbound', 'inbound/backend', 'inbound/app', 'inbound/ebpf', 'inbound/tun']
   for (const action of ['read', 'apply', 'validate']) {
     assert.deepEqual(complete(`config ${action} in`).candidates, targets)
     assert.ok(!complete(`config ${action} `).candidates.includes('ebpf'))
@@ -90,9 +90,9 @@ test('mock 同步单文件模板、分区与真实后端状态边界', () => {
   assert.equal(run('service', 'status').data.active_backend, null)
   assert.deepEqual(JSON.parse(run('config', 'read', 'inbound').data.content), defaults)
   assert.deepEqual(run('config', 'list').data.filter(item => item.category === 'inbound').map(item => item.id), [
-    'inbound', 'inbound/backend', 'inbound/ebpf', 'inbound/tun',
+    'inbound', 'inbound/backend', 'inbound/app', 'inbound/ebpf', 'inbound/tun',
   ])
-  for (const section of ['backend', 'ebpf', 'tun']) {
+  for (const section of ['backend', 'app', 'ebpf', 'tun']) {
     const result = run('config', 'read', `inbound/${section}`)
     assert.deepEqual(JSON.parse(result.data.content), { [section]: defaults[section] })
     assert.ok(result.data.revision)

@@ -54,7 +54,7 @@ feature/<name>/
 ## 状态所有权
 
 - `feature/inbound` 管理入站后端和原生 eBPF/TUN 表单，复用 `ConfigRepository` 的候选文件与分区 revision。唯一事实源为 `config/inbound/inbound.json`，表单更新只替换所拥有的原生字段并保留其余字段；冲突必须重新加载。
-- `SettingsViewModel` 管理模块开关与独立「网络匹配」页的 Wi-Fi 策略；入站页只依赖 `InboundViewModel`，分应用入口位于入站页。分应用仍使用原有 app 命令，保存后由用户重启服务。
+- `SettingsViewModel` 管理模块开关与独立「网络匹配」页的 Wi-Fi 策略；入站页只依赖 `InboundViewModel`，分应用入口位于入站页。分应用通过 `ConfigRepository` 保存带 revision 的 `inbound/app` 分区，Go 负责应用与回滚；`AppsViewModel` 合并连续意图，离页或进入后台时立即提交，运行中的保存不取消或重复执行。
 - `feature/routing` 直接复用 `ConfigRepository` 编辑 proxy/direct/block 本地规则集。表单只编辑单条件规则，保留其他原生规则及顺序；多条件规则继续使用 JSON 编辑器。保存失败保留草稿，只有确认原 revision 未变时才允许修正后重试，否则要求显式重新加载。
 - 后端切换在服务运行时需要确认；只有配置与实际服务后端均确认后才显示成功。`active_backend` 保留内部校验，不作为常驻设置项展示，为 null 时不从配置推测。首次配置与选项读取完成后一次展示表单，刷新保留旧表单和正常颜色；保存取消在途刷新，避免旧结果覆盖新 revision，写入仍串行并检查冲突。完整入站 JSON 编辑位于入站页，包装 Schema 引用内置 sing-box 原生定义。
 - 入站列表输入每行一个值，候选勾选直接操作列表，不按逗号拆分原生标签或接口名。保存失败保留候选与原 revision 供用户核对；后续刷新失败时实际状态未知，不沿用旧 ready 快照或自动重试。

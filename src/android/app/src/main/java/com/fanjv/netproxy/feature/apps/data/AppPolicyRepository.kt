@@ -1,28 +1,28 @@
 package com.fanjv.netproxy.feature.apps.data
 
-import com.fanjv.netproxy.core.command.NetProxyCtlClient
 import com.fanjv.netproxy.feature.apps.model.AppProxyConfig
-import kotlinx.serialization.json.decodeFromJsonElement
+import com.fanjv.netproxy.feature.settings.data.ConfigRepository
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 
 /** 分应用代理策略的数据入口。 */
 internal class AppPolicyRepository(
-    private val client: NetProxyCtlClient
+    private val configs: ConfigRepository
 ) {
-    suspend fun config(): AppProxyConfig =
-        client.json.decodeFromJsonElement(client.execute("app", "list").data)
+    private val json = Json { encodeDefaults = true }
 
-    suspend fun setMode(mode: String): AppProxyConfig =
-        executeConfig("app", "mode", mode)
+    suspend fun config(): AppProxyConfig {
+        val snapshot = configs.readSnapshot("inbound/app")
+        val app = json.parseToJsonElement(snapshot.content).jsonObject.getValue("app").jsonObject
+        require(app.keys == setOf("enabled", "mode", "proxy_apps", "bypass_apps")) { "模块返回的应用策略字段不完整" }
+        return json.decodeFromJsonElement(AppProxyConfig.serializer(), app)
+            .copy(revision = snapshot.revision)
+    }
 
-    suspend fun add(id: String): AppProxyConfig =
-        executeConfig("app", "add", id)
-
-    suspend fun remove(id: String): AppProxyConfig =
-        executeConfig("app", "remove", id)
-
-    suspend fun setEnabled(enabled: Boolean): AppProxyConfig =
-        executeConfig("app", if (enabled) "enable" else "disable")
-
-    private suspend fun executeConfig(vararg args: String): AppProxyConfig =
-        client.json.decodeFromJsonElement(client.execute(*args).data)
+    suspend fun apply(config: AppProxyConfig): AppProxyConfig {
+        val content = json.encodeToString(mapOf("app" to config))
+        val revision = configs.apply("inbound/app", content, config.revision)
+        return config.copy(revision = revision)
+    }
 }

@@ -40,7 +40,7 @@ TUN 使用原生 `auto_route` 与 `auto_redirect` 接管流量，接口、地址
 
 模块不会持久化 UID。每次生成运行时配置时，Go 组件通过 Android package service 按用户查询当前 UID，因此应用重装、分身变化或 UID 变化后，重启核心即可重新解析。
 
-共用策略保存在 `inbound.json` 的 `app`，只筛选所选入站的本机应用；修改名单后重启服务应用。仅启用 eBPF 共享路径时不查询应用 UID。它不承诺用本机 UID 过滤热点客户端；开启共用策略时，原生 package/user 筛选或反向 UID 筛选存在冲突会明确报错。
+共用策略保存在 `inbound.json` 的 `app`，只筛选所选入站的本机应用；运行时有效策略变化自动应用。仅启用 eBPF 共享路径时不查询应用 UID。它不承诺用本机 UID 过滤热点客户端；开启共用策略时，原生 package/user 筛选或反向 UID 筛选存在冲突会明确报错。
 
 系统 DNS、DownloadManager、isolated process 或 SDK sandbox 代发的流量可能属于其他 UID，不能只凭前台应用包名推断。
 

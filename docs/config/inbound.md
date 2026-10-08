@@ -23,7 +23,7 @@
 }
 ```
 
-这是完整文件中 `app` 的示例，不是独立配置文件或 `inbound/app` 目标。名单是 JSON 字符串数组，每项必须为 `<用户ID>:<包名>`。黑名单中的 `bypass_apps` 绕过代理；白名单只代理 `proxy_apps`，并自动包含 UID 0。修改应用名单后重启服务应用。
+`app` 支持独立分区编辑，候选内容使用 `{"app": {...}}` 包装。名单是 JSON 字符串数组，每项必须为 `<用户ID>:<包名>`。黑名单中的 `bypass_apps` 绕过代理；白名单只代理 `proxy_apps`，并自动包含 UID 0。服务运行时，有效策略变化自动应用；服务停止时只保存。
 
 模块通过 Android package service 按用户查询 UID，不持久化 UID 缓存。关闭共用策略时保留原生 UID 筛选；开启时合并到当前后端的本机 UID 筛选，反向 UID 筛选或原生 package/user 筛选存在歧义时拒绝配置。仅启用 eBPF 共享网络时不查询应用 UID；本机应用名单不筛选热点客户端。
 
@@ -33,6 +33,7 @@
 |---|---|---|
 | `inbound` | 完整四字段包装 | 可编辑 |
 | `inbound/backend` | `{"backend":"tun"}` 或 `{"backend":"ebpf"}` | 可编辑 |
+| `inbound/app` | `{"app":{...}}` | 可编辑 |
 | `inbound/ebpf` | `{"ebpf":{...}}` | 可编辑 |
 | `inbound/tun` | `{"tun":{...}}` | 可编辑 |
 | `runtime/inbound.json` | 只有当前选中受管入站的 sing-box 文档 | 只读 |
