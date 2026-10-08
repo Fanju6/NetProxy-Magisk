@@ -92,6 +92,7 @@ src/module/service.sh
 ## Android 管理器
 
 - 数据流保持 `Compose -> ViewModel -> Repository -> NetProxyCtlClient -> netproxyctl`。页面不直接读取 `/data/adb`、Catalog 文件、PID 或 Shell 文本推断业务状态。
+- 短读共享 Root 命令通道，长操作和写入使用独立短生命周期 Shell；不得让订阅下载占用状态读取或停服队列。协程取消只取消等待，不能用 libsu Future.cancel 或关闭共享 Shell 冒充 Native 业务取消；输入文件必须保留到命令实际消费结束，已开始的写事务必须完成收尾。
 - ViewModel 按功能域持有不可变 `StateFlow`；Repository 负责命令组合和响应映射。不要重新堆回全能 Repository、全能 ViewModel 或静态 Service Locator。
 - 构造依赖由 `AppContainer` 和 `NetProxyViewModelFactory` 提供，不引入 Hilt/Koin，除非先完成明确的全项目架构决策。
 - 遵循现有 miuix 视觉和交互：二级页使用 `AdaptiveTopAppBar`，分组标题使用 miuix `SmallTitle`，列表保持 Lazy item 粒度，卡片优先复用 `groupedCardItems`。有 miuix 对应组件时不另造 Material 风格替代品。

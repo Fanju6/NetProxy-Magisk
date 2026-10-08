@@ -14,13 +14,14 @@ import java.io.IOException
 /** 日志读取、清理和诊断包导出的模块数据入口。 */
 internal class LogRepository(
     private val client: NetProxyCtlClient,
-    context: Context
+    private val reportsDir: File
 ) {
-    private val reportsDir = File(context.applicationContext.cacheDir, "reports")
+    constructor(client: NetProxyCtlClient, context: Context) :
+        this(client, File(context.applicationContext.cacheDir, "reports"))
 
     suspend fun read(type: LogType, lines: Int = 800): List<LogItem> {
         val data = client.execute("logs", "show", type.commandName, lines.toString()).data.jsonObject
-        return when (type) {
+        return withContext(Dispatchers.Default) { when (type) {
             LogType.SERVICE -> {
                 val entries = data["entries"]?.jsonArray
                     ?: error("Native 日志响应缺少 entries")
@@ -31,7 +32,7 @@ internal class LogRepository(
                 val content = data["content"]?.jsonPrimitive?.content.orEmpty()
                 LogParser.parseKernel(content)
             }
-        }
+        } }
     }
 
     suspend fun clear(type: LogType) {
@@ -48,20 +49,32 @@ internal class LogRepository(
             ?.jsonPrimitive?.content ?: outputPath
 
     suspend fun createReport(): File {
-        val target = withContext(Dispatchers.IO) {
-            reportsDir.mkdirs()
-            File(reportsDir, "NetProxy_Logs_${System.currentTimeMillis()}.tar.gz").also {
-                it.delete()
-                check(it.createNewFile()) { "无法创建诊断包临时文件" }
-            }
+        var target: File? = null
+        try {
+            return withContext(Dispatchers.IO) { createReportFile().also { target = it } }
+        } catch (error: Throwable) {
+            target?.delete()
+            throw error
         }
-        export(target.absolutePath)
-        withContext(Dispatchers.IO) {
+    }
+
+    private suspend fun createReportFile(): File {
+        check(reportsDir.mkdirs() || reportsDir.isDirectory) { "无法创建诊断包目录" }
+        // 分享接收方可能稍后才读取，报告保留一天；保存副本由调用方立即删除。
+        val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1_000L
+        reportsDir.listFiles()?.filter { it.name.startsWith("NetProxy_Logs_") && it.lastModified() < cutoff }
+            ?.forEach(File::delete)
+        val target = File.createTempFile("NetProxy_Logs_", ".tar.gz", reportsDir)
+        try {
+            export(target.absolutePath)
             if (!target.isFile || target.length() == 0L) {
                 throw IOException("诊断包导出后为空")
             }
+            return target
+        } catch (error: Throwable) {
+            target.delete()
+            throw error
         }
-        return target
     }
 
     private val LogType.commandName: String

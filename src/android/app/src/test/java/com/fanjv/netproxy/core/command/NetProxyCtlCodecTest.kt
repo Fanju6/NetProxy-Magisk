@@ -4,6 +4,12 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -186,5 +192,66 @@ class NetProxyCtlCodecTest {
         client.execute("service", "start")
 
         assertEquals(listOf(0L, 0L, 30_000L, 120_000L), observed)
+    }
+
+    @Test fun `all lifecycle writes receive a complete budget`() {
+        for (args in listOf(listOf("service", "restart"), listOf("service", "reload"),
+            listOf("config", "apply", "singbox/config.json"), listOf("config", "apply", "rules/proxy.json"))) {
+            assertEquals(120_000L, commandTimeout(args))
+            assertFalse(isShortRead(args))
+        }
+        assertTrue(isShortRead(listOf("service", "status")))
+        assertTrue(isShortRead(listOf("logs", "show", "core")))
+        assertFalse(isShortRead(listOf("config", "validate", "fixture.json")))
+    }
+
+    private fun success() = NetProxyCtlOutput(true,
+        listOf("""{"schema":1,"ok":true,"code":"test","data":{}}"""), emptyList())
+
+    @Test fun `long mutation does not serialize short reads in the client`() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
+            if (args.first() == "sub") { started.complete(Unit); finish.await() }
+            success()
+        })
+        val update = async { client.execute("sub", "update", "fixture") }
+        started.await()
+        withTimeout(1_000) { client.execute("service", "status") }
+        finish.complete(Unit)
+        update.await()
+        Unit
+    }
+
+    @Test fun `read waiting cancels without publishing a result`() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        val never = CompletableDeferred<Unit>()
+        val client = NetProxyCtlClient(transport = NetProxyCtlTransport { _, _ ->
+            started.complete(Unit); never.await(); success()
+        })
+        var delivered = false
+        val read = launch { client.execute("service", "status"); delivered = true }
+        started.await()
+        withTimeout(1_000) { read.cancelAndJoin() }
+        assertFalse(delivered)
+    }
+
+    @Test fun `cancelled writes finish consuming input before cleanup`() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        var completed = false
+        var delivered = false
+        val client = NetProxyCtlClient(transport = NetProxyCtlTransport { _, _ ->
+            started.complete(Unit); finish.await(); completed = true; success()
+        })
+        val write = launch { client.execute("config", "apply", "fixture"); delivered = true }
+        started.await()
+        write.cancel()
+        yield()
+        assertFalse(write.isCompleted)
+        finish.complete(Unit)
+        write.join()
+        assertTrue(completed)
+        assertFalse(delivered)
     }
 }

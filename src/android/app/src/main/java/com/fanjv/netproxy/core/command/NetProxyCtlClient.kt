@@ -3,6 +3,9 @@ package com.fanjv.netproxy.core.command
 import com.fanjv.netproxy.core.module.ModulePaths
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -36,29 +39,21 @@ internal data class NetProxyCtlOutput(
 )
 
 internal fun interface NetProxyCtlTransport {
-    fun execute(arguments: List<String>, timeoutMillis: Long): NetProxyCtlOutput
+    suspend fun execute(arguments: List<String>, timeoutMillis: Long): NetProxyCtlOutput
 }
 
-private const val TRANSPORT_GRACE_MILLIS = 5_000L
-
 private object RootShellNetProxyCtlTransport : NetProxyCtlTransport {
-    override fun execute(arguments: List<String>, timeoutMillis: Long): NetProxyCtlOutput {
+    override suspend fun execute(arguments: List<String>, timeoutMillis: Long): NetProxyCtlOutput {
         val command = mutableListOf(ModulePaths.NETPROXYCTL, "--json")
         if (timeoutMillis > 0) {
             command += listOf("--timeout", "${(timeoutMillis + 999L) / 1000L}s")
         }
         command += arguments
-        val result = if (timeoutMillis > 0) {
-            ShellCommand.exec(timeoutMillis + TRANSPORT_GRACE_MILLIS, *command.toTypedArray())
-        } else {
-            ShellCommand.exec(*command.toTypedArray()).let {
-                TimedShellResult(it.isSuccess, it.out, it.err)
-            }
-        }
+        val result = ShellCommand.execute(*command.toTypedArray(), isolated = !isShortRead(arguments))
         return NetProxyCtlOutput(
-            successful = result.successful,
-            stdout = result.stdout,
-            stderr = result.stderr
+            successful = result.isSuccess,
+            stdout = result.out,
+            stderr = result.err
         )
     }
 }
@@ -137,35 +132,40 @@ internal class NetProxyCtlClient(
         }
     }
 
-    suspend fun execute(vararg args: String): NetProxyCtlResponse = withContext(Dispatchers.IO) {
+    suspend fun execute(vararg args: String): NetProxyCtlResponse {
         val arguments = args.toList()
-        val timeoutMillis =
-            if (isSubscriptionMutation(arguments)) {
-                NO_OUTER_TIMEOUT
-            } else if (arguments.firstOrNull() == "service" && arguments.getOrNull(1) == "start") {
-                SERVICE_START_TIMEOUT_MILLIS
-            } else if (arguments.firstOrNull() == "config" && arguments.getOrNull(1) == "apply" &&
-                arguments.any { it == "inbound" || it.startsWith("inbound/") }
-            ) {
-                INBOUND_APPLY_TIMEOUT_MILLIS
-            } else {
-                DEFAULT_TIMEOUT_MILLIS
-            }
-        codec.decode(transport.execute(arguments, timeoutMillis))
+        val context = currentCoroutineContext()
+        context.ensureActive()
+        // 已提交的事务和输入文件必须等 Native 消费结束，取消等待不能终止收尾。
+        val output = if (isShortRead(arguments)) {
+            withContext(Dispatchers.IO) { transport.execute(arguments, commandTimeout(arguments)) }
+        } else withContext(NonCancellable + Dispatchers.IO) {
+            transport.execute(arguments, commandTimeout(arguments))
+        }
+        context.ensureActive()
+        return withContext(Dispatchers.Default) { codec.decode(output) }
     }
 
     private companion object {
-        const val NO_OUTER_TIMEOUT = 0L
-        const val DEFAULT_TIMEOUT_MILLIS = 30_000L
-        const val SERVICE_START_TIMEOUT_MILLIS = 120_000L
-        const val INBOUND_APPLY_TIMEOUT_MILLIS = 120_000L
         val TRANSPORT_ERROR_CODES = setOf(
             "transport.invalid_output",
             "transport.invalid_json"
         )
 
-        fun isSubscriptionMutation(arguments: List<String>): Boolean =
-            arguments.firstOrNull() == "sub" &&
-                arguments.getOrNull(1) in setOf("add", "edit", "update", "update-all")
     }
+}
+
+internal fun commandTimeout(arguments: List<String>): Long = when {
+    arguments.firstOrNull() == "sub" && arguments.getOrNull(1) in setOf("add", "edit", "update", "update-all") -> 0L
+    !isShortRead(arguments) -> 120_000L
+    else -> 30_000L
+}
+
+internal fun isShortRead(arguments: List<String>): Boolean = when (arguments.firstOrNull()) {
+    "service" -> arguments.getOrNull(1) == "status"
+    "catalog", "node", "sub" -> arguments.getOrNull(1) in setOf("list", "get", "show", "snapshot", "export", "history", "progress", "status")
+    "config" -> arguments.getOrNull(1) in setOf("list", "read")
+    "app" -> arguments.getOrNull(1) == "list"
+    "logs" -> arguments.getOrNull(1) == "show"
+    else -> false
 }

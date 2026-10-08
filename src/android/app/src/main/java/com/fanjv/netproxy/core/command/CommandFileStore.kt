@@ -1,7 +1,6 @@
 package com.fanjv.netproxy.core.command
 
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -14,15 +13,23 @@ internal class CommandFileStore(private val cacheDir: File) {
         content: String,
         block: suspend (File) -> T
     ): T {
-        val file = withContext(Dispatchers.IO) {
-            File.createTempFile(prefix, suffix, cacheDir).also {
-                it.writeText(content, Charsets.UTF_8)
-            }
-        }
-        return try {
-            block(file)
-        } finally {
-            withContext(NonCancellable + Dispatchers.IO) { file.delete() }
-        }
+        return withCommandFile(cacheDir, prefix, suffix, { it.writeText(content, Charsets.UTF_8) }, block)
+    }
+}
+
+internal suspend fun <T> withCommandFile(
+    directory: File,
+    prefix: String,
+    suffix: String,
+    write: (File) -> Unit,
+    block: suspend (File) -> T
+): T = withContext(Dispatchers.IO) {
+    val file = File.createTempFile(prefix, suffix, directory)
+    try {
+        write(file)
+        block(file)
+    } finally {
+        // 删除与创建处于同一 IO 生命周期，不经过可取消的文件返回边界。
+        file.delete()
     }
 }

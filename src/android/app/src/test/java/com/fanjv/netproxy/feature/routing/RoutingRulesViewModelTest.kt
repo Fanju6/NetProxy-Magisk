@@ -41,7 +41,7 @@ class RoutingRulesViewModelTest {
         val entered = CompletableDeferred<Unit>()
         val calls = mutableListOf<List<String>>()
 
-        override fun execute(arguments: List<String>, timeoutMillis: Long): NetProxyCtlOutput {
+        override suspend fun execute(arguments: List<String>, timeoutMillis: Long): NetProxyCtlOutput {
             calls += arguments
             val data = when (arguments[1]) {
                 "read" -> {
