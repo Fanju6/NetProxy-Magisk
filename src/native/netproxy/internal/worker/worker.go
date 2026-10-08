@@ -446,7 +446,9 @@ func UpdateGroup(ctx context.Context, options Options, groupID string, now time.
 // SyncEditedGroup 将已持久化的订阅编辑通过统一运行时流程应用到 sing-box。
 func SyncEditedGroup(ctx context.Context, options Options, groupID string, now time.Time, logger *log.Logger) (subscription.Result, error) {
 	result := subscription.Result{GroupID: groupID, Persisted: true}
-	metadata, err := catalog.LoadMetadata(ctx, filepath.Join(options.Root, groupID, "meta.json"), groupID)
+	localContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	metadata, err := catalog.LoadMetadata(localContext, filepath.Join(options.Root, groupID, "meta.json"), groupID)
 	if err != nil {
 		return result, persistedEffectFailure(result, err)
 	}

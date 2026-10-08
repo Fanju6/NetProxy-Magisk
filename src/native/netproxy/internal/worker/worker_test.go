@@ -30,6 +30,50 @@ type manualClock struct {
 	delays []time.Duration
 }
 
+func TestSyncEditedGroupCancellationReconcilesPersistedState(t *testing.T) {
+	for _, running := range []bool{false, true} {
+		t.Run(fmt.Sprint(running), func(t *testing.T) {
+			now := time.Now()
+			root, moduleConf := prepareWorkerFixture(t, "https://fixture.invalid", now)
+			path := filepath.Join(root, "fixture", "meta.json")
+			metadata, err := catalog.LoadMetadata(t.Context(), path, "fixture")
+			if err != nil {
+				t.Fatal(err)
+			}
+			metadata.Name, metadata.NodeCount, metadata.RuntimeSyncState = "Renamed", 3, subscription.RuntimeSyncApplied
+			if err := catalog.SaveMetadataAtomic(t.Context(), path, metadata); err != nil {
+				t.Fatal(err)
+			}
+			options := newTestOptions(root)
+			options.ModuleConf = moduleConf
+			installRuntimeHooks(t, nil, running, nil)
+			options.SyncCatalog = func(ctx context.Context, _ string, changed bool) (string, bool, error) {
+				if !changed {
+					t.Error("名称变化未要求更新运行时结构")
+				}
+				if running {
+					return subscription.RuntimeSyncFailed, true, ctx.Err()
+				}
+				return subscription.RuntimeSyncNotRunning, false, nil
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			result, syncErr := SyncEditedGroup(ctx, options, "fixture", now, nil)
+			after, err := catalog.LoadMetadata(t.Context(), path, "fixture")
+			if err != nil || !result.Persisted || result.NodeCount != 3 {
+				t.Fatalf("取消后丢失持久化结果: %+v %v", result, err)
+			}
+			if running {
+				if syncErr == nil || !after.RuntimeSyncPending || after.RuntimeSyncState != subscription.RuntimeSyncFailed || after.LastError == "" {
+					t.Fatalf("取消后未保留同步失败: %+v %v", after, syncErr)
+				}
+			} else if syncErr != nil || after.RuntimeSyncState != subscription.RuntimeSyncNotRunning {
+				t.Fatalf("停止状态未整理: %+v %v", after, syncErr)
+			}
+		})
+	}
+}
+
 type manualTimer struct {
 	mu      sync.Mutex
 	channel chan time.Time
