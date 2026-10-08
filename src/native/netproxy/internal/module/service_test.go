@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestServiceStartFailureReportsCheckError(t *testing.T) {
@@ -93,6 +94,38 @@ func TestLifecycleLockRejectsConcurrentOperation(t *testing.T) {
 		t.Fatalf("服务锁不应再创建无读取方的 action 文件: %v", err)
 	}
 	second.release()
+}
+
+func TestLifecycleLockWaitHonorsContext(t *testing.T) {
+	for _, canceled := range []bool{false, true} {
+		t.Run(strconv.FormatBool(canceled), func(t *testing.T) {
+			stateFile := filepath.Join(t.TempDir(), "service.json")
+			holder, err := acquireLifecycleLock(stateFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer holder.release()
+			ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+			defer cancel()
+			want := context.DeadlineExceeded
+			if canceled {
+				cancel()
+				want = context.Canceled
+			}
+			if lock, err := waitLifecycleLock(ctx, stateFile); !errors.Is(err, want) {
+				if lock != nil {
+					lock.release()
+				}
+				t.Fatalf("等待服务锁未遵循 context: %v，期望 %v", err, want)
+			}
+			holder.release()
+			lock, err := waitLifecycleLock(t.Context(), stateFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lock.release()
+		})
+	}
 }
 
 func TestLifecycleLockRecoversReusedPIDMetadata(t *testing.T) {
