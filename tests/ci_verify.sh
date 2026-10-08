@@ -7,7 +7,7 @@
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-BUILD_DIR="${NETPROXY_CI_BUILD_DIR:-$ROOT/.tmp/ci}"
+BUILD_DIR="${NETPROXY_CI_BUILD_DIR:-$ROOT/.agents/runs/ci-$$}"
 NATIVE_DIR="$ROOT/src/native/netproxy"
 HOST_BIN="$BUILD_DIR/netproxyctl"
 if [ "$(go env GOOS)" = windows ]; then

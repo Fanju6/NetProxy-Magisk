@@ -6,8 +6,8 @@
 *.iml
 CLAUDE.local.md
 
-# 本地安装的 Agent 技能与安装记录
-/.agents/skills/
+# 本地开发资料、技能、测试产物与缓存
+/.agents/
 /skills-lock.json
 
 # NetProxy WebUI 构建产物
@@ -18,9 +18,6 @@ src/module/bin/netproxyctl
 
 # CI 打包时临时生成的含管理器发行资产
 src/module/NetProxy.apk
-
-# 测试用临时目录
-.tmp/
 
 # Android 管理器本地配置与构建产物
 src/android/**/.gradle/
@@ -64,6 +61,3 @@ docs/**/*.ntvs*
 docs/**/*.njsproj
 docs/**/*.sln
 docs/**/*.sw?
-
-# Codex 本地协作状态与阶段规划，不纳入项目提交
-.codex/

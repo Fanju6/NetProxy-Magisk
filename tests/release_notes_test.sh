@@ -9,7 +9,7 @@ set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 SCRIPT="$ROOT/.github/scripts/extract-release-notes.mjs"
 CHANGELOG="$ROOT/docs/changelog.md"
-TMP_DIR="$ROOT/.tmp/release-notes-test.$$"
+TMP_DIR="$ROOT/.agents/runs/release-notes-test.$$"
 
 cleanup() {
   rm -rf "$TMP_DIR"
