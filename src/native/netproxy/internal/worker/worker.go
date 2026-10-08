@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -87,10 +88,14 @@ type Options struct {
 
 // Summary 是一次调度轮次的结果。
 type Summary struct {
-	Updated      []string `json:"updated"`
-	Failed       []string `json:"failed"`
-	Nearest      int64    `json:"nearest"`
-	failureKinds []workerFailureKind
+	Updated []string `json:"updated"`
+	Failed  []string `json:"failed"`
+	Nearest int64    `json:"nearest"`
+}
+
+type subscriptionRetry struct {
+	attempt int
+	epoch   int64
 }
 
 type workerFailureKind uint8
@@ -166,42 +171,26 @@ func Run(ctx context.Context, options Options, wake <-chan struct{}, logger *log
 
 	logWorker(logger, "INFO", "worker.run", "started", "后台 Worker 已启动")
 	consecutiveFailures := 0
-	retryGroups := make(map[string]struct{})
+	retries := make(map[string]subscriptionRetry)
 	for {
 		now := options.Now()
-		summary, err := RunDue(ctx, options, now, logger)
+		_, err := runDue(ctx, options, now, logger, retries)
+		var nearest int64
+		if err == nil {
+			now = options.Now()
+			var schedule catalog.ScheduleResult
+			schedule, err = subscriptionSchedule(ctx, options.Root, now.Unix(), retries)
+			nearest = schedule.Nearest
+		}
+		if ctx.Err() != nil {
+			return nil
+		}
 		if err != nil {
 			logWorker(logger, "ERROR", "subscription.schedule", "failed", "读取订阅调度失败: %v", err)
-		}
-		if err == nil {
-			for _, groupID := range summary.Updated {
-				delete(retryGroups, groupID)
-			}
-			for _, groupID := range summary.Failed {
-				retryGroups[groupID] = struct{}{}
-			}
-			updateRetryGroups(ctx, options, now, logger, retryGroups, &summary)
-		}
-		failure := err != nil || len(summary.Failed) > 0
-		var retryDelay time.Duration
-		if failure {
 			consecutiveFailures++
-			retryDelay = workerRetryDelay(consecutiveFailures, summary.failureKind(err))
+			nearest = now.Unix() + int64(workerRetryDelay(consecutiveFailures, classifyWorkerError(err))/time.Second)
 		} else {
 			consecutiveFailures = 0
-		}
-		var nearest int64
-		if failure {
-			nearest = now.Unix() + int64(retryDelay/time.Second)
-		} else {
-			nearest, err = nextUpdate(ctx, options.Root, now.Unix())
-			if err != nil {
-				logWorker(logger, "ERROR", "subscription.schedule", "failed", "计算下一次订阅更新时间失败: %v", err)
-				consecutiveFailures++
-				retryDelay = workerRetryDelay(consecutiveFailures, classifyWorkerError(err))
-				nearest = now.Unix() + int64(retryDelay/time.Second)
-				failure = true
-			}
 		}
 		if nearest == 0 && !networkWatchEnabled && options.Telemetry == nil {
 			logWorker(logger, "INFO", "worker.run", "stopped", "没有启用自动更新的订阅，Worker 退出")
@@ -211,9 +200,6 @@ func Run(ctx context.Context, options Options, wake <-chan struct{}, logger *log
 			nearest = now.Unix() + int64((24*time.Hour)/time.Second)
 		}
 		delay := time.Duration(nearest-now.Unix()) * time.Second
-		if failure && retryDelay > 0 {
-			delay = retryDelay
-		}
 		if delay < time.Second {
 			delay = time.Second
 		}
@@ -229,10 +215,8 @@ func Run(ctx context.Context, options Options, wake <-chan struct{}, logger *log
 				if options.Telemetry != nil {
 					options.Telemetry.Notify()
 				}
-				if !failure {
-					stopTimer(timer)
-					break wait
-				}
+				stopTimer(timer)
+				break wait
 			case <-timer.C():
 				break wait
 			}
@@ -240,37 +224,33 @@ func Run(ctx context.Context, options Options, wake <-chan struct{}, logger *log
 	}
 }
 
-func updateRetryGroups(ctx context.Context, options Options, now time.Time, logger *log.Logger, retryGroups map[string]struct{}, summary *Summary) {
-	if summary == nil || len(retryGroups) == 0 {
-		return
+func subscriptionSchedule(ctx context.Context, root string, now int64, retries map[string]subscriptionRetry) (catalog.ScheduleResult, error) {
+	schedule, err := catalog.Schedule(ctx, root, now)
+	if err != nil {
+		return schedule, err
 	}
-	attempted := make(map[string]struct{}, len(summary.Updated)+len(summary.Failed))
-	for _, groupID := range summary.Updated {
-		attempted[groupID] = struct{}{}
-	}
-	for _, groupID := range summary.Failed {
-		attempted[groupID] = struct{}{}
-	}
-	for groupID := range retryGroups {
-		if _, ok := attempted[groupID]; ok {
-			continue
+	for groupID := range retries {
+		if _, enabled := schedule.NextByGroup[groupID]; !enabled {
+			delete(retries, groupID)
 		}
-		if err := ctx.Err(); err != nil {
-			return
-		}
-		_, updateErr := UpdateGroup(ctx, options, groupID, now, logger)
-		if updateErr != nil {
-			summary.Failed = append(summary.Failed, groupID)
-			summary.failureKinds = append(summary.failureKinds, classifyWorkerError(updateErr))
-			if logger != nil {
-				logWorker(logger, "WARN", "subscription.update", "failed", "订阅退避重试失败: %s: %v", groupID, updateErr)
-			}
-			continue
-		}
-		summary.Updated = append(summary.Updated, groupID)
-		logWorker(logger, "INFO", "subscription.update", "success", "订阅退避重试成功: %s", groupID)
-		delete(retryGroups, groupID)
 	}
+	if len(retries) == 0 {
+		return schedule, nil
+	}
+	schedule.Nearest, schedule.Due = 0, schedule.Due[:0]
+	for _, groupID := range slices.Sorted(maps.Keys(schedule.NextByGroup)) {
+		epoch := schedule.NextByGroup[groupID]
+		if retry, exists := retries[groupID]; exists {
+			epoch = retry.epoch
+		}
+		if schedule.Nearest == 0 || epoch < schedule.Nearest {
+			schedule.Nearest = epoch
+		}
+		if epoch <= now {
+			schedule.Due = append(schedule.Due, groupID)
+		}
+	}
+	return schedule, nil
 }
 
 type systemTimer struct {
@@ -302,15 +282,8 @@ func stopTimer(timer Timer) {
 	}
 }
 
-// RunDue 顺序执行当前已经到期的订阅更新。
-func RunDue(ctx context.Context, options Options, now time.Time, logger *log.Logger) (Summary, error) {
-	if err := validateOptions(options); err != nil {
-		return Summary{}, err
-	}
-	if now.IsZero() {
-		now = time.Now()
-	}
-	schedule, err := catalog.Schedule(ctx, options.Root, now.Unix())
+func runDue(ctx context.Context, options Options, now time.Time, logger *log.Logger, retries map[string]subscriptionRetry) (Summary, error) {
+	schedule, err := subscriptionSchedule(ctx, options.Root, now.Unix(), retries)
 	if err != nil {
 		return Summary{}, err
 	}
@@ -325,27 +298,21 @@ func RunDue(ctx context.Context, options Options, now time.Time, logger *log.Log
 		updated, updateErr := UpdateGroup(ctx, options, groupID, now, logger)
 		if updateErr != nil {
 			summary.Failed = append(summary.Failed, groupID)
-			summary.failureKinds = append(summary.failureKinds, classifyWorkerError(updateErr))
+			if retries != nil {
+				attempt := retries[groupID].attempt + 1
+				delay := workerRetryDelay(attempt, classifyWorkerError(updateErr))
+				retries[groupID] = subscriptionRetry{attempt: attempt, epoch: options.Now().Add(delay).Unix()}
+			}
 			if logger != nil {
 				logWorker(logger, "ERROR", "subscription.update", "failed", "订阅更新失败: %s: %v", groupID, updateErr)
 			}
 			continue
 		}
+		delete(retries, groupID)
 		summary.Updated = append(summary.Updated, groupID)
 		logWorker(logger, "INFO", "subscription.update", "success", "订阅更新完成: %s，节点 %d，运行时状态 %s", groupID, updated.NodeCount, updated.RuntimeSyncState)
 	}
 	return summary, nil
-}
-
-// UpdateGroup 执行单个订阅更新，并统一处理更新后的运行时状态。
-func (summary Summary) failureKind(runErr error) workerFailureKind {
-	if runErr != nil {
-		return classifyWorkerError(runErr)
-	}
-	if slices.Contains(summary.failureKinds, workerFailurePermanent) {
-		return workerFailurePermanent
-	}
-	return workerFailureTransient
 }
 
 func workerRetryDelay(attempt int, kind workerFailureKind) time.Duration {
@@ -414,6 +381,7 @@ func subscriptionErrorCause(value *subscription.Error) string {
 	return cause
 }
 
+// UpdateGroup 执行单个订阅更新，并统一处理更新后的运行时状态。
 func UpdateGroup(ctx context.Context, options Options, groupID string, now time.Time, logger *log.Logger) (subscription.Result, error) {
 	runtimeRunning := workerProcessRunning(options.SingBoxPath)
 	result, err := subscription.Update(ctx, subscription.UpdateOptions{

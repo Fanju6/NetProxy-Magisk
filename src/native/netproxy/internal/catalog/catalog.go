@@ -94,8 +94,9 @@ type RuntimeResult struct {
 }
 
 type ScheduleResult struct {
-	Nearest int64    `json:"nearest"`
-	Due     []string `json:"due"`
+	Nearest     int64            `json:"nearest"`
+	Due         []string         `json:"due"`
+	NextByGroup map[string]int64 `json:"-"`
 }
 
 func Scan(ctx context.Context, options ScanOptions) ([]GroupSnapshot, error) {
@@ -144,7 +145,7 @@ func Schedule(ctx context.Context, root string, now int64) (ScheduleResult, erro
 	if err != nil {
 		return ScheduleResult{}, err
 	}
-	result := ScheduleResult{Due: []string{}}
+	result := ScheduleResult{Due: []string{}, NextByGroup: make(map[string]int64)}
 	for _, entry := range entries {
 		if !isGroupDir(entry) {
 			continue
@@ -160,6 +161,7 @@ func Schedule(ctx context.Context, root string, now int64) (ScheduleResult, erro
 		if epoch <= 0 {
 			epoch = now
 		}
+		result.NextByGroup[entry.Name()] = epoch
 		if result.Nearest == 0 || epoch < result.Nearest {
 			result.Nearest = epoch
 		}

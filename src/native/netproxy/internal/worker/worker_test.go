@@ -30,6 +30,52 @@ type manualClock struct {
 	delays []time.Duration
 }
 
+func TestRetryScheduleDropsDisabledDeletedAndLocalGroups(t *testing.T) {
+	for _, change := range []string{"disable", "delete", "local"} {
+		t.Run(change, func(t *testing.T) {
+			now := time.Now()
+			root, _ := prepareWorkerFixture(t, "https://fixture.invalid", now)
+			retries := map[string]subscriptionRetry{"fixture": {attempt: 1, epoch: now.Unix()}}
+			path := filepath.Join(root, "fixture", "meta.json")
+			if change == "delete" {
+				if err := catalog.DeleteGroup(t.Context(), root, "fixture"); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				metadata, err := catalog.LoadMetadata(t.Context(), path, "fixture")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if change == "disable" {
+					metadata.AutoUpdate = false
+				} else {
+					metadata.Type = "local"
+				}
+				if err := catalog.SaveMetadataAtomic(t.Context(), path, metadata); err != nil {
+					t.Fatal(err)
+				}
+			}
+			schedule, err := subscriptionSchedule(t.Context(), root, now.Unix(), retries)
+			if err != nil || len(retries) != 0 || len(schedule.Due) != 0 || schedule.Nearest != 0 {
+				t.Fatalf("不再启用的订阅仍有重试: schedule=%+v retries=%+v err=%v", schedule, retries, err)
+			}
+		})
+	}
+}
+
+func TestRetryScheduleDoesNotBypassBackoff(t *testing.T) {
+	now := time.Now()
+	root, _ := prepareWorkerFixture(t, "https://fixture.invalid", now)
+	deadline := now.Add(15 * time.Minute).Unix()
+	retries := map[string]subscriptionRetry{"fixture": {attempt: 1, epoch: deadline}}
+	for range 3 {
+		schedule, err := subscriptionSchedule(t.Context(), root, now.Unix(), retries)
+		if err != nil || len(schedule.Due) != 0 || schedule.Nearest != deadline || retries["fixture"].attempt != 1 {
+			t.Fatalf("重新计算调度提前重试或重置退避: %+v %v", schedule, err)
+		}
+	}
+}
+
 func TestSyncEditedGroupCancellationReconcilesPersistedState(t *testing.T) {
 	for _, running := range []bool{false, true} {
 		t.Run(fmt.Sprint(running), func(t *testing.T) {
@@ -1176,7 +1222,7 @@ func TestRunDueContinuesAfterOneSubscriptionFails(t *testing.T) {
 	options := newTestOptions(root)
 	options.ModuleConf = moduleConf
 	options.Now = func() time.Time { return now }
-	summary, err := RunDue(context.Background(), options, now, log.New(io.Discard, "", 0))
+	summary, err := runDue(context.Background(), options, now, log.New(io.Discard, "", 0), nil)
 	if err != nil {
 		t.Fatalf("批量更新不应因单项失败而中断: %v", err)
 	}
@@ -1373,5 +1419,90 @@ func TestWorkerStartRequiresPIDState(t *testing.T) {
 	err := waitForWorkerPID(ctx, filepath.Join(t.TempDir(), "worker.pid"), os.Getpid(), 20*time.Millisecond)
 	if err == nil || !strings.Contains(err.Error(), "PID") {
 		t.Fatalf("missing PID state was not reported: %v", err)
+	}
+}
+
+func TestWorkerBackoffDoesNotDelayHealthySubscription(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("invalid subscription")) }))
+	defer server.Close()
+	clock := newManualClock(time.Unix(1700000000, 0))
+	root, moduleConf := prepareWorkerFixture(t, server.URL, clock.Now())
+	group := filepath.Join(root, "healthy")
+	if err := os.MkdirAll(group, 0700); err != nil {
+		t.Fatal(err)
+	}
+	metadata := catalog.NewMetadata("healthy", "Healthy", "subscription", server.URL, clock.Now())
+	metadata.AutoUpdate, metadata.UpdateInterval, metadata.UpdateViaProxy = true, 900, "never"
+	metadata.NextUpdateEpoch = clock.Now().Unix() + 60
+	metadata.NextUpdateAt = catalog.FormatEpochUTC(metadata.NextUpdateEpoch)
+	if err := catalog.SaveMetadataAtomic(t.Context(), filepath.Join(group, "meta.json"), metadata); err != nil {
+		t.Fatal(err)
+	}
+	if err := provider.WriteAtomic(filepath.Join(group, "provider.json"), []byte(`{"outbounds":[]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	options := newTestOptions(root)
+	options.ModuleConf, options.Now, options.NewTimer = moduleConf, clock.Now, clock.NewTimer
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- Run(ctx, options, nil, log.New(io.Discard, "", 0)) }()
+	deadline := time.Now().Add(3 * time.Second)
+	for len(clock.Delays()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	delays := clock.Delays()
+	if len(delays) == 0 {
+		t.Fatal("no timer")
+	}
+	t.Logf("healthy due in 1m; worker sleep=%v", delays[0])
+	if delays[0] > time.Minute {
+		t.Fatal("failed subscription delayed an unrelated healthy subscription")
+	}
+}
+
+func TestWorkerRetryStopsWhenAutoUpdateDisabled(t *testing.T) {
+	requests := make(chan struct{}, 4)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- struct{}{}
+		_, _ = w.Write([]byte("invalid subscription"))
+	}))
+	defer server.Close()
+	clock := newManualClock(time.Unix(1700000000, 0))
+	root, moduleConf := prepareWorkerFixture(t, server.URL, clock.Now())
+	options := newTestOptions(root)
+	options.ModuleConf, options.Now, options.NewTimer = moduleConf, clock.Now, clock.NewTimer
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- Run(ctx, options, nil, log.New(io.Discard, "", 0)) }()
+	waitRequest(t, requests)
+	waitTimerDelay(t, clock, 15*time.Minute, 0)
+	path := filepath.Join(root, "fixture", "meta.json")
+	metadata, err := catalog.LoadMetadata(t.Context(), path, "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata.AutoUpdate = false
+	if err := catalog.SaveMetadataAtomic(t.Context(), path, metadata); err != nil {
+		t.Fatal(err)
+	}
+	clock.Advance(15 * time.Minute)
+	select {
+	case <-requests:
+		cancel()
+		<-done
+		t.Fatal("关闭自动更新后仍发起退避重试请求")
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		cancel()
+		<-done
+		t.Fatal("关闭最后一个自动订阅后 Worker 未完成调度")
 	}
 }

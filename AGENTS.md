@@ -296,6 +296,8 @@ HTTP 验证器只跟随已接受的 Provider 更新：失败保留原 ETag/Last-
 
 Worker 根据各订阅的 `next_update_at` 调度，不依赖 sing-box 和 `crond`；同时通过 netlink 监听 Android 路由、地址和接口变化，再读取 Wi-Fi 与实际出口状态进行策略评估，不得改回文件或定时轮询。运行时进度放在 `/dev/netproxy/subscriptions/`，完成后不作为长期 UI 状态显示。
 
+失败退避按分组独立计算，正常调度和重试取最早截止时间；每轮读取最新启用状态，关闭自动更新或删除分组后丢弃重试。退避仅保存在 Worker 内存，配置唤醒重新计算调度但不提前重试失败分组。
+
 订阅响应头的解析要点：`Subscription-Userinfo` 提供流量与到期，空值（如 `expire=`）表示不适用而非畸形；`Profile-Title` 可能带 `base64:` 前缀或 RFC 2047 编码；`Content-Disposition` 的 `filename` 可能是 RFC 5987 形式，也可能直接携带原始 UTF-8 字节。
 
 ## 服务生命周期
