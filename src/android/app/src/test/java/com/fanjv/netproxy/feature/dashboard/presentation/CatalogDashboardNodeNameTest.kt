@@ -29,11 +29,12 @@ class CatalogDashboardNodeNameTest {
     }
 
     @Test
-    fun `service transition invalidates in-flight dashboard snapshots`() {
+    fun `refresh mode and service operations invalidate in-flight dashboard snapshots`() {
         assertEquals(false, shouldApplyDashboardSnapshot(1, 2, ""))
         assertEquals(false, shouldApplyDashboardSnapshot(2, 2, "stop"))
         assertEquals(false, shouldApplyDashboardSnapshot(2, 2, "start"))
-        assertEquals(true, shouldApplyDashboardSnapshot(2, 2, "mode"))
+        assertEquals(false, shouldApplyDashboardSnapshot(2, 2, "mode"))
+        assertEquals(true, shouldApplyDashboardSnapshot(2, 2, ""))
     }
 
     @Test

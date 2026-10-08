@@ -4,11 +4,11 @@ import android.graphics.drawable.Icon
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** 快捷设置磁贴：一键切换代理服务的启停，并同步磁贴状态。 */
@@ -43,24 +43,17 @@ class NetProxyTileService : TileService() {
         applyTileState(targetRunning)
 
         toggleJob = serviceScope.launch {
-            val commandAccepted = runCatching {
+            try {
                 repository.action(if (targetRunning) "start" else "stop")
-            }.isSuccess
-
-            if (!commandAccepted) {
-                syncTileState()
-                return@launch
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
             }
-
-            repeat(8) {
-                delay(500)
-                val actualRunning = syncTileState()
-                if (actualRunning == targetRunning) return@launch
-            }
+            syncTileState()
         }
     }
 
     private fun refreshTile() {
+        if (toggleJob?.isActive == true) return
         refreshJob?.cancel()
         refreshJob = serviceScope.launch {
             syncTileState()
@@ -74,7 +67,8 @@ class NetProxyTileService : TileService() {
             lastKnownRunning = isRunning
             applyTileState(isRunning)
             isRunning
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
             lastKnownRunning ?: false
         }
     }
