@@ -53,6 +53,7 @@ func inboundDisk(t *testing.T, options Options) []byte {
 }
 
 func TestAppUpdateRecoversInboundBeforeReadingLatestPolicy(t *testing.T) {
+	fakeAndroidPackages(t)
 	options, _, runtimeContent, _ := inboundApplyFixture(t, "ebpf", false)
 	_, err := beginConfigApply(options, options.InboundConfig)
 	if err != nil {
@@ -661,6 +662,7 @@ func TestInboundRejectsStaticManagedConflictsBeforeSideEffects(t *testing.T) {
 }
 
 func TestInboundConcurrentAppsPreserveBothNativeTemplates(t *testing.T) {
+	fakeAndroidPackages(t)
 	for _, backend := range []string{"ebpf", "tun"} {
 		t.Run(backend, func(t *testing.T) {
 			options, original, runtimeContent, _ := inboundApplyFixture(t, backend, false)

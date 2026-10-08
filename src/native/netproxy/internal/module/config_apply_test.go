@@ -61,6 +61,21 @@ func fakeSingBox(t *testing.T) string {
 	return fakeSingBoxBuild.path
 }
 
+func fakeAndroidPackages(t *testing.T) {
+	t.Helper()
+	directory := t.TempDir()
+	binary := filepath.Join(directory, "cmd")
+	if runtime.GOOS == "windows" {
+		binary += ".exe"
+	}
+	command := exec.Command("go", "build", "-o", binary, "../inbound/testdata/fake-package")
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("构建应用查询桩: %v %s", err, output)
+	}
+	t.Setenv("PATH", directory+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("NETPROXY_TEST_COMMAND_MODE", "packages")
+}
+
 func withFakeSingBoxResult(t *testing.T, failed bool, run func()) {
 	t.Helper()
 	old, present := os.LookupEnv("NETPROXY_FAKE_SING_BOX_FAIL")
@@ -568,6 +583,7 @@ func TestConfigApplyHoldsWriterLockAndReloadBorrowsIt(t *testing.T) {
 }
 
 func TestConcurrentAppAddsKeepEveryPackage(t *testing.T) {
+	fakeAndroidPackages(t)
 	options, _, _, _ := configApplyOptions(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
