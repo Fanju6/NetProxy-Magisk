@@ -33,25 +33,27 @@ jobs:
   changes:
     name: 判断验证范围
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 3
     outputs:
-      core: ${{ steps.changes.outputs.core }}
-      webui: ${{ steps.changes.outputs.webui }}
-      android: ${{ steps.changes.outputs.android }}
-      docs: ${{ steps.changes.outputs.docs }}
+      core: ${{ steps.detect.outputs.core }}
+      webui: ${{ steps.detect.outputs.webui }}
+      android: ${{ steps.detect.outputs.android }}
+      docs: ${{ steps.detect.outputs.docs }}
     steps:
-      - name: 拉取范围判断脚本
+      - name: 拉取代码
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          sparse-checkout: .github/scripts
+          sparse-checkout: |
+            .github/actions/detect-changes
+            .github/scripts
 
-      - name: 计算验证范围
-        id: changes
-        env:
-          NETPROXY_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          NETPROXY_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: node .github/scripts/ci-changes.mjs
+      - name: 检测变更范围
+        id: detect
+        uses: ./.github/actions/detect-changes
+        with:
+          base-sha: ${{ github.event.pull_request.base.sha }}
+          head-sha: ${{ github.event.pull_request.head.sha }}
 
   core:
     name: 验证 Native 与模块契约

@@ -36,9 +36,10 @@ runs:
         path: |
           ~/go/pkg/mod
           ~/.cache/go-build
-        key: ${{ runner.os }}-${{ runner.arch }}-native-${{ hashFiles('src/native/netproxy/go.mod') }}-${{ hashFiles('src/native/netproxy/go.sum', 'src/native/netproxy/**/*.go', 'src/native/netproxy/**/*.pgo', 'tests/ci_verify.sh', '.github/actions/build-module/action.yml') }}
+        key: ${{ runner.os }}-${{ runner.arch }}-native-${{ hashFiles('src/native/netproxy/go.sum') }}-${{ hashFiles('src/native/netproxy/**/*.pgo', 'tests/ci_verify.sh', '.github/actions/build-module/action.yml') }}
         restore-keys: |
-          ${{ runner.os }}-${{ runner.arch }}-native-${{ hashFiles('src/native/netproxy/go.mod') }}-
+          ${{ runner.os }}-${{ runner.arch }}-native-${{ hashFiles('src/native/netproxy/go.sum') }}-
+          ${{ runner.os }}-${{ runner.arch }}-native-
 
     - name: 配置 Node
       uses: actions/setup-node@v7

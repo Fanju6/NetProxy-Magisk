@@ -32,25 +32,25 @@ jobs:
   changes:
     name: 判断受影响组件
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 3
     permissions:
       contents: read
       actions: read
     outputs:
-      module: ${{ steps.changes.outputs.module }}
-      android: ${{ steps.changes.outputs.android }}
+      module: ${{ steps.detect.outputs.module }}
+      android: ${{ steps.detect.outputs.android }}
     steps:
       - name: 拉取代码
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          sparse-checkout: .github/scripts
+          sparse-checkout: |
+            .github/actions/detect-changes
+            .github/scripts
 
-      - name: 计算验证范围
-        id: changes
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node .github/scripts/ci-changes.mjs
+      - name: 检测变更范围
+        id: detect
+        uses: ./.github/actions/detect-changes
 
   build:
     name: 并行构建模块与管理器
@@ -71,7 +71,7 @@ jobs:
     if: >-
       always() && !cancelled() && needs.build.result == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     permissions:
       contents: write
     env:
@@ -107,8 +107,8 @@ jobs:
             echo "同步最新代码变更，仅保留最新版本的构建产物。"
             echo
             echo "版本: \`${VERSION}\` (build ${COMMIT_COUNT})"
-            echo "构建时间: ${{ env.TIMESTAMP }}"
-            echo "提交: \`${{ env.SHORT_HASH }}\`"
+            echo "构建时间: ${TIMESTAMP}"
+            echo "提交: \`${SHORT_HASH}\`"
             echo
             echo "## 提交记录"
             echo
@@ -139,6 +139,8 @@ jobs:
 
       - name: Telegram 构建成功通知
         if: success()
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         uses: cbrgm/telegram-github-action@v1
         with:
           token: ${{ secrets.TG_BOT_TOKEN }}

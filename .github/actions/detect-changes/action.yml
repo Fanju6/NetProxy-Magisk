@@ -1,0 +1,39 @@
+name: 检测变更范围
+description: 判断代码变更影响哪些组件，用于 CI/PR 验证范围决策
+
+inputs:
+  base-sha:
+    description: '基线提交 SHA（留空时自动检测）'
+    required: false
+  head-sha:
+    description: '目标提交 SHA（留空时使用 GITHUB_SHA）'
+    required: false
+
+outputs:
+  module:
+    description: '模块内容是否受影响（需要完整构建）'
+    value: ${{ steps.changes.outputs.module }}
+  core:
+    description: 'Native/Shell 核心是否受影响'
+    value: ${{ steps.changes.outputs.core }}
+  webui:
+    description: 'WebUI 是否受影响'
+    value: ${{ steps.changes.outputs.webui }}
+  android:
+    description: 'Android 管理器是否受影响'
+    value: ${{ steps.changes.outputs.android }}
+  docs:
+    description: '文档站是否受影响'
+    value: ${{ steps.changes.outputs.docs }}
+
+runs:
+  using: composite
+  steps:
+    - name: 计算变更范围
+      id: changes
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        NETPROXY_BASE_SHA: ${{ inputs.base-sha }}
+        NETPROXY_HEAD_SHA: ${{ inputs.head-sha }}
+      run: node .github/scripts/ci-changes.mjs

@@ -100,7 +100,7 @@ jobs:
     name: 汇合模块与管理器
     needs: [module, android]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     env:
       MODULE_NAME: ${{ needs.module.outputs.module_name }}
     steps:

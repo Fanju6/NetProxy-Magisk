@@ -18,7 +18,7 @@ jobs:
   preflight:
     name: 验证发布版本与更新日志
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 3
     steps:
       - name: 拉取发布元数据
         uses: actions/checkout@v7
@@ -59,7 +59,7 @@ jobs:
     name: 发布 Release
     needs: [preflight, build]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     env:
       VERSION: ${{ needs.build.outputs.version }}
       COMMIT_COUNT: ${{ needs.build.outputs.commit_count }}
