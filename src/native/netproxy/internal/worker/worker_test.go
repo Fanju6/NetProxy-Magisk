@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
+	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
@@ -118,7 +119,7 @@ func prepareWorkerFixture(t *testing.T, serverURL string, now time.Time) (string
 		t.Fatal(err)
 	}
 	moduleConf := filepath.Join(root, "module.conf")
-	content := "ACTIVE_GROUP_ID=\"default\"\nSELECTOR_MODE=urltest\n"
+	content := "ACTIVE_GROUP_ID=\"default\"\n"
 	if err := os.WriteFile(moduleConf, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -166,9 +167,22 @@ func installRuntimeHooks(t *testing.T, options *Options, running bool, reload fu
 	originalRunning, originalVerify := workerProcessRunning, workerVerifyRuntime
 	workerProcessRunning = func(string) bool { return running }
 	workerVerifyRuntime = func(context.Context, Options, string) error { return nil }
-	if options != nil && reload != nil {
-		options.ReloadService = func(ctx context.Context) error {
-			return reload(ctx, *options)
+	if options != nil {
+		syncCatalog := options.SyncCatalog
+		options.SyncCatalog = func(ctx context.Context, groupID string, structureChanged bool) (string, bool, error) {
+			before, err := moduleconfig.LoadModule(options.ModuleConf)
+			if err != nil {
+				return currentRuntimeSyncState(*options), false, err
+			}
+			state, attempted, err := syncCatalog(ctx, groupID, structureChanged)
+			if err != nil || !running {
+				return state, attempted, err
+			}
+			after, err := moduleconfig.LoadModule(options.ModuleConf)
+			if err == nil && reload != nil && (structureChanged || before.ActiveGroupID != after.ActiveGroupID) {
+				err = reload(ctx, *options)
+			}
+			return subscription.RuntimeSyncApplied, true, err
 		}
 	}
 	t.Cleanup(func() {
@@ -177,21 +191,11 @@ func installRuntimeHooks(t *testing.T, options *Options, running bool, reload fu
 	})
 }
 
-func installPersistenceHooks(t *testing.T, updateModule func(string, map[string]string) error, groupHasNodes func(context.Context, string, string) (bool, error)) {
+func installPersistenceHooks(t *testing.T, options *Options, cause error) {
 	t.Helper()
-	originalUpdateModule, originalGroupHasNodes := workerUpdateModule, workerGroupHasNodes
-	if updateModule != nil {
-		workerUpdateModule = func(_ context.Context, path string, updates map[string]string) error {
-			return updateModule(path, updates)
-		}
+	options.SyncCatalog = func(context.Context, string, bool) (string, bool, error) {
+		return currentRuntimeSyncState(*options), false, cause
 	}
-	if groupHasNodes != nil {
-		workerGroupHasNodes = groupHasNodes
-	}
-	t.Cleanup(func() {
-		workerUpdateModule = originalUpdateModule
-		workerGroupHasNodes = originalGroupHasNodes
-	})
 }
 
 func historyContains(entries []jsontext.Value, code string) bool {
@@ -311,9 +315,7 @@ func TestUpdateGroupWhenServiceStoppedReturnsModuleConfigEffectError(t *testing.
 	options.ModuleConf = moduleConf
 	options.SingBoxPath = filepath.Join(root, "sing-box")
 	installRuntimeHooks(t, &options, false, func(context.Context, Options) error { return nil })
-	installPersistenceHooks(t, func(string, map[string]string) error {
-		return errors.New("module.conf write failed")
-	}, nil)
+	installPersistenceHooks(t, &options, errors.New("module.conf write failed"))
 
 	result, err := UpdateGroup(context.Background(), options, "fixture", now, nil)
 	if err == nil {
@@ -344,9 +346,7 @@ func TestUpdateGroupWhenServiceStoppedReturnsCatalogReadError(t *testing.T) {
 	options.ModuleConf = moduleConf
 	options.SingBoxPath = filepath.Join(root, "sing-box")
 	installRuntimeHooks(t, &options, false, func(context.Context, Options) error { return nil })
-	installPersistenceHooks(t, nil, func(context.Context, string, string) (bool, error) {
-		return false, errors.New("Catalog read failed")
-	})
+	installPersistenceHooks(t, &options, errors.New("Catalog read failed"))
 
 	result, err := UpdateGroup(context.Background(), options, "fixture", now, nil)
 	if err == nil {
@@ -377,9 +377,7 @@ func TestUpdateGroupWhenServiceStoppedEffectFailureStoresMetadata(t *testing.T) 
 	options.ModuleConf = moduleConf
 	options.SingBoxPath = filepath.Join(root, "sing-box")
 	installRuntimeHooks(t, &options, false, func(context.Context, Options) error { return nil })
-	installPersistenceHooks(t, func(string, map[string]string) error {
-		return errors.New("module.conf write failed")
-	}, nil)
+	installPersistenceHooks(t, &options, errors.New("module.conf write failed"))
 
 	result, err := UpdateGroup(context.Background(), options, "fixture", now, nil)
 	if err == nil {
@@ -420,9 +418,7 @@ func TestUpdateGroupWhenServiceStoppedReturnsCatalogReadErrorWithMetadata(t *tes
 	options.ModuleConf = moduleConf
 	options.SingBoxPath = filepath.Join(root, "sing-box")
 	installRuntimeHooks(t, &options, false, func(context.Context, Options) error { return nil })
-	installPersistenceHooks(t, nil, func(context.Context, string, string) (bool, error) {
-		return false, errors.New("Catalog read failed")
-	})
+	installPersistenceHooks(t, &options, errors.New("Catalog read failed"))
 
 	result, err := UpdateGroup(context.Background(), options, "fixture", now, nil)
 	if err == nil {
@@ -462,7 +458,7 @@ func TestUpdateGroupWhenServiceRunningUsesProviderWatch(t *testing.T) {
 	options := newTestOptions(root)
 	options.ModuleConf = moduleConf
 	options.SingBoxPath = filepath.Join(root, "sing-box")
-	if err := os.WriteFile(moduleConf, []byte("ACTIVE_GROUP_ID=fixture\nSELECTOR_MODE=urltest\n"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConf, []byte("ACTIVE_GROUP_ID=fixture\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := provider.WriteAtomic(filepath.Join(root, "fixture", "provider.json"), []byte(`{"outbounds":[{"type":"socks","tag":"old-node","server":"127.0.0.1","server_port":1080}]}`+"\n"), 0o600); err != nil {
@@ -497,7 +493,7 @@ func TestUpdateGroupProviderWatchFailureDoesNotReload(t *testing.T) {
 	options := newTestOptions(root)
 	options.ModuleConf = moduleConf
 	options.SingBoxPath = filepath.Join(root, "sing-box")
-	if err := os.WriteFile(moduleConf, []byte("ACTIVE_GROUP_ID=fixture\nSELECTOR_MODE=urltest\n"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConf, []byte("ACTIVE_GROUP_ID=fixture\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := provider.WriteAtomic(filepath.Join(root, "fixture", "provider.json"), []byte(`{"outbounds":[{"type":"socks","tag":"old-node","server":"127.0.0.1","server_port":1080}]}`+"\n"), 0o600); err != nil {
@@ -1063,7 +1059,7 @@ func TestRunDueContinuesAfterOneSubscriptionFails(t *testing.T) {
 
 	root := t.TempDir()
 	moduleConf := filepath.Join(root, "module.conf")
-	if err := os.WriteFile(moduleConf, []byte("ACTIVE_GROUP_ID=\"good\"\nSELECTOR_MODE=urltest\n"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConf, []byte("ACTIVE_GROUP_ID=\"good\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	for _, item := range []struct {

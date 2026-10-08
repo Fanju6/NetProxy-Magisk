@@ -58,7 +58,7 @@ func TestPublicCommandsKeepSingleJSONContract(t *testing.T) {
 	options.WorkerPIDFile = filepath.Join(root, "state", "worker.pid")
 	options.WiFiStateFile = filepath.Join(root, "state", "wifi_state")
 	for path, content := range map[string]string{
-		options.ModuleConfig:                             "ACTIVE_GROUP_ID=default\nSELECTOR_MODE=urltest\n",
+		options.ModuleConfig:                             "ACTIVE_GROUP_ID=default\n",
 		options.InboundConfig:                            `{"backend":"ebpf","app":{"enabled":false,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]},"ebpf":{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true},"shared":{"enabled":false}},"tun":{"type":"tun","tag":"netproxy-in","interface_name":"netproxy","address":["172.19.0.1/30"],"auto_route":true,"auto_redirect":true}}`,
 		filepath.Join(options.SingBoxDir, "config.json"): "{}\n",
 	} {
@@ -72,6 +72,9 @@ func TestPublicCommandsKeepSingleJSONContract(t *testing.T) {
 	if err := catalog.InitializeGroup(t.Context(), catalog.GroupOptions{Root: options.CatalogRoot, GroupID: "default", Name: "本地配置", Type: "local"}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := catalog.AppendNode(t.Context(), catalog.MutationOptions{GroupDir: filepath.Join(options.CatalogRoot, "default"), GroupID: "default", Input: "socks://127.0.0.1:1080#NODE"}); err != nil {
+		t.Fatal(err)
+	}
 	command := &cli{options: options}
 	for _, test := range []struct {
 		args   string
@@ -83,6 +86,8 @@ func TestPublicCommandsKeepSingleJSONContract(t *testing.T) {
 		{"catalog show default", "catalog.show", 0},
 		{"node list", "node.list", 0},
 		{"node current", "node.current", 0},
+		{"node use auto default", "node.selected", 0},
+		{"node use default/NODE", "node.selected", 0},
 		{"sub list", "subscription.list", 0},
 		{"mode", "mode.current", 0},
 		{"mode Rule", "mode.changed", 0},

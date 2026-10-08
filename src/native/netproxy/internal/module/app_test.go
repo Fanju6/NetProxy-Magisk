@@ -1,19 +1,30 @@
 package module
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
+	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
+	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/worker"
+	"google.golang.org/protobuf/encoding/protowire"
 )
 
 const testInboundConfig = `{
@@ -23,13 +34,527 @@ const testInboundConfig = `{
   "tun": {"type": "tun", "tag": "netproxy-in", "interface_name": "netproxy", "address": ["172.19.0.1/30"], "auto_route": true, "auto_redirect": true}
 }`
 
+func selectionFixture(t *testing.T) Options {
+	t.Helper()
+	options := newTestOptions(t.TempDir())
+	if err := os.MkdirAll(filepath.Dir(options.ModuleConfig), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=default\nSELECTED_NODE_TAG=\nWIFI_SSID_LIST=office\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tag := range []string{"NODE", "节点 / 02"} {
+		if _, err := catalog.AppendNode(t.Context(), catalog.MutationOptions{
+			GroupDir: filepath.Join(options.CatalogRoot, "default"), GroupID: "default", Name: "本地配置", Type: "local",
+			Input: "socks://127.0.0.1:1080#" + url.PathEscape(tag),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return options
+}
+
+func TestSelectNodeStoppedKeepsTwoFieldStateAndPublicResult(t *testing.T) {
+	options := selectionFixture(t)
+	for _, target := range []string{"default/节点 / 02", "auto"} {
+		result, err := SelectNode(t.Context(), options, target, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		module, err := moduleconfig.LoadModule(options.ModuleConfig)
+		if err != nil || module.WiFiSSIDList != "office" || result["group_id"] != "default" || result["mode"] != module.Mode() {
+			t.Fatalf("选择结果不一致: %+v %+v %v", result, module, err)
+		}
+		if target != "auto" && (module.SelectedNodeTag != "节点 / 02" || result["selected"] != "本地配置/节点 / 02") {
+			t.Fatalf("手动选择未保留原始 tag: %+v %+v", result, module)
+		}
+		if target == "auto" && (module.SelectedNodeTag != "" || result["selected"] != "Auto/本地配置") {
+			t.Fatalf("自动选择错误: %+v %+v", result, module)
+		}
+	}
+	before, err := os.ReadFile(options.ModuleConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SelectNode(t.Context(), options, "default/missing", ""); err == nil {
+		t.Fatal("不存在的节点选择成功")
+	}
+	after, err := os.ReadFile(options.ModuleConfig)
+	if err != nil || string(before) != string(after) || strings.Contains(string(after), "SELECTOR_MODE") || strings.Contains(string(after), "SELECTED_NODE_REF") {
+		t.Fatalf("无效选择改变了配置或写回旧字段: %s %v", after, err)
+	}
+	for _, path := range []string{options.StateFile, options.WorkerPIDFile, options.RuntimeDir} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("停止时选节点改变了服务、Worker 或 runtime: %s %v", path, err)
+		}
+	}
+}
+
+func TestSelectNodeWaitingForLifecycleCanCancel(t *testing.T) {
+	options := selectionFixture(t)
+	lock, err := acquireLifecycleLock(options.StateFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.release()
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := SelectNode(ctx, options, "default/NODE", ""); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("等锁时未传播取消: %v", err)
+	}
+	module, err := moduleconfig.LoadModule(options.ModuleConfig)
+	if err != nil || module.SelectedNodeTag != "" {
+		t.Fatalf("取消时写入了选择: %+v %v", module, err)
+	}
+}
+
+func TestCatalogRemovalWaitsForLifecycleBeforeCommit(t *testing.T) {
+	for _, subscriptionGroup := range []bool{false, true} {
+		t.Run(fmt.Sprint(subscriptionGroup), func(t *testing.T) {
+			options := selectionFixture(t)
+			groupID, tag := "default", "NODE"
+			if subscriptionGroup {
+				groupID, tag = "subscription", "SUB"
+				if _, err := catalog.AppendNode(t.Context(), catalog.MutationOptions{GroupDir: filepath.Join(options.CatalogRoot, groupID), GroupID: groupID, Type: "subscription", Input: "socks://127.0.0.1:1080#SUB"}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := SelectNode(t.Context(), options, groupID+"/"+tag, ""); err != nil {
+				t.Fatal(err)
+			}
+			providerPath := filepath.Join(options.CatalogRoot, groupID, "provider.json")
+			before, err := os.ReadFile(providerPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lock, err := acquireLifecycleLock(options.StateFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer lock.release()
+			ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+			defer cancel()
+			if subscriptionGroup {
+				err = RemoveSubscription(ctx, options, groupID, "")
+			} else {
+				_, err = NodeRemove(ctx, options, groupID+"/"+tag)
+			}
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("等待生命周期锁未传播取消: %v", err)
+			}
+			after, err := os.ReadFile(providerPath)
+			if err != nil || string(before) != string(after) {
+				t.Fatalf("等待锁时删除了持久节点: %s %v", after, err)
+			}
+			module, err := moduleconfig.LoadModule(options.ModuleConfig)
+			if err != nil || module.Ref() != groupID+"/"+tag {
+				t.Fatalf("取消时改变了保存的选择: %+v %v", module, err)
+			}
+		})
+	}
+}
+
+func TestCatalogSyncKeepsChoiceSavedWhileWaitingForConfigLock(t *testing.T) {
+	options := selectionFixture(t)
+	editor, err := moduleconfig.Lock(t.Context(), options.ModuleConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer editor.Release()
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := SyncCatalog(t.Context(), options, "default", false)
+		done <- err
+	}()
+	if err := editor.Update((moduleconfig.Selection{ActiveGroupID: "default", SelectedNodeTag: "NODE"}).Updates(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := editor.Release(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	module, err := moduleconfig.LoadModule(options.ModuleConfig)
+	if err != nil || module.SelectedNodeTag != "NODE" || module.WiFiSSIDList != "office" {
+		t.Fatalf("覆盖了并发保存的选择或网络设置: %+v %v", module, err)
+	}
+}
+
+func TestNodeRemovalRejectsBrokenModuleConfigBeforeCommit(t *testing.T) {
+	options := selectionFixture(t)
+	providerPath := filepath.Join(options.CatalogRoot, "default", "provider.json")
+	before, err := os.ReadFile(providerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=default\nSELECTED_NODE_TAG=\" \"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NodeRemove(t.Context(), options, "default/NODE"); err == nil {
+		t.Fatal("模块配置损坏时仍删除了节点")
+	}
+	after, err := os.ReadFile(providerPath)
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("预检失败后 Provider 被改变: %s %v", after, err)
+	}
+}
+
+func TestCatalogSyncFinishesSavedChoiceAfterCancellation(t *testing.T) {
+	options := selectionFixture(t)
+	if _, err := SelectNode(t.Context(), options, "default/NODE", ""); err != nil {
+		t.Fatal(err)
+	}
+	options, saved, release, err := lockCatalogChange(t.Context(), options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	if _, err := catalog.RemoveNode(t.Context(), catalog.MutationOptions{GroupDir: filepath.Join(options.CatalogRoot, "default"), GroupID: "default", Tag: "NODE"}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	state, attempted, err := syncCatalogChange(ctx, options, saved, "default", false, false)
+	if err != nil || attempted || state != subscription.RuntimeSyncNotRunning {
+		t.Fatalf("提交后的本地选择未完成收敛: %s %v %v", state, attempted, err)
+	}
+	module, err := moduleconfig.LoadModule(options.ModuleConfig)
+	if err != nil || module.ActiveGroupID != "default" || module.SelectedNodeTag != "" {
+		t.Fatalf("保留了已删除节点的引用: %+v %v", module, err)
+	}
+}
+
+func TestRemoveSubscriptionRecoversConfigBeforeDeletion(t *testing.T) {
+	options := selectionFixture(t)
+	isolateConfigApplyHooks(t, false)
+	if err := os.MkdirAll(filepath.Dir(options.InboundConfig), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(options.InboundConfig, []byte(testInboundConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := catalog.AppendNode(t.Context(), catalog.MutationOptions{GroupDir: filepath.Join(options.CatalogRoot, "subscription"), GroupID: "subscription", Type: "subscription", Input: "socks://127.0.0.1:1080#SUB"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SelectNode(t.Context(), options, "subscription/SUB", ""); err != nil {
+		t.Fatal(err)
+	}
+	transaction, err := beginConfigApply(options, options.ModuleConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := transaction.setPhase("reload_started"); err != nil {
+		t.Fatal(err)
+	}
+	configSnapshotRestore = func(snapshot configFileSnapshot) error {
+		if _, err := os.Stat(filepath.Join(options.CatalogRoot, "subscription")); err != nil {
+			t.Fatalf("删除订阅发生在配置恢复之前: %v", err)
+		}
+		return restoreConfigSnapshot(snapshot)
+	}
+	if err := RemoveSubscription(t.Context(), options, "subscription", ""); err != nil {
+		t.Fatal(err)
+	}
+	module, err := moduleconfig.LoadModule(options.ModuleConfig)
+	if err != nil || module.ActiveGroupID != "default" || module.SelectedNodeTag != "" {
+		t.Fatalf("恢复覆盖了删除后的选择: %+v %v", module, err)
+	}
+	if _, err := os.Stat(configTransactionPath(options)); !os.IsNotExist(err) {
+		t.Fatalf("配置恢复未清理 journal: %v", err)
+	}
+}
+
+func TestSubscriptionPending304ReappliesSavedAutoSelection(t *testing.T) {
+	options := selectionFixture(t)
+	groupID := "subscription"
+	selectCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/sub":
+			w.Header().Set("ETag", `"fixture"`)
+			if r.Header.Get("If-None-Match") != "" {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+			_, _ = w.Write([]byte(`{"outbounds":[{"type":"socks","tag":"NODE","server":"127.0.0.1","server_port":1080}]}`))
+		case "/daemon.StartedService/SelectOutbound":
+			selectCalls++
+			body, err := io.ReadAll(r.Body)
+			expected := protowire.AppendString(protowire.AppendTag(nil, 1, protowire.BytesType), "Proxy")
+			expected = protowire.AppendString(protowire.AppendTag(expected, 2, protowire.BytesType), "Auto/订阅测试")
+			if err != nil || len(body) < 5 || !bytes.Equal(body[5:], expected) {
+				t.Errorf("重试未应用持久化的同组 Auto: %x %v", body, err)
+			}
+			if selectCalls == 1 {
+				http.Error(w, "selection rejected", http.StatusServiceUnavailable)
+				return
+			}
+			_, _ = w.Write(make([]byte, 5))
+		case "/daemon.StartedService/SubscribeOutbounds":
+			item := protowire.AppendString(protowire.AppendTag(nil, 1, protowire.BytesType), "订阅测试/NODE")
+			payload := protowire.AppendBytes(protowire.AppendTag(nil, 1, protowire.BytesType), item)
+			frame := make([]byte, 5)
+			binary.BigEndian.PutUint32(frame[1:], uint32(len(payload)))
+			_, _ = w.Write(append(frame, payload...))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	options.ServiceAddress = server.URL
+	if err := catalog.InitializeGroup(t.Context(), catalog.GroupOptions{Root: options.CatalogRoot, GroupID: groupID, Name: "订阅测试", Type: "subscription", URL: server.URL + "/sub", UpdateViaProxy: "never"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := catalog.AppendNode(t.Context(), catalog.MutationOptions{GroupDir: filepath.Join(options.CatalogRoot, groupID), GroupID: groupID, Type: "subscription", Input: "socks://127.0.0.1:1080#OLD"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SelectNode(t.Context(), options, groupID+"/OLD", ""); err != nil {
+		t.Fatal(err)
+	}
+	workerOptions := workerOptions(options)
+	workerOptions.SyncCatalog = func(ctx context.Context, groupID string, structural bool) (string, bool, error) {
+		if structural {
+			t.Error("已有 Provider 更新或 pending 304 不应重载核心")
+		}
+		locked, saved, release, err := lockCatalogChange(ctx, options)
+		if err != nil {
+			return "", false, err
+		}
+		defer release()
+		return syncCatalogChange(ctx, locked, saved, groupID, structural, true)
+	}
+	first, err := worker.UpdateGroup(t.Context(), workerOptions, groupID, time.Now(), nil)
+	var syncErr *subscription.Error
+	if !errors.As(err, &syncErr) || syncErr.Code != "subscription.runtime_sync_failed" || !first.RuntimeSyncPending || first.RuntimeSyncState != subscription.RuntimeSyncFailed || selectCalls != 1 {
+		t.Fatalf("选择 API 失败未保留运行时 pending: %+v calls=%d err=%v", first, selectCalls, err)
+	}
+	module, err := moduleconfig.LoadModule(options.ModuleConfig)
+	if err != nil || module.ActiveGroupID != groupID || module.SelectedNodeTag != "" {
+		t.Fatalf("未持久化同组 Auto: %+v %v", module, err)
+	}
+	second, err := worker.UpdateGroup(t.Context(), workerOptions, groupID, time.Now(), nil)
+	if err != nil || !second.NotModified || !second.RuntimeSynced || second.RuntimeSyncPending || selectCalls != 2 {
+		t.Fatalf("304 未重新应用保存的 Auto: %+v calls=%d err=%#v", second, selectCalls, err)
+	}
+	metadata, err := catalog.PrivateMetadata(t.Context(), options.CatalogRoot, groupID)
+	if err != nil || metadata.RuntimeSyncPending || metadata.LastError != "" || metadata.RuntimeSyncState != subscription.RuntimeSyncApplied {
+		t.Fatalf("同步成功未清理 pending 和运行时错误: %+v %v", metadata, err)
+	}
+}
+
+func TestSyncSelectionDoesNotSaveOrReload(t *testing.T) {
+	options := selectionFixture(t)
+	if err := moduleconfig.UpdateModule(t.Context(), options.ModuleConfig, (moduleconfig.Selection{ActiveGroupID: "default", SelectedNodeTag: "NODE"}).Updates()); err != nil {
+		t.Fatal(err)
+	}
+	stamp := time.Unix(1_700_000_000, 0)
+	if err := os.Chtimes(options.ModuleConfig, stamp, stamp); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(options.ModuleConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fail := range []bool{false, true} {
+		calls := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			if r.URL.Path != "/daemon.StartedService/SelectOutbound" {
+				t.Errorf("同步调用了非选择接口: %s", r.URL.Path)
+			}
+			if fail {
+				http.Error(w, "selection rejected", http.StatusServiceUnavailable)
+				return
+			}
+			w.Header().Set("Content-Type", "application/grpc-web+proto")
+			_, _ = w.Write(make([]byte, 5))
+		}))
+		options.ServiceAddress = server.URL
+		err := syncSelection(t.Context(), options)
+		server.Close()
+		if (err != nil) != fail || (!fail && calls != 2) || (fail && calls != 1) {
+			t.Fatalf("同步调用异常: fail=%v calls=%d err=%v", fail, calls, err)
+		}
+	}
+	after, err := os.ReadFile(options.ModuleConfig)
+	info, statErr := os.Stat(options.ModuleConfig)
+	if err != nil || statErr != nil || string(before) != string(after) || !info.ModTime().Equal(stamp) {
+		t.Fatalf("运行时同步重新保存了选择: %v %v", err, statErr)
+	}
+	if _, err := os.Stat(options.StateFile); !os.IsNotExist(err) {
+		t.Fatalf("API 失败触发了服务操作: %v", err)
+	}
+}
+
+func TestNodeRemoveClearsMissingSelectionAndEmptyCatalog(t *testing.T) {
+	options := selectionFixture(t)
+	if _, err := SelectNode(t.Context(), options, "default/NODE", ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{"default/NODE", "default/节点 / 02"} {
+		if _, err := NodeRemove(t.Context(), options, target); err != nil {
+			t.Fatal(err)
+		}
+		module, err := moduleconfig.LoadModule(options.ModuleConfig)
+		if err != nil || module.ActiveGroupID != "default" || module.SelectedNodeTag != "" {
+			t.Fatalf("删除节点后没有保留同组自动选择: %+v %v", module, err)
+		}
+	}
+}
+
+func TestRemoveSubscriptionNormalizesLatestSelection(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		selected    moduleconfig.Selection
+		replacement string
+		want        moduleconfig.Selection
+	}{
+		{"inactive", moduleconfig.Selection{ActiveGroupID: "default", SelectedNodeTag: "NODE"}, "replacement", moduleconfig.Selection{ActiveGroupID: "default", SelectedNodeTag: "NODE"}},
+		{"automatic-replacement", moduleconfig.Selection{ActiveGroupID: "subscription", SelectedNodeTag: "SUB"}, "", moduleconfig.Selection{ActiveGroupID: "default"}},
+		{"specified-replacement", moduleconfig.Selection{ActiveGroupID: "subscription", SelectedNodeTag: "SUB"}, "replacement", moduleconfig.Selection{ActiveGroupID: "replacement"}},
+		{"invalid-replacement", moduleconfig.Selection{ActiveGroupID: "subscription", SelectedNodeTag: "SUB"}, "subscription", moduleconfig.Selection{ActiveGroupID: "subscription", SelectedNodeTag: "SUB"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			options := selectionFixture(t)
+			for _, group := range []string{"subscription", "replacement"} {
+				if err := catalog.InitializeGroup(t.Context(), catalog.GroupOptions{Root: options.CatalogRoot, GroupID: group, Name: group, Type: "subscription", URL: "https://example.invalid/sub"}); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := catalog.AppendNode(t.Context(), catalog.MutationOptions{GroupDir: filepath.Join(options.CatalogRoot, group), GroupID: group, Type: "subscription", Input: "socks://127.0.0.1:1080#SUB"}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := moduleconfig.UpdateModule(t.Context(), options.ModuleConfig, test.selected.Updates()); err != nil {
+				t.Fatal(err)
+			}
+			err := RemoveSubscription(t.Context(), options, "subscription", test.replacement)
+			if (err != nil) != (test.name == "invalid-replacement") {
+				t.Fatalf("删除结果异常: %v", err)
+			}
+			module, err := moduleconfig.LoadModule(options.ModuleConfig)
+			if err != nil || module.Selection != test.want {
+				t.Fatalf("删除覆盖了当前选择: %+v %v", module, err)
+			}
+			_, err = os.Stat(filepath.Join(options.CatalogRoot, "subscription"))
+			if test.name == "invalid-replacement" && err != nil || test.name != "invalid-replacement" && !os.IsNotExist(err) {
+				t.Fatalf("订阅目录状态异常: %v", err)
+			}
+		})
+	}
+}
+
+func TestSelectionTargetCoreAppliesSavedChoice(t *testing.T) {
+	core := targetCoreBinary(t)
+	options := selectionFixture(t)
+	if err := moduleconfig.UpdateModule(t.Context(), options.ModuleConfig, (moduleconfig.Selection{ActiveGroupID: "default", SelectedNodeTag: "节点 / 02"}).Updates()); err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := listener.Addr().(*net.TCPAddr)
+	_ = listener.Close()
+	options.ServiceAddress, options.ServiceSecret = address.String(), "fixture"
+	configPath := filepath.Join(options.SingBoxDir, "config.json")
+	if err := os.MkdirAll(options.SingBoxDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	content := fmt.Sprintf(`{"log":{"disabled":true},"experimental":{"cache_file":{"enabled":true,"path":"cache.db"}},"services":[{"type":"api","listen":"127.0.0.1","listen_port":%d,"secret":"fixture"}]}`, address.Port)
+	targetCoreWrite(t, configPath, []byte(content))
+	providersPath, outboundsPath := filepath.Join(options.RuntimeDir, "providers.json"), filepath.Join(options.RuntimeDir, "outbounds.json")
+	if _, err := catalog.BuildRuntime(t.Context(), catalog.RuntimeOptions{Root: options.CatalogRoot, ModuleConfig: options.ModuleConfig, ProvidersOutput: providersPath, OutboundsOutput: outboundsPath}); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.CommandContext(t.Context(), core, "check", "-c", configPath, "-c", providersPath, "-c", outboundsPath).CombinedOutput(); err != nil {
+		t.Fatalf("真实核心 check 失败: %v\n%s", err, output)
+	}
+	command := exec.CommandContext(t.Context(), core, "run", "-c", configPath, "-c", providersPath, "-c", outboundsPath)
+	command.Dir = options.SingBoxDir
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = command.Process.Kill(); _ = command.Wait() })
+	client, err := serviceapi.New(options.ServiceAddress, options.ServiceSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	for {
+		if _, err := client.Ready(ctx); err == nil {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("真实核心 API 未就绪")
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+	if err := client.SelectGroup(ctx, "Select/本地配置", "本地配置/NODE"); err != nil {
+		t.Fatal(err)
+	}
+	syncSaved := func() {
+		locked, saved, release, err := lockCatalogChange(ctx, options)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer release()
+		state, attempted, err := syncCatalogChange(ctx, locked, saved, "default", false, true)
+		if err != nil || !attempted || state != subscription.RuntimeSyncApplied {
+			t.Fatalf("真实核心统一选择同步失败: %s %v %v", state, attempted, err)
+		}
+	}
+	syncSaved()
+	groups, err := client.Groups(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	matched := 0
+	for _, group := range groups {
+		if group.Tag == "Proxy" && group.Selected == "Select/本地配置" || group.Tag == "Select/本地配置" && group.Selected == "本地配置/节点 / 02" {
+			matched++
+		}
+	}
+	if matched != 2 {
+		t.Fatalf("真实核心没有恢复保存的手动选择: %+v", groups)
+	}
+	started, err := client.StartedAt(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := syncRuntimeSelector(ctx, options, "Select/本地配置", "本地配置/missing"); err == nil {
+		t.Fatal("真实核心接受了不存在的节点")
+	}
+	after, err := client.StartedAt(ctx)
+	if err != nil || after != started {
+		t.Fatalf("失败的选择触发了重载: %+v %+v %v", started, after, err)
+	}
+	if err := moduleconfig.UpdateModule(ctx, options.ModuleConfig, (moduleconfig.Selection{ActiveGroupID: "default"}).Updates()); err != nil {
+		t.Fatal(err)
+	}
+	syncSaved()
+	groups, err = client.Groups(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, group := range groups {
+		if group.Tag == "Proxy" && group.Selected == "Auto/本地配置" {
+			return
+		}
+	}
+	t.Fatalf("真实核心没有切回同组 Auto: %+v", groups)
+}
+
 func TestNodeImportAppendsToDefaultGroup(t *testing.T) {
 	root := t.TempDir()
 	options := newTestOptions(root)
 	if err := os.MkdirAll(filepath.Dir(options.ModuleConfig), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=default\nSELECTOR_MODE=urltest\nSELECTED_NODE_REF=\n"), 0o600); err != nil {
+	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=default\nSELECTED_NODE_TAG=\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := catalog.InitializeGroup(context.Background(), catalog.GroupOptions{
@@ -99,7 +624,7 @@ func TestUpdateAllSubscriptionsPreservesStructuredFailure(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(options.ModuleConfig), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=default\nSELECTOR_MODE=urltest\n"), 0o600); err != nil {
+	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=default\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := catalog.InitializeGroup(context.Background(), catalog.GroupOptions{
@@ -215,7 +740,7 @@ func TestEditSubscriptionSchedulingOnlyDoesNotReload(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(options.ModuleConfig), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=default\nSELECTOR_MODE=urltest\n"), 0o600); err != nil {
+	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=default\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Unix(1_700_450_000, 0)
@@ -256,7 +781,7 @@ func TestEditSubscriptionHistoryFailureKeepsProviderAndMetadata(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(options.ModuleConfig), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=default\nSELECTOR_MODE=urltest\n"), 0o600); err != nil {
+	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=default\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := catalog.InitializeGroup(context.Background(), catalog.GroupOptions{

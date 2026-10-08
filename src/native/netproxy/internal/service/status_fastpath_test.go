@@ -15,7 +15,12 @@ import (
 
 func writeStatusModule(t *testing.T, path, activeID, selector, selected string) {
 	t.Helper()
-	content := "SELECTOR_MODE=" + selector + "\nACTIVE_GROUP_ID=" + activeID + "\nSELECTED_NODE_REF=\"" + selected + "\"\n"
+	if selector == "manual" {
+		selected = strings.TrimPrefix(selected, activeID+"/")
+	} else {
+		selected = ""
+	}
+	content := "ACTIVE_GROUP_ID=" + activeID + "\nSELECTED_NODE_TAG=\"" + selected + "\"\n"
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}

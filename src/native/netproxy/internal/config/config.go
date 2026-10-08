@@ -15,21 +15,51 @@ import (
 
 // ModuleConfig 描述 module.conf 中由运行时使用的全部设置。
 type ModuleConfig struct {
+	Selection
 	AutoStart       bool   `json:"auto_start"`
-	SelectorMode    string `json:"selector_mode"`
-	ActiveGroupID   string `json:"active_group_id"`
-	SelectedNodeRef string `json:"selected_node_ref"`
 	WiFiAutoSwitch  bool   `json:"wifi_auto_switch"`
 	WiFiSSIDMode    string `json:"wifi_ssid_mode"`
 	WiFiSSIDList    string `json:"wifi_ssid_list"`
 	ProxyOnCellular bool   `json:"proxy_on_cellular"`
 }
 
+type Selection struct {
+	ActiveGroupID   string `json:"active_group_id"`
+	SelectedNodeTag string `json:"selected_node_tag"`
+}
+
+func (selection Selection) Mode() string {
+	if selection.SelectedNodeTag == "" {
+		return "urltest"
+	}
+	return "manual"
+}
+
+func (selection Selection) Ref() string {
+	if selection.SelectedNodeTag == "" {
+		return ""
+	}
+	return selection.ActiveGroupID + "/" + selection.SelectedNodeTag
+}
+
+func (selection Selection) RuntimeTargets(runtimeTag string) (group, node string) {
+	if selection.SelectedNodeTag == "" {
+		return "Auto/" + runtimeTag, ""
+	}
+	return "Select/" + runtimeTag, runtimeTag + "/" + selection.SelectedNodeTag
+}
+
+func (selection Selection) Updates() map[string]string {
+	return map[string]string{
+		"ACTIVE_GROUP_ID":   Quote(selection.ActiveGroupID),
+		"SELECTED_NODE_TAG": Quote(selection.SelectedNodeTag),
+	}
+}
+
 // DefaultModule 返回全新配置使用的唯一默认值集合。
 func DefaultModule() ModuleConfig {
 	return ModuleConfig{
-		SelectorMode:    "urltest",
-		ActiveGroupID:   "default",
+		Selection:       Selection{ActiveGroupID: "default"},
 		WiFiSSIDMode:    "blacklist",
 		ProxyOnCellular: true,
 	}
@@ -75,8 +105,8 @@ func LoadModule(path string) (ModuleConfig, error) {
 		return ModuleConfig{}, err
 	}
 	allowed := map[string]bool{
-		"AUTO_START": true, "SELECTOR_MODE": true,
-		"ACTIVE_GROUP_ID": true, "SELECTED_NODE_REF": true,
+		"AUTO_START":      true,
+		"ACTIVE_GROUP_ID": true, "SELECTED_NODE_TAG": true,
 		"WIFI_AUTO_SWITCH": true, "WIFI_SSID_MODE": true,
 		"WIFI_SSID_LIST": true, "PROXY_ON_CELLULAR": true,
 	}
@@ -89,11 +119,11 @@ func LoadModule(path string) (ModuleConfig, error) {
 	if config.AutoStart, err = boolValue(values, "AUTO_START", config.AutoStart); err != nil {
 		return ModuleConfig{}, err
 	}
-	if config.SelectorMode = valueOr(values, "SELECTOR_MODE", config.SelectorMode); config.SelectorMode != "urltest" && config.SelectorMode != "manual" {
-		return ModuleConfig{}, fmt.Errorf("SELECTOR_MODE 无效: %s", config.SelectorMode)
-	}
 	config.ActiveGroupID = valueOr(values, "ACTIVE_GROUP_ID", config.ActiveGroupID)
-	config.SelectedNodeRef = valueOr(values, "SELECTED_NODE_REF", "")
+	config.SelectedNodeTag = valueOr(values, "SELECTED_NODE_TAG", "")
+	if config.SelectedNodeTag != "" && (config.ActiveGroupID == "" || strings.TrimSpace(config.SelectedNodeTag) == "") {
+		return ModuleConfig{}, errors.New("手动选择必须指定活动分组和有效节点 tag")
+	}
 	// 没有任何 Catalog 分组时允许为空；下一次导入非空分组时由应用服务重新设置。
 	if config.WiFiAutoSwitch, err = boolValue(values, "WIFI_AUTO_SWITCH", config.WiFiAutoSwitch); err != nil {
 		return ModuleConfig{}, err

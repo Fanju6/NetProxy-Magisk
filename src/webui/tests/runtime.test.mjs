@@ -48,6 +48,13 @@ test('格式化只改变 JSON 排版，文本、错误和危险字符保持原�
   assert.equal(formatCtlOutput('not { json'), 'not { json')
 })
 
+test('节点选择运行时失败保留持久化状态与原始错误', () => {
+  const response = { schema: 1, ok: false, code: 'node.runtime_sync_failed', message: '节点选择已保存，但运行时切换失败', data: { persisted: true, runtime_synced: false, group_id: 'default', mode: 'manual', selected: '本地配置/NODE' } }
+  const output = { out: JSON.stringify(response), err: '', code: 1 }
+  assert.deepEqual(decodeCtlResult(output), response)
+  assert.deepEqual(JSON.parse(formatCtlOutput(output.out)), response)
+})
+
 test('模式补全仅使用配置列表，保留自定义名称和空格', () => {
   const modes = ['Rule', 'Direct', 'Office Network']
   assert.deepEqual(complete('mode ', [], [], modes).candidates, modes)

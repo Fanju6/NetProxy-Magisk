@@ -7,9 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"encoding/json/jsontext"
 	json "encoding/json/v2"
+	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 )
 
 func TestScanAndBuildRuntime(t *testing.T) {
@@ -44,8 +46,7 @@ func TestScanAndBuildRuntime(t *testing.T) {
 	outboundsPath := filepath.Join(root, "runtime", "outbounds.json")
 	result, err := BuildRuntime(context.Background(), RuntimeOptions{
 		Root: root, ProvidersOutput: providersPath, OutboundsOutput: outboundsPath,
-		ActiveGroup: "remote", SelectorMode: "manual",
-		SelectedNodeRef: "remote/订阅节点",
+		Selection: moduleconfig.Selection{ActiveGroupID: "remote", SelectedNodeTag: "订阅节点"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -67,6 +68,69 @@ func TestScanAndBuildRuntime(t *testing.T) {
 	assertRuntimeGroupSources(t, outbounds)
 	if !strings.Contains(state, "selected_node_ref\tremote/订阅节点") {
 		t.Fatalf("unexpected state: %s", state)
+	}
+}
+
+func TestSelectionResolutionAndNormalization(t *testing.T) {
+	root := t.TempDir()
+	writeGroup(t, root, "default", "本地配置", "local", "LOCAL")
+	writeGroup(t, root, "remote", "远程订阅", "subscription", "REMOTE")
+	selection, runtimeTag, err := ResolveSelection(t.Context(), root, moduleconfig.Selection{ActiveGroupID: "远程订阅", SelectedNodeTag: "REMOTE"})
+	if err != nil || selection.ActiveGroupID != "remote" || runtimeTag != "远程订阅" {
+		t.Fatalf("名称解析和节点校验不一致: %+v %s %v", selection, runtimeTag, err)
+	}
+	if _, _, err := ResolveSelection(t.Context(), root, moduleconfig.Selection{ActiveGroupID: "remote", SelectedNodeTag: "missing"}); err == nil {
+		t.Fatal("严格选择接受了不存在的手动节点")
+	}
+	for _, test := range []struct {
+		selection moduleconfig.Selection
+		preferred string
+		want      moduleconfig.Selection
+	}{
+		{moduleconfig.Selection{ActiveGroupID: "remote", SelectedNodeTag: "REMOTE"}, "default", moduleconfig.Selection{ActiveGroupID: "remote", SelectedNodeTag: "REMOTE"}},
+		{moduleconfig.Selection{ActiveGroupID: "remote", SelectedNodeTag: "missing"}, "default", moduleconfig.Selection{ActiveGroupID: "remote"}},
+		{moduleconfig.Selection{ActiveGroupID: "removed", SelectedNodeTag: "old"}, "remote", moduleconfig.Selection{ActiveGroupID: "remote"}},
+		{moduleconfig.Selection{ActiveGroupID: "removed"}, "missing", moduleconfig.Selection{ActiveGroupID: "default"}},
+	} {
+		selection, tag, err := NormalizeSelection(t.Context(), root, test.selection, test.preferred)
+		if err != nil || selection != test.want || tag == "" {
+			t.Fatalf("选择整理异常: %+v want=%+v tag=%s err=%v", selection, test.want, tag, err)
+		}
+	}
+	if err := SetGroupName(t.Context(), root, "remote", "本地配置", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ResolveSelection(t.Context(), root, moduleconfig.Selection{ActiveGroupID: "本地配置"}); err == nil {
+		t.Fatal("接受了重名分组查询")
+	}
+	_, tag, err := ResolveSelection(t.Context(), root, moduleconfig.Selection{ActiveGroupID: "remote"})
+	if err != nil || tag != "本地配置 [remote]" {
+		t.Fatalf("ID 选择未保持运行时标签消歧: %s %v", tag, err)
+	}
+}
+
+func TestSelectionOnlyValidatesActiveProviderAndKeepsEmptyLocalGroup(t *testing.T) {
+	root := t.TempDir()
+	writeGroup(t, root, "default", "本地配置", "local", "LOCAL")
+	writeGroup(t, root, "remote", "远程订阅", "subscription", "REMOTE")
+	if err := os.WriteFile(filepath.Join(root, "remote", "provider.json"), []byte(`{"outbounds":[`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := NormalizeSelection(t.Context(), root, moduleconfig.Selection{ActiveGroupID: "default", SelectedNodeTag: "LOCAL"}, "remote"); err != nil {
+		t.Fatalf("整理有效选择时解析了非活动 Provider: %v", err)
+	}
+	if _, _, err := NormalizeSelection(t.Context(), root, moduleconfig.Selection{ActiveGroupID: "remote"}, "default"); err == nil {
+		t.Fatal("活动 Provider 损坏时静默切到了其他分组")
+	}
+	if err := DeleteGroup(t.Context(), root, "remote"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RemoveNode(t.Context(), MutationOptions{GroupDir: filepath.Join(root, "default"), GroupID: "default", Tag: "LOCAL"}); err != nil {
+		t.Fatal(err)
+	}
+	selection, tag, err := NormalizeSelection(t.Context(), root, moduleconfig.Selection{ActiveGroupID: "default", SelectedNodeTag: "LOCAL"}, "")
+	if err != nil || selection.ActiveGroupID != "default" || selection.SelectedNodeTag != "" || tag != "" {
+		t.Fatalf("空 Catalog 未保留本地组和空 tag: %+v %s %v", selection, tag, err)
 	}
 }
 
@@ -150,7 +214,7 @@ func TestRuntimeTagIgnoresEmptyDuplicateGroup(t *testing.T) {
 	providersPath := filepath.Join(runtimeDir, "providers.json")
 	result, err := BuildRuntime(context.Background(), RuntimeOptions{
 		Root: root, ProvidersOutput: providersPath,
-		OutboundsOutput: filepath.Join(runtimeDir, "outbounds.json"), ActiveGroup: "ready",
+		OutboundsOutput: filepath.Join(runtimeDir, "outbounds.json"), Selection: moduleconfig.Selection{ActiveGroupID: "ready"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -173,7 +237,7 @@ func TestRuntimeTagIgnoresEmptyDuplicateGroup(t *testing.T) {
 	}
 	result, err = BuildRuntime(context.Background(), RuntimeOptions{
 		Root: root, ProvidersOutput: providersPath,
-		OutboundsOutput: filepath.Join(runtimeDir, "outbounds.json"), ActiveGroup: "ready",
+		OutboundsOutput: filepath.Join(runtimeDir, "outbounds.json"), Selection: moduleconfig.Selection{ActiveGroupID: "ready"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -239,7 +303,7 @@ func TestBuildRuntimeFallbackAndEmpty(t *testing.T) {
 	result, err := BuildRuntime(context.Background(), RuntimeOptions{
 		Root: root, ProvidersOutput: filepath.Join(root, "providers.json"),
 		OutboundsOutput: filepath.Join(root, "outbounds.json"),
-		ActiveGroup:     "missing", SelectorMode: "manual", SelectedNodeRef: "missing/节点",
+		Selection:       moduleconfig.Selection{ActiveGroupID: "missing", SelectedNodeTag: "节点"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -290,8 +354,8 @@ func TestBuildRuntimeUsesMetadataAndOnlyChecksManualTarget(t *testing.T) {
 
 	result, err := BuildRuntime(context.Background(), RuntimeOptions{
 		Root: root, ProvidersOutput: filepath.Join(root, "providers.json"),
-		OutboundsOutput: filepath.Join(root, "outbounds.json"), ActiveGroup: "default",
-		SelectorMode: "manual", SelectedNodeRef: "default/LOCAL",
+		OutboundsOutput: filepath.Join(root, "outbounds.json"),
+		Selection:       moduleconfig.Selection{ActiveGroupID: "default", SelectedNodeTag: "LOCAL"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -301,15 +365,22 @@ func TestBuildRuntimeUsesMetadataAndOnlyChecksManualTarget(t *testing.T) {
 	}
 }
 
-func TestBuildRuntimeRejectsUnknownSelectorMode(t *testing.T) {
+func TestBuildRuntimeMissingManualNodeUsesSameGroupAuto(t *testing.T) {
 	root := t.TempDir()
 	writeGroup(t, root, "default", "本地配置", "local", "NODE")
-	_, err := BuildRuntime(context.Background(), RuntimeOptions{
+	result, err := BuildRuntime(context.Background(), RuntimeOptions{
 		Root: root, ProvidersOutput: filepath.Join(root, "providers.json"),
-		OutboundsOutput: filepath.Join(root, "outbounds.json"), SelectorMode: "selector",
+		OutboundsOutput: filepath.Join(root, "outbounds.json"),
+		Selection:       moduleconfig.Selection{ActiveGroupID: "default", SelectedNodeTag: "missing"},
 	})
-	if err == nil || !strings.Contains(err.Error(), "未知节点选择模式") {
-		t.Fatalf("未知选择模式未被拒绝: %v", err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ActiveGroup != "default" || result.SelectorMode != "urltest" || result.Selection.SelectedNodeTag != "" || result.SelectedNodeRef != "" {
+		t.Fatalf("失效手动节点未回到同组 Auto: %+v", result)
+	}
+	if !strings.Contains(readFile(t, filepath.Join(root, "outbounds.json")), `"default": "Auto/本地配置"`) {
+		t.Fatal("失效手动节点没有使用同组 Auto")
 	}
 }
 

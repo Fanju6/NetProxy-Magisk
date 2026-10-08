@@ -147,9 +147,9 @@ func ReadStatus(ctx context.Context, options Options) (Status, error) {
 		OutboundMode:           unknownOutboundMode,
 		ConfiguredOutboundMode: modes.Mode,
 		AvailableOutboundModes: modes.Available,
-		SelectorMode:           module.SelectorMode,
+		SelectorMode:           module.Mode(),
 		ActiveGroupID:          module.ActiveGroupID,
-		SelectedNodeRef:        module.SelectedNodeRef,
+		SelectedNodeRef:        module.Ref(),
 		CPUCount:               1,
 		WorkerState:            "stopped",
 	}
@@ -625,8 +625,8 @@ func readModuleConfig(path string) moduleconfig.ModuleConfig {
 func selectionFromRuntimeGroups(module moduleconfig.ModuleConfig, groups []catalog.GroupSnapshot, runtimeGroups []serviceapi.Group) Selection {
 	selection := Selection{
 		ActiveGroupID:   module.ActiveGroupID,
-		SelectorMode:    module.SelectorMode,
-		SelectedNodeRef: module.SelectedNodeRef,
+		SelectorMode:    module.Mode(),
+		SelectedNodeRef: module.Ref(),
 	}
 	for _, group := range groups {
 		if group.Group.ID != module.ActiveGroupID {
@@ -637,7 +637,7 @@ func selectionFromRuntimeGroups(module moduleconfig.ModuleConfig, groups []catal
 		selection.ActiveGroupNodeCount = group.Group.NodeCount
 		if group.Group.NodeCount == 0 {
 			selection.Selected = ""
-		} else if module.SelectorMode == "urltest" {
+		} else if module.SelectedNodeTag == "" {
 			selection.Selected = "Auto/" + group.Group.RuntimeTag
 		} else {
 			selection.Selected = selection.SelectedNodeRef
@@ -648,10 +648,7 @@ func selectionFromRuntimeGroups(module moduleconfig.ModuleConfig, groups []catal
 		selection.ActiveGroupName = module.ActiveGroupID
 	}
 	if selection.ActiveGroupRuntimeTag != "" {
-		runtimeGroup := "Auto/" + selection.ActiveGroupRuntimeTag
-		if module.SelectorMode == "manual" {
-			runtimeGroup = "Select/" + selection.ActiveGroupRuntimeTag
-		}
+		runtimeGroup, _ := module.Selection.RuntimeTargets(selection.ActiveGroupRuntimeTag)
 		for _, group := range runtimeGroups {
 			if group.Tag == runtimeGroup {
 				selection.RuntimeSelected = group.Selected
@@ -795,8 +792,8 @@ func resolveDelayRequest(ctx context.Context, options Options, target, group str
 	activeID := module.ActiveGroupID
 	if target == "" {
 		group = activeID
-		if module.SelectorMode == "manual" {
-			return runtimeNodeDelayRequest(ctx, options.CatalogRoot, module.SelectedNodeRef)
+		if module.SelectedNodeTag != "" {
+			return runtimeNodeDelayRequest(ctx, options.CatalogRoot, module.Ref())
 		}
 		target = "auto"
 	}

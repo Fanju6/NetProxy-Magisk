@@ -122,7 +122,7 @@ func delayFixtureFiles(t *testing.T) (string, string) {
 	catalogRoot := filepath.Join(temp, "catalog")
 	moduleConfig := filepath.Join(temp, "module.conf")
 	writeCatalogFixture(t, catalogRoot)
-	if err := os.WriteFile(moduleConfig, []byte("SELECTOR_MODE=urltest\nACTIVE_GROUP_ID=default\nSELECTED_NODE_REF=\"\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConfig, []byte("ACTIVE_GROUP_ID=default\nSELECTED_NODE_TAG=\"\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return catalogRoot, moduleConfig

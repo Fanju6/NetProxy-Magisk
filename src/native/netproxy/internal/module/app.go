@@ -46,7 +46,6 @@ type Options struct {
 	WorkerPIDFile      string
 	WorkerLogFile      string
 	WiFiStateFile      string
-	SkipServiceReload  bool
 	RequestTimeout     time.Duration
 	NetworkStateReader worker.NetworkStateReader
 	Telemetry          *telemetry.Reporter
@@ -154,22 +153,15 @@ func Prepare(ctx context.Context, options Options, allowEmpty bool) (PrepareResu
 	return PrepareResult{RuntimeResult: runtime, Providers: providers, Outbounds: outbounds, Inbound: inboundPath, Backend: config.Backend}, nil
 }
 
-func syncRuntimeSelection(ctx context.Context, options Options, runtime catalog.RuntimeResult) error {
+func saveSelection(ctx context.Context, options Options, selection moduleconfig.Selection) error {
 	module, err := moduleconfig.LoadModule(options.ModuleConfig)
 	if err != nil {
 		return err
 	}
-	updates := map[string]string{}
-	if module.ActiveGroupID != runtime.ActiveGroup {
-		updates["ACTIVE_GROUP_ID"] = moduleconfig.Quote(runtime.ActiveGroup)
+	if module.Selection == selection {
+		return nil
 	}
-	if module.SelectorMode != runtime.SelectorMode {
-		updates["SELECTOR_MODE"] = runtime.SelectorMode
-	}
-	if module.SelectedNodeRef != runtime.SelectedNodeRef {
-		updates["SELECTED_NODE_REF"] = moduleconfig.Quote(runtime.SelectedNodeRef)
-	}
-	return options.updateModule(ctx, updates)
+	return options.updateModule(ctx, selection.Updates())
 }
 
 func (options Options) updateModule(ctx context.Context, updates map[string]string) error {
@@ -210,138 +202,84 @@ func SelectNode(ctx context.Context, options Options, target, group string) (dat
 	if err := options.validate(); err != nil {
 		return nil, err
 	}
+	lock, err := waitLifecycleLock(ctx, options.StateFile)
+	if err != nil {
+		return nil, err
+	}
+	defer lock.release()
+	if err := recoverConfigApply(ctx, options); err != nil {
+		return nil, err
+	}
+	options, release, err := lockConfigFiles(ctx, options, options.ModuleConfig)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	module, err := moduleconfig.LoadModule(options.ModuleConfig)
 	if err != nil {
 		return nil, err
 	}
+	selection := moduleconfig.Selection{ActiveGroupID: group}
 	if target == "auto" {
 		if strings.TrimSpace(group) == "" {
-			group = module.ActiveGroupID
+			selection.ActiveGroupID = module.ActiveGroupID
 		}
-		group, err = catalog.ResolveGroup(ctx, options.CatalogRoot, group)
+	} else {
+		selection.ActiveGroupID, selection.SelectedNodeTag, err = splitReference(target)
 		if err != nil {
 			return nil, err
 		}
-		hasNodes, err := catalog.GroupHasNodes(ctx, options.CatalogRoot, group)
-		if err != nil || !hasNodes {
-			if err != nil {
-				return nil, err
-			}
-			return nil, errors.New("目标分组没有可用节点")
-		}
-		updates := map[string]string{
-			"ACTIVE_GROUP_ID": moduleconfig.Quote(group), "SELECTOR_MODE": "urltest",
-			"SELECTED_NODE_REF": moduleconfig.Quote(""),
-		}
-		if err := options.updateModule(ctx, updates); err != nil {
-			return nil, err
-		}
-		persisted = true
-		runtimeTag, err := catalog.RuntimeTag(ctx, options.CatalogRoot, group)
-		if err != nil {
-			return nil, err
-		}
-		if err := syncRuntimeSelector(ctx, options, "Auto/"+runtimeTag, ""); err != nil {
-			return nil, err
-		}
-		return map[string]string{"group_id": group, "mode": "urltest", "selected": "Auto/" + runtimeTag}, nil
 	}
-	groupID, tag, found := strings.Cut(target, "/")
-	if !found || groupID == "" || tag == "" {
-		return nil, errors.New("节点引用格式应为 <group-id>/<tag>")
-	}
-	groupID, err = catalog.ResolveGroup(ctx, options.CatalogRoot, groupID)
+	selection, runtimeTag, err := catalog.ResolveSelection(ctx, options.CatalogRoot, selection)
 	if err != nil {
 		return nil, err
 	}
-	present, err := catalog.GroupContainsTag(ctx, options.CatalogRoot, groupID, tag)
-	if err != nil || !present {
-		if err != nil {
+	if selection != module.Selection {
+		if err := options.updateModule(ctx, selection.Updates()); err != nil {
 			return nil, err
 		}
-		return nil, fmt.Errorf("未找到节点: %s/%s", groupID, tag)
-	}
-	runtimeTag, err := catalog.RuntimeTag(ctx, options.CatalogRoot, groupID)
-	if err != nil {
-		return nil, err
-	}
-	if err := options.updateModule(ctx, map[string]string{
-		"ACTIVE_GROUP_ID": moduleconfig.Quote(groupID), "SELECTOR_MODE": "manual",
-		"SELECTED_NODE_REF": moduleconfig.Quote(groupID + "/" + tag),
-	}); err != nil {
-		return nil, err
 	}
 	persisted = true
-	if err := syncRuntimeSelector(ctx, options, "Select/"+runtimeTag, runtimeTag+"/"+tag); err != nil {
-		return nil, err
+	active, inner := selection.RuntimeTargets(runtimeTag)
+	selected := active
+	if inner != "" {
+		selected = inner
 	}
-	return map[string]string{"group_id": groupID, "mode": "manual", "selected": runtimeTag + "/" + tag}, nil
+	data = map[string]string{"group_id": selection.ActiveGroupID, "mode": selection.Mode(), "selected": selected}
+	if service.ProcessRunning(options.SingBoxPath) {
+		if err := syncRuntimeSelector(ctx, options, active, inner); err != nil {
+			return data, &service.Error{Code: "node.runtime_sync_failed", Message: fmt.Sprintf("节点选择已保存，但运行时切换失败: %v", err),
+				Data: map[string]any{"persisted": true, "runtime_synced": false, "group_id": selection.ActiveGroupID, "mode": selection.Mode(), "selected": selected, "cause": err.Error()}}
+		}
+	}
+	return data, nil
 }
 
-// SyncSelection 将 module.conf 中保存的选择同步到运行中的 sing-box。
-func SyncSelection(ctx context.Context, options Options) (map[string]string, error) {
+func syncSelection(ctx context.Context, options Options) error {
 	module, err := moduleconfig.LoadModule(options.ModuleConfig)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if strings.TrimSpace(module.ActiveGroupID) == "" {
-		return map[string]string{"mode": "urltest", "selected": ""}, nil
+		return nil
 	}
-	if module.SelectorMode == "manual" && strings.TrimSpace(module.SelectedNodeRef) != "" {
-		return SelectNode(ctx, options, module.SelectedNodeRef, "")
+	_, runtimeTag, err := catalog.ResolveSelection(ctx, options.CatalogRoot, module.Selection)
+	if err != nil {
+		return err
 	}
-	return SelectNode(ctx, options, "auto", module.ActiveGroupID)
+	active, inner := module.Selection.RuntimeTargets(runtimeTag)
+	return syncRuntimeSelector(ctx, options, active, inner)
 }
 
 func syncRuntimeSelector(ctx context.Context, options Options, active, inner string) error {
-	if !service.ProcessRunning(options.SingBoxPath) {
-		return nil
-	}
 	client, err := serviceapi.New(options.ServiceAddress, options.ServiceSecret)
-	if err == nil {
-		err = retryRuntimeSelection(ctx, client, options, active, inner)
-		client.Close()
-		if err == nil {
-			return nil
-		}
+	if err != nil {
+		return err
 	}
-	if options.SkipServiceReload {
-		return fmt.Errorf("Service API 切换失败，跳过嵌套服务 reload: %w", err)
-	}
-	_, reloadErr := ManageService(ctx, options, "reload")
-	return reloadErr
-}
-
-// retryRuntimeSelection 等待 reload 后的 selector 完成注册，再同步组内与顶层选择器。
-func retryRuntimeSelection(ctx context.Context, client *serviceapi.Client, options Options, active, inner string) error {
-	const backoff = 300 * time.Millisecond
-	deadline := time.Now().Add(minTimeout(options.RequestTimeout, 6*time.Second))
-	var lastErr error
-	for time.Now().Before(deadline) {
-		requestContext, cancel := context.WithTimeout(ctx, minTimeout(options.RequestTimeout, time.Second))
-		lastErr = nil
-		if inner != "" {
-			lastErr = client.Select(requestContext, active, inner)
-			if lastErr == nil {
-				lastErr = client.Select(requestContext, "Proxy", active)
-			}
-		} else {
-			lastErr = client.Select(requestContext, "Proxy", active)
-		}
-		cancel()
-		if lastErr == nil {
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(backoff):
-		}
-	}
-	if lastErr == nil {
-		lastErr = context.DeadlineExceeded
-	}
-	return lastErr
+	defer client.Close()
+	requestContext, cancel := context.WithTimeout(ctx, minTimeout(options.RequestTimeout, 6*time.Second))
+	defer cancel()
+	return client.SelectGroup(requestContext, active, inner)
 }
 
 // UpdateApp 在同一入站文件锁内修改最新应用策略，不应用到运行实例。
@@ -433,6 +371,11 @@ func appPolicy(config inbound.Config) AppPolicy {
 // NodeAppend 将节点加入本地分组并处理活动状态与运行时 reload。
 func NodeAppend(ctx context.Context, options Options, groupID, input string, allowInsecure bool) (mutation catalog.MutationResult, err error) {
 	defer func() { logOperation(options, "node", "node.append", "节点添加", mutation.Revision > 0, err) }()
+	options, saved, release, err := lockCatalogChange(ctx, options)
+	if err != nil {
+		return catalog.MutationResult{}, err
+	}
+	defer release()
 	if err := ensureDefaultGroup(ctx, options); err != nil {
 		return catalog.MutationResult{}, err
 	}
@@ -447,15 +390,18 @@ func NodeAppend(ctx context.Context, options Options, groupID, input string, all
 	if err != nil {
 		return catalog.MutationResult{}, err
 	}
-	if err := syncCatalogChange(ctx, options, groupID, result.StructureChanged); err != nil {
-		return result, err
-	}
-	return result, nil
+	_, attempted, err := syncCatalogChange(ctx, options, saved, groupID, result.StructureChanged, service.ProcessRunning(options.SingBoxPath))
+	return result, catalogChangeError("node", attempted, err)
 }
 
 // NodeImport 将本地文件中的节点追加到 default 本地配置组。
 func NodeImport(ctx context.Context, options Options, input string, allowInsecure bool) (mutation catalog.MutationResult, err error) {
 	defer func() { logOperation(options, "node", "node.import", "节点导入", mutation.Revision > 0, err) }()
+	options, saved, release, err := lockCatalogChange(ctx, options)
+	if err != nil {
+		return catalog.MutationResult{}, err
+	}
+	defer release()
 	if err := ensureDefaultGroup(ctx, options); err != nil {
 		return catalog.MutationResult{}, err
 	}
@@ -470,15 +416,18 @@ func NodeImport(ctx context.Context, options Options, input string, allowInsecur
 	if err != nil {
 		return catalog.MutationResult{}, err
 	}
-	if err := syncCatalogChange(ctx, options, groupID, result.StructureChanged); err != nil {
-		return result, err
-	}
-	return result, nil
+	_, attempted, err := syncCatalogChange(ctx, options, saved, groupID, result.StructureChanged, service.ProcessRunning(options.SingBoxPath))
+	return result, catalogChangeError("node", attempted, err)
 }
 
 // NodeEdit 原子替换指定分组的节点。
 func NodeEdit(ctx context.Context, options Options, reference, input string, allowInsecure bool) (mutation catalog.MutationResult, err error) {
 	defer func() { logOperation(options, "node", "node.edit", "节点编辑", mutation.Revision > 0, err) }()
+	options, saved, release, err := lockCatalogChange(ctx, options)
+	if err != nil {
+		return catalog.MutationResult{}, err
+	}
+	defer release()
 	groupID, tag, err := splitReference(reference)
 	if err != nil {
 		return catalog.MutationResult{}, err
@@ -491,15 +440,18 @@ func NodeEdit(ctx context.Context, options Options, reference, input string, all
 	if err != nil {
 		return catalog.MutationResult{}, err
 	}
-	if err := syncCatalogChange(ctx, options, groupID, result.StructureChanged); err != nil {
-		return result, err
-	}
-	return result, nil
+	_, attempted, err := syncCatalogChange(ctx, options, saved, groupID, result.StructureChanged, service.ProcessRunning(options.SingBoxPath))
+	return result, catalogChangeError("node", attempted, err)
 }
 
 // NodeRemove 删除指定节点，并在手动节点消失时回退 Auto。
 func NodeRemove(ctx context.Context, options Options, reference string) (mutation catalog.MutationResult, err error) {
 	defer func() { logOperation(options, "node", "node.remove", "节点删除", mutation.Revision > 0, err) }()
+	options, saved, release, err := lockCatalogChange(ctx, options)
+	if err != nil {
+		return catalog.MutationResult{}, err
+	}
+	defer release()
 	groupID, tag, err := splitReference(reference)
 	if err != nil {
 		return catalog.MutationResult{}, err
@@ -512,19 +464,19 @@ func NodeRemove(ctx context.Context, options Options, reference string) (mutatio
 	if err != nil {
 		return catalog.MutationResult{}, err
 	}
-	if err := fallbackMissingNode(ctx, options, groupID); err != nil {
-		return result, err
-	}
-	if err := syncCatalogChange(ctx, options, groupID, result.StructureChanged); err != nil {
-		return result, err
-	}
-	return result, nil
+	_, attempted, err := syncCatalogChange(ctx, options, saved, groupID, result.StructureChanged, service.ProcessRunning(options.SingBoxPath))
+	return result, catalogChangeError("node", attempted, err)
 }
 
 // RemoveSubscription 删除订阅并处理活动分组替代。
 func RemoveSubscription(ctx context.Context, options Options, query, replacement string) (err error) {
 	deleted := false
 	defer func() { logOperation(options, "subscription", "subscription.remove", "订阅删除", deleted, err) }()
+	options, saved, release, err := lockCatalogChange(ctx, options)
+	if err != nil {
+		return err
+	}
+	defer release()
 	groupID, err := catalog.ResolveGroup(ctx, options.CatalogRoot, query)
 	if err != nil {
 		return err
@@ -533,97 +485,99 @@ func RemoveSubscription(ctx context.Context, options Options, query, replacement
 	if err != nil || typ != "subscription" {
 		return errors.New("目标不是 URL 订阅")
 	}
-	module, err := moduleconfig.LoadModule(options.ModuleConfig)
-	if err != nil {
-		return err
-	}
-	if module.ActiveGroupID == groupID {
-		if replacement != "" {
-			replacement, err = catalog.ResolveGroup(ctx, options.CatalogRoot, replacement)
-			if err != nil {
-				return err
-			}
-		} else {
-			replacement, err = catalog.FirstNonEmptyGroup(ctx, options.CatalogRoot, groupID)
-			if err != nil {
-				return err
-			}
+	if replacement != "" {
+		replacement, err = catalog.ResolveGroup(ctx, options.CatalogRoot, replacement)
+		if err != nil {
+			return err
 		}
-		if replacement != "" {
-			if _, err := SelectNode(ctx, options, "auto", replacement); err != nil {
-				return err
-			}
-		} else {
-			if err := options.updateModule(ctx, map[string]string{"ACTIVE_GROUP_ID": moduleconfig.Quote(""), "SELECTOR_MODE": "urltest", "SELECTED_NODE_REF": moduleconfig.Quote("")}); err != nil {
-				return err
-			}
-			if service.ProcessRunning(options.SingBoxPath) {
-				if _, err := ManageService(ctx, options, "stop"); err != nil {
-					return err
-				}
-			}
+		if replacement == groupID {
+			return errors.New("替代分组不能是待删除订阅")
+		}
+		if _, _, err := catalog.ResolveSelection(ctx, options.CatalogRoot, moduleconfig.Selection{ActiveGroupID: replacement}); err != nil {
+			return err
 		}
 	}
 	if err := catalog.DeleteGroup(ctx, options.CatalogRoot, groupID); err != nil {
 		return err
 	}
 	deleted = true
-	if service.ProcessRunning(options.SingBoxPath) {
-		_, reloadErr := ManageService(ctx, options, "reload")
-		return reloadErr
-	}
-	return nil
+	_, attempted, err := syncCatalogChange(ctx, options, saved, replacement, true, service.ProcessRunning(options.SingBoxPath))
+	return catalogChangeError("subscription", attempted, err)
 }
 
-func syncCatalogChange(ctx context.Context, options Options, groupID string, structureChanged bool) error {
+func lockCatalogChange(ctx context.Context, options Options) (Options, moduleconfig.Selection, func(), error) {
+	if err := options.validate(); err != nil {
+		return options, moduleconfig.Selection{}, nil, err
+	}
+	lock, err := waitLifecycleLock(ctx, options.StateFile)
+	if err != nil {
+		return options, moduleconfig.Selection{}, nil, err
+	}
+	if err := recoverConfigApply(ctx, options); err != nil {
+		lock.release()
+		return options, moduleconfig.Selection{}, nil, err
+	}
+	options, release, err := lockConfigFiles(ctx, options, options.ModuleConfig, options.InboundConfig, paths.SingBoxConfig(options.SingBoxDir))
+	if err != nil {
+		lock.release()
+		return options, moduleconfig.Selection{}, nil, err
+	}
 	module, err := moduleconfig.LoadModule(options.ModuleConfig)
 	if err != nil {
-		return err
+		release()
+		lock.release()
+		return options, moduleconfig.Selection{}, nil, err
 	}
-	hasActive, err := catalog.GroupHasNodes(ctx, options.CatalogRoot, module.ActiveGroupID)
-	if err != nil {
-		return err
-	}
-	if !hasActive {
-		if hasNodes, _ := catalog.GroupHasNodes(ctx, options.CatalogRoot, groupID); hasNodes {
-			_, err := SelectNode(ctx, options, "auto", groupID)
-			return err
-		}
-		replacement, _ := catalog.FirstNonEmptyGroup(ctx, options.CatalogRoot, module.ActiveGroupID)
-		if replacement != "" {
-			_, err := SelectNode(ctx, options, "auto", replacement)
-			return err
-		}
-		if _, statErr := os.Stat(filepath.Join(options.CatalogRoot, "default", "meta.json")); statErr == nil {
-			if err := options.updateModule(ctx, map[string]string{"ACTIVE_GROUP_ID": moduleconfig.Quote("default"), "SELECTOR_MODE": "urltest", "SELECTED_NODE_REF": moduleconfig.Quote("")}); err != nil {
-				return err
-			}
-		} else if err := options.updateModule(ctx, map[string]string{"ACTIVE_GROUP_ID": moduleconfig.Quote(""), "SELECTOR_MODE": "urltest", "SELECTED_NODE_REF": moduleconfig.Quote("")}); err != nil {
-			return err
-		}
-	}
-	if structureChanged && service.ProcessRunning(options.SingBoxPath) {
-		_, reloadErr := ManageService(ctx, options, "reload")
-		return reloadErr
-	}
-	return nil
+	return options, module.Selection, func() { release(); lock.release() }, nil
 }
 
-func fallbackMissingNode(ctx context.Context, options Options, groupID string) error {
-	module, err := moduleconfig.LoadModule(options.ModuleConfig)
-	if err != nil || module.SelectorMode != "manual" {
-		return err
+// SyncCatalog 将 Worker 的持久化副作用串行化到服务生命周期，不在下载阶段持锁。
+func SyncCatalog(ctx context.Context, options Options, groupID string, structureChanged bool) (string, bool, error) {
+	options, saved, release, err := lockCatalogChange(ctx, options)
+	if err != nil {
+		return "", false, err
 	}
-	selectedGroup, tag, found := strings.Cut(module.SelectedNodeRef, "/")
-	if !found || selectedGroup != groupID || tag == "" {
+	defer release()
+	return syncCatalogChange(ctx, options, saved, groupID, structureChanged, service.ProcessRunning(options.SingBoxPath))
+}
+
+func syncCatalogChange(ctx context.Context, options Options, saved moduleconfig.Selection, preferredGroup string, structureChanged, running bool) (string, bool, error) {
+	// Catalog 已提交，取消只能停止运行时请求，不能留下指向已删除节点的持久选择。
+	localContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	selection, runtimeTag, err := catalog.NormalizeSelection(localContext, options.CatalogRoot, saved, preferredGroup)
+	if err != nil {
+		return "", false, err
+	}
+	if selection != saved {
+		if err := options.updateModule(localContext, selection.Updates()); err != nil {
+			return "", false, err
+		}
+	}
+	if !running {
+		return subscription.RuntimeSyncNotRunning, false, nil
+	}
+	if runtimeTag == "" {
+		return subscription.RuntimeSyncNotRunning, true, StopService(ctx, options)
+	}
+	if structureChanged || selection.ActiveGroupID != saved.ActiveGroupID {
+		err = ReloadService(ctx, options)
+	} else {
+		active, inner := selection.RuntimeTargets(runtimeTag)
+		err = syncRuntimeSelector(ctx, options, active, inner)
+	}
+	return subscription.RuntimeSyncApplied, true, err
+}
+
+func catalogChangeError(component string, attempted bool, err error) error {
+	if err == nil {
 		return nil
 	}
-	present, err := catalog.GroupContainsTag(ctx, options.CatalogRoot, groupID, tag)
-	if err != nil || present {
-		return err
+	code, message := "persisted_effect_failed", "数据已保存，但本地选择整理失败"
+	if attempted {
+		code, message = "runtime_sync_failed", "数据已保存，但运行时同步失败"
 	}
-	_, err = SelectNode(ctx, options, "auto", groupID)
-	return err
+	return &service.Error{Code: component + "." + code, Message: message, Data: map[string]any{"persisted": true, "runtime_synced": false, "cause": err.Error()}}
 }
 
 func ensureDefaultGroup(ctx context.Context, options Options) error {
@@ -832,8 +786,8 @@ func workerOptions(options Options) worker.Options {
 		ServiceAddress:      options.ServiceAddress,
 		ServiceSecret:       options.ServiceSecret,
 		NetworkWatchEnabled: true,
-		ReloadService: func(ctx context.Context) error {
-			return ReloadService(ctx, options)
+		SyncCatalog: func(ctx context.Context, groupID string, structureChanged bool) (string, bool, error) {
+			return SyncCatalog(ctx, options, groupID, structureChanged)
 		},
 		Now: time.Now,
 		NetworkEvaluate: func(ctx context.Context, networkType, ssid string) error {

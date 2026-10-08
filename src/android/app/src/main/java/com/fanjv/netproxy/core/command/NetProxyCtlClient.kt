@@ -7,6 +7,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
@@ -23,7 +24,10 @@ internal class NetProxyCtlException(
     val resultCode: String,
     override val message: String,
     val data: JsonElement = JsonObject(emptyMap())
-) : IllegalStateException(message)
+) : IllegalStateException(message) {
+    val persisted: Boolean
+        get() = ((data as? JsonObject)?.get("persisted") as? JsonPrimitive)?.booleanOrNull == true
+}
 
 internal data class NetProxyCtlOutput(
     val successful: Boolean,

@@ -163,7 +163,7 @@ func StartService(ctx context.Context, options Options) (err error) {
 	if err := checkPreparedConfiguration(ctx, options, prepared); err != nil {
 		return failServiceStart(options, 0, 0, "sing-box 配置检查失败", err)
 	}
-	if err := syncRuntimeSelection(ctx, options, prepared.RuntimeResult); err != nil {
+	if err := saveSelection(ctx, options, prepared.Selection); err != nil {
 		return failServiceStart(options, 0, 0, "运行时选择状态同步失败", err)
 	}
 	return startPreparedService(ctx, options, prepared)
@@ -210,9 +210,7 @@ func startPreparedService(ctx context.Context, options Options, prepared Prepare
 	}
 	startedAt = actualStartedAt / 1000
 	stage = "selection"
-	syncOptions := options
-	syncOptions.SkipServiceReload = true
-	if _, err := SyncSelection(ctx, syncOptions); err != nil {
+	if err := syncSelection(ctx, options); err != nil {
 		return failServiceStart(options, pid, startedAt, "运行时节点选择同步失败", err)
 	}
 	stage = "mode"
@@ -306,9 +304,7 @@ func reloadAppliedConfig(ctx context.Context, options Options) error {
 	if err := checkPreparedConfiguration(ctx, options, prepared); err != nil {
 		return err
 	}
-	reloadOptions := options
-	reloadOptions.SkipServiceReload = true
-	return reloadPreparedService(ctx, reloadOptions, prepared, true)
+	return reloadPreparedService(ctx, options, prepared, true)
 }
 
 func startAppliedConfig(ctx context.Context, options Options) error {
@@ -319,7 +315,7 @@ func startAppliedConfig(ctx context.Context, options Options) error {
 	if err := checkPreparedConfiguration(ctx, options, prepared); err != nil {
 		return err
 	}
-	if err := syncRuntimeSelection(ctx, options, prepared.RuntimeResult); err != nil {
+	if err := saveSelection(ctx, options, prepared.Selection); err != nil {
 		return err
 	}
 	return startPreparedService(ctx, options, prepared)
@@ -339,15 +335,13 @@ func reloadConfigSnapshot(ctx context.Context, options Options, journal configAp
 			return fmt.Errorf("旧运行时快照 %s 不可用: %w", name, err)
 		}
 	}
-	reloadOptions := options
-	reloadOptions.SkipServiceReload = true
 	if !service.ProcessRunning(options.SingBoxPath) {
-		return startPreparedService(ctx, reloadOptions, prepared)
+		return startPreparedService(ctx, options, prepared)
 	}
-	return reloadPreparedService(ctx, reloadOptions, prepared, false)
+	return reloadPreparedService(ctx, options, prepared, false)
 }
 
-func reloadPreparedService(ctx context.Context, options Options, prepared PrepareResult, syncSelection bool) error {
+func reloadPreparedService(ctx context.Context, options Options, prepared PrepareResult, synchronizeSelection bool) error {
 	state, _ := ReadServiceState(options.StateFile)
 	pid := service.FindProcess(options.SingBoxPath, int(state.PID))
 	if pid <= 0 {
@@ -368,13 +362,11 @@ func reloadPreparedService(ctx context.Context, options Options, prepared Prepar
 	if err != nil {
 		return restoreReloadState(ctx, options, pid, oldStartedAt, state.ReadyAt, err)
 	}
-	if syncSelection {
-		syncOptions := options
-		syncOptions.SkipServiceReload = true
-		if err := syncRuntimeSelection(ctx, options, prepared.RuntimeResult); err != nil {
+	if synchronizeSelection {
+		if err := saveSelection(ctx, options, prepared.Selection); err != nil {
 			return restoreReloadState(ctx, options, pid, startedAt/1000, state.ReadyAt, err)
 		}
-		if _, err := SyncSelection(ctx, syncOptions); err != nil {
+		if err := syncSelection(ctx, options); err != nil {
 			return restoreReloadState(ctx, options, pid, startedAt/1000, state.ReadyAt, err)
 		}
 	}

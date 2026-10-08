@@ -51,7 +51,7 @@ func writeCatalogFixture(t *testing.T, root string) {
 func TestReadStatusWithoutService(t *testing.T) {
 	temp := t.TempDir()
 	moduleConfig := filepath.Join(temp, "module.conf")
-	if err := os.WriteFile(moduleConfig, []byte("SELECTOR_MODE=urltest\nACTIVE_GROUP_ID=default\nSELECTED_NODE_REF=\"\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConfig, []byte("ACTIVE_GROUP_ID=default\nSELECTED_NODE_TAG=\"\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	status, err := ReadStatus(context.Background(), Options{SingBoxConfig: modeConfigFixture(t, temp, "Global"),
@@ -185,7 +185,7 @@ func TestReadStatusFetchesIndependentServiceAPISnapshotsConcurrently(t *testing.
 	moduleConfig := filepath.Join(temp, "module.conf")
 	stateFile := filepath.Join(temp, "service.json")
 	writeCatalogFixture(t, catalogRoot)
-	if err := os.WriteFile(moduleConfig, []byte("SELECTOR_MODE=urltest\nACTIVE_GROUP_ID=default\n"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConfig, []byte("ACTIVE_GROUP_ID=default\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	writeReadyServiceState(t, stateFile, 123)
@@ -329,7 +329,7 @@ func TestReadSelectionAndSnapshotWithoutService(t *testing.T) {
 	catalogRoot := filepath.Join(temp, "catalog")
 	moduleConfig := filepath.Join(temp, "module.conf")
 	writeCatalogFixture(t, catalogRoot)
-	if err := os.WriteFile(moduleConfig, []byte("SELECTOR_MODE=urltest\nACTIVE_GROUP_ID=default\nSELECTED_NODE_REF=\"\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConfig, []byte("ACTIVE_GROUP_ID=default\nSELECTED_NODE_TAG=\"\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	options := Options{CatalogRoot: catalogRoot, ModuleConfig: moduleConfig}
@@ -340,7 +340,7 @@ func TestReadSelectionAndSnapshotWithoutService(t *testing.T) {
 	if selection.Selected != "Auto/本地配置" || selection.ActiveGroupName != "本地配置" || selection.ActiveGroupNodeCount != 1 {
 		t.Fatalf("unexpected automatic selection: %#v", selection)
 	}
-	if err := os.WriteFile(moduleConfig, []byte("SELECTOR_MODE=manual\nACTIVE_GROUP_ID=default\nSELECTED_NODE_REF=\"default/NODE\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConfig, []byte("ACTIVE_GROUP_ID=default\nSELECTED_NODE_TAG=\"NODE\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	selection, err = ReadSelection(context.Background(), options)
@@ -373,7 +373,7 @@ func TestDelayTargetResolution(t *testing.T) {
 	catalogRoot := filepath.Join(temp, "catalog")
 	moduleConfig := filepath.Join(temp, "module.conf")
 	writeCatalogFixture(t, catalogRoot)
-	if err := os.WriteFile(moduleConfig, []byte("SELECTOR_MODE=urltest\nACTIVE_GROUP_ID=default\nSELECTED_NODE_REF=\"\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConfig, []byte("ACTIVE_GROUP_ID=default\nSELECTED_NODE_TAG=\"\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	options := Options{CatalogRoot: catalogRoot, ModuleConfig: moduleConfig}
@@ -381,7 +381,7 @@ func TestDelayTargetResolution(t *testing.T) {
 	if err != nil || request.Target != "Auto/本地配置" {
 		t.Fatalf("automatic target = %q, err=%v", request.Target, err)
 	}
-	if err := os.WriteFile(moduleConfig, []byte("SELECTOR_MODE=manual\nACTIVE_GROUP_ID=default\nSELECTED_NODE_REF=\"default/NODE\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConfig, []byte("ACTIVE_GROUP_ID=default\nSELECTED_NODE_TAG=\"NODE\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	request, err = resolveDelayRequest(context.Background(), options, "", "")
@@ -395,7 +395,7 @@ func TestDelayAndCloseAllConnectionsUnavailable(t *testing.T) {
 	catalogRoot := filepath.Join(temp, "catalog")
 	moduleConfig := filepath.Join(temp, "module.conf")
 	writeCatalogFixture(t, catalogRoot)
-	if err := os.WriteFile(moduleConfig, []byte("SELECTOR_MODE=urltest\nACTIVE_GROUP_ID=default\nSELECTED_NODE_REF=\"\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConfig, []byte("ACTIVE_GROUP_ID=default\nSELECTED_NODE_TAG=\"\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	options := Options{

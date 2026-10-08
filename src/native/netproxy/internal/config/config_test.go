@@ -50,7 +50,7 @@ func TestReadStrictRejectsShellLikeInputAndDuplicateKeys(t *testing.T) {
 
 func TestLoadModuleDefaultsAndValidation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "module.conf")
-	content := "AUTO_START=0\nSELECTOR_MODE=urltest\nACTIVE_GROUP_ID=default\nSELECTED_NODE_REF=\nWIFI_AUTO_SWITCH=1\nWIFI_SSID_MODE=whitelist\nWIFI_SSID_LIST=TestWiFi\nPROXY_ON_CELLULAR=0\n"
+	content := "AUTO_START=0\nACTIVE_GROUP_ID=default\nSELECTED_NODE_TAG=\nWIFI_AUTO_SWITCH=1\nWIFI_SSID_MODE=whitelist\nWIFI_SSID_LIST=TestWiFi\nPROXY_ON_CELLULAR=0\n"
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -76,12 +76,38 @@ func TestLoadModuleDefaultsAndValidation(t *testing.T) {
 		t.Fatal("接受了已移除的模块出站模式字段")
 	}
 
-	for _, selector := range []string{"auto", "selector"} {
-		if err := os.WriteFile(path, []byte("SELECTOR_MODE="+selector+"\n"), 0o600); err != nil {
+	for _, old := range []string{"SELECTOR_MODE=urltest", "SELECTOR_MODE=manual", "SELECTED_NODE_REF=default/NODE"} {
+		if err := os.WriteFile(path, []byte(old+"\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := LoadModule(path); err == nil {
-			t.Fatalf("SELECTOR_MODE=%s 不应继续被接受", selector)
+			t.Fatalf("旧选择字段不应继续被接受: %s", old)
+		}
+	}
+}
+
+func TestSelectionDerivesModeAndReference(t *testing.T) {
+	for _, tag := range []string{"", "香港 / 🇭🇰 节点"} {
+		selection := Selection{ActiveGroupID: "default", SelectedNodeTag: tag}
+		mode, ref, group, node := "urltest", "", "Auto/本地配置", ""
+		if tag != "" {
+			mode, ref, group, node = "manual", "default/"+tag, "Select/本地配置", "本地配置/"+tag
+		}
+		runtimeGroup, runtimeNode := selection.RuntimeTargets("本地配置")
+		if selection.Mode() != mode || selection.Ref() != ref || runtimeGroup != group || runtimeNode != node || len(selection.Updates()) != 2 {
+			t.Fatalf("选择派生不一致: %+v", selection)
+		}
+	}
+}
+
+func TestLoadModuleRejectsManualNodeWithoutGroup(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "module.conf")
+	for _, content := range []string{"ACTIVE_GROUP_ID=\nSELECTED_NODE_TAG=NODE\n", "SELECTED_NODE_TAG=\" \"\n"} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LoadModule(path); err == nil {
+			t.Fatalf("接受了无效手动选择: %s", content)
 		}
 	}
 }

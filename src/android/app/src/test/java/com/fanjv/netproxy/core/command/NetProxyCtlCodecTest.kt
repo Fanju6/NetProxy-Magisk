@@ -86,6 +86,38 @@ class NetProxyCtlCodecTest {
     }
 
     @Test
+    fun `keeps persisted node selection when runtime synchronization fails`() {
+        val error = assertThrows(NetProxyCtlException::class.java) {
+            codec.decode(
+                NetProxyCtlOutput(
+                    successful = false,
+                    stdout = listOf(
+                        """{"schema":1,"ok":false,"code":"node.runtime_sync_failed","message":"节点选择已保存，但运行时切换失败","data":{"persisted":true,"runtime_synced":false,"group_id":"default","mode":"manual","selected":"本地配置/NODE"}}"""
+                    ),
+                    stderr = emptyList()
+                )
+            )
+        }
+        assertEquals("node.runtime_sync_failed", error.resultCode)
+        assertTrue(error.persisted)
+        assertEquals("true", error.data.jsonObject["persisted"]?.jsonPrimitive?.content)
+        assertEquals("false", error.data.jsonObject["runtime_synced"]?.jsonPrimitive?.content)
+        assertEquals("本地配置/NODE", error.data.jsonObject["selected"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `persisted requires an explicit successful disk commit`() {
+        for (data in listOf("{}", "null", "[]", "{\"persisted\":false}", "{\"persisted\":{}}")) {
+            val error = NetProxyCtlException("node.runtime_sync_failed", "fixture", Json.parseToJsonElement(data))
+            assertFalse(error.persisted)
+        }
+        for (code in listOf("node.persisted_effect_failed", "subscription.persisted_effect_failed")) {
+            val error = NetProxyCtlException(code, "fixture", Json.parseToJsonElement("{\"persisted\":true}"))
+            assertTrue(error.persisted)
+        }
+    }
+
+    @Test
     fun `availability accepts structured command errors`() = runBlocking {
         val client = NetProxyCtlClient(
             transport = NetProxyCtlTransport { _, _ ->

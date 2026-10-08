@@ -20,14 +20,6 @@ func TestCatalogGroupQueries(t *testing.T) {
 	if err != nil || resolved != "local-test" {
 		t.Fatalf("resolve group: %q, %v", resolved, err)
 	}
-	hasNodes, err := GroupHasNodes(context.Background(), root, resolved)
-	if err != nil || !hasNodes {
-		t.Fatalf("group has nodes: %v, %v", hasNodes, err)
-	}
-	first, err := GroupFirstTag(context.Background(), root, resolved)
-	if err != nil || first != "ALPHA" {
-		t.Fatalf("group first tag: %q, %v", first, err)
-	}
 	contains, err := GroupContainsTag(context.Background(), root, resolved, "ZED")
 	if err != nil || !contains {
 		t.Fatalf("group contains tag: %v, %v", contains, err)
@@ -35,9 +27,6 @@ func TestCatalogGroupQueries(t *testing.T) {
 	metadata, err := PrivateMetadata(context.Background(), root, resolved)
 	if err != nil || metadata.Name != "本地配置" || metadata.Type != "local" {
 		t.Fatalf("private metadata: %+v, %v", metadata, err)
-	}
-	if _, err := FirstNonEmptyGroup(context.Background(), root, "missing"); err != nil {
-		t.Fatalf("first nonempty group: %v", err)
 	}
 }
 

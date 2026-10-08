@@ -60,40 +60,6 @@ func ResolveGroup(ctx context.Context, root, query string) (string, error) {
 	return "", fmt.Errorf("分组不存在: %s", query)
 }
 
-// GroupHasNodes 判断分组是否包含节点。
-func GroupHasNodes(ctx context.Context, root, groupID string) (bool, error) {
-	release, err := acquireCatalogRootAndRecover(ctx, root)
-	if err != nil {
-		return false, err
-	}
-	defer release()
-	hasNodes, err := provider.FileHasNodes(ctx, filepath.Join(root, groupID, "provider.json"))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return false, nil
-		}
-		return false, err
-	}
-	return hasNodes, nil
-}
-
-// GroupFirstTag 返回分组按标签排序后的第一个节点标签。
-func GroupFirstTag(ctx context.Context, root, groupID string) (string, error) {
-	release, err := acquireCatalogRootAndRecover(ctx, root)
-	if err != nil {
-		return "", err
-	}
-	defer release()
-	nodes, err := provider.InspectFile(ctx, filepath.Join(root, groupID, "provider.json"))
-	if err != nil {
-		return "", err
-	}
-	if len(nodes) == 0 {
-		return "", nil
-	}
-	return nodes[0].Tag, nil
-}
-
 // GroupContainsTag 判断分组是否包含指定节点标签。
 func GroupContainsTag(ctx context.Context, root, groupID, tag string) (bool, error) {
 	release, err := acquireCatalogRootAndRecover(ctx, root)
@@ -173,27 +139,6 @@ func GroupType(ctx context.Context, root, groupID string) (string, error) {
 		return "", err
 	}
 	return metadata.Type, nil
-}
-
-// FirstNonEmptyGroup 返回第一个有节点的分组 ID，可排除指定分组。
-func FirstNonEmptyGroup(ctx context.Context, root, exclude string) (string, error) {
-	ids, err := GroupIDs(ctx, root, "all")
-	if err != nil {
-		return "", err
-	}
-	for _, groupID := range ids {
-		if groupID == exclude {
-			continue
-		}
-		hasNodes, err := GroupHasNodes(ctx, root, groupID)
-		if err != nil {
-			return "", err
-		}
-		if hasNodes {
-			return groupID, nil
-		}
-	}
-	return "", nil
 }
 
 // DeleteGroup 删除 Catalog 分组目录。

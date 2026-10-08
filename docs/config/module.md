@@ -17,15 +17,16 @@
 ### 节点选择
 
 ```ini
-SELECTOR_MODE=urltest
 ACTIVE_GROUP_ID="default"
-SELECTED_NODE_REF=""
+SELECTED_NODE_TAG=""
 ```
 
-- `SELECTOR_MODE=urltest` 使用 `Auto/<group>` 自动测速，`SELECTED_NODE_REF` 必须为空。
-- `SELECTOR_MODE=manual` 使用 `<group-id>/<tag>` 手动选择。
 - `ACTIVE_GROUP_ID` 保存当前活动分组，例如 `default`。
+- `SELECTED_NODE_TAG` 留空使用 `Auto/<group>` 自动测速；填写该分组的节点 tag 则手动选择，例如 `SELECTED_NODE_TAG="香港 01"`。
+- 自动测速选出的当前节点由核心报告，不会写回 `SELECTED_NODE_TAG`。
 - 订阅更新后手动节点消失时回退到同组 Auto，不会回退到 `direct`。
+
+管理器和 CLI 在服务停止时也可保存选择，启动后自动应用。服务运行时通过 API 切换；若切换失败，已保存选择仍保留，命令会明确报告运行时未同步，不会自动重载核心。
 
 ## Wi-Fi 自动策略
 
@@ -53,4 +54,4 @@ su -c '/data/adb/modules/netproxy/netproxyctl config check'
 su -c '/data/adb/modules/netproxy/netproxyctl service restart'
 ```
 
-节点和订阅不保存在 `module.conf`，而是在 `data/catalog/` 中维护。选择状态只使用分组 ID、节点 tag 和当前选择模式，不要把节点文件路径或 UID 写入该文件。
+节点和订阅不保存在 `module.conf`，而是在 `data/catalog/` 中维护。选择状态只保存分组 ID 和节点 tag，不要把节点文件路径或 UID 写入该文件。

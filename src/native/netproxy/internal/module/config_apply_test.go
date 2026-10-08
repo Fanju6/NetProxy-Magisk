@@ -387,7 +387,7 @@ func TestApplyConfigCommitFailureReportsRollbackErrors(t *testing.T) {
 func TestApplyConfigReturnsRevisionAfterSelectionNormalization(t *testing.T) {
 	options, _, source, _ := configApplyOptions(t)
 	isolateConfigApplyHooks(t, true)
-	if err := os.WriteFile(source, []byte("ACTIVE_GROUP_ID=missing\nSELECTOR_MODE=urltest\n"), 0o600); err != nil {
+	if err := os.WriteFile(source, []byte("ACTIVE_GROUP_ID=missing\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	configReload = func(ctx context.Context, locked Options) error {

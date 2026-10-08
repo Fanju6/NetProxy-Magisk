@@ -115,8 +115,8 @@ func configureWorkerCallbacks(options *worker.Options, moduleDir, catalogRoot, m
 			return err == nil && state.State == "ready" && state.PID > 0 && service.FindProcess(options.SingBoxPath, int(state.PID)) == int(state.PID)
 		}
 	}
-	options.ReloadService = func(ctx context.Context) error {
-		return moduleapp.ReloadService(ctx, moduleOptions)
+	options.SyncCatalog = func(ctx context.Context, groupID string, structureChanged bool) (string, bool, error) {
+		return moduleapp.SyncCatalog(ctx, moduleOptions, groupID, structureChanged)
 	}
 	options.NetworkEvaluate = func(ctx context.Context, networkType, ssid string) error {
 		_, err := moduleapp.EvaluateNetwork(ctx, moduleOptions, networkType, ssid)

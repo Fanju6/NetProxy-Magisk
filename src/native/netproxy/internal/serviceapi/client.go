@@ -214,6 +214,15 @@ func (c *Client) Select(ctx context.Context, group string, outbound string) erro
 	return c.invoke(ctx, methodSelectOutbound, &selectOutboundRequest{Group: group, Outbound: outbound}, &emptyMessage{})
 }
 
+func (c *Client) SelectGroup(ctx context.Context, group, node string) error {
+	if node != "" {
+		if err := c.Select(ctx, group, node); err != nil {
+			return err
+		}
+	}
+	return c.Select(ctx, "Proxy", group)
+}
+
 func (c *Client) URLTest(ctx context.Context, outbound string) error {
 	return c.invoke(ctx, methodURLTest, &urlTestRequest{Outbound: outbound}, &emptyMessage{})
 }

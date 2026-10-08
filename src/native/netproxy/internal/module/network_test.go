@@ -22,9 +22,8 @@ func TestEvaluateNetworkPreservesDefaultAndPersistsPolicyState(t *testing.T) {
 	modulePath := filepath.Join(root, "module.conf")
 	statePath := filepath.Join(root, "wifi_state")
 	content := `AUTO_START=1
-SELECTOR_MODE=urltest
 ACTIVE_GROUP_ID=default
-SELECTED_NODE_REF=""
+SELECTED_NODE_TAG=""
 WIFI_AUTO_SWITCH=1
 WIFI_SSID_MODE=blacklist
 WIFI_SSID_LIST="办公 WiFi，家庭 WiFi"
@@ -79,9 +78,8 @@ func TestEvaluateNetworkClearsDisabledOverride(t *testing.T) {
 	modulePath := filepath.Join(root, "module.conf")
 	statePath := filepath.Join(root, "wifi_state")
 	content := `AUTO_START=1
-SELECTOR_MODE=urltest
 ACTIVE_GROUP_ID=default
-SELECTED_NODE_REF=""
+SELECTED_NODE_TAG=""
 WIFI_AUTO_SWITCH=0
 WIFI_SSID_MODE=blacklist
 WIFI_SSID_LIST=""

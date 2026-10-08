@@ -79,19 +79,18 @@ type RuntimeOptions struct {
 	ModuleConfig    string
 	ProvidersOutput string
 	OutboundsOutput string
-	ActiveGroup     string
-	SelectorMode    string
-	SelectedNodeRef string
+	Selection       moduleconfig.Selection
 	AllowEmpty      bool
 }
 
 type RuntimeResult struct {
-	ActiveGroup     string `json:"active_group_id"`
-	ActiveGroupTag  string `json:"active_group_tag"`
-	SelectorMode    string `json:"selector_mode"`
-	SelectedNodeRef string `json:"selected_node_ref"`
-	GroupCount      int    `json:"group_count"`
-	NodeCount       int    `json:"node_count"`
+	Selection       moduleconfig.Selection `json:"-"`
+	ActiveGroup     string                 `json:"active_group_id"`
+	ActiveGroupTag  string                 `json:"active_group_tag"`
+	SelectorMode    string                 `json:"selector_mode"`
+	SelectedNodeRef string                 `json:"selected_node_ref"`
+	GroupCount      int                    `json:"group_count"`
+	NodeCount       int                    `json:"node_count"`
 }
 
 type ScheduleResult struct {
@@ -221,6 +220,102 @@ func RuntimeTag(ctx context.Context, root, groupID string) (string, error) {
 	return targetName, nil
 }
 
+func ResolveSelection(ctx context.Context, root string, selection moduleconfig.Selection) (moduleconfig.Selection, string, error) {
+	if strings.TrimSpace(root) == "" || strings.TrimSpace(selection.ActiveGroupID) == "" {
+		return selection, "", errors.New("Catalog 根目录和分组查询不能为空")
+	}
+	release, err := acquireCatalogRootAndRecover(ctx, root)
+	if err != nil {
+		return selection, "", err
+	}
+	defer release()
+	groups, err := loadGroups(ctx, root, true)
+	if err != nil {
+		return selection, "", err
+	}
+	index := findGroup(groups, selection.ActiveGroupID)
+	if index < 0 {
+		for i, group := range groups {
+			if group.Metadata.Name == selection.ActiveGroupID {
+				if index >= 0 {
+					return selection, "", errors.New("分组名称不唯一，请使用分组 ID")
+				}
+				index = i
+			}
+		}
+	}
+	if index < 0 || !groups[index].hasNodes {
+		return selection, "", errors.New("目标分组不存在或没有可用节点")
+	}
+	selection.ActiveGroupID = groups[index].ID
+	var present bool
+	if selection.SelectedNodeTag == "" {
+		present, err = provider.FileHasNodes(ctx, groups[index].ProviderPath)
+	} else {
+		present, err = provider.FileContainsTag(ctx, groups[index].ProviderPath, selection.SelectedNodeTag)
+	}
+	if err != nil {
+		return selection, "", err
+	}
+	if !present {
+		return selection, "", fmt.Errorf("目标分组没有可用节点或未找到手动节点: %s", selection.Ref())
+	}
+	assignRuntimeTags(groups)
+	return selection, groups[index].RuntimeTag, nil
+}
+
+func NormalizeSelection(ctx context.Context, root string, selection moduleconfig.Selection, preferredGroup string) (moduleconfig.Selection, string, error) {
+	release, err := acquireCatalogRootAndRecover(ctx, root)
+	if err != nil {
+		return selection, "", err
+	}
+	defer release()
+	groups, err := loadGroups(ctx, root, true)
+	if err != nil {
+		return selection, "", err
+	}
+	return normalizeSelection(ctx, groups, selection, preferredGroup)
+}
+
+func normalizeSelection(ctx context.Context, groups []*loadedGroup, selection moduleconfig.Selection, preferredGroup string) (moduleconfig.Selection, string, error) {
+	indices := []int{findGroup(groups, selection.ActiveGroupID), findGroup(groups, preferredGroup)}
+	for index := range groups {
+		indices = append(indices, index)
+	}
+	for _, index := range indices {
+		if index < 0 || !groups[index].hasNodes {
+			continue
+		}
+		group := groups[index]
+		hasNodes, err := provider.FileHasNodes(ctx, group.ProviderPath)
+		if err != nil {
+			return selection, "", err
+		}
+		if !hasNodes {
+			continue
+		}
+		if selection.ActiveGroupID != group.ID {
+			selection = moduleconfig.Selection{ActiveGroupID: group.ID}
+		}
+		if selection.SelectedNodeTag != "" {
+			present, err := provider.FileContainsTag(ctx, group.ProviderPath, selection.SelectedNodeTag)
+			if err != nil {
+				return selection, "", err
+			}
+			if !present {
+				selection.SelectedNodeTag = ""
+			}
+		}
+		assignRuntimeTags(groups)
+		return selection, group.RuntimeTag, nil
+	}
+	selection = moduleconfig.Selection{}
+	if findGroup(groups, "default") >= 0 {
+		selection.ActiveGroupID = "default"
+	}
+	return selection, "", nil
+}
+
 func GroupIDs(ctx context.Context, root, groupType string) ([]string, error) {
 	release, err := acquireCatalogRootAndRecover(ctx, root)
 	if err != nil {
@@ -284,9 +379,7 @@ func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, e
 		if err != nil {
 			return RuntimeResult{}, fmt.Errorf("读取 module.conf 失败: %w", err)
 		}
-		options.ActiveGroup = module.ActiveGroupID
-		options.SelectorMode = module.SelectorMode
-		options.SelectedNodeRef = module.SelectedNodeRef
+		options.Selection = module.Selection
 	}
 	groups, err := loadGroups(ctx, options.Root, false)
 	if err != nil {
@@ -302,39 +395,19 @@ func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, e
 		return RuntimeResult{SelectorMode: "urltest"}, nil
 	}
 
-	assignRuntimeTags(groups)
-	active := options.ActiveGroup
-	activeIndex := findGroup(groups, active)
-	if activeIndex < 0 {
-		activeIndex = 0
-		active = groups[0].ID
+	selection, runtimeTag, err := normalizeSelection(ctx, groups, options.Selection, "")
+	if err != nil {
+		return RuntimeResult{}, err
 	}
-	selector := options.SelectorMode
-	if selector == "" {
-		selector = "urltest"
-	}
-	if selector != "urltest" && selector != "manual" {
-		return RuntimeResult{}, fmt.Errorf("未知节点选择模式: %s", selector)
-	}
-	selected := options.SelectedNodeRef
-	if selector == "manual" {
-		contains, err := containsNode(ctx, groups[activeIndex], selected)
-		if err != nil {
-			return RuntimeResult{}, fmt.Errorf("检查活动节点引用失败: %w", err)
-		}
-		if !contains {
-			selector = "urltest"
-			selected = ""
-		}
-	}
-	if selector == "urltest" {
-		selected = ""
+	if runtimeTag == "" {
+		return RuntimeResult{}, errors.New("Catalog 元数据与 Provider 节点数量不一致")
 	}
 
 	if err := writeRuntimeProviders(options.ProvidersOutput, groups); err != nil {
 		return RuntimeResult{}, err
 	}
-	if err := writeRuntimeOutbounds(options.OutboundsOutput, groups, groups[activeIndex].RuntimeTag, selector); err != nil {
+	activeTag, _ := selection.RuntimeTargets(runtimeTag)
+	if err := writeRuntimeOutbounds(options.OutboundsOutput, groups, activeTag); err != nil {
 		return RuntimeResult{}, err
 	}
 
@@ -343,10 +416,11 @@ func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, e
 		nodeCount += group.Metadata.NodeCount
 	}
 	result := RuntimeResult{
-		ActiveGroup:     active,
-		ActiveGroupTag:  groups[activeIndex].RuntimeTag,
-		SelectorMode:    selector,
-		SelectedNodeRef: selected,
+		Selection:       selection,
+		ActiveGroup:     selection.ActiveGroupID,
+		ActiveGroupTag:  runtimeTag,
+		SelectorMode:    selection.Mode(),
+		SelectedNodeRef: selection.Ref(),
 		GroupCount:      len(groups),
 		NodeCount:       nodeCount,
 	}
@@ -429,14 +503,6 @@ func findGroup(groups []*loadedGroup, id string) int {
 	return -1
 }
 
-func containsNode(ctx context.Context, group *loadedGroup, reference string) (bool, error) {
-	groupID, tag, found := strings.Cut(reference, "/")
-	if !found || groupID != group.ID || tag == "" {
-		return false, nil
-	}
-	return provider.FileContainsTag(ctx, group.ProviderPath, tag)
-}
-
 func writeRuntimeProviders(path string, groups []*loadedGroup) error {
 	items := make([]option.Provider, 0, len(groups))
 	for _, group := range groups {
@@ -459,7 +525,7 @@ func writeRuntimeProviders(path string, groups []*loadedGroup) error {
 	}{Providers: items})
 }
 
-func writeRuntimeOutbounds(path string, groups []*loadedGroup, activeTag, selector string) error {
+func writeRuntimeOutbounds(path string, groups []*loadedGroup, defaultTag string) error {
 	outbounds := []option.Outbound{
 		{Type: C.TypeDirect, Tag: "direct", Options: new(option.DirectOutboundOptions)},
 		{Type: C.TypeBlock, Tag: "block", Options: new(option.StubOptions)},
@@ -490,10 +556,6 @@ func writeRuntimeOutbounds(path string, groups []*loadedGroup, activeTag, select
 			},
 		)
 		options = append(options, autoTag, selectTag)
-	}
-	defaultTag := "Auto/" + activeTag
-	if selector == "manual" {
-		defaultTag = "Select/" + activeTag
 	}
 	outbounds = append(outbounds, option.Outbound{
 		Type: C.TypeSelector,

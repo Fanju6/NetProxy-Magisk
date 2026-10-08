@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
-	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/logfile"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
@@ -33,13 +32,9 @@ const (
 )
 
 var (
-	workerProcessRunning   = isProcessRunning
-	workerProcessPID       = isWorkerProcessPID
-	workerVerifyRuntime    = verifyRuntimeState
-	workerLoadModule       = moduleconfig.LoadModule
-	workerUpdateModule     = moduleconfig.UpdateModule
-	workerGroupHasNodes    = catalog.GroupHasNodes
-	workerGroupContainsTag = catalog.GroupContainsTag
+	workerProcessRunning = isProcessRunning
+	workerProcessPID     = isWorkerProcessPID
+	workerVerifyRuntime  = verifyRuntimeState
 )
 
 // logWorker 按 Native 统一事件格式写入 Worker 日志。
@@ -76,7 +71,7 @@ type Options struct {
 	// PersistedBeforeUpdate 表示订阅编辑已保存设置，更新失败时不得误报为未保存。
 	PersistedBeforeUpdate   bool
 	NetworkWatchEnabled     bool
-	ReloadService           func(context.Context) error
+	SyncCatalog             func(context.Context, string, bool) (string, bool, error)
 	NetworkEvaluate         func(context.Context, string, string) error
 	NetworkEventSource      NetworkEventSource
 	NetworkStateReader      NetworkStateReader
@@ -469,7 +464,7 @@ func SyncEditedGroup(ctx context.Context, options Options, groupID string, now t
 }
 
 func applyRuntimeSync(ctx context.Context, options Options, result subscription.Result, groupID string, logger *log.Logger, forceReload bool, now time.Time) (subscription.Result, error) {
-	runtimeState, runtimeAttempted, effectErr := applyUpdateEffects(ctx, options, result, groupID, logger, forceReload)
+	runtimeState, runtimeAttempted, effectErr := applyUpdateEffects(ctx, options, result, groupID, forceReload)
 	result.RuntimeSyncState = runtimeState
 	result.RuntimeSynced = runtimeState == subscription.RuntimeSyncApplied
 	if effectErr != nil {
@@ -524,25 +519,22 @@ func nextUpdate(ctx context.Context, root string, now int64) (int64, error) {
 	return schedule.Nearest, nil
 }
 
-func applyUpdateEffects(ctx context.Context, options Options, result subscription.Result, groupID string, logger *log.Logger, forceReload bool) (string, bool, error) {
-	activated, err := activateGroupIfNeeded(ctx, options, groupID)
+func applyUpdateEffects(ctx context.Context, options Options, result subscription.Result, groupID string, forceReload bool) (string, bool, error) {
+	if options.SyncCatalog == nil {
+		return currentRuntimeSyncState(options), false, errors.New("未配置 Catalog 同步回调")
+	}
+	state, attempted, err := options.SyncCatalog(ctx, groupID, forceReload || result.StructureChanged)
 	if err != nil {
-		return currentRuntimeSyncState(options), false, err
-	}
-	if err := fallbackMissingNode(ctx, options, groupID, logger); err != nil {
-		return currentRuntimeSyncState(options), false, err
-	}
-	if !workerProcessRunning(options.SingBoxPath) {
-		return subscription.RuntimeSyncNotRunning, false, nil
-	}
-	reloaded := forceReload || result.StructureChanged || activated
-	if reloaded {
-		if options.ReloadService == nil {
-			return subscription.RuntimeSyncFailed, true, errors.New("未配置服务 reload 回调")
-		}
-		if err := options.ReloadService(ctx); err != nil {
+		if attempted {
 			return subscription.RuntimeSyncFailed, true, err
 		}
+		return currentRuntimeSyncState(options), attempted, err
+	}
+	if state == subscription.RuntimeSyncNotRunning {
+		return state, attempted, nil
+	}
+	if state != subscription.RuntimeSyncApplied {
+		return currentRuntimeSyncState(options), attempted, fmt.Errorf("Catalog 同步返回无效状态: %s", state)
 	}
 	if err := workerVerifyRuntime(ctx, options, groupID); err != nil {
 		return subscription.RuntimeSyncFailed, true, err
@@ -648,78 +640,6 @@ func runtimeProviderMatches(outbounds []serviceapi.GroupItem, runtimeTag string,
 		}
 	}
 	return true
-}
-
-func activateGroupIfNeeded(ctx context.Context, options Options, groupID string) (bool, error) {
-	module, err := workerLoadModule(options.ModuleConf)
-	if err != nil {
-		return false, err
-	}
-	active := module.ActiveGroupID
-	if active != "" {
-		hasNodes, hasErr := workerGroupHasNodes(ctx, options.Root, active)
-		if hasErr != nil {
-			return false, hasErr
-		}
-		if hasNodes {
-			return false, nil
-		}
-	}
-	hasNodes, err := workerGroupHasNodes(ctx, options.Root, groupID)
-	if err != nil || !hasNodes {
-		return false, err
-	}
-	if err := workerUpdateModule(ctx, options.ModuleConf, map[string]string{
-		"ACTIVE_GROUP_ID":   moduleconfig.Quote(groupID),
-		"SELECTOR_MODE":     "urltest",
-		"SELECTED_NODE_REF": moduleconfig.Quote(""),
-	}); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-func fallbackMissingNode(ctx context.Context, options Options, groupID string, logger *log.Logger) error {
-	module, err := workerLoadModule(options.ModuleConf)
-	if err != nil || module.SelectorMode != "manual" {
-		return err
-	}
-	selected := module.SelectedNodeRef
-	if selected == "" {
-		return err
-	}
-	selectedGroup, selectedTag, found := strings.Cut(selected, "/")
-	if !found || selectedGroup != groupID || selectedTag == "" {
-		return nil
-	}
-	present, err := workerGroupContainsTag(ctx, options.Root, groupID, selectedTag)
-	if err != nil || present {
-		return err
-	}
-	if err := workerUpdateModule(ctx, options.ModuleConf, map[string]string{
-		"SELECTOR_MODE":     "urltest",
-		"SELECTED_NODE_REF": moduleconfig.Quote(""),
-	}); err != nil {
-		return err
-	}
-	runtimeTag, err := catalog.RuntimeTag(ctx, options.Root, groupID)
-	if err != nil {
-		return err
-	}
-	if logger != nil {
-		logWorker(logger, "WARN", "node.selection", "fallback", "手动节点已从 Provider 移除，回退到 Auto/%s", runtimeTag)
-	}
-	if !isProcessRunning(options.SingBoxPath) {
-		return nil
-	}
-	client, err := serviceapi.New(options.ServiceAddress, options.ServiceSecret)
-	if err != nil {
-		return err
-	}
-	defer client.Close()
-	requestContext, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	return client.Select(requestContext, "Proxy", "Auto/"+runtimeTag)
 }
 
 func validateOptions(options Options) error {

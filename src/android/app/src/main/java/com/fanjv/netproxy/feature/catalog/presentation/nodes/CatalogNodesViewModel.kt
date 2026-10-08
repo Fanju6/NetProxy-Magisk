@@ -4,12 +4,14 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fanjv.netproxy.R
+import com.fanjv.netproxy.core.command.NetProxyCtlException
 import com.fanjv.netproxy.core.ui.UiText
 import com.fanjv.netproxy.core.ui.toUiText
 import com.fanjv.netproxy.core.ui.userMessage
 import com.fanjv.netproxy.feature.catalog.data.NodeImportStore
 import com.fanjv.netproxy.feature.catalog.data.NodeRepository
 import com.fanjv.netproxy.feature.catalog.model.CatalogNodeGroup
+import com.fanjv.netproxy.feature.catalog.model.CatalogNodesSnapshot
 import com.fanjv.netproxy.feature.catalog.model.CurrentNodeSelection
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,7 +35,16 @@ internal data class CatalogNodesUiState(
     val noticeId: Long = 0,
     val exportedNodeLink: String = "",
     val exportedNodeLinkId: Long = 0
-)
+) {
+    fun withSnapshot(snapshot: CatalogNodesSnapshot): CatalogNodesUiState = copy(
+        groups = snapshot.groups,
+        selection = snapshot.selection,
+        selectedGroupId = selectedGroupId.takeIf { id -> snapshot.groups.any { it.group.id == id } }
+            ?: snapshot.selection.activeGroupId.takeIf(String::isNotBlank)
+            ?: snapshot.groups.firstOrNull()?.group?.id.orEmpty(),
+        loading = false
+    )
+}
 
 internal class CatalogNodesViewModel(
     private val repository: NodeRepository,
@@ -58,21 +69,7 @@ internal class CatalogNodesViewModel(
             try {
                 if (!silent) _state.update { it.copy(loading = true, error = UiText.Empty) }
                 runCatching { repository.snapshot() }.onSuccess { snapshot ->
-                    val groups = snapshot.groups
-                    val selection = snapshot.selection
-                    _state.update { old ->
-                        val selected = old.selectedGroupId
-                            .takeIf { id -> groups.any { it.group.id == id } }
-                            ?: selection.activeGroupId.takeIf(String::isNotBlank)
-                            ?: groups.firstOrNull()?.group?.id.orEmpty()
-                        old.copy(
-                            groups = groups,
-                            selection = selection,
-                            selectedGroupId = selected,
-                            loading = false,
-                            error = UiText.Empty
-                        )
-                    }
+                    _state.update { it.withSnapshot(snapshot) }
                     loaded = true
                 }.onFailure { error ->
                     _state.update {
@@ -160,6 +157,7 @@ internal class CatalogNodesViewModel(
                             noticeId = it.noticeId + 1
                         )
                     }
+                    if ((error as? NetProxyCtlException)?.persisted == true) refresh(silent = true)
                     onResult(false)
                 }
         }
@@ -360,6 +358,7 @@ internal class CatalogNodesViewModel(
                             noticeId = it.noticeId + 1
                         )
                     }
+                    if ((error as? NetProxyCtlException)?.persisted == true) refresh(silent = true)
                 }
         }
     }
