@@ -201,6 +201,7 @@ func (editor *Editor) Update(updates map[string]string, validate func(string) er
 	written := make(map[string]bool, len(updates))
 	for index, line := range lines {
 		key, _, found := strings.Cut(line, "=")
+		key = strings.TrimSpace(key)
 		if found {
 			if value, ok := updates[key]; ok {
 				lines[index] = key + "=" + value

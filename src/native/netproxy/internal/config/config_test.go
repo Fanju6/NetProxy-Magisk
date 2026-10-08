@@ -178,3 +178,20 @@ func TestConfigLockRecoversAfterHolderExit(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestUpdateWhitespaceKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "module.conf")
+	if err := os.WriteFile(path, []byte(" ACTIVE_GROUP_ID = \"default\"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadModule(path); err != nil {
+		t.Fatalf("initial valid config rejected: %v", err)
+	}
+	if err := UpdateModule(t.Context(), path, map[string]string{"ACTIVE_GROUP_ID": Quote("fixture")}); err != nil {
+		t.Fatalf("read accepted whitespace, but update failed: %v", err)
+	}
+	updated, err := LoadModule(path)
+	if err != nil || updated.ActiveGroupID != "fixture" {
+		t.Fatalf("带空格的键未正确更新: %+v %v", updated, err)
+	}
+}
