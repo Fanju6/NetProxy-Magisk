@@ -47,6 +47,7 @@ import com.fanjv.netproxy.feature.kernel.presentation.SingBoxKernelSettingsScree
 import com.fanjv.netproxy.feature.logs.presentation.LogsScreen
 import com.fanjv.netproxy.feature.inbound.presentation.InboundSettingsScreen
 import com.fanjv.netproxy.feature.settings.presentation.NetworkMatchingScreen
+import com.fanjv.netproxy.feature.routing.presentation.RoutingRulesScreen
 import com.fanjv.netproxy.feature.settings.presentation.SettingsScreen
 import com.fanjv.netproxy.feature.theme.presentation.ThemeSettingsScreen
 import com.fanjv.netproxy.feature.theme.presentation.ThemeViewModel
@@ -63,6 +64,7 @@ import com.fanjv.netproxy.navigation.Route.Main
 import com.fanjv.netproxy.navigation.Route.NodeEdit
 import com.fanjv.netproxy.navigation.Route.InboundSettings
 import com.fanjv.netproxy.navigation.Route.NetworkMatching
+import com.fanjv.netproxy.navigation.Route.RoutingRules
 import com.fanjv.netproxy.navigation.Route.SubscriptionDetails
 import com.fanjv.netproxy.navigation.Route.SubscriptionEdit
 import com.fanjv.netproxy.navigation.Route.ThemeSettings
@@ -182,6 +184,9 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
                 }
                 entry<NetworkMatching> {
                     NetworkMatchingScreen(onBack = { navigator.pop() })
+                }
+                entry<RoutingRules> {
+                    RoutingRulesScreen(onBack = { navigator.pop() })
                 }
                 entry<KernelSettings> {
                     SingBoxKernelSettingsScreen(

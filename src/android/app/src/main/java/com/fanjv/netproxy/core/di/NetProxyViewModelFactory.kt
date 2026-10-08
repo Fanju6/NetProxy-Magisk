@@ -17,6 +17,7 @@ import com.fanjv.netproxy.feature.kernel.presentation.SingBoxConfigViewModel
 import com.fanjv.netproxy.feature.logs.presentation.LogsViewModel
 import com.fanjv.netproxy.feature.inbound.presentation.InboundViewModel
 import com.fanjv.netproxy.feature.settings.presentation.SettingsViewModel
+import com.fanjv.netproxy.feature.routing.presentation.RoutingRulesViewModel
 import com.fanjv.netproxy.feature.theme.presentation.ThemeViewModel
 
 /** 在应用组合根集中创建 ViewModel，业务类不再依赖 Application 或服务定位器。 */
@@ -58,6 +59,8 @@ internal class NetProxyViewModelFactory(
             )
 
             InboundViewModel::class.java -> InboundViewModel(container.inboundRepository)
+
+            RoutingRulesViewModel::class.java -> RoutingRulesViewModel(container.configRepository)
 
             SingBoxConfigViewModel::class.java -> SingBoxConfigViewModel(
                 container.configRepository,

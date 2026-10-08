@@ -399,6 +399,30 @@ func validateConfig(ctx context.Context, options Options, target, candidate stri
 		}
 		return validateSingBoxTree(ctx, options, candidate)
 	}
+	if strings.HasPrefix(target, "singbox/rules/local/") {
+		var rules option.PlainRuleSetCompat
+		if err := json.Unmarshal(content, &rules); err != nil {
+			return fmt.Errorf("规则集格式无效: %w", err)
+		}
+		check, err := json.Marshal(map[string]any{
+			"log": option.LogOptions{Disabled: true},
+			"route": map[string]any{"rule_set": []map[string]string{
+				{"type": "local", "tag": "netproxy-check", "format": "source", "path": candidate},
+			}},
+		}, json.Deterministic(true))
+		if err != nil {
+			return err
+		}
+		// 独立 check 只加载候选规则，不启动入站、不加载用户其他配置，也不下载远程规则。
+		command := exec.CommandContext(ctx, options.SingBoxPath, "check", "-c", "stdin")
+		command.Stdin = bytes.NewReader(check)
+		if output, err := command.CombinedOutput(); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return fmt.Errorf("规则集检查失败: %w: %s", err, strings.TrimSpace(string(output)))
+		}
+	}
 	return nil
 }
 
