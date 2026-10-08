@@ -50,6 +50,44 @@ class SettingsViewModelTest {
         assertFalse(calls.any { it.contains("ebpf") || it.any { arg -> arg.startsWith("inbound") } })
     }
 
+    @Test fun autoStartSaveKeepsLoadedSettingsAndRejectsDuplicateWrites() = runBlocking {
+        var module = "AUTO_START=1\n"
+        var writes = 0
+        val entered = CompletableDeferred<Unit>()
+        val release = CountDownLatch(1)
+        val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
+            val data = if (args[1] == "read") {
+                JsonObject(mapOf("content" to JsonPrimitive(module),
+                    "revision" to JsonPrimitive("module-read"))).toString()
+            } else {
+                writes++
+                entered.complete(Unit)
+                check(release.await(5, TimeUnit.SECONDS))
+                module = File(args.last()).readText()
+                """{"revision":"module-saved"}"""
+            }
+            NetProxyCtlOutput(true, listOf("""{"schema":1,"ok":true,"code":"test","message":"","data":$data}"""), emptyList())
+        })
+        val vm = SettingsViewModel(ConfigRepository(client, CommandFileStore(folder.root)), this)
+        vm.refresh()
+        withTimeout(5_000) { vm.state.first { it.hasLoaded && !it.isLoading } }
+        vm.setAutoStartEnabled(false)
+        try {
+            withTimeout(5_000) { entered.await() }
+            assertTrue(vm.state.value.hasLoaded)
+            assertTrue(vm.state.value.autoStartEnabled)
+            assertTrue(vm.state.value.isSaving)
+            vm.setAutoStartEnabled(true)
+            assertEquals(1, writes)
+        } finally {
+            release.countDown()
+        }
+        withTimeout(5_000) { vm.state.first { !it.isSaving } }
+        assertTrue(vm.state.value.hasLoaded)
+        assertFalse(vm.state.value.autoStartEnabled)
+        assertEquals(1, writes)
+    }
+
     @Test fun networkLoadingPreservesLoadedValuesAndRecoversFromFirstReadFailure() = runBlocking {
         var fail = true
         var gate: CountDownLatch? = null

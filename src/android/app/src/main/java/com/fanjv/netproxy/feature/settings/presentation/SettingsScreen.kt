@@ -175,7 +175,7 @@ internal fun SettingsScreen(
                                     )
                                 },
                                 checked = settings.autoStartEnabled,
-                                enabled = settings.hasLoaded && !settings.isLoading && !settings.isSaving,
+                                enabled = settings.hasLoaded,
                                 onCheckedChange = { viewModel.setAutoStartEnabled(it) }
                             )
                         },
