@@ -49,7 +49,7 @@ import com.fanjv.netproxy.core.ui.resolve
 import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BackIconButton
 import com.fanjv.netproxy.core.ui.component.BlurredBar
-import com.fanjv.netproxy.core.ui.component.EmptyCatalog
+import com.fanjv.netproxy.core.ui.component.ContentStatus
 import com.fanjv.netproxy.core.ui.component.SnackbarNoticeEffect
 import com.fanjv.netproxy.core.ui.component.StatusTag
 import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
@@ -165,16 +165,11 @@ internal fun SubscriptionsScreen(
                 .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)
         ) {
             when {
-                state.loading && state.groups.isEmpty() -> InfiniteProgressIndicator(
-                    modifier = Modifier.align(Alignment.Center)
-                )
-
-                state.groups.isEmpty() -> EmptyCatalog(
-                    text = stringResource(R.string.subscription_empty),
-                    onRefresh = null,
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .padding(horizontal = 24.dp)
+                state.groups.isEmpty() -> ContentStatus(
+                    padding = PaddingValues(top = innerPadding.calculateTopPadding(),
+                        bottom = innerPadding.calculateBottomPadding() + bottomPadding),
+                    text = stringResource(if (state.loadFailed) R.string.subscriptions_read_failed else R.string.subscription_empty),
+                    loading = state.loading,
                 )
 
                 else -> LazyColumn(

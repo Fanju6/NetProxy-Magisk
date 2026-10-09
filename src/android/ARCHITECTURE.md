@@ -67,6 +67,8 @@ feature/<name>/
 - `AppContainer` 只在应用入口创建长期依赖，不提供运行时服务定位。
 - Miuix Nav 条目拥有自己的 ViewModelStore；列表、详情和编辑页面使用独立 ViewModel。
 - `MainActivity` 组合主分页，`MainBottomBar` 是唯一底部导航实现；主题状态不参与导航结构选择。
+- `ModuleAccessViewModel` 在应用入口检查 Root 和模块控制接口，启动与恢复前台共用同一状态，检查在途时不清空上次结果。未确认可用时主导航只保留仪表盘和设置，主题与关于可独立使用；模块路由由 `ModulePage` 统一阻止无效读取，并保存编辑器的可恢复状态。分页保存目的地身份，不保存会随权限变化失效的索引。
+- 首次读取失败使用 `ContentStatus` 在 Scaffold 内容区居中展示，不作为空列表或默认配置；后续读取失败保留已加载内容和草稿。日志按服务/核心分别持有加载与错误状态，不让另一页成功读取清除本页失败。
 - 仪表盘快照合并放在纯 Kotlin reducer 中，避免异步响应在 UI 层互相覆盖。
 
 ## CLI 契约

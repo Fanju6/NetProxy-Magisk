@@ -4,7 +4,6 @@ import com.fanjv.netproxy.core.command.NetProxyCtlClient
 import com.fanjv.netproxy.core.command.NetProxyCtlOutput
 import com.fanjv.netproxy.core.command.NetProxyCtlTransport
 import com.fanjv.netproxy.core.module.ModuleAvailability
-import com.fanjv.netproxy.core.module.ModuleEnvironment
 import com.fanjv.netproxy.core.module.ServiceRepository
 import com.fanjv.netproxy.core.ui.UiText
 import java.util.concurrent.CopyOnWriteArrayList
@@ -42,11 +41,8 @@ class CatalogDashboardViewModelTest {
 
     private fun model(scope: CoroutineScope, transport: Transport) = CatalogDashboardViewModel(
         ServiceRepository(NetProxyCtlClient(transport = transport)),
-        object : ModuleEnvironment {
-            override val totalMemoryBytes = 1_000L
-            override suspend fun availability() = ModuleAvailability(true, true)
-        }, scope,
-    )
+        1_000L, scope,
+    ).apply { setAvailability(ModuleAvailability(true, true)) }
 
     private suspend fun CatalogDashboardViewModel.available() = withTimeout(5_000) {
         state.first { it.moduleInstalled }
@@ -55,6 +51,33 @@ class CatalogDashboardViewModelTest {
     private suspend fun settle() {
         val jobs = currentCoroutineContext().job.children.toList()
         withTimeout(5_000) { jobs.forEach { it.join() } }
+    }
+
+    @Test fun availabilityLossBlocksNewReadsButDoesNotCancelStartedControl() = runBlocking {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val transport = Transport { args ->
+            if (args[0] == "mode") {
+                entered.complete(Unit)
+                release.await()
+                "{}"
+            } else snapshot("Rule")
+        }
+        val vm = model(this, transport)
+        vm.refresh()
+        withTimeout(5_000) { vm.state.first { !it.loading } }
+        vm.setMode("Direct")
+        withTimeout(5_000) { entered.await() }
+        vm.setAvailability(ModuleAvailability(false, false))
+        vm.refresh()
+        vm.toggleService()
+        release.complete(Unit)
+        withTimeout(5_000) { vm.state.first { it.operation.isEmpty() } }
+        settle()
+        assertFalse(vm.state.value.rootGranted)
+        assertEquals(1, transport.calls.count { it[0] == "mode" })
+        assertEquals(1, transport.calls.count { it[0] == "service" })
+        assertFalse(transport.calls.any { it.take(2) == listOf("service", "start") })
     }
 
     @Test fun latestRefreshWinsAndStaleFailureCannotMarkServiceFailed() = runBlocking {

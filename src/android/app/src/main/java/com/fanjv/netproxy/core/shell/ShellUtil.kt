@@ -35,6 +35,8 @@ object ShellUtil {
      * 检查 root 是否可用；若尚未授权会触发 SU 请求。
      */
     suspend fun isRootAvailable(): Boolean = withContext(Dispatchers.IO) {
+        // 拒绝授权后的非 Root shell 会被 libsu 缓存；只关闭它，不能中断有效的 Root 命令。
+        Shell.getCachedShell()?.takeUnless { it.isRoot }?.close()
         Shell.getShell().isRoot
     }
 

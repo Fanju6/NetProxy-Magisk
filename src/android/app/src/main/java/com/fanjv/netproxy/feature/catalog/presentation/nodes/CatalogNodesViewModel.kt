@@ -34,6 +34,7 @@ internal data class CatalogNodesUiState(
     val focusGroupRevision: Long = 0,
     val latencies: Map<String, String> = emptyMap(),
     val loading: Boolean = false,
+    val loadFailed: Boolean = false,
     val operation: String = "",
     val error: UiText = UiText.Empty,
     val notice: UiText = UiText.Empty,
@@ -47,7 +48,8 @@ internal data class CatalogNodesUiState(
         selectedGroupId = selectedGroupId.takeIf { id -> snapshot.groups.any { it.group.id == id } }
             ?: snapshot.selection.activeGroupId.takeIf(String::isNotBlank)
             ?: snapshot.groups.firstOrNull()?.group?.id.orEmpty(),
-        loading = false
+        loading = false,
+        loadFailed = false,
     )
 }
 
@@ -94,6 +96,7 @@ internal class CatalogNodesViewModel(
                     _state.update {
                         it.copy(
                             loading = false,
+                            loadFailed = true,
                             error = error.userMessage().toUiText(),
                             noticeId = it.noticeId + 1
                         )

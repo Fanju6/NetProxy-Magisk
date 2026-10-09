@@ -13,19 +13,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.add
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
-import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -51,7 +45,6 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -60,6 +53,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BackIconButton
+import com.fanjv.netproxy.core.ui.component.ContentStatus
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.CardItem
 import com.fanjv.netproxy.core.ui.component.deferredTopPadding
@@ -146,15 +140,10 @@ internal fun LogsScreen(
         viewModel.refresh(currentType)
     }
 
-    val logs = remember(
-        logsState.serviceLogs,
-        logsState.kernelLogs,
-        selectedTabIndex
-    ) {
-        when (selectedTabIndex) {
-            0 -> logsState.serviceLogs
-            else -> logsState.kernelLogs
-        }
+    val content = logsState[currentType]
+    val logs = content.entries
+    LaunchedEffect(currentType, content.error) {
+        if (content.error.isNotEmpty() && logs.isNotEmpty()) showMessage(content.error, isError = true)
     }
 
     // 导出保存启动器
@@ -273,7 +262,8 @@ internal fun LogsScreen(
                                 )
                             }
                             Box {
-                                IconButton(onClick = { showMoreMenu = true }) {
+                                IconButton(enabled = !content.loading && (logs.isNotEmpty() || content.error.isEmpty()),
+                                    onClick = { showMoreMenu = true }) {
                                     Icon(
                                         imageVector = MiuixIcons.MoreCircle,
                                         contentDescription = stringResource(R.string.more_options),
@@ -378,43 +368,29 @@ internal fun LogsScreen(
                 )
             }
         },
-        contentWindowInsets = WindowInsets.systemBars.add(WindowInsets.displayCutout)
-            .only(WindowInsetsSides.Horizontal)
     ) { innerPadding ->
         val layoutDirection = LocalLayoutDirection.current
         Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .scrollEndHaptic()
-                    .overScrollVertical()
-                    .nestedScroll(scrollBehavior.nestedScrollConnection),
-                contentPadding = PaddingValues(
-                    top = innerPadding.calculateTopPadding() + 6.dp,
-                    start = innerPadding.calculateStartPadding(layoutDirection) + 12.dp,
-                    end = innerPadding.calculateEndPadding(layoutDirection) + 12.dp,
-                    bottom = innerPadding.calculateBottomPadding()
-                ),
-                overscrollEffect = null
-            ) {
-                if (logs.isEmpty()) {
-                    item {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .fillParentMaxHeight(0.7f),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = stringResource(R.string.no_logs),
-                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                fontSize = 15.sp,
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                    }
-                } else {
+            if (logs.isEmpty()) {
+                ContentStatus(innerPadding,
+                    stringResource(if (content.error.isNotEmpty()) R.string.logs_read_failed else R.string.no_logs),
+                    loading = content.loading)
+            } else {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .scrollEndHaptic()
+                        .overScrollVertical()
+                        .nestedScroll(scrollBehavior.nestedScrollConnection),
+                    contentPadding = PaddingValues(
+                        top = innerPadding.calculateTopPadding() + 6.dp,
+                        start = innerPadding.calculateStartPadding(layoutDirection) + 12.dp,
+                        end = innerPadding.calculateEndPadding(layoutDirection) + 12.dp,
+                        bottom = innerPadding.calculateBottomPadding()
+                    ),
+                    overscrollEffect = null
+                ) {
                     if (isCardView) {
                         items(logs) { item ->
                             LogItemCard(item = item, type = currentType)
@@ -422,10 +398,10 @@ internal fun LogsScreen(
                     } else {
                         rawLogItems(logs = logs)
                     }
-                }
 
-                item {
-                    Spacer(modifier = Modifier.height(16.dp))
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
                 }
             }
         }

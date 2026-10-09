@@ -33,6 +33,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.core.ui.component.BlurredBar
+import com.fanjv.netproxy.core.ui.component.LocalModuleAvailability
 import com.fanjv.netproxy.core.ui.component.CardItem
 import com.fanjv.netproxy.core.ui.component.groupedCardItems
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
@@ -57,6 +58,7 @@ internal fun SettingsScreen(
     viewModel: SettingsViewModel = netProxyViewModel()
 ) {
     val settings by viewModel.state.collectAsStateWithLifecycle()
+    val available = LocalModuleAvailability.current?.available == true
     val navigator = LocalNavigator.current
     val context = LocalContext.current
     val resources = LocalResources.current
@@ -66,9 +68,9 @@ internal fun SettingsScreen(
     val blurActive = backdrop != null
     val barColor = if (blurActive) Color.Transparent else colorScheme.surface
 
-    LifecycleResumeEffect(isActive) {
-        viewModel.setVisible(isActive)
-        onPauseOrDispose { if (isActive) viewModel.setVisible(false) }
+    LifecycleResumeEffect(isActive, available) {
+        viewModel.setVisible(isActive && available)
+        onPauseOrDispose { if (isActive && available) viewModel.setVisible(false) }
     }
 
 
@@ -158,7 +160,7 @@ internal fun SettingsScreen(
                     ),
                 )
 
-                groupedCardItems(
+                if (available) groupedCardItems(
                     keyPrefix = "settings_module",
                     outerTopPadding = 12.dp,
                     items = listOf(

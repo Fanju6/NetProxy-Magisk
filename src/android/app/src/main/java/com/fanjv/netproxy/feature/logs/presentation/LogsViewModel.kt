@@ -38,22 +38,18 @@ internal class LogsViewModel(
 
     fun refresh(type: LogType) {
         val revision = invalidate(type)
+        _state.update { it.with(type, it[type].copy(loading = true, error = "")) }
         reads[type] = viewModelScope.launch {
             runCatching {
                 repository.read(type)
             }.onSuccess { logs ->
                 currentCoroutineContext().ensureActive()
                 if (revisions[type] != revision) return@onSuccess
-                _state.update {
-                    when (type) {
-                        LogType.SERVICE -> it.copy(serviceLogs = logs, error = "")
-                        LogType.KERNEL -> it.copy(kernelLogs = logs, error = "")
-                    }
-                }
+                _state.update { it.with(type, LogContent(entries = logs, loading = false)) }
             }.onFailure { error ->
                 if (error is CancellationException) throw error
                 if (revisions[type] != revision) return@onFailure
-                _state.update { it.copy(error = error.userMessage()) }
+                _state.update { it.with(type, it[type].copy(loading = false, error = error.userMessage())) }
             }
         }
     }
@@ -65,18 +61,13 @@ internal class LogsViewModel(
                 .onSuccess {
                     currentCoroutineContext().ensureActive()
                     invalidate(type)
-                    _state.update { state ->
-                        when (type) {
-                            LogType.SERVICE -> state.copy(serviceLogs = emptyList(), error = "")
-                            LogType.KERNEL -> state.copy(kernelLogs = emptyList(), error = "")
-                        }
-                    }
+                    _state.update { it.with(type, LogContent(loading = false)) }
                     onResult(true)
                 }
                 .onFailure { error ->
                     if (error is CancellationException) throw error
                     if (revisions[type] != revision) return@onFailure
-                    _state.update { it.copy(error = error.userMessage()) }
+                    _state.update { it.with(type, it[type].copy(loading = false)) }
                     onResult(false)
                 }
         }

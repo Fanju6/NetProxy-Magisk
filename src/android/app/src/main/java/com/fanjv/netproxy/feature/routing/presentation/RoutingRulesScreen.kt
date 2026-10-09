@@ -7,21 +7,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.add
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
-import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -53,6 +47,7 @@ import com.fanjv.netproxy.core.ui.component.AdaptiveTopAppBar
 import com.fanjv.netproxy.core.ui.component.BackIconButton
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.CardItem
+import com.fanjv.netproxy.core.ui.component.ContentStatus
 import com.fanjv.netproxy.core.ui.component.TopBarMenuAction
 import com.fanjv.netproxy.core.ui.component.TopBarMoreMenu
 import com.fanjv.netproxy.core.ui.component.deferredTopPadding
@@ -143,10 +138,11 @@ internal fun RoutingRulesScreen(
                 )
             }
         },
-        contentWindowInsets = WindowInsets.systemBars.add(WindowInsets.displayCutout).only(WindowInsetsSides.Horizontal),
     ) { padding ->
         val layoutDirection = LocalLayoutDirection.current
-        LazyColumn(
+        if (state.document == null && !state.invalidDocument && state.draft == null) {
+            ContentStatus(padding, stringResource(R.string.routing_read_failed), loading = state.isLoading || state.error.isEmpty())
+        } else LazyColumn(
             modifier = Modifier.fillMaxSize()
                 .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)
                 .scrollEndHaptic().overScrollVertical().nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -158,48 +154,40 @@ internal fun RoutingRulesScreen(
             ),
             overscrollEffect = null,
         ) {
-            if (state.document == null && state.isLoading) {
-                item("loading") {
-                    Box(Modifier.fillMaxWidth().fillParentMaxHeight(0.7f), contentAlignment = Alignment.Center) {
-                        InfiniteProgressIndicator()
-                    }
+            if ((state.error.isNotEmpty() || state.requiresReload) && state.draft == null && state.deleting == null) {
+                item("error") { RuleError(state, reload = { viewModel.refresh(discardDraft = true) }) }
+            }
+            if (state.document == null) {
+                if (state.invalidDocument) item("raw") {
+                    TextButton(stringResource(R.string.routing_raw), rawEdit, Modifier.fillMaxWidth())
                 }
             } else {
-                if ((state.error.isNotEmpty() || state.requiresReload) && state.draft == null && state.deleting == null) {
-                    item("error") { RuleError(state, reload = { viewModel.refresh(discardDraft = true) }) }
-                }
-                if (state.document == null) {
-                    if (state.invalidDocument) item("raw") {
-                        TextButton(stringResource(R.string.routing_raw), rawEdit, Modifier.fillMaxWidth())
-                    }
-                } else {
-                    val rules = state.document!!.rules
-                    if (rules.isNotEmpty()) groupedCardSection(
-                        "routing_rules",
-                        { stringResource(R.string.routing_matches) },
-                        rules.mapIndexed { index, rule -> CardItem(index.toString()) {
-                            val simple = remember(rule) { rule.simpleRule() }
-                            ArrowPreference(
-                                title = simple?.values?.first()?.take(100) ?: stringResource(R.string.routing_advanced),
-                                summary = simple?.let {
-                                    stringResource(it.field.title()) + if (it.values.size > 1) " · " + stringResource(R.string.routing_values_count, it.values.size) else ""
-                                } ?: stringResource(R.string.routing_advanced_hint),
-                                onClick = { viewModel.edit(index) },
-                                holdDownState = state.draft?.index == index,
-                            )
-                        } },
-                        titleTopPadding = 8.dp,
-                    )
-                    if (rules.isEmpty()) item("empty") {
-                        Box(Modifier.fillMaxWidth().fillParentMaxHeight(0.7f), contentAlignment = Alignment.Center) {
-                            Column(Modifier.padding(horizontal = 14.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(stringResource(R.string.routing_empty), style = MiuixTheme.textStyles.body1,
-                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary, textAlign = TextAlign.Center)
-                                Text(stringResource(R.string.routing_empty_hint), style = MiuixTheme.textStyles.footnote1,
-                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary, textAlign = TextAlign.Center)
-                            }
+                val rules = state.document!!.rules
+                if (rules.isNotEmpty()) groupedCardSection(
+                    "routing_rules",
+                    { stringResource(R.string.routing_matches) },
+                    rules.mapIndexed { index, rule -> CardItem(index.toString()) {
+                        val simple = remember(rule) { rule.simpleRule() }
+                        ArrowPreference(
+                            title = simple?.values?.first()?.take(100) ?: stringResource(R.string.routing_advanced),
+                            summary = simple?.let {
+                                stringResource(it.field.title()) + if (it.values.size > 1) " · " + stringResource(R.string.routing_values_count, it.values.size) else ""
+                            } ?: stringResource(R.string.routing_advanced_hint),
+                            onClick = { viewModel.edit(index) },
+                            holdDownState = state.draft?.index == index,
+                        )
+                    } },
+                    titleTopPadding = 8.dp,
+                )
+                if (rules.isEmpty()) item("empty") {
+                    Box(Modifier.fillMaxWidth().fillParentMaxHeight(0.7f), contentAlignment = Alignment.Center) {
+                        Column(Modifier.padding(horizontal = 14.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(stringResource(R.string.routing_empty), style = MiuixTheme.textStyles.body1,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary, textAlign = TextAlign.Center)
+                            Text(stringResource(R.string.routing_empty_hint), style = MiuixTheme.textStyles.footnote1,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary, textAlign = TextAlign.Center)
                         }
                     }
                 }

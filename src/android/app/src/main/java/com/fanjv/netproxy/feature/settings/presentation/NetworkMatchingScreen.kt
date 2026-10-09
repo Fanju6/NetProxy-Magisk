@@ -5,7 +5,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -58,13 +57,10 @@ internal fun NetworkMatchingScreen(
                 )
             }
         },
-        contentWindowInsets = WindowInsets.systemBars.add(WindowInsets.displayCutout).only(WindowInsetsSides.Horizontal)
     ) { padding ->
         Box(Modifier.then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)) {
-            if (!state.hasLoaded && state.error.isBlank()) {
-                Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                    InfiniteProgressIndicator()
-                }
+            if (!state.hasLoaded) {
+                ContentStatus(padding, stringResource(R.string.network_read_failed), loading = state.error.isBlank())
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxHeight().scrollEndHaptic().overScrollVertical()

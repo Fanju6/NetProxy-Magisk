@@ -14,6 +14,64 @@ class LogsViewModelTest {
     private fun output(content: String) = NetProxyCtlOutput(true,
         listOf("""{"schema":1,"ok":true,"code":"test","data":{"content":"$content"}}"""), emptyList())
 
+    @Test fun readFailureIsNotEmptyAndDoesNotAffectAnotherLogType() = runBlocking {
+        val scope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
+                if (args[2] == "service") error("read failed") else output("")
+            })
+            val vm = LogsViewModel(LogRepository(client, folder.root), scope)
+            vm.refresh(LogType.SERVICE)
+            vm.refresh(LogType.KERNEL)
+            scope.coroutineContext.job.children.toList().joinAll()
+            assertFalse(vm.state.value.service.loading)
+            assertTrue(vm.state.value.service.error.isNotEmpty())
+            assertTrue(vm.state.value.kernel.entries.isEmpty())
+            assertFalse(vm.state.value.kernel.loading)
+            assertEquals("", vm.state.value.kernel.error)
+        } finally { scope.cancel() }
+    }
+
+    @Test fun refreshFailurePreservesLoadedLogsAndCanRecover() = runBlocking {
+        val scope = CoroutineScope(coroutineContext + SupervisorJob())
+        var fail = false
+        try {
+            val client = NetProxyCtlClient(transport = NetProxyCtlTransport { _, _ ->
+                if (fail) error("read failed") else output("retained")
+            })
+            val vm = LogsViewModel(LogRepository(client, folder.root), scope)
+            vm.refresh(LogType.KERNEL)
+            scope.coroutineContext.job.children.toList().joinAll()
+            fail = true
+            vm.refresh(LogType.KERNEL)
+            scope.coroutineContext.job.children.toList().joinAll()
+            assertEquals("retained", vm.state.value.kernel.entries.single().rawLine)
+            assertTrue(vm.state.value.kernel.error.isNotEmpty())
+            fail = false
+            vm.refresh(LogType.KERNEL)
+            scope.coroutineContext.job.children.toList().joinAll()
+            assertEquals("", vm.state.value.kernel.error)
+        } finally { scope.cancel() }
+    }
+
+    @Test fun clearFailureDoesNotBecomeAReadFailure() = runBlocking {
+        val scope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
+                if (args[1] == "clear") error("cannot clear") else output("")
+            })
+            val vm = LogsViewModel(LogRepository(client, folder.root), scope)
+            vm.refresh(LogType.KERNEL)
+            scope.coroutineContext.job.children.toList().joinAll()
+            val result = CompletableDeferred<Boolean>()
+            vm.clear(LogType.KERNEL) { result.complete(it) }
+            assertFalse(result.await())
+            assertFalse(vm.state.value.kernel.loading)
+            assertEquals("", vm.state.value.kernel.error)
+            assertTrue(vm.state.value.kernel.entries.isEmpty())
+        } finally { scope.cancel() }
+    }
+
     @Test fun clearInvalidatesReadsStartedDuringTheWrite() = runBlocking {
         val clearStarted = CompletableDeferred<Unit>()
         val clearFinish = CompletableDeferred<Unit>()
@@ -40,8 +98,8 @@ class LogsViewModelTest {
             assertTrue(done.await())
             readFinish.complete(Unit)
             scope.coroutineContext.job.children.toList().joinAll()
-            assertTrue(vm.state.value.kernelLogs.isEmpty())
-            assertEquals("", vm.state.value.error)
+            assertTrue(vm.state.value.kernel.entries.isEmpty())
+            assertEquals("", vm.state.value.kernel.error)
         } finally { scope.cancel() }
     }
 
@@ -63,12 +121,12 @@ class LogsViewModelTest {
             firstStarted.await()
             vm.refresh(LogType.KERNEL)
             withTimeout(2_000) {
-                while (vm.state.value.kernelLogs.isEmpty()) yield()
+                while (vm.state.value.kernel.entries.isEmpty()) yield()
             }
             firstFinish.complete(Unit)
             scope.coroutineContext.job.children.toList().joinAll()
-            assertEquals("latest", vm.state.value.kernelLogs.single().rawLine)
-            assertEquals("", vm.state.value.error)
+            assertEquals("latest", vm.state.value.kernel.entries.single().rawLine)
+            assertEquals("", vm.state.value.kernel.error)
         } finally { scope.cancel() }
     }
 }

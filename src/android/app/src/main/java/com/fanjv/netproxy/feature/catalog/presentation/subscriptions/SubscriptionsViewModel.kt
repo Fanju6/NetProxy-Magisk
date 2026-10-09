@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 internal data class SubscriptionsUiState(
     val groups: List<CatalogGroupSummary> = emptyList(),
     val loading: Boolean = false,
+    val loadFailed: Boolean = false,
     val operation: String = "",
     val operationGroupId: String = "",
     val error: UiText = UiText.Empty,
@@ -62,7 +63,7 @@ internal class SubscriptionsViewModel(
                 val groups = repository.list()
                 currentCoroutineContext().ensureActive()
                 if (request == refreshGeneration) {
-                    _state.update { it.copy(groups = groups, loading = false) }
+                    _state.update { it.copy(groups = groups, loading = false, loadFailed = false) }
                     loaded = true
                 }
             } catch (error: CancellationException) {
@@ -72,6 +73,7 @@ internal class SubscriptionsViewModel(
                 if (request == refreshGeneration) _state.update {
                     it.copy(
                         loading = false,
+                        loadFailed = true,
                         error = if (it.error == UiText.Empty) error.toUiText() else it.error,
                         noticeId = it.noticeId + 1
                     )

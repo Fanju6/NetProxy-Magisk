@@ -41,6 +41,22 @@ class SubscriptionViewModelsTest {
         true, listOf("""{"schema":1,"ok":true,"code":"test","message":"","data":$data}"""), emptyList()
     )
 
+    @Test fun consumingFailureNoticeDoesNotTurnReadFailureIntoEmptySubscriptions() = runBlocking {
+        var fail = true
+        val vm = SubscriptionsViewModel(SubscriptionRepository(catalog {
+            if (fail) error("cannot read") else output("[]")
+        }), this)
+        vm.refresh()
+        withTimeout(5_000) { vm.state.first { it.loadFailed } }
+        vm.clearNotice()
+        assertEquals(UiText.Empty, vm.state.value.error)
+        assertTrue(vm.state.value.loadFailed)
+        fail = false
+        vm.refresh()
+        withTimeout(5_000) { vm.state.first { !it.loading && !it.loadFailed } }
+        assertTrue(vm.state.value.groups.isEmpty())
+    }
+
     private fun editor(id: String, url: String, name: String = "Sample") = output(
         """{"id":"$id","name":"$name","url":"$url"}"""
     )

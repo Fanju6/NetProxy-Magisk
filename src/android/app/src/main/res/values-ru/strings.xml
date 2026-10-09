@@ -1,4 +1,11 @@
 <resources>
+    <string name="inbound_read_failed">Не удалось прочитать настройки входящего подключения</string>
+    <string name="network_read_failed">Не удалось прочитать настройки сопоставления сети</string>
+    <string name="routing_read_failed">Не удалось прочитать правила маршрутизации</string>
+    <string name="logs_read_failed">Не удалось прочитать журналы</string>
+    <string name="nodes_read_failed">Не удалось прочитать узлы</string>
+    <string name="subscriptions_read_failed">Не удалось прочитать подписки</string>
+    <string name="apps_read_failed">Не удалось прочитать настройки прокси для приложений</string>
     <string name="app_name">NetProxy</string>
     <string name="settings">Настройки</string>
     <string name="about">О приложении</string>

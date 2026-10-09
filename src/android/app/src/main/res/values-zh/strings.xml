@@ -1,4 +1,11 @@
 <resources>
+    <string name="inbound_read_failed">无法读取入站配置</string>
+    <string name="network_read_failed">无法读取网络匹配配置</string>
+    <string name="routing_read_failed">无法读取路由规则</string>
+    <string name="logs_read_failed">无法读取日志</string>
+    <string name="nodes_read_failed">无法读取节点</string>
+    <string name="subscriptions_read_failed">无法读取订阅</string>
+    <string name="apps_read_failed">无法读取分应用代理配置</string>
 
     <!-- 通用 -->
     <string name="app_name">NetProxy</string>

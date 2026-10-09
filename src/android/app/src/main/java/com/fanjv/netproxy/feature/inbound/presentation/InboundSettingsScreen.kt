@@ -120,20 +120,17 @@ internal fun InboundSettingsScreen(
                             contentDescription = stringResource(R.string.more_actions),
                             actions = listOf(
                                 TopBarMenuAction(stringResource(R.string.restart_core), enabled = state.editable, onClick = viewModel::restart),
-                                TopBarMenuAction(stringResource(R.string.ebpf_diagnostics), enabled = !state.isDiagnosing, onClick = viewModel::diagnose)
+                                TopBarMenuAction(stringResource(R.string.ebpf_diagnostics), enabled = state.hasConfiguration && !state.isDiagnosing, onClick = viewModel::diagnose)
                             )
                         )
                     }
                 )
             }
         },
-        contentWindowInsets = WindowInsets.systemBars.add(WindowInsets.displayCutout).only(WindowInsetsSides.Horizontal)
     ) { padding ->
         Box(Modifier.then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)) {
-            if (state.isInitialLoading) {
-                Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                    InfiniteProgressIndicator()
-                }
+            if (state.snapshot == null && !state.hasPendingChanges) {
+                ContentStatus(padding, stringResource(R.string.inbound_read_failed), loading = state.isInitialLoading)
             } else LazyColumn(
                 modifier = Modifier.fillMaxHeight().scrollEndHaptic().overScrollVertical()
                     .nestedScroll(scrollBehavior.nestedScrollConnection).padding(horizontal = 12.dp),
@@ -153,7 +150,7 @@ internal fun InboundSettingsScreen(
                         color = colorScheme.error
                     )
                 }
-                if (state.requiresReload || (state.snapshot == null && !state.isLoading)) {
+                if (state.requiresReload) {
                     item("reload") { TextButton(stringResource(
                         if (state.hasPendingChanges) R.string.routing_reload_draft else R.string.inbound_reload),
                         onClick = viewModel::discardAndReload) }

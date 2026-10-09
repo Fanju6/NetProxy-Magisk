@@ -53,6 +53,21 @@ class CatalogNodesViewModelTest {
         withTimeout(5_000) { jobs.forEach { it.join() } }
     }
 
+    @Test fun consumingFailureNoticeDoesNotTurnReadFailureIntoEmptyNodes() = runBlocking {
+        var fail = true
+        val vm = model(this, Transport { if (fail) error("cannot read") else snapshot("new") })
+        vm.refresh()
+        withTimeout(5_000) { vm.state.first { it.loadFailed } }
+        vm.clearNotice()
+        assertEquals(UiText.Empty, vm.state.value.error)
+        assertTrue(vm.state.value.loadFailed)
+        fail = false
+        vm.refresh()
+        withTimeout(5_000) { vm.state.first { it.selection.selected == "default/new" } }
+        assertFalse(vm.state.value.loadFailed)
+        settle()
+    }
+
     @Test fun latestRefreshWinsEvenWhenOldRequestFinishesLast() = runBlocking {
         val count = AtomicInteger()
         val entered = CompletableDeferred<Unit>()

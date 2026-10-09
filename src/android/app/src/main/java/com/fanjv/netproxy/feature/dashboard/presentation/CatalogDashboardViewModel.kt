@@ -3,7 +3,7 @@ package com.fanjv.netproxy.feature.dashboard.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fanjv.netproxy.R
-import com.fanjv.netproxy.core.module.ModuleEnvironment
+import com.fanjv.netproxy.core.module.ModuleAvailability
 import com.fanjv.netproxy.core.module.ServiceRepository
 import com.fanjv.netproxy.core.module.ServiceStatusSnapshot
 import com.fanjv.netproxy.core.ui.UiText
@@ -66,7 +66,7 @@ internal data class CatalogDashboardUiState(
 /** 仅消费 netproxyctl 与运行时 API 的仪表盘状态，不读取旧配置或 PID。 */
 internal class CatalogDashboardViewModel(
     private val repository: ServiceRepository,
-    private val environment: ModuleEnvironment,
+    totalMemoryBytes: Long,
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
 ) : ViewModel(scope) {
     private val _state = MutableStateFlow(CatalogDashboardUiState())
@@ -76,23 +76,27 @@ internal class CatalogDashboardViewModel(
     private var uptimeJob: Job? = null
     private var visible = false
     private var stateRevision = 0L
-    private val totalMemoryBytes = environment.totalMemoryBytes
     private val snapshotReducer = DashboardSnapshotReducer(totalMemoryBytes)
     private val trafficReducer = TrafficTimelineReducer()
 
-    init {
-        viewModelScope.launch {
-            val availability = environment.availability()
-            currentCoroutineContext().ensureActive()
-            _state.update {
-                it.copy(
-                    rootChecked = true,
-                    rootGranted = availability.rootGranted,
-                    moduleInstalled = availability.moduleInstalled,
-                    loading = availability.moduleInstalled
-                )
-            }
-            if (availability.moduleInstalled && visible) startPolling()
+    fun setAvailability(availability: ModuleAvailability?) {
+        val previous = _state.value
+        val available = availability?.available == true
+        _state.update {
+            it.copy(rootChecked = availability != null,
+                rootGranted = availability?.rootGranted == true,
+                moduleInstalled = available,
+                loading = available && (!previous.moduleInstalled || previous.loading))
+        }
+        if (available && visible) {
+            startUptimeTicker()
+            startPolling()
+        } else if (!available) {
+            pollingJob?.cancel()
+            pollingJob = null
+            snapshotJob?.cancel()
+            uptimeJob?.cancel()
+            if (previous.operation.isEmpty()) stateRevision++
         }
     }
 
@@ -105,8 +109,10 @@ internal class CatalogDashboardViewModel(
     fun setVisible(visible: Boolean) {
         this.visible = visible
         if (visible) {
-            startUptimeTicker()
-            if (_state.value.moduleInstalled) startPolling()
+            if (_state.value.moduleInstalled) {
+                startUptimeTicker()
+                startPolling()
+            }
         } else {
             pollingJob?.cancel()
             pollingJob = null
@@ -180,7 +186,7 @@ internal class CatalogDashboardViewModel(
     }
 
     private fun refreshSnapshot() {
-        if (_state.value.operation.isNotEmpty()) return
+        if (!_state.value.moduleInstalled || _state.value.operation.isNotEmpty()) return
         val requestRevision = ++stateRevision
         snapshotJob?.cancel()
         snapshotJob = viewModelScope.launch { readSnapshot(requestRevision) }

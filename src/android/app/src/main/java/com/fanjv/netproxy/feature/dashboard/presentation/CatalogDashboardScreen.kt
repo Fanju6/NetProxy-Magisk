@@ -22,6 +22,7 @@ import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Router
 import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -34,6 +35,7 @@ import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BlurredBar
+import com.fanjv.netproxy.core.ui.component.LocalModuleAvailability
 import com.fanjv.netproxy.core.ui.component.SnackbarNoticeEffect
 import com.fanjv.netproxy.core.ui.component.WarningCard
 import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
@@ -65,6 +67,8 @@ internal fun CatalogDashboardScreen(
     viewModel: CatalogDashboardViewModel = netProxyViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val availability = LocalModuleAvailability.current
+    LaunchedEffect(availability) { viewModel.setAvailability(availability) }
     val snackbarHostState = rememberAppSnackbarHostState()
     val scrollBehavior = MiuixScrollBehavior()
     val backdrop = rememberBlurBackdrop()
@@ -141,7 +145,7 @@ internal fun CatalogDashboardScreen(
                         trafficSamples = state.trafficSamples,
                         statusSummary = serviceSummary,
                         isRunning = state.isReady,
-                        serviceControlEnabled = state.rootGranted &&
+                        serviceControlEnabled = availability?.available == true && state.rootGranted &&
                             state.moduleInstalled &&
                             !state.loading &&
                             !state.isServiceControlBusy,
@@ -202,6 +206,7 @@ internal fun CatalogDashboardScreen(
                         }
                         OverlayDropdownPreference(
                             title = stringResource(R.string.dashboard_outbound_mode),
+                            enabled = availability?.available == true && !state.loading && state.operation.isEmpty(),
                             items = modeItems,
                             selectedIndex = if (selectedModeIndex >= 0) selectedModeIndex else 0,
                             startAction = {
@@ -220,6 +225,7 @@ internal fun CatalogDashboardScreen(
                         )
                         ArrowPreference(
                             title = stringResource(R.string.dashboard_current_node),
+                            enabled = availability?.available == true,
                             summary = state.currentNode.ifBlank {
                                 stringResource(R.string.dashboard_not_selected)
                             },

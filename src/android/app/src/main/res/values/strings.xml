@@ -1,4 +1,11 @@
 <resources>
+    <string name="inbound_read_failed">Cannot read inbound configuration</string>
+    <string name="network_read_failed">Cannot read network matching configuration</string>
+    <string name="routing_read_failed">Cannot read routing rules</string>
+    <string name="logs_read_failed">Cannot read logs</string>
+    <string name="nodes_read_failed">Cannot read nodes</string>
+    <string name="subscriptions_read_failed">Cannot read subscriptions</string>
+    <string name="apps_read_failed">Cannot read app proxy configuration</string>
     <string name="app_name">NetProxy</string>
     <string name="settings">Settings</string>
     <string name="about">About</string>

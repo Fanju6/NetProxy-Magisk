@@ -14,8 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.Saver
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.fanjv.netproxy.R
@@ -29,10 +28,9 @@ import kotlin.math.abs
 internal fun rememberMainPagerState(
     pagerState: PagerState,
     coroutineScope: CoroutineScope = rememberCoroutineScope()
-): MainPagerState = rememberSaveable(
+): MainPagerState = remember(
     pagerState,
     coroutineScope,
-    saver = MainPagerState.saver(pagerState, coroutineScope)
 ) {
     MainPagerState(pagerState, coroutineScope)
 }
@@ -87,21 +85,14 @@ internal class MainPagerState(
             selectedPage = pagerState.currentPage
         }
     }
-
-    companion object {
-        fun saver(
-            pagerState: PagerState,
-            coroutineScope: CoroutineScope
-        ): Saver<MainPagerState, Int> = Saver(
-            save = { it.selectedPage },
-            restore = { savedPage ->
-                MainPagerState(pagerState, coroutineScope).apply {
-                    selectedPage = savedPage
-                }
-            }
-        )
-    }
 }
+
+internal fun mainDestinations(moduleAvailable: Boolean): List<AppDestination> =
+    if (moduleAvailable) AppDestination.entries
+    else listOf(AppDestination.Dashboard, AppDestination.Settings)
+
+internal fun AppDestination.availableIn(destinations: List<AppDestination>): AppDestination =
+    takeIf { it in destinations } ?: AppDestination.Dashboard
 
 internal enum class AppDestination(
     val labelRes: Int,

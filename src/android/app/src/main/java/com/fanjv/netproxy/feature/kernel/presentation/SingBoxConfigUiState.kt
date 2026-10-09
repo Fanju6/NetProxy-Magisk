@@ -5,7 +5,7 @@ import androidx.compose.runtime.Immutable
 @Immutable
 data class SingBoxConfigUiState(
     val documents: List<SingBoxDocument> = emptyList(),
-    val isLoadingDocuments: Boolean = false,
+    val isLoadingDocuments: Boolean = true,
     val documentsError: Boolean = false,
     val activeDocumentId: String? = null,
     val activeDocumentContent: String = "",
@@ -13,4 +13,3 @@ data class SingBoxConfigUiState(
     val isLoadingDocument: Boolean = false,
     val documentLoadError: Boolean = false
 )
-

@@ -16,7 +16,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -25,10 +29,14 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
 import com.fanjv.netproxy.core.di.netProxyViewModel
+import com.fanjv.netproxy.core.module.ModuleAccessViewModel
+import com.fanjv.netproxy.core.ui.component.LocalModuleAvailability
+import com.fanjv.netproxy.core.ui.component.ModulePage
 import com.fanjv.netproxy.core.ui.theme.AppThemeDefaults
 import com.fanjv.netproxy.core.ui.theme.AppThemeSettings
 import com.fanjv.netproxy.core.ui.theme.ColorMode
@@ -70,6 +78,8 @@ import com.fanjv.netproxy.navigation.Route.SubscriptionEdit
 import com.fanjv.netproxy.navigation.Route.ThemeSettings
 import com.fanjv.netproxy.navigation.rememberMainPagerState
 import com.fanjv.netproxy.navigation.rememberNavigator
+import com.fanjv.netproxy.navigation.mainDestinations
+import com.fanjv.netproxy.navigation.availableIn
 import top.yukonga.miuix.kmp.basic.NavigationItem
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.blur.layerBackdrop
@@ -144,9 +154,17 @@ class MainActivity : ComponentActivity() {
 internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
     val navigator = rememberNavigator(Main)
     val catalogNodesViewModel: CatalogNodesViewModel = netProxyViewModel()
+    val moduleAccess: ModuleAccessViewModel = netProxyViewModel()
+    val availability by moduleAccess.state.collectAsStateWithLifecycle()
+
+    LifecycleResumeEffect(Unit) {
+        moduleAccess.refresh()
+        onPauseOrDispose { }
+    }
 
     CompositionLocalProvider(
-        LocalNavigator provides navigator
+        LocalNavigator provides navigator,
+        LocalModuleAvailability provides availability,
     ) {
         Scaffold {
             NavDisplay(
@@ -155,54 +173,74 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
             ) {
                 entry<Main> { MainScreen(themeViewModel, catalogNodesViewModel) }
                 entry<Apps> {
-                    AppsScreen(onBack = { navigator.pop() })
+                    ModulePage(R.string.proxy_apps, R.string.apps_read_failed, { navigator.pop() }) {
+                        AppsScreen(onBack = { navigator.pop() })
+                    }
                 }
                 entry<SubscriptionDetails> {
-                    SubscriptionDetailsScreen(
-                        id = it.id,
-                        onBack = { navigator.pop() }
-                    )
+                    ModulePage(R.string.subscriptions, R.string.subscriptions_read_failed, { navigator.pop() }) {
+                        SubscriptionDetailsScreen(
+                            id = it.id,
+                            onBack = { navigator.pop() }
+                        )
+                    }
                 }
                 entry<SubscriptionEdit> {
-                    SubscriptionEditorScreen(
-                        id = it.id,
-                        onBack = { navigator.pop() }
-                    )
+                    ModulePage(R.string.subscriptions, R.string.subscriptions_read_failed, { navigator.pop() }) {
+                        SubscriptionEditorScreen(
+                            id = it.id,
+                            onBack = { navigator.pop() }
+                        )
+                    }
                 }
                 entry<NodeEdit> {
-                    SingBoxNodeEditScreen(
-                        viewModel = catalogNodesViewModel,
-                        nodeRef = it.nodeRef,
-                        onBack = { navigator.pop() }
-                    )
+                    ModulePage(R.string.node_edit, R.string.nodes_read_failed, { navigator.pop() }) {
+                        SingBoxNodeEditScreen(
+                            viewModel = catalogNodesViewModel,
+                            nodeRef = it.nodeRef,
+                            onBack = { navigator.pop() }
+                        )
+                    }
                 }
                 entry<InboundSettings> {
-                    InboundSettingsScreen(
-                        onBack = { navigator.pop() },
-                        bottomPadding = 0.dp
-                    )
+                    ModulePage(R.string.inbound_settings, R.string.inbound_read_failed, { navigator.pop() }) {
+                        InboundSettingsScreen(
+                            onBack = { navigator.pop() },
+                            bottomPadding = 0.dp
+                        )
+                    }
                 }
                 entry<NetworkMatching> {
-                    NetworkMatchingScreen(onBack = { navigator.pop() })
+                    ModulePage(R.string.network_matching, R.string.network_read_failed, { navigator.pop() }) {
+                        NetworkMatchingScreen(onBack = { navigator.pop() })
+                    }
                 }
                 entry<RoutingRules> {
-                    RoutingRulesScreen(onBack = { navigator.pop() })
+                    ModulePage(R.string.routing_rules, R.string.routing_read_failed, { navigator.pop() }) {
+                        RoutingRulesScreen(onBack = { navigator.pop() })
+                    }
                 }
                 entry<KernelSettings> {
-                    SingBoxKernelSettingsScreen(
-                        onBack = { navigator.pop() }
-                    )
+                    ModulePage(R.string.kernel_settings, R.string.singbox_documents_load_failed, { navigator.pop() }) {
+                        SingBoxKernelSettingsScreen(
+                            onBack = { navigator.pop() }
+                        )
+                    }
                 }
                 entry<JsonEdit> {
-                    SingBoxJsonEditScreen(
-                        documentId = it.documentId,
-                        onBack = { navigator.pop() }
-                    )
+                    ModulePage(R.string.kernel_settings, R.string.singbox_documents_load_failed, { navigator.pop() }) {
+                        SingBoxJsonEditScreen(
+                            documentId = it.documentId,
+                            onBack = { navigator.pop() }
+                        )
+                    }
                 }
                 entry<ThemeSettings> { ThemeSettingsScreen(viewModel = themeViewModel) }
                 entry<About> { AboutScreen() }
                 entry<Logs> {
-                    LogsScreen(onBack = { navigator.pop() })
+                    ModulePage(R.string.logs, R.string.logs_read_failed, { navigator.pop() }) {
+                        LogsScreen(onBack = { navigator.pop() })
+                    }
                 }
             }
         }
@@ -214,21 +252,39 @@ internal fun MainScreen(
     themeViewModel: ThemeViewModel,
     catalogNodesViewModel: CatalogNodesViewModel
 ) {
-    val themeState by themeViewModel.state.collectAsStateWithLifecycle()
-    val destinations = AppDestination.entries
-    val pagerState = rememberPagerState(initialPage = 0, pageCount = { destinations.size })
-    val mainPagerState = rememberMainPagerState(pagerState)
-    // 目的地列表变化时，确保 selectedPage 不越界
-    LaunchedEffect(destinations) {
-        if (mainPagerState.selectedPage >= destinations.size) {
-            mainPagerState.animateToPage((destinations.size - 1).coerceAtLeast(0))
-        }
+    val availability = LocalModuleAvailability.current
+    var destination by rememberSaveable { mutableStateOf(AppDestination.Dashboard) }
+    if (availability == null) {
+        CatalogDashboardScreen()
+        return
     }
+    val destinations = mainDestinations(availability.available)
+    // 权限改变会改变页码；保存目的地身份，避免“设置”被映射为“节点”。
+    key(destinations) {
+        MainPager(themeViewModel, catalogNodesViewModel, destinations,
+            initialDestination = destination.availableIn(destinations),
+            onDestinationChanged = { destination = it })
+    }
+}
+
+@Composable
+private fun MainPager(
+    themeViewModel: ThemeViewModel,
+    catalogNodesViewModel: CatalogNodesViewModel,
+    destinations: List<AppDestination>,
+    initialDestination: AppDestination,
+    onDestinationChanged: (AppDestination) -> Unit,
+) {
+    val themeState by themeViewModel.state.collectAsStateWithLifecycle()
+    val pagerState = rememberPagerState(initialPage = destinations.indexOf(initialDestination),
+        pageCount = { destinations.size })
+    val mainPagerState = rememberMainPagerState(pagerState)
 
     // 非动画态（如滑动）时与 pager 同步；
     // 导航动画结束后也重跑一次，否则点击导航可能跳过目的地页的首次按需加载。
     LaunchedEffect(mainPagerState.pagerState.currentPage, mainPagerState.isNavigating) {
         mainPagerState.syncPage()
+        onDestinationChanged(destinations[mainPagerState.selectedPage])
     }
 
     val navItems = destinations.map {
@@ -271,6 +327,7 @@ internal fun MainScreen(
                         }
                     ),
                 state = pagerState,
+                key = { destinations[it] },
                 beyondViewportPageCount = 1,
                 userScrollEnabled = destinations.size > 1
             ) { pageIndex ->

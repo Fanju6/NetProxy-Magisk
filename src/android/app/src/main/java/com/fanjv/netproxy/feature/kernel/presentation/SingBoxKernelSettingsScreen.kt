@@ -2,16 +2,9 @@ package com.fanjv.netproxy.feature.kernel.presentation
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.add
-import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Code
@@ -22,7 +15,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -35,7 +27,7 @@ import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BackIconButton
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.CardItem
-import com.fanjv.netproxy.core.ui.component.EmptyCatalog
+import com.fanjv.netproxy.core.ui.component.ContentStatus
 import com.fanjv.netproxy.core.ui.component.TopBarMenuAction
 import com.fanjv.netproxy.core.ui.component.TopBarMoreMenu
 import com.fanjv.netproxy.core.ui.component.groupedCardSection
@@ -45,7 +37,6 @@ import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.Route
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SnackbarDuration
@@ -100,10 +91,12 @@ internal fun SingBoxKernelSettingsScreen(
                             actions = listOf(
                                 TopBarMenuAction(
                                     text = stringResource(R.string.restart_core),
+                                    enabled = state.documents.isNotEmpty(),
                                     onClick = viewModel::restartService,
                                 ),
                                 TopBarMenuAction(
                                     text = stringResource(R.string.singbox_check_all),
+                                    enabled = state.documents.isNotEmpty(),
                                     onClick = {
                                         viewModel.checkConfig { success ->
                                             coroutineScope.launch {
@@ -127,41 +120,16 @@ internal fun SingBoxKernelSettingsScreen(
                 )
             }
         },
-        contentWindowInsets = WindowInsets.systemBars.add(WindowInsets.displayCutout)
-            .only(WindowInsetsSides.Horizontal),
     ) { innerPadding ->
         Box(
             modifier = Modifier
                 .fillMaxHeight()
                 .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier),
         ) {
-            if (state.isLoadingDocuments && state.documents.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .fillMaxWidth()
-                        .padding(innerPadding),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    InfiniteProgressIndicator()
-                }
-            } else if (state.documentsError || state.documents.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .fillMaxWidth()
-                        .padding(innerPadding),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    EmptyCatalog(
-                        text = stringResource(
-                            if (state.documentsError) R.string.singbox_documents_load_failed
-                            else R.string.singbox_documents_empty,
-                        ),
-                        onRefresh = null,
-                        modifier = Modifier.padding(horizontal = 24.dp),
-                    )
-                }
+            if (state.documents.isEmpty()) {
+                ContentStatus(innerPadding, stringResource(
+                    if (state.documentsError) R.string.singbox_documents_load_failed else R.string.singbox_documents_empty),
+                    loading = state.isLoadingDocuments)
             } else {
                 LazyColumn(
                     modifier = Modifier
