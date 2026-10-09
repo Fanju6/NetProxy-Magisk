@@ -19,8 +19,8 @@
       "ref": "sing",
       "sourcePath": "geo/geosite/category-ads-all.srs",
       "metadataPath": "geo/geosite/category-ads-all.json",
-      "currentCommit": "6fea7d2d9bc4c7f85d2b8ff46d3f3250d09c0d12",
-      "currentSha256": "4f75ea1833fd50671201330f3fc4c411651ff7fe4b7721ad46d15444d89f9948"
+      "currentCommit": "d9e3c4c09747d325d28e9bfe8829011135cfbbbf",
+      "currentSha256": "4df355d40543a0a4272be663fd479c209f765142e4bbe6aff042748c911139db"
     },
     {
       "name": "geosite/apple-cn",
@@ -63,8 +63,8 @@
       "ref": "sing",
       "sourcePath": "geo/geosite/geolocation-!cn.srs",
       "metadataPath": "geo/geosite/geolocation-!cn.json",
-      "currentCommit": "9e4267fddfa0719523d4e125347dac7a324f7639",
-      "currentSha256": "6adeaca419926dec293d3bc3f059ae670d7977a13f3950641b52ac918c693809"
+      "currentCommit": "d9e3c4c09747d325d28e9bfe8829011135cfbbbf",
+      "currentSha256": "9bcf2560e2aa40c52173a60b0ed89a383e1bc172aa69633d576505cae97176c4"
     },
     {
       "name": "geosite/cn",
@@ -85,8 +85,8 @@
       "ref": "sing",
       "sourcePath": "geo/geoip/cn.srs",
       "metadataPath": "geo/geoip/cn.json",
-      "currentCommit": "1bbe90f849505bcbcea530d8fbc127ad7877eb2a",
-      "currentSha256": "ac82bac86a7f9f873b4e016765f9ee5afe0152da52049b72c16f459572c317ee"
+      "currentCommit": "d9e3c4c09747d325d28e9bfe8829011135cfbbbf",
+      "currentSha256": "d5a12d61f726d63c0835fd7233de1b3186204aed51c07167f9650936224293ec"
     },
     {
       "name": "geoip/telegram",
@@ -104,7 +104,7 @@
     "path": "src/module/bin/sing-box",
     "repo": "reF1nd/sing-box",
     "tagPattern": "^v[0-9].*-reF1nd$",
-    "currentVersion": "v1.15.0-alpha.10-reF1nd",
+    "currentVersion": "v1.15.0-alpha.11-reF1nd",
     "buildTags": [
       "with_quic",
       "with_utls",
