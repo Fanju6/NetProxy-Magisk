@@ -48,8 +48,6 @@ import com.fanjv.netproxy.core.ui.component.BackIconButton
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.CardItem
 import com.fanjv.netproxy.core.ui.component.ContentStatus
-import com.fanjv.netproxy.core.ui.component.TopBarMenuAction
-import com.fanjv.netproxy.core.ui.component.TopBarMoreMenu
 import com.fanjv.netproxy.core.ui.component.deferredTopPadding
 import com.fanjv.netproxy.core.ui.component.groupedCardSection
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
@@ -112,11 +110,6 @@ internal fun RoutingRulesScreen(
                         IconButton(onClick = { viewModel.edit() }, enabled = state.editable) {
                             Icon(MiuixIcons.Add, stringResource(R.string.routing_add), tint = MiuixTheme.colorScheme.onSurface)
                         }
-                        var expanded by remember { mutableStateOf(false) }
-                        TopBarMoreMenu(expanded, { expanded = it }, listOf(
-                            TopBarMenuAction(stringResource(R.string.routing_raw), !state.isSaving, rawEdit),
-                            TopBarMenuAction(stringResource(R.string.inbound_reload), !state.isSaving) { viewModel.refresh() },
-                        ), stringResource(R.string.more_actions))
                     },
                     bottomContent = {
                         Column(
@@ -142,6 +135,19 @@ internal fun RoutingRulesScreen(
         val layoutDirection = LocalLayoutDirection.current
         if (state.document == null && !state.invalidDocument && state.draft == null) {
             ContentStatus(padding, stringResource(R.string.routing_read_failed), loading = state.isLoading || state.error.isEmpty())
+        } else if (state.document?.rules?.isEmpty() == true && state.error.isEmpty() && !state.requiresReload) {
+            Column(
+                Modifier.fillMaxSize()
+                    .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)
+                    .padding(padding).padding(horizontal = 26.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+            ) {
+                Text(stringResource(R.string.routing_empty), style = MiuixTheme.textStyles.body1,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary, textAlign = TextAlign.Center)
+                Text(stringResource(R.string.routing_empty_hint), style = MiuixTheme.textStyles.footnote1,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary, textAlign = TextAlign.Center)
+            }
         } else LazyColumn(
             modifier = Modifier.fillMaxSize()
                 .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)
@@ -179,18 +185,6 @@ internal fun RoutingRulesScreen(
                     } },
                     titleTopPadding = 8.dp,
                 )
-                if (rules.isEmpty()) item("empty") {
-                    Box(Modifier.fillMaxWidth().fillParentMaxHeight(0.7f), contentAlignment = Alignment.Center) {
-                        Column(Modifier.padding(horizontal = 14.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(stringResource(R.string.routing_empty), style = MiuixTheme.textStyles.body1,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary, textAlign = TextAlign.Center)
-                            Text(stringResource(R.string.routing_empty_hint), style = MiuixTheme.textStyles.footnote1,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary, textAlign = TextAlign.Center)
-                        }
-                    }
-                }
             }
             item("bottom") { Spacer(Modifier.height(24.dp).navigationBarsPadding()) }
         }
