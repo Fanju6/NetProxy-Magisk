@@ -98,6 +98,7 @@ src/module/service.sh
 - ViewModel 按功能域持有不可变 `StateFlow`；Repository 负责命令组合和响应映射。不要重新堆回全能 Repository、全能 ViewModel 或静态 Service Locator。
 - 构造依赖由 `AppContainer` 和 `NetProxyViewModelFactory` 提供，不引入 Hilt/Koin，除非先完成明确的全项目架构决策。
 - 遵循现有 miuix 视觉和交互：二级页使用 `AdaptiveTopAppBar`，分组标题使用 miuix `SmallTitle`，列表保持 Lazy item 粒度，卡片优先复用 `groupedCardItems`。有 miuix 对应组件时不另造 Material 风格替代品。
+- 分应用搜索由 Scaffold 的 `popupHost` 承载，仅搜索框参与上移动画；普通列表不做位移动画，两份列表的滚动状态在内容切换之外持有，输入焦点不得跳过展开动画直接确认搜索状态。自定义 `popupHost` 仍须保留 `MiuixPopupHost`，否则页面下拉菜单无法显示。
 - Miuix Nav 是页面导航状态唯一所有者。主分页动画必须从真实当前页开始，禁止通过临时目标页制造过渡。
 - 主分页底部导航由 `MainBottomBar` 单一实现统一承载；主题偏好不改变其结构或布局形态。
 - 管理器由 Android 原生资源自动匹配中文、英语和俄语，英文是默认资源；界面文案放入字符串资源，不自行保存或强制覆盖系统语言。补全与校验逻辑不得依据翻译后的文本判断类型或错误分类。

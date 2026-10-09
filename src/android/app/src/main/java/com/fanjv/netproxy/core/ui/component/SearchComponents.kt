@@ -14,22 +14,26 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
@@ -38,18 +42,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
@@ -136,11 +136,6 @@ class SearchStatus(val label: String) {
         backgroundColor: androidx.compose.ui.graphics.Color = colorScheme.surface,
         content: @Composable () -> Unit
     ) {
-        val topAppBarAlpha = animateFloatAsState(
-            if (visible) 1f else 0f,
-            animationSpec = tween(if (visible) 550 else 0, easing = FastOutSlowInEasing),
-            label = "topAppBarAlpha"
-        )
         Box(modifier = modifier) {
             Box(
                 modifier = Modifier
@@ -149,7 +144,7 @@ class SearchStatus(val label: String) {
             )
             Box(
                 modifier = Modifier
-                    .alpha(topAppBarAlpha.value)
+                    .graphicsLayer { alpha = if (visible) 1f else 0f }
             ) { content() }
         }
     }
@@ -161,29 +156,7 @@ class SearchStatus(val label: String) {
 fun SearchStatus.SearchBox(
     content: @Composable () -> Unit
 ) {
-    val searchStatus = this
-    val density = LocalDensity.current
-    val offsetYPx = with(density) { (searchStatus.offsetY.toPx() * 0.9).toInt() }
-
-    Box {
-        AnimatedVisibility(
-            visible = searchStatus.shouldCollapsed(),
-            enter = fadeIn(tween(300, easing = LinearOutSlowInEasing)) + slideInVertically(
-                tween(
-                    300,
-                    easing = LinearOutSlowInEasing
-                )
-            ) { -offsetYPx },
-            exit = fadeOut(tween(300, easing = LinearOutSlowInEasing)) + slideOutVertically(
-                tween(
-                    300,
-                    easing = LinearOutSlowInEasing
-                )
-            ) { -offsetYPx }
-        ) {
-            content()
-        }
-    }
+    if (shouldCollapsed()) content()
 }
 
 @Composable
@@ -210,20 +183,23 @@ fun SearchStatus.SearchPager(
     ) {
         searchStatus.onAnimationComplete()
     }
-    val surfaceAlpha by animateFloatAsState(
+    val surfaceAlpha = animateFloatAsState(
         if (searchStatus.shouldExpand()) 1f else 0f,
         animationSpec = tween(200, easing = FastOutSlowInEasing),
         label = "surfaceAlpha"
     )
+    val surfaceColor = colorScheme.surface
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .zIndex(5f)
-            .background(colorScheme.surface.copy(alpha = surfaceAlpha))
+            .drawBehind { drawRect(surfaceColor.copy(alpha = surfaceAlpha.value)) }
             .semantics { onClick { false } }
             .then(
-                if (!searchStatus.isCollapsed()) Modifier.pointerInput(Unit) { } else Modifier
+                if (!searchStatus.isCollapsed()) {
+                    Modifier.pointerInput(Unit) { detectTapGestures { } }
+                } else Modifier
             )
     ) {
         Row(
@@ -303,6 +279,8 @@ fun SearchStatus.SearchPager(
                 LazyColumn(
                     Modifier.fillMaxSize().overScrollVertical(),
                     state = listState,
+                    contentPadding = WindowInsets.ime.union(WindowInsets.navigationBars)
+                        .only(WindowInsetsSides.Bottom).asPaddingValues(),
                     content = result
                 )
                 if (empty) {
@@ -324,9 +302,6 @@ fun SearchBar(
     searchStatus: SearchStatus,
     searchBarTopPadding: () -> Dp = { 12.dp },
 ) {
-    val focusRequester = remember { FocusRequester() }
-    var expanded by rememberSaveable { mutableStateOf(false) }
-
     InputField(
         query = searchStatus.searchText,
         onQueryChange = { searchStatus.searchText = it },
@@ -367,21 +342,11 @@ fun SearchBar(
             .fillMaxWidth()
             .padding(horizontal = 12.dp)
             .deferredTopPadding(searchBarTopPadding)
-            .padding(bottom = 12.dp)
-            .focusRequester(focusRequester),
+            .padding(bottom = 12.dp),
         onSearch = { },
         expanded = searchStatus.shouldExpand(),
-        onExpandedChange = {
-            searchStatus.current =
-                if (it) SearchStatus.Status.EXPANDED else SearchStatus.Status.COLLAPSED
-        }
+        onExpandedChange = { }
     )
-    LaunchedEffect(Unit) {
-        if (!expanded && searchStatus.shouldExpand()) {
-            focusRequester.requestFocus()
-            expanded = true
-        }
-    }
 }
 
 @Composable

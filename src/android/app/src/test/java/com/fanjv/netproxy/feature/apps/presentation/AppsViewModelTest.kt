@@ -447,6 +447,35 @@ class AppsViewModelTest {
         assertTrue(closed.isCollapsed())
     }
 
+    @Test fun searchAnimationOnlyShowsResultsAfterExpansionAndRestoresContentOnCollapse() {
+        val search = SearchStatus("").apply {
+            searchText = "example"
+            current = SearchStatus.Status.EXPANDING
+        }
+        assertTrue(search.shouldExpand())
+        assertFalse(search.isExpand())
+        assertFalse(search.shouldCollapsed())
+        search.onAnimationComplete()
+        assertTrue(search.isExpand())
+        assertEquals("example", search.searchText)
+
+        search.current = SearchStatus.Status.COLLAPSING
+        assertTrue(search.shouldCollapsed())
+        assertFalse(search.shouldExpand())
+        search.onAnimationComplete()
+        assertTrue(search.isCollapsed())
+        assertEquals("", search.searchText)
+    }
+
+    @Test fun interruptedExpansionCompletesCurrentCollapseInsteadOfReopeningSearch() {
+        val search = SearchStatus("").apply { current = SearchStatus.Status.EXPANDING }
+        search.current = SearchStatus.Status.COLLAPSING
+        search.onAnimationComplete()
+        assertTrue(search.isCollapsed())
+        search.onAnimationComplete()
+        assertTrue(search.isCollapsed())
+    }
+
     @Test fun newestFilterWinsWhenQueuedCalculationsRunInReverseOrder() = runBlocking {
         val dispatcher = ManualDispatcher()
         val vm = model(this, Transport(), dispatcher = dispatcher)

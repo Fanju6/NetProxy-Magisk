@@ -87,6 +87,7 @@ import top.yukonga.miuix.kmp.icon.extended.MoreCircle
 import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
+import top.yukonga.miuix.kmp.utils.MiuixPopupUtils.Companion.MiuixPopupHost
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
@@ -143,6 +144,7 @@ internal fun AppsScreen(
     val spacing = 10.dp
 
     val searchStatus = rememberSaveable(saver = SearchStatus.Saver) { SearchStatus("") }
+    val listState = rememberLazyListState()
     val searchListState = rememberLazyListState()
 
     LaunchedEffect(Unit) { viewModel.load() }
@@ -250,7 +252,7 @@ internal fun AppsScreen(
                                             }
                                         }
                                         .then(
-                                            if (searchStatus.isCollapsed()) {
+                                            if (searchStatus.isCollapsed() && apps.appProxyEnabled) {
                                                 Modifier.pointerInput(Unit) {
                                                     detectTapGestures {
                                                         searchStatus.current =
@@ -268,6 +270,42 @@ internal fun AppsScreen(
                         )
                     }
                 }
+            },
+            popupHost = {
+                if (apps.appProxyEnabled) {
+                    val searchResults = remember(
+                        apps.searchResults, apps.proxiedApps, apps.appSelectedFirst, apps.appReverseSort
+                    ) { apps.orderedApps(apps.searchResults) }
+                    searchStatus.SearchPager(
+                        empty = apps.hasLoadedApps && !apps.isFilteringApps &&
+                            apps.appSearchQuery.isNotBlank() && apps.searchResults.isEmpty(),
+                        listState = searchListState,
+                        searchBarTopPadding = dynamicTopPadding,
+                    ) {
+                        if (apps.error.isNotBlank() || apps.requiresPolicyReload) item("error") {
+                            if (apps.error.isNotBlank()) Text(apps.error, Modifier.padding(14.dp), color = colorScheme.error)
+                            if (apps.requiresPolicyReload) TextButton(stringResource(R.string.routing_reload_draft),
+                                onClick = viewModel::discardPolicyAndReload)
+                        }
+                        items(
+                            items = searchResults,
+                            key = AppInfoModel::id,
+                            contentType = { "app_item" },
+                        ) { app ->
+                            AppItem(app, apps.appShowPackageName, app.id in apps.proxiedApps, spacing) {
+                                if (apps.appSelectedFirst) {
+                                    // 重排时保持视口位置，不跟随已选条目的 key 上移。
+                                    searchListState.requestScrollToItem(
+                                        searchListState.firstVisibleItemIndex,
+                                        searchListState.firstVisibleItemScrollOffset
+                                    )
+                                }
+                                viewModel.toggle(app.id)
+                            }
+                        }
+                    }
+                }
+                MiuixPopupHost()
             },
             contentWindowInsets = WindowInsets.systemBars.add(WindowInsets.displayCutout)
                 .only(WindowInsetsSides.Horizontal)
@@ -315,6 +353,7 @@ internal fun AppsScreen(
                     ) {
                         Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
                             LazyColumn(
+                                state = listState,
                                 modifier = Modifier
                                     .fillMaxHeight()
                                     .scrollEndHaptic()
@@ -405,40 +444,6 @@ internal fun AppsScreen(
                                 }
                             }
                         }
-                    }
-                }
-            }
-        }
-
-        if (apps.appProxyEnabled) {
-            val searchResults = remember(
-                apps.searchResults, apps.proxiedApps, apps.appSelectedFirst, apps.appReverseSort
-            ) { apps.orderedApps(apps.searchResults) }
-            searchStatus.SearchPager(
-                empty = apps.hasLoadedApps && !apps.isFilteringApps &&
-                    apps.appSearchQuery.isNotBlank() && apps.searchResults.isEmpty(),
-                listState = searchListState,
-                searchBarTopPadding = dynamicTopPadding,
-            ) {
-                if (apps.error.isNotBlank() || apps.requiresPolicyReload) item("error") {
-                    if (apps.error.isNotBlank()) Text(apps.error, Modifier.padding(14.dp), color = colorScheme.error)
-                    if (apps.requiresPolicyReload) TextButton(stringResource(R.string.routing_reload_draft),
-                        onClick = viewModel::discardPolicyAndReload)
-                }
-                items(
-                    items = searchResults,
-                    key = AppInfoModel::id,
-                    contentType = { "app_item" },
-                ) { app ->
-                    AppItem(app, apps.appShowPackageName, app.id in apps.proxiedApps, spacing) {
-                        if (apps.appSelectedFirst) {
-                            // 重排时保持视口位置，不跟随已选条目的 key 上移。
-                            searchListState.requestScrollToItem(
-                                searchListState.firstVisibleItemIndex,
-                                searchListState.firstVisibleItemScrollOffset
-                            )
-                        }
-                        viewModel.toggle(app.id)
                     }
                 }
             }
