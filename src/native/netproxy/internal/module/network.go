@@ -2,6 +2,8 @@ package module
 
 import (
 	"context"
+	"encoding/json/jsontext"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +13,7 @@ import (
 	"time"
 
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/inbound"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/worker"
@@ -40,12 +43,31 @@ func EvaluateNetwork(ctx context.Context, options Options, networkType, ssid str
 
 // 调用方已持有生命周期与配置锁，启动、重载和手动模式保存显式复用该路径。
 func syncConfiguredMode(ctx context.Context, options Options) (NetworkEvaluation, error) {
+	result, err := configuredNetwork(ctx, options)
+	if err != nil {
+		return result, err
+	}
+	modes, err := moduleconfig.LoadModes(paths.SingBoxConfig(options.SingBoxDir))
+	if err != nil {
+		return result, err
+	}
+	return applyNetworkMode(ctx, options, modes, result, true)
+}
+
+func configuredNetwork(ctx context.Context, options Options) (NetworkEvaluation, error) {
+	if options.networkEvaluation != nil {
+		return *options.networkEvaluation, nil
+	}
 	module, err := moduleconfig.LoadModule(options.ModuleConfig)
 	if err != nil {
 		return NetworkEvaluation{}, err
 	}
+	modes, err := moduleconfig.LoadModes(paths.SingBoxConfig(options.SingBoxDir))
+	if err != nil {
+		return NetworkEvaluation{}, err
+	}
 	if !module.WiFiAutoSwitch {
-		return evaluateNetwork(ctx, options, "not_wifi", "", true)
+		return networkPolicy(module, modes.Mode, "not_wifi", ""), nil
 	}
 	reader := options.NetworkStateReader
 	if reader == nil {
@@ -54,7 +76,10 @@ func syncConfiguredMode(ctx context.Context, options Options) (NetworkEvaluation
 	readContext, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	state, err := reader(readContext)
-	if err == nil && state.NetworkType == "wifi" && strings.TrimSpace(state.SSID) == "" {
+	if err == nil && state.NetworkType != "wifi" && state.NetworkType != "not_wifi" {
+		return NetworkEvaluation{}, errors.New("网络采集返回了未知网络类型")
+	}
+	if err == nil && state.NetworkType == "wifi" && state.SSID == "" {
 		err = worker.ErrNetworkUnavailable
 	}
 	if err != nil {
@@ -63,13 +88,9 @@ func syncConfiguredMode(ctx context.Context, options Options) (NetworkEvaluation
 		}
 		// 开机无默认路由时先消除缓存模式，网络就绪事件再应用 Wi-Fi 策略。
 		logService(options, "INFO", "network.read", "waiting", "网络尚未就绪：等待 Android 网络默认路由")
-		modes, loadErr := moduleconfig.LoadModes(paths.SingBoxConfig(options.SingBoxDir))
-		if loadErr != nil {
-			return NetworkEvaluation{}, loadErr
-		}
-		return applyNetworkMode(ctx, options, modes, NetworkEvaluation{Enabled: true, DesiredMode: modes.Mode}, true)
+		return NetworkEvaluation{Enabled: true, DesiredMode: modes.Mode}, nil
 	}
-	return evaluateNetwork(ctx, options, state.NetworkType, state.SSID, true)
+	return networkPolicy(module, modes.Mode, state.NetworkType, state.SSID), nil
 }
 
 func evaluateNetwork(ctx context.Context, options Options, networkType, ssid string, running bool) (result NetworkEvaluation, err error) {
@@ -91,21 +112,159 @@ func evaluateNetwork(ctx context.Context, options Options, networkType, ssid str
 	if networkType != "wifi" && networkType != "not_wifi" {
 		return result, errors.New("网络类型必须是 wifi 或 not_wifi")
 	}
-	result = NetworkEvaluation{Enabled: module.WiFiAutoSwitch, NetworkType: networkType, SSID: strings.TrimSpace(ssid), Target: "proxying", DesiredMode: modes.Mode}
-	if module.WiFiAutoSwitch {
+	result = networkPolicy(module, modes.Mode, networkType, ssid)
+	if result.Target == "" {
+		return result, nil
+	}
+	return applyNetworkPolicy(ctx, options, modes, result, running, reloadNetworkConfig)
+}
+
+func networkPolicy(module moduleconfig.ModuleConfig, base, networkType, ssid string) NetworkEvaluation {
+	result := NetworkEvaluation{Enabled: module.WiFiAutoSwitch, NetworkType: networkType, SSID: ssid, Target: "proxying", DesiredMode: base}
+	if result.Enabled {
 		if networkType == "wifi" && result.SSID == "" {
 			result.Target = ""
 			result.Reason = "WiFi 已连接但 SSID 尚不可读"
-			return result, nil
+			return result
 		}
-		listed := containsSSID(module.WiFiSSIDList, result.SSID)
-		if networkType == "wifi" && ((module.WiFiSSIDMode == "whitelist" && !listed) || (module.WiFiSSIDMode == "blacklist" && listed)) ||
-			networkType == "not_wifi" && !module.ProxyOnCellular {
+		if networkType == "wifi" && ((module.WiFiSSIDMode == "whitelist" && !slices.Contains(module.WiFiSSIDWhitelist, ssid)) || (module.WiFiSSIDMode == "blacklist" && slices.Contains(module.WiFiSSIDBlacklist, ssid))) ||
+			networkType == "not_wifi" && !module.ProxyOnNonWiFi {
 			result.Target = "bypassed"
 			result.DesiredMode = "Direct"
 		}
 	}
+	if result.DesiredMode == "Direct" {
+		result.Target = "bypassed"
+	}
+	return result
+}
+
+func applyConfiguredNetwork(ctx context.Context, options Options, reload func(context.Context, Options) error) (NetworkEvaluation, error) {
+	result, err := configuredNetwork(ctx, options)
+	if err != nil {
+		return result, err
+	}
+	if result.Enabled && result.Target == "" {
+		if service.ProcessRunning(options.SingBoxPath) {
+			result.RuntimeMode, err = service.ReadRuntimeMode(ctx, networkControlOptions(options))
+		}
+		return result, err
+	}
+	modes, err := moduleconfig.LoadModes(paths.SingBoxConfig(options.SingBoxDir))
+	if err != nil {
+		return result, err
+	}
+	return applyNetworkPolicy(ctx, options, modes, result, service.ProcessRunning(options.SingBoxPath), reload)
+}
+
+func applyNetworkPolicy(ctx context.Context, options Options, modes moduleconfig.Modes, result NetworkEvaluation, running bool, reload func(context.Context, Options) error) (NetworkEvaluation, error) {
+	if !slices.Contains(modes.Available, result.DesiredMode) {
+		return result, &service.Error{Code: "mode.unavailable", Message: "当前网络策略所需模式不在主配置中: " + result.DesiredMode, Data: modes}
+	}
+	if result.DesiredMode == "Direct" {
+		if err := validateDirectRouting(options); err != nil {
+			return result, err
+		}
+	}
+	if running {
+		// API 失败不能触发重载；只有已确认的运行时参数变化才允许重载。
+		runtimeMode, err := service.ReadRuntimeMode(ctx, networkControlOptions(options))
+		if err != nil {
+			return result, err
+		}
+		result.RuntimeMode = runtimeMode
+		config, err := inbound.Load(options.InboundConfig)
+		if err != nil {
+			return result, err
+		}
+		config, err = config.WithDNSBypass(result.DesiredMode == "Direct")
+		if err != nil {
+			return result, err
+		}
+		wanted, err := config.DNSState()
+		if err != nil {
+			return result, err
+		}
+		content, err := os.ReadFile(filepath.Join(options.RuntimeDir, "inbound.json"))
+		if err != nil {
+			return result, err
+		}
+		current, err := inbound.RuntimeDNSState(content)
+		if err != nil {
+			return result, err
+		}
+		if current != wanted {
+			if err := ctx.Err(); err != nil {
+				return result, err
+			}
+			options.networkEvaluation = &result
+			logService(options, "INFO", "network.dns", "started", "DNS 接管参数变化，重新加载 sing-box")
+			// 新事件只能排队，不能取消已经开始的入站重载收尾。
+			applyContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*serviceReadyTimeout+2*serviceStopTimeout+10*time.Second)
+			defer cancel()
+			if err := reload(applyContext, options); err != nil {
+				return result, err
+			}
+			result.Changed = true
+			ctx = applyContext
+		}
+	}
 	return applyNetworkMode(ctx, options, modes, result, running)
+}
+
+func reloadNetworkConfig(ctx context.Context, options Options) error {
+	transaction, err := beginConfigApply(options, options.ModuleConfig)
+	if err != nil {
+		return err
+	}
+	transaction.journal.Mode = options.networkEvaluation.RuntimeMode
+	if err := transaction.setPhase("reload_started"); err != nil {
+		return errors.Join(err, transaction.rollback())
+	}
+	if err := reloadAppliedConfig(ctx, options); err != nil {
+		return rollbackConfigApply(options, transaction, err)
+	}
+	if err := transaction.commit(); err != nil {
+		return rollbackConfigApply(options, transaction, err)
+	}
+	return nil
+}
+
+func validateDirectRouting(options Options) error {
+	content, err := os.ReadFile(paths.SingBoxConfig(options.SingBoxDir))
+	if err != nil {
+		return err
+	}
+	var document struct {
+		Route struct {
+			Rules []map[string]jsontext.Value `json:"rules"`
+		} `json:"route"`
+		Outbounds []struct {
+			Type string `json:"type"`
+			Tag  string `json:"tag"`
+		} `json:"outbounds"`
+	}
+	if err := json.Unmarshal(content, &document); err != nil {
+		return err
+	}
+	if len(document.Route.Rules) > 0 {
+		rule := document.Route.Rules[0]
+		var mode, action, outbound string
+		_ = json.Unmarshal(rule["clash_mode"], &mode)
+		_ = json.Unmarshal(rule["action"], &action)
+		_ = json.Unmarshal(rule["outbound"], &outbound)
+		if len(rule) == 3 && mode == "Direct" && action == "route" {
+			if outbound == "direct" {
+				return nil
+			}
+			for _, entry := range document.Outbounds {
+				if entry.Type == "direct" && entry.Tag == outbound {
+					return nil
+				}
+			}
+		}
+	}
+	return &service.Error{Code: "network.direct_route_required", Message: "直连模式要求 route.rules 首条为 Direct 路由，并指向 direct 类型出站"}
 }
 
 func applyNetworkMode(ctx context.Context, options Options, modes moduleconfig.Modes, result NetworkEvaluation, running bool) (NetworkEvaluation, error) {
@@ -137,8 +296,10 @@ func applyNetworkMode(ctx context.Context, options Options, modes moduleconfig.M
 	if result.Target == "" {
 		return result, nil
 	}
-	if err := writeWiFiState(options.WiFiStateFile, result.Target); err != nil {
-		return result, err
+	if previous != result.Target {
+		if err := writeWiFiState(options.WiFiStateFile, result.Target); err != nil {
+			return result, err
+		}
 	}
 	result.Changed = result.Changed || previous != result.Target
 	result.Reason = "网络策略未变化"
@@ -166,16 +327,6 @@ func networkControlOptions(options Options) service.Options {
 		ServiceSecret:  options.ServiceSecret,
 		RequestTimeout: options.RequestTimeout,
 	}
-}
-
-func containsSSID(list, target string) bool {
-	list = strings.ReplaceAll(list, "，", ",")
-	for value := range strings.SplitSeq(list, ",") {
-		if strings.TrimSpace(value) == target && target != "" {
-			return true
-		}
-	}
-	return false
 }
 
 func readWiFiState(path string) string {

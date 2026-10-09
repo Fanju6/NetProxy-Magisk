@@ -29,6 +29,8 @@ test('默认配置仅保留部署与运行时生成所需的上游差异', () =>
     rule.path = rule.path.replace('./source/rule_set/', './rules/remote/').replace('./source/', './rules/local/')
   }
   expected.route.rules.push({ clash_mode: 'Rule', action: 'route', outbound: expected.route.final })
+  const directIndex = expected.route.rules.findIndex(rule => rule.clash_mode === 'Direct')
+  expected.route.rules.unshift(...expected.route.rules.splice(directIndex, 1))
   assert.deepEqual(config, expected)
 })
 

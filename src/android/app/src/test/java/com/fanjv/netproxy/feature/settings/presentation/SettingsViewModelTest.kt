@@ -22,7 +22,7 @@ class SettingsViewModelTest {
     @get:Rule val folder = TemporaryFolder()
 
     private inner class Network {
-        var module = "AUTO_START=1\nACTIVE_GROUP_ID=default\nWIFI_AUTO_SWITCH=0\n"
+        var module = "AUTO_START=1\nACTIVE_GROUP_ID=default\nWIFI_AUTO_SWITCH=0\nWIFI_SSID_MODE=blacklist\n"
         var revision = 0
         var writes = 0
         var reads = 0
@@ -54,23 +54,41 @@ class SettingsViewModelTest {
         !state.value.requiresReload && !state.value.hasPendingWifi
     }
 
+    @Test fun wifiSelectionDerivesFromSwitchWithoutChangingSavedMode() = runBlocking {
+        for (value in listOf(null, "0", "false", "1", "true")) {
+            val network = Network()
+            network.module = "WIFI_SSID_MODE=whitelist\n" +
+                if (value == null) "" else "WIFI_AUTO_SWITCH=$value\n"
+            val vm = network.viewModel(this)
+            vm.refresh(); vm.loaded()
+            val enabled = value == "1" || value == "true"
+            assertEquals(enabled, vm.state.value.wifi.enabled)
+            assertEquals(if (enabled) "whitelist" else "off", vm.state.value.wifi.selection)
+            assertEquals("whitelist", vm.state.value.wifi.mode)
+            assertFalse(vm.state.value.hasPendingWifi)
+            assertEquals(0, network.writes)
+        }
+    }
+
     @Test fun confirmedWifiEditsMergeOnlyOnLeaveAndNoOpDoesNotWrite() = runBlocking {
         val network = Network()
         val vm = network.viewModel(this)
         vm.refresh(); vm.loaded()
-        vm.setWifiAutoSwitch(true)
+        vm.setWifiSsidMode("blacklist")
         vm.setWifiSsidMode("whitelist")
-        vm.setWifiSsidList("home， second,home")
-        vm.setProxyOnCellular(false)
+        vm.setWifiSsids(listOf("home", "second", "home"))
+        vm.setProxyOnNonWifi(false)
         assertEquals(0, network.writes)
         assertTrue(vm.state.value.hasPendingWifi)
         assertTrue(vm.flushWifi())
         assertEquals(1, network.writes)
         val saved = ShellConfigFile.parse(network.module)
-        assertEquals("home,second", saved["WIFI_SSID_LIST"])
+        assertEquals("[\"home\",\"second\"]", saved["WIFI_SSID_WHITELIST"])
+        assertEquals("1", saved["WIFI_AUTO_SWITCH"])
+        assertEquals("whitelist", saved["WIFI_SSID_MODE"])
         assertEquals("default", saved["ACTIVE_GROUP_ID"])
         assertEquals("1", saved["AUTO_START"])
-        vm.setWifiAutoSwitch(false); vm.setWifiAutoSwitch(true)
+        vm.setWifiSsidMode("off"); vm.setWifiSsidMode("whitelist")
         assertFalse(vm.state.value.hasPendingWifi)
         assertTrue(vm.flushWifi())
         assertEquals(1, network.writes)
@@ -80,34 +98,59 @@ class SettingsViewModelTest {
         val network = Network()
         val vm = network.viewModel(this)
         vm.refresh(); vm.loaded()
-        vm.setWifiSsidList("draft")
-        network.module = "AUTO_START=0\nWIFI_SSID_LIST=remote\n"
+        vm.setWifiSsids(listOf("draft"))
+        network.module = "AUTO_START=0\nWIFI_SSID_BLACKLIST=[\"remote\"]\n"
         network.revision++
         vm.refresh()
         assertEquals(1, network.reads)
         assertFalse(vm.flushWifi())
-        assertEquals("draft", vm.state.value.wifi.ssids)
-        assertEquals("remote", ShellConfigFile.parse(network.module)["WIFI_SSID_LIST"])
+        assertEquals(listOf("draft"), vm.state.value.wifi.ssids)
+        assertEquals("[\"remote\"]", ShellConfigFile.parse(network.module)["WIFI_SSID_BLACKLIST"])
         assertFalse(vm.flushWifi())
         assertEquals(1, network.writes)
         vm.discardWifiAndReload(); vm.loaded()
         assertFalse(vm.state.value.hasPendingWifi)
-        assertEquals("remote", vm.state.value.wifi.ssids)
+        assertEquals(listOf("remote"), vm.state.value.wifi.ssids)
         assertFalse(vm.state.value.autoStartEnabled)
+    }
+
+    @Test fun wifiListsRemainIndependentAndKeepExactNames() = runBlocking {
+        val network = Network()
+        val vm = network.viewModel(this)
+        vm.refresh(); vm.loaded()
+        val blacklist = listOf(" Home,Wi-Fi ", "办公\"网络")
+        val whitelist = listOf("Office", "office")
+        vm.setWifiSsidMode("blacklist"); vm.setWifiSsids(blacklist)
+        vm.setWifiSsidMode("whitelist"); vm.setWifiSsids(whitelist)
+        vm.setWifiSsidMode("off")
+        assertTrue(vm.flushWifi())
+        vm.refresh(); vm.loaded()
+        assertEquals(blacklist, vm.state.value.wifi.blacklist)
+        assertEquals(whitelist, vm.state.value.wifi.whitelist)
+        assertFalse(vm.state.value.wifi.enabled)
+        assertEquals("off", vm.state.value.wifi.selection)
+        assertEquals("whitelist", vm.state.value.wifi.mode)
+        val saved = ShellConfigFile.parse(network.module)
+        assertEquals("0", saved["WIFI_AUTO_SWITCH"])
+        assertEquals("whitelist", saved["WIFI_SSID_MODE"])
+        vm.setWifiSsidMode("blacklist")
+        assertEquals(blacklist, vm.state.value.wifi.ssids)
+        vm.setWifiSsidMode("whitelist")
+        assertEquals(whitelist, vm.state.value.wifi.ssids)
     }
 
     @Test fun queuedSaveOnlyIncludesWifiValuesAtItsTrigger() = runBlocking {
         val network = Network()
         val vm = network.viewModel(this)
         vm.refresh(); vm.loaded()
-        vm.setWifiAutoSwitch(true); vm.requestWifiFlush()
-        vm.setWifiSsidList("later")
+        vm.setWifiSsidMode("blacklist"); vm.requestWifiFlush()
+        vm.setWifiSsids(listOf("later"))
         withTimeout(5_000) { vm.state.first { !it.isSaving } }
-        assertEquals("", ShellConfigFile.parse(network.module)["WIFI_SSID_LIST"])
-        assertEquals("later", vm.state.value.wifi.ssids)
+        assertEquals("[]", ShellConfigFile.parse(network.module)["WIFI_SSID_BLACKLIST"])
+        assertEquals(listOf("later"), vm.state.value.wifi.ssids)
         assertTrue(vm.state.value.hasPendingWifi)
         assertTrue(vm.flushWifi())
-        assertEquals("later", ShellConfigFile.parse(network.module)["WIFI_SSID_LIST"])
+        assertEquals("[\"later\"]", ShellConfigFile.parse(network.module)["WIFI_SSID_BLACKLIST"])
         assertEquals(2, network.writes)
     }
 
@@ -120,18 +163,18 @@ class SettingsViewModelTest {
         network.before = { if (network.writes == 1) {
             entered.complete(Unit); withTimeout(5_000) { release.await() }
         } }
-        vm.setWifiAutoSwitch(true)
+        vm.setWifiSsidMode("blacklist")
         val leaving = launch { vm.flushWifi() }
         withTimeout(5_000) { entered.await() }
         leaving.cancelAndJoin()
-        vm.setWifiSsidList("new")
+        vm.setWifiSsids(listOf("new"))
         vm.requestWifiFlush()
         assertTrue(vm.state.value.isSaving)
         release.complete(Unit)
         assertTrue(vm.flushWifi())
         assertEquals(2, network.writes)
-        assertEquals("new", vm.state.value.wifi.ssids)
-        assertEquals("new", ShellConfigFile.parse(network.module)["WIFI_SSID_LIST"])
+        assertEquals(listOf("new"), vm.state.value.wifi.ssids)
+        assertEquals("[\"new\"]", ShellConfigFile.parse(network.module)["WIFI_SSID_BLACKLIST"])
     }
 
     @Test fun backgroundSaveLeavesNewForegroundEditsUnsubmitted() = runBlocking {
@@ -143,20 +186,20 @@ class SettingsViewModelTest {
         network.before = { if (network.writes == 1) {
             entered.complete(Unit); withTimeout(5_000) { release.await() }
         } }
-        vm.setWifiAutoSwitch(true); vm.requestWifiFlush()
+        vm.setWifiSsidMode("blacklist"); vm.requestWifiFlush()
         withTimeout(5_000) { entered.await() }
-        vm.setWifiSsidList("new")
+        vm.setWifiSsids(listOf("new"))
         release.complete(Unit)
         withTimeout(5_000) { vm.state.first { !it.isSaving } }
         assertEquals(1, network.writes)
         assertTrue(vm.state.value.hasPendingWifi)
-        assertNull(ShellConfigFile.parse(network.module)["WIFI_SSID_LIST"]?.takeIf(String::isNotBlank))
+        assertEquals("[]", ShellConfigFile.parse(network.module)["WIFI_SSID_BLACKLIST"])
         assertTrue(vm.flushWifi())
-        assertEquals("new", ShellConfigFile.parse(network.module)["WIFI_SSID_LIST"])
+        assertEquals("[\"new\"]", ShellConfigFile.parse(network.module)["WIFI_SSID_BLACKLIST"])
     }
 
     @Test fun moduleAndWifiSettingsNeverReadOrMapInboundKeys() = runBlocking {
-        var module = "AUTO_START=1\nWIFI_AUTO_SWITCH=1\nWIFI_SSID_MODE=whitelist\nWIFI_SSID_LIST=\"example\"\nPROXY_ON_CELLULAR=0\n"
+        var module = "AUTO_START=1\nWIFI_AUTO_SWITCH=1\nWIFI_SSID_MODE=whitelist\nWIFI_SSID_WHITELIST=[\"example\"]\nPROXY_ON_NON_WIFI=0\n"
         val calls = mutableListOf<List<String>>()
         val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
             calls += args
@@ -178,13 +221,13 @@ class SettingsViewModelTest {
         assertTrue(vm.state.value.hasLoaded)
         assertTrue(vm.state.value.wifi.enabled)
         assertEquals("whitelist", vm.state.value.wifi.mode)
-        assertEquals("example", vm.state.value.wifi.ssids)
-        assertFalse(vm.state.value.wifi.proxyOnCellular)
-        vm.setWifiSsidList(" example，second , third ")
+        assertEquals(listOf("example"), vm.state.value.wifi.ssids)
+        assertFalse(vm.state.value.wifi.proxyOnNonWifi)
+        vm.setWifiSsids(listOf("example", "second", "third"))
         assertEquals(0, calls.count { it[1] == "apply" })
         assertTrue(vm.flushWifi())
         withTimeout(5_000) { vm.state.first { !it.isSaving } }
-        assertEquals("example,second,third", vm.state.value.wifi.ssids)
+        assertEquals(listOf("example", "second", "third"), vm.state.value.wifi.ssids)
         assertFalse(calls.any { it.contains("ebpf") || it.any { arg -> arg.startsWith("inbound") } })
     }
 
@@ -236,7 +279,7 @@ class SettingsViewModelTest {
                 check(it.await(5, TimeUnit.SECONDS))
             }
             if (fail) throw NetProxyCtlException("config.read_failed", "read failed")
-            val data = JsonObject(mapOf("content" to JsonPrimitive("WIFI_AUTO_SWITCH=1\n"),
+            val data = JsonObject(mapOf("content" to JsonPrimitive("WIFI_AUTO_SWITCH=1\nWIFI_SSID_MODE=blacklist\n"),
                 "revision" to JsonPrimitive("module-read")))
             NetProxyCtlOutput(true, listOf("""{"schema":1,"ok":true,"code":"test","message":"","data":$data}"""), emptyList())
         })

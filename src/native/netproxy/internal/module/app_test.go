@@ -41,7 +41,7 @@ func selectionFixture(t *testing.T) Options {
 	if err := os.MkdirAll(filepath.Dir(options.ModuleConfig), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=default\nSELECTED_NODE_TAG=\nWIFI_SSID_LIST=office\n"), 0o600); err != nil {
+	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=default\nSELECTED_NODE_TAG=\nWIFI_SSID_BLACKLIST=[\"office\"]\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	for _, tag := range []string{"NODE", "节点 / 02"} {
@@ -63,7 +63,7 @@ func TestSelectNodeStoppedKeepsTwoFieldStateAndPublicResult(t *testing.T) {
 			t.Fatal(err)
 		}
 		module, err := moduleconfig.LoadModule(options.ModuleConfig)
-		if err != nil || module.WiFiSSIDList != "office" || result["group_id"] != "default" || result["mode"] != module.Mode() {
+		if err != nil || len(module.WiFiSSIDBlacklist) != 1 || module.WiFiSSIDBlacklist[0] != "office" || result["group_id"] != "default" || result["mode"] != module.Mode() {
 			t.Fatalf("选择结果不一致: %+v %+v %v", result, module, err)
 		}
 		if target != "auto" && (module.SelectedNodeTag != "节点 / 02" || result["selected"] != "本地配置/节点 / 02") {
@@ -180,7 +180,7 @@ func TestCatalogSyncKeepsChoiceSavedWhileWaitingForConfigLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	module, err := moduleconfig.LoadModule(options.ModuleConfig)
-	if err != nil || module.SelectedNodeTag != "NODE" || module.WiFiSSIDList != "office" {
+	if err != nil || module.SelectedNodeTag != "NODE" || len(module.WiFiSSIDBlacklist) != 1 || module.WiFiSSIDBlacklist[0] != "office" {
 		t.Fatalf("覆盖了并发保存的选择或网络设置: %+v %v", module, err)
 	}
 }
@@ -263,7 +263,7 @@ func TestWorkerCancellationAfterCommitNormalizesSelection(t *testing.T) {
 		t.Fatalf("提交后取消未完成本地状态整理: %+v %v", result, err)
 	}
 	module, err := moduleconfig.LoadModule(options.ModuleConfig)
-	if err != nil || module.ActiveGroupID != groupID || module.SelectedNodeTag != "" || module.WiFiSSIDList != "office" {
+	if err != nil || module.ActiveGroupID != groupID || module.SelectedNodeTag != "" || len(module.WiFiSSIDBlacklist) != 1 || module.WiFiSSIDBlacklist[0] != "office" {
 		t.Fatalf("提交后取消保留了失效选择或覆盖网络设置: %+v %v", module, err)
 	}
 	metadata, err := catalog.PrivateMetadata(t.Context(), options.CatalogRoot, groupID)

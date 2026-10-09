@@ -3,6 +3,8 @@ module github.com/Fanju6/NetProxy-Magisk/src/native/netproxy
 go 1.27.0
 
 require (
+	github.com/mdlayher/genetlink v1.4.0
+	github.com/mdlayher/wifi v0.9.0
 	github.com/sagernet/netlink v0.0.0-20260814022025-64455d367bbf
 	github.com/sagernet/sing v0.9.7-0.20260929150544-6f21f2425a95
 	github.com/sagernet/sing-box v1.15.0-alpha.10-reF1nd

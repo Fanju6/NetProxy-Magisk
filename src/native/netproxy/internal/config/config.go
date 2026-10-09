@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"os"
@@ -9,6 +10,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/processlock"
 )
@@ -16,11 +19,12 @@ import (
 // ModuleConfig 描述 module.conf 中由运行时使用的全部设置。
 type ModuleConfig struct {
 	Selection
-	AutoStart       bool   `json:"auto_start"`
-	WiFiAutoSwitch  bool   `json:"wifi_auto_switch"`
-	WiFiSSIDMode    string `json:"wifi_ssid_mode"`
-	WiFiSSIDList    string `json:"wifi_ssid_list"`
-	ProxyOnCellular bool   `json:"proxy_on_cellular"`
+	AutoStart         bool     `json:"auto_start"`
+	WiFiAutoSwitch    bool     `json:"wifi_auto_switch"`
+	WiFiSSIDMode      string   `json:"wifi_ssid_mode"`
+	WiFiSSIDBlacklist []string `json:"wifi_ssid_blacklist"`
+	WiFiSSIDWhitelist []string `json:"wifi_ssid_whitelist"`
+	ProxyOnNonWiFi    bool     `json:"proxy_on_non_wifi"`
 }
 
 type Selection struct {
@@ -59,9 +63,9 @@ func (selection Selection) Updates() map[string]string {
 // DefaultModule 返回全新配置使用的唯一默认值集合。
 func DefaultModule() ModuleConfig {
 	return ModuleConfig{
-		Selection:       Selection{ActiveGroupID: "default"},
-		WiFiSSIDMode:    "blacklist",
-		ProxyOnCellular: true,
+		Selection:      Selection{ActiveGroupID: "default"},
+		WiFiSSIDMode:   "blacklist",
+		ProxyOnNonWiFi: true,
 	}
 }
 
@@ -107,8 +111,8 @@ func LoadModule(path string) (ModuleConfig, error) {
 	allowed := map[string]bool{
 		"AUTO_START":      true,
 		"ACTIVE_GROUP_ID": true, "SELECTED_NODE_TAG": true,
-		"WIFI_AUTO_SWITCH": true, "WIFI_SSID_MODE": true,
-		"WIFI_SSID_LIST": true, "PROXY_ON_CELLULAR": true,
+		"WIFI_AUTO_SWITCH": true, "WIFI_SSID_MODE": true, "WIFI_SSID_BLACKLIST": true,
+		"WIFI_SSID_WHITELIST": true, "PROXY_ON_NON_WIFI": true,
 	}
 	for key := range values {
 		if !allowed[key] {
@@ -124,7 +128,6 @@ func LoadModule(path string) (ModuleConfig, error) {
 	if config.SelectedNodeTag != "" && (config.ActiveGroupID == "" || strings.TrimSpace(config.SelectedNodeTag) == "") {
 		return ModuleConfig{}, errors.New("手动选择必须指定活动分组和有效节点 tag")
 	}
-	// 没有任何 Catalog 分组时允许为空；下一次导入非空分组时由应用服务重新设置。
 	if config.WiFiAutoSwitch, err = boolValue(values, "WIFI_AUTO_SWITCH", config.WiFiAutoSwitch); err != nil {
 		return ModuleConfig{}, err
 	}
@@ -132,14 +135,35 @@ func LoadModule(path string) (ModuleConfig, error) {
 	if config.WiFiSSIDMode != "blacklist" && config.WiFiSSIDMode != "whitelist" {
 		return ModuleConfig{}, fmt.Errorf("WIFI_SSID_MODE 无效: %s", config.WiFiSSIDMode)
 	}
-	config.WiFiSSIDList = valueOr(values, "WIFI_SSID_LIST", "")
-	if strings.ContainsAny(config.WiFiSSIDList, "\r\n\t") {
-		return ModuleConfig{}, errors.New("WIFI_SSID_LIST 不能包含换行或制表符")
+	for key, destination := range map[string]*[]string{
+		"WIFI_SSID_BLACKLIST": &config.WiFiSSIDBlacklist,
+		"WIFI_SSID_WHITELIST": &config.WiFiSSIDWhitelist,
+	} {
+		if err := json.Unmarshal([]byte(valueOr(values, key, "[]")), destination); err != nil || *destination == nil {
+			return ModuleConfig{}, fmt.Errorf("%s 必须是 JSON 字符串数组", key)
+		}
+		seen := make(map[string]bool)
+		for _, ssid := range *destination {
+			if err := ValidateSSID(ssid); err != nil {
+				return ModuleConfig{}, fmt.Errorf("%s: %w", key, err)
+			}
+			if seen[ssid] {
+				return ModuleConfig{}, fmt.Errorf("%s 包含重复的 Wi-Fi 名称", key)
+			}
+			seen[ssid] = true
+		}
 	}
-	if config.ProxyOnCellular, err = boolValue(values, "PROXY_ON_CELLULAR", config.ProxyOnCellular); err != nil {
+	if config.ProxyOnNonWiFi, err = boolValue(values, "PROXY_ON_NON_WIFI", config.ProxyOnNonWiFi); err != nil {
 		return ModuleConfig{}, err
 	}
 	return config, nil
+}
+
+func ValidateSSID(ssid string) error {
+	if len(ssid) == 0 || len(ssid) > 32 || !utf8.ValidString(ssid) || strings.ContainsFunc(ssid, unicode.IsControl) {
+		return errors.New("Wi-Fi 名称必须为 1 至 32 字节的 UTF-8 文本，不能包含控制字符")
+	}
+	return nil
 }
 
 // UpdateModule 更新并校验 module.conf，校验失败时不会替换原文件。

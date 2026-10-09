@@ -589,11 +589,12 @@ func TestAutoStartSaveDoesNotReloadRunningService(t *testing.T) {
 	}
 	reloads := 0
 	configReload = func(context.Context, Options) error { reloads++; return nil }
-	if _, err := ApplyConfig(t.Context(), options, "module", writeSectionSource(t, "WIFI_AUTO_SWITCH=1\n"), false, ""); err != nil {
+	configProcessRunning = func(string) bool { return false }
+	if _, err := ApplyConfig(t.Context(), options, "module", writeSectionSource(t, "WIFI_AUTO_SWITCH=1\nWIFI_SSID_MODE=blacklist\n"), false, ""); err != nil {
 		t.Fatal(err)
 	}
-	if reloads != 1 {
-		t.Fatal("网络策略修改未应用到运行实例")
+	if reloads != 0 {
+		t.Fatal("仅启用策略、没有 DNS 参数变化时不应重载")
 	}
 }
 
@@ -609,7 +610,7 @@ func TestConfigApplyHoldsWriterLockAndReloadBorrowsIt(t *testing.T) {
 			}
 			return fmt.Errorf("reload 期间其他写入未被阻止: %v", err)
 		}
-		return locked.updateModule(context.Background(), map[string]string{"PROXY_ON_CELLULAR": "0"})
+		return locked.updateModule(context.Background(), map[string]string{"PROXY_ON_NON_WIFI": "0"})
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -622,7 +623,7 @@ func TestConfigApplyHoldsWriterLockAndReloadBorrowsIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	config, err := moduleconfig.LoadModule(options.ModuleConfig)
-	if err != nil || config.ProxyOnCellular || config.AutoStart {
+	if err != nil || config.ProxyOnNonWiFi || config.AutoStart {
 		t.Fatalf("配置变更丢失: %+v %v", config, err)
 	}
 }
@@ -667,14 +668,14 @@ func TestConfigApplyRejectsRevisionAfterInternalWrite(t *testing.T) {
 	if err := os.WriteFile(source, []byte("AUTO_START=0\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := moduleconfig.UpdateModule(context.Background(), options.ModuleConfig, map[string]string{"PROXY_ON_CELLULAR": "0"}); err != nil {
+	if err := moduleconfig.UpdateModule(context.Background(), options.ModuleConfig, map[string]string{"PROXY_ON_NON_WIFI": "0"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ApplyConfig(context.Background(), options, "module", source, false, configRevision(original)); err == nil {
 		t.Fatal("过期配置覆盖成功")
 	}
 	config, err := moduleconfig.LoadModule(options.ModuleConfig)
-	if err != nil || config.ProxyOnCellular {
+	if err != nil || config.ProxyOnNonWiFi {
 		t.Fatalf("内部写入丢失: %+v %v", config, err)
 	}
 }

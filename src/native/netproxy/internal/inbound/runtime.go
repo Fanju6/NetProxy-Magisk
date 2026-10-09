@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	json "encoding/json/v2"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -19,6 +20,76 @@ type BuildResult struct {
 	Runtime         Runtime
 	MissingPackages []PackageRef
 	Backend         string
+}
+
+// WithDNSBypass 只覆盖运行时副本，不修改用户保存的入站偏好。
+func (c Config) WithDNSBypass(bypass bool) (Config, error) {
+	if !bypass {
+		return c, nil
+	}
+	var err error
+	if c.Backend == "ebpf" {
+		native, nativeErr := c.EBPFOptions()
+		if nativeErr != nil {
+			return c, nativeErr
+		}
+		local, shared := native.EffectiveEnablement()
+		if local {
+			native.Local.DNSMode = "off"
+		}
+		if shared {
+			native.Shared.DNSMode = "off"
+		}
+		c.EBPF, err = marshalNative(ebpfInbound{Type: "ebpf", Tag: Tag, EBPFInboundOptions: native})
+	} else {
+		native, nativeErr := c.TUNOptions()
+		if nativeErr != nil {
+			return c, nativeErr
+		}
+		native.DNSMode = "disabled"
+		c.TUN, err = marshalNative(tunInbound{Type: "tun", Tag: Tag, TunInboundOptions: native})
+	}
+	return c, err
+}
+
+func (c Config) DNSState() (string, error) {
+	if c.Backend == "ebpf" {
+		native, err := c.EBPFOptions()
+		if err != nil {
+			return "", err
+		}
+		local, shared := native.EffectiveEnablement()
+		if !local {
+			native.Local.DNSMode = ""
+		}
+		if !shared {
+			native.Shared.DNSMode = ""
+		}
+		return fmt.Sprintf("ebpf:%t:%s:%t:%s", local, native.Local.DNSMode, shared, native.Shared.DNSMode), nil
+	}
+	native, err := c.TUNOptions()
+	if err != nil {
+		return "", err
+	}
+	return "tun:" + native.DNSMode, nil
+}
+
+func RuntimeDNSState(content []byte) (string, error) {
+	var runtime Runtime
+	if err := json.Unmarshal(content, &runtime); err != nil {
+		return "", err
+	}
+	if len(runtime.Inbounds) != 1 {
+		return "", fmt.Errorf("受管运行时必须只有一个入站")
+	}
+	var identity struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(runtime.Inbounds[0], &identity); err != nil {
+		return "", err
+	}
+	c := Config{Backend: identity.Type, EBPF: runtime.Inbounds[0], TUN: runtime.Inbounds[0]}
+	return c.DNSState()
 }
 
 func (c Config) Build(ctx context.Context) (BuildResult, error) {

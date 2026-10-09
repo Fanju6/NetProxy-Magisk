@@ -29,9 +29,7 @@ func Start(ctx context.Context, options Options, executable string) (Status, err
 		return Status{}, err
 	}
 	if pid := readPID(options.PIDFile); pid > 0 && isWorkerProcessPID(pid) {
-		if options.Telemetry != nil {
-			_ = wakeProcess(pid)
-		}
+		_ = wakeProcess(pid)
 		return Status{State: "running", PID: pid}, nil
 	}
 	nearest, err := NextUpdate(ctx, options.Root, options.Now())
@@ -71,6 +69,14 @@ func Start(ctx context.Context, options Options, executable string) (Status, err
 	}
 	_ = command.Process.Release()
 	return Status{State: "running", PID: pid, Nearest: nearest}, nil
+}
+
+// Wake 仅通知已存在的 Worker，不因保存停止状态的配置而启动后台进程。
+func Wake(options Options) error {
+	if pid := readPID(options.PIDFile); pid > 0 && isWorkerProcessPID(pid) {
+		return wakeProcess(pid)
+	}
+	return nil
 }
 
 func waitForWorkerPID(ctx context.Context, path string, pid int, timeout time.Duration) error {

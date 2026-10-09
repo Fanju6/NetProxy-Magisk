@@ -2,18 +2,267 @@ package module
 
 import (
 	"context"
+	"encoding/binary"
+	json "encoding/json/v2"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+
+	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/inbound"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/worker"
+	"google.golang.org/protobuf/encoding/protowire"
 )
 
-func TestContainsSSID(t *testing.T) {
-	if !containsSSID("办公 WiFi，家庭 WiFi", "家庭 WiFi") {
-		t.Fatal("全角逗号分隔的 SSID 应该可以命中")
+func TestNetworkPolicyIndependentLists(t *testing.T) {
+	module := moduleconfig.DefaultModule()
+	module.WiFiSSIDBlacklist = []string{"Home, Wi-Fi"}
+	module.WiFiSSIDWhitelist = []string{"Office"}
+	for _, test := range []struct {
+		mode, network, ssid, base, want string
+		enabled, nonWiFi                bool
+	}{
+		{"blacklist", "wifi", "Home, Wi-Fi", "Rule", "Rule", false, false},
+		{"whitelist", "wifi", "Home, Wi-Fi", "Rule", "Rule", false, false},
+		{"whitelist", "not_wifi", "", "Rule", "Rule", false, false},
+		{"blacklist", "wifi", "Home, Wi-Fi", "Rule", "Direct", true, true},
+		{"blacklist", "wifi", "home, Wi-Fi", "Rule", "Rule", true, true},
+		{"blacklist", "wifi", " Home, Wi-Fi", "Rule", "Rule", true, true},
+		{"whitelist", "wifi", "Office", "Rule", "Rule", true, true},
+		{"whitelist", "wifi", "Home, Wi-Fi", "Rule", "Direct", true, true},
+		{"whitelist", "not_wifi", "", "Rule", "Direct", true, false},
+		{"blacklist", "not_wifi", "", "Rule", "Rule", true, true},
+		{"whitelist", "wifi", "Office", "Direct", "Direct", false, true},
+	} {
+		module.WiFiAutoSwitch = test.enabled
+		module.WiFiSSIDMode = test.mode
+		module.ProxyOnNonWiFi = test.nonWiFi
+		got := networkPolicy(module, test.base, test.network, test.ssid)
+		if got.DesiredMode != test.want || got.Enabled != test.enabled {
+			t.Fatalf("%+v -> %+v", test, got)
+		}
 	}
-	if containsSSID("办公 WiFi,家庭 WiFi", "访客 WiFi") {
-		t.Fatal("不存在的 SSID 不应该命中")
+	module.WiFiSSIDBlacklist = nil
+	module.WiFiSSIDWhitelist = nil
+	module.WiFiAutoSwitch = true
+	module.WiFiSSIDMode = "blacklist"
+	if networkPolicy(module, "Rule", "wifi", "Home").DesiredMode != "Rule" {
+		t.Fatal("空黑名单绕过了所有网络")
+	}
+	module.WiFiSSIDMode = "whitelist"
+	if networkPolicy(module, "Rule", "wifi", "Home").DesiredMode != "Direct" {
+		t.Fatal("空白名单未绕过")
+	}
+	if got := networkPolicy(module, "Rule", "wifi", ""); got.Target != "" {
+		t.Fatalf("未知 SSID 参与了匹配: %+v", got)
+	}
+}
+
+func TestConfiguredNetworkUnknownAndFrozenRecovery(t *testing.T) {
+	options := newTestOptions(t.TempDir())
+	writeModeConfig(t, options, "Rule")
+	targetCoreWrite(t, options.ModuleConfig, []byte("WIFI_AUTO_SWITCH=1\nWIFI_SSID_MODE=blacklist\n"))
+	reads := 0
+	options.NetworkStateReader = func(context.Context) (worker.NetworkState, error) {
+		reads++
+		return worker.NetworkState{NetworkType: "unknown"}, nil
+	}
+	if _, err := configuredNetwork(t.Context(), options); err == nil {
+		t.Fatal("未知类型被当作非 Wi-Fi")
+	}
+	options.networkEvaluation = prepareFromConfigJournal(options, configApplyJournal{Mode: "Direct"}).Network
+	result, err := configuredNetwork(t.Context(), options)
+	if err != nil || result.DesiredMode != "Direct" || result.Target != "bypassed" || reads != 1 {
+		t.Fatalf("恢复未复用快照模式: %+v %d %v", result, reads, err)
+	}
+}
+
+func TestConfiguredNetworkDisabledSkipsReader(t *testing.T) {
+	options := newTestOptions(t.TempDir())
+	writeModeConfig(t, options, "Rule")
+	targetCoreWrite(t, options.ModuleConfig, []byte("WIFI_AUTO_SWITCH=0\nWIFI_SSID_MODE=whitelist\nPROXY_ON_NON_WIFI=0\n"))
+	options.NetworkStateReader = func(context.Context) (worker.NetworkState, error) {
+		t.Fatal("关闭策略时仍读取网络")
+		return worker.NetworkState{}, nil
+	}
+	got, err := configuredNetwork(t.Context(), options)
+	if err != nil || got.Enabled || got.DesiredMode != "Rule" {
+		t.Fatalf("关闭后未使用默认模式: %+v %v", got, err)
+	}
+}
+
+func TestNetworkTargetCoreDNSCheck(t *testing.T) {
+	core := targetCoreBinary(t)
+	for _, backend := range []string{"ebpf", "tun"} {
+		for _, mode := range []string{"Rule", "Direct"} {
+			t.Run(backend+"/"+mode, func(t *testing.T) {
+				config, err := inbound.Parse([]byte(testInboundConfig))
+				if err != nil {
+					t.Fatal(err)
+				}
+				config.Backend = backend
+				content, err := json.Marshal(config, json.Deterministic(true))
+				if err != nil {
+					t.Fatal(err)
+				}
+				options, _ := targetCoreFixture(t, core, content)
+				var document map[string]any
+				if err := json.Unmarshal([]byte(targetCoreStaticConfig), &document); err != nil {
+					t.Fatal(err)
+				}
+				document["experimental"].(map[string]any)["clash_api"].(map[string]any)["default_mode"] = mode
+				route := document["route"].(map[string]any)
+				route["rules"] = append([]any{map[string]any{"clash_mode": "Direct", "action": "route", "outbound": "direct"}}, route["rules"].([]any)...)
+				content, err = json.Marshal(document, json.Deterministic(true))
+				if err != nil {
+					t.Fatal(err)
+				}
+				targetCoreWrite(t, paths.SingBoxConfig(options.SingBoxDir), content)
+				prepared, err := Check(t.Context(), options, false)
+				if err != nil {
+					t.Fatal(err)
+				}
+				effective, err := config.WithDNSBypass(mode == "Direct")
+				if err != nil {
+					t.Fatal(err)
+				}
+				wanted, err := effective.DNSState()
+				if err != nil {
+					t.Fatal(err)
+				}
+				got, err := inbound.RuntimeDNSState(targetCoreRead(t, prepared.Inbound))
+				if err != nil || got != wanted {
+					t.Fatalf("运行时 DNS 不符: %+v %+v %v", got, wanted, err)
+				}
+				if prepared.Network == nil || prepared.Network.DesiredMode != mode {
+					t.Fatalf("未冻结启动模式: %+v", prepared)
+				}
+			})
+		}
+	}
+}
+
+func TestNetworkDNSReloadOnlyForParameterChanges(t *testing.T) {
+	for _, backend := range []string{"ebpf", "tun"} {
+		t.Run(backend, func(t *testing.T) {
+			options := newTestOptions(t.TempDir())
+			writeModeConfig(t, options, "Rule")
+			original, err := inbound.Parse([]byte(testInboundConfig))
+			if err != nil {
+				t.Fatal(err)
+			}
+			original.Backend = backend
+			if err := os.MkdirAll(filepath.Dir(options.InboundConfig), 0700); err != nil {
+				t.Fatal(err)
+			}
+			saved, _ := json.Marshal(original, json.Deterministic(true))
+			targetCoreWrite(t, options.InboundConfig, saved)
+			writeRuntime := func(c inbound.Config) {
+				t.Helper()
+				if _, err := inbound.WriteAtomic(t.Context(), filepath.Join(options.RuntimeDir, "inbound.json"), c); err != nil {
+					t.Fatal(err)
+				}
+			}
+			writeRuntime(original)
+			var actual atomic.Value
+			actual.Store("Rule")
+			var failAPI atomic.Bool
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if failAPI.Load() {
+					http.Error(w, "unavailable", 503)
+					return
+				}
+				var payload []byte
+				switch r.URL.Path {
+				case "/daemon.StartedService/GetClashModeStatus":
+					payload = protowire.AppendTag(payload, 2, protowire.BytesType)
+					payload = protowire.AppendString(payload, actual.Load().(string))
+				case "/daemon.StartedService/SetClashMode":
+					body, _ := io.ReadAll(r.Body)
+					if len(body) < 6 {
+						t.Error("无效模式请求")
+						return
+					}
+					_, _, n := protowire.ConsumeTag(body[5:])
+					mode, _ := protowire.ConsumeString(body[5+n:])
+					actual.Store(mode)
+				}
+				header := make([]byte, 5)
+				binary.BigEndian.PutUint32(header[1:], uint32(len(payload)))
+				w.Write(append(header, payload...))
+			}))
+			defer server.Close()
+			options.ServiceAddress = server.URL
+			modes, _ := moduleconfig.LoadModes(filepath.Join(options.SingBoxDir, "config.json"))
+			reloads := 0
+			failReload := false
+			var cancelDuringReload context.CancelFunc
+			reload := func(ctx context.Context, frozen Options) error {
+				reloads++
+				if frozen.networkEvaluation == nil {
+					t.Fatal("重载没有冻结策略")
+				}
+				if failReload {
+					return errors.New("reload failed")
+				}
+				if cancelDuringReload != nil {
+					cancelDuringReload()
+				}
+				effective, err := original.WithDNSBypass(frozen.networkEvaluation.DesiredMode == "Direct")
+				if err != nil {
+					return err
+				}
+				writeRuntime(effective)
+				actual.Store(frozen.networkEvaluation.DesiredMode)
+				return ctx.Err()
+			}
+			plan := NetworkEvaluation{Enabled: true, DesiredMode: "Direct", Target: "bypassed"}
+			if _, err := applyNetworkPolicy(t.Context(), options, modes, plan, true, reload); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := applyNetworkPolicy(t.Context(), options, modes, plan, true, reload); err != nil || reloads != 1 {
+				t.Fatalf("相同 DNS 重复重载: %d %v", reloads, err)
+			}
+			plan.DesiredMode = "Rule"
+			plan.Target = "proxying"
+			if _, err := applyNetworkPolicy(t.Context(), options, modes, plan, true, reload); err != nil || reloads != 2 {
+				t.Fatalf("DNS 未恢复: %d %v", reloads, err)
+			}
+			actual.Store("Direct")
+			if _, err := applyNetworkPolicy(t.Context(), options, modes, plan, true, reload); err != nil || actual.Load() != "Rule" || reloads != 2 {
+				t.Fatalf("API 模式校准触发了重载: %d %s %v", reloads, actual.Load(), err)
+			}
+			failAPI.Store(true)
+			plan.DesiredMode = "Direct"
+			if _, err := applyNetworkPolicy(t.Context(), options, modes, plan, true, reload); err == nil || reloads != 2 {
+				t.Fatalf("API 失败重载兜底: %d %v", reloads, err)
+			}
+			failAPI.Store(false)
+			failReload = true
+			result, err := applyNetworkPolicy(t.Context(), options, modes, plan, true, reload)
+			if err == nil || result.Changed || readWiFiState(options.WiFiStateFile) == "bypassed" {
+				t.Fatalf("失败被标记为已绕过: %+v %v", result, err)
+			}
+			failReload = false
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			cancelDuringReload = cancel
+			result, err = applyNetworkPolicy(ctx, options, modes, plan, true, reload)
+			if err != nil || !result.Changed || ctx.Err() == nil || actual.Load() != "Direct" {
+				t.Fatalf("开始后的取消中断了重载收尾: %+v %v", result, err)
+			}
+			persisted, _ := os.ReadFile(options.InboundConfig)
+			if string(persisted) != string(saved) {
+				t.Fatal("改写了保存偏好")
+			}
+		})
 	}
 }
 
@@ -26,8 +275,8 @@ ACTIVE_GROUP_ID=default
 SELECTED_NODE_TAG=""
 WIFI_AUTO_SWITCH=1
 WIFI_SSID_MODE=blacklist
-WIFI_SSID_LIST="办公 WiFi，家庭 WiFi"
-PROXY_ON_CELLULAR=1
+WIFI_SSID_BLACKLIST=["办公 WiFi","家庭 WiFi"]
+PROXY_ON_NON_WIFI=1
 `
 	if err := os.WriteFile(modulePath, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
@@ -81,9 +330,8 @@ func TestEvaluateNetworkClearsDisabledOverride(t *testing.T) {
 ACTIVE_GROUP_ID=default
 SELECTED_NODE_TAG=""
 WIFI_AUTO_SWITCH=0
-WIFI_SSID_MODE=blacklist
-WIFI_SSID_LIST=""
-PROXY_ON_CELLULAR=1
+WIFI_SSID_MODE=whitelist
+PROXY_ON_NON_WIFI=1
 `
 	if err := os.WriteFile(modulePath, []byte(content), 0o600); err != nil {
 		t.Fatal(err)

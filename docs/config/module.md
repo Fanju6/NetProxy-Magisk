@@ -33,17 +33,17 @@ SELECTED_NODE_TAG=""
 ```ini
 WIFI_AUTO_SWITCH=0
 WIFI_SSID_MODE="blacklist"
-WIFI_SSID_LIST=""
-PROXY_ON_CELLULAR=1
+WIFI_SSID_BLACKLIST=[]
+WIFI_SSID_WHITELIST=[]
+PROXY_ON_NON_WIFI=1
 ```
 
-- `WIFI_AUTO_SWITCH=1` 启用后台 Worker 的 SSID 策略评估。
-- `WIFI_SSID_MODE=blacklist` 时名单内 Wi-Fi 使用 Direct。
-- `WIFI_SSID_MODE=whitelist` 时只有名单内 Wi-Fi 使用基础模式。
-- `WIFI_SSID_LIST` 使用英文逗号分隔。
-- `PROXY_ON_CELLULAR=1` 表示非 Wi-Fi 网络使用基础模式；`0` 表示使用 Direct。
+- `WIFI_AUTO_SWITCH=0` 关闭策略，`1` 启用；关闭不清空名单或改变名单模式。
+- `WIFI_SSID_MODE=blacklist` 绕过黑名单 Wi-Fi，`whitelist` 仅对白名单 Wi-Fi 使用基础模式。
+- 黑白名单独立保存为 JSON 字符串数组，如 `["家庭 Wi-Fi", "Office"]`，名称精确匹配。
+- `PROXY_ON_NON_WIFI=1` 表示非 Wi-Fi 网络使用基础模式；`0` 表示使用 Direct，策略关闭时忽略此项。
 
-Wi-Fi 自动策略只改变运行时实际模式，不覆盖主配置的 `experimental.clash_api.default_mode`。Worker 会检查实际默认路由，避免 Wi-Fi 仍显示 connected 但流量已经走移动数据时误判。绕过网络需要主配置包含 `Direct` 模式及其直连规则。
+Wi-Fi 自动策略只改变运行时实际模式和 DNS 接管参数，不覆盖主配置的 `experimental.clash_api.default_mode` 或保存的入站偏好。Worker 按实际出口读取 SSID；绕过网络需要主配置首条为 `Direct` 直连规则。DNS 参数变化时会原位重载，其他情况只按需切换模式。
 
 完整触发规则与排查方法见 [Wi-Fi 自动策略](/guide/wifi-policy)。
 

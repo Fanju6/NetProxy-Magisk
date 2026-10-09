@@ -352,13 +352,21 @@
     <string name="json_discard_changes">放弃更改</string>
 
     <!-- Settings: WiFi automatic switching -->
-    <string name="wifi_auto_switch_title">WiFi 自动切换</string>
-    <string name="wifi_auto_switch">按 WiFi 自动切换</string>
-    <string name="wifi_ssid_mode">名单模式</string>
+    <string name="wifi_auto_switch">Wi-Fi 自动切换</string>
+    <string name="wifi_policy_title">匹配策略</string>
+    <string name="wifi_mode_off">关闭</string>
+    <string name="wifi_blacklist_title">Wi-Fi 黑名单</string>
+    <string name="wifi_whitelist_title">Wi-Fi 白名单</string>
+    <string name="proxy_on_non_wifi">非 Wi-Fi 网络走代理</string>
+    <string name="wifi_add">添加 Wi-Fi</string>
+    <string name="wifi_edit">编辑 Wi-Fi</string>
+    <string name="wifi_name">Wi-Fi 名称</string>
+    <string name="wifi_empty">暂无 Wi-Fi 名称，点击右上角添加</string>
+    <string name="wifi_saved_failed">无法读取已保存 Wi-Fi，请手动输入</string>
+    <string name="wifi_saved_empty">没有可添加的已保存 Wi-Fi</string>
+    <string name="wifi_invalid_name">名称须为 1 至 32 个 UTF-8 字节，且不含控制字符</string>
     <string name="wifi_ssid_mode_blacklist">黑名单</string>
     <string name="wifi_ssid_mode_whitelist">白名单</string>
-    <string name="wifi_ssid_list">SSID 名单</string>
-    <string name="proxy_on_cellular">非 WiFi 网络走代理</string>
 
     <!-- eBPF 透明代理 -->
     <string name="ebpf_core_settings">eBPF 入站</string>
@@ -398,7 +406,6 @@
     <string name="settings_hint_interfaces">每行一个接口名称，例如 wlan2 或 wlan0</string>
     <string name="settings_hint_cidrs">每行一个 CIDR，例如 192.168.0.0/16 或 10.0.0.0/8</string>
     <string name="settings_hint_macs">每行一个 MAC 地址</string>
-    <string name="settings_hint_ssids">多个 SSID 请用英文逗号分隔</string>
     <!-- Apps: user scope labels -->
     <string name="app_users_label">用户 %1$s</string>
     <string name="percentage_value">%1$d%%</string>

@@ -253,3 +253,41 @@ func TestEBPFDiagnosticJSONContract(t *testing.T) {
 		})
 	}
 }
+
+func TestSavedWiFiCommandContract(t *testing.T) {
+	root := t.TempDir()
+	binary := filepath.Join(root, "cmd")
+	if runtime.GOOS == "windows" {
+		binary += ".exe"
+	}
+	build := exec.Command("go", "build", "-o", binary, "../../internal/inbound/testdata/fake-package")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("构建 Wi-Fi fixture 失败: %v\n%s", err, output)
+	}
+	t.Setenv("PATH", root+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("NETPROXY_TEST_COMMAND_MODE", "wifi-list")
+	capture, err := os.CreateTemp(root, "stdout-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer capture.Close()
+	previous := os.Stdout
+	os.Stdout = capture
+	defer func() { os.Stdout = previous }()
+	status := (&cli{}).run(t.Context(), []string{"--json", "network", "wifi-list"})
+	content, err := os.ReadFile(capture.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		Schema int    `json:"schema"`
+		OK     bool   `json:"ok"`
+		Code   string `json:"code"`
+		Data   struct {
+			SSIDs []string `json:"ssids"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(content, &response); err != nil || status != 0 || response.Schema != 1 || !response.OK || response.Code != "network.wifi_list" || len(response.Data.SSIDs) != 1 || response.Data.SSIDs[0] != "Home, Wi-Fi" {
+		t.Fatalf("已保存 Wi-Fi 契约错误: %s %v", content, err)
+	}
+}

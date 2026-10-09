@@ -82,11 +82,12 @@ configured_backend 是保存的入站；active_backend 仅在 ready 且 PID/API 
   },
   network: {
     overview: 'network <命令>  网络策略评估',
-    actions: ['evaluate'],
+    actions: ['evaluate', 'wifi-list'],
     help: `network - 网络策略
 
   network evaluate --type <类型> [--ssid <名称>]
                          评估当前网络并应用 Wi-Fi 策略
+  network wifi-list       查看已保存的 Wi-Fi 名称
   类型: wifi / not_wifi
 `,
   },

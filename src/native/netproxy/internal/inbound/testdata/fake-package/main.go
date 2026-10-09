@@ -10,6 +10,13 @@ import (
 
 func main() {
 	switch os.Getenv("NETPROXY_TEST_COMMAND_MODE") {
+	case "wifi-list":
+		if len(os.Args) != 3 || strings.Join(os.Args[1:], " ") != "wifi list-networks" {
+			panic("invalid Wi-Fi arguments")
+		}
+		fmt.Println("Network Id SSID                             Security type")
+		fmt.Printf("%-12d %-32s %-4s\n", 1, "Home, Wi-Fi", "wpa2-psk")
+		return
 	case "packages":
 		if len(os.Args) != 7 || strings.Join(os.Args[1:5], " ") != "package list packages --user" || os.Args[6] != "-U" {
 			panic("invalid package arguments")

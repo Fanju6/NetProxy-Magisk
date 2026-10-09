@@ -41,7 +41,8 @@
 - 服务状态只允许 `stopped/preparing/starting/ready/stopping/failed`。`ready_at` 只能在 sing-box API 与所选入站均就绪后写入。
 - `service status` 的 `configured_backend` 是入站持久选择字符串；`active_backend` 仅在 ready、实际 PID 与启动记录匹配、API 毫秒级启动身份一致时非空，否则必须为 null。不从当前模板猜测旧核心后端，也不增加后端 PID/锁/状态文件。
 - 出站模式的唯一持久事实源是主配置 `experimental.clash_api.default_mode`；可选列表复用内核 `clashmode.CalculateModeList` 并包含默认模式，使用原生名称，不保留模块字段或固定四模式映射。`service status.outbound_mode` 表示实际模式，`configured_outbound_mode` 表示默认模式，`available_outbound_modes` 表示配置中的模式列表。停止时显示默认模式；运行中 API 不可用时显示 `unknown`。Wi-Fi 策略只修改运行时，不覆盖默认模式。
-- 模式保存与网络策略应用按生命周期锁、配置文件锁顺序串行执行；运行中仅使用 API 并回读确认，失败保留已保存默认模式并返回 `mode.runtime_sync_failed`，不得重载兜底。内核会恢复缓存模式，启动和重载必须在写入 ready 前校准当前网络所需模式；不能删除缓存或禁用其他缓存功能来规避模式恢复。
+- 模式保存与网络策略应用按生命周期锁、配置文件锁顺序串行执行；仅有效入站 DNS 参数变化才原位重载，参数不变时通过 API 切换并回读确认。API 失败不得重载兜底，已保存默认模式保留并返回 `mode.runtime_sync_failed`。Direct 必须先于 DNS 劫持路由；运行时将启用的 eBPF 路径 DNS 设为 off、TUN 设为 disabled，不改保存的偏好。启动/重载冻结同一策略生成入站并校准缓存模式，避免启动后再次重载；已开始的重载有界收尾，不被新网络事件取消。
+- Wi-Fi 策略分别保存 `WIFI_AUTO_SWITCH` 开关与 `WIFI_SSID_MODE=blacklist/whitelist` 模式，独立 JSON 数组 `WIFI_SSID_BLACKLIST/WIFI_SSID_WHITELIST` 与 `PROXY_ON_NON_WIFI`；界面三态由开关与模式派生，关闭不得清空名单或改写模式。SSID 精确保留空格、大小写和逗号，不读取旧名单字段或将 mode=off 转换为开关。只在策略开启时监听 route/link/address 和 nl80211 事件，按实际出口 station 读取 SSID，不回退到 cmd/dumpsys 文本猜测或定时轮询。未知网络不能当作非 Wi-Fi；开机未知时校准默认模式。只读 `network wifi-list` 经 Go 有界查询已保存名称，不返回密码，不进入遥测，名单落日志与诊断前必须脱敏。
 
 ## 命令入口与脚本布局
 

@@ -106,6 +106,9 @@ su -c '/data/adb/modules/netproxy/netproxyctl network evaluate --type wifi --ssi
 su -c '/data/adb/modules/netproxy/netproxyctl ebpf status configured'
 su -c '/data/adb/modules/netproxy/netproxyctl ebpf status all --raw'
 
+su -c '/data/adb/modules/netproxy/netproxyctl network wifi-list'
+su -c '/data/adb/modules/netproxy/netproxyctl network evaluate --type wifi --ssid "Home Wi-Fi"'
+
 su -c '/data/adb/modules/netproxy/netproxyctl config list'
 su -c '/data/adb/modules/netproxy/netproxyctl config read inbound'
 su -c '/data/adb/modules/netproxy/netproxyctl config read inbound/backend'
@@ -122,6 +125,8 @@ su -c '/data/adb/modules/netproxy/netproxyctl logs export /sdcard/Download/netpr
 ```
 
 `ebpf status` 默认返回整理后的 eBPF 能力诊断，`--raw` 返回 sing-box 原始输出；不代表实际 backend，没有 `tun status` 命令。诊断包不会导出 Catalog 节点内容。
+
+`network wifi-list` 仅查询已保存的 Wi-Fi 名称，不扫描附近网络；JSON 的 `data.ssids` 为字符串数组。`network evaluate` 按提供的真实网络状态应用策略，类型为 `wifi` 或 `not_wifi`。
 
 `config list` 同时列出主配置、分区、本地规则和只读运行时。`singbox/dns` 的候选内容必须使用 `{"dns": {...}}`，`{}` 表示删除该字段；不能包含其他分区。完整替换使用 `singbox/config.json`。
 

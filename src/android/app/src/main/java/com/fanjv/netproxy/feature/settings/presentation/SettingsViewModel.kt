@@ -18,6 +18,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
 
 internal class SettingsViewModel(
     private val repository: ConfigRepository,
@@ -53,11 +56,12 @@ internal class SettingsViewModel(
         }
     }
 
-    fun setWifiAutoSwitch(value: Boolean) = edit { it.copy(enabled = value) }
-    fun setWifiSsidMode(value: String) = edit { it.copy(mode = value) }
-    fun setWifiSsidList(value: String) = edit { it.copy(ssids = value.replace('，', ',').split(',')
-        .map(String::trim).filter(String::isNotEmpty).distinct().joinToString(",")) }
-    fun setProxyOnCellular(value: Boolean) = edit { it.copy(proxyOnCellular = value) }
+    fun setWifiSsidMode(value: String) = edit {
+        if (value == "off") it.copy(enabled = false) else it.copy(enabled = true, mode = value)
+    }
+    fun setWifiSsids(values: List<String>) = edit { it.withSsids(values.distinct()) }
+    fun setProxyOnNonWifi(value: Boolean) = edit { it.copy(proxyOnNonWifi = value) }
+    suspend fun savedWifiNetworks(): List<String> = repository.savedWifiNetworks()
 
     private fun edit(transform: (WifiPolicySettings) -> WifiPolicySettings) {
         if (!state.value.hasLoaded || state.value.requiresReload) return
@@ -83,8 +87,9 @@ internal class SettingsViewModel(
                     val values = listOf(
                         Triple("WIFI_AUTO_SWITCH", if (saved.enabled) "1" else "0", false),
                         Triple("WIFI_SSID_MODE", saved.mode, true),
-                        Triple("WIFI_SSID_LIST", saved.ssids, true),
-                        Triple("PROXY_ON_CELLULAR", if (saved.proxyOnCellular) "1" else "0", false),
+                        Triple("WIFI_SSID_BLACKLIST", Json.encodeToString(saved.blacklist), false),
+                        Triple("WIFI_SSID_WHITELIST", Json.encodeToString(saved.whitelist), false),
+                        Triple("PROXY_ON_NON_WIFI", if (saved.proxyOnNonWifi) "1" else "0", false),
                     )
                     val content = values.fold(previous.content) { content, (key, value, quoted) ->
                         ShellConfigFile.updateValue(content, key, value, quoted)
@@ -130,9 +135,10 @@ internal class SettingsViewModel(
             autoStartEnabled = ShellConfigFile.boolean(module["AUTO_START"]),
             wifi = WifiPolicySettings(
                 enabled = ShellConfigFile.boolean(module["WIFI_AUTO_SWITCH"]),
-                mode = module["WIFI_SSID_MODE"] ?: "blacklist",
-                ssids = module["WIFI_SSID_LIST"].orEmpty(),
-                proxyOnCellular = ShellConfigFile.boolean(module["PROXY_ON_CELLULAR"], true)
+                mode = (module["WIFI_SSID_MODE"] ?: "blacklist").also { check(it in listOf("blacklist", "whitelist")) },
+                blacklist = Json.decodeFromString<List<String>>(module["WIFI_SSID_BLACKLIST"] ?: "[]"),
+                whitelist = Json.decodeFromString<List<String>>(module["WIFI_SSID_WHITELIST"] ?: "[]"),
+                proxyOnNonWifi = ShellConfigFile.boolean(module["PROXY_ON_NON_WIFI"], true)
             )
         )
         snapshot = read

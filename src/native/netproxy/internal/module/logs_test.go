@@ -135,7 +135,7 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 			}
 		}
 	}
-	if err := os.WriteFile(moduleConfig, []byte("SUB_URL=https://example.test/sub?token=secret-token\nWIFI_SSID_LIST=\"secret-office,secret-home\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConfig, []byte("SUB_URL=https://example.test/sub?token=secret-token\nWIFI_SSID_BLACKLIST=[\"secret-office\",\"secret-home\"]\nWIFI_SSID_WHITELIST=[\"secret-trusted\"]\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(inboundConfig, []byte(`{"app":{"proxy_apps":["0:secret.app.one","10:secret.app.two"],"bypass_apps":["0:secret.app.three"]}}`), 0o600); err != nil {
@@ -248,7 +248,7 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 		for _, secret := range []string{
 			"secret-bearer", "secret-token", "secret-hwid", "secret-config",
 			"secret-log-uuid", "secret-log-auth", "secret-hysteria-auth", "secret-private-key",
-			"secret-wireguard-psk", "secret-office", "secret-home", "secret.app.one",
+			"secret-wireguard-psk", "secret-office", "secret-home", "secret-trusted", "secret.app.one",
 			"secret.app.two", "secret.app.three", "private-telemetry-event",
 		} {
 			if strings.Contains(string(content), secret) {

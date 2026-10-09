@@ -25,12 +25,21 @@ import java.io.File
 class ConfigRepositoryTest {
     @get:Rule val temporaryFolder = TemporaryFolder()
 
+    @Test fun savedWifiNamesUseReadonlyNetworkContract() = runBlocking {
+        val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
+            assertEquals(listOf("network", "wifi-list"), args)
+            NetProxyCtlOutput(true, listOf("""{"schema":1,"ok":true,"code":"network.wifi_list","message":"","data":{"ssids":["Home, Wi-Fi","Office"]}}"""), emptyList())
+        })
+        assertEquals(listOf("Home, Wi-Fi", "Office"), ConfigRepository(client, CommandFileStore(temporaryFolder.root)).savedWifiNetworks())
+        assertTrue(temporaryFolder.root.listFiles()!!.isEmpty())
+    }
+
     @Test fun reopeningWaitsForDetachedCommitAndReadsItsNewRevision() = runBlocking {
         val pageScope = CoroutineScope(coroutineContext + Job())
         val saveScope = CoroutineScope(coroutineContext + Job())
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
-        var content = "WIFI_AUTO_SWITCH=0\n"
+        var content = "WIFI_AUTO_SWITCH=0\nWIFI_SSID_MODE=blacklist\n"
         var revision = 0
         var reads = 0
         val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
@@ -56,7 +65,7 @@ class ConfigRepositoryTest {
         try {
             old.refresh()
             withTimeout(5_000) { old.state.first { it.hasLoaded } }
-            old.setWifiAutoSwitch(true); old.requestWifiFlush()
+            old.setWifiSsidMode("blacklist"); old.requestWifiFlush()
             pageScope.cancel()
             withTimeout(5_000) { entered.await() }
             val reopened = SettingsViewModel(repository, this, writes)

@@ -39,6 +39,7 @@ type configApplyJournal struct {
 	Backend    string               `json:"backend"`
 	Action     string               `json:"action"`
 	BootID     string               `json:"boot_id"`
+	Mode       string               `json:"mode,omitempty"`
 }
 
 type configApplyTransaction struct {
@@ -315,6 +316,12 @@ func restoreConfigApply(ctx context.Context, options Options, transaction *confi
 			return fmt.Errorf("旧 runtime 恢复失败: %w", err)
 		}
 	}
+	if journal.Action == "mode" && journal.Phase == "mode_started" && journal.WasRunning {
+		options.networkEvaluation = prepareFromConfigJournal(options, journal).Network
+		if _, err := syncConfiguredMode(ctx, options); err != nil {
+			return fmt.Errorf("旧模式恢复失败: %w", err)
+		}
+	}
 	if err := transaction.cleanup(); err != nil {
 		return fmt.Errorf("事务清理失败: %w", err)
 	}
@@ -399,6 +406,14 @@ func restoreConfigSnapshot(snapshot configFileSnapshot) error {
 
 func prepareFromConfigJournal(options Options, journal configApplyJournal) PrepareResult {
 	prepared := PrepareResult{Backend: journal.Backend}
+	if journal.Mode != "" {
+		module, _ := moduleconfig.LoadModule(options.ModuleConfig)
+		target := "proxying"
+		if journal.Mode == "Direct" {
+			target = "bypassed"
+		}
+		prepared.Network = &NetworkEvaluation{Enabled: module.WiFiAutoSwitch, DesiredMode: journal.Mode, Target: target}
+	}
 	for _, snapshot := range journal.Runtime {
 		switch filepath.Base(snapshot.Path) {
 		case "providers.json":

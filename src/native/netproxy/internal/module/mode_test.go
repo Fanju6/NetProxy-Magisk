@@ -34,7 +34,7 @@ func writeModeConfig(t *testing.T, options Options, mode string) {
 		t.Fatal(err)
 	}
 	name, _ := json.Marshal(mode)
-	content := `{"experimental":{"clash_api":{"default_mode":` + string(name) + `,"secret":"fixture"},"cache_file":{"enabled":true}},"route":{"rules":[{"clash_mode":["Direct","Office"]},{"domain":"example.test","outbound":"Proxy"}]},"custom":{"keep":true}}`
+	content := `{"experimental":{"clash_api":{"default_mode":` + string(name) + `,"secret":"fixture"},"cache_file":{"enabled":true}},"route":{"rules":[{"clash_mode":"Direct","action":"route","outbound":"direct"},{"clash_mode":"Office"},{"domain":"example.test","outbound":"Proxy"}]},"custom":{"keep":true}}`
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestRuntimeModeReconciliation(t *testing.T) {
 			writeModeConfig(t, options, test.config)
 			module := "WIFI_AUTO_SWITCH=0\n"
 			if test.wifi {
-				module = "WIFI_AUTO_SWITCH=1\nWIFI_SSID_MODE=blacklist\nWIFI_SSID_LIST=Home\n"
+				module = "WIFI_AUTO_SWITCH=1\nWIFI_SSID_MODE=blacklist\nWIFI_SSID_BLACKLIST=[\"Home\"]\n"
 			}
 			if err := os.WriteFile(options.ModuleConfig, []byte(module), 0o600); err != nil {
 				t.Fatal(err)
@@ -205,7 +205,7 @@ func TestNetworkPolicyRejectsMissingDirectMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	targetCoreWrite(t, paths.SingBoxConfig(options.SingBoxDir), []byte(`{}`))
-	targetCoreWrite(t, options.ModuleConfig, []byte("WIFI_AUTO_SWITCH=1\nPROXY_ON_CELLULAR=0\n"))
+	targetCoreWrite(t, options.ModuleConfig, []byte("WIFI_AUTO_SWITCH=1\nWIFI_SSID_MODE=blacklist\nPROXY_ON_NON_WIFI=0\n"))
 	_, err := EvaluateNetwork(t.Context(), options, "not_wifi", "")
 	structured, ok := errors.AsType[*service.Error](err)
 	if !ok || structured.Code != "mode.unavailable" {

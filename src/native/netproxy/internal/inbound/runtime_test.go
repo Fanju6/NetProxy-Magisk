@@ -37,6 +37,45 @@ func builtFilters(t *testing.T, built BuildResult) (include []uint32, includeRan
 	return native.IncludeUID, native.IncludeUIDRange, native.ExcludeUID, native.ExcludeUIDRange
 }
 
+func TestDNSBypassDoesNotChangeSavedPreferences(t *testing.T) {
+	for _, backend := range []string{"ebpf", "tun"} {
+		original := fixture(t, backend, `{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true,"dns_mode":"respect_policy"},"shared":{"enabled":false,"dns_mode":"hijack"}}`, strings.TrimSuffix(testTUN, "}")+`,"dns_mode":"native"}`)
+		saved := encodeConfig(t, original)
+		effective, err := original.WithDNSBypass(true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		built, err := effective.Build(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		content, _ := json.Marshal(built.Runtime)
+		state, err := RuntimeDNSState(content)
+		wanted, _ := effective.DNSState()
+		if err != nil || state != wanted {
+			t.Fatalf("%s: %s %s %v", backend, state, wanted, err)
+		}
+		if backend == "ebpf" && (strings.Contains(string(content), `"dns_mode":"respect_policy"`) || strings.Contains(string(content), `"dns_mode":"hijack"`) || !strings.Contains(string(content), `"shared":{"enabled":false}`)) {
+			t.Fatal(string(content))
+		}
+		if backend == "tun" && !strings.Contains(string(content), `"dns_mode":"disabled"`) {
+			t.Fatal(string(content))
+		}
+		if !bytes.Equal(saved, encodeConfig(t, original)) {
+			t.Fatal("改变了保存偏好")
+		}
+		restored, _ := original.WithDNSBypass(false)
+		if !bytes.Equal(saved, encodeConfig(t, restored)) {
+			t.Fatal("未恢复原 DNS 配置")
+		}
+	}
+	for _, bad := range []string{`{}`, `{"inbounds":[]}`, `{"inbounds":[{},{}]}`, `{"inbounds":[{"type":"other"}]}`} {
+		if _, err := RuntimeDNSState([]byte(bad)); err == nil {
+			t.Fatalf("接受了无效运行时: %s", bad)
+		}
+	}
+}
+
 func addFilters(t *testing.T, config *Config, filters string) {
 	t.Helper()
 	if config.Backend == "ebpf" {

@@ -2,13 +2,56 @@ package config
 
 import (
 	"context"
+	json "encoding/json/v2"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/processlock"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
+
+func TestWiFiListsStrictAndLossless(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "module.conf")
+	names := []string{" Home ", "home", "办公,Wi-Fi", "Quote\"Wifi"}
+	encoded, _ := json.Marshal(names)
+	os.WriteFile(path, []byte("WIFI_SSID_BLACKLIST="+string(encoded)+"\nWIFI_SSID_WHITELIST=[\"independent\"]\n"), 0600)
+	got, err := LoadModule(path)
+	if err != nil || got.WiFiAutoSwitch || got.WiFiSSIDMode != "blacklist" || !reflect.DeepEqual(got.WiFiSSIDBlacklist, names) || !reflect.DeepEqual(got.WiFiSSIDWhitelist, []string{"independent"}) {
+		t.Fatalf("%+v %v", got, err)
+	}
+	for _, line := range []string{
+		"WIFI_AUTO_SWITCH=invalid", "WIFI_SSID_LIST=Home", "PROXY_ON_CELLULAR=1",
+		"WIFI_SSID_MODE=off", "WIFI_SSID_MODE=invalid", "WIFI_SSID_BLACKLIST=null", "WIFI_SSID_WHITELIST=[1]",
+		"WIFI_SSID_BLACKLIST=[\"\"]", "WIFI_SSID_BLACKLIST=[\"same\",\"same\"]",
+		"WIFI_SSID_BLACKLIST=[\"abcdefghijklmnopqrstuvwxyz0123456\"]",
+		"WIFI_SSID_BLACKLIST=[\"escaped\\nname\"]", "WIFI_SSID_BLACKLIST=[\"escaped\\u007fname\"]",
+	} {
+		os.WriteFile(path, []byte(line+"\n"), 0600)
+		if _, err := LoadModule(path); err == nil {
+			t.Fatalf("无效配置被接受: %s", line)
+		}
+	}
+}
+
+func TestWiFiSwitchKeepsModeAndLists(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "module.conf")
+	original := "WIFI_SSID_MODE=whitelist\nWIFI_SSID_BLACKLIST=[\"Home\"]\nWIFI_SSID_WHITELIST=[\"Office\"]\n"
+	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"1", "false", "true", "0"} {
+		if err := UpdateModule(t.Context(), path, map[string]string{"WIFI_AUTO_SWITCH": value}); err != nil {
+			t.Fatal(err)
+		}
+		got, err := LoadModule(path)
+		if err != nil || got.WiFiAutoSwitch != (value == "1" || value == "true") || got.WiFiSSIDMode != "whitelist" ||
+			!reflect.DeepEqual(got.WiFiSSIDBlacklist, []string{"Home"}) || !reflect.DeepEqual(got.WiFiSSIDWhitelist, []string{"Office"}) {
+			t.Fatalf("开关改写了模式或名单: %+v %v", got, err)
+		}
+	}
+}
 
 func TestConfigLockHelper(t *testing.T) {
 	if os.Getenv("NETPROXY_CONFIG_LOCK_HELPER") != "1" {
@@ -50,7 +93,7 @@ func TestReadStrictRejectsShellLikeInputAndDuplicateKeys(t *testing.T) {
 
 func TestLoadModuleDefaultsAndValidation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "module.conf")
-	content := "AUTO_START=0\nACTIVE_GROUP_ID=default\nSELECTED_NODE_TAG=\nWIFI_AUTO_SWITCH=1\nWIFI_SSID_MODE=whitelist\nWIFI_SSID_LIST=TestWiFi\nPROXY_ON_CELLULAR=0\n"
+	content := "AUTO_START=0\nACTIVE_GROUP_ID=default\nSELECTED_NODE_TAG=\nWIFI_AUTO_SWITCH=1\nWIFI_SSID_MODE=whitelist\nWIFI_SSID_WHITELIST=[\"TestWiFi\"]\nPROXY_ON_NON_WIFI=0\n"
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +101,7 @@ func TestLoadModuleDefaultsAndValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !config.WiFiAutoSwitch || config.WiFiSSIDMode != "whitelist" || config.ProxyOnCellular {
+	if !config.WiFiAutoSwitch || config.WiFiSSIDMode != "whitelist" || config.ProxyOnNonWiFi || len(config.WiFiSSIDWhitelist) != 1 {
 		t.Fatalf("unexpected module config: %#v", config)
 	}
 

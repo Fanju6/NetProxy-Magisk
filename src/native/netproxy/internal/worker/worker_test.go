@@ -980,6 +980,86 @@ func (task *testTelemetryTask) Run(ctx context.Context, _ func() bool, _ func())
 
 func (task *testTelemetryTask) Notify() { task.notified <- struct{}{} }
 
+func TestNetworkWatchFollowsPolicyWithoutStoppingOtherTasks(t *testing.T) {
+	options := newTestOptions(t.TempDir())
+	options.ModuleConf = filepath.Join(t.TempDir(), "module.conf")
+	writePolicy := func(enabled, mode string) {
+		t.Helper()
+		if err := os.WriteFile(options.ModuleConf, []byte("WIFI_AUTO_SWITCH="+enabled+"\nWIFI_SSID_MODE="+mode+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writePolicy("0", "whitelist")
+	task := &testTelemetryTask{make(chan struct{}), make(chan struct{}, 4), make(chan struct{})}
+	options.Telemetry = task
+	options.NetworkWatchEnabled = true
+	roundReady := make(chan struct{}, 4)
+	options.NewTimer = func(delay time.Duration) Timer {
+		timer := systemTimer{time.NewTimer(delay)}
+		roundReady <- struct{}{}
+		return timer
+	}
+	options.NetworkStateReader = func(context.Context) (NetworkState, error) {
+		return NetworkState{NetworkType: "not_wifi"}, nil
+	}
+	options.NetworkEvaluate = func(context.Context, string, string) error { return nil }
+	started, stopped := make(chan struct{}, 2), make(chan struct{}, 2)
+	options.NetworkEventSource = func(ctx context.Context, _ func()) error {
+		started <- struct{}{}
+		<-ctx.Done()
+		stopped <- struct{}{}
+		return nil
+	}
+	wake := make(chan struct{}, 1)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- Run(ctx, options, wake, log.New(io.Discard, "", 0)) }()
+	await := func(channel <-chan struct{}) {
+		t.Helper()
+		select {
+		case <-channel:
+		case <-time.After(3 * time.Second):
+			t.Fatal("Worker 任务切换超时")
+		}
+	}
+	await(task.started)
+	await(roundReady)
+	select {
+	case <-started:
+		t.Fatal("关闭策略时仍启动监听")
+	default:
+	}
+	writePolicy("1", "blacklist")
+	wake <- struct{}{}
+	await(started)
+	await(roundReady)
+	writePolicy("0", "blacklist")
+	wake <- struct{}{}
+	await(stopped)
+	await(roundReady)
+	select {
+	case <-task.stopped:
+		t.Fatal("关闭网络监听同时停止了统计任务")
+	default:
+	}
+	writePolicy("1", "whitelist")
+	wake <- struct{}{}
+	await(started)
+	await(roundReady)
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Worker 未释放后台任务")
+	}
+	await(stopped)
+	await(task.stopped)
+}
+
 func TestTelemetrySharesWorkerLifecycleWithoutSubscriptions(t *testing.T) {
 	options := newTestOptions(t.TempDir())
 	options.ModuleConf = filepath.Join(t.TempDir(), "module.conf")

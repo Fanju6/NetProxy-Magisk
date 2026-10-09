@@ -46,136 +46,51 @@ func TestNetworkUnavailableIsReportedAsWaiting(t *testing.T) {
 	}
 }
 
-func TestParseWiFiSnapshot(t *testing.T) {
-	tests := []struct {
-		name    string
-		input   string
-		network string
-		ssid    string
-	}{
-		{
-			name:    "cmd wifi status",
-			input:   `Wifi is connected to "Home WiFi", BSSID: 00:11:22:33:44:55`,
-			network: "wifi",
-			ssid:    "Home WiFi",
-		},
-		{
-			name:    "dumpsys wifi",
-			input:   "mWifiInfo SSID: Office, BSSID: 00:11:22:33:44:55\ndetailed state: CONNECTED",
-			network: "wifi",
-			ssid:    "Office",
-		},
-		{
-			name:    "disabled",
-			input:   "Wifi is disabled",
-			network: "not_wifi",
-		},
-		{
-			name:    "not connected",
-			input:   "Wifi is enabled\nstate: DISCONNECTED",
-			network: "not_wifi",
-		},
-		{
-			name:    "unknown ssid",
-			input:   `Wifi is connected to "<unknown ssid>", BSSID: 00:11:22:33:44:55`,
-			network: "wifi",
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			network, ssid := parseWiFiSnapshot(test.input)
-			if network != test.network || ssid != test.ssid {
-				t.Fatalf("parseWiFiSnapshot() = (%q, %q), want (%q, %q)", network, ssid, test.network, test.ssid)
+func TestNetworkSnapshotUsesOnlyActualInterface(t *testing.T) {
+	for _, iface := range []string{"wlan1", "rmnet_data0", "eth0", "ap0"} {
+		state, err := getNetworkStateWith(t.Context(), func(ctx context.Context, active string) (NetworkState, error) {
+			if active != iface {
+				t.Fatalf("Wi-Fi 查询接口=%s，实际出口=%s", active, iface)
 			}
-		})
-	}
-}
-
-func TestWiFiSnapshotUsesActiveInterface(t *testing.T) {
-	tests := []struct {
-		name            string
-		activeInterface string
-		wantNetwork     string
-		wantSSID        string
-	}{
-		{
-			name:            "wifi carries the default route",
-			activeInterface: "wlan0",
-			wantNetwork:     "wifi",
-			wantSSID:        "Home WiFi",
-		},
-		{
-			name:            "mobile data carries the default route",
-			activeInterface: "rmnet0",
-			wantNetwork:     "not_wifi",
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			state, err := getNetworkStateWith(
-				context.Background(),
-				func(_ context.Context, name string, args ...string) (string, error) {
-					switch name {
-					case "cmd":
-						return `Wifi is connected to "Home WiFi", BSSID: 00:11:22:33:44:55`, nil
-					case "dumpsys":
-						return "", nil
-					default:
-						return "", errors.New("unexpected command")
-					}
-				},
-				func(context.Context) (string, error) { return test.activeInterface, nil },
-			)
-			if err != nil {
-				t.Fatal(err)
+			if active == "wlan1" {
+				return NetworkState{NetworkType: "wifi", SSID: " Home,Wi-Fi "}, nil
 			}
-			gotNetwork, gotSSID := state.NetworkType, state.SSID
-			if gotNetwork != test.wantNetwork || gotSSID != test.wantSSID {
-				t.Fatalf("snapshot = (%q, %q), want (%q, %q)", gotNetwork, gotSSID, test.wantNetwork, test.wantSSID)
-			}
-		})
-	}
-}
-
-func TestIsWiFiInterface(t *testing.T) {
-	for _, test := range []struct {
-		iface string
-		want  bool
-	}{
-		{iface: "wlan0", want: true},
-		{iface: "AP0", want: true},
-		{iface: "wifi0", want: true},
-		{iface: "rmnet_data0", want: false},
-		{iface: "eth0", want: false},
-	} {
-		if got := isWiFiInterface(test.iface); got != test.want {
-			t.Errorf("isWiFiInterface(%q) = %v, want %v", test.iface, got, test.want)
+			return NetworkState{NetworkType: "not_wifi"}, nil
+		}, func(context.Context) (string, error) { return iface, nil })
+		if err != nil || state.ActiveInterface != iface {
+			t.Fatalf("%+v %v", state, err)
+		}
+		if iface == "wlan1" && state.SSID != " Home,Wi-Fi " {
+			t.Fatal("SSID 被修改")
+		}
+		if iface != "wlan1" && (state.NetworkType != "not_wifi" || state.SSID != "") {
+			t.Fatalf("非 station 被识别成 Wi-Fi: %+v", state)
 		}
 	}
 }
-
-func TestNetworkSnapshotCommandBudget(t *testing.T) {
-	for _, test := range []struct {
-		iface, status string
-		calls         int
-	}{
-		{"rmnet_data0", "", 0}, {"eth0", "", 0},
-		{"wlan0", `Wifi is connected to "Home", BSSID: 00:11:22:33:44:55`, 1},
-		{"wlan0", "Wifi is enabled", 2},
-	} {
-		calls := 0
-		_, err := getNetworkStateWith(t.Context(), func(_ context.Context, name string, _ ...string) (string, error) {
-			calls++
-			if name == "cmd" {
-				return test.status, nil
-			}
-			return `WifiInfo: SSID: "Home", BSSID: 00:11:22:33:44:55`, nil
-		}, func(context.Context) (string, error) { return test.iface, nil })
-		if err != nil || calls != test.calls {
-			t.Fatalf("%s: 命令数=%d, 期望=%d, err=%v", test.iface, calls, test.calls, err)
+func TestNetworkReadFailureAndCancellation(t *testing.T) {
+	for _, failure := range []error{ErrNetworkUnavailable, context.Canceled} {
+		called := false
+		_, err := getNetworkStateWith(t.Context(), func(context.Context, string) (NetworkState, error) { called = true; return NetworkState{}, nil },
+			func(context.Context) (string, error) { return "", failure })
+		if !errors.Is(err, failure) || called {
+			t.Fatalf("查询出口失败后仍读取 Wi-Fi: %v", err)
 		}
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err := getNetworkStateWith(ctx, func(context.Context, string) (NetworkState, error) {
+		t.Fatal("取消后仍读取 Wi-Fi")
+		return NetworkState{}, nil
+	},
+		func(context.Context) (string, error) { return "wlan0", nil })
+	if !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	_, err = getNetworkStateWith(t.Context(), func(context.Context, string) (NetworkState, error) { return NetworkState{NetworkType: "wifi"}, nil },
+		func(context.Context) (string, error) { return "wlan0", nil })
+	if !errors.Is(err, ErrNetworkUnavailable) {
+		t.Fatal("未知 SSID 被当作有效网络")
 	}
 }
 
@@ -192,50 +107,6 @@ func TestNetworkStateFingerprintIncludesPolicyInputs(t *testing.T) {
 		if base.Fingerprint() == changed.Fingerprint() {
 			t.Fatalf("%s did not change the network fingerprint", name)
 		}
-	}
-}
-
-func TestNetworkStateUsesActiveRouteForDualConnections(t *testing.T) {
-	state, err := getNetworkStateWith(
-		context.Background(),
-		func(_ context.Context, name string, args ...string) (string, error) {
-			switch name {
-			case "cmd":
-				return `Wifi is connected to "Home WiFi", BSSID: 00:11:22:33:44:55`, nil
-			case "dumpsys":
-				return "", nil
-			}
-			return "", errors.New("unexpected command")
-		},
-		func(context.Context) (string, error) { return "rmnet_data0", nil },
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if state.NetworkType != "not_wifi" || state.SSID != "" {
-		t.Fatalf("双连接时不应按 Wi-Fi 评估: %+v", state)
-	}
-	if state.ActiveInterface != "rmnet_data0" {
-		t.Fatalf("活动网络接口不正确: %+v", state)
-	}
-}
-
-func TestNetworkStateReadFailureReturnsError(t *testing.T) {
-	_, err := getNetworkStateWith(
-		context.Background(),
-		func(_ context.Context, name string, args ...string) (string, error) {
-			if name == "cmd" {
-				return `Wifi is connected to "Home WiFi"`, nil
-			}
-			if name == "dumpsys" {
-				return "mSoftApState=11", nil
-			}
-			return "", errors.New("network read failed")
-		},
-		func(context.Context) (string, error) { return "", networkUnavailable("没有默认路由") },
-	)
-	if err == nil {
-		t.Fatal("网络状态读取失败时不应生成快照")
 	}
 }
 
@@ -342,7 +213,7 @@ func TestNetworkWatcherDoesNotReadStateWithoutEvents(t *testing.T) {
 	}
 }
 
-func TestNetworkWatcherCancelsStaleEvaluation(t *testing.T) {
+func TestNetworkWatcherQueuesLatestWithoutCancellingApply(t *testing.T) {
 	states := []NetworkState{
 		{NetworkType: "wifi", SSID: "A"},
 		{NetworkType: "wifi", SSID: "B"},
@@ -350,6 +221,7 @@ func TestNetworkWatcherCancelsStaleEvaluation(t *testing.T) {
 	var mu sync.Mutex
 	reads := 0
 	firstStarted := make(chan struct{})
+	finishFirst := make(chan struct{})
 	latestEvaluated := make(chan string, 1)
 	events := make(chan struct{}, 1)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -367,8 +239,13 @@ func TestNetworkWatcherCancelsStaleEvaluation(t *testing.T) {
 			NetworkEvaluate: func(ctx context.Context, _, ssid string) error {
 				if ssid == "A" {
 					close(firstStarted)
-					<-ctx.Done()
-					return ctx.Err()
+					select {
+					case <-ctx.Done():
+						t.Error("新事件取消了已开始的应用")
+						return ctx.Err()
+					case <-finishFirst:
+						return nil
+					}
 				}
 				latestEvaluated <- ssid
 				return nil
@@ -384,6 +261,13 @@ func TestNetworkWatcherCancelsStaleEvaluation(t *testing.T) {
 		t.Fatal("首个网络策略评估未启动")
 	}
 	events <- struct{}{}
+	time.Sleep(20 * time.Millisecond)
+	select {
+	case got := <-latestEvaluated:
+		t.Fatalf("并行应用了 %s", got)
+	default:
+	}
+	close(finishFirst)
 	select {
 	case got := <-latestEvaluated:
 		if got != "B" {

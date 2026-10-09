@@ -6,9 +6,14 @@ import androidx.compose.runtime.Immutable
 data class WifiPolicySettings(
     val enabled: Boolean = false,
     val mode: String = "blacklist",
-    val ssids: String = "",
-    val proxyOnCellular: Boolean = true
-)
+    val blacklist: List<String> = emptyList(),
+    val whitelist: List<String> = emptyList(),
+    val proxyOnNonWifi: Boolean = true
+) {
+    val selection get() = if (enabled) mode else "off"
+    val ssids get() = if (mode == "whitelist") whitelist else blacklist
+    fun withSsids(values: List<String>) = if (mode == "whitelist") copy(whitelist = values) else copy(blacklist = values)
+}
 
 @Immutable
 data class SettingsUiState(

@@ -82,4 +82,7 @@ internal class ConfigRepository(
         client.execute("ebpf", "status", mode).data.jsonObject["content"]
             ?.jsonPrimitive?.content
             ?: error("模块没有返回 eBPF 诊断结果")
+
+    suspend fun savedWifiNetworks(): List<String> =
+        client.json.decodeFromJsonElement(client.execute("network", "wifi-list").data.jsonObject.getValue("ssids"))
 }

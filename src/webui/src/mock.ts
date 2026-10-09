@@ -194,6 +194,10 @@ function execute(args: string[]): CtlResult<unknown> {
     })
   }
 
+  if (command === 'network' && action === 'wifi-list') {
+    return response('network.wifi_list', '已读取保存的 Wi-Fi 名称', { ssids: ['Home Wi-Fi', 'Office'] })
+  }
+
   if (command === 'network' && action === 'evaluate') {
     return response('network.evaluated', 'Wi-Fi 自动切换未启用', {
       enabled: false,

@@ -19,6 +19,7 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/inbound"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/worker"
 	"github.com/sagernet/sing-box/option"
 )
 
@@ -313,13 +314,14 @@ func applyConfigLocked(ctx context.Context, options Options, target, destination
 		return revision, nil
 	}
 	applyRuntime := true
+	selectionChanged := false
 	switchBackend := false
 	if target == "module" {
 		previous, previousErr := moduleconfig.LoadModule(destination)
 		next, nextErr := moduleconfig.LoadModule(candidatePath)
 		if previousErr == nil && nextErr == nil {
-			previous.AutoStart = next.AutoStart
-			applyRuntime = previous != next
+			selectionChanged = previous.Selection != next.Selection
+			applyRuntime = previous.Selection != next.Selection || previous.WiFiAutoSwitch != next.WiFiAutoSwitch || previous.WiFiSSIDMode != next.WiFiSSIDMode || previous.ProxyOnNonWiFi != next.ProxyOnNonWiFi || !slices.Equal(previous.WiFiSSIDBlacklist, next.WiFiSSIDBlacklist) || !slices.Equal(previous.WiFiSSIDWhitelist, next.WiFiSSIDWhitelist)
 		}
 	}
 	if inboundTarget {
@@ -383,17 +385,47 @@ func applyConfigLocked(ctx context.Context, options Options, target, destination
 		if err := transaction.commit(); err != nil {
 			return "", errors.Join(fmt.Errorf("提交配置事务失败: %w", err), transaction.rollback())
 		}
+		if target == "module" {
+			_ = worker.Wake(workerOptions(options))
+		}
 		return revision, nil
-	}
-	if err := transaction.setPhase("reload_started"); err != nil {
-		return "", rollbackConfigApply(options, transaction, fmt.Errorf("记录配置 reload 阶段失败: %w", err))
 	}
 	apply := configReload
 	if transaction.journal.Action == "switch" {
 		apply = configStart
 	}
-	if err := apply(ctx, options); err != nil {
-		return "", rollbackConfigApply(options, transaction, fmt.Errorf("配置应用失败: %w", err))
+	reload := func(applyContext context.Context, applyOptions Options) error {
+		if transaction.journal.Action == "mode" {
+			transaction.journal.Action = "reload"
+		}
+		if applyOptions.networkEvaluation != nil {
+			transaction.journal.Mode = applyOptions.networkEvaluation.RuntimeMode
+		}
+		if err := transaction.setPhase("reload_started"); err != nil {
+			return err
+		}
+		return apply(applyContext, applyOptions)
+	}
+	var applyErr error
+	if target == "module" {
+		if !selectionChanged {
+			previousMode, modeErr := service.ReadRuntimeMode(ctx, networkControlOptions(options))
+			if modeErr != nil {
+				return "", rollbackConfigApply(options, transaction, modeErr)
+			}
+			transaction.journal.Mode, transaction.journal.Action = previousMode, "mode"
+			if err := transaction.setPhase("mode_started"); err != nil {
+				return "", rollbackConfigApply(options, transaction, err)
+			}
+			_, applyErr = applyConfiguredNetwork(ctx, options, reload)
+		} else {
+			applyErr = reload(ctx, options)
+		}
+	} else {
+		applyErr = reload(ctx, options)
+	}
+	if applyErr != nil {
+		return "", rollbackConfigApply(options, transaction, fmt.Errorf("配置应用失败: %w", applyErr))
 	}
 	if target == "module" {
 		// reload 可能校正已失效的节点选择，revision 必须对应锁内最终内容。
@@ -405,6 +437,9 @@ func applyConfigLocked(ctx context.Context, options Options, target, destination
 	}
 	if err := transaction.commit(); err != nil {
 		return "", rollbackAfterCommitFailure(ctx, options, transaction, err)
+	}
+	if target == "module" {
+		_ = worker.Wake(workerOptions(options))
 	}
 	return revision, nil
 }

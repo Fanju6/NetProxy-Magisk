@@ -48,6 +48,7 @@ type Options struct {
 	NetworkStateReader worker.NetworkStateReader
 	Telemetry          *telemetry.Reporter
 	configEditors      map[string]*moduleconfig.Editor
+	networkEvaluation  *NetworkEvaluation
 }
 
 // NewOptions 根据模块根目录返回完整的默认路径。
@@ -77,10 +78,11 @@ func NewOptions(moduleDir string) Options {
 // PrepareResult 描述一次运行时准备结果。
 type PrepareResult struct {
 	catalog.RuntimeResult
-	Providers string `json:"providers"`
-	Outbounds string `json:"outbounds"`
-	Inbound   string `json:"inbound"`
-	Backend   string `json:"backend"`
+	Providers string             `json:"providers"`
+	Outbounds string             `json:"outbounds"`
+	Inbound   string             `json:"inbound"`
+	Backend   string             `json:"backend"`
+	Network   *NetworkEvaluation `json:"-"`
 }
 
 // AppPolicy 描述分应用代理的持久设置。
@@ -141,6 +143,19 @@ func Prepare(ctx context.Context, options Options, allowEmpty bool) (PrepareResu
 	if err != nil {
 		return PrepareResult{}, err
 	}
+	network, err := configuredNetwork(ctx, options)
+	if err != nil {
+		return PrepareResult{}, err
+	}
+	if network.DesiredMode == "Direct" {
+		if err := validateDirectRouting(options); err != nil {
+			return PrepareResult{}, err
+		}
+	}
+	config, err = config.WithDNSBypass(network.DesiredMode == "Direct")
+	if err != nil {
+		return PrepareResult{}, err
+	}
 	missingPackages, err := inbound.WriteAtomic(ctx, inboundPath, config)
 	if err != nil {
 		return PrepareResult{}, err
@@ -148,7 +163,7 @@ func Prepare(ctx context.Context, options Options, allowEmpty bool) (PrepareResu
 	for _, ref := range missingPackages {
 		logService(options, "WARN", "inbound.package", "skipped", "分应用代理跳过未安装应用: %s", ref.String())
 	}
-	return PrepareResult{RuntimeResult: runtime, Providers: providers, Outbounds: outbounds, Inbound: inboundPath, Backend: config.Backend}, nil
+	return PrepareResult{RuntimeResult: runtime, Providers: providers, Outbounds: outbounds, Inbound: inboundPath, Backend: config.Backend, Network: &network}, nil
 }
 
 func saveSelection(ctx context.Context, options Options, selection moduleconfig.Selection) error {

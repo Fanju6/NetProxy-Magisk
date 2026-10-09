@@ -58,7 +58,7 @@ func ApplyMode(ctx context.Context, options Options, mode string) (result servic
 	if !service.ProcessRunning(options.SingBoxPath) {
 		return result, nil
 	}
-	evaluation, err := syncConfiguredMode(ctx, options)
+	evaluation, err := applyConfiguredNetwork(ctx, options, reloadNetworkConfig)
 	result.RuntimeMode = evaluation.RuntimeMode
 	if err != nil {
 		return result, &service.Error{
@@ -111,7 +111,7 @@ func lockModeConfig(ctx context.Context, options Options) (Options, func(), erro
 		lock.release()
 		return options, nil, err
 	}
-	options, release, err := lockConfigFiles(ctx, options, options.ModuleConfig, paths.SingBoxConfig(options.SingBoxDir))
+	options, release, err := lockConfigFiles(ctx, options, options.ModuleConfig, options.InboundConfig, paths.SingBoxConfig(options.SingBoxDir))
 	if err != nil {
 		lock.release()
 		return options, nil, err
