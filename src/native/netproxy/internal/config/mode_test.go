@@ -12,7 +12,7 @@ func TestModesFollowNativeRulesAndDefault(t *testing.T) {
 		available []string
 	}{
 		{`{}`, "Rule", []string{"Rule"}},
-		{`{"experimental":{"clash_api":{"default_mode":"Office"}},"route":{"rules":[{"clash_mode":["Direct","Global"]},{"type":"logical","rules":[{"clash_mode":"Office"},{"clash_mode":"Zeta"}]}]},"dns":{"rules":[{"type":"logical","rules":[{"clash_mode":["AllowAds","Office"]}]}]}}`, "Office", []string{"AllowAds", "Office", "Zeta", "Global", "Direct"}},
+		{`{"experimental":{"clash_api":{"default_mode":"Office"}},"route":{"rules":[{"clash_mode":["Direct","Proxy"]},{"type":"logical","rules":[{"clash_mode":"Office"},{"clash_mode":"Zeta"}]}]},"dns":{"rules":[{"type":"logical","rules":[{"clash_mode":["RuleAllowAds","Office"]}]}]}}`, "Office", []string{"Office", "Proxy", "RuleAllowAds", "Zeta", "Direct"}},
 		{`{"experimental":{"clash_api":{"default_mode":""}},"dns":{"rules":[{"clash_mode":"Direct"}]}}`, "Rule", []string{"Rule", "Direct"}},
 	} {
 		result, err := ParseModes([]byte(test.content))

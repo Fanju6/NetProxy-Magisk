@@ -22,7 +22,7 @@ const GROUPS = [
 
 const NODE = { tag: 'demo-node', protocol: 'socks', server: 'example.test', port: 1080 }
 let serviceState = 'stopped'
-const availableModes = ['AllowAds', 'Rule', 'Global', 'Direct']
+const availableModes = ['Proxy', 'RuleAllowAds', 'Rule', 'Direct']
 let outboundMode = 'Rule'
 let runtimePrepared = false
 

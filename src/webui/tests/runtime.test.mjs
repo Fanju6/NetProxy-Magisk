@@ -56,14 +56,18 @@ test('节点选择运行时失败保留持久化状态与原始错误', () => {
 })
 
 test('模式补全仅使用配置列表，保留自定义名称和空格', () => {
-  const modes = ['Rule', 'Direct', 'Office Network']
+  const modes = ['Rule', 'Proxy', 'Direct', 'RuleAllowAds', 'Office Network']
   assert.deepEqual(complete('mode ', [], [], modes).candidates, modes)
   assert.deepEqual(complete('mode ').candidates, [])
   assert.equal(complete('mode Off', [], [], modes).completed, 'mode "Office Network" ')
+  assert.equal(complete('mode Pro', [], [], modes).completed, 'mode Proxy ')
+  assert.equal(complete('mode RuleA', [], [], modes).completed, 'mode RuleAllowAds ')
   const run = (...args) => decodeCtlResult(mockCtl(args))
-  assert.equal(run('mode', 'global').ok, false)
-  assert.equal(run('mode', 'Global').data.mode, 'Global')
+  for (const mode of ['proxy', 'Global', 'AllowAds']) assert.equal(run('mode', mode).ok, false)
+  for (const mode of ['Proxy', 'RuleAllowAds']) assert.equal(run('mode', mode).data.mode, mode)
+  assert.deepEqual(run('mode').data.available, ['Proxy', 'RuleAllowAds', 'Rule', 'Direct'])
   assert.deepEqual(run('mode').data.available, run('service', 'status').data.available_outbound_modes)
+  assert.match(COMMANDS.mode.help, /Proxy（代理）.*RuleAllowAds/)
   run('mode', 'Rule')
 })
 

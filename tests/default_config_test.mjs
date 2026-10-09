@@ -20,7 +20,7 @@ test('模块设置只有 module.json 默认文件，字段使用 JSON 原生类�
   })
 })
 
-test('默认配置仅保留部署与运行时生成所需的上游差异', () => {
+test('默认配置仅保留部署、运行时生成和模式命名的上游差异', () => {
   const expected = structuredClone(upstream)
   expected.log.output = 'stderr'
   expected.experimental.cache_file.path = '/data/adb/modules/netproxy/config/singbox/cache.db'
@@ -37,6 +37,15 @@ test('默认配置仅保留部署与运行时生成所需的上游差异', () =>
   for (const rule of expected.route.rule_set) {
     rule.path = rule.path.replace('./source/rule_set/', './rules/remote/').replace('./source/', './rules/local/')
   }
+  const renameModes = rules => {
+    for (const rule of rules) {
+      if (rule.clash_mode === 'Global') rule.clash_mode = 'Proxy'
+      if (rule.clash_mode === 'AllowAds') rule.clash_mode = 'RuleAllowAds'
+      if (rule.rules) renameModes(rule.rules)
+    }
+  }
+  renameModes(expected.dns.rules)
+  renameModes(expected.route.rules)
   expected.route.rules.push({ clash_mode: 'Rule', action: 'route', outbound: expected.route.final })
   const directIndex = expected.route.rules.findIndex(rule => rule.clash_mode === 'Direct')
   expected.route.rules.unshift(...expected.route.rules.splice(directIndex, 1))
@@ -47,6 +56,9 @@ test('默认规则显式提供 Rule，保存其他默认模式后仍可切回', 
   const rule = config.route.rules.at(-1)
   assert.deepEqual(rule, { clash_mode: 'Rule', action: 'route', outbound: config.route.final })
   assert.equal(config.experimental.clash_api.default_mode, 'Rule')
+  const modes = rules => rules.flatMap(rule => [...list(rule.clash_mode), ...modes(rule.rules ?? [])])
+  assert.deepEqual([...new Set([...modes(config.route.rules), ...modes(config.dns.rules)])].sort(),
+    ['Direct', 'Proxy', 'Rule', 'RuleAllowAds'])
 })
 
 test('默认远程规则有对应的内置文件与更新来源', () => {

@@ -24,7 +24,7 @@ import (
 func modeConfigFixture(t *testing.T, root, mode string) string {
 	t.Helper()
 	path := filepath.Join(root, "config.json")
-	content := fmt.Sprintf(`{"experimental":{"clash_api":{"default_mode":%q}},"route":{"rules":[{"clash_mode":["Global","Direct","AllowAds"]}]}}`, mode)
+	content := fmt.Sprintf(`{"experimental":{"clash_api":{"default_mode":%q}},"route":{"rules":[{"clash_mode":["Proxy","Direct","RuleAllowAds"]}]}}`, mode)
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestReadStatusWithoutService(t *testing.T) {
 	if err := os.WriteFile(moduleConfig, []byte("{\"selection\":{\"group_id\":\"default\",\"node_tag\":\"\"}}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	status, err := ReadStatus(context.Background(), Options{SingBoxConfig: modeConfigFixture(t, temp, "Global"),
+	status, err := ReadStatus(context.Background(), Options{SingBoxConfig: modeConfigFixture(t, temp, "Proxy"),
 		CatalogRoot:  filepath.Join(temp, "catalog"),
 		ModuleConfig: moduleConfig,
 		StateFile:    filepath.Join(temp, "service.json"),
@@ -62,8 +62,8 @@ func TestReadStatusWithoutService(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.State != "stopped" || status.OutboundMode != "Global" ||
-		status.ConfiguredOutboundMode != "Global" || status.ActiveGroupID != "default" {
+	if status.State != "stopped" || status.OutboundMode != "Proxy" ||
+		status.ConfiguredOutboundMode != "Proxy" || status.ActiveGroupID != "default" {
 		t.Fatalf("停止服务时应回退到配置模式: %#v", status)
 	}
 	if status.PID != nil || status.WorkerState != "stopped" {
@@ -163,7 +163,7 @@ func TestReadStatusUsesActualServiceAPIMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeReadyServiceState(t, stateFile, 123)
-	server := serviceStatusFixture(t, "Global", true)
+	server := serviceStatusFixture(t, "Proxy", true)
 	defer server.Close()
 	withServiceProcess(t, 123)
 
@@ -174,7 +174,7 @@ func TestReadStatusUsesActualServiceAPIMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.OutboundMode != "Global" || status.ConfiguredOutboundMode != "Rule" {
+	if status.OutboundMode != "Proxy" || status.ConfiguredOutboundMode != "Rule" {
 		t.Fatalf("Service API 实际模式未正确映射: %#v", status)
 	}
 }
@@ -227,14 +227,14 @@ func TestReadStatusServiceAPIFailureDoesNotUseConfiguredMode(t *testing.T) {
 	writeReadyServiceState(t, stateFile, 123)
 	withServiceProcess(t, 123)
 
-	status, err := ReadStatus(context.Background(), Options{SingBoxConfig: modeConfigFixture(t, temp, "AllowAds"),
+	status, err := ReadStatus(context.Background(), Options{SingBoxConfig: modeConfigFixture(t, temp, "RuleAllowAds"),
 		ModuleConfig: moduleConfig, StateFile: stateFile, ServiceAddress: "127.0.0.1:1",
 		RequestTimeout: 20 * time.Millisecond,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.OutboundMode != unknownOutboundMode || status.ConfiguredOutboundMode != "AllowAds" {
+	if status.OutboundMode != unknownOutboundMode || status.ConfiguredOutboundMode != "RuleAllowAds" {
 		t.Fatalf("Service API 不可用时错误回退到配置模式: %#v", status)
 	}
 }
@@ -284,14 +284,14 @@ func TestReadStatusOldSnapshotDoesNotClaimConfiguredMode(t *testing.T) {
 	writeReadyServiceState(t, stateFile, 123)
 	withServiceProcess(t, 0)
 
-	status, err := ReadStatus(context.Background(), Options{SingBoxConfig: modeConfigFixture(t, temp, "Global"),
+	status, err := ReadStatus(context.Background(), Options{SingBoxConfig: modeConfigFixture(t, temp, "Proxy"),
 		ModuleConfig: moduleConfig, StateFile: stateFile, ServiceAddress: "127.0.0.1:1",
 		RequestTimeout: 20 * time.Millisecond,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.State != "failed" || status.OutboundMode != unknownOutboundMode || status.ConfiguredOutboundMode != "Global" {
+	if status.State != "failed" || status.OutboundMode != unknownOutboundMode || status.ConfiguredOutboundMode != "Proxy" {
 		t.Fatalf("旧服务快照错误声明了配置模式: %#v", status)
 	}
 }
@@ -362,8 +362,8 @@ func TestReadModeWithoutService(t *testing.T) {
 	if err := os.WriteFile(moduleConfig, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	state, err := ReadMode(context.Background(), Options{SingBoxConfig: modeConfigFixture(t, temp, "AllowAds"), ModuleConfig: moduleConfig, ServiceAddress: "127.0.0.1:1"})
-	if err != nil || state.Mode != "AllowAds" || len(state.Available) != 3 || state.RuntimeMode != "" {
+	state, err := ReadMode(context.Background(), Options{SingBoxConfig: modeConfigFixture(t, temp, "RuleAllowAds"), ModuleConfig: moduleConfig, ServiceAddress: "127.0.0.1:1"})
+	if err != nil || state.Mode != "RuleAllowAds" || len(state.Available) != 3 || state.RuntimeMode != "" {
 		t.Fatalf("unexpected mode state: %#v, err=%v", state, err)
 	}
 }

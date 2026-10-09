@@ -39,9 +39,9 @@
     <string name="dashboard_traffic">↑ %1$s   ↓ %2$s</string>
     <string name="dashboard_outbound_mode">Outbound mode</string>
     <string name="dashboard_mode_rule">Rule</string>
-    <string name="dashboard_mode_global">Global</string>
+    <string name="dashboard_mode_proxy">Proxy</string>
     <string name="dashboard_mode_direct">Direct</string>
-    <string name="dashboard_mode_allow_ads">Allow ads</string>
+    <string name="dashboard_mode_rule_allow_ads">Rule (allow ads)</string>
     <string name="dashboard_mode_unknown">Active mode unknown</string>
     <string name="dashboard_current_node">Current node</string>
     <string name="dashboard_not_selected">Not selected</string>

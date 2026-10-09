@@ -376,7 +376,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl service start'
 
 ### 路由结果与预期不同
 
-规则按顺序匹配。Global、Direct、本地 `proxy/direct/block` 和广告规则会优先生效；更具体的业务规则应放在宽泛的国外或国内规则之前。
+规则按顺序匹配。`Proxy`、`Direct`、本地 `proxy/direct/block` 和广告规则会优先生效；更具体的业务规则应放在宽泛的国外或国内规则之前。
 
 ## 相关资料
 

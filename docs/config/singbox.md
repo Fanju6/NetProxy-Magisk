@@ -56,13 +56,13 @@ runtime/           # 启动时生成的运行时配置
 
 `experimental.clash_api.default_mode` 保存默认模式，默认配置为 `Rule`。可选模式由主配置中路由与 DNS 规则的 `clash_mode` 条件和默认模式共同决定，支持自定义名称。
 
-默认规则提供 `Rule`（规则分流）、`Global`（全局代理）、`Direct`（直连）和 `AllowAds`（允许广告）。模式的实际行为由对应规则决定；仅添加名称不会自动创建代理或直连规则。
+默认规则提供 `Rule`（规则）、`Proxy`（代理）、`Direct`（直连）和 `RuleAllowAds`（规则，允许广告）。模式的实际行为由对应规则决定；仅添加名称不会自动创建代理或直连规则。
 
 自定义配置应在规则中显式保留希望长期使用的模式。只作为 `default_mode` 存在、未被规则引用的名称，在改为其他默认模式后将不再出现在列表中。
 
 ```sh
 su -c '/data/adb/modules/netproxy/netproxyctl mode'
-su -c '/data/adb/modules/netproxy/netproxyctl mode Global'
+su -c '/data/adb/modules/netproxy/netproxyctl mode Proxy'
 ```
 
 管理器和 WebUI 使用同一模式列表。切换模式会原子保存 `default_mode`；服务运行时，通过 API 应用当前网络策略并确认结果，不重载核心。同步失败会明确提示默认模式已经保存，运行中的核心未确认同步。
@@ -79,6 +79,7 @@ Wi-Fi 策略只临时使用 `Direct` 或保存的默认模式，不写回主配�
 - mixed 入站和两个 API 仅监听本机，端口保持 `7080`、`9999`（Clash）与 `9090`（Service）。
 - 不复制上游的示例 Provider、出站和 eBPF 入站，继续由 Catalog 与 `config/inbound/inbound.json` 生成。只输出选中的 eBPF 或 TUN，应用与接口策略按所选后端的原生语义生效。
 - 路由末尾显式保留 `Rule` 的 Proxy 兜底，与原 `route.final` 行为一致，便于修改默认模式后继续切回规则模式。
+- 模式名称使用 `Proxy` 与 `RuleAllowAds`，对应代理与规则（允许广告）；路由和 DNS 匹配行为保持一致。
 
 远程规则使用 `geosite/` 与 `geoip/` 标签，内置文件放在 `rules/remote/geosite/` 与 `rules/remote/geoip/`。保留个人主配置时不会自动替换其规则标签；如需采用新默认规则，应同时更新主配置和入站 `ebpf.local.bypass_rule_set`、`ebpf.shared.bypass_rule_set`，默认绕过标签均为 `geoip/cn`。TUN 的接管/绕过规则集按其原生字段单独配置。
 

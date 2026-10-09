@@ -48,12 +48,12 @@ su -c '/data/adb/modules/netproxy/netproxyctl service reload'
 
 su -c '/data/adb/modules/netproxy/netproxyctl mode'
 su -c '/data/adb/modules/netproxy/netproxyctl mode Rule'
-su -c '/data/adb/modules/netproxy/netproxyctl mode Global'
+su -c '/data/adb/modules/netproxy/netproxyctl mode Proxy'
 su -c '/data/adb/modules/netproxy/netproxyctl mode Direct'
-su -c '/data/adb/modules/netproxy/netproxyctl mode AllowAds'
+su -c '/data/adb/modules/netproxy/netproxyctl mode RuleAllowAds'
 ```
 
-`mode` 返回主配置默认模式、可选模式及运行时实际模式。模式名称与内核一致，来自主配置规则，不限定为以上四种。
+`mode` 返回主配置默认模式、可选模式及运行时实际模式。默认配置中的 `Rule`、`Proxy`、`Direct`、`RuleAllowAds` 分别对应规则、代理、直连、规则（允许广告）。模式名称来自主配置规则，不限定为以上四种；配置、CLI 和 API 使用同一名称。
 
 `service status.data.outbound_mode` 是核心当前实际模式；`configured_outbound_mode` 来自主配置的 `experimental.clash_api.default_mode`，`available_outbound_modes` 是可选模式列表。服务停止时显示默认模式，运行时 API 不可用则显示 `unknown`。Wi-Fi 策略只改变运行时结果，不覆盖默认模式。
 

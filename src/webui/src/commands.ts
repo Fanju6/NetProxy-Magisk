@@ -78,6 +78,8 @@ configured_backend 是保存的入站；active_backend 仅在 ready 且 PID/API 
   mode <模式名称> 保存主配置默认模式，运行时应用网络策略
 
 可选模式来自主配置的路由与 DNS 规则，名称与内核一致。
+默认配置：Rule（规则）、Proxy（代理）、Direct（直连）、RuleAllowAds（规则，允许广告）。
+示例：mode Proxy、mode RuleAllowAds。
 `,
   },
   network: {

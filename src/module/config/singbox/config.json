@@ -104,7 +104,7 @@
       }
     ],
     "rules": [
-      { "clash_mode": "Global", "action": "route", "server": "dns-proxy" },
+      { "clash_mode": "Proxy", "action": "route", "server": "dns-proxy" },
       { "clash_mode": "Direct", "action": "route", "server": "dns-direct" },
       {
         "rule_set": [
@@ -125,7 +125,7 @@
         "type": "logical",
         "mode": "and",
         "rules": [
-          { "clash_mode": "AllowAds", "invert": true },
+          { "clash_mode": "RuleAllowAds", "invert": true },
           { "rule_set": ["block", "Ads_AWAvenue", "geosite/category-ads-all"] }
         ],
         "action": "reject"
@@ -198,14 +198,14 @@
         ],
         "action": "hijack-dns"
       },
-      { "clash_mode": "Global", "action": "route", "outbound": "Proxy" },
+      { "clash_mode": "Proxy", "action": "route", "outbound": "Proxy" },
       { "rule_set": "proxy", "action": "route", "outbound": "Proxy" },
       { "rule_set": "direct", "action": "route", "outbound": "direct" },
       {
         "type": "logical",
         "mode": "and",
         "rules": [
-          { "clash_mode": "AllowAds", "invert": true },
+          { "clash_mode": "RuleAllowAds", "invert": true },
           { "rule_set": ["block", "Ads_AWAvenue", "geosite/category-ads-all"] }
         ],
         "action": "reject"

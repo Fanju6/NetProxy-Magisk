@@ -21,6 +21,7 @@ ${COMMAND_NAMES.map(name => `  ${COMMANDS[name].overview}`).join('\n')}
   service start
   node use auto default
   mode Rule
+  mode Proxy
   sub update-all
   node delay auto default
 

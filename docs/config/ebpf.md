@@ -61,7 +61,7 @@ eBPF 参数保存在 `config/inbound/inbound.json` 的 `ebpf` 对象。完整结
 - `respect_policy`：先应用该路径的筛选与绕过策略，再接管 DNS；这是本机默认值。
 - `off`：不由该路径接管 DNS。
 
-`ipv6: false` 仅绕过该路径的 IPv6，不关闭系统 IPv6。`bypass_rule_set` 默认引用 `geoip/cn`，只使用可提取的 IP CIDR；命中流量不会进入普通路由，Global 模式也不能覆盖提前绕过。
+`ipv6: false` 仅绕过该路径的 IPv6，不关闭系统 IPv6。`bypass_rule_set` 默认引用 `geoip/cn`，只使用可提取的 IP CIDR；命中流量不会进入普通路由，`Proxy` 模式也不能覆盖提前绕过。
 
 `bypass_port` 使用数字数组，例如 `[22, 443]`；`bypass_port_range` 使用字符串数组，例如 `["1000:2000"]`，不是逗号文本。
 

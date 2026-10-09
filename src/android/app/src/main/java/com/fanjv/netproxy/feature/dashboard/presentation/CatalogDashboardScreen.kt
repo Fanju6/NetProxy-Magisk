@@ -189,9 +189,9 @@ internal fun CatalogDashboardScreen(
                         val modeLabels = modeValues.map { mode ->
                             when (mode) {
                                 "Rule" -> stringResource(R.string.dashboard_mode_rule)
-                                "Global" -> stringResource(R.string.dashboard_mode_global)
+                                "Proxy" -> stringResource(R.string.dashboard_mode_proxy)
                                 "Direct" -> stringResource(R.string.dashboard_mode_direct)
-                                "AllowAds" -> stringResource(R.string.dashboard_mode_allow_ads)
+                                "RuleAllowAds" -> stringResource(R.string.dashboard_mode_rule_allow_ads)
                                 else -> mode
                             }
                         }

@@ -295,7 +295,7 @@ data/catalog/
 - 手动模式仅保存当前分组节点的 tag，不重复保存分组 ID 或文件路径。
 - 手动节点在 Provider 更新后消失时回退该组 Auto。
 - 公开命令仍使用 `node use auto [group]` 或 `node use <group-id>/<tag>`；JSON 的 `selector_mode` 与 `selected_node_ref` 是派生结果，不是另一个持久事实源。订阅更新在配置文件锁内读取最新选择后计算变更，不能覆盖并发用户选择。
-- 出站模式使用主配置与内核生成的原生列表；客户端翻译已知模式的显示文案，自定义名称原样显示。模式切换保存默认值，当前 Wi-Fi 绕过策略仍可使实际模式为 `Direct`。
+- 出站模式使用主配置与内核生成的原生列表；默认规则的模式值为 `Rule/Proxy/Direct/RuleAllowAds`，配置、CTL 和 API 使用同一名称，不提供旧名别名。客户端翻译已知模式的显示文案，自定义名称原样显示。模式切换保存默认值，当前 Wi-Fi 绕过策略仍可使实际模式为 `Direct`。
 
 ## 订阅事务
 

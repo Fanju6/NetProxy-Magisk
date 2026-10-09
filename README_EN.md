@@ -50,7 +50,7 @@ Manage everyday tasks with the bundled Android Manager, terminal-style module We
 - **Nodes and subscriptions**: Import node links, node text, Clash YAML, and sing-box JSON, with support for subscription filtering, custom request headers, usage information, and automatic updates.
 - **Node selection and latency tests**: Choose nodes manually or use automatic selection; run latency tests even when the service is stopped.
 - **Per-app proxy**: Configure blacklists and whitelists separately for each Android user, including cloned apps.
-- **Network policies**: Rule, Global, Direct, and Allow ads modes, with automatic switching based on Wi-Fi names and the actual network used.
+- **Network policies**: Rule, Proxy, Direct, and Rule (allow ads) modes, with automatic switching based on Wi-Fi names and the actual network used.
 - **Configuration and diagnostics**: Edit sing-box configuration and local rules, view runtime configuration and logs, and export redacted diagnostic bundles.
 
 ## Installation and Getting Started

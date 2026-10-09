@@ -45,9 +45,9 @@
     <string name="dashboard_traffic">↑ %1$s   ↓ %2$s</string>
     <string name="dashboard_outbound_mode">出站模式</string>
     <string name="dashboard_mode_rule">规则</string>
-    <string name="dashboard_mode_global">全局</string>
+    <string name="dashboard_mode_proxy">代理</string>
     <string name="dashboard_mode_direct">直连</string>
-    <string name="dashboard_mode_allow_ads">允许广告</string>
+    <string name="dashboard_mode_rule_allow_ads">规则（允许广告）</string>
     <string name="dashboard_mode_unknown">实际模式未知</string>
     <string name="dashboard_current_node">当前节点</string>
     <string name="dashboard_not_selected">未选择</string>

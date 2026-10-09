@@ -60,7 +60,7 @@ func TestPublicCommandsKeepSingleJSONContract(t *testing.T) {
 	for path, content := range map[string]string{
 		options.ModuleConfig:                             "{\"selection\":{\"group_id\":\"default\"}}",
 		options.InboundConfig:                            `{"backend":"ebpf","root_policy":"default","app":{"enabled":false,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]},"ebpf":{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true},"shared":{"enabled":false}},"tun":{"type":"tun","tag":"netproxy-in","interface_name":"netproxy","address":["172.19.0.1/30"],"auto_route":true,"auto_redirect":true}}`,
-		filepath.Join(options.SingBoxDir, "config.json"): "{}\n",
+		filepath.Join(options.SingBoxDir, "config.json"): `{"experimental":{"clash_api":{"default_mode":"Rule"}},"route":{"rules":[{"clash_mode":["Rule","Proxy","Direct","RuleAllowAds"]}]}}`,
 	} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatal(err)
@@ -90,8 +90,12 @@ func TestPublicCommandsKeepSingleJSONContract(t *testing.T) {
 		{"node use default/NODE", "node.selected", 0},
 		{"sub list", "subscription.list", 0},
 		{"mode", "mode.current", 0},
+		{"mode Proxy", "mode.changed", 0},
+		{"mode RuleAllowAds", "mode.changed", 0},
 		{"mode Rule", "mode.changed", 0},
-		{"mode global", "mode.invalid", 1},
+		{"mode proxy", "mode.invalid", 1},
+		{"mode Global", "mode.invalid", 1},
+		{"mode AllowAds", "mode.invalid", 1},
 		{"mode Rule extra", "usage.invalid", 2},
 		{"network evaluate --type not_wifi", "network.evaluated", 0},
 		{"app list", "app.list", 0},
@@ -138,8 +142,16 @@ func TestPublicCommandsKeepSingleJSONContract(t *testing.T) {
 				if err := json.Unmarshal(response.Data, &data); err != nil || string(data["state"]) != `"stopped"` {
 					t.Fatalf("服务状态必须直接位于 data: %s: %v", response.Data, err)
 				}
-				if string(data["configured_outbound_mode"]) != `"Rule"` || string(data["available_outbound_modes"]) != `["Rule"]` {
+				if string(data["configured_outbound_mode"]) != `"Rule"` || string(data["available_outbound_modes"]) != `["Proxy","RuleAllowAds","Rule","Direct"]` {
 					t.Fatalf("模式字段未使用主配置: %s", response.Data)
+				}
+			}
+			if test.code == "mode.changed" {
+				var data struct {
+					Mode string `json:"mode"`
+				}
+				if err := json.Unmarshal(response.Data, &data); err != nil || data.Mode != strings.TrimPrefix(test.args, "mode ") {
+					t.Fatalf("模式名称未原样返回: %s: %v", response.Data, err)
 				}
 			}
 		})

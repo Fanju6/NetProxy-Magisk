@@ -88,6 +88,13 @@ func (c *cli) help() {
   netproxyctl [--json] [--timeout <秒|时长>] config list|read|check|validate|apply
   netproxyctl [--json] [--timeout <秒|时长>] logs show|clear|export
 
+默认配置的出站模式:
+  Rule          规则
+  Proxy         代理
+  Direct        直连
+  RuleAllowAds  规则（允许广告）
+实际可选名称以 mode 返回的主配置模式列表为准。
+
 节点引用固定为 <group-id>/<tag>；自动模式使用 node use auto [分组]。
 node import <文件> 会将文件中的全部节点追加到 default 本地配置组。
 默认命令超时为 30 秒，service start 默认 120 秒；订阅变更由各订阅下载超时控制。

@@ -39,9 +39,9 @@
     <string name="dashboard_traffic">↑ %1$s   ↓ %2$s</string>
     <string name="dashboard_outbound_mode">Режим маршрутизации</string>
     <string name="dashboard_mode_rule">По правилам</string>
-    <string name="dashboard_mode_global">Глобальный</string>
+    <string name="dashboard_mode_proxy">Прокси</string>
     <string name="dashboard_mode_direct">Напрямую</string>
-    <string name="dashboard_mode_allow_ads">Разрешить рекламу</string>
+    <string name="dashboard_mode_rule_allow_ads">По правилам (с рекламой)</string>
     <string name="dashboard_mode_unknown">Текущий режим неизвестен</string>
     <string name="dashboard_current_node">Текущий узел</string>
     <string name="dashboard_not_selected">Не выбран</string>
