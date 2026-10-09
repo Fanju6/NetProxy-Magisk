@@ -140,4 +140,5 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.hiddenapibypass)
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }

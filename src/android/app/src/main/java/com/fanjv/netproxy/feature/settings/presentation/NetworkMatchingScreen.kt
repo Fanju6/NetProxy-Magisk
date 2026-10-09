@@ -1,6 +1,7 @@
 package com.fanjv.netproxy.feature.settings.presentation
 
 import androidx.compose.foundation.layout.*
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -31,12 +32,15 @@ internal fun NetworkMatchingScreen(
     viewModel: SettingsViewModel = netProxyViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val enabled = state.hasLoaded && !state.isLoading && !state.isSaving
+    val enabled = state.hasLoaded && !state.requiresReload
+    val commitOnLeave = rememberCommitOnLeave(viewModel::requestWifiFlush)
+    val leave: () -> Unit = { commitOnLeave(onBack) }
     val wifi = state.wifi
     val scrollBehavior = MiuixScrollBehavior()
     val backdrop = rememberBlurBackdrop()
     var editing by rememberSaveable { mutableStateOf(false) }
     var ssids by rememberSaveable { mutableStateOf("") }
+    BackHandler(enabled = !editing && (state.hasPendingWifi || state.isSaving || state.requiresReload)) { leave() }
 
     LifecycleResumeEffect(Unit) {
         viewModel.refresh()
@@ -50,7 +54,7 @@ internal fun NetworkMatchingScreen(
                     title = stringResource(R.string.network_matching),
                     color = if (backdrop != null) Color.Transparent else colorScheme.surface,
                     scrollBehavior = scrollBehavior,
-                    navigationIcon = { BackIconButton(onClick = onBack) }
+                    navigationIcon = { BackIconButton(onClick = leave) }
                 )
             }
         },
@@ -70,6 +74,9 @@ internal fun NetworkMatchingScreen(
                 ) {
                     if (state.error.isNotBlank()) item("error") {
                         Text(state.error, Modifier.padding(14.dp), color = colorScheme.error)
+                    }
+                    if (state.requiresReload) item("reload") {
+                        TextButton(stringResource(R.string.routing_reload_draft), onClick = viewModel::discardWifiAndReload)
                     }
                     if (state.hasLoaded) groupedCardSection("wifi", { stringResource(R.string.wifi_auto_switch_title) }, listOf(
                         CardItem("enabled") {
@@ -99,7 +106,7 @@ internal fun NetworkMatchingScreen(
                                 enabled = enabled, onCheckedChange = viewModel::setProxyOnCellular)
                         }
                     ))
-                    if (state.error.isNotBlank()) item("retry") {
+                    if (state.error.isNotBlank() && !state.requiresReload) item("retry") {
                         TextButton(stringResource(R.string.inbound_reload), enabled = !state.isLoading && !state.isSaving,
                             onClick = viewModel::refresh)
                     }

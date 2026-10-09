@@ -51,14 +51,17 @@ internal class NetProxyViewModelFactory(
 
             AppsViewModel::class.java -> AppsViewModel(
                 container.appPolicyRepository,
-                container.appPackageRepository
+                container.appPackageRepository,
+                writes = container.configurationWrites
             )
 
             SettingsViewModel::class.java -> SettingsViewModel(
-                container.configRepository
+                container.configRepository,
+                writes = container.configurationWrites
             )
 
-            InboundViewModel::class.java -> InboundViewModel(container.inboundRepository)
+            InboundViewModel::class.java -> InboundViewModel(container.inboundRepository,
+                writes = container.configurationWrites)
 
             RoutingRulesViewModel::class.java -> RoutingRulesViewModel(container.configRepository)
 

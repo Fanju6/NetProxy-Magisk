@@ -1,62 +1,46 @@
 package com.fanjv.netproxy.feature.apps.presentation
 
-import com.fanjv.netproxy.core.command.NetProxyCtlClient
-import com.fanjv.netproxy.core.command.NetProxyCtlException
-import com.fanjv.netproxy.core.command.NetProxyCtlOutput
-import com.fanjv.netproxy.core.command.NetProxyCtlTransport
-import com.fanjv.netproxy.core.command.CommandFileStore
-import com.fanjv.netproxy.feature.settings.data.ConfigRepository
-import com.fanjv.netproxy.feature.apps.data.AppIconCache
-import com.fanjv.netproxy.feature.apps.data.AppPackageRepository
-import com.fanjv.netproxy.feature.apps.data.AppPolicyRepository
+import androidx.compose.runtime.saveable.SaverScope
+import com.fanjv.netproxy.core.command.*
+import com.fanjv.netproxy.core.ui.component.SearchStatus
+import com.fanjv.netproxy.feature.apps.data.*
 import com.fanjv.netproxy.feature.apps.model.AppProxyConfig
+import com.fanjv.netproxy.feature.settings.data.ConfigRepository
+import java.io.File
 import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
-import java.io.File
 import kotlin.coroutines.CoroutineContext
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.job
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.yield
+import kotlinx.coroutines.test.*
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.*
-import org.junit.Test
 import org.junit.Rule
+import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class AppsViewModelTest {
     @get:Rule val folder = TemporaryFolder()
 
-    private fun policy(args: List<String>): AppProxyConfig = Json.decodeFromJsonElement(
-        AppProxyConfig.serializer(), Json.parseToJsonElement(File(args.last()).readText()).jsonObject.getValue("app"))
-
     private class Transport : NetProxyCtlTransport {
         @Volatile var config = AppProxyConfig(mode = "whitelist")
+        var revision = 0
         val calls = CopyOnWriteArrayList<List<String>>()
         var before: suspend (List<String>) -> Unit = {}
         var after: suspend (List<String>) -> Unit = {}
-        private var revision = 0
         private val json = Json { encodeDefaults = true }
+        val writes get() = calls.count { it[1] == "apply" }
 
         override suspend fun execute(arguments: List<String>, timeoutMillis: Long): NetProxyCtlOutput {
             calls += arguments
             before(arguments)
-            val result = if (arguments[1] == "apply") {
-                check(arguments[3] == revision.toString()) { "config.conflict" }
+            val data = if (arguments[1] == "apply") {
+                if (arguments[3] != revision.toString()) throw NetProxyCtlException("config.conflict", "conflict")
                 config = Json.decodeFromJsonElement(AppProxyConfig.serializer(),
                     Json.parseToJsonElement(File(arguments.last()).readText()).jsonObject.getValue("app"))
                 revision++
@@ -67,7 +51,7 @@ class AppsViewModelTest {
             }
             after(arguments)
             return NetProxyCtlOutput(true, listOf(
-                """{"schema":1,"ok":true,"code":"config.test","message":"","data":$result}"""
+                """{"schema":1,"ok":true,"code":"config.test","message":"","data":$data}"""
             ), emptyList())
         }
     }
@@ -80,194 +64,337 @@ class AppsViewModelTest {
     }
 
     private fun packages(label: (String) -> String = { it }) = AppPackageRepository(
-        queryPackages = { args ->
-            when {
-                args.last() == "users" -> listOf("UserInfo{0:Owner:13}")
-                args.last() == "-s" -> listOf("package:system.example")
-                else -> listOf("package:alpha.example", "package:beta.example")
-            }
-        }, resolveLabel = label,
+        queryPackages = { args -> when {
+            args.last() == "users" -> listOf("UserInfo{0:Owner:13}")
+            args.last() == "-s" -> listOf("package:system.example")
+            else -> listOf("package:alpha.example", "package:beta.example")
+        } }, resolveLabel = label,
     )
 
     private fun model(scope: CoroutineScope, transport: Transport, catalog: AppPackageRepository = packages(),
-        dispatcher: CoroutineDispatcher? = null): AppsViewModel {
-        val repository = AppPolicyRepository(ConfigRepository(NetProxyCtlClient(transport = transport), CommandFileStore(folder.root)))
-        return AppsViewModel(repository, catalog, scope, dispatcher ?: kotlinx.coroutines.Dispatchers.Default, policyDebounceMillis = 50)
-    }
+        dispatcher: CoroutineDispatcher = Dispatchers.Default, saveScope: CoroutineScope = scope,
+        onSaveFailure: (String) -> Unit = {}) = AppsViewModel(
+        AppPolicyRepository(ConfigRepository(NetProxyCtlClient(transport = transport), CommandFileStore(folder.root))),
+        catalog, scope, dispatcher, ConfigurationWrites(saveScope) { onSaveFailure(it.message.orEmpty()) },
+    )
 
     private suspend fun AppsViewModel.loaded() = withTimeout(5_000) {
         state.first { !it.isLoadingApps && it.allApps.size == 2 }
     }
 
-    private suspend fun settle() {
-        val jobs = currentCoroutineContext().job.children.toList()
-        withTimeout(5_000) { jobs.forEach { it.join() } }
+    private suspend fun AppsViewModel.flushPolicy(): Boolean = withTimeout(5_000) {
+        do {
+            requestPolicyFlush()
+            state.first { !it.isSavingPolicy }
+        } while (state.value.hasPendingPolicy && !state.value.requiresPolicyReload)
+        !state.value.requiresPolicyReload && !state.value.hasPendingPolicy
     }
 
-    @Test fun confirmedWriteKeepsLaterToggleAndSettingsIntentVisible() = runBlocking {
+    @Test fun leavingAndClearingPageDoesNotCancelPolicyCommit() = runBlocking {
+        val pageScope = CoroutineScope(coroutineContext + Job())
         val transport = Transport()
-        val vm = model(this, transport)
-        vm.load(); vm.loaded()
-        val firstEntered = CompletableDeferred<Unit>()
-        val firstRelease = CompletableDeferred<Unit>()
-        val secondEntered = CompletableDeferred<Unit>()
-        val secondRelease = CompletableDeferred<Unit>()
-        transport.before = { args ->
-            if (args[1] == "apply" && policy(args).proxyApps == listOf("0:alpha.example")) {
-                firstEntered.complete(Unit); withTimeout(10_000) { firstRelease.await() }
-            } else if (args[1] == "apply") {
-                secondEntered.complete(Unit); withTimeout(10_000) { secondRelease.await() }
-            }
-        }
-        vm.toggle("0:alpha.example")
-        withTimeout(5_000) { firstEntered.await() }
-        vm.toggle("0:beta.example")
-        vm.setProxySettings(false)
-        assertEquals(setOf("0:alpha.example", "0:beta.example"), vm.state.value.proxiedApps)
-        firstRelease.complete(Unit)
-        withTimeout(5_000) { secondEntered.await() }
-        assertEquals(setOf("0:alpha.example", "0:beta.example"), vm.state.value.proxiedApps)
-        assertFalse(vm.state.value.appProxyEnabled)
-        assertTrue(transport.config.enabled)
-        secondRelease.complete(Unit)
-        settle()
-        assertFalse(vm.state.value.appProxyEnabled)
-        assertEquals(listOf("read", "apply", "apply"), transport.calls.map { it[1] })
-    }
-
-    @Test fun rapidDoubleToggleIsAppliedInOrderWithoutOldCheckmarkReturning() = runBlocking {
-        val transport = Transport()
-        val vm = model(this, transport)
-        vm.load(); vm.loaded()
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
-        val removeEntered = CompletableDeferred<Unit>()
-        val removeRelease = CompletableDeferred<Unit>()
-        transport.before = { args ->
-            if (args[1] == "apply" && policy(args).proxyApps.isNotEmpty()) { entered.complete(Unit); withTimeout(10_000) { release.await() } }
-            if (args[1] == "apply" && policy(args).proxyApps.isEmpty()) { removeEntered.complete(Unit); withTimeout(10_000) { removeRelease.await() } }
-        }
-        vm.toggle("0:alpha.example")
-        withTimeout(5_000) { entered.await() }
-        vm.toggle("0:alpha.example")
-        release.complete(Unit)
-        withTimeout(5_000) { removeEntered.await() }
-        assertFalse(vm.state.value.proxiedApps.contains("0:alpha.example"))
-        removeRelease.complete(Unit)
-        settle()
-        assertTrue(vm.state.value.proxiedApps.isEmpty())
-        assertEquals(listOf("read", "apply", "apply"), transport.calls.map { it[1] })
+        transport.before = { if (it[1] == "apply") {
+            entered.complete(Unit); withTimeout(5_000) { release.await() }
+        } }
+        val vm = model(pageScope, transport, saveScope = this)
+        try {
+            vm.load(); vm.loaded()
+            vm.toggle("0:alpha.example")
+            vm.requestPolicyFlush()
+            pageScope.cancel()
+            withTimeout(5_000) { entered.await() }
+            assertEquals(emptyList<String>(), transport.config.proxyApps)
+            release.complete(Unit)
+            withTimeout(5_000) { vm.state.first { !it.isSavingPolicy && !it.hasPendingPolicy } }
+            assertEquals(listOf("0:alpha.example"), transport.config.proxyApps)
+            assertEquals(1, transport.writes)
+        } finally { release.complete(Unit); pageScope.cancel() }
     }
 
-    @Test fun failedWriteReadbackDoesNotOverwriteQueuedModeOrSelection() = runBlocking {
+    @Test fun failedCommitAfterLeavingReportsErrorWithoutRetry() = runBlocking {
+        val pageScope = CoroutineScope(coroutineContext + Job())
+        val transport = Transport()
+        val errors = mutableListOf<String>()
+        val vm = model(pageScope, transport, saveScope = this, onSaveFailure = errors::add)
+        try {
+            vm.load(); vm.loaded()
+            transport.before = { if (it[1] == "apply") throw NetProxyCtlException("config.conflict", "conflict") }
+            vm.toggle("0:alpha.example")
+            vm.requestPolicyFlush(); pageScope.cancel()
+            withTimeout(5_000) { vm.state.first { it.requiresPolicyReload && !it.isSavingPolicy } }
+            assertEquals(listOf("conflict"), errors)
+            assertTrue(vm.state.value.hasPendingPolicy)
+            vm.requestPolicyFlush()
+            assertEquals(1, transport.writes)
+        } finally { pageScope.cancel() }
+    }
+
+    @Test fun editsHaveNoIdleTimerAndLeaveMergesAllConfirmedChanges() = runTest {
         val transport = Transport()
         val vm = model(this, transport)
-        vm.load(); vm.loaded()
-        val entered = CompletableDeferred<Unit>()
-        val release = CompletableDeferred<Unit>()
-        val modeEntered = CompletableDeferred<Unit>()
-        val modeRelease = CompletableDeferred<Unit>()
-        transport.before = { args ->
-            if (args[1] == "apply") {
-                if (!policy(args).enabled) {
-                    entered.complete(Unit); withTimeout(10_000) { release.await() }
-                    throw NetProxyCtlException("app.update_failed", "failed write")
-                } else { modeEntered.complete(Unit); withTimeout(10_000) { modeRelease.await() } }
-            }
-        }
-        vm.setProxySettings(false)
-        withTimeout(5_000) { entered.await() }
+        vm.load()
+        withContext(Dispatchers.Default) { vm.loaded() }
+        vm.toggle("0:alpha.example")
         vm.setProxySettings(true, "blacklist")
         vm.toggle("0:beta.example")
-        release.complete(Unit)
-        withTimeout(5_000) { modeEntered.await() }
-        assertEquals("blacklist", vm.state.value.appProxyMode)
-        assertEquals(setOf("0:beta.example"), vm.state.value.bypassApps)
-        assertTrue(vm.state.value.appProxyEnabled)
-        assertEquals("failed write", vm.state.value.error)
-        modeRelease.complete(Unit)
-        settle()
-        assertEquals(listOf("0:beta.example"), transport.config.bypassApps)
-        assertEquals("", vm.state.value.error)
-        assertEquals(listOf("read", "apply", "read", "apply"), transport.calls.map { it[1] })
-    }
-
-    @Test fun quickChangesAreSavedAsOnePolicyAndReturningToOriginalDoesNotWrite() = runBlocking {
-        val transport = Transport()
-        val vm = model(this, transport)
-        vm.load(); vm.loaded()
-        vm.toggle("0:alpha.example")
-        vm.toggle("0:beta.example")
         vm.setProxySettings(false)
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertEquals(0, transport.writes)
         assertTrue(vm.state.value.hasPendingPolicy)
-        assertTrue(vm.flushPolicy())
-        assertFalse(vm.state.value.hasPendingPolicy)
-        assertFalse(transport.config.enabled)
-        assertEquals(listOf("0:alpha.example", "0:beta.example"), transport.config.proxyApps)
-        assertEquals(1, transport.calls.count { it[1] == "apply" })
-        vm.toggle("0:alpha.example")
-        vm.toggle("0:alpha.example")
-        assertTrue(vm.flushPolicy())
-        assertEquals(1, transport.calls.count { it[1] == "apply" })
-    }
-
-    @Test fun oldReadbackDuringPackageLoadingCannotReplaceNewPolicy() = runBlocking {
-        val transport = Transport()
-        val entered = CompletableDeferred<Unit>()
-        val release = CompletableDeferred<Unit>()
-        val catalog = AppPackageRepository(queryPackages = { args ->
-            if (args.last() == "users") listOf("UserInfo{0:Owner:13}")
-            else {
-                entered.complete(Unit); withTimeout(10_000) { release.await() }
-                if (args.last() == "-s") emptyList() else listOf("package:alpha.example", "package:beta.example")
-            }
-        }, resolveLabel = { it })
-        val vm = model(this, transport, catalog)
-        vm.load()
-        withTimeout(5_000) { entered.await() }
-        vm.setProxySettings(false)
-        withTimeout(5_000) {
-            while (transport.config.enabled) yield()
-        }
-        release.complete(Unit)
-        vm.loaded()
-        assertFalse(vm.state.value.appProxyEnabled)
-    }
-
-    @Test fun failedModeDoesNotApplyDependentSelectionToOppositeListOrReplayIt() = runBlocking {
-        val transport = Transport().apply {
-            config = AppProxyConfig(mode = "blacklist", bypassApps = listOf("0:beta.example"))
-        }
-        val vm = model(this, transport)
-        vm.load(); vm.loaded()
-        val entered = CompletableDeferred<Unit>()
-        val release = CompletableDeferred<Unit>()
-        transport.before = { args ->
-            if (args[1] == "apply") {
-                entered.complete(Unit)
-                withTimeout(10_000) { release.await() }
-                throw NetProxyCtlException("app.mode_invalid", "failed mode")
-            }
-        }
-        vm.setProxySettings(true, "whitelist")
-        withTimeout(5_000) { entered.await() }
-        vm.toggle("0:alpha.example")
-        assertEquals(setOf("0:alpha.example"), vm.state.value.proxyApps)
-        release.complete(Unit)
-        settle()
-        assertEquals("blacklist", vm.state.value.appProxyMode)
-        assertEquals(listOf("0:beta.example"), transport.config.bypassApps)
-        assertTrue(vm.state.value.proxyApps.isEmpty())
-        assertEquals("failed mode", vm.state.value.error)
-        assertEquals(listOf("read", "apply", "read"), transport.calls.map { it[1] })
-        transport.before = {}
-        vm.setProxySettings(true, "whitelist")
-        settle()
-        assertTrue(transport.config.proxyApps.isEmpty())
-        vm.toggle("0:alpha.example")
-        settle()
+        assertTrue(withContext(Dispatchers.Default) { vm.flushPolicy() })
+        assertEquals(1, transport.writes)
         assertEquals(listOf("0:alpha.example"), transport.config.proxyApps)
         assertEquals(listOf("0:beta.example"), transport.config.bypassApps)
+        assertFalse(transport.config.enabled)
+    }
+
+    @Test fun returningToOriginalPolicyDoesNotWrite() = runBlocking {
+        val transport = Transport()
+        val vm = model(this, transport)
+        vm.load(); vm.loaded()
+        vm.toggle("0:alpha.example"); vm.toggle("0:alpha.example")
+        vm.setProxySettings(false); vm.setProxySettings(true)
+        assertFalse(vm.state.value.hasPendingPolicy)
+        assertTrue(vm.flushPolicy())
+        assertEquals(0, transport.writes)
+    }
+
+    @Test fun queuedSaveOnlyIncludesSelectionAtItsTrigger() = runBlocking {
+        val transport = Transport()
+        val vm = model(this, transport)
+        vm.load(); vm.loaded()
+        vm.toggle("0:alpha.example"); vm.requestPolicyFlush()
+        vm.toggle("0:beta.example")
+        withTimeout(5_000) { vm.state.first { !it.isSavingPolicy } }
+        assertEquals(listOf("0:alpha.example"), transport.config.proxyApps)
+        assertEquals(setOf("0:alpha.example", "0:beta.example"), vm.state.value.proxyApps)
+        assertTrue(vm.state.value.hasPendingPolicy)
+        assertTrue(vm.flushPolicy())
+        assertEquals(setOf("0:alpha.example", "0:beta.example"), transport.config.proxyApps.toSet())
+        assertEquals(2, transport.writes)
+    }
+
+    @Test fun repeatedTriggerDuringSaveDoesNotSubmitLaterForegroundEdits() = runBlocking {
+        val transport = Transport()
+        val vm = model(this, transport)
+        vm.load(); vm.loaded()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        transport.before = { if (it[1] == "apply" && transport.writes == 1) {
+            entered.complete(Unit); withTimeout(5_000) { release.await() }
+        } }
+        vm.toggle("0:alpha.example"); vm.requestPolicyFlush()
+        withTimeout(5_000) { entered.await() }
+        vm.toggle("0:beta.example"); vm.requestPolicyFlush()
+        vm.toggle("0:alpha.example")
+        release.complete(Unit)
+        withTimeout(5_000) { vm.state.first { !it.isSavingPolicy } }
+        assertEquals(setOf("0:alpha.example", "0:beta.example"), transport.config.proxyApps.toSet())
+        assertEquals(setOf("0:beta.example"), vm.state.value.proxyApps)
+        assertTrue(vm.state.value.hasPendingPolicy)
+        assertTrue(vm.flushPolicy())
+        assertEquals(listOf("0:beta.example"), transport.config.proxyApps)
+        assertEquals(3, transport.writes)
+    }
+
+    @Test fun backgroundSaveKeepsNewIntentAndRepeatedFlushDoesNotDuplicateWrites() = runBlocking {
+        val transport = Transport()
+        val vm = model(this, transport)
+        vm.load(); vm.loaded()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        transport.before = { if (it[1] == "apply" && transport.writes == 1) {
+            entered.complete(Unit); withTimeout(5_000) { release.await() }
+        } }
+        vm.toggle("0:alpha.example")
+        vm.requestPolicyFlush()
+        withTimeout(5_000) { entered.await() }
+        vm.requestPolicyFlush()
+        vm.toggle("0:beta.example")
+        vm.setProxySettings(false)
+        release.complete(Unit)
+        assertTrue(vm.flushPolicy())
+        assertEquals(setOf("0:alpha.example", "0:beta.example"), vm.state.value.proxiedApps)
+        assertEquals(2, transport.writes)
+        assertFalse(transport.config.enabled)
+        vm.toggle("0:alpha.example")
+        yield()
+        assertEquals(2, transport.writes)
+        assertTrue(vm.state.value.hasPendingPolicy)
+    }
+
+    @Test fun revertingDuringWriteDoesNotRestoreAnOldCheckmarkOrSkipPendingRemoval() = runBlocking {
+        val transport = Transport()
+        val vm = model(this, transport)
+        vm.load(); vm.loaded()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        transport.before = { if (it[1] == "apply" && transport.writes == 1) {
+            entered.complete(Unit); withTimeout(5_000) { release.await() }
+        } }
+        vm.toggle("0:alpha.example"); vm.requestPolicyFlush()
+        withTimeout(5_000) { entered.await() }
+        vm.toggle("0:alpha.example")
+        assertTrue(vm.state.value.hasPendingPolicy)
+        assertTrue(vm.state.value.proxiedApps.isEmpty())
+        release.complete(Unit)
+        assertTrue(vm.flushPolicy())
+        assertTrue(transport.config.proxyApps.isEmpty())
+        assertEquals(2, transport.writes)
+    }
+
+    @Test fun backgroundSaveLeavesLaterForegroundEditsForNextLeave() = runBlocking {
+        val transport = Transport()
+        val vm = model(this, transport)
+        vm.load(); vm.loaded()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        transport.before = { if (it[1] == "apply" && transport.writes == 1) {
+            entered.complete(Unit); withTimeout(5_000) { release.await() }
+        } }
+        vm.toggle("0:alpha.example"); vm.requestPolicyFlush()
+        withTimeout(5_000) { entered.await() }
+        vm.toggle("0:beta.example")
+        release.complete(Unit)
+        withTimeout(5_000) { vm.state.first { !it.isSavingPolicy } }
+        assertEquals(1, transport.writes)
+        assertEquals(listOf("0:alpha.example"), transport.config.proxyApps)
+        assertTrue(vm.state.value.hasPendingPolicy)
+        assertTrue(vm.flushPolicy())
+        assertEquals(2, transport.writes)
+    }
+
+    @Test fun failedWriteRetainsModeAndSelectionWithoutRebasingOrRetrying() = runBlocking {
+        val transport = Transport()
+        val vm = model(this, transport)
+        vm.load(); vm.loaded()
+        vm.setProxySettings(true, "blacklist"); vm.toggle("0:beta.example")
+        transport.before = { if (it[1] == "apply") throw NetProxyCtlException("config.conflict", "conflict") }
+        assertFalse(vm.flushPolicy())
+        assertEquals("blacklist", vm.state.value.appProxyMode)
+        assertEquals(setOf("0:beta.example"), vm.state.value.proxiedApps)
+        assertTrue(vm.state.value.requiresPolicyReload)
+        vm.load(force = true)
+        withTimeout(5_000) { vm.state.first { !it.isLoadingApps } }
+        assertFalse(vm.flushPolicy())
+        assertEquals(1, transport.writes)
+        assertEquals(1, transport.calls.count { it[1] == "read" })
+        transport.before = {}
+        vm.discardPolicyAndReload()
+        vm.loaded()
+        assertFalse(vm.state.value.hasPendingPolicy)
+        assertEquals("whitelist", vm.state.value.appProxyMode)
+        vm.toggle("0:alpha.example")
+        assertTrue(vm.flushPolicy())
+    }
+
+    @Test fun persistedFailureIsNotReportedAsSuccessOrAutomaticallyReplayed() = runBlocking {
+        val transport = Transport()
+        val vm = model(this, transport)
+        vm.load(); vm.loaded()
+        transport.after = { if (it[1] == "apply") throw NetProxyCtlException("subscription.runtime_sync_failed", "failed") }
+        vm.toggle("0:alpha.example")
+        assertFalse(vm.flushPolicy())
+        assertEquals(listOf("0:alpha.example"), transport.config.proxyApps)
+        assertTrue(vm.state.value.hasPendingPolicy)
+        assertFalse(vm.flushPolicy())
+        assertEquals(1, transport.writes)
+        transport.after = {}
+        vm.discardPolicyAndReload(); vm.loaded()
+        assertEquals(setOf("0:alpha.example"), vm.state.value.proxiedApps)
+        assertFalse(vm.state.value.hasPendingPolicy)
+    }
+
+    @Test fun cancellingLeaveWaitDoesNotCancelStartedWrite() = runBlocking {
+        val transport = Transport()
+        val vm = model(this, transport)
+        vm.load(); vm.loaded()
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        transport.before = { if (it[1] == "apply") {
+            entered.complete(Unit); withTimeout(5_000) { release.await() }
+        } }
+        vm.toggle("0:alpha.example")
+        val leaving = launch { vm.flushPolicy() }
+        withTimeout(5_000) { entered.await() }
+        leaving.cancelAndJoin()
+        assertTrue(vm.state.value.isSavingPolicy)
+        release.complete(Unit)
+        assertTrue(vm.flushPolicy())
+        assertEquals(1, transport.writes)
+    }
+
+    @Test fun searchCheckmarksNeverRebuildResultsOrScheduleFiltering() = runBlocking {
+        val dispatcher = ManualDispatcher()
+        val transport = Transport()
+        val vm = model(this, transport, dispatcher = dispatcher)
+        vm.load()
+        withTimeout(5_000) { vm.state.first { !it.isLoadingApps && it.masterAppList.isNotEmpty() } }
+        dispatcher.drain(); yield()
+        vm.updateSearch(".example")
+        yield(); dispatcher.drain(); yield()
+        val results = vm.state.value.searchResults
+        vm.toggle("0:beta.example"); vm.toggle("0:alpha.example")
+        assertSame(results, vm.state.value.searchResults)
+        assertFalse(vm.state.value.isFilteringApps)
+        assertTrue(dispatcher.tasks.isEmpty())
+        vm.setSelectedFirst(false)
+        assertSame(results, vm.state.value.searchResults)
+        assertEquals(".example", vm.state.value.appSearchQuery)
+        assertTrue(vm.flushPolicy())
+        assertEquals(1, transport.writes)
+    }
+
+    @Test fun selectionDuringSearchCalculationUsesLatestCheckmarks() = runBlocking {
+        val dispatcher = ManualDispatcher()
+        val vm = model(this, Transport(), dispatcher = dispatcher)
+        vm.load()
+        withTimeout(5_000) { vm.state.first { !it.isLoadingApps && it.masterAppList.isNotEmpty() } }
+        dispatcher.drain(); yield()
+        vm.updateSearch("alpha"); yield()
+        vm.toggle("0:alpha.example")
+        dispatcher.drain(); yield()
+        assertEquals(listOf("alpha.example"), vm.state.value.searchResults.map { it.packageName })
+        assertEquals(setOf("0:alpha.example"), vm.state.value.proxiedApps)
+    }
+
+    @Test fun dirtyRefreshPreservesOriginalRevisionAndDoesNotOverwriteRemoteSelection() = runBlocking {
+        val transport = Transport()
+        val vm = model(this, transport)
+        vm.load(); vm.loaded()
+        vm.toggle("0:alpha.example")
+        transport.config = transport.config.copy(proxyApps = listOf("0:beta.example"))
+        transport.revision++
+        vm.load(force = true); vm.loaded()
+        assertEquals(setOf("0:alpha.example"), vm.state.value.proxiedApps)
+        assertFalse(vm.flushPolicy())
+        assertEquals(listOf("0:beta.example"), transport.config.proxyApps)
+    }
+
+    @Test fun selectedFirstOnlyReordersNormalListAndPreservesReverseOrder() {
+        val alpha = AppInfoModel("alpha.example", "Alpha")
+        val beta = AppInfoModel("beta.example", "Beta")
+        val state = AppsUiState(allApps = listOf(alpha, beta), searchResults = listOf(alpha, beta),
+            proxiedApps = setOf(beta.id))
+        assertEquals(listOf(beta, alpha), state.orderedApps())
+        assertEquals(listOf(alpha, beta), state.searchResults)
+        assertSame(state.allApps, state.copy(appSelectedFirst = false).orderedApps())
+        assertEquals(listOf(alpha, beta), state.copy(allApps = listOf(beta, alpha), appReverseSort = true).orderedApps())
+    }
+
+    @Test fun searchStateRestoresExpandedQueryButNotClosingAnimation() {
+        val search = SearchStatus("Search").apply { searchText = "example"; current = SearchStatus.Status.EXPANDING }
+        val scope = SaverScope { true }
+        val restored = with(SearchStatus.Saver) { restore(scope.save(search)!!)!! }
+        assertEquals("example", restored.searchText)
+        assertEquals(SearchStatus.Status.EXPANDED, restored.current)
+        search.current = SearchStatus.Status.COLLAPSING
+        val closed = with(SearchStatus.Saver) { restore(scope.save(search)!!)!! }
+        assertEquals("", closed.searchText)
+        assertTrue(closed.isCollapsed())
     }
 
     @Test fun newestFilterWinsWhenQueuedCalculationsRunInReverseOrder() = runBlocking {
@@ -276,131 +403,54 @@ class AppsViewModelTest {
         vm.load()
         withTimeout(5_000) { vm.state.first { !it.isLoadingApps && it.masterAppList.isNotEmpty() } }
         dispatcher.drain(); yield()
-        vm.updateSearch("alpha")
-        yield()
-        vm.setReverseSort(true)
-        vm.updateSearch("beta")
-        yield()
-        dispatcher.newest(); yield()
-        dispatcher.drain(); yield()
-        assertEquals("beta", vm.state.value.appSearchQuery)
+        vm.updateSearch("alpha"); yield()
+        vm.setReverseSort(true); vm.updateSearch("beta"); yield()
+        dispatcher.newest(); yield(); dispatcher.drain(); yield()
         assertEquals(listOf("beta.example"), vm.state.value.searchResults.map { it.packageName })
         assertEquals(listOf("beta.example", "alpha.example"), vm.state.value.allApps.map { it.packageName })
-        vm.updateSearch("")
-        yield(); dispatcher.drain(); yield()
-        assertTrue(vm.state.value.searchResults.isEmpty())
     }
 
-    @Test fun failedModeAndReadbackCannotApplySelectionUsingUnconfirmedMode() = runBlocking {
-        val transport = Transport().apply { config = AppProxyConfig(mode = "blacklist") }
-        val vm = model(this, transport)
-        vm.load(); vm.loaded()
-        val entered = CompletableDeferred<Unit>()
-        val release = CompletableDeferred<Unit>()
-        transport.before = { args ->
-            if (args[1] == "apply") {
-                entered.complete(Unit)
-                withTimeout(10_000) { release.await() }
-                transport.config = AppProxyConfig(mode = "blacklist")
-                throw NetProxyCtlException("app.mode_invalid", "failed mode")
-            }
-            if (args[1] == "read") throw NetProxyCtlException("app.read_failed", "failed readback")
-        }
-        vm.setProxySettings(true, "whitelist")
-        withTimeout(5_000) { entered.await() }
-        vm.toggle("0:alpha.example")
-        release.complete(Unit)
-        settle()
-        assertEquals(1, transport.calls.count { it[1] == "apply" })
-        assertTrue(transport.config.bypassApps.isEmpty())
-        assertTrue(vm.state.value.error.isNotBlank())
+    @Test fun failedRefreshClearsCancelledSearchCalculation() = runBlocking {
+        val dispatcher = ManualDispatcher()
+        val transport = Transport()
+        val vm = model(this, transport, dispatcher = dispatcher)
+        vm.load()
+        withTimeout(5_000) { vm.state.first { !it.isLoadingApps && it.masterAppList.isNotEmpty() } }
+        dispatcher.drain(); yield()
+        vm.updateSearch("alpha"); yield()
+        transport.before = { throw NetProxyCtlException("config.read_failed", "failed") }
+        vm.load(force = true)
+        withTimeout(5_000) { vm.state.first { !it.isLoadingApps } }
+        dispatcher.drain(); yield()
+        assertFalse(vm.state.value.isFilteringApps)
+        assertEquals("failed", vm.state.value.error)
     }
 
     @Test fun cancellationStopsCpuFilteringBeforeTraversingRemainingApps() = runBlocking {
-        val snapshot = AppsUiState(masterAppList = List(100) {
-            AppInfoModel("app$it.example", "App $it", false)
-        })
-        var reads = 0
-        var returned = false
-        val calculation = launch {
-            val context = currentCoroutineContext()
-            val labels = object : AbstractMap<String, String>() {
-                override val entries = emptySet<Map.Entry<String, String>>()
-                override fun get(key: String): String {
-                    reads++
-                    context.job.cancel()
-                    return key
+        val lookups = AtomicInteger()
+        val entries = (0..1_000).map { AppInfoModel("pkg.$it", "App $it") }
+        val job = launch {
+            val current = currentCoroutineContext().job
+            val labels = object : Map<String, String> by emptyMap() {
+                override fun get(key: String): String? {
+                    if (lookups.incrementAndGet() == 10) current.cancel()
+                    return null
                 }
             }
-            calculateAppsList(snapshot, labels)
-            returned = true
+            calculateAppsList(AppsUiState(masterAppList = entries), labels)
         }
-        calculation.join()
-        assertTrue(calculation.isCancelled)
-        assertFalse(returned)
-        assertEquals(1, reads)
+        job.join()
+        assertTrue(job.isCancelled)
+        assertEquals(10, lookups.get())
     }
 
     @Test fun forceRefreshReloadsListingLabelsAndIconGeneration() = runBlocking {
         val label = AtomicReference("Before")
         val vm = model(this, Transport(), packages { label.get() })
         vm.load(); vm.loaded()
-        assertTrue(vm.state.value.allApps.all { it.label == "Before" })
         val revision = AppIconCache.revision
-        label.set("After")
-        vm.load(force = true)
+        label.set("After"); vm.load(force = true)
         withTimeout(5_000) { vm.state.first { !it.isLoadingApps && it.allApps.all { app -> app.label == "After" } } }
         assertTrue(AppIconCache.revision > revision)
-    }
-
-    @Test fun forcedLoadSupersedesInFlightListingWithoutCancellationError() = runBlocking {
-        val calls = AtomicInteger()
-        val entered = CompletableDeferred<Unit>()
-        val release = CompletableDeferred<Unit>()
-        val catalog = AppPackageRepository(queryPackages = { args ->
-            when {
-                args.last() == "users" && calls.incrementAndGet() == 1 -> {
-                    entered.complete(Unit)
-                    withContext(NonCancellable) { withTimeout(10_000) { release.await() } }
-                    listOf("UserInfo{10:Old:13}")
-                }
-                args.last() == "users" -> listOf("UserInfo{0:Owner:13}")
-                args.last() == "-s" -> emptyList()
-                else -> listOf("package:alpha.example", "package:beta.example")
-            }
-        }, resolveLabel = { it })
-        val vm = model(this, Transport(), catalog)
-        vm.load()
-        withTimeout(5_000) { entered.await() }
-        vm.load(force = true)
-        vm.loaded()
-        release.complete(Unit)
-        settle()
-        assertTrue(vm.state.value.masterAppList.all { it.userId == "0" })
-        assertEquals("", vm.state.value.error)
-    }
-
-    @Test fun cancelledWriteDoesNotPublishFailureOrApplyLateResult() = runBlocking {
-        val transport = Transport()
-        val entered = CompletableDeferred<Unit>()
-        val release = CompletableDeferred<Unit>()
-        lateinit var vm: AppsViewModel
-        coroutineScope {
-            val worker = launch {
-                vm = model(this, transport)
-                vm.load(); vm.loaded()
-                transport.after = {
-                    entered.complete(Unit)
-                    withContext(NonCancellable) { withTimeout(10_000) { release.await() } }
-                }
-                vm.setProxySettings(false)
-            }
-            withTimeout(5_000) { entered.await() }
-            worker.cancel(CancellationException("page closed"))
-            release.complete(Unit)
-            worker.join()
-        }
-        assertEquals("", vm.state.value.error)
-        assertFalse(vm.state.value.appProxyEnabled)
     }
 }

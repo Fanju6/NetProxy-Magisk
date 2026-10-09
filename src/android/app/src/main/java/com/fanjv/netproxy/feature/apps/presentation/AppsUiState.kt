@@ -6,7 +6,6 @@ import androidx.compose.runtime.Immutable
 data class AppInfoModel(
     val packageName: String,
     val label: String,
-    val isProxied: Boolean,
     val userId: String = "0",
     val isSystem: Boolean = false
 ) {
@@ -29,7 +28,16 @@ data class AppsUiState(
     val appReverseSort: Boolean = false,
     val appShowPackageName: Boolean = true,
     val isLoadingApps: Boolean = false,
+    val isFilteringApps: Boolean = false,
     val hasLoadedApps: Boolean = false,
     val hasPendingPolicy: Boolean = false,
+    val isSavingPolicy: Boolean = false,
+    val requiresPolicyReload: Boolean = false,
     val error: String = ""
 )
+
+internal fun AppsUiState.orderedApps(): List<AppInfoModel> {
+    if (!appSelectedFirst) return allApps
+    val (selected, other) = allApps.partition { it.id in proxiedApps }
+    return if (appReverseSort) other + selected else selected + other
+}

@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -39,6 +40,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -89,14 +91,25 @@ internal fun Modifier.deferredTopPadding(top: () -> Dp): Modifier =
         }
     }
 
-/** 搜索状态持有者：搜索文本、展开态、结果状态及相关动画。 */
+/** 搜索状态持有者：搜索文本、展开态及相关动画。 */
 @Stable
 class SearchStatus(val label: String) {
+    companion object {
+        val Saver = listSaver<SearchStatus, Any>(
+            save = { listOf(it.label, if (it.shouldExpand()) it.searchText else "", it.shouldExpand()) },
+            restore = {
+                SearchStatus(it[0] as String).apply {
+                    searchText = it[1] as String
+                    current = if (it[2] as Boolean) Status.EXPANDED else Status.COLLAPSED
+                }
+            }
+        )
+    }
+
     var searchText by mutableStateOf("")
     var current by mutableStateOf(Status.COLLAPSED)
 
     var offsetY by mutableStateOf(0.dp)
-    var resultStatus by mutableStateOf(ResultStatus.DEFAULT)
 
     fun isExpand() = current == Status.EXPANDED
     fun isCollapsed() = current == Status.COLLAPSED
@@ -142,7 +155,6 @@ class SearchStatus(val label: String) {
     }
 
     enum class Status { EXPANDED, EXPANDING, COLLAPSED, COLLAPSING }
-    enum class ResultStatus { DEFAULT, EMPTY, LOAD, SHOW }
 }
 
 @Composable
@@ -176,7 +188,7 @@ fun SearchStatus.SearchBox(
 
 @Composable
 fun SearchStatus.SearchPager(
-    defaultResult: @Composable () -> Unit,
+    empty: Boolean,
     expandBar: @Composable (SearchStatus, () -> Dp) -> Unit = { searchStatus, padding ->
         SearchBar(searchStatus, padding)
     },
@@ -184,6 +196,8 @@ fun SearchStatus.SearchPager(
     result: LazyListScope.() -> Unit
 ) {
     val searchStatus = this
+    val listState = rememberLazyListState()
+    LaunchedEffect(searchStatus.searchText) { listState.scrollToItem(0) }
     val systemBarsPadding = WindowInsets.systemBars.asPaddingValues().calculateTopPadding()
     val topPadding by animateDpAsState(
         targetValue = if (searchStatus.shouldExpand()) {
@@ -285,9 +299,13 @@ fun SearchStatus.SearchPager(
             enter = fadeIn(),
             exit = fadeOut()
         ) {
-            when (searchStatus.resultStatus) {
-                SearchStatus.ResultStatus.DEFAULT -> defaultResult()
-                SearchStatus.ResultStatus.EMPTY -> {
+            Box(Modifier.fillMaxSize()) {
+                LazyColumn(
+                    Modifier.fillMaxSize().overScrollVertical(),
+                    state = listState,
+                    content = result
+                )
+                if (empty) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(
                             text = stringResource(com.fanjv.netproxy.R.string.no_apps_found),
@@ -295,18 +313,6 @@ fun SearchStatus.SearchPager(
                             color = colorScheme.onSurfaceVariantActions
                         )
                     }
-                }
-
-                SearchStatus.ResultStatus.LOAD -> {
-                    // 如需可在此添加加载指示器
-                }
-
-                SearchStatus.ResultStatus.SHOW -> LazyColumn(
-                    Modifier
-                        .fillMaxSize()
-                        .overScrollVertical(),
-                ) {
-                    result()
                 }
             }
         }

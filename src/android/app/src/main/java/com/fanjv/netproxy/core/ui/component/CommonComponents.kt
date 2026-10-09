@@ -8,6 +8,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -18,8 +23,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.fanjv.netproxy.core.ui.theme.LocalEnableBlur
 import com.fanjv.netproxy.core.ui.theme.isInDarkTheme
+import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
@@ -57,6 +65,35 @@ fun BackIconButton(onClick: () -> Unit) {
             contentDescription = null,
             tint = colorScheme.onSurface,
         )
+    }
+}
+
+@Composable
+internal fun rememberCommitAction(
+    commit: suspend () -> Boolean,
+): (() -> Unit) -> Unit {
+    val scope = rememberCoroutineScope()
+    var committing by remember { mutableStateOf(false) }
+    return { action ->
+        if (!committing) {
+            committing = true
+            scope.launch {
+                try { if (commit()) action() } finally { committing = false }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun rememberCommitOnLeave(requestCommit: () -> Unit): (() -> Unit) -> Unit {
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { requestCommit() }
+    var leaving by remember { mutableStateOf(false) }
+    return { action ->
+        if (!leaving) {
+            leaving = true
+            requestCommit()
+            action()
+        }
     }
 }
 

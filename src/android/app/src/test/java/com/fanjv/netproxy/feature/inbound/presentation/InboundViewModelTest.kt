@@ -5,11 +5,13 @@ import com.fanjv.netproxy.core.module.ServiceRepository
 import com.fanjv.netproxy.feature.inbound.data.InboundRepository
 import com.fanjv.netproxy.feature.inbound.data.textAt
 import com.fanjv.netproxy.feature.inbound.data.listAt
+import com.fanjv.netproxy.feature.inbound.data.objectAt
 import com.fanjv.netproxy.feature.inbound.data.stringArray
 import com.fanjv.netproxy.feature.settings.data.ConfigRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -23,10 +25,11 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.CopyOnWriteArrayList
 
 class InboundViewModelTest {
     @get:Rule val folder = TemporaryFolder()
-    private val calls = mutableListOf<List<String>>()
+    private val calls = CopyOnWriteArrayList<List<String>>()
     private var backend = "ebpf"
     private var running = true
     private var failure: String? = null
@@ -40,12 +43,15 @@ class InboundViewModelTest {
     private var ebpf = """{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true,"dns_mode":"respect_policy","bypass_port":[853]},"shared":{"enabled":false},"udp_timeout":"3m"}"""
     private var tun = """{"type":"tun","tag":"netproxy-in","address":["172.19.0.1/30"],"auto_route":true,"auto_redirect":true,"exclude_interface":["old"],"route_address_set":["untouched"],"multi_queue":true}"""
     private var revision = 1
+    private val partitionWrites = mutableMapOf<String, Int>()
+    private fun configRevision(target: String) = "$target-$revision-${partitionWrites[target] ?: 0}"
     private var choicesGate: CountDownLatch? = null
     private val choicesEntered = CompletableDeferred<Unit>()
     private var choicesFailure = false
 
     private fun output(data: String) = NetProxyCtlOutput(true, listOf("""{"schema":1,"ok":true,"code":"test","message":"","data":$data}"""), emptyList())
-    private fun viewModel(scope: CoroutineScope): InboundViewModel {
+    private fun viewModel(scope: CoroutineScope, saveScope: CoroutineScope = scope,
+        onSaveFailure: (String) -> Unit = {}): InboundViewModel {
         val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
             calls += args
             when {
@@ -79,11 +85,11 @@ class InboundViewModelTest {
                         "singbox/config.json" -> """{"route":{"rule_set":[{"tag":"private"}]}}"""
                         else -> error("非预期配置目标")
                     }
-                    output(JsonObject(mapOf("content" to JsonPrimitive(content), "revision" to JsonPrimitive("${args.last()}-$revision"))).toString())
+                    output(JsonObject(mapOf("content" to JsonPrimitive(content), "revision" to JsonPrimitive(configRevision(args.last())))).toString())
                 }
                 args.take(2) == listOf("config", "apply") -> {
                     onApply()
-                    if (failure != null || args[3] != "${args[4]}-$revision") NetProxyCtlOutput(false,
+                    if (failure != null || args[3] != configRevision(args[4])) NetProxyCtlOutput(false,
                         listOf("""{"schema":1,"ok":false,"code":"${failure ?: "config.conflict"}","message":"failed"}"""), emptyList())
                     else {
                         val content = kotlinx.serialization.json.Json.parseToJsonElement(File(args.last()).readText()) as JsonObject
@@ -92,18 +98,206 @@ class InboundViewModelTest {
                             "inbound/ebpf" -> ebpf = content.getValue("ebpf").toString()
                             "inbound/tun" -> tun = content.getValue("tun").toString()
                         }
-                        revision++
-                        output("""{"revision":"${args[4]}-$revision"}""")
+                        partitionWrites[args[4]] = (partitionWrites[args[4]] ?: 0) + 1
+                        output("""{"revision":"${configRevision(args[4])}"}""")
                     }
                 }
                 else -> error("非预期命令")
             }
         })
-        return InboundViewModel(InboundRepository(ConfigRepository(client, CommandFileStore(folder.root)), ServiceRepository(client)), scope)
+        val writes = ConfigurationWrites(saveScope) { onSaveFailure(it.message.orEmpty()) }
+        return InboundViewModel(InboundRepository(ConfigRepository(client, CommandFileStore(folder.root),
+            awaitPendingWrites = writes::await), ServiceRepository(client)), scope, writes)
     }
 
     private suspend fun InboundViewModel.loaded() = withTimeout(5_000) { state.first { it.snapshot != null && !it.isLoading } }
-    private suspend fun InboundViewModel.idle() = withTimeout(5_000) { state.first { !it.isSaving } }
+    private suspend fun InboundViewModel.idle() {
+        flush()
+        withTimeout(5_000) { state.first { !it.isSaving } }
+    }
+
+    @Test fun nativeCommitSurvivesPageScopeAndReportsFailure() = runBlocking {
+        val pageScope = CoroutineScope(coroutineContext + Job())
+        val errors = mutableListOf<String>()
+        val vm = viewModel(pageScope, saveScope = this, onSaveFailure = errors::add)
+        try {
+            vm.refresh(); vm.loaded()
+            vm.setField("udp_timeout", JsonPrimitive("5m"))
+            failure = "config.conflict"
+            vm.requestFlush(); pageScope.cancel()
+            withTimeout(5_000) { vm.state.first { it.requiresReload && !it.isSaving } }
+            assertEquals(listOf("failed"), errors)
+            assertEquals("5m", vm.state.value.native.textAt("udp_timeout"))
+            assertTrue(vm.state.value.hasPendingChanges)
+            assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+            vm.requestFlush()
+            assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+        } finally { pageScope.cancel() }
+    }
+
+    @Test fun nativeEditsMergeOnLeaveAndReturningToOriginalDoesNotWrite() = runBlocking {
+        val vm = viewModel(this)
+        vm.refresh(); vm.loaded()
+        vm.setField("udp_timeout", JsonPrimitive("5m"))
+        vm.setField("local.dns_mode", JsonPrimitive("off"))
+        vm.refresh()
+        assertEquals("5m", vm.state.value.native.textAt("udp_timeout"))
+        assertTrue(vm.state.value.hasPendingChanges)
+        assertFalse(calls.any { it.take(2) == listOf("config", "apply") })
+        assertTrue(vm.flush())
+        assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+        vm.setField("udp_timeout", JsonPrimitive("3m"))
+        vm.setField("udp_timeout", JsonPrimitive("5m"))
+        assertFalse(vm.state.value.hasPendingChanges)
+        assertTrue(vm.flush())
+        assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+    }
+
+    @Test fun confirmedBackendSwitchSurvivesPageDisposalAndReportsFailure() = runBlocking {
+        val pageScope = CoroutineScope(coroutineContext + Job())
+        val errors = mutableListOf<String>()
+        val vm = viewModel(pageScope, saveScope = this, onSaveFailure = errors::add)
+        try {
+            vm.refresh(); vm.loaded()
+            vm.requestBackend("tun")
+            withTimeout(5_000) { vm.state.first { it.pendingBackend == "tun" } }
+            failure = "tun.start_failed"
+            vm.confirmBackendSwitch(); pageScope.cancel()
+            withTimeout(5_000) { vm.state.first { it.requiresReload && !it.isSaving } }
+            assertEquals(listOf("failed"), errors)
+            assertEquals("ebpf", vm.state.value.backend)
+            assertEquals("backend", vm.state.value.draftForReview()!!.partition)
+            assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+        } finally { pageScope.cancel() }
+    }
+
+    @Test fun restartCompletesItsDraftAndConfirmationAfterPageDisposal() = runBlocking {
+        val pageScope = CoroutineScope(coroutineContext + Job())
+        val vm = viewModel(pageScope, saveScope = this)
+        try {
+            vm.refresh(); vm.loaded()
+            vm.setField("udp_timeout", JsonPrimitive("5m"))
+            vm.restart(); pageScope.cancel()
+            withTimeout(5_000) { vm.state.first { !it.isSaving } }
+            assertTrue(ebpf.contains("5m"))
+            assertFalse(vm.state.value.hasPendingChanges)
+            assertFalse(vm.state.value.requiresReload)
+            assertEquals("ready", vm.state.value.snapshot!!.status!!.state)
+            assertEquals(1, calls.count { it == listOf("service", "restart") })
+        } finally { pageScope.cancel() }
+    }
+
+    @Test fun leavingBeforeBackendConfirmationNeverSwitchesRunningService() = runBlocking {
+        val pageScope = CoroutineScope(coroutineContext + Job())
+        val vm = viewModel(pageScope, saveScope = this)
+        try {
+            vm.refresh(); vm.loaded()
+            vm.setField("udp_timeout", JsonPrimitive("5m"))
+            vm.requestBackend("tun"); pageScope.cancel()
+            withTimeout(5_000) { vm.state.first { !it.isSaving } }
+            assertTrue(ebpf.contains("5m"))
+            assertEquals("ebpf", backend)
+            assertNull(vm.state.value.pendingBackend)
+            assertFalse(calls.any { it.take(2) == listOf("config", "apply") && it[4] == "inbound/backend" })
+        } finally { pageScope.cancel() }
+    }
+
+    @Test fun queuedSaveDoesNotIncludeEditsMadeAfterItsTrigger() = runBlocking {
+        val vm = viewModel(this)
+        vm.refresh(); vm.loaded()
+        vm.setField("udp_timeout", JsonPrimitive("5m"))
+        vm.requestFlush()
+        vm.setField("local.dns_mode", JsonPrimitive("off"))
+        withTimeout(5_000) { vm.state.first { !it.isSaving } }
+        assertTrue(ebpf.contains("respect_policy"))
+        assertEquals("off", vm.state.value.native.objectAt("local").textAt("dns_mode"))
+        assertTrue(vm.state.value.hasPendingChanges)
+        assertTrue(vm.flush())
+        assertTrue(ebpf.contains("off"))
+        assertEquals(2, calls.count { it.take(2) == listOf("config", "apply") })
+    }
+
+    @Test fun failedSaveAfterRevertingDraftStillBlocksNavigationAndAutomaticRefresh() = runBlocking {
+        val vm = viewModel(this)
+        vm.refresh(); vm.loaded()
+        val originalRevision = vm.state.value.snapshot!!.partitions.getValue("ebpf").revision
+        failure = "config.conflict"
+        onApply = { vm.setField("udp_timeout", JsonPrimitive("3m")) }
+        vm.setField("udp_timeout", JsonPrimitive("5m"))
+        assertFalse(vm.flush())
+        assertNull(vm.state.value.draft)
+        assertFalse(vm.state.value.canReviewDraft)
+        assertTrue(vm.state.value.requiresReload)
+        val reads = calls.count { it.take(2) == listOf("config", "read") }
+        vm.refresh()
+        assertEquals(reads, calls.count { it.take(2) == listOf("config", "read") })
+        assertEquals(originalRevision, vm.state.value.snapshot!!.partitions.getValue("ebpf").revision)
+        failure = null
+        vm.discardAndReload(); vm.loaded()
+        assertFalse(vm.state.value.requiresReload)
+    }
+
+    @Test fun backendSwitchFlushesParametersBeforeRequestingConfirmation() = runBlocking {
+        val vm = viewModel(this)
+        vm.refresh(); vm.loaded()
+        vm.setField("udp_timeout", JsonPrimitive("5m"))
+        vm.requestBackend("tun")
+        withTimeout(5_000) { vm.state.first { it.pendingBackend == "tun" } }
+        assertEquals("ebpf", vm.state.value.backend)
+        assertTrue(ebpf.contains("5m"))
+        assertFalse(vm.state.value.hasPendingChanges)
+        vm.confirmBackendSwitch(); vm.idle()
+        assertEquals(listOf("inbound/ebpf", "inbound/backend"),
+            calls.filter { it.take(2) == listOf("config", "apply") }.map { it[4] })
+        assertEquals("tun", vm.state.value.backend)
+    }
+
+    @Test fun failedFlushPreventsRestartAndRetainsLatestDraft() = runBlocking {
+        val vm = viewModel(this)
+        vm.refresh(); vm.loaded()
+        vm.setField("udp_timeout", JsonPrimitive("5m"))
+        failure = "config.conflict"
+        vm.restart(); vm.idle()
+        assertFalse(vm.flush())
+        assertTrue(vm.state.value.requiresReload)
+        assertTrue(vm.state.value.draftForReview()!!.snapshot.content.contains("5m"))
+        assertFalse(calls.any { it == listOf("service", "restart") })
+        assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+    }
+
+    @Test fun revertingDuringSaveIsAppliedAfterConfirmationWithoutFlicker() = runBlocking {
+        val vm = viewModel(this)
+        vm.refresh(); vm.loaded()
+        onApply = {
+            if (calls.count { it.take(2) == listOf("config", "apply") } == 1) {
+                vm.setField("udp_timeout", JsonPrimitive("3m"))
+                assertEquals("3m", vm.state.value.native.textAt("udp_timeout"))
+            }
+        }
+        vm.setField("udp_timeout", JsonPrimitive("5m"))
+        assertTrue(vm.flush())
+        assertEquals("3m", vm.state.value.native.textAt("udp_timeout"))
+        assertTrue(ebpf.contains("3m"))
+        assertEquals(2, calls.count { it.take(2) == listOf("config", "apply") })
+    }
+
+    @Test fun backgroundSaveKeepsLaterForegroundEditsUntilNextLeave() = runBlocking {
+        val vm = viewModel(this)
+        vm.refresh(); vm.loaded()
+        onApply = {
+            if (calls.count { it.take(2) == listOf("config", "apply") } == 1) {
+                vm.setField("local.dns_mode", JsonPrimitive("off"))
+            }
+        }
+        vm.setField("udp_timeout", JsonPrimitive("5m")); vm.requestFlush()
+        withTimeout(5_000) { vm.state.first { !it.isSaving } }
+        assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+        assertTrue(ebpf.contains("respect_policy"))
+        assertTrue(vm.state.value.hasPendingChanges)
+        assertTrue(vm.flush())
+        assertTrue(ebpf.contains("off"))
+        assertEquals(2, calls.count { it.take(2) == listOf("config", "apply") })
+    }
 
     @Test fun diagnosticsInBothBackendsUseReadableContentWithoutChangingService() = runBlocking {
         for (selected in listOf("ebpf", "tun")) {
@@ -186,22 +380,24 @@ class InboundViewModelTest {
         assertEquals(saved, vm.state.value.snapshot)
     }
 
-    @Test fun applyingAndConfirmationKeepTheFormVisibleButBlockDuplicateWrites() = runBlocking {
+    @Test fun applyingKeepsNewDraftVisibleAndConfirmationBlocksBackendEdits() = runBlocking {
         val vm = viewModel(this)
         vm.refresh()
         vm.loaded()
         onApply = {
             assertTrue(vm.state.value.isSaving)
-            assertEquals("local.dns_mode", vm.state.value.applyingField)
+            assertEquals("ebpf", vm.state.value.applyingField)
             assertTrue(vm.state.value.hasConfiguration)
-            assertFalse(vm.state.value.editable)
-            vm.setField("local.dns_mode", JsonPrimitive("hijack"))
+            assertTrue(vm.state.value.editable)
+            if (calls.count { it.take(2) == listOf("config", "apply") } == 1) {
+                vm.setField("local.dns_mode", JsonPrimitive("hijack"))
+            }
         }
         vm.setField("local.dns_mode", JsonPrimitive("off"))
         vm.idle()
         assertNull(vm.state.value.applyingField)
-        assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
-        assertEquals("off", vm.state.value.native.getValue("local").jsonObject.textAt("dns_mode"))
+        assertEquals(2, calls.count { it.take(2) == listOf("config", "apply") })
+        assertEquals("hijack", vm.state.value.native.getValue("local").jsonObject.textAt("dns_mode"))
         vm.requestBackend("tun")
         withTimeout(5_000) { vm.state.first { it.pendingBackend != null } }
         assertNull(vm.state.value.applyingField)
@@ -285,7 +481,7 @@ class InboundViewModelTest {
         vm.setField("local.dns_mode", JsonPrimitive("hijack"))
         assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
         failure = null
-        vm.refresh()
+        vm.discardAndReload()
         withTimeout(5_000) { vm.state.first { !it.isLoading && !it.requiresReload } }
         vm.setField("local.dns_mode", JsonPrimitive("off"))
         vm.idle()
@@ -388,7 +584,7 @@ class InboundViewModelTest {
         assertFalse(vm.state.value.editable)
         assertTrue(vm.state.value.requiresReload)
         assertEquals("tun.start_failed", vm.state.value.errorCode)
-        val draft = vm.state.value.failedDraft!!
+        val draft = vm.state.value.draftForReview()!!
         assertEquals("backend", draft.partition)
         assertEquals(originalRevision, draft.snapshot.revision)
         assertEquals("tun", kotlinx.serialization.json.Json.parseToJsonElement(draft.snapshot.content).jsonObject.textAt("backend"))
@@ -401,12 +597,12 @@ class InboundViewModelTest {
 
         readFailure = null
         revision++
-        vm.refresh()
+        vm.discardAndReload()
         vm.loaded()
         assertEquals("stopped", vm.state.value.snapshot!!.status!!.state)
         assertNull(vm.state.value.snapshot!!.status!!.activeBackend)
         assertFalse(vm.state.value.requiresReload)
-        assertEquals(draft, vm.state.value.failedDraft)
+        assertNull(vm.state.value.failedDraft)
         assertNotEquals(originalRevision, vm.state.value.snapshot!!.partitions.getValue("backend").revision)
         assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
     }
@@ -426,7 +622,7 @@ class InboundViewModelTest {
         assertFalse(vm.state.value.editable)
         assertTrue(vm.state.value.requiresReload)
         assertEquals(original, ebpf)
-        val draft = vm.state.value.failedDraft!!
+        val draft = vm.state.value.draftForReview()!!
         assertEquals("ebpf", draft.partition)
         assertEquals(originalRevision, draft.snapshot.revision)
         val native = kotlinx.serialization.json.Json.parseToJsonElement(draft.snapshot.content).jsonObject.getValue("ebpf").jsonObject
@@ -459,11 +655,11 @@ class InboundViewModelTest {
         assertFalse(vm.state.value.editable)
 
         statusFailure = null
-        vm.refresh()
+        vm.discardAndReload()
         vm.loaded()
         assertEquals("tun", vm.state.value.backend)
         assertEquals("tun", vm.state.value.snapshot!!.status!!.activeBackend)
-        assertNotNull(vm.state.value.failedDraft)
+        assertNull(vm.state.value.failedDraft)
         assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
     }
 
@@ -517,16 +713,14 @@ class InboundViewModelTest {
         vm.refresh()
         vm.loaded()
         val interfaces = InboundListInput(listOf("ap,0", "usb0")).withSelection("manual0", true).entries()
-        onApply = { assertEquals("include_interface", vm.state.value.applyingField) }
+        onApply = { assertEquals("tun", vm.state.value.applyingField) }
         vm.setFilter("include_interface", "exclude_interface", "include", interfaces)
-        vm.idle()
-        val selected = kotlinx.serialization.json.Json.parseToJsonElement(tun).jsonObject
+        val selected = vm.state.value.native
         assertEquals(interfaces, selected.listAt("include_interface"))
         assertFalse(selected.containsKey("exclude_interface"))
         assertEquals(listOf("untouched"), selected.listAt("route_address_set"))
 
         val tags = InboundListInput(emptyList()).withText("corp,lan\nprivate").withSelection("more，rules", true).entries()
-        onApply = { assertEquals("route_exclude_address_set", vm.state.value.applyingField) }
         vm.setField("route_exclude_address_set", stringArray(tags))
         vm.idle()
         val updated = kotlinx.serialization.json.Json.parseToJsonElement(tun).jsonObject
@@ -535,7 +729,7 @@ class InboundViewModelTest {
         assertEquals(selected.getValue("multi_queue"), updated.getValue("multi_queue"))
         assertEquals(selected.getValue("route_address_set"), updated.getValue("route_address_set"))
         assertEquals("stopped", vm.state.value.snapshot!!.status!!.state)
-        assertEquals(2, calls.count { it.take(2) == listOf("config", "apply") })
+        assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
     }
 
     @Test fun multiFieldEditsTrackTheirVisibleSettingAndClearProgress() = runBlocking {
@@ -543,7 +737,7 @@ class InboundViewModelTest {
         val vm = viewModel(this)
         vm.refresh()
         vm.loaded()
-        onApply = { assertEquals("paths", vm.state.value.applyingField) }
+        onApply = { assertEquals("ebpf", vm.state.value.applyingField) }
         vm.setDataPaths("both")
         vm.idle()
         assertNull(vm.state.value.applyingField)
@@ -557,7 +751,7 @@ class InboundViewModelTest {
 
         vm.refresh()
         vm.loaded()
-        onApply = { assertEquals("ipv6", vm.state.value.applyingField) }
+        onApply = { assertEquals("tun", vm.state.value.applyingField) }
         vm.setTunIpv6(true)
         vm.idle()
         assertNull(vm.state.value.applyingField)

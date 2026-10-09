@@ -1,8 +1,6 @@
 package com.fanjv.netproxy.feature.apps.presentation
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -33,14 +31,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -54,9 +51,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.compose.LifecycleEventEffect
-import androidx.lifecycle.Lifecycle
-import kotlinx.coroutines.launch
 import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.core.ui.component.BackIconButton
@@ -68,6 +62,7 @@ import com.fanjv.netproxy.core.ui.component.SearchPager
 import com.fanjv.netproxy.core.ui.component.SearchStatus
 import com.fanjv.netproxy.core.ui.component.StatusTag
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
+import com.fanjv.netproxy.core.ui.component.rememberCommitOnLeave
 import com.fanjv.netproxy.feature.apps.data.AppIconCache
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
@@ -82,6 +77,7 @@ import top.yukonga.miuix.kmp.basic.PopupPositionProvider
 import top.yukonga.miuix.kmp.basic.PullToRefresh
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.rememberPullToRefreshState
 import top.yukonga.miuix.kmp.blur.layerBackdrop
@@ -145,25 +141,13 @@ internal fun AppsScreen(
     val apps by viewModel.state.collectAsStateWithLifecycle()
     val spacing = 10.dp
 
-    val searchStatus by viewModel.searchStatus
+    val searchStatus = rememberSaveable(saver = SearchStatus.Saver) { SearchStatus("") }
 
     LaunchedEffect(Unit) { viewModel.load() }
-    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.requestPolicyFlush() }
-    val scope = rememberCoroutineScope()
-    var leaving by remember { mutableStateOf(false) }
-    val leave: () -> Unit = {
-        if (!leaving) {
-            if (!apps.hasPendingPolicy) onBack?.invoke()
-            else {
-                leaving = true
-                scope.launch {
-                    if (viewModel.flushPolicy()) onBack?.invoke()
-                    leaving = false
-                }
-            }
-        }
-    }
-    BackHandler(enabled = apps.hasPendingPolicy && onBack != null && searchStatus.isCollapsed()) { leave() }
+    val commitOnLeave = rememberCommitOnLeave(viewModel::requestPolicyFlush)
+    val leave: () -> Unit = { commitOnLeave { onBack?.invoke() } }
+    BackHandler(enabled = onBack != null && searchStatus.isCollapsed() &&
+        (apps.hasPendingPolicy || apps.requiresPolicyReload)) { leave() }
 
     val scrollBehavior = MiuixScrollBehavior()
     val dynamicTopPadding =
@@ -312,7 +296,9 @@ internal fun AppsScreen(
                         stringResource(R.string.refresh_refresh),
                         stringResource(R.string.refresh_complete),
                     )
-                    val allApps = apps.allApps
+                    val allApps = remember(
+                        apps.allApps, apps.proxiedApps, apps.appSelectedFirst, apps.appReverseSort
+                    ) { apps.orderedApps() }
 
                     PullToRefresh(
                         isRefreshing = apps.isLoadingApps,
@@ -341,6 +327,10 @@ internal fun AppsScreen(
                             ) {
                                 if (apps.error.isNotBlank()) item("error") {
                                     Text(apps.error, Modifier.padding(14.dp), color = colorScheme.error)
+                                }
+                                if (apps.requiresPolicyReload) item("reload") {
+                                    TextButton(stringResource(R.string.routing_reload_draft),
+                                        onClick = viewModel::discardPolicyAndReload)
                                 }
                                 item {
                                     Card(
@@ -388,7 +378,7 @@ internal fun AppsScreen(
                                         AppItem(
                                             app,
                                             apps.appShowPackageName,
-                                            app.isProxied,
+                                            app.id in apps.proxiedApps,
                                             spacing,
                                             viewModel
                                         )
@@ -421,15 +411,21 @@ internal fun AppsScreen(
 
         if (apps.appProxyEnabled) {
             searchStatus.SearchPager(
-                defaultResult = { },
+                empty = apps.hasLoadedApps && !apps.isFilteringApps &&
+                    apps.appSearchQuery.isNotBlank() && apps.searchResults.isEmpty(),
                 searchBarTopPadding = dynamicTopPadding,
             ) {
+                if (apps.error.isNotBlank() || apps.requiresPolicyReload) item("error") {
+                    if (apps.error.isNotBlank()) Text(apps.error, Modifier.padding(14.dp), color = colorScheme.error)
+                    if (apps.requiresPolicyReload) TextButton(stringResource(R.string.routing_reload_draft),
+                        onClick = viewModel::discardPolicyAndReload)
+                }
                 items(
                     items = apps.searchResults,
                     key = AppInfoModel::id,
                     contentType = { "app_item" },
                 ) { app ->
-                    AppItem(app, apps.appShowPackageName, app.isProxied, spacing, viewModel)
+                    AppItem(app, apps.appShowPackageName, app.id in apps.proxiedApps, spacing, viewModel)
                 }
             }
         }
@@ -445,25 +441,11 @@ private fun AppItem(
     spacing: androidx.compose.ui.unit.Dp,
     viewModel: AppsViewModel
 ) {
-    val animationState = remember { Animatable(0f) }
-
-    LaunchedEffect(Unit) {
-        animationState.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(durationMillis = 300)
-        )
-    }
-
     Card(
         modifier = Modifier
             .padding(horizontal = 12.dp)
             .padding(bottom = spacing)
             .fillMaxWidth()
-            .graphicsLayer {
-                val progress = animationState.value
-                this.alpha = progress
-                this.translationY = 50f * (1f - progress)
-            }
     ) {
         BasicComponent(
             onClick = {

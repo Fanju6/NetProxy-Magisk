@@ -20,7 +20,8 @@ internal data class ConfigValueUpdate(
 /** 模块与 sing-box 配置的事务读取、校验和写入入口。 */
 internal class ConfigRepository(
     private val client: NetProxyCtlClient,
-    private val commandFiles: CommandFileStore
+    private val commandFiles: CommandFileStore,
+    private val awaitPendingWrites: suspend (String) -> Unit = {}
 ) {
     private val updateMutex = Mutex()
 
@@ -30,8 +31,10 @@ internal class ConfigRepository(
     suspend fun read(target: String): String =
         readSnapshot(target).content
 
-    suspend fun readSnapshot(target: String): ConfigSnapshot =
-        client.json.decodeFromJsonElement(client.execute("config", "read", target).data)
+    suspend fun readSnapshot(target: String): ConfigSnapshot {
+        awaitPendingWrites(target)
+        return client.json.decodeFromJsonElement(client.execute("config", "read", target).data)
+    }
 
     suspend fun updateValue(
         target: String,

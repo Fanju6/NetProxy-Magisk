@@ -76,6 +76,7 @@ internal fun InboundSettingsScreen(
     var showField by remember { mutableStateOf(false) }
     var advanced by remember { mutableStateOf(false) }
     var showDraft by remember { mutableStateOf(false) }
+    var reviewingDraft by remember { mutableStateOf<InboundDraft?>(null) }
     var applyingField by remember { mutableStateOf<String?>(null) }
     val enabled = state.hasConfiguration
     LaunchedEffect(state.applyingField) {
@@ -85,7 +86,11 @@ internal fun InboundSettingsScreen(
             applyingField = state.applyingField
         }
     }
-    BackHandler(enabled = state.isSaving) {}
+    val commitOnLeave = rememberCommitOnLeave(viewModel::requestFlush)
+    val commitAction = rememberCommitAction(viewModel::flush)
+    val leave: () -> Unit = { commitOnLeave(onBack) }
+    BackHandler(enabled = !showField && state.pendingBackend == null && !showDraft &&
+        (state.hasPendingChanges || state.isSaving)) { leave() }
     fun openField(field: FieldEdit) {
         if (!state.editable) return
         editing = field.copy(backend = state.backend, revision = state.snapshot?.partitions?.get(state.backend)?.revision)
@@ -103,7 +108,7 @@ internal fun InboundSettingsScreen(
                     title = stringResource(R.string.inbound_settings),
                     color = if (backdrop != null) Color.Transparent else colorScheme.surface,
                     scrollBehavior = scrollBehavior,
-                    navigationIcon = { BackIconButton(onClick = { if (!state.isSaving) onBack() }) },
+                    navigationIcon = { BackIconButton(onClick = leave) },
                     actions = {
                         var more by remember { mutableStateOf(false) }
                         if (applyingField == "restart") {
@@ -149,12 +154,17 @@ internal fun InboundSettingsScreen(
                     )
                 }
                 if (state.requiresReload || (state.snapshot == null && !state.isLoading)) {
-                    item("reload") { TextButton(stringResource(R.string.inbound_reload), onClick = viewModel::refresh) }
+                    item("reload") { TextButton(stringResource(
+                        if (state.hasPendingChanges) R.string.routing_reload_draft else R.string.inbound_reload),
+                        onClick = viewModel::discardAndReload) }
                 }
-                if (state.failedDraft != null) groupedCardItems("draft", listOf(
+                if (state.canReviewDraft) groupedCardItems("draft", listOf(
                     CardItem("review") {
                         ArrowPreference(title = stringResource(R.string.inbound_draft),
-                            summary = stringResource(R.string.inbound_draft_hint), onClick = { showDraft = true })
+                            summary = stringResource(R.string.inbound_draft_hint), onClick = {
+                                reviewingDraft = state.draftForReview()
+                                showDraft = true
+                            })
                     }
                 ))
                 if (state.snapshot != null) {
@@ -172,14 +182,14 @@ internal fun InboundSettingsScreen(
                             ArrowPreference(
                                 title = stringResource(R.string.proxy_apps),
                                 enabled = enabled,
-                                onClick = { if (state.editable) navigator.push(Route.Apps) }
+                                onClick = { if (state.editable) commitAction { navigator.push(Route.Apps) } }
                             )
                         },
                         CardItem("json") {
                             ArrowPreference(
                                 title = stringResource(R.string.inbound_full_json),
                                 enabled = enabled,
-                                onClick = { if (state.editable) navigator.push(Route.JsonEdit("inbound")) }
+                                onClick = { if (state.editable) commitAction { navigator.push(Route.JsonEdit("inbound")) } }
                             )
                         }
                     ) + if (state.snapshot?.status?.requiresBackendSwitch(state.backend) == true) listOf(
@@ -224,7 +234,7 @@ internal fun InboundSettingsScreen(
             showField = false
         })
     }
-    state.failedDraft?.let { draft ->
+    reviewingDraft?.let { draft ->
         val title = stringResource(R.string.inbound_draft)
         OverlayDialog(show = showDraft, title = title, summary = stringResource(R.string.inbound_draft_hint),
             onDismissRequest = { showDraft = false }) {

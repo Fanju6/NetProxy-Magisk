@@ -2,6 +2,7 @@ package com.fanjv.netproxy.feature.inbound.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.fanjv.netproxy.core.command.ConfigurationWrites
 import com.fanjv.netproxy.core.command.NetProxyCtlException
 import com.fanjv.netproxy.core.ui.userMessage
 import com.fanjv.netproxy.feature.inbound.data.*
@@ -15,10 +16,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonObject
 
 internal data class InboundDraft(val partition: String, val snapshot: ConfigSnapshot)
 
@@ -31,6 +32,7 @@ internal data class InboundUiState(
     val requiresReload: Boolean = false,
     val pendingBackend: String? = null,
     val failedDraft: InboundDraft? = null,
+    val draft: JsonObject? = null,
     val diagnostic: String? = null,
     val isDiagnosing: Boolean = false,
     val errorCode: String = "",
@@ -39,21 +41,34 @@ internal data class InboundUiState(
     val isSaving: Boolean get() = applyingField != null
     val isInitialLoading: Boolean get() = snapshot == null && (isLoading || !requiresReload)
     val backend: String get() = snapshot?.backend.orEmpty()
-    val native: JsonObject get() = snapshot?.native?.get(backend) ?: JsonObject(emptyMap())
+    val native: JsonObject get() = draft ?: snapshot?.native?.get(backend) ?: JsonObject(emptyMap())
+    val hasPendingChanges: Boolean get() = draft != null || failedDraft != null
+    val canReviewDraft: Boolean get() = failedDraft != null || (requiresReload && draft != null)
     val hasConfiguration: Boolean get() = snapshot?.status != null && !requiresReload
-    val editable: Boolean get() = hasConfiguration && !isSaving && pendingBackend == null
+    val editable: Boolean get() = hasConfiguration && (applyingField == null || applyingField == backend) && pendingBackend == null
+
+    fun draftForReview(): InboundDraft? {
+        failedDraft?.let { return it }
+        val candidate = draft?.takeIf { requiresReload } ?: return null
+        val revision = snapshot?.partitions?.get(backend)?.revision ?: return null
+        return InboundDraft(backend, ConfigSnapshot(inboundJson.encodeToString(JsonObject(mapOf(backend to candidate))), revision))
+    }
 }
 
 internal class InboundViewModel(
     private val repository: InboundRepository,
-    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+    private val writes: ConfigurationWrites = ConfigurationWrites(scope)
 ) : ViewModel(scope) {
     private val mutableState = MutableStateFlow(InboundUiState())
     val state = mutableState.asStateFlow()
     private var refreshJob: Job? = null
+    private var mutationJob: Job? = null
+    private var requestedNative: JsonObject? = null
 
     fun refresh() {
-        if (state.value.isLoading || state.value.isSaving) return
+        if (state.value.isLoading || state.value.isSaving || state.value.hasPendingChanges ||
+            (state.value.requiresReload && state.value.snapshot != null)) return
         mutableState.update { it.copy(isLoading = true, error = "", errorCode = "", pendingBackend = null) }
         refreshJob = viewModelScope.launch {
             try {
@@ -66,7 +81,7 @@ internal class InboundViewModel(
                 }
                 mutableState.update {
                     it.copy(snapshot = snapshot, choices = choices ?: it.choices, choicesError = choices == null,
-                        requiresReload = false, isLoading = false)
+                        requiresReload = false, isLoading = false, failedDraft = null)
                 }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
@@ -79,50 +94,36 @@ internal class InboundViewModel(
     }
 
     fun requestBackend(backend: String) {
-        if (!state.value.editable) return
+        if (!state.value.editable || state.value.isSaving) return
         require(backend in setOf("ebpf", "tun"))
-        cancelRefresh()
-        mutableState.update { it.copy(applyingField = "backend", error = "") }
-        viewModelScope.launch {
-            try {
-                val status = repository.status()
-                mutableState.update { it.copy(applyingField = null) }
-                if (status.requiresBackendSwitch(backend)) mutableState.update { it.copy(pendingBackend = backend) }
-                else if (backend != state.value.backend) saveBackend(backend)
-                else mutableState.update { it.copy(snapshot = it.snapshot?.copy(status = status)) }
-            } catch (error: Exception) {
-                if (error is CancellationException) throw error
-                mutableState.update {
-                    it.copy(snapshot = it.snapshot?.copy(status = null), applyingField = null,
-                        requiresReload = true, error = error.userMessage())
-                }
-            }
-        }
+        mutate("backend", write = {
+            applyPending()
+            val status = repository.status()
+            if (status.requiresBackendSwitch(backend)) {
+                if (viewModelScope.isActive) mutableState.update { it.copy(pendingBackend = backend) }
+            } else if (backend != state.value.backend) applyBackend(backend)
+            else mutableState.update { it.copy(snapshot = it.snapshot?.copy(status = status)) }
+        }, afterWrite = ::restoreFailedBackend)
     }
 
     fun cancelBackendSwitch() = mutableState.update { it.copy(pendingBackend = null) }
     fun confirmBackendSwitch() {
         val backend = state.value.pendingBackend ?: return
         cancelBackendSwitch()
-        saveBackend(backend, confirmed = true)
-    }
-
-    private fun saveBackend(backend: String, confirmed: Boolean = false) {
-        val snapshot = state.value.snapshot?.partitions?.get("backend") ?: return
-        save("backend", snapshot, JsonObject(mapOf("backend" to JsonPrimitive(backend))), confirmed)
+        mutate("backend", write = { applyBackend(backend, confirmed = true) }, afterWrite = ::restoreFailedBackend)
     }
 
     fun setField(path: String, value: JsonElement?, backend: String = state.value.backend, revision: String? = null) =
-        edit(path, backend, revision) { it.withPath(path.split('.'), value) }
-    fun setDataPaths(value: String) = edit("paths") {
+        edit(backend, revision) { it.withPath(path.split('.'), value) }
+    fun setDataPaths(value: String) = edit {
         it.withPath(listOf("local", "enabled"), JsonPrimitive(value != "shared"))
             .withPath(listOf("shared", "enabled"), JsonPrimitive(value != "local"))
     }
-    fun setTunIpv6(enabled: Boolean) = edit("ipv6") { it.withTunIpv6(enabled) }
+    fun setTunIpv6(enabled: Boolean) = edit { it.withTunIpv6(enabled) }
     fun setFilter(include: String, exclude: String, mode: String, values: List<String>, backend: String = state.value.backend, revision: String? = null) =
-        edit(include, backend, revision) { it.withFilter(include, exclude, mode, values) }
+        edit(backend, revision) { it.withFilter(include, exclude, mode, values) }
 
-    private fun edit(field: String, backend: String = state.value.backend, revision: String? = null, transform: (JsonObject) -> JsonObject) {
+    private fun edit(backend: String = state.value.backend, revision: String? = null, transform: (JsonObject) -> JsonObject) {
         if (!state.value.editable) return
         if (backend != state.value.backend) {
             mutableState.update { it.copy(requiresReload = true, errorCode = "config.conflict") }
@@ -130,68 +131,112 @@ internal class InboundViewModel(
         }
         val snapshot = state.value.snapshot!!.partitions.getValue(backend)
         try {
+            if (revision != null && revision != snapshot.revision) {
+                mutableState.update { it.copy(requiresReload = true, errorCode = "config.conflict") }
+                return
+            }
+            cancelRefresh()
             val updated = transform(state.value.native)
-            save(backend, if (revision == null) snapshot else snapshot.copy(revision = revision), JsonObject(mapOf(backend to updated)), field = field)
+            mutableState.update { current -> current.copy(
+                draft = updated.takeUnless { it == current.snapshot!!.native.getValue(backend) }, error = "") }
         } catch (error: Exception) {
             mutableState.update { it.copy(error = error.userMessage()) }
         }
     }
 
-    private fun save(partition: String, snapshot: ConfigSnapshot, value: JsonObject, confirmed: Boolean = false, field: String = partition) {
-        if (!state.value.editable) return
-        cancelRefresh()
-        val content = inboundJson.encodeToString(value)
-        val draft = InboundDraft(partition, ConfigSnapshot(content, snapshot.revision))
-        mutableState.update { it.copy(applyingField = field, error = "", errorCode = "") }
-        viewModelScope.launch {
-            try {
-                val result = repository.apply("inbound/$partition", content, snapshot.revision, confirmed)
-                mutableState.update { current ->
-                    val previous = current.snapshot!!
-                    val updated = previous.copy(
-                        backend = if (partition == "backend") value.textAt("backend") else previous.backend,
-                        partitions = previous.partitions + (partition to ConfigSnapshot(content, result.revision)),
-                        native = if (partition == "backend") previous.native else previous.native + (partition to value.objectAt(partition)),
-                        status = result.status
-                    )
-                    current.copy(snapshot = updated, applyingField = null)
-                }
-            } catch (error: Exception) {
-                if (error is CancellationException) throw error
-                if (error is InboundSwitchConfirmationRequired) {
-                    mutableState.update { it.copy(applyingField = null, pendingBackend = value.textAt("backend")) }
-                    return@launch
-                }
-                val restored = try { repository.load() } catch (loadError: Exception) {
-                    if (loadError is CancellationException) throw loadError
-                    null
-                }
-                mutableState.update {
-                    it.copy(snapshot = restored ?: it.snapshot?.copy(status = null), failedDraft = draft,
-                        applyingField = null, requiresReload = true,
-                        errorCode = (error as? NetProxyCtlException)?.resultCode.orEmpty(), error = error.userMessage())
-                }
+    fun requestFlush() {
+        if (state.value.requiresReload || (state.value.draft == null && state.value.applyingField != state.value.backend)) return
+        requestedNative = state.value.native
+        if (mutationJob?.isActive == true) return
+        mutate(state.value.backend, write = { applyPending(drain = false) })
+    }
+
+    suspend fun flush(): Boolean {
+        do {
+            requestFlush()
+            while (mutationJob?.isActive == true) mutationJob?.join()
+        } while (state.value.draft != null && !state.value.requiresReload)
+        return !state.value.requiresReload && !state.value.hasPendingChanges && !state.value.isSaving
+    }
+
+    private suspend fun applyPending(drain: Boolean = true) {
+        while (true) {
+            val current = state.value
+            val partition = current.backend
+            val snapshot = current.snapshot!!.partitions.getValue(partition)
+            val saved = if (drain) current.draft ?: break else requestedNative ?: break
+            requestedNative = null
+            if (saved == current.snapshot.native.getValue(partition)) continue
+            val content = inboundJson.encodeToString(JsonObject(mapOf(partition to saved)))
+            val result = repository.apply("inbound/$partition", content, snapshot.revision)
+            mutableState.update {
+                val latest = it.native
+                val previous = it.snapshot!!
+                it.copy(snapshot = previous.copy(
+                    partitions = previous.partitions + (partition to ConfigSnapshot(content, result.revision)),
+                    native = previous.native + (partition to saved), status = result.status,
+                ), draft = latest.takeUnless { native -> native == saved })
             }
         }
     }
 
-    fun restart() {
-        if (!state.value.editable) return
-        cancelRefresh()
-        mutableState.update { it.copy(applyingField = "restart", error = "") }
-        viewModelScope.launch {
-            try {
-                repository.restart()
-                val snapshot = repository.load()
-                mutableState.update { it.copy(snapshot = snapshot, applyingField = null) }
-            } catch (error: Exception) {
-                if (error is CancellationException) throw error
-                mutableState.update {
-                    it.copy(snapshot = it.snapshot?.copy(status = null), applyingField = null,
-                        requiresReload = true, error = error.userMessage())
-                }
+    private suspend fun applyBackend(backend: String, confirmed: Boolean = false) {
+        val snapshot = state.value.snapshot!!.partitions.getValue("backend")
+        val content = inboundJson.encodeToString(JsonObject(mapOf("backend" to JsonPrimitive(backend))))
+        val draft = InboundDraft("backend", ConfigSnapshot(content, snapshot.revision))
+        try {
+            val result = repository.apply("inbound/backend", content, snapshot.revision, confirmed)
+            mutableState.update { current ->
+                val previous = current.snapshot!!
+                current.copy(snapshot = previous.copy(
+                    backend = backend,
+                    partitions = previous.partitions + ("backend" to ConfigSnapshot(content, result.revision)),
+                    status = result.status
+                ))
             }
+        } catch (error: InboundSwitchConfirmationRequired) {
+            if (viewModelScope.isActive) mutableState.update { it.copy(pendingBackend = backend) }
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            mutableState.update { it.copy(failedDraft = draft) }
+            throw error
         }
+    }
+
+    private suspend fun restoreFailedBackend() {
+        if (state.value.failedDraft?.partition != "backend") return
+        val restored = try { repository.load() } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            null
+        }
+        if (restored != null) mutableState.update { it.copy(snapshot = restored) }
+    }
+
+    fun restart() {
+        if (!state.value.editable || state.value.isSaving) return
+        mutate("restart", write = {
+            applyPending()
+            repository.restart()
+        }, afterWrite = {
+            if (!state.value.requiresReload) {
+                val snapshot = repository.load()
+                mutableState.update { it.copy(snapshot = snapshot) }
+            }
+        })
+    }
+
+    private fun mutate(field: String, write: suspend () -> Unit, afterWrite: suspend () -> Unit = {}) {
+        cancelRefresh()
+        mutableState.update { it.copy(applyingField = field, error = "", errorCode = "") }
+        mutationJob = writes.launch("inbound", write, afterWrite = {
+            try {
+                afterWrite()
+            } finally { mutableState.update { it.copy(applyingField = null) } }
+        }, onFailure = { error ->
+            requestedNative = null
+            mutableState.update { it.copy(snapshot = it.snapshot?.copy(status = null), requiresReload = true,
+                errorCode = (error as? NetProxyCtlException)?.resultCode.orEmpty(), error = error.userMessage()) }
+        })
     }
 
     fun diagnose() {
@@ -208,7 +253,13 @@ internal class InboundViewModel(
     }
 
     fun dismissDiagnostic() = mutableState.update { it.copy(diagnostic = null) }
-    fun discardDraft() = mutableState.update { it.copy(failedDraft = null) }
+    fun discardDraft() = mutableState.update { it.copy(failedDraft = null, draft = null) }
+    fun discardAndReload() {
+        if (state.value.isSaving) return
+        discardDraft()
+        mutableState.update { it.copy(requiresReload = false) }
+        refresh()
+    }
 
     private fun cancelRefresh() {
         // 保存后不能再由较早发起的刷新覆盖新 revision。

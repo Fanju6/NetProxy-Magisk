@@ -17,5 +17,7 @@ data class SettingsUiState(
     val wifi: WifiPolicySettings = WifiPolicySettings(),
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
+    val hasPendingWifi: Boolean = false,
+    val requiresReload: Boolean = false,
     val error: String = ""
 )
