@@ -37,7 +37,7 @@ func TestStatusBackendRequiresMatchingInstance(t *testing.T) {
 			modePath := modeConfigFixture(t, root, "Rule")
 			withServiceProcess(t, test.pid)
 			inboundPath := filepath.Join(root, "inbound.json")
-			content := `{"backend":"tun","app":{"enabled":false,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]},"ebpf":{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true}},"tun":{"type":"tun","tag":"netproxy-in","interface_name":"netproxy","address":["172.19.0.1/30"],"auto_route":true,"auto_redirect":true}}`
+			content := `{"backend":"tun","root_policy":"default","app":{"enabled":false,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]},"ebpf":{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true}},"tun":{"type":"tun","tag":"netproxy-in","interface_name":"netproxy","address":["172.19.0.1/30"],"auto_route":true,"auto_redirect":true}}`
 			if err := os.WriteFile(inboundPath, []byte(content), 0o600); err != nil {
 				t.Fatal(err)
 			}

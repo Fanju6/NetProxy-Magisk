@@ -101,7 +101,7 @@ internal class InboundViewModel(
             val status = repository.status()
             if (status.requiresBackendSwitch(backend)) {
                 if (viewModelScope.isActive) mutableState.update { it.copy(pendingBackend = backend) }
-            } else if (backend != state.value.backend) applyBackend(backend)
+            } else if (backend != state.value.backend) applyChoice("backend", backend)
             else mutableState.update { it.copy(snapshot = it.snapshot?.copy(status = status)) }
         }, afterWrite = ::restoreFailedBackend)
     }
@@ -110,7 +110,16 @@ internal class InboundViewModel(
     fun confirmBackendSwitch() {
         val backend = state.value.pendingBackend ?: return
         cancelBackendSwitch()
-        mutate("backend", write = { applyBackend(backend, confirmed = true) }, afterWrite = ::restoreFailedBackend)
+        mutate("backend", write = { applyChoice("backend", backend, confirmed = true) }, afterWrite = ::restoreFailedBackend)
+    }
+
+    fun setRootPolicy(policy: String) {
+        require(policy in setOf("default", "include", "exclude"))
+        if (!state.value.editable || state.value.isSaving || policy == state.value.snapshot?.rootPolicy) return
+        mutate("root_policy", write = {
+            applyPending()
+            applyChoice("root_policy", policy)
+        })
     }
 
     fun setField(path: String, value: JsonElement?, backend: String = state.value.backend, revision: String? = null) =
@@ -180,22 +189,22 @@ internal class InboundViewModel(
         }
     }
 
-    private suspend fun applyBackend(backend: String, confirmed: Boolean = false) {
-        val snapshot = state.value.snapshot!!.partitions.getValue("backend")
-        val content = inboundJson.encodeToString(JsonObject(mapOf("backend" to JsonPrimitive(backend))))
-        val draft = InboundDraft("backend", ConfigSnapshot(content, snapshot.revision))
+    private suspend fun applyChoice(partition: String, value: String, confirmed: Boolean = false) {
+        val snapshot = state.value.snapshot!!.partitions.getValue(partition)
+        val content = inboundJson.encodeToString(JsonObject(mapOf(partition to JsonPrimitive(value))))
+        val draft = InboundDraft(partition, ConfigSnapshot(content, snapshot.revision))
         try {
-            val result = repository.apply("inbound/backend", content, snapshot.revision, confirmed)
+            val result = repository.apply("inbound/$partition", content, snapshot.revision, confirmed)
             mutableState.update { current ->
                 val previous = current.snapshot!!
                 current.copy(snapshot = previous.copy(
-                    backend = backend,
-                    partitions = previous.partitions + ("backend" to ConfigSnapshot(content, result.revision)),
+                    backend = if (partition == "backend") value else previous.backend,
+                    partitions = previous.partitions + (partition to ConfigSnapshot(content, result.revision)),
                     status = result.status
                 ))
             }
         } catch (error: InboundSwitchConfirmationRequired) {
-            if (viewModelScope.isActive) mutableState.update { it.copy(pendingBackend = backend) }
+            if (viewModelScope.isActive) mutableState.update { it.copy(pendingBackend = value) }
         } catch (error: Exception) {
             if (error is CancellationException) throw error
             mutableState.update { it.copy(failedDraft = draft) }

@@ -120,7 +120,9 @@ internal fun InboundSettingsScreen(
                             contentDescription = stringResource(R.string.more_actions),
                             actions = listOf(
                                 TopBarMenuAction(stringResource(R.string.restart_core), enabled = state.editable, onClick = viewModel::restart),
-                                TopBarMenuAction(stringResource(R.string.ebpf_diagnostics), enabled = state.hasConfiguration && !state.isDiagnosing, onClick = viewModel::diagnose)
+                                TopBarMenuAction(stringResource(R.string.ebpf_diagnostics), enabled = state.hasConfiguration && !state.isDiagnosing, onClick = viewModel::diagnose),
+                                TopBarMenuAction(stringResource(R.string.inbound_full_json), enabled = state.editable,
+                                    onClick = { commitAction { navigator.push(Route.JsonEdit("inbound")) } })
                             )
                         )
                     }
@@ -175,18 +177,22 @@ internal fun InboundSettingsScreen(
                                 onSelectedIndexChange = { viewModel.requestBackend(if (it == 1) "tun" else "ebpf") }
                             )
                         },
+                        CardItem("root_policy") {
+                            val policies = listOf("default", "include", "exclude")
+                            OverlayDropdownPreference(
+                                title = stringResource(R.string.inbound_root_processes),
+                                items = listOf(stringResource(R.string.inbound_root_default),
+                                    stringResource(R.string.inbound_root_include), stringResource(R.string.inbound_root_exclude)),
+                                selectedIndex = policies.indexOf(state.snapshot!!.rootPolicy),
+                                enabled = enabled,
+                                onSelectedIndexChange = { viewModel.setRootPolicy(policies[it]) }
+                            )
+                        },
                         CardItem("apps") {
                             ArrowPreference(
                                 title = stringResource(R.string.proxy_apps),
                                 enabled = enabled,
                                 onClick = { if (state.editable) commitAction { navigator.push(Route.Apps) } }
-                            )
-                        },
-                        CardItem("json") {
-                            ArrowPreference(
-                                title = stringResource(R.string.inbound_full_json),
-                                enabled = enabled,
-                                onClick = { if (state.editable) commitAction { navigator.push(Route.JsonEdit("inbound")) } }
                             )
                         }
                     ) + if (state.snapshot?.status?.requiresBackendSwitch(state.backend) == true) listOf(

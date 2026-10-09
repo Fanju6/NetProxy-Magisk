@@ -17,10 +17,12 @@ internal data class InboundSnapshot(
     val backend: String,
     val partitions: Map<String, ConfigSnapshot>,
     val status: ServiceStatusSnapshot?,
-    val native: Map<String, JsonObject> = partitions.filterKeys { it != "backend" }.mapValues { (key, snapshot) ->
+    val native: Map<String, JsonObject> = partitions.filterKeys { it in setOf("ebpf", "tun") }.mapValues { (key, snapshot) ->
         inboundJson.parseToJsonElement(snapshot.content).jsonObject.objectAt(key)
     }
-)
+) {
+    val rootPolicy: String get() = inboundJson.parseToJsonElement(partitions.getValue("root_policy").content).jsonObject.textAt("root_policy")
+}
 
 internal data class InboundChoices(val interfaces: List<String>, val ruleSets: List<String>)
 internal data class InboundApplyResult(val revision: String, val status: ServiceStatusSnapshot)
@@ -36,14 +38,16 @@ internal class InboundRepository(
     private val service: ServiceRepository
 ) {
     suspend fun load(): InboundSnapshot {
-        val partitions = listOf("backend", "ebpf", "tun").associateWith {
+        val partitions = listOf("backend", "root_policy", "ebpf", "tun").associateWith {
             config.readSnapshot("inbound/$it")
         }
         val backend = inboundJson.parseToJsonElement(partitions.getValue("backend").content)
             .jsonObject.textAt("backend")
         check(backend in setOf("ebpf", "tun"))
         val status = service.status()
-        return withContext(Dispatchers.Default) { InboundSnapshot(backend, partitions, status) }
+        return withContext(Dispatchers.Default) {
+            InboundSnapshot(backend, partitions, status).also { check(it.rootPolicy in setOf("default", "include", "exclude")) }
+        }
     }
 
     suspend fun choices(): InboundChoices {
@@ -74,7 +78,7 @@ internal class InboundRepository(
         val result = config.apply(target, content, revision)
         val after = service.status()
         val expected = requested ?: before.configuredBackend
-        val selectedPartition = target == "inbound/$expected"
+        val selectedPartition = target == "inbound/$expected" || target == "inbound/root_policy"
         if ((requested != null && after.configuredBackend != requested) ||
             ((requested != null || selectedPartition) && before.mayBeRunning() &&
                 (after.state != "ready" || after.activeBackend != expected))

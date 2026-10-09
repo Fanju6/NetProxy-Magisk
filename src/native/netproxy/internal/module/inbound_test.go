@@ -134,7 +134,7 @@ func TestInboundConfigTargetsAndPartitionRevisions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, target := range []string{"inbound", "inbound/backend", "inbound/app", "inbound/ebpf", "inbound/tun", "runtime/inbound.json"} {
+	for _, target := range []string{"inbound", "inbound/backend", "inbound/root_policy", "inbound/app", "inbound/ebpf", "inbound/tun", "runtime/inbound.json"} {
 		index := slices.IndexFunc(documents, func(document ConfigDocument) bool { return document.ID == target })
 		if index < 0 || documents[index].Editable == strings.HasPrefix(target, "runtime/") {
 			t.Fatalf("配置目标缺失或权限错误: %s", target)
@@ -237,6 +237,93 @@ func TestAppPartitionAppliesOnlyEffectiveChangesAndRollsBackFailures(t *testing.
 			}
 			assertInboundJournalAbsent(t, options)
 		})
+	}
+}
+
+func TestRootPartitionUsesIndependentRevisionAndTransaction(t *testing.T) {
+	for _, backend := range []string{"ebpf", "tun"} {
+		t.Run(backend, func(t *testing.T) {
+			options, original, _, _ := inboundApplyFixture(t, backend, true)
+			reloads := 0
+			configReload = func(context.Context, Options) error { reloads++; return nil }
+			snapshot, err := ReadConfig(options, "inbound/root_policy")
+			if err != nil {
+				t.Fatal(err)
+			}
+			app, _ := ReadConfig(options, "inbound/app")
+			revision, err := ApplyConfig(t.Context(), options, "inbound/root_policy", writeSectionSource(t, `{"root_policy":"exclude"}`), false, snapshot["revision"])
+			if err != nil || reloads != 1 {
+				t.Fatal("Root 有效变化未应用", reloads, err)
+			}
+			after, _ := ReadConfig(options, "inbound/app")
+			if !reflect.DeepEqual(app, after) {
+				t.Fatal("Root 变化影响应用分区 revision")
+			}
+			before, _ := configObject(original)
+			current, _ := configObject(inboundDisk(t, options))
+			for _, field := range []string{"backend", "app", "ebpf", "tun"} {
+				var beforeValue, afterValue any
+				if err := json.Unmarshal(before[field], &beforeValue); err != nil {
+					t.Fatal(err)
+				}
+				if err := json.Unmarshal(current[field], &afterValue); err != nil {
+					t.Fatal(err)
+				}
+				if !reflect.DeepEqual(beforeValue, afterValue) {
+					t.Fatal("Root 保存修改其他分区", field)
+				}
+			}
+			if _, err := ApplyConfig(t.Context(), options, "inbound/root_policy", writeSectionSource(t, `{"root_policy":"exclude"}`), false, revision); err != nil || reloads != 1 {
+				t.Fatal("相同 Root 策略仍 reload", err)
+			}
+			if _, err := ApplyConfig(t.Context(), options, "inbound/root_policy", writeSectionSource(t, `{"root_policy":"include"}`), false, snapshot["revision"]); !errors.Is(err, ErrConfigConflict) {
+				t.Fatal("未拒绝过期 Root revision", err)
+			}
+			for _, invalid := range []string{`{}`, `{"root_policy":null}`, `{"root_policy":"other"}`, `{"root_policy":"default","app":{}}`} {
+				if _, err := ApplyConfig(t.Context(), options, "inbound/root_policy", writeSectionSource(t, invalid), false, revision); err == nil {
+					t.Fatal("接受非法 Root 分区", invalid)
+				}
+			}
+			saved := inboundDisk(t, options)
+			failure := errors.New("模拟 Root 策略 reload 失败")
+			configReload = func(context.Context, Options) error { return failure }
+			configStop = func(context.Context, Options) error { return nil }
+			configRestoreReload = func(context.Context, Options, configApplyJournal) error { return nil }
+			if _, err := ApplyConfig(t.Context(), options, "inbound/root_policy", writeSectionSource(t, `{"root_policy":"default"}`), false, revision); !errors.Is(err, failure) {
+				t.Fatal("Root 应用错误丢失", err)
+			}
+			if !bytes.Equal(saved, inboundDisk(t, options)) {
+				t.Fatal("Root 应用失败未回滚")
+			}
+			assertInboundJournalAbsent(t, options)
+		})
+	}
+}
+
+func TestRootPartitionDoesNotStartOrReloadInactivePolicy(t *testing.T) {
+	for _, backend := range []string{"ebpf", "tun", "shared"} {
+		selected := backend
+		if backend == "shared" {
+			selected = "ebpf"
+		}
+		options, original, runtimeContent, _ := inboundApplyFixture(t, selected, backend == "shared")
+		if backend == "shared" {
+			object, _ := configObject(original)
+			object["ebpf"] = []byte(`{"type":"ebpf","tag":"netproxy-in","local":{"enabled":false},"shared":{"enabled":true,"interface":"ap0"}}`)
+			content, _ := json.Marshal(object, json.Deterministic(true))
+			if err := os.WriteFile(options.InboundConfig, content, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		snapshot, err := ReadConfig(options, "inbound/root_policy")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ApplyConfig(t.Context(), options, "inbound/root_policy", writeSectionSource(t, `{"root_policy":"exclude"}`), false, snapshot["revision"]); err != nil {
+			t.Fatal(err)
+		}
+		assertRuntimeContent(t, options, runtimeContent)
+		assertInboundJournalAbsent(t, options)
 	}
 }
 
@@ -401,7 +488,7 @@ func TestInboundRecordedBackendMismatchCannotStopWithoutStart(t *testing.T) {
 			}
 			before, _ := configObject(original)
 			after, _ := configObject(inboundDisk(t, options))
-			for _, field := range []string{"backend", "app", "ebpf", "tun"} {
+			for _, field := range []string{"backend", "root_policy", "app", "ebpf", "tun"} {
 				if !inboundJSONEqual(before[field], after[field]) {
 					t.Fatal("相同模板被转换", field)
 				}

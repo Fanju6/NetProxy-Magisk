@@ -209,8 +209,8 @@
 
     <!-- Apps Control -->
     <string name="apps">应用</string>
-    <string name="proxy_apps">分应用代理</string>
-    <string name="app_proxy_mode">应用代理模式</string>
+    <string name="proxy_apps">应用代理</string>
+    <string name="app_proxy_mode">代理模式</string>
     <string name="no_apps_found">未找到应用</string>
     <string name="show_system_apps">显示系统应用</string>
     <string name="proxy_mode_summary">选择如何过滤需要走代理的应用</string>
@@ -553,6 +553,10 @@
     <string name="inbound_general">通用设置</string>
     <string name="inbound_backend">入站后端</string>
     <string name="inbound_full_json">编辑完整入站 JSON</string>
+    <string name="inbound_root_processes">Root 进程</string>
+    <string name="inbound_root_default">默认</string>
+    <string name="inbound_root_include">接管</string>
+    <string name="inbound_root_exclude">绕过</string>
     <string name="inbound_switch_title">切换入站后端？</string>
     <string name="inbound_switch_warning">服务将重启，连接会短暂中断。</string>
     <string name="inbound_reload">重新加载设置</string>

@@ -59,7 +59,7 @@ func TestPublicCommandsKeepSingleJSONContract(t *testing.T) {
 	options.WiFiStateFile = filepath.Join(root, "state", "wifi_state")
 	for path, content := range map[string]string{
 		options.ModuleConfig:                             "{\"selection\":{\"group_id\":\"default\"}}",
-		options.InboundConfig:                            `{"backend":"ebpf","app":{"enabled":false,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]},"ebpf":{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true},"shared":{"enabled":false}},"tun":{"type":"tun","tag":"netproxy-in","interface_name":"netproxy","address":["172.19.0.1/30"],"auto_route":true,"auto_redirect":true}}`,
+		options.InboundConfig:                            `{"backend":"ebpf","root_policy":"default","app":{"enabled":false,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]},"ebpf":{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true},"shared":{"enabled":false}},"tun":{"type":"tun","tag":"netproxy-in","interface_name":"netproxy","address":["172.19.0.1/30"],"auto_route":true,"auto_redirect":true}}`,
 		filepath.Join(options.SingBoxDir, "config.json"): "{}\n",
 	} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -184,7 +184,7 @@ func TestEBPFDiagnosticJSONContract(t *testing.T) {
 		{"invalid-raw", "tun", "supported", true, false, "ebpf.status_invalid", ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			config := `{"backend":"` + test.backend + `","app":{"enabled":false,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]},"ebpf":{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true},"shared":{"enabled":false}},"tun":{"type":"tun","tag":"netproxy-in","interface_name":"netproxy","address":["172.19.0.1/30"],"auto_route":true,"auto_redirect":true}}`
+			config := `{"backend":"` + test.backend + `","root_policy":"default","app":{"enabled":false,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]},"ebpf":{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true},"shared":{"enabled":false}},"tun":{"type":"tun","tag":"netproxy-in","interface_name":"netproxy","address":["172.19.0.1/30"],"auto_route":true,"auto_redirect":true}}`
 			if err := os.WriteFile(options.InboundConfig, []byte(config), 0o600); err != nil {
 				t.Fatal(err)
 			}

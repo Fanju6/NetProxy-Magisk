@@ -34,15 +34,21 @@ class InboundRepositoryTest {
             if (args.first() == "service") status("stopped", "ebpf", null)
             else {
                 val key = args.last().substringAfter('/')
-                snapshot(if (key == "backend") """{"backend":"ebpf"}""" else """{"$key":{"type":"$key","tag":"netproxy-in"}}""", "$key-revision")
+                snapshot(when (key) {
+                    "backend" -> """{"backend":"ebpf"}"""
+                    "root_policy" -> """{"root_policy":"default"}"""
+                    else -> """{"$key":{"type":"$key","tag":"netproxy-in"}}"""
+                }, "$key-revision")
             }
         }
         val loaded = repo.load()
         assertEquals("ebpf", loaded.backend)
+        assertEquals("default", loaded.rootPolicy)
+        assertEquals(setOf("ebpf", "tun"), loaded.native.keys)
         assertNull(loaded.status!!.activeBackend)
         assertEquals("tun-revision", loaded.partitions.getValue("tun").revision)
         assertEquals(listOf(
-            listOf("config", "read", "inbound/backend"), listOf("config", "read", "inbound/ebpf"),
+            listOf("config", "read", "inbound/backend"), listOf("config", "read", "inbound/root_policy"), listOf("config", "read", "inbound/ebpf"),
             listOf("config", "read", "inbound/tun"), listOf("service", "status")
         ), calls)
     }

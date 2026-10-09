@@ -140,6 +140,12 @@ func (c Config) BuildWithResolver(resolve PackageUIDResolver) (BuildResult, erro
 				native.Local.ExcludeUID = append(native.Local.ExcludeUID, resolution.UIDs...)
 			}
 		}
+		if local {
+			if err := c.applyRootPolicy(&native.Local.IncludeUID, native.Local.IncludeUIDRange, &native.Local.ExcludeUID, &native.Local.ExcludeUIDRange,
+				len(native.Local.IncludePackage) > 0); err != nil {
+				return BuildResult{}, err
+			}
+		}
 		native, err = normalizeEBPF(native)
 		if err == nil {
 			content, err = marshalNative(ebpfInbound{Type: "ebpf", Tag: Tag, EBPFInboundOptions: native})
@@ -162,6 +168,10 @@ func (c Config) BuildWithResolver(resolve PackageUIDResolver) (BuildResult, erro
 			} else {
 				native.ExcludeUID = append(native.ExcludeUID, resolution.UIDs...)
 			}
+		}
+		if err := c.applyRootPolicy(&native.IncludeUID, native.IncludeUIDRange, &native.ExcludeUID, &native.ExcludeUIDRange,
+			len(native.IncludePackage) > 0); err != nil {
+			return BuildResult{}, err
 		}
 		native, err = normalizeTUN(native)
 		if err == nil {
@@ -217,6 +227,9 @@ func (c Config) EffectiveContent() ([]byte, error) {
 		local, _ := native.EffectiveEnablement()
 		if !local {
 			app.Enabled = false
+		} else if err := c.applyRootPolicy(&native.Local.IncludeUID, native.Local.IncludeUIDRange, &native.Local.ExcludeUID, &native.Local.ExcludeUIDRange,
+			len(native.Local.IncludePackage) > 0); err != nil {
+			return nil, err
 		}
 		native, err = normalizeEBPF(native)
 		if err == nil {
@@ -226,6 +239,10 @@ func (c Config) EffectiveContent() ([]byte, error) {
 		var native option.TunInboundOptions
 		native, err = c.TUNOptions()
 		if err != nil {
+			return nil, err
+		}
+		if err := c.applyRootPolicy(&native.IncludeUID, native.IncludeUIDRange, &native.ExcludeUID, &native.ExcludeUIDRange,
+			len(native.IncludePackage) > 0); err != nil {
 			return nil, err
 		}
 		native, err = normalizeTUN(native)

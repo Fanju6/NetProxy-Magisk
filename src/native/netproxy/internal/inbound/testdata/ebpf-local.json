@@ -1,5 +1,6 @@
 {
   "backend": "ebpf",
+  "root_policy": "default",
   "app": {"enabled": true, "mode": "blacklist", "proxy_apps": [], "bypass_apps": []},
   "ebpf": {
     "type": "ebpf", "tag": "netproxy-in", "udp_timeout": "5m", "tc_priority": 1,

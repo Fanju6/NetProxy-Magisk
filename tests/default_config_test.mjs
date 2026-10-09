@@ -78,7 +78,8 @@ test('eBPF 默认绕过引用与上游和静态规则一致', () => {
 })
 
 test('单一入站默认保留 eBPF 原生语义和禁用共享路径偏好', () => {
-  assert.deepEqual(Object.keys(managed), ['backend', 'app', 'ebpf', 'tun'])
+  assert.deepEqual(Object.keys(managed), ['backend', 'root_policy', 'app', 'ebpf', 'tun'])
+  assert.equal(managed.root_policy, 'default')
   assert.equal(managed.backend, 'ebpf')
   assert.deepEqual(managed.app, { enabled: true, mode: 'blacklist', proxy_apps: [], bypass_apps: [] })
   assert.deepEqual(managed.ebpf, {

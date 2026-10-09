@@ -1,5 +1,6 @@
 {
   "backend": "tun",
+  "root_policy": "default",
   "app": {"enabled": false, "mode": "blacklist", "proxy_apps": [], "bypass_apps": []},
   "ebpf": {"type": "ebpf", "tag": "netproxy-in", "local": {"enabled": true}, "shared": {"enabled": false}},
   "tun": {

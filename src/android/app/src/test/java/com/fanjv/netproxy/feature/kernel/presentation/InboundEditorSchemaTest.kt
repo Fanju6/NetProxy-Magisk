@@ -20,8 +20,8 @@ class InboundEditorSchemaTest {
     private val schema = testEditorSchema(source)
     private fun validator(target: String) = SingBoxSchemaValidator(schema.forDocument(target), localizedSchemaText(""))
 
-    @Test fun fullWrapperRequiresExactlyFourFields() = runBlocking {
-        val value = """{"backend":"ebpf","app":$app,"ebpf":$ebpf,"tun":$tun}"""
+    @Test fun fullWrapperRequiresExactlyFiveFields() = runBlocking {
+        val value = """{"backend":"ebpf","root_policy":"default","app":$app,"ebpf":$ebpf,"tun":$tun}"""
         assertEquals(SingBoxSchemaValidationResult.Valid, validator("inbound").validate(value))
         val parsed = singBoxSchemaJson.parseToJsonElement(value).jsonObject
         for (field in parsed.keys) {
@@ -29,6 +29,7 @@ class InboundEditorSchemaTest {
         }
         assertTrue(validator("inbound").validate(JsonObject(parsed + ("extra" to JsonPrimitive(1))).toString()) is SingBoxSchemaValidationResult.Invalid)
         assertTrue(validator("inbound").validate(value.replace("\"blacklist\"", "\"invalid\"")) is SingBoxSchemaValidationResult.Invalid)
+        assertTrue(validator("inbound").validate(value.replace("\"default\"", "\"invalid\"")) is SingBoxSchemaValidationResult.Invalid)
         assertTrue(validator("inbound").validate(value.replace("0:com.example.client", "com.example.client")) is SingBoxSchemaValidationResult.Invalid)
     }
 
@@ -37,6 +38,10 @@ class InboundEditorSchemaTest {
         assertEquals(SingBoxSchemaValidationResult.Valid, validator("inbound/tun").validate("""{"tun":$tun}"""))
         assertEquals(SingBoxSchemaValidationResult.Valid, validator("inbound/backend").validate("""{"backend":"tun"}"""))
         assertTrue(validator("inbound/backend").validate("""{"backend":"direct"}""") is SingBoxSchemaValidationResult.Invalid)
+        for (policy in listOf("default", "include", "exclude")) {
+            assertEquals(SingBoxSchemaValidationResult.Valid, validator("inbound/root_policy").validate("""{"root_policy":"$policy"}"""))
+        }
+        assertTrue(validator("inbound/root_policy").validate("""{"root_policy":"auto"}""") is SingBoxSchemaValidationResult.Invalid)
         assertTrue(validator("inbound/tun").validate(tun) is SingBoxSchemaValidationResult.Invalid)
         assertTrue(validator("inbound/ebpf").validate("""{"ebpf":{"type":"tun","tag":"netproxy-in"}}""") is SingBoxSchemaValidationResult.Invalid)
         assertTrue(validator("inbound/tun").validate("""{"tun":$tun}""".replace("netproxy-in", "wrong-tag")) is SingBoxSchemaValidationResult.Invalid)

@@ -195,8 +195,8 @@
     <string name="clear_logs_failed">Failed to clear logs</string>
     <string name="no_logs">No log entries</string>
     <string name="apps">Apps</string>
-    <string name="proxy_apps">Per-app proxy</string>
-    <string name="app_proxy_mode">App proxy mode</string>
+    <string name="proxy_apps">App proxy</string>
+    <string name="app_proxy_mode">Proxy mode</string>
     <string name="no_apps_found">No apps found</string>
     <string name="show_system_apps">Show system apps</string>
     <string name="proxy_mode_summary">Choose how to filter apps that use the proxy</string>
@@ -523,6 +523,10 @@
     <string name="inbound_general">General settings</string>
     <string name="inbound_backend">Inbound backend</string>
     <string name="inbound_full_json">Edit complete inbound JSON</string>
+    <string name="inbound_root_processes">Root processes</string>
+    <string name="inbound_root_default">Default</string>
+    <string name="inbound_root_include">Intercept</string>
+    <string name="inbound_root_exclude">Bypass</string>
     <string name="inbound_switch_title">Switch inbound backend?</string>
     <string name="inbound_switch_warning">The service will restart and connections will briefly disconnect.</string>
     <string name="inbound_reload">Reload settings</string>

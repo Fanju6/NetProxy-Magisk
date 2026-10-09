@@ -16,10 +16,11 @@ import (
 const Tag = "netproxy-in"
 
 type Config struct {
-	Backend string         `json:"backend"`
-	App     AppPolicy      `json:"app"`
-	EBPF    jsontext.Value `json:"ebpf"`
-	TUN     jsontext.Value `json:"tun"`
+	Backend    string         `json:"backend"`
+	RootPolicy string         `json:"root_policy"`
+	App        AppPolicy      `json:"app"`
+	EBPF       jsontext.Value `json:"ebpf"`
+	TUN        jsontext.Value `json:"tun"`
 }
 
 type AppPolicy struct {
@@ -93,7 +94,7 @@ func parseOuter(content []byte) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	for _, field := range []string{"backend", "app", "ebpf", "tun"} {
+	for _, field := range []string{"backend", "root_policy", "app", "ebpf", "tun"} {
 		if _, exists := fields[field]; !exists {
 			return Config{}, validationError("inbound.field_required", field, "入站配置缺少必需字段: "+field)
 		}
@@ -132,6 +133,9 @@ func objectFields(content []byte, field string) (map[string]jsontext.Value, erro
 func (c Config) validateOuter() error {
 	if c.Backend != "ebpf" && c.Backend != "tun" {
 		return validationError("inbound.backend_invalid", "backend", "入站后端只能是 ebpf 或 tun")
+	}
+	if c.RootPolicy != "default" && c.RootPolicy != "include" && c.RootPolicy != "exclude" {
+		return validationError("inbound.root_policy_invalid", "root_policy", "Root 进程策略只能是 default、include 或 exclude")
 	}
 	for _, section := range []struct {
 		name string
@@ -244,6 +248,11 @@ func (c Config) validateSection(section string) error {
 			return err
 		}
 		local, _ := native.EffectiveEnablement()
+		if local {
+			if err := c.validateRootUsers(native.Local.IncludeAndroidUser); err != nil {
+				return err
+			}
+		}
 		if local && c.App.Enabled {
 			return validateAppFilters(native.Local.IncludeAndroidUser, native.Local.IncludePackage, native.Local.ExcludePackage)
 		}
@@ -252,9 +261,19 @@ func (c Config) validateSection(section string) error {
 		if err != nil {
 			return err
 		}
+		if err := c.validateRootUsers(native.IncludeAndroidUser); err != nil {
+			return err
+		}
 		if c.App.Enabled {
 			return validateAppFilters(native.IncludeAndroidUser, native.IncludePackage, native.ExcludePackage)
 		}
+	}
+	return nil
+}
+
+func (c Config) validateRootUsers(users []int) error {
+	if c.RootPolicy == "include" && len(users) > 0 && !slices.Contains(users, 0) {
+		return validationError("inbound.root_user_conflict", "root_policy", "接管 Root 进程需在原生 include_android_user 中包含 Android 用户 0")
 	}
 	return nil
 }

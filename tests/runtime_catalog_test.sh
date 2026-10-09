@@ -73,7 +73,7 @@ const success = (...args) => {
 };
 const documents = success('config', 'list');
 assert.deepEqual(documents.filter(item => item.category === 'inbound').map(item => item.id),
-  ['inbound', 'inbound/backend', 'inbound/app', 'inbound/ebpf', 'inbound/tun']);
+  ['inbound', 'inbound/backend', 'inbound/root_policy', 'inbound/app', 'inbound/ebpf', 'inbound/tun']);
 assert.equal(new Set(documents.map(item => item.id)).size, documents.length);
 const modulePath = join(moduleDir, 'config', 'module.json');
 const moduleConfig = JSON.parse(readFileSync(modulePath, 'utf8'));
@@ -132,7 +132,7 @@ assert.equal(stopped.pid, null);
 assert.equal(stopped.worker_pid, null);
 const inboundPath = join(moduleDir, 'config', 'inbound', 'inbound.json');
 const template = JSON.parse(readFileSync(inboundPath, 'utf8'));
-for (const target of ['inbound', 'inbound/backend', 'inbound/app', 'inbound/ebpf', 'inbound/tun']) {
+for (const target of ['inbound', 'inbound/backend', 'inbound/root_policy', 'inbound/app', 'inbound/ebpf', 'inbound/tun']) {
   const document = documents.find(item => item.id === target);
   assert.equal(document.editable, true);
   const read = success('config', 'read', target);

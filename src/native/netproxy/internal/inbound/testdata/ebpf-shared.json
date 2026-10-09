@@ -1,5 +1,6 @@
 {
   "backend": "ebpf",
+  "root_policy": "default",
   "app": {"enabled": true, "mode": "whitelist", "proxy_apps": ["10:com.example.app"], "bypass_apps": []},
   "ebpf": {
     "type": "ebpf", "tag": "netproxy-in", "network": "tcp",

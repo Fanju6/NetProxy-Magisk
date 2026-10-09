@@ -39,6 +39,10 @@ internal fun editorSchema(root: JsonObject, documentId: String): JsonObject {
             put("type", "string")
             put("enum", JsonArray(listOf("ebpf", "tun").map(::JsonPrimitive)))
         })
+        put("root_policy", buildJsonObject {
+            put("type", "string")
+            put("enum", JsonArray(listOf("default", "include", "exclude").map(::JsonPrimitive)))
+        })
         put("app", buildJsonObject {
             put("type", "object")
             put("properties", buildJsonObject {

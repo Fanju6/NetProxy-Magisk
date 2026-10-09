@@ -31,6 +31,7 @@ class InboundViewModelTest {
     @get:Rule val folder = TemporaryFolder()
     private val calls = CopyOnWriteArrayList<List<String>>()
     private var backend = "ebpf"
+    private var rootPolicy = "default"
     private var running = true
     private var failure: String? = null
     private var readFailure: String? = null
@@ -80,6 +81,7 @@ class InboundViewModelTest {
                     if (readFailure != null && args.last().startsWith("inbound/")) throw NetProxyCtlException(readFailure!!, "read failed")
                     val content = when (args.last()) {
                         "inbound/backend" -> """{"backend":"$backend"}"""
+                        "inbound/root_policy" -> """{"root_policy":"$rootPolicy"}"""
                         "inbound/ebpf" -> """{"ebpf":$ebpf}"""
                         "inbound/tun" -> """{"tun":$tun}"""
                         "singbox/config.json" -> """{"route":{"rule_set":[{"tag":"private"}]}}"""
@@ -95,6 +97,7 @@ class InboundViewModelTest {
                         val content = kotlinx.serialization.json.Json.parseToJsonElement(File(args.last()).readText()) as JsonObject
                         when (args[4]) {
                             "inbound/backend" -> backend = (content.getValue("backend") as JsonPrimitive).content
+                            "inbound/root_policy" -> rootPolicy = (content.getValue("root_policy") as JsonPrimitive).content
                             "inbound/ebpf" -> ebpf = content.getValue("ebpf").toString()
                             "inbound/tun" -> tun = content.getValue("tun").toString()
                         }
@@ -114,6 +117,51 @@ class InboundViewModelTest {
     private suspend fun InboundViewModel.idle() {
         flush()
         withTimeout(5_000) { state.first { !it.isSaving } }
+    }
+
+    @Test fun rootPolicyCommitsPendingParametersAndKeepsBackend() = runBlocking {
+        val vm = viewModel(this)
+        vm.refresh(); vm.loaded()
+        assertEquals("default", vm.state.value.snapshot!!.rootPolicy)
+        vm.setField("udp_timeout", JsonPrimitive("5m"))
+        vm.setRootPolicy("exclude"); vm.idle()
+        assertEquals(listOf("inbound/ebpf", "inbound/root_policy"),
+            calls.filter { it.take(2) == listOf("config", "apply") }.map { it[4] })
+        assertEquals("exclude", vm.state.value.snapshot!!.rootPolicy)
+        assertEquals("ebpf", vm.state.value.backend)
+        assertFalse(vm.state.value.hasPendingChanges)
+        vm.setRootPolicy("exclude"); vm.idle()
+        assertEquals(2, calls.count { it.take(2) == listOf("config", "apply") })
+        running = false
+        vm.requestBackend("tun"); vm.idle()
+        assertEquals("tun", vm.state.value.backend)
+        assertEquals("exclude", vm.state.value.snapshot!!.rootPolicy)
+    }
+
+    @Test fun rootPolicyFailureKeepsConfirmedValueAndReviewableCandidate() = runBlocking {
+        val vm = viewModel(this)
+        vm.refresh(); vm.loaded()
+        failure = "config.conflict"
+        vm.setRootPolicy("include")
+        withTimeout(5_000) { vm.state.first { it.requiresReload && !it.isSaving } }
+        assertEquals("default", vm.state.value.snapshot!!.rootPolicy)
+        assertEquals("config.conflict", vm.state.value.errorCode)
+        val draft = vm.state.value.draftForReview()!!
+        assertEquals("root_policy", draft.partition)
+        assertEquals("include", kotlinx.serialization.json.Json.parseToJsonElement(draft.snapshot.content).jsonObject.textAt("root_policy"))
+        vm.setRootPolicy("exclude")
+        assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+    }
+
+    @Test fun confirmedRootPolicySurvivesPageScopeDisposal() = runBlocking {
+        val pageScope = CoroutineScope(coroutineContext + Job())
+        val vm = viewModel(pageScope, saveScope = this)
+        try {
+            vm.refresh(); vm.loaded()
+            vm.setRootPolicy("include"); pageScope.cancel()
+            withTimeout(5_000) { vm.state.first { !it.isSaving && it.snapshot!!.rootPolicy == "include" } }
+            assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+        } finally { pageScope.cancel() }
     }
 
     @Test fun nativeCommitSurvivesPageScopeAndReportsFailure() = runBlocking {

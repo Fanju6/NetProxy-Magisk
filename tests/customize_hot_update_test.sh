@@ -35,7 +35,7 @@ su() { [ "$1" = -c ]; sh -c "$2"; }
 # 参数: $1 TUN 接口名，用于区分快照来源。
 # 返回: 0=输出不含真实凭据的当前入站 JSON。
 inbound_fixture() {
-  printf '{"backend":"ebpf","app":{"enabled":true,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]},"ebpf":{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true},"shared":{"enabled":false}},"tun":{"type":"tun","tag":"netproxy-in","interface_name":"%s","address":["172.19.0.1/30","fdfe:dcba:9876::1/126"],"auto_route":true,"auto_redirect":true,"dns_mode":"hijack"}}\n' "$1"
+  printf '{"backend":"ebpf","root_policy":"default","app":{"enabled":true,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]},"ebpf":{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true},"shared":{"enabled":false}},"tun":{"type":"tun","tag":"netproxy-in","interface_name":"%s","address":["172.19.0.1/30","fdfe:dcba:9876::1/126"],"auto_route":true,"auto_redirect":true,"dns_mode":"hijack"}}\n' "$1"
 }
 
 # 参数: $1 节点 tag，用于区分快照来源。

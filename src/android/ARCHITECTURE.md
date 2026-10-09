@@ -53,7 +53,7 @@ feature/<name>/
 
 ## 状态所有权
 
-- `feature/inbound` 管理入站后端和原生 eBPF/TUN 表单，复用 `ConfigRepository` 的候选文件与分区 revision。唯一事实源为 `config/inbound/inbound.json`，表单更新只替换所拥有的原生字段并保留其余字段；冲突必须重新加载。
+- `feature/inbound` 管理入站后端、独立 `root_policy` 三态和原生 eBPF/TUN 表单，复用 `ConfigRepository` 的候选文件与分区 revision。唯一事实源为 `config/inbound/inbound.json`，表单更新只替换所拥有的原生字段并保留其余字段；冲突必须重新加载。Root 选择即时提交自己的分区，复用后端标量保存流程并先提交已确认原生草稿；不在应用列表创建 Root 条目，也不扩展应用名单格式。完整 JSON 编辑位于入站页右上角菜单。
 - `SettingsViewModel` 管理模块开关与独立「网络匹配」页的 Wi-Fi 策略；通过 `ConfigRepository` 与 kotlinx.serialization 类型模型读取 `config/module.json` 的 `module/wifi`、`module/auto_start` 分区，各自持有独立 revision，只提交所拥有的分区，不读后合并整份旧快照。两个保存任务独立维护在途状态，写入阶段不重新读取配置。入站页只依赖 `InboundViewModel`，分应用入口位于入站页。分应用通过 `ConfigRepository` 保存带 revision 的 `inbound/app` 分区，Go 负责应用与回滚；`AppsViewModel` 合并全部模式、开关与名单编辑，仅在离页或进入后台提交，不设闲置计时器。应用条目不保存勾选状态，统一读取当前名单；搜索匹配结果与勾选独立，只有关键词、过滤条件和应用清单变化时重新计算。默认列表与搜索列表复用选中优先和反序的显示排序，勾选只更新名单与排序投影；搜索重排保持视口位置，不跟随已选条目上移。搜索层由 Scaffold 的 popupHost 承载，仅搜索框上移，普通列表不做位移动画，模糊仍只采集普通内容；两份列表的滚动状态均在切换内容之外持有，展开状态由搜索框位置动画完成后确认，不由输入焦点改写。
 - 模块 JSON 分区读取允许字段省略，沿用类型模型的构造默认值；写入始终包含默认字段，不能把全默认分区编码为 `{}`。模块内容复用现有 kotlinx.serialization 并单独拒绝未知字段；布尔字段在类型解码前检查 JSON primitive 类型，避免引号布尔值被宽容解码，不改变 CLI 响应的未知字段兼容策略。
 - 网络匹配配置分别保存启用开关与黑/白名单模式，界面派生为关闭/黑名单/白名单三态；关闭只修改开关，保留原模式与两份 SSID JSON 名单。名称精确保留。添加弹窗通过 ConfigRepository 查询只读 `network wifi-list` 候选，查询失败仍允许手动输入；确认只修改页面草稿，取消和未确认输入不保存。列表只显示当前名单，不因网络变化刷新。候选不进入遥测，页面不读取系统 Wi-Fi 文件或执行额外 Root 命令。

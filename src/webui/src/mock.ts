@@ -34,6 +34,7 @@ const MODULE_CONFIG = {
 
 const INBOUND_CONFIG = {
   backend: 'ebpf' as InboundBackend,
+  root_policy: 'default',
   app: { enabled: true, mode: 'blacklist', proxy_apps: [] as string[], bypass_apps: [] as string[] },
   ebpf: {
     type: 'ebpf', tag: 'netproxy-in', network: ['tcp', 'udp'], udp_timeout: '5m', tc_priority: 1,
@@ -72,7 +73,7 @@ const MODULE_DOCUMENTS = [
 
 const CONFIG_DOCUMENTS = [
   { id: 'inbound', filename: 'inbound.json', category: 'inbound', editable: true },
-  ...['backend', 'app', 'ebpf', 'tun'].map(section => ({
+  ...['backend', 'root_policy', 'app', 'ebpf', 'tun'].map(section => ({
     id: `inbound/${section}`, filename: section, category: 'inbound', editable: true, section,
   })),
   { id: 'singbox/config.json', filename: 'config.json', category: 'config', editable: true },

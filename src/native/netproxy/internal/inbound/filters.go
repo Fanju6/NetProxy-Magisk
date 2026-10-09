@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/sagernet/sing/common/json/badoption"
 )
 
 func validateAppFilters(users []int, includePackage, excludePackage []string) error {
@@ -63,4 +65,30 @@ func validateUIDFilters(include []uint32, includeRanges []string, exclude []uint
 	}
 	_, _, err := normalizeUIDFilters(exclude, excludeRanges)
 	return err
+}
+
+// applyRootPolicy 只覆盖 UID 0；空 include 表示不限 UID，不能为接管 Root 将其变成仅包含 0。
+func (c Config) applyRootPolicy(include *badoption.Listable[uint32], includeRanges []string, exclude *badoption.Listable[uint32], excludeRanges *badoption.Listable[string], otherIncludes bool) error {
+	switch c.RootPolicy {
+	case "exclude":
+		*exclude = append(*exclude, 0)
+	case "include":
+		if len(*include)+len(includeRanges) > 0 || otherIncludes || (c.App.Enabled && c.App.Mode == "whitelist") {
+			*include = append(*include, 0)
+		}
+		uids, intervals, err := normalizeUIDFilters(*exclude, *excludeRanges)
+		if err != nil {
+			return err
+		}
+		*exclude = slices.DeleteFunc(uids, func(uid uint32) bool { return uid == 0 })
+		*excludeRanges = nil
+		for _, interval := range intervals {
+			start, end, _ := strings.Cut(interval, ":")
+			if start == "0" {
+				start = "1"
+			}
+			*excludeRanges = append(*excludeRanges, start+":"+end)
+		}
+	}
+	return nil
 }

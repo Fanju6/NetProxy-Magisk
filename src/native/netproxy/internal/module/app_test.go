@@ -30,6 +30,7 @@ import (
 
 const testInboundConfig = `{
   "backend": "ebpf",
+  "root_policy": "default",
   "app": {"enabled": false, "mode": "blacklist", "proxy_apps": [], "bypass_apps": []},
   "ebpf": {"type": "ebpf", "tag": "netproxy-in", "local": {"enabled": true}, "shared": {"enabled": false}},
   "tun": {"type": "tun", "tag": "netproxy-in", "interface_name": "netproxy", "address": ["172.19.0.1/30"], "auto_route": true, "auto_redirect": true}

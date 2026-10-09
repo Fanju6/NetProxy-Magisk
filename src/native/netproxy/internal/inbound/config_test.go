@@ -25,7 +25,7 @@ func fixture(t *testing.T, backend, ebpf, tun string) Config {
 	if tun == "" {
 		tun = testTUN
 	}
-	config, err := Parse([]byte(`{"backend":"` + backend + `","app":{"enabled":false,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]},"ebpf":` + ebpf + `,"tun":` + tun + `}`))
+	config, err := Parse([]byte(`{"backend":"` + backend + `","root_policy":"default","app":{"enabled":false,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]},"ebpf":` + ebpf + `,"tun":` + tun + `}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,6 +77,9 @@ func TestStrictOuterJSON(t *testing.T) {
 		strings.Replace(base, `"backend":"ebpf"`, `"backend":null`, 1),
 		strings.Replace(base, `"backend":"ebpf",`, ``, 1),
 		strings.Replace(base, `"backend":"ebpf"`, `"backend":"ebpf","extra":1`, 1),
+		strings.Replace(base, `"root_policy":"default"`, `"root_policy":"auto"`, 1),
+		strings.Replace(base, `"root_policy":"default"`, `"root_policy":null`, 1),
+		strings.Replace(base, `"root_policy":"default"`, `"root_policy":true`, 1),
 		strings.Replace(base, `"app":{`, `"app":null,"removed":{`, 1),
 		strings.Replace(base, `"enabled":false`, `"enabled":null`, 1),
 		strings.Replace(base, `"enabled":false`, `"enabled":false,"enabled":true`, 1),
@@ -96,7 +99,7 @@ func TestStrictOuterJSON(t *testing.T) {
 			t.Fatalf("第 %d 个非法配置被接受: %s", index, content)
 		}
 	}
-	for _, field := range []string{"backend", "app", "ebpf", "tun"} {
+	for _, field := range []string{"backend", "root_policy", "app", "ebpf", "tun"} {
 		var fields map[string]jsontext.Value
 		if err := json.Unmarshal([]byte(base), &fields); err != nil {
 			t.Fatal(err)
