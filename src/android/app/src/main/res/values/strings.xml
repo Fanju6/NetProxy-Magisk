@@ -152,11 +152,10 @@
     <string name="subscription_editor_url">Subscription URL</string>
     <string name="subscription_editor_update_interval">Update interval</string>
     <string name="subscription_editor_auto_update">Auto update</string>
-    <string name="subscription_editor_auto_update_summary">Scheduled updates also run when the core is stopped</string>
     <string name="subscription_editor_update_network">Download mode</string>
     <string name="subscription_editor_network_auto">Auto</string>
-    <string name="subscription_editor_network_proxy">Always use proxy</string>
-    <string name="subscription_editor_network_direct">Always direct</string>
+    <string name="subscription_editor_network_proxy">Proxy</string>
+    <string name="subscription_editor_network_direct">Direct</string>
     <string name="subscription_editor_filter_section">Filtering and connection</string>
     <string name="subscription_editor_include">Include only (regex, optional)</string>
     <string name="subscription_editor_exclude">Exclude (regex, optional)</string>

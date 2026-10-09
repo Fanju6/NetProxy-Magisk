@@ -799,7 +799,6 @@ internal fun SubscriptionEditorScreen(
                         )
                         SwitchPreference(
                             title = stringResource(R.string.subscription_editor_auto_update),
-                            summary = stringResource(R.string.subscription_editor_auto_update_summary),
                             checked = draft.autoUpdate,
                             onCheckedChange = { enabled ->
                                 viewModel.update { it.copy(autoUpdate = enabled) }

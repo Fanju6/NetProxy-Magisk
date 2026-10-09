@@ -152,11 +152,10 @@
     <string name="subscription_editor_url">URL подписки</string>
     <string name="subscription_editor_update_interval">Интервал обновления</string>
     <string name="subscription_editor_auto_update">Автообновление</string>
-    <string name="subscription_editor_auto_update_summary">Обновления по расписанию работают и при остановленном ядре</string>
     <string name="subscription_editor_update_network">Режим загрузки</string>
     <string name="subscription_editor_network_auto">Авто</string>
-    <string name="subscription_editor_network_proxy">Всегда через прокси</string>
-    <string name="subscription_editor_network_direct">Всегда напрямую</string>
+    <string name="subscription_editor_network_proxy">Прокси</string>
+    <string name="subscription_editor_network_direct">Напрямую</string>
     <string name="subscription_editor_filter_section">Фильтрация и соединение</string>
     <string name="subscription_editor_include">Включить только (регулярное выражение, необязательно)</string>
     <string name="subscription_editor_exclude">Исключить (регулярное выражение, необязательно)</string>

@@ -162,11 +162,10 @@
     <string name="subscription_editor_url">订阅链接</string>
     <string name="subscription_editor_update_interval">自动更新周期</string>
     <string name="subscription_editor_auto_update">自动更新</string>
-    <string name="subscription_editor_auto_update_summary">核心停止时也会按计划更新</string>
     <string name="subscription_editor_update_network">更新网络</string>
     <string name="subscription_editor_network_auto">自动</string>
-    <string name="subscription_editor_network_proxy">始终通过代理</string>
-    <string name="subscription_editor_network_direct">始终直连</string>
+    <string name="subscription_editor_network_proxy">代理</string>
+    <string name="subscription_editor_network_direct">直连</string>
     <string name="subscription_editor_filter_section">筛选与连接</string>
     <string name="subscription_editor_include">仅保留（正则，可选）</string>
     <string name="subscription_editor_exclude">排除（正则，可选）</string>
