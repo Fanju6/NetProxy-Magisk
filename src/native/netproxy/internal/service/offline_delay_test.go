@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	json "encoding/json/v2"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/processlock"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
 )
 
 func TestOfflineDelayConfigIsIsolatedAndUsesProviderSnapshot(t *testing.T) {
@@ -105,6 +107,9 @@ func TestOfflineDelayConfigIsIsolatedAndUsesProviderSnapshot(t *testing.T) {
 
 func TestOfflineDelayCancellationStopsProcessAndRemovesSession(t *testing.T) {
 	if os.Getenv("NETPROXY_OFFLINE_DELAY_HELPER") == "1" {
+		if _, err := os.Stdout.Write([]byte{1}); err != nil {
+			t.Fatal(err)
+		}
 		time.Sleep(30 * time.Second)
 		return
 	}
@@ -115,34 +120,106 @@ func TestOfflineDelayCancellationStopsProcessAndRemovesSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	originalCommand := offlineDelayCommand
-	offlineDelayCommand = func(ctx context.Context, _, _, workingDir string, output *os.File) *exec.Cmd {
-		command := exec.CommandContext(ctx, os.Args[0], "-test.run=TestOfflineDelayCancellationStopsProcessAndRemovesSession")
-		command.Dir = workingDir
-		command.Env = append(os.Environ(), "NETPROXY_OFFLINE_DELAY_HELPER=1")
-		command.Stdout = output
-		command.Stderr = output
-		return command
+	for _, stage := range []string{"before-start", "after-start"} {
+		t.Run(stage, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			reader, writer, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reader.Close()
+			defer writer.Close()
+			started := make(chan error, 1)
+			if stage == "after-start" {
+				go func() {
+					var signal [1]byte
+					_, err := reader.Read(signal[:])
+					started <- err
+					cancel()
+				}()
+			}
+			var command *exec.Cmd
+			originalCommand := offlineDelayCommand
+			offlineDelayCommand = func(ctx context.Context, _, _, workingDir string, output *os.File) *exec.Cmd {
+				command = exec.CommandContext(ctx, os.Args[0], "-test.run=^TestOfflineDelayCancellationStopsProcessAndRemovesSession$")
+				command.Dir = workingDir
+				command.Env = append(os.Environ(), "NETPROXY_OFFLINE_DELAY_HELPER=1")
+				command.Stdout = writer
+				command.Stderr = output
+				if stage == "before-start" {
+					cancel()
+				}
+				return command
+			}
+			defer func() { offlineDelayCommand = originalCommand }()
+			delayDir := filepath.Join(t.TempDir(), "delay")
+			_, err = runOfflineDelay(ctx, Options{
+				CatalogRoot: catalogRoot, ModuleConfig: moduleConfig, DelayDir: delayDir,
+				SingBoxPath: os.Args[0], RequestTimeout: time.Second,
+			}, request)
+			_ = reader.Close()
+			if stage == "after-start" {
+				if err := <-started; err != nil {
+					t.Fatalf("测试子进程未确认启动: %v", err)
+				}
+				if command.ProcessState == nil || command.ProcessState.Success() {
+					t.Fatal("取消后未回收测速子进程")
+				}
+			}
+			var structured *Error
+			if !errors.As(err, &structured) || structured.Code != "node.delay_timeout" {
+				t.Fatalf("取消离线测速未返回超时错误: %v", err)
+			}
+			entries, err := os.ReadDir(delayDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, entry := range entries {
+				if strings.HasPrefix(entry.Name(), "session-") {
+					t.Fatalf("取消后遗留测速会话目录: %s", entry.Name())
+				}
+			}
+			lock, err := processlock.TryAcquire(filepath.Join(delayDir, "session.lock"))
+			if err != nil {
+				t.Fatalf("取消后未释放测速锁: %v", err)
+			}
+			_ = lock.Release()
+		})
 	}
-	defer func() { offlineDelayCommand = originalCommand }()
-	delayDir := filepath.Join(t.TempDir(), "delay")
-	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
-	defer cancel()
-	_, err = runOfflineDelay(ctx, Options{
-		CatalogRoot: catalogRoot, ModuleConfig: moduleConfig, DelayDir: delayDir,
-		SingBoxPath: os.Args[0], RequestTimeout: time.Second,
-	}, request)
-	var structured *Error
-	if !errors.As(err, &structured) || structured.Code != "node.delay_timeout" {
-		t.Fatalf("取消离线测速未返回超时错误: %v", err)
+}
+
+func TestOfflineDelayErrorClassification(t *testing.T) {
+	for _, test := range []struct {
+		cause error
+		code  string
+	}{
+		{context.Canceled, "node.delay_timeout"},
+		{fmt.Errorf("启动离线测速核心: %w", context.DeadlineExceeded), "node.delay_timeout"},
+		{errors.New("核心退出"), "node.delay_offline_failed"},
+		{&Error{Code: "node.delay_target_missing"}, "node.delay_target_missing"},
+	} {
+		structured, ok := errors.AsType[*Error](offlineDelayError("Auto/test", test.cause))
+		if !ok || structured.Code != test.code {
+			t.Fatalf("离线测速错误分类异常: %v，期望 %s", structured, test.code)
+		}
 	}
-	entries, err := os.ReadDir(delayDir)
+}
+
+func TestOfflineDelayReadyCancellationTakesPrecedenceOverProcessExit(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	client, err := serviceapi.New("127.0.0.1:1", "test-secret")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), "session-") {
-			t.Fatalf("取消后遗留测速会话目录: %s", entry.Name())
+	defer client.Close()
+	done := make(chan struct{})
+	close(done)
+	processErr := errors.New("进程已终止")
+	for range 64 {
+		if err := waitOfflineDelayReady(ctx, client, done, &processErr); !errors.Is(err, context.Canceled) {
+			t.Fatalf("进程退出覆盖了取消原因: %v", err)
 		}
 	}
 }

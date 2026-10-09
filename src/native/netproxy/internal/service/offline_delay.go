@@ -110,11 +110,11 @@ func runOfflineDelay(ctx context.Context, options Options, request delayRequest)
 	}
 	defer client.Close()
 	if err := waitOfflineDelayReady(sessionContext, client, done, &processErr); err != nil {
-		return DelayResult{}, mapOfflineDelayError(request.Target, err)
+		return DelayResult{}, offlineDelayError(request.Target, err)
 	}
 	result, err := delayWithClient(sessionContext, client, request.Target, true)
 	if err != nil {
-		return DelayResult{}, mapOfflineDelayError(request.Target, err)
+		return DelayResult{}, offlineDelayError(request.Target, err)
 	}
 	return result, nil
 }
@@ -238,6 +238,9 @@ func waitOfflineDelayReady(ctx context.Context, client *serviceapi.Client, done 
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-done:
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if *processErr == nil {
 				return errors.New("离线测速核心已提前退出")
 			}
@@ -265,17 +268,13 @@ func stopOfflineDelayProcess(cancel context.CancelFunc, command *exec.Cmd, done 
 	}
 }
 
-func mapOfflineDelayError(target string, cause error) error {
+func offlineDelayError(target string, cause error) error {
 	if structured, ok := errors.AsType[*Error](cause); ok {
 		return structured
 	}
 	if errors.Is(cause, context.DeadlineExceeded) || errors.Is(cause, context.Canceled) {
 		return delayTimeoutError(target, cause)
 	}
-	return offlineDelayError(target, cause)
-}
-
-func offlineDelayError(target string, cause error) error {
 	return &Error{
 		Code:    "node.delay_offline_failed",
 		Message: fmt.Sprintf("离线节点测速失败: %v", cause),
