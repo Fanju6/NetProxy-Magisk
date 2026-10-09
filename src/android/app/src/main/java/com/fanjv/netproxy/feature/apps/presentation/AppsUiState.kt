@@ -36,8 +36,8 @@ data class AppsUiState(
     val error: String = ""
 )
 
-internal fun AppsUiState.orderedApps(): List<AppInfoModel> {
-    if (!appSelectedFirst) return allApps
-    val (selected, other) = allApps.partition { it.id in proxiedApps }
+internal fun AppsUiState.orderedApps(items: List<AppInfoModel> = allApps): List<AppInfoModel> {
+    if (!appSelectedFirst) return items
+    val (selected, other) = items.partition { it.id in proxiedApps }
     return if (appReverseSort) other + selected else selected + other
 }

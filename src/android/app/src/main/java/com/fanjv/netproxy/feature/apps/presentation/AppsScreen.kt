@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Android
@@ -142,6 +143,7 @@ internal fun AppsScreen(
     val spacing = 10.dp
 
     val searchStatus = rememberSaveable(saver = SearchStatus.Saver) { SearchStatus("") }
+    val searchListState = rememberLazyListState()
 
     LaunchedEffect(Unit) { viewModel.load() }
     val commitOnLeave = rememberCommitOnLeave(viewModel::requestPolicyFlush)
@@ -380,8 +382,7 @@ internal fun AppsScreen(
                                             apps.appShowPackageName,
                                             app.id in apps.proxiedApps,
                                             spacing,
-                                            viewModel
-                                        )
+                                        ) { viewModel.toggle(app.id) }
                                     }
                                 } else {
                                     item("app_proxy_disabled") {
@@ -410,9 +411,13 @@ internal fun AppsScreen(
         }
 
         if (apps.appProxyEnabled) {
+            val searchResults = remember(
+                apps.searchResults, apps.proxiedApps, apps.appSelectedFirst, apps.appReverseSort
+            ) { apps.orderedApps(apps.searchResults) }
             searchStatus.SearchPager(
                 empty = apps.hasLoadedApps && !apps.isFilteringApps &&
                     apps.appSearchQuery.isNotBlank() && apps.searchResults.isEmpty(),
+                listState = searchListState,
                 searchBarTopPadding = dynamicTopPadding,
             ) {
                 if (apps.error.isNotBlank() || apps.requiresPolicyReload) item("error") {
@@ -421,11 +426,20 @@ internal fun AppsScreen(
                         onClick = viewModel::discardPolicyAndReload)
                 }
                 items(
-                    items = apps.searchResults,
+                    items = searchResults,
                     key = AppInfoModel::id,
                     contentType = { "app_item" },
                 ) { app ->
-                    AppItem(app, apps.appShowPackageName, app.id in apps.proxiedApps, spacing, viewModel)
+                    AppItem(app, apps.appShowPackageName, app.id in apps.proxiedApps, spacing) {
+                        if (apps.appSelectedFirst) {
+                            // 重排时保持视口位置，不跟随已选条目的 key 上移。
+                            searchListState.requestScrollToItem(
+                                searchListState.firstVisibleItemIndex,
+                                searchListState.firstVisibleItemScrollOffset
+                            )
+                        }
+                        viewModel.toggle(app.id)
+                    }
                 }
             }
         }
@@ -439,7 +453,7 @@ private fun AppItem(
     showPackageName: Boolean,
     isProxied: Boolean,
     spacing: androidx.compose.ui.unit.Dp,
-    viewModel: AppsViewModel
+    onClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -448,9 +462,7 @@ private fun AppItem(
             .fillMaxWidth()
     ) {
         BasicComponent(
-            onClick = {
-                viewModel.toggle(app.id)
-            },
+            onClick = onClick,
             startAction = {
                 Box(
                     modifier = Modifier
@@ -479,9 +491,7 @@ private fun AppItem(
                 top.yukonga.miuix.kmp.basic.Checkbox(
                     modifier = Modifier.padding(end = 12.dp),
                     state = androidx.compose.ui.state.ToggleableState(isProxied),
-                    onClick = {
-                        viewModel.toggle(app.id)
-                    }
+                    onClick = onClick
                 )
             }
         ) {

@@ -337,12 +337,22 @@ class AppsViewModelTest {
         vm.updateSearch(".example")
         yield(); dispatcher.drain(); yield()
         val results = vm.state.value.searchResults
-        vm.toggle("0:beta.example"); vm.toggle("0:alpha.example")
+        vm.toggle("0:beta.example")
+        assertEquals(listOf("beta.example", "alpha.example"),
+            vm.state.value.orderedApps(results).map { it.packageName })
+        vm.toggle("0:alpha.example")
+        assertEquals(listOf("alpha.example", "beta.example"),
+            vm.state.value.orderedApps(results).map { it.packageName })
         assertSame(results, vm.state.value.searchResults)
         assertFalse(vm.state.value.isFilteringApps)
         assertTrue(dispatcher.tasks.isEmpty())
         vm.setSelectedFirst(false)
         assertSame(results, vm.state.value.searchResults)
+        assertSame(results, vm.state.value.orderedApps(results))
+        assertFalse(vm.state.value.isFilteringApps)
+        assertTrue(dispatcher.tasks.isEmpty())
+        assertEquals(0, transport.writes)
+        assertEquals(1, transport.calls.size)
         assertEquals(".example", vm.state.value.appSearchQuery)
         assertTrue(vm.flushPolicy())
         assertEquals(1, transport.writes)
@@ -374,15 +384,55 @@ class AppsViewModelTest {
         assertEquals(listOf("0:beta.example"), transport.config.proxyApps)
     }
 
-    @Test fun selectedFirstOnlyReordersNormalListAndPreservesReverseOrder() {
+    @Test fun selectedFirstUsesSameOrderingForNormalAndSearchLists() {
         val alpha = AppInfoModel("alpha.example", "Alpha")
         val beta = AppInfoModel("beta.example", "Beta")
         val state = AppsUiState(allApps = listOf(alpha, beta), searchResults = listOf(alpha, beta),
             proxiedApps = setOf(beta.id))
         assertEquals(listOf(beta, alpha), state.orderedApps())
+        assertEquals(state.orderedApps(), state.orderedApps(state.searchResults))
         assertEquals(listOf(alpha, beta), state.searchResults)
         assertSame(state.allApps, state.copy(appSelectedFirst = false).orderedApps())
-        assertEquals(listOf(alpha, beta), state.copy(allApps = listOf(beta, alpha), appReverseSort = true).orderedApps())
+        assertSame(state.searchResults, state.copy(appSelectedFirst = false).orderedApps(state.searchResults))
+        val reversed = state.copy(allApps = listOf(beta, alpha), searchResults = listOf(beta, alpha), appReverseSort = true)
+        assertEquals(listOf(alpha, beta), reversed.orderedApps())
+        assertEquals(reversed.orderedApps(), reversed.orderedApps(reversed.searchResults))
+    }
+
+    @Test fun searchOrderingPreservesFilterUserIdentityAndRelativeOrder() {
+        val alpha = AppInfoModel("alpha.example", "Alpha")
+        val owner = AppInfoModel("google.example", "Google", userId = "0")
+        val work = owner.copy(userId = "10")
+        val play = AppInfoModel("google.play", "Google Play")
+        val search = listOf(owner, work, play)
+        val state = AppsUiState(allApps = listOf(alpha) + search, searchResults = search,
+            proxiedApps = setOf(alpha.id, work.id, play.id))
+        assertEquals(listOf(work, play, owner), state.orderedApps(search))
+        assertEquals(listOf(owner, work, play), state.copy(proxiedApps = emptySet()).orderedApps(search))
+        assertEquals(listOf(owner, work, play), state.copy(proxiedApps = search.map { it.id }.toSet()).orderedApps(search))
+        assertEquals(listOf(owner, work, play), state.copy(appSelectedFirst = false).orderedApps(search))
+        assertEquals(listOf(owner, work, play), search)
+        assertTrue(state.orderedApps(emptyList()).isEmpty())
+    }
+
+    @Test fun continuousSearchSelectionAndDeselectionUsesLatestPolicyWithoutRefiltering() = runBlocking {
+        val transport = Transport()
+        val vm = model(this, transport)
+        vm.load(); vm.loaded()
+        vm.updateSearch(".example")
+        withTimeout(5_000) { vm.state.first { !it.isFilteringApps && it.searchResults.size == 2 } }
+        val results = vm.state.value.searchResults
+        vm.toggle("0:beta.example")
+        assertEquals(listOf("beta.example", "alpha.example"), vm.state.value.orderedApps(results).map { it.packageName })
+        vm.toggle("0:alpha.example")
+        vm.toggle("0:alpha.example")
+        assertEquals(listOf("beta.example", "alpha.example"), vm.state.value.orderedApps(results).map { it.packageName })
+        vm.toggle("0:beta.example")
+        assertEquals(listOf("alpha.example", "beta.example"), vm.state.value.orderedApps(results).map { it.packageName })
+        assertSame(results, vm.state.value.searchResults)
+        assertFalse(vm.state.value.isFilteringApps)
+        assertEquals(0, transport.writes)
+        assertFalse(vm.state.value.hasPendingPolicy)
     }
 
     @Test fun searchStateRestoresExpandedQueryButNotClosingAnimation() {

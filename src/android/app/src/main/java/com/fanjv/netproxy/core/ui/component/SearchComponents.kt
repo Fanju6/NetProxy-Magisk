@@ -32,7 +32,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -189,6 +189,7 @@ fun SearchStatus.SearchBox(
 @Composable
 fun SearchStatus.SearchPager(
     empty: Boolean,
+    listState: LazyListState,
     expandBar: @Composable (SearchStatus, () -> Dp) -> Unit = { searchStatus, padding ->
         SearchBar(searchStatus, padding)
     },
@@ -196,7 +197,6 @@ fun SearchStatus.SearchPager(
     result: LazyListScope.() -> Unit
 ) {
     val searchStatus = this
-    val listState = rememberLazyListState()
     LaunchedEffect(searchStatus.searchText) { listState.scrollToItem(0) }
     val systemBarsPadding = WindowInsets.systemBars.asPaddingValues().calculateTopPadding()
     val topPadding by animateDpAsState(
