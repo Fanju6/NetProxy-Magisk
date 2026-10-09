@@ -11,7 +11,7 @@ func TestLayout(t *testing.T) {
 	expected := map[string]string{
 		"root":           root,
 		"catalog":        filepath.Join(root, "data", "catalog"),
-		"module config":  filepath.Join(root, "config", "module.conf"),
+		"module config":  filepath.Join(root, "config", "module.json"),
 		"inbound config": filepath.Join(root, "config", "inbound", "inbound.json"),
 		"sing-box":       filepath.Join(root, "bin", "sing-box"),
 		"executable":     filepath.Join(root, "bin", "netproxyctl"),

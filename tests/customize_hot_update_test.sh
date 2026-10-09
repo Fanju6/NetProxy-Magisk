@@ -38,13 +38,19 @@ inbound_fixture() {
   printf '{"backend":"ebpf","app":{"enabled":true,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]},"ebpf":{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true},"shared":{"enabled":false}},"tun":{"type":"tun","tag":"netproxy-in","interface_name":"%s","address":["172.19.0.1/30","fdfe:dcba:9876::1/126"],"auto_route":true,"auto_redirect":true,"dns_mode":"hijack"}}\n' "$1"
 }
 
+# 参数: $1 节点 tag，用于区分快照来源。
+# 返回: 0=输出不含真实凭据的当前模块 JSON。
+module_fixture() {
+  printf '{"auto_start":false,"selection":{"group_id":"default","node_tag":"%s"},"wifi":{"enabled":false,"mode":"blacklist","blacklist":[],"whitelist":[],"proxy_on_non_wifi":true}}\n' "$1"
+}
+
 write_module() {
   target="$1" label="$2"
   mkdir -p "$target/bin" "$target/config/inbound" "$target/config/singbox/rules/local" \
     "$target/config/singbox/rules/remote" "$target/config/singbox/custom-state" \
     "$target/data/catalog/default" "$target/runtime" "$target/logs"
   printf 'id=netproxy\nversion=%s\n' "$label" > "$target/module.prop"
-  printf '%s\n' "$label-module" > "$target/config/module.conf"
+  module_fixture "$label" > "$target/config/module.json"
   inbound_fixture "$label" > "$target/config/inbound/inbound.json"
   printf '%s\n' "$label-config" > "$target/config/singbox/config.json"
   printf '%s\n' "$label-local" > "$target/config/singbox/rules/local/custom.json"
@@ -96,6 +102,9 @@ assert_value() { grep -Fxq "$2" "$1"; }
 # 参数: $1 入站文件，$2 快照来源接口名。
 # 返回: 0=JSON 快照匹配，1=内容不一致或文件不可读。
 assert_inbound() { assert_value "$1" "$(inbound_fixture "$2")"; }
+# 参数: $1 模块文件，$2 快照来源节点 tag。
+# 返回: 0=JSON 快照匹配，1=内容不一致或文件不可读。
+assert_module() { assert_value "$1" "$(module_fixture "$2")"; }
 
 # 参数: $1 等待秒数。
 # 返回: 0=写入下一个测试按键，1=模拟读取失败。
@@ -136,7 +145,7 @@ test_install_choices() (
       printf '%s\n' '操作后超时不能自动确认安装' >&2
       exit 1
     fi
-    assert_value "$LIVE/config/module.conf" current-module
+    assert_module "$LIVE/config/module.json" current
   done
   rm "$LIVE/config/singbox/config.json"
   CHOICES=timeout
@@ -210,7 +219,7 @@ test_snapshot_modes() (
     fi
     if [ "$mode" = preserve ]; then
       assert_inbound "$STAGE/config/inbound/inbound.json" current
-      assert_value "$STAGE/config/module.conf" current-module
+      assert_module "$STAGE/config/module.json" current
       assert_value "$STAGE/config/singbox/config.json" current-config
       assert_value "$STAGE/config/singbox/rules/local/custom.json" current-local
       assert_value "$STAGE/config/singbox/cache.db" current-cache
@@ -218,7 +227,7 @@ test_snapshot_modes() (
       assert_value "$STAGE/config/telemetry/state.json" current-telemetry-queue
     else
       assert_inbound "$STAGE/config/inbound/inbound.json" package
-      assert_value "$STAGE/config/module.conf" package-module
+      assert_module "$STAGE/config/module.json" package
       assert_value "$STAGE/config/singbox/rules/local/custom.json" package-local
       assert_value "$STAGE/config/singbox/cache.db" package-cache
       assert_value "$STAGE/config/singbox/custom-state/state.json" package-state
@@ -235,7 +244,7 @@ test_snapshot_failure() (
   reset_modules
   cp() { return 1; }
   if copy_user_data_locked; then exit 1; fi
-  assert_value "$STAGE/config/module.conf" package-module
+  assert_module "$STAGE/config/module.json" package
   assert_value "$LIVE/data/catalog/default/provider.json" current-provider
 )
 
@@ -246,7 +255,7 @@ test_snapshot_rename_failure() (
     command mv "$@"
   }
   if copy_user_data_locked; then exit 1; fi
-  assert_value "$STAGE/config/module.conf" package-module
+  assert_module "$STAGE/config/module.json" package
   assert_inbound "$STAGE/config/inbound/inbound.json" package
   assert_value "$STAGE/config/singbox/cache.db" package-cache
   [ -z "$(find "$STAGE" -name '.install-state.*' -print)" ]
@@ -256,7 +265,7 @@ test_missing_current_data() (
   reset_modules
   rm "$LIVE/config/singbox/config.json"
   if copy_user_data_locked; then exit 1; fi
-  assert_value "$STAGE/config/module.conf" package-module
+  assert_module "$STAGE/config/module.json" package
   INSTALL_MODE=nodes
   copy_user_data_locked
   assert_value "$STAGE/config/singbox/config.json" package-config
@@ -297,13 +306,33 @@ test_missing_inbound() (
   if validate_stage; then exit 1; fi
 )
 
+# 参数: 无。
+# 返回: 0=缺失模块 JSON 时仅 nodes/fresh 可安装，非零=回归失败。
+test_missing_module() (
+  reset_modules
+  rm "$LIVE/config/module.json"
+  wait_volume_key() { VOLUME_KEY=timeout; }
+  if choose_install_mode > "$WORKDIR/menu"; then exit 1; fi
+  grep -Fq 'config/module.json' "$WORKDIR/menu"
+  grep -Fq '请选择仅保留节点与订阅或全新安装' "$WORKDIR/menu"
+  if copy_user_data_locked; then exit 1; fi
+  assert_module "$STAGE/config/module.json" package
+  for mode in nodes fresh; do
+    INSTALL_MODE="$mode"
+    copy_user_data_locked
+    assert_module "$STAGE/config/module.json" package
+  done
+  rm "$STAGE/config/module.json"
+  if validate_stage; then exit 1; fi
+)
+
 test_permissions() (
   reset_modules
   set_permissions
   case "$(uname -s)" in
     MINGW*|MSYS*) printf '%s\n' 'NTFS 权限位不作断言，权限断言需在 Linux 执行' ;;
     *)
-      for file in config/module.conf config/inbound/inbound.json data/catalog/default/provider.json logs/service.log; do
+      for file in config/module.json config/inbound/inbound.json data/catalog/default/provider.json logs/service.log; do
         [ "$(stat -c '%a' "$STAGE/$file")" = 600 ]
       done
       [ "$(stat -c '%a' "$STAGE/config")" = 700 ]
@@ -376,7 +405,7 @@ test_manager_install() (
     if install_bundled_manager > "$WORKDIR/manager"; then exit 1; fi
     [ ! -s "$CALL_LOG" ]
     [ -f "$STAGE/NetProxy.apk" ]
-    assert_value "$LIVE/config/module.conf" current-module
+    assert_module "$LIVE/config/module.json" current
   done
   # 重复安装仍直接调用覆盖安装，不读取已安装版本或自动跳过。
   CHOICES=down
@@ -411,7 +440,7 @@ test_hot_update() (
     sleep() { :; }
     with_user_data_locks() {
       CATALOG_LOCK=data/.catalog.netproxy-test.lock
-      for entry in config/inbound/inbound.json.lock config/module.conf.lock config/singbox/config.json.lock "$CATALOG_LOCK"; do
+      for entry in config/inbound/inbound.json.lock config/module.json.lock config/singbox/config.json.lock "$CATALOG_LOCK"; do
         : > "$LIVE/$entry"
       done
       "$@"
@@ -445,21 +474,21 @@ test_hot_update_guards() (
 test_hot_update_latest_data() (
   reset_modules
   copy_user_data_locked
-  assert_value "$STAGE/config/module.conf" current-module
+  assert_module "$STAGE/config/module.json" current
   INSTALLER_PID=99999999
   sleep() {
-    printf '%s\n' 'latest-module' > "$LIVE/config/module.conf"
+    module_fixture latest > "$LIVE/config/module.json"
     printf '%s\n' 'latest-provider' > "$LIVE/data/catalog/default/provider.json"
   }
   with_user_data_locks() {
     CATALOG_LOCK=data/.catalog.netproxy-test.lock
-    for entry in config/inbound/inbound.json.lock config/module.conf.lock config/singbox/config.json.lock "$CATALOG_LOCK"; do
+    for entry in config/inbound/inbound.json.lock config/module.json.lock config/singbox/config.json.lock "$CATALOG_LOCK"; do
       : > "$LIVE/$entry"
     done
     "$@"
   }
   apply_hot_update
-  assert_value "$LIVE/config/module.conf" latest-module
+  assert_module "$LIVE/config/module.json" latest
   assert_value "$LIVE/data/catalog/default/provider.json" latest-provider
 
   reset_modules
@@ -474,7 +503,7 @@ test_hot_update_latest_data() (
 test_hot_rename_failure() (
   reset_modules
   CATALOG_LOCK=data/.catalog.netproxy-test.lock
-  for entry in config/inbound/inbound.json.lock config/module.conf.lock config/singbox/config.json.lock "$CATALOG_LOCK"; do
+  for entry in config/inbound/inbound.json.lock config/module.json.lock config/singbox/config.json.lock "$CATALOG_LOCK"; do
     : > "$LIVE/$entry"
   done
   mv() {
@@ -496,9 +525,9 @@ test_linux_locks() (
   with_user_data_locks copy_user_data_locked
   catalog_lock="$(find "$LIVE/data" -name '.catalog.netproxy-*.lock')"
   inode="$(stat -c '%i' "$catalog_lock")"
-  config_inode="$(stat -c '%i' "$LIVE/config/module.conf.lock")"
+  config_inode="$(stat -c '%i' "$LIVE/config/module.json.lock")"
   inbound_inode="$(stat -c '%i' "$LIVE/config/inbound/inbound.json.lock")"
-  for busy in "$catalog_lock" "$LIVE/config/module.conf.lock" "$LIVE/config/inbound/inbound.json.lock" "$WORKDIR/state/service.lock.flock"; do
+  for busy in "$catalog_lock" "$LIVE/config/module.json.lock" "$LIVE/config/inbound/inbound.json.lock" "$WORKDIR/state/service.lock.flock"; do
     (
       exec 3>"$busy"
       flock -n 3 3>&3
@@ -514,7 +543,7 @@ test_linux_locks() (
   )
   with_user_data_locks commit_hot_update
   [ "$(stat -c '%i' "$LIVE/data/${catalog_lock##*/}")" = "$inode" ]
-  [ "$(stat -c '%i' "$LIVE/config/module.conf.lock")" = "$config_inode" ]
+  [ "$(stat -c '%i' "$LIVE/config/module.json.lock")" = "$config_inode" ]
   [ "$(stat -c '%i' "$LIVE/config/inbound/inbound.json.lock")" = "$inbound_inode" ]
   [ -f "$LIVE/data/${group_lock##*/}" ]
 )
@@ -522,7 +551,7 @@ test_linux_locks() (
 test_native_catalog_lock() (
   [ -n "$NATIVE_CTL" ] && command -v flock >/dev/null 2>&1 || exit 0
   reset_modules
-  cp "$ROOT/src/module/config/module.conf" "$LIVE/config/module.conf"
+  cp "$ROOT/src/module/config/module.json" "$LIVE/config/module.json"
   cp "$ROOT/src/module/config/inbound/inbound.json" "$LIVE/config/inbound/inbound.json"
   cp "$ROOT/src/module/data/catalog/default/meta.json" "$LIVE/data/catalog/default/meta.json"
   cp "$ROOT/src/module/data/catalog/default/provider.json" "$LIVE/data/catalog/default/provider.json"
@@ -643,6 +672,7 @@ test_snapshot_failure
 test_snapshot_rename_failure
 test_missing_current_data
 test_missing_inbound
+test_missing_module
 test_permissions
 test_service_failures
 test_manager_install

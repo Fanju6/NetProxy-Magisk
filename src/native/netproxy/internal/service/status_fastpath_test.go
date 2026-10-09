@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	json "encoding/json/v2"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,8 +21,11 @@ func writeStatusModule(t *testing.T, path, activeID, selector, selected string) 
 	} else {
 		selected = ""
 	}
-	content := "ACTIVE_GROUP_ID=" + activeID + "\nSELECTED_NODE_TAG=\"" + selected + "\"\n"
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+	content, err := json.Marshal(map[string]any{"selection": map[string]string{"group_id": activeID, "node_tag": selected}}, json.Deterministic(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	modeConfigFixture(t, filepath.Dir(path), "Rule")
@@ -59,7 +63,7 @@ func statusOptions(root, moduleConfig string) Options {
 func TestReadStatusFastPathSkipsInactiveProvider(t *testing.T) {
 	temp := t.TempDir()
 	catalogRoot := filepath.Join(temp, "catalog")
-	moduleConfig := filepath.Join(temp, "module.conf")
+	moduleConfig := filepath.Join(temp, "module.json")
 	if err := os.MkdirAll(catalogRoot, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +105,7 @@ func TestReadGroupSummaryKeepsRuntimeTagDisambiguation(t *testing.T) {
 func TestReadStatusStoppedReadsCatalogSummary(t *testing.T) {
 	temp := t.TempDir()
 	catalogRoot := filepath.Join(temp, "catalog")
-	moduleConfig := filepath.Join(temp, "module.conf")
+	moduleConfig := filepath.Join(temp, "module.json")
 	if err := os.MkdirAll(catalogRoot, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +125,7 @@ func TestReadStatusStoppedReadsCatalogSummary(t *testing.T) {
 func TestReadStatusEmptyCatalogDegradesClearly(t *testing.T) {
 	temp := t.TempDir()
 	catalogRoot := filepath.Join(temp, "catalog")
-	moduleConfig := filepath.Join(temp, "module.conf")
+	moduleConfig := filepath.Join(temp, "module.json")
 	if err := os.MkdirAll(catalogRoot, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +144,7 @@ func TestReadStatusEmptyCatalogDegradesClearly(t *testing.T) {
 func TestReadStatusMissingActiveGroupDoesNotShowOtherGroup(t *testing.T) {
 	temp := t.TempDir()
 	catalogRoot := filepath.Join(temp, "catalog")
-	moduleConfig := filepath.Join(temp, "module.conf")
+	moduleConfig := filepath.Join(temp, "module.json")
 	if err := os.MkdirAll(catalogRoot, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +164,7 @@ func TestReadStatusMissingActiveGroupDoesNotShowOtherGroup(t *testing.T) {
 func TestReadStatusUsesMetadataWithoutParsingActiveProvider(t *testing.T) {
 	temp := t.TempDir()
 	catalogRoot := filepath.Join(temp, "catalog")
-	moduleConfig := filepath.Join(temp, "module.conf")
+	moduleConfig := filepath.Join(temp, "module.json")
 	if err := os.MkdirAll(catalogRoot, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +183,7 @@ func TestReadStatusUsesMetadataWithoutParsingActiveProvider(t *testing.T) {
 func TestReadStatusActiveGroupSwitchIsVisibleImmediately(t *testing.T) {
 	temp := t.TempDir()
 	catalogRoot := filepath.Join(temp, "catalog")
-	moduleConfig := filepath.Join(temp, "module.conf")
+	moduleConfig := filepath.Join(temp, "module.json")
 	if err := os.MkdirAll(catalogRoot, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -223,10 +227,10 @@ func TestSnapshotIgnoresUnrequestedProvider(t *testing.T) {
 	if _, err := catalog.Scan(t.Context(), catalog.ScanOptions{Root: root, WithNodes: true, GroupID: "wanted"}); err != nil {
 		t.Fatalf("targeted catalog scan failed: %v", err)
 	}
-	module := filepath.Join(t.TempDir(), "module.conf")
+	module := filepath.Join(t.TempDir(), "module.json")
 	options := Options{CatalogRoot: root, ModuleConfig: module, SingBoxPath: filepath.Join(t.TempDir(), "not-running-singbox")}
 	for _, active := range []string{"wanted", "unrelated"} {
-		if err := os.WriteFile(module, []byte("ACTIVE_GROUP_ID=\""+active+"\"\n"), 0600); err != nil {
+		if err := os.WriteFile(module, []byte(`{"selection":{"group_id":"`+active+`"}}`), 0600); err != nil {
 			t.Fatal(err)
 		}
 		for _, query := range []string{"wanted", "Group wanted"} {

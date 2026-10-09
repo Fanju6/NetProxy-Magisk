@@ -133,7 +133,10 @@ configured_backend 是保存的入站；active_backend 仅在 ready 且 PID/API 
   config validate <目标> <内容文件>   校验配置
   config apply <目标> <内容文件>      应用配置
 
-  完整配置：singbox/config.json、inbound
+  完整配置：module（module.json）、singbox/config.json、inbound
+  模块分区：module/wifi、module/auto_start
+  模块分区保留顶层字段，例如 {"auto_start":true}、{"wifi":{...}}；不能用 {} 删除。
+  模块分区 revision 独立，保存时保留 selection 和其他字段；auto_start 只影响下次开机。
   入站分区：inbound/backend、inbound/app、inbound/ebpf、inbound/tun
   入站分区保留顶层字段，例如 {"backend":"tun"}；不能用 {} 删除。
   核心分区：singbox/dns、singbox/inbounds、singbox/route 等
@@ -161,6 +164,7 @@ export const COMMAND_NAMES = Object.keys(COMMANDS) as CommandName[]
 export const ROOT_COMPLETIONS = [...COMMAND_NAMES, 'help', 'clear', 'exit']
 export const HELP_TOPICS = [...COMMAND_NAMES, 'shell']
 const CONFIG_TARGETS = [
+  'module', 'module/wifi', 'module/auto_start',
   'inbound', 'inbound/backend', 'inbound/app', 'inbound/ebpf', 'inbound/tun', 'singbox/config.json',
   'singbox/log', 'singbox/dns', 'singbox/inbounds', 'singbox/outbounds', 'singbox/route',
   'singbox/experimental', 'singbox/http_clients', 'singbox/services',

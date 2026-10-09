@@ -59,9 +59,9 @@ func TestRuntimeModeReconciliation(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			options := newTestOptions(t.TempDir())
 			writeModeConfig(t, options, test.config)
-			module := "WIFI_AUTO_SWITCH=0\n"
+			module := "{\"wifi\":{\"enabled\":false}}"
 			if test.wifi {
-				module = "WIFI_AUTO_SWITCH=1\nWIFI_SSID_MODE=blacklist\nWIFI_SSID_BLACKLIST=[\"Home\"]\n"
+				module = "{\"wifi\":{\"blacklist\":[\"Home\"],\"enabled\":true,\"mode\":\"blacklist\"}}"
 			}
 			if err := os.WriteFile(options.ModuleConfig, []byte(module), 0o600); err != nil {
 				t.Fatal(err)
@@ -132,7 +132,7 @@ func TestApplyModeStoppedUpdatesOnlyDefaultMode(t *testing.T) {
 	options := newTestOptions(t.TempDir())
 	options.SingBoxPath = filepath.Join(options.ModuleDir, "missing-core")
 	writeModeConfig(t, options, "Rule")
-	if err := os.WriteFile(options.ModuleConfig, []byte("AUTO_START=0\n"), 0o600); err != nil {
+	if err := os.WriteFile(options.ModuleConfig, []byte("{\"auto_start\":false}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	path := paths.SingBoxConfig(options.SingBoxDir)
@@ -152,7 +152,7 @@ func TestApplyModeStoppedUpdatesOnlyDefaultMode(t *testing.T) {
 		t.Fatalf("覆盖了模式以外的配置: %s", after)
 	}
 	module, _ := os.ReadFile(options.ModuleConfig)
-	if string(module) != "AUTO_START=0\n" {
+	if string(module) != `{"auto_start":false}` {
 		t.Fatalf("修改了模块配置: %s", module)
 	}
 	for _, path := range []string{options.StateFile, options.WorkerPIDFile} {
@@ -205,7 +205,7 @@ func TestNetworkPolicyRejectsMissingDirectMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	targetCoreWrite(t, paths.SingBoxConfig(options.SingBoxDir), []byte(`{}`))
-	targetCoreWrite(t, options.ModuleConfig, []byte("WIFI_AUTO_SWITCH=1\nWIFI_SSID_MODE=blacklist\nPROXY_ON_NON_WIFI=0\n"))
+	targetCoreWrite(t, options.ModuleConfig, []byte("{\"wifi\":{\"enabled\":true,\"mode\":\"blacklist\",\"proxy_on_non_wifi\":false}}"))
 	_, err := EvaluateNetwork(t.Context(), options, "not_wifi", "")
 	structured, ok := errors.AsType[*service.Error](err)
 	if !ok || structured.Code != "mode.unavailable" {
@@ -255,7 +255,7 @@ func TestModeTargetCoreRestoresCacheAndReconcilesDefault(t *testing.T) {
 	}
 	content := fmt.Sprintf(`{"log":{"disabled":true},"experimental":{"cache_file":{"enabled":true,"path":"cache.db"},"clash_api":{"default_mode":"Rule"}},"services":[{"type":"api","listen":"127.0.0.1","listen_port":%d,"secret":"fixture"}],"outbounds":[{"type":"direct","tag":"direct"}],"route":{"rules":[{"clash_mode":["Rule","Global","Direct","Office"],"action":"route","outbound":"direct"}]}}`, address.Port)
 	targetCoreWrite(t, path, []byte(content))
-	targetCoreWrite(t, options.ModuleConfig, []byte("WIFI_AUTO_SWITCH=0\n"))
+	targetCoreWrite(t, options.ModuleConfig, []byte("{\"wifi\":{\"enabled\":false}}"))
 	client, err := serviceapi.New(options.ServiceAddress, options.ServiceSecret)
 	if err != nil {
 		t.Fatal(err)

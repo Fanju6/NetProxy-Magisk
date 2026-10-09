@@ -64,4 +64,4 @@ su -c '/data/adb/modules/netproxy/netproxyctl config apply --revision <读到的
 
 `runtime/inbound.json` 可重建，不应编辑或作为安装保留数据。`runtime/providers.json` 与 `runtime/outbounds.json` 继续独立生成。主配置允许 mixed、HTTP 等其他入站，但不得额外定义受管 eBPF/TUN 或占用 `netproxy-in`。
 
-安装器不检测或转换旧版本。保留全数据要求当前 `inbound.json`、主配置与 Catalog 完整；缺少入站文件会明确失败，请主动选择“仅保留节点与订阅”或“全新安装”，不会静默补默认。
+安装器不检测或转换旧版本。保留全数据要求当前 `config/module.json`、`inbound.json`、主配置与 Catalog 完整；缺少当前模块 JSON 或入站文件会明确失败。旧格式用户只能选择“仅保留节点与订阅”或“全新安装”，不会静默补默认。

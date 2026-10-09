@@ -41,7 +41,7 @@ func selectionFixture(t *testing.T) Options {
 	if err := os.MkdirAll(filepath.Dir(options.ModuleConfig), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=default\nSELECTED_NODE_TAG=\nWIFI_SSID_BLACKLIST=[\"office\"]\n"), 0o600); err != nil {
+	if err := os.WriteFile(options.ModuleConfig, []byte("{\"selection\":{\"group_id\":\"default\",\"node_tag\":\"\"},\"wifi\":{\"blacklist\":[\"office\"]}}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	for _, tag := range []string{"NODE", "节点 / 02"} {
@@ -63,7 +63,7 @@ func TestSelectNodeStoppedKeepsTwoFieldStateAndPublicResult(t *testing.T) {
 			t.Fatal(err)
 		}
 		module, err := moduleconfig.LoadModule(options.ModuleConfig)
-		if err != nil || len(module.WiFiSSIDBlacklist) != 1 || module.WiFiSSIDBlacklist[0] != "office" || result["group_id"] != "default" || result["mode"] != module.Mode() {
+		if err != nil || len(module.WiFi.Blacklist) != 1 || module.WiFi.Blacklist[0] != "office" || result["group_id"] != "default" || result["mode"] != module.Mode() {
 			t.Fatalf("选择结果不一致: %+v %+v %v", result, module, err)
 		}
 		if target != "auto" && (module.SelectedNodeTag != "节点 / 02" || result["selected"] != "本地配置/节点 / 02") {
@@ -170,7 +170,7 @@ func TestCatalogSyncKeepsChoiceSavedWhileWaitingForConfigLock(t *testing.T) {
 		done <- err
 	}()
 	cancel()
-	if err := editor.Update((moduleconfig.Selection{ActiveGroupID: "default", SelectedNodeTag: "NODE"}).Updates(), nil); err != nil {
+	if err := editor.UpdateSelection(moduleconfig.Selection{ActiveGroupID: "default", SelectedNodeTag: "NODE"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := editor.Release(); err != nil {
@@ -180,7 +180,7 @@ func TestCatalogSyncKeepsChoiceSavedWhileWaitingForConfigLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	module, err := moduleconfig.LoadModule(options.ModuleConfig)
-	if err != nil || module.SelectedNodeTag != "NODE" || len(module.WiFiSSIDBlacklist) != 1 || module.WiFiSSIDBlacklist[0] != "office" {
+	if err != nil || module.SelectedNodeTag != "NODE" || len(module.WiFi.Blacklist) != 1 || module.WiFi.Blacklist[0] != "office" {
 		t.Fatalf("覆盖了并发保存的选择或网络设置: %+v %v", module, err)
 	}
 }
@@ -192,7 +192,7 @@ func TestNodeRemovalRejectsBrokenModuleConfigBeforeCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=default\nSELECTED_NODE_TAG=\" \"\n"), 0o600); err != nil {
+	if err := os.WriteFile(options.ModuleConfig, []byte("{\"selection\":{\"group_id\":\"default\",\"node_tag\":\" \"}}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := NodeRemove(t.Context(), options, "default/NODE"); err == nil {
@@ -263,7 +263,7 @@ func TestWorkerCancellationAfterCommitNormalizesSelection(t *testing.T) {
 		t.Fatalf("提交后取消未完成本地状态整理: %+v %v", result, err)
 	}
 	module, err := moduleconfig.LoadModule(options.ModuleConfig)
-	if err != nil || module.ActiveGroupID != groupID || module.SelectedNodeTag != "" || len(module.WiFiSSIDBlacklist) != 1 || module.WiFiSSIDBlacklist[0] != "office" {
+	if err != nil || module.ActiveGroupID != groupID || module.SelectedNodeTag != "" || len(module.WiFi.Blacklist) != 1 || module.WiFi.Blacklist[0] != "office" {
 		t.Fatalf("提交后取消保留了失效选择或覆盖网络设置: %+v %v", module, err)
 	}
 	metadata, err := catalog.PrivateMetadata(t.Context(), options.CatalogRoot, groupID)
@@ -443,7 +443,7 @@ func TestSubscriptionPending304ReappliesSavedAutoSelection(t *testing.T) {
 
 func TestSyncSelectionDoesNotSaveOrReload(t *testing.T) {
 	options := selectionFixture(t)
-	if err := moduleconfig.UpdateModule(t.Context(), options.ModuleConfig, (moduleconfig.Selection{ActiveGroupID: "default", SelectedNodeTag: "NODE"}).Updates()); err != nil {
+	if err := moduleconfig.UpdateSelection(t.Context(), options.ModuleConfig, moduleconfig.Selection{ActiveGroupID: "default", SelectedNodeTag: "NODE"}); err != nil {
 		t.Fatal(err)
 	}
 	stamp := time.Unix(1_700_000_000, 0)
@@ -620,7 +620,7 @@ func TestRemoveSubscriptionNormalizesLatestSelection(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if err := moduleconfig.UpdateModule(t.Context(), options.ModuleConfig, test.selected.Updates()); err != nil {
+			if err := moduleconfig.UpdateSelection(t.Context(), options.ModuleConfig, test.selected); err != nil {
 				t.Fatal(err)
 			}
 			err := RemoveSubscription(t.Context(), options, "subscription", test.replacement)
@@ -642,7 +642,7 @@ func TestRemoveSubscriptionNormalizesLatestSelection(t *testing.T) {
 func TestSelectionTargetCoreAppliesSavedChoice(t *testing.T) {
 	core := targetCoreBinary(t)
 	options := selectionFixture(t)
-	if err := moduleconfig.UpdateModule(t.Context(), options.ModuleConfig, (moduleconfig.Selection{ActiveGroupID: "default", SelectedNodeTag: "节点 / 02"}).Updates()); err != nil {
+	if err := moduleconfig.UpdateSelection(t.Context(), options.ModuleConfig, moduleconfig.Selection{ActiveGroupID: "default", SelectedNodeTag: "节点 / 02"}); err != nil {
 		t.Fatal(err)
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -727,7 +727,7 @@ func TestSelectionTargetCoreAppliesSavedChoice(t *testing.T) {
 	if err != nil || after != started {
 		t.Fatalf("失败的选择触发了重载: %+v %+v %v", started, after, err)
 	}
-	if err := moduleconfig.UpdateModule(ctx, options.ModuleConfig, (moduleconfig.Selection{ActiveGroupID: "default"}).Updates()); err != nil {
+	if err := moduleconfig.UpdateSelection(ctx, options.ModuleConfig, moduleconfig.Selection{ActiveGroupID: "default"}); err != nil {
 		t.Fatal(err)
 	}
 	syncSaved()
@@ -749,7 +749,7 @@ func TestNodeImportAppendsToDefaultGroup(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(options.ModuleConfig), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=default\nSELECTED_NODE_TAG=\n"), 0o600); err != nil {
+	if err := os.WriteFile(options.ModuleConfig, []byte("{\"selection\":{\"group_id\":\"default\",\"node_tag\":\"\"}}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := catalog.InitializeGroup(context.Background(), catalog.GroupOptions{
@@ -819,7 +819,7 @@ func TestUpdateAllSubscriptionsPreservesStructuredFailure(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(options.ModuleConfig), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=default\n"), 0o600); err != nil {
+	if err := os.WriteFile(options.ModuleConfig, []byte("{\"selection\":{\"group_id\":\"default\"}}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := catalog.InitializeGroup(context.Background(), catalog.GroupOptions{
@@ -935,7 +935,7 @@ func TestEditSubscriptionSchedulingOnlyDoesNotReload(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(options.ModuleConfig), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=default\n"), 0o600); err != nil {
+	if err := os.WriteFile(options.ModuleConfig, []byte("{\"selection\":{\"group_id\":\"default\"}}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Unix(1_700_450_000, 0)
@@ -976,7 +976,7 @@ func TestEditSubscriptionHistoryFailureKeepsProviderAndMetadata(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(options.ModuleConfig), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=default\n"), 0o600); err != nil {
+	if err := os.WriteFile(options.ModuleConfig, []byte("{\"selection\":{\"group_id\":\"default\"}}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := catalog.InitializeGroup(context.Background(), catalog.GroupOptions{

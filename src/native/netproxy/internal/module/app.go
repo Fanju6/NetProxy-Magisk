@@ -166,25 +166,11 @@ func Prepare(ctx context.Context, options Options, allowEmpty bool) (PrepareResu
 	return PrepareResult{RuntimeResult: runtime, Providers: providers, Outbounds: outbounds, Inbound: inboundPath, Backend: config.Backend, Network: &network}, nil
 }
 
-func saveSelection(ctx context.Context, options Options, selection moduleconfig.Selection) error {
-	module, err := moduleconfig.LoadModule(options.ModuleConfig)
-	if err != nil {
-		return err
-	}
-	if module.Selection == selection {
-		return nil
-	}
-	return options.updateModule(ctx, selection.Updates())
-}
-
-func (options Options) updateModule(ctx context.Context, updates map[string]string) error {
+func (options Options) updateSelection(ctx context.Context, selection moduleconfig.Selection) error {
 	if editor := options.configEditors[filepath.Clean(options.ModuleConfig)]; editor != nil {
-		return editor.Update(updates, func(candidate string) error {
-			_, err := moduleconfig.LoadModule(candidate)
-			return err
-		})
+		return editor.UpdateSelection(selection)
 	}
-	return moduleconfig.UpdateModule(ctx, options.ModuleConfig, updates)
+	return moduleconfig.UpdateSelection(ctx, options.ModuleConfig, selection)
 }
 
 // Check 生成隔离运行时配置并执行 sing-box check。
@@ -239,7 +225,7 @@ func SelectNode(ctx context.Context, options Options, target, group string) (dat
 		return nil, err
 	}
 	if selection != module.Selection {
-		if err := options.updateModule(ctx, selection.Updates()); err != nil {
+		if err := options.updateSelection(ctx, selection); err != nil {
 			return nil, err
 		}
 	}
@@ -563,7 +549,7 @@ func applyCatalogChange(ctx, localContext context.Context, options Options, save
 		return "", false, err
 	}
 	if selection != saved {
-		if err := options.updateModule(localContext, selection.Updates()); err != nil {
+		if err := options.updateSelection(localContext, selection); err != nil {
 			return "", false, err
 		}
 	}
@@ -794,7 +780,7 @@ func workerOptions(options Options) worker.Options {
 		ProgressDir:         options.ProgressDir,
 		PIDFile:             options.WorkerPIDFile,
 		LogFile:             options.WorkerLogFile,
-		ModuleConf:          options.ModuleConfig,
+		ModuleConfig:        options.ModuleConfig,
 		SingBoxPath:         options.SingBoxPath,
 		ServiceAddress:      options.ServiceAddress,
 		ServiceSecret:       options.ServiceSecret,

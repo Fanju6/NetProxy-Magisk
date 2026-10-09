@@ -2,6 +2,7 @@ package module
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"errors"
 	"fmt"
@@ -34,6 +35,43 @@ func TestExportLogsReportsArchiveFinalizationFailure(t *testing.T) {
 	failure := errors.New("模拟压缩尾部写入失败")
 	if err := writeLogArchive(options, &limitedArchiveWriter{remaining: 10, failure: failure}); !errors.Is(err, failure) {
 		t.Fatalf("压缩结束错误丢失: %v", err)
+	}
+}
+
+func TestExportLogsOmitsMalformedJSONSecrets(t *testing.T) {
+	options := NewOptions(t.TempDir())
+	if err := os.MkdirAll(filepath.Dir(options.ModuleConfig), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(options.ModuleConfig, []byte(`{"wifi":{"blacklist":["private-home"],"whitelist":["private-office"`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := writeLogArchive(options, &output); err != nil {
+		t.Fatal(err)
+	}
+	compressed, err := gzip.NewReader(&output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer compressed.Close()
+	reader := tar.NewReader(compressed)
+	for {
+		header, err := reader.Next()
+		if err != nil {
+			t.Fatalf("诊断包未包含模块配置: %v", err)
+		}
+		if header.Name != "config/module.json" {
+			continue
+		}
+		content, err := io.ReadAll(reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(content), "private-") || !strings.Contains(string(content), "JSON 配置损坏") {
+			t.Fatalf("损坏 JSON 原文未安全省略: %s", content)
+		}
+		break
 	}
 }
 
@@ -111,7 +149,7 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 	logDir := filepath.Join(root, "logs")
-	moduleConfig := filepath.Join(root, "config", "module.conf")
+	moduleConfig := filepath.Join(root, "config", "module.json")
 	inboundConfig := filepath.Join(root, "config", "inbound", "inbound.json")
 	singboxDir := filepath.Join(root, "config", "singbox")
 	runtimeDir := filepath.Join(root, "runtime")
@@ -135,7 +173,7 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 			}
 		}
 	}
-	if err := os.WriteFile(moduleConfig, []byte("SUB_URL=https://example.test/sub?token=secret-token\nWIFI_SSID_BLACKLIST=[\"secret-office\",\"secret-home\"]\nWIFI_SSID_WHITELIST=[\"secret-trusted\"]\n"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConfig, []byte("{\"url\":\"https://example.test/sub?token=secret-token\",\"wifi\":{\"blacklist\":[\"secret-office\",\"secret-home\"],\"whitelist\":[\"secret-trusted\"]}}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(inboundConfig, []byte(`{"app":{"proxy_apps":["0:secret.app.one","10:secret.app.two"],"bypass_apps":["0:secret.app.three"]}}`), 0o600); err != nil {
@@ -204,6 +242,7 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 	defer compressed.Close()
 	reader := tar.NewReader(compressed)
 	seenRuntime := false
+	seenModule := false
 	seenState := false
 	seenReadme := false
 	seenBackups := 0
@@ -230,6 +269,9 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 		}
 		if strings.HasPrefix(header.Name, "logs/") && (strings.HasSuffix(header.Name, ".1") || strings.HasSuffix(header.Name, ".2")) {
 			seenBackups++
+		}
+		if header.Name == "config/module.json" {
+			seenModule = true
 		}
 		if header.Name == "README.txt" {
 			seenReadme = true
@@ -261,6 +303,9 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 	}
 	if !seenRuntime {
 		t.Fatal("诊断包未包含运行时配置")
+	}
+	if !seenModule {
+		t.Fatal("诊断包未包含 module.json")
 	}
 	if !seenState {
 		t.Fatal("诊断包未包含服务状态")

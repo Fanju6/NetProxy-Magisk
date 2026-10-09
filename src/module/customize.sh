@@ -9,7 +9,7 @@
 SKIPUNZIP=1
 umask 077
 readonly MODULE_ID=netproxy
-readonly CONFIG_ENTRIES="config/module.conf config/inbound/inbound.json config/singbox/config.json config/singbox/rules/local"
+readonly CONFIG_ENTRIES="config/module.json config/inbound/inbound.json config/singbox/config.json config/singbox/rules/local"
 readonly EXECUTABLE_FILES="bin/sing-box bin/netproxyctl action.sh netproxyctl service.sh uninstall.sh"
 
 INSTALL_MODE=fresh
@@ -96,7 +96,7 @@ wait_volume_key() {
 # 参数: 无。
 # 返回: 0=存在用户数据，1=首次安装。
 has_existing_user_data() {
-  [ -f "$LIVE_DIR/config/module.conf" ] || [ -d "$LIVE_DIR/data/catalog" ]
+  [ -f "$LIVE_DIR/config/module.json" ] || [ -d "$LIVE_DIR/data/catalog" ]
 }
 
 #######################################
@@ -223,7 +223,7 @@ validate_stage() {
   grep -qx "id=$MODULE_ID" "$MODPATH/module.prop" || return 1
   local entry
   for entry in bin/netproxyctl bin/sing-box netproxyctl service.sh \
-    config/module.conf config/inbound/inbound.json config/singbox/config.json \
+    config/module.json config/inbound/inbound.json config/singbox/config.json \
     data/catalog/default/meta.json data/catalog/default/provider.json; do
     [ -s "$MODPATH/$entry" ] || return 1
   done
@@ -390,7 +390,7 @@ with_user_data_locks() (
   mkdir -p "$LIVE_DIR/config/inbound" || exit 1
   exec 8>"$LIVE_DIR/config/inbound/inbound.json.lock"
   flock -n 8 8>&8 || exit 1
-  exec 7>"$LIVE_DIR/config/module.conf.lock"
+  exec 7>"$LIVE_DIR/config/module.json.lock"
   flock -n 7 7>&7 || exit 1
   exec 6>"$LIVE_DIR/config/singbox/config.json.lock"
   flock -n 6 6>&6 || exit 1
@@ -444,7 +444,7 @@ commit_hot_update() {
   rm -f "$MODPATH/data"/.catalog.netproxy-*.lock || return 1
   # 等待中的 Go 命令必须继续使用原来的锁，而不是目录切换后的第二个锁。
   if has_existing_user_data; then
-    for entry in config/inbound/inbound.json.lock config/module.conf.lock config/singbox/config.json.lock; do
+    for entry in config/inbound/inbound.json.lock config/module.json.lock config/singbox/config.json.lock; do
       ln -f "$LIVE_DIR/$entry" "$MODPATH/$entry" || return 1
     done
     for entry in "$LIVE_DIR/data"/.catalog.netproxy-*.lock; do

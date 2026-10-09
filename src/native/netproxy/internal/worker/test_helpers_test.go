@@ -15,20 +15,20 @@ func newTestOptions(root string) Options {
 	options.ProgressDir = filepath.Join(testDevRoot, "subscriptions")
 	options.PIDFile = filepath.Join(testDevRoot, "worker.pid")
 	options.LogFile = filepath.Join(testDevRoot, "worker.log")
-	options.ModuleConf = filepath.Join(root, "module.conf")
+	options.ModuleConfig = filepath.Join(root, "module.json")
 	options.SyncCatalog = func(ctx context.Context, groupID string, _ bool) (string, bool, error) {
-		editor, err := moduleconfig.Lock(ctx, options.ModuleConf)
+		editor, err := moduleconfig.Lock(ctx, options.ModuleConfig)
 		if err != nil {
 			return subscription.RuntimeSyncNotRunning, false, err
 		}
 		defer editor.Release()
-		module, err := moduleconfig.LoadModule(options.ModuleConf)
+		module, err := moduleconfig.LoadModule(options.ModuleConfig)
 		if err != nil {
 			return subscription.RuntimeSyncNotRunning, false, err
 		}
 		selection, _, err := catalog.NormalizeSelection(ctx, root, module.Selection, groupID)
 		if err == nil && selection != module.Selection {
-			err = editor.Update(selection.Updates(), nil)
+			err = editor.UpdateSelection(selection)
 		}
 		return subscription.RuntimeSyncNotRunning, false, err
 	}

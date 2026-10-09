@@ -3,52 +3,123 @@ package config
 import (
 	"context"
 	json "encoding/json/v2"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/processlock"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/processlock"
 )
 
-func TestWiFiListsStrictAndLossless(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "module.conf")
-	names := []string{" Home ", "home", "办公,Wi-Fi", "Quote\"Wifi"}
-	encoded, _ := json.Marshal(names)
-	os.WriteFile(path, []byte("WIFI_SSID_BLACKLIST="+string(encoded)+"\nWIFI_SSID_WHITELIST=[\"independent\"]\n"), 0600)
-	got, err := LoadModule(path)
-	if err != nil || got.WiFiAutoSwitch || got.WiFiSSIDMode != "blacklist" || !reflect.DeepEqual(got.WiFiSSIDBlacklist, names) || !reflect.DeepEqual(got.WiFiSSIDWhitelist, []string{"independent"}) {
-		t.Fatalf("%+v %v", got, err)
+func TestModuleJSONDefaultsAndStrictValidation(t *testing.T) {
+	got, err := ParseModule([]byte("{}"))
+	if err != nil || !reflect.DeepEqual(got, DefaultModule()) {
+		t.Fatalf("默认值不一致: %+v %v", got, err)
 	}
-	for _, line := range []string{
-		"WIFI_AUTO_SWITCH=invalid", "WIFI_SSID_LIST=Home", "PROXY_ON_CELLULAR=1",
-		"WIFI_SSID_MODE=off", "WIFI_SSID_MODE=invalid", "WIFI_SSID_BLACKLIST=null", "WIFI_SSID_WHITELIST=[1]",
-		"WIFI_SSID_BLACKLIST=[\"\"]", "WIFI_SSID_BLACKLIST=[\"same\",\"same\"]",
-		"WIFI_SSID_BLACKLIST=[\"abcdefghijklmnopqrstuvwxyz0123456\"]",
-		"WIFI_SSID_BLACKLIST=[\"escaped\\nname\"]", "WIFI_SSID_BLACKLIST=[\"escaped\\u007fname\"]",
+	for _, content := range []string{
+		"", "null", "[]", "true", "{}{}", "{",
+		`{"auto_start":1}`, `{"auto_start":"true"}`, `{"auto_start":null}`,
+		`{"auto_start":true,"auto_start":false}`, `{"AUTO_START":true}`,
+		`{"unknown":1}`, `{"selection":null}`, `{"selection":[]}`,
+		`{"selection":{"group_id":1}}`, `{"selection":{"node_tag":null}}`,
+		`{"selection":{"group_id":"","node_tag":"NODE"}}`,
+		`{"selection":{"node_tag":" "}}`, `{"selection":{"mode":"manual"}}`,
+		`{"wifi":null}`, `{"wifi":[]}`, `{"wifi":{"enabled":"false"}}`,
+		`{"wifi":{"proxy_on_non_wifi":0}}`, `{"wifi":{"mode":"off"}}`,
+		`{"wifi":{"ssid_list":[]}}`, `{"wifi":{"blacklist":null}}`,
+		`{"wifi":{"whitelist":[1]}}`, `{"wifi":{"blacklist":[""]}}`,
+		`{"wifi":{"blacklist":["same","same"]}}`,
+		`{"wifi":{"blacklist":["abcdefghijklmnopqrstuvwxyz0123456"]}}`,
+		`{"wifi":{"blacklist":["escaped\nname"]}}`,
+		`{"wifi":{"blacklist":["escaped\u007fname"]}}`,
+		`{"wifi":{"blacklist":["same"],"blacklist":[]}}`,
+		"AUTO_START=0\n",
+		string([]byte{'{', '"', 'x', '"', ':', '"', 0xff, '"', '}'}),
 	} {
-		os.WriteFile(path, []byte(line+"\n"), 0600)
-		if _, err := LoadModule(path); err == nil {
-			t.Fatalf("无效配置被接受: %s", line)
+		if _, err := ParseModule([]byte(content)); err == nil {
+			t.Fatalf("无效配置被接受: %q", content)
 		}
 	}
 }
 
-func TestWiFiSwitchKeepsModeAndLists(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "module.conf")
-	original := "WIFI_SSID_MODE=whitelist\nWIFI_SSID_BLACKLIST=[\"Home\"]\nWIFI_SSID_WHITELIST=[\"Office\"]\n"
-	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
+func TestWiFiListsStrictAndLossless(t *testing.T) {
+	names := []string{" Home ", "home", "办公,Wi-Fi", "Quote\"Wifi", "null"}
+	module := DefaultModule()
+	module.WiFi.Blacklist = names
+	module.WiFi.Whitelist = []string{"independent"}
+	content, err := json.Marshal(module, json.Deterministic(true))
+	if err != nil {
 		t.Fatal(err)
 	}
-	for _, value := range []string{"1", "false", "true", "0"} {
-		if err := UpdateModule(t.Context(), path, map[string]string{"WIFI_AUTO_SWITCH": value}); err != nil {
+	got, err := ParseModule(content)
+	if err != nil || !reflect.DeepEqual(got, module) {
+		t.Fatalf("Wi-Fi 名称未原样保留: %+v %v", got, err)
+	}
+}
+
+func TestSelectionUpdateKeepsOtherFieldsAndSkipsUnchangedWrites(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "module.json")
+	original := `{"auto_start":true,"selection":{"group_id":"default"},"wifi":{"mode":"whitelist","blacklist":["Home"],"whitelist":["Office"]}}`
+	if err := os.WriteFile(path, []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.Stat(path)
+	if err := UpdateSelection(t.Context(), path, Selection{ActiveGroupID: "default"}); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.Stat(path)
+	content, _ := os.ReadFile(path)
+	if !os.SameFile(before, after) || string(content) != original {
+		t.Fatal("无变更仍替换了原文件")
+	}
+	for _, tag := range []string{"香港 / 节点", ""} {
+		if err := UpdateSelection(t.Context(), path, Selection{ActiveGroupID: "fixture", SelectedNodeTag: tag}); err != nil {
 			t.Fatal(err)
 		}
 		got, err := LoadModule(path)
-		if err != nil || got.WiFiAutoSwitch != (value == "1" || value == "true") || got.WiFiSSIDMode != "whitelist" ||
-			!reflect.DeepEqual(got.WiFiSSIDBlacklist, []string{"Home"}) || !reflect.DeepEqual(got.WiFiSSIDWhitelist, []string{"Office"}) {
-			t.Fatalf("开关改写了模式或名单: %+v %v", got, err)
+		if err != nil || got.WiFi.Enabled || got.WiFi.Mode != "whitelist" || !got.AutoStart || got.SelectedNodeTag != tag ||
+			!reflect.DeepEqual(got.WiFi.Blacklist, []string{"Home"}) || !reflect.DeepEqual(got.WiFi.Whitelist, []string{"Office"}) {
+			t.Fatalf("更新丢失其他字段: %+v %v", got, err)
+		}
+	}
+}
+
+func TestSelectionUpdateFailurePreservesOriginal(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "module.json")
+	original := `{"selection":{"group_id":"default"}}`
+	if err := os.WriteFile(path, []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := UpdateSelection(t.Context(), path, Selection{SelectedNodeTag: "NODE"}); err == nil {
+		t.Fatal("接受了无效更新")
+	}
+	content, _ := os.ReadFile(path)
+	if string(content) != original {
+		t.Fatal("失败更新修改了原文件")
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := UpdateSelection(ctx, path, Selection{ActiveGroupID: "default", SelectedNodeTag: "NODE"}); err == nil {
+		t.Fatal("取消没有传播")
+	}
+	content, _ = os.ReadFile(path)
+	if string(content) != original {
+		t.Fatal("取消更新修改了原文件")
+	}
+}
+
+func TestSelectionDerivesModeAndReference(t *testing.T) {
+	for _, tag := range []string{"", "香港 / 🇭🇰 节点"} {
+		selection := Selection{ActiveGroupID: "default", SelectedNodeTag: tag}
+		mode, ref, group, node := "urltest", "", "Auto/本地配置", ""
+		if tag != "" {
+			mode, ref, group, node = "manual", "default/"+tag, "Select/本地配置", "本地配置/"+tag
+		}
+		runtimeGroup, runtimeNode := selection.RuntimeTargets("本地配置")
+		if selection.Mode() != mode || selection.Ref() != ref || runtimeGroup != group || runtimeNode != node {
+			t.Fatalf("选择派生不一致: %+v", selection)
 		}
 	}
 }
@@ -70,112 +141,9 @@ func TestConfigLockHelper(t *testing.T) {
 	}
 }
 
-func TestReadStrictRejectsShellLikeInputAndDuplicateKeys(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "module.conf")
-	if err := os.WriteFile(path, []byte("AUTO_START=1\nAUTO_START=0\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ReadStrict(path); err == nil {
-		t.Fatal("expected duplicate key to fail")
-	}
-
-	if err := os.WriteFile(path, []byte("AUTO_START=$(id)\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	values, err := ReadStrict(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if values["AUTO_START"] != "$(id)" {
-		t.Fatalf("unexpected literal value: %#v", values)
-	}
-}
-
-func TestLoadModuleDefaultsAndValidation(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "module.conf")
-	content := "AUTO_START=0\nACTIVE_GROUP_ID=default\nSELECTED_NODE_TAG=\nWIFI_AUTO_SWITCH=1\nWIFI_SSID_MODE=whitelist\nWIFI_SSID_WHITELIST=[\"TestWiFi\"]\nPROXY_ON_NON_WIFI=0\n"
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	config, err := LoadModule(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !config.WiFiAutoSwitch || config.WiFiSSIDMode != "whitelist" || config.ProxyOnNonWiFi || len(config.WiFiSSIDWhitelist) != 1 {
-		t.Fatalf("unexpected module config: %#v", config)
-	}
-
-	if err := os.WriteFile(path, []byte("UNKNOWN_OPTION=1\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := LoadModule(path); err == nil {
-		t.Fatal("expected unknown module key to fail")
-	}
-
-	if err := os.WriteFile(path, []byte("OUTBOUND_MODE=rule\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := LoadModule(path); err == nil {
-		t.Fatal("接受了已移除的模块出站模式字段")
-	}
-
-	for _, old := range []string{"SELECTOR_MODE=urltest", "SELECTOR_MODE=manual", "SELECTED_NODE_REF=default/NODE"} {
-		if err := os.WriteFile(path, []byte(old+"\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := LoadModule(path); err == nil {
-			t.Fatalf("旧选择字段不应继续被接受: %s", old)
-		}
-	}
-}
-
-func TestSelectionDerivesModeAndReference(t *testing.T) {
-	for _, tag := range []string{"", "香港 / 🇭🇰 节点"} {
-		selection := Selection{ActiveGroupID: "default", SelectedNodeTag: tag}
-		mode, ref, group, node := "urltest", "", "Auto/本地配置", ""
-		if tag != "" {
-			mode, ref, group, node = "manual", "default/"+tag, "Select/本地配置", "本地配置/"+tag
-		}
-		runtimeGroup, runtimeNode := selection.RuntimeTargets("本地配置")
-		if selection.Mode() != mode || selection.Ref() != ref || runtimeGroup != group || runtimeNode != node || len(selection.Updates()) != 2 {
-			t.Fatalf("选择派生不一致: %+v", selection)
-		}
-	}
-}
-
-func TestLoadModuleRejectsManualNodeWithoutGroup(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "module.conf")
-	for _, content := range []string{"ACTIVE_GROUP_ID=\nSELECTED_NODE_TAG=NODE\n", "SELECTED_NODE_TAG=\" \"\n"} {
-		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := LoadModule(path); err == nil {
-			t.Fatalf("接受了无效手动选择: %s", content)
-		}
-	}
-}
-
-func TestUpdateModuleKeepsOriginalWhenCandidateIsInvalid(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "module.conf")
-	original := "AUTO_START=0\nACTIVE_GROUP_ID=default\n"
-	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := UpdateModule(context.Background(), path, map[string]string{"SELECTOR_MODE": "invalid"}); err == nil {
-		t.Fatal("expected typed update to fail")
-	}
-	content, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(content) != original {
-		t.Fatalf("invalid update changed original file: %q", content)
-	}
-}
-
 func TestConfigLockRecoversAfterHolderExit(t *testing.T) {
 	root := t.TempDir()
-	lockPath := filepath.Join(root, "module.conf.lock")
+	lockPath := filepath.Join(root, "module.json.lock")
 	ready := filepath.Join(root, "ready")
 	command := exec.Command(os.Args[0], "-test.run=^TestConfigLockHelper$")
 	command.Env = append(os.Environ(),
@@ -219,22 +187,5 @@ func TestConfigLockRecoversAfterHolderExit(t *testing.T) {
 	}
 	if err := lock.Release(); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestUpdateWhitespaceKey(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "module.conf")
-	if err := os.WriteFile(path, []byte(" ACTIVE_GROUP_ID = \"default\"\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := LoadModule(path); err != nil {
-		t.Fatalf("initial valid config rejected: %v", err)
-	}
-	if err := UpdateModule(t.Context(), path, map[string]string{"ACTIVE_GROUP_ID": Quote("fixture")}); err != nil {
-		t.Fatalf("read accepted whitespace, but update failed: %v", err)
-	}
-	updated, err := LoadModule(path)
-	if err != nil || updated.ActiveGroupID != "fixture" {
-		t.Fatalf("带空格的键未正确更新: %+v %v", updated, err)
 	}
 }

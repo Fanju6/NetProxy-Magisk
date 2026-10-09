@@ -842,7 +842,7 @@ func readWorkerStatus(ctx context.Context, options Options) (worker.Status, erro
 	workerOptions := worker.NewOptions(options.CatalogRoot)
 	workerOptions.ProgressDir = options.ProgressDir
 	workerOptions.PIDFile = options.WorkerPIDFile
-	workerOptions.ModuleConf = options.ModuleConfig
+	workerOptions.ModuleConfig = options.ModuleConfig
 	return worker.ReadStatus(ctx, workerOptions)
 }
 

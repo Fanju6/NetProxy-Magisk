@@ -379,7 +379,7 @@ func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, e
 	if options.ModuleConfig != "" {
 		module, err := moduleconfig.LoadModule(options.ModuleConfig)
 		if err != nil {
-			return RuntimeResult{}, fmt.Errorf("读取 module.conf 失败: %w", err)
+			return RuntimeResult{}, fmt.Errorf("读取 module.json 失败: %w", err)
 		}
 		options.Selection = module.Selection
 	}

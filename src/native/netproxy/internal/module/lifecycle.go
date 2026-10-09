@@ -168,7 +168,7 @@ func StartService(ctx context.Context, options Options) (err error) {
 	if err := checkPreparedConfiguration(ctx, options, prepared); err != nil {
 		return failServiceStart(options, 0, 0, "sing-box 配置检查失败", err)
 	}
-	if err := saveSelection(ctx, options, prepared.Selection); err != nil {
+	if err := options.updateSelection(ctx, prepared.Selection); err != nil {
 		return failServiceStart(options, 0, 0, "运行时选择状态同步失败", err)
 	}
 	return startPreparedService(ctx, options, prepared)
@@ -321,7 +321,7 @@ func startAppliedConfig(ctx context.Context, options Options) error {
 	if err := checkPreparedConfiguration(ctx, options, prepared); err != nil {
 		return err
 	}
-	if err := saveSelection(ctx, options, prepared.Selection); err != nil {
+	if err := options.updateSelection(ctx, prepared.Selection); err != nil {
 		return err
 	}
 	return startPreparedService(ctx, options, prepared)
@@ -370,7 +370,7 @@ func reloadPreparedService(ctx context.Context, options Options, prepared Prepar
 		return restoreReloadState(ctx, options, pid, oldStartedAt, state.ReadyAt, err)
 	}
 	if synchronizeSelection {
-		if err := saveSelection(ctx, options, prepared.Selection); err != nil {
+		if err := options.updateSelection(ctx, prepared.Selection); err != nil {
 			return restoreReloadState(ctx, options, pid, startedAt/1000, state.ReadyAt, err)
 		}
 		if err := syncSelection(ctx, options); err != nil {

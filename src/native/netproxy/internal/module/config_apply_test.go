@@ -112,7 +112,7 @@ func configApplyOptions(t *testing.T) (Options, string, string, map[string]strin
 	if err := os.MkdirAll(filepath.Dir(options.ModuleConfig), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(options.ModuleConfig, []byte("\n"), 0o600); err != nil {
+	if err := os.WriteFile(options.ModuleConfig, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Dir(options.InboundConfig), 0o700); err != nil {
@@ -447,11 +447,11 @@ func TestApplyConfigCommitFailureReportsRollbackErrors(t *testing.T) {
 func TestApplyConfigReturnsRevisionAfterSelectionNormalization(t *testing.T) {
 	options, _, source, _ := configApplyOptions(t)
 	isolateConfigApplyHooks(t, true)
-	if err := os.WriteFile(source, []byte("ACTIVE_GROUP_ID=missing\n"), 0o600); err != nil {
+	if err := os.WriteFile(source, []byte("{\"selection\":{\"group_id\":\"missing\"}}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	configReload = func(ctx context.Context, locked Options) error {
-		return locked.updateModule(ctx, map[string]string{"ACTIVE_GROUP_ID": "default"})
+		return locked.updateSelection(ctx, moduleconfig.Selection{ActiveGroupID: "default"})
 	}
 	revision, err := ApplyConfig(t.Context(), options, "module", source, false, "")
 	if err != nil {
@@ -571,17 +571,17 @@ func TestAutoStartSaveDoesNotReloadRunningService(t *testing.T) {
 		t.Fatal("开机自启触发了核心 reload")
 		return nil
 	}
-	for _, value := range []string{"1", "0"} {
-		snapshot, err := ReadConfig(options, "module")
+	for _, value := range []string{"true", "false"} {
+		snapshot, err := ReadConfig(options, "module/auto_start")
 		if err != nil {
 			t.Fatal(err)
 		}
-		source := writeSectionSource(t, "AUTO_START="+value+"\n")
-		revision, err := ApplyConfig(t.Context(), options, "module", source, false, snapshot["revision"])
+		source := writeSectionSource(t, `{"auto_start":`+value+`}`)
+		revision, err := ApplyConfig(t.Context(), options, "module/auto_start", source, false, snapshot["revision"])
 		if err != nil {
 			t.Fatal(err)
 		}
-		applied, _ := ReadConfig(options, "module")
+		applied, _ := ReadConfig(options, "module/auto_start")
 		if revision != applied["revision"] {
 			t.Fatal("revision 没有对应保存内容")
 		}
@@ -590,11 +590,75 @@ func TestAutoStartSaveDoesNotReloadRunningService(t *testing.T) {
 	reloads := 0
 	configReload = func(context.Context, Options) error { reloads++; return nil }
 	configProcessRunning = func(string) bool { return false }
-	if _, err := ApplyConfig(t.Context(), options, "module", writeSectionSource(t, "WIFI_AUTO_SWITCH=1\nWIFI_SSID_MODE=blacklist\n"), false, ""); err != nil {
+	if _, err := ApplyConfig(t.Context(), options, "module", writeSectionSource(t, "{\"wifi\":{\"enabled\":true,\"mode\":\"blacklist\"}}"), false, ""); err != nil {
 		t.Fatal(err)
 	}
 	if reloads != 0 {
 		t.Fatal("仅启用策略、没有 DNS 参数变化时不应重载")
+	}
+}
+
+func TestModulePartitionsPreserveConcurrentSelectionAndIndependentRevisions(t *testing.T) {
+	options, _, _, _ := configApplyOptions(t)
+	isolateConfigApplyHooks(t, false)
+	if err := os.WriteFile(options.ModuleConfig, []byte(`{"auto_start":true,"selection":{"group_id":"default"},"wifi":{"whitelist":["Office"],"mode":"whitelist"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	wifi, err := ReadConfig(options, "module/wifi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	autoStart, err := ReadConfig(options, "module/auto_start")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := options.updateSelection(t.Context(), moduleconfig.Selection{ActiveGroupID: "latest", SelectedNodeTag: "NODE"}); err != nil {
+		t.Fatal(err)
+	}
+	afterSelection, _ := ReadConfig(options, "module/wifi")
+	if afterSelection["revision"] != wifi["revision"] {
+		t.Fatal("内部选择写入改变了未修改的 Wi-Fi revision")
+	}
+	source := writeSectionSource(t, `{"wifi":{"enabled":false,"mode":"blacklist","blacklist":["Home"],"whitelist":["Office"],"proxy_on_non_wifi":false}}`)
+	revision, err := ApplyConfig(t.Context(), options, "module/wifi", source, false, wifi["revision"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	applied, _ := ReadConfig(options, "module/wifi")
+	if revision != applied["revision"] {
+		t.Fatal("返回了整份文件的 revision，而非 Wi-Fi revision")
+	}
+	if _, err := ApplyConfig(t.Context(), options, "module/auto_start", writeSectionSource(t, `{"auto_start":false}`), false, autoStart["revision"]); err != nil {
+		t.Fatal(err)
+	}
+	module, err := moduleconfig.LoadModule(options.ModuleConfig)
+	if err != nil || module.ActiveGroupID != "latest" || module.SelectedNodeTag != "NODE" || module.AutoStart || module.WiFi.ProxyOnNonWiFi || !module.WiFi.Equal(moduleconfig.WiFiPolicy{Mode: "blacklist", Blacklist: []string{"Home"}, Whitelist: []string{"Office"}}) {
+		t.Fatalf("分区写入覆盖了其他设置: %+v %v", module, err)
+	}
+	if _, err := ApplyConfig(t.Context(), options, "module/wifi", source, false, wifi["revision"]); !errors.Is(err, ErrConfigConflict) {
+		t.Fatalf("同分区旧快照未被拒绝: %v", err)
+	}
+}
+
+func TestModulePartitionsRejectDeletionAndInvalidValues(t *testing.T) {
+	options, _, _, _ := configApplyOptions(t)
+	isolateConfigApplyHooks(t, false)
+	before, _ := os.ReadFile(options.ModuleConfig)
+	for _, test := range []struct{ target, content string }{
+		{"module/wifi", `{}`}, {"module/wifi", `{"wifi":null}`},
+		{"module/wifi", `{"wifi":{"enabled":"true"}}`},
+		{"module/wifi", `{"wifi":{"mode":"off"}}`},
+		{"module/wifi", `{"wifi":{},"selection":{"group_id":"wrong"}}`},
+		{"module/auto_start", `{}`}, {"module/auto_start", `{"auto_start":null}`},
+		{"module/auto_start", `{"auto_start":1}`},
+	} {
+		if _, err := ApplyConfig(t.Context(), options, test.target, writeSectionSource(t, test.content), false, ""); err == nil {
+			t.Fatalf("接受了无效分区: %+v", test)
+		}
+		after, _ := os.ReadFile(options.ModuleConfig)
+		if !bytes.Equal(before, after) {
+			t.Fatal("无效分区修改了原文件")
+		}
 	}
 }
 
@@ -610,7 +674,7 @@ func TestConfigApplyHoldsWriterLockAndReloadBorrowsIt(t *testing.T) {
 			}
 			return fmt.Errorf("reload 期间其他写入未被阻止: %v", err)
 		}
-		return locked.updateModule(context.Background(), map[string]string{"PROXY_ON_NON_WIFI": "0"})
+		return locked.updateSelection(ctx, moduleconfig.Selection{ActiveGroupID: "default", SelectedNodeTag: "BORROWED"})
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -619,11 +683,11 @@ func TestConfigApplyHoldsWriterLockAndReloadBorrowsIt(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	if err := moduleconfig.UpdateModule(context.Background(), options.ModuleConfig, map[string]string{"AUTO_START": "0"}); err != nil {
+	if err := moduleconfig.UpdateSelection(context.Background(), options.ModuleConfig, moduleconfig.Selection{ActiveGroupID: "default", SelectedNodeTag: "LATEST"}); err != nil {
 		t.Fatal(err)
 	}
 	config, err := moduleconfig.LoadModule(options.ModuleConfig)
-	if err != nil || config.ProxyOnNonWiFi || config.AutoStart {
+	if err != nil || config.SelectedNodeTag != "LATEST" || !config.WiFi.ProxyOnNonWiFi || config.AutoStart {
 		t.Fatalf("配置变更丢失: %+v %v", config, err)
 	}
 }
@@ -665,17 +729,17 @@ func TestConfigApplyRejectsRevisionAfterInternalWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(source, []byte("AUTO_START=0\n"), 0o600); err != nil {
+	if err := os.WriteFile(source, []byte("{\"auto_start\":false}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := moduleconfig.UpdateModule(context.Background(), options.ModuleConfig, map[string]string{"PROXY_ON_NON_WIFI": "0"}); err != nil {
+	if err := moduleconfig.UpdateSelection(context.Background(), options.ModuleConfig, moduleconfig.Selection{ActiveGroupID: "default", SelectedNodeTag: "LATEST"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ApplyConfig(context.Background(), options, "module", source, false, configRevision(original)); err == nil {
 		t.Fatal("过期配置覆盖成功")
 	}
 	config, err := moduleconfig.LoadModule(options.ModuleConfig)
-	if err != nil || config.ProxyOnNonWiFi {
+	if err != nil || config.SelectedNodeTag != "LATEST" {
 		t.Fatalf("内部写入丢失: %+v %v", config, err)
 	}
 }

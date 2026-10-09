@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
 const root = new URL('../', import.meta.url)
@@ -10,6 +10,15 @@ const managed = readJSON('src/module/config/inbound/inbound.json')
 const upstream = readJSON('tests/fixtures/singbox-upstream.json')
 const resources = readJSON('.github/resources.json').raw
 const list = value => value === undefined ? [] : Array.isArray(value) ? value : [value]
+
+test('模块设置只有 module.json 默认文件，字段使用 JSON 原生类型', () => {
+  assert.equal(existsSync(new URL('src/module/config/module.conf', root)), false)
+  assert.deepEqual(readJSON('src/module/config/module.json'), {
+    auto_start: false,
+    selection: { group_id: 'default', node_tag: '' },
+    wifi: { enabled: false, mode: 'blacklist', blacklist: [], whitelist: [], proxy_on_non_wifi: true },
+  })
+})
 
 test('默认配置仅保留部署与运行时生成所需的上游差异', () => {
   const expected = structuredClone(upstream)

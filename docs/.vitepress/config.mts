@@ -132,7 +132,7 @@ export default defineConfig({
         {
           text: '配置参考',
           items: [
-            { text: 'module.conf', link: '/config/module' },
+            { text: 'module.json', link: '/config/module' },
             { text: '入站配置', link: '/config/inbound' },
             { text: 'eBPF 原生参数', link: '/config/ebpf' },
             { text: 'TUN 原生参数', link: '/config/tun' },

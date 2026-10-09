@@ -30,8 +30,8 @@ func TestStatusBackendRequiresMatchingInstance(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
-			modulePath := filepath.Join(root, "module.conf")
-			if err := os.WriteFile(modulePath, []byte(""), 0o600); err != nil {
+			modulePath := filepath.Join(root, "module.json")
+			if err := os.WriteFile(modulePath, []byte("{}"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			modePath := modeConfigFixture(t, root, "Rule")

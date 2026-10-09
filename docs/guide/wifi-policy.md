@@ -17,21 +17,29 @@
 
 ## 配置项
 
-```ini
-WIFI_AUTO_SWITCH=0
-WIFI_SSID_MODE="blacklist"
-WIFI_SSID_BLACKLIST=[]
-WIFI_SSID_WHITELIST=[]
-PROXY_ON_NON_WIFI=1
+Wi-Fi 策略保存在 `config/module.json` 的 `wifi` 对象。`module/wifi` 分区使用以下候选格式：
+
+```json
+{
+  "wifi": {
+    "enabled": false,
+    "mode": "blacklist",
+    "blacklist": [],
+    "whitelist": [],
+    "proxy_on_non_wifi": true
+  }
+}
 ```
 
-- `WIFI_AUTO_SWITCH`：`0` 关闭，`1` 启用。
-- `WIFI_SSID_MODE`：`blacklist`、`whitelist`。管理器将开关与名单模式合并显示为关闭、黑名单、白名单。
-- 名单使用 JSON 字符串数组，例如 `["家庭 Wi-Fi", "Office, Wi-Fi"]`；名称须为 1 至 32 个 UTF-8 字节，不含控制字符。
-- `PROXY_ON_NON_WIFI=1` 使用默认模式，`0` 使用 Direct；自动切换关闭时不应用此项。
+- `wifi.enabled`：`false` 关闭，`true` 启用。
+- `wifi.mode`：`"blacklist"`、`"whitelist"`。管理器将开关与名单模式合并显示为关闭、黑名单、白名单。
+- `wifi.blacklist` 与 `wifi.whitelist` 使用 JSON 字符串数组，例如 `["家庭 Wi-Fi", "Office, Wi-Fi"]`；名称须为 1 至 32 个 UTF-8 字节，不含控制字符。
+- `wifi.proxy_on_non_wifi=true` 使用默认模式，`false` 使用 Direct；自动切换关闭时不应用此项。
 - 默认模式来自主配置 `experimental.clash_api.default_mode`，网络策略不会覆盖它。
 
-升级到本配置格式时，选择 **仅保留节点与订阅** 或 **全新安装**。
+保存使用读取 `module/wifi` 时的独立 revision，只替换 `wifi`，保留最新节点选择与开机自启。候选不能用 `{}` 删除分区，也不能包含 `selection` 或 `auto_start`。读取与应用示例见 [模块设置](/config/module#修改与检查)。
+
+旧格式升级只能选择 **仅保留节点与订阅** 或 **全新安装**，不迁移旧配置。
 
 ## DNS 与运行时
 

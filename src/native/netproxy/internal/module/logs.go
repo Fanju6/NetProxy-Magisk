@@ -3,6 +3,7 @@ package module
 import (
 	"archive/tar"
 	"compress/gzip"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"io"
@@ -129,7 +130,7 @@ func writeLogArchive(options Options, output io.Writer) (err error) {
 		files = append(files, archiveFile{source: path, name: "logs/" + filepath.Base(path), redact: true, tail: logfile.MaxFileBytes})
 	}
 	files = append(files,
-		archiveFile{source: options.ModuleConfig, name: "config/module.conf", redact: true},
+		archiveFile{source: options.ModuleConfig, name: "config/module.json", redact: true},
 		archiveFile{source: options.InboundConfig, name: "config/inbound.json", redact: true},
 		archiveFile{source: paths.SingBoxConfig(options.SingBoxDir), name: "config/singbox/config.json", redact: true},
 	)
@@ -169,6 +170,10 @@ func writeLogArchive(options Options, output io.Writer) (err error) {
 			return err
 		}
 		if item.redact {
+			// 损坏的 JSON 无法按字段脱敏，不能把残留的名单或凭据作为诊断原文导出。
+			if filepath.Ext(item.name) == ".json" && !jsontext.Value(content).IsValid() {
+				content = []byte("{\"diagnostic_error\":\"JSON 配置损坏，已省略原文以保护敏感信息\"}\n")
+			}
 			content = []byte(logfile.RedactText(string(content)))
 		}
 		if err := writeTarFile(tarWriter, item.name, content); err != nil {

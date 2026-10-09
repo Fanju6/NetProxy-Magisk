@@ -82,6 +82,29 @@ test('入站帮助与补全只使用公共配置目标，诊断仍保留 ebpf st
   assert.match(COMMANDS.service.help, /active_backend.*ready.*PID\/API/)
 })
 
+test('模块 JSON 帮助、补全和 mock 使用完整目标与独立分区', () => {
+  const run = (...args) => decodeCtlResult(mockCtl(args))
+  const defaults = JSON.parse(readFileSync(new URL('../../module/config/module.json', import.meta.url)))
+  const targets = ['module', 'module/wifi', 'module/auto_start']
+  for (const action of ['read', 'apply', 'validate']) {
+    assert.deepEqual(complete(`config ${action} module`).candidates, targets)
+    assert.deepEqual(complete(`config ${action} module/selection`).candidates, [])
+  }
+  assert.match(COMMANDS.config.help, /module\.json/)
+  assert.match(COMMANDS.config.help, /module\/wifi、module\/auto_start/)
+  assert.match(COMMANDS.config.help, /revision 独立.*selection/)
+  const full = run('config', 'read', 'module').data
+  assert.deepEqual(JSON.parse(full.content), defaults)
+  const revisions = [full.revision]
+  for (const section of ['wifi', 'auto_start']) {
+    const fragment = run('config', 'read', `module/${section}`).data
+    assert.deepEqual(JSON.parse(fragment.content), { [section]: defaults[section] })
+    revisions.push(fragment.revision)
+  }
+  assert.equal(new Set(revisions).size, revisions.length)
+  assert.equal(run('config', 'read', 'module/selection').ok, false)
+})
+
 test('mock 同步单文件模板、分区与真实后端状态边界', () => {
   const run = (...args) => decodeCtlResult(mockCtl(args))
   const defaults = JSON.parse(readFileSync(new URL('../../module/config/inbound/inbound.json', import.meta.url)))

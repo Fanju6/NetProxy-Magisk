@@ -66,7 +66,7 @@ func configuredNetwork(ctx context.Context, options Options) (NetworkEvaluation,
 	if err != nil {
 		return NetworkEvaluation{}, err
 	}
-	if !module.WiFiAutoSwitch {
+	if !module.WiFi.Enabled {
 		return networkPolicy(module, modes.Mode, "not_wifi", ""), nil
 	}
 	reader := options.NetworkStateReader
@@ -120,15 +120,15 @@ func evaluateNetwork(ctx context.Context, options Options, networkType, ssid str
 }
 
 func networkPolicy(module moduleconfig.ModuleConfig, base, networkType, ssid string) NetworkEvaluation {
-	result := NetworkEvaluation{Enabled: module.WiFiAutoSwitch, NetworkType: networkType, SSID: ssid, Target: "proxying", DesiredMode: base}
+	result := NetworkEvaluation{Enabled: module.WiFi.Enabled, NetworkType: networkType, SSID: ssid, Target: "proxying", DesiredMode: base}
 	if result.Enabled {
 		if networkType == "wifi" && result.SSID == "" {
 			result.Target = ""
 			result.Reason = "WiFi 已连接但 SSID 尚不可读"
 			return result
 		}
-		if networkType == "wifi" && ((module.WiFiSSIDMode == "whitelist" && !slices.Contains(module.WiFiSSIDWhitelist, ssid)) || (module.WiFiSSIDMode == "blacklist" && slices.Contains(module.WiFiSSIDBlacklist, ssid))) ||
-			networkType == "not_wifi" && !module.ProxyOnNonWiFi {
+		if networkType == "wifi" && ((module.WiFi.Mode == "whitelist" && !slices.Contains(module.WiFi.Whitelist, ssid)) || (module.WiFi.Mode == "blacklist" && slices.Contains(module.WiFi.Blacklist, ssid))) ||
+			networkType == "not_wifi" && !module.WiFi.ProxyOnNonWiFi {
 			result.Target = "bypassed"
 			result.DesiredMode = "Direct"
 		}

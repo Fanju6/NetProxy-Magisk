@@ -110,6 +110,9 @@ su -c '/data/adb/modules/netproxy/netproxyctl network wifi-list'
 su -c '/data/adb/modules/netproxy/netproxyctl network evaluate --type wifi --ssid "Home Wi-Fi"'
 
 su -c '/data/adb/modules/netproxy/netproxyctl config list'
+su -c '/data/adb/modules/netproxy/netproxyctl config read module'
+su -c '/data/adb/modules/netproxy/netproxyctl config read module/wifi'
+su -c '/data/adb/modules/netproxy/netproxyctl config read module/auto_start'
 su -c '/data/adb/modules/netproxy/netproxyctl config read inbound'
 su -c '/data/adb/modules/netproxy/netproxyctl config read inbound/backend'
 su -c '/data/adb/modules/netproxy/netproxyctl config read inbound/ebpf'
@@ -130,9 +133,11 @@ su -c '/data/adb/modules/netproxy/netproxyctl logs export /sdcard/Download/netpr
 
 `config list` 同时列出主配置、分区、本地规则和只读运行时。`singbox/dns` 的候选内容必须使用 `{"dns": {...}}`，`{}` 表示删除该字段；不能包含其他分区。完整替换使用 `singbox/config.json`。
 
+模块设置的唯一文件是 `config/module.json`，`module` 目标读取或替换整份 JSON。`module/wifi` 与 `module/auto_start` 分别使用 `{"wifi": {...}}`、`{"auto_start": true}`，拥有独立 revision；在同一个 `module.json.lock` 内合并最新其他字段，保留并发节点选择。分区不能用 `{}` 删除或携带其他顶层字段。没有 `module/selection` 目标，选节点使用 `node use`；单独保存 `auto_start` 只影响下次开机。
+
 受管入站使用 `inbound` 完整目标与 `inbound/backend`、`inbound/app`、`inbound/ebpf`、`inbound/tun` 分区；分区保留对应顶层字段，例如 `{"backend":"tun"}`，不能用 `{}` 删除。它们共用同一磁盘文件，没有 `config ebpf` 目标。实际入站只读目标为 `runtime/inbound.json`，另保留 `runtime/providers.json` 与 `runtime/outbounds.json`。
 
-`config list` 的四个入站目标属于 `category: "inbound"`。运行时准备结果使用 `inbound` 路径字段与 `backend`，不再使用旧 `ebpf` 字段。切换强杀时中止并保留 journal，需要设备重启后再恢复，不做兜底清理。
+`config list` 的五个入站目标属于 `category: "inbound"`。运行时准备结果使用 `inbound` 路径字段与 `backend`，不再使用旧 `ebpf` 字段。切换强杀时中止并保留 journal，需要设备重启后再恢复，不做兜底清理。
 
 `config read` 返回 `content` 和 `revision`。编辑期间需要防止覆盖并发修改时，在目标前传入读到的版本：
 

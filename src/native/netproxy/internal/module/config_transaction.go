@@ -412,7 +412,7 @@ func prepareFromConfigJournal(options Options, journal configApplyJournal) Prepa
 		if journal.Mode == "Direct" {
 			target = "bypassed"
 		}
-		prepared.Network = &NetworkEvaluation{Enabled: module.WiFiAutoSwitch, DesiredMode: journal.Mode, Target: target}
+		prepared.Network = &NetworkEvaluation{Enabled: module.WiFi.Enabled, DesiredMode: journal.Mode, Target: target}
 	}
 	for _, snapshot := range journal.Runtime {
 		switch filepath.Base(snapshot.Path) {

@@ -23,8 +23,8 @@ import (
 
 func TestNetworkPolicyIndependentLists(t *testing.T) {
 	module := moduleconfig.DefaultModule()
-	module.WiFiSSIDBlacklist = []string{"Home, Wi-Fi"}
-	module.WiFiSSIDWhitelist = []string{"Office"}
+	module.WiFi.Blacklist = []string{"Home, Wi-Fi"}
+	module.WiFi.Whitelist = []string{"Office"}
 	for _, test := range []struct {
 		mode, network, ssid, base, want string
 		enabled, nonWiFi                bool
@@ -41,22 +41,22 @@ func TestNetworkPolicyIndependentLists(t *testing.T) {
 		{"blacklist", "not_wifi", "", "Rule", "Rule", true, true},
 		{"whitelist", "wifi", "Office", "Direct", "Direct", false, true},
 	} {
-		module.WiFiAutoSwitch = test.enabled
-		module.WiFiSSIDMode = test.mode
-		module.ProxyOnNonWiFi = test.nonWiFi
+		module.WiFi.Enabled = test.enabled
+		module.WiFi.Mode = test.mode
+		module.WiFi.ProxyOnNonWiFi = test.nonWiFi
 		got := networkPolicy(module, test.base, test.network, test.ssid)
 		if got.DesiredMode != test.want || got.Enabled != test.enabled {
 			t.Fatalf("%+v -> %+v", test, got)
 		}
 	}
-	module.WiFiSSIDBlacklist = nil
-	module.WiFiSSIDWhitelist = nil
-	module.WiFiAutoSwitch = true
-	module.WiFiSSIDMode = "blacklist"
+	module.WiFi.Blacklist = nil
+	module.WiFi.Whitelist = nil
+	module.WiFi.Enabled = true
+	module.WiFi.Mode = "blacklist"
 	if networkPolicy(module, "Rule", "wifi", "Home").DesiredMode != "Rule" {
 		t.Fatal("空黑名单绕过了所有网络")
 	}
-	module.WiFiSSIDMode = "whitelist"
+	module.WiFi.Mode = "whitelist"
 	if networkPolicy(module, "Rule", "wifi", "Home").DesiredMode != "Direct" {
 		t.Fatal("空白名单未绕过")
 	}
@@ -68,7 +68,7 @@ func TestNetworkPolicyIndependentLists(t *testing.T) {
 func TestConfiguredNetworkUnknownAndFrozenRecovery(t *testing.T) {
 	options := newTestOptions(t.TempDir())
 	writeModeConfig(t, options, "Rule")
-	targetCoreWrite(t, options.ModuleConfig, []byte("WIFI_AUTO_SWITCH=1\nWIFI_SSID_MODE=blacklist\n"))
+	targetCoreWrite(t, options.ModuleConfig, []byte("{\"wifi\":{\"enabled\":true,\"mode\":\"blacklist\"}}"))
 	reads := 0
 	options.NetworkStateReader = func(context.Context) (worker.NetworkState, error) {
 		reads++
@@ -87,7 +87,7 @@ func TestConfiguredNetworkUnknownAndFrozenRecovery(t *testing.T) {
 func TestConfiguredNetworkDisabledSkipsReader(t *testing.T) {
 	options := newTestOptions(t.TempDir())
 	writeModeConfig(t, options, "Rule")
-	targetCoreWrite(t, options.ModuleConfig, []byte("WIFI_AUTO_SWITCH=0\nWIFI_SSID_MODE=whitelist\nPROXY_ON_NON_WIFI=0\n"))
+	targetCoreWrite(t, options.ModuleConfig, []byte("{\"wifi\":{\"enabled\":false,\"mode\":\"whitelist\",\"proxy_on_non_wifi\":false}}"))
 	options.NetworkStateReader = func(context.Context) (worker.NetworkState, error) {
 		t.Fatal("关闭策略时仍读取网络")
 		return worker.NetworkState{}, nil
@@ -268,16 +268,9 @@ func TestNetworkDNSReloadOnlyForParameterChanges(t *testing.T) {
 
 func TestEvaluateNetworkPreservesDefaultAndPersistsPolicyState(t *testing.T) {
 	root := t.TempDir()
-	modulePath := filepath.Join(root, "module.conf")
+	modulePath := filepath.Join(root, "module.json")
 	statePath := filepath.Join(root, "wifi_state")
-	content := `AUTO_START=1
-ACTIVE_GROUP_ID=default
-SELECTED_NODE_TAG=""
-WIFI_AUTO_SWITCH=1
-WIFI_SSID_MODE=blacklist
-WIFI_SSID_BLACKLIST=["办公 WiFi","家庭 WiFi"]
-PROXY_ON_NON_WIFI=1
-`
+	content := "{\"auto_start\":true,\"selection\":{\"group_id\":\"default\",\"node_tag\":\"\"},\"wifi\":{\"blacklist\":[\"办公 WiFi\",\"家庭 WiFi\"],\"enabled\":true,\"mode\":\"blacklist\",\"proxy_on_non_wifi\":true}}"
 	if err := os.WriteFile(modulePath, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -324,15 +317,9 @@ PROXY_ON_NON_WIFI=1
 
 func TestEvaluateNetworkClearsDisabledOverride(t *testing.T) {
 	root := t.TempDir()
-	modulePath := filepath.Join(root, "module.conf")
+	modulePath := filepath.Join(root, "module.json")
 	statePath := filepath.Join(root, "wifi_state")
-	content := `AUTO_START=1
-ACTIVE_GROUP_ID=default
-SELECTED_NODE_TAG=""
-WIFI_AUTO_SWITCH=0
-WIFI_SSID_MODE=whitelist
-PROXY_ON_NON_WIFI=1
-`
+	content := "{\"auto_start\":true,\"selection\":{\"group_id\":\"default\",\"node_tag\":\"\"},\"wifi\":{\"enabled\":false,\"mode\":\"whitelist\",\"proxy_on_non_wifi\":true}}"
 	if err := os.WriteFile(modulePath, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}

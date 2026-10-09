@@ -2,6 +2,7 @@ package logfile
 
 import (
 	"bytes"
+	json "encoding/json/v2"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,26 @@ import (
 	"testing"
 	"time"
 )
+
+func TestModuleWiFiRedactionPreservesPolicyAndOtherLists(t *testing.T) {
+	for _, input := range []string{
+		`{"auto_start":true,"wifi":{"enabled":false,"mode":"whitelist","blacklist":["private-home"],"whitelist":["private-office"]},"blacklist":["public-example"]}`,
+		"{\n  \"wifi\": {\n    \"blacklist\": [\"private-home\"],\n    \"whitelist\": [\"private-office\"]\n  }\n}",
+	} {
+		output := RedactText(input)
+		var document map[string]any
+		if err := json.Unmarshal([]byte(output), &document); err != nil {
+			t.Fatal(err)
+		}
+		wifi := document["wifi"].(map[string]any)
+		if wifi["blacklist"] != "***" || wifi["whitelist"] != "***" || strings.Contains(output, "private-") {
+			t.Fatalf("Wi-Fi 名单未脱敏: %s", output)
+		}
+		if strings.Contains(input, "public-example") && !strings.Contains(output, "public-example") {
+			t.Fatal("误脱敏了 Wi-Fi 以外的同名字段")
+		}
+	}
+}
 
 func TestProcessLogAppendsAndClearPreservesLiveHandle(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sing-box.log")

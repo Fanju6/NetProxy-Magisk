@@ -171,7 +171,7 @@ func targetCoreFixture(t *testing.T, core string, content []byte) (Options, map[
 	options.WiFiStateFile = filepath.Join(root, "state", "wifi_state")
 	options.Telemetry = nil
 	files := map[string][]byte{
-		options.ModuleConfig:                    []byte("ACTIVE_GROUP_ID=default\nSELECTED_NODE_TAG=\n"),
+		options.ModuleConfig:                    []byte("{\"selection\":{\"group_id\":\"default\",\"node_tag\":\"\"}}"),
 		options.InboundConfig:                   content,
 		paths.SingBoxConfig(options.SingBoxDir): []byte(targetCoreStaticConfig),
 	}

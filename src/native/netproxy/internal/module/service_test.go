@@ -24,7 +24,7 @@ func TestServiceStartFailureReportsCheckError(t *testing.T) {
 	if err := os.MkdirAll(options.CatalogRoot, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(options.ModuleConfig, []byte("\n"), 0o600); err != nil {
+	if err := os.WriteFile(options.ModuleConfig, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Dir(options.InboundConfig), 0o700); err != nil {
@@ -58,7 +58,7 @@ func TestCheckServiceRejectsMissingBinary(t *testing.T) {
 	if err := os.MkdirAll(options.CatalogRoot, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(options.ModuleConfig, []byte("\n"), 0o600); err != nil {
+	if err := os.WriteFile(options.ModuleConfig, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Dir(options.InboundConfig), 0o700); err != nil {
@@ -292,7 +292,7 @@ func TestStartServiceDoesNotReachReadyAfterStateWriteFailure(t *testing.T) {
 	if err := os.MkdirAll(options.CatalogRoot, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(options.ModuleConfig, []byte("\n"), 0o600); err != nil {
+	if err := os.WriteFile(options.ModuleConfig, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Dir(options.InboundConfig), 0o700); err != nil {
@@ -360,7 +360,7 @@ func TestPrepareDoesNotPersistSelectionBeforeCheck(t *testing.T) {
 	if err := os.MkdirAll(options.CatalogRoot, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(options.ModuleConfig, []byte("ACTIVE_GROUP_ID=missing\nSELECTED_NODE_TAG=node\n"), 0o600); err != nil {
+	if err := os.WriteFile(options.ModuleConfig, []byte("{\"selection\":{\"group_id\":\"missing\",\"node_tag\":\"node\"}}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Dir(options.InboundConfig), 0o700); err != nil {
@@ -377,7 +377,7 @@ func TestPrepareDoesNotPersistSelectionBeforeCheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(content) != "ACTIVE_GROUP_ID=missing\nSELECTED_NODE_TAG=node\n" {
+	if string(content) != `{"selection":{"group_id":"missing","node_tag":"node"}}` {
 		t.Fatalf("配置检查前不应修改选择状态: %s", content)
 	}
 }

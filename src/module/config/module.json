@@ -1,0 +1,14 @@
+{
+  "auto_start": false,
+  "selection": {
+    "group_id": "default",
+    "node_tag": ""
+  },
+  "wifi": {
+    "enabled": false,
+    "mode": "blacklist",
+    "blacklist": [],
+    "whitelist": [],
+    "proxy_on_non_wifi": true
+  }
+}

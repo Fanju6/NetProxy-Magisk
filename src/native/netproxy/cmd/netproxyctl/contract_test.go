@@ -58,7 +58,7 @@ func TestPublicCommandsKeepSingleJSONContract(t *testing.T) {
 	options.WorkerPIDFile = filepath.Join(root, "state", "worker.pid")
 	options.WiFiStateFile = filepath.Join(root, "state", "wifi_state")
 	for path, content := range map[string]string{
-		options.ModuleConfig:                             "ACTIVE_GROUP_ID=default\n",
+		options.ModuleConfig:                             "{\"selection\":{\"group_id\":\"default\"}}",
 		options.InboundConfig:                            `{"backend":"ebpf","app":{"enabled":false,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]},"ebpf":{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true},"shared":{"enabled":false}},"tun":{"type":"tun","tag":"netproxy-in","interface_name":"netproxy","address":["172.19.0.1/30"],"auto_route":true,"auto_redirect":true}}`,
 		filepath.Join(options.SingBoxDir, "config.json"): "{}\n",
 	} {
@@ -97,6 +97,8 @@ func TestPublicCommandsKeepSingleJSONContract(t *testing.T) {
 		{"app list", "app.list", 0},
 		{"config list", "config.list", 0},
 		{"config read module", "config.read", 0},
+		{"config read module/wifi", "config.read", 0},
+		{"config read module/auto_start", "config.read", 0},
 		{"logs show service", "logs.show", 0},
 		{"node get invalid", "node.ref_invalid", 2},
 		{"catalog show", "usage.invalid", 2},

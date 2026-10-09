@@ -64,7 +64,7 @@ type Options struct {
 	ProgressDir    string
 	PIDFile        string
 	LogFile        string
-	ModuleConf     string
+	ModuleConfig   string
 	SingBoxPath    string
 	ServiceAddress string
 	ServiceSecret  string
@@ -171,12 +171,12 @@ func Run(ctx context.Context, options Options, wake <-chan struct{}, logger *log
 	retries := make(map[string]subscriptionRetry)
 	for {
 		watch := options.NetworkWatchEnabled && options.NetworkEvaluate != nil
-		if watch && options.ModuleConf != "" {
-			module, err := moduleconfig.LoadModule(options.ModuleConf)
+		if watch && options.ModuleConfig != "" {
+			module, err := moduleconfig.LoadModule(options.ModuleConfig)
 			if err != nil {
 				return err
 			}
-			watch = module.WiFiAutoSwitch
+			watch = module.WiFi.Enabled
 		}
 		if networkWatchEnabled != watch {
 			if cancelNetwork != nil {
@@ -637,7 +637,7 @@ func runtimeProviderMatches(outbounds []serviceapi.GroupItem, runtimeTag string,
 }
 
 func validateOptions(options Options) error {
-	for name, value := range map[string]string{"Catalog 根目录": options.Root, "PID 文件": options.PIDFile, "模块配置": options.ModuleConf} {
+	for name, value := range map[string]string{"Catalog 根目录": options.Root, "PID 文件": options.PIDFile, "模块配置": options.ModuleConfig} {
 		if strings.TrimSpace(value) == "" {
 			return fmt.Errorf("%s不能为空", name)
 		}

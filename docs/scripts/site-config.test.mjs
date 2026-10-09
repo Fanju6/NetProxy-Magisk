@@ -13,6 +13,7 @@ describe('页面元数据', () => {
   it.each([
     ['index.md', 'https://www.netproxy.store/'],
     ['statistics.md', 'https://www.netproxy.store/statistics'],
+    ['config/module.md', 'https://www.netproxy.store/config/module'],
     ['config/tun.md', 'https://www.netproxy.store/config/tun'],
     ['mascot/index.md', 'https://www.netproxy.store/mascot/']
   ])('%s 使用独立规范地址', (path, url) => {

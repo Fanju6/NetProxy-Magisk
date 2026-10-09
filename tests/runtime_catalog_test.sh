@@ -8,7 +8,7 @@ trap 'rm -rf "$TMP_ROOT"' EXIT INT TERM
 
 MODDIR="$ROOT/src/module"
 TEST_MODULE="$TMP_ROOT/module"
-MODULE_CONF="$TEST_MODULE/config/module.conf"
+MODULE_JSON="$TEST_MODULE/config/module.json"
 CATALOG_DIR="$TEST_MODULE/data/catalog"
 SINGBOX_DIR="$MODDIR/config/singbox"
 MIXED_INBOUND_FILE="$SINGBOX_DIR/config.json"
@@ -17,7 +17,7 @@ CATALOG_LIST_OUTPUT="$TMP_ROOT/catalog-list.json"
 CATALOG_SHOW_OUTPUT="$TMP_ROOT/catalog-show.json"
 
 mkdir -p "$TEST_MODULE/config/inbound" "$CATALOG_DIR/default" "$CATALOG_DIR/secondary" "$CATALOG_DIR/staging"
-cp "$MODDIR/config/module.conf" "$MODULE_CONF"
+cp "$MODDIR/config/module.json" "$MODULE_JSON"
 cp "$MODDIR/config/inbound/inbound.json" "$TEST_MODULE/config/inbound/inbound.json"
 mkdir -p "$TEST_MODULE/config/singbox" "$TEST_MODULE/runtime"
 cp "$SINGBOX_DIR/config.json" "$TEST_MODULE/config/singbox/config.json"
@@ -74,6 +74,60 @@ const documents = success('config', 'list');
 assert.deepEqual(documents.filter(item => item.category === 'inbound').map(item => item.id),
   ['inbound', 'inbound/backend', 'inbound/app', 'inbound/ebpf', 'inbound/tun']);
 assert.equal(new Set(documents.map(item => item.id)).size, documents.length);
+const modulePath = join(moduleDir, 'config', 'module.json');
+const moduleConfig = JSON.parse(readFileSync(modulePath, 'utf8'));
+const moduleTargets = ['module', 'module/wifi', 'module/auto_start'];
+for (const target of moduleTargets) {
+  const read = success('config', 'read', target);
+  assert.equal(read.target, target);
+  assert.equal(read.revision, createHash('sha256').update(read.content).digest('hex'));
+  const section = target.split('/')[1];
+  assert.deepEqual(JSON.parse(read.content), section ? { [section]: moduleConfig[section] } : moduleConfig);
+}
+const moduleSource = join(moduleDir, 'module-candidate.json');
+const moduleRead = target => success('config', 'read', target);
+const moduleWrite = (action, target, content, revision) => {
+  writeFileSync(moduleSource, JSON.stringify(content));
+  return run('config', action, '--revision', revision, target, moduleSource);
+};
+const full = moduleRead('module');
+assert.equal(moduleWrite('apply', 'module', moduleConfig, full.revision).ok, true);
+assert.deepEqual(JSON.parse(moduleRead('module').content), moduleConfig);
+const wifi = moduleRead('module/wifi');
+const autoStart = moduleRead('module/auto_start');
+const beforeSelection = moduleRead('module');
+moduleConfig.selection.node_tag = 'SOCKS';
+writeFileSync(modulePath, JSON.stringify(moduleConfig));
+assert.notEqual(moduleRead('module').revision, beforeSelection.revision);
+assert.equal(moduleRead('module/wifi').revision, wifi.revision);
+assert.equal(moduleRead('module/auto_start').revision, autoStart.revision);
+const nextWiFi = { ...moduleConfig.wifi, blacklist: [' Home, Wi-Fi ', 'Office'] };
+assert.equal(moduleWrite('validate', 'module/wifi', { wifi: nextWiFi }, wifi.revision).ok, true);
+assert.deepEqual(JSON.parse(moduleRead('module/wifi').content), { wifi: moduleConfig.wifi });
+const appliedWiFi = moduleWrite('apply', 'module/wifi', { wifi: nextWiFi }, wifi.revision);
+assert.equal(appliedWiFi.ok, true, appliedWiFi.message);
+assert.equal(appliedWiFi.data.revision, moduleRead('module/wifi').revision);
+assert.equal(moduleRead('module/auto_start').revision, autoStart.revision);
+assert.deepEqual(JSON.parse(moduleRead('module').content).selection, moduleConfig.selection);
+const wifiRevision = moduleRead('module/wifi').revision;
+const appliedAutoStart = moduleWrite('apply', 'module/auto_start', { auto_start: true }, autoStart.revision);
+assert.equal(appliedAutoStart.ok, true, appliedAutoStart.message);
+assert.equal(appliedAutoStart.data.revision, moduleRead('module/auto_start').revision);
+assert.equal(moduleRead('module/wifi').revision, wifiRevision);
+assert.deepEqual(JSON.parse(moduleRead('module').content), { ...moduleConfig, auto_start: true, wifi: nextWiFi });
+for (const action of ['apply', 'validate']) {
+  assert.equal(moduleWrite(action, 'module/wifi', { wifi: moduleConfig.wifi }, wifi.revision).code, 'config.conflict');
+  assert.equal(moduleWrite(action, 'module/auto_start', { auto_start: false }, autoStart.revision).code, 'config.conflict');
+  for (const target of moduleTargets.slice(1)) {
+    const revision = moduleRead(target).revision;
+    assert.equal(moduleWrite(action, target, {}, revision).ok, false);
+    assert.equal(moduleWrite(action, target, moduleConfig, revision).ok, false);
+  }
+}
+assert.deepEqual(JSON.parse(moduleRead('module').content), { ...moduleConfig, auto_start: true, wifi: nextWiFi });
+const stopped = success('service', 'status');
+assert.equal(stopped.pid, null);
+assert.equal(stopped.worker_pid, null);
 const inboundPath = join(moduleDir, 'config', 'inbound', 'inbound.json');
 const template = JSON.parse(readFileSync(inboundPath, 'utf8'));
 for (const target of ['inbound', 'inbound/backend', 'inbound/app', 'inbound/ebpf', 'inbound/tun']) {
@@ -98,7 +152,7 @@ for (const target of ['runtime/inbound.json', 'runtime/outbounds.json', 'runtime
   success('config', 'read', target);
   assert.equal(run('config', 'apply', target, inboundPath).ok, false);
 }
-for (const target of ['ebpf', 'runtime/ebpf.json', 'inbound/unknown']) {
+for (const target of ['ebpf', 'runtime/ebpf.json', 'inbound/unknown', 'module/selection', 'module/unknown']) {
   assert.equal(run('config', 'read', target).ok, false);
   assert.equal(run('config', 'apply', target, inboundPath).ok, false);
 }

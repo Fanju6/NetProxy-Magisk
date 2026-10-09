@@ -1,14 +1,16 @@
 package config
 
 import (
+	"bytes"
 	"context"
+	"encoding/json/jsontext"
 	json "encoding/json/v2"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
-	"sort"
-	"strconv"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -16,20 +18,29 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/processlock"
 )
 
-// ModuleConfig 描述 module.conf 中由运行时使用的全部设置。
 type ModuleConfig struct {
-	Selection
-	AutoStart         bool     `json:"auto_start"`
-	WiFiAutoSwitch    bool     `json:"wifi_auto_switch"`
-	WiFiSSIDMode      string   `json:"wifi_ssid_mode"`
-	WiFiSSIDBlacklist []string `json:"wifi_ssid_blacklist"`
-	WiFiSSIDWhitelist []string `json:"wifi_ssid_whitelist"`
-	ProxyOnNonWiFi    bool     `json:"proxy_on_non_wifi"`
+	AutoStart bool `json:"auto_start"`
+	Selection `json:"selection"`
+	WiFi      WiFiPolicy `json:"wifi"`
 }
 
 type Selection struct {
-	ActiveGroupID   string `json:"active_group_id"`
-	SelectedNodeTag string `json:"selected_node_tag"`
+	ActiveGroupID   string `json:"group_id"`
+	SelectedNodeTag string `json:"node_tag"`
+}
+
+type WiFiPolicy struct {
+	Enabled        bool     `json:"enabled"`
+	Mode           string   `json:"mode"`
+	Blacklist      []string `json:"blacklist"`
+	Whitelist      []string `json:"whitelist"`
+	ProxyOnNonWiFi bool     `json:"proxy_on_non_wifi"`
+}
+
+func (policy WiFiPolicy) Equal(other WiFiPolicy) bool {
+	return policy.Enabled == other.Enabled && policy.Mode == other.Mode &&
+		policy.ProxyOnNonWiFi == other.ProxyOnNonWiFi &&
+		slices.Equal(policy.Blacklist, other.Blacklist) && slices.Equal(policy.Whitelist, other.Whitelist)
 }
 
 func (selection Selection) Mode() string {
@@ -53,110 +64,67 @@ func (selection Selection) RuntimeTargets(runtimeTag string) (group, node string
 	return "Select/" + runtimeTag, runtimeTag + "/" + selection.SelectedNodeTag
 }
 
-func (selection Selection) Updates() map[string]string {
-	return map[string]string{
-		"ACTIVE_GROUP_ID":   Quote(selection.ActiveGroupID),
-		"SELECTED_NODE_TAG": Quote(selection.SelectedNodeTag),
-	}
-}
-
 // DefaultModule 返回全新配置使用的唯一默认值集合。
 func DefaultModule() ModuleConfig {
 	return ModuleConfig{
-		Selection:      Selection{ActiveGroupID: "default"},
-		WiFiSSIDMode:   "blacklist",
-		ProxyOnNonWiFi: true,
+		Selection: Selection{ActiveGroupID: "default"},
+		WiFi:      WiFiPolicy{Mode: "blacklist", Blacklist: []string{}, Whitelist: []string{}, ProxyOnNonWiFi: true},
 	}
 }
 
-// ReadStrict 读取受限的 KEY=value 配置，不执行任何 Shell 语义。
-func ReadStrict(path string) (map[string]string, error) {
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	values := make(map[string]string)
-	for lineNumber, line := range strings.Split(strings.ReplaceAll(string(content), "\r\n", "\n"), "\n") {
-		line = strings.TrimSuffix(line, "\r")
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		position := strings.IndexByte(line, '=')
-		if position <= 0 {
-			return nil, fmt.Errorf("第 %d 行不是有效的 KEY=value 配置", lineNumber+1)
-		}
-		key := strings.TrimSpace(line[:position])
-		if !validKey(key) {
-			return nil, fmt.Errorf("第 %d 行包含非法配置键: %s", lineNumber+1, key)
-		}
-		if _, exists := values[key]; exists {
-			return nil, fmt.Errorf("配置键重复: %s", key)
-		}
-		value, err := decodeValueStrict(strings.TrimSpace(line[position+1:]))
-		if err != nil {
-			return nil, fmt.Errorf("配置键 %s 的值无效: %w", key, err)
-		}
-		values[key] = value
-	}
-	return values, nil
-}
-
-// LoadModule 读取并校验 module.conf 的类型化模型。
 func LoadModule(path string) (ModuleConfig, error) {
-	values, err := ReadStrict(path)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		return ModuleConfig{}, err
 	}
-	allowed := map[string]bool{
-		"AUTO_START":      true,
-		"ACTIVE_GROUP_ID": true, "SELECTED_NODE_TAG": true,
-		"WIFI_AUTO_SWITCH": true, "WIFI_SSID_MODE": true, "WIFI_SSID_BLACKLIST": true,
-		"WIFI_SSID_WHITELIST": true, "PROXY_ON_NON_WIFI": true,
-	}
-	for key := range values {
-		if !allowed[key] {
-			return ModuleConfig{}, fmt.Errorf("不支持的 module.conf 配置键: %s", key)
+	return ParseModule(content)
+}
+
+func ParseModule(content []byte) (ModuleConfig, error) {
+	// JSON null 会把布尔、字符串和结构体静默置零；模块配置不允许这种隐式重置。
+	decoder := jsontext.NewDecoder(bytes.NewReader(content))
+	for {
+		token, err := decoder.ReadToken()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return ModuleConfig{}, fmt.Errorf("模块 JSON 配置无效: %w", err)
+		}
+		if token.Kind() == 'n' {
+			return ModuleConfig{}, errors.New("模块配置字段不能为 null")
 		}
 	}
 	config := DefaultModule()
-	if config.AutoStart, err = boolValue(values, "AUTO_START", config.AutoStart); err != nil {
-		return ModuleConfig{}, err
+	if err := json.Unmarshal(content, &config, json.RejectUnknownMembers(true)); err != nil {
+		return ModuleConfig{}, fmt.Errorf("模块 JSON 配置无效: %w", err)
 	}
-	config.ActiveGroupID = valueOr(values, "ACTIVE_GROUP_ID", config.ActiveGroupID)
-	config.SelectedNodeTag = valueOr(values, "SELECTED_NODE_TAG", "")
+	return config, config.validate()
+}
+
+func (config ModuleConfig) validate() error {
 	if config.SelectedNodeTag != "" && (config.ActiveGroupID == "" || strings.TrimSpace(config.SelectedNodeTag) == "") {
-		return ModuleConfig{}, errors.New("手动选择必须指定活动分组和有效节点 tag")
+		return errors.New("手动选择必须指定活动分组和有效节点 tag")
 	}
-	if config.WiFiAutoSwitch, err = boolValue(values, "WIFI_AUTO_SWITCH", config.WiFiAutoSwitch); err != nil {
-		return ModuleConfig{}, err
+	if config.WiFi.Mode != "blacklist" && config.WiFi.Mode != "whitelist" {
+		return errors.New("wifi.mode 只能是 blacklist 或 whitelist")
 	}
-	config.WiFiSSIDMode = valueOr(values, "WIFI_SSID_MODE", config.WiFiSSIDMode)
-	if config.WiFiSSIDMode != "blacklist" && config.WiFiSSIDMode != "whitelist" {
-		return ModuleConfig{}, fmt.Errorf("WIFI_SSID_MODE 无效: %s", config.WiFiSSIDMode)
-	}
-	for key, destination := range map[string]*[]string{
-		"WIFI_SSID_BLACKLIST": &config.WiFiSSIDBlacklist,
-		"WIFI_SSID_WHITELIST": &config.WiFiSSIDWhitelist,
-	} {
-		if err := json.Unmarshal([]byte(valueOr(values, key, "[]")), destination); err != nil || *destination == nil {
-			return ModuleConfig{}, fmt.Errorf("%s 必须是 JSON 字符串数组", key)
-		}
-		seen := make(map[string]bool)
-		for _, ssid := range *destination {
+	for _, list := range []struct {
+		field string
+		ssids []string
+	}{{"blacklist", config.WiFi.Blacklist}, {"whitelist", config.WiFi.Whitelist}} {
+		seen := make(map[string]bool, len(list.ssids))
+		for _, ssid := range list.ssids {
 			if err := ValidateSSID(ssid); err != nil {
-				return ModuleConfig{}, fmt.Errorf("%s: %w", key, err)
+				return fmt.Errorf("wifi.%s: %w", list.field, err)
 			}
 			if seen[ssid] {
-				return ModuleConfig{}, fmt.Errorf("%s 包含重复的 Wi-Fi 名称", key)
+				return fmt.Errorf("wifi.%s 包含重复的 Wi-Fi 名称", list.field)
 			}
 			seen[ssid] = true
 		}
 	}
-	if config.ProxyOnNonWiFi, err = boolValue(values, "PROXY_ON_NON_WIFI", config.ProxyOnNonWiFi); err != nil {
-		return ModuleConfig{}, err
-	}
-	return config, nil
+	return nil
 }
 
 func ValidateSSID(ssid string) error {
@@ -166,22 +134,13 @@ func ValidateSSID(ssid string) error {
 	return nil
 }
 
-// UpdateModule 更新并校验 module.conf，校验失败时不会替换原文件。
-func UpdateModule(ctx context.Context, path string, updates map[string]string) error {
-	return UpdateValidated(ctx, path, updates, func(candidate string) error {
-		_, err := LoadModule(candidate)
-		return err
-	})
-}
-
-// UpdateValidated 使用候选文件完成校验后再原子替换原配置。
-func UpdateValidated(ctx context.Context, path string, updates map[string]string, validate func(string) error) error {
+func UpdateSelection(ctx context.Context, path string, selection Selection) error {
 	editor, err := Lock(ctx, path)
 	if err != nil {
 		return err
 	}
 	defer editor.Release()
-	return editor.Update(updates, validate)
+	return editor.UpdateSelection(selection)
 }
 
 // Editor 在显式持有文件锁期间完成配置读改写。
@@ -198,132 +157,50 @@ func Lock(ctx context.Context, path string) (*Editor, error) {
 	return &Editor{path: path, Lock: lock}, nil
 }
 
-func (editor *Editor) Update(updates map[string]string, validate func(string) error) error {
-	path := editor.path
-	content, err := os.ReadFile(path)
+func (editor *Editor) UpdateSelection(selection Selection) error {
+	content, err := os.ReadFile(editor.path)
 	if err != nil {
 		return err
 	}
-	if len(updates) == 0 {
+	config, err := ParseModule(content)
+	if err != nil {
+		return err
+	}
+	if config.Selection == selection {
 		return nil
 	}
-	for key := range updates {
-		if !validKey(key) {
-			return fmt.Errorf("非法配置键: %s", key)
-		}
+	config.Selection = selection
+	if err := config.validate(); err != nil {
+		return err
 	}
-	keys := make([]string, 0, len(updates))
-	for key := range updates {
-		keys = append(keys, key)
+	// 保留未修改分区的原始字段，内部选择同步不能改变 Wi-Fi 草稿的 revision。
+	var fields map[string]jsontext.Value
+	if err := json.Unmarshal(content, &fields); err != nil {
+		return err
 	}
-	sort.Strings(keys)
-	text := strings.ReplaceAll(string(content), "\r\n", "\n")
-	lines := strings.Split(text, "\n")
-	if len(lines) > 0 && lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
-	}
-	written := make(map[string]bool, len(updates))
-	for index, line := range lines {
-		key, _, found := strings.Cut(line, "=")
-		key = strings.TrimSpace(key)
-		if found {
-			if value, ok := updates[key]; ok {
-				lines[index] = key + "=" + value
-				written[key] = true
-			}
-		}
-	}
-	for _, key := range keys {
-		value := updates[key]
-		if !written[key] {
-			lines = append(lines, key+"="+value)
-		}
-	}
-	updated := strings.Join(lines, "\n")
-	if !strings.HasSuffix(updated, "\n") {
-		updated += "\n"
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".module-conf-")
+	fields["selection"], err = json.Marshal(selection, json.Deterministic(true))
 	if err != nil {
 		return err
 	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	if _, err = tmp.WriteString(updated); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err = tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err = tmp.Close(); err != nil {
-		return err
-	}
-	if validate != nil {
-		if err = validate(tmpPath); err != nil {
-			return err
-		}
-	}
-	return os.Rename(tmpPath, path)
-}
-
-// Quote 生成与模块配置兼容的双引号值。
-func Quote(value string) string {
-	return strconv.Quote(value)
-}
-
-func validKey(value string) bool {
-	if value == "" {
-		return false
-	}
-	for _, char := range value {
-		if (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == '_' {
-			continue
-		}
-		return false
-	}
-	return true
-}
-
-func decodeValueStrict(value string) (string, error) {
-	if value == "" || value[0] != '"' {
-		if strings.ContainsAny(value, "\r\n\t") {
-			return "", errors.New("不能包含换行或制表符")
-		}
-		return value, nil
-	}
-	if len(value) < 2 || value[len(value)-1] != '"' {
-		return "", errors.New("双引号未闭合")
-	}
-	decoded, err := strconv.Unquote(value)
+	content, err = json.Marshal(fields, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
-		return "", err
+		return err
 	}
-	if strings.ContainsAny(decoded, "\r\n\t") {
-		return "", errors.New("不能包含换行或制表符")
+	temporary, err := os.CreateTemp(filepath.Dir(editor.path), ".module-json-")
+	if err != nil {
+		return err
 	}
-	return decoded, nil
-}
-
-func valueOr(values map[string]string, key, fallback string) string {
-	if value, ok := values[key]; ok {
-		return value
+	defer os.Remove(temporary.Name())
+	if _, err := temporary.Write(append(content, '\n')); err != nil {
+		_ = temporary.Close()
+		return err
 	}
-	return fallback
-}
-
-func boolValue(values map[string]string, key string, fallback bool) (bool, error) {
-	value, ok := values[key]
-	if !ok {
-		return fallback, nil
+	if err := temporary.Sync(); err != nil {
+		_ = temporary.Close()
+		return err
 	}
-	switch value {
-	case "1", "true":
-		return true, nil
-	case "0", "false":
-		return false, nil
-	default:
-		return false, fmt.Errorf("%s 必须为 0、1、true 或 false", key)
+	if err := temporary.Close(); err != nil {
+		return err
 	}
+	return os.Rename(temporary.Name(), editor.path)
 }
