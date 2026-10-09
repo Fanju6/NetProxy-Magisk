@@ -23,9 +23,11 @@
 }
 ```
 
-`app` 支持独立分区编辑，候选内容使用 `{"app": {...}}` 包装。名单是 JSON 字符串数组，每项必须为 `<用户ID>:<包名>`。黑名单中的 `bypass_apps` 绕过代理；白名单只代理 `proxy_apps`，并自动包含 UID 0。服务运行时，有效策略变化自动应用；服务停止时只保存。
+`app` 支持独立分区编辑，候选内容使用 `{"app": {...}}` 包装。名单是 JSON 字符串数组，每项必须为 `<用户ID>:<包名>`。黑名单中的 `bypass_apps` 绕过代理；白名单只代理 `proxy_apps`，不自动加入 UID 0。服务运行时，有效策略变化自动应用；服务停止时只保存。
 
-模块通过 Android package service 按用户查询 UID，不持久化 UID 缓存。关闭共用策略时保留原生 UID 筛选；开启时合并到当前后端的本机 UID 筛选，反向 UID 筛选或原生 package/user 筛选存在歧义时拒绝配置。仅启用 eBPF 共享网络时不查询应用 UID；本机应用名单不筛选热点客户端。
+模块通过 Android package service 按用户查询 UID，不持久化 UID 缓存。开启共用策略时，白名单合并到原生 `include_uid`，黑名单合并到 `exclude_uid`，排除规则优先；可手动加入或排除 UID 0。白名单为空或应用全部不存在，且没有原生 include UID/range 时，本机 UID 流量全部绕过。关闭共用策略时原生筛选保持不变；原生 package/user 筛选不能与共用策略混用。仅启用 eBPF 共享网络时不查询应用 UID；本机应用名单不筛选热点客户端。
+
+DNS 遵循所选入站的原生设置：eBPF `respect_policy` 遵循 UID 策略，`hijack` 优先拦截 DNS，`off` 不拦截 53 端口。系统代发 DNS 按实际执行进程或 socket 的 UID 判断，不按发起查询的应用名称判断。
 
 ## 配置目标
 

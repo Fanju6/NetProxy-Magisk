@@ -10,8 +10,12 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/sagernet/sing-tun"
+	"github.com/sagernet/sing/common/ranges"
 )
 
 func builtFilters(t *testing.T, built BuildResult) (include []uint32, includeRange []string, exclude []uint32, excludeRange []string) {
@@ -71,7 +75,7 @@ func TestBuildAppPolicyBothBackends(t *testing.T) {
 				}
 				include, includeRange, exclude, excludeRange := builtFilters(t, built)
 				if mode == "whitelist" {
-					if !reflect.DeepEqual(include, []uint32{0, 1010123}) || !reflect.DeepEqual(includeRange, []string{"10120:10130"}) || len(exclude)+len(excludeRange) != 0 {
+					if !reflect.DeepEqual(include, []uint32{1010123}) || !reflect.DeepEqual(includeRange, []string{"10120:10130"}) || len(exclude)+len(excludeRange) != 0 {
 						t.Fatalf("白名单合并错误: %v %v %v %v", include, includeRange, exclude, excludeRange)
 					}
 				} else if !reflect.DeepEqual(exclude, []uint32{1010123}) || !reflect.DeepEqual(excludeRange, []string{"10120:10130"}) || len(include)+len(includeRange) != 0 {
@@ -85,20 +89,115 @@ func TestBuildAppPolicyBothBackends(t *testing.T) {
 	}
 }
 
-func TestWhitelistMissingAndEmptyStillOnlyRoot(t *testing.T) {
+func TestWhitelistMissingAndEmptyBypassAllLocalUIDs(t *testing.T) {
 	for _, backend := range []string{"ebpf", "tun"} {
 		for _, values := range [][]string{nil, {"10:com.example.missing"}} {
 			config := fixture(t, backend, "", "")
 			config.App = AppPolicy{Enabled: true, Mode: "whitelist", ProxyApps: values}
+			original := encodeConfig(t, config)
 			built, err := config.BuildWithResolver(func(refs []PackageRef) (PackageUIDResolution, error) { return PackageUIDResolution{Missing: refs}, nil })
 			if err != nil {
 				t.Fatal(err)
 			}
-			include, ranges, _, _ := builtFilters(t, built)
-			if !reflect.DeepEqual(include, []uint32{0}) || len(ranges) != 0 || len(built.MissingPackages) != len(values) {
+			include, ranges, exclude, excludeRanges := builtFilters(t, built)
+			if len(include)+len(ranges)+len(exclude) != 0 || !reflect.DeepEqual(excludeRanges, []string{"0:4294967294"}) || len(built.MissingPackages) != len(values) {
 				t.Fatal(built)
 			}
+			if !bytes.Equal(original, encodeConfig(t, config)) {
+				t.Fatal("空白名单投影写回持久模板")
+			}
 		}
+	}
+}
+
+func TestAppPolicyPreservesNativeUIDFilters(t *testing.T) {
+	for _, backend := range []string{"ebpf", "tun"} {
+		for _, test := range []struct {
+			name, mode, filters        string
+			apps                       []string
+			include, exclude           []uint32
+			includeRange, excludeRange []string
+		}{
+			{name: "exclude-root", mode: "whitelist", filters: `"exclude_uid":0`, apps: []string{"0:com.example.app"}, include: []uint32{10123}, exclude: []uint32{0}},
+			{name: "explicit-root", mode: "whitelist", filters: `"include_uid":0`, apps: []string{"0:com.example.app"}, include: []uint32{0, 10123}},
+			{name: "exclude-included-app", mode: "whitelist", filters: `"exclude_uid":10123`, apps: []string{"0:com.example.app"}, include: []uint32{10123}, exclude: []uint32{10123}},
+			{name: "native-whitelist", mode: "whitelist", filters: `"include_uid":0`, include: []uint32{0}},
+			{name: "native-whitelist-range", mode: "whitelist", filters: `"include_uid_range":"10000:10010","exclude_uid":0`, includeRange: []string{"10000:10010"}, exclude: []uint32{0}},
+			{name: "whitelist-with-exclude-range", mode: "whitelist", filters: `"exclude_uid_range":"0:9999"`, apps: []string{"0:com.example.app"}, include: []uint32{10123}, excludeRange: []string{"0:9999"}},
+			{name: "blacklist-with-native-whitelist", mode: "blacklist", filters: `"include_uid":10123`, apps: []string{"0:com.example.app"}, include: []uint32{10123}, exclude: []uint32{10123}},
+			{name: "blacklist-with-native-range", mode: "blacklist", filters: `"include_uid_range":"10000:10130","exclude_uid":0`, apps: []string{"0:com.example.app"}, includeRange: []string{"10000:10130"}, exclude: []uint32{0, 10123}},
+		} {
+			t.Run(backend+"/"+test.name, func(t *testing.T) {
+				config := fixture(t, backend, "", "")
+				config.App = AppPolicy{Enabled: true, Mode: test.mode, ProxyApps: test.apps, BypassApps: test.apps}
+				addFilters(t, &config, test.filters)
+				original := encodeConfig(t, config)
+				if _, err := Parse(original); err != nil {
+					t.Fatal(err)
+				}
+				if err := Validate(original, ""); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := config.EffectiveContent(); err != nil {
+					t.Fatal(err)
+				}
+				built, err := config.BuildWithResolver(func(refs []PackageRef) (PackageUIDResolution, error) {
+					if len(test.apps) == 0 {
+						t.Fatal("空应用名单仍查询 UID")
+					}
+					return PackageUIDResolution{UIDs: []uint32{10123}}, nil
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				include, includeRange, exclude, excludeRange := builtFilters(t, built)
+				if !slices.Equal(include, test.include) || !slices.Equal(includeRange, test.includeRange) || !slices.Equal(exclude, test.exclude) || !slices.Equal(excludeRange, test.excludeRange) {
+					t.Fatalf("原生 UID 筛选变化: %v %v %v %v", include, includeRange, exclude, excludeRange)
+				}
+				if !bytes.Equal(original, encodeConfig(t, config)) {
+					t.Fatal("UID 投影修改持久模板")
+				}
+			})
+		}
+	}
+}
+
+func TestNativeUIDPolicyExcludesRootAndEmptyWhitelist(t *testing.T) {
+	options := tun.Options{
+		IncludeUID: []ranges.Range[uint32]{{Start: 0, End: 0}, {Start: 10123, End: 10123}},
+		ExcludeUID: []ranges.Range[uint32]{{Start: 0, End: 0}},
+	}
+	if got, want := options.ExcludedRanges(), ([]ranges.Range[uint32]{{Start: 0, End: 10122}, {Start: 10124, End: 4294967294}}); !slices.Equal(got, want) {
+		t.Fatalf("内核未优先排除 UID 0: %v", got)
+	}
+	options.IncludeUID = nil
+	options.ExcludeUID = []ranges.Range[uint32]{{Start: 0, End: 4294967294}}
+	if got := options.ExcludedRanges(); !slices.Equal(got, options.ExcludeUID) {
+		t.Fatalf("空白名单未排除全部有效 UID: %v", got)
+	}
+}
+
+func TestEmptyWhitelistPreservesEBPFDNSAndSharedPath(t *testing.T) {
+	for _, mode := range []string{"respect_policy", "hijack", "off"} {
+		t.Run(mode, func(t *testing.T) {
+			config := fixture(t, "ebpf", `{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true,"dns_mode":"`+mode+`"},"shared":{"enabled":true,"interface":"wlan2","dns_mode":"hijack"}}`, "")
+			config.App = AppPolicy{Enabled: true, Mode: "whitelist"}
+			built, err := config.BuildWithResolver(nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var native ebpfInbound
+			if err := unmarshalNative(built.Runtime.Inbounds[0], &native); err != nil {
+				t.Fatal(err)
+			}
+			local, shared := native.EffectiveEnablement()
+			if !local || !shared || native.Local.DNSMode != mode || native.Shared.DNSMode != "hijack" || !slices.Equal(native.Shared.Interface, []string{"wlan2"}) {
+				t.Fatalf("空白名单改变 DNS 或共享接管: %+v", native)
+			}
+			if len(native.Local.IncludeUID)+len(native.Local.IncludeUIDRange) != 0 || !slices.Equal(native.Local.ExcludeUIDRange, []string{"0:4294967294"}) {
+				t.Fatal("空白名单未绕过本机 UID", native.Local)
+			}
+		})
 	}
 }
 
@@ -129,11 +228,7 @@ func TestSharedOnlyAndDisabledAppNeverResolve(t *testing.T) {
 func TestAppFilterConflicts(t *testing.T) {
 	for _, backend := range []string{"ebpf", "tun"} {
 		for _, mode := range []string{"whitelist", "blacklist"} {
-			opposite := "include"
-			if mode == "whitelist" {
-				opposite = "exclude"
-			}
-			for _, filters := range []string{`"` + opposite + `_uid":123`, `"` + opposite + `_uid_range":"123:456"`, `"include_android_user":0`, `"include_package":"com.example.app"`, `"exclude_package":"com.example.app"`} {
+			for _, filters := range []string{`"include_android_user":0`, `"include_package":"com.example.app"`, `"exclude_package":"com.example.app"`} {
 				config := fixture(t, backend, "", "")
 				config.App.Enabled, config.App.Mode = true, mode
 				addFilters(t, &config, filters)

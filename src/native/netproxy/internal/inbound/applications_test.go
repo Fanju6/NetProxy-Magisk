@@ -85,7 +85,7 @@ func TestCommandContextQueriesEachUserOnceAndReportsMissing(t *testing.T) {
 			t.Fatal(err)
 		}
 		include, ranges, _, _ := builtFilters(t, built)
-		if !reflect.DeepEqual(include, []uint32{0, 10123, 1010123}) || len(ranges) != 0 {
+		if !reflect.DeepEqual(include, []uint32{10123, 1010123}) || len(ranges) != 0 {
 			t.Fatalf("多用户或共享 UID 投影错误: %v %v", include, ranges)
 		}
 		if !reflect.DeepEqual(built.MissingPackages, []PackageRef{{UserID: 10, Package: "com.example.missing"}}) {

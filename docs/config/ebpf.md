@@ -67,7 +67,7 @@ eBPF 参数保存在 `config/inbound/inbound.json` 的 `ebpf` 对象。完整结
 
 ## 原生筛选
 
-本机支持 `include_uid`、`exclude_uid`、UID range、`include_android_user`、`include_package` 和 `exclude_package`。共用 `app` 开启时不要叠加原生 package/user 筛选；黑白名单与反向 UID 筛选冲突时会明确报错，关闭共用策略后才能单独使用原生筛选。
+本机支持 `include_uid`、`exclude_uid`、UID range、`include_android_user`、`include_package` 和 `exclude_package`。共用 `app` 开启时可叠加原生 UID/range，排除优先，UID 0 也可手动加入或排除；原生 package/user 筛选需关闭共用策略后使用。
 
 共享网络支持 `include_source_cidr`、`exclude_source_cidr`、`include_mac_address` 和 `exclude_mac_address`，排除优先。共用应用名单只筛选本机应用，不用来识别热点客户端。
 

@@ -7,12 +7,9 @@ import (
 	"strings"
 )
 
-func validateAppFilters(mode string, include []uint32, includeRange []string, exclude []uint32, excludeRange []string, users []int, includePackage, excludePackage []string) error {
+func validateAppFilters(users []int, includePackage, excludePackage []string) error {
 	if len(users) != 0 || len(includePackage) != 0 || len(excludePackage) != 0 {
 		return validationError("inbound.app_filter_conflict", "app", "共用应用策略与原生 package/user 筛选冲突，请关闭应用策略或清理原生筛选")
-	}
-	if mode == "whitelist" && (len(exclude) != 0 || len(excludeRange) != 0) || mode == "blacklist" && (len(include) != 0 || len(includeRange) != 0) {
-		return validationError("inbound.app_filter_conflict", "app", "共用应用策略与原生相反 UID 名单冲突，请关闭应用策略或清理相反名单")
 	}
 	return nil
 }

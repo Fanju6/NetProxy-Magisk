@@ -245,7 +245,7 @@ func (c Config) validateSection(section string) error {
 		}
 		local, _ := native.EffectiveEnablement()
 		if local && c.App.Enabled {
-			return validateAppFilters(c.App.Mode, native.Local.IncludeUID, native.Local.IncludeUIDRange, native.Local.ExcludeUID, native.Local.ExcludeUIDRange, native.Local.IncludeAndroidUser, native.Local.IncludePackage, native.Local.ExcludePackage)
+			return validateAppFilters(native.Local.IncludeAndroidUser, native.Local.IncludePackage, native.Local.ExcludePackage)
 		}
 	case "tun":
 		native, err := c.TUNOptions()
@@ -253,7 +253,7 @@ func (c Config) validateSection(section string) error {
 			return err
 		}
 		if c.App.Enabled {
-			return validateAppFilters(c.App.Mode, native.IncludeUID, native.IncludeUIDRange, native.ExcludeUID, native.ExcludeUIDRange, native.IncludeAndroidUser, native.IncludePackage, native.ExcludePackage)
+			return validateAppFilters(native.IncludeAndroidUser, native.IncludePackage, native.ExcludePackage)
 		}
 	}
 	return nil

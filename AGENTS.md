@@ -332,9 +332,9 @@ eBPF 与 TUN 只负责透明代理入站。停止服务由 sing-box 关闭并清
 
 节点测速不要求正式服务处于 `ready`。服务停止时，Native 只允许启动不含透明代理入站、eBPF/TUN 和 Clash API 的短生命周期 sing-box 会话，使用目标 Provider 快照与随机 loopback Service API 完成测速；会话不得修改正式服务状态、选择状态或 Worker，结束和取消时必须清理进程与临时文件。
 
-分应用配置保存在入站文件的 `app` 对象，`proxy_apps` 与 `bypass_apps` 是严格 `<user-id>:<package>` 字符串数组。Go 通过 Android package service 按用户查询 UID 后合并到所选入站本机的 `include_uid` 或 `exclude_uid`，不写回原生模板。应用安装、重装、UID 变化或用户范围变化后，通过重启或配置 reload 重新解析，不维护模块侧 UID 缓存；白名单自动包含 UID 0。app 命令和 app 分区保存均通过配置事务应用有效变化，失败回滚；关闭策略、未使用名单或仅 eBPF 共享路径的无效变化不 reload。
+分应用配置保存在入站文件的 `app` 对象，`proxy_apps` 与 `bypass_apps` 是严格 `<user-id>:<package>` 字符串数组。Go 通过 Android package service 按用户查询 UID 后合并到所选入站本机的 `include_uid` 或 `exclude_uid`，不写回原生模板。应用安装、重装、UID 变化或用户范围变化后，通过重启或配置 reload 重新解析，不维护模块侧 UID 缓存；不自动加入 UID 0。app 命令和 app 分区保存均通过配置事务应用有效变化，失败回滚；关闭策略、未使用名单或仅 eBPF 共享路径的无效变化不 reload。
 
-app 关闭时保留原生 UID 筛选；开启时合并去重同向 UID/range，反向 UID/range 或非空原生 package/user 筛选必须明确拒绝歧义。仅启用 eBPF 共享网络时不查询应用 UID，不把本机应用名单当成热点客户端过滤器。
+app 关闭时保留原生 UID 筛选；开启时合并去重同向 UID/range，保留反向 UID/range 并由内核按排除优先处理，非空原生 package/user 筛选仍拒绝混用。白名单解析后与原生 include UID/range 均为空时，仅在运行时设置 `exclude_uid_range=["0:4294967294"]` 排除全部有效 UID；不能生成空 include 后静默变为全量接管，也不能注入占位 UID。仅启用 eBPF 共享网络时不查询应用 UID，不把本机应用名单当成热点客户端过滤器；eBPF DNS 保持原生 hijack/respect_policy/off 语义，不因应用名单覆盖 DNS 模式。
 
 eBPF 本机与热点下游接管分别由 `local.enabled`、`shared.enabled` 控制。本机默认使用 cgroup socket hook 与 `respect_policy` DNS，也可选择跟随默认接口的 TC；共享网络默认关闭，保存以太网 `packet_rewrite`、`hijack` DNS 与 `wlan2` 接口偏好，raw-IP、PPP 或隧道接口可选择 `socket_assign`。启用共享网络时必须配置至少一个下游接口。
 

@@ -61,6 +61,10 @@ func (c Config) BuildWithResolver(resolve PackageUIDResolver) (BuildResult, erro
 			}
 			if c.App.Mode == "whitelist" {
 				native.Local.IncludeUID = append(native.Local.IncludeUID, resolution.UIDs...)
+				// 空 include 在内核中表示不限 UID；空白名单须排除全部有效 UID，最大 uint32 是无效 UID。
+				if len(native.Local.IncludeUID)+len(native.Local.IncludeUIDRange) == 0 {
+					native.Local.ExcludeUIDRange = []string{"0:4294967294"}
+				}
 			} else {
 				native.Local.ExcludeUID = append(native.Local.ExcludeUID, resolution.UIDs...)
 			}
@@ -81,6 +85,9 @@ func (c Config) BuildWithResolver(resolve PackageUIDResolver) (BuildResult, erro
 			}
 			if c.App.Mode == "whitelist" {
 				native.IncludeUID = append(native.IncludeUID, resolution.UIDs...)
+				if len(native.IncludeUID)+len(native.IncludeUIDRange) == 0 {
+					native.ExcludeUIDRange = []string{"0:4294967294"}
+				}
 			} else {
 				native.ExcludeUID = append(native.ExcludeUID, resolution.UIDs...)
 			}
@@ -114,9 +121,6 @@ func (c Config) resolveApplications(resolve PackageUIDResolver) (PackageUIDResol
 		if err != nil {
 			return PackageUIDResolution{}, err
 		}
-	}
-	if c.App.Mode == "whitelist" {
-		resolution.UIDs = append(slices.Clone(resolution.UIDs), 0)
 	}
 	return resolution, nil
 }
