@@ -199,11 +199,9 @@
     <string name="app_proxy_mode">Режим прокси</string>
     <string name="no_apps_found">Приложения не найдены</string>
     <string name="show_system_apps">Показывать системные приложения</string>
-    <string name="proxy_mode_summary">Выберите способ фильтрации приложений для проксирования</string>
     <string name="app_proxy_mode_blacklist">Чёрный список</string>
     <string name="app_proxy_mode_whitelist">Белый список</string>
     <string name="proxy_mode_off">Выключено</string>
-    <string name="app_proxy_disabled_hint">Прокси для приложений выключен</string>
     <string name="app_selected_first">Выбранные в начале</string>
     <string name="app_reverse_sort">Обратный порядок</string>
     <string name="app_show_package_name">Показывать имена пакетов</string>

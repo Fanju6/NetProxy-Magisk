@@ -199,11 +199,9 @@
     <string name="app_proxy_mode">Proxy mode</string>
     <string name="no_apps_found">No apps found</string>
     <string name="show_system_apps">Show system apps</string>
-    <string name="proxy_mode_summary">Choose how to filter apps that use the proxy</string>
-    <string name="app_proxy_mode_blacklist">Blacklist mode</string>
-    <string name="app_proxy_mode_whitelist">Whitelist mode</string>
+    <string name="app_proxy_mode_blacklist">Blacklist</string>
+    <string name="app_proxy_mode_whitelist">Whitelist</string>
     <string name="proxy_mode_off">Off</string>
-    <string name="app_proxy_disabled_hint">Per-app proxy is disabled</string>
     <string name="app_selected_first">Selected first</string>
     <string name="app_reverse_sort">Reverse order</string>
     <string name="app_show_package_name">Show package names</string>

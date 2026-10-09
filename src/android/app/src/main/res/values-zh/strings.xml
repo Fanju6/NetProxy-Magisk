@@ -213,11 +213,9 @@
     <string name="app_proxy_mode">代理模式</string>
     <string name="no_apps_found">未找到应用</string>
     <string name="show_system_apps">显示系统应用</string>
-    <string name="proxy_mode_summary">选择如何过滤需要走代理的应用</string>
-    <string name="app_proxy_mode_blacklist">黑名单模式</string>
-    <string name="app_proxy_mode_whitelist">白名单模式</string>
+    <string name="app_proxy_mode_blacklist">黑名单</string>
+    <string name="app_proxy_mode_whitelist">白名单</string>
     <string name="proxy_mode_off">关闭</string>
-    <string name="app_proxy_disabled_hint">分应用代理已关闭</string>
     <string name="app_selected_first">选中优先</string>
     <string name="app_reverse_sort">逆向排序</string>
     <string name="app_show_package_name">显示包名</string>
