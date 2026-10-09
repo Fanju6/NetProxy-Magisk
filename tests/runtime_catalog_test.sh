@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 NETPROXYCTL_BIN="${1:-$ROOT/src/module/bin/netproxyctl}"
 TMP_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TMP_ROOT"' EXIT INT TERM
+export NETPROXY_DEV_ROOT="$TMP_ROOT/state"
 
 MODDIR="$ROOT/src/module"
 TEST_MODULE="$TMP_ROOT/module"
@@ -91,7 +92,8 @@ const moduleWrite = (action, target, content, revision) => {
   return run('config', action, '--revision', revision, target, moduleSource);
 };
 const full = moduleRead('module');
-assert.equal(moduleWrite('apply', 'module', moduleConfig, full.revision).ok, true);
+const appliedModule = moduleWrite('apply', 'module', moduleConfig, full.revision);
+assert.equal(appliedModule.ok, true, appliedModule.message);
 assert.deepEqual(JSON.parse(moduleRead('module').content), moduleConfig);
 const wifi = moduleRead('module/wifi');
 const autoStart = moduleRead('module/auto_start');

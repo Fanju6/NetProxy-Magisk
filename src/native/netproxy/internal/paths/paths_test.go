@@ -6,6 +6,7 @@ import (
 )
 
 func TestLayout(t *testing.T) {
+	t.Setenv("NETPROXY_DEV_ROOT", "")
 	layout := New(filepath.Join("module", "netproxy"))
 	root := filepath.Join("module", "netproxy")
 	expected := map[string]string{
@@ -52,5 +53,32 @@ func TestLayout(t *testing.T) {
 func TestLayoutCleansRoot(t *testing.T) {
 	if got, want := New(filepath.Join("module", "netproxy", "..", "netproxy")).Root(), filepath.Join("module", "netproxy"); got != want {
 		t.Fatalf("模块根目录未规范化: got %q, want %q", got, want)
+	}
+}
+
+func TestLayoutIsolatesAllTransientState(t *testing.T) {
+	root := t.TempDir()
+	devRoot := filepath.Join(t.TempDir(), "state", "..", "dev")
+	t.Setenv("NETPROXY_DEV_ROOT", devRoot)
+	layout := New(root)
+	wantRoot := filepath.Clean(devRoot)
+	for _, path := range []struct {
+		got  string
+		name string
+	}{
+		{layout.DevRoot(), ""},
+		{layout.ServiceState(), "service.json"},
+		{layout.WorkerPID(), "worker.pid"},
+		{layout.ProgressDir(), "subscriptions"},
+		{layout.DelayDir(), "delay"},
+		{layout.WiFiState(), "wifi_state"},
+		{layout.TelemetryLock(), "telemetry.lock.flock"},
+	} {
+		if want := filepath.Join(wantRoot, path.name); path.got != want {
+			t.Fatalf("瞬态路径未隔离: got %q, want %q", path.got, want)
+		}
+	}
+	if layout.Root() != root || layout.ModuleConfig() != filepath.Join(root, "config", "module.json") {
+		t.Fatal("状态目录覆盖改变了模块持久路径")
 	}
 }

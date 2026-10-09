@@ -136,6 +136,8 @@ src/module/service.sh
 
 本地可通过 `sh tests/verify.sh quick|webui|android|docs|full` 编排下列既有检查；它不自动暂存、提交或发布。WebUI 构建检查页面引用的本地资源是否完整，生成产物由 CI 打包，不纳入 Git。
 
+Host CLI 测试同时用 `NETPROXY_MODULE_DIR` 与 `NETPROXY_DEV_ROOT` 隔离持久目录和瞬态状态，避免写入系统 `/dev/netproxy` 或共享其他测试的服务锁；未设置后者时设备状态目录仍固定为 `/dev/netproxy`。
+
 ```sh
 # Go 原生组件
 (cd src/native/netproxy && go test ./... && go vet ./...)
