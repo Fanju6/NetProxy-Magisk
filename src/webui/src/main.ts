@@ -178,8 +178,9 @@ async function run(raw: string) {
   }
 
   const entry = entryTemplate.content.firstElementChild!.cloneNode(true) as HTMLElement
-  entry.querySelector('pre')!.textContent = '❯ ' + command
+  Object.assign(entry.querySelector('.entry-command')!, { textContent: '❯ ' + command, title: command })
   const state = entry.querySelector<HTMLElement>('.entry-state')!
+  const resultOutput = entry.querySelector<HTMLElement>('.entry-output')!
   output.append(entry)
   // 只在当前页面保留有限记录，不持久化可能含凭据的输入和输出。
   const entries = output.querySelectorAll('.entry')
@@ -220,13 +221,13 @@ async function run(raw: string) {
       if (['service', 'sub', 'node', 'catalog'].includes(args[0])) void refreshCompletions()
     }
     failed ||= code !== 0
-    append(entry, kind, out)
-    append(entry, 'e', err)
+    append(resultOutput, kind, out)
+    append(resultOutput, 'e', err)
     resultText = [out, err].filter(Boolean).join('\n')
   } catch (error) {
     failed = true
     resultText = `异常: ${error instanceof Error ? error.message : String(error)}`
-    append(entry, 'e', resultText)
+    append(resultOutput, 'e', resultText)
   } finally {
     lastResult = resultText
     copyButton.textContent = '复制结果'

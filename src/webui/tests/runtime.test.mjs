@@ -46,6 +46,30 @@ test('格式化只改变 JSON 排版，文本、错误和危险字符保持原�
   assert.deepEqual(JSON.parse(formatCtlOutput(raw)), JSON.parse(raw))
   assert.equal(formatCtlOutput('shell output\n'), 'shell output\n')
   assert.equal(formatCtlOutput('not { json'), 'not { json')
+  const longLines = `${'long command 中文 '.repeat(40)}\n\t${'x'.repeat(400)}\n\nend\n`
+  assert.equal(formatCtlOutput(longLines), longLines)
+})
+
+test('终端只在命令结果内横向滚动，标题和状态不随输出移动', () => {
+  const style = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8')
+  assert.match(style, /\.out pre \{[^}]*white-space: pre;/)
+  assert.doesNotMatch(style, /\.out(?: pre)? \{[^}]*(?:pre-wrap|break-all|anywhere)/)
+  assert.match(style, /\.out \{[^}]*overflow-x: hidden;[^}]*overflow-y: auto;[^}]*overscroll-behavior: contain;/)
+  assert.match(style, /\.entry-output \{[^}]*overflow-x: auto;[^}]*overscroll-behavior-x: contain;/)
+  assert.match(style, /\.entry-command \{[^}]*min-width: 0;[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;/)
+  assert.doesNotMatch(style, /\.entry(?:-heading)? \{[^}]*width: max-content;/)
+  assert.match(style, /\.transcript \{[^}]*min-width: 0;/)
+
+  const page = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
+  assert.match(page, /<div class="entry-output" role="region" aria-label="命令输出" tabindex="0"><\/div>/)
+  assert.match(page, /<\/section>\s*<div id="mascot"/)
+  assert.match(page, /<\/div>\s*<form id="command-form"/)
+
+  const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
+  assert.match(main, /textContent: '❯ ' \+ command, title: command/)
+  assert.match(main, /append\(resultOutput, kind, out\)/)
+  assert.match(main, /append\(resultOutput, 'e', err\)/)
+  assert.match(main, /append\(resultOutput, 'e', resultText\)/)
 })
 
 test('节点选择运行时失败保留持久化状态与原始错误', () => {
