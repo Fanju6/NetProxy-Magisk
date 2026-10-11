@@ -608,6 +608,7 @@
     <string name="routing_advanced">高级规则</string>
     <string name="routing_advanced_hint">通过 JSON 编辑组合条件</string>
     <string name="routing_match">匹配方式</string>
+    <string name="routing_type">规则类型</string>
     <string name="routing_values">每行一个匹配值</string>
     <string name="routing_domain_suffix">域名及子域名</string>
     <string name="routing_domain">完整域名</string>

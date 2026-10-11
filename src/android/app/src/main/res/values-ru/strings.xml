@@ -578,6 +578,7 @@
     <string name="routing_advanced">Сложное правило</string>
     <string name="routing_advanced_hint">Изменение составных условий в JSON</string>
     <string name="routing_match">Условие совпадения</string>
+    <string name="routing_type">Тип правила</string>
     <string name="routing_values">Одно значение на строку</string>
     <string name="routing_domain_suffix">Домен и поддомены</string>
     <string name="routing_domain">Точный домен</string>

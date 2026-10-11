@@ -578,6 +578,7 @@
     <string name="routing_advanced">Advanced rule</string>
     <string name="routing_advanced_hint">Edit combined conditions in JSON</string>
     <string name="routing_match">Match by</string>
+    <string name="routing_type">Rule type</string>
     <string name="routing_values">One value per line</string>
     <string name="routing_domain_suffix">Domain and subdomains</string>
     <string name="routing_domain">Exact domain</string>
