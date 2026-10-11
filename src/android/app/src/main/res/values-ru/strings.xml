@@ -590,6 +590,7 @@
     <string name="routing_ip_cidr">IP-адрес или подсеть</string>
     <string name="routing_port">Порт назначения</string>
     <string name="routing_port_range">Диапазон портов назначения</string>
+    <string name="routing_package_name">Имя пакета Android</string>
     <string name="routing_domain_suffix_hint">example.com соответствует этому домену и всем его поддоменам. Не вводите URL.</string>
     <string name="routing_domain_hint">www.example.com соответствует только этому домену. Не вводите URL.</string>
     <string name="routing_domain_keyword_hint">example соответствует доменам, содержащим этот текст.</string>
@@ -597,10 +598,12 @@
     <string name="routing_ip_cidr_hint">Например, 192.0.2.1, 192.0.2.0/24 или 2001:db8::/32.</string>
     <string name="routing_port_hint">Например, 443. Допустимые порты: 1–65535.</string>
     <string name="routing_port_range_hint">Например, 8000:9000 соответствует портам от 8000 до 9000 включительно.</string>
+    <string name="routing_package_name_hint">Например, com.android.chrome. По одному полному имени пакета на строку, без ID пользователя.</string>
     <string name="routing_error_empty">Введите хотя бы одно значение.</string>
     <string name="routing_error_domain">Введите домен без схемы URL, пути и порта.</string>
     <string name="routing_error_port">Введите номера портов от 1 до 65535.</string>
     <string name="routing_error_port_range">Используйте начало:конец, от 1 до 65535. Начало не должно превышать конец.</string>
+    <string name="routing_error_package_name">Введите полное имя пакета, например com.android.chrome, без ID пользователя, пробелов и URL.</string>
     <string name="routing_invalid_document">Этот набор нельзя изменить в форме. Проверьте version и rules в редакторе JSON.</string>
     <string name="routing_reload_draft">Отбросить черновик и перечитать</string>
 </resources>

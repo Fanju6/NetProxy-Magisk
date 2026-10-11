@@ -52,6 +52,9 @@ internal data class RoutingRulesState(
     val isEmpty: Boolean get() = files.values.all { it.document?.rules?.isEmpty() == true && !it.requiresReload && it.error.isEmpty() }
     val canAdd: Boolean get() = LocalRuleSet.entries.any(::editable)
 
+    fun showPageError(target: LocalRuleSet): Boolean = target != draft?.target && target != deleting?.target &&
+        files.getValue(target).let { it.error.isNotEmpty() || it.requiresReload }
+
     fun editable(target: LocalRuleSet): Boolean = files.getValue(target).let {
         it.document != null && !isLoading && !isSaving && !it.requiresReload
     }

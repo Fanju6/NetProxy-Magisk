@@ -590,6 +590,7 @@
     <string name="routing_ip_cidr">IP address or subnet</string>
     <string name="routing_port">Destination port</string>
     <string name="routing_port_range">Destination port range</string>
+    <string name="routing_package_name">Android package name</string>
     <string name="routing_domain_suffix_hint">example.com matches example.com and its subdomains. Do not enter a URL.</string>
     <string name="routing_domain_hint">www.example.com matches only this domain. Do not enter a URL.</string>
     <string name="routing_domain_keyword_hint">example matches domains containing this text.</string>
@@ -597,10 +598,12 @@
     <string name="routing_ip_cidr_hint">For example, 192.0.2.1, 192.0.2.0/24 or 2001:db8::/32.</string>
     <string name="routing_port_hint">For example, 443. Valid ports are 1–65535.</string>
     <string name="routing_port_range_hint">For example, 8000:9000 matches ports 8000 through 9000.</string>
+    <string name="routing_package_name_hint">For example, com.android.chrome. One full package name per line, without a user ID.</string>
     <string name="routing_error_empty">Enter at least one value.</string>
     <string name="routing_error_domain">Enter a domain without a URL scheme, path or port.</string>
     <string name="routing_error_port">Enter port numbers from 1 to 65535.</string>
     <string name="routing_error_port_range">Use start:end, with ports from 1 to 65535 and start no greater than end.</string>
+    <string name="routing_error_package_name">Enter a full package name, such as com.android.chrome, without a user ID, spaces or a URL.</string>
     <string name="routing_invalid_document">This rule set cannot be edited as a form. Check its version and rules in the JSON editor.</string>
     <string name="routing_reload_draft">Discard draft and reload</string>
 </resources>

@@ -153,8 +153,7 @@ internal fun RoutingRulesScreen(
             overscrollEffect = null,
         ) {
             LocalRuleSet.entries.forEach { target ->
-                val file = state.files.getValue(target)
-                if (file.error.isNotEmpty() || file.requiresReload) item("error:${target.tag}") {
+                if (state.showPageError(target)) item("error:${target.tag}") {
                     RuleFileError(target, state, reload = { viewModel.refresh(discardDraft = true) }, rawEdit = rawEdit)
                 }
             }
@@ -303,6 +302,7 @@ private fun RuleField.title(): Int = when (this) {
     RuleField.IpCidr -> R.string.routing_ip_cidr
     RuleField.Port -> R.string.routing_port
     RuleField.PortRange -> R.string.routing_port_range
+    RuleField.PackageName -> R.string.routing_package_name
 }
 
 private fun RuleField.hint(): Int = when (this) {
@@ -313,6 +313,7 @@ private fun RuleField.hint(): Int = when (this) {
     RuleField.IpCidr -> R.string.routing_ip_cidr_hint
     RuleField.Port -> R.string.routing_port_hint
     RuleField.PortRange -> R.string.routing_port_range_hint
+    RuleField.PackageName -> R.string.routing_package_name_hint
 }
 
 private fun RuleInputError.message(): Int = when (this) {
@@ -320,4 +321,5 @@ private fun RuleInputError.message(): Int = when (this) {
     RuleInputError.Domain -> R.string.routing_error_domain
     RuleInputError.Port -> R.string.routing_error_port
     RuleInputError.PortRange -> R.string.routing_error_port_range
+    RuleInputError.PackageName -> R.string.routing_error_package_name
 }

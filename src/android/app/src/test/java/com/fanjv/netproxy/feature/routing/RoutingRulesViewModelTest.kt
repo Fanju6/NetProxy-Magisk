@@ -312,6 +312,45 @@ class RoutingRulesViewModelTest {
         assertNull(vm.saved().draft)
     }
 
+    @Test fun saveErrorBelongsToActiveDialogAndReturnsToPageAfterDismissal() = runBlocking {
+        val transport = Transport()
+        val vm = model(this, transport)
+        vm.refresh()
+        vm.loaded()
+        vm.add()
+        vm.selectTarget(LocalRuleSet.Direct)
+        vm.updateDraft(RuleField.IpCidr, "192.168.10.0/24")
+        transport.applyError = NetProxyCtlException("command.failed", "reload failed")
+        vm.save()
+        val failed = vm.saved()
+        assertEquals("reload failed", failed.file(LocalRuleSet.Direct).error)
+        assertFalse(failed.showPageError(LocalRuleSet.Direct))
+        vm.dismiss()
+        assertTrue(vm.state.value.showPageError(LocalRuleSet.Direct))
+        vm.requestDelete(RuleIdentity(LocalRuleSet.Direct, 0))
+        vm.delete()
+        assertFalse(vm.saved().showPageError(LocalRuleSet.Direct))
+        vm.dismiss()
+        assertTrue(vm.state.value.showPageError(LocalRuleSet.Direct))
+    }
+
+    @Test fun packageRulesSaveThroughExistingRevisionCheckedConfigurationEntry() = runBlocking {
+        val transport = Transport()
+        val vm = model(this, transport)
+        vm.refresh()
+        vm.loaded()
+        vm.add()
+        vm.selectTarget(LocalRuleSet.Direct)
+        vm.updateDraft(RuleField.PackageName, "com.android.chrome\ncom.example.app")
+        vm.save()
+        val saved = vm.saved()
+        assertNull(saved.draft)
+        val rule = saved.file(LocalRuleSet.Direct).document!!.rules.last().simpleRule()!!
+        assertEquals(RuleField.PackageName, rule.field)
+        assertEquals(listOf("com.android.chrome", "com.example.app"), rule.values)
+        assertEquals(listOf("config", "apply", "--revision", "read-revision", LocalRuleSet.Direct.target), transport.calls.last().take(5))
+    }
+
     @Test fun nonConflictFailureWithChangedRevisionCannotRetryWithNewRevision() = runBlocking {
         val transport = Transport()
         val vm = model(this, transport)

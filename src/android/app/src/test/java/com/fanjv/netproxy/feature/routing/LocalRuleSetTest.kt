@@ -4,6 +4,7 @@ import com.fanjv.netproxy.feature.routing.model.LocalRuleDocument
 import com.fanjv.netproxy.feature.routing.model.LocalRuleSet
 import com.fanjv.netproxy.feature.routing.model.RuleField
 import com.fanjv.netproxy.feature.routing.model.RuleInputError
+import com.fanjv.netproxy.feature.routing.model.SimpleRule
 import com.fanjv.netproxy.feature.routing.model.simpleRule
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -55,6 +56,26 @@ class LocalRuleSetTest {
         assertEquals(listOf("^a{1,3}\\.example$", "^b\\.example$"), RuleField.DomainRegex.values(regex))
         assertEquals(listOf("example.com", "second.example"), RuleField.DomainSuffix.values(" example.com\r\n\nsecond.example\nexample.com "))
         assertEquals(JsonArray(listOf(JsonPrimitive(443), JsonPrimitive(8443))), RuleField.Port.rule("443\n8443")["port"])
+    }
+
+    @Test fun ipAndPackageRulesRoundTripWithoutChangingTheirMatchFields() {
+        for ((field, input) in listOf(
+            RuleField.IpCidr to "192.168.10.0/24\n2001:db8::/32",
+            RuleField.PackageName to "com.android.chrome\nandroid\ncom.example.app_2",
+        )) {
+            assertNull(field.inputError(input))
+            val rule = field.rule(input)
+            assertEquals(setOf(field.key), rule.keys)
+            assertEquals(SimpleRule(field, input.lines()), rule.simpleRule())
+            val document = LocalRuleDocument.parse("""{"version":1,"rules":[]}""")
+                .replace(null, rule)
+            assertEquals(document, LocalRuleDocument.parse(document.content()))
+        }
+        for (input in listOf("0:com.android.chrome", "com.example app", "https://example.com", "com..example", "com.2example", ".com.example")) {
+            assertEquals(RuleInputError.PackageName, RuleField.PackageName.inputError(input))
+        }
+        assertEquals(RuleInputError.Empty, RuleField.PackageName.inputError(""))
+        assertThrows(IllegalArgumentException::class.java) { RuleField.PackageName.rule("0:com.android.chrome") }
     }
 
     @Test fun invalidInputCannotBecomeAnUnconditionalRule() {

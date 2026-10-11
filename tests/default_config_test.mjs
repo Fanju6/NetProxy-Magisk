@@ -20,7 +20,7 @@ test('模块设置只有 module.json 默认文件，字段使用 JSON 原生类�
   })
 })
 
-test('默认配置仅保留部署、运行时生成和模式命名的上游差异', () => {
+test('默认配置仅保留部署、运行时生成、模式命名与原生 DNS 响应匹配差异', () => {
   const expected = structuredClone(upstream)
   expected.log.output = 'stderr'
   expected.experimental.cache_file.path = '/data/adb/modules/netproxy/config/singbox/cache.db'
@@ -46,6 +46,14 @@ test('默认配置仅保留部署、运行时生成和模式命名的上游差�
   }
   renameModes(expected.dns.rules)
   renameModes(expected.route.rules)
+  const matchLocalResponses = rules => {
+    for (const rule of rules) {
+      if (list(rule.rule_set).some(tag => ['proxy', 'direct', 'block'].includes(tag))) rule.match_response = true
+      if (rule.rules) matchLocalResponses(rule.rules)
+    }
+  }
+  matchLocalResponses(expected.dns.rules)
+  expected.dns.rules.splice(2, 0, { action: 'evaluate', server: 'dns-proxy' })
   expected.route.rules.push({ clash_mode: 'Rule', action: 'route', outbound: expected.route.final })
   const directIndex = expected.route.rules.findIndex(rule => rule.clash_mode === 'Direct')
   expected.route.rules.unshift(...expected.route.rules.splice(directIndex, 1))

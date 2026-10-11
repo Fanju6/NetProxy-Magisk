@@ -620,6 +620,7 @@
     <string name="routing_ip_cidr">IP 地址或网段</string>
     <string name="routing_port">目标端口</string>
     <string name="routing_port_range">目标端口范围</string>
+    <string name="routing_package_name">Android 包名</string>
     <string name="routing_domain_suffix_hint">example.com 匹配该域名及其所有子域名，不需要填写网址。</string>
     <string name="routing_domain_hint">www.example.com 仅匹配这个域名，不需要填写网址。</string>
     <string name="routing_domain_keyword_hint">example 匹配域名中包含这段文字的目标。</string>
@@ -627,10 +628,12 @@
     <string name="routing_ip_cidr_hint">例如 192.0.2.1、192.0.2.0/24 或 2001:db8::/32。</string>
     <string name="routing_port_hint">例如 443，端口范围为 1–65535。</string>
     <string name="routing_port_range_hint">例如 8000:9000，匹配 8000 至 9000 的全部端口。</string>
+    <string name="routing_package_name_hint">例如 com.android.chrome，每行填写一个完整包名，不需要用户 ID。</string>
     <string name="routing_error_empty">请至少填写一个匹配值。</string>
     <string name="routing_error_domain">请填写域名，不要包含网址前缀、路径或端口。</string>
     <string name="routing_error_port">请填写 1 至 65535 的端口数字。</string>
     <string name="routing_error_port_range">请按 起始端口:结束端口 填写，范围为 1 至 65535，起始值不能大于结束值。</string>
+    <string name="routing_error_package_name">请填写完整包名，例如 com.android.chrome，不要包含用户 ID、空格或网址。</string>
     <string name="routing_invalid_document">该规则集暂时无法使用表单编辑，请在 JSON 编辑器中检查 version 和 rules。</string>
     <string name="routing_reload_draft">丢弃草稿并重新加载</string>
 </resources>

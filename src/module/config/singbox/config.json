@@ -106,7 +106,9 @@
     "rules": [
       { "clash_mode": "Proxy", "action": "route", "server": "dns-proxy" },
       { "clash_mode": "Direct", "action": "route", "server": "dns-direct" },
+      { "action": "evaluate", "server": "dns-proxy" },
       {
+        "match_response": true,
         "rule_set": [
           "direct",
           "geosite/apple-cn"
@@ -115,6 +117,7 @@
         "server": "dns-direct"
       },
       {
+        "match_response": true,
         "rule_set": [
           "proxy"
         ],
@@ -126,7 +129,7 @@
         "mode": "and",
         "rules": [
           { "clash_mode": "RuleAllowAds", "invert": true },
-          { "rule_set": ["block", "Ads_AWAvenue", "geosite/category-ads-all"] }
+          { "match_response": true, "rule_set": ["block", "Ads_AWAvenue", "geosite/category-ads-all"] }
         ],
         "action": "reject"
       },

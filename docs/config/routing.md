@@ -37,6 +37,8 @@ NetProxy 的分流行为由四层共同决定：
 
 在管理器「设置 → 路由规则」查看全部本地匹配规则，卡片标明代理、直连或拦截。点击右上角「+」，选择规则类型与匹配条件后保存。已有规则保留所属规则集；多条件与高级规则使用 JSON 编辑器。
 
+「Android 包名」填写完整包名，例如 `com.android.chrome`，每行一个，不加用户 ID。路由只处理已经被入站接管的流量；需要按 Android 用户控制接管范围时使用「应用代理」。
+
 希望按地区和流媒体、AI、社交等业务单独选择出口时，可以阅读[策略分组配置教程](/config/policy-groups)，从零建立地区选择器、业务选择器和对应路由规则。
 
 ## eBPF 提前绕过
@@ -69,6 +71,8 @@ eBPF 的 `local.dns_mode` 与 `shared.dns_mode` 分别控制两条数据路径�
 本机默认 `respect_policy`，共享默认 `hijack`。TUN 使用自己的 `dns_mode`：默认 `hijack`，也有 `disabled` 与高级 `native`；`dns_address` 默认由上游推导，不能把 native 当作 Android 系统全局 DNS 设置。
 
 sing-box 侧 DNS 服务器、域名解析策略和 DNS 路由位于 `config/singbox/config.json` 的 `dns` 分区。默认 DNS A/AAAA 查询使用真实的 `dns-proxy` 服务器组，不使用 FakeIP 地址池。DNS 最终出站由 DNS 配置和核心实际模式共同决定；若将兜底 DNS 设置为直连，解析请求可能不经过代理，这是可预期的配置取舍，不等同于核心故障。
+
+本地规则集可同时包含域名和 IP。默认配置使用 `evaluate` 获取代理 DNS 响应，再以 `match_response` 匹配这些规则集，不使用旧式 DNS 地址过滤。规则模式下，直连 DNS 分流前可能先产生一次代理 DNS 查询；命中 Proxy 或 Direct 出站模式时直接使用对应 DNS。
 
 默认规则模式下，`geosite/category-ai-!cn`（境外 AI）与 `geosite/google` 规则集在中国域名分流前匹配，DNS 查询与连接均走代理。`geosite/cn` 域名使用直连 DNS，随后匹配的 `geosite/geolocation-!cn` 域名使用代理 DNS；未命中规则的查询仍以 `dns-proxy` 兜底。自定义直连、代理和广告规则保持更高的匹配优先级。
 

@@ -15,7 +15,8 @@ internal enum class LocalRuleSet(val tag: String) {
 
 internal enum class RuleField(val key: String) {
     DomainSuffix("domain_suffix"), Domain("domain"), DomainKeyword("domain_keyword"),
-    DomainRegex("domain_regex"), IpCidr("ip_cidr"), Port("port"), PortRange("port_range");
+    DomainRegex("domain_regex"), IpCidr("ip_cidr"), Port("port"), PortRange("port_range"),
+    PackageName("package_name");
 
     fun values(text: String): List<String> = text.lines().map(String::trim).filter(String::isNotEmpty).distinct()
 
@@ -33,6 +34,7 @@ internal enum class RuleField(val key: String) {
             this in setOf(Domain, DomainSuffix) && values.any { value ->
                 value.any(Char::isWhitespace) || value.any { it in "/:@" }
             } -> RuleInputError.Domain
+            this == PackageName && values.any { !packageName.matches(it) } -> RuleInputError.PackageName
             else -> null
         }
     }
@@ -43,9 +45,13 @@ internal enum class RuleField(val key: String) {
             if (this == Port) JsonPrimitive(it.toInt()) else JsonPrimitive(it)
         })))
     }
+
+    companion object {
+        private val packageName = Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)*")
+    }
 }
 
-internal enum class RuleInputError { Empty, Domain, Port, PortRange }
+internal enum class RuleInputError { Empty, Domain, Port, PortRange, PackageName }
 internal data class SimpleRule(val field: RuleField, val values: List<String>)
 
 internal fun JsonElement.simpleRule(): SimpleRule? {

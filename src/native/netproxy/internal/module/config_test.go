@@ -16,6 +16,7 @@ func TestValidateLocalRuleSetUsesCoreMatchers(t *testing.T) {
 	}{
 		{"empty", `{"version":1,"rules":[]}`, ""},
 		{"common", `{"version":1,"rules":[{"domain_suffix":["example.com"]},{"ip_cidr":["192.0.2.1","2001:db8::/32"]},{"port":[443]},{"port_range":["8000:9000"]}]}`, ""},
+		{"package", `{"version":1,"rules":[{"package_name":["com.android.chrome","android"]}]}`, ""},
 		{"logical", `{"version":5,"rules":[{"type":"logical","mode":"and","rules":[{"domain_regex":["^example\\.com$"]},{"network":"tcp"}]}]}`, ""},
 		{"invalid-regex", `{"version":1,"rules":[{"domain_regex":["["]}]}`, "domain_regex"},
 		{"invalid-cidr", `{"version":1,"rules":[{"ip_cidr":["192.0.2.0/99"]}]}`, "规则集"},

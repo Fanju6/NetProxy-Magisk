@@ -47,6 +47,86 @@ const targetCoreStaticConfig = `{
   }
 }`
 
+func TestDefaultDNSTargetCoreWithLocalRoutingRules(t *testing.T) {
+	core := targetCoreBinary(t)
+	content := targetCoreRead(t, filepath.Join("..", "..", "..", "..", "module", "config", "singbox", "config.json"))
+	for _, tag := range []string{"proxy", "direct", "block"} {
+		for _, rule := range []string{
+			`{"ip_cidr":["192.168.10.0/24","2001:db8::/32"]}`,
+			`{"domain_suffix":["example.com"]}`,
+			`{"package_name":["com.android.chrome"]}`,
+			`{"domain_suffix":["example.com"],"ip_cidr":["192.168.10.0/24"]}`,
+		} {
+			t.Run(tag+"/"+rule, func(t *testing.T) {
+				var config map[string]jsontext.Value
+				if err := json.Unmarshal(content, &config); err != nil {
+					t.Fatal(err)
+				}
+				var route option.RouteOptions
+				if err := json.Unmarshal(config["route"], &route); err != nil {
+					t.Fatal(err)
+				}
+				directory := t.TempDir()
+				var ruleSets []map[string]any
+				for _, set := range route.RuleSet {
+					for _, name := range set.Tag {
+						entry := map[string]any{"type": "inline", "tag": name, "rules": []any{map[string]string{"domain": "example.invalid"}}}
+						if slices.Contains([]string{"proxy", "direct", "block"}, name) {
+							path := filepath.Join(directory, name+".json")
+							rules := `{"version":1,"rules":[]}`
+							if name == tag {
+								rules = `{"version":1,"rules":[` + rule + `]}`
+							}
+							targetCoreWrite(t, path, []byte(rules))
+							entry = map[string]any{"type": "local", "tag": name, "format": "source", "path": path}
+						}
+						ruleSets = append(ruleSets, entry)
+					}
+				}
+				// 保留完整默认 DNS，只移除设备入站并用匿名本地规则替代远程下载。
+				document := map[string]any{
+					"dns": config["dns"], "log": map[string]any{"output": "stderr", "level": "info"},
+					"route": map[string]any{"rule_set": ruleSets, "default_domain_resolver": route.DefaultDomainResolver},
+					"outbounds": []map[string]any{
+						{"type": "socks", "tag": "Proxy", "server": "127.0.0.1", "server_port": 1},
+						{"type": "direct", "tag": "direct"},
+					},
+				}
+				encoded, err := json.Marshal(document, json.Deterministic(true))
+				if err != nil {
+					t.Fatal(err)
+				}
+				path := filepath.Join(directory, "config.json")
+				targetCoreWrite(t, path, encoded)
+				log, err := os.Create(filepath.Join(directory, "core.log"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer log.Close()
+				command := exec.Command(core, "run", "--disable-color", "-c", path)
+				command.Stdout, command.Stderr = log, log
+				if err := command.Start(); err != nil {
+					t.Fatal(err)
+				}
+				done := make(chan error, 1)
+				go func() { done <- command.Wait() }()
+				defer func() { _ = command.Process.Kill(); <-done }()
+				deadline := time.Now().Add(10 * time.Second)
+				for {
+					output := targetCoreRead(t, log.Name())
+					if bytes.Contains(output, []byte("FATAL")) || bytes.Contains(output, []byte("deprecated")) || time.Now().After(deadline) {
+						t.Fatalf("默认 DNS 与本地规则不兼容: %s", output)
+					}
+					if bytes.Contains(output, []byte("sing-box started")) {
+						break
+					}
+					time.Sleep(20 * time.Millisecond)
+				}
+			})
+		}
+	}
+}
+
 func TestTargetCoreStderrLogCapturesStartupReloadAndFailure(t *testing.T) {
 	core := targetCoreBinary(t)
 	options := NewOptions(t.TempDir())
