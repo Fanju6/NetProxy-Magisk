@@ -24,8 +24,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -35,7 +33,7 @@ import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.LocalModuleAvailability
 import com.fanjv.netproxy.core.ui.component.CardItem
-import com.fanjv.netproxy.core.ui.component.groupedCardItems
+import com.fanjv.netproxy.core.ui.component.groupedCardSection
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.Route
@@ -60,8 +58,6 @@ internal fun SettingsScreen(
     val settings by viewModel.state.collectAsStateWithLifecycle()
     val available = LocalModuleAvailability.current?.available == true
     val navigator = LocalNavigator.current
-    val context = LocalContext.current
-    val resources = LocalResources.current
 
     val scrollBehavior = MiuixScrollBehavior()
     val backdrop = rememberBlurBackdrop()
@@ -97,9 +93,9 @@ internal fun SettingsScreen(
                 contentPadding = innerPadding,
                 overscrollEffect = null,
             ) {
-                groupedCardItems(
+                groupedCardSection(
                     keyPrefix = "settings_entries",
-                    outerTopPadding = 12.dp,
+                    title = { stringResource(R.string.settings_section_proxy) },
                     items = listOf(
                         CardItem("inbound") {
                             ArrowPreference(
@@ -160,11 +156,11 @@ internal fun SettingsScreen(
                     ),
                 )
 
-                if (available) groupedCardItems(
-                    keyPrefix = "settings_module",
-                    outerTopPadding = 12.dp,
-                    items = listOf(
-                        CardItem("autoStart") {
+                groupedCardSection(
+                    keyPrefix = "settings_general",
+                    title = { stringResource(R.string.settings_section_general) },
+                    items = buildList {
+                        if (available) add(CardItem("autoStart") {
                             SwitchPreference(
                                 title = stringResource(R.string.auto_start),
                                 summary = stringResource(R.string.auto_start_summary),
@@ -180,15 +176,8 @@ internal fun SettingsScreen(
                                 enabled = settings.hasLoaded,
                                 onCheckedChange = { viewModel.setAutoStartEnabled(it) }
                             )
-                        },
-                    ),
-                )
-
-                groupedCardItems(
-                    keyPrefix = "settings_theme",
-                    outerTopPadding = 12.dp,
-                    items = listOf(
-                        CardItem("theme") {
+                        })
+                        add(CardItem("theme") {
                             ArrowPreference(
                                 title = stringResource(R.string.settings_theme),
                                 summary = stringResource(R.string.settings_theme_summary),
@@ -202,13 +191,13 @@ internal fun SettingsScreen(
                                 },
                                 onClick = { navigator.push(Route.ThemeSettings) }
                             )
-                        },
-                    ),
+                        })
+                    },
                 )
 
-                groupedCardItems(
+                groupedCardSection(
                     keyPrefix = "settings_support",
-                    outerTopPadding = 12.dp,
+                    title = { stringResource(R.string.settings_section_support) },
                     outerBottomPadding = 12.dp,
                     items = listOf(
                         CardItem("logs") {

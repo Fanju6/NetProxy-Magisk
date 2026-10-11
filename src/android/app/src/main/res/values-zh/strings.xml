@@ -220,6 +220,9 @@
     <string name="app_show_package_name">显示包名</string>
 
     <!-- Settings: Main -->
+    <string name="settings_section_proxy">代理配置</string>
+    <string name="settings_section_general">通用设置</string>
+    <string name="settings_section_support">帮助与关于</string>
     <string name="inbound_settings">入站设置</string>
     <string name="inbound_settings_summary">配置透明代理接管与分应用策略</string>
     <string name="network_matching">网络匹配</string>

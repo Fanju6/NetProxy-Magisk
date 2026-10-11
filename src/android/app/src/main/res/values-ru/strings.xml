@@ -204,6 +204,9 @@
     <string name="app_selected_first">Выбранные в начале</string>
     <string name="app_reverse_sort">Обратный порядок</string>
     <string name="app_show_package_name">Показывать имена пакетов</string>
+    <string name="settings_section_proxy">Настройки прокси</string>
+    <string name="settings_section_general">Общие настройки</string>
+    <string name="settings_section_support">Помощь и информация</string>
     <string name="inbound_settings">Настройки входящих подключений</string>
     <string name="inbound_settings_summary">Прозрачное проксирование и фильтрация приложений</string>
     <string name="network_matching">Сопоставление сетей</string>

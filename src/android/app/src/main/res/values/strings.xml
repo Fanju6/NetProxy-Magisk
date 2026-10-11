@@ -204,6 +204,9 @@
     <string name="app_selected_first">Selected first</string>
     <string name="app_reverse_sort">Reverse order</string>
     <string name="app_show_package_name">Show package names</string>
+    <string name="settings_section_proxy">Proxy configuration</string>
+    <string name="settings_section_general">General settings</string>
+    <string name="settings_section_support">Help and about</string>
     <string name="inbound_settings">Inbound settings</string>
     <string name="inbound_settings_summary">Configure transparent interception and app filtering</string>
     <string name="network_matching">Network matching</string>
