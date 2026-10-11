@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: write
-  actions: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -71,6 +70,7 @@ jobs:
           sparse-checkout: |
             .github/scripts
             docs
+            .github/kernelsu
 
       - name: 配置发布脚本 Node
         uses: actions/setup-node@v7
@@ -81,6 +81,21 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: module-package
+
+      - name: 校验模块包与发布身份
+        env:
+          TAG: ${{ github.ref_name }}
+        run: node .github/scripts/prepare-kernelsu.mjs check "$TAG" "$MODULE_NAME" "$COMMIT_COUNT"
+
+      - name: KernelSU 分发预检
+        uses: KernelSU-Modules/tools/actions/module-release@ca1187c92135b3c31e48d37e008d61153120a08b
+        with:
+          zip: ${{ env.MODULE_NAME }}
+          tag: ${{ github.ref_name }}
+          repository: Fanju6/NetProxy-Releases
+          token: ${{ secrets.DIST_REPO_TOKEN }}
+          require-immutable: true
+          dry-run: true
 
       - name: 生成模块自更新清单
         env:
@@ -114,6 +129,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 发布通知到 Telegram
+        continue-on-error: true
         uses: cbrgm/telegram-github-action@v1
         with:
           token: ${{ secrets.TG_BOT_TOKEN }}
@@ -130,13 +146,32 @@ jobs:
             **直接下载:**
             [模块包](${{ github.server_url }}/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ env.MODULE_NAME }})
 
-      - name: 触发同步到 KernelSU 仓库
-        if: github.ref_type == 'tag'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # release:published 由 GITHUB_TOKEN 创建，受防递归限制不会自动触发 sync 工作流；
-        # 故在此显式 dispatch（workflow_dispatch 是该限制的官方例外，GITHUB_TOKEN 可触发）。
-        run: gh workflow run sync-kernelsu.yml
+  kernelsu:
+    name: 分发至 KernelSU Modules
+    needs: release
+    uses: ./.github/workflows/publish-kernelsu.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets:
+      DIST_REPO_TOKEN: ${{ secrets.DIST_REPO_TOKEN }}
+
+  distribution-failure:
+    name: 通知独立分发失败
+    needs: [release, kernelsu]
+    if: always() && needs.release.result == 'success' && needs.kernelsu.result == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: 分发失败通知
+        uses: cbrgm/telegram-github-action@v1
+        with:
+          token: ${{ secrets.TG_BOT_TOKEN }}
+          to: ${{ secrets.TG_CHAT_ID }}
+          thread-id: 2275
+          message: |
+            主仓库 ${{ github.ref_name }} 已发布，KernelSU 分发失败。
+            请单独重试 KernelSU 正式版分发工作流，无需重新构建或发布主仓库。
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
   failure:
     name: 通知构建或发布失败

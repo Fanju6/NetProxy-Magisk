@@ -41,9 +41,17 @@ test('模块、WebUI 和测试按各自范围验证', () => {
 })
 
 test('工作流和公共构建输入变化执行所有产品范围验证', () => {
-  for (const path of ['.github/workflows/ci.yml', '.github/actions/build-module/action.yml']) {
+  for (const path of ['.github/workflows/ci.yml', '.github/actions/build-module/action.yml', '.github/workflows/publish-kernelsu.yml']) {
     assert.deepEqual(classifyChanges([path]), {
       module: true, core: true, webui: true, android: true, docs: false,
+    })
+  }
+})
+
+test('KernelSU 展示元数据执行契约验证，不触发 Android 或 WebUI 验证', () => {
+  for (const path of ['module.yaml', '.github/kernelsu/README.md', '.github/kernelsu/icon.png']) {
+    assert.deepEqual(classifyChanges([path]), {
+      module: true, core: true, webui: false, android: false, docs: false,
     })
   }
 })

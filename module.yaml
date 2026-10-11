@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/KernelSU-Modules/tools/main/schemas/module.schema.json
+schemaVersion: 1
+id: netproxy
+name: NetProxy
+summary: Android sing-box 透明代理模块，支持 eBPF、TUN、节点订阅和应用代理。
+description: .github/kernelsu/README.md
+homepage: https://netproxy.store
+support: https://github.com/Fanju6/NetProxy-Magisk/issues
+icon: .github/kernelsu/icon.png
+tags: [network, proxy]
+authors:
+  - name: Fanju
+    url: https://github.com/Fanju6
+starsRepository: Fanju6/NetProxy-Magisk
+compatibility:
+  architectures: [arm64-v8a]
+release:
+  assetPattern: "netproxy-*.zip"

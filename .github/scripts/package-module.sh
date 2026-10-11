@@ -18,7 +18,8 @@ test ! -e "$module"
 
 (
   cd "$module_dir"
-  7z a -tzip -mm=XZ -mx=9 "$module" . -x!NetProxy.apk
+  7z a -tzip -mm=XZ -mx=9 "$module" . -x!NetProxy.apk -x!module.prop
+  7z a -tzip -mx=0 "$module" module.prop
 )
 
 7z t "$module"

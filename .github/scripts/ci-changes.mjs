@@ -14,6 +14,7 @@ function isSharedBuildInput(path) {
     path === '.github/workflows/ci.yml' ||
     path === '.github/workflows/build-module.yml' ||
     path === '.github/workflows/release.yml' ||
+    path === '.github/workflows/publish-kernelsu.yml' ||
     path === '.github/workflows/update-resources.yml' ||
     path === '.github/workflows/verify.yml'
 }
@@ -36,7 +37,8 @@ export function classifyChanges(paths) {
   const inboundConfig = paths.some((path) => path.startsWith('src/module/config/inbound/'))
   const docs = paths.some((path) =>
     path.startsWith('docs/') || path === '.github/workflows/docs.yml')
-  const core = shared || moduleFiles || native || tests
+  const storeMetadata = paths.some((path) => path === 'module.yaml' || path.startsWith('.github/kernelsu/'))
+  const core = shared || moduleFiles || native || tests || storeMetadata
   const android = shared || native || androidSource || moduleConfig
   const webui = shared || webuiSource || inboundConfig
 

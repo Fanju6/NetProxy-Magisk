@@ -16,10 +16,13 @@ on:
       - '.github/workflows/ci.yml'
       - '.github/workflows/build-module.yml'
       - '.github/workflows/release.yml'
+      - '.github/workflows/publish-kernelsu.yml'
       - '.github/workflows/update-resources.yml'
       - '.github/workflows/verify.yml'
       - '.github/workflows/docs.yml'
       - '.gitattributes'
+      - '.github/kernelsu/**'
+      - 'module.yaml'
   workflow_dispatch:
 
 permissions:
@@ -82,6 +85,17 @@ jobs:
 
       - name: 执行核心验证
         run: sh tests/verify.sh quick
+
+      - name: 准备 KernelSU 校验 fixture
+        run: |
+          mkdir -p "$RUNNER_TEMP/module-fixture"
+          cp src/module/module.prop "$RUNNER_TEMP/module-fixture/module.prop"
+
+      - name: 验证 KernelSU 展示元数据
+        uses: KernelSU-Modules/tools/actions/module-release@ca1187c92135b3c31e48d37e008d61153120a08b
+        with:
+          module-dir: ${{ runner.temp }}/module-fixture
+          dry-run: true
 
   webui:
     name: 验证 WebUI 与生成产物

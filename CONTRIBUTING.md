@@ -75,6 +75,14 @@ JavaScript 脚本必须配备 `*.test.mjs`，在 `npm run check` 中执行。
 
 CI 的管理器任务与标准模块构建并行启动，按变更范围在同一次 Gradle 调用中执行 Android 单元测试、Lint 和 Release 构建，并启用构建缓存。管理器 APK 使用 GitHub Secrets 提供的固定密钥签名，发布阶段仅将其追加到标准包，不重复编译或压缩；该 APK 和签名材料不提交到仓库。Android 源码改动会同时触发模块重打包。CI 管理器版本带提交短哈希，不显示安装来源或签名警告；使用同一固定密钥的后续构建可以覆盖升级。构建需要 `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS` 和 `ANDROID_KEY_PASSWORD`，纯验证任务不需要签名材料。修改 Android 源码仍需在提交前完成本地构建；涉及 Root、模块命令、快捷设置磁贴、多用户与应用分身、Navigation 动画或 eBPF 时还需真机验证。
 
+## KernelSU 分发
+
+源码和 nightly 保留在本仓库；正式模块通过 [NetProxy-Releases](https://github.com/Fanju6/NetProxy-Releases) 的不可变 Release 提供给 KernelSU Modules。展示信息维护在根目录 `module.yaml`、`.github/kernelsu/README.md` 和图标中；官方发布 Action 只同步这些文件，不同步源码。
+
+正式 tag 的发布流程会先用 KernelSU 官方校验器检查完整模块包，随后发布主仓库，再把同一 ZIP 分发到独立仓库。独立分发失败时，在 Actions 中运行“KernelSU 正式版分发”，输入已发布 tag；默认只验证，关闭“只验证，不发布”才会发布。它不重新构建、不重复主仓库发布通知，已发布且摘要一致的版本可以安全重试；不一致时必须停止，不能覆盖不可变版本。
+
+`DIST_REPO_TOKEN` 使用仅授权分发仓库的 fine-grained PAT：Contents 读写，Administration 只读。`RESOURCE_UPDATE_TOKEN` 仅授权主仓库：Contents、Pull requests 读写。凭据保存在 GitHub Secrets，按有效期轮换，不写入源码。KernelSU Modules App 只需安装到分发仓库；首次正式分发后，由开发者门户提交收录或转移已有模块。
+
 ## Pull Request
 
 - 一次 PR 只处理一个清晰主题。

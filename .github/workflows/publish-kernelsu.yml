@@ -1,0 +1,78 @@
+name: KernelSU 正式版分发
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+    secrets:
+      DIST_REPO_TOKEN:
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 主仓库已发布的正式版本 tag
+        type: string
+        required: true
+      dry-run:
+        description: 只验证，不发布
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kernelsu-distribution-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: 分发已发布模块包，不重新构建
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 拉取对应版本的发布元数据
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts
+            .github/kernelsu
+
+      - name: 配置发布脚本 Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: 下载正式模块并确认来源与重试状态
+        id: source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DIST_REPO_TOKEN: ${{ secrets.DIST_REPO_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: node .github/scripts/prepare-kernelsu.mjs prepare "$TAG" "$RUNNER_TEMP/kernelsu"
+
+      - name: 校验并发布不可变版本
+        if: steps.source.outputs.already_published != 'true'
+        uses: KernelSU-Modules/tools/actions/module-release@ca1187c92135b3c31e48d37e008d61153120a08b
+        with:
+          zip: ${{ steps.source.outputs.zip }}
+          tag: ${{ inputs.tag }}
+          repository: Fanju6/NetProxy-Releases
+          token: ${{ secrets.DIST_REPO_TOKEN }}
+          release-notes-file: ${{ steps.source.outputs.notes }}
+          require-immutable: true
+          dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
+
+      - name: 确认分发摘要与不可变状态
+        if: steps.source.outputs.already_published == 'true' || github.event_name != 'workflow_dispatch' || !inputs.dry-run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DIST_REPO_TOKEN: ${{ secrets.DIST_REPO_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: node .github/scripts/prepare-kernelsu.mjs verify "$TAG"

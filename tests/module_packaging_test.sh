@@ -111,6 +111,13 @@ assert_contains "$RELEASE_WORKFLOW" 'releases/download/${TAG}/${MODULE_NAME}'
 assert_contains "$RELEASE_WORKFLOW" 'extract-release-notes.mjs'
 assert_contains "$RELEASE_WORKFLOW" 'body_path: ${{ runner.temp }}/release-notes.md'
 assert_contains "$RELEASE_WORKFLOW" '[模块包]'
+assert_contains "$RELEASE_WORKFLOW" 'dry-run: true'
+assert_contains "$RELEASE_WORKFLOW" 'uses: ./.github/workflows/publish-kernelsu.yml'
+assert_not_contains "$RELEASE_WORKFLOW" 'sync-kernelsu|actions: write'
+[ ! -e "$ROOT/module.json" ]
+[ ! -e "$ROOT/.github/workflows/sync-kernelsu.yml" ]
+assert_contains "$ROOT/module.yaml" 'id: netproxy'
+assert_contains "$ROOT/module.yaml" 'starsRepository: Fanju6/NetProxy-Magisk'
 assert_not_contains "$RELEASE_WORKFLOW" 'body_path:[[:space:]]*docs/changelog\.md'
 assert_not_contains "$RELEASE_WORKFLOW" 'full_name|lite_name|FULL_NAME|LITE_NAME'
 
@@ -185,6 +192,9 @@ cp "$TEMP/module/bin/netproxyctl" "$TEMP/module/NetProxy.apk"
 sh "$ROOT/.github/scripts/complete-module.sh" "$TEMP/output/module.zip" "$TEMP/module/NetProxy.apk" >> "$TEMP/package.log"
 7z l -slt "$TEMP/output/module.zip" | tr '\\' '/' > "$TEMP/module.list"
 assert_contains "$TEMP/module.list" 'Path = module.prop'
+[ "$(grep -c '^Path = module.prop$' "$TEMP/module.list")" -eq 1 ]
+7z l -slt "$TEMP/output/module.zip" module.prop > "$TEMP/prop.list"
+assert_contains "$TEMP/prop.list" 'Method = Store'
 assert_contains "$TEMP/module.list" 'Path = config/inbound/inbound.json'
 assert_not_contains "$TEMP/module.list" 'Path = config/ebpf/ebpf.conf'
 assert_contains "$TEMP/module.list" 'Path = runtime/.gitkeep'
