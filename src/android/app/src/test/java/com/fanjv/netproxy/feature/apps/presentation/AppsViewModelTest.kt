@@ -371,6 +371,13 @@ class AppsViewModelTest {
         assertSame(results, vm.state.value.orderedApps(results))
         assertFalse(vm.state.value.isFilteringApps)
         assertTrue(dispatcher.tasks.isEmpty())
+        for (enabled in listOf(false, true)) {
+            vm.setProxySettings(enabled)
+            assertEquals(enabled, vm.state.value.appProxyEnabled)
+            assertEquals(".example", vm.state.value.appSearchQuery)
+            assertSame(results, vm.state.value.searchResults)
+            assertTrue(dispatcher.tasks.isEmpty())
+        }
         assertEquals(0, transport.writes)
         assertEquals(1, transport.calls.size)
         assertEquals(".example", vm.state.value.appSearchQuery)

@@ -164,12 +164,6 @@ internal fun AppsScreen(
     LaunchedEffect(searchStatus.searchText) {
         viewModel.updateSearch(searchStatus.searchText)
     }
-    LaunchedEffect(apps.appProxyEnabled) {
-        if (!apps.appProxyEnabled) {
-            searchStatus.searchText = ""
-            searchStatus.current = SearchStatus.Status.COLLAPSED
-        }
-    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
@@ -251,7 +245,7 @@ internal fun AppsScreen(
                             },
                             bottomContent = {
                                 Column {
-                                    if (showAppControls) {
+                                    if (apps.hasLoadedApps) {
                                         Box(
                                             modifier = Modifier
                                                 .alpha(if (searchStatus.isCollapsed()) 1f else 0f)
@@ -287,12 +281,12 @@ internal fun AppsScreen(
                 }
             },
             popupHost = {
-                if (showAppControls) {
+                if (apps.hasLoadedApps) {
                     val searchResults = remember(
                         apps.searchResults, apps.proxiedApps, apps.appSelectedFirst, apps.appReverseSort
                     ) { apps.orderedApps(apps.searchResults) }
                     searchStatus.SearchPager(
-                        empty = apps.hasLoadedApps && !apps.isFilteringApps &&
+                        empty = apps.appProxyEnabled && !apps.isFilteringApps &&
                             apps.appSearchQuery.isNotBlank() && apps.searchResults.isEmpty(),
                         listState = searchListState,
                         searchBarTopPadding = dynamicTopPadding,
@@ -304,7 +298,7 @@ internal fun AppsScreen(
                                 onClick = viewModel::discardPolicyAndReload)
                         }
                         items(
-                            items = searchResults,
+                            items = if (apps.appProxyEnabled) searchResults else emptyList(),
                             key = AppInfoModel::id,
                             contentType = { "app_item" },
                         ) { app ->
