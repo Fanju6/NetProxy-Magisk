@@ -2,7 +2,7 @@
   "backend": "ebpf",
   "root_policy": "default",
   "app": {
-    "enabled": true,
+    "enabled": false,
     "mode": "blacklist",
     "proxy_apps": [],
     "bypass_apps": []

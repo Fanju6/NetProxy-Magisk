@@ -34,6 +34,11 @@ object AppIconCache {
     private fun cacheKey(userId: String, packageName: String, sizePx: Int) =
         "$userId:$packageName@$sizePx"
 
+    fun cachedIcon(packageName: String, userId: String, sizePx: Int): ImageBitmap? =
+        synchronized(cacheLock) {
+            lruCache[cacheKey(userId, packageName, sizePx.coerceAtLeast(1))]
+        }
+
     suspend fun loadIcon(
         context: Context,
         packageName: String,

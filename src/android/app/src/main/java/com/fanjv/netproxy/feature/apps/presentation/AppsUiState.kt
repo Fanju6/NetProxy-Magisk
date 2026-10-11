@@ -14,7 +14,7 @@ data class AppInfoModel(
 
 @Immutable
 data class AppsUiState(
-    val appProxyEnabled: Boolean = true,
+    val appProxyEnabled: Boolean = false,
     val appProxyMode: String = "blacklist",
     val proxyApps: Set<String> = emptySet(),
     val bypassApps: Set<String> = emptySet(),

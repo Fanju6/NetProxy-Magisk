@@ -124,7 +124,7 @@ test('mock 同步单文件模板、分区与真实后端状态边界', () => {
     assert.deepEqual(JSON.parse(result.data.content), { [section]: defaults[section] })
     assert.ok(result.data.revision)
   }
-  assert.deepEqual(run('app', 'list').data, { enabled: true, mode: 'blacklist', proxy_apps: '', bypass_apps: '' })
+  assert.deepEqual(run('app', 'list').data, { enabled: false, mode: 'blacklist', proxy_apps: '', bypass_apps: '' })
   assert.equal(run('config', 'read', 'ebpf').ok, false)
   assert.equal(run('config', 'read', 'runtime/ebpf.json').ok, false)
   assert.equal(run('tun', 'status').ok, false)

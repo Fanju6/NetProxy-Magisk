@@ -28,7 +28,7 @@ class AppsViewModelTest {
     @get:Rule val folder = TemporaryFolder()
 
     private class Transport : NetProxyCtlTransport {
-        @Volatile var config = AppProxyConfig(mode = "whitelist")
+        @Volatile var config = AppProxyConfig(enabled = true, mode = "whitelist")
         var revision = 0
         val calls = CopyOnWriteArrayList<List<String>>()
         var before: suspend (List<String>) -> Unit = {}
@@ -88,6 +88,26 @@ class AppsViewModelTest {
             state.first { !it.isSavingPolicy }
         } while (state.value.hasPendingPolicy && !state.value.requiresPolicyReload)
         !state.value.requiresPolicyReload && !state.value.hasPendingPolicy
+    }
+
+    @Test fun defaultPolicyIsOffAndLoadingPreservesSavedPolicy() = runBlocking {
+        assertFalse(AppProxyConfig().enabled)
+        assertFalse(AppsUiState().appProxyEnabled)
+        for (enabled in listOf(false, true)) {
+            val scope = CoroutineScope(coroutineContext + Job())
+            val transport = Transport().apply {
+                config = AppProxyConfig(enabled = enabled, mode = "whitelist",
+                    proxyApps = listOf("0:alpha.example"))
+            }
+            try {
+                val vm = model(scope, transport)
+                vm.load(); vm.loaded()
+                assertEquals(enabled, vm.state.value.appProxyEnabled)
+                assertEquals("whitelist", vm.state.value.appProxyMode)
+                assertEquals(setOf("0:alpha.example"), vm.state.value.proxyApps)
+                assertEquals(0, transport.writes)
+            } finally { scope.cancel() }
+        }
     }
 
     @Test fun leavingAndClearingPageDoesNotCancelPolicyCommit() = runBlocking {

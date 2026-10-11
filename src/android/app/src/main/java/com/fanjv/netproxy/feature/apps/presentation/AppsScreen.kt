@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -38,7 +39,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -100,12 +100,12 @@ fun AppIcon(
     val context = LocalContext.current
     val iconSizePx = with(LocalDensity.current) { 40.dp.roundToPx() }
     val iconRevision = AppIconCache.revision
-    var icon by remember(packageName, userId, iconSizePx, iconRevision) {
-        mutableStateOf<ImageBitmap?>(null)
+    var icon by remember(packageName, userId, iconSizePx) {
+        mutableStateOf(AppIconCache.cachedIcon(packageName, userId, iconSizePx))
     }
 
     LaunchedEffect(packageName, userId, iconSizePx, iconRevision) {
-        icon = AppIconCache.loadIcon(context, packageName, userId, iconSizePx)
+        AppIconCache.loadIcon(context, packageName, userId, iconSizePx)?.let { icon = it }
     }
 
     Box(
@@ -250,30 +250,35 @@ internal fun AppsScreen(
                                 }
                             },
                             bottomContent = {
-                                if (showAppControls) {
-                                    Box(
-                                        modifier = Modifier
-                                            .alpha(if (searchStatus.isCollapsed()) 1f else 0f)
-                                            .onGloballyPositioned { coordinates ->
-                                                with(density) {
-                                                    searchStatus.offsetY =
-                                                        coordinates.positionInWindow().y.toDp()
-                                                }
-                                            }
-                                            .then(
-                                                if (searchStatus.isCollapsed()) {
-                                                    Modifier.pointerInput(Unit) {
-                                                        detectTapGestures {
-                                                            searchStatus.current =
-                                                                SearchStatus.Status.EXPANDING
-                                                        }
+                                Column {
+                                    if (showAppControls) {
+                                        Box(
+                                            modifier = Modifier
+                                                .alpha(if (searchStatus.isCollapsed()) 1f else 0f)
+                                                .onGloballyPositioned { coordinates ->
+                                                    with(density) {
+                                                        searchStatus.offsetY =
+                                                            coordinates.positionInWindow().y.toDp()
                                                     }
-                                                } else {
-                                                    Modifier
                                                 }
-                                            )
-                                    ) {
-                                        SearchBarFake(searchStatus.label, dynamicTopPadding)
+                                                .then(
+                                                    if (searchStatus.isCollapsed()) {
+                                                        Modifier.pointerInput(Unit) {
+                                                            detectTapGestures {
+                                                                searchStatus.current =
+                                                                    SearchStatus.Status.EXPANDING
+                                                            }
+                                                        }
+                                                    } else {
+                                                        Modifier
+                                                    }
+                                                )
+                                        ) {
+                                            SearchBarFake(searchStatus.label, dynamicTopPadding)
+                                        }
+                                    }
+                                    if (apps.hasLoadedApps) {
+                                        AppProxyMode(apps, viewModel::setProxySettings)
                                     }
                                 }
                             }
@@ -291,6 +296,7 @@ internal fun AppsScreen(
                             apps.appSearchQuery.isNotBlank() && apps.searchResults.isEmpty(),
                         listState = searchListState,
                         searchBarTopPadding = dynamicTopPadding,
+                        headerContent = { AppProxyMode(apps, viewModel::setProxySettings) },
                     ) {
                         if (apps.error.isNotBlank() || apps.requiresPolicyReload) item("error") {
                             if (apps.error.isNotBlank()) Text(apps.error, Modifier.padding(14.dp), color = colorScheme.error)
@@ -383,42 +389,6 @@ internal fun AppsScreen(
                                     TextButton(stringResource(R.string.routing_reload_draft),
                                         onClick = viewModel::discardPolicyAndReload)
                                 }
-                                item {
-                                    Card(
-                                        modifier = Modifier
-                                            .padding(horizontal = 12.dp)
-                                            .padding(bottom = spacing)
-                                            .fillMaxWidth(),
-                                    ) {
-                                        val modes = listOf(
-                                            stringResource(R.string.proxy_mode_off),
-                                            stringResource(R.string.app_proxy_mode_blacklist),
-                                            stringResource(R.string.app_proxy_mode_whitelist)
-                                        )
-                                        val selectedIndex = if (!apps.appProxyEnabled) 0
-                                        else if (apps.appProxyMode == "blacklist") 1
-                                        else 2
-
-                                        OverlayDropdownPreference(
-                                            title = stringResource(R.string.app_proxy_mode),
-                                            items = modes,
-                                            selectedIndex = selectedIndex,
-                                            onSelectedIndexChange = { index ->
-                                                if (index == 0) {
-                                                    viewModel.setProxySettings(enabled = false)
-                                                } else {
-                                                    val mode =
-                                                        if (index == 1) "blacklist" else "whitelist"
-                                                    viewModel.setProxySettings(
-                                                        enabled = true,
-                                                        mode = mode
-                                                    )
-                                                }
-                                            }
-                                        )
-                                    }
-                                }
-
                                 if (apps.appProxyEnabled) {
                                     items(
                                         items = allApps,
@@ -443,6 +413,28 @@ internal fun AppsScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AppProxyMode(apps: AppsUiState, onChange: (Boolean, String?) -> Unit) {
+    Card(Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
+        OverlayDropdownPreference(
+            title = stringResource(R.string.app_proxy_mode),
+            items = listOf(
+                stringResource(R.string.proxy_mode_off),
+                stringResource(R.string.app_proxy_mode_blacklist),
+                stringResource(R.string.app_proxy_mode_whitelist)
+            ),
+            selectedIndex = if (!apps.appProxyEnabled) 0 else if (apps.appProxyMode == "blacklist") 1 else 2,
+            onSelectedIndexChange = { index ->
+                onChange(index != 0, when (index) {
+                    1 -> "blacklist"
+                    2 -> "whitelist"
+                    else -> null
+                })
+            }
+        )
     }
 }
 

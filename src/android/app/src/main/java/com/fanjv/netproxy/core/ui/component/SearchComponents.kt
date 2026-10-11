@@ -167,6 +167,7 @@ fun SearchStatus.SearchPager(
         SearchBar(searchStatus, padding)
     },
     searchBarTopPadding: () -> Dp = { 12.dp },
+    headerContent: @Composable () -> Unit,
     result: LazyListScope.() -> Unit
 ) {
     val searchStatus = this
@@ -236,7 +237,7 @@ fun SearchStatus.SearchPager(
                         .padding(
                             start = 4.dp,
                             end = 16.dp,
-                            bottom = 12.dp
+                            bottom = 10.dp
                         )
                         .clickable(
                             interactionSource = null,
@@ -275,21 +276,24 @@ fun SearchStatus.SearchPager(
             enter = fadeIn(),
             exit = fadeOut()
         ) {
-            Box(Modifier.fillMaxSize()) {
-                LazyColumn(
-                    Modifier.fillMaxSize().overScrollVertical(),
-                    state = listState,
-                    contentPadding = WindowInsets.ime.union(WindowInsets.navigationBars)
-                        .only(WindowInsetsSides.Bottom).asPaddingValues(),
-                    content = result
-                )
-                if (empty) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
-                            text = stringResource(com.fanjv.netproxy.R.string.no_apps_found),
-                            style = top.yukonga.miuix.kmp.theme.MiuixTheme.textStyles.body2,
-                            color = colorScheme.onSurfaceVariantActions
-                        )
+            Column(Modifier.fillMaxSize()) {
+                headerContent()
+                Box(Modifier.weight(1f)) {
+                    LazyColumn(
+                        Modifier.fillMaxSize().overScrollVertical(),
+                        state = listState,
+                        contentPadding = WindowInsets.ime.union(WindowInsets.navigationBars)
+                            .only(WindowInsetsSides.Bottom).asPaddingValues(),
+                        content = result
+                    )
+                    if (empty) {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = stringResource(com.fanjv.netproxy.R.string.no_apps_found),
+                                style = top.yukonga.miuix.kmp.theme.MiuixTheme.textStyles.body2,
+                                color = colorScheme.onSurfaceVariantActions
+                            )
+                        }
                     }
                 }
             }
@@ -342,7 +346,7 @@ fun SearchBar(
             .fillMaxWidth()
             .padding(horizontal = 12.dp)
             .deferredTopPadding(searchBarTopPadding)
-            .padding(bottom = 12.dp),
+            .padding(bottom = 10.dp),
         onSearch = { },
         expanded = searchStatus.shouldExpand(),
         onExpandedChange = { }
@@ -372,7 +376,7 @@ fun SearchBarFake(
             .fillMaxWidth()
             .padding(horizontal = 12.dp)
             .deferredTopPadding(searchBarTopPadding)
-            .padding(bottom = 12.dp),
+            .padding(bottom = 10.dp),
         onSearch = { },
         enabled = false,
         expanded = false,
