@@ -104,15 +104,19 @@ class CatalogDashboardViewModelTest {
         assertEquals("", vm.state.value.serviceError)
     }
 
-    @Test fun modeChangeInvalidatesOldRefreshAndBlocksDuplicateControl() = runBlocking {
+    @Test fun modeChangesRunInOrderAndInvalidateOldRefresh() = runBlocking {
         val count = AtomicInteger()
+        var savedMode = "Rule"
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         val modeEntered = CompletableDeferred<Unit>()
         val modeRelease = CompletableDeferred<Unit>()
         val transport = Transport { args ->
             if (args[0] == "mode") {
-                modeEntered.complete(Unit); withTimeout(10_000) { modeRelease.await() }; "{}"
+                modeEntered.complete(Unit)
+                withTimeout(10_000) { modeRelease.await() }
+                savedMode = args[1]
+                "{}"
             } else when (count.incrementAndGet()) {
                 1 -> snapshot("Rule")
                 2 -> {
@@ -120,7 +124,7 @@ class CatalogDashboardViewModelTest {
                     withContext(NonCancellable) { withTimeout(10_000) { release.await() } }
                     snapshot("Rule", "ready", 999)
                 }
-                else -> snapshot("Direct")
+                else -> snapshot(savedMode)
             }
         }
         val vm = model(this, transport)
@@ -137,10 +141,11 @@ class CatalogDashboardViewModelTest {
         yield()
         assertEquals("mode", vm.state.value.operation)
         assertEquals(0L, vm.state.value.downloadTotal)
-        modeRelease.complete(Unit)
-        withTimeout(5_000) { vm.state.first { it.outboundMode == "Direct" && it.operation.isEmpty() } }
-        settle()
         assertEquals(1, transport.calls.count { it[0] == "mode" })
+        modeRelease.complete(Unit)
+        settle()
+        withTimeout(5_000) { vm.state.first { it.outboundMode == "Rule" && it.operation.isEmpty() } }
+        assertEquals(listOf(listOf("mode", "Direct"), listOf("mode", "Rule")), transport.calls.filter { it[0] == "mode" })
         assertFalse(transport.calls.any { it[1] == "start" || it[1] == "stop" })
     }
 
@@ -149,10 +154,18 @@ class CatalogDashboardViewModelTest {
             val action = if (initial == "stopped") "start" else "stop"
             val final = if (initial == "stopped") "ready" else "stopped"
             val count = AtomicInteger()
+            var savedMode = "Rule"
             val entered = CompletableDeferred<Unit>()
             val release = CompletableDeferred<Unit>()
+            val actionRelease = CompletableDeferred<Unit>()
             val transport = Transport { args ->
-                if (args[1] == action) "{}"
+                if (args[1] == action) {
+                    withTimeout(10_000) { actionRelease.await() }
+                    "{}"
+                } else if (args[0] == "mode") {
+                    savedMode = args[1]
+                    "{}"
+                }
                 else when (count.incrementAndGet()) {
                     1 -> snapshot("Rule", initial)
                     2 -> {
@@ -160,7 +173,7 @@ class CatalogDashboardViewModelTest {
                         withContext(NonCancellable) { withTimeout(10_000) { release.await() } }
                         snapshot("Rule", initial)
                     }
-                    else -> snapshot("Rule", final)
+                    else -> snapshot(savedMode, final)
                 }
             }
             val vm = model(this, transport)
@@ -170,10 +183,17 @@ class CatalogDashboardViewModelTest {
             withTimeout(5_000) { entered.await() }
             vm.toggleService()
             assertEquals(action, vm.state.value.operation)
-            withTimeout(5_000) { vm.state.first { it.serviceState == final && it.operation.isEmpty() } }
+            assertEquals("Rule", vm.state.value.outboundMode)
+            vm.setMode("Direct")
+            assertFalse(transport.calls.any { it[0] == "mode" })
+            actionRelease.complete(Unit)
+            withTimeout(5_000) { vm.state.first {
+                it.serviceState == final && it.outboundMode == "Direct" && it.operation.isEmpty()
+            } }
             release.complete(Unit)
             settle()
             assertEquals(final, vm.state.value.serviceState)
+            assertEquals(1, transport.calls.count { it[0] == "mode" })
         }
     }
 

@@ -206,7 +206,7 @@ internal fun CatalogDashboardScreen(
                         }
                         OverlayDropdownPreference(
                             title = stringResource(R.string.dashboard_outbound_mode),
-                            enabled = availability?.available == true && !state.loading && state.operation.isEmpty(),
+                            enabled = availability?.available == true && !state.loading,
                             items = modeItems,
                             selectedIndex = if (selectedModeIndex >= 0) selectedModeIndex else 0,
                             startAction = {
@@ -218,9 +218,7 @@ internal fun CatalogDashboardScreen(
                             },
                             onSelectedIndexChange = { index ->
                                 val actualIndex = if (selectedModeIndex >= 0) index else index - 1
-                                if (actualIndex in modeValues.indices && state.rootGranted && state.moduleInstalled && !state.loading) {
-                                    viewModel.setMode(modeValues[actualIndex])
-                                }
+                                modeValues.getOrNull(actualIndex)?.let(viewModel::setMode)
                             }
                         )
                         ArrowPreference(

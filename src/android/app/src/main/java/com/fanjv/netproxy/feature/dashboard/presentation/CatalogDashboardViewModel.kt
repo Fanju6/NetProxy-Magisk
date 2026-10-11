@@ -12,6 +12,7 @@ import com.fanjv.netproxy.core.ui.userMessage
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
@@ -23,6 +24,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.net.NetworkInterface
 
@@ -76,6 +79,7 @@ internal class CatalogDashboardViewModel(
     private var uptimeJob: Job? = null
     private var visible = false
     private var stateRevision = 0L
+    private val controlMutex = Mutex()
     private val snapshotReducer = DashboardSnapshotReducer(totalMemoryBytes)
     private val trafficReducer = TrafficTimelineReducer()
 
@@ -141,7 +145,8 @@ internal class CatalogDashboardViewModel(
     }
 
     fun setMode(mode: String) {
-        if (!canControlService() || mode !in _state.value.availableOutboundModes) return
+        val current = _state.value
+        if (!current.rootGranted || !current.moduleInstalled || current.loading || mode !in current.availableOutboundModes) return
         runOperation("mode") {
             repository.setMode(mode)
             UiText.Resource(R.string.dashboard_mode_changed)
@@ -243,59 +248,42 @@ internal class CatalogDashboardViewModel(
     }
 
     private fun runOperation(name: String, action: suspend () -> UiText) {
-        if (_state.value.operation.isNotEmpty()) return
-        val requestRevision = ++stateRevision
-        snapshotJob?.cancel()
-        val changesServiceState = name == "start" || name == "stop"
-        val previousServiceState = _state.value.serviceState
-        _state.update { current ->
-            current.copy(
-                operation = name,
-                serviceError = "",
-                serviceState = when (name) {
-                    "start" -> "starting"
-                    "stop" -> "stopping"
-                    else -> current.serviceState
+        viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            controlMutex.withLock {
+                val requestRevision = ++stateRevision
+                snapshotJob?.cancel()
+                val previousServiceState = _state.value.serviceState
+                _state.update { current ->
+                    current.copy(
+                        operation = name,
+                        serviceError = "",
+                        serviceState = when (name) {
+                            "start" -> "starting"
+                            "stop" -> "stopping"
+                            else -> current.serviceState
+                        }
+                    )
                 }
-            )
-        }
-        viewModelScope.launch {
-            runCatching { action() }
-                .onSuccess { message ->
-                    currentCoroutineContext().ensureActive()
-                    if (requestRevision != stateRevision) return@onSuccess
-                    _state.update {
-                        it.copy(
-                            operation = "",
-                            serviceState = when (name) {
-                                "start" -> "ready"
-                                "stop" -> "stopped"
-                                else -> it.serviceState
-                            },
-                            notice = message,
-                            noticeId = it.noticeId + 1
-                        )
-                    }
-                    refreshSnapshot()
+                val result = runCatching { action() }
+                val error = result.exceptionOrNull()
+                if (error is CancellationException) throw error
+                currentCoroutineContext().ensureActive()
+                if (requestRevision != stateRevision) return@withLock
+                _state.update {
+                    it.copy(
+                        operation = "",
+                        serviceState = when {
+                            error != null && name in setOf("start", "stop") -> previousServiceState
+                            error == null && name == "start" -> "ready"
+                            error == null && name == "stop" -> "stopped"
+                            else -> it.serviceState
+                        },
+                        notice = result.fold({ message -> message }, { it.userMessage().toUiText() }),
+                        noticeId = it.noticeId + 1
+                    )
                 }
-                .onFailure { error ->
-                    if (error is CancellationException) throw error
-                    currentCoroutineContext().ensureActive()
-                    if (requestRevision != stateRevision) return@onFailure
-                    _state.update {
-                        it.copy(
-                            operation = "",
-                            serviceState = if (changesServiceState) {
-                                previousServiceState
-                            } else {
-                                it.serviceState
-                            },
-                            notice = error.userMessage().toUiText(),
-                            noticeId = it.noticeId + 1
-                        )
-                    }
-                    refreshSnapshot()
-                }
+                refreshSnapshot()
+            }
         }
     }
 
