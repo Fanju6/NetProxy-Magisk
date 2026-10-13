@@ -66,7 +66,7 @@ func New(options moduleapp.Options, config apiconfig.Config) (*Server, error) {
 	s.mux.HandleFunc("GET /api/v1/events", s.streamEvents)
 	s.mux.HandleFunc("GET /api/v1/diagnostics/export", s.exportDiagnostics)
 	// WebUI 与 HTTP API 共享同一个受限 loopback Origin，不放开跨域策略。
-	static := http.FileServer(http.Dir(filepath.Join(options.ModuleDir, "webroot", "control")))
+	static := http.FileServer(http.Dir(filepath.Join(options.ModuleDir, "webroot", "netproxy", "control")))
 	s.mux.Handle("GET /ui/", http.StripPrefix("/ui/", static))
 	s.mux.HandleFunc("GET /ui", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ui/", http.StatusPermanentRedirect)
