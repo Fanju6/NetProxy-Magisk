@@ -290,7 +290,6 @@ internal fun AppsScreen(
                             apps.appSearchQuery.isNotBlank() && apps.searchResults.isEmpty(),
                         listState = searchListState,
                         searchBarTopPadding = dynamicTopPadding,
-                        headerContent = { AppProxyMode(apps, viewModel::setProxySettings) },
                     ) {
                         if (apps.error.isNotBlank() || apps.requiresPolicyReload) item("error") {
                             if (apps.error.isNotBlank()) Text(apps.error, Modifier.padding(14.dp), color = colorScheme.error)

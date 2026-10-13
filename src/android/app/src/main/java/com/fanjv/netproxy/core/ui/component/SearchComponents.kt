@@ -167,7 +167,6 @@ fun SearchStatus.SearchPager(
         SearchBar(searchStatus, padding)
     },
     searchBarTopPadding: () -> Dp = { 12.dp },
-    headerContent: @Composable () -> Unit,
     result: LazyListScope.() -> Unit
 ) {
     val searchStatus = this
@@ -276,24 +275,21 @@ fun SearchStatus.SearchPager(
             enter = fadeIn(),
             exit = fadeOut()
         ) {
-            Column(Modifier.fillMaxSize()) {
-                headerContent()
-                Box(Modifier.weight(1f)) {
-                    LazyColumn(
-                        Modifier.fillMaxSize().overScrollVertical(),
-                        state = listState,
-                        contentPadding = WindowInsets.ime.union(WindowInsets.navigationBars)
-                            .only(WindowInsetsSides.Bottom).asPaddingValues(),
-                        content = result
-                    )
-                    if (empty) {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text(
-                                text = stringResource(com.fanjv.netproxy.R.string.no_apps_found),
-                                style = top.yukonga.miuix.kmp.theme.MiuixTheme.textStyles.body2,
-                                color = colorScheme.onSurfaceVariantActions
-                            )
-                        }
+            Box(Modifier.fillMaxSize()) {
+                LazyColumn(
+                    Modifier.fillMaxSize().overScrollVertical(),
+                    state = listState,
+                    contentPadding = WindowInsets.ime.union(WindowInsets.navigationBars)
+                        .only(WindowInsetsSides.Bottom).asPaddingValues(),
+                    content = result
+                )
+                if (empty) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = stringResource(com.fanjv.netproxy.R.string.no_apps_found),
+                            style = top.yukonga.miuix.kmp.theme.MiuixTheme.textStyles.body2,
+                            color = colorScheme.onSurfaceVariantActions
+                        )
                     }
                 }
             }
