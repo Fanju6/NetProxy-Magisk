@@ -8,11 +8,22 @@
 
 通过 Root 执行 `api access` 取得专用凭据；请求必须携带 Bearer header。当前终端 WebUI 和 Android 管理器仍使用 CLI。连接步骤与请求示例见 [HTTP API](/config/http-api)。
 
-## 模块 WebUI
+## 图形化 HTTP 管理面板
 
-从 KernelSU、Magisk 或 APatch 的模块详情页打开。当前 WebUI 是终端式界面：它提供命令补全、执行历史和易读结果渲染，所有操作仍统一调用 `netproxyctl`。
+**入口：** `http://127.0.0.1:9091/ui/`，与模块 HTTP API 共享同源地址（9091），不需要额外的服务进程或第三方托管。
 
-它适合无 Android 管理器的临时操作和排障，不维护另一份节点或订阅数据库。
+1. 更新到包含该面板的模块构建，并确认 `netproxyctl api status` 返回管理接口就绪。如需手动恢复，执行 `su -c '/data/adb/modules/netproxy/netproxyctl api start'`。
+2. 通过 Root 终端运行 `su -c '/data/adb/modules/netproxy/netproxyctl api access'`，读取结果中 `data.secret` 的 **64 位十六进制** 密钥。
+3. 在手机浏览器访问 `http://127.0.0.1:9091/ui/`，粘贴密钥连接。面板直接连接原生 API，支持图形化服务操作、节点选择/导入/编辑/删除、订阅设置/更新、JSON 配置编辑、日志、eBPF 检查、诊断包导出及实时事件。
+4. 电脑使用 USB 管理时，在电脑执行 `adb forward tcp:9091 tcp:9091`，再在电脑浏览器打开同一地址。
+
+密钥只在该页面的**内存**中使用，不写入 localStorage、sessionStorage、URL 或 Cookie；刷新、关闭或退出需要重新输入。前端不使用第三方 CDN。管理 API 的所有资源、操作和 SSE 事件仍要求 Bearer 鉴权，只有静态面板无需认证。静态资源依然校验 Host、Origin 并设定 CSP，不允许其他域跨域控制。
+
+配置编辑从服务端取得原文与 revision，保存时回传相同 revision；遇到冲突不会自动覆盖。服务返回 `persisted=true` 表示文件已经落盘，即使运行时同步失败也不应重复提交。核心停止时仍可读取完整配置进行恢复。
+
+## 模块终端 WebUI
+
+从 KernelSU、Magisk 或 APatch 模块详情页打开的是原有终端式 WebUI：它提供命令补全、执行历史和易读结果渲染，所有操作调用 `netproxyctl`。两个界面共用业务和持久化数据，终端页面保留供高级操作和排障。
 
 ## Service API Dashboard
 
