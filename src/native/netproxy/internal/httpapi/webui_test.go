@@ -11,7 +11,7 @@ import (
 
 func TestWebUIPublicAssetsAndPrivateAPIRemainSeparated(t *testing.T) {
 	server := resourceFixture(t)
-	root := filepath.Join(server.options.ModuleDir, "webroot", "control")
+	root := filepath.Join(server.options.ModuleDir, "webroot", "netproxy", "control")
 	if err := os.MkdirAll(root, 0755); err != nil {
 		t.Fatal(err)
 	}
