@@ -422,6 +422,21 @@ let eventRefresh;
 function onEvent(name,raw){
   let r;try{r=JSON.parse(raw)}catch{return}
   if(r.schema!==1||!r.ok)return;
+  if(name==='traffic' && r.data?.available && state.status) {
+    const t=r.data.status||{};
+    state.status.download_total=t.downlink_total??state.status.download_total;
+    state.status.upload_total=t.uplink_total??state.status.upload_total;
+    state.status.memory_bytes=t.memory??state.status.memory_bytes;
+    state.status.connections_in=t.connections_in??state.status.connections_in;
+    state.status.connections_out=t.connections_out??state.status.connections_out;
+    // 高频事件只更新对应文本，不触发完整 HTTP 刷新和页面重绘。
+    if(state.view==='overview'){
+      const value=document.querySelector('.kpi-grid .card:nth-child(4) .card-value');
+      const foot=document.querySelector('.kpi-grid .card:nth-child(4) .card-foot');
+      if(value)value.textContent=fmtSize(state.status.download_total);
+      if(foot)foot.textContent='↑ '+fmtSize(state.status.upload_total);
+    }
+  }
   if(name==='status')state.status=r.data;
   if(name==='groups')state.snapshot=r.data;
   if(name==='subscriptions')state.subs=array(r.data);
