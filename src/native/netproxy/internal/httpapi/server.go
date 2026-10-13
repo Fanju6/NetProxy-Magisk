@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
@@ -64,6 +65,12 @@ func New(options moduleapp.Options, config apiconfig.Config) (*Server, error) {
 	s.registerResources()
 	s.mux.HandleFunc("GET /api/v1/events", s.streamEvents)
 	s.mux.HandleFunc("GET /api/v1/diagnostics/export", s.exportDiagnostics)
+	// WebUI 与 HTTP API 共享同一个受限 loopback Origin，不放开跨域策略。
+	static := http.FileServer(http.Dir(filepath.Join(options.ModuleDir, "webroot", "control")))
+	s.mux.Handle("GET /ui/", http.StripPrefix("/ui/", static))
+	s.mux.HandleFunc("GET /ui", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/ui/", http.StatusPermanentRedirect)
+	})
 	s.mux.HandleFunc("/", s.unmatched)
 	return s, nil
 }
@@ -136,6 +143,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(15 * time.Second))
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
 	if r.Host != s.config.Listen {
 		writeResult(w, http.StatusForbidden, contract.Result{Schema: 1, Code: "api.host_invalid", Message: "管理接口 Host 无效"})
 		return
@@ -163,6 +173,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeResult(w, http.StatusBadRequest, contract.Result{Schema: 1, Code: "api.query_invalid", Message: "查询参数无效，凭据只能通过 Authorization 传递"})
 			return
 		}
+	}
+	// 仅公开静态页面，所有 /api/v1/* 资源及 SSE 仍强制 Bearer 鉴权。
+	// Host、Origin 和查询参数检查已在上方完成，未放宽安全边界。
+	if (r.Method == http.MethodGet || r.Method == http.MethodHead) &&
+		(r.URL.Path == "/ui" || strings.HasPrefix(r.URL.Path, "/ui/")) {
+		s.mux.ServeHTTP(w, r)
+		return
 	}
 	authorization := r.Header.Values("Authorization")
 	if len(authorization) != 1 || subtle.ConstantTimeCompare([]byte(authorization[0]), []byte("Bearer "+s.config.Secret)) != 1 {
