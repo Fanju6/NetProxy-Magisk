@@ -74,7 +74,7 @@ function setConnection(connected){
 }
 function setLive(message,live){$('live-indicator').classList.toggle('live',live);$('live-indicator').lastChild.textContent=message}
 function logout(){
-  stopEvents();state.secret='';state.info=null;state.status=null;state.snapshot=null;state.catalog=[];
+  stopEvents();++state.renderEpoch;state.secret='';state.info=null;state.status=null;state.snapshot=null;state.catalog=[];
   state.subs=[];state.configContent='';state.configRevision='';$('content').replaceChildren();
   $('auth-layer').hidden=false;setConnection(false);$('secret').focus();
 }
@@ -399,7 +399,7 @@ function startEvents(){
       const reader=res.body.getReader(),decoder=new TextDecoder();let buffer='';
       for(;;){
         const {value,done}=await reader.read();if(done)break;
-        buffer+=decoder.decode(value,{stream:true}).replace(/\r\n/g,'\n');
+        buffer=(buffer+decoder.decode(value,{stream:true})).replace(/\r\n/g,'\n');
         if(buffer.length>1024*1024)throw new Error('事件帧超过大小限制');
         let i;while((i=buffer.indexOf('\n\n'))!==-1){
           const block=buffer.slice(0,i);buffer=buffer.slice(i+2);
@@ -437,6 +437,7 @@ function onEvent(name,raw){
       if(foot)foot.textContent='↑ '+fmtSize(state.status.upload_total);
     }
   }
+  if(name==='traffic')return;
   if(name==='status')state.status=r.data;
   if(name==='groups')state.snapshot=r.data;
   if(name==='subscriptions')state.subs=array(r.data);
