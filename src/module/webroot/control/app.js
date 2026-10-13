@@ -200,7 +200,7 @@ async function subscriptions(){
 async function configs(){
   const targets=await api('/configs');
   let entries=Array.isArray(targets)?targets:array(targets?.targets||targets?.configs);
-  let list=entries.map(e=>typeof e==='string'?e:(e.target||e.name||e.path)).filter(Boolean);
+  let list=entries.map(e=>typeof e==='string'?e:(e.id||e.target||e.name||e.path)).filter(Boolean);
   // 这些完整目标是离线恢复的基础；即使 configs 不可用也允许尝试读取。
   list=[...new Set(['module','inbound','singbox/config.json',...list])];
   if(!list.includes(state.configTarget))state.configTarget='module';
