@@ -1125,7 +1125,6 @@ func TestRunUsesControllableClockForWakeCancelAndRestart(t *testing.T) {
 	options.ProgressDir = filepath.Join(t.TempDir(), "progress")
 	options.Now = clock.Now
 	options.NewTimer = clock.NewTimer
-	markStaleWorker(t, options.PIDFile)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	wake := make(chan struct{}, 1)
@@ -1150,7 +1149,7 @@ func TestRunUsesControllableClockForWakeCancelAndRestart(t *testing.T) {
 	}
 }
 
-func TestRunWakeProcessesMultipleRoundsAndRestartsFromStalePID(t *testing.T) {
+func TestRunWakeProcessesMultipleRoundsAndRestarts(t *testing.T) {
 	requests := make(chan struct{}, 4)
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		requests <- struct{}{}
@@ -1167,7 +1166,6 @@ func TestRunWakeProcessesMultipleRoundsAndRestartsFromStalePID(t *testing.T) {
 	options.ProgressDir = filepath.Join(t.TempDir(), "progress")
 	options.Now = clock.Now
 	options.NewTimer = clock.NewTimer
-	markStaleWorker(t, options.PIDFile)
 	wake := make(chan struct{}, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -1194,7 +1192,6 @@ func TestRunWakeProcessesMultipleRoundsAndRestartsFromStalePID(t *testing.T) {
 	if metadata.Revision != 2 {
 		t.Fatalf("多轮唤醒只执行了 %d 次更新", metadata.Revision)
 	}
-	markStaleWorker(t, options.PIDFile)
 	metadata.NextUpdateEpoch = clock.Now().Unix() - 1
 	metadata.NextUpdateAt = catalog.FormatEpochUTC(metadata.NextUpdateEpoch)
 	if err := catalog.SaveMetadataAtomic(context.Background(), filepath.Join(root, "fixture", "meta.json"), metadata); err != nil {

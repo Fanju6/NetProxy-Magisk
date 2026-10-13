@@ -363,7 +363,40 @@ func appPolicy(config inbound.Config) AppPolicy {
 
 // NodeAppend 将节点加入本地分组并处理活动状态与运行时 reload。
 func NodeAppend(ctx context.Context, options Options, groupID, input string, allowInsecure bool) (mutation catalog.MutationResult, err error) {
-	defer func() { logOperation(options, "node", "node.append", "节点添加", mutation.Revision > 0, err) }()
+	return nodeAppend(ctx, options, groupID, "append", allowInsecure, func(mutationOptions catalog.MutationOptions) (catalog.MutationResult, error) {
+		mutationOptions.Input = input
+		return catalog.AppendNode(ctx, mutationOptions)
+	})
+}
+
+// NodeAppendContent 将原始内容加入本地分组，不读取客户端指定的文件路径。
+func NodeAppendContent(ctx context.Context, options Options, groupID string, content []byte, allowInsecure bool) (catalog.MutationResult, error) {
+	return nodeAppend(ctx, options, groupID, "append", allowInsecure, func(mutationOptions catalog.MutationOptions) (catalog.MutationResult, error) {
+		return catalog.AppendNodeContent(ctx, mutationOptions, content)
+	})
+}
+
+// NodeImport 将本地文件中的节点追加到 default 本地配置组。
+func NodeImport(ctx context.Context, options Options, input string, allowInsecure bool) (mutation catalog.MutationResult, err error) {
+	return nodeAppend(ctx, options, "default", "import", allowInsecure, func(mutationOptions catalog.MutationOptions) (catalog.MutationResult, error) {
+		mutationOptions.Input = input
+		return catalog.AppendNode(ctx, mutationOptions)
+	})
+}
+
+// NodeImportContent 将原始节点内容追加到 default 组，不读取客户端指定的文件路径。
+func NodeImportContent(ctx context.Context, options Options, content []byte, allowInsecure bool) (catalog.MutationResult, error) {
+	return nodeAppend(ctx, options, "default", "import", allowInsecure, func(mutationOptions catalog.MutationOptions) (catalog.MutationResult, error) {
+		return catalog.AppendNodeContent(ctx, mutationOptions, content)
+	})
+}
+
+func nodeAppend(ctx context.Context, options Options, groupID, action string, allowInsecure bool, appendNodes func(catalog.MutationOptions) (catalog.MutationResult, error)) (mutation catalog.MutationResult, err error) {
+	message := "节点添加"
+	if action == "import" {
+		message = "节点导入"
+	}
+	defer func() { logOperation(options, "node", "node."+action, message, mutation.Revision > 0, err) }()
 	options, saved, release, err := lockCatalogChange(ctx, options)
 	if err != nil {
 		return catalog.MutationResult{}, err
@@ -379,31 +412,10 @@ func NodeAppend(ctx context.Context, options Options, groupID, input string, all
 	if err != nil {
 		return catalog.MutationResult{}, err
 	}
-	result, err := catalog.AppendNode(ctx, catalog.MutationOptions{GroupDir: filepath.Join(options.CatalogRoot, groupID), GroupID: groupID, Type: "local", Input: input, AllowInsecure: allowInsecure})
-	if err != nil {
-		return catalog.MutationResult{}, err
-	}
-	_, attempted, err := syncCatalogChange(ctx, options, saved, groupID, result.StructureChanged, service.ProcessRunning(options.SingBoxPath))
-	return result, catalogChangeError("node", attempted, err)
-}
-
-// NodeImport 将本地文件中的节点追加到 default 本地配置组。
-func NodeImport(ctx context.Context, options Options, input string, allowInsecure bool) (mutation catalog.MutationResult, err error) {
-	defer func() { logOperation(options, "node", "node.import", "节点导入", mutation.Revision > 0, err) }()
-	options, saved, release, err := lockCatalogChange(ctx, options)
-	if err != nil {
-		return catalog.MutationResult{}, err
-	}
-	defer release()
-	if err := ensureDefaultGroup(ctx, options); err != nil {
-		return catalog.MutationResult{}, err
-	}
-	const groupID = "default"
-	result, err := catalog.AppendNode(ctx, catalog.MutationOptions{
+	result, err := appendNodes(catalog.MutationOptions{
 		GroupDir:      filepath.Join(options.CatalogRoot, groupID),
 		GroupID:       groupID,
 		Type:          "local",
-		Input:         input,
 		AllowInsecure: allowInsecure,
 	})
 	if err != nil {
@@ -415,6 +427,20 @@ func NodeImport(ctx context.Context, options Options, input string, allowInsecur
 
 // NodeEdit 原子替换指定分组的节点。
 func NodeEdit(ctx context.Context, options Options, reference, input string, allowInsecure bool) (mutation catalog.MutationResult, err error) {
+	return nodeEdit(ctx, options, reference, allowInsecure, func(mutationOptions catalog.MutationOptions) (catalog.MutationResult, error) {
+		mutationOptions.Input = input
+		return catalog.EditNode(ctx, mutationOptions)
+	})
+}
+
+// NodeEditContent 使用原始内容替换指定节点，不解释设备文件路径。
+func NodeEditContent(ctx context.Context, options Options, reference string, content []byte, allowInsecure bool) (catalog.MutationResult, error) {
+	return nodeEdit(ctx, options, reference, allowInsecure, func(mutationOptions catalog.MutationOptions) (catalog.MutationResult, error) {
+		return catalog.EditNodeContent(ctx, mutationOptions, content)
+	})
+}
+
+func nodeEdit(ctx context.Context, options Options, reference string, allowInsecure bool, editNode func(catalog.MutationOptions) (catalog.MutationResult, error)) (mutation catalog.MutationResult, err error) {
 	defer func() { logOperation(options, "node", "node.edit", "节点编辑", mutation.Revision > 0, err) }()
 	options, saved, release, err := lockCatalogChange(ctx, options)
 	if err != nil {
@@ -429,7 +455,7 @@ func NodeEdit(ctx context.Context, options Options, reference, input string, all
 	if err != nil {
 		return catalog.MutationResult{}, err
 	}
-	result, err := catalog.EditNode(ctx, catalog.MutationOptions{GroupDir: filepath.Join(options.CatalogRoot, groupID), GroupID: groupID, Tag: tag, Input: input, AllowInsecure: allowInsecure})
+	result, err := editNode(catalog.MutationOptions{GroupDir: filepath.Join(options.CatalogRoot, groupID), GroupID: groupID, Tag: tag, AllowInsecure: allowInsecure})
 	if err != nil {
 		return catalog.MutationResult{}, err
 	}
@@ -781,6 +807,7 @@ func workerOptions(options Options) worker.Options {
 		PIDFile:             options.WorkerPIDFile,
 		LogFile:             options.WorkerLogFile,
 		ModuleConfig:        options.ModuleConfig,
+		APIConfig:           paths.New(options.ModuleDir).APIConfig(),
 		SingBoxPath:         options.SingBoxPath,
 		ServiceAddress:      options.ServiceAddress,
 		ServiceSecret:       options.ServiceSecret,
@@ -809,8 +836,11 @@ func RecordActivity(ctx context.Context, options Options, startWorker bool) {
 	if options.Telemetry == nil || ctx.Err() != nil {
 		return
 	}
-	if added, err := options.Telemetry.RecordActive(time.Now()); added && err == nil && startWorker {
-		_ = ensureWorker(ctx, options)
+	if added, err := options.Telemetry.RecordActive(time.Now()); added && err == nil {
+		options.Telemetry.Notify()
+		if startWorker {
+			_ = EnsureWorker(ctx, options)
+		}
 	}
 }
 

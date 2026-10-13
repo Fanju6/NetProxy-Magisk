@@ -10,17 +10,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/contract"
 	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 )
 
-type result struct {
-	Schema  int    `json:"schema"`
-	OK      bool   `json:"ok"`
-	Code    string `json:"code"`
-	Message string `json:"message"`
-	Data    any    `json:"data,omitzero"`
-}
+type result = contract.Result
 
 type cli struct {
 	options moduleapp.Options
@@ -88,6 +83,8 @@ func (c *cli) run(ctx context.Context, args []string) int {
 		handler = c.config
 	case "logs":
 		handler = c.logs
+	case "api":
+		handler = c.api
 	default:
 		return c.fail("usage.invalid", "未知命令组，使用 netproxyctl help 查看帮助", 2)
 	}
@@ -100,6 +97,7 @@ func (c *cli) run(ctx context.Context, args []string) int {
 }
 
 func skipActivity(args []string) bool {
+	if len(args) > 1 && args[0] == "api" && args[1] != "start" { return true }
 	for _, arg := range args {
 		if arg == "help" || arg == "-h" || arg == "--help" {
 			return true

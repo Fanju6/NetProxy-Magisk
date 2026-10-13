@@ -441,6 +441,7 @@ write_log() {
 commit_hot_update() {
   local backup_dir="$(dirname "$LIVE_DIR")/.netproxy.install-backup.$$" entry
   copy_user_data_locked && set_permissions || return 1
+  NETPROXY_MODULE_DIR="$MODPATH" "$MODPATH/bin/netproxyctl" api init >/dev/null 2>&1 || return 1
   rm -f "$MODPATH/data"/.catalog.netproxy-*.lock || return 1
   # 等待中的 Go 命令必须继续使用原来的锁，而不是目录切换后的第二个锁。
   if has_existing_user_data; then
@@ -560,6 +561,8 @@ install_bundled_manager || { print_error "管理器安装步骤失败"; exit 1; 
 print_title "安装模块"
 ui_print "  安装完成前请勿修改模块配置、节点或订阅"
 synchronize_user_data && set_permissions || { print_error "保留用户数据或权限设置失败"; exit 1; }
+NETPROXY_MODULE_DIR="$MODPATH" "$MODPATH/bin/netproxyctl" api init > "$INSTALL_TMP/api.log" 2>&1 \
+  || { print_error "管理接口凭据初始化失败，未替换当前模块"; exit 1; }
 if [ "${BOOTMODE:-false}" = true ]; then
   NETPROXY_MODULE_DIR="$MODPATH" "$MODPATH/bin/netproxyctl" config check > "$INSTALL_TMP/check.log" 2>&1 \
     || { print_error "配置检查失败，未替换当前模块；请检查安装模式与当前配置"; exit 1; }

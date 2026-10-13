@@ -57,6 +57,10 @@ func (l Layout) Catalog() string { return filepath.Join(l.Data(), "catalog") }
 // ModuleConfig 返回模块配置文件路径。
 func (l Layout) ModuleConfig() string { return filepath.Join(l.Config(), "module.json") }
 
+func (l Layout) APIConfig() string { return filepath.Join(l.Config(), "api.json") }
+
+func (l Layout) APITempDir() string { return filepath.Join(l.DevRoot(), "http") }
+
 // InboundConfig 返回受管入站配置文件路径。
 func (l Layout) InboundConfig() string { return filepath.Join(l.Config(), "inbound", "inbound.json") }
 

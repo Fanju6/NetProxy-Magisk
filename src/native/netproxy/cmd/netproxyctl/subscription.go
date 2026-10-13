@@ -77,7 +77,7 @@ func (c *cli) subscription(ctx context.Context, args []string) error {
 		}
 		updated, err := moduleapp.AddSubscription(ctx, moduleapp.SubscriptionOptions{Options: options, Name: *name, URL: *urlValue, UserAgent: *userAgent, HWID: *hwid, Headers: headers, AutoUpdate: *autoUpdate, UpdateInterval: seconds, IntervalSource: "user", UpdateViaProxy: *viaProxy, Include: *include, Exclude: *exclude, AllowInsecure: *allowInsecure, Timeout: *timeout})
 		if err != nil {
-			return moduleSubscriptionError(err)
+			return err
 		}
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "subscription.added", Message: "订阅已添加", Data: updated})
 		return nil
@@ -88,7 +88,7 @@ func (c *cli) subscription(ctx context.Context, args []string) error {
 		}
 		updated, err := moduleapp.UpdateSubscription(ctx, options, positionals[0])
 		if err != nil {
-			return moduleSubscriptionError(err)
+			return err
 		}
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "subscription.updated", Message: "订阅更新完成", Data: updated})
 		return nil
@@ -153,7 +153,7 @@ func (c *cli) subscription(ctx context.Context, args []string) error {
 		}
 		edited, err := moduleapp.EditSubscription(ctx, options, positionals[0], edit)
 		if err != nil {
-			return moduleSubscriptionError(err)
+			return err
 		}
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "subscription.edited", Message: "订阅设置已更新", Data: edited})
 		return nil
@@ -161,7 +161,7 @@ func (c *cli) subscription(ctx context.Context, args []string) error {
 	if action == "update-all" {
 		summary, err := moduleapp.UpdateAllSubscriptions(ctx, options)
 		if err != nil {
-			return moduleSubscriptionError(err)
+			return err
 		}
 		if len(summary.Failed) > 0 {
 			return fmt.Errorf("部分订阅更新失败")

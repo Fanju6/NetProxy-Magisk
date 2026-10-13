@@ -8,18 +8,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/contract"
 	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 )
 
-type resultError struct {
-	Status  int
-	Code    string
-	Message string
-	Data    any
-}
-
-func (e *resultError) Error() string { return e.Message }
+type resultError = contract.Error
 
 func defaultModuleDir() string {
 	return paths.Root()

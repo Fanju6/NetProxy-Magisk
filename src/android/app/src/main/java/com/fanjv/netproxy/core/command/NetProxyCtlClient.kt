@@ -167,5 +167,6 @@ internal fun isShortRead(arguments: List<String>): Boolean = when (arguments.fir
     "config" -> arguments.getOrNull(1) in setOf("list", "read")
     "app" -> arguments.getOrNull(1) == "list"
     "logs" -> arguments.getOrNull(1) == "show"
+    "api" -> arguments.getOrNull(1) in setOf("status", "access")
     else -> false
 }

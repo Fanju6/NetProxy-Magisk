@@ -5,6 +5,20 @@ interface CommandSpec {
 }
 
 export const COMMANDS = {
+  api: {
+    overview: 'api <命令>      模块 HTTP 管理接口',
+    actions: ['init', 'start', 'status', 'access'],
+    help: `api - 模块 HTTP 管理接口
+
+  api init      初始化独立随机凭据，不覆盖已有配置
+  api start     启动或恢复后台管理接口
+  api status    查看实际接口就绪状态
+  api access    读取地址与凭据，仅供 Root 客户端连接
+
+接口默认仅监听 127.0.0.1:9091，关闭 sing-box 不关闭管理接口。
+凭据不可分享或粘贴到公共聊天中。
+`,
+  },
   service: {
     overview: 'service <命令>  服务控制',
     actions: ['status', 'start', 'stop', 'restart', 'reload', 'check', 'toggle'],

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	json "encoding/json/v2"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,7 +17,98 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/inbound"
 	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 )
+
+func TestSubscriptionFailureContract(t *testing.T) {
+	for _, state := range []string{"active", "canceled", "timeout"} {
+		for _, wrapped := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/wrapped=%t", state, wrapped), func(t *testing.T) {
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				if state == "canceled" {
+					cancel()
+				} else if state == "timeout" {
+					cancel()
+					ctx, cancel = context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+					defer cancel()
+				}
+				var failure error = &subscription.Error{
+					Code: "subscription.runtime_sync_failed", Message: "订阅已保存但未同步",
+					Data: map[string]any{"persisted": true, "runtime_sync_pending": true},
+				}
+				if wrapped {
+					failure = fmt.Errorf("更新失败: %w", failure)
+				}
+				capture, err := os.CreateTemp(t.TempDir(), "stdout-")
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer capture.Close()
+				previous := os.Stdout
+				os.Stdout = capture
+				defer func() { os.Stdout = previous }()
+				status := (&cli{}).runCommand(ctx, func(context.Context, []string) error { return failure })
+				payload, err := os.ReadFile(capture.Name())
+				if err != nil {
+					t.Fatal(err)
+				}
+				var response result
+				if err := json.Unmarshal(payload, &response); err != nil {
+					t.Fatalf("stdout 不是单一 JSON: %s: %v", payload, err)
+				}
+				expected, err := json.Marshal(result{Schema: 1, OK: false, Code: "subscription.runtime_sync_failed", Message: "订阅已保存但未同步", Data: map[string]any{"persisted": true, "runtime_sync_pending": true}}, json.Deterministic(true))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if status != 1 || strings.TrimSpace(string(payload)) != string(expected) {
+					t.Fatalf("结构化订阅失败被覆盖: exit=%d response=%s", status, payload)
+				}
+			})
+		}
+	}
+}
+
+func TestCommandCancellationContract(t *testing.T) {
+	for _, test := range []struct {
+		cause   error
+		code    string
+		message string
+		status  int
+	}{
+		{context.Canceled, "command.canceled", "操作已取消", 1},
+		{context.DeadlineExceeded, "command.timeout", "命令执行超时", 124},
+	} {
+		t.Run(test.code, func(t *testing.T) {
+			capture, err := os.CreateTemp(t.TempDir(), "stdout-")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer capture.Close()
+			previous := os.Stdout
+			os.Stdout = capture
+			defer func() { os.Stdout = previous }()
+			status := (&cli{}).runCommand(t.Context(), func(context.Context, []string) error {
+				return fmt.Errorf("等待订阅更新: %w", test.cause)
+			})
+			payload, err := os.ReadFile(capture.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+			var response result
+			if err := json.Unmarshal(payload, &response); err != nil {
+				t.Fatal(err)
+			}
+			expected, err := json.Marshal(result{Schema: 1, OK: false, Code: test.code, Message: test.message, Data: map[string]any{}}, json.Deterministic(true))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if status != test.status || strings.TrimSpace(string(payload)) != string(expected) {
+				t.Fatalf("取消契约变化: exit=%d response=%s", status, payload)
+			}
+		})
+	}
+}
 
 func TestRuntimeModeFailureKeepsPersistedStateAfterTimeout(t *testing.T) {
 	capture, err := os.CreateTemp(t.TempDir(), "stdout-")
@@ -233,10 +325,12 @@ func TestEBPFDiagnosticJSONContract(t *testing.T) {
 				t.Fatal(err)
 			}
 			var response struct {
-				Schema int    `json:"schema"`
-				OK     bool   `json:"ok"`
-				Code   string `json:"code"`
-				Data   struct {
+				Schema  int    `json:"schema"`
+				OK      bool   `json:"ok"`
+				Code    string `json:"code"`
+				Message string `json:"message"`
+				Data    struct {
+					Mode    string              `json:"mode"`
 					Raw     bool                `json:"raw"`
 					Content string              `json:"content"`
 					Report  inbound.ProbeReport `json:"report"`
@@ -247,6 +341,16 @@ func TestEBPFDiagnosticJSONContract(t *testing.T) {
 			}
 			if response.Schema != 1 || response.Code != test.code || response.OK != (status == 0) || response.OK != (test.code == "ebpf.status") || response.Data.Raw != test.raw {
 				t.Fatalf("诊断契约错误: exit=%d\n%s", status, output)
+			}
+			message := "eBPF 能力检查完成"
+			if test.code == "ebpf.unsupported" {
+				message = "eBPF 能力检查未通过"
+			} else if test.code == "ebpf.status_invalid" {
+				_, parseErr := inbound.ParseProbeReport(string(payload))
+				message = parseErr.Error()
+			}
+			if response.Message != message || (test.code != "ebpf.status_invalid" && response.Data.Mode != "configured") {
+				t.Fatalf("诊断消息或范围契约变化: %s", output)
 			}
 			if test.raw {
 				if response.Data.Content != string(payload) {

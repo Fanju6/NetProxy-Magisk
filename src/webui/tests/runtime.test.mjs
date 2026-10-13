@@ -12,6 +12,14 @@ import { formatCtlOutput } from '../src/format.ts'
 import { mockCtl } from '../src/mock.ts'
 import { COMMANDS } from '../src/commands.ts'
 
+test('HTTP API 帮助、补全与预览不伪造可用服务或真实凭据', () => {
+  assert.deepEqual(complete('api st').candidates, ['start', 'status'])
+  assert.match(COMMANDS.api.help, /127\.0\.0\.1:9091/)
+  assert.equal(decodeCtlResult(mockCtl(['api', 'access'])).ok, false)
+  assert.equal(decodeCtlResult(mockCtl(['api', 'start'])).ok, false)
+  assert.equal(decodeCtlResult(mockCtl(['api', 'status'])).data.state, 'unavailable')
+})
+
 test('构建检查拒绝缺失或空的页面资源及运行时角色帧', t => {
   const root = mkdtempSync(join(tmpdir(), 'netproxy-webui-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))

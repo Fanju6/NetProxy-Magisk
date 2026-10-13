@@ -264,7 +264,7 @@ func ReadSelection(ctx context.Context, options Options) (Selection, error) {
 		return Selection{}, err
 	}
 	runtimeGroups, _ := readRuntimeGroups(ctx, options)
-	return selectionFromRuntimeGroups(module, groups, runtimeGroups), nil
+	return SelectionFromRuntimeGroups(module, groups, runtimeGroups), nil
 }
 
 // ReadSnapshot 读取持久化节点并尽力合并运行时 Service API 状态。
@@ -284,7 +284,7 @@ func ReadSnapshot(ctx context.Context, options Options, groupID string) (Snapsho
 		}
 	}
 	runtimeGroups, _ := readRuntimeGroups(ctx, options)
-	selection := selectionFromRuntimeGroups(module, selectionGroups, runtimeGroups)
+	selection := SelectionFromRuntimeGroups(module, selectionGroups, runtimeGroups)
 	return Snapshot{Groups: groups, Selection: selection, RuntimeGroups: runtimeGroups}, nil
 }
 
@@ -594,7 +594,7 @@ func readModuleConfig(path string) moduleconfig.ModuleConfig {
 	return moduleconfig.DefaultModule()
 }
 
-func selectionFromRuntimeGroups(module moduleconfig.ModuleConfig, groups []catalog.GroupSnapshot, runtimeGroups []serviceapi.Group) Selection {
+func SelectionFromRuntimeGroups(module moduleconfig.ModuleConfig, groups []catalog.GroupSnapshot, runtimeGroups []serviceapi.Group) Selection {
 	selection := Selection{
 		ActiveGroupID:   module.ActiveGroupID,
 		SelectorMode:    module.Mode(),

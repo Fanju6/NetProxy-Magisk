@@ -97,6 +97,7 @@ check_module_layout() {
 # 确认升级/卸载只通过 PID 感知的 Worker 入口操作
 #######################################
 check_worker_lifecycle() {
+  grep -q 'netproxyctl" api init' "$MODULE_DIR/customize.sh"
   ! grep -q 'pkill -f' "$MODULE_DIR/customize.sh"
   grep -q 'worker stop' "$MODULE_DIR/customize.sh"
   grep -q -- '--module-dir' "$MODULE_DIR/customize.sh"
