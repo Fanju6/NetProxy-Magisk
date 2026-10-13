@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Script } from 'node:vm'
 
-const root = resolve(import.meta.dirname, '../../module/webroot/control')
+const root = resolve(import.meta.dirname, '../public/control')
 const html = readFileSync(resolve(root, 'index.html'), 'utf8')
 const css = readFileSync(resolve(root, 'style.css'), 'utf8')
 const js = readFileSync(resolve(root, 'app.js'), 'utf8')
