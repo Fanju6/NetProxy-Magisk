@@ -337,7 +337,7 @@ async function act(action,d){
           combo('自动更新','auto_update',[['true','开启'],['false','关闭']],String(!!meta.auto_update))+
           field('User-Agent','user_agent',meta.user_agent)+field('HWID','hwid',meta.hwid)+
           field('节点包含过滤','include',meta.include)+field('节点排除过滤','exclude',meta.exclude)+
-          field('下载超时（秒）','download_timeout',meta.download_timeout??60,'number'),
+          field('下载超时（秒）','download_timeout',meta.timeout??60,'number'),
           async v=>{await mutate('/subscriptions/'+idq(ident),'PUT',{name:v.name,url:v.url,update_interval:Number(v.minutes)*60,
             update_via_proxy:v.update_via_proxy,auto_update:v.auto_update==='true',user_agent:v.user_agent,
             hwid:v.hwid,include:v.include,exclude:v.exclude,download_timeout:Number(v.download_timeout)})});break;
