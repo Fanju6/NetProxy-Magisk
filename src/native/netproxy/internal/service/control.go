@@ -49,6 +49,7 @@ type Status struct {
 	ActiveBackend          *string  `json:"active_backend"`
 	PID                    *int     `json:"pid"`
 	StartedAt              int64    `json:"started_at"`
+	CoreStartedAtMillis    int64    `json:"core_started_at_millis"`
 	ReadyAt                int64    `json:"ready_at"`
 	UptimeSeconds          int64    `json:"uptime_seconds"`
 	Error                  string   `json:"error"`
@@ -192,9 +193,8 @@ func ReadStatus(ctx context.Context, options Options) (Status, error) {
 		if status.State == "stopped" || state.PID != pid {
 			status.State = "starting"
 		}
-		status.ProcessCPUTicks = processCPUTicks(pid)
 	}
-	status.SystemCPUTicks, status.CPUCount = systemCPUTicks()
+	status.ProcessCPUTicks, status.SystemCPUTicks, status.CPUCount = CPUUsage(pid)
 
 	if status.State == "ready" && status.ReadyAt > 0 {
 		if elapsed := time.Now().Unix() - status.ReadyAt; elapsed >= 0 {
@@ -217,6 +217,16 @@ func ReadStatus(ctx context.Context, options Options) (Status, error) {
 		status.OutboundMode = status.ConfiguredOutboundMode
 	}
 	return status, ctx.Err()
+}
+
+// CPUUsage 采集进程与系统 CPU 计数，供普通快照和共享事件流使用。
+func CPUUsage(pid int) (uint64, uint64, int) {
+	system, count := systemCPUTicks()
+	var process uint64
+	if pid > 0 {
+		process = processCPUTicks(pid)
+	}
+	return process, system, count
 }
 
 // ReadGroups 读取 Service API 当前的节点组和测速状态。
@@ -264,7 +274,7 @@ func ReadSelection(ctx context.Context, options Options) (Selection, error) {
 		return Selection{}, err
 	}
 	runtimeGroups, _ := readRuntimeGroups(ctx, options)
-	return selectionFromRuntimeGroups(module, groups, runtimeGroups), nil
+	return SelectionFromRuntimeGroups(module, groups, runtimeGroups), nil
 }
 
 // ReadSnapshot 读取持久化节点并尽力合并运行时 Service API 状态。
@@ -284,7 +294,7 @@ func ReadSnapshot(ctx context.Context, options Options, groupID string) (Snapsho
 		}
 	}
 	runtimeGroups, _ := readRuntimeGroups(ctx, options)
-	selection := selectionFromRuntimeGroups(module, selectionGroups, runtimeGroups)
+	selection := SelectionFromRuntimeGroups(module, selectionGroups, runtimeGroups)
 	return Snapshot{Groups: groups, Selection: selection, RuntimeGroups: runtimeGroups}, nil
 }
 
@@ -594,7 +604,7 @@ func readModuleConfig(path string) moduleconfig.ModuleConfig {
 	return moduleconfig.DefaultModule()
 }
 
-func selectionFromRuntimeGroups(module moduleconfig.ModuleConfig, groups []catalog.GroupSnapshot, runtimeGroups []serviceapi.Group) Selection {
+func SelectionFromRuntimeGroups(module moduleconfig.ModuleConfig, groups []catalog.GroupSnapshot, runtimeGroups []serviceapi.Group) Selection {
 	selection := Selection{
 		ActiveGroupID:   module.ActiveGroupID,
 		SelectorMode:    module.Mode(),
@@ -712,6 +722,7 @@ func mergeRuntimeStatus(ctx context.Context, options Options, status *Status, ac
 	}
 	waitGroup.Wait()
 	if confirmedIdentity && identityErr == nil && started.UnixMilli == state.CoreStartedAtMillis {
+		status.CoreStartedAtMillis = started.UnixMilli
 		backend := state.ActiveBackend
 		status.ActiveBackend = &backend
 	}

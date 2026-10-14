@@ -8,6 +8,8 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"runtime"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -18,12 +20,62 @@ const workerStartTimeout = 2 * time.Second
 
 // RunProcess 安装系统信号并运行 Worker。
 func RunProcess(ctx context.Context, options Options, logger *log.Logger) error {
+	if runtime.GOOS == "android" {
+		if err := prepareProcessEnvironment(); err != nil {
+			return err
+		}
+		if os.Getenv("GOMEMLIMIT") == "" {
+			debug.SetMemoryLimit(64 << 20)
+		}
+	}
+	if err := validateOptions(options); err != nil {
+		return err
+	}
+	if err := acquirePID(options.PIDFile); err != nil {
+		return err
+	}
+	// HTTP 事务完成之前仍属于同一后台实例，不能提前允许新进程获取身份。
+	defer releasePID(options.PIDFile)
 	processContext, wake, cleanup := withSignals(ctx)
 	defer cleanup()
-	return Run(processContext, options, wake, logger)
+	processContext, cancel := context.WithCancel(processContext)
+	defer cancel()
+	if options.RunServer == nil {
+		return Run(processContext, options, wake, logger)
+	}
+	taskWake, serverWake := make(chan struct{}, 1), make(chan struct{}, 1)
+	wakeDone := make(chan struct{})
+	go func() {
+		defer close(wakeDone)
+		for {
+			select {
+			case <-processContext.Done():
+				return
+			case <-wake:
+				for _, target := range []chan struct{}{taskWake, serverWake} {
+					select {
+					case target <- struct{}{}:
+					default:
+					}
+				}
+			}
+		}
+	}()
+	serverDone := make(chan error, 1)
+	go func() { serverDone <- options.RunServer(processContext, serverWake) }()
+	err := Run(processContext, options, taskWake, logger)
+	cancel()
+	serverErr := <-serverDone
+	<-wakeDone
+	return errors.Join(err, serverErr)
 }
 
-// Start 启动唯一 Worker；没有订阅、网络监听或安装统计任务时才退出。
+func prepareProcessEnvironment() error {
+	// 安装目录和 TMPDIR 会被删除，不能让长期宿主与子进程继承它们。
+	return errors.Join(os.Chdir("/"), os.Unsetenv("TMPDIR"))
+}
+
+// Start 启动唯一后台实例；API 不因核心停止或没有调度任务而退出。
 func Start(ctx context.Context, options Options, executable string) (Status, error) {
 	if err := validateOptions(options); err != nil {
 		return Status{}, err
@@ -33,10 +85,10 @@ func Start(ctx context.Context, options Options, executable string) (Status, err
 		return Status{State: "running", PID: pid}, nil
 	}
 	nearest, err := NextUpdate(ctx, options.Root, options.Now())
-	if err != nil && options.Telemetry == nil {
+	if err != nil && options.Telemetry == nil && options.APIConfig == "" {
 		return Status{}, err
 	}
-	if nearest == 0 && !(options.NetworkWatchEnabled && options.NetworkEvaluate != nil) && options.Telemetry == nil {
+	if nearest == 0 && !(options.NetworkWatchEnabled && options.NetworkEvaluate != nil) && options.Telemetry == nil && options.APIConfig == "" {
 		return Status{State: "stopped", Nearest: 0}, nil
 	}
 	if executable == "" {
@@ -111,7 +163,11 @@ func Stop(options Options) error {
 	if err := terminateProcess(pid); err != nil {
 		return err
 	}
-	if !waitProcessStop(pid, 10*time.Second) {
+	timeout := 10 * time.Second
+	if options.APIConfig != "" {
+		timeout = 11 * time.Minute
+	}
+	if !waitProcessStop(pid, timeout) {
 		return fmt.Errorf("Worker 未在限定时间内退出: %d", pid)
 	}
 	return nil
@@ -123,6 +179,9 @@ func appendWorkerFlags(arguments []string, options Options) []string {
 		"--module-config", options.ModuleConfig,
 		"--sing-box", options.SingBoxPath, "--service-address", options.ServiceAddress,
 		"--service-secret", options.ServiceSecret)
+	if options.APIConfig != "" {
+		arguments = append(arguments, "--api-config", options.APIConfig)
+	}
 	return arguments
 }
 

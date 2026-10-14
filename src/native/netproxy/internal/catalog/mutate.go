@@ -203,6 +203,24 @@ func buildGroupMetadata(options GroupOptions) (Metadata, error) {
 
 // AppendNode 将链接或文件节点加入现有 Catalog 分组。
 func AppendNode(ctx context.Context, options MutationOptions) (MutationResult, error) {
+	return appendNode(ctx, options, func() (provider.ParseResult, error) {
+		return convert.Input(ctx, options.Input, options.AllowInsecure)
+	})
+}
+
+// AppendNodeContent 只解析节点内容，不将其解释为系统文件路径。
+func AppendNodeContent(ctx context.Context, options MutationOptions, content []byte) (MutationResult, error) {
+	options.Input = string(content)
+	if strings.TrimSpace(options.Input) == "" {
+		_, err := convert.Content(ctx, options.Input, options.AllowInsecure)
+		return MutationResult{}, err
+	}
+	return appendNode(ctx, options, func() (provider.ParseResult, error) {
+		return convert.Content(ctx, options.Input, options.AllowInsecure)
+	})
+}
+
+func appendNode(ctx context.Context, options MutationOptions, parse func() (provider.ParseResult, error)) (MutationResult, error) {
 	if err := validateMutationOptions(options, false); err != nil {
 		return MutationResult{}, err
 	}
@@ -219,7 +237,7 @@ func AppendNode(ctx context.Context, options MutationOptions) (MutationResult, e
 		return MutationResult{}, err
 	}
 	oldNodeCount := len(document.Outbounds) + len(document.Endpoints)
-	source, err := convert.Input(ctx, options.Input, options.AllowInsecure)
+	source, err := parse()
 	if err != nil {
 		return MutationResult{}, err
 	}
@@ -269,6 +287,19 @@ func RemoveNode(ctx context.Context, options MutationOptions) (MutationResult, e
 
 // EditNode 原子替换 Catalog 分组中的一个节点。
 func EditNode(ctx context.Context, options MutationOptions) (MutationResult, error) {
+	return editNode(ctx, options, func() (provider.ParseResult, error) {
+		return convert.Input(ctx, options.Input, options.AllowInsecure)
+	})
+}
+
+// EditNodeContent 只解析节点内容，不将其解释为系统文件路径。
+func EditNodeContent(ctx context.Context, options MutationOptions, content []byte) (MutationResult, error) {
+	return editNode(ctx, options, func() (provider.ParseResult, error) {
+		return convert.Content(ctx, string(content), options.AllowInsecure)
+	})
+}
+
+func editNode(ctx context.Context, options MutationOptions, parse func() (provider.ParseResult, error)) (MutationResult, error) {
 	if err := validateMutationOptions(options, true); err != nil {
 		return MutationResult{}, err
 	}
@@ -287,7 +318,7 @@ func EditNode(ctx context.Context, options MutationOptions) (MutationResult, err
 	if !provider.Remove(&document, options.Tag) {
 		return MutationResult{}, fmt.Errorf("未找到节点标签 %q", options.Tag)
 	}
-	source, err := convert.Input(ctx, options.Input, options.AllowInsecure)
+	source, err := parse()
 	if err != nil {
 		return MutationResult{}, err
 	}

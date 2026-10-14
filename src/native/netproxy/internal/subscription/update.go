@@ -46,6 +46,8 @@ type UpdateOptions struct {
 	UseConfiguredProxy bool
 	FallbackDirect     bool
 	RuntimeSyncPending bool
+	// TransferContext 仅取消网络下载；转换、提交和持久化收尾仍使用调用方上下文。
+	TransferContext context.Context
 	// PersistedBeforeUpdate 表示调用方已先保存编辑设置；更新失败时仍须在错误数据中报告已保存。
 	PersistedBeforeUpdate bool
 	Now                   time.Time
@@ -297,6 +299,9 @@ func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 	if metadata.Type != "subscription" || strings.TrimSpace(metadata.URL) == "" {
 		return Result{}, &Error{Code: "subscription.invalid_target", Message: "目标不是有效的 URL 订阅"}
 	}
+	if err := ValidateSettings(metadata.UpdateInterval, metadata.UpdateViaProxy, metadata.Timeout); err != nil {
+		return Result{}, err
+	}
 	if options.UseConfiguredProxy && options.ProxyURL == "" {
 		switch metadata.UpdateViaProxy {
 		case "always", "auto":
@@ -360,7 +365,7 @@ func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 	}
 	response, usedProxy, fetchErr := fetchSubscription(ctx, metadata, options)
 	if fetchErr != nil {
-		if cancelled(ctx, options.ProgressDir, options.GroupID) {
+		if errors.Is(fetchErr, context.Canceled) || cancelled(ctx, options.ProgressDir, options.GroupID) {
 			return updateFailure(ctx, options, metadata, groupDir, started, response, "subscription.cancelled", "订阅更新已取消", fetchErr)
 		}
 		if _, ok := errors.AsType[*fetch.RedirectError](fetchErr); ok {
@@ -577,6 +582,17 @@ func commitNotModified(ctx context.Context, options UpdateOptions, groupDir, met
 }
 
 func fetchSubscription(ctx context.Context, metadata catalog.Metadata, options UpdateOptions) (fetch.Response, bool, error) {
+	if options.TransferContext != nil {
+		downloadContext, cancel := context.WithCancel(ctx)
+		stop := context.AfterFunc(options.TransferContext, cancel)
+		defer stop()
+		defer cancel()
+		// AfterFunc 异步执行；已结束的服务不能在回调运行前发起新下载。
+		if options.TransferContext.Err() != nil {
+			cancel()
+		}
+		ctx = downloadContext
+	}
 	request := fetch.Request{
 		URL: metadata.URL, UserAgent: metadata.UserAgent, HWID: metadata.HWID,
 		Headers: metadata.CustomHeaders, ETag: metadata.ETag, LastModified: metadata.LastModified,

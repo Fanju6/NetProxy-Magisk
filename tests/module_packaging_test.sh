@@ -134,6 +134,19 @@ assert_contains "$CI_WORKFLOW" 'MODULE_NAME: ${{ needs.build.outputs.module_name
 assert_contains "$SHARED_WORKFLOW" 'compression-level: 0'
 assert_contains "$SHARED_WORKFLOW" '            src/module/config/singbox'
 assert_contains "$CI_WORKFLOW" '--target "$GITHUB_SHA"'
+assert_contains "$CI_WORKFLOW" 'COMMIT_MESSAGE=$(git log -1 --format=%s "$GITHUB_SHA")'
+assert_contains "$CI_WORKFLOW" 'parse-mode: ""'
+sed -n '/      - name: Telegram 构建成功通知/,/        with:/p' "$CI_WORKFLOW" |
+  grep -Fq 'continue-on-error: true' || {
+    printf '%s\n' 'Telegram 通知失败不得改变已成功的构建与发布结果' >&2
+    exit 1
+  }
+if sed -n '/      - name: 发布 Pre-release 到 GitHub Release/,/      - name: Telegram 构建成功通知/p' "$CI_WORKFLOW" |
+    grep -Fq 'continue-on-error:'; then
+  printf '%s\n' '开发包发布失败必须阻止 CI 成功' >&2
+  exit 1
+fi
+assert_not_contains "$CI_WORKFLOW" 'github.event.head_commit.message'
 assert_not_contains "$CI_WORKFLOW" 'full_name|lite_name'
 for workflow in "$CI_WORKFLOW" "$RELEASE_WORKFLOW"; do
   assert_contains "$workflow" 'uses: ./.github/workflows/build-module.yml'

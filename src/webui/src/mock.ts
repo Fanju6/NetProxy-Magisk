@@ -166,6 +166,14 @@ function execute(args: string[]): CtlResult<unknown> {
   const command = clean[0]
   const action = clean[1]
 
+  if (command === 'api') {
+    if (action === 'access') return failure('api.preview_unavailable', '开发预览不提供真实连接凭据')
+    if (action === 'init') return response('api.initialized', '管理接口凭据已初始化', { listen: '127.0.0.1:9091' })
+    if (action === 'start') return failure('api.preview_unavailable', '开发预览不会启动 HTTP 管理服务')
+    if (action === 'status') return response('api.status', '模块管理接口状态', { state: 'unavailable', listen: '127.0.0.1:9091' })
+    return failure('usage.invalid', '用法: api init|start|status|access')
+  }
+
   if (command === 'service') {
     if (action === 'start' || action === 'restart') {
       serviceState = 'ready'

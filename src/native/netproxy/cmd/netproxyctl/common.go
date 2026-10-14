@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,18 +10,9 @@ import (
 	json "encoding/json/v2"
 
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/inbound"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/contract"
 	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 )
-
-func moduleSubscriptionError(err error) error {
-	if structured, ok := errors.AsType[*subscription.Error](err); ok {
-		return &resultError{Code: structured.Code, Message: structured.Message, Data: structured.Data}
-	}
-	return err
-}
 
 func readActiveGroup(options moduleapp.Options) string {
 	module, err := moduleconfig.LoadModule(options.ModuleConfig)
@@ -40,22 +30,9 @@ type commandHandler func(context.Context, []string) error
 
 func (c *cli) runCommand(ctx context.Context, handler commandHandler, args ...string) int {
 	if err := handler(ctx, args); err != nil {
-		if structured, ok := errors.AsType[*service.Error](err); ok {
-			return c.failData(structured.Code, structured.Message, structured.Data, 1)
-		}
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return c.fail("command.timeout", "命令执行超时", 124)
-		}
-		if structured, ok := errors.AsType[*resultError](err); ok {
-			return c.failData(structured.Code, structured.Message, structured.Data, structured.Status)
-		}
-		if structured, ok := errors.AsType[*inbound.ValidationError](err); ok && len(structured.Diagnostics) > 0 {
-			return c.failData(structured.Diagnostics[0].Code, err.Error(), map[string]any{"diagnostics": structured.Diagnostics}, 1)
-		}
-		if errors.Is(err, moduleapp.ErrForcedTermination) {
-			return c.fail("inbound.cleanup_unconfirmed", err.Error(), 1)
-		}
-		return c.fail("command.failed", err.Error(), 1)
+		response, status := contract.Failure(ctx, err)
+		writeJSON(os.Stdout, response)
+		return status
 	}
 	return 0
 }
@@ -87,6 +64,7 @@ func (c *cli) help() {
   netproxyctl [--json] [--timeout <秒|时长>] ebpf status [configured|all|local|shared] [--raw]
   netproxyctl [--json] [--timeout <秒|时长>] config list|read|check|validate|apply
   netproxyctl [--json] [--timeout <秒|时长>] logs show|clear|export
+  netproxyctl [--json] [--timeout <秒|时长>] api init|start|status|access
 
 默认配置的出站模式:
   Rule          规则

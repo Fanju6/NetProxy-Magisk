@@ -97,7 +97,7 @@ func ManageService(ctx context.Context, options Options, action string) (Service
 		return ServiceResult{}, err
 	}
 	if action == "start" || action == "restart" {
-		if err := ensureWorker(ctx, options); err != nil {
+		if err := EnsureWorker(ctx, options); err != nil {
 			// Worker 独立于 sing-box，不能因为订阅调度启动失败而把已经就绪的核心判为失败。
 			logService(options, "WARN", "worker.start", "failed", "后台 Worker 启动失败: %v", err)
 		}
@@ -430,6 +430,9 @@ func Boot(ctx context.Context, options Options) error {
 		return fmt.Errorf("等待系统启动完成失败: %w", err)
 	}
 	logService(options, "INFO", "module.boot", "ready", "Android 启动完成")
+	if err := EnsureWorker(ctx, options); err != nil {
+		logService(options, "WARN", "worker.start", "failed", "后台 Worker 启动失败，可稍后手动重试: %v", err)
+	}
 	config, err := moduleconfig.LoadModule(options.ModuleConfig)
 	if err != nil {
 		return fmt.Errorf("加载模块配置失败: %w", err)
@@ -441,9 +444,6 @@ func Boot(ctx context.Context, options Options) error {
 	} else {
 		logService(options, "INFO", "service.start", "skipped", "开机自启动已禁用，跳过启动")
 	}
-	if err := ensureWorker(ctx, options); err != nil {
-		logService(options, "WARN", "worker.start", "failed", "后台 Worker 启动失败，可稍后手动重试: %v", err)
-	}
 	logService(options, "INFO", "module.boot", "success", "开机服务流程结束")
 	return nil
 }
@@ -452,7 +452,7 @@ func newBootCompletedWaitCommand(ctx context.Context) *exec.Cmd {
 	return exec.CommandContext(ctx, "resetprop", "-w", "sys.boot_completed", "0")
 }
 
-func ensureWorker(ctx context.Context, options Options) error {
+func EnsureWorker(ctx context.Context, options Options) error {
 	executable := paths.New(options.ModuleDir).Executable()
 	if _, err := worker.Start(ctx, workerOptions(options), executable); err != nil {
 		return err

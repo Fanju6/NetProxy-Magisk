@@ -12,6 +12,7 @@ func TestLayout(t *testing.T) {
 	expected := map[string]string{
 		"root":           root,
 		"catalog":        filepath.Join(root, "data", "catalog"),
+		"android icons":  filepath.Join(root, "data", "cache", "android-icons"),
 		"module config":  filepath.Join(root, "config", "module.json"),
 		"inbound config": filepath.Join(root, "config", "inbound", "inbound.json"),
 		"sing-box":       filepath.Join(root, "bin", "sing-box"),
@@ -29,6 +30,7 @@ func TestLayout(t *testing.T) {
 	actual := map[string]string{
 		"root":           layout.Root(),
 		"catalog":        layout.Catalog(),
+		"android icons":  layout.AndroidIcons(),
 		"module config":  layout.ModuleConfig(),
 		"inbound config": layout.InboundConfig(),
 		"sing-box":       layout.SingBox(),

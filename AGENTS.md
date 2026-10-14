@@ -20,7 +20,7 @@
 
 ## 核心契约
 
-- `netproxyctl` 是仓库唯一 Go 可执行文件，也是终端、Android 和 WebUI 的唯一模块管理入口；模块生命周期使用同一二进制的隐藏 `__internal` 入口。
+- `netproxyctl` 是仓库唯一 Go 可执行文件；CLI 与模块 HTTP API 直接复用同一领域函数，Android 与当前终端 WebUI 仍调用 CLI。模块生命周期使用同一二进制的隐藏 `__internal` 入口。
 - `__internal` 只允许 `boot` 与 `worker start|stop|run` 这类进程生命周期入口。Catalog、节点、订阅、配置、eBPF、Service API 和服务操作必须由公共命令直接调用 Go 领域处理器，不得重新建立内部命令转发层。
 - 机器接口固定使用 `schema=1` JSON。stdout 只能包含结果 JSON，日志与诊断写 stderr；字段、错误码或状态语义变化必须同步检查 Shell、Go、Android、WebUI 和测试。
 - Native 运行日志固定为 `[timestamp] [LEVEL] [component] [event] [result] [error_code] message`，成功或无错误码时写 `-`；消息必须在落盘前统一脱敏和限长。`logs show service` 的 `entries` 是 Android 展示事实源，不得回退到旧文本猜测。`logs show core` 保持 sing-box 文本，由客户端使用独立解析逻辑。
@@ -49,7 +49,7 @@
 ## 命令入口与脚本布局
 
 - `src/module/netproxyctl` 只负责定位 `bin/netproxyctl`；公共实现位于 `src/native/netproxy/cmd/netproxyctl`。Shell 不再保留公共命令 dispatcher。
-- 命令组权威清单：`service catalog node sub mode network app ebpf config logs`。新增命令组必须同时更新 Go CLI、Android `NetProxyCtlClient`、WebUI `src/exec.ts` 和契约测试。
+- 命令组权威清单：`service catalog node sub mode network app ebpf config logs api`。新增命令组必须同时更新 Go CLI、Android `NetProxyCtlClient`、WebUI 命令表与传输判断和契约测试。
 - `scripts/` 不承载运行时业务；配置、Catalog、状态和 Service API 业务统一由 Go 实现。
 - 根目录 `service.sh` 负责模块开机桥接；运行时配置、节点切换、订阅事务和调度由 Go 负责。
 - Go Worker 负责 Android 网络变化采集、Wi-Fi 状态读取和策略评估。
@@ -76,7 +76,17 @@ src/module/service.sh
 
 - `src/native/netproxy` 是 Catalog、Provider、订阅事务、配置、eBPF 运行时、Service API 与 sing-box 生命周期的业务事实源；Shell 只负责模块 service 阶段进入 Go 的平台桥接。
 - 模块、配置、Catalog、运行时、日志、二进制与 `/dev/netproxy` 状态路径统一由 `internal/paths.Layout` 推导。生产代码不得自行拼接这些布局；测试和用户指定的导入、导出、临时路径仍可显式注入。
-- 允许且仅允许一个 Go Worker。它承载订阅调度、可选的 Android 网络监听和设备统计，不能演变为通用控制守护进程、REST 服务或第二个代理核心。
+- 允许且仅允许一个长期 Go 后台宿主，复用 Worker 进程身份。HTTP 管理服务、订阅调度、Android 网络监听和设备统计并列运行；调度配置错误不得关闭管理接口。PID 所有权覆盖 HTTP 事务收尾，不能在调度退出时提前释放。HTTP 不执行 CLI 或 Shell，不新增第二个守护进程或代理核心。
+- Android Worker 进入长期运行前必须切换到稳定的 `/` 工作目录并清除继承的 `TMPDIR`，使用 Android 原生临时目录；安装器临时目录删除后会使 ART 初始化 `user.dir` 原生崩溃，或使配置校验报 `stat /dev/tmp`。不能仅修复单个 Java 调用或配置保存入口。
+- 模块 HTTP API 的唯一监听与凭据事实源为 `config/api.json`，仅允许 loopback IP 和专用随机 256 bit secret；安装通过 `api init` 显式初始化，已有或损坏文件不得覆盖。API 使用每安装独立的 TLS 证书与私钥，凭据通过 Root 的 `api access` 或固定签名验证后的私有 Provider 交付，不进入日志、诊断、遥测或 URL。客户端校验证书 SHA-256，不允许明文、系统代理、重定向或 Root 回退。HTTP 同时检查 Host、Origin 与 Bearer header，不能用 loopback 代替鉴权或允许通配 CORS。
+- HTTP 复用 `schema=1`、原错误码、revision 和持久化副作用语义。客户端断线不取消已接受写入；服务关闭停止准入，并等待有界事务收尾。上传与下载仅使用服务端私有临时文件或内容接口，不接受设备路径。SSE 只在有订阅者时共享核心流，先发完整快照；旧核心启动身份的帧必须丢弃，慢客户端不得无限缓存。
+- HTTP 的 `HEAD` 不进入领域函数或 SSE。节点添加、编辑与导入直接传内容，共用 CLI 的领域事务，不落临时输入文件。SSE 文件事件按相关主题合并刷新，溢出必须重新校准快照；监听失效必须断开，不能保持连接却静默漏报。
+- HTTP 请求体统一上限 4 MiB，超限返回 `api.body_too_large` 与 413；API 监听失败或意外退出按 1–30 秒退避恢复，不需要重启核心。
+- 事件流的服务状态缓存每次发送仍核对当前文件身份与修改时间，不能只信内存 epoch；核心流按启动身份隔离。groups 更新在固定 250ms 窗口合并，实际模式消费原生 SubscribeClashMode，不能从节点分组猜测或遗漏模式变化。
+- Worker 关停只取消 HTTP 订阅的网络下载阶段；下载完成后的持久事务继续按原有有界上下文收尾，不能以缩短关停时间为由中断提交。Android Worker 默认使用 64 MiB 的 Go 软内存目标，显式 GOMEMLIMIT 优先；目标不包含文件映射或 Java 子进程，不在请求后强制 GC。
+- API 启动不主动交付凭据或拉起管理器；首次连接、凭据失效与显式重连由客户端请求固定签名私有交付。成功交付后冷却 30 秒，失败有界退避，拒绝请求不延长窗口。凭据缓存只在这些边界重读，Provider 原子写入必须立即更新同进程缓存；旧请求的 401 不得清除其他请求已经取得的新凭据，也不得重发已接受的写入。
+- 安装 TLS 证书是本机精确钉扎的身份：Go 探测与 Android 校验证书身份和主机名，不依赖证书日期或设备时钟；不得移除钉扎或以接受任意证书替代。订阅创建、编辑和下载前共用领域设置校验，非法代理模式不得落盘后静默按直连执行，HTTP 不重复实现周期和代理模式规则。
+- 请求正文读取期限由 HTTP Server 管理，不在 handler 中为无正文 GET 设置连接读期限，否则长查询与 SSE 会在 15 秒被标准库取消；SSE 保留心跳、逐帧写入期限与真实断连错误。
 - 设备统计只从 Go 公共命令与真实核心启动采集 `module_active`、`service_start_result`，不增加 Android/WebUI SDK。Worker 以 Root 查询用户 0 的 `ANDROID_ID`，用固定 NetProxy 命名空间的 SHA-256 派生设备身份，每个 Worker 成功读取后只缓存在内存；读取失败不得回退随机身份。CLI 不查询设备标识，`config/telemetry/state.json` 只保存每日去重和有界队列，不进入编辑器、日志或诊断包；原始标识不得落盘或上传，Token 只由构建注入。损坏状态不得静默覆盖，系统查询和网络请求不得持有状态锁，上传不得阻塞业务命令。停服入口不得为统计重新启动 Worker，以免停服操作产生后台启动副作用。
 - 使用 reF1nd sing-box 的类型定义解析、生成和校验 Provider，不通过字符串替换拼接协议配置。
 - reF1nd 依赖版本必须与打包的 sing-box 内核兼容；升级时同时验证转换 fixtures、Provider 和 Service API。
@@ -231,7 +241,7 @@ WebUI ───────────┼─> netproxyctl ─> Go 业务层 ─
                          └─> schema=1 JSON 契约
 ```
 
-NetProxy 不维护通用独立控制守护进程。唯一长期 Go 进程是模块启动的 Worker，负责订阅调度、Android 网络事件、策略评估和设备统计；`service.sh` 仅在模块 service 阶段通过 `su -c` 进入 Go，Go 负责 sing-box 生命周期、类型化配置、网络事务、Provider 与业务状态。
+唯一长期 Go 进程是模块启动的后台宿主，复用 Worker 进程身份，负责模块 HTTP API、订阅调度、Android 网络事件、策略评估和设备统计。HTTP 与 CLI 调用同一领域函数；`service.sh` 仅在模块 service 阶段通过 `su -c` 进入 Go。代理服务停止不关闭模块 API，错误的代理配置也不得阻断完整配置读取与修复入口。
 
 ## 事实源
 

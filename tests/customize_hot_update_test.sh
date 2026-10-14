@@ -68,6 +68,7 @@ write_module() {
     '  __internal:worker:stop) exit "${TEST_WORKER_STOP:-0}" ;;' \
     '  service:stop:) exit "${TEST_SERVICE_STOP:-0}" ;;' \
     '  config:check:) exit "${TEST_CONFIG_CHECK:-0}" ;;' \
+    '  api:init:) exit "${TEST_API_INIT:-0}" ;;' \
     'esac' > "$target/bin/netproxyctl"
   cp "$target/bin/netproxyctl" "$target/netproxyctl"
   printf '%s\n' 'core fixture' > "$target/bin/sing-box"
@@ -95,7 +96,7 @@ reset_modules() {
   SERVICE_STOPPED=false
   KEY_PID=""
   TEST_RUNNING=false
-  unset TEST_WORKER_STOP TEST_SERVICE_STOP TEST_CONFIG_CHECK TEST_PIDOF
+  unset TEST_WORKER_STOP TEST_SERVICE_STOP TEST_CONFIG_CHECK TEST_PIDOF TEST_API_INIT
 }
 
 assert_value() { grep -Fxq "$2" "$1"; }
@@ -450,6 +451,7 @@ test_hot_update() (
     assert_value "$LIVE/module.prop" version=package
     grep -Fq '后台热更新已完成' "$LIVE/logs/service.log"
     grep -q '^__internal worker start' "$CALL_LOG"
+    grep -Fxq 'api init' "$CALL_LOG"
     [ -z "$(find "$WORKDIR/modules" -name '.netproxy.install-backup.*' -print)" ]
   done
 )
@@ -468,6 +470,16 @@ test_hot_update_guards() (
   : > "$LIVE/update"
   rm "$STAGE/bin/sing-box"
   if apply_hot_update; then exit 1; fi
+  [ -d "$STAGE" ] && [ -f "$LIVE/update" ]
+
+  reset_modules
+  TEST_API_INIT=1
+  export TEST_API_INIT
+  if commit_hot_update; then exit 1; fi
+  assert_value "$CALL_LOG" 'api init'
+  [ "$(wc -l < "$CALL_LOG")" -eq 1 ]
+  assert_value "$LIVE/module.prop" version=current
+  assert_module "$LIVE/config/module.json" current
   [ -d "$STAGE" ] && [ -f "$LIVE/update" ]
 )
 
@@ -620,17 +632,34 @@ test_installer_entrypoints() (
   [ ! -e "$STAGE/NetProxy.apk" ]
   grep -Fq '管理器安装成功' "$WORKDIR/install-output"
   assert_inbound "$STAGE/config/inbound/inbound.json" package
-  [ ! -s "$CALL_LOG" ]
+  assert_value "$CALL_LOG" 'api init'
+  [ "$(wc -l < "$CALL_LOG")" -eq 1 ]
 
   original_stage="$STAGE"
   STAGE="$LIVE"
   mkdir -p "$LIVE"
   run_foreground
   assert_inbound "$LIVE/config/inbound/inbound.json" package
-  [ ! -s "$CALL_LOG" ]
+  [ "$(grep -Fxc 'api init' "$CALL_LOG")" -eq 2 ]
+  [ "$(wc -l < "$CALL_LOG")" -eq 2 ]
   if run_foreground; then exit 1; fi
   assert_inbound "$LIVE/config/inbound/inbound.json" package
+  [ "$(wc -l < "$CALL_LOG")" -eq 2 ]
   STAGE="$original_stage"
+
+  # 管理接口初始化失败时必须取消安装，不能覆盖现有模块。
+  reset_modules
+  TEST_API_INIT=1
+  export TEST_API_INIT
+  if run_foreground; then exit 1; fi
+  grep -Fq '管理接口凭据初始化失败' "$WORKDIR/install-output"
+  assert_value "$LIVE/module.prop" version=current
+  [ -d "$STAGE" ]
+  # 保留数据安装会先验证现有 Catalog，再初始化新包 API。
+  [ "$(sed -n '1p' "$CALL_LOG")" = 'catalog list' ]
+  [ "$(sed -n '2p' "$CALL_LOG")" = 'api init' ]
+  [ "$(wc -l < "$CALL_LOG")" -eq 2 ]
+  unset TEST_API_INIT
 
   reset_modules
   run_foreground

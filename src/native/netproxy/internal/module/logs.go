@@ -92,7 +92,7 @@ func ExportLogs(options Options, destination string) error {
 		return err
 	}
 	defer os.Remove(file.Name())
-	archiveErr := writeLogArchive(options, file)
+	archiveErr := ExportDiagnostics(options, file)
 	if err := errors.Join(archiveErr, file.Sync(), file.Close()); err != nil {
 		return err
 	}
@@ -116,7 +116,8 @@ func inspectExportTarget(destination string) (exportTarget, error) {
 	return exportTarget{info: info}, nil
 }
 
-func writeLogArchive(options Options, output io.Writer) (err error) {
+// ExportDiagnostics 输出完整脱敏诊断包；调用方负责 output 的同步、关闭和完整传输。
+func ExportDiagnostics(options Options, output io.Writer) (err error) {
 	archive := gzip.NewWriter(output)
 	tarWriter := tar.NewWriter(archive)
 	defer func() { err = errors.Join(err, tarWriter.Close(), archive.Close()) }()

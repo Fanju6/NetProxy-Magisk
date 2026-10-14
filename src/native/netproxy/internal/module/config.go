@@ -29,6 +29,8 @@ var (
 	configRestoreReload  = reloadConfigSnapshot
 	configStop           = StopService
 	configStart          = startAppliedConfig
+	configFindProcess    = service.FindProcess
+	configStartedAt      = serviceStartedAtMillis
 )
 
 // ConfigDocument 是配置工作台可见的文件摘要。
@@ -203,17 +205,15 @@ func prepareConfigEdit(current, replacement []byte, section, expectedRevision st
 	return merged, configRevision(replacement), err
 }
 
-// ApplyConfig 通过候选文件、校验和原子替换应用配置。
+// ApplyConfig 读取调用方指定文件，再复用内容入口应用配置。
 func ApplyConfig(ctx context.Context, options Options, target, source string, validateOnly bool, expectedRevision string) (revision string, err error) {
-	event := "config.apply"
-	message := "配置保存"
-	if validateOnly {
-		event = "config.validate"
-		message = "配置校验"
-	}
-	defer func() { logOperation(options, "config", event, message, false, err) }()
-	destination, err := ResolveConfig(options, target)
-	if err != nil {
+	contentEntry := false
+	defer func() {
+		if !contentEntry && err != nil {
+			logConfigApply(options, validateOnly, err)
+		}
+	}()
+	if _, err = ResolveConfig(options, target); err != nil {
 		return "", err
 	}
 	if strings.HasPrefix(target, "runtime/") {
@@ -222,6 +222,30 @@ func ApplyConfig(ctx context.Context, options Options, target, source string, va
 	replacement, err := os.ReadFile(source)
 	if err != nil {
 		return "", fmt.Errorf("配置内容文件不存在: %w", err)
+	}
+	contentEntry = true
+	return ApplyConfigContent(ctx, options, target, replacement, validateOnly, expectedRevision)
+}
+
+func logConfigApply(options Options, validateOnly bool, err error) {
+	event := "config.apply"
+	message := "配置保存"
+	if validateOnly {
+		event = "config.validate"
+		message = "配置校验"
+	}
+	logOperation(options, "config", event, message, false, err)
+}
+
+// ApplyConfigContent 通过候选文件、校验和原子替换应用原始配置内容。
+func ApplyConfigContent(ctx context.Context, options Options, target string, replacement []byte, validateOnly bool, expectedRevision string) (revision string, err error) {
+	defer func() { logConfigApply(options, validateOnly, err) }()
+	destination, err := ResolveConfig(options, target)
+	if err != nil {
+		return "", err
+	}
+	if strings.HasPrefix(target, "runtime/") {
+		return "", errors.New("运行时配置只读")
 	}
 	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
 		return "", err
@@ -323,6 +347,8 @@ func applyConfigLocked(ctx context.Context, options Options, target, destination
 	applyRuntime := true
 	selectionChanged := false
 	switchBackend := false
+	transactionOptions := options
+	var repairedBackend string
 	if moduleTarget {
 		previous, previousErr := moduleconfig.LoadModule(destination)
 		if previousErr == nil {
@@ -331,25 +357,37 @@ func applyConfigLocked(ctx context.Context, options Options, target, destination
 		}
 	}
 	if inboundTarget {
-		previous, parseErr := inbound.Parse(current)
-		if parseErr != nil {
-			return "", parseErr
+		previous, previousErr := inbound.Parse(current)
+		if previousErr != nil && section != "" {
+			return "", previousErr
 		}
 		next, parseErr := inbound.Parse(content)
 		if parseErr != nil {
 			return "", parseErr
 		}
-		oldEffective, effectiveErr := previous.EffectiveContent()
-		if effectiveErr != nil {
-			return "", effectiveErr
+		if previousErr == nil {
+			oldEffective, effectiveErr := previous.EffectiveContent()
+			if effectiveErr != nil {
+				return "", effectiveErr
+			}
+			newEffective, effectiveErr := next.EffectiveContent()
+			if effectiveErr != nil {
+				return "", effectiveErr
+			}
+			applyRuntime = !bytes.Equal(oldEffective, newEffective)
+			switchBackend = previous.Backend != next.Backend
+		} else {
+			// 事务仍备份原目标；候选仅提供已校验结构，不能从损坏模板猜测旧后端。
+			transactionOptions.InboundConfig = candidatePath
+			if configProcessRunning(options.SingBoxPath) {
+				repairedBackend, err = confirmedConfigBackend(ctx, options)
+				if err != nil {
+					return "", err
+				}
+				switchBackend = repairedBackend != next.Backend
+			}
 		}
-		newEffective, effectiveErr := next.EffectiveContent()
-		if effectiveErr != nil {
-			return "", effectiveErr
-		}
-		applyRuntime = !bytes.Equal(oldEffective, newEffective)
-		switchBackend = previous.Backend != next.Backend
-		if configProcessRunning(options.SingBoxPath) {
+		if previousErr == nil && configProcessRunning(options.SingBoxPath) {
 			state, stateErr := ReadServiceState(options.StateFile)
 			if stateErr != nil {
 				return "", stateErr
@@ -360,9 +398,14 @@ func applyConfigLocked(ctx context.Context, options Options, target, destination
 			}
 		}
 	}
-	transaction, err := beginConfigApply(options, destination)
+	transaction, err := beginConfigApply(transactionOptions, destination)
 	if err != nil {
 		return "", err
+	}
+	if transactionOptions.InboundConfig != options.InboundConfig && transaction.journal.WasRunning {
+		if repairedBackend == "" || transaction.journal.Backend != repairedBackend {
+			return "", errors.Join(errors.New("无法确认旧 sing-box 实例，拒绝修复运行中的入站配置"), transaction.rollback())
+		}
 	}
 	if !applyRuntime {
 		transaction.journal.Action = "none"
@@ -448,6 +491,26 @@ func applyConfigLocked(ctx context.Context, options Options, target, destination
 		_ = worker.Wake(workerOptions(options))
 	}
 	return revision, nil
+}
+
+func confirmedConfigBackend(ctx context.Context, options Options) (string, error) {
+	state, err := ReadServiceState(options.StateFile)
+	if err != nil {
+		return "", err
+	}
+	if state.State != "ready" || state.PID <= 0 || state.CoreStartedAtMillis <= 0 ||
+		(state.ActiveBackend != "ebpf" && state.ActiveBackend != "tun") ||
+		configFindProcess(options.SingBoxPath, int(state.PID)) != int(state.PID) {
+		return "", errors.New("无法确认旧 sing-box 实例，拒绝修复运行中的入站配置")
+	}
+	startedAt, err := configStartedAt(ctx, options)
+	if err != nil {
+		return "", fmt.Errorf("确认旧 sing-box 实例失败: %w", err)
+	}
+	if startedAt != state.CoreStartedAtMillis {
+		return "", errors.New("sing-box 启动身份与记录不一致，拒绝修复运行中的入站配置")
+	}
+	return state.ActiveBackend, nil
 }
 
 func rollbackAfterCommitFailure(ctx context.Context, options Options, transaction *configApplyTransaction, commitErr error) error {

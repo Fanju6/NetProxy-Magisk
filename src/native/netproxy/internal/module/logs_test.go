@@ -33,8 +33,46 @@ func (writer *limitedArchiveWriter) Write(content []byte) (int, error) {
 func TestExportLogsReportsArchiveFinalizationFailure(t *testing.T) {
 	options := NewOptions(t.TempDir())
 	failure := errors.New("模拟压缩尾部写入失败")
-	if err := writeLogArchive(options, &limitedArchiveWriter{remaining: 10, failure: failure}); !errors.Is(err, failure) {
+	if err := ExportDiagnostics(options, &limitedArchiveWriter{remaining: 10, failure: failure}); !errors.Is(err, failure) {
 		t.Fatalf("压缩结束错误丢失: %v", err)
+	}
+}
+
+type ownedDiagnosticsWriter struct {
+	bytes.Buffer
+	closed bool
+}
+
+func (writer *ownedDiagnosticsWriter) Close() error {
+	writer.closed = true
+	return nil
+}
+
+func TestExportDiagnosticsFinalizesWithoutClosingOutput(t *testing.T) {
+	options := newTestOptions(t.TempDir())
+	output := &ownedDiagnosticsWriter{}
+	if err := ExportDiagnostics(options, output); err != nil {
+		t.Fatal(err)
+	}
+	if output.closed {
+		t.Fatal("诊断导出提前关闭了调用方输出")
+	}
+	compressed, err := gzip.NewReader(bytes.NewReader(output.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer compressed.Close()
+	content, err := io.ReadAll(compressed)
+	if err != nil {
+		t.Fatal("压缩尾部不完整", err)
+	}
+	reader := tar.NewReader(bytes.NewReader(content))
+	header, err := reader.Next()
+	if err != nil || header.Name != "README.txt" {
+		t.Fatal("诊断包没有正常结束", header, err)
+	}
+	if _, err := reader.Next(); !errors.Is(err, io.EOF) {
+		t.Fatal("诊断包尾部无效", err)
 	}
 }
 
@@ -47,7 +85,7 @@ func TestExportLogsOmitsMalformedJSONSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
-	if err := writeLogArchive(options, &output); err != nil {
+	if err := ExportDiagnostics(options, &output); err != nil {
 		t.Fatal(err)
 	}
 	compressed, err := gzip.NewReader(&output)

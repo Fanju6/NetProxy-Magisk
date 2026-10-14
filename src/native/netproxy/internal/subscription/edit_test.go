@@ -15,6 +15,49 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 )
 
+func TestSettingsValidationRejectsInvalidPolicies(t *testing.T) {
+	for _, test := range []struct {
+		interval int64
+		via      string
+		timeout  int64
+		code     string
+	}{
+		{899, "auto", 60, "subscription.interval_too_short"},
+		{900, "invalid", 60, "subscription.proxy_mode_invalid"},
+		{900, "auto", 0, "subscription.timeout_invalid"},
+		{900, "auto", -1, "subscription.timeout_invalid"},
+	} {
+		err := ValidateSettings(test.interval, test.via, test.timeout)
+		structured, ok := errors.AsType[*Error](err)
+		if !ok || structured.Code != test.code {
+			t.Fatalf("校验结果不一致: %+v %v", test, err)
+		}
+	}
+	for _, via := range []string{"auto", "always", "never"} {
+		if err := ValidateSettings(900, via, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestInvalidSavedProxyPolicyNeverFallsBackToDirect(t *testing.T) {
+	root, groupID, groupDir, server := newEditableSubscription(t)
+	metadata, err := catalog.LoadMetadata(t.Context(), filepath.Join(groupDir, "meta.json"), groupID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata.UpdateViaProxy = "invalid"
+	if err := catalog.SaveMetadataAtomic(t.Context(), filepath.Join(groupDir, "meta.json"), metadata); err != nil {
+		t.Fatal(err)
+	}
+	server.Close()
+	_, err = Update(t.Context(), UpdateOptions{Root: root, GroupID: groupID, UseConfiguredProxy: true})
+	structured, ok := errors.AsType[*Error](err)
+	if !ok || structured.Code != "subscription.proxy_mode_invalid" {
+		t.Fatal("非法代理模式进入了下载流程", err)
+	}
+}
+
 func TestEditUpdatesSchedulingWithoutDownloading(t *testing.T) {
 	root := t.TempDir()
 	now := time.Unix(1_700_000_000, 0)

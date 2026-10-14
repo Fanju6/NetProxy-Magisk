@@ -32,10 +32,23 @@ su -c '/data/adb/modules/netproxy/netproxyctl help'
 
 ```text
 service  catalog  node  sub  mode
-network  app      ebpf  config  logs
+network  app      ebpf  config  logs  api
 ```
 
 以设备上当前二进制的 `help` 输出为权威清单。
+
+## 模块 HTTP API
+
+```sh
+su -c '/data/adb/modules/netproxy/netproxyctl api init'
+su -c '/data/adb/modules/netproxy/netproxyctl api start'
+su -c '/data/adb/modules/netproxy/netproxyctl api status'
+su -c '/data/adb/modules/netproxy/netproxyctl api access'
+```
+
+安装时自动初始化独立随机凭据，`init` 不会覆盖已有配置。`start` 启动或唤醒唯一后台宿主，并检查 HTTP 接口实际就绪状态。`access` 返回地址与私有凭据，仅供 Root 客户端连接，不要分享输出。关闭 sing-box 不关闭管理接口。
+
+接口、鉴权与请求格式见 [HTTP API](/config/http-api)。
 
 ## 服务与模式
 

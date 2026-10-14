@@ -65,11 +65,14 @@ type Options struct {
 	PIDFile        string
 	LogFile        string
 	ModuleConfig   string
+	APIConfig      string
 	SingBoxPath    string
 	ServiceAddress string
 	ServiceSecret  string
 	ProxyURL       string
 	FallbackDirect bool
+	// TransferContext 只向订阅网络下载传递服务生命周期取消。
+	TransferContext context.Context
 	// PersistedBeforeUpdate 表示订阅编辑已保存设置，更新失败时不得误报为未保存。
 	PersistedBeforeUpdate   bool
 	NetworkWatchEnabled     bool
@@ -81,6 +84,7 @@ type Options struct {
 	Now                     func() time.Time
 	NewTimer                TimerFactory
 	CoreRunning             func() bool
+	RunServer               func(context.Context, <-chan struct{}) error
 	Telemetry               interface {
 		Run(context.Context, func() bool, func())
 		Notify()
@@ -134,10 +138,6 @@ func Run(ctx context.Context, options Options, wake <-chan struct{}, logger *log
 	if logger == nil {
 		logger = log.New(os.Stderr, "", 0)
 	}
-	if err := acquirePID(options.PIDFile); err != nil {
-		return err
-	}
-	defer releasePID(options.PIDFile)
 	background, cancelBackground := context.WithCancel(ctx)
 	var telemetryDone chan struct{}
 	if options.Telemetry != nil {
@@ -170,13 +170,16 @@ func Run(ctx context.Context, options Options, wake <-chan struct{}, logger *log
 	consecutiveFailures := 0
 	retries := make(map[string]subscriptionRetry)
 	for {
+		var configErr error
 		watch := options.NetworkWatchEnabled && options.NetworkEvaluate != nil
 		if watch && options.ModuleConfig != "" {
 			module, err := moduleconfig.LoadModule(options.ModuleConfig)
 			if err != nil {
-				return err
+				configErr = err
+				watch = false
+			} else {
+				watch = module.WiFi.Enabled
 			}
-			watch = module.WiFi.Enabled
 		}
 		if networkWatchEnabled != watch {
 			if cancelNetwork != nil {
@@ -195,7 +198,10 @@ func Run(ctx context.Context, options Options, wake <-chan struct{}, logger *log
 			networkWatchEnabled = watch
 		}
 		now := options.Now()
-		_, err := runDue(ctx, options, now, logger, retries)
+		err := configErr
+		if err == nil {
+			_, err = runDue(ctx, options, now, logger, retries)
+		}
 		var nearest int64
 		if err == nil {
 			now = options.Now()
@@ -213,7 +219,7 @@ func Run(ctx context.Context, options Options, wake <-chan struct{}, logger *log
 		} else {
 			consecutiveFailures = 0
 		}
-		if nearest == 0 && !networkWatchEnabled && options.Telemetry == nil {
+		if nearest == 0 && !networkWatchEnabled && options.Telemetry == nil && options.APIConfig == "" {
 			logWorker(logger, "INFO", "worker.run", "stopped", "没有启用自动更新的订阅，Worker 退出")
 			return nil
 		}
@@ -407,7 +413,8 @@ func UpdateGroup(ctx context.Context, options Options, groupID string, now time.
 	runtimeRunning := workerProcessRunning(options.SingBoxPath)
 	result, err := subscription.Update(ctx, subscription.UpdateOptions{
 		Root: options.Root, GroupID: groupID, ProgressDir: options.ProgressDir,
-		ProxyURL: options.ProxyURL, FallbackDirect: options.FallbackDirect,
+		TransferContext: options.TransferContext,
+		ProxyURL:        options.ProxyURL, FallbackDirect: options.FallbackDirect,
 		UseConfiguredProxy: true, RuntimeSyncPending: runtimeRunning,
 		PersistedBeforeUpdate: options.PersistedBeforeUpdate, Now: now,
 	})

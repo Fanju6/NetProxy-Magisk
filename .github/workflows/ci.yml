@@ -142,23 +142,22 @@ jobs:
 
       - name: Telegram 构建成功通知
         if: success()
-        env:
-          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        continue-on-error: true
         uses: cbrgm/telegram-github-action@v1
         with:
           token: ${{ secrets.TG_BOT_TOKEN }}
           to: ${{ secrets.TG_CHAT_ID }}
           thread-id: 2275
-          parse-mode: markdown
+          parse-mode: ""
           message: |
-            **持续集成构建成功**
+            持续集成构建成功
 
-            版本: `${{ needs.build.outputs.version }}` (build ${{ needs.build.outputs.commit_count }})
+            版本: ${{ needs.build.outputs.version }} (build ${{ needs.build.outputs.commit_count }})
             说明: ${{ env.COMMIT_MESSAGE }}
 
-            [下载开发包](${{ github.server_url }}/${{ github.repository }}/releases/tag/nightly)
-            [提交记录](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})
-            [构建日志](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            下载开发包: ${{ github.server_url }}/${{ github.repository }}/releases/tag/nightly
+            提交记录: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+            构建日志: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
   failure:
     name: 通知验证或发布失败
