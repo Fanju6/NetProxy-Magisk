@@ -61,7 +61,7 @@ NetProxy 是面向已 Root Android 设备的系统级透明代理模块，支持
 
 1. 从 [Releases](https://github.com/Fanju6/NetProxy-Magisk/releases) 下载 `NetProxy_<版本>_<构建号>.zip`，内含模块和 Android 管理器。
 2. 在 Root 管理器中刷入，按提示选择数据保留方式及是否安装管理器；等待安装完成。
-3. 打开 Android 管理器并授予 Root 权限，在“节点”页导入节点，或在“订阅”页添加订阅。
+3. 打开 Android 管理器，自动连接模块，在“节点”页导入节点，或在“订阅”页添加订阅。
 4. 在“节点”页选择分组与自动 / 手动节点，返回“仪表盘”开启服务。
 
 服务默认手动启动，开机自启可在“设置”中开启。首次配置参阅[快速开始](https://www.netproxy.store/guide/quick-start)。

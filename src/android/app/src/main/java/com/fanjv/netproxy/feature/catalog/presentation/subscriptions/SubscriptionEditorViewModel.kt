@@ -3,7 +3,7 @@ package com.fanjv.netproxy.feature.catalog.presentation.subscriptions
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fanjv.netproxy.R
-import com.fanjv.netproxy.core.command.NetProxyCtlException
+import com.fanjv.netproxy.core.api.ModuleApiException
 import com.fanjv.netproxy.core.ui.UiText
 import com.fanjv.netproxy.core.ui.UiTextException
 import com.fanjv.netproxy.core.ui.toUiText
@@ -100,7 +100,7 @@ internal class SubscriptionEditorViewModel(
                 } catch (error: Exception) {
                     if (!error.subscriptionPersisted()) throw error
                     commandError = error
-                    (error as NetProxyCtlException).data
+                    (error as ModuleApiException).data
                 }
                 currentCoroutineContext().ensureActive()
                 if (request != generation) return@launch

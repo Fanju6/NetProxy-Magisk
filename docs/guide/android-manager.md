@@ -6,7 +6,7 @@ description: NetProxy Android 管理器的页面功能、配置与运行状态�
 
 Android 管理器是 NetProxy 的日常图形化入口，随每个 Release 与 CI 模块包提供。刷入模块时可选择安装或更新管理器，也可跳过；跳过不会影响模块安装。
 
-管理器通过 Root 权限管理设备上的 NetProxy 模块。
+管理器通过本机 HTTPS 接口管理 NetProxy，无需授予应用 Root 权限。官方签名的管理器首次打开时自动取得连接资料；模块后台仍由 Root 框架运行。
 
 ## 页面功能
 
@@ -20,7 +20,7 @@ Android 管理器是 NetProxy 的日常图形化入口，随每个 Release 与 C
 | 内核配置 | 编辑并校验 sing-box 静态配置，查看只读运行时配置 |
 | 日志 | 查看结构化模块日志和核心日志，导出脱敏诊断包 |
 
-快捷设置磁贴可以控制服务。服务启停、配置和节点操作统一通过模块的 `netproxyctl` 完成。
+快捷设置磁贴可以控制服务。服务启停、配置和节点操作统一通过模块管理 API 完成，核心停止时接口仍可使用。
 
 ## 配置与运行状态
 
@@ -39,7 +39,7 @@ Android 管理器是 NetProxy 的日常图形化入口，随每个 Release 与 C
 
 ```bash
 cd src/android
-./gradlew testDebugUnitTest lintDebug assembleDebug
+./gradlew testDebugUnitTest lintDebug assembleDebug :platform:assembleDex
 ```
 
 模块包中的 APK 由 CI 根据当前源码构建，并使用固定密钥签名；后续同签名版本可以直接覆盖升级。CI 版本名保留提交短哈希，管理器不显示安装来源或签名警告。如果设备上安装的是不同签名的旧版本，需要先卸载再安装；卸载会清除管理器本地数据，不影响模块保存的配置、节点和订阅。

@@ -2,7 +2,7 @@ package com.fanjv.netproxy.feature.logs.data
 
 import android.content.Context
 import com.fanjv.netproxy.BuildConfig
-import com.fanjv.netproxy.core.command.NetProxyCtlClient
+import com.fanjv.netproxy.core.api.ModuleApiClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.jsonArray
@@ -13,14 +13,14 @@ import java.io.IOException
 
 /** 日志读取、清理和诊断包导出的模块数据入口。 */
 internal class LogRepository(
-    private val client: NetProxyCtlClient,
+    private val client: ModuleApiClient,
     private val reportsDir: File
 ) {
-    constructor(client: NetProxyCtlClient, context: Context) :
+    constructor(client: ModuleApiClient, context: Context) :
         this(client, File(context.applicationContext.cacheDir, "reports"))
 
     suspend fun read(type: LogType, lines: Int = 800): List<LogItem> {
-        val data = client.execute("logs", "show", type.commandName, lines.toString()).data.jsonObject
+        val data = client.get("/logs", mapOf("kind" to type.commandName, "lines" to lines.toString())).data.jsonObject
         return withContext(Dispatchers.Default) { when (type) {
             LogType.SERVICE -> {
                 val entries = data["entries"]?.jsonArray
@@ -36,17 +36,14 @@ internal class LogRepository(
     }
 
     suspend fun clear(type: LogType) {
-        client.execute("logs", "clear", type.commandName)
+        client.delete("/logs", mapOf("kind" to type.commandName))
     }
 
-    suspend fun export(outputPath: String): String =
-        client.execute(
-            "logs", "export",
-            "--manager-version", BuildConfig.VERSION_NAME,
-            "--manager-version-code", BuildConfig.VERSION_CODE.toString(),
-            outputPath,
-        ).data.jsonObject["path"]
-            ?.jsonPrimitive?.content ?: outputPath
+    suspend fun export(outputPath: String): String {
+        client.download("/diagnostics/export", mapOf("manager_version" to BuildConfig.VERSION_NAME,
+            "manager_version_code" to BuildConfig.VERSION_CODE.toString()), File(outputPath))
+        return outputPath
+    }
 
     suspend fun createReport(): File {
         var target: File? = null

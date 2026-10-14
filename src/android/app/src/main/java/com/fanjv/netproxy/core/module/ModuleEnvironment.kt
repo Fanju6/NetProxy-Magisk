@@ -4,8 +4,8 @@ import android.app.ActivityManager
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.fanjv.netproxy.core.command.NetProxyCtlClient
-import com.fanjv.netproxy.core.shell.ShellUtil
+import com.fanjv.netproxy.core.api.ModuleApiClient
+import com.fanjv.netproxy.core.api.ModuleApiException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,17 +14,17 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancelAndJoin
 
-internal data class ModuleAvailability(
-    val rootGranted: Boolean,
-    val moduleInstalled: Boolean
-) {
-    val available: Boolean get() = rootGranted && moduleInstalled
+internal enum class ModuleConnectionState { READY, UNAVAILABLE, UNTRUSTED }
+internal data class ModuleAvailability(val state: ModuleConnectionState) {
+    val available: Boolean get() = state == ModuleConnectionState.READY
 }
 
 internal interface ModuleEnvironment {
     val totalMemoryBytes: Long
     suspend fun availability(): ModuleAvailability
+    suspend fun reconnect(address: String)
 }
 
 internal class ModuleAccessViewModel(
@@ -35,6 +35,12 @@ internal class ModuleAccessViewModel(
     val state = _state.asStateFlow()
     private var refreshJob: Job? = null
 
+    suspend fun reconnect(address: String) {
+        refreshJob?.cancelAndJoin()
+        environment.reconnect(address)
+        _state.value = ModuleAvailability(ModuleConnectionState.READY)
+    }
+
     fun refresh() {
         if (refreshJob?.isActive == true) return
         refreshJob = viewModelScope.launch {
@@ -43,7 +49,7 @@ internal class ModuleAccessViewModel(
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
-                ModuleAvailability(false, false)
+                ModuleAvailability(ModuleConnectionState.UNAVAILABLE)
             }
         }
     }
@@ -51,7 +57,7 @@ internal class ModuleAccessViewModel(
 
 internal class AndroidModuleEnvironment(
     context: Context,
-    private val client: NetProxyCtlClient
+    private val client: ModuleApiClient
 ) : ModuleEnvironment {
     override val totalMemoryBytes: Long = ActivityManager.MemoryInfo().also { info ->
         (context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager)
@@ -59,10 +65,14 @@ internal class AndroidModuleEnvironment(
     }.totalMem
 
     override suspend fun availability(): ModuleAvailability {
-        val root = ShellUtil.isRootAvailable()
-        return ModuleAvailability(
-            rootGranted = root,
-            moduleInstalled = root && client.isAvailable()
-        )
+        return try {
+            client.get("/info")
+            ModuleAvailability(ModuleConnectionState.READY)
+        } catch (error: CancellationException) { throw error }
+        catch (error: ModuleApiException) {
+            ModuleAvailability(if (error.resultCode == "api.unauthorized") ModuleConnectionState.UNTRUSTED else ModuleConnectionState.UNAVAILABLE)
+        }
     }
+
+    override suspend fun reconnect(address: String) = client.reconnect(address)
 }

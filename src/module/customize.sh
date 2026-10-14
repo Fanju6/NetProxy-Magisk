@@ -222,7 +222,7 @@ set_permissions() {
 validate_stage() {
   grep -qx "id=$MODULE_ID" "$MODPATH/module.prop" || return 1
   local entry
-  for entry in bin/netproxyctl bin/sing-box netproxyctl service.sh \
+  for entry in bin/netproxyctl bin/sing-box bin/android-platform.dex netproxyctl service.sh \
     config/module.json config/inbound/inbound.json config/singbox/config.json \
     data/catalog/default/meta.json data/catalog/default/provider.json; do
     [ -s "$MODPATH/$entry" ] || return 1

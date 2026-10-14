@@ -1,6 +1,8 @@
 package com.fanjv.netproxy.feature.inbound.presentation
 
-import com.fanjv.netproxy.core.command.*
+import com.fanjv.netproxy.core.api.*
+
+import com.fanjv.netproxy.core.config.*
 import com.fanjv.netproxy.core.module.ServiceRepository
 import com.fanjv.netproxy.feature.inbound.data.InboundRepository
 import com.fanjv.netproxy.feature.inbound.data.textAt
@@ -29,7 +31,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 
 class InboundViewModelTest {
     @get:Rule val folder = TemporaryFolder()
-    private val calls = CopyOnWriteArrayList<List<String>>()
+    private val calls = CopyOnWriteArrayList<ApiTestRequest>()
     private var backend = "ebpf"
     private var rootPolicy = "default"
     private var running = true
@@ -50,36 +52,36 @@ class InboundViewModelTest {
     private val choicesEntered = CompletableDeferred<Unit>()
     private var choicesFailure = false
 
-    private fun output(data: String) = NetProxyCtlOutput(true, listOf("""{"schema":1,"ok":true,"code":"test","message":"","data":$data}"""), emptyList())
+    private fun output(data: String) = apiSuccess(data)
     private fun viewModel(scope: CoroutineScope, saveScope: CoroutineScope = scope,
         onSaveFailure: (String) -> Unit = {}): InboundViewModel {
-        val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
+        val client = ModuleApiClient(transport = TestApiTransport { args ->
             calls += args
             when {
-                args == listOf("service", "status") -> {
-                    if (statusFailure != null) throw NetProxyCtlException(statusFailure!!, "status failed")
+                args.path == "/service" -> {
+                    if (statusFailure != null) throw ModuleApiException(statusFailure!!, "status failed")
                     output("""{"state":"${if (running) "ready" else "stopped"}","configured_backend":"$backend","active_backend":${if (running && activeConfirmed) "\"${actualBackendOverride ?: backend}\"" else "null"}}""")
                 }
-                args == listOf("service", "restart") -> {
-                    if (restartFailure != null) throw NetProxyCtlException(restartFailure!!, "restart failed")
+                args.path == "/service/restart" -> {
+                    if (restartFailure != null) throw ModuleApiException(restartFailure!!, "restart failed")
                     output("{}")
                 }
-                args == listOf("ebpf", "status", "configured") -> {
+                args.path == "/diagnostics/ebpf" -> {
                     val content = "结论: ${diagnosticFailure ?: "eBPF 能力预检通过"}"
                     val data = JsonObject(mapOf("content" to JsonPrimitive(content), "report" to JsonObject(emptyMap())))
-                    if (diagnosticFailure != null) throw NetProxyCtlException("ebpf.unsupported", "预检未通过", data)
+                    if (diagnosticFailure != null) throw ModuleApiException("ebpf.unsupported", "预检未通过", data)
                     output(data.toString())
                 }
-                args.take(2) == listOf("config", "read") -> {
-                    if (args.last() == "singbox/config.json") {
+                args.path == "/config" && args.method == "GET" -> {
+                    if (args.target == "singbox/config.json") {
                         choicesGate?.let {
                             choicesEntered.complete(Unit)
                             check(it.await(5, TimeUnit.SECONDS))
                         }
-                        if (choicesFailure) throw NetProxyCtlException("config.read_failed", "choices failed")
+                        if (choicesFailure) throw ModuleApiException("config.read_failed", "choices failed")
                     }
-                    if (readFailure != null && args.last().startsWith("inbound/")) throw NetProxyCtlException(readFailure!!, "read failed")
-                    val content = when (args.last()) {
+                    if (readFailure != null && args.target.startsWith("inbound/")) throw ModuleApiException(readFailure!!, "read failed")
+                    val content = when (args.target) {
                         "inbound/backend" -> """{"backend":"$backend"}"""
                         "inbound/root_policy" -> """{"root_policy":"$rootPolicy"}"""
                         "inbound/ebpf" -> """{"ebpf":$ebpf}"""
@@ -87,29 +89,28 @@ class InboundViewModelTest {
                         "singbox/config.json" -> """{"route":{"rule_set":[{"tag":"private"}]}}"""
                         else -> error("非预期配置目标")
                     }
-                    output(JsonObject(mapOf("content" to JsonPrimitive(content), "revision" to JsonPrimitive(configRevision(args.last())))).toString())
+                    output(JsonObject(mapOf("content" to JsonPrimitive(content), "revision" to JsonPrimitive(configRevision(args.target)))).toString())
                 }
-                args.take(2) == listOf("config", "apply") -> {
+                args.path == "/config" && args.method == "PUT" -> {
                     onApply()
-                    if (failure != null || args[3] != configRevision(args[4])) NetProxyCtlOutput(false,
-                        listOf("""{"schema":1,"ok":false,"code":"${failure ?: "config.conflict"}","message":"failed"}"""), emptyList())
+                    if (failure != null || args.text("revision") != configRevision(args.target)) ModuleHttpResponse(409, """{"schema":1,"ok":false,"code":"${failure ?: "config.conflict"}","message":"failed"}""")
                     else {
-                        val content = kotlinx.serialization.json.Json.parseToJsonElement(File(args.last()).readText()) as JsonObject
-                        when (args[4]) {
+                        val content = kotlinx.serialization.json.Json.parseToJsonElement(args.text("content")) as JsonObject
+                        when (args.target) {
                             "inbound/backend" -> backend = (content.getValue("backend") as JsonPrimitive).content
                             "inbound/root_policy" -> rootPolicy = (content.getValue("root_policy") as JsonPrimitive).content
                             "inbound/ebpf" -> ebpf = content.getValue("ebpf").toString()
                             "inbound/tun" -> tun = content.getValue("tun").toString()
                         }
-                        partitionWrites[args[4]] = (partitionWrites[args[4]] ?: 0) + 1
-                        output("""{"revision":"${configRevision(args[4])}"}""")
+                        partitionWrites[args.target] = (partitionWrites[args.target] ?: 0) + 1
+                        output("""{"revision":"${configRevision(args.target)}"}""")
                     }
                 }
                 else -> error("非预期命令")
             }
         })
         val writes = ConfigurationWrites(saveScope) { onSaveFailure(it.message.orEmpty()) }
-        return InboundViewModel(InboundRepository(ConfigRepository(client, CommandFileStore(folder.root),
+        return InboundViewModel(InboundRepository(ConfigRepository(client,
             awaitPendingWrites = writes::await), ServiceRepository(client)), scope, writes)
     }
 
@@ -126,12 +127,12 @@ class InboundViewModelTest {
         vm.setField("udp_timeout", JsonPrimitive("5m"))
         vm.setRootPolicy("exclude"); vm.idle()
         assertEquals(listOf("inbound/ebpf", "inbound/root_policy"),
-            calls.filter { it.take(2) == listOf("config", "apply") }.map { it[4] })
+            calls.filter { it.path == "/config" && it.method == "PUT" }.map { it.target })
         assertEquals("exclude", vm.state.value.snapshot!!.rootPolicy)
         assertEquals("ebpf", vm.state.value.backend)
         assertFalse(vm.state.value.hasPendingChanges)
         vm.setRootPolicy("exclude"); vm.idle()
-        assertEquals(2, calls.count { it.take(2) == listOf("config", "apply") })
+        assertEquals(2, calls.count { it.path == "/config" && it.method == "PUT" })
         running = false
         vm.requestBackend("tun"); vm.idle()
         assertEquals("tun", vm.state.value.backend)
@@ -150,7 +151,7 @@ class InboundViewModelTest {
         assertEquals("root_policy", draft.partition)
         assertEquals("include", kotlinx.serialization.json.Json.parseToJsonElement(draft.snapshot.content).jsonObject.textAt("root_policy"))
         vm.setRootPolicy("exclude")
-        assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+        assertEquals(1, calls.count { it.path == "/config" && it.method == "PUT" })
     }
 
     @Test fun confirmedRootPolicySurvivesPageScopeDisposal() = runBlocking {
@@ -160,7 +161,7 @@ class InboundViewModelTest {
             vm.refresh(); vm.loaded()
             vm.setRootPolicy("include"); pageScope.cancel()
             withTimeout(5_000) { vm.state.first { !it.isSaving && it.snapshot!!.rootPolicy == "include" } }
-            assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+            assertEquals(1, calls.count { it.path == "/config" && it.method == "PUT" })
         } finally { pageScope.cancel() }
     }
 
@@ -177,9 +178,9 @@ class InboundViewModelTest {
             assertEquals(listOf("failed"), errors)
             assertEquals("5m", vm.state.value.native.textAt("udp_timeout"))
             assertTrue(vm.state.value.hasPendingChanges)
-            assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+            assertEquals(1, calls.count { it.path == "/config" && it.method == "PUT" })
             vm.requestFlush()
-            assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+            assertEquals(1, calls.count { it.path == "/config" && it.method == "PUT" })
         } finally { pageScope.cancel() }
     }
 
@@ -191,14 +192,14 @@ class InboundViewModelTest {
         vm.refresh()
         assertEquals("5m", vm.state.value.native.textAt("udp_timeout"))
         assertTrue(vm.state.value.hasPendingChanges)
-        assertFalse(calls.any { it.take(2) == listOf("config", "apply") })
+        assertFalse(calls.any { it.path == "/config" && it.method == "PUT" })
         assertTrue(vm.flush())
-        assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+        assertEquals(1, calls.count { it.path == "/config" && it.method == "PUT" })
         vm.setField("udp_timeout", JsonPrimitive("3m"))
         vm.setField("udp_timeout", JsonPrimitive("5m"))
         assertFalse(vm.state.value.hasPendingChanges)
         assertTrue(vm.flush())
-        assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+        assertEquals(1, calls.count { it.path == "/config" && it.method == "PUT" })
     }
 
     @Test fun confirmedBackendSwitchSurvivesPageDisposalAndReportsFailure() = runBlocking {
@@ -215,7 +216,7 @@ class InboundViewModelTest {
             assertEquals(listOf("failed"), errors)
             assertEquals("ebpf", vm.state.value.backend)
             assertEquals("backend", vm.state.value.draftForReview()!!.partition)
-            assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+            assertEquals(1, calls.count { it.path == "/config" && it.method == "PUT" })
         } finally { pageScope.cancel() }
     }
 
@@ -231,7 +232,7 @@ class InboundViewModelTest {
             assertFalse(vm.state.value.hasPendingChanges)
             assertFalse(vm.state.value.requiresReload)
             assertEquals("ready", vm.state.value.snapshot!!.status!!.state)
-            assertEquals(1, calls.count { it == listOf("service", "restart") })
+            assertEquals(1, calls.count { it.path == "/service/restart" })
         } finally { pageScope.cancel() }
     }
 
@@ -246,7 +247,7 @@ class InboundViewModelTest {
             assertTrue(ebpf.contains("5m"))
             assertEquals("ebpf", backend)
             assertNull(vm.state.value.pendingBackend)
-            assertFalse(calls.any { it.take(2) == listOf("config", "apply") && it[4] == "inbound/backend" })
+            assertFalse(calls.any { it.path == "/config" && it.method == "PUT" && it.target == "inbound/backend" })
         } finally { pageScope.cancel() }
     }
 
@@ -262,7 +263,7 @@ class InboundViewModelTest {
         assertTrue(vm.state.value.hasPendingChanges)
         assertTrue(vm.flush())
         assertTrue(ebpf.contains("off"))
-        assertEquals(2, calls.count { it.take(2) == listOf("config", "apply") })
+        assertEquals(2, calls.count { it.path == "/config" && it.method == "PUT" })
     }
 
     @Test fun failedSaveAfterRevertingDraftStillBlocksNavigationAndAutomaticRefresh() = runBlocking {
@@ -276,9 +277,9 @@ class InboundViewModelTest {
         assertNull(vm.state.value.draft)
         assertFalse(vm.state.value.canReviewDraft)
         assertTrue(vm.state.value.requiresReload)
-        val reads = calls.count { it.take(2) == listOf("config", "read") }
+        val reads = calls.count { it.path == "/config" && it.method == "GET" }
         vm.refresh()
-        assertEquals(reads, calls.count { it.take(2) == listOf("config", "read") })
+        assertEquals(reads, calls.count { it.path == "/config" && it.method == "GET" })
         assertEquals(originalRevision, vm.state.value.snapshot!!.partitions.getValue("ebpf").revision)
         failure = null
         vm.discardAndReload(); vm.loaded()
@@ -296,7 +297,7 @@ class InboundViewModelTest {
         assertFalse(vm.state.value.hasPendingChanges)
         vm.confirmBackendSwitch(); vm.idle()
         assertEquals(listOf("inbound/ebpf", "inbound/backend"),
-            calls.filter { it.take(2) == listOf("config", "apply") }.map { it[4] })
+            calls.filter { it.path == "/config" && it.method == "PUT" }.map { it.target })
         assertEquals("tun", vm.state.value.backend)
     }
 
@@ -309,15 +310,15 @@ class InboundViewModelTest {
         assertFalse(vm.flush())
         assertTrue(vm.state.value.requiresReload)
         assertTrue(vm.state.value.draftForReview()!!.snapshot.content.contains("5m"))
-        assertFalse(calls.any { it == listOf("service", "restart") })
-        assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+        assertFalse(calls.any { it.path == "/service/restart" })
+        assertEquals(1, calls.count { it.path == "/config" && it.method == "PUT" })
     }
 
     @Test fun revertingDuringSaveIsAppliedAfterConfirmationWithoutFlicker() = runBlocking {
         val vm = viewModel(this)
         vm.refresh(); vm.loaded()
         onApply = {
-            if (calls.count { it.take(2) == listOf("config", "apply") } == 1) {
+            if (calls.count { it.path == "/config" && it.method == "PUT" } == 1) {
                 vm.setField("udp_timeout", JsonPrimitive("3m"))
                 assertEquals("3m", vm.state.value.native.textAt("udp_timeout"))
             }
@@ -326,25 +327,25 @@ class InboundViewModelTest {
         assertTrue(vm.flush())
         assertEquals("3m", vm.state.value.native.textAt("udp_timeout"))
         assertTrue(ebpf.contains("3m"))
-        assertEquals(2, calls.count { it.take(2) == listOf("config", "apply") })
+        assertEquals(2, calls.count { it.path == "/config" && it.method == "PUT" })
     }
 
     @Test fun backgroundSaveKeepsLaterForegroundEditsUntilNextLeave() = runBlocking {
         val vm = viewModel(this)
         vm.refresh(); vm.loaded()
         onApply = {
-            if (calls.count { it.take(2) == listOf("config", "apply") } == 1) {
+            if (calls.count { it.path == "/config" && it.method == "PUT" } == 1) {
                 vm.setField("local.dns_mode", JsonPrimitive("off"))
             }
         }
         vm.setField("udp_timeout", JsonPrimitive("5m")); vm.requestFlush()
         withTimeout(5_000) { vm.state.first { !it.isSaving } }
-        assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+        assertEquals(1, calls.count { it.path == "/config" && it.method == "PUT" })
         assertTrue(ebpf.contains("respect_policy"))
         assertTrue(vm.state.value.hasPendingChanges)
         assertTrue(vm.flush())
         assertTrue(ebpf.contains("off"))
-        assertEquals(2, calls.count { it.take(2) == listOf("config", "apply") })
+        assertEquals(2, calls.count { it.path == "/config" && it.method == "PUT" })
     }
 
     @Test fun diagnosticsInBothBackendsUseReadableContentWithoutChangingService() = runBlocking {
@@ -357,7 +358,7 @@ class InboundViewModelTest {
             vm.diagnose()
             withTimeout(5_000) { vm.state.first { it.diagnostic != null } }
             assertEquals("结论: eBPF 能力预检通过", vm.state.value.diagnostic)
-            assertEquals(listOf(listOf("ebpf", "status", "configured")), calls)
+            assertEquals(listOf("/diagnostics/ebpf"), calls.map { it.path })
             assertEquals(selected, vm.state.value.backend)
             assertFalse(vm.state.value.isDiagnosing)
             vm.dismissDiagnostic()
@@ -373,7 +374,7 @@ class InboundViewModelTest {
         withTimeout(5_000) { vm.state.first { it.diagnostic != null } }
         assertEquals("结论: 部分必要检查无法确认", vm.state.value.diagnostic)
         assertFalse(vm.state.value.isDiagnosing)
-        assertEquals(listOf(listOf("ebpf", "status", "configured")), calls)
+        assertEquals(listOf("/diagnostics/ebpf"), calls.map { it.path })
     }
 
     @Test fun initialLoadPublishesTheFormAndChoicesTogether() = runBlocking {
@@ -437,14 +438,14 @@ class InboundViewModelTest {
             assertEquals("ebpf", vm.state.value.applyingField)
             assertTrue(vm.state.value.hasConfiguration)
             assertTrue(vm.state.value.editable)
-            if (calls.count { it.take(2) == listOf("config", "apply") } == 1) {
+            if (calls.count { it.path == "/config" && it.method == "PUT" } == 1) {
                 vm.setField("local.dns_mode", JsonPrimitive("hijack"))
             }
         }
         vm.setField("local.dns_mode", JsonPrimitive("off"))
         vm.idle()
         assertNull(vm.state.value.applyingField)
-        assertEquals(2, calls.count { it.take(2) == listOf("config", "apply") })
+        assertEquals(2, calls.count { it.path == "/config" && it.method == "PUT" })
         assertEquals("hijack", vm.state.value.native.getValue("local").jsonObject.textAt("dns_mode"))
         vm.requestBackend("tun")
         withTimeout(5_000) { vm.state.first { it.pendingBackend != null } }
@@ -487,7 +488,7 @@ class InboundViewModelTest {
         vm.requestBackend("tun")
         withTimeout(5_000) { vm.state.first { it.pendingBackend == "tun" } }
         assertEquals("ebpf", vm.state.value.backend)
-        assertFalse(calls.any { it.take(2) == listOf("config", "apply") })
+        assertFalse(calls.any { it.path == "/config" && it.method == "PUT" })
         vm.cancelBackendSwitch()
         assertNull(vm.state.value.pendingBackend)
         vm.requestBackend("tun")
@@ -512,7 +513,7 @@ class InboundViewModelTest {
         assertFalse(vm.state.value.editable)
         assertEquals("failed", vm.state.value.error)
         assertNull(vm.state.value.applyingField)
-        assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+        assertEquals(1, calls.count { it.path == "/config" && it.method == "PUT" })
     }
 
     @Test fun conflictDoesNotOverwriteOrRetryAndReloadUnblocks() = runBlocking {
@@ -525,9 +526,9 @@ class InboundViewModelTest {
         vm.idle()
         assertEquals(oldContent, ebpf)
         assertTrue(vm.state.value.requiresReload)
-        assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+        assertEquals(1, calls.count { it.path == "/config" && it.method == "PUT" })
         vm.setField("local.dns_mode", JsonPrimitive("hijack"))
-        assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+        assertEquals(1, calls.count { it.path == "/config" && it.method == "PUT" })
         failure = null
         vm.discardAndReload()
         withTimeout(5_000) { vm.state.first { !it.isLoading && !it.requiresReload } }
@@ -552,7 +553,7 @@ class InboundViewModelTest {
         assertEquals("stopped", vm.state.value.snapshot!!.status!!.state)
         assertNull(vm.state.value.snapshot!!.status!!.activeBackend)
         assertEquals(previous, ebpf)
-        assertTrue(calls.filter { it.first() == "service" }.all { it == listOf("service", "status") })
+        assertTrue(calls.filter { it.path.startsWith("/service") }.all { it.path == "/service" })
     }
 
     @Test fun absentActiveBackendIsAnErrorNotSavedSuccess() = runBlocking {
@@ -597,7 +598,7 @@ class InboundViewModelTest {
         vm.setField("local.dns_mode", JsonPrimitive("off"), "ebpf", draftRevision)
         assertTrue(vm.state.value.requiresReload)
         assertEquals("config.conflict", vm.state.value.errorCode)
-        assertFalse(calls.any { it.take(2) == listOf("config", "apply") })
+        assertFalse(calls.any { it.path == "/config" && it.method == "PUT" })
     }
 
     @Test fun applyingConfiguredBackendStillConfirmsWhenActualDiffers() = runBlocking {
@@ -608,7 +609,7 @@ class InboundViewModelTest {
         vm.loaded()
         vm.requestBackend("tun")
         withTimeout(5_000) { vm.state.first { it.pendingBackend == "tun" } }
-        assertFalse(calls.any { it.take(2) == listOf("config", "apply") })
+        assertFalse(calls.any { it.path == "/config" && it.method == "PUT" })
         actualBackendOverride = null
         vm.confirmBackendSwitch()
         vm.idle()
@@ -641,7 +642,7 @@ class InboundViewModelTest {
         vm.loaded()
         assertNull(vm.state.value.snapshot!!.status)
         assertEquals(draft, vm.state.value.failedDraft)
-        assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+        assertEquals(1, calls.count { it.path == "/config" && it.method == "PUT" })
 
         readFailure = null
         revision++
@@ -652,7 +653,7 @@ class InboundViewModelTest {
         assertFalse(vm.state.value.requiresReload)
         assertNull(vm.state.value.failedDraft)
         assertNotEquals(originalRevision, vm.state.value.snapshot!!.partitions.getValue("backend").revision)
-        assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+        assertEquals(1, calls.count { it.path == "/config" && it.method == "PUT" })
     }
 
     @Test fun failedFieldSaveWithUnreadableStatusKeepsCandidateUntilExplicitDiscard() = runBlocking {
@@ -681,7 +682,7 @@ class InboundViewModelTest {
         assertNull(vm.state.value.failedDraft)
         assertNull(vm.state.value.snapshot!!.status)
         assertTrue(vm.state.value.requiresReload)
-        assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+        assertEquals(1, calls.count { it.path == "/config" && it.method == "PUT" })
     }
 
     @Test fun successfulNativeWriteWithoutStatusConfirmationIsNotUiSuccess() = runBlocking {
@@ -708,7 +709,7 @@ class InboundViewModelTest {
         assertEquals("tun", vm.state.value.backend)
         assertEquals("tun", vm.state.value.snapshot!!.status!!.activeBackend)
         assertNull(vm.state.value.failedDraft)
-        assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+        assertEquals(1, calls.count { it.path == "/config" && it.method == "PUT" })
     }
 
     @Test fun manualRefreshFailureDoesNotReuseReadySnapshot() = runBlocking {
@@ -722,7 +723,7 @@ class InboundViewModelTest {
         assertNull(vm.state.value.snapshot!!.status)
         assertTrue(vm.state.value.requiresReload)
         assertFalse(vm.state.value.editable)
-        assertFalse(calls.any { it.take(2) == listOf("config", "apply") })
+        assertFalse(calls.any { it.path == "/config" && it.method == "PUT" })
     }
 
     @Test fun backendStatusReadFailureMarksActualUnknownBeforeAnyWrite() = runBlocking {
@@ -736,7 +737,7 @@ class InboundViewModelTest {
         assertTrue(vm.state.value.requiresReload)
         assertFalse(vm.state.value.editable)
         assertNull(vm.state.value.pendingBackend)
-        assertFalse(calls.any { it.take(2) == listOf("config", "apply") })
+        assertFalse(calls.any { it.path == "/config" && it.method == "PUT" })
     }
 
     @Test fun failedRestartDoesNotReuseReadySnapshot() = runBlocking {
@@ -751,7 +752,7 @@ class InboundViewModelTest {
         assertFalse(vm.state.value.editable)
         assertNull(vm.state.value.failedDraft)
         assertEquals("restart failed", vm.state.value.error)
-        assertEquals(1, calls.count { it == listOf("service", "restart") })
+        assertEquals(1, calls.count { it.path == "/service/restart" })
     }
 
     @Test fun tunInterfaceAndRuleSetEditsWriteWholeArrayTokensAndPreserveOtherFields() = runBlocking {
@@ -777,7 +778,7 @@ class InboundViewModelTest {
         assertEquals(selected.getValue("multi_queue"), updated.getValue("multi_queue"))
         assertEquals(selected.getValue("route_address_set"), updated.getValue("route_address_set"))
         assertEquals("stopped", vm.state.value.snapshot!!.status!!.state)
-        assertEquals(1, calls.count { it.take(2) == listOf("config", "apply") })
+        assertEquals(1, calls.count { it.path == "/config" && it.method == "PUT" })
     }
 
     @Test fun multiFieldEditsTrackTheirVisibleSettingAndClearProgress() = runBlocking {

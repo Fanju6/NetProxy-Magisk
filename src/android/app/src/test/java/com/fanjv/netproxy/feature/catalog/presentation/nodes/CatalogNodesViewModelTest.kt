@@ -1,11 +1,8 @@
 package com.fanjv.netproxy.feature.catalog.presentation.nodes
 
-import com.fanjv.netproxy.core.command.CommandFileStore
-import com.fanjv.netproxy.core.command.NetProxyCtlClient
-import com.fanjv.netproxy.core.command.NetProxyCtlOutput
-import com.fanjv.netproxy.core.command.NetProxyCtlTransport
+import com.fanjv.netproxy.core.api.*
+
 import com.fanjv.netproxy.core.ui.UiText
-import com.fanjv.netproxy.feature.catalog.data.CatalogRepository
 import com.fanjv.netproxy.feature.catalog.data.NodeRepository
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
@@ -29,14 +26,12 @@ import org.junit.rules.TemporaryFolder
 class CatalogNodesViewModelTest {
     @get:Rule val folder = TemporaryFolder()
 
-    private class Transport(val handler: suspend (List<String>) -> String) : NetProxyCtlTransport {
-        val calls = CopyOnWriteArrayList<List<String>>()
-        override suspend fun execute(arguments: List<String>, timeoutMillis: Long): NetProxyCtlOutput {
-            calls += arguments
-            val data = handler(arguments)
-            return NetProxyCtlOutput(true, listOf(
-                """{"schema":1,"ok":true,"code":"node.test","message":"","data":$data}"""
-            ), emptyList())
+    private class Transport(val handler: suspend (ApiTestRequest) -> String) : TestApiTransport() {
+        val calls = CopyOnWriteArrayList<ApiTestRequest>()
+        override suspend fun respond(request: ApiTestRequest): ModuleHttpResponse {
+            calls += request
+            val data = handler(request)
+            return apiSuccess(data)
         }
     }
 
@@ -44,7 +39,7 @@ class CatalogNodesViewModelTest {
         """{"selection":{"active_group_id":"default","selector_mode":"manual","selected":"default/$tag","runtime_selected":"Local/$tag"}}"""
 
     private fun model(scope: CoroutineScope, transport: Transport) = CatalogNodesViewModel(
-        NodeRepository(CatalogRepository(NetProxyCtlClient(transport = transport), CommandFileStore(folder.root))),
+        NodeRepository(ModuleApiClient(transport = transport)),
         importNode = { error("Unexpected import") }, scope = scope,
     )
 
@@ -98,7 +93,7 @@ class CatalogNodesViewModelTest {
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         val transport = Transport { args ->
-            if (args[1] == "use") "{}"
+            if (args.path == "/selection") "{}"
             else if (count.incrementAndGet() == 1) {
                 entered.complete(Unit)
                 withContext(NonCancellable) { withTimeout(10_000) { release.await() } }
@@ -117,7 +112,7 @@ class CatalogNodesViewModelTest {
         settle()
         assertEquals("default/chosen", vm.state.value.selection.selected)
         assertEquals(2, count.get())
-        assertEquals(1, transport.calls.count { it[1] == "use" })
+        assertEquals(1, transport.calls.count { it.path == "/selection" })
     }
 
     @Test fun autoSelectionKeepsResolvedNodeUntilConfirmedSnapshotReplacesIt() = runBlocking {
@@ -126,7 +121,7 @@ class CatalogNodesViewModelTest {
         var reads = 0
         val initial = """{"selection":{"active_group_id":"default","selector_mode":"urltest","selected":"Auto/default","active_group_runtime_tag":"Local","runtime_selected":"Local/fast"}}"""
         val transport = Transport { args ->
-            if (args[1] == "use") "{}"
+            if (args.path == "/selection") "{}"
             else if (++reads == 1) initial
             else {
                 entered.complete(Unit)
@@ -152,7 +147,7 @@ class CatalogNodesViewModelTest {
         settle()
         assertEquals(UiText.Empty, vm.state.value.error)
         assertEquals(0L, vm.state.value.noticeId)
-        assertFalse(transport.calls.any { it[1] == "snapshot" })
+        assertFalse(transport.calls.any { it.path == "/nodes/snapshot" })
     }
 
     @Test fun cancelledPageCannotApplyLateSnapshotOrFailure() = runBlocking {

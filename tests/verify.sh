@@ -44,7 +44,7 @@ run_android() {
   printf '%s\n' '==> 验证 Android 管理器'
   (
     cd "$ROOT/src/android"
-    ./gradlew testDebugUnitTest :scripta:editor:testAndroidHostTest :scripta:editor:desktopTest lintDebug :app:assembleDebug --build-cache --parallel --no-daemon
+    ./gradlew testDebugUnitTest :scripta:editor:testAndroidHostTest :scripta:editor:desktopTest lintDebug :app:assembleDebug :platform:assembleDex --build-cache --parallel --no-daemon
   )
 }
 

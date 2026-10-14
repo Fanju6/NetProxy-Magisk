@@ -4,7 +4,7 @@
 
 开始修改前请先阅读 [AGENTS.md](AGENTS.md)：目录职责、跨组件契约、各组件编码约定、提交与注释要求，以及按改动范围执行的验证命令都在那里，本文件不重复。Android 内部分层见 [src/android/ARCHITECTURE.md](src/android/ARCHITECTURE.md)；源码结构的概览见 [README](README.md) 的「源码结构」。
 
-Android 管理器通过 `netproxyctl` 的 `schema=1` JSON 契约访问模块。修改命令字段、错误码或状态语义时，必须同步检查原生组件、Shell、WebUI 和 Android 调用方。
+Android 管理器通过模块 HTTPS API 的 `schema=1` JSON 契约访问模块，CLI 是独立维护入口。修改命令字段、错误码或状态语义时，必须同步检查原生组件、Shell、WebUI 和 Android 调用方。
 
 ## 提交前
 
@@ -73,7 +73,7 @@ JavaScript 脚本必须配备 `*.test.mjs`，在 `npm run check` 中执行。
 
 ## Android 管理器
 
-CI 的管理器任务与标准模块构建并行启动，按变更范围在同一次 Gradle 调用中执行 Android 单元测试、Lint 和 Release 构建，并启用构建缓存。管理器 APK 使用 GitHub Secrets 提供的固定密钥签名，发布阶段仅将其追加到标准包，不重复编译或压缩；该 APK 和签名材料不提交到仓库。Android 源码改动会同时触发模块重打包。CI 管理器版本带提交短哈希，不显示安装来源或签名警告；使用同一固定密钥的后续构建可以覆盖升级。构建需要 `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS` 和 `ANDROID_KEY_PASSWORD`，纯验证任务不需要签名材料。修改 Android 源码仍需在提交前完成本地构建；涉及 Root、模块命令、快捷设置磁贴、多用户与应用分身、Navigation 动画或 eBPF 时还需真机验证。
+CI 的管理器任务与标准模块构建并行启动，按变更范围在同一次 Gradle 调用中执行 Android 单元测试、Lint 和 Release 构建，并启用构建缓存。管理器任务同时构建框架辅助 DEX；模块汇合 APK 与 DEX。管理器 APK 使用 GitHub Secrets 提供的固定密钥签名，发布阶段仅将其追加到标准包，不重复编译或压缩；该 APK 和签名材料不提交到仓库。Android 源码改动会同时触发模块重打包。CI 管理器版本带提交短哈希，不显示安装来源或签名警告；使用同一固定密钥的后续构建可以覆盖升级。构建需要 `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS` 和 `ANDROID_KEY_PASSWORD`，纯验证任务不需要签名材料。修改 Android 源码仍需在提交前完成本地构建；涉及 Root、模块命令、快捷设置磁贴、多用户与应用分身、Navigation 动画或 eBPF 时还需真机验证。
 
 ## KernelSU 分发
 

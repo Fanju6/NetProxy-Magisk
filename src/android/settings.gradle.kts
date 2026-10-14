@@ -36,3 +36,4 @@ file("local.properties").takeIf(File::isFile)?.copyTo(
 
 includeBuild(scriptaDirectory)
 include(":app")
+include(":platform")

@@ -7,7 +7,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
@@ -19,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -26,6 +32,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.DpSize
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -35,6 +42,10 @@ import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
 import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.core.module.ModuleAccessViewModel
+import com.fanjv.netproxy.core.ui.userMessage
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import com.fanjv.netproxy.core.ui.component.LocalModuleAvailability
 import com.fanjv.netproxy.core.ui.component.ModulePage
 import com.fanjv.netproxy.core.ui.theme.AppThemeDefaults
@@ -81,6 +92,11 @@ import com.fanjv.netproxy.navigation.rememberNavigator
 import com.fanjv.netproxy.navigation.mainDestinations
 import com.fanjv.netproxy.navigation.availableIn
 import top.yukonga.miuix.kmp.basic.NavigationItem
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
+import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextField
+import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
@@ -156,6 +172,7 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
     val catalogNodesViewModel: CatalogNodesViewModel = netProxyViewModel()
     val moduleAccess: ModuleAccessViewModel = netProxyViewModel()
     val availability by moduleAccess.state.collectAsStateWithLifecycle()
+    var reconnect by rememberSaveable { mutableStateOf(false) }
 
     LifecycleResumeEffect(Unit) {
         moduleAccess.refresh()
@@ -171,7 +188,7 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
                 backStack = navigator.backStack,
                 onBack = { navigator.pop() },
             ) {
-                entry<Main> { MainScreen(themeViewModel, catalogNodesViewModel) }
+                entry<Main> { MainScreen(themeViewModel, catalogNodesViewModel, onReconnect = { reconnect = true }) }
                 entry<Apps> {
                     ModulePage(R.string.proxy_apps, R.string.apps_read_failed, { navigator.pop() }) {
                         AppsScreen(onBack = { navigator.pop() })
@@ -244,18 +261,59 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
                 }
             }
         }
+        ModuleConnectionDialog(reconnect, moduleAccess::reconnect) { reconnect = false }
+    }
+}
+
+@Composable
+private fun ModuleConnectionDialog(show: Boolean, connect: suspend (String) -> Unit, onDismiss: () -> Unit) {
+    var address by rememberSaveable { mutableStateOf("https://127.0.0.1:9091") }
+    var connecting by remember { mutableStateOf(false) }
+    var request by remember { mutableStateOf<Job?>(null) }
+    var error by remember { mutableStateOf("") }
+    val invalidAddress = stringResource(R.string.module_address_invalid)
+    val scope = rememberCoroutineScope()
+    val dismiss = { request?.cancel(); onDismiss() }
+    OverlayDialog(show = show, title = stringResource(R.string.module_reconnect),
+        onDismissRequest = dismiss, insideMargin = DpSize(0.dp, 24.dp)) {
+        Column(Modifier.padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            TextField(value = address, onValueChange = { address = it; error = "" },
+                label = stringResource(R.string.module_address), maxLines = 1, enabled = !connecting,
+                modifier = Modifier.fillMaxWidth())
+            if (error.isNotEmpty()) Text(error, style = top.yukonga.miuix.kmp.theme.MiuixTheme.textStyles.footnote1,
+                color = top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.error)
+            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                TextButton(stringResource(android.R.string.cancel), modifier = Modifier.weight(1f), onClick = dismiss)
+                TextButton(stringResource(if (connecting) R.string.module_connecting else R.string.module_reconnect),
+                    modifier = Modifier.weight(1f), enabled = !connecting && address.isNotBlank(),
+                    colors = ButtonDefaults.textButtonColorsPrimary(), onClick = {
+                        connecting = true
+                        error = ""
+                        request = scope.launch {
+                            try { connect(address.trim()); onDismiss() }
+                            catch (cancelled: CancellationException) { throw cancelled }
+                            catch (failure: Exception) {
+                                error = if (failure is IllegalArgumentException || failure is java.net.URISyntaxException) invalidAddress
+                                    else failure.userMessage()
+                            }
+                            finally { connecting = false; request = null }
+                        }
+                    })
+            }
+        }
     }
 }
 
 @Composable
 internal fun MainScreen(
     themeViewModel: ThemeViewModel,
-    catalogNodesViewModel: CatalogNodesViewModel
+    catalogNodesViewModel: CatalogNodesViewModel,
+    onReconnect: () -> Unit = {},
 ) {
     val availability = LocalModuleAvailability.current
     var destination by rememberSaveable { mutableStateOf(AppDestination.Dashboard) }
     if (availability == null) {
-        CatalogDashboardScreen()
+        CatalogDashboardScreen(onReconnect = onReconnect)
         return
     }
     val destinations = mainDestinations(availability.available)
@@ -263,7 +321,7 @@ internal fun MainScreen(
     key(destinations) {
         MainPager(themeViewModel, catalogNodesViewModel, destinations,
             initialDestination = destination.availableIn(destinations),
-            onDestinationChanged = { destination = it })
+            onDestinationChanged = { destination = it }, onReconnect = onReconnect)
     }
 }
 
@@ -274,6 +332,7 @@ private fun MainPager(
     destinations: List<AppDestination>,
     initialDestination: AppDestination,
     onDestinationChanged: (AppDestination) -> Unit,
+    onReconnect: () -> Unit,
 ) {
     val themeState by themeViewModel.state.collectAsStateWithLifecycle()
     val pagerState = rememberPagerState(initialPage = destinations.indexOf(initialDestination),
@@ -335,6 +394,7 @@ private fun MainPager(
                     AppDestination.Dashboard -> CatalogDashboardScreen(
                         bottomPadding = bottomPadding,
                         isActive = mainPagerState.selectedPage == pageIndex,
+                        onReconnect = onReconnect,
                         onNavigateToNodes = {
                             val nodesIndex = destinations.indexOf(AppDestination.Nodes)
                             if (nodesIndex != -1) {

@@ -61,7 +61,7 @@ eBPF is selected by default. Choose TUN under **Settings → Inbound settings**.
 
 1. Download `NetProxy_<version>_<build>.zip` from [Releases](https://github.com/Fanju6/NetProxy-Magisk/releases). It includes the module and Android Manager.
 2. Flash it in your root manager, choose how to retain data and whether to install the Android Manager, then wait for installation to finish.
-3. Open the Android Manager and grant root access. Import nodes on the **Nodes** page or add a subscription on the **Subscriptions** page.
+3. Open the Android Manager to connect to the module automatically. Import nodes on the **Nodes** page or add a subscription on the **Subscriptions** page.
 4. On the **Nodes** page, choose a group and automatic or manual selection, then return to **Dashboard** to start the service.
 
 The service starts manually by default. Enable **Start on boot** in **Settings** for automatic startup. See [Quick Start](https://www.netproxy.store/guide/quick-start) for initial setup.

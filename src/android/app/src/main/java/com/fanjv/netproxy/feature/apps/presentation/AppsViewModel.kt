@@ -2,7 +2,7 @@ package com.fanjv.netproxy.feature.apps.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.fanjv.netproxy.core.command.ConfigurationWrites
+import com.fanjv.netproxy.core.config.ConfigurationWrites
 import com.fanjv.netproxy.core.ui.userMessage
 import com.fanjv.netproxy.feature.apps.data.AppIconCache
 import com.fanjv.netproxy.feature.apps.data.AppPackageRepository
@@ -25,11 +25,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.util.concurrent.ConcurrentHashMap
 
-/** 管理 Android 应用清单与 netproxyctl 分应用策略。 */
+/** 管理 Android 应用清单与模块分应用策略。 */
 internal class AppsViewModel(
     private val repository: AppPolicyRepository,
     private val packageCatalog: AppPackageRepository,
@@ -37,8 +38,6 @@ internal class AppsViewModel(
     private val modelDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val writes: ConfigurationWrites = ConfigurationWrites(scope),
 ) : ViewModel(scope) {
-    private var labels = ConcurrentHashMap<String, String>()
-    private var packageLabels = ConcurrentHashMap<String, String>()
     private val _state = MutableStateFlow(AppsUiState())
     val state: StateFlow<AppsUiState> = _state.asStateFlow()
     private var loadJob: Job? = null
@@ -51,7 +50,6 @@ internal class AppsViewModel(
     private var draftConfig: AppProxyConfig? = null
     private var requestedConfig: AppProxyConfig? = null
     private val policyMutationMutex = Mutex()
-    private val packageLookupDispatcher = Dispatchers.IO.limitedParallelism(4)
     private var loaded = false
 
     fun load(force: Boolean = false) {
@@ -62,16 +60,13 @@ internal class AppsViewModel(
         if (force) {
             modelRevision++
             modelJob?.cancel()
-            labels = ConcurrentHashMap()
-            packageLabels = ConcurrentHashMap()
-            AppIconCache.clear()
             loaded = false
         }
         _state.update { it.copy(isLoadingApps = true, error = "") }
         loadJob = viewModelScope.launch {
             try {
                 if (force) packageCatalog.invalidatePackageListingCaches()
-                val (config, users) = coroutineScope {
+                val snapshot = coroutineScope {
                     val config = async {
                         policyMutationMutex.withLock {
                             if (draftConfig != null || _state.value.isSavingPolicy) return@withLock draftConfig ?: confirmedConfig
@@ -85,23 +80,17 @@ internal class AppsViewModel(
                             result
                         }
                     }
-                    val users = async { packageCatalog.getUsers() }
-                    config.await() to users.await()
+                    val snapshot = async { packageCatalog.snapshot() }
+                    config.await()
+                    snapshot.await()
                 }
-                val selected = activeItems(config).toSet()
-                resolveLabels(selected.mapNotNull(::splitAppId))
-                val master = withContext(Dispatchers.IO) {
-                    users.map { user ->
-                        async {
-                            val system = packageCatalog.getInstalledPackages(user.id, "system")
-                            val regular = packageCatalog.getInstalledPackages(user.id, "user")
-                            resolveLabels((system + regular).map { it to user.id })
-                            buildList {
-                                system.forEach { add(appModel(it, user.id, true)) }
-                                regular.forEach { add(appModel(it, user.id, false)) }
-                            }
+                val master = withContext(Dispatchers.Default) {
+                    snapshot.users.flatMap { user ->
+                        user.apps.map { app ->
+                            currentCoroutineContext().ensureActive()
+                            AppInfoModel(app.packageName, app.label, user.id.toString(), app.system, app.iconKey)
                         }
-                    }.awaitAll().flatten()
+                    }
                 }
                 currentCoroutineContext().ensureActive()
                 if (revision != loadRevision) return@launch
@@ -217,11 +206,10 @@ internal class AppsViewModel(
         val revision = ++modelRevision
         modelJob?.cancel()
         val snapshot = _state.value
-        val currentLabels = labels
         _state.update { it.copy(isFilteringApps = true) }
         modelJob = viewModelScope.launch {
             val (apps, search) = withContext(modelDispatcher) {
-                calculateAppsList(snapshot, currentLabels)
+                calculateAppsList(snapshot)
             }
             currentCoroutineContext().ensureActive()
             if (revision != modelRevision) return@launch
@@ -231,30 +219,21 @@ internal class AppsViewModel(
         }
     }
 
-    private suspend fun resolveLabels(packageIds: List<Pair<String, String>>) {
-        val labels = labels
-        val packageLabels = packageLabels
-        coroutineScope {
-            packageIds.distinct().map { (packageName, userId) ->
-                async(packageLookupDispatcher) {
-                    val key = "$userId:$packageName"
-                    if (labels.containsKey(key)) return@async
-                    val label = packageLabels.computeIfAbsent(packageName) {
-                        packageCatalog.label(packageName)
+    suspend fun loadIcons(references: List<String>) = coroutineScope {
+        val generation = AppIconCache.generation
+        val ids = references.toSet()
+        val slots = Semaphore(4)
+        _state.value.masterAppList.filter { it.id in ids }.map { it.iconKey }.distinct()
+            .filter { it.isNotEmpty() && AppIconCache.cachedIcon(it) == null }.map { key ->
+                async {
+                    slots.withPermit {
+                        try { AppIconCache.putIcon(key, packageCatalog.icon(key), generation) }
+                        catch (error: CancellationException) { throw error }
+                        catch (_: Exception) { }
                     }
-                    labels[key] = label
                 }
             }.awaitAll()
-        }
     }
-
-    private fun appModel(packageName: String, userId: String, isSystem: Boolean) =
-        AppInfoModel(
-            packageName = packageName,
-            label = labels["$userId:$packageName"] ?: packageName,
-            userId = userId,
-            isSystem = isSystem
-        )
 
     private fun activeItems(config: AppProxyConfig): Set<String> =
         activeItems(config.mode, config.proxyApps.toSet(), config.bypassApps.toSet())
@@ -287,17 +266,10 @@ internal class AppsViewModel(
             config.proxyApps.toSet() != confirmedConfig.proxyApps.toSet() ||
             config.bypassApps.toSet() != confirmedConfig.bypassApps.toSet()
 
-    private fun splitAppId(value: String): Pair<String, String>? {
-        val separator = value.indexOf(':')
-        if (separator <= 0 || separator == value.lastIndex) return null
-        return value.substring(separator + 1) to value.substring(0, separator)
-    }
-
 }
 
 internal suspend fun calculateAppsList(
     snapshot: AppsUiState,
-    labels: Map<String, String>,
 ): Pair<List<AppInfoModel>, List<AppInfoModel>> {
     val context = currentCoroutineContext()
     var apps = snapshot.masterAppList
@@ -305,10 +277,6 @@ internal suspend fun calculateAppsList(
         .filter {
             context.ensureActive()
             snapshot.showSystemApps || !it.isSystem
-        }
-        .map { app ->
-            val label = labels[app.id] ?: app.label
-            if (label == app.label) app else app.copy(label = label)
         }
         .toList()
     apps = apps.sortedWith { left, right ->

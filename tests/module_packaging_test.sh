@@ -123,9 +123,9 @@ assert_not_contains "$RELEASE_WORKFLOW" 'full_name|lite_name|FULL_NAME|LITE_NAME
 
 assert_contains "$SHARED_WORKFLOW" '${{ steps.pack.outputs.module_name }}'
 assert_contains "$SHARED_WORKFLOW" 'needs: [module, android]'
-assert_contains "$SHARED_WORKFLOW" 'sh .github/scripts/complete-module.sh "$MODULE_NAME" manager/NetProxy.apk'
+assert_contains "$SHARED_WORKFLOW" 'sh .github/scripts/complete-module.sh "$MODULE_NAME" manager/module/NetProxy.apk manager/android/platform/build/dex/classes.dex'
 assert_contains "$SHARED_WORKFLOW" 'name: module-content'
-assert_contains "$SHARED_WORKFLOW" 'name: manager-apk'
+assert_contains "$SHARED_WORKFLOW" 'name: manager-binaries'
 assert_contains "$SHARED_WORKFLOW" 'name: module-package'
 assert_contains "$CI_WORKFLOW" 'needs: build'
 assert_contains "$CI_WORKFLOW" "needs.build.result == 'success'"
@@ -189,20 +189,29 @@ cp "$ROOT/src/module/config/inbound/inbound.json" "$TEMP/module/config/inbound/i
 
 sh "$ROOT/.github/scripts/package-module.sh" "$TEMP/module" "$TEMP/output" module.zip > "$TEMP/package.log"
 cp "$TEMP/output/module.zip" "$TEMP/before.zip"
-if sh "$ROOT/.github/scripts/complete-module.sh" "$TEMP/output/module.zip" "$TEMP/module/NetProxy.apk" >/dev/null 2>&1; then
+if sh "$ROOT/.github/scripts/complete-module.sh" "$TEMP/output/module.zip" "$TEMP/module/NetProxy.apk" "$TEMP/module/bin/android-platform.dex" >/dev/null 2>&1; then
   printf '%s\n' '缺少 APK 时不能完成模块包' >&2
   exit 1
 fi
 cmp "$TEMP/before.zip" "$TEMP/output/module.zip"
 : > "$TEMP/module/NetProxy.apk"
-if sh "$ROOT/.github/scripts/complete-module.sh" "$TEMP/output/module.zip" "$TEMP/module/NetProxy.apk" >/dev/null 2>&1; then
+if sh "$ROOT/.github/scripts/complete-module.sh" "$TEMP/output/module.zip" "$TEMP/module/NetProxy.apk" "$TEMP/module/bin/android-platform.dex" >/dev/null 2>&1; then
   printf '%s\n' '空 APK 时不能完成模块包' >&2
   exit 1
 fi
 cmp "$TEMP/before.zip" "$TEMP/output/module.zip"
 cp "$TEMP/module/bin/netproxyctl" "$TEMP/module/NetProxy.apk"
+for dex in missing empty; do
+  if [ "$dex" = empty ]; then : > "$TEMP/module/bin/android-platform.dex"; fi
+  if sh "$ROOT/.github/scripts/complete-module.sh" "$TEMP/output/module.zip" "$TEMP/module/NetProxy.apk" "$TEMP/module/bin/android-platform.dex" >/dev/null 2>&1; then
+    printf '%s\n' '缺少或空 DEX 时不能完成模块包' >&2
+    exit 1
+  fi
+  cmp "$TEMP/before.zip" "$TEMP/output/module.zip"
+done
+printf '%s\n' 'anonymous dex packaging fixture' > "$TEMP/module/bin/android-platform.dex"
 7z l -slt "$TEMP/before.zip" bin/netproxyctl > "$TEMP/before.core"
-sh "$ROOT/.github/scripts/complete-module.sh" "$TEMP/output/module.zip" "$TEMP/module/NetProxy.apk" >> "$TEMP/package.log"
+sh "$ROOT/.github/scripts/complete-module.sh" "$TEMP/output/module.zip" "$TEMP/module/NetProxy.apk" "$TEMP/module/bin/android-platform.dex" >> "$TEMP/package.log"
 7z l -slt "$TEMP/output/module.zip" | tr '\\' '/' > "$TEMP/module.list"
 assert_contains "$TEMP/module.list" 'Path = module.prop'
 [ "$(grep -c '^Path = module.prop$' "$TEMP/module.list")" -eq 1 ]
@@ -221,7 +230,7 @@ grep -Eiq '^Method = xz$' "$TEMP/core.list" || {
 grep -E '^(Packed Size|CRC|Method) = ' "$TEMP/before.core" > "$TEMP/before.compression"
 grep -E '^(Packed Size|CRC|Method) = ' "$TEMP/core.list" > "$TEMP/after.compression"
 cmp "$TEMP/before.compression" "$TEMP/after.compression"
-for file in module.prop bin/netproxyctl config/singbox/config.json config/inbound/inbound.json NetProxy.apk; do
+for file in module.prop bin/netproxyctl config/singbox/config.json config/inbound/inbound.json NetProxy.apk bin/android-platform.dex; do
   7z x -so "$TEMP/output/module.zip" "$file" > "$TEMP/extracted"
   cmp "$TEMP/module/$file" "$TEMP/extracted"
 done
@@ -231,7 +240,7 @@ if sh "$ROOT/.github/scripts/package-module.sh" "$TEMP/module" "$TEMP/output" mo
   printf '%s\n' '打包程序不应复用已有输出归档' >&2
   exit 1
 fi
-if sh "$ROOT/.github/scripts/complete-module.sh" "$TEMP/output/missing.zip" "$TEMP/module/NetProxy.apk" >/dev/null 2>&1; then
+if sh "$ROOT/.github/scripts/complete-module.sh" "$TEMP/output/missing.zip" "$TEMP/module/NetProxy.apk" "$TEMP/module/bin/android-platform.dex" >/dev/null 2>&1; then
   printf '%s\n' '不能从缺失的模块内容生成发行包' >&2
   exit 1
 fi

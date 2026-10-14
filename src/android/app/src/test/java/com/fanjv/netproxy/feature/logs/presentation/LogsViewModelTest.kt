@@ -1,6 +1,7 @@
 package com.fanjv.netproxy.feature.logs.presentation
 
-import com.fanjv.netproxy.core.command.*
+import com.fanjv.netproxy.core.api.*
+
 import com.fanjv.netproxy.feature.logs.data.*
 import kotlinx.coroutines.*
 import org.junit.Assert.*
@@ -11,14 +12,13 @@ import org.junit.rules.TemporaryFolder
 class LogsViewModelTest {
     @get:Rule val folder = TemporaryFolder()
 
-    private fun output(content: String) = NetProxyCtlOutput(true,
-        listOf("""{"schema":1,"ok":true,"code":"test","data":{"content":"$content"}}"""), emptyList())
+    private fun output(content: String) = apiSuccess("""{"content":"$content"}""")
 
     @Test fun readFailureIsNotEmptyAndDoesNotAffectAnotherLogType() = runBlocking {
         val scope = CoroutineScope(coroutineContext + SupervisorJob())
         try {
-            val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
-                if (args[2] == "service") error("read failed") else output("")
+            val client = ModuleApiClient(transport = TestApiTransport { args ->
+                if (args.query["kind"] == "service") error("read failed") else output("")
             })
             val vm = LogsViewModel(LogRepository(client, folder.root), scope)
             vm.refresh(LogType.SERVICE)
@@ -36,7 +36,7 @@ class LogsViewModelTest {
         val scope = CoroutineScope(coroutineContext + SupervisorJob())
         var fail = false
         try {
-            val client = NetProxyCtlClient(transport = NetProxyCtlTransport { _, _ ->
+            val client = ModuleApiClient(transport = TestApiTransport { _ ->
                 if (fail) error("read failed") else output("retained")
             })
             val vm = LogsViewModel(LogRepository(client, folder.root), scope)
@@ -57,8 +57,8 @@ class LogsViewModelTest {
     @Test fun clearFailureDoesNotBecomeAReadFailure() = runBlocking {
         val scope = CoroutineScope(coroutineContext + SupervisorJob())
         try {
-            val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
-                if (args[1] == "clear") error("cannot clear") else output("")
+            val client = ModuleApiClient(transport = TestApiTransport { args ->
+                if (args.method == "DELETE") error("cannot clear") else output("")
             })
             val vm = LogsViewModel(LogRepository(client, folder.root), scope)
             vm.refresh(LogType.KERNEL)
@@ -79,8 +79,8 @@ class LogsViewModelTest {
         val readFinish = CompletableDeferred<Unit>()
         val scope = CoroutineScope(coroutineContext + SupervisorJob())
         try {
-            val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
-                if (args[1] == "clear") {
+            val client = ModuleApiClient(transport = TestApiTransport { args ->
+                if (args.method == "DELETE") {
                     clearStarted.complete(Unit); clearFinish.await()
                 } else {
                     readStarted.complete(Unit)
@@ -109,7 +109,7 @@ class LogsViewModelTest {
         val scope = CoroutineScope(coroutineContext + SupervisorJob())
         var calls = 0
         try {
-            val client = NetProxyCtlClient(transport = NetProxyCtlTransport { _, _ ->
+            val client = ModuleApiClient(transport = TestApiTransport { _ ->
                 if (++calls == 1) {
                     firstStarted.complete(Unit)
                     withContext(NonCancellable) { firstFinish.await() }

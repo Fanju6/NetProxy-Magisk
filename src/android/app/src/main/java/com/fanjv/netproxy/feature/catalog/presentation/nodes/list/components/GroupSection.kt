@@ -78,17 +78,19 @@ internal fun CatalogNodeGrid(
         horizontalArrangement = Arrangement.spacedBy(spacing),
         overscrollEffect = null
     ) {
-        item {
-            NodeCard(
-                title = stringResource(R.string.node_auto_fastest),
-                summary = if (selectedAutoNode == null) stringResource(R.string.node_auto_test) else "",
-                protocol = selectedAutoNode ?: "AUTO",
-                latency = latencies["Auto/${group.group.id}"],
-                selected = automaticSelected,
-                enabled = !busy && group.nodes.isNotEmpty(),
-                itemSize = itemSize,
-                onClick = onAuto
-            )
+        if (group.nodes.isNotEmpty()) {
+            item {
+                NodeCard(
+                    title = stringResource(R.string.node_auto_fastest),
+                    summary = if (selectedAutoNode == null) stringResource(R.string.node_auto_test) else "",
+                    protocol = selectedAutoNode ?: "AUTO",
+                    latency = latencies["Auto/${group.group.id}"],
+                    selected = automaticSelected,
+                    enabled = !busy,
+                    itemSize = itemSize,
+                    onClick = onAuto
+                )
+            }
         }
         items(sortedNodes, key = { it.tag }) { node ->
             NodeCard(
@@ -167,7 +169,7 @@ internal fun CatalogGroupList(
                     if (expanded) Spacer(Modifier.height(spacing))
                 }
             }
-            if (expanded) {
+            if (expanded && group.nodes.isNotEmpty()) {
                 val entries = listOf<CatalogNode?>(null) + sortCatalogNodes(
                     group.nodes, sortMode, groupId, latencies
                 )
@@ -192,7 +194,7 @@ internal fun CatalogGroupList(
                                             protocol = selectedAutoNode ?: "AUTO",
                                             latency = latencies["Auto/$groupId"],
                                             selected = automaticSelected,
-                                            enabled = !busy && group.nodes.isNotEmpty(),
+                                            enabled = !busy,
                                             itemSize = itemSize,
                                             onClick = { onAuto(groupId) }
                                         )

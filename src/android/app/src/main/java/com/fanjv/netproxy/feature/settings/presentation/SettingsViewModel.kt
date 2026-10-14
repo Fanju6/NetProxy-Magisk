@@ -2,7 +2,7 @@ package com.fanjv.netproxy.feature.settings.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.fanjv.netproxy.core.command.ConfigurationWrites
+import com.fanjv.netproxy.core.config.ConfigurationWrites
 import com.fanjv.netproxy.core.ui.userMessage
 import com.fanjv.netproxy.feature.settings.data.ConfigRepository
 import com.fanjv.netproxy.feature.settings.model.ModuleAutoStartConfig

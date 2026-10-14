@@ -8,6 +8,7 @@ internal data class ServiceStatusSnapshot(
     val state: String = "stopped",
     val pid: Int? = null,
     @SerialName("started_at") val startedAt: Long = 0,
+    @SerialName("core_started_at_millis") val coreStartedAtMillis: Long = 0,
     @SerialName("ready_at") val readyAt: Long = 0,
     @SerialName("uptime_seconds") val uptimeSeconds: Long = 0,
     val error: String = "",

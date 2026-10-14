@@ -1,9 +1,9 @@
 package com.fanjv.netproxy.feature.dashboard.presentation
 
-import com.fanjv.netproxy.core.command.NetProxyCtlClient
-import com.fanjv.netproxy.core.command.NetProxyCtlOutput
-import com.fanjv.netproxy.core.command.NetProxyCtlTransport
+import com.fanjv.netproxy.core.api.*
+
 import com.fanjv.netproxy.core.module.ModuleAvailability
+import com.fanjv.netproxy.core.module.ModuleConnectionState
 import com.fanjv.netproxy.core.module.ServiceRepository
 import com.fanjv.netproxy.core.ui.UiText
 import java.util.concurrent.CopyOnWriteArrayList
@@ -25,14 +25,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CatalogDashboardViewModelTest {
-    private class Transport(val handler: suspend (List<String>) -> String) : NetProxyCtlTransport {
-        val calls = CopyOnWriteArrayList<List<String>>()
-        override suspend fun execute(arguments: List<String>, timeoutMillis: Long): NetProxyCtlOutput {
-            calls += arguments
-            val data = handler(arguments)
-            return NetProxyCtlOutput(true, listOf(
-                """{"schema":1,"ok":true,"code":"service.test","message":"","data":$data}"""
-            ), emptyList())
+    private class Transport(val handler: suspend (ApiTestRequest) -> String) : TestApiTransport() {
+        val calls = CopyOnWriteArrayList<ApiTestRequest>()
+        override suspend fun respond(request: ApiTestRequest): ModuleHttpResponse {
+            calls += request
+            val data = handler(request)
+            return apiSuccess(data)
         }
     }
 
@@ -40,12 +38,12 @@ class CatalogDashboardViewModelTest {
         """{"state":"$state","outbound_mode":"$mode","available_outbound_modes":["Rule","Direct"],"download_total":$total}"""
 
     private fun model(scope: CoroutineScope, transport: Transport) = CatalogDashboardViewModel(
-        ServiceRepository(NetProxyCtlClient(transport = transport)),
+        ServiceRepository(ModuleApiClient(transport = transport)),
         1_000L, scope,
-    ).apply { setAvailability(ModuleAvailability(true, true)) }
+    ).apply { setAvailability(ModuleAvailability(ModuleConnectionState.READY)) }
 
     private suspend fun CatalogDashboardViewModel.available() = withTimeout(5_000) {
-        state.first { it.moduleInstalled }
+        state.first { it.connected }
     }
 
     private suspend fun settle() {
@@ -57,7 +55,7 @@ class CatalogDashboardViewModelTest {
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         val transport = Transport { args ->
-            if (args[0] == "mode") {
+            if (args.path == "/mode") {
                 entered.complete(Unit)
                 release.await()
                 "{}"
@@ -68,16 +66,16 @@ class CatalogDashboardViewModelTest {
         withTimeout(5_000) { vm.state.first { !it.loading } }
         vm.setMode("Direct")
         withTimeout(5_000) { entered.await() }
-        vm.setAvailability(ModuleAvailability(false, false))
+        vm.setAvailability(ModuleAvailability(ModuleConnectionState.UNAVAILABLE))
         vm.refresh()
         vm.toggleService()
         release.complete(Unit)
         withTimeout(5_000) { vm.state.first { it.operation.isEmpty() } }
         settle()
-        assertFalse(vm.state.value.rootGranted)
-        assertEquals(1, transport.calls.count { it[0] == "mode" })
-        assertEquals(1, transport.calls.count { it[0] == "service" })
-        assertFalse(transport.calls.any { it.take(2) == listOf("service", "start") })
+        assertFalse(vm.state.value.connected)
+        assertEquals(1, transport.calls.count { it.path == "/mode" })
+        assertEquals(1, transport.calls.count { it.path == "/service" })
+        assertFalse(transport.calls.any { it.path == "/service/start" })
     }
 
     @Test fun latestRefreshWinsAndStaleFailureCannotMarkServiceFailed() = runBlocking {
@@ -112,10 +110,10 @@ class CatalogDashboardViewModelTest {
         val modeEntered = CompletableDeferred<Unit>()
         val modeRelease = CompletableDeferred<Unit>()
         val transport = Transport { args ->
-            if (args[0] == "mode") {
+            if (args.path == "/mode") {
                 modeEntered.complete(Unit)
                 withTimeout(10_000) { modeRelease.await() }
-                savedMode = args[1]
+                savedMode = args.text("mode")
                 "{}"
             } else when (count.incrementAndGet()) {
                 1 -> snapshot("Rule")
@@ -141,12 +139,12 @@ class CatalogDashboardViewModelTest {
         yield()
         assertEquals("mode", vm.state.value.operation)
         assertEquals(0L, vm.state.value.downloadTotal)
-        assertEquals(1, transport.calls.count { it[0] == "mode" })
+        assertEquals(1, transport.calls.count { it.path == "/mode" })
         modeRelease.complete(Unit)
         settle()
         withTimeout(5_000) { vm.state.first { it.outboundMode == "Rule" && it.operation.isEmpty() } }
-        assertEquals(listOf(listOf("mode", "Direct"), listOf("mode", "Rule")), transport.calls.filter { it[0] == "mode" })
-        assertFalse(transport.calls.any { it[1] == "start" || it[1] == "stop" })
+        assertEquals(listOf("Direct", "Rule"), transport.calls.filter { it.path == "/mode" }.map { it.text("mode") })
+        assertFalse(transport.calls.any { it.path in setOf("/service/start", "/service/stop") })
     }
 
     @Test fun serviceStartAndStopInvalidateOldSnapshot() = runBlocking {
@@ -159,11 +157,11 @@ class CatalogDashboardViewModelTest {
             val release = CompletableDeferred<Unit>()
             val actionRelease = CompletableDeferred<Unit>()
             val transport = Transport { args ->
-                if (args[1] == action) {
+                if (args.path == "/service/$action") {
                     withTimeout(10_000) { actionRelease.await() }
                     "{}"
-                } else if (args[0] == "mode") {
-                    savedMode = args[1]
+                } else if (args.path == "/mode") {
+                    savedMode = args.text("mode")
                     "{}"
                 }
                 else when (count.incrementAndGet()) {
@@ -185,7 +183,7 @@ class CatalogDashboardViewModelTest {
             assertEquals(action, vm.state.value.operation)
             assertEquals("Rule", vm.state.value.outboundMode)
             vm.setMode("Direct")
-            assertFalse(transport.calls.any { it[0] == "mode" })
+            assertFalse(transport.calls.any { it.path == "/mode" })
             actionRelease.complete(Unit)
             withTimeout(5_000) { vm.state.first {
                 it.serviceState == final && it.outboundMode == "Direct" && it.operation.isEmpty()
@@ -193,7 +191,7 @@ class CatalogDashboardViewModelTest {
             release.complete(Unit)
             settle()
             assertEquals(final, vm.state.value.serviceState)
-            assertEquals(1, transport.calls.count { it[0] == "mode" })
+            assertEquals(1, transport.calls.count { it.path == "/mode" })
         }
     }
 
@@ -217,7 +215,7 @@ class CatalogDashboardViewModelTest {
 
     @Test fun cancelledModeOperationDoesNotPublishFailureNotice() = runBlocking {
         val transport = Transport { args ->
-            if (args[0] == "mode") throw CancellationException("page closed")
+            if (args.path == "/mode") throw CancellationException("page closed")
             snapshot("Rule")
         }
         val vm = model(this, transport)
@@ -237,7 +235,7 @@ class CatalogDashboardViewModelTest {
         coroutineScope {
             val worker = launch {
                 vm = model(this, Transport { args ->
-                    if (args[1] == "start") {
+                    if (args.path == "/service/start") {
                         entered.complete(Unit)
                         withContext(NonCancellable) { withTimeout(10_000) { release.await() } }
                         "{}"

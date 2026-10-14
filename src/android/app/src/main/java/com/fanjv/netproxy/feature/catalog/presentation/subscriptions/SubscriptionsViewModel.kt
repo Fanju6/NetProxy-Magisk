@@ -42,11 +42,28 @@ internal class SubscriptionsViewModel(
     private var loaded = false
     private var refreshJob: Job? = null
     private var refreshGeneration = 0L
+    private var eventsJob: Job? = null
 
     fun setVisible(value: Boolean) {
         visible = value
-        if (value) refresh(silent = loaded)
+        if (value) {
+            refresh(silent = loaded)
+            if (eventsJob?.isActive != true) eventsJob = viewModelScope.launch {
+                repository.observe().collect { result ->
+                    if (_state.value.operation.isEmpty()) result.fold(
+                        onSuccess = { groups ->
+                            ++refreshGeneration
+                            refreshJob?.cancel()
+                            _state.update { it.copy(groups = groups, loading = false, loadFailed = false) }
+                            loaded = true
+                        },
+                        onFailure = { error -> _state.update { it.copy(loading = false, error = error.toUiText(), noticeId = it.noticeId + 1) } }
+                    )
+                }
+            }
+        }
         else {
+            eventsJob?.cancel(); eventsJob = null
             ++refreshGeneration
             refreshJob?.cancel()
             _state.update { it.copy(loading = false) }

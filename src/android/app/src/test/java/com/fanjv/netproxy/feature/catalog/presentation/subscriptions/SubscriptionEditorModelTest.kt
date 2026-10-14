@@ -1,7 +1,7 @@
 package com.fanjv.netproxy.feature.catalog.presentation.subscriptions
 
 import com.fanjv.netproxy.core.ui.UiText
-import com.fanjv.netproxy.feature.catalog.data.subscriptionEditArguments
+import com.fanjv.netproxy.feature.catalog.data.subscriptionEditBody
 import com.fanjv.netproxy.feature.catalog.model.SubscriptionDraft
 import com.fanjv.netproxy.feature.catalog.model.SubscriptionEditorState
 import kotlinx.serialization.json.Json
@@ -25,8 +25,8 @@ class SubscriptionEditorModelTest {
         assertFalse(state.saved)
         assertFalse(state.baselineReadRequired)
         assertEquals(
-            listOf("sub", "edit", "--url", original.url, original.id),
-            subscriptionEditArguments(state.id, state.original!!, state.draft.copy(url = original.url), null)
+            JsonObject(mapOf("url" to JsonPrimitive(original.url))),
+            subscriptionEditBody(state.original!!, state.draft.copy(url = original.url))
         )
     }
 
@@ -49,16 +49,16 @@ class SubscriptionEditorModelTest {
         assertFalse(state.sameInput(submitted))
     }
 
-    @Test fun editorArgumentsOnlyContainActuallyChangedFields() {
-        assertEquals(listOf("sub", "edit", "sample"), subscriptionEditArguments(original.id, original, original.toDraft(), null))
+    @Test fun editorBodyOnlyContainsActuallyChangedFields() {
+        assertEquals(JsonObject(emptyMap()), subscriptionEditBody(original, original.toDraft()))
         assertEquals(
-            listOf("sub", "edit", "--name", "New name", "sample"),
-            subscriptionEditArguments(original.id, original, original.toDraft().copy(name = "New name"), null)
+            JsonObject(mapOf("name" to JsonPrimitive("New name"))),
+            subscriptionEditBody(original, original.toDraft().copy(name = "New name"))
         )
         val disk = original.copy(customHeaders = JsonObject(mapOf("X-Sample" to JsonPrimitive("fixture"))))
         assertEquals(
-            listOf("sub", "edit", "--headers-file", "/fixture/headers.json", "sample"),
-            subscriptionEditArguments(disk.id, disk, disk.toDraft().copy(customHeaders = emptyMap()), "/fixture/headers.json")
+            JsonObject(mapOf("custom_headers" to JsonObject(emptyMap()))),
+            subscriptionEditBody(disk, disk.toDraft().copy(customHeaders = emptyMap()))
         )
     }
 

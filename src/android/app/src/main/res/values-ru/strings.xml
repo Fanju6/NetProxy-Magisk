@@ -213,10 +213,13 @@
     <string name="network_matching_summary">Правила прокси по имени Wi-Fi и для других сетей</string>
     <string name="auto_start">Запуск при загрузке</string>
     <string name="auto_start_summary">Запускать службу при загрузке системы</string>
-    <string name="no_root_title">Нет доступа Root</string>
-    <string name="no_root_summary">Предоставьте приложению доступ Root для всех функций</string>
-    <string name="no_module_title">Модуль не обнаружен</string>
-    <string name="no_module_summary">Модуль NetProxy не обнаружен. Установите и включите его в Magisk/KernelSU</string>
+    <string name="no_module_title">Нет соединения с модулем</string>
+    <string name="module_identity_failed">Не удалось подтвердить подлинность модуля. Нажмите для подключения.</string>
+    <string name="module_reconnect">Подключить</string>
+    <string name="module_connecting">Подключение…</string>
+    <string name="module_address">Локальный HTTPS-адрес</string>
+    <string name="module_address_invalid">Укажите HTTPS-адрес с числовым loopback IP, например https://127.0.0.1:9091</string>
+    <string name="no_module_summary">Проверьте, что фоновая служба модуля работает. Нажмите для подключения.</string>
     <string name="about_source_code">Исходный код на %1$s&lt;br/&gt;Наш канал в %2$s</string>
     <string name="settings_theme">Настройки темы</string>
     <string name="settings_theme_summary">Настройка оформления</string>

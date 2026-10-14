@@ -2,8 +2,8 @@ package com.fanjv.netproxy.feature.inbound.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.fanjv.netproxy.core.command.ConfigurationWrites
-import com.fanjv.netproxy.core.command.NetProxyCtlException
+import com.fanjv.netproxy.core.config.ConfigurationWrites
+import com.fanjv.netproxy.core.api.ModuleApiException
 import com.fanjv.netproxy.core.ui.userMessage
 import com.fanjv.netproxy.feature.inbound.data.*
 import com.fanjv.netproxy.feature.settings.model.ConfigSnapshot
@@ -244,7 +244,7 @@ internal class InboundViewModel(
         }, onFailure = { error ->
             requestedNative = null
             mutableState.update { it.copy(snapshot = it.snapshot?.copy(status = null), requiresReload = true,
-                errorCode = (error as? NetProxyCtlException)?.resultCode.orEmpty(), error = error.userMessage()) }
+                errorCode = (error as? ModuleApiException)?.resultCode.orEmpty(), error = error.userMessage()) }
         })
     }
 
@@ -254,7 +254,7 @@ internal class InboundViewModel(
         viewModelScope.launch {
             val output = try { repository.diagnose() } catch (error: Exception) {
                 if (error is CancellationException) throw error
-                ((error as? NetProxyCtlException)?.data as? JsonObject)?.textAt("content")?.takeIf(String::isNotBlank)
+                ((error as? ModuleApiException)?.data as? JsonObject)?.textAt("content")?.takeIf(String::isNotBlank)
                     ?: error.userMessage()
             }
             mutableState.update { it.copy(isDiagnosing = false, diagnostic = output) }

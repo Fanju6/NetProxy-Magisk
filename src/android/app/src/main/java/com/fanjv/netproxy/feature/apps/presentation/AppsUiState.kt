@@ -7,7 +7,8 @@ data class AppInfoModel(
     val packageName: String,
     val label: String,
     val userId: String = "0",
-    val isSystem: Boolean = false
+    val isSystem: Boolean = false,
+    val iconKey: String = "",
 ) {
     val id: String get() = "$userId:$packageName"
 }

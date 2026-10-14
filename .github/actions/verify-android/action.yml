@@ -69,13 +69,13 @@ runs:
       run: |
         set --
         if [ "$BUILD_MANAGER" = true ]; then
-          set -- :app:assembleRelease \
+          set -- :app:assembleRelease :platform:assembleDex \
             -PnetproxyManagerCi=true \
             -PnetproxyManagerBuildId="$BUILD_ID" \
             -PnetproxyManagerVersion="$MANAGER_VERSION"
         fi
         if [ "$VERIFY_ANDROID" = true ]; then
-          set -- "$@" testDebugUnitTest :scripta:editor:testAndroidHostTest :scripta:editor:desktopTest lintDebug
+          set -- "$@" testDebugUnitTest :scripta:editor:testAndroidHostTest :scripta:editor:desktopTest lintDebug :platform:assembleDex
         fi
         if [ "$ASSEMBLE_DEBUG" = true ]; then
           set -- "$@" :app:assembleDebug
@@ -117,4 +117,7 @@ runs:
           --v4-signing-enabled false \
           --out "$SIGNED_APK" "$UNSIGNED_APK"
         "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose "$SIGNED_APK"
+        EXPECTED_SIGNER="$(sed -n 's/.*MANAGER_CERTIFICATE_SHA256 = "\([a-f0-9]*\)";.*/\1/p' src/android/platform/src/main/java/com/fanjv/netproxy/platform/Main.java)"
+        test "${#EXPECTED_SIGNER}" -eq 64
+        "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --print-certs "$SIGNED_APK" | grep -F "certificate SHA-256 digest: $EXPECTED_SIGNER"
         install -m 0644 "$SIGNED_APK" src/module/NetProxy.apk

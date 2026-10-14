@@ -213,10 +213,13 @@
     <string name="network_matching_summary">Match Wi-Fi names and choose the non-Wi-Fi policy</string>
     <string name="auto_start">Start on boot</string>
     <string name="auto_start_summary">Start the service when the system boots</string>
-    <string name="no_root_title">Root access not granted</string>
-    <string name="no_root_summary">Grant the app Root access to use all features</string>
-    <string name="no_module_title">Module not detected</string>
-    <string name="no_module_summary">NetProxy module not detected. Install and enable it in Magisk/KernelSU first</string>
+    <string name="no_module_title">Cannot connect to the module</string>
+    <string name="module_identity_failed">Module identity verification failed. Tap to reconnect.</string>
+    <string name="module_reconnect">Reconnect</string>
+    <string name="module_connecting">Connecting…</string>
+    <string name="module_address">Local HTTPS address</string>
+    <string name="module_address_invalid">Use a numeric loopback HTTPS address, such as https://127.0.0.1:9091</string>
+    <string name="no_module_summary">Check that the module background service is running. Tap to reconnect.</string>
     <string name="about_source_code">View source on %1$s&lt;br/&gt;Join our %2$s channel</string>
     <string name="settings_theme">Theme settings</string>
     <string name="settings_theme_summary">Customize theme options</string>

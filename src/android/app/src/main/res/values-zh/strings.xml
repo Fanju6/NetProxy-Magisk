@@ -231,10 +231,13 @@
     <string name="auto_start_summary">系统启动时自动开启服务</string>
 
     <!-- Module prerequisites -->
-    <string name="no_root_title">未获取 Root 权限</string>
-    <string name="no_root_summary">请先授予应用 Root 权限以使用全部功能</string>
-    <string name="no_module_title">未检测到核心模块</string>
-    <string name="no_module_summary">未检测到 NetProxy 模块，请先在 Magisk/KernelSU 中安装并启用该模块</string>
+    <string name="no_module_title">无法连接模块后台</string>
+    <string name="module_identity_failed">模块身份验证失败，点击重新连接</string>
+    <string name="module_reconnect">重新连接</string>
+    <string name="module_connecting">连接中…</string>
+    <string name="module_address">本机 HTTPS 地址</string>
+    <string name="module_address_invalid">请输入本机 IP 的 HTTPS 地址，例如 https://127.0.0.1:9091</string>
+    <string name="no_module_summary">请确认模块后台正在运行，点击重新连接</string>
 
     <!-- About -->
     <string name="about_source_code">在 %1$s 查看源码&lt;br/&gt;加入我们的 %2$s 频道</string>

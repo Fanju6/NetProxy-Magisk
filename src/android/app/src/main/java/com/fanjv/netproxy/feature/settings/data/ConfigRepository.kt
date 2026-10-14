@@ -1,7 +1,6 @@
 package com.fanjv.netproxy.feature.settings.data
 
-import com.fanjv.netproxy.core.command.CommandFileStore
-import com.fanjv.netproxy.core.command.NetProxyCtlClient
+import com.fanjv.netproxy.core.api.ModuleApiClient
 import com.fanjv.netproxy.feature.settings.model.ManagedConfigDocument
 import com.fanjv.netproxy.feature.settings.model.ConfigSnapshot
 import com.fanjv.netproxy.feature.settings.model.ModuleAutoStartConfig
@@ -15,11 +14,12 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /** 模块与 sing-box 配置的事务读取、校验和写入入口。 */
 internal class ConfigRepository(
-    private val client: NetProxyCtlClient,
-    private val commandFiles: CommandFileStore,
+    private val client: ModuleApiClient,
     private val awaitPendingWrites: suspend (String) -> Unit = {}
 ) {
     private val moduleJson = Json(client.json) {
@@ -28,14 +28,14 @@ internal class ConfigRepository(
     }
 
     suspend fun listDocuments(): List<ManagedConfigDocument> =
-        client.json.decodeFromJsonElement(client.execute("config", "list").data)
+        client.read("/configs")
 
     suspend fun read(target: String): String =
         readSnapshot(target).content
 
     suspend fun readSnapshot(target: String): ConfigSnapshot {
         awaitPendingWrites(target)
-        return client.json.decodeFromJsonElement(client.execute("config", "read", target).data)
+        return client.read("/config", mapOf("target" to target))
     }
 
     suspend fun readWifi(): ModuleWifiConfig = readSnapshot("module/wifi").let {
@@ -67,32 +67,25 @@ internal class ConfigRepository(
     suspend fun applyAutoStart(enabled: Boolean, revision: String): String =
         apply("module/auto_start", moduleJson.encodeToString(ModuleAutoStartConfig(enabled)), revision)
 
-    suspend fun apply(target: String, content: String, revision: String? = null): String =
-        commandFiles.withTextFile("netproxy-config-", ".json", content) { source ->
-            val arguments = buildList {
-                add("apply")
-                if (revision != null) addAll(listOf("--revision", revision))
-                addAll(listOf(target, source.absolutePath))
-            }
-            client.execute("config", *arguments.toTypedArray()).data.jsonObject["revision"]
-                ?.jsonPrimitive?.content ?: error("模块没有返回配置版本")
-        }
+    suspend fun apply(target: String, content: String, revision: String): String =
+        client.put("/config", buildJsonObject { put("content", content); put("revision", revision) },
+            mapOf("target" to target)).data.jsonObject["revision"]?.jsonPrimitive?.content
+            ?: error("模块没有返回配置版本")
 
     suspend fun check() {
-        client.execute("config", "check")
+        client.post("/service/check")
     }
 
     suspend fun validate(target: String, content: String, revision: String) {
-        commandFiles.withTextFile("netproxy-config-", ".json", content) { source ->
-            client.execute("config", "validate", "--revision", revision, target, source.absolutePath)
-        }
+        client.post("/config/validate", buildJsonObject { put("content", content); put("revision", revision) },
+            mutation = false, query = mapOf("target" to target))
     }
 
     suspend fun ebpfStatus(mode: String = "configured"): String =
-        client.execute("ebpf", "status", mode).data.jsonObject["content"]
+        client.post("/diagnostics/ebpf", buildJsonObject { put("mode", mode) }).data.jsonObject["content"]
             ?.jsonPrimitive?.content
             ?: error("模块没有返回 eBPF 诊断结果")
 
     suspend fun savedWifiNetworks(): List<String> =
-        client.json.decodeFromJsonElement(client.execute("network", "wifi-list").data.jsonObject.getValue("ssids"))
+        client.json.decodeFromJsonElement(client.get("/network/wifi-list").data.jsonObject.getValue("ssids"))
 }

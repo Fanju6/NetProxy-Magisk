@@ -1,4 +1,4 @@
-package com.fanjv.netproxy.core.command
+package com.fanjv.netproxy.core.config
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope

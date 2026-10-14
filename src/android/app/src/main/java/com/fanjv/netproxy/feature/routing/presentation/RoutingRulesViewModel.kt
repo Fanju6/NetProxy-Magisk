@@ -2,7 +2,7 @@ package com.fanjv.netproxy.feature.routing.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.fanjv.netproxy.core.command.NetProxyCtlException
+import com.fanjv.netproxy.core.api.ModuleApiException
 import com.fanjv.netproxy.core.ui.userMessage
 import com.fanjv.netproxy.feature.routing.model.LocalRuleDocument
 import com.fanjv.netproxy.feature.routing.model.LocalRuleSet
@@ -176,7 +176,7 @@ internal class RoutingRulesViewModel(
                     .withFile(target, RuleFileState(document, revision)) }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
-                val unchanged = if ((error as? NetProxyCtlException)?.resultCode == "config.conflict") false else try {
+                val unchanged = if ((error as? ModuleApiException)?.resultCode == "config.conflict") false else try {
                     repository.readSnapshot(target.target).revision == file.revision
                 } catch (readError: Exception) {
                     if (readError is CancellationException) throw readError

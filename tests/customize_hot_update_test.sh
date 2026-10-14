@@ -72,6 +72,7 @@ write_module() {
     'esac' > "$target/bin/netproxyctl"
   cp "$target/bin/netproxyctl" "$target/netproxyctl"
   printf '%s\n' 'core fixture' > "$target/bin/sing-box"
+  printf '%s\n' 'anonymous dex fixture' > "$target/bin/android-platform.dex"
   for file in service.sh action.sh uninstall.sh; do
     printf '%s\n' '#!/bin/sh' > "$target/$file"
   done

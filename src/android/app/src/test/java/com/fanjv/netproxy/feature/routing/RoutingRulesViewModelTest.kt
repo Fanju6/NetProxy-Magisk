@@ -1,10 +1,7 @@
 package com.fanjv.netproxy.feature.routing
 
-import com.fanjv.netproxy.core.command.CommandFileStore
-import com.fanjv.netproxy.core.command.NetProxyCtlClient
-import com.fanjv.netproxy.core.command.NetProxyCtlException
-import com.fanjv.netproxy.core.command.NetProxyCtlOutput
-import com.fanjv.netproxy.core.command.NetProxyCtlTransport
+import com.fanjv.netproxy.core.api.*
+
 import com.fanjv.netproxy.feature.routing.model.LocalRuleDocument
 import com.fanjv.netproxy.feature.routing.model.LocalRuleSet
 import com.fanjv.netproxy.feature.routing.model.RuleField
@@ -31,43 +28,43 @@ import org.junit.rules.TemporaryFolder
 class RoutingRulesViewModelTest {
     @get:Rule val folder = TemporaryFolder()
 
-    private class Transport : NetProxyCtlTransport {
+    private class Transport : TestApiTransport() {
         var content = """{"version":1,"rules":[{"domain_suffix":"example.com"},{"domain":"advanced.example","port":443}]}"""
         var revision = "read-revision"
-        var applyError: NetProxyCtlException? = null
+        var applyError: ModuleApiException? = null
         var readError: Exception? = null
         val contents = mutableMapOf<String, String>()
         val revisions = mutableMapOf<String, String>()
         val readErrors = mutableMapOf<String, Exception>()
         var gate: CountDownLatch? = null
         val entered = CompletableDeferred<Unit>()
-        val calls = mutableListOf<List<String>>()
+        val calls = mutableListOf<ApiTestRequest>()
 
-        override suspend fun execute(arguments: List<String>, timeoutMillis: Long): NetProxyCtlOutput {
-            calls += arguments
-            val data = when (arguments[1]) {
-                "read" -> {
-                    (readErrors[arguments[2]] ?: readError)?.let { throw it }
-                    JsonObject(mapOf("content" to JsonPrimitive(contents[arguments[2]] ?: content),
-                        "revision" to JsonPrimitive(revisions[arguments[2]] ?: revision)))
+        override suspend fun respond(request: ApiTestRequest): ModuleHttpResponse {
+            calls += request
+            val data = when (request.method) {
+                "GET" -> {
+                    (readErrors[request.target] ?: readError)?.let { throw it }
+                    JsonObject(mapOf("content" to JsonPrimitive(contents[request.target] ?: content),
+                        "revision" to JsonPrimitive(revisions[request.target] ?: revision)))
                 }
-                "apply" -> {
+                "PUT" -> {
                     gate?.let { entered.complete(Unit); check(it.await(5, TimeUnit.SECONDS)) }
                     applyError?.let { throw it }
-                    val target = arguments[4]
-                    assertEquals(listOf("config", "apply", "--revision", revisions[target] ?: revision), arguments.take(4))
-                    contents[target] = File(arguments.last()).readText()
+                    val target = request.target
+                    assertEquals(revisions[target] ?: revision, request.text("revision"))
+                    contents[target] = request.text("content")
                     revisions[target] = "saved-revision"
                     JsonObject(mapOf("revision" to JsonPrimitive("saved-revision")))
                 }
                 else -> error("Unexpected command")
             }
-            return NetProxyCtlOutput(true, listOf("""{"schema":1,"ok":true,"code":"config.test","message":"","data":$data}"""), emptyList())
+            return apiSuccess(data.toString())
         }
     }
 
     private fun model(scope: CoroutineScope, transport: Transport) = RoutingRulesViewModel(
-        ConfigRepository(NetProxyCtlClient(transport = transport), CommandFileStore(folder.root)), scope)
+        ConfigRepository(ModuleApiClient(transport = transport)), scope)
 
     private fun RoutingRulesState.file(target: LocalRuleSet = LocalRuleSet.Proxy) = files.getValue(target)
 
@@ -88,7 +85,7 @@ class RoutingRulesViewModelTest {
         val vm = model(this, transport)
         vm.refresh()
         val loaded = vm.loaded()
-        assertEquals(LocalRuleSet.entries.map { listOf("config", "read", it.target) }, transport.calls)
+        assertEquals(LocalRuleSet.entries.map { it.target }, transport.calls.map { it.target })
         assertEquals(LocalRuleSet.entries.map { RuleIdentity(it, 0) }, loaded.rules)
         assertEquals(3, loaded.rules.distinct().size)
         assertTrue(loaded.hasDocuments)
@@ -127,13 +124,13 @@ class RoutingRulesViewModelTest {
             val document = saved.file(target).document!!
             assertEquals(3, document.rules.size)
             assertEquals(before.getValue(target).document!!.rules.toList(), document.rules.take(2))
-            assertEquals(target.target, transport.calls.last()[4])
+            assertEquals(target.target, transport.calls.last().target)
             LocalRuleSet.entries.filter { it != target }.forEach { other ->
                 assertEquals(before.getValue(other), saved.file(other))
             }
         }
-        assertEquals(3, transport.calls.count { it[1] == "apply" })
-        assertFalse(transport.calls.any { it.first() != "config" })
+        assertEquals(3, transport.calls.count { it.method == "PUT" })
+        assertFalse(transport.calls.any { it.path != "/config" })
     }
 
     @Test fun editingAndDeletingUseFileIdentityAndCannotMoveExistingRules() = runBlocking {
@@ -154,7 +151,7 @@ class RoutingRulesViewModelTest {
         val saved = vm.saved()
         assertEquals("direct.example", saved.file(LocalRuleSet.Direct).document!!.rules[0].simpleRule()!!.values.single())
         assertEquals(advanced, saved.file(LocalRuleSet.Direct).document!!.rules[1])
-        assertEquals(listOf("config", "apply", "--revision", "direct-revision", LocalRuleSet.Direct.target), transport.calls.last().take(5))
+        assertEquals(Triple("PUT", LocalRuleSet.Direct.target, "direct-revision"), transport.calls.last().let { Triple(it.method, it.target, it.text("revision")) })
         vm.requestDelete(direct)
         assertEquals(direct, vm.state.value.deleting)
         vm.delete()
@@ -167,7 +164,7 @@ class RoutingRulesViewModelTest {
 
     @Test fun partialFailureKeepsHealthyRulesAndPerFileErrorsAndRefreshRecovers() = runBlocking {
         val transport = Transport()
-        transport.readErrors[LocalRuleSet.Direct.target] = NetProxyCtlException("config.read_failed", "direct read failed")
+        transport.readErrors[LocalRuleSet.Direct.target] = ModuleApiException("config.read_failed", "direct read failed")
         transport.contents[LocalRuleSet.Block.target] = "{}"
         val vm = model(this, transport)
         vm.refresh()
@@ -186,10 +183,10 @@ class RoutingRulesViewModelTest {
         vm.updateDraft(RuleField.Domain, "new.example")
         vm.save()
         assertEquals("direct read failed", vm.state.value.file(LocalRuleSet.Direct).error)
-        assertFalse(transport.calls.any { it[1] == "apply" })
+        assertFalse(transport.calls.any { it.method == "PUT" })
         vm.selectTarget(LocalRuleSet.Block)
         vm.save()
-        assertFalse(transport.calls.any { it[1] == "apply" })
+        assertFalse(transport.calls.any { it.method == "PUT" })
         vm.dismiss()
         transport.readErrors.clear()
         transport.contents.clear()
@@ -205,7 +202,7 @@ class RoutingRulesViewModelTest {
 
     @Test fun healthyFileCanSaveWhileOtherFilesRemainFailed() = runBlocking {
         val transport = Transport()
-        transport.readErrors[LocalRuleSet.Proxy.target] = NetProxyCtlException("config.read_failed", "proxy read failed")
+        transport.readErrors[LocalRuleSet.Proxy.target] = ModuleApiException("config.read_failed", "proxy read failed")
         transport.contents[LocalRuleSet.Block.target] = "{}"
         val vm = model(this, transport)
         vm.refresh()
@@ -215,7 +212,7 @@ class RoutingRulesViewModelTest {
         vm.updateDraft(RuleField.Domain, "new.example")
         vm.save()
         val saved = vm.saved()
-        assertEquals(LocalRuleSet.Direct.target, transport.calls.last()[4])
+        assertEquals(LocalRuleSet.Direct.target, transport.calls.last().target)
         assertEquals(failed.file(LocalRuleSet.Proxy), saved.file(LocalRuleSet.Proxy))
         assertEquals(failed.file(LocalRuleSet.Block), saved.file(LocalRuleSet.Block))
         assertFalse(saved.isEmpty)
@@ -229,13 +226,13 @@ class RoutingRulesViewModelTest {
         assertFalse(vm.state.value.hasDocuments)
         vm.refresh()
         assertTrue(vm.loaded().isEmpty)
-        transport.readErrors[LocalRuleSet.Direct.target] = NetProxyCtlException("config.read_failed", "direct read failed")
+        transport.readErrors[LocalRuleSet.Direct.target] = ModuleApiException("config.read_failed", "direct read failed")
         vm.refresh()
         val partial = vm.loaded()
         assertTrue(partial.hasDocuments)
         assertTrue(partial.rules.isEmpty())
         assertFalse(partial.isEmpty)
-        transport.readError = NetProxyCtlException("config.read_failed", "read failed")
+        transport.readError = ModuleApiException("config.read_failed", "read failed")
         val fresh = model(this, transport)
         fresh.refresh()
         val failed = fresh.loaded()
@@ -269,7 +266,7 @@ class RoutingRulesViewModelTest {
         vm.loaded()
         vm.edit(RuleIdentity(LocalRuleSet.Direct, 0))
         vm.updateDraft(RuleField.DomainSuffix, "new.example")
-        transport.applyError = NetProxyCtlException("config.conflict", "changed")
+        transport.applyError = ModuleApiException("config.conflict", "changed")
         transport.revisions[LocalRuleSet.Direct.target] = "external-revision"
         vm.save()
         val failed = vm.saved()
@@ -299,13 +296,14 @@ class RoutingRulesViewModelTest {
         vm.add()
         vm.selectTarget(LocalRuleSet.Block)
         vm.updateDraft(RuleField.DomainRegex, "[")
-        transport.applyError = NetProxyCtlException("command.failed", "invalid regex")
+        transport.applyError = ModuleApiException("command.failed", "invalid regex")
         vm.save()
         val failed = vm.saved()
         assertFalse(failed.file(LocalRuleSet.Block).requiresReload)
         assertEquals("invalid regex", failed.file(LocalRuleSet.Block).error)
         assertEquals("[", failed.draft!!.text)
-        assertEquals(listOf("config", "read", LocalRuleSet.Block.target), transport.calls.last())
+        assertEquals("GET", transport.calls.last().method)
+        assertEquals(LocalRuleSet.Block.target, transport.calls.last().target)
         transport.applyError = null
         vm.updateDraft(RuleField.DomainRegex, "^example\\.com$")
         vm.save()
@@ -320,7 +318,7 @@ class RoutingRulesViewModelTest {
         vm.add()
         vm.selectTarget(LocalRuleSet.Direct)
         vm.updateDraft(RuleField.IpCidr, "192.168.10.0/24")
-        transport.applyError = NetProxyCtlException("command.failed", "reload failed")
+        transport.applyError = ModuleApiException("command.failed", "reload failed")
         vm.save()
         val failed = vm.saved()
         assertEquals("reload failed", failed.file(LocalRuleSet.Direct).error)
@@ -348,7 +346,7 @@ class RoutingRulesViewModelTest {
         val rule = saved.file(LocalRuleSet.Direct).document!!.rules.last().simpleRule()!!
         assertEquals(RuleField.PackageName, rule.field)
         assertEquals(listOf("com.android.chrome", "com.example.app"), rule.values)
-        assertEquals(listOf("config", "apply", "--revision", "read-revision", LocalRuleSet.Direct.target), transport.calls.last().take(5))
+        assertEquals(Triple("PUT", LocalRuleSet.Direct.target, "read-revision"), transport.calls.last().let { Triple(it.method, it.target, it.text("revision")) })
     }
 
     @Test fun nonConflictFailureWithChangedRevisionCannotRetryWithNewRevision() = runBlocking {
@@ -359,7 +357,7 @@ class RoutingRulesViewModelTest {
         vm.add()
         vm.selectTarget(LocalRuleSet.Block)
         vm.updateDraft(RuleField.Domain, "new.example")
-        transport.applyError = NetProxyCtlException("command.failed", "failed")
+        transport.applyError = ModuleApiException("command.failed", "failed")
         transport.revisions[LocalRuleSet.Block.target] = "external-revision"
         vm.save()
         val failed = vm.saved()
@@ -391,8 +389,8 @@ class RoutingRulesViewModelTest {
             vm.save()
             assertEquals(LocalRuleSet.Direct, vm.state.value.draft!!.target)
             assertEquals("new.example", vm.state.value.draft!!.text)
-            assertEquals(1, transport.calls.count { it[1] == "apply" })
-            assertEquals(3, transport.calls.count { it[1] == "read" })
+            assertEquals(1, transport.calls.count { it.method == "PUT" })
+            assertEquals(3, transport.calls.count { it.method == "GET" })
         } finally {
             transport.gate!!.countDown()
         }
@@ -406,8 +404,8 @@ class RoutingRulesViewModelTest {
         val loaded = vm.loaded()
         vm.edit(RuleIdentity(LocalRuleSet.Block, 0))
         vm.updateDraft(RuleField.Domain, "new.example")
-        transport.applyError = NetProxyCtlException("command.failed", "failed")
-        transport.readErrors[LocalRuleSet.Block.target] = NetProxyCtlException("config.read_failed", "read failed")
+        transport.applyError = ModuleApiException("command.failed", "failed")
+        transport.readErrors[LocalRuleSet.Block.target] = ModuleApiException("config.read_failed", "read failed")
         vm.save()
         val failed = vm.saved()
         assertTrue(failed.file(LocalRuleSet.Block).requiresReload)
@@ -426,7 +424,7 @@ class RoutingRulesViewModelTest {
         val loaded = vm.loaded()
         val identity = RuleIdentity(LocalRuleSet.Block, 0)
         vm.requestDelete(identity)
-        transport.applyError = NetProxyCtlException("config.conflict", "changed")
+        transport.applyError = ModuleApiException("config.conflict", "changed")
         vm.delete()
         val failed = vm.saved()
         assertEquals(identity, failed.deleting)
@@ -455,7 +453,7 @@ class RoutingRulesViewModelTest {
         assertNull(vm.state.value.draft!!.field)
         assertEquals(LocalRuleSet.Block, vm.state.value.draft!!.target)
         assertEquals(loaded.files, vm.state.value.files)
-        assertFalse(transport.calls.any { it[1] == "apply" })
+        assertFalse(transport.calls.any { it.method == "PUT" })
         vm.dismiss()
         transport.contents[LocalRuleSet.Block.target] = "{}"
         vm.refresh()
@@ -464,7 +462,7 @@ class RoutingRulesViewModelTest {
         assertNull(invalid.file(LocalRuleSet.Block).document)
         vm.edit(RuleIdentity(LocalRuleSet.Block, 0))
         assertNull(vm.state.value.draft)
-        assertFalse(transport.calls.any { it[1] == "apply" })
+        assertFalse(transport.calls.any { it.method == "PUT" })
     }
 
     @Test fun deleteFromEditorClosesDraftAndCancellationDoesNotWrite() = runBlocking {
@@ -481,7 +479,7 @@ class RoutingRulesViewModelTest {
         vm.dismiss()
         assertNull(vm.state.value.deleting)
         assertEquals(loaded.files, vm.state.value.files)
-        assertFalse(transport.calls.any { it[1] == "apply" })
+        assertFalse(transport.calls.any { it.method == "PUT" })
     }
 
     @Test fun failedRefreshRetainsDisplayedDataButOnlyFailedFileRequiresReload() = runBlocking {
@@ -489,7 +487,7 @@ class RoutingRulesViewModelTest {
         val vm = model(this, transport)
         vm.refresh()
         val loaded = vm.loaded()
-        transport.readErrors[LocalRuleSet.Direct.target] = NetProxyCtlException("config.read_failed", "read failed")
+        transport.readErrors[LocalRuleSet.Direct.target] = ModuleApiException("config.read_failed", "read failed")
         vm.refresh()
         val failed = vm.loaded()
         assertEquals(loaded.rules, failed.rules)

@@ -1,12 +1,8 @@
 package com.fanjv.netproxy.feature.catalog.presentation.subscriptions
 
-import com.fanjv.netproxy.core.command.CommandFileStore
-import com.fanjv.netproxy.core.command.NetProxyCtlClient
-import com.fanjv.netproxy.core.command.NetProxyCtlException
-import com.fanjv.netproxy.core.command.NetProxyCtlOutput
-import com.fanjv.netproxy.core.command.NetProxyCtlTransport
+import com.fanjv.netproxy.core.api.*
+
 import com.fanjv.netproxy.core.ui.UiText
-import com.fanjv.netproxy.feature.catalog.data.CatalogRepository
 import com.fanjv.netproxy.feature.catalog.data.NodeRepository
 import com.fanjv.netproxy.feature.catalog.data.SubscriptionRepository
 import kotlinx.coroutines.CompletableDeferred
@@ -27,19 +23,15 @@ import org.junit.rules.TemporaryFolder
 
 class SubscriptionViewModelsTest {
     @get:Rule val folder = TemporaryFolder()
-    private val calls = mutableListOf<List<String>>()
+    private val calls = mutableListOf<ApiTestRequest>()
 
-    private fun catalog(action: suspend (List<String>) -> NetProxyCtlOutput): CatalogRepository = CatalogRepository(
-        NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
+    private fun catalog(action: suspend (ApiTestRequest) -> ModuleHttpResponse): ModuleApiClient =
+        ModuleApiClient(transport = TestApiTransport { args ->
             calls += args
             action(args)
-        }),
-        CommandFileStore(folder.root)
-    )
+        })
 
-    private fun output(data: String) = NetProxyCtlOutput(
-        true, listOf("""{"schema":1,"ok":true,"code":"test","message":"","data":$data}"""), emptyList()
-    )
+    private fun output(data: String) = apiSuccess(data)
 
     @Test fun consumingFailureNoticeDoesNotTurnReadFailureIntoEmptySubscriptions() = runBlocking {
         var fail = true
@@ -61,7 +53,7 @@ class SubscriptionViewModelsTest {
         """{"id":"$id","name":"$name","url":"$url"}"""
     )
 
-    private fun persisted(id: String): Nothing = throw NetProxyCtlException(
+    private fun persisted(id: String): Nothing = throw ModuleApiException(
         "subscription.runtime_sync_failed", "persisted failure",
         JsonObject(mapOf("group_id" to JsonPrimitive(id), "persisted" to JsonPrimitive(true), "runtime_sync_pending" to JsonPrimitive(true)))
     )
@@ -75,10 +67,10 @@ class SubscriptionViewModelsTest {
     @Test fun persistedEditRefreshesBaselineAndRevertingUrlSendsAnotherEdit() = runBlocking {
         var diskUrl = "https://example.invalid/a"
         val repo = SubscriptionRepository(catalog { args ->
-            when (args.take(2)) {
-                listOf("sub", "show") -> editor("sample", diskUrl)
-                listOf("sub", "edit") -> {
-                    diskUrl = args[args.indexOf("--url") + 1]
+            when (args.method + " " + args.path) {
+                "GET /subscriptions/sample" -> editor("sample", diskUrl)
+                "PUT /subscriptions/sample" -> {
+                    diskUrl = args.text("url")
                     persisted("sample")
                 }
                 else -> error("Unexpected command")
@@ -96,7 +88,7 @@ class SubscriptionViewModelsTest {
         vm.update { it.copy(url = "https://example.invalid/a") }
         vm.save()
         vm.idle()
-        assertEquals(2, calls.count { it.take(2) == listOf("sub", "edit") })
+        assertEquals(2, calls.count { it.method == "PUT" && it.path == "/subscriptions/sample" })
         assertEquals("https://example.invalid/a", diskUrl)
     }
 
@@ -106,18 +98,18 @@ class SubscriptionViewModelsTest {
         var diskUrl = "https://example.invalid/a"
         var readFailed = true
         val repo = SubscriptionRepository(catalog { args ->
-            when (args.take(2)) {
-                listOf("sub", "add") -> {
+            when (args.method + " " + args.path) {
+                "POST /subscriptions" -> {
                     entered.complete(Unit)
                     withTimeout(5_000) { release.await() }
                     persisted("sample")
                 }
-                listOf("sub", "show") -> {
-                    if (readFailed) throw NetProxyCtlException("subscription.read_failed", "read failure")
+                "GET /subscriptions/sample" -> {
+                    if (readFailed) throw ModuleApiException("subscription.read_failed", "read failure")
                     editor("sample", diskUrl, "Assigned name")
                 }
-                listOf("sub", "edit") -> {
-                    diskUrl = args[args.indexOf("--url") + 1]
+                "PUT /subscriptions/sample" -> {
+                    diskUrl = args.text("url")
                     output("""{"group_id":"sample","persisted":true}""")
                 }
                 else -> error("Unexpected command")
@@ -139,12 +131,12 @@ class SubscriptionViewModelsTest {
         assertEquals("sample", vm.state.value.id)
         vm.save()
         vm.idle()
-        assertEquals(1, calls.count { it.take(2) == listOf("sub", "add") })
+        assertEquals(1, calls.count { it.method == "POST" && it.path == "/subscriptions" })
         readFailed = false
         vm.save()
         vm.idle()
-        assertEquals(1, calls.count { it.take(2) == listOf("sub", "add") })
-        assertEquals(1, calls.count { it.take(2) == listOf("sub", "edit") })
+        assertEquals(1, calls.count { it.method == "POST" && it.path == "/subscriptions" })
+        assertEquals(1, calls.count { it.method == "PUT" && it.path == "/subscriptions/sample" })
         assertEquals("https://example.invalid/later", diskUrl)
         assertEquals("Assigned name", vm.state.value.draft.name)
     }
@@ -153,7 +145,7 @@ class SubscriptionViewModelsTest {
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         val repo = SubscriptionRepository(catalog { args ->
-            if (args.last() == "old") withContext(NonCancellable) {
+            if (args.path == "/subscriptions/old") withContext(NonCancellable) {
                 entered.complete(Unit)
                 withTimeout(5_000) { release.await() }
                 editor("old", "https://example.invalid/old")
@@ -177,7 +169,8 @@ class SubscriptionViewModelsTest {
         val release = CompletableDeferred<Unit>()
         val scope = CoroutineScope(coroutineContext + Job())
         val repo = SubscriptionRepository(catalog { args ->
-            assertEquals(listOf("sub", "add"), args.take(2))
+            assertEquals("POST", args.method)
+            assertEquals("/subscriptions", args.path)
             entered.complete(Unit)
             withTimeout(5_000) { release.await() }
             output("""{"group_id":"sample","persisted":true}""")
@@ -199,10 +192,10 @@ class SubscriptionViewModelsTest {
     @Test fun persistedDetailsUpdateRefreshesDataWithoutClearingError() = runBlocking {
         var name = "Before"
         val cat = catalog { args ->
-            when (args.take(2)) {
-                listOf("catalog", "show") -> output("""{"group":{"id":"sample","name":"$name","type":"subscription"}}""")
-                listOf("sub", "history") -> output("[]")
-                listOf("sub", "update") -> { name = "After"; persisted("sample") }
+            when (args.method + " " + args.path) {
+                "GET /subscriptions/sample" -> output("""{"group":{"id":"sample","name":"$name","type":"subscription"}}""")
+                "GET /subscriptions/sample/history" -> output("[]")
+                "POST /subscriptions/sample/update" -> { name = "After"; persisted("sample") }
                 else -> error("Unexpected command")
             }
         }
@@ -219,7 +212,7 @@ class SubscriptionViewModelsTest {
         val release = CompletableDeferred<Unit>()
         var reads = 0
         val repo = SubscriptionRepository(catalog { args ->
-            if (args.take(2) == listOf("catalog", "list")) {
+            if (args.path == "/subscriptions") {
                 if (++reads == 1) withContext(NonCancellable) {
                     entered.complete(Unit)
                     withTimeout(5_000) { release.await() }
@@ -230,11 +223,12 @@ class SubscriptionViewModelsTest {
         val vm = SubscriptionsViewModel(repo, this)
         vm.setVisible(true)
         withTimeout(5_000) { entered.await() }
-        val oldJob = coroutineContext[Job]!!.children.single()
+        val oldJobs = coroutineContext[Job]!!.children.toList()
         vm.updateSubscription("sample")
         withTimeout(5_000) { vm.state.first { it.groups.firstOrNull()?.name == "New" } }
         release.complete(Unit)
-        withTimeout(5_000) { oldJob.join() }
+        vm.setVisible(false)
+        withTimeout(5_000) { oldJobs.forEach { it.join() } }
         assertEquals("New", vm.state.value.groups.single().name)
         assertEquals(UiText.Empty, vm.state.value.error)
     }
@@ -242,10 +236,10 @@ class SubscriptionViewModelsTest {
     @Test fun persistedRemoveClearsDeletedDetailsAndKeepsErrorWithoutSuccessNavigation() = runBlocking {
         var navigated = false
         val cat = catalog { args ->
-            when (args.take(2)) {
-                listOf("catalog", "show") -> output("""{"group":{"id":"sample","name":"Sample","type":"subscription"}}""")
-                listOf("sub", "history") -> output("[]")
-                listOf("sub", "remove") -> persisted("sample")
+            when (args.method + " " + args.path) {
+                "GET /subscriptions/sample" -> output("""{"group":{"id":"sample","name":"Sample","type":"subscription"}}""")
+                "GET /subscriptions/sample/history" -> output("[]")
+                "DELETE /subscriptions/sample" -> persisted("sample")
                 else -> error("Unexpected command")
             }
         }
@@ -264,7 +258,7 @@ class SubscriptionViewModelsTest {
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         val cat = catalog { args ->
-            if (args.last() == "old") withContext(NonCancellable) {
+            if (args.path == "/subscriptions/old") withContext(NonCancellable) {
                 entered.complete(Unit)
                 withTimeout(5_000) { release.await() }
                 output("""{"group":{"id":"old","name":"Old","type":"local"}}""")

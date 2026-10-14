@@ -1,9 +1,10 @@
 package com.fanjv.netproxy.feature.logs.data
 
-import com.fanjv.netproxy.core.command.*
+import com.fanjv.netproxy.core.api.*
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancelAndJoin
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -13,13 +14,17 @@ import java.io.File
 class LogRepositoryTest {
     @get:Rule val folder = TemporaryFolder()
 
-    private fun client(write: (File) -> Unit) = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
-        write(File(args.last()))
-        NetProxyCtlOutput(true, listOf("""{"schema":1,"ok":true,"code":"test","data":{}}"""), emptyList())
+    private fun client(write: suspend (File) -> Unit) = ModuleApiClient(object : TestApiTransport() {
+        override suspend fun respond(request: ApiTestRequest): ModuleHttpResponse = error("Unexpected JSON request")
+        override suspend fun download(path: String, query: Map<String, String>, destination: File) {
+            assertEquals("/diagnostics/export", path)
+            assertEquals(setOf("manager_version", "manager_version_code"), query.keys)
+            write(destination)
+        }
     })
 
     @Test fun removesFailedOrEmptyExports() = runBlocking {
-        for (write in listOf<(File) -> Unit>({}, { error("export failed") })) {
+        for (write in listOf<suspend (File) -> Unit>({}, { error("export failed") })) {
             try { LogRepository(client(write), folder.root).createReport(); fail("expected export failure") }
             catch (_: Exception) {}
             assertTrue(folder.root.listFiles()!!.isEmpty())
@@ -39,23 +44,18 @@ class LogRepositoryTest {
         assertTrue(unrelated.exists())
     }
 
-    @Test fun cancelledExportFinishesBeforeDeletingTheReport() = runBlocking {
+    @Test fun cancelledDownloadRemovesPartialReport() = runBlocking {
         val started = CompletableDeferred<File>()
-        val complete = CompletableDeferred<Unit>()
-        val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
-            val file = File(args.last())
-            started.complete(file)
-            complete.await()
-            assertTrue(file.exists())
+        val client = client { file ->
             file.writeBytes(byteArrayOf(1))
-            NetProxyCtlOutput(true, listOf("""{"schema":1,"ok":true,"data":{}}"""), emptyList())
-        })
+            started.complete(file)
+            CompletableDeferred<Unit>().await()
+        }
         val export = launch { LogRepository(client, folder.root).createReport() }
         val file = started.await()
-        export.cancel()
         assertTrue(file.exists())
-        complete.complete(Unit)
-        export.join()
+        export.cancelAndJoin()
+        assertFalse(file.exists())
         assertTrue(folder.root.listFiles()!!.isEmpty())
     }
 }

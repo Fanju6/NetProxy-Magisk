@@ -1,11 +1,8 @@
 package com.fanjv.netproxy.feature.settings.data
 
-import com.fanjv.netproxy.core.command.CommandFileStore
-import com.fanjv.netproxy.core.command.ConfigurationWrites
-import com.fanjv.netproxy.core.command.NetProxyCtlClient
-import com.fanjv.netproxy.core.command.NetProxyCtlException
-import com.fanjv.netproxy.core.command.NetProxyCtlOutput
-import com.fanjv.netproxy.core.command.NetProxyCtlTransport
+import com.fanjv.netproxy.core.api.*
+
+import com.fanjv.netproxy.core.config.ConfigurationWrites
 import com.fanjv.netproxy.feature.settings.model.WifiPolicySettings
 import com.fanjv.netproxy.feature.settings.presentation.SettingsViewModel
 import kotlinx.coroutines.CompletableDeferred
@@ -31,19 +28,18 @@ class ConfigRepositoryTest {
 
     private val defaultWifi = """{"wifi":{"enabled":false,"mode":"blacklist","blacklist":[],"whitelist":[],"proxy_on_non_wifi":true}}"""
 
-    private fun output(data: String) = NetProxyCtlOutput(true,
-        listOf("""{"schema":1,"ok":true,"code":"test","message":"","data":$data}"""), emptyList())
+    private fun output(data: String) = ModuleHttpResponse(200, """{"schema":1,"ok":true,"code":"test","message":"","data":$data}""")
 
     private fun snapshot(content: String, revision: String) = output(JsonObject(mapOf(
         "content" to JsonPrimitive(content), "revision" to JsonPrimitive(revision)
     )).toString())
 
     private suspend fun assertModuleReadRejected(target: String, content: String) {
-        val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
-            assertEquals(listOf("config", "read", target), args)
+        val client = ModuleApiClient(transport = TestApiTransport { args ->
+            args.assertConfig("GET", target)
             snapshot(content, "read")
         })
-        val repository = ConfigRepository(client, CommandFileStore(temporaryFolder.root))
+        val repository = ConfigRepository(client)
         try {
             if (target == "module/wifi") repository.readWifi() else repository.readAutoStart()
             fail("应拒绝无效配置: $content")
@@ -51,23 +47,23 @@ class ConfigRepositoryTest {
     }
 
     @Test fun savedWifiNamesUseReadonlyNetworkContract() = runBlocking {
-        val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
-            assertEquals(listOf("network", "wifi-list"), args)
+        val client = ModuleApiClient(transport = TestApiTransport { args ->
+            assertEquals("/network/wifi-list", args.path)
             output("""{"ssids":["Home, Wi-Fi","Office"]}""")
         })
-        assertEquals(listOf("Home, Wi-Fi", "Office"), ConfigRepository(client, CommandFileStore(temporaryFolder.root)).savedWifiNetworks())
+        assertEquals(listOf("Home, Wi-Fi", "Office"), ConfigRepository(client).savedWifiNetworks())
         assertTrue(temporaryFolder.root.listFiles()!!.isEmpty())
     }
 
     @Test fun modulePartitionsDecodeTypedValuesAndIndependentRevisions() = runBlocking {
-        val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
-            when (args) {
-                listOf("config", "read", "module/wifi") -> snapshot(defaultWifi, "wifi-read")
-                listOf("config", "read", "module/auto_start") -> snapshot("""{"auto_start":false}""", "auto-read")
+        val client = ModuleApiClient(transport = TestApiTransport { args ->
+            when (args.target) {
+                "module/wifi" -> snapshot(defaultWifi, "wifi-read")
+                "module/auto_start" -> snapshot("""{"auto_start":false}""", "auto-read")
                 else -> error("非分区读取: $args")
             }
         })
-        val repository = ConfigRepository(client, CommandFileStore(temporaryFolder.root))
+        val repository = ConfigRepository(client)
         val wifi = repository.readWifi()
         assertEquals(WifiPolicySettings(), wifi.wifi)
         assertEquals("wifi-read", wifi.revision)
@@ -78,17 +74,18 @@ class ConfigRepositoryTest {
 
     @Test fun modulePartitionWritesContainOnlyOwnedFieldsIncludingDefaults() = runBlocking {
         val writes = ConfigurationWrites(this)
-        val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
-            assertEquals(listOf("config", "apply", "--revision"), args.take(3))
-            val target = args[4]
+        val client = ModuleApiClient(transport = TestApiTransport { args ->
+            assertEquals("PUT", args.method)
+            assertEquals("/config", args.path)
+            val target = args.target
             assertTrue(target in setOf("module/wifi", "module/auto_start"))
-            assertEquals(if (target == "module/wifi") "wifi-read" else "auto-read", args[3])
+            assertEquals(if (target == "module/wifi") "wifi-read" else "auto-read", args.text("revision"))
             assertEquals(Json.parseToJsonElement(if (target == "module/wifi") defaultWifi else """{"auto_start":false}"""),
-                Json.parseToJsonElement(File(args.last()).readText()))
-            assertTrue(args.last().endsWith(".json"))
+                Json.parseToJsonElement(args.text("content")))
+            assertEquals(setOf("content", "revision"), args.body.keys)
             output("""{"revision":"$target-saved"}""")
         })
-        val repository = ConfigRepository(client, CommandFileStore(temporaryFolder.root), writes::await)
+        val repository = ConfigRepository(client, writes::await)
         withTimeout(5_000) {
             writes.launch("module/wifi", write = {
                 assertEquals("module/wifi-saved", repository.applyWifi(WifiPolicySettings(), "wifi-read"))
@@ -110,21 +107,21 @@ class ConfigRepositoryTest {
             """{"wifi":{"proxy_on_non_wifi":false}}""" to WifiPolicySettings(proxyOnNonWifi = false)
         )
         for ((content, expected) in wifiCases) {
-            val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
-                assertEquals(listOf("config", "read", "module/wifi"), args)
+            val client = ModuleApiClient(transport = TestApiTransport { args ->
+                args.assertConfig("GET", "module/wifi")
                 snapshot(content, "sparse-wifi")
             })
-            val read = ConfigRepository(client, CommandFileStore(temporaryFolder.root)).readWifi()
+            val read = ConfigRepository(client).readWifi()
             assertEquals(expected, read.wifi)
             assertEquals("sparse-wifi", read.revision)
         }
         for ((content, expected) in listOf("{}" to false, """{"auto_start":false}""" to false,
             """{"auto_start":true}""" to true)) {
-            val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
-                assertEquals(listOf("config", "read", "module/auto_start"), args)
+            val client = ModuleApiClient(transport = TestApiTransport { args ->
+                args.assertConfig("GET", "module/auto_start")
                 snapshot(content, "sparse-auto")
             })
-            val read = ConfigRepository(client, CommandFileStore(temporaryFolder.root)).readAutoStart()
+            val read = ConfigRepository(client).readAutoStart()
             assertEquals(expected, read.enabled)
             assertEquals("sparse-auto", read.revision)
         }
@@ -161,21 +158,21 @@ class ConfigRepositoryTest {
                 assertModuleReadRejected("module/wifi", """{"wifi":{"$field":$values}}""")
             }
         }
-        val client = NetProxyCtlClient(transport = NetProxyCtlTransport { _, _ ->
+        val client = ModuleApiClient(transport = TestApiTransport { _ ->
             snapshot("""{"wifi":{"blacklist":["1"],"whitelist":["1.5"]}}""", "read")
         })
-        val wifi = ConfigRepository(client, CommandFileStore(temporaryFolder.root)).readWifi().wifi
+        val wifi = ConfigRepository(client).readWifi().wifi
         assertEquals(listOf("1"), wifi.blacklist)
         assertEquals(listOf("1.5"), wifi.whitelist)
     }
 
-    @Test fun strictModuleCodecDoesNotChangeCliResponseUnknownFieldPolicy() = runBlocking {
-        val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
-            assertEquals(listOf("config", "read", "module/auto_start"), args)
+    @Test fun strictModuleCodecDoesNotChangeApiResponseUnknownFieldPolicy() = runBlocking {
+        val client = ModuleApiClient(transport = TestApiTransport { args ->
+            args.assertConfig("GET", "module/auto_start")
             output("""{"content":"{}","revision":"auto-read","extra":true}""")
         })
         assertTrue(client.json.configuration.ignoreUnknownKeys)
-        val read = ConfigRepository(client, CommandFileStore(temporaryFolder.root)).readAutoStart()
+        val read = ConfigRepository(client).readAutoStart()
         assertFalse(read.enabled)
         assertEquals("auto-read", read.revision)
         assertTrue(client.json.configuration.ignoreUnknownKeys)
@@ -189,21 +186,21 @@ class ConfigRepositoryTest {
         var content = defaultWifi
         var revision = 0
         var reads = 0
-        val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
-            if (args[1] == "read") {
+        val client = ModuleApiClient(transport = TestApiTransport { args ->
+            if (args.method == "GET") {
                 reads++
-                if (args[2] == "module/wifi") snapshot(content, "$revision")
+                if (args.target == "module/wifi") snapshot(content, "$revision")
                 else snapshot("""{"auto_start":false}""", "auto")
             } else {
                 entered.complete(Unit); withTimeout(5_000) { release.await() }
-                assertEquals(listOf("config", "apply", "--revision", "$revision", "module/wifi"), args.dropLast(1))
-                content = File(args.last()).readText()
+                args.assertConfig("PUT", "module/wifi", "$revision")
+                content = args.text("content")
                 revision++
                 output("""{"revision":"$revision"}""")
             }
         })
         val writes = ConfigurationWrites(saveScope)
-        val repository = ConfigRepository(client, CommandFileStore(temporaryFolder.root), writes::await)
+        val repository = ConfigRepository(client, writes::await)
         val old = SettingsViewModel(repository, pageScope, writes)
         try {
             old.refresh()
@@ -227,11 +224,11 @@ class ConfigRepositoryTest {
     @Test fun unrelatedConfigurationReadDoesNotWaitForModuleWrite() = runBlocking {
         val release = CompletableDeferred<Unit>()
         val writes = ConfigurationWrites(this)
-        val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
-            assertEquals(listOf("config", "read", "singbox/config.json"), args)
+        val client = ModuleApiClient(transport = TestApiTransport { args ->
+            args.assertConfig("GET", "singbox/config.json")
             snapshot("{}", "main")
         })
-        val repository = ConfigRepository(client, CommandFileStore(temporaryFolder.root), writes::await)
+        val repository = ConfigRepository(client, writes::await)
         val writer = writes.launch("module/wifi", write = { release.await() })
         try {
             val snapshot = withTimeout(5_000) { repository.readSnapshot("singbox/config.json") }
@@ -241,24 +238,24 @@ class ConfigRepositoryTest {
     }
 
     @Test fun savesReadPartitionRevisionAndNeverRereadsOrRetriesConflict() = runBlocking {
-        val calls = mutableListOf<List<String>>()
-        val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
+        val calls = mutableListOf<ApiTestRequest>()
+        val client = ModuleApiClient(transport = TestApiTransport { args ->
             calls.add(args)
-            if (args[1] == "read") {
-                assertEquals(listOf("config", "read", "module/auto_start"), args)
+            if (args.method == "GET") {
+                args.assertConfig("GET", "module/auto_start")
                 snapshot("""{"auto_start":false}""", "auto-read")
             } else {
-                assertEquals(listOf("config", "apply", "--revision", "auto-read", "module/auto_start"), args.dropLast(1))
-                assertEquals("""{"auto_start":true}""", File(args.last()).readText())
-                NetProxyCtlOutput(false, listOf("""{"schema":1,"ok":false,"code":"config.conflict","message":"配置已被修改，请重新加载后再保存"}"""), emptyList())
+                args.assertConfig("PUT", "module/auto_start", "auto-read")
+                assertEquals("""{"auto_start":true}""", args.text("content"))
+                ModuleHttpResponse(500, """{"schema":1,"ok":false,"code":"config.conflict","message":"配置已被修改，请重新加载后再保存"}""")
             }
         })
-        val repository = ConfigRepository(client, CommandFileStore(temporaryFolder.root))
+        val repository = ConfigRepository(client)
         val read = repository.readAutoStart()
         try {
             repository.applyAutoStart(true, read.revision)
             fail("应返回配置冲突")
-        } catch (error: NetProxyCtlException) {
+        } catch (error: ModuleApiException) {
             assertEquals("config.conflict", error.resultCode)
             assertTrue(error.message.contains("重新加载"))
         }
@@ -271,29 +268,29 @@ class ConfigRepositoryTest {
             "auto_start" to JsonPrimitive(false),
             "selection" to JsonObject(mapOf("group_id" to JsonPrimitive("default"), "node_tag" to JsonPrimitive("")))
         )).toString()
-        val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
-            if (args[1] == "read") {
-                assertEquals(listOf("config", "read", "module"), args)
+        val client = ModuleApiClient(transport = TestApiTransport { args ->
+            if (args.method == "GET") {
+                args.assertConfig("GET", "module")
                 snapshot(content, "full-read")
             } else {
-                assertEquals(listOf("config", "apply", "--revision", "full-read", "module"), args.dropLast(1))
-                assertEquals(content, File(args.last()).readText())
+                args.assertConfig("PUT", "module", "full-read")
+                assertEquals(content, args.text("content"))
                 output("""{"revision":"full-saved"}""")
             }
         })
-        val repository = ConfigRepository(client, CommandFileStore(temporaryFolder.root))
+        val repository = ConfigRepository(client)
         val read = repository.readSnapshot("module")
         assertEquals("full-saved", repository.apply("module", read.content, read.revision))
     }
 
-    @Test fun nativeInboundValidationCarriesRevisionAndCleansCandidate() = runBlocking {
+    @Test fun nativeInboundValidationCarriesRevisionWithoutCandidateFiles() = runBlocking {
         val content = """{"tun":{"type":"tun","tag":"netproxy-in"}}"""
-        val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
-            assertEquals(listOf("config", "validate", "--revision", "tun-revision", "inbound/tun"), args.dropLast(1))
-            assertEquals(content, File(args.last()).readText())
+        val client = ModuleApiClient(transport = TestApiTransport { args ->
+            args.assertConfig("POST", "inbound/tun", "tun-revision")
+            assertEquals(content, args.text("content"))
             output("{}")
         })
-        ConfigRepository(client, CommandFileStore(temporaryFolder.root)).validate("inbound/tun", content, "tun-revision")
+        ConfigRepository(client).validate("inbound/tun", content, "tun-revision")
         assertTrue(temporaryFolder.root.listFiles()!!.isEmpty())
     }
 }

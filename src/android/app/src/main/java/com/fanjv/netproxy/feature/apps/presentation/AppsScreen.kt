@@ -35,6 +35,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.CancellationException
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -45,6 +49,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
@@ -52,6 +57,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.flowWithLifecycle
 import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.core.ui.component.BackIconButton
@@ -93,19 +101,16 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
 @Composable
 fun AppIcon(
-    packageName: String,
-    userId: String,
+    app: AppInfoModel,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
-    val iconSizePx = with(LocalDensity.current) { 40.dp.roundToPx() }
     val iconRevision = AppIconCache.revision
-    var icon by remember(packageName, userId, iconSizePx) {
-        mutableStateOf(AppIconCache.cachedIcon(packageName, userId, iconSizePx))
+    var icon by remember(app.id) {
+        mutableStateOf(AppIconCache.cachedIcon(app.iconKey))
     }
 
-    LaunchedEffect(packageName, userId, iconSizePx, iconRevision) {
-        AppIconCache.loadIcon(context, packageName, userId, iconSizePx)?.let { icon = it }
+    LaunchedEffect(app.iconKey, iconRevision) {
+        AppIconCache.cachedIcon(app.iconKey)?.let { icon = it }
     }
 
     Box(
@@ -147,7 +152,25 @@ internal fun AppsScreen(
     val listState = rememberLazyListState()
     val searchListState = rememberLazyListState()
 
-    LaunchedEffect(Unit) { viewModel.load() }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    for (currentList in listOf(listState, searchListState)) {
+        LaunchedEffect(currentList, apps.masterAppList, lifecycle) {
+            snapshotFlow {
+                val active = (currentList === listState) == searchStatus.isCollapsed()
+                (if (active) currentList.layoutInfo.visibleItemsInfo.mapNotNull { it.key as? String } else emptyList()) to AppIconCache.generation
+            }.flowWithLifecycle(lifecycle, Lifecycle.State.RESUMED)
+                .distinctUntilChanged().collectLatest { (visible, _) ->
+                    try { viewModel.loadIcons(visible) }
+                    catch (error: CancellationException) { throw error }
+                    catch (_: Exception) { }
+                }
+        }
+    }
+
+    val resources = LocalConfiguration.current
+    LaunchedEffect(resources.locales.toLanguageTags()) {
+        viewModel.load(force = apps.hasLoadedApps)
+    }
     val commitOnLeave = rememberCommitOnLeave(viewModel::requestPolicyFlush)
     val leave: () -> Unit = { commitOnLeave { onBack?.invoke() } }
     BackHandler(enabled = onBack != null && searchStatus.isCollapsed() &&
@@ -455,8 +478,7 @@ private fun AppItem(
                         .padding(start = 12.dp)
                 ) {
                     AppIcon(
-                        packageName = app.packageName,
-                        userId = app.userId,
+                        app = app,
                         modifier = Modifier.padding(end = 12.dp)
                     )
                 }

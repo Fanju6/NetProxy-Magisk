@@ -30,9 +30,7 @@ import kotlinx.coroutines.withContext
 import java.net.NetworkInterface
 
 internal data class CatalogDashboardUiState(
-    val rootChecked: Boolean = false,
-    val rootGranted: Boolean = false,
-    val moduleInstalled: Boolean = false,
+    val connection: ModuleAvailability? = null,
     val loading: Boolean = true,
     val serviceState: String = "stopped",
     val serviceError: String = "",
@@ -54,6 +52,7 @@ internal data class CatalogDashboardUiState(
     val notice: UiText = UiText.Empty,
     val noticeId: Long = 0
 ) {
+    val connected: Boolean get() = connection?.available == true
     val isServiceTransitioning: Boolean
         get() = operation == "start" || operation == "stop"
     val isReady: Boolean
@@ -66,7 +65,7 @@ internal data class CatalogDashboardUiState(
         get() = isStarting || isStopping || operation.isNotEmpty()
 }
 
-/** 仅消费 netproxyctl 与运行时 API 的仪表盘状态，不读取旧配置或 PID。 */
+/** 仅消费模块 API 与共享事件快照，不读取设备配置或 PID。 */
 internal class CatalogDashboardViewModel(
     private val repository: ServiceRepository,
     totalMemoryBytes: Long,
@@ -74,7 +73,7 @@ internal class CatalogDashboardViewModel(
 ) : ViewModel(scope) {
     private val _state = MutableStateFlow(CatalogDashboardUiState())
     val state: StateFlow<CatalogDashboardUiState> = _state.asStateFlow()
-    private var pollingJob: Job? = null
+    private var eventsJob: Job? = null
     private var snapshotJob: Job? = null
     private var uptimeJob: Job? = null
     private var visible = false
@@ -87,17 +86,15 @@ internal class CatalogDashboardViewModel(
         val previous = _state.value
         val available = availability?.available == true
         _state.update {
-            it.copy(rootChecked = availability != null,
-                rootGranted = availability?.rootGranted == true,
-                moduleInstalled = available,
-                loading = available && (!previous.moduleInstalled || previous.loading))
+            it.copy(connection = availability,
+                loading = available && (!previous.connected || previous.loading))
         }
         if (available && visible) {
             startUptimeTicker()
-            startPolling()
+            startEvents()
         } else if (!available) {
-            pollingJob?.cancel()
-            pollingJob = null
+            eventsJob?.cancel()
+            eventsJob = null
             snapshotJob?.cancel()
             uptimeJob?.cancel()
             if (previous.operation.isEmpty()) stateRevision++
@@ -105,7 +102,7 @@ internal class CatalogDashboardViewModel(
     }
 
     fun refresh() {
-        if (_state.value.moduleInstalled) {
+        if (_state.value.connected) {
             refreshSnapshot()
         }
     }
@@ -113,13 +110,14 @@ internal class CatalogDashboardViewModel(
     fun setVisible(visible: Boolean) {
         this.visible = visible
         if (visible) {
-            if (_state.value.moduleInstalled) {
+            if (_state.value.connected) {
+                refreshSnapshot()
                 startUptimeTicker()
-                startPolling()
+                startEvents()
             }
         } else {
-            pollingJob?.cancel()
-            pollingJob = null
+            eventsJob?.cancel()
+            eventsJob = null
             snapshotJob?.cancel()
             if (_state.value.operation.isEmpty()) stateRevision++
             uptimeJob?.cancel()
@@ -146,7 +144,7 @@ internal class CatalogDashboardViewModel(
 
     fun setMode(mode: String) {
         val current = _state.value
-        if (!current.rootGranted || !current.moduleInstalled || current.loading || mode !in current.availableOutboundModes) return
+        if (!current.connected || current.loading || mode !in current.availableOutboundModes) return
         runOperation("mode") {
             repository.setMode(mode)
             UiText.Resource(R.string.dashboard_mode_changed)
@@ -154,8 +152,7 @@ internal class CatalogDashboardViewModel(
     }
 
     private fun canControlService(): Boolean =
-        _state.value.rootGranted &&
-            _state.value.moduleInstalled &&
+        _state.value.connected &&
             !_state.value.loading &&
             _state.value.operation.isEmpty()
 
@@ -163,13 +160,17 @@ internal class CatalogDashboardViewModel(
         _state.update { it.copy(notice = UiText.Empty) }
     }
 
-    private fun startPolling() {
-        if (pollingJob?.isActive == true) return
-        pollingJob = viewModelScope.launch {
-            while (isActive) {
-                refreshSnapshot()
-                snapshotJob?.join()
-                delay(5000)
+    private fun startEvents() {
+        if (eventsJob?.isActive == true) return
+        eventsJob = viewModelScope.launch {
+            repository.observe().collect { result ->
+                if (_state.value.operation.isEmpty()) {
+                    val revision = ++stateRevision
+                    result.fold(
+                        onSuccess = { readSnapshot(revision, it) },
+                        onFailure = { error -> _state.update { it.copy(loading = false, serviceError = error.userMessage()) } }
+                    )
+                }
             }
         }
     }
@@ -191,14 +192,14 @@ internal class CatalogDashboardViewModel(
     }
 
     private fun refreshSnapshot() {
-        if (!_state.value.moduleInstalled || _state.value.operation.isNotEmpty()) return
+        if (!_state.value.connected || _state.value.operation.isNotEmpty()) return
         val requestRevision = ++stateRevision
         snapshotJob?.cancel()
         snapshotJob = viewModelScope.launch { readSnapshot(requestRevision) }
     }
 
-    private suspend fun readSnapshot(requestRevision: Long) {
-        runCatching { repository.status() }.onSuccess { service ->
+    private suspend fun readSnapshot(requestRevision: Long, event: ServiceStatusSnapshot? = null) {
+        runCatching { event ?: repository.status() }.onSuccess { service ->
             val localAddress = withContext(Dispatchers.IO) { localAddress() }
             currentCoroutineContext().ensureActive()
             if (!shouldApplyDashboardSnapshot(

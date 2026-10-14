@@ -1,8 +1,7 @@
 package com.fanjv.netproxy.feature.kernel.presentation
 
-import com.fanjv.netproxy.core.command.NetProxyCtlCodec
-import com.fanjv.netproxy.core.command.NetProxyCtlException
-import com.fanjv.netproxy.core.command.NetProxyCtlOutput
+import com.fanjv.netproxy.core.api.*
+
 import com.fanjv.netproxy.feature.settings.model.ConfigSnapshot
 import com.fanjv.netproxy.feature.settings.model.ManagedConfigDocument
 import kotlinx.serialization.json.Json
@@ -29,14 +28,9 @@ class ConfigDocumentContractTest {
 
     @Test
     fun conflictsRemainActionableErrors() {
-        val error = assertThrows(NetProxyCtlException::class.java) {
-            NetProxyCtlCodec(json).decode(
-                NetProxyCtlOutput(
-                    successful = false,
-                    stdout = listOf("""{"schema":1,"ok":false,"code":"config.conflict","message":"配置已被修改，请重新加载后再保存"}"""),
-                    stderr = emptyList(),
-                )
-            )
+        val error = assertThrows(ModuleApiException::class.java) {
+            ModuleApiCodec(json).decode(409,
+                """{"schema":1,"ok":false,"code":"config.conflict","message":"配置已被修改，请重新加载后再保存"}""")
         }
         assertEquals("config.conflict", error.resultCode)
         assertEquals("配置已被修改，请重新加载后再保存", error.message)

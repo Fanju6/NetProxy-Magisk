@@ -4,9 +4,9 @@
 
 ## 模块 HTTP API
 
-模块管理接口默认位于 `http://127.0.0.1:9091/api/v1`，可读取 Catalog、保存配置、更新订阅和操作服务。它独立于 sing-box，核心停止时仍可使用。
+模块管理接口默认位于 `https://127.0.0.1:9091/api/v1`，可读取 Catalog、保存配置、更新订阅和操作服务。它独立于 sing-box，核心停止时仍可使用。
 
-通过 Root 执行 `api access` 取得专用凭据；请求必须携带 Bearer header。当前终端 WebUI 和 Android 管理器仍使用 CLI。连接步骤与请求示例见 [HTTP API](/config/http-api)。
+Android 管理器自动取得可信连接资料，通过 HTTPS API 管理模块；终端 WebUI 继续使用 CLI。开发者可执行 `su -c '/data/adb/modules/netproxy/netproxyctl api access'` 取得专用凭据，请求须携带 Bearer header 并校验服务证书。连接步骤与请求示例见 [HTTP API](/config/http-api)。
 
 ## 模块 WebUI
 
@@ -21,7 +21,7 @@ sing-box Dashboard 使用 Service API，展示原生服务状态、节点组、�
 - 地址：`http://127.0.0.1:9090/dashboard/`
 - Secret：`singbox`
 
-Android 管理器也通过 Service API 合并核心实时状态。
+模块通过 Service API 汇集核心实时状态，再由模块 HTTPS API 和事件流提供给 Android 管理器。
 
 ## Clash API
 

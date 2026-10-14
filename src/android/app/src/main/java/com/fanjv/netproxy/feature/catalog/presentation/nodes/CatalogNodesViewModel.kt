@@ -4,7 +4,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fanjv.netproxy.R
-import com.fanjv.netproxy.core.command.NetProxyCtlException
+import com.fanjv.netproxy.core.api.ModuleApiException
 import com.fanjv.netproxy.core.ui.UiText
 import com.fanjv.netproxy.core.ui.toUiText
 import com.fanjv.netproxy.core.ui.userMessage
@@ -63,7 +63,7 @@ internal class CatalogNodesViewModel(
         importStore: NodeImportStore,
         scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     ) : this(repository, { uri ->
-        importStore.withImportedFile(uri) { repository.import(it.absolutePath) }
+        repository.import(importStore.read(uri))
         Unit
     }, scope)
 
@@ -72,9 +72,25 @@ internal class CatalogNodesViewModel(
     private var refreshJob: Job? = null
     private var refreshRevision = 0L
     private var loaded = false
+    private var eventsJob: Job? = null
 
     fun setVisible(visible: Boolean) {
-        if (visible) refresh(silent = loaded)
+        if (!visible) { eventsJob?.cancel(); eventsJob = null; return }
+        refresh(silent = loaded)
+        if (eventsJob?.isActive == true) return
+        eventsJob = viewModelScope.launch {
+            repository.observe().collect { result ->
+                if (_state.value.operation.isEmpty()) result.fold(
+                    onSuccess = { snapshot ->
+                        ++refreshRevision
+                        refreshJob?.cancel()
+                        _state.update { it.withSnapshot(snapshot) }
+                        loaded = true
+                    },
+                    onFailure = { error -> _state.update { it.copy(error = error.userMessage().toUiText(), noticeId = it.noticeId + 1) } }
+                )
+            }
+        }
     }
 
     fun refresh(silent: Boolean = false) {
@@ -176,7 +192,7 @@ internal class CatalogNodesViewModel(
                             noticeId = it.noticeId + 1
                         )
                     }
-                    if ((error as? NetProxyCtlException)?.persisted == true) refresh(silent = true)
+                    if ((error as? ModuleApiException)?.persisted == true) refresh(silent = true)
                     onResult(false)
                 }
         }
@@ -388,7 +404,7 @@ internal class CatalogNodesViewModel(
                             noticeId = it.noticeId + 1
                         )
                     }
-                    if (name == "select" || (error as? NetProxyCtlException)?.persisted == true) refresh(silent = true)
+                    if (name == "select" || (error as? ModuleApiException)?.persisted == true) refresh(silent = true)
                 }
         }
     }

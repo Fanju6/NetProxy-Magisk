@@ -33,6 +33,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.di.netProxyViewModel
+import com.fanjv.netproxy.core.module.ModuleConnectionState
 import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.LocalModuleAvailability
@@ -64,6 +65,7 @@ internal fun CatalogDashboardScreen(
     bottomPadding: androidx.compose.ui.unit.Dp = 0.dp,
     isActive: Boolean = true,
     onNavigateToNodes: () -> Unit = {},
+    onReconnect: () -> Unit = {},
     viewModel: CatalogDashboardViewModel = netProxyViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -73,10 +75,9 @@ internal fun CatalogDashboardScreen(
     val scrollBehavior = MiuixScrollBehavior()
     val backdrop = rememberBlurBackdrop()
     val barColor = if (backdrop != null) Color.Transparent else colorScheme.surface
-    val noRootMessage =
-        "${stringResource(R.string.no_root_title)}\n${stringResource(R.string.no_root_summary)}"
     val noModuleMessage =
-        "${stringResource(R.string.no_module_title)}\n${stringResource(R.string.no_module_summary)}"
+        if (availability?.state == ModuleConnectionState.UNTRUSTED) stringResource(R.string.module_identity_failed)
+        else "${stringResource(R.string.no_module_title)}\n${stringResource(R.string.no_module_summary)}"
 
     LifecycleResumeEffect(isActive) {
         viewModel.setVisible(isActive)
@@ -117,13 +118,9 @@ internal fun CatalogDashboardScreen(
                 contentPadding = innerPadding,
                 overscrollEffect = null
             ) {
-                if (state.rootChecked && !state.rootGranted) {
+                if (state.connection != null && !state.connected) {
                     item {
-                        DashboardWarning(noRootMessage)
-                    }
-                } else if (state.rootChecked && !state.moduleInstalled) {
-                    item {
-                        DashboardWarning(noModuleMessage)
+                        DashboardWarning(noModuleMessage, onReconnect)
                     }
                 } else if (state.serviceState == "failed" && state.serviceError.isNotBlank()) {
                     item { DashboardWarning(state.serviceError) }
@@ -145,8 +142,7 @@ internal fun CatalogDashboardScreen(
                         trafficSamples = state.trafficSamples,
                         statusSummary = serviceSummary,
                         isRunning = state.isReady,
-                        serviceControlEnabled = availability?.available == true && state.rootGranted &&
-                            state.moduleInstalled &&
+                        serviceControlEnabled = availability?.available == true && state.connected &&
                             !state.loading &&
                             !state.isServiceControlBusy,
                         modifier = Modifier.padding(top = 12.dp),
@@ -298,9 +294,10 @@ private fun ResourceUsageCard(
 }
 
 @Composable
-private fun DashboardWarning(message: String) {
+private fun DashboardWarning(message: String, onClick: (() -> Unit)? = null) {
     WarningCard(
         message = message,
+        onClick = onClick,
         modifier = Modifier
             .padding(top = 12.dp)
             .fillMaxWidth(),

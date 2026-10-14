@@ -44,6 +44,13 @@ export const ANDROID_DEPENDENCIES = [
     source: moduleSource('org.jetbrains.kotlinx', 'kotlinx-serialization-json', ['central'], 'https://github.com/Kotlin/kotlinx.serialization/releases'),
   },
   {
+    id: 'okhttp',
+    name: 'OkHttp',
+    policy: 'auto-minor',
+    refs: [ref(MAIN_CATALOG, 'okhttp')],
+    source: moduleSource('com.squareup.okhttp3', 'okhttp', ['central'], 'https://github.com/lysine-dev/okhttp/releases'),
+  },
+  {
     id: 'activity-compose',
     name: 'AndroidX Activity Compose',
     policy: 'auto-minor',

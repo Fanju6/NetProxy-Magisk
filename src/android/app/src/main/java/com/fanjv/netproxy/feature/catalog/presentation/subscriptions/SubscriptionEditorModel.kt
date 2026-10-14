@@ -1,6 +1,6 @@
 package com.fanjv.netproxy.feature.catalog.presentation.subscriptions
 
-import com.fanjv.netproxy.core.command.NetProxyCtlException
+import com.fanjv.netproxy.core.api.ModuleApiException
 import com.fanjv.netproxy.core.ui.UiText
 import com.fanjv.netproxy.feature.catalog.model.SubscriptionDraft
 import com.fanjv.netproxy.feature.catalog.model.SubscriptionEditorState
@@ -97,7 +97,7 @@ internal fun JsonElement?.subscriptionOutcome(): SubscriptionRuntimeOutcome {
 }
 
 internal fun Throwable.subscriptionPersisted(): Boolean =
-    (this as? NetProxyCtlException)?.data.subscriptionOutcome().persisted
+    (this as? ModuleApiException)?.data.subscriptionOutcome().persisted
 
 internal fun subscriptionIntervalOptions(current: Long): List<Long> {
     val presets = listOf(900L, 3600L, 21600L, 43200L, 86400L, 259200L, 604800L)

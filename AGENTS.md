@@ -20,7 +20,7 @@
 
 ## 核心契约
 
-- `netproxyctl` 是仓库唯一 Go 可执行文件；CLI 与模块 HTTP API 直接复用同一领域函数，Android 与当前终端 WebUI 仍调用 CLI。模块生命周期使用同一二进制的隐藏 `__internal` 入口。
+- `netproxyctl` 是仓库唯一 Go 可执行文件；CLI 与模块 HTTP API 直接复用同一领域函数，Android 仅通过模块 HTTPS API 调用业务，当前终端 WebUI 仍调用 CLI。模块生命周期使用同一二进制的隐藏 `__internal` 入口。
 - `__internal` 只允许 `boot` 与 `worker start|stop|run` 这类进程生命周期入口。Catalog、节点、订阅、配置、eBPF、Service API 和服务操作必须由公共命令直接调用 Go 领域处理器，不得重新建立内部命令转发层。
 - 机器接口固定使用 `schema=1` JSON。stdout 只能包含结果 JSON，日志与诊断写 stderr；字段、错误码或状态语义变化必须同步检查 Shell、Go、Android、WebUI 和测试。
 - Native 运行日志固定为 `[timestamp] [LEVEL] [component] [event] [result] [error_code] message`，成功或无错误码时写 `-`；消息必须在落盘前统一脱敏和限长。`logs show service` 的 `entries` 是 Android 展示事实源，不得回退到旧文本猜测。`logs show core` 保持 sing-box 文本，由客户端使用独立解析逻辑。
@@ -49,7 +49,7 @@
 ## 命令入口与脚本布局
 
 - `src/module/netproxyctl` 只负责定位 `bin/netproxyctl`；公共实现位于 `src/native/netproxy/cmd/netproxyctl`。Shell 不再保留公共命令 dispatcher。
-- 命令组权威清单：`service catalog node sub mode network app ebpf config logs api`。新增命令组必须同时更新 Go CLI、Android `NetProxyCtlClient`、WebUI 命令表与传输判断和契约测试。
+- 命令组权威清单：`service catalog node sub mode network app ebpf config logs api`。新增命令组必须同时更新 Go CLI、Android `ModuleApiClient`、WebUI 命令表与传输判断和契约测试。
 - `scripts/` 不承载运行时业务；配置、Catalog、状态和 Service API 业务统一由 Go 实现。
 - 根目录 `service.sh` 负责模块开机桥接；运行时配置、节点切换、订阅事务和调度由 Go 负责。
 - Go Worker 负责 Android 网络变化采集、Wi-Fi 状态读取和策略评估。
@@ -84,7 +84,7 @@ src/module/service.sh
 - HTTP 请求体统一上限 4 MiB，超限返回 `api.body_too_large` 与 413；API 监听失败或意外退出按 1–30 秒退避恢复，不需要重启核心。
 - 事件流的服务状态缓存每次发送仍核对当前文件身份与修改时间，不能只信内存 epoch；核心流按启动身份隔离。groups 更新在固定 250ms 窗口合并，实际模式消费原生 SubscribeClashMode，不能从节点分组猜测或遗漏模式变化。
 - Worker 关停只取消 HTTP 订阅的网络下载阶段；下载完成后的持久事务继续按原有有界上下文收尾，不能以缩短关停时间为由中断提交。Android Worker 默认使用 64 MiB 的 Go 软内存目标，显式 GOMEMLIMIT 优先；目标不包含文件映射或 Java 子进程，不在请求后强制 GC。
-- API 启动不主动交付凭据或拉起管理器；首次连接、凭据失效与显式重连由客户端请求固定签名私有交付。成功交付后冷却 30 秒，失败有界退避，拒绝请求不延长窗口。凭据缓存只在这些边界重读，Provider 原子写入必须立即更新同进程缓存；旧请求的 401 不得清除其他请求已经取得的新凭据，也不得重发已接受的写入。
+- API 启动不主动交付凭据或拉起管理器；首次连接、凭据失效与显式重连由客户端请求固定签名私有交付。成功交付后冷却 30 秒，失败有界退避，拒绝请求不延长窗口。凭据缓存只在这些边界重读，Provider 原子写入必须立即更新同进程缓存；旧请求的 401 不得清除其他请求已经取得的新凭据。主动重连不预先清空可用资料或修改回连地址，须等待新的 Provider 交付；失败不能覆盖并发新交付，不得重发已接受的写入。
 - 安装 TLS 证书是本机精确钉扎的身份：Go 探测与 Android 校验证书身份和主机名，不依赖证书日期或设备时钟；不得移除钉扎或以接受任意证书替代。订阅创建、编辑和下载前共用领域设置校验，非法代理模式不得落盘后静默按直连执行，HTTP 不重复实现周期和代理模式规则。
 - 请求正文读取期限由 HTTP Server 管理，不在 handler 中为无正文 GET 设置连接读期限，否则长查询与 SSE 会在 15 秒被标准库取消；SSE 保留心跳、逐帧写入期限与真实断连错误。
 - 设备统计只从 Go 公共命令与真实核心启动采集 `module_active`、`service_start_result`，不增加 Android/WebUI SDK。Worker 以 Root 查询用户 0 的 `ANDROID_ID`，用固定 NetProxy 命名空间的 SHA-256 派生设备身份，每个 Worker 成功读取后只缓存在内存；读取失败不得回退随机身份。CLI 不查询设备标识，`config/telemetry/state.json` 只保存每日去重和有界队列，不进入编辑器、日志或诊断包；原始标识不得落盘或上传，Token 只由构建注入。损坏状态不得静默覆盖，系统查询和网络请求不得持有状态锁，上传不得阻塞业务命令。停服入口不得为统计重新启动 Worker，以免停服操作产生后台启动副作用。
@@ -107,8 +107,11 @@ src/module/service.sh
 
 ## Android 管理器
 
-- 数据流保持 `Compose -> ViewModel -> Repository -> NetProxyCtlClient -> netproxyctl`。页面不直接读取 `/data/adb`、Catalog 文件、PID 或 Shell 文本推断业务状态。
-- 短读共享 Root 命令通道，长操作和写入使用独立短生命周期 Shell；不得让订阅下载占用状态读取或停服队列。协程取消只取消等待，不能用 libsu Future.cancel 或关闭共享 Shell 冒充 Native 业务取消；输入文件必须保留到命令实际消费结束，已开始的写事务必须完成收尾。
+- 数据流保持 `Compose -> ViewModel -> Repository -> ModuleApiClient -> 模块 HTTPS API`。管理器不申请 Root，不执行 CLI，不直接读取 `/data/adb`、Catalog 文件或 PID。应用标签、图标与多用户由 Go 按需运行模块内 Java DEX 查询系统框架。
+- 普通 HTTP 读取、下载与图标查询随客户端取消；已接受写入有界收尾，不盲目重发。共享 SSE 在前台会话内只增加主题，最后消费者退出后保留 2 秒切页宽限，真正停止后清空会话；断线明确报错，重连重新等待完整快照，不使用轮询回退。首次自动连接只触发固定官方用户 0 的私有 Provider 交付，不通过 HTTP 返回秘密；Provider 校验 Binder UID 0，辅助程序校验当前 APK 签名、UID 与非导出 Provider，不接受请求指定目标。
+- 订阅页列表与 SSE 的 `subscriptions` 快照包含本地和 URL 订阅分组，普通详情同样可读本地分组；URL 私有设置与订阅修改仍限制为 URL 订阅。框架 DEX 绘制应用原生图标直接读取 Android 资源；`loadIcon()` 的厂商主题扩展会在独立 `app_process` 读取系统 Provider 时被拒绝，造成整批图标消失。
+- 应用清单通过一次 DEX 查询全部用户并准备固定 128px 的版本化 PNG，图标以 `icon_key` 经鉴权 HTTPS 单独读取；滚动与显示密度变化不得重新启动 DEX 或传输 Base64。缓存位于 `data/cache/android-icons` 的平目录，不进入诊断包；Worker 应用清单查询串行，全部用户成功完成后再统一清理，不能按一个用户的名单删除其他用户的图标。凭据交付使用自身互斥与冷却，不等待应用清单槽位。刷新清单不得清空正在显示的图标，仅在新资源就绪后替换。
+- 管理器网络取消只取消本次 OkHttp Call，响应关闭后不得操作其他请求借用的池连接；普通连接池空闲期限短于服务端，只有普通 GET 的响应前通信故障可恢复一次，且共享原调用总时限，正文、超时、取消及 TLS 身份、握手或协议失败不重试，写操作不自动重发。仅证书或对端身份验证异常及其包装清除对应凭据，普通 SSL 读写故障不得误判身份失败。SSE 使用独立调度器、独立 Call 与有界事件缓冲，不占普通请求配额。类型化响应直接解码 Envelope，事件帧只缓存自身的解码结果；筛选事件按帧引用去重，不能为每个 traffic 帧重解完整 groups 或深比较 JSON 树。
 - ViewModel 按功能域持有不可变 `StateFlow`；Repository 负责命令组合和响应映射。不要重新堆回全能 Repository、全能 ViewModel 或静态 Service Locator。
 - 构造依赖由 `AppContainer` 和 `NetProxyViewModelFactory` 提供，不引入 Hilt/Koin，除非先完成明确的全项目架构决策。
 - 遵循现有 miuix 视觉和交互：二级页使用 `AdaptiveTopAppBar`，分组标题使用 miuix `SmallTitle`，列表保持 Lazy item 粒度，卡片优先复用 `groupedCardItems`。有 miuix 对应组件时不另造 Material 风格替代品。
@@ -116,7 +119,7 @@ src/module/service.sh
 - 应用代理模式与搜索框位于同一固定顶部区域，不作为应用列表条目滚动；应用图标失效只触发后台重新加载，不清空已展示图标，缓存命中须直接用于首帧。
 - Miuix Nav 是页面导航状态唯一所有者。主分页动画必须从真实当前页开始，禁止通过临时目标页制造过渡。
 - 主分页底部导航由 `MainBottomBar` 单一实现统一承载；主题偏好不改变其结构或布局形态。
-- Root 与模块可用性由应用入口统一检查；未确认可用时不启动模块页面读取，仅保留仪表盘与设置导航。动态分页按目的地身份恢复，不沿用旧页码。受限页面保留标题和返回键，读取失败与真实空内容必须区分，并在 Scaffold 实际内容区居中展示；权限变化不得取消已开始的写事务或丢弃编辑草稿。
+- 模块 HTTPS 可连接性与身份由应用入口统一检查；未确认可用时不启动模块页面读取，仅保留仪表盘与设置导航。动态分页按目的地身份恢复，不沿用旧页码。受限页面保留标题和返回键，读取失败与真实空内容必须区分，并在 Scaffold 实际内容区居中展示；权限变化不得取消已开始的写事务或丢弃编辑草稿。
 - 管理器由 Android 原生资源自动匹配中文、英语和俄语，英文是默认资源；界面文案放入字符串资源，不自行保存或强制覆盖系统语言。补全与校验逻辑不得依据翻译后的文本判断类型或错误分类。
 - 路由规则表单只编辑现有 proxy/direct/block 本地规则集；多条件、logical、invert 和其他原生字段的规则保留原样并交给 JSON 编辑器，不能展开成多个单条件规则改变匹配语义。保存使用读取时的 revision，不为表单维护另一份规则数据库。
 - 默认 DNS 引用本地规则集时使用原生 `evaluate` / `match_response`，不能直接按旧式地址过滤引用；否则添加有效 IP 规则会触发内核弃用检查并使正在重载的核心退出。不得使用 `ENABLE_DEPRECATED_*` 绕过。
@@ -258,7 +261,7 @@ WebUI ───────────┼─> netproxyctl ─> Go 业务层 ─
 | 服务状态 | `/dev/netproxy/service.json` | 本次启动周期的状态快照；缺失时按 stopped 处理 |
 | 实时核心状态 | Service API / Clash API | 连接、流量、测速和实际选择 |
 
-Android 和 WebUI 不建立另一份节点数据库，也不直接修改这些文件。持久状态通过 `netproxyctl` 读取和变更，运行状态通过固定的 sing-box API 补充。
+Android 和 WebUI 不建立另一份节点数据库，也不直接修改这些文件。Android 的持久与运行状态通过模块 HTTPS API 读取和变更；终端 WebUI 通过 `netproxyctl` 与固定的 sing-box API 获取。
 
 ## Catalog 与 Provider
 
@@ -421,11 +424,11 @@ Go 生命周期控制器通过 `-c config/singbox/config.json` 加载静态配�
 - 敏感读取命令只能由 Root 客户端调用，普通列表只返回安全摘要。
 - 写操作使用稳定退出码，并保证 JSON 中 `ok` 与进程退出状态一致。
 
-`netproxyctl __internal` 只供模块生命周期内部使用。Android/WebUI 只能调用公开命令组，以免形成两套公共契约。
+`netproxyctl __internal` 只供模块生命周期内部使用。终端 WebUI 只能调用公开命令组；Android 只能调用模块 API，以免形成两套公共契约。
 
 ## 客户端边界
 
-**Android**：按 `core/`、`feature/`、`navigation/` 组织。每个功能域拥有自己的 Repository、ViewModel 和 UI state；应用级长生命周期依赖由 `AppContainer` 组合。Root 命令只从 `NetProxyCtlClient` 发出，页面不拼接 Shell。底部一级入口为「仪表盘 / 节点 / 订阅 / 设置」。
+**Android**：按 `core/`、`feature/`、`navigation/` 组织。每个功能域拥有自己的 Repository、ViewModel 和 UI state；应用级长生命周期依赖由 `AppContainer` 组合。模块业务只从 `ModuleApiClient` 发出，页面不读取模块路径或执行 Shell。底部一级入口为「仪表盘 / 节点 / 订阅 / 设置」。
 
 **WebUI**：终端式界面，Root 命令经 `src/exec.ts` 统一发出。开发环境可以提供 mock，但 mock 不得改变生产契约或掩盖非零退出状态。
 
@@ -433,12 +436,12 @@ Go 生命周期控制器通过 `-c config/singbox/config.json` 加载静态配�
 
 ## 构建与发布
 
-- CI 与 Release 共用 `build-module.yml` 的并行任务图；模块任务完成 Go/Shell 验证、`netproxyctl`、WebUI 与内容压缩，Android 任务构建并用固定密钥签名当前源码的 APK。共享工作流等待两者成功后汇合为唯一模块包，发布任务只下载最终产物，不重新编译或打包。Android 源码变化必须触发模块重打包；任一构建或所需验证失败均不得发布。
+- CI 与 Release 共用 `build-module.yml` 的并行任务图；模块任务完成 Go/Shell 验证、`netproxyctl`、WebUI 与内容压缩，Android 任务构建当前源码的 APK 与框架辅助 DEX，并用固定密钥签名 APK；打包同时校验辅助程序固定的公开证书指纹。共享工作流等待两者成功后汇合为唯一模块包，发布任务只下载最终产物，不重新编译或打包。Android 源码变化必须触发模块重打包；任一构建或所需验证失败均不得发布。
 - `verify.yml` 面向 Pull Request 与手动源码验证，只读取公开源码并按变更范围执行 Native、WebUI、Android 或文档检查；它不得读取签名、发布、Telegram 或统计 Secrets，不得打包、上传或发布产物。只有 `main` 上的 `ci.yml` 和 tag 发布工作流可以构建签名管理器与模块包。
 - CI 变更范围从同分支上次成功验证的提交计算，不能只比较本次 push：前一轮被取消或失败的改动仍须验证；基线不可用时执行全部检查。
 - 版本计数与更新日志所需的 checkout 保留完整提交历史；可使用 `blob:none` 或稀疏检出减少历史文件下载。
 - 主仓库只发布 `NetProxy_<版本>_<构建号>.zip`，必须包含本次构建的管理器 APK。APK 只在首次解压检查时必需，用户安装或跳过后均清理，热切换校验不得要求它仍然存在。
-- 模块使用 ZIP 容器和 XZ 9 压缩，根目录唯一的 `module.prop` 必须使用 Store，供 KernelSU 索引读取；汇合任务以 Store 追加 APK，不复制第二份发行包。CI 上传归档时不再进行外层压缩。
+- 模块使用 ZIP 容器和 XZ 9 压缩，根目录唯一的 `module.prop` 必须使用 Store，供 KernelSU 索引读取；汇合任务以 Store 追加 APK 与 `bin/android-platform.dex`，不复制第二份发行包。CI 上传归档时不再进行外层压缩。
 - KernelSU 仅从公开 `Fanju6/NetProxy-Releases` 分发不可变正式版本，源码和可变 nightly 留在主仓库；不镜像源码、全部标签或历史 Release。根目录 `module.yaml` 与 `.github/kernelsu/` 是展示元数据，不是设备上的 `config/module.json`。正式发布先经过官方 Action 预检，主仓库发布后分发同一 ZIP；分发资源按官方规则命名 `netproxy-<构建号>-<版本>.zip`，摘要必须一致。
 - `publish-kernelsu.yml` 重试只下载既有主仓库正式 Release，不重新构建。已发布的分发版本只能验证不可变状态和摘要，不能覆盖、删除或移动 tag；分发失败不能冒充主仓库发布失败。`DIST_REPO_TOKEN` 仅有分发仓库 Contents 读写和 Administration 只读权限，资源更新使用仅限主仓库的 `RESOURCE_UPDATE_TOKEN`，两者不能互用。
 - Android 受影响时，CI 在管理器构建任务中使用同一次 Gradle 调用执行单元测试、Lint 与 Release 构建；仅需模块打包时仍构建当前管理器，不额外执行 Android 验证。资源维护复用纯验证模式，不构建 APK，也不需要签名密钥。固定签名由 `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` 四个 GitHub Secrets 注入；缺失时构建失败，不生成替代密钥。CI 版本名保留提交短哈希，仅用于区分构建。

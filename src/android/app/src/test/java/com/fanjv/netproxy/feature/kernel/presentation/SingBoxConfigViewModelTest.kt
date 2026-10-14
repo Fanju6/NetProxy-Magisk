@@ -1,9 +1,7 @@
 package com.fanjv.netproxy.feature.kernel.presentation
 
-import com.fanjv.netproxy.core.command.CommandFileStore
-import com.fanjv.netproxy.core.command.NetProxyCtlClient
-import com.fanjv.netproxy.core.command.NetProxyCtlOutput
-import com.fanjv.netproxy.core.command.NetProxyCtlTransport
+import com.fanjv.netproxy.core.api.*
+
 import com.fanjv.netproxy.core.module.ServiceRepository
 import com.fanjv.netproxy.feature.inbound.data.InboundRepository
 import com.fanjv.netproxy.feature.settings.data.ConfigRepository
@@ -28,15 +26,14 @@ import java.util.concurrent.atomic.AtomicInteger
 class SingBoxConfigViewModelTest {
     @get:Rule val folder = TemporaryFolder()
 
-    private fun model(scope: CoroutineScope, transport: NetProxyCtlTransport): SingBoxConfigViewModel {
-        val client = NetProxyCtlClient(transport = transport)
-        val repository = ConfigRepository(client, CommandFileStore(folder.root))
+    private fun model(scope: CoroutineScope, transport: ModuleApiTransport): SingBoxConfigViewModel {
+        val client = ModuleApiClient(transport = transport)
+        val repository = ConfigRepository(client)
         val service = ServiceRepository(client)
         return SingBoxConfigViewModel(repository, service, InboundRepository(repository, service), scope)
     }
 
-    private fun output(data: JsonElement) = NetProxyCtlOutput(true,
-        listOf("""{"schema":1,"ok":true,"code":"config.test","message":"","data":$data}"""), emptyList())
+    private fun output(data: JsonElement) = apiSuccess(data.toString())
 
     private fun snapshot(revision: String) = output(JsonObject(mapOf(
         "content" to JsonPrimitive("""{"revision":"$revision"}"""), "revision" to JsonPrimitive(revision),
@@ -56,7 +53,7 @@ class SingBoxConfigViewModelTest {
             val entered = CompletableDeferred<Unit>()
             val release = CompletableDeferred<Unit>()
             var reads = 0
-            val vm = model(this, NetProxyCtlTransport { _, _ ->
+            val vm = model(this, TestApiTransport { _ ->
                 if (++reads == 1) withContext(NonCancellable) {
                     entered.complete(Unit)
                     release.await()
@@ -80,7 +77,7 @@ class SingBoxConfigViewModelTest {
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         var calls = 0
-        val vm = model(this, NetProxyCtlTransport { _, _ ->
+        val vm = model(this, TestApiTransport { _ ->
             if (++calls == 1) withContext(NonCancellable) {
                 entered.complete(Unit)
                 release.await()
@@ -103,14 +100,14 @@ class SingBoxConfigViewModelTest {
         val entered = CompletableDeferred<Unit>()
         val release = CompletableDeferred<Unit>()
         var reads = 0
-        val vm = model(this, NetProxyCtlTransport { args, _ ->
-            when (args[1]) {
-                "read" -> if (++reads == 1) snapshot("base") else withContext(NonCancellable) {
+        val vm = model(this, TestApiTransport { args ->
+            when (args.method) {
+                "GET" -> if (++reads == 1) snapshot("base") else withContext(NonCancellable) {
                     entered.complete(Unit)
                     release.await()
                     snapshot("old")
                 }
-                "apply" -> output(JsonObject(mapOf("revision" to JsonPrimitive("saved"))))
+                "PUT" -> output(JsonObject(mapOf("revision" to JsonPrimitive("saved"))))
                 else -> error("Unexpected command")
             }
         })
@@ -133,10 +130,10 @@ class SingBoxConfigViewModelTest {
         val release = CompletableDeferred<Unit>()
         var reads = 0
         var callbacks = 0
-        val vm = model(this, NetProxyCtlTransport { args, _ ->
-            when (args[1]) {
-                "read" -> snapshot(if (++reads == 1) "base" else "new")
-                "apply" -> {
+        val vm = model(this, TestApiTransport { args ->
+            when (args.method) {
+                "GET" -> snapshot(if (++reads == 1) "base" else "new")
+                "PUT" -> {
                     entered.complete(Unit)
                     release.await()
                     output(JsonObject(mapOf("revision" to JsonPrimitive("old-save"))))
@@ -163,10 +160,10 @@ class SingBoxConfigViewModelTest {
         val activeWrites = AtomicInteger()
         val maxActiveWrites = AtomicInteger()
         var oldCallbacks = 0
-        val vm = model(this, NetProxyCtlTransport { args, _ ->
-            when (args[1]) {
-                "read" -> snapshot("base")
-                "apply" -> {
+        val vm = model(this, TestApiTransport { args ->
+            when (args.method) {
+                "GET" -> snapshot("base")
+                "PUT" -> {
                     val write = writes.incrementAndGet()
                     maxActiveWrites.accumulateAndGet(activeWrites.incrementAndGet(), ::maxOf)
                     try {

@@ -89,8 +89,10 @@ jobs:
       - name: 保存本次签名的管理器
         uses: actions/upload-artifact@v7
         with:
-          name: manager-apk
-          path: src/module/NetProxy.apk
+          name: manager-binaries
+          path: |
+            src/module/NetProxy.apk
+            src/android/platform/build/dex/classes.dex
           if-no-files-found: error
           compression-level: 0
           retention-days: 3
@@ -117,11 +119,11 @@ jobs:
       - name: 下载本次签名管理器
         uses: actions/download-artifact@v8
         with:
-          name: manager-apk
+          name: manager-binaries
           path: manager
 
       - name: 完成唯一模块包
-        run: sh .github/scripts/complete-module.sh "$MODULE_NAME" manager/NetProxy.apk
+        run: sh .github/scripts/complete-module.sh "$MODULE_NAME" manager/module/NetProxy.apk manager/android/platform/build/dex/classes.dex
 
       - name: 保存最终模块包
         uses: actions/upload-artifact@v7

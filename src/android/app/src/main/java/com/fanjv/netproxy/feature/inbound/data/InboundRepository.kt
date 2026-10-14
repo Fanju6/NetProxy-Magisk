@@ -1,6 +1,6 @@
 package com.fanjv.netproxy.feature.inbound.data
 
-import com.fanjv.netproxy.core.command.NetProxyCtlException
+import com.fanjv.netproxy.core.api.ModuleApiException
 import com.fanjv.netproxy.core.module.ServiceRepository
 import com.fanjv.netproxy.core.module.ServiceStatusSnapshot
 import com.fanjv.netproxy.feature.settings.data.ConfigRepository
@@ -83,7 +83,7 @@ internal class InboundRepository(
             ((requested != null || selectedPartition) && before.mayBeRunning() &&
                 (after.state != "ready" || after.activeBackend != expected))
         ) {
-            throw NetProxyCtlException("inbound.not_confirmed", "入站应用结果尚未确认，请重新加载")
+            throw ModuleApiException("inbound.not_confirmed", "入站应用结果尚未确认，请重新加载")
         }
         return InboundApplyResult(result, after)
     }

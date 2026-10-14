@@ -6,10 +6,32 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ModuleAccessViewModelTest {
+    @Test fun explicitReconnectCancelsOldProbeBeforePublishingConfirmedAccess(): Unit = runBlocking {
+        val entered = CompletableDeferred<Unit>()
+        val cancelled = CompletableDeferred<Unit>()
+        val connected = CompletableDeferred<Unit>()
+        val vm = ModuleAccessViewModel(object : ModuleEnvironment {
+            override val totalMemoryBytes = 0L
+            override suspend fun availability(): ModuleAvailability {
+                entered.complete(Unit)
+                try { awaitCancellation() } finally { cancelled.complete(Unit) }
+            }
+            override suspend fun reconnect(address: String) {
+                assertEquals("https://127.0.0.1:9092", address)
+                assertTrue(cancelled.isCompleted)
+                connected.complete(Unit)
+            }
+        }, this)
+        vm.refresh()
+        withTimeout(5_000) { entered.await(); vm.reconnect("https://127.0.0.1:9092"); connected.await() }
+        assertTrue(vm.state.value!!.available)
+    }
+
     private fun model(scope: CoroutineScope, query: suspend () -> ModuleAvailability) =
         ModuleAccessViewModel(object : ModuleEnvironment {
             override val totalMemoryBytes = 0L
             override suspend fun availability() = query()
+            override suspend fun reconnect(address: String) { query() }
         }, scope)
 
     @Test fun refreshIsSingleFlightAndKeepsPreviousStateWhileChecking() = runBlocking {
@@ -19,11 +41,11 @@ class ModuleAccessViewModelTest {
         var calls = 0
         try {
             val vm = model(scope) {
-                if (++calls == 1) ModuleAvailability(false, false)
+                if (++calls == 1) ModuleAvailability(ModuleConnectionState.UNAVAILABLE)
                 else {
                     started.complete(Unit)
                     finish.await()
-                    ModuleAvailability(true, true)
+                    ModuleAvailability(ModuleConnectionState.READY)
                 }
             }
             assertNull(vm.state.value)
@@ -45,7 +67,7 @@ class ModuleAccessViewModelTest {
         var fail = false
         try {
             val vm = model(scope) {
-                if (fail) error("unavailable") else ModuleAvailability(true, true)
+                if (fail) error("unavailable") else ModuleAvailability(ModuleConnectionState.READY)
             }
             vm.refresh()
             withTimeout(2_000) { vm.state.first { it?.available == true } }

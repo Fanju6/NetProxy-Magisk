@@ -14,11 +14,11 @@ navigationevent = "1.2.0"
 composeBom = "2026.09.00"
 
 # Third-party
-libsu = "6.0.0"
 miuix = "0.9.4"
 hiddenapibypass = "6.1"
 junit = "4.13.2"
 coroutinesTest = "1.9.0"
+okhttp = "5.5.0"
 
 [libraries]
 # AndroidX
@@ -38,9 +38,6 @@ androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graph
 # KotlinX
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
 
-# Libsu
-libsu-core = { group = "com.github.topjohnwu.libsu", name = "core", version.ref = "libsu" }
-
 # Miuix
 miuix-ui = { module = "top.yukonga.miuix.kmp:miuix-ui-android", version.ref = "miuix" }
 miuix-icons = { module = "top.yukonga.miuix.kmp:miuix-icons-android", version.ref = "miuix" }
@@ -51,6 +48,8 @@ miuix-squircle = { module = "top.yukonga.miuix.kmp:miuix-squircle-android", vers
 hiddenapibypass = { module = "org.lsposed.hiddenapibypass:hiddenapibypass", version.ref = "hiddenapibypass" }
 junit = { module = "junit:junit", version.ref = "junit" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutinesTest" }
+okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
+okhttp-mockwebserver = { module = "com.squareup.okhttp3:mockwebserver3", version.ref = "okhttp" }
 scripta-editor = { module = "scripta:editor" }
 
 

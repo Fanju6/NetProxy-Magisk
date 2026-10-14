@@ -3,7 +3,7 @@ package com.fanjv.netproxy.feature.kernel.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fanjv.netproxy.core.module.ServiceRepository
-import com.fanjv.netproxy.core.command.NetProxyCtlException
+import com.fanjv.netproxy.core.api.ModuleApiException
 import com.fanjv.netproxy.core.ui.userMessage
 import com.fanjv.netproxy.feature.settings.data.ConfigRepository
 import com.fanjv.netproxy.feature.inbound.data.InboundRepository
@@ -169,7 +169,7 @@ internal class SingBoxConfigViewModel(
                         SingBoxDocumentSaveResult(
                             success = false,
                             errorMessage = error.userMessage(),
-                            errorCode = (error as? NetProxyCtlException)?.resultCode.orEmpty(),
+                            errorCode = (error as? ModuleApiException)?.resultCode.orEmpty(),
                             restored = false
                         )
                     )

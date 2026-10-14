@@ -125,9 +125,6 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.material.icons.extended)
 
-    // libsu
-    implementation(libs.libsu.core)
-
     // Miuix
     implementation(libs.miuix.ui)
     implementation(libs.miuix.icons)
@@ -138,7 +135,9 @@ dependencies {
     implementation(libs.scripta.editor)
     implementation(libs.androidx.navigationevent.compose)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.okhttp)
     implementation(libs.hiddenapibypass)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.okhttp.mockwebserver)
 }

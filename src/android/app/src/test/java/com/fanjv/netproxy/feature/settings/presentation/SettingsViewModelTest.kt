@@ -1,6 +1,8 @@
 package com.fanjv.netproxy.feature.settings.presentation
 
-import com.fanjv.netproxy.core.command.*
+import com.fanjv.netproxy.core.api.*
+
+import com.fanjv.netproxy.core.config.*
 import com.fanjv.netproxy.feature.settings.data.ConfigRepository
 import com.fanjv.netproxy.feature.settings.model.ModuleAutoStartConfig
 import com.fanjv.netproxy.feature.settings.model.ModuleWifiConfig
@@ -35,42 +37,42 @@ class SettingsViewModelTest {
         var autoStart = true
         var wifiRevision = 0
         var autoStartRevision = 10
-        val calls = CopyOnWriteArrayList<List<String>>()
-        val writes get() = calls.count { it[1] == "apply" }
-        val reads get() = calls.count { it[1] == "read" }
+        val calls = CopyOnWriteArrayList<ApiTestRequest>()
+        val writes get() = calls.count { it.method == "PUT" }
+        val reads get() = calls.count { it.method == "GET" }
         var before: suspend (String) -> Unit = {}
         var beforeRead: suspend (String) -> Unit = {}
 
         fun viewModel(scope: CoroutineScope, writes: ConfigurationWrites = ConfigurationWrites(scope)): SettingsViewModel {
-            val client = NetProxyCtlClient(transport = NetProxyCtlTransport { args, _ ->
+            val client = ModuleApiClient(transport = TestApiTransport { args ->
                 calls += args
-                val target = if (args[1] == "read") args[2] else args[4]
+                val target = args.target
                 assertTrue(target in setOf("module/wifi", "module/auto_start"))
-                val data = if (args[1] == "read") {
+                val data = if (args.method == "GET") {
                     beforeRead(target)
                     val content = if (target == "module/wifi") Json.encodeToString(ModuleWifiConfig(wifi))
                         else Json.encodeToString(ModuleAutoStartConfig(autoStart))
                     val revision = if (target == "module/wifi") "wifi-$wifiRevision" else "auto-$autoStartRevision"
                     JsonObject(mapOf("content" to JsonPrimitive(content), "revision" to JsonPrimitive(revision))).toString()
                 } else {
-                    assertEquals(listOf("config", "apply", "--revision"), args.take(3))
+                    assertEquals("/config", args.path)
                     before(target)
-                    val content = File(args.last()).readText()
+                    val content = args.text("content")
                     assertEquals(setOf(target.substringAfter('/')), Json.parseToJsonElement(content).jsonObject.keys)
                     val revision = if (target == "module/wifi") {
-                        if (args[3] != "wifi-$wifiRevision") throw NetProxyCtlException("config.conflict", "conflict")
+                        if (args.text("revision") != "wifi-$wifiRevision") throw ModuleApiException("config.conflict", "conflict")
                         wifi = Json.decodeFromString<ModuleWifiConfig>(content).wifi
                         "wifi-${++wifiRevision}"
                     } else {
-                        if (args[3] != "auto-$autoStartRevision") throw NetProxyCtlException("config.conflict", "conflict")
+                        if (args.text("revision") != "auto-$autoStartRevision") throw ModuleApiException("config.conflict", "conflict")
                         autoStart = Json.decodeFromString<ModuleAutoStartConfig>(content).enabled
                         "auto-${++autoStartRevision}"
                     }
                     """{"revision":"$revision"}"""
                 }
-                NetProxyCtlOutput(true, listOf("""{"schema":1,"ok":true,"code":"test","message":"","data":$data}"""), emptyList())
+                apiSuccess(data)
             })
-            return SettingsViewModel(ConfigRepository(client, CommandFileStore(folder.root), writes::await), scope, writes)
+            return SettingsViewModel(ConfigRepository(client, writes::await), scope, writes)
         }
     }
 
@@ -371,7 +373,7 @@ class SettingsViewModelTest {
     @Test fun networkLoadingPreservesLoadedValuesAndRecoversFromFirstReadFailure() = runBlocking {
         val network = Network()
         network.wifi = WifiPolicySettings(enabled = true)
-        network.beforeRead = { throw NetProxyCtlException("config.read_failed", "read failed") }
+        network.beforeRead = { throw ModuleApiException("config.read_failed", "read failed") }
         val vm = network.viewModel(this)
         vm.refresh()
         withTimeout(5_000) { vm.state.first { !it.isLoading } }
