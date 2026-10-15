@@ -11,6 +11,7 @@
 - `src/module/`：Magisk、KernelSU 与 APatch 模块，包含生命周期脚本、`netproxyctl`、sing-box 配置、资源和打包内容。
 - `src/native/netproxy/`：模块专用 Go 组件，负责节点转换、Provider、订阅、配置、eBPF 运行时、Service API 与唯一允许的后台 Worker。
 - `src/webui/`：原生 TypeScript 终端式 WebUI，构建产物写入 `src/module/webroot/netproxy/`。
+- `apps/web/`：独立的 V9 React WebUI；开发与演示构建使用显式标识的 Mock，普通生产构建在可信 Transport 缺失时拒绝连接。此工程不写入 V8 模块构建目录，不使用 Root Shell，不代表 Tauri 或跨平台接管已经可用。
 - `src/android/`：Android 管理器，使用 Compose、miuix-nav 和内置 Scripta 源码快照。
 - `docs/`：VitePress 用户文档；`tests/`：Shell 契约与运行时回归测试。
 

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="100%" height="100%">
+  <defs>
+    <linearGradient id="diagGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#003BCC" />
+      <stop offset="35%" stop-color="#28CBE6" />
+      <stop offset="65%" stop-color="#55E6AA" />
+      <stop offset="100%" stop-color="#004A8F" />
+    </linearGradient>
+  </defs>
+
+  <line x1="100" y1="80" x2="100" y2="320" stroke="#0DD8F5" stroke-width="88" stroke-linecap="round" />
+
+  <line x1="300" y1="80" x2="300" y2="320" stroke="#79F5A9" stroke-width="88" stroke-linecap="round" />
+
+  <line x1="100" y1="80" x2="300" y2="320" stroke="url(#diagGrad)" stroke-width="88" stroke-linecap="round" opacity="0.85" />
+</svg>

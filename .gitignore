@@ -10,6 +10,14 @@ CLAUDE.local.md
 /.agents/
 /skills-lock.json
 
+# V9 独立 WebUI，不进入 V8 模块打包目录
+apps/web/node_modules/
+apps/web/dist/
+apps/web/test-results/
+apps/web/playwright-report/
+apps/web/.env.local
+apps/web/.env.*.local
+
 # NetProxy WebUI 构建产物
 src/module/webroot/netproxy/
 

@@ -1,0 +1,58 @@
+name: 验证 V9 WebUI
+
+on:
+  push:
+    branches: [feat/v9-webui-foundation]
+    paths:
+      - "apps/web/**"
+      - ".github/workflows/verify-v9-web.yml"
+  pull_request:
+    paths:
+      - "apps/web/**"
+      - ".github/workflows/verify-v9-web.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v9-web-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: apps/web
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: 安装固定版本 pnpm 与锁定依赖
+        run: |
+          npm install --global pnpm@12.11.2
+          pnpm install --frozen-lockfile
+      - name: 检查类型、Lint、格式与单元契约
+        run: pnpm check
+      - name: 检查生产依赖与显式演示构建
+        run: |
+          pnpm peers check
+          pnpm audit --prod --audit-level=high
+          pnpm build:demo
+      - name: 安装测试浏览器
+        run: pnpm exec playwright install --with-deps chromium
+      - name: 验证桌面、移动与普通生产构建
+        run: pnpm test:e2e
+      - name: 保留页面与失败证据
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: v9-web-evidence
+          path: apps/web/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
