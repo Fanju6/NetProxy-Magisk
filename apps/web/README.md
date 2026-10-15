@@ -49,4 +49,4 @@ pnpm test:e2e      # 自动运行 Mock dev 与独立生产预览服务器
 - 所有权威 API 路径均相对 `/api/v1`；后续 Transport 负责固定端点和可信连接，页面不得自行 `fetch`、IPC 或执行命令。
 - 不修改模块持久化结构，不增加旧格式兼容或迁移逻辑。
 
-详细依据见 [V8 功能与 API 基线](docs/v8-baseline.md)、[架构决策](docs/architecture.md) 和 [交付报告](docs/delivery.md)。
+详细依据见 [完整 V9 架构规范](docs/NETPROXY_V9_ARCHITECTURE.md)、[V8 功能与 API 基线](docs/v8-baseline.md)、[架构决策](docs/architecture.md) 和 [交付报告](docs/delivery.md)。

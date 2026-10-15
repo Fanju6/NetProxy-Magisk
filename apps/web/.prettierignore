@@ -3,3 +3,4 @@ dist
 pnpm-lock.yaml
 playwright-report
 test-results
+docs/NETPROXY_V9_ARCHITECTURE.md
