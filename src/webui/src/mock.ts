@@ -34,7 +34,7 @@ const MODULE_CONFIG = {
 
 const INBOUND_CONFIG = {
   backend: 'ebpf' as InboundBackend,
-  root_policy: 'default',
+  root_policy: 'include',
   app: { enabled: false, mode: 'blacklist', proxy_apps: [] as string[], bypass_apps: [] as string[] },
   ebpf: {
     type: 'ebpf', tag: 'netproxy-in', network: ['tcp', 'udp'], udp_timeout: '5m', tc_priority: 1,

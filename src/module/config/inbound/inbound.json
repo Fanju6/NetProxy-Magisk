@@ -1,6 +1,6 @@
 {
   "backend": "ebpf",
-  "root_policy": "default",
+  "root_policy": "include",
   "app": {
     "enabled": false,
     "mode": "blacklist",
