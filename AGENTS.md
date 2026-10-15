@@ -109,8 +109,8 @@ src/module/service.sh
 
 - 数据流保持 `Compose -> ViewModel -> Repository -> ModuleApiClient -> 模块 HTTPS API`。管理器不申请 Root，不执行 CLI，不直接读取 `/data/adb`、Catalog 文件或 PID。应用标签、图标与多用户由 Go 按需运行模块内 Java DEX 查询系统框架。
 - 普通 HTTP 读取、下载与图标查询随客户端取消；已接受写入有界收尾，不盲目重发。共享 SSE 在前台会话内只增加主题，最后消费者退出后保留 2 秒切页宽限，真正停止后清空会话；断线明确报错，重连重新等待完整快照，不使用轮询回退。首次自动连接只触发固定官方用户 0 的私有 Provider 交付，不通过 HTTP 返回秘密；Provider 校验 Binder UID 0，辅助程序校验当前 APK 签名、UID 与非导出 Provider，不接受请求指定目标。
-- 订阅页列表与 SSE 的 `subscriptions` 快照包含本地和 URL 订阅分组，普通详情同样可读本地分组；URL 私有设置与订阅修改仍限制为 URL 订阅。框架 DEX 绘制应用原生图标直接读取 Android 资源；`loadIcon()` 的厂商主题扩展会在独立 `app_process` 读取系统 Provider 时被拒绝，造成整批图标消失。
-- 应用清单通过一次 DEX 查询全部用户并准备固定 128px 的版本化 PNG，图标以 `icon_key` 经鉴权 HTTPS 单独读取；滚动与显示密度变化不得重新启动 DEX 或传输 Base64。缓存位于 `data/cache/android-icons` 的平目录，不进入诊断包；Worker 应用清单查询串行，全部用户成功完成后再统一清理，不能按一个用户的名单删除其他用户的图标。凭据交付使用自身互斥与冷却，不等待应用清单槽位。刷新清单不得清空正在显示的图标，仅在新资源就绪后替换。
+- 订阅页列表与 SSE 的 `subscriptions` 快照包含本地和 URL 订阅分组，普通详情同样可读本地分组；URL 私有设置与订阅修改仍限制为 URL 订阅。框架 DEX 绘制应用原生图标直接读取 Android 资源；`loadIcon()` 的厂商主题扩展会在独立 `app_process` 读取系统 Provider 时被拒绝，造成整批图标消失。未声明图标时返回空 `icon_key`，由管理器显示占位图；不得调用 `getDefaultActivityIcon()`，其厂商扩展同样可能使辅助进程原生崩溃。
+- 应用清单通过一次 DEX 查询全部用户并准备固定 128px 的版本化 PNG，图标以 `icon_key` 经鉴权 HTTPS 单独读取；滚动与显示密度变化不得重新启动 DEX 或传输 Base64。独立 `app_process` 的 `systemMain` 不执行应用绑定阶段的字体初始化，必须在创建绘图线程池前加载缺失的系统字体映射，并将其中的 `sans-serif` 交给框架 `setDefault` 解析和注册。延迟字体的 `native_instance` 可合法为 0，不得读取该字段判断初始化成功，也不能只依赖公开 `Typeface.DEFAULT`；否则可能误判加载失败或使符号图标触发原生断言并终止整份查询。凭据交付不加载字体。缓存位于 `data/cache/android-icons` 的平目录，不进入诊断包；Worker 应用清单查询串行，全部用户成功完成后再统一清理，不能按一个用户的名单删除其他用户的图标。凭据交付使用自身互斥与冷却，不等待应用清单槽位。刷新清单不得清空正在显示的图标，仅在新资源就绪后替换。
 - 管理器网络取消只取消本次 OkHttp Call，响应关闭后不得操作其他请求借用的池连接；普通连接池空闲期限短于服务端，只有普通 GET 的响应前通信故障可恢复一次，且共享原调用总时限，正文、超时、取消及 TLS 身份、握手或协议失败不重试，写操作不自动重发。仅证书或对端身份验证异常及其包装清除对应凭据，普通 SSL 读写故障不得误判身份失败。SSE 使用独立调度器、独立 Call 与有界事件缓冲，不占普通请求配额。类型化响应直接解码 Envelope，事件帧只缓存自身的解码结果；筛选事件按帧引用去重，不能为每个 traffic 帧重解完整 groups 或深比较 JSON 树。
 - ViewModel 按功能域持有不可变 `StateFlow`；Repository 负责命令组合和响应映射。不要重新堆回全能 Repository、全能 ViewModel 或静态 Service Locator。
 - 构造依赖由 `AppContainer` 和 `NetProxyViewModelFactory` 提供，不引入 Hilt/Koin，除非先完成明确的全项目架构决策。

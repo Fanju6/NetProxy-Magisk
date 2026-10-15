@@ -37,7 +37,11 @@ func (client Client) Query(ctx context.Context, request Request) (jsontext.Value
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	if runErr != nil && output.Len() == 0 {
+	return decodeResponse(output.Bytes(), runErr)
+}
+
+func decodeResponse(output []byte, runErr error) (jsontext.Value, error) {
+	if runErr != nil && len(output) == 0 {
 		return nil, &contract.Error{Code: "android.unavailable", Message: "Android 平台查询失败"}
 	}
 	var result struct {
@@ -47,7 +51,7 @@ func (client Client) Query(ctx context.Context, request Request) (jsontext.Value
 		Message string         `json:"message"`
 		Data    jsontext.Value `json:"data"`
 	}
-	if err := json.Unmarshal(output.Bytes(), &result, json.RejectUnknownMembers(true)); err != nil || result.Schema != 1 || result.Code == "" {
+	if err := json.Unmarshal(output, &result, json.RejectUnknownMembers(true)); err != nil || result.Schema != 1 || result.Code == "" {
 		return nil, &contract.Error{Code: "android.invalid_output", Message: "Android 平台没有返回有效数据"}
 	}
 	if !result.OK || runErr != nil {

@@ -10,6 +10,7 @@ import android.content.pm.ProviderInfo;
 import android.content.pm.Signature;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.os.Binder;
 import android.os.IBinder;
@@ -25,12 +26,15 @@ import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -54,11 +58,11 @@ public final class Main {
             response.put("message", "Android 平台查询失败");
             if (Process.myUid() != 0) throw new SecurityException();
             JSONObject request = new JSONObject(readInput());
+            String operation = request.getString("operation");
             Looper.prepareMainLooper();
             Class<?> threadClass = Class.forName("android.app.ActivityThread");
             Object thread = threadClass.getMethod("systemMain").invoke(null);
             Context context = (Context) threadClass.getMethod("getSystemContext").invoke(thread);
-            String operation = request.getString("operation");
             Object result;
             if ("apps".equals(operation)) {
                 if (request.has("user_id") || request.has("size")) throw new IllegalArgumentException();
@@ -92,6 +96,20 @@ public final class Main {
     }
 
     private static JSONObject apps(Context context, File cache) throws Exception {
+        // 延迟字体的原始句柄可为 0，由框架 setDefault 解析并注册实际字体。
+        Field fontMap = Typeface.class.getDeclaredField("sSystemFontMap");
+        fontMap.setAccessible(true);
+        Map<?, ?> fonts = (Map<?, ?>) fontMap.get(null);
+        Typeface font = fonts == null ? null : (Typeface) fonts.get("sans-serif");
+        if (font == null) {
+            Typeface.class.getMethod("loadPreinstalledSystemFontMap").invoke(null);
+            fonts = (Map<?, ?>) fontMap.get(null);
+            font = fonts == null ? null : (Typeface) fonts.get("sans-serif");
+        }
+        if (font == null) throw new IllegalStateException();
+        Method setDefault = Typeface.class.getDeclaredMethod("setDefault", Typeface.class);
+        setDefault.setAccessible(true);
+        setDefault.invoke(null, font);
         UserManager manager = context.getSystemService(UserManager.class);
         List<?> users = (List<?>) UserManager.class.getMethod("getUsers").invoke(manager);
         JSONArray result = new JSONArray();
@@ -145,7 +163,8 @@ public final class Main {
         long version = Build.VERSION.SDK_INT >= 28 ? installed.getLongVersionCode() : installed.versionCode;
         String label = manager.getApplicationLabel(info).toString();
         String iconKey = "";
-        if (cache != null) {
+        // 缺失图标由管理器显示占位图，系统默认图标仍可能触发厂商原生崩溃。
+        if (cache != null && info.icon != 0) {
             String name = digest((user + ":" + info.packageName + ":" + version + ":" + installed.lastUpdateTime + ":" + resources)
                 .getBytes(StandardCharsets.UTF_8)) + ".png";
             File target = new File(cache, name);
@@ -164,8 +183,7 @@ public final class Main {
 
     private static void writeIcon(PackageManager manager, ApplicationInfo info, int size, File target) throws Exception {
         // loadIcon 的厂商主题扩展会访问仅注册应用进程可用的 Provider，直接读取原生图标资源。
-        Drawable drawable = info.icon == 0 ? manager.getDefaultActivityIcon()
-            : manager.getResourcesForApplication(info).getDrawable(info.icon, null);
+        Drawable drawable = manager.getResourcesForApplication(info).getDrawable(info.icon, null);
         File temporary = File.createTempFile(target.getName() + ".", ".tmp", target.getParentFile());
         Bitmap image = null;
         try {

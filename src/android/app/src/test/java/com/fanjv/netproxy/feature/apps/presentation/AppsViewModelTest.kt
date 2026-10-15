@@ -134,6 +134,32 @@ class AppsViewModelTest {
         assertEquals(1, calls.get())
     }
 
+    @Test fun applicationsWithoutIconsRemainSelectableWithoutIconRequests() = runBlocking {
+        val iconRequests = AtomicInteger()
+        val catalog = AppPackageRepository(ModuleApiClient(object : TestApiTransport() {
+            override suspend fun respond(request: ApiTestRequest): ModuleHttpResponse {
+                val apps = listOf("alpha.example", "beta.example").map {
+                    AndroidApp(it, it, 10001, false, 1, 1, "")
+                }
+                return apiSuccess(Json.encodeToString(AndroidAppsSnapshot(listOf(AndroidUserApps(0, "Owner", "apps", apps)))))
+            }
+            override suspend fun image(path: String): ByteArray {
+                iconRequests.incrementAndGet()
+                return byteArrayOf()
+            }
+        }))
+        val vm = model(this, Transport(), catalog)
+        vm.load(); vm.loaded()
+        assertTrue(vm.state.value.masterAppList.all { it.iconKey.isEmpty() })
+        val revision = AppIconCache.revision
+        vm.loadIcons(vm.state.value.masterAppList.map { it.id })
+        assertEquals(0, iconRequests.get())
+        assertEquals(revision, AppIconCache.revision)
+        vm.toggle("0:alpha.example")
+        assertEquals(setOf("0:alpha.example"), vm.state.value.proxyApps)
+        assertEquals(2, vm.state.value.masterAppList.size)
+    }
+
     @Test fun snapshotFailureKeepsLoadedApplicationsAndIconKeys() = runBlocking {
         var failing = false
         val catalog = AppPackageRepository(ModuleApiClient(TestApiTransport {
