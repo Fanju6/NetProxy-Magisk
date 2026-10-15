@@ -8,6 +8,8 @@ test('service confirmation, stopped Catalog and selection work without a backend
   await page.goto('/')
   await expect(page.getByRole('note')).toContainText('演示模式')
   await expect(page.getByRole('heading', { name: '运行中', exact: true })).toBeVisible()
+  await expect(page.getByText('历史快照 · 非实时', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('正在获取实时快照', { exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: '停止服务', exact: true }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
   await page.getByRole('button', { name: '取消', exact: true }).click()

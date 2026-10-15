@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, ArrowUpRight, Power, Activity, MemoryStick, Link2 }
 import { useApi, usePreferences } from '@/app/context'
 import { moduleQueries, useChangeMode, useServiceAction } from '@/api/queries'
 import type { Traffic } from '@/api/contracts'
+import { useEventConnection } from '@/api/events'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -23,6 +24,7 @@ import type { MessageKey } from '@/app/i18n'
 export function DashboardPage() {
   const api = useApi()
   const { t, preferences } = usePreferences()
+  const connection = useEventConnection()
   const status = useQuery(moduleQueries(api).service)
   const info = useQuery(moduleQueries(api).info)
   const live = useQuery<Traffic>({
@@ -43,19 +45,22 @@ export function DashboardPage() {
   const service = status.data
   const running = service.state === 'ready'
   const traffic =
-    live.data?.available && live.data.started_at_millis === service.core_started_at_millis
+    connection === 'live' &&
+    live.data?.available &&
+    live.data.started_at_millis === service.core_started_at_millis
       ? live.data.status
       : undefined
+  const rateUnavailable = connection !== 'live' || (running && !traffic)
   const current = displayNode(service.runtime_selected || service.selected_node_ref) || t('auto')
   const values = [
     {
       title: t('download'),
-      value: `${bytes(traffic?.downlink ?? 0, preferences.locale)}/s`,
+      value: rateUnavailable ? '—' : `${bytes(traffic?.downlink ?? 0, preferences.locale)}/s`,
       icon: ArrowDown,
     },
     {
       title: t('upload'),
-      value: `${bytes(traffic?.uplink ?? 0, preferences.locale)}/s`,
+      value: rateUnavailable ? '—' : `${bytes(traffic?.uplink ?? 0, preferences.locale)}/s`,
       icon: ArrowUp,
     },
     {
@@ -79,12 +84,13 @@ export function DashboardPage() {
             <Activity className="size-4" />
             {t('service')}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <h2 className="text-3xl font-semibold">{t(service.state)}</h2>
+            {connection !== 'live' && <Badge variant="outline">{t('staleSnapshot')}</Badge>}
             <Badge variant="outline" className="gap-1.5">
               <span
                 className={
-                  running
+                  running && connection === 'live'
                     ? 'size-1.5 rounded-full bg-emerald-500'
                     : 'size-1.5 rounded-full bg-muted-foreground'
                 }
@@ -133,7 +139,7 @@ export function DashboardPage() {
             aria-label={t('traffic')}
             className="traffic-plot flex h-48 items-end gap-1 border-b px-1 pt-4"
           >
-            {!running || history.length === 0 ? (
+            {connection !== 'live' || !running || history.length === 0 ? (
               <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
                 {t('waiting')}
               </div>

@@ -1,30 +1,74 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { expect, it, vi } from 'vitest'
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+  RouterProvider,
+} from '@tanstack/react-router'
+import { afterEach, expect, it, vi, type Mock } from 'vitest'
 import { ApiContext, PreferencesContext } from '@/app/context'
 import { translator } from '@/app/i18n'
 import { createFixtures, demoTraffic } from '@/mocks/fixtures'
 import { ApiClient } from './client'
-import type { ApiEvent, ApiTransport, EventTopic } from './contracts'
+import { ApiError, type ApiEvent, type ApiTransport, type EventTopic } from './contracts'
 import { ModuleEvents } from './events'
+import { DashboardPage } from '@/features/dashboard'
 
-function setup() {
-  const sessions: {
-    consume: (event: ApiEvent) => void
-    fail: (error: Error) => void
-    close: ReturnType<typeof vi.fn>
-  }[] = []
+type Session = {
+  consume: (event: ApiEvent) => void
+  fail: (error: Error) => void
+  close: Mock<() => void>
+}
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+})
+
+const frame = (name: ApiEvent['name'], data: unknown): ApiEvent => ({
+  name,
+  body: { schema: 1, ok: true, code: 'fixture', message: '', data },
+})
+
+function setup(
+  onSubscribe?: (session: Session, index: number) => void,
+  { dashboard = false, strict = false } = {},
+) {
+  const sessions: Session[] = []
+  const active = new Set<Session>()
   const transport: ApiTransport = {
     kind: 'mock',
     request: vi.fn(),
     subscribe: (_topics: readonly EventTopic[], consume, fail) => {
-      const session = { consume, fail, close: vi.fn() }
+      const session: Session = {
+        consume,
+        fail,
+        close: vi.fn(() => {
+          active.delete(session)
+        }),
+      }
       sessions.push(session)
+      active.add(session)
+      onSubscribe?.(session, sessions.length - 1)
       return session.close
     },
   }
-  const cache = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  const view = render(
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: Infinity, staleTime: Infinity } },
+  })
+  const router = dashboard
+    ? createRouter({
+        routeTree: createRootRoute({ component: DashboardPage }),
+        history: createMemoryHistory(),
+      })
+    : undefined
+  if (dashboard) {
+    vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+    cache.setQueryData(['service'], createFixtures().service)
+    cache.setQueryData(['info'], { version: 'v8.6.1' })
+  }
+  const tree = (
     <PreferencesContext
       value={{
         preferences: { theme: 'light', locale: 'en' },
@@ -35,19 +79,28 @@ function setup() {
       <ApiContext value={new ApiClient(transport)}>
         <QueryClientProvider client={cache}>
           <ModuleEvents />
+          {router && <RouterProvider router={router} />}
         </QueryClientProvider>
       </ApiContext>
-    </PreferencesContext>,
+    </PreferencesContext>
   )
+  const view = render(strict ? <StrictMode>{tree}</StrictMode> : tree)
   const emit = (name: ApiEvent['name'], data: unknown, session = sessions.at(-1)!) => {
-    act(() =>
-      session.consume({ name, body: { schema: 1, ok: true, code: 'fixture', message: '', data } }),
+    act(() => session.consume(frame(name, data)))
+  }
+  const complete = (service = createFixtures().service) => {
+    const { snapshot } = createFixtures()
+    emit('status', service)
+    emit('groups', snapshot)
+    emit(
+      'subscriptions',
+      snapshot.groups.map((item) => item.group),
     )
   }
-  return { cache, sessions, emit, view }
+  return { cache, sessions, active, transport, emit, complete, view }
 }
 
-it('clears traffic on disconnect and rejects old-session frames after reconnect', () => {
+it('clears traffic on disconnect and rejects old-session frames after reconnect', async () => {
   const { service } = createFixtures()
   const { cache, sessions, emit } = setup()
   emit('traffic', demoTraffic(service))
@@ -59,7 +112,7 @@ it('clears traffic on disconnect and rejects old-session frames after reconnect'
   act(() => old.fail(new Error('disconnected')))
   expect(cache.getQueryData(['traffic'])).toEqual({ available: false })
   expect(cache.getQueryData(['traffic-history'])).toEqual([])
-  expect(screen.getByRole('alert')).toBeVisible()
+  expect(await screen.findByRole('alert')).toBeVisible()
   act(() => screen.getByRole('button', { name: 'Reconnect' }).click())
   expect(sessions).toHaveLength(2)
   emit('status', service, old)
@@ -83,11 +136,272 @@ it('keeps a new event snapshot when an earlier HTTP read resolves later', async 
         }),
     })
     .catch(() => undefined)
-  await waitFor(() => expect(finish).toBeTypeOf('function'))
+  expect(finish).toBeTypeOf('function')
   emit('status', service)
   finish({ ...service, state: 'stopped' })
   await pending
   expect(cache.getQueryData(['service'])).toEqual(service)
+})
+
+it('clears traffic and history when ready core A changes directly to ready core B', () => {
+  const { cache, emit, complete } = setup()
+  const { service: coreA } = createFixtures()
+  complete(coreA)
+  emit('traffic', demoTraffic(coreA))
+  emit('traffic', demoTraffic(coreA, 1))
+  expect(cache.getQueryData(['traffic-history'])).toHaveLength(2)
+  emit('status', coreA)
+  expect(cache.getQueryData(['traffic-history'])).toHaveLength(2)
+  const coreB = { ...coreA, core_started_at_millis: coreA.core_started_at_millis + 1000 }
+  emit('status', coreB)
+  expect(cache.getQueryData(['traffic'])).toEqual({ available: false })
+  expect(cache.getQueryData(['traffic-history'])).toEqual([])
+  emit('traffic', demoTraffic(coreA))
+  expect(cache.getQueryData(['traffic-history'])).toEqual([])
+  emit('traffic', demoTraffic(coreB))
+  expect(cache.getQueryData(['traffic-history'])).toHaveLength(1)
+})
+
+it('accepts synchronous complete snapshots and owns their disposer until unmount', () => {
+  const { service, snapshot } = createFixtures()
+  const { cache, active, sessions, view } = setup((session) => {
+    session.consume(frame('status', service))
+    session.consume(frame('groups', snapshot))
+    session.consume(
+      frame(
+        'subscriptions',
+        snapshot.groups.map((item) => item.group),
+      ),
+    )
+  })
+  expect(cache.getQueryData(['events-connection'])).toBe('live')
+  expect(active.size).toBe(1)
+  expect(sessions[0]!.close).not.toHaveBeenCalled()
+  view.unmount()
+  expect(active.size).toBe(0)
+  expect(sessions[0]!.close).toHaveBeenCalledOnce()
+})
+
+it('does not overwrite a nested replacement subscription with the late disposer', () => {
+  const { service } = createFixtures()
+  const { active, sessions, cache, view } = setup((session, index) => {
+    session.consume(frame('status', service))
+    if (index !== 0) return
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    document.dispatchEvent(new Event('visibilitychange'))
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+  expect(sessions).toHaveLength(2)
+  expect(active.size).toBe(1)
+  expect(sessions[0]!.close).toHaveBeenCalledOnce()
+  expect(sessions[1]!.close).not.toHaveBeenCalled()
+  act(() => sessions[0]!.consume(frame('status', { ...service, state: 'failed' })))
+  expect(cache.getQueryData(['service'])).toMatchObject({ state: 'ready' })
+  view.unmount()
+  expect(sessions[0]!.close).toHaveBeenCalledOnce()
+  expect(sessions[1]!.close).toHaveBeenCalledOnce()
+  expect(active.size).toBe(0)
+})
+
+it.each([400, 401, 403])(
+  'does not automatically retry HTTP %s authentication or contract errors',
+  (status) => {
+    vi.useFakeTimers()
+    const { sessions, cache, view } = setup()
+    act(() => sessions[0]!.fail(new ApiError('fixture.rejected', '', status)))
+    expect(cache.getQueryData(['events-connection'])).toBe('offline')
+    act(() => vi.advanceTimersByTime(120_000))
+    expect(sessions).toHaveLength(1)
+    view.unmount()
+  },
+)
+
+it('does not retry a synchronous authentication exception or double-release its resources', () => {
+  vi.useFakeTimers()
+  const { sessions, active, cache, view } = setup((session) => {
+    session.close()
+    throw new ApiError('api.unauthorized', '', 401)
+  })
+  expect(cache.getQueryData(['events-connection'])).toBe('offline')
+  expect(active.size).toBe(0)
+  act(() => vi.advanceTimersByTime(120_000))
+  expect(sessions).toHaveLength(1)
+  view.unmount()
+  expect(sessions[0]!.close).toHaveBeenCalledOnce()
+})
+
+it('resets the retry budget only after a stable complete-snapshot session', () => {
+  vi.useFakeTimers()
+  const { sessions, complete, view } = setup()
+  act(() => sessions[0]!.fail(new Error('network')))
+  act(() => vi.advanceTimersByTime(1000))
+  complete()
+  act(() => vi.advanceTimersByTime(30_000))
+  act(() => sessions[1]!.fail(new Error('network again')))
+  act(() => vi.advanceTimersByTime(999))
+  expect(sessions).toHaveLength(2)
+  act(() => vi.advanceTimersByTime(1))
+  expect(sessions).toHaveLength(3)
+  view.unmount()
+})
+
+it.each(['ready', 'stopped'] as const)(
+  'shows a non-live %s snapshot without claiming zero speed or changing proxy state',
+  async (state) => {
+    const { sessions, complete, emit, view } = setup(undefined, { dashboard: true })
+    const service = { ...createFixtures().service, state }
+    const label = state === 'ready' ? 'Running' : 'Stopped'
+    complete(service)
+    emit('traffic', demoTraffic(service))
+    expect(await screen.findByRole('heading', { name: label })).toBeVisible()
+    expect(screen.queryByText('Last snapshot · not live')).not.toBeInTheDocument()
+    if (state === 'ready') expect(await screen.findByText('2.1 MB/s')).toBeVisible()
+    else expect(screen.getAllByText('0 B/s')).toHaveLength(2)
+    act(() => sessions[0]!.fail(new Error('network')))
+    expect(await screen.findByText('Last snapshot · not live')).toBeVisible()
+    expect(screen.getByRole('heading', { name: label })).toBeVisible()
+    expect(screen.queryByText('2.1 MB/s')).not.toBeInTheDocument()
+    expect(screen.getAllByText('—')).toHaveLength(2)
+    act(() => screen.getByRole('button', { name: 'Reconnect' }).click())
+    emit('status', service)
+    expect(screen.getByText('Last snapshot · not live')).toBeVisible()
+    complete(service)
+    await waitFor(() =>
+      expect(screen.queryByText('Last snapshot · not live')).not.toBeInTheDocument(),
+    )
+    view.unmount()
+  },
+)
+
+it.each(['error', 'invalid frame'] as const)(
+  'releases a synchronous %s subscription exactly once',
+  (failure) => {
+    vi.useFakeTimers()
+    const { sessions, active, view } = setup((session) => {
+      if (failure === 'error') session.fail(new Error('synchronous error'))
+      else session.consume({ name: 'status', body: { schema: 2 } })
+    })
+    expect(active.size).toBe(0)
+    expect(sessions[0]!.close).toHaveBeenCalledOnce()
+    view.unmount()
+    act(() => vi.advanceTimersByTime(60_000))
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0]!.close).toHaveBeenCalledOnce()
+  },
+)
+
+it('releases a subscription when visibility requests disposal before subscribe returns', () => {
+  const { sessions, active, view } = setup(() => {
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+  expect(active.size).toBe(0)
+  expect(sessions[0]!.close).toHaveBeenCalledOnce()
+  view.unmount()
+  expect(sessions[0]!.close).toHaveBeenCalledOnce()
+})
+
+it('does not release twice when the close callback reports another error', () => {
+  const { sessions, active, view } = setup((session) => {
+    const release = session.close.getMockImplementation()!
+    session.close.mockImplementation(() => {
+      release()
+      session.fail(new Error('closed'))
+    })
+  })
+  act(() => sessions[0]!.fail(new Error('disconnected')))
+  expect(sessions[0]!.close).toHaveBeenCalledOnce()
+  expect(active.size).toBe(0)
+  view.unmount()
+  expect(sessions[0]!.close).toHaveBeenCalledOnce()
+})
+
+it('releases Strict Mode probe subscriptions and rejects their queued callbacks after cleanup', async () => {
+  const { service, snapshot } = createFixtures()
+  const { sessions, active, cache, view } = setup(
+    (session, index) => {
+      session.consume(frame('status', service))
+      session.consume(frame('groups', snapshot))
+      session.consume(
+        frame(
+          'subscriptions',
+          snapshot.groups.map((item) => item.group),
+        ),
+      )
+      if (index === 0)
+        queueMicrotask(() => session.consume(frame('status', { ...service, state: 'failed' })))
+    },
+    { strict: true },
+  )
+  await act(async () => {
+    await Promise.resolve()
+  })
+  expect(sessions).toHaveLength(2)
+  expect(active.size).toBe(1)
+  expect(sessions[0]!.close).toHaveBeenCalledOnce()
+  expect(sessions[1]!.close).not.toHaveBeenCalled()
+  expect(cache.getQueryData(['service'])).toMatchObject({ state: 'ready' })
+  expect(cache.getQueryData(['events-connection'])).toBe('live')
+  view.unmount()
+  expect(active.size).toBe(0)
+  expect(sessions[1]!.close).toHaveBeenCalledOnce()
+})
+
+it('retries only the event subscription with a finite budget and fresh snapshots', () => {
+  vi.useFakeTimers()
+  const { sessions, cache, transport, emit, complete, view } = setup()
+  complete()
+  expect(cache.getQueryData(['events-connection'])).toBe('live')
+  for (const [index, delay] of [1000, 2000, 4000].entries()) {
+    act(() => sessions.at(-1)!.fail(new Error('network')))
+    expect(cache.getQueryData(['events-connection'])).toBe('reconnecting')
+    act(() => vi.advanceTimersByTime(delay - 1))
+    expect(sessions).toHaveLength(index + 1)
+    act(() => vi.advanceTimersByTime(1))
+    expect(sessions).toHaveLength(index + 2)
+    emit('traffic', demoTraffic(createFixtures().service))
+    expect(cache.getQueryData(['traffic'])).toEqual({ available: false })
+    complete()
+    expect(cache.getQueryData(['events-connection'])).toBe('live')
+  }
+  act(() => sessions.at(-1)!.fail(new Error('still broken')))
+  expect(cache.getQueryData(['events-connection'])).toBe('offline')
+  act(() => vi.advanceTimersByTime(120_000))
+  expect(sessions).toHaveLength(4)
+  expect(transport.request).not.toHaveBeenCalled()
+  act(() => screen.getByRole('button', { name: 'Reconnect' }).click())
+  expect(sessions).toHaveLength(5)
+  emit('status', createFixtures().service)
+  expect(cache.getQueryData(['events-connection'])).not.toBe('live')
+  complete()
+  expect(cache.getQueryData(['events-connection'])).toBe('live')
+  view.unmount()
+})
+
+it('times out incomplete snapshots and does not treat traffic as connection readiness', () => {
+  vi.useFakeTimers()
+  const { sessions, cache, emit, view } = setup()
+  emit('status', createFixtures().service)
+  emit('traffic', demoTraffic(createFixtures().service))
+  expect(cache.getQueryData(['events-connection'])).toBe('connecting')
+  act(() => vi.advanceTimersByTime(30_000))
+  expect(sessions[0]!.close).toHaveBeenCalledOnce()
+  expect(cache.getQueryData(['events-connection'])).toBe('reconnecting')
+  view.unmount()
+  act(() => vi.advanceTimersByTime(60_000))
+  expect(sessions).toHaveLength(1)
+})
+
+it('keeps proxy state independent from the disconnected stream and ignores frames after unmount', async () => {
+  const { sessions, cache, complete, emit, view } = setup()
+  complete()
+  act(() => sessions[0]!.fail(new Error('network')))
+  expect(cache.getQueryData(['service'])).toMatchObject({ state: 'ready' })
+  expect(await screen.findByRole('alert')).toHaveTextContent(/snapshot.*not live/i)
+  view.unmount()
+  emit('status', { ...createFixtures().service, state: 'failed' })
+  expect(cache.getQueryData(['service'])).toMatchObject({ state: 'ready' })
 })
 
 it('closes the stream in the background and releases it on unmount', () => {
@@ -101,4 +415,17 @@ it('closes the stream in the background and releases it on unmount', () => {
   view.unmount()
   expect(sessions[1]!.close).toHaveBeenCalledOnce()
   vi.restoreAllMocks()
+})
+
+it('marks a hidden connection as paused even when the visibility event has not arrived', () => {
+  vi.useFakeTimers()
+  const { sessions, cache, complete, view } = setup()
+  complete()
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+  act(() => sessions[0]!.fail(new Error('hidden disconnect')))
+  expect(cache.getQueryData(['events-connection'])).toBe('paused')
+  act(() => vi.advanceTimersByTime(120_000))
+  expect(sessions).toHaveLength(1)
+  expect(sessions[0]!.close).toHaveBeenCalledOnce()
+  view.unmount()
 })
