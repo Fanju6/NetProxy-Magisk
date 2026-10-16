@@ -38,4 +38,4 @@ assert.equal(
   demo,
   '普通生产包不得包含 Mock 数据；演示包必须显式包含 Mock',
 )
-console.log(`V9 ${native ? '原生只读' : demo ? '演示' : '生产'}产物检查通过`)
+console.log(`V9 ${native ? '原生受限' : demo ? '演示' : '生产'}产物检查通过`)

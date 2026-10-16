@@ -1,6 +1,6 @@
 # NetProxy Android Native PoC
 
-这是 V9 第一阶段第二里程碑的只读原生壳，不是正式管理器替代版本。不修改 Go 业务、模块配置或 V8 发布流水线，不实现桌面平台。
+这是 V9 第一阶段的 Android 原生壳，不是正式管理器替代版本。M4.1 在既有只读通信上仅开放服务启动和停止，不修改 Go 业务、模块配置或 V8 发布流水线，不实现桌面平台。
 
 ## 工程
 
@@ -42,7 +42,7 @@ pnpm android:build
 pnpm android:build:upgrade
 ```
 
-它构建 `com.fanjv.netproxy` 的 **未签名 Release APK**，版本码 1092 是第三里程碑测试基线，不是后续发布计数器。安装前必须确认高于设备现有版本，使用正式固定密钥签名，并以 `apksigner verify --print-certs` 核对模块辅助程序接受的公开指纹。不得生成替代签名后声称升级成功。密钥和密码不属于本工程，沿用已有安全签名方式，不改 V8 CI。
+它构建 `com.fanjv.netproxy` 的 **未签名 Release APK**，版本码 1096 是 M4.1 覆盖验证基线，不是后续发布计数器。安装前必须确认高于设备现有版本，使用正式固定密钥签名，并以 `apksigner verify --print-certs` 核对模块辅助程序接受的公开指纹。不得生成替代签名后声称升级成功。密钥和密码不属于本工程，沿用已有安全签名方式，不改 V8 CI。
 
 两种 APK 都使用同一份 React Native-mode 构建产物。`pnpm tauri android dev` 使用本机 1420 端口的显式 Native 模式开发服务，不会退回 Mock。
 
@@ -86,15 +86,15 @@ React / TanStack Query / Zod
   -> 共用 LocalHttpTransport -> Go loopback HTTPS API
 ```
 
-- 只读资源枚举只有 `info`、`service`，事件主题只有 `status/groups/subscriptions`，traffic 随 status 到达。没有传入方法、URL、凭据、文件或命令的 IPC。
+- 只读资源枚举只有 `info`、`service`，事件主题只有 `status/groups/subscriptions`，traffic 随 status 到达。`service_action` 仅接受 `start/stop` 枚举，Kotlin 固定映射 POST 路径和空对象正文；没有传入任意方法、URL、凭据、文件或命令的 IPC。
 - Kotlin 通过 Gradle sourceSet 直接编译 V8 `core/api` 源码，不复制或分叉证书、Bearer、Provider 和取消实现。首次配对同样复用该传输，安全流程见 [ADR 001](docs/adr-001-trusted-pairing.md)。
 - 凭据仍由非导出、仅接受 Binder UID 0 的 `ConnectionProvider` 写入 `noBackupFilesDir/module-connection.json`。证书精确 SHA-256 和主机名验证、禁用代理/重定向、请求取消继续使用原有实现。
 - 无凭据时，原生层只发送固定、无凭据的配对触发；不信其响应，必须等到新的 Root 私有交付后才进行精确钉扎业务读取。401 或身份失败先拒绝本次请求，下一次连接经同一可信交付恢复，不重放业务写入。不要求用户粘贴主 Secret。
-- Kotlin 检查 schema=1、HTTP 状态、类型和 4 MiB 上限；业务错误保留状态和错误码，丢弃原始异常消息与错误详情。JS 再经现有 ApiClient/Zod 校验。
+- Kotlin 检查 schema=1、HTTP 状态、类型和 4 MiB 上限；业务错误保留状态、错误码和布尔 `persisted`，丢弃原始异常消息与其他错误详情。JS 再经现有 ApiClient/Zod 校验。
 - SSE 原生队列容量为 1，JS 同时只等待一个 next_event。没有无界事件 IPC、原生重连循环或 HTTP 轮询。慢端背压到已有有界传输；关闭和后台取消对应 Call。
 - 新订阅替换遗留文档的会话，同 ID 重复建立被拒绝；旧 ID 关闭不影响新会话。读取最多 8 项并行，取消先到的 ID 有界记录，不因 IPC 重排遗漏取消。
 - Kotlin Activity-aware 生命周期是原生可见性事实源；JS 将它与 document 可见性合并，继续负责有界重连、完整快照和核心身份隔离。
-- Capability 仅授予本插件六项命令和官方 listener 注册/移除。没有通用 HTTP、FS、Shell 或远程页面授权，CSP 不允许 JS 直连 Go。
+- Capability 仅授予本插件七项命令和官方 listener 注册/移除。没有通用 HTTP、FS、Shell 或远程页面授权，CSP 不允许 JS 直连 Go。
 
 ## 验证与限制
 

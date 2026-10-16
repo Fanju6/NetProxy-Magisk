@@ -86,11 +86,19 @@ describe('restricted native requests', () => {
         requestId: expect.any(String),
         resource: path.slice(1),
       })
-      expect(transport.readOnly).toBe(true)
+      expect(transport.capabilities).toEqual([
+        'info.read',
+        'service.read',
+        'service.start',
+        'service.stop',
+      ])
     },
   )
   it.each([
-    { method: 'POST', path: '/service/start' },
+    { method: 'POST', path: '/service/restart' },
+    { method: 'POST', path: '/service/reload' },
+    { method: 'POST', path: '/service/check' },
+    { method: 'POST', path: '/service/start', body: {} },
     { method: 'PUT', path: '/selection', body: {} },
     { method: 'DELETE', path: '/subscriptions' },
     { method: 'GET', path: '/nodes/snapshot' },
@@ -102,7 +110,7 @@ describe('restricted native requests', () => {
   ])('rejects unauthorized resources before IPC: %j', async (request) => {
     const { transport, invoke } = setup()
     await expect(transport.request(request as ApiRequest)).rejects.toMatchObject({
-      code: 'client.read_only',
+      code: 'client.operation_denied',
       status: 403,
     })
     expect(invoke).not.toHaveBeenCalled()
@@ -181,9 +189,57 @@ describe('restricted native requests', () => {
       client.request({ method: 'GET', path: '/info' }, z.unknown()),
     ).rejects.toMatchObject({ code: 'client.invalid_response' })
     await expect(
-      client.request({ method: 'POST', path: '/service/start' }, z.unknown()),
-    ).rejects.toMatchObject({ code: 'client.read_only' })
+      client.request({ method: 'PUT', path: '/selection', body: {} }, z.unknown()),
+    ).rejects.toMatchObject({ code: 'client.operation_denied' })
     expect(invoke).toHaveBeenCalledTimes(2)
+  })
+  it.each(['start', 'stop'] as const)(
+    'maps only service.%s to the restricted write command',
+    async (action) => {
+      const { transport, invoke } = setup()
+      invoke.mockResolvedValue({ status: 200, body: event.body })
+      await transport.request({ method: 'POST', path: `/service/${action}` })
+      expect(invoke).toHaveBeenCalledExactlyOnceWith('plugin:module-api|service_action', {
+        requestId: expect.any(String),
+        action,
+      })
+    },
+  )
+  it.each([401, 403, 409, 502, 504])(
+    'preserves service error %s and committed metadata without replay',
+    async (status) => {
+      const { transport, invoke } = setup()
+      invoke.mockResolvedValue({
+        status,
+        body: {
+          schema: 1,
+          ok: false,
+          code: 'service.failed',
+          message: '',
+          data: { persisted: true },
+        },
+      })
+      await expect(
+        new ApiClient(transport).request({ method: 'POST', path: '/service/start' }, z.unknown()),
+      ).rejects.toMatchObject({ status, code: 'service.failed', persisted: true })
+      expect(invoke).toHaveBeenCalledTimes(1)
+    },
+  )
+  it('cancels a service wait without replaying it or accepting its late result', async () => {
+    const { transport, invoke } = setup()
+    const reply = deferred<unknown>()
+    invoke.mockImplementation((name) =>
+      name.endsWith('|service_action') ? reply.promise : Promise.resolve(),
+    )
+    const controller = new AbortController()
+    const request = transport.request({ method: 'POST', path: '/service/start' }, controller.signal)
+    const rejected = expect(request).rejects.toMatchObject({ name: 'AbortError' })
+    controller.abort()
+    await rejected
+    reply.resolve({ status: 200, body: event.body })
+    await flush()
+    expect(invoke.mock.calls.filter(([name]) => name.endsWith('|service_action'))).toHaveLength(1)
+    expect(invoke.mock.calls.filter(([name]) => name.endsWith('|cancel'))).toHaveLength(1)
   })
   it.each([{}, { status: 0, body: {} }, { status: 200, body: 'x'.repeat(4 * 1024 * 1024) }])(
     'rejects malformed or oversized native replies',

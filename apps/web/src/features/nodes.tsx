@@ -104,7 +104,7 @@ export function NodesPage() {
                       className={cn('node-tile', auto && 'node-selected')}
                       aria-label={t('selectNode', { name: t('auto') })}
                       aria-pressed={auto}
-                      disabled={api.transport.readOnly || selection.isPending}
+                      disabled={!api.supports('selection.write') || selection.isPending}
                       onClick={() => selection.mutate({ group_id: group.id, node_tag: '' })}
                     >
                       <div className="flex min-w-0 items-center gap-2">
@@ -134,7 +134,7 @@ export function NodesPage() {
                           type="button"
                           className={cn('node-tile w-full pr-11', selected && 'node-selected')}
                           aria-pressed={selected}
-                          disabled={api.transport.readOnly || selection.isPending}
+                          disabled={!api.supports('selection.write') || selection.isPending}
                           aria-label={t('selectNode', { name: node.tag })}
                           onClick={() =>
                             selection.mutate({ group_id: group.id, node_tag: node.tag })

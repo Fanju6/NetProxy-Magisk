@@ -1,6 +1,6 @@
 # NetProxy V9 WebUI
 
-V9 第一批独立前端工程。保留 V8 管理器、终端 WebUI、Go API 和模块发布流程；本目录尚未接入真实设备。
+V9 独立前端工程。保留 V8 管理器、终端 WebUI、Go API 和模块发布流程；Android 原生壳的可信通信与服务控制范围见 [接入约定](docs/native-transport.md)。普通 Web 构建不连接真实模块。
 
 ## 开发
 
@@ -18,7 +18,7 @@ pnpm dev
 pnpm check          # 类型、Lint、格式、单元与组件测试
 pnpm build          # 安全默认：无可信 Transport 时不连接、不操作模块
 pnpm build:demo     # 显式包含 Mock 的可交互静态演示
-pnpm build:native   # Tauri 只读 IPC 构建，输出 dist-native/
+pnpm build:native   # Tauri 受限 IPC 构建，输出 dist-native/
 pnpm preview       # 预览最近一次构建，端口 5181
 pnpm exec playwright install chromium
 pnpm test:e2e      # 自动运行 Mock dev 与独立生产预览服务器

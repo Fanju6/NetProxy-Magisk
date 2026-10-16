@@ -39,7 +39,7 @@ it('shows native data but disables every business write and reads no unsupported
   })
   const transport: ApiTransport = {
     kind: 'native',
-    readOnly: true,
+    capabilities: ['info.read', 'service.read'],
     request,
     subscribe: (_topics, consume) => {
       for (const [name, data] of [
@@ -60,7 +60,7 @@ it('shows native data but disables every business write and reads no unsupported
       <RouterProvider router={router} />
     </AppProviders>,
   )
-  expect(await screen.findByRole('note')).toHaveTextContent('Native connection · read-only')
+  expect(await screen.findByRole('note')).toHaveTextContent('Native connection · service control')
   expect(screen.queryByText('Demo mode')).not.toBeInTheDocument()
   expect(await screen.findByRole('button', { name: 'Stop service' })).toBeDisabled()
   expect(screen.getByRole('combobox', { name: 'Outbound mode' })).toBeDisabled()

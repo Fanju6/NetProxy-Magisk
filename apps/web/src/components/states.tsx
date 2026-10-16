@@ -46,7 +46,11 @@ export function ErrorState({
             ? t('connectionUnavailable')
             : code === 'api.unauthorized'
               ? t('unauthorized')
-              : t('requestFailed')
+              : error instanceof ApiError && error.status === 403
+                ? t('operationDenied')
+                : error instanceof ApiError && [409, 429].includes(error.status)
+                  ? t('operationBusy')
+                  : t('requestFailed')
   return (
     <div
       role="alert"

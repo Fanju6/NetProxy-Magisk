@@ -13,6 +13,14 @@ import {
   ApiError,
 } from './contracts'
 import { Button } from '@/components/ui/button'
+import {
+  observeService,
+  serviceEpoch,
+  serviceOperationKey,
+  useServiceOperation,
+  type ServiceOperation,
+} from './service-control'
+import { moduleQueries } from './queries'
 
 export function acceptTraffic(service: ServiceStatus | undefined, traffic: Traffic): boolean {
   return (
@@ -45,6 +53,7 @@ export function ModuleEvents() {
   const { t } = usePreferences()
   const connection = useEventConnection()
   const [attempt, setAttempt] = useState(0)
+  const operationEpoch = useServiceOperation()?.epoch ?? 0
   useEffect(() => {
     let close: (() => void) | undefined
     let retryTimer: ReturnType<typeof setTimeout> | undefined
@@ -87,7 +96,8 @@ export function ModuleEvents() {
         return
       }
       setConnection(retries === 0 ? 'connecting' : 'reconnecting')
-      const active = () => !disposed && generation === currentGeneration
+      const active = () =>
+        !disposed && generation === currentGeneration && serviceEpoch(cache) === operationEpoch
       const pending = new Set(['status', 'groups', 'subscriptions'])
       let liveAt: number | undefined
       const fail = (retry = true) => {
@@ -119,60 +129,72 @@ export function ModuleEvents() {
         )
       // 单一会话只接受当前连接的完整快照，断流后不沿用旧核心流量。
       let status: ServiceStatus | undefined
-      snapshotTimer = setTimeout(fail, 30_000)
-      try {
-        const release = api.transport.subscribe(
-          ['status', 'groups', 'subscriptions'],
-          (event) => {
-            if (!active()) return
-            try {
-              const envelope = envelopeSchema.parse(event.body)
-              if (!envelope.ok) throw new Error(envelope.code)
-              if (event.name === 'status') {
-                const next = serviceSchema.parse(envelope.data)
-                if (
-                  next.state !== 'ready' ||
-                  status?.core_started_at_millis !== next.core_started_at_millis
-                )
-                  clearTraffic()
-                status = next
-                if (!active()) return
-                publish('service', next)
-              } else if (event.name === 'groups')
-                publish('nodes', snapshotSchema.parse(envelope.data))
-              else if (event.name === 'subscriptions')
-                publish('subscriptions', z.array(groupSchema).parse(envelope.data))
-              else {
-                const traffic = trafficSchema.parse(envelope.data)
-                if (!traffic.available) clearTraffic()
-                else if (acceptTraffic(status, traffic)) {
-                  cache.setQueryData(['traffic'], traffic)
-                  if (!active()) return
-                  cache.setQueryData<number[]>(['traffic-history'], (previous) =>
-                    [...(previous ?? []), traffic.status.downlink].slice(-30),
-                  )
-                }
-              }
+      const subscribe = () => {
+        if (!active()) return
+        snapshotTimer = setTimeout(fail, 30_000)
+        try {
+          const release = api.transport.subscribe(
+            ['status', 'groups', 'subscriptions'],
+            (event) => {
               if (!active()) return
-              pending.delete(event.name)
-              if (pending.size === 0 && liveAt === undefined) {
-                clearTimeout(snapshotTimer)
-                snapshotTimer = undefined
-                liveAt = performance.now()
-                setConnection('live')
+              try {
+                const envelope = envelopeSchema.parse(event.body)
+                if (!envelope.ok) throw new Error(envelope.code)
+                if (event.name === 'status') {
+                  const next = serviceSchema.parse(envelope.data)
+                  if (
+                    next.state !== 'ready' ||
+                    status?.core_started_at_millis !== next.core_started_at_millis
+                  )
+                    clearTraffic()
+                  status = next
+                  if (!active()) return
+                  publish('service', next)
+                  observeService(cache, next)
+                } else if (event.name === 'groups')
+                  publish('nodes', snapshotSchema.parse(envelope.data))
+                else if (event.name === 'subscriptions')
+                  publish('subscriptions', z.array(groupSchema).parse(envelope.data))
+                else {
+                  const traffic = trafficSchema.parse(envelope.data)
+                  if (!traffic.available) clearTraffic()
+                  else if (acceptTraffic(status, traffic)) {
+                    cache.setQueryData(['traffic'], traffic)
+                    if (!active()) return
+                    cache.setQueryData<number[]>(['traffic-history'], (previous) =>
+                      [...(previous ?? []), traffic.status.downlink].slice(-30),
+                    )
+                  }
+                }
+                if (!active()) return
+                pending.delete(event.name)
+                if (pending.size === 0 && liveAt === undefined) {
+                  clearTimeout(snapshotTimer)
+                  snapshotTimer = undefined
+                  liveAt = performance.now()
+                  setConnection('live')
+                }
+              } catch {
+                fail(false)
               }
-            } catch {
-              fail(false)
-            }
-          },
-          onError,
-        )
-        // subscribe 可同步报错、发布帧或触发后台释放；返回时只接管仍有效的会话。
-        if (active()) close = release
-        else release()
-      } catch (error) {
-        onError(error)
+            },
+            onError,
+          )
+          // subscribe 可同步报错、发布帧或触发后台释放；返回时只接管仍有效的会话。
+          if (active()) close = release
+          else release()
+        } catch (error) {
+          onError(error)
+        }
       }
+      const operation = cache.getQueryData<ServiceOperation | null>(serviceOperationKey)
+      if (operation && operation.phase !== 'pending') {
+        // 操作后的 GET 必须先于新流建立；旧连接迟到帧没有服务端序号可供可靠排序。
+        void cache
+          .fetchQuery({ ...moduleQueries(api).service, staleTime: 0 })
+          .catch(() => {})
+          .finally(subscribe)
+      } else subscribe()
     }
     const visibility = () => {
       const visible = isVisible()
@@ -200,7 +222,7 @@ export function ModuleEvents() {
       stop()
       setConnection('paused')
     }
-  }, [api, cache, attempt])
+  }, [api, cache, attempt, operationEpoch])
   return connection !== 'live' ? (
     <div
       role={connection === 'offline' || connection === 'reconnecting' ? 'alert' : 'status'}

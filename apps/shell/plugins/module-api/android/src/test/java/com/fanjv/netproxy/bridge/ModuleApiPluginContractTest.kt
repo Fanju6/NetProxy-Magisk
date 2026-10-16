@@ -14,7 +14,7 @@ class ModuleApiPluginContractTest {
         assertEquals("com.fanjv.netproxy.bridge.ModuleApiPlugin", plugin.name)
         assertNotNull(plugin.getAnnotation(TauriPlugin::class.java))
         val commands = plugin.declaredMethods.filter { it.getAnnotation(Command::class.java) != null }
-        assertEquals(setOf("read", "cancel", "openEvents", "nextEvent", "closeEvents", "visibility", "registerListener", "removeListener"), commands.map { it.name }.toSet())
+        assertEquals(setOf("read", "serviceAction", "cancel", "openEvents", "nextEvent", "closeEvents", "visibility", "registerListener", "removeListener"), commands.map { it.name }.toSet())
         commands.forEach { assertArrayEquals(arrayOf(Invoke::class.java), it.parameterTypes) }
     }
 
@@ -39,5 +39,11 @@ class ModuleApiPluginContractTest {
     @Test fun readArgumentsUseResourceNotArbitraryPathOrMethod() {
         val fields = ReadArgs::class.java.declaredFields.map { it.name }.toSet()
         assertEquals(setOf("requestId", "resource"), fields)
+    }
+
+    @Test fun serviceArgumentsCannotSupplyURLMethodBodyOrCredentials() {
+        assertEquals(setOf("requestId", "action"), ServiceActionArgs::class.java.declaredFields.map { it.name }.toSet())
+        assertEquals("", ServiceActionArgs().requestId)
+        assertEquals("", ServiceActionArgs().action)
     }
 }

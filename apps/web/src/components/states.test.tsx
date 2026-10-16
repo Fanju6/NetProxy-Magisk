@@ -44,6 +44,20 @@ it('describes missing native credentials without claiming pairing or exposing de
   expect(screen.getByRole('alert')).toHaveTextContent(
     'Trusted connection details are not available',
   )
-  expect(screen.getByRole('alert')).toHaveTextContent('This build does not pair automatically.')
+  expect(screen.getByRole('alert')).toHaveTextContent('Trusted pairing did not complete.')
   expect(screen.queryByText(/private-native-fixture/)).not.toBeInTheDocument()
+})
+
+it.each([
+  [401, 'api.unauthorized', 'Connection credentials are invalid'],
+  [403, 'client.operation_denied', 'This operation is not authorized.'],
+  [409, 'api.busy', 'Another operation is in progress.'],
+] as const)('classifies operation rejection %s without backend text', (status, code, title) => {
+  render(
+    <AppProviders api={new ApiClient(unavailableTransport)}>
+      <ErrorState error={new ApiError(code, 'private-fixture', status)} />
+    </AppProviders>,
+  )
+  expect(screen.getByRole('alert')).toHaveTextContent(title)
+  expect(screen.queryByText(/private-fixture/)).not.toBeInTheDocument()
 })

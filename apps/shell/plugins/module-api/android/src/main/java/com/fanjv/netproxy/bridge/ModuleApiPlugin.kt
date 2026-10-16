@@ -26,6 +26,12 @@ class ReadArgs {
 }
 
 @InvokeArg
+class ServiceActionArgs {
+    var requestId: String = ""
+    var action: String = ""
+}
+
+@InvokeArg
 class CancelArgs {
     var requestId: String = ""
 }
@@ -108,6 +114,16 @@ class ModuleApiPlugin(activity: Activity) : Plugin(activity) {
     fun read(invoke: Invoke) = dispatch(invoke) {
         val args = invoke.parseArgs(ReadArgs::class.java)
         val result = bridge.read(args.requestId, args.resource)
+        JSObject().apply {
+            put("status", result.status)
+            put("body", JSONObject(result.body.toString()))
+        }
+    }
+
+    @Command
+    fun serviceAction(invoke: Invoke) = dispatch(invoke) {
+        val args = invoke.parseArgs(ServiceActionArgs::class.java)
+        val result = bridge.serviceAction(args.requestId, args.action)
         JSObject().apply {
             put("status", result.status)
             put("body", JSONObject(result.body.toString()))

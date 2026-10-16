@@ -41,7 +41,7 @@ export function DashboardPage() {
   const mode = useChangeMode()
   const [confirmStop, setConfirmStop] = useState(false)
   if (status.isPending) return <LoadingState />
-  if (status.isError) return <ErrorState error={status.error} retry={() => void status.refetch()} />
+  if (!status.data) return <ErrorState error={status.error} retry={() => void status.refetch()} />
   const service = status.data
   const running = service.state === 'ready'
   const traffic =
@@ -110,8 +110,11 @@ export function DashboardPage() {
           size="lg"
           variant={running ? 'outline' : 'default'}
           disabled={
-            api.transport.readOnly ||
+            !api.supports(running ? 'service.stop' : 'service.start') ||
             action.isPending ||
+            action.isUncertain ||
+            status.isError ||
+            connection !== 'live' ||
             !['ready', 'stopped', 'failed'].includes(service.state)
           }
           onClick={() => (running ? setConfirmStop(true) : action.mutate('start'))}
@@ -120,7 +123,26 @@ export function DashboardPage() {
           {action.isPending ? t('working') : running ? t('stop') : t('start')}
         </Button>
       </section>
-      {action.isError && <ErrorState compact error={action.error} />}
+      {action.isUncertain && (
+        <section
+          role="status"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-4 text-sm"
+        >
+          <div className="space-y-1">
+            <p className="font-medium">{t('serviceUncertain')}</p>
+            <p className="text-muted-foreground">
+              {t(action.persisted ? 'servicePersisted' : 'serviceUncertainDescription')}
+            </p>
+          </div>
+          <Button variant="outline" onClick={() => void action.verify()}>
+            {t('checkStatus')}
+          </Button>
+        </section>
+      )}
+      {action.error != null && <ErrorState compact error={action.error} />}
+      {status.isError && (
+        <ErrorState compact error={status.error} retry={() => void status.refetch()} />
+      )}
       <div className="grid grid-cols-2 gap-x-6 gap-y-6 lg:grid-cols-4">
         {values.map((item) => (
           <section key={item.title} className="min-w-0 space-y-3 border-b pb-5">
@@ -196,7 +218,7 @@ export function DashboardPage() {
                   : value,
               }))}
               onChange={(value) => mode.mutate(value)}
-              disabled={api.transport.readOnly || mode.isPending}
+              disabled={!api.supports('mode.write') || mode.isPending}
             />
           </div>
           {mode.isError && <ErrorState error={mode.error} compact />}
@@ -216,15 +238,26 @@ export function DashboardPage() {
       <Dialog open={confirmStop} onOpenChange={setConfirmStop}>
         <DialogContent showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle>{t('stopTitle')}</DialogTitle>
-            <DialogDescription>{t('stopDescription')}</DialogDescription>
+            <DialogTitle>
+              {t(api.transport.kind === 'mock' ? 'stopTitle' : 'stopRealTitle')}
+            </DialogTitle>
+            <DialogDescription>
+              {t(api.transport.kind === 'mock' ? 'stopDescription' : 'stopRealDescription')}
+            </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmStop(false)}>
               {t('cancel')}
             </Button>
             <Button
-              disabled={api.transport.readOnly}
+              disabled={
+                !api.supports('service.stop') ||
+                action.isPending ||
+                action.isUncertain ||
+                status.isError ||
+                !running ||
+                connection !== 'live'
+              }
               onClick={() => {
                 setConfirmStop(false)
                 action.mutate('stop')

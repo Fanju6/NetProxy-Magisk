@@ -128,7 +128,7 @@ export function AppShell() {
         )}
         {api.transport.kind === 'native' && (
           <div className="demo-notice" role="note">
-            <strong className="font-medium">{t('nativeReadOnly')}</strong>
+            <strong className="font-medium">{t('nativeConnection')}</strong>
             <span className="text-muted-foreground">{t('readOnlyNotice')}</span>
           </div>
         )}

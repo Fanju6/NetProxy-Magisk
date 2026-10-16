@@ -24,6 +24,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromStream
 import kotlinx.serialization.json.put
@@ -73,6 +75,7 @@ internal class ModuleApiBridge(
     private val lock = Any()
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
     private val requests = HashMap<String, Job>()
+    private var serviceWrite: Job? = null
     private val cancellations = LinkedHashMap<String, Long>()
     private var cancellationOverflowUntil = Long.MIN_VALUE
     private var loadedView: WeakReference<Any>? = null
@@ -91,7 +94,7 @@ internal class ModuleApiBridge(
         val admitted = runCatching {
             synchronized(lock) {
                 requireForeground()
-                if (dispatches >= 9) throw BridgeFailure("api.busy")
+                if (dispatches >= 10) throw BridgeFailure("api.busy")
                 dispatches++
                 generation
             }
@@ -129,12 +132,25 @@ internal class ModuleApiBridge(
         }
     }
 
-    suspend fun read(requestId: String, resource: String): ReadResult = coroutineScope {
+    suspend fun read(requestId: String, resource: String): ReadResult {
         val path = when (resource) {
             "info" -> "/info"
             "service" -> "/service"
             else -> throw BridgeFailure("api.read_only", 403)
         }
+        return request(requestId, path, mutation = false)
+    }
+
+    suspend fun serviceAction(requestId: String, action: String): ReadResult {
+        val path = when (action) {
+            "start" -> "/service/start"
+            "stop" -> "/service/stop"
+            else -> throw BridgeFailure("api.invalid_request", 400)
+        }
+        return request(requestId, path, mutation = true)
+    }
+
+    private suspend fun request(requestId: String, path: String, mutation: Boolean): ReadResult = coroutineScope {
         validateId(requestId)
         val job = currentCoroutineContext().job
         synchronized(lock) {
@@ -145,11 +161,20 @@ internal class ModuleApiBridge(
                 throw BridgeFailure("api.cancelled")
             }
             if (requests.containsKey(requestId)) throw BridgeFailure("api.request_exists", 409)
-            if (requests.size >= 8) throw BridgeFailure("api.busy", 429)
+            if (mutation) {
+                if (serviceWrite != null) throw BridgeFailure("api.busy", 429)
+                serviceWrite = job
+            } else if (requests.size - (if (serviceWrite != null) 1 else 0) >= 8) {
+                throw BridgeFailure("api.busy", 429)
+            }
             requests[requestId] = job
         }
         try {
-            val response = transport.request("GET", path, null, emptyMap(), false) { status, input ->
+            // 共享传输要求 POST 正文；固定空对象符合 Go 服务操作契约。
+            val response = transport.request(
+                if (mutation) "POST" else "GET", path,
+                if (mutation) JsonObject(emptyMap()) else null, emptyMap(), mutation,
+            ) { status, input ->
                 ReadResult(status, decode(status, input))
             }
             currentCoroutineContext().ensureActive()
@@ -162,6 +187,7 @@ internal class ModuleApiBridge(
         } finally {
             synchronized(lock) {
                 if (requests[requestId] === job) requests.remove(requestId)
+                if (serviceWrite === job) serviceWrite = null
             }
         }
     }
@@ -340,7 +366,11 @@ internal class ModuleApiBridge(
         if (!ok && !allowBusinessFailure) throw safeFailure(ModuleApiException(header.code, SAFE_FAILURE_MESSAGE))
         val data = if (ok) {
             header.data?.takeUnless { it is JsonNull } ?: throw BridgeFailure("api.invalid_response")
-        } else JsonObject(emptyMap())
+        } else buildJsonObject {
+            val persisted = ((header.data as? JsonObject)?.get("persisted") as? JsonPrimitive)
+                ?.takeUnless { it.isString }?.booleanOrNull
+            if (persisted != null) put("persisted", persisted)
+        }
         return envelope(ok, header.code, data)
     }
 

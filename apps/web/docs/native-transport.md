@@ -1,4 +1,4 @@
-# Android 只读 Transport 接入约定
+# Android 受限 Transport 接入约定
 
 本页只描述 `apps/web` 的桥接实现，不代表 Tauri、APK、TLS、Provider 或真机升级已经验收。原生工程和凭据边界由父任务集成验证。
 
@@ -8,25 +8,26 @@
 - `pnpm build:demo` → `dist/`：显式 Mock，可操作模拟数据。
 - `pnpm build:native` → `dist-native/`：不包含 Mock，仅在官方 `isTauri()` 返回真时创建 Native Transport。在普通浏览器打开仍拒绝连接。
 - `pnpm exec vite --mode native` 可用于 Tauri 开发，不能回退到 Mock。父工程应将 `frontendDist` 指向 `../web/dist-native`，具体相对路径以壳工程位置为准。
-- `ApiTransport.readOnly` 是独立能力，不从平台名称推断。Native 和 Unavailable 为真，Mock 为假。`ApiClient` 在发送前拒绝写入；服务、模式和节点选择控件禁用；配置不读取。节点和订阅只消费 SSE 完整快照。
+- `ApiTransport.capabilities` 按具体操作表达范围，不从平台名称或单一只读标记推断。Native 仅有 `info.read/service.read/service.start/service.stop`，Mock 保留演示能力，Unavailable 没有能力。`ApiClient`、NativeTransport、Rust 和 Kotlin 分别检查；前端标记不能扩大原生授权。模式、节点选择和配置写入仍禁用，配置不读取。节点和订阅只消费 SSE 完整快照。
 - 普通 Web CSP 不变。只有 native mode 的 HTML 增加 `ipc:` 和 `http://ipc.localhost`，不允许前端直连 Go HTTPS 或任意 URL；父工程 Tauri CSP 仍须单独限制。
 
 ## IPC 协议
 
 全部通过官方 `@tauri-apps/api@2.12.4` 的 `invoke` 和 `addPluginListener`，业务页面不直接调用 IPC。
 
-| 命令                              | 参数                                           | 返回                   |
-| --------------------------------- | ---------------------------------------------- | ---------------------- |
-| `plugin:module-api\|read`         | `{ requestId, resource: "info" \| "service" }` | `{ status, body }`     |
-| `plugin:module-api\|cancel`       | `{ requestId }`                                | 无数据                 |
-| `plugin:module-api\|open_events`  | `{ subscriptionId, topics }`                   | 订阅建立后完成         |
-| `plugin:module-api\|next_event`   | `{ subscriptionId }`                           | `{ name, body }`       |
-| `plugin:module-api\|close_events` | `{ subscriptionId }`                           | 无数据                 |
-| `plugin:module-api\|visibility`   | `{}`                                           | `{ visible: boolean }` |
+| 命令                                | 参数                                           | 返回                   |
+| ----------------------------------- | ---------------------------------------------- | ---------------------- |
+| `plugin:module-api\|read`           | `{ requestId, resource: "info" \| "service" }` | `{ status, body }`     |
+| `plugin:module-api\|service_action` | `{ requestId, action: "start" \| "stop" }`     | `{ status, body }`     |
+| `plugin:module-api\|cancel`         | `{ requestId }`                                | 无数据                 |
+| `plugin:module-api\|open_events`    | `{ subscriptionId, topics }`                   | 订阅建立后完成         |
+| `plugin:module-api\|next_event`     | `{ subscriptionId }`                           | `{ name, body }`       |
+| `plugin:module-api\|close_events`   | `{ subscriptionId }`                           | 无数据                 |
+| `plugin:module-api\|visibility`     | `{}`                                           | `{ visible: boolean }` |
 
-`topics` 是 `status/groups/subscriptions` 的非空子集，`traffic` 仅随 status 接收。HTTP 相对路径只允许 GET `/info`、`/service`，不接受 query/body；API 前缀 `/api/v1` 由原生层固定，JS 不传 URL。Rust 拒绝返回 `{ code, status, message }`；前端保留合法错误码和状态，但不展示原始异常消息。HTTP 响应继续由 `ApiClient` 校验 `schema=1`、HTTP 状态与 Zod 数据类型，不把 IPC 成功当业务成功。
+`topics` 是 `status/groups/subscriptions` 的非空子集，`traffic` 仅随 status 接收。HTTP 只允许 GET `/info`、`/service` 和 POST `/service/start`、`/service/stop`；JS 不传 query/body、方法或 URL，Kotlin 对写入使用固定空对象。API 前缀 `/api/v1` 由原生层固定。Rust 拒绝返回 `{ code, status, message }`；前端保留合法错误码和状态，但不展示原始异常消息。HTTP 响应继续由 `ApiClient` 校验 `schema=1`、HTTP 状态与 Zod 数据类型，不把 IPC 成功当业务成功。
 
-原生层必须在传入 JS 前限制正文和帧大小、移除凭据、校验 TLS 身份，并用自己的白名单与 Capability 拒绝写入。前端也限制桥接帧为 4 MiB，但这不能替代原生读取限制。
+原生层必须在传入 JS 前限制正文和帧大小、移除凭据、校验 TLS 身份，并用自己的白名单与 Capability 拒绝未授权写入。前端也限制桥接帧为 4 MiB，但这不能替代原生读取限制。
 
 原生层首次连接遵循 [可信配对 ADR](../../shell/docs/adr-001-trusted-pairing.md)：无凭据的固定请求只触发 Root 私有交付，初始响应不能建立服务身份；新 Provider 资料就绪后才通过精确证书钉扎读取业务。JS 不接收 Secret 或指纹，也不能调用配对 URL。无交付时明确失败，不回退 Mock、Root 或 TOFU。
 

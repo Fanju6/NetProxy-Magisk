@@ -166,7 +166,7 @@ export interface ApiRequest {
 }
 export interface ApiTransport {
   readonly kind: 'unavailable' | 'mock' | 'browser' | 'native'
-  readonly readOnly: boolean
+  readonly capabilities: readonly ApiOperation[]
   observeVisibility?(listener: (visible: boolean) => void): () => void
   request(request: ApiRequest, signal?: AbortSignal): Promise<{ status: number; body: unknown }>
   // 允许同步回调；返回的函数释放本次订阅。若启动抛出异常，Transport 须先回收未交付资源。
@@ -177,12 +177,44 @@ export interface ApiTransport {
   ): () => void
 }
 
+export const apiOperations = [
+  'info.read',
+  'service.read',
+  'service.start',
+  'service.stop',
+  'nodes.read',
+  'selection.write',
+  'mode.read',
+  'mode.write',
+  'subscriptions.read',
+  'config.read',
+  'config.write',
+] as const
+export type ApiOperation = (typeof apiOperations)[number]
+
+const operations: Partial<Record<ApiRequest['method'], Partial<Record<ApiPath, ApiOperation>>>> = {
+  GET: {
+    '/info': 'info.read',
+    '/service': 'service.read',
+    '/nodes/snapshot': 'nodes.read',
+    '/mode': 'mode.read',
+    '/subscriptions': 'subscriptions.read',
+    '/config': 'config.read',
+  },
+  POST: { '/service/start': 'service.start', '/service/stop': 'service.stop' },
+  PUT: { '/selection': 'selection.write', '/mode': 'mode.write', '/config': 'config.write' },
+}
+export function requestOperation(request: ApiRequest): ApiOperation | undefined {
+  return operations[request.method]?.[request.path]
+}
+
 export class ApiError extends Error {
   constructor(
     readonly code: string,
     message: string,
     readonly status: number,
     readonly data: unknown = null,
+    readonly responseReceived = false,
   ) {
     super(message)
     this.name = 'ApiError'

@@ -54,7 +54,7 @@ function bounded<T>(schema: z.ZodType<T>, value: unknown): T {
 
 export class NativeTransport implements ApiTransport {
   readonly kind = 'native' as const
-  readonly readOnly = true
+  readonly capabilities = ['info.read', 'service.read', 'service.start', 'service.stop'] as const
   private releaseEvents: (() => void) | undefined
   private eventGeneration = 0
   private releaseVisibility: (() => void) | undefined
@@ -75,13 +75,11 @@ export class NativeTransport implements ApiTransport {
   }
 
   async request(request: ApiRequest, signal?: AbortSignal) {
-    if (
-      request.method !== 'GET' ||
-      !['/info', '/service'].includes(request.path) ||
-      request.body !== undefined ||
-      request.query !== undefined
-    )
-      throw new ApiError('client.read_only', 'Native API resource is not allowed', 403)
+    const read = request.method === 'GET' && ['/info', '/service'].includes(request.path)
+    const action =
+      request.method === 'POST' && ['/service/start', '/service/stop'].includes(request.path)
+    if ((!read && !action) || request.body !== undefined || request.query !== undefined)
+      throw new ApiError('client.operation_denied', 'Native API resource is not allowed', 403)
     if (signal?.aborted) throw signal.reason
     const requestId = crypto.randomUUID()
     return new Promise<{ status: number; body: unknown }>((resolve, reject) => {
@@ -100,7 +98,12 @@ export class NativeTransport implements ApiTransport {
         })
       signal?.addEventListener('abort', cancel, { once: true })
       window.addEventListener('pagehide', cancel, { once: true })
-      void this.call('read', { requestId, resource: request.path.slice(1) })
+      void this.call(
+        read ? 'read' : 'service_action',
+        read
+          ? { requestId, resource: request.path.slice(1) }
+          : { requestId, action: request.path.slice('/service/'.length) },
+      )
         .then((value) => {
           if (!settled) {
             const response = bounded(responseSchema, value)

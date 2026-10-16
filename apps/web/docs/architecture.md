@@ -71,3 +71,14 @@ shadcn 初始化使用官方 CLI，实际配置位于 `components.json`。UI 文
 实现与证据见 [安全 ADR](../../shell/docs/adr-001-trusted-pairing.md) 及 [验收报告](../../shell/docs/trusted-pairing-report.md)。新增的匿名初始请求只触发固定官方目标的 Root 私有交付，不从初始响应获取或信任证书；业务请求仍须精确钉扎。没有新增 Go 数据结构、JS Secret、业务写入 IPC 或第二套重连。
 
 Kotlin 继续直接编译 V8 安全源码，补齐宿主实例重绑和代际任务释放；JS pagehide 取消自身读取与订阅。原生 CI 独立验证 Debug 包和测试探针，不读取正式签名 Secrets、不改变 V8 发布。真机功能性重建通过与长期零泄漏是不同结论，上游 Activity 引用及多 ROM 验收限制保留在报告中。本轮不开始完整业务迁移。
+
+## M4.1：服务控制与操作能力
+
+- `ApiTransport.capabilities` 取代粗粒度 `readOnly`。当前 Native 只有 `info.read/service.read/service.start/service.stop`；节点和订阅仍来自 SSE，未开放其写入。Mock 保留原有演示操作，普通生产仍拒绝连接。
+- 真实写入只有 `service_action(start|stop)`。React、ApiClient、NativeTransport、Rust 枚举与 Kotlin 固定路径分别检查；Capability 不提供通用请求、Root、Shell 或文件访问。Kotlin 直接复用 V8 的钉扎、Bearer、Provider 与非重放写入。
+- 服务操作的短生命周期元数据保存在现有 QueryClient，不新增全局 Store。同步登记意图防止跨组件重复提交，离页不取消已接受操作；原生后台/销毁取消的是本次等待，不代表 Go 回滚。
+- 不发布 POST 返回状态的乐观快照。操作结束或等待中断后先更换事件代际、GET `/service` 复核，再建立新 SSE；旧回调即时失效。现有 Go 没有事件序号，不能用客户端到达时间给旧流和新 GET 排序。
+- `401/403/409/429` 等明确拒绝与断线、取消、`502/504` 等不确定结果分开。`persisted=true` 始终保留；不回滚数据、不重发写入、不自动 restart/reload。未取得业务响应时，即使临时看到 failed，也不能认定操作已经结束；目标状态可确认完成，其他终态须等到有界观察窗口后再复核。
+- 观察窗口采用 150 秒，覆盖现有 120 秒 Go 操作预算与 135 秒原生调用等待并留出余量。它只限制客户端等待保护，不是服务端回滚或任意内部步骤一定结束的承诺；窗口到期不触发 POST，也不靠定时轮询查询。
+
+完整验证与限制见 [M4.1 验收报告](../../shell/docs/service-control-report.md)。原始目标规范不回写，本轮不开始其他业务迁移。

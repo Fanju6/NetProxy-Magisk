@@ -1,5 +1,6 @@
 const COMMANDS: &[&str] = &[
     "read",
+    "service_action",
     "cancel",
     "open_events",
     "next_event",

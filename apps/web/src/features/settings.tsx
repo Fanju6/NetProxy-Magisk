@@ -83,7 +83,7 @@ export function SettingsPage() {
         <h2 id="general-title" className="section-label">
           {t('general')}
         </h2>
-        {api.transport.readOnly ? (
+        {!api.supports('config.read') ? (
           <p className="py-4 text-sm text-muted-foreground">{t('readOnlyNotice')}</p>
         ) : config.isError ? (
           <ErrorState compact error={config.error} retry={() => void config.refetch()} />
@@ -99,7 +99,7 @@ export function SettingsPage() {
               <Switch
                 id="auto-start"
                 checked={config.data.value}
-                disabled={api.transport.readOnly || save.isPending}
+                disabled={!api.supports('config.write') || save.isPending}
                 onCheckedChange={(value) => save.mutate(value)}
               />
             )}
@@ -129,7 +129,7 @@ export function SettingsPage() {
       <section className="space-y-4 border-t pt-6">
         <h2 className="text-sm font-medium">{t('about')}</h2>
         <p className="text-sm text-muted-foreground">
-          {t(api.transport.kind === 'native' ? 'nativeReadOnly' : 'aboutDescription')}
+          {t(api.transport.kind === 'native' ? 'nativeConnection' : 'aboutDescription')}
         </p>
         <p className="text-xs leading-6 text-muted-foreground">{t('trustNotice')}</p>
         <a

@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { ApiClient } from './client'
-import { ApiError, type ApiTransport } from './contracts'
+import { ApiError, apiOperations, type ApiTransport } from './contracts'
 
 function transport(status: number, body: unknown) {
   return {
     kind: 'mock',
-    readOnly: false,
+    capabilities: apiOperations,
     request: vi.fn().mockResolvedValue({ status, body }),
     subscribe: () => () => {},
   } satisfies ApiTransport

@@ -1,4 +1,5 @@
 import type { ApiEvent, ApiRequest, ApiTransport, EventTopic } from '@/api/contracts'
+import { apiOperations } from '@/api/contracts'
 import { createFixtures, demoTraffic } from './fixtures'
 import { z } from 'zod'
 
@@ -13,7 +14,7 @@ const failure = (status: number, code: string, data: unknown = {}) => ({
 
 export class MockTransport implements ApiTransport {
   readonly kind = 'mock' as const
-  readonly readOnly = false
+  readonly capabilities = apiOperations
   private state = createFixtures()
   private listeners = new Set<{
     topics: readonly EventTopic[]

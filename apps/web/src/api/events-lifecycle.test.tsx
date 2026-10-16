@@ -12,7 +12,13 @@ import { ApiContext, PreferencesContext } from '@/app/context'
 import { translator } from '@/app/i18n'
 import { createFixtures, demoTraffic } from '@/mocks/fixtures'
 import { ApiClient } from './client'
-import { ApiError, type ApiEvent, type ApiTransport, type EventTopic } from './contracts'
+import {
+  ApiError,
+  apiOperations,
+  type ApiEvent,
+  type ApiTransport,
+  type EventTopic,
+} from './contracts'
 import { ModuleEvents } from './events'
 import { DashboardPage } from '@/features/dashboard'
 
@@ -40,7 +46,7 @@ function setup(
   const active = new Set<Session>()
   const transport: ApiTransport = {
     kind: 'mock',
-    readOnly: false,
+    capabilities: apiOperations,
     request: vi.fn(),
     subscribe: (_topics: readonly EventTopic[], consume, fail) => {
       const session: Session = {

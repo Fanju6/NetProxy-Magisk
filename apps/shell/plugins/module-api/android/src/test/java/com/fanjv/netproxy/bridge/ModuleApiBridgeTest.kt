@@ -5,6 +5,7 @@ import com.fanjv.netproxy.core.api.LocalHttpTransport
 import com.fanjv.netproxy.core.api.ModuleApiException
 import com.fanjv.netproxy.core.api.ModuleApiTransport
 import com.fanjv.netproxy.core.api.ModuleEvent
+import com.fanjv.netproxy.core.api.ModuleConnection
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CompletableDeferred
@@ -23,12 +24,19 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
+import okio.Buffer
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ModuleApiBridgeTest {
@@ -58,6 +66,238 @@ class ModuleApiBridgeTest {
         assertEquals("fixture.status", result.body.getValue("code").jsonPrimitive.content)
         assertEquals("Native module request completed", result.body.getValue("message").jsonPrimitive.content)
         assertFalse(result.body.toString().contains(PRIVATE))
+    }
+
+    @Test fun onlyStartAndStopProduceFixedEmptyPOSTsAndReturnActualGoActionAndStatus() = runTest {
+        val transport = FakeTransport()
+        val bridge = bridge(transport)
+        for ((action, state) in listOf("start" to "ready", "stop" to "stopped")) {
+            val data = """{"action":"$action","status":{"state":"$state","pid":0}}"""
+            transport.content = envelope(code = "service.$action", message = PRIVATE, data = data)
+            val result = bridge.serviceAction("action", action)
+            assertEquals(200, result.status)
+            assertEquals(Json.parseToJsonElement(data), result.body["data"])
+            assertEquals("service.$action", result.body.getValue("code").jsonPrimitive.content)
+            assertFalse(result.body.toString().contains(PRIVATE))
+        }
+        for (action in listOf("restart", "reload", "check", "toggle", "status", "Start", " start", "stop ",
+            "/service/start", "service/stop", "start?secret=x", "POST", PRIVATE, "")) {
+            assertFailure("api.invalid_request", runCatching { bridge.serviceAction("forbidden", action) })
+        }
+        for (id in listOf("", "../action", "x".repeat(97))) {
+            assertFailure("api.invalid_request", runCatching { bridge.serviceAction(id, "start") })
+        }
+        assertEquals(listOf("/service/start", "/service/stop"), transport.paths)
+    }
+
+    @Test fun serviceErrorsPreserveOnlyBooleanPersistedAlongsideHTTPStatusAndCode() = runTest {
+        val transport = FakeTransport()
+        val bridge = bridge(transport)
+        for (status in listOf(200, 401, 409, 503)) {
+            for (value in listOf("true", "false", "null", "\"true\"", "\"false\"", "1", "{}", "[]")) {
+                transport.status = status
+                transport.content = envelope(ok = false, code = "service.operation_failed", message = PRIVATE,
+                    data = """{"persisted":$value,"url":"$PRIVATE","diagnostics":{"secret":"$PRIVATE"}}""")
+                val result = bridge.serviceAction("error", "start")
+                assertEquals(status, result.status)
+                assertFalse(result.body.getValue("ok").jsonPrimitive.boolean)
+                assertEquals("service.operation_failed", result.body.getValue("code").jsonPrimitive.content)
+                assertEquals(SAFE_FAILURE_MESSAGE, result.body.getValue("message").jsonPrimitive.content)
+                assertEquals(Json.parseToJsonElement(if (value in listOf("true", "false")) """{"persisted":$value}""" else "{}"), result.body["data"])
+                assertFalse(result.body.toString().contains(PRIVATE))
+            }
+        }
+        for (data in listOf("null", "[]", "true", "\"$PRIVATE\"", "{}")) {
+            transport.content = envelope(ok = false, data = data)
+            assertEquals(JsonObject(emptyMap()), bridge.serviceAction("error", "stop").body["data"])
+        }
+    }
+
+    @Test fun failedServiceWritesAreNeverRetriedOrReplayedOnResume() = runTest {
+        val transport = FakeTransport()
+        val bridge = bridge(transport)
+        for (error in listOf(IOException(PRIVATE), ModuleApiException("api.unauthorized", PRIVATE))) {
+            transport.requestFailure = error
+            val before = transport.paths.size
+            assertTrue(runCatching { bridge.serviceAction("failure", "start") }.isFailure)
+            bridge.pause()
+            bridge.resume()
+            runCurrent()
+            assertEquals(before + 1, transport.paths.size)
+        }
+        transport.requestFailure = null
+        for ((status, content) in listOf(
+            401 to envelope(ok = false, code = "api.unauthorized", message = PRIVATE),
+            503 to envelope(ok = false, code = "service.start_failed", message = PRIVATE),
+            200 to "malformed $PRIVATE",
+            200 to envelope().replace("\"schema\":1", "\"schema\":2"),
+        )) {
+            transport.status = status
+            transport.content = content
+            val before = transport.paths.size
+            runCatching { bridge.serviceAction("failure", "start") }
+            assertEquals(before + 1, transport.paths.size)
+        }
+    }
+
+    @Test fun sharedTransportUses135SecondMutationPolicyAndNeverRetriesServiceWrites() = runTest {
+        for (action in listOf("start", "stop")) {
+            for (failNetwork in listOf(false, true)) {
+                val credentials = ModuleConnection("https://127.0.0.1:9091", "a".repeat(64), "b".repeat(64))
+                val transport = LocalHttpTransport(ConnectionStore({ Json.encodeToString(credentials) }, {}))
+                val pinned = LocalHttpTransport::class.java.getDeclaredMethod("pinned", String::class.java)
+                    .apply { isAccessible = true }.invoke(transport, credentials.certificate_sha256) as OkHttpClient
+                val calls = AtomicInteger()
+                // Probe after the shared policy interceptor without opening sockets or changing production hooks.
+                val probe = pinned.newBuilder().addInterceptor { chain ->
+                    calls.incrementAndGet()
+                    assertEquals(135_000, chain.readTimeoutMillis())
+                    assertEquals(TimeUnit.SECONDS.toNanos(140), chain.call().timeout().timeoutNanos())
+                    val request = chain.request()
+                    assertEquals("POST", request.method)
+                    assertEquals("/api/v1/service/$action", request.url.encodedPath)
+                    assertNull(request.url.query)
+                    val body = Buffer()
+                    requireNotNull(request.body).writeTo(body)
+                    assertEquals("{}", body.readUtf8())
+                    if (failNetwork) throw IOException(PRIVATE)
+                    Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(503).message(PRIVATE)
+                        .body(envelope(ok = false, code = "service.operation_failed", message = PRIVATE,
+                            data = """{"persisted":true,"url":"$PRIVATE"}""").toResponseBody())
+                        .build()
+                }.build()
+                LocalHttpTransport::class.java.getDeclaredField("pinnedClient").apply { isAccessible = true }
+                    .set(transport, credentials.certificate_sha256 to probe)
+                val result = runCatching { bridge(transport).serviceAction("write", action) }
+                if (failNetwork) {
+                    assertFailure("api.connection_failed", result)
+                } else {
+                    assertEquals(503, result.getOrThrow().status)
+                    assertEquals("service.operation_failed", result.getOrThrow().body.getValue("code").jsonPrimitive.content)
+                    assertEquals(Json.parseToJsonElement("""{"persisted":true}"""), result.getOrThrow().body["data"])
+                    assertFalse(result.getOrThrow().body.toString().contains(PRIVATE))
+                }
+                assertEquals(1, calls.get())
+            }
+        }
+    }
+
+    @Test fun serviceWriteHasOneSlotIndependentOfEightReadsAndSSE() = runTest {
+        val transport = FakeTransport().apply { holdReads = true; holdWrites = true }
+        val bridge = bridge(transport)
+        val completions = mutableListOf<Result<Any>>()
+        repeat(8) { bridge.dispatch({ bridge.read("read$it", "info") }, completions::add) }
+        bridge.dispatch({ bridge.serviceAction("write", "start") }, completions::add)
+        bridge.openEvents("events", listOf("status"))
+        bridge.dispatch({ bridge.nextEvent("events") }, completions::add)
+        runCurrent()
+        assertTrue(completions.isEmpty())
+        assertEquals(9, transport.paths.size)
+        repeat(128) {
+            assertFailure("api.busy", runCatching { bridge.serviceAction("overflow$it", if (it % 2 == 0) "stop" else "start") })
+        }
+        assertFailure("api.busy", runCatching { bridge.read("overflow", "service") })
+        assertFailure("api.request_exists", runCatching { bridge.read("write", "info") })
+        assertFailure("api.request_exists", runCatching { bridge.serviceAction("read0", "stop") })
+        transport.events.send(ModuleEvent("status", envelope()))
+        runCurrent()
+        assertEquals(1, completions.size)
+        assertTrue(completions.single().isSuccess)
+        assertEquals(9, transport.paths.size)
+        bridge.cancel("read0")
+        runCurrent()
+        transport.holdReads = false
+        assertEquals(200, bridge.read("fresh", "service").status)
+        assertFailure("api.busy", runCatching { bridge.serviceAction("still-busy", "stop") })
+        bridge.pause()
+        runCurrent()
+        assertEquals(1, transport.cancelledWrites)
+        assertEquals(8, transport.cancelledReads)
+    }
+
+    @Test fun cancellationBeforeServiceAdmissionPreventsHTTPAndOverflowFailsClosed() = runTest {
+        var time = 0L
+        val transport = FakeTransport()
+        val bridge = bridge(transport) { time }
+        bridge.cancel("late")
+        assertFailure("api.cancelled", runCatching { bridge.serviceAction("late", "start") })
+        repeat(129) { bridge.cancel("cancel$it") }
+        assertFailure("api.cancelled", runCatching { bridge.serviceAction("fresh", "stop") })
+        assertTrue(transport.paths.isEmpty())
+        time = 60_001
+        assertEquals(200, bridge.serviceAction("fresh", "stop").status)
+    }
+
+    @Test fun cancelledWriteKeepsAdmissionUntilCleanupAndDoesNotCancelReadsOrEvents() = runTest {
+        val cleanup = CompletableDeferred<Unit>()
+        val transport = FakeTransport().apply { holdWrites = true; writeCleanup = cleanup }
+        val bridge = bridge(transport)
+        val write = async { runCatching { bridge.serviceAction("write", "start") } }
+        bridge.openEvents("events", listOf("status"))
+        runCurrent()
+        bridge.cancel("write")
+        runCurrent()
+        assertFalse(write.isCompleted)
+        assertFailure("api.busy", runCatching { bridge.serviceAction("next", "stop") })
+        assertFailure("api.request_exists", runCatching { bridge.read("write", "info") })
+        assertEquals(200, bridge.read("read", "info").status)
+        transport.events.send(ModuleEvent("status", envelope()))
+        runCurrent()
+        assertEquals("status", bridge.nextEvent("events").name)
+        assertEquals(0, transport.watchStops)
+        cleanup.complete(Unit)
+        runCurrent()
+        assertTrue(write.await().exceptionOrNull() is CancellationException)
+        assertEquals(1, transport.cancelledWrites)
+        transport.holdWrites = false
+        assertEquals(200, bridge.serviceAction("write", "stop").status)
+    }
+
+    @Test fun serviceWritesFollowPauseDestroyAndWebViewCancellationWithoutReplay() = runTest {
+        for (boundary in listOf("pause", "destroy", "webview")) {
+            val transport = FakeTransport().apply { holdWrites = true }
+            val bridge = bridge(transport)
+            bridge.load(Any(), true)
+            val completions = mutableListOf<Result<ReadResult>>()
+            bridge.dispatch({ bridge.serviceAction("running", "stop") }, completions::add)
+            runCurrent()
+            when (boundary) {
+                "pause" -> bridge.pause()
+                "destroy" -> bridge.destroy()
+                else -> bridge.load(Any(), true)
+            }
+            runCurrent()
+            assertEquals(1, completions.size)
+            assertTrue(completions.single().isFailure)
+            assertEquals(1, transport.cancelledWrites)
+            if (boundary != "webview") {
+                assertFailure(if (boundary == "destroy") "api.destroyed" else "api.background",
+                    runCatching { bridge.serviceAction("blocked", "start") })
+            }
+            bridge.resume()
+            runCurrent()
+            assertEquals(listOf("/service/stop"), transport.paths)
+            bridge.destroy()
+        }
+    }
+
+    @Test fun queuedOrCompletedWritesCannotPublishIntoAnotherDocumentGeneration() = runTest {
+        for (completed in listOf(false, true)) {
+            val transport = FakeTransport()
+            val bridge = bridge(transport)
+            val completions = mutableListOf<Result<ReadResult>>()
+            bridge.dispatch({
+                bridge.serviceAction("write", "start").also {
+                    if (completed) { bridge.pause(); bridge.resume() }
+                }
+            }, completions::add)
+            if (!completed) { bridge.pause(); bridge.resume() }
+            runCurrent()
+            assertEquals(1, completions.size)
+            assertTrue(completions.single().isFailure)
+            assertEquals(if (completed) 1 else 0, transport.paths.size)
+            bridge.destroy()
+        }
     }
 
     @Test fun businessErrorsPreserveHTTPStatusAndCodeButDropUntrustedDetails() = runTest {
@@ -248,12 +488,12 @@ class ModuleApiBridgeTest {
     @Test fun queuedInvokesAreBoundedBeforeTheyReachIO() = runTest {
         val bridge = bridge(FakeTransport())
         val completions = mutableListOf<Result<Unit>>()
-        repeat(9) { bridge.dispatch({ awaitCancellation() }, completions::add) }
+        repeat(10) { bridge.dispatch({ awaitCancellation() }, completions::add) }
         bridge.dispatch({ fail("Overflow must not run") }, completions::add)
         assertFailure("api.busy", completions.single())
         bridge.pause()
         runCurrent()
-        assertEquals(10, completions.size)
+        assertEquals(11, completions.size)
         assertTrue(completions.all { it.isFailure })
         bridge.resume()
         bridge.dispatch({ Unit }, completions::add)
@@ -710,6 +950,9 @@ class ModuleApiBridgeTest {
         var content = envelope()
         var status = 200
         var holdReads = false
+        var holdWrites = false
+        var cancelledWrites = 0
+        var writeCleanup: CompletableDeferred<Unit>? = null
         var cancelledReads = 0
         var delivered = 0
         var watchStarts = 0
@@ -720,13 +963,23 @@ class ModuleApiBridgeTest {
 
         override suspend fun <T> request(method: String, path: String, body: JsonObject?, query: Map<String, String>, mutation: Boolean,
             decode: (Int, InputStream) -> T): T {
-            assertEquals("GET", method)
-            assertNull(body)
             assertTrue(query.isEmpty())
-            assertFalse(mutation)
+            if (path in setOf("/service/start", "/service/stop")) {
+                assertEquals("POST", method)
+                assertEquals(JsonObject(emptyMap()), body)
+                assertTrue(mutation)
+            } else {
+                assertEquals("GET", method)
+                assertNull(body)
+                assertFalse(mutation)
+            }
             paths.add(path)
             requestFailure?.let { throw it }
-            if (holdReads) try { awaitCancellation() } finally { cancelledReads++ }
+            if (mutation && holdWrites) try { awaitCancellation() } finally {
+                writeCleanup?.let { withContext(NonCancellable) { it.await() } }
+                cancelledWrites++
+            }
+            if (!mutation && holdReads) try { awaitCancellation() } finally { cancelledReads++ }
             return decode(status, content.byteInputStream())
         }
 

@@ -379,6 +379,18 @@
           "markdownDescription": "Denies the remove_listener command without any pre-configured scope."
         },
         {
+          "description": "Enables the service_action command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-service-action",
+          "markdownDescription": "Enables the service_action command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the service_action command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-service-action",
+          "markdownDescription": "Denies the service_action command without any pre-configured scope."
+        },
+        {
           "description": "Enables the visibility command without any pre-configured scope.",
           "type": "string",
           "const": "allow-visibility",
@@ -391,10 +403,10 @@
           "markdownDescription": "Denies the visibility command without any pre-configured scope."
         },
         {
-          "description": "Read-only module state and bounded events, without shell, files or HTTP access\n#### This default permission set includes:\n\n- `allow-read`\n- `allow-cancel`\n- `allow-open-events`\n- `allow-next-event`\n- `allow-close-events`\n- `allow-visibility`\n- `allow-register-listener`\n- `allow-remove-listener`",
+          "description": "Module state, start/stop and bounded events, without shell, files or arbitrary HTTP access\n#### This default permission set includes:\n\n- `allow-read`\n- `allow-service-action`\n- `allow-cancel`\n- `allow-open-events`\n- `allow-next-event`\n- `allow-close-events`\n- `allow-visibility`\n- `allow-register-listener`\n- `allow-remove-listener`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Read-only module state and bounded events, without shell, files or HTTP access\n#### This default permission set includes:\n\n- `allow-read`\n- `allow-cancel`\n- `allow-open-events`\n- `allow-next-event`\n- `allow-close-events`\n- `allow-visibility`\n- `allow-register-listener`\n- `allow-remove-listener`"
+          "markdownDescription": "Module state, start/stop and bounded events, without shell, files or arbitrary HTTP access\n#### This default permission set includes:\n\n- `allow-read`\n- `allow-service-action`\n- `allow-cancel`\n- `allow-open-events`\n- `allow-next-event`\n- `allow-close-events`\n- `allow-visibility`\n- `allow-register-listener`\n- `allow-remove-listener`"
         }
       ]
     }

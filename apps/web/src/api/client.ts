@@ -1,16 +1,30 @@
 import { z } from 'zod'
-import { ApiError, envelopeSchema, type ApiRequest, type ApiTransport } from './contracts'
+import {
+  ApiError,
+  envelopeSchema,
+  requestOperation,
+  type ApiOperation,
+  type ApiRequest,
+  type ApiTransport,
+} from './contracts'
 
 export class ApiClient {
   constructor(readonly transport: ApiTransport) {}
+
+  supports(operation: ApiOperation) {
+    return this.transport.capabilities.includes(operation)
+  }
 
   async request<S extends z.ZodType>(
     request: ApiRequest,
     schema: S,
     signal?: AbortSignal,
   ): Promise<z.infer<S>> {
-    if (this.transport.readOnly && request.method !== 'GET')
-      throw new ApiError('client.read_only', 'This connection is read-only', 403)
+    if (this.transport.kind === 'unavailable')
+      throw new ApiError('client.transport_unavailable', 'Trusted transport is not configured', 0)
+    const operation = requestOperation(request)
+    if (!operation || !this.supports(operation))
+      throw new ApiError('client.operation_denied', 'This operation is not available', 403)
     if (
       request.body !== undefined &&
       new TextEncoder().encode(JSON.stringify(request.body)).length > 4 * 1024 * 1024
@@ -23,7 +37,7 @@ export class ApiClient {
       throw new ApiError('client.invalid_response', 'Invalid schema=1 response', response.status)
     const { ok, code, message, data } = result.data
     if (!ok || response.status < 200 || response.status >= 300)
-      throw new ApiError(code, message, response.status, data)
+      throw new ApiError(code, message, response.status, data, true)
     const parsed = schema.safeParse(data)
     if (!parsed.success)
       throw new ApiError('client.invalid_response', 'Invalid response data', response.status)
@@ -33,7 +47,7 @@ export class ApiClient {
 
 export const unavailableTransport: ApiTransport = {
   kind: 'unavailable',
-  readOnly: true,
+  capabilities: [],
   request: () =>
     Promise.reject(
       new ApiError('client.transport_unavailable', 'Trusted transport is not configured', 0),

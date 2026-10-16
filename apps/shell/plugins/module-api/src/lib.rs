@@ -40,6 +40,13 @@ pub enum Resource {
     Service,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ServiceAction {
+    Start,
+    Stop,
+}
+
 fn valid_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 96
@@ -139,6 +146,23 @@ async fn read<R: Runtime>(
 }
 
 #[tauri::command]
+async fn service_action<R: Runtime>(
+    app: AppHandle<R>,
+    request_id: String,
+    action: ServiceAction,
+) -> Result<Value, BridgeError> {
+    if !valid_id(&request_id) {
+        return Err(BridgeError::invalid());
+    }
+    dispatch(
+        app,
+        "serviceAction",
+        json!({"requestId": request_id, "action": action}),
+    )
+    .await
+}
+
+#[tauri::command]
 async fn cancel<R: Runtime>(app: AppHandle<R>, request_id: String) -> Result<Value, BridgeError> {
     if !valid_id(&request_id) {
         return Err(BridgeError::invalid());
@@ -199,6 +223,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("module-api")
         .invoke_handler(tauri::generate_handler![
             read,
+            service_action,
             cancel,
             open_events,
             next_event,
@@ -232,6 +257,34 @@ mod tests {
             "https://127.0.0.1",
         ] {
             assert!(serde_json::from_value::<Resource>(json!(forbidden)).is_err());
+        }
+    }
+
+    #[test]
+    fn service_actions_only_accept_start_and_stop() {
+        for action in ["start", "stop"] {
+            let parsed = serde_json::from_value::<ServiceAction>(json!(action)).unwrap();
+            assert_eq!(serde_json::to_value(parsed).unwrap(), json!(action));
+        }
+        for forbidden in [
+            "restart",
+            "reload",
+            "check",
+            "toggle",
+            "status",
+            "Start",
+            " start",
+            "stop ",
+            "/service/start",
+            "start?x=1",
+            "POST",
+            "https://127.0.0.1",
+            "",
+        ] {
+            assert!(serde_json::from_value::<ServiceAction>(json!(forbidden)).is_err());
+        }
+        for forbidden in [json!(null), json!(1), json!({"action": "start"})] {
+            assert!(serde_json::from_value::<ServiceAction>(forbidden).is_err());
         }
     }
 

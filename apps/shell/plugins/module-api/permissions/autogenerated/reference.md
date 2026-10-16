@@ -1,10 +1,11 @@
 ## Default Permission
 
-Read-only module state and bounded events, without shell, files or HTTP access
+Module state, start/stop and bounded events, without shell, files or arbitrary HTTP access
 
 #### This default permission set includes the following:
 
 - `allow-read`
+- `allow-service-action`
 - `allow-cancel`
 - `allow-open-events`
 - `allow-next-event`
@@ -200,6 +201,32 @@ Enables the remove_listener command without any pre-configured scope.
 <td>
 
 Denies the remove_listener command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`module-api:allow-service-action`
+
+</td>
+<td>
+
+Enables the service_action command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`module-api:deny-service-action`
+
+</td>
+<td>
+
+Denies the service_action command without any pre-configured scope.
 
 </td>
 </tr>
