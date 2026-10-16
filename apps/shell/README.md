@@ -100,6 +100,8 @@ React / TanStack Query / Zod
 
 [兼容性调查](docs/v8-compatibility.md)记录应用身份、Provider、私有数据、Tile 与分享迁移门槛；[本轮验收报告](docs/android-poc-report.md)区分 JVM、浏览器和真实设备证据。
 
+第三里程碑的后续结果见 [可信配对与生命周期报告](docs/trusted-pairing-report.md)，包含首次配对 ADR、真实 401、错误签名/证书拒绝、Activity.recreate 和独立原生 CI；第二里程碑报告保留其历史时间点，不代表当前所有验收状态。
+
 上游 Tauri 2.12.4 Android 框架与官方生成模板仍使用独立 Kotlin 插件和旧 AGP DSL，本工程保留官方要求的两项兼容设置 `android.builtInKotlin=false`、`android.newDsl=false`，构建会提示未来 AGP 10 移除。没有隐藏警告或手工修改下载的 Tauri 源码。它们属于上游工程限制，不是已完成现代 Android 构建迁移的证明；升级 AGP 10 前必须先解决。已删除无必要的旧模板 ProGuard 缺失文件开关。
 
 官方依据：[移动插件](https://v2.tauri.app/develop/plugins/develop-mobile/)、[Capability](https://v2.tauri.app/security/capabilities/)、[Android 签名](https://v2.tauri.app/distribute/sign/android/)、[Android 更新签名要求](https://developer.android.com/studio/publish/app-signing)。

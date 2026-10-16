@@ -65,3 +65,9 @@ shadcn 初始化使用官方 CLI，实际配置位于 `components.json`。UI 文
 - **同步回调契约。** subscribe 允许返回前发布事件、报告错误或触发生命周期释放；先注销 generation 再关闭，返回后只接管仍有效的关闭函数。Transport 若抛出启动异常，必须自行回收未交付的资源，调用方无法释放没有取得的句柄。
 
 上述重连只建立事件订阅，不调用 mutation 或补发 POST/PUT/DELETE。安全传输、持久化格式和原始架构规范不变。
+
+## 第三里程碑：可信配对与生命周期
+
+实现与证据见 [安全 ADR](../../shell/docs/adr-001-trusted-pairing.md) 及 [验收报告](../../shell/docs/trusted-pairing-report.md)。新增的匿名初始请求只触发固定官方目标的 Root 私有交付，不从初始响应获取或信任证书；业务请求仍须精确钉扎。没有新增 Go 数据结构、JS Secret、业务写入 IPC 或第二套重连。
+
+Kotlin 继续直接编译 V8 安全源码，补齐宿主实例重绑和代际任务释放；JS pagehide 取消自身读取与订阅。原生 CI 独立验证 Debug 包和测试探针，不读取正式签名 Secrets、不改变 V8 发布。真机功能性重建通过与长期零泄漏是不同结论，上游 Activity 引用及多 ROM 验收限制保留在报告中。本轮不开始完整业务迁移。
