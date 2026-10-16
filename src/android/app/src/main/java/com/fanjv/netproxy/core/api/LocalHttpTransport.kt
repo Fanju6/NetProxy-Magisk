@@ -52,6 +52,7 @@ import kotlin.coroutines.resumeWithException
 internal class LocalHttpTransport internal constructor(
     private val connections: ConnectionStore,
     private val defaultAddress: String = "https://127.0.0.1:9091",
+    private val allowProvisioning: Boolean = true,
 ) : ModuleApiTransport {
     constructor(context: Context) : this(ConnectionStore(context.applicationContext))
 
@@ -77,6 +78,7 @@ internal class LocalHttpTransport internal constructor(
     }
 
     private suspend fun provisionConnection(address: String): ModuleConnection {
+        if (!allowProvisioning) throw ModuleApiException("api.connection_unavailable", "需要通过可信私有交付建立连接")
         val previous = try { connections.read() } catch (error: Exception) {
             if (error is CancellationException) throw error
             null

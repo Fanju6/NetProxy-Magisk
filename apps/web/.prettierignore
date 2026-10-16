@@ -1,5 +1,6 @@
 node_modules
 dist
+dist-native
 pnpm-lock.yaml
 playwright-report
 test-results

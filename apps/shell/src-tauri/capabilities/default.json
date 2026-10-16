@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "default",
+  "description": "Only the bundled main WebView may read module state",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "module-api:default"
+  ]
+}

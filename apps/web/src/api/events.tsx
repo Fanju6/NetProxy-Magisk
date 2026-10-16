@@ -52,6 +52,9 @@ export function ModuleEvents() {
     let disposed = false
     let generation = 0
     let retries = 0
+    let nativeVisible: boolean | undefined = api.transport.observeVisibility ? undefined : true
+    let lastVisible: boolean | undefined
+    const isVisible = () => document.visibilityState !== 'hidden' && nativeVisible === true
     const setConnection = (value: EventConnection) =>
       cache.setQueryData(['events-connection'], value)
     const clearTraffic = () => {
@@ -78,7 +81,8 @@ export function ModuleEvents() {
     const start = () => {
       const currentGeneration = stop()
       if (disposed || generation !== currentGeneration) return
-      if (document.visibilityState === 'hidden') {
+      if (!isVisible()) {
+        lastVisible = false
         setConnection('paused')
         return
       }
@@ -92,7 +96,8 @@ export function ModuleEvents() {
         if (liveAt !== undefined && performance.now() - liveAt >= 30_000) retries = 0
         const stopped = stop()
         if (disposed || generation !== stopped) return
-        if (document.visibilityState === 'hidden') {
+        if (!isVisible()) {
+          lastVisible = false
           setConnection('paused')
           return
         }
@@ -170,7 +175,10 @@ export function ModuleEvents() {
       }
     }
     const visibility = () => {
-      if (document.visibilityState === 'hidden') {
+      const visible = isVisible()
+      if (lastVisible === visible) return
+      lastVisible = visible
+      if (!visible) {
         const stopped = stop()
         if (generation === stopped && !disposed) setConnection('paused')
       } else {
@@ -179,10 +187,16 @@ export function ModuleEvents() {
       }
     }
     document.addEventListener('visibilitychange', visibility)
-    start()
+    const releaseVisibility = api.transport.observeVisibility?.((visible) => {
+      if (disposed) return
+      nativeVisible = visible
+      visibility()
+    })
+    visibility()
     return () => {
       disposed = true
       document.removeEventListener('visibilitychange', visibility)
+      releaseVisibility?.()
       stop()
       setConnection('paused')
     }

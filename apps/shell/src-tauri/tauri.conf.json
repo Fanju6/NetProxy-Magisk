@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "NetProxy",
+  "version": "0.1.0",
+  "identifier": "com.fanjv.netproxy",
+  "build": {
+    "frontendDist": "../../web/dist-native",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npx --yes --package=pnpm@12.11.2 pnpm --dir ../web exec vite --mode native --host 127.0.0.1 --port 1420 --strictPort",
+    "beforeBuildCommand": "npx --yes --package=pnpm@12.11.2 pnpm --dir ../web build:native"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "NetProxy",
+        "width": 800,
+        "height": 600,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'self'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [],
+    "icon": ["icons/icon.png"],
+    "android": {
+      "minSdkVersion": 26,
+      "versionCode": 1091,
+      "debugApplicationIdSuffix": ".v9poc"
+    }
+  }
+}

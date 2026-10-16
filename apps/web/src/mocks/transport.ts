@@ -13,6 +13,7 @@ const failure = (status: number, code: string, data: unknown = {}) => ({
 
 export class MockTransport implements ApiTransport {
   readonly kind = 'mock' as const
+  readonly readOnly = false
   private state = createFixtures()
   private listeners = new Set<{
     topics: readonly EventTopic[]

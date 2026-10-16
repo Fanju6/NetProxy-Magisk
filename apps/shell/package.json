@@ -1,0 +1,19 @@
+{
+  "name": "@netproxy/shell",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.11.2",
+  "scripts": {
+    "tauri": "tauri",
+    "android:init": "tauri android init",
+    "android:build": "tauri android build --target aarch64 --apk --debug",
+    "android:build:upgrade": "tauri android build --target aarch64 --apk --config src-tauri/tauri.upgrade.conf.json"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.3"
+  },
+  "pnpm": {
+    "minimumReleaseAgeExclude": ["@tauri-apps/cli@2.12.3", "@tauri-apps/cli-*@2.12.3"]
+  }
+}

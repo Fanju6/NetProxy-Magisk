@@ -126,6 +126,12 @@ export function AppShell() {
             <span className="text-muted-foreground">{t('demoNotice')}</span>
           </div>
         )}
+        {api.transport.kind === 'native' && (
+          <div className="demo-notice" role="note">
+            <strong className="font-medium">{t('nativeReadOnly')}</strong>
+            <span className="text-muted-foreground">{t('readOnlyNotice')}</span>
+          </div>
+        )}
         {api.transport.kind !== 'unavailable' && <ModuleEvents />}
         <main id="main" className="page-content" tabIndex={-1}>
           <div className="mb-8 space-y-2">

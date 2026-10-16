@@ -9,6 +9,8 @@ export class ApiClient {
     schema: S,
     signal?: AbortSignal,
   ): Promise<z.infer<S>> {
+    if (this.transport.readOnly && request.method !== 'GET')
+      throw new ApiError('client.read_only', 'This connection is read-only', 403)
     if (
       request.body !== undefined &&
       new TextEncoder().encode(JSON.stringify(request.body)).length > 4 * 1024 * 1024
@@ -31,6 +33,7 @@ export class ApiClient {
 
 export const unavailableTransport: ApiTransport = {
   kind: 'unavailable',
+  readOnly: true,
   request: () =>
     Promise.reject(
       new ApiError('client.transport_unavailable', 'Trusted transport is not configured', 0),

@@ -34,11 +34,13 @@ const frame = (name: ApiEvent['name'], data: unknown): ApiEvent => ({
 function setup(
   onSubscribe?: (session: Session, index: number) => void,
   { dashboard = false, strict = false } = {},
+  observeVisibility?: ApiTransport['observeVisibility'],
 ) {
   const sessions: Session[] = []
   const active = new Set<Session>()
   const transport: ApiTransport = {
     kind: 'mock',
+    readOnly: false,
     request: vi.fn(),
     subscribe: (_topics: readonly EventTopic[], consume, fail) => {
       const session: Session = {
@@ -53,6 +55,7 @@ function setup(
       onSubscribe?.(session, sessions.length - 1)
       return session.close
     },
+    ...(observeVisibility ? { observeVisibility } : {}),
   }
   const cache = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity, staleTime: Infinity } },
@@ -427,5 +430,61 @@ it('marks a hidden connection as paused even when the visibility event has not a
   act(() => vi.advanceTimersByTime(120_000))
   expect(sessions).toHaveLength(1)
   expect(sessions[0]!.close).toHaveBeenCalledOnce()
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+  act(() => document.dispatchEvent(new Event('visibilitychange')))
+  expect(sessions).toHaveLength(2)
   view.unmount()
+})
+
+it('waits for native visibility, combines it with document visibility and ignores duplicate initial callbacks', () => {
+  let notify!: (visible: boolean) => void
+  const release = vi.fn()
+  const { sessions, cache, view, complete, emit } = setup(undefined, {}, (listener) => {
+    notify = listener
+    return release
+  })
+  expect(sessions).toHaveLength(0)
+  expect(cache.getQueryData(['events-connection'])).toBe('paused')
+  act(() => {
+    notify(true)
+    notify(true)
+  })
+  expect(sessions).toHaveLength(1)
+  complete()
+  emit('traffic', demoTraffic(createFixtures().service))
+  act(() => notify(false))
+  expect(sessions[0]!.close).toHaveBeenCalledOnce()
+  expect(cache.getQueryData(['traffic-history'])).toEqual([])
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+  act(() => {
+    document.dispatchEvent(new Event('visibilitychange'))
+    notify(true)
+  })
+  expect(sessions).toHaveLength(1)
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+  act(() => document.dispatchEvent(new Event('visibilitychange')))
+  expect(sessions).toHaveLength(2)
+  expect(cache.getQueryData(['events-connection'])).toBe('connecting')
+  emit('traffic', demoTraffic(createFixtures().service))
+  expect(cache.getQueryData(['traffic-history'])).toEqual([])
+  complete()
+  expect(cache.getQueryData(['events-connection'])).toBe('live')
+  view.unmount()
+  expect(release).toHaveBeenCalledOnce()
+  act(() => notify(true))
+  expect(sessions).toHaveLength(2)
+})
+
+it('does not open twice when native visibility initializes synchronously', () => {
+  const release = vi.fn()
+  const { sessions, view } = setup(undefined, { strict: true }, (listener) => {
+    listener(true)
+    return release
+  })
+  expect(sessions).toHaveLength(2)
+  expect(sessions[0]!.close).toHaveBeenCalledOnce()
+  expect(sessions[1]!.close).not.toHaveBeenCalled()
+  view.unmount()
+  expect(release).toHaveBeenCalledTimes(2)
+  expect(sessions[1]!.close).toHaveBeenCalledOnce()
 })

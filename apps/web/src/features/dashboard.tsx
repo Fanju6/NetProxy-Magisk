@@ -109,7 +109,11 @@ export function DashboardPage() {
         <Button
           size="lg"
           variant={running ? 'outline' : 'default'}
-          disabled={action.isPending || !['ready', 'stopped', 'failed'].includes(service.state)}
+          disabled={
+            api.transport.readOnly ||
+            action.isPending ||
+            !['ready', 'stopped', 'failed'].includes(service.state)
+          }
           onClick={() => (running ? setConfirmStop(true) : action.mutate('start'))}
         >
           <Power />
@@ -192,7 +196,7 @@ export function DashboardPage() {
                   : value,
               }))}
               onChange={(value) => mode.mutate(value)}
-              disabled={mode.isPending}
+              disabled={api.transport.readOnly || mode.isPending}
             />
           </div>
           {mode.isError && <ErrorState error={mode.error} compact />}
@@ -220,6 +224,7 @@ export function DashboardPage() {
               {t('cancel')}
             </Button>
             <Button
+              disabled={api.transport.readOnly}
               onClick={() => {
                 setConfirmStop(false)
                 action.mutate('stop')

@@ -1,0 +1,34 @@
+pluginManagement {
+    repositories {
+        mavenCentral()
+        gradlePluginPortal()
+        google()
+    }
+    resolutionStrategy {
+        eachPlugin {
+            switch (requested.id.id) {
+                case "com.android.library":
+                    useModule("com.android.tools.build:gradle:${providers.gradleProperty('netproxy.agpVersion').get()}")
+                    break
+                case "org.jetbrains.kotlin.android":
+                    useModule("org.jetbrains.kotlin:kotlin-gradle-plugin:${providers.gradleProperty('netproxy.kotlinVersion').get()}")
+                    break
+                case "org.jetbrains.kotlin.plugin.serialization":
+                    useModule("org.jetbrains.kotlin:kotlin-serialization:${providers.gradleProperty('netproxy.kotlinVersion').get()}")
+                    break
+            }
+        }
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        mavenCentral()
+        google()
+
+    }
+}
+
+include ':tauri-android'
+project(':tauri-android').projectDir = file(providers.gradleProperty('tauri.androidPath').getOrElse('./.tauri/tauri-api'))

@@ -6,7 +6,16 @@ import refresh from 'eslint-plugin-react-refresh'
 import prettier from 'eslint-config-prettier'
 
 export default tseslint.config(
-  { ignores: ['dist', 'node_modules', 'playwright-report', 'test-results', 'pnpm-lock.yaml'] },
+  {
+    ignores: [
+      'dist',
+      'dist-native',
+      'node_modules',
+      'playwright-report',
+      'test-results',
+      'pnpm-lock.yaml',
+    ],
+  },
   js.configs.recommended,
   tseslint.configs.recommended,
   { files: ['**/*.{js,mjs}'], languageOptions: { globals: globals.node } },

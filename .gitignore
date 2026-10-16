@@ -13,10 +13,24 @@ CLAUDE.local.md
 # V9 独立 WebUI，不进入 V8 模块打包目录
 apps/web/node_modules/
 apps/web/dist/
+apps/web/dist-native/
 apps/web/test-results/
 apps/web/playwright-report/
 apps/web/.env.local
 apps/web/.env.*.local
+
+# V9 Tauri shell build and local signing material
+apps/shell/node_modules/
+apps/shell/**/target/
+apps/shell/**/.gradle/
+apps/shell/**/.kotlin/
+apps/shell/**/build/
+apps/shell/**/.cxx/
+apps/shell/**/local.properties
+apps/shell/**/keystore.properties
+apps/shell/**/*.jks
+apps/shell/**/*.keystore
+apps/shell/src-tauri/gen/schemas/
 
 # NetProxy WebUI 构建产物
 src/module/webroot/netproxy/

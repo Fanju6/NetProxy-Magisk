@@ -14,6 +14,7 @@ V9 目标架构见 [完整架构设计规范](apps/web/docs/NETPROXY_V9_ARCHITEC
 - `src/native/netproxy/`：模块专用 Go 组件，负责节点转换、Provider、订阅、配置、eBPF 运行时、Service API 与唯一允许的后台 Worker。
 - `src/webui/`：原生 TypeScript 终端式 WebUI，构建产物写入 `src/module/webroot/netproxy/`。
 - `apps/web/`：独立的 V9 React WebUI；开发与演示构建使用显式标识的 Mock，普通生产构建在可信 Transport 缺失时拒绝连接。此工程不写入 V8 模块构建目录，不使用 Root Shell，不代表 Tauri 或跨平台接管已经可用。
+- `apps/shell/`：V9 Tauri Android 只读 PoC，复用 `apps/web/dist-native` 与 V8 Kotlin 安全传输源码；构建、权限与验收边界见 [原生通信说明](apps/shell/README.md)，不进入 V8 模块流水线。
 - `src/android/`：Android 管理器，使用 Compose、miuix-nav 和内置 Scripta 源码快照。
 - `docs/`：VitePress 用户文档；`tests/`：Shell 契约与运行时回归测试。
 
@@ -131,6 +132,9 @@ src/module/service.sh
 - 模块包必须包含 `NetProxy.apk`，由独立 Android 任务通过共享 Action 从当前源码构建，并使用 GitHub Secrets 中的固定密钥签名；不得提交签名材料或手工维护该生成物。安装器不检查已安装版本，两处安装选择共用音量加循环、音量减确认；10 秒无操作默认执行 `pm install -r`，操作后 20 秒未确认取消安装；APK 安装失败不卸载应用或清除数据，也不阻塞模块安装。
 
 ## WebUI
+
+- V9 原生桥只允许读取 info、service 与有界 SSE，不能接收任意 URL、方法、文件路径或 Shell。主 Secret 和证书资料只留在 Android 私有存储，JS 只接收业务 Envelope。PoC 禁用未验证 TLS 的首次配对引导，缺少可信私有交付时拒绝连接，不能回退 Root、Mock 或接受任意证书。
+- V9 普通 Web、演示与 Native 分别显式构建，Native 只在 Tauri 环境启用；JS 使用既有事件生命周期，Kotlin 负责取消与背压。后台释放原生工作，恢复重新等待完整快照；新文档的订阅替换遗留订阅，迟到的旧关闭操作不能取消新会话。
 
 - 当前 WebUI 是原生 TypeScript 终端式界面：所有 Root 命令统一经 `src/webui/src/exec.ts` 调用 `netproxyctl` 并渲染输出，其他模块不得自行拼接 Root 命令。
 - 持久节点和订阅在核心停止时也必须可读，数据来自 `netproxyctl`；运行时延迟、流量和选择状态再与 sing-box API 合并。

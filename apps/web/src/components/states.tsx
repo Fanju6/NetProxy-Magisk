@@ -42,9 +42,11 @@ export function ErrorState({
         ? t('persisted')
         : code === 'client.transport_unavailable'
           ? t('unavailable')
-          : code === 'api.unauthorized'
-            ? t('unauthorized')
-            : t('requestFailed')
+          : code === 'api.connection_unavailable'
+            ? t('connectionUnavailable')
+            : code === 'api.unauthorized'
+              ? t('unauthorized')
+              : t('requestFailed')
   return (
     <div
       role="alert"
@@ -58,6 +60,11 @@ export function ErrorState({
       <p className="max-w-md text-sm">{title}</p>
       {code === 'client.transport_unavailable' && (
         <p className="max-w-md text-sm text-muted-foreground">{t('unavailableDescription')}</p>
+      )}
+      {code === 'api.connection_unavailable' && (
+        <p className="max-w-md text-sm text-muted-foreground">
+          {t('connectionUnavailableDescription')}
+        </p>
       )}
       {retry && (
         <Button variant="outline" onClick={retry}>

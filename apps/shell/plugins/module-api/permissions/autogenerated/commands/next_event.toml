@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-next-event"
+description = "Enables the next_event command without any pre-configured scope."
+commands.allow = ["next_event"]
+
+[[permission]]
+identifier = "deny-next-event"
+description = "Denies the next_event command without any pre-configured scope."
+commands.deny = ["next_event"]

@@ -10,18 +10,27 @@ export default defineConfig({
   projects: [
     {
       name: 'desktop',
-      testIgnore: '**/production.spec.ts',
+      testIgnore: ['**/production.spec.ts', '**/native.spec.ts'],
       use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 1000 } },
     },
     {
       name: 'mobile',
-      testIgnore: '**/production.spec.ts',
+      testIgnore: ['**/production.spec.ts', '**/native.spec.ts'],
       use: { ...devices['Pixel 7'], defaultBrowserType: 'chromium' },
     },
     {
       name: 'production',
       testMatch: '**/production.spec.ts',
       use: { ...devices['Desktop Chrome'], baseURL: 'http://127.0.0.1:5183' },
+    },
+    {
+      name: 'native-browser',
+      testMatch: '**/native.spec.ts',
+      use: {
+        ...devices['Pixel 7'],
+        defaultBrowserType: 'chromium',
+        baseURL: 'http://127.0.0.1:5184',
+      },
     },
   ],
   webServer: [
@@ -33,6 +42,12 @@ export default defineConfig({
     {
       command: 'pnpm build && pnpm exec vite preview --host 127.0.0.1 --port 5183 --strictPort',
       url: 'http://127.0.0.1:5183',
+      reuseExistingServer: false,
+    },
+    {
+      command:
+        'pnpm build:native && pnpm exec vite preview --mode native --host 127.0.0.1 --port 5184 --strictPort',
+      url: 'http://127.0.0.1:5184',
       reuseExistingServer: false,
     },
   ],

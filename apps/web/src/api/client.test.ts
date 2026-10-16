@@ -6,6 +6,7 @@ import { ApiError, type ApiTransport } from './contracts'
 function transport(status: number, body: unknown) {
   return {
     kind: 'mock',
+    readOnly: false,
     request: vi.fn().mockResolvedValue({ status, body }),
     subscribe: () => () => {},
   } satisfies ApiTransport

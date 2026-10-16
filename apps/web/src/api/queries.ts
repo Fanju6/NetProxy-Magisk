@@ -23,16 +23,19 @@ export const moduleQueries = (api: ApiClient) => ({
   }),
   nodes: queryOptions({
     queryKey: ['nodes'],
+    enabled: !api.transport.readOnly,
     queryFn: ({ signal }) =>
       api.request({ method: 'GET', path: '/nodes/snapshot' }, snapshotSchema, signal),
   }),
   subscriptions: queryOptions({
     queryKey: ['subscriptions'],
+    enabled: !api.transport.readOnly,
     queryFn: ({ signal }) =>
       api.request({ method: 'GET', path: '/subscriptions' }, z.array(groupSchema), signal),
   }),
   autoStart: queryOptions({
     queryKey: ['config', 'module/auto_start'],
+    enabled: !api.transport.readOnly,
     queryFn: ({ signal }) =>
       api.request(
         { method: 'GET', path: '/config', query: { target: 'module/auto_start' } },

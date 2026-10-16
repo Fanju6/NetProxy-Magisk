@@ -166,6 +166,8 @@ export interface ApiRequest {
 }
 export interface ApiTransport {
   readonly kind: 'unavailable' | 'mock' | 'browser' | 'native'
+  readonly readOnly: boolean
+  observeVisibility?(listener: (visible: boolean) => void): () => void
   request(request: ApiRequest, signal?: AbortSignal): Promise<{ status: number; body: unknown }>
   // 允许同步回调；返回的函数释放本次订阅。若启动抛出异常，Transport 须先回收未交付资源。
   subscribe(

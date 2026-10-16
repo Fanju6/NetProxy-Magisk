@@ -6,7 +6,7 @@
 
 `View -> TanStack Query / feature mutation -> ApiClient -> ApiTransport`。
 
-Transport 只提供类型化路径的 request 和可释放的事件订阅；它传递状态码及 Envelope，不接管业务。当前实际实现只有 Mock 和 unavailable。Browser/Native 是后续可实现的边界，不是空壳实现或已支持平台。
+Transport 只提供类型化路径的 request 和可释放的事件订阅；它传递状态码及 Envelope，不接管业务。第一批实现 Mock 与 unavailable；第二里程碑新增受限的 Android Native 只读 Transport，见 [原生壳说明](../../shell/README.md)。Browser 仍是未实现的边界，Native PoC 不代表全部业务迁移。
 
 Query 管理权威远端快照；组件维护搜索、展开、弹层和视图模式。主题/语言由轻量 Context 管理。没有 Zustand、全局业务 Store、插件注册器、二次 Repository 或提前拆出的共享 packages。
 

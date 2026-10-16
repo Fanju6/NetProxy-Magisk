@@ -1,0 +1,24 @@
+[package]
+name = "netproxy-shell"
+version = "0.1.0"
+description = "NetProxy Android read-only client"
+authors = ["NetProxy"]
+license = "GPL-3.0-only"
+repository = "https://github.com/Fanju6/NetProxy-Magisk"
+edition = "2024"
+rust-version = "1.90"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "=2.7.3", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+tauri = { version = "=2.12.4", features = [] }
+tauri-plugin-module-api = { path = "../plugins/module-api" }

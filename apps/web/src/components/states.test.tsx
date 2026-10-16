@@ -34,3 +34,16 @@ it('distinguishes loading, empty and connection failure', () => {
   expect(screen.getByText('Nothing here yet')).toBeVisible()
   expect(screen.getByRole('alert')).toHaveTextContent('A trusted connection is not configured')
 })
+
+it('describes missing native credentials without claiming pairing or exposing details', () => {
+  render(
+    <AppProviders api={new ApiClient(unavailableTransport)}>
+      <ErrorState error={new ApiError('api.connection_unavailable', 'private-native-fixture', 0)} />
+    </AppProviders>,
+  )
+  expect(screen.getByRole('alert')).toHaveTextContent(
+    'Trusted connection details are not available',
+  )
+  expect(screen.getByRole('alert')).toHaveTextContent('This build does not pair automatically.')
+  expect(screen.queryByText(/private-native-fixture/)).not.toBeInTheDocument()
+})
