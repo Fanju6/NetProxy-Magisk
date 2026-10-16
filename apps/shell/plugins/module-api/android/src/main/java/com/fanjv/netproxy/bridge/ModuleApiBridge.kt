@@ -19,9 +19,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.builtins.nullable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromStream
 import kotlinx.serialization.json.put
@@ -69,7 +71,7 @@ internal class ModuleApiBridge(
     private val workDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val lock = Any()
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
     private val requests = HashMap<String, Job>()
     private val cancellations = LinkedHashMap<String, Long>()
     private var cancellationOverflowUntil = Long.MIN_VALUE
@@ -324,8 +326,8 @@ internal class ModuleApiBridge(
     private fun decode(status: Int, input: InputStream, allowBusinessFailure: Boolean = true): JsonObject {
         val header = try {
             BodyLimitInputStream(input).use {
-                // Reuse ModuleApiCodec's strict schema/boolean/string serializers in one stream decode.
-                json.decodeFromStream(ModuleEnvelope.serializer(JsonElement.serializer()), it)
+                // 复用共享 Envelope 的严格字段校验；Go 错误响应可省略 data。
+                json.decodeFromStream(ModuleEnvelope.serializer(JsonElement.serializer().nullable), it)
             }
         } catch (error: Exception) {
             if (error is BridgeFailure) throw error
@@ -336,7 +338,10 @@ internal class ModuleApiBridge(
         if (safeCode(header.code) != header.code) throw BridgeFailure("api.invalid_response")
         val ok = status in 200..299 && header.ok
         if (!ok && !allowBusinessFailure) throw safeFailure(ModuleApiException(header.code, SAFE_FAILURE_MESSAGE))
-        return envelope(ok, header.code, if (ok) header.data else JsonObject(emptyMap()))
+        val data = if (ok) {
+            header.data?.takeUnless { it is JsonNull } ?: throw BridgeFailure("api.invalid_response")
+        } else JsonObject(emptyMap())
+        return envelope(ok, header.code, data)
     }
 
     private fun envelope(ok: Boolean, code: String, data: kotlinx.serialization.json.JsonElement) = buildJsonObject {

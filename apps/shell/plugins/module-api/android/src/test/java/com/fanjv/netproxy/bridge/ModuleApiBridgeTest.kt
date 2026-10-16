@@ -76,6 +76,52 @@ class ModuleApiBridgeTest {
         }
     }
 
+    @Test fun unauthorizedWithoutDataPreservesTheExactGoHTTP401Envelope() = runTest {
+        val transport = FakeTransport().apply {
+            status = 401
+            content = """{"schema":1,"ok":false,"code":"api.unauthorized","message":"需要有效的管理接口凭据"}"""
+        }
+        val result = bridge(transport).read("unauthorized", "info")
+        assertEquals(401, result.status)
+        assertFalse(result.body.getValue("ok").jsonPrimitive.boolean)
+        assertEquals("api.unauthorized", result.body.getValue("code").jsonPrimitive.content)
+        assertEquals(SAFE_FAILURE_MESSAGE, result.body.getValue("message").jsonPrimitive.content)
+        assertEquals(JsonObject(emptyMap()), result.body["data"])
+    }
+
+    @Test fun errorEnvelopesAllowAbsentOrNullDataAndPreserveStatusAndCode() = runTest {
+        val transport = FakeTransport()
+        val bridge = bridge(transport)
+        for ((status, code) in listOf(403 to "api.forbidden", 409 to "config.conflict", 503 to "api.unavailable")) {
+            for (data in listOf("", ""","data":null""")) {
+                transport.status = status
+                transport.content = """{"schema":1,"ok":false,"code":"$code","message":"$PRIVATE"$data}"""
+                val result = bridge.read("error", "service")
+                assertEquals(status, result.status)
+                assertFalse(result.body.getValue("ok").jsonPrimitive.boolean)
+                assertEquals(code, result.body.getValue("code").jsonPrimitive.content)
+                assertEquals(SAFE_FAILURE_MESSAGE, result.body.getValue("message").jsonPrimitive.content)
+                assertEquals(JsonObject(emptyMap()), result.body["data"])
+                assertFalse(result.body.toString().contains(PRIVATE))
+            }
+        }
+    }
+
+    @Test fun successfulReadsAndEventsStillRejectAbsentOrNullData() = runTest {
+        for (data in listOf("", ""","data":null""")) {
+            val transport = FakeTransport().apply {
+                content = """{"schema":1,"ok":true,"code":"fixture.status","message":"safe"$data}"""
+            }
+            val bridge = bridge(transport)
+            assertFailure("api.invalid_response", runCatching { bridge.read("missing", "info") })
+            bridge.openEvents("missing", listOf("status"))
+            transport.events.send(ModuleEvent("status", transport.content))
+            runCurrent()
+            assertFailure("api.invalid_response", runCatching { bridge.nextEvent("missing") })
+            bridge.destroy()
+        }
+    }
+
     @Test fun codecRejectsUnsupportedSchemaAndMalformedHeaders() = runTest {
         val transport = FakeTransport()
         val bridge = bridge(transport)
