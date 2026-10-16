@@ -7,8 +7,10 @@ import com.fanjv.netproxy.core.api.ModuleApiTransport
 import com.fanjv.netproxy.core.api.ModuleEvent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.channels.Channel
@@ -16,6 +18,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
@@ -109,7 +112,7 @@ class ModuleApiBridgeTest {
         }
     }
 
-    @Test fun missingCredentialsFailWithoutAnyProvisioningAttempt() = runTest {
+    @Test fun explicitTransportProvisioningOptOutRemainsFailClosed() = runTest {
         val transport = LocalHttpTransport(ConnectionStore({ null }, { fail("Must not persist credentials") }), allowProvisioning = false)
         val bridge = bridge(transport)
         assertFailure("api.connection_unavailable", runCatching { bridge.read("one", "info") })
@@ -151,6 +154,213 @@ class ModuleApiBridgeTest {
         runCurrent()
         reads.forEach { assertTrue(it.await().isFailure) }
         assertEquals(8, transport.cancelledReads)
+    }
+
+    @Test fun queuedInvokesCannotEnterTheNextForegroundOrWebViewSession() = runTest {
+        for (replaceView in listOf(false, true)) {
+            val transport = FakeTransport()
+            val bridge = bridge(transport)
+            val view = Any()
+            bridge.load(view, true)
+            val completions = mutableListOf<Result<ReadResult>>()
+            bridge.dispatch({ bridge.read("queued", "info") }, completions::add)
+            if (replaceView) bridge.load(Any(), true) else {
+                bridge.pause()
+                bridge.resume()
+            }
+            runCurrent()
+            assertEquals(1, completions.size)
+            assertTrue(completions.single().isFailure)
+            assertTrue(transport.paths.isEmpty())
+            assertTrue(bridge.visible)
+            bridge.destroy()
+        }
+    }
+
+    @Test fun dispatchCancellationSettlesOnceAndDeadCallbacksAreNotRetried() = runTest {
+        val transport = FakeTransport().apply { holdReads = true }
+        val bridge = bridge(transport)
+        val completions = mutableListOf<Result<ReadResult>>()
+        bridge.dispatch({ bridge.read("running", "info") }) {
+            completions.add(it)
+            throw IllegalStateException("Dead callback")
+        }
+        runCurrent()
+        bridge.destroy()
+        runCurrent()
+        assertEquals(1, completions.size)
+        assertTrue(completions.single().isFailure)
+        assertEquals(1, transport.cancelledReads)
+        bridge.dispatch({ error("Destroyed bridge must not dispatch") }) {
+            completions.add(Result.failure(it.exceptionOrNull()!!))
+            throw IllegalStateException("Dead callback")
+        }
+        assertEquals(2, completions.size)
+        assertFailure("api.destroyed", completions.last())
+    }
+
+    @Test fun queuedInvokesAreBoundedBeforeTheyReachIO() = runTest {
+        val bridge = bridge(FakeTransport())
+        val completions = mutableListOf<Result<Unit>>()
+        repeat(9) { bridge.dispatch({ awaitCancellation() }, completions::add) }
+        bridge.dispatch({ fail("Overflow must not run") }, completions::add)
+        assertFailure("api.busy", completions.single())
+        bridge.pause()
+        runCurrent()
+        assertEquals(10, completions.size)
+        assertTrue(completions.all { it.isFailure })
+        bridge.resume()
+        bridge.dispatch({ Unit }, completions::add)
+        runCurrent()
+        assertTrue(completions.last().isSuccess)
+    }
+
+    @Test fun completedReadCannotPublishAfterReentrantPauseAndResume() = runTest {
+        val bridge = bridge(FakeTransport())
+        val completions = mutableListOf<Result<ReadResult>>()
+        bridge.dispatch({
+            val result = bridge.read("one", "info")
+            bridge.pause()
+            bridge.resume()
+            result
+        }, completions::add)
+        runCurrent()
+        assertEquals(1, completions.size)
+        assertTrue(completions.single().isFailure)
+    }
+
+    @Test fun recreatedActivityGetsFreshWorkAndLateOldCallbacksCannotStopIt() = runTest {
+        val transport = FakeTransport().apply { holdReads = true }
+        val oldOwner = Any()
+        val newOwner = Any()
+        val unrelated = Any()
+        val lifecycle = ModuleApiLifecycle(oldOwner) { bridge(transport) }
+        val oldBridge = lifecycle.bridge
+        val read = async { runCatching { oldBridge.read("old", "info") } }
+        oldBridge.openEvents("old", listOf("status"))
+        val pull = async { runCatching { oldBridge.nextEvent("old") } }
+        runCurrent()
+        assertFalse(lifecycle.pause(unrelated))
+        assertFalse(lifecycle.destroy(unrelated))
+        assertFalse(lifecycle.resume(unrelated, replaceOwner = false))
+        assertTrue(lifecycle.destroy(oldOwner))
+        assertNull(lifecycle.owner)
+        assertTrue(lifecycle.resume(newOwner, replaceOwner = true))
+        val replacement = lifecycle.bridge
+        assertNotSame(oldBridge, replacement)
+        assertFalse(lifecycle.destroy(oldOwner))
+        assertFalse(lifecycle.pause(oldOwner))
+        assertFalse(lifecycle.resume(oldOwner, replaceOwner = false))
+        runCurrent()
+        assertTrue(read.await().isFailure)
+        assertFailure("api.subscription_closed", pull.await())
+        assertFalse(oldBridge.visible)
+        assertTrue(replacement.visible)
+        assertEquals(1, transport.watchStarts)
+        assertEquals(1, transport.watchStops)
+        transport.holdReads = false
+        assertEquals(200, replacement.read("new", "info").status)
+        assertTrue(lifecycle.destroy(newOwner))
+        assertFalse(lifecycle.destroy(newOwner))
+    }
+
+    @Test fun replacementResumeBeforeOldDestroyStillRetiresTheOldScope() = runTest {
+        val transport = FakeTransport()
+        val oldOwner = Any()
+        val newOwner = Any()
+        val lifecycle = ModuleApiLifecycle(oldOwner) { bridge(transport) }
+        val previous = lifecycle.bridge
+        previous.openEvents("old", listOf("status"))
+        runCurrent()
+        assertTrue(lifecycle.resume(newOwner, replaceOwner = true))
+        assertFalse(lifecycle.destroy(oldOwner))
+        runCurrent()
+        assertFalse(previous.visible)
+        assertTrue(lifecycle.bridge.visible)
+        assertEquals(1, transport.watchStarts)
+        assertEquals(1, transport.watchStops)
+        assertFailure("api.destroyed", runCatching { previous.read("old", "info") })
+    }
+
+    @Test fun newOwnerCanAttachBeforeResumeWithoutStartingAnyWork() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val transport = FakeTransport()
+        val oldOwner = Any()
+        val newOwner = Any()
+        val lifecycle = ModuleApiLifecycle(oldOwner) {
+            ModuleApiBridge(transport, CoroutineScope(SupervisorJob() + dispatcher), workDispatcher = dispatcher)
+                .also(bridges::add)
+        }
+        lifecycle.destroy(oldOwner)
+        assertTrue(lifecycle.attach(newOwner, replaceOwner = true))
+        lifecycle.bridge.load(Any(), false)
+        val visible = mutableListOf<Boolean>()
+        lifecycle.registerVisibility(1, visible::add)
+        assertFalse(lifecycle.bridge.visible)
+        lifecycle.resume(newOwner, replaceOwner = false)
+        lifecycle.publishVisibility()
+        assertEquals(listOf(true), visible)
+        assertTrue(transport.paths.isEmpty())
+        assertEquals(0, transport.watchStarts)
+    }
+
+    @Test fun newDocumentCanRegisterBeforeRetainedPluginReceivesResumeOrLoad() = runTest {
+        val oldOwner = Any()
+        val newOwner = Any()
+        val lifecycle = ModuleApiLifecycle(oldOwner) { bridge(FakeTransport()) }
+        val old = mutableListOf<Boolean>()
+        val current = mutableListOf<Boolean>()
+        lifecycle.registerVisibility(1, old::add)
+        lifecycle.destroy(oldOwner)
+        lifecycle.registerVisibility(2, current::add)
+        lifecycle.resume(newOwner, replaceOwner = true)
+        lifecycle.removeVisibility(1)
+        lifecycle.publishVisibility()
+        assertTrue(old.isEmpty())
+        assertEquals(listOf(true), current)
+    }
+
+    @Test fun visibilitySlotReplacesOldDocumentsAndIgnoresTheirLateRemoval() = runTest {
+        val owner = Any()
+        val lifecycle = ModuleApiLifecycle(owner) { bridge(FakeTransport()) }
+        val old = mutableListOf<Boolean>()
+        val current = mutableListOf<Boolean>()
+        lifecycle.registerVisibility(1, old::add)
+        lifecycle.registerVisibility(2, current::add)
+        lifecycle.removeVisibility(1)
+        lifecycle.publishVisibility()
+        lifecycle.pause(owner)
+        lifecycle.publishVisibility()
+        assertTrue(old.isEmpty())
+        assertEquals(listOf(true, false), current)
+        lifecycle.destroy(owner)
+        lifecycle.publishVisibility()
+        lifecycle.resume(Any(), replaceOwner = true)
+        lifecycle.publishVisibility()
+        assertEquals(2, current.size)
+        lifecycle.registerVisibility(3) { throw IllegalStateException("Dead document") }
+        lifecycle.publishVisibility()
+        lifecycle.removeVisibility(3)
+        lifecycle.publishVisibility()
+    }
+
+    @Test fun eventReplacementBoundsProducersStillFinishingCancellation() = runTest {
+        val cleanup = CompletableDeferred<Unit>()
+        val transport = FakeTransport().apply { watchCleanup = cleanup }
+        val bridge = bridge(transport)
+        bridge.openEvents("first", listOf("status"))
+        runCurrent()
+        bridge.openEvents("second", listOf("groups"))
+        runCurrent()
+        repeat(20) {
+            assertFailure("api.busy", runCatching { bridge.openEvents("overflow$it", listOf("status")) })
+        }
+        assertEquals(2, transport.watchStarts)
+        cleanup.complete(Unit)
+        runCurrent()
+        bridge.openEvents("third", listOf("status"))
+        runCurrent()
+        assertEquals(3, transport.watchStarts)
     }
 
     @Test fun cancelBeforeReadPreventsAnyHTTPWork() = runTest {
@@ -278,7 +488,36 @@ class ModuleApiBridgeTest {
         assertTrue(bridge.visible)
         assertEquals(1, transport.watchStarts)
         assertEquals(1, transport.watchStops)
+        bridge.pause()
         bridge.load(Any(), false)
+        assertFalse(bridge.visible)
+    }
+
+    @Test fun loadCannotOverrideExplicitResumeOrPauseWithAStaleLifecycleSnapshot() = runTest {
+        val transport = FakeTransport()
+        val bridge = bridge(transport)
+        bridge.load(Any(), false)
+        assertTrue(bridge.visible)
+        assertEquals(200, bridge.read("resumed-before-load", "info").status)
+        bridge.pause()
+        bridge.load(Any(), true)
+        assertFalse(bridge.visible)
+        assertFailure("api.background", runCatching { bridge.read("paused-before-load", "info") })
+        bridge.resume()
+        bridge.load(Any(), false)
+        assertTrue(bridge.visible)
+    }
+
+    @Test fun loadUsesInitialVisibilityOnlyBeforeAnyActivityCallback() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val bridge = ModuleApiBridge(FakeTransport(), CoroutineScope(SupervisorJob() + dispatcher), workDispatcher = dispatcher)
+        bridges.add(bridge)
+        bridge.load(Any(), false)
+        assertFalse(bridge.visible)
+        bridge.load(Any(), true)
+        assertTrue(bridge.visible)
+        bridge.pause()
+        bridge.load(Any(), true)
         assertFalse(bridge.visible)
     }
 
@@ -407,6 +646,7 @@ class ModuleApiBridgeTest {
 
     private fun TestScope.bridge(transport: ModuleApiTransport, clock: () -> Long = { System.nanoTime() / 1_000_000 }): ModuleApiBridge = ModuleApiBridge(
         transport, CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)), clock,
+        StandardTestDispatcher(testScheduler),
     ).also { bridges.add(it); it.resume() }
 
     private fun assertFailure(code: String, result: Result<*>) {
@@ -430,6 +670,7 @@ class ModuleApiBridgeTest {
         var watchStops = 0
         var requestFailure: Exception? = null
         var watchFailure: Exception? = null
+        var watchCleanup: CompletableDeferred<Unit>? = null
 
         override suspend fun <T> request(method: String, path: String, body: JsonObject?, query: Map<String, String>, mutation: Boolean,
             decode: (Int, InputStream) -> T): T {
@@ -451,7 +692,10 @@ class ModuleApiBridgeTest {
                     consume(event)
                     delivered++
                 }
-            } finally { watchStops++ }
+            } finally {
+                watchCleanup?.let { withContext(NonCancellable) { it.await() } }
+                watchStops++
+            }
         }
 
         override suspend fun reconnect(address: String): Unit = error("No native reconnection")

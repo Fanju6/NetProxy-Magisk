@@ -9,19 +9,19 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ModuleApiPluginContractTest {
-    @Test fun pluginHasTheOfficialNameAndSixCommands() {
+    @Test fun pluginHasTheOfficialNameAndRestrictedCommands() {
         val plugin = ModuleApiPlugin::class.java
         assertEquals("com.fanjv.netproxy.bridge.ModuleApiPlugin", plugin.name)
         assertNotNull(plugin.getAnnotation(TauriPlugin::class.java))
         val commands = plugin.declaredMethods.filter { it.getAnnotation(Command::class.java) != null }
-        assertEquals(setOf("read", "cancel", "openEvents", "nextEvent", "closeEvents", "visibility"), commands.map { it.name }.toSet())
+        assertEquals(setOf("read", "cancel", "openEvents", "nextEvent", "closeEvents", "visibility", "registerListener", "removeListener"), commands.map { it.name }.toSet())
         commands.forEach { assertArrayEquals(arrayOf(Invoke::class.java), it.parameterTypes) }
     }
 
-    @Test fun listenersRemainOfficialInheritedCommands() {
+    @Test fun listenersKeepTheOfficialSignaturesAndCommandNames() {
         for (name in listOf("registerListener", "removeListener")) {
             val method = ModuleApiPlugin::class.java.getMethod(name, Invoke::class.java)
-            assertEquals("app.tauri.plugin.Plugin", method.declaringClass.name)
+            assertEquals(ModuleApiPlugin::class.java, method.declaringClass)
             assertNotNull(method.getAnnotation(Command::class.java))
         }
     }

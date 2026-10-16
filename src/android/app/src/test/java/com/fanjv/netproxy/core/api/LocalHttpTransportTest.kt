@@ -183,7 +183,7 @@ class LocalHttpTransportTest {
             unavailable.enqueue(MockResponse(code = 503,
                 body = """{"schema":1,"ok":false,"code":"api.busy","message":"busy","data":{}}"""))
             val error = runCatching { transport.reconnect("https://127.0.0.1:${unavailable.port}") }.exceptionOrNull() as ModuleApiException
-            assertEquals("api.busy", error.resultCode)
+            assertEquals("api.connection_unavailable", error.resultCode)
             assertSame(old, store.read())
         }
         server.dispatcher = object : Dispatcher() {
@@ -236,7 +236,7 @@ class LocalHttpTransportTest {
         assertEquals("still connected", read())
     }
 
-    @Test fun failedReconnectDoesNotRestoreOldCredentialsOverConcurrentDelivery() = runBlocking {
+    @Test fun deliverySucceedsIndependentlyOfUntrustedResponseStatus() = runBlocking {
         val old = requireNotNull(store.read())
         val replacement = credentials.copy(secret = "c".repeat(64))
         server.dispatcher = object : Dispatcher() {
@@ -246,9 +246,82 @@ class LocalHttpTransportTest {
                     body = """{"schema":1,"ok":false,"code":"api.busy","message":"busy","data":{}}""")
             }
         }
-        assertTrue(runCatching { transport.reconnect(credentials.address) }.isFailure)
+        transport.reconnect(credentials.address)
         assertEquals(replacement, store.read())
         assertFalse(store.invalidate(old))
+    }
+
+    @Test fun forgedBootstrapCredentialsNeverBecomeTrusted() = runBlocking {
+        val empty = ConnectionStore({ null }, {})
+        val connecting = LocalHttpTransport(empty, credentials.address)
+        server.enqueue(MockResponse(body = Json.encodeToString(credentials)))
+        val error = runCatching { connecting.connect() }.exceptionOrNull() as ModuleApiException
+        assertEquals("api.connection_unavailable", error.resultCode)
+        assertNull(empty.read())
+        val request = recorded()
+        assertEquals("POST", request.method)
+        assertEquals("/api/v1/auth/provision", request.target)
+        assertEquals("{}", request.body?.utf8())
+        assertNull(request.headers["Authorization"])
+        assertNull(request.headers["Cookie"])
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test fun freshProviderDeliveryCancelsSlowBootstrapBeforeAuthenticatedRead() = runBlocking {
+        val empty = ConnectionStore({ null }, {})
+        val connecting = LocalHttpTransport(empty, credentials.address)
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                if (request.target == "/api/v1/auth/provision") {
+                    assertNull(request.headers["Authorization"])
+                    empty.write(Json.encodeToString(credentials))
+                    return MockResponse.Builder().headersDelay(3, TimeUnit.SECONDS).body("not trusted").build()
+                }
+                assertEquals("Bearer ${credentials.secret}", request.headers["Authorization"])
+                return MockResponse(body = "trusted")
+            }
+        }
+        assertEquals("trusted", withTimeout(2_000) {
+            connecting.request("GET", "/info", null, emptyMap(), false) { _, input -> input.readBytes().decodeToString() }
+        })
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test fun concurrentFirstReadsShareOnePrivateDelivery() = runBlocking {
+        val empty = ConnectionStore({ null }, {})
+        val connecting = LocalHttpTransport(empty, credentials.address)
+        val triggers = AtomicInteger()
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                if (request.target == "/api/v1/auth/provision") {
+                    triggers.incrementAndGet()
+                    empty.write(Json.encodeToString(credentials))
+                }
+                return MockResponse(body = "trusted")
+            }
+        }
+        val calls = List(8) { async(Dispatchers.IO) { connecting.connect() } }
+        calls.forEach { assertEquals(credentials, it.await()) }
+        assertEquals(1, triggers.get())
+    }
+
+    @Test fun actualUnauthorizedReadRequiresFreshProviderDeliveryWithoutReplayingRead() = runBlocking {
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                if (request.target == "/api/v1/auth/provision") {
+                    assertNull(request.headers["Authorization"])
+                    store.write(Json.encodeToString(credentials.copy(secret = "c".repeat(64))))
+                    return MockResponse(body = "ignored")
+                }
+                return if (request.headers["Authorization"] == "Bearer ${credentials.secret}")
+                    MockResponse(code = 401, body = "denied") else MockResponse(body = "recovered")
+            }
+        }
+        assertEquals(401, readStatus())
+        assertNull(store.read())
+        assertEquals(1, server.requestCount)
+        assertEquals("recovered", read())
+        assertEquals(3, server.requestCount)
     }
 
     @Test fun cancellationBeforeResponseHeadersDoesNotRetryRead() = runBlocking {

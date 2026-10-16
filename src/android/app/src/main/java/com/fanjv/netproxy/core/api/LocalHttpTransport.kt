@@ -6,6 +6,9 @@ import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.channels.trySendBlocking
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.collect
@@ -79,22 +82,36 @@ internal class LocalHttpTransport internal constructor(
 
     private suspend fun provisionConnection(address: String): ModuleConnection {
         if (!allowProvisioning) throw ModuleApiException("api.connection_unavailable", "需要通过可信私有交付建立连接")
-        val previous = try { connections.read() } catch (error: Exception) {
+        fun receipt(): ModuleConnection? = try { connections.read() } catch (error: Exception) {
             if (error is CancellationException) throw error
             null
         }
+        val previous = receipt()
         // 未认证连接只触发私有 Provider 交付，独立客户端不携带 Bearer，也不复用业务连接。
         val request = Request.Builder().url("$address/api/v1/auth/provision")
             .post("{}".toRequestBody(JSON_MEDIA_TYPE)).build()
-        execute(provisioningClient, request, null, 20_000) { response ->
-            if (!response.isSuccessful) fail(response, "api.connection_unavailable", "无法自动连接模块后台")
-            LimitedInputStream(response.body.byteStream(), 64 * 1024).use { it.readBytes() }
+        return coroutineScope {
+            val trigger = launch {
+                try {
+                    // 响应完全不可信，不解析其正文、错误码或身份；只等待 Root Provider 的新交付。
+                    execute(provisioningClient, request, null, 20_000) { }
+                } catch (error: Exception) {
+                    if (error is CancellationException) throw error
+                }
+            }
+            try {
+                repeat(200) { attempt ->
+                    receipt()?.takeIf { it !== previous && it.address == address }?.let { return@coroutineScope it }
+                    if (trigger.isCompleted && attempt >= 20) {
+                        throw ModuleApiException("api.connection_unavailable", "无法自动连接模块后台")
+                    }
+                    delay(100)
+                }
+                throw ModuleApiException("api.connection_unavailable", "无法自动连接模块后台")
+            } finally {
+                trigger.cancelAndJoin()
+            }
         }
-        repeat(20) {
-            connections.read()?.takeIf { it !== previous && it.address == address }?.let { return it }
-            delay(100)
-        }
-        throw ModuleApiException("api.connection_unavailable", "无法自动连接模块后台")
     }
 
     override suspend fun <T> request(

@@ -133,7 +133,7 @@ src/module/service.sh
 
 ## WebUI
 
-- V9 原生桥只允许读取 info、service 与有界 SSE，不能接收任意 URL、方法、文件路径或 Shell。主 Secret 和证书资料只留在 Android 私有存储，JS 只接收业务 Envelope。PoC 禁用未验证 TLS 的首次配对引导，缺少可信私有交付时拒绝连接，不能回退 Root、Mock 或接受任意证书。
+- V9 原生桥只允许读取 info、service 与有界 SSE，不能接收任意 URL、方法、文件路径或 Shell。主 Secret 和证书资料只留在 Android 私有存储，JS 只接收业务 Envelope。首次配对遵循 [可信配对 ADR](apps/shell/docs/adr-001-trusted-pairing.md)：未认证 TLS 仅能发送无敏感信息的固定 provision 触发，响应不能作为身份或错误事实源；必须等到新的 Root 私有 Provider 交付，再以精确证书与主机名验证发送 Bearer 业务请求，不能回退 Root、Mock 或信任初始证书。
 - V9 普通 Web、演示与 Native 分别显式构建，Native 只在 Tauri 环境启用；JS 使用既有事件生命周期，Kotlin 负责取消与背压。后台释放原生工作，恢复重新等待完整快照；新文档的订阅替换遗留订阅，迟到的旧关闭操作不能取消新会话。
 
 - 当前 WebUI 是原生 TypeScript 终端式界面：所有 Root 命令统一经 `src/webui/src/exec.ts` 调用 `netproxyctl` 并渲染输出，其他模块不得自行拼接 Root 命令。

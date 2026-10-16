@@ -5,7 +5,9 @@ import com.fanjv.netproxy.core.api.ModuleApiTransport
 import com.fanjv.netproxy.core.api.ModuleEnvelope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
@@ -14,6 +16,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
@@ -63,6 +66,7 @@ internal class ModuleApiBridge(
     private val transport: ModuleApiTransport,
     private val scope: CoroutineScope,
     private val nowMillis: () -> Long = { System.nanoTime() / 1_000_000 },
+    private val workDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val lock = Any()
     private val json = Json { ignoreUnknownKeys = true }
@@ -71,10 +75,57 @@ internal class ModuleApiBridge(
     private var cancellationOverflowUntil = Long.MIN_VALUE
     private var loadedView: WeakReference<Any>? = null
     private var active: Subscription? = null
+    private val producers = HashSet<Job>()
     private var foreground = false
+    private var lifecycleVisibilityKnown = false
     private var destroyed = false
+    private var generation = 0L
+    private var dispatches = 0
+    private val dispatchedJobs = HashSet<Job>()
 
     val visible: Boolean get() = synchronized(lock) { foreground && !destroyed }
+
+    fun <T> dispatch(action: suspend () -> T, complete: (Result<T>) -> Unit) {
+        val admitted = runCatching {
+            synchronized(lock) {
+                requireForeground()
+                if (dispatches >= 9) throw BridgeFailure("api.busy")
+                dispatches++
+                generation
+            }
+        }
+        if (admitted.isFailure) {
+            runCatching { complete(Result.failure(admitted.exceptionOrNull()!!)) }
+            return
+        }
+        val expected = admitted.getOrThrow()
+        // 调度前进入协程，确保尚未执行 IO 时取消也能完成 Invoke。
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            val job = currentCoroutineContext().job
+            try {
+                val result = runCatching {
+                    synchronized(lock) {
+                        requireGeneration(expected)
+                        dispatchedJobs.add(job)
+                    }
+                    val value = withContext(workDispatcher) {
+                        synchronized(lock) { requireGeneration(expected) }
+                        action()
+                    }
+                    currentCoroutineContext().ensureActive()
+                    synchronized(lock) { requireGeneration(expected) }
+                    value
+                }
+                // 旧文档可能已释放回调，交付异常时不能再次完成同一个 Invoke。
+                runCatching { complete(result) }
+            } finally {
+                synchronized(lock) {
+                    dispatchedJobs.remove(job)
+                    dispatches--
+                }
+            }
+        }
+    }
 
     suspend fun read(requestId: String, resource: String): ReadResult = coroutineScope {
         val path = when (resource) {
@@ -86,6 +137,7 @@ internal class ModuleApiBridge(
         val job = currentCoroutineContext().job
         synchronized(lock) {
             requireForeground()
+            job.ensureActive()
             pruneCancellations()
             if (cancellations.remove(requestId) != null || nowMillis() < cancellationOverflowUntil) {
                 throw BridgeFailure("api.cancelled")
@@ -134,13 +186,15 @@ internal class ModuleApiBridge(
         val subscription = synchronized(lock) {
             requireForeground()
             if (active?.id == subscriptionId) throw BridgeFailure("api.subscription_exists", 409)
+            // 最多保留一个正在收尾的旧流与一个新流，避免快速替换堆积取消中的协程。
+            if (producers.size >= 2) throw BridgeFailure("api.busy")
             // A new document cannot release the previous document's IPC handles after WebView reload.
             active?.let {
                 it.stop(BridgeFailure("api.subscription_closed"))
                 it.producer.cancel()
             }
             Subscription(subscriptionId, topics.toSet()).also { session ->
-                session.producer = scope.launch(start = CoroutineStart.LAZY) {
+                session.producer = scope.launch(workDispatcher, start = CoroutineStart.LAZY) {
                     try {
                         transport.watch(session.topics) { event ->
                             if (event.name !in session.topics &&
@@ -158,6 +212,8 @@ internal class ModuleApiBridge(
                         synchronized(lock) { session.stop(safeFailure(error)) }
                     }
                 }
+                producers.add(session.producer)
+                session.producer.invokeOnCompletion { synchronized(lock) { producers.remove(session.producer) } }
                 active = session
             }
         }
@@ -166,8 +222,10 @@ internal class ModuleApiBridge(
 
     suspend fun nextEvent(subscriptionId: String): EventResult {
         validateId(subscriptionId)
+        val job = currentCoroutineContext().job
         val session = synchronized(lock) {
             requireForeground()
+            job.ensureActive()
             val current = active?.takeIf { it.id == subscriptionId }
                 ?: throw BridgeFailure("api.subscription_closed")
             if (current.pulling) throw BridgeFailure("api.next_pending", 409)
@@ -204,6 +262,7 @@ internal class ModuleApiBridge(
     }
 
     fun resume() = synchronized(lock) {
+        lifecycleVisibilityKnown = true
         if (!destroyed) foreground = true
     }
 
@@ -211,11 +270,13 @@ internal class ModuleApiBridge(
         if (destroyed) return
         if (loadedView != null && loadedView?.get() !== view) stopWork()
         loadedView = WeakReference(view)
-        foreground = visible
-        if (!visible) stopWork()
+        // load 时 AndroidX 的状态可能尚未追上 onResume，不能覆盖已收到的生命周期回调。
+        if (!lifecycleVisibilityKnown) foreground = visible
+        if (!foreground) stopWork()
     }
 
     fun pause() = synchronized(lock) {
+        lifecycleVisibilityKnown = true
         foreground = false
         stopWork()
     }
@@ -233,7 +294,9 @@ internal class ModuleApiBridge(
     }
 
     private fun stopWork() {
+        generation++
         // Cancel under the same lock as admission, so a late cancel cannot affect a new request.
+        dispatchedJobs.toList().forEach { it.cancel() }
         requests.values.toList().forEach { it.cancel() }
         active?.let {
             active = null
@@ -245,6 +308,11 @@ internal class ModuleApiBridge(
     private fun requireForeground() {
         if (destroyed || !scope.isActive) throw BridgeFailure("api.destroyed")
         if (!foreground) throw BridgeFailure("api.background")
+    }
+
+    private fun requireGeneration(expected: Long) {
+        requireForeground()
+        if (generation != expected) throw BridgeFailure("api.cancelled")
     }
 
     private fun pruneCancellations() {

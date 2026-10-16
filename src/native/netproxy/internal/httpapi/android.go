@@ -79,13 +79,6 @@ func (s *Server) queryApps(ctx context.Context, cache string) (jsontext.Value, e
 }
 
 func (s *Server) provisionClient(ctx context.Context, r *http.Request) (contract.Result, error) {
-	if !s.provisionMu.TryLock() {
-		return contract.Result{}, busy()
-	}
-	defer s.provisionMu.Unlock()
-	if time.Now().Before(s.provisionAfter) {
-		return contract.Result{}, busy()
-	}
 	if _, err := resourceQuery(r); err != nil {
 		return contract.Result{}, err
 	}
@@ -97,6 +90,13 @@ func (s *Server) provisionClient(ctx context.Context, r *http.Request) (contract
 	}
 	if err := ctx.Err(); err != nil {
 		return contract.Result{}, err
+	}
+	if !s.provisionMu.TryLock() {
+		return contract.Result{}, busy()
+	}
+	defer s.provisionMu.Unlock()
+	if time.Now().Before(s.provisionAfter) {
+		return contract.Result{}, busy()
 	}
 	// 私有 Provider 交付有界执行，失败不能立即占用下一次进程启动。
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)

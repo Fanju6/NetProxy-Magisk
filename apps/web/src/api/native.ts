@@ -56,6 +56,9 @@ export class NativeTransport implements ApiTransport {
   readonly kind = 'native' as const
   readonly readOnly = true
   private releaseEvents: (() => void) | undefined
+  private eventGeneration = 0
+  private releaseVisibility: (() => void) | undefined
+  private visibilityGeneration = 0
 
   constructor(private readonly ipc: NativeIpc = officialIpc) {}
 
@@ -87,14 +90,16 @@ export class NativeTransport implements ApiTransport {
         if (settled) return
         settled = true
         signal?.removeEventListener('abort', cancel)
+        window.removeEventListener('pagehide', cancel)
         complete()
       }
       const cancel = () =>
         finish(() => {
           this.discard('cancel', { requestId })
-          reject(signal?.reason)
+          reject(signal?.reason ?? new DOMException('Native request cancelled', 'AbortError'))
         })
       signal?.addEventListener('abort', cancel, { once: true })
+      window.addEventListener('pagehide', cancel, { once: true })
       void this.call('read', { requestId, resource: request.path.slice(1) })
         .then((value) => {
           if (!settled) {
@@ -111,7 +116,9 @@ export class NativeTransport implements ApiTransport {
     consume: (event: ApiEvent) => void,
     onError: (error: Error) => void,
   ) {
+    const generation = ++this.eventGeneration
     this.releaseEvents?.()
+    if (generation !== this.eventGeneration) return () => {}
     const subscriptionId = crypto.randomUUID()
     const selected = [...new Set(topics)]
     let closed = false
@@ -122,10 +129,12 @@ export class NativeTransport implements ApiTransport {
     const release = () => {
       if (closed) return
       closed = true
+      window.removeEventListener('pagehide', release)
       if (this.releaseEvents === release) this.releaseEvents = undefined
       close()
     }
     this.releaseEvents = release
+    window.addEventListener('pagehide', release, { once: true })
     const run = async () => {
       try {
         if (
@@ -154,15 +163,19 @@ export class NativeTransport implements ApiTransport {
       } catch (error) {
         if (!closed) {
           release()
-          onError(nativeError(error))
+          if (generation === this.eventGeneration) onError(nativeError(error))
         }
       }
     }
-    void run()
+    // 消费方回调异常不能让已释放的会话产生未处理的 Promise 拒绝。
+    void run().catch(() => {})
     return release
   }
 
   observeVisibility(listener: (visible: boolean) => void) {
+    const generation = ++this.visibilityGeneration
+    this.releaseVisibility?.()
+    if (generation !== this.visibilityGeneration) return () => {}
     let disposed = false
     let registration: { unregister(): Promise<void> } | undefined
     let revision = 0
@@ -170,34 +183,56 @@ export class NativeTransport implements ApiTransport {
     const publish = (visible: boolean) => {
       if (!disposed && visible !== previous) {
         previous = visible
-        listener(visible)
+        try {
+          listener(visible)
+        } catch {
+          // 消费方异常不能破坏原生事件分发或阻止后续清理。
+        }
       }
     }
-    void this.ipc
-      .listen((event) => {
-        revision++
-        const parsed = visibilitySchema.safeParse(event)
-        publish(parsed.success && parsed.data.visible)
+    const unregister = (handle: { unregister(): Promise<void> }) => {
+      try {
+        void handle.unregister().catch(() => {})
+      } catch {
+        // 文档可能已经释放原生回调注册表。
+      }
+    }
+    const release = () => {
+      if (disposed) return
+      disposed = true
+      window.removeEventListener('pagehide', release)
+      if (this.releaseVisibility === release) this.releaseVisibility = undefined
+      if (registration) unregister(registration)
+      registration = undefined
+    }
+    this.releaseVisibility = release
+    window.addEventListener('pagehide', release, { once: true })
+    void Promise.resolve()
+      .then(() => {
+        if (disposed) return
+        return this.ipc.listen((event) => {
+          revision++
+          const parsed = visibilitySchema.safeParse(event)
+          publish(parsed.success && parsed.data.visible)
+        })
       })
       .then(async (handle) => {
+        if (!handle) return
         if (disposed) {
-          await handle.unregister()
+          unregister(handle)
           return
         }
         registration = handle
-        const initialRevision = revision
+        // 注册完成前也可能收到事件，初始查询不能覆盖它。
+        if (revision !== 0) return
         try {
           const initial = await this.call('visibility', {})
-          if (initialRevision === revision) publish(visibilitySchema.parse(initial).visible)
+          if (revision === 0) publish(visibilitySchema.parse(initial).visible)
         } catch {
-          if (initialRevision === revision) publish(false)
+          if (revision === 0) publish(false)
         }
       })
       .catch(() => publish(false))
-    return () => {
-      disposed = true
-      if (registration) void registration.unregister().catch(() => {})
-      registration = undefined
-    }
+    return release
   }
 }

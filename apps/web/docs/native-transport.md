@@ -28,7 +28,7 @@
 
 原生层必须在传入 JS 前限制正文和帧大小、移除凭据、校验 TLS 身份，并用自己的白名单与 Capability 拒绝写入。前端也限制桥接帧为 4 MiB，但这不能替代原生读取限制。
 
-本轮原生 PoC 禁止未验证的 TLS 配对引导，`allowProvisioning=false`。只能使用同包升级保留或模块私有 Provider 重新交付的资料；全新安装没有凭据时返回 `api.connection_unavailable`，界面提示缺少可信资料且不会自动配对，不要求粘贴 Secret，也不声称已经连接。
+原生层首次连接遵循 [可信配对 ADR](../../shell/docs/adr-001-trusted-pairing.md)：无凭据的固定请求只触发 Root 私有交付，初始响应不能建立服务身份；新 Provider 资料就绪后才通过精确证书钉扎读取业务。JS 不接收 Secret 或指纹，也不能调用配对 URL。无交付时明确失败，不回退 Mock、Root 或 TOFU。
 
 ## 订阅及取消
 

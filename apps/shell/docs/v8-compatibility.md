@@ -73,12 +73,12 @@ owned by the installed manager UID. Delivery rechecks the bound Provider.
 accepts only Binder UID 0, method `provision`, null arg and the existing delivery
 format. Do not export it or add JS access to delivery contents.
 
-The PoC must construct LocalHttpTransport with `allowProvisioning = false`.
-The default remains true for unchanged V8 callers. A fresh sandbox without trusted
-connection material must return an explicit unavailable error, not use the V8
-unverified TLS provisioning bootstrap. This also applies to explicit reconnect.
-Do not call `api access`, change module credentials, or trigger provisioning as
-part of this read-only investigation.
+Milestone 2 disabled provisioning. Milestone 3 supersedes that restriction with
+[ADR 001](adr-001-trusted-pairing.md): a fixed anonymous bootstrap can trigger
+delivery, but neither its status nor body establishes trust. Only a fresh,
+address-matching Root private Provider receipt enables pinned business requests.
+No JavaScript credential, arbitrary URL, Root fallback or TOFU is introduced.
+The default V8 delivery mechanism and installed credential format are preserved.
 
 Native commands should allowlist read operations rather than accept arbitrary
 paths/methods. Never expose the native HTTP client's mutation methods through a

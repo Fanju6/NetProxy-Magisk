@@ -1,0 +1,166 @@
+name: Verify V9 Android Shell
+
+on:
+  push:
+    paths:
+      - "apps/shell/**"
+      - "!apps/shell/**/*.md"
+      - "apps/web/**"
+      - "!apps/web/**/*.md"
+      - "src/android/app/src/main/java/com/fanjv/netproxy/core/api/**"
+      - "src/android/app/src/test/java/com/fanjv/netproxy/core/api/**"
+      - ".github/workflows/v9-shell.yml"
+      - ".gitattributes"
+  pull_request:
+    paths:
+      - "apps/shell/**"
+      - "!apps/shell/**/*.md"
+      - "apps/web/**"
+      - "!apps/web/**/*.md"
+      - "src/android/app/src/main/java/com/fanjv/netproxy/core/api/**"
+      - "src/android/app/src/test/java/com/fanjv/netproxy/core/api/**"
+      - ".github/workflows/v9-shell.yml"
+      - ".gitattributes"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v9-shell-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_BUILD_JOBS: 2
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
+  NDK_VERSION: "29.0.14206865"
+
+jobs:
+  android:
+    name: Rust, Kotlin and arm64 Debug APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            apps/shell
+            apps/web
+            src/android/app/src/main/java/com/fanjv/netproxy/core/api
+            src/android/app/src/test/java/com/fanjv/netproxy/core/api
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install pinned pnpm and locked dependencies
+        run: |
+          npm install --global pnpm@12.11.2
+          pnpm --dir apps/web install --frozen-lockfile
+          pnpm --dir apps/shell install --frozen-lockfile
+
+      - name: Install Rust toolchain and Android target
+        uses: dtolnay/rust-toolchain@1.94.0
+        with:
+          components: rustfmt, clippy
+          targets: aarch64-linux-android
+
+      - name: Install Linux dependencies for host Rust tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential pkg-config libwebkit2gtk-4.1-dev libssl-dev \
+            libxdo-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/shell/src-tauri -> target
+          key: v9-shell-android
+
+      - name: Check Rust formatting, plugin tests and Clippy
+        working-directory: apps/shell/src-tauri
+        run: |
+          cargo fmt --all -- --check
+          cargo test --locked -p tauri-plugin-module-api --all-targets
+          cargo clippy --locked -p tauri-plugin-module-api --all-targets -- -D warnings
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - uses: gradle/actions/setup-gradle@v5
+
+      - name: Install Android SDK and pinned NDK
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            'platform-tools' 'platforms;android-37.0' 'build-tools;37.0.0' \
+            "ndk;$NDK_VERSION" --channel=1
+          test -f "$ANDROID_HOME/platforms/android-37.0/android.jar"
+          test -x "$ANDROID_HOME/build-tools/37.0.0/aapt"
+          test -x "$ANDROID_HOME/ndk/$NDK_VERSION/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+          printf 'NDK_HOME=%s/ndk/%s\n' "$ANDROID_HOME" "$NDK_VERSION" >> "$GITHUB_ENV"
+
+      - name: Build isolated arm64 Debug APK with locked Cargo dependencies
+        working-directory: apps/shell
+        run: pnpm tauri android build --ci --debug --apk --target aarch64 -- --locked
+
+      - name: Run integrated Kotlin unit tests and Lint
+        working-directory: apps/shell/src-tauri/gen/android
+        run: |
+          test -s app/src/main/jniLibs/arm64-v8a/libapp_lib.so
+          bash ./gradlew \
+            :tauri-plugin-module-api:testDebugUnitTest \
+            :tauri-plugin-module-api:lintDebug \
+            :app:lintUniversalDebug \
+            :app:assembleUniversalDebugAndroidTest \
+            -PabiList=arm64-v8a -ParchList=arm64 -PtargetList=aarch64 \
+            -x :app:rustBuildUniversalDebug -x :app:rustBuildArm64Debug \
+            --no-daemon --console=plain
+
+      - name: Verify Debug APK identity, ABI and signature
+        run: |
+          test -s apps/shell/plugins/module-api/android/build/test-results/testDebugUnitTest/TEST-com.fanjv.netproxy.core.api.LocalHttpTransportTest.xml
+          test -s apps/shell/plugins/module-api/android/build/test-results/testDebugUnitTest/TEST-com.fanjv.netproxy.core.api.ModuleConnectionTest.xml
+          apk=apps/shell/src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
+          test -s "$apk"
+          badging="$("$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$apk")"
+          printf '%s\n' "$badging" | grep -F "package: name='com.fanjv.netproxy.v9poc'"
+          printf '%s\n' "$badging" | grep -Fx 'application-debuggable'
+          printf '%s\n' "$badging" | grep -Fx "native-code: 'arm64-v8a'"
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify "$apk"
+
+      - name: Verify lockfiles stayed unchanged
+        if: always()
+        run: |
+          git diff --exit-code -- \
+            apps/web/pnpm-lock.yaml apps/shell/pnpm-lock.yaml \
+            apps/shell/src-tauri/Cargo.lock
+          git diff --check
+
+      - name: Upload isolated Debug APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: v9-shell-debug-arm64
+          path: apps/shell/src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Preserve Kotlin test and Lint reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: v9-shell-verification-reports
+          path: |
+            apps/shell/plugins/module-api/android/build/test-results/testDebugUnitTest/
+            apps/shell/plugins/module-api/android/build/reports/tests/testDebugUnitTest/
+            apps/shell/plugins/module-api/android/build/reports/lint-results-debug.*
+            apps/shell/src-tauri/gen/android/app/build/reports/lint-results-universalDebug.*
+          if-no-files-found: ignore
+          retention-days: 7

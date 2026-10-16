@@ -42,9 +42,39 @@ pnpm android:build
 pnpm android:build:upgrade
 ```
 
-它构建 `com.fanjv.netproxy` 的 **未签名 Release APK**，版本码 1091 是本轮测试基线，不是后续发布计数器。安装前必须确认高于设备现有版本，使用正式固定密钥签名，并以 `apksigner verify --print-certs` 核对模块辅助程序接受的公开指纹。不得生成替代签名后声称升级成功。密钥和密码不属于本工程，沿用已有安全签名方式，不改 V8 CI。
+它构建 `com.fanjv.netproxy` 的 **未签名 Release APK**，版本码 1092 是第三里程碑测试基线，不是后续发布计数器。安装前必须确认高于设备现有版本，使用正式固定密钥签名，并以 `apksigner verify --print-certs` 核对模块辅助程序接受的公开指纹。不得生成替代签名后声称升级成功。密钥和密码不属于本工程，沿用已有安全签名方式，不改 V8 CI。
 
 两种 APK 都使用同一份 React Native-mode 构建产物。`pnpm tauri android dev` 使用本机 1420 端口的显式 Native 模式开发服务，不会退回 Mock。
+
+## CI
+
+独立工作流 [v9-shell.yml](../../.github/workflows/v9-shell.yml) 在壳、V9 WebUI、共用 V8 `core/api` 源码与测试或自身配置变化的 push / Pull Request 上运行，也可手动执行。它不调用或修改 V8 验证、签名、模块打包与发布流水线，不读取签名 Secrets。
+
+Ubuntu 24.04 使用 Rust 1.94.0、Node 24、pnpm 12.11.2、JDK 25、SDK / Build Tools 37 与 NDK 29.0.14206865。两个 pnpm 工程均使用 `install --frozen-lockfile`，Rust 单测、Clippy 与 APK 构建均使用 `--locked`，结束时检查三个锁文件未变。
+
+CI 执行 `cargo fmt --all -- --check`，并通过壳的 Cargo 锁文件执行插件 `cargo test --locked -p tauri-plugin-module-api --all-targets` 和 `cargo clippy --locked -p tauri-plugin-module-api --all-targets -- -D warnings`。主壳与 Android 条件分支由下面的 APK 构建编译，不把宿主单测视作 Android 运行验收。
+
+```sh
+cd apps/shell
+pnpm tauri android build --ci --debug --apk --target aarch64 -- --locked
+cd src-tauri/gen/android
+bash ./gradlew :tauri-plugin-module-api:testDebugUnitTest \
+  :tauri-plugin-module-api:lintDebug :app:lintUniversalDebug \
+  :app:assembleUniversalDebugAndroidTest \
+  -PabiList=arm64-v8a -ParchList=arm64 -PtargetList=aarch64 \
+  -x :app:rustBuildUniversalDebug -x :app:rustBuildArm64Debug \
+  --no-daemon --console=plain
+```
+
+插件测试直接编译共享 `core/api` 测试目录中的 `LocalHttpTransportTest`、`ModuleConnectionTest`，复用 V8 的 `mockwebserver3:5.5.0`，覆盖 HTTPS、首次配对与私有连接存储。`ModuleApiClientTest`、`ModuleEventStreamTest` 依赖管理器 Repository，`ModuleApiCodecTest` 依赖壳当前 Kotlin Android 编译环境未提供的 JDK 管理模块；它们仍由 V8 验证执行，不引入壳工程。
+
+先运行 Tauri CLI，再运行 Gradle：CLI 根据 Runner 上的 Cargo 路径刷新被忽略的 `tauri.settings.gradle` 和插件依赖，不重新执行 `android init` 或覆盖已维护的 Android 工程。Native 前端由既有 `beforeBuildCommand` 构建到 `apps/web/dist-native`，不写入 V8 模块目录。Cargo 的 `--locked` 通过 CLI 末尾的 `--` 传给构建器，不是 Tauri 自身选项。
+
+后续 Gradle 调用固定 arm64 并显式排除两项已完成的 Rust 构建任务，复用 CLI 产出的 `libapp_lib.so`；CI 先检查该文件存在。不能在 CLI 退出后重新执行生成插件的 Rust 任务，否则其临时 WebSocket 已关闭，且默认 universal 还会尝试未启用的其他 ABI。仪器测试探针只编译为测试 APK，不运行 `connectedAndroidTest`；实际 `Activity.recreate`、SSE 与设备生命周期仍需真机验证。
+
+成功后上传七天有效的 `v9-shell-debug-arm64` APK；单测和 Lint 报告在失败时也保留。上传前核验包名 `com.fanjv.netproxy.v9poc`、Debug 标记、仅 arm64 ABI 与 APK 签名。签名仅使用 Android 自动生成的 Debug 密钥，不使用正式密钥，不生成覆盖升级版或 Release。此产物不能读取正式包的私有凭据，也不证明首次配对、真实 HTTPS/SSE、设备生命周期或 V8 兼容性已验收。
+
+环境与命令依据：[Tauri 前置依赖](https://v2.tauri.app/start/prerequisites/)、[Android CLI 参数](https://v2.tauri.app/reference/cli/#android-build)、[官方 Android CI](https://github.com/tauri-apps/tauri/blob/dev/.github/workflows/test-android.yml)、[Android 签名边界](https://v2.tauri.app/distribute/sign/android/)。SDK 版本已核对 [Google 官方仓库元数据](https://dl.google.com/android/repository/repository2-3.xml) 的稳定频道，Build Tools 37.0.0 提供 Linux 包。
 
 ## 安全与职责
 
@@ -57,9 +87,9 @@ React / TanStack Query / Zod
 ```
 
 - 只读资源枚举只有 `info`、`service`，事件主题只有 `status/groups/subscriptions`，traffic 随 status 到达。没有传入方法、URL、凭据、文件或命令的 IPC。
-- Kotlin 通过 Gradle sourceSet 直接编译 V8 `core/api` 源码，不复制或分叉证书、Bearer、Provider 和取消实现。唯一 V8 源码变化是 `allowProvisioning=true` 的默认构造选项；原 V8 行为不变，PoC 显式传 false。
+- Kotlin 通过 Gradle sourceSet 直接编译 V8 `core/api` 源码，不复制或分叉证书、Bearer、Provider 和取消实现。首次配对同样复用该传输，安全流程见 [ADR 001](docs/adr-001-trusted-pairing.md)。
 - 凭据仍由非导出、仅接受 Binder UID 0 的 `ConnectionProvider` 写入 `noBackupFilesDir/module-connection.json`。证书精确 SHA-256 和主机名验证、禁用代理/重定向、请求取消继续使用原有实现。
-- 无凭据、401 或证书身份失效时，PoC 不使用未经验证的 TLS 引导。首次安装的可信配对仍是后续安全设计门槛，不要求用户粘贴主 Secret。
+- 无凭据时，原生层只发送固定、无凭据的配对触发；不信其响应，必须等到新的 Root 私有交付后才进行精确钉扎业务读取。401 或身份失败先拒绝本次请求，下一次连接经同一可信交付恢复，不重放业务写入。不要求用户粘贴主 Secret。
 - Kotlin 检查 schema=1、HTTP 状态、类型和 4 MiB 上限；业务错误保留状态和错误码，丢弃原始异常消息与错误详情。JS 再经现有 ApiClient/Zod 校验。
 - SSE 原生队列容量为 1，JS 同时只等待一个 next_event。没有无界事件 IPC、原生重连循环或 HTTP 轮询。慢端背压到已有有界传输；关闭和后台取消对应 Call。
 - 新订阅替换遗留文档的会话，同 ID 重复建立被拒绝；旧 ID 关闭不影响新会话。读取最多 8 项并行，取消先到的 ID 有界记录，不因 IPC 重排遗漏取消。

@@ -1,6 +1,7 @@
 package com.fanjv.netproxy.bridge
 
 import android.app.Activity
+import android.content.ContextWrapper
 import android.webkit.WebView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Lifecycle
@@ -8,18 +9,14 @@ import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
+import app.tauri.plugin.Channel
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 import com.fanjv.netproxy.core.api.ConnectionStore
 import com.fanjv.netproxy.core.api.LocalHttpTransport
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 @InvokeArg
@@ -39,40 +36,72 @@ class EventsArgs {
     var topics: List<String> = emptyList()
 }
 
+@InvokeArg
+class VisibilityListenerArgs {
+    var event: String = ""
+    lateinit var handler: Channel
+}
+
+@InvokeArg
+class RemoveVisibilityListenerArgs {
+    var event: String = ""
+    var channelId: Long = 0
+}
+
 @TauriPlugin
 class ModuleApiPlugin(activity: Activity) : Plugin(activity) {
-    private var ownerActivity: Activity? = activity
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val bridge = ModuleApiBridge(
-        LocalHttpTransport(ConnectionStore(activity.applicationContext), allowProvisioning = false), scope,
-    )
+    private val ownerClass = activity.javaClass
+    private val transport = LocalHttpTransport(ConnectionStore(activity.applicationContext))
+    private val lifecycle = ModuleApiLifecycle(activity) {
+        ModuleApiBridge(
+            transport,
+            CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+        )
+    }
+    private val bridge get() = lifecycle.bridge
 
     // Signatures verified against tauri 2.12.4 mobile/android Plugin.kt.
     override fun load(webView: WebView) {
+        val candidate = viewActivity(webView) ?: lifecycle.owner ?: return
+        if (!attachOwner(candidate)) return
         super.load(webView)
-        val owner = ownerActivity as? AppCompatActivity
+        val owner = lifecycle.owner as? AppCompatActivity
         bridge.load(webView, owner?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) == true)
     }
 
     override fun onPause(activity: AppCompatActivity) {
-        if (activity !== ownerActivity) return
-        bridge.pause()
-        trigger("visibility", JSObject().put("visible", false))
+        if (!lifecycle.pause(activity)) return
+        publishVisibility()
         super.onPause(activity)
     }
 
     override fun onResume(activity: AppCompatActivity) {
-        if (activity !== ownerActivity) return
+        if (!attachOwner(activity)) return
+        lifecycle.resume(activity, replaceOwner = false)
         super.onResume(activity)
-        bridge.resume()
-        trigger("visibility", JSObject().put("visible", bridge.visible))
+        publishVisibility()
     }
 
     override fun onDestroy(activity: AppCompatActivity) {
-        if (activity !== ownerActivity) return
-        ownerActivity = null
-        bridge.destroy()
+        if (!lifecycle.destroy(activity)) return
         super.onDestroy(activity)
+    }
+
+    private fun attachOwner(activity: Activity): Boolean {
+        if (activity.isDestroyed || activity.isFinishing) return false
+        val owner = lifecycle.owner
+        val replaceOwner = activity.javaClass == ownerClass &&
+            (owner == null || owner.isDestroyed || owner.isChangingConfigurations)
+        return lifecycle.attach(activity, replaceOwner)
+    }
+
+    private fun viewActivity(webView: WebView): Activity? {
+        var context = webView.context
+        repeat(16) {
+            if (context is Activity) return context as Activity
+            context = (context as? ContextWrapper)?.baseContext ?: return null
+        }
+        return null
     }
 
     @Command
@@ -116,30 +145,44 @@ class ModuleApiPlugin(activity: Activity) : Plugin(activity) {
     @Command
     fun visibility(invoke: Invoke) = immediate(invoke) { JSObject().put("visible", bridge.visible) }
 
+    // 沿用官方 listener 协议，但新文档必须替换旧回调，不能累积已失联的 Channel。
+    @Command
+    override fun registerListener(invoke: Invoke) = immediate(invoke) {
+        val args = invoke.parseArgs(VisibilityListenerArgs::class.java)
+        if (args.event != "visibility") throw BridgeFailure("api.invalid_request")
+        lifecycle.registerVisibility(args.handler.id) { visible ->
+            args.handler.send(JSObject().put("visible", visible))
+        }
+        null
+    }
+
+    @Command
+    override fun removeListener(invoke: Invoke) = immediate(invoke) {
+        val args = invoke.parseArgs(RemoveVisibilityListenerArgs::class.java)
+        if (args.event != "visibility") throw BridgeFailure("api.invalid_request")
+        lifecycle.removeVisibility(args.channelId)
+        null
+    }
+
+    private fun publishVisibility() {
+        lifecycle.publishVisibility()
+    }
+
     private fun immediate(invoke: Invoke, action: () -> JSObject?) {
-        try {
-            invoke.resolve(action())
-        } catch (error: Exception) {
-            reject(invoke, error)
+        val result = runCatching { action() }
+        runCatching {
+            result.fold({ invoke.resolve(it) }, { reject(invoke, it) })
         }
     }
 
     private fun dispatch(invoke: Invoke, action: suspend () -> JSObject) {
-        // Enter the try block before dispatch: even cancellation before IO starts must settle Invoke.
-        scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            try {
-                currentCoroutineContext().ensureActive()
-                val result = withContext(Dispatchers.IO) { action() }
-                currentCoroutineContext().ensureActive()
-                invoke.resolve(result)
-            } catch (error: Exception) {
-                reject(invoke, error)
-            }
+        bridge.dispatch(action) { result ->
+            result.fold({ invoke.resolve(it) }, { reject(invoke, it) })
         }
     }
 
-    private fun reject(invoke: Invoke, error: Exception) {
-        val safe = safeFailure(error)
+    private fun reject(invoke: Invoke, error: Throwable) {
+        val safe = safeFailure(error as? Exception ?: BridgeFailure("api.native_failed"))
         // Do not pass exceptions to Invoke.reject: Tauri logs them, including nested URLs.
         invoke.reject(SAFE_FAILURE_MESSAGE, safe.code, null, JSObject().put("status", safe.status))
     }

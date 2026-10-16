@@ -324,9 +324,124 @@ describe('native event pull lifecycle', () => {
     await flush()
     expect(fail).not.toHaveBeenCalled()
   })
+
+  it('does not overwrite a subscription created reentrantly by native cleanup', async () => {
+    const { transport, invoke } = setup()
+    const pending = deferred<unknown>()
+    let replacement: (() => void) | undefined
+    let reenter = false
+    invoke.mockImplementation((name) => {
+      if (name.endsWith('|next_event')) return pending.promise
+      if (name.endsWith('|close_events') && reenter) {
+        reenter = false
+        replacement = transport.subscribe(['groups'], vi.fn(), vi.fn())
+      }
+      return Promise.resolve()
+    })
+    transport.subscribe(['status'], vi.fn(), vi.fn())
+    await flush()
+    reenter = true
+    const superseded = transport.subscribe(['subscriptions'], vi.fn(), vi.fn())
+    await flush()
+    expect(invoke.mock.calls.filter(([name]) => name.endsWith('|open_events'))).toEqual([
+      ['plugin:module-api|open_events', { subscriptionId: expect.any(String), topics: ['status'] }],
+      ['plugin:module-api|open_events', { subscriptionId: expect.any(String), topics: ['groups'] }],
+    ])
+    superseded()
+    expect(invoke.mock.calls.filter(([name]) => name.endsWith('|close_events'))).toHaveLength(1)
+    replacement!()
+    pending.resolve(event)
+    await flush()
+    expect(invoke.mock.calls.filter(([name]) => name.endsWith('|close_events'))).toHaveLength(2)
+  })
+
+  it('does not notify an obsolete error callback after cleanup creates a replacement', async () => {
+    const { transport, invoke } = setup()
+    const pending = deferred<unknown>()
+    let replacement: (() => void) | undefined
+    invoke.mockImplementation((name) => {
+      if (name.endsWith('|next_event')) return pending.promise
+      if (name.endsWith('|close_events') && !replacement)
+        replacement = transport.subscribe(['groups'], vi.fn(), vi.fn())
+      return Promise.resolve()
+    })
+    const fail = vi.fn()
+    transport.subscribe(['status'], vi.fn(), fail)
+    await flush()
+    pending.reject(new Error('old stream failed'))
+    await flush()
+    expect(fail).not.toHaveBeenCalled()
+    replacement!()
+  })
+
+  it('contains throwing consumer and error callbacks and closes native work once', async () => {
+    const { transport, invoke } = setup()
+    invoke.mockResolvedValue(event)
+    const fail = vi.fn(() => {
+      throw new Error('callback failed')
+    })
+    const close = transport.subscribe(
+      ['status'],
+      () => {
+        throw new Error('consumer failed')
+      },
+      fail,
+    )
+    await flush()
+    close()
+    expect(fail).toHaveBeenCalledOnce()
+    expect(invoke.mock.calls.filter(([name]) => name.endsWith('|close_events'))).toHaveLength(1)
+    expect(invoke.mock.calls.filter(([name]) => name.endsWith('|open_events'))).toHaveLength(1)
+  })
 })
 
 describe('native visibility', () => {
+  it('replaces visibility observers and releases late old registrations without affecting the new one', async () => {
+    const { transport, listen, invoke } = setup()
+    const first = deferred<{ unregister(): Promise<void> }>()
+    const oldUnregister = vi.fn().mockResolvedValue(undefined)
+    const newUnregister = vi.fn().mockResolvedValue(undefined)
+    const callbacks: ((event: unknown) => void)[] = []
+    listen.mockImplementation((callback) => {
+      callbacks.push(callback)
+      return callbacks.length === 1 ? first.promise : Promise.resolve({ unregister: newUnregister })
+    })
+    invoke.mockResolvedValue({ visible: true })
+    const oldPublish = vi.fn()
+    const oldClose = transport.observeVisibility(oldPublish)
+    await flush()
+    const publish = vi.fn()
+    const close = transport.observeVisibility(publish)
+    await flush()
+    first.resolve({ unregister: oldUnregister })
+    await flush()
+    oldClose()
+    callbacks[0]!({ visible: false })
+    callbacks[1]!({ visible: false })
+    expect(oldPublish).not.toHaveBeenCalled()
+    expect(publish.mock.calls).toEqual([[true], [false]])
+    expect(oldUnregister).toHaveBeenCalledOnce()
+    expect(newUnregister).not.toHaveBeenCalled()
+    expect(invoke).toHaveBeenCalledOnce()
+    close()
+    close()
+    expect(newUnregister).toHaveBeenCalledOnce()
+  })
+
+  it('contains visibility consumer exceptions without publishing a synthetic failure', async () => {
+    const { transport, invoke, visibility, unregister } = setup()
+    invoke.mockResolvedValue({ visible: true })
+    const publish = vi.fn(() => {
+      throw new Error('consumer failed')
+    })
+    const close = transport.observeVisibility(publish)
+    await flush()
+    expect(() => visibility({ visible: false })).not.toThrow()
+    expect(publish.mock.calls).toEqual([[true], [false]])
+    close()
+    expect(unregister).toHaveBeenCalledOnce()
+  })
+
   it('does not turn a newer lifecycle event into paused when the initial query fails late', async () => {
     const { transport, invoke, visibility } = setup()
     const initial = deferred<unknown>()
@@ -366,6 +481,7 @@ describe('native visibility', () => {
     listen.mockReturnValue(registration.promise)
     const publish = vi.fn()
     const close = transport.observeVisibility(publish)
+    await flush()
     close()
     registration.resolve({ unregister })
     await flush()
@@ -373,6 +489,70 @@ describe('native visibility', () => {
     expect(invoke).not.toHaveBeenCalled()
     expect(publish).not.toHaveBeenCalled()
   })
+
+  it('does not allocate a listener when disposed before registration starts', async () => {
+    const { transport, listen, invoke } = setup()
+    const close = transport.observeVisibility(vi.fn())
+    close()
+    await flush()
+    expect(listen).not.toHaveBeenCalled()
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
+  it('preserves visibility delivered before listener registration resolves', async () => {
+    const { transport, listen, invoke, unregister } = setup()
+    const registration = deferred<{ unregister(): Promise<void> }>()
+    listen.mockImplementation((callback) => {
+      callback({ visible: false })
+      return registration.promise
+    })
+    const publish = vi.fn()
+    const close = transport.observeVisibility(publish)
+    await flush()
+    registration.resolve({ unregister })
+    await flush()
+    expect(publish.mock.calls).toEqual([[false]])
+    expect(invoke).not.toHaveBeenCalled()
+    close()
+    expect(unregister).toHaveBeenCalledOnce()
+  })
+
+  it('fails closed when listener registration throws synchronously', async () => {
+    const { transport, listen, invoke } = setup()
+    listen.mockImplementation(() => {
+      throw new Error('registration unavailable')
+    })
+    const publish = vi.fn()
+    const close = transport.observeVisibility(publish)
+    await flush()
+    expect(publish.mock.calls).toEqual([[false]])
+    expect(invoke).not.toHaveBeenCalled()
+    close()
+  })
+
+  it.each(['synchronous', 'rejected'] as const)(
+    'contains %s listener cleanup errors',
+    async (kind) => {
+      const { transport, invoke, unregister, visibility } = setup()
+      invoke.mockResolvedValue({ visible: true })
+      if (kind === 'synchronous')
+        unregister.mockImplementation(() => {
+          throw new Error('gone')
+        })
+      else unregister.mockRejectedValue(new Error('gone'))
+      const publish = vi.fn()
+      const close = transport.observeVisibility(publish)
+      await flush()
+      expect(() => {
+        close()
+        close()
+      }).not.toThrow()
+      visibility({ visible: false })
+      await flush()
+      expect(unregister).toHaveBeenCalledOnce()
+      expect(publish.mock.calls).toEqual([[true]])
+    },
+  )
   it('fails closed on registration or initial query failures', async () => {
     for (const at of ['listen', 'initial']) {
       const { transport, listen, invoke } = setup()
@@ -384,5 +564,104 @@ describe('native visibility', () => {
       expect(publish.mock.calls).toEqual([[false]])
       close()
     }
+  })
+})
+
+describe('same-WebView document teardown', () => {
+  it('pagehide cancels reads without AbortSignals and discards late replies', async () => {
+    const { transport, invoke } = setup()
+    const pending = deferred<unknown>()
+    invoke.mockImplementation((name) =>
+      name.endsWith('|read') ? pending.promise : Promise.resolve(),
+    )
+    const read = transport.request({ method: 'GET', path: '/info' })
+    const failure = expect(read).rejects.toMatchObject({ name: 'AbortError' })
+    window.dispatchEvent(new Event('pagehide'))
+    window.dispatchEvent(new Event('pagehide'))
+    await failure
+    pending.resolve({ status: 200, body: event.body })
+    await flush()
+    expect(invoke.mock.calls.map(([name]) => name)).toEqual([
+      'plugin:module-api|read',
+      'plugin:module-api|cancel',
+    ])
+  })
+
+  it('pagehide closes a pending stream and unregisters visibility without reconnecting', async () => {
+    const { transport, invoke, visibility, unregister } = setup()
+    const next = deferred<unknown>()
+    invoke.mockImplementation((name) => {
+      if (name.endsWith('|next_event')) return next.promise
+      if (name.endsWith('|visibility')) return Promise.resolve({ visible: true })
+      return Promise.resolve()
+    })
+    const consume = vi.fn()
+    const fail = vi.fn()
+    const publish = vi.fn()
+    const close = transport.subscribe(['status'], consume, fail)
+    const release = transport.observeVisibility(publish)
+    await flush()
+    window.dispatchEvent(new Event('pagehide'))
+    window.dispatchEvent(new Event('pagehide'))
+    close()
+    release()
+    visibility({ visible: false })
+    next.resolve(event)
+    await flush()
+    expect(consume).not.toHaveBeenCalled()
+    expect(fail).not.toHaveBeenCalled()
+    expect(publish.mock.calls).toEqual([[true]])
+    expect(unregister).toHaveBeenCalledOnce()
+    expect(invoke.mock.calls.filter(([name]) => name.endsWith('|close_events'))).toHaveLength(1)
+    expect(invoke.mock.calls.filter(([name]) => name.endsWith('|open_events'))).toHaveLength(1)
+  })
+
+  it('pagehide compensates late open and registration without starting old-document work', async () => {
+    const { transport, invoke, listen, unregister } = setup()
+    const opening = deferred<unknown>()
+    const registration = deferred<{ unregister(): Promise<void> }>()
+    invoke.mockImplementation((name) =>
+      name.endsWith('|open_events') ? opening.promise : Promise.resolve(),
+    )
+    listen.mockReturnValue(registration.promise)
+    const consume = vi.fn()
+    const fail = vi.fn()
+    const publish = vi.fn()
+    transport.subscribe(['status'], consume, fail)
+    transport.observeVisibility(publish)
+    await flush()
+    window.dispatchEvent(new Event('pagehide'))
+    opening.resolve(undefined)
+    registration.resolve({ unregister })
+    await flush()
+    expect(invoke.mock.calls.map(([name]) => name)).toEqual([
+      'plugin:module-api|open_events',
+      'plugin:module-api|close_events',
+      'plugin:module-api|close_events',
+    ])
+    expect(unregister).toHaveBeenCalledOnce()
+    expect(consume).not.toHaveBeenCalled()
+    expect(fail).not.toHaveBeenCalled()
+    expect(publish).not.toHaveBeenCalled()
+  })
+
+  it('normal completion and disposal remove their pagehide handlers', async () => {
+    const { transport, invoke } = setup()
+    const add = vi.spyOn(window, 'addEventListener')
+    const remove = vi.spyOn(window, 'removeEventListener')
+    invoke.mockResolvedValue({ status: 200, body: event.body })
+    await transport.request({ method: 'GET', path: '/info' })
+    const close = transport.subscribe(['status'], vi.fn(), vi.fn())
+    close()
+    const release = transport.observeVisibility(vi.fn())
+    release()
+    await flush()
+    const handlers = add.mock.calls
+      .filter(([name]) => name === 'pagehide')
+      .map(([, handler]) => handler)
+    expect(handlers).toHaveLength(3)
+    for (const handler of handlers) expect(remove).toHaveBeenCalledWith('pagehide', handler)
+    add.mockRestore()
+    remove.mockRestore()
   })
 })
