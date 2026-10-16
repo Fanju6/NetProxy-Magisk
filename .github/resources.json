@@ -19,8 +19,8 @@
       "ref": "sing",
       "sourcePath": "geo/geosite/category-ads-all.srs",
       "metadataPath": "geo/geosite/category-ads-all.json",
-      "currentCommit": "d9e3c4c09747d325d28e9bfe8829011135cfbbbf",
-      "currentSha256": "4df355d40543a0a4272be663fd479c209f765142e4bbe6aff042748c911139db"
+      "currentCommit": "66997bb8226ffcff9903665042500eb6f1a22a2b",
+      "currentSha256": "5d7e3f38ceb008c793f12c4b84108ed61c64ae11e16a920af961e0c33a7e9233"
     },
     {
       "name": "geosite/apple-cn",
@@ -41,8 +41,8 @@
       "ref": "sing",
       "sourcePath": "geo/geosite/category-ai-!cn.srs",
       "metadataPath": "geo/geosite/category-ai-!cn.json",
-      "currentCommit": "1bbe90f849505bcbcea530d8fbc127ad7877eb2a",
-      "currentSha256": "ecd8c691ff2728d4f479f621dab170c92d757ba916606efe37bf392111762dc1"
+      "currentCommit": "66997bb8226ffcff9903665042500eb6f1a22a2b",
+      "currentSha256": "9658467ea2c587dd03e7537b1af088b9fb71df50ca2ca800b80d35d660397ae2"
     },
     {
       "name": "geosite/google",
@@ -63,8 +63,8 @@
       "ref": "sing",
       "sourcePath": "geo/geosite/geolocation-!cn.srs",
       "metadataPath": "geo/geosite/geolocation-!cn.json",
-      "currentCommit": "d9e3c4c09747d325d28e9bfe8829011135cfbbbf",
-      "currentSha256": "9bcf2560e2aa40c52173a60b0ed89a383e1bc172aa69633d576505cae97176c4"
+      "currentCommit": "66997bb8226ffcff9903665042500eb6f1a22a2b",
+      "currentSha256": "533f7944b65a5c0ab06a9a0be5fcbe5984ff41b032a54ce1ef6b963200b7eef0"
     },
     {
       "name": "geosite/cn",
@@ -74,8 +74,8 @@
       "ref": "sing",
       "sourcePath": "geo/geosite/cn.srs",
       "metadataPath": "geo/geosite/cn.json",
-      "currentCommit": "1bbe90f849505bcbcea530d8fbc127ad7877eb2a",
-      "currentSha256": "66f3c2324558f166b1ecb1237fdeac29f98af8b9e84d18f501c44445f97e25be"
+      "currentCommit": "66997bb8226ffcff9903665042500eb6f1a22a2b",
+      "currentSha256": "1ab60f7ce9eab19b7de4996cc6a26e749bba01562e574a55f65289097e430b7d"
     },
     {
       "name": "geoip/cn",
@@ -120,8 +120,8 @@
       "path": "src/module/webroot/sing-box-dashboard",
       "repo": "SagerNet/sing-box-dashboard",
       "ref": "gh-pages",
-      "currentCommit": "edca5a83ccd91f474d7942b990b360e12292b4a8",
-      "currentSourceCommit": "f231354bc786dfcffcf09f6ec771bc5683050194"
+      "currentCommit": "d77c2f016a7681aa1704e9f83c69139edb230c97",
+      "currentSourceCommit": "3e4bf08e5bf5b9417cf9c36e5a2d5abcb21bdd34"
     }
   ]
 }

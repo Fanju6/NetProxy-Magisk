@@ -15,7 +15,7 @@ composeBom = "2026.09.00"
 
 # Third-party
 miuix = "0.9.4"
-hiddenapibypass = "6.1"
+hiddenapibypass = "6.2"
 junit = "4.13.2"
 coroutinesTest = "1.9.0"
 okhttp = "5.5.0"
