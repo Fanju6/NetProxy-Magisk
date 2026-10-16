@@ -103,8 +103,13 @@ V8 覆盖包的 1095 仅由忽略目录中的本地 Gradle init script 注入，
 本机全局 pnpm shim 不能供 Playwright 子进程使用，因此通过固定版本 pnpm 启动测试；
 未为本机环境修改仓库工作流或测试配置。
 
-远端验证使用现有独立 `v9-shell.yml` 与 `verify-v9-web.yml`，不读取正式签名 Secrets。
-实际运行链接与结果将在推送后补充，不能以本地通过替代远端验收。
+远端实际验证源码提交 `a92e56a0455116664d9a3c23316507834ef7312b`，两条工作流均成功：
+
+- [V9 WebUI](https://github.com/Fanju6/NetProxy-Magisk/actions/runs/38910609293)：类型、Lint、格式、149 项单测、生产/演示构建与 10 项 Playwright 检查通过，任务用时约 1 分 18 秒。
+- [V9 Android Shell](https://github.com/Fanju6/NetProxy-Magisk/actions/runs/38910609234)：Rust、Kotlin、Lint、隔离 arm64 Debug APK、测试 APK、包身份/签名/ABI 和锁文件检查全部通过，任务用时 6 分 2 秒。
+
+工作流没有读取正式签名 Secrets 或进入 V8 发布。运行链接在后续纯文档提交中补记，
+不改变该已验收源码；远端隔离 Debug APK 不代表固定签名的真机覆盖升级证据，后者见上表。
 
 ## 限制与停止边界
 
