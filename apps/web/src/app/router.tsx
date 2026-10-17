@@ -26,6 +26,21 @@ const routeTree = root.addChildren([
     path: '/settings',
     component: lazyRouteComponent(() => import('@/features/settings'), 'SettingsPage'),
   }),
+  createRoute({
+    getParentRoute: () => root,
+    path: '/settings/configuration',
+    component: lazyRouteComponent(() => import('@/features/configuration'), 'ConfigurationPage'),
+  }),
+  createRoute({
+    getParentRoute: () => root,
+    path: '/settings/policies',
+    component: lazyRouteComponent(() => import('@/features/policies'), 'PoliciesPage'),
+  }),
+  createRoute({
+    getParentRoute: () => root,
+    path: '/settings/logs',
+    component: lazyRouteComponent(() => import('@/features/operations'), 'OperationsPage'),
+  }),
 ])
 export function makeRouter() {
   return createRouter({

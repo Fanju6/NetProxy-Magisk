@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
+import { Link } from '@tanstack/react-router'
 import { ArrowUpRight, Code2, FileText, Network, Route, Wifi } from 'lucide-react'
 import { useApi, usePreferences } from '@/app/context'
 import { moduleQueries } from '@/api/queries'
@@ -7,11 +8,13 @@ import { Choice } from '@/components/choice'
 import { ErrorState } from '@/components/states'
 import { Switch } from '@/components/ui/switch'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useManagementAction } from '@/api/management'
 
 export function SettingsPage() {
   const api = useApi()
   const cache = useQueryClient()
   const { preferences, update, t } = usePreferences()
+  const management = useManagementAction()
   const config = useQuery({
     ...moduleQueries(api).autoStart,
     select: (document) => ({
@@ -22,7 +25,7 @@ export function SettingsPage() {
   const save = useMutation({
     mutationFn: (value: boolean) => {
       if (!config.data) throw new Error('Configuration is not loaded')
-      return api.request(
+      return management.run(
         {
           method: 'PUT',
           path: '/config',
@@ -36,12 +39,37 @@ export function SettingsPage() {
       await cache.invalidateQueries({ queryKey: ['config', 'module/auto_start'] })
     },
   })
-  const future = [
-    { title: t('inbound'), description: t('inboundDescription'), icon: Network },
-    { title: t('network'), description: t('networkDescription'), icon: Wifi },
-    { title: t('routes'), description: t('routesDescription'), icon: Route },
-    { title: t('kernel'), description: t('kernelDescription'), icon: Code2 },
-    { title: t('logs'), description: t('logsDescription'), icon: FileText },
+  const pages = [
+    {
+      title: t('inbound'),
+      description: t('inboundDescription'),
+      icon: Network,
+      to: '/settings/policies' as const,
+    },
+    {
+      title: t('network'),
+      description: t('networkDescription'),
+      icon: Wifi,
+      to: '/settings/policies' as const,
+    },
+    {
+      title: t('routes'),
+      description: t('routesDescription'),
+      icon: Route,
+      to: '/settings/configuration' as const,
+    },
+    {
+      title: t('kernel'),
+      description: t('kernelDescription'),
+      icon: Code2,
+      to: '/settings/configuration' as const,
+    },
+    {
+      title: t('logs'),
+      description: t('logsDescription'),
+      icon: FileText,
+      to: '/settings/logs' as const,
+    },
   ]
   return (
     <div className="max-w-3xl space-y-9">
@@ -99,7 +127,7 @@ export function SettingsPage() {
               <Switch
                 id="auto-start"
                 checked={config.data.value}
-                disabled={!api.supports('config.write') || save.isPending}
+                disabled={!api.supports('config.write') || save.isPending || management.pending}
                 onCheckedChange={(value) => save.mutate(value)}
               />
             )}
@@ -107,12 +135,12 @@ export function SettingsPage() {
         )}
         {save.isError && <ErrorState compact error={save.error} />}
       </section>
-      <section aria-labelledby="roadmap-title" className="space-y-2">
-        <h2 id="roadmap-title" className="section-label">
-          {t('roadmap')}
+      <section aria-labelledby="management-title" className="space-y-2">
+        <h2 id="management-title" className="section-label">
+          {t('general')}
         </h2>
-        {future.map((item) => (
-          <div key={item.title} className="setting-row">
+        {pages.map((item) => (
+          <Link to={item.to} key={item.title} className="setting-row">
             <div className="flex min-w-0 gap-3">
               <item.icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
               <div className="min-w-0 space-y-1">
@@ -120,10 +148,8 @@ export function SettingsPage() {
                 <p className="text-xs text-muted-foreground">{item.description}</p>
               </div>
             </div>
-            <span className="max-w-28 text-right text-xs text-muted-foreground">
-              {t('nextBatch')}
-            </span>
-          </div>
+            <ArrowUpRight className="size-4 shrink-0 text-muted-foreground" />
+          </Link>
         ))}
       </section>
       <section className="space-y-4 border-t pt-6">

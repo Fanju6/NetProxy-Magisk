@@ -23,6 +23,7 @@ import type { ApiClient } from './client'
 import { ApiError } from './contracts'
 import { resourceQueries } from './resources'
 import { subscriptionBusy } from './subscription-control'
+import { managementBusy } from './management'
 import type { NodeTarget } from './contracts'
 import {
   observeRouting,
@@ -187,7 +188,12 @@ export function useServiceAction() {
   return {
     mutate: (action: ServiceAction) => {
       const current = cache.getQueryData<ServiceOperation | null>(serviceOperationKey)
-      if ((current && current.phase !== 'idle') || routingBusy(cache) || subscriptionBusy(cache))
+      if (
+        (current && current.phase !== 'idle') ||
+        routingBusy(cache) ||
+        subscriptionBusy(cache) ||
+        managementBusy(cache)
+      )
         return
       if (!api.supports(`service.${action}`)) return
       const epoch = serviceEpoch(cache) + 1
@@ -306,6 +312,7 @@ function useRoutingAction(kind: 'selection' | 'mode') {
       if (
         routingBusy(cache) ||
         subscriptionBusy(cache) ||
+        managementBusy(cache) ||
         (service && service.phase !== 'idle') ||
         !api.supports(`${target.kind}.write`)
       )

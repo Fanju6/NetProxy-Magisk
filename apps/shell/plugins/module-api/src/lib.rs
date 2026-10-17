@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
+mod management;
 #[cfg(target_os = "android")]
 use tauri::Manager;
 use tauri::{
@@ -316,6 +317,9 @@ impl NodeTarget {
 pub enum ServiceAction {
     Start,
     Stop,
+    Restart,
+    Reload,
+    Check,
 }
 
 fn valid_id(id: &str) -> bool {
@@ -473,6 +477,15 @@ async fn subscription_write<R: Runtime>(
 }
 
 #[tauri::command]
+async fn management<R: Runtime>(
+    app: AppHandle<R>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<Value, BridgeError> {
+    let request = management::Request::parse(request.body())?;
+    dispatch(app, "management", json!(request)).await
+}
+
+#[tauri::command]
 async fn select_node<R: Runtime>(
     app: AppHandle<R>,
     request_id: String,
@@ -590,6 +603,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             subscription_read,
             subscription_action,
             subscription_write,
+            management,
             service_action,
             select_node,
             change_mode,
@@ -967,15 +981,12 @@ mod tests {
     }
 
     #[test]
-    fn service_actions_only_accept_start_and_stop() {
-        for action in ["start", "stop"] {
+    fn service_actions_only_accept_fixed_lifecycle_operations() {
+        for action in ["start", "stop", "restart", "reload", "check"] {
             let parsed = serde_json::from_value::<ServiceAction>(json!(action)).unwrap();
             assert_eq!(serde_json::to_value(parsed).unwrap(), json!(action));
         }
         for forbidden in [
-            "restart",
-            "reload",
-            "check",
             "toggle",
             "status",
             "Start",

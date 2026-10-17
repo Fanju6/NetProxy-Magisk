@@ -31,6 +31,7 @@ import {
 import type { NodeSnapshot } from './contracts'
 import { acceptResourceEvent, resetResourceSession } from './resources'
 import { subscriptionEventEpoch, useSubscriptionOperation } from './subscription-control'
+import { managementEpoch, managementKey } from './management'
 
 export function acceptTraffic(service: ServiceStatus | undefined, traffic: Traffic): boolean {
   return (
@@ -68,6 +69,12 @@ export function ModuleEvents() {
   const subscriptionOperation = useSubscriptionOperation()
   const resourceEpoch =
     (subscriptionOperation?.epoch ?? 0) - (subscriptionOperation?.phase === 'pending' ? 1 : 0)
+  const managementVersion =
+    useQuery({
+      queryKey: managementKey,
+      queryFn: () => ({ epoch: 0, pending: false }),
+      enabled: false,
+    }).data?.epoch ?? 0
   useEffect(() => {
     let close: (() => void) | undefined
     let retryTimer: ReturnType<typeof setTimeout> | undefined
@@ -116,7 +123,8 @@ export function ModuleEvents() {
         generation === currentGeneration &&
         serviceEpoch(cache) === operationEpoch &&
         routingEpoch(cache) === routeEpoch &&
-        subscriptionEventEpoch(cache) === resourceEpoch
+        subscriptionEventEpoch(cache) === resourceEpoch &&
+        managementEpoch(cache) === managementVersion
       const pending = new Set(['status', 'groups', 'subscriptions'])
       let liveAt: number | undefined
       const fail = (retry = true) => {
@@ -151,7 +159,10 @@ export function ModuleEvents() {
       let pendingNodes: NodeSnapshot | undefined
       let initialResources = true
       const routing = cache.getQueryData<RoutingOperation | null>(routingOperationKey)
-      const checkRouting = (routing != null && routing.phase !== 'pending') || resourceEpoch > 0
+      const checkRouting =
+        (routing != null && routing.phase !== 'pending') ||
+        resourceEpoch > 0 ||
+        managementVersion > 0
       let confirmed = !checkRouting
       let confirming = false
       let changedDuringCheck = false
@@ -364,7 +375,7 @@ export function ModuleEvents() {
       stop()
       setConnection('paused')
     }
-  }, [api, cache, attempt, operationEpoch, routeEpoch, resourceEpoch])
+  }, [api, cache, attempt, operationEpoch, routeEpoch, resourceEpoch, managementVersion])
   return connection !== 'live' ? (
     <div
       role={connection === 'offline' || connection === 'reconnecting' ? 'alert' : 'status'}

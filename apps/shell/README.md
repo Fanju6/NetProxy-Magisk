@@ -1,6 +1,6 @@
-# NetProxy Android Native PoC
+# NetProxy V9 Android Prototype
 
-这是 V9 第一阶段的 Android 原生壳，不是正式管理器替代版本。M4.3.2 在公开资源与核心控制基础上加入 URL 订阅增删改、更新和取消；只补充 Go 更新全部的部分失败响应，不修改更新引擎、模块配置结构或 V8 发布流水线，不实现桌面平台。
+这是可试用的 V9 Android 管理器原型，尚未正式发布。已接入服务控制、节点与订阅管理、配置和本地规则、入站、应用/Wi-Fi 策略、日志与诊断。V9 不以兼容 V8 为目标，但继续复用经过验证的 TLS、私有凭据交付和 Go 事务；不修改 V8 发布流水线，不实现桌面平台。
 
 ## 工程
 
@@ -87,6 +87,8 @@ React / TanStack Query / Zod
 ```
 
 - 只读资源枚举为 `info/service/nodes/selection/mode/catalog/subscriptions`，`subscription_read` 只接受严格分组 ID 与 `detail/history/progress`，禁止私有查询。`subscription_action(update/cancel)` 和 `subscription_write(add/edit/remove/update_all)` 严格验证操作、字段与 ID；方法、路径及删除替代组 query 仅在原生层构造。事件主题只有 `status/groups/subscriptions`，traffic 随 status 到达。其他核心操作边界不变，不提供任意 HTTP、凭据、文件或命令的 IPC。
+- `management` 是固定业务枚举，不是通用 HTTP：配置目标仅限 module、inbound、sing-box 主配置/分区、本地规则和只读 runtime；另允许应用/图标、Wi-Fi、日志、eBPF、节点内容操作与固定诊断导出。`service_action` 支持 start/stop/restart/reload/check。请求仍受双层字段、revision、类型及大小校验，不允许访问 api.json 或统计状态。
+- 配置与节点原文只在用户主动打开的编辑器中保留；新输入的凭据可经过 JS/IPC，不声称永远不进入 JS。敏感内容不进入 Query/Mutation 缓存、持久存储或日志。诊断包留在原生私有缓存，系统分享仅授予选定接收方读取权限；前端只收到分享启动结果，不收到设备路径。
 - 公开 Catalog 的 GET 与 SSE 共用原生字段投影，剔除私有设置、官网 URL、未知扩展与原始异常；前端仍按实际 Go 结构验证 `local/subscription`、流量、稀疏历史及当前阶段，不把进度消失当作成功。
 - Kotlin 通过 Gradle sourceSet 直接编译 V8 `core/api` 源码，不复制或分叉证书、Bearer、Provider 和取消实现。首次配对同样复用该传输，安全流程见 [ADR 001](docs/adr-001-trusted-pairing.md)。
 - 凭据仍由非导出、仅接受 Binder UID 0 的 `ConnectionProvider` 写入 `noBackupFilesDir/module-connection.json`。证书精确 SHA-256 和主机名验证、禁用代理/重定向、请求取消继续使用原有实现。

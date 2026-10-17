@@ -199,10 +199,10 @@ class ModuleApiBridgeTest {
         assertFalse(result.body.toString().contains(PRIVATE))
     }
 
-    @Test fun onlyStartAndStopProduceFixedEmptyPOSTsAndReturnActualGoActionAndStatus() = runTest {
+    @Test fun lifecycleOperationsProduceFixedEmptyPOSTsAndReturnActualGoActionAndStatus() = runTest {
         val transport = FakeTransport()
         val bridge = bridge(transport)
-        for ((action, state) in listOf("start" to "ready", "stop" to "stopped")) {
+        for ((action, state) in listOf("start" to "ready", "stop" to "stopped", "restart" to "ready", "reload" to "ready", "check" to "ready")) {
             val data = """{"action":"$action","status":{"state":"$state","pid":0}}"""
             transport.content = envelope(code = "service.$action", message = PRIVATE, data = data)
             val result = bridge.serviceAction("action", action)
@@ -211,14 +211,14 @@ class ModuleApiBridgeTest {
             assertEquals("service.$action", result.body.getValue("code").jsonPrimitive.content)
             assertFalse(result.body.toString().contains(PRIVATE))
         }
-        for (action in listOf("restart", "reload", "check", "toggle", "status", "Start", " start", "stop ",
+        for (action in listOf("toggle", "status", "Start", " start", "stop ",
             "/service/start", "service/stop", "start?secret=x", "POST", PRIVATE, "")) {
             assertFailure("api.invalid_request", runCatching { bridge.serviceAction("forbidden", action) })
         }
         for (id in listOf("", "../action", "x".repeat(97))) {
             assertFailure("api.invalid_request", runCatching { bridge.serviceAction(id, "start") })
         }
-        assertEquals(listOf("/service/start", "/service/stop"), transport.paths)
+        assertEquals(listOf("/service/start", "/service/stop", "/service/restart", "/service/reload", "/service/check"), transport.paths)
     }
 
     @Test fun serviceErrorsPreserveOnlyBooleanPersistedAlongsideHTTPStatusAndCode() = runTest {
@@ -1097,7 +1097,7 @@ class ModuleApiBridgeTest {
         override suspend fun <T> request(method: String, path: String, body: JsonObject?, query: Map<String, String>, mutation: Boolean,
             decode: (Int, InputStream) -> T): T {
             assertTrue(query.isEmpty())
-            if (path in setOf("/service/start", "/service/stop")) {
+            if (path in setOf("/service/start", "/service/stop", "/service/restart", "/service/reload", "/service/check")) {
                 assertEquals("POST", method)
                 assertEquals(JsonObject(emptyMap()), body)
                 assertTrue(mutation)

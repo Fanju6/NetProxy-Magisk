@@ -125,6 +125,17 @@ func TestListConfigsUsesReadableRuntimeID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	for _, target := range []string{"module", "module/auto_start", "module/wifi"} {
+		found := false
+		for _, document := range documents {
+			if document.ID == target && document.Category == "module" && document.Editable {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("module configuration missing from list: %s", target)
+		}
+	}
 	for _, document := range documents {
 		if document.Filename == "service.json" || document.Filename == "internal.json" {
 			t.Fatalf("内部状态文件不应出现在配置列表: %q", document.ID)

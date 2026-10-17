@@ -6,7 +6,7 @@ export const en = {
   demo: 'Demo mode',
   nativeConnection: 'Native connection · core controls',
   readOnlyNotice:
-    'Service control, nodes, outbound modes, latency tests and URL subscriptions are available. Other changes are not enabled.',
+    'Connected through the trusted native channel. Changes apply to the module on this device.',
   demoNotice: 'All actions affect simulated data only.',
   demoOnly: 'Simulate',
   mainNavigation: 'Main navigation',
@@ -259,7 +259,7 @@ export const zh: Record<MessageKey, string> = {
   settings: '设置',
   demo: '演示模式',
   nativeConnection: '原生连接 · 核心管理',
-  readOnlyNotice: '已接入服务启停、节点、出站模式、测速与 URL 订阅管理，其他修改暂未开放。',
+  readOnlyNotice: '已通过受信任的原生通道连接，修改将应用到本机模块。',
   demoNotice: '所有操作仅影响模拟数据。',
   demoOnly: '模拟操作',
   mainNavigation: '主导航',

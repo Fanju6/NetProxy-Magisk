@@ -32,7 +32,10 @@ export function AppShell() {
   const { t, preferences, update } = usePreferences()
   const api = useApi()
   const pathname = useLocation({ select: (location) => location.pathname })
-  const current = routes.find((route) => route.to === pathname) ?? routes[0]
+  const current =
+    routes.find(
+      (route) => route.to === pathname || (route.to !== '/' && pathname.startsWith(`${route.to}/`)),
+    ) ?? routes[0]
   return (
     <div className="app-shell">
       <a

@@ -3,6 +3,7 @@ const COMMANDS: &[&str] = &[
     "subscription_read",
     "subscription_action",
     "subscription_write",
+    "management",
     "service_action",
     "select_node",
     "change_mode",

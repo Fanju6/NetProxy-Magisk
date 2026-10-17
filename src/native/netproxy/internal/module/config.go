@@ -70,6 +70,11 @@ func ListConfigs(options Options) ([]ConfigDocument, error) {
 		return nil, err
 	}
 	result := make([]ConfigDocument, 0)
+	result = append(result,
+		ConfigDocument{ID: "module", Filename: "module.json", Category: "module", Editable: true},
+		ConfigDocument{ID: "module/auto_start", Filename: "auto_start", Category: "module", Editable: true, Section: "auto_start"},
+		ConfigDocument{ID: "module/wifi", Filename: "wifi", Category: "module", Editable: true, Section: "wifi"},
+	)
 	result = append(result, ConfigDocument{ID: "inbound", Filename: "inbound.json", Category: "inbound", Editable: true})
 	for _, section := range []string{"backend", "root_policy", "app", "ebpf", "tun"} {
 		result = append(result, ConfigDocument{ID: "inbound/" + section, Filename: section, Category: "inbound", Editable: true, Section: section})

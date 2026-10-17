@@ -8,6 +8,7 @@ Module state, public Catalog reads, URL subscription management, service control
 - `allow-subscription-read`
 - `allow-subscription-action`
 - `allow-subscription-write`
+- `allow-management`
 - `allow-service-action`
 - `allow-select-node`
 - `allow-change-mode`
@@ -103,6 +104,32 @@ Enables the close_events command without any pre-configured scope.
 <td>
 
 Denies the close_events command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`module-api:allow-management`
+
+</td>
+<td>
+
+Enables the management command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`module-api:deny-management`
+
+</td>
+<td>
+
+Denies the management command without any pre-configured scope.
 
 </td>
 </tr>

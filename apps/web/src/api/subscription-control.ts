@@ -13,6 +13,7 @@ import {
   type SubscriptionInput,
 } from './subscription-input'
 import type { ApiRequest } from './contracts'
+import { managementBusy } from './management'
 
 export const subscriptionResultSchema = z.object({
   group_id: groupIdSchema,
@@ -172,6 +173,7 @@ export function beginSubscriptionWrite(
       (!groupIdSchema.safeParse(groupId).success || group?.type !== 'subscription')) ||
     !api.supports(`subscriptions.${command.action}`) ||
     subscriptionBusy(cache) ||
+    managementBusy(cache) ||
     routingBusy(cache) ||
     (service && service.phase !== 'idle')
   )

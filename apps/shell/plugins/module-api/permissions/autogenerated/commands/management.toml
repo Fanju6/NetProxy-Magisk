@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-management"
+description = "Enables the management command without any pre-configured scope."
+commands.allow = ["management"]
+
+[[permission]]
+identifier = "deny-management"
+description = "Denies the management command without any pre-configured scope."
+commands.deny = ["management"]

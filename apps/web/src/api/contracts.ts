@@ -208,6 +208,21 @@ export type ApiPath =
   | '/service'
   | '/service/start'
   | '/service/stop'
+  | '/service/restart'
+  | '/service/reload'
+  | '/service/check'
+  | '/configs'
+  | '/config/validate'
+  | '/android/apps'
+  | `/android/icons/${string}`
+  | '/network/wifi-list'
+  | '/logs'
+  | '/diagnostics/ebpf'
+  | '/diagnostics/export'
+  | '/nodes'
+  | '/nodes/get'
+  | '/nodes/export'
+  | '/nodes/import'
   | '/nodes/snapshot'
   | '/nodes/delay'
   | '/selection'
@@ -259,6 +274,24 @@ export const apiOperations = [
   'subscriptions.update_all',
   'config.read',
   'config.write',
+  'config.list',
+  'config.validate',
+  'android.apps',
+  'android.icon',
+  'network.wifi',
+  'logs.read',
+  'logs.clear',
+  'diagnostics.ebpf',
+  'diagnostics.export',
+  'nodes.get',
+  'nodes.export',
+  'nodes.add',
+  'nodes.edit',
+  'nodes.remove',
+  'nodes.import',
+  'service.restart',
+  'service.reload',
+  'service.check',
 ] as const
 export type ApiOperation = (typeof apiOperations)[number]
 
@@ -272,15 +305,37 @@ const operations: Partial<Record<ApiRequest['method'], Partial<Record<ApiPath, A
     '/subscriptions': 'subscriptions.read',
     '/catalog': 'catalog.read',
     '/config': 'config.read',
+    '/configs': 'config.list',
+    '/android/apps': 'android.apps',
+    '/network/wifi-list': 'network.wifi',
+    '/logs': 'logs.read',
+    '/diagnostics/export': 'diagnostics.export',
+    '/nodes/get': 'nodes.get',
+    '/nodes/export': 'nodes.export',
   },
   POST: {
     '/service/start': 'service.start',
     '/service/stop': 'service.stop',
     '/nodes/delay': 'nodes.delay',
+    '/nodes': 'nodes.add',
+    '/nodes/import': 'nodes.import',
+    '/config/validate': 'config.validate',
+    '/diagnostics/ebpf': 'diagnostics.ebpf',
+    '/service/restart': 'service.restart',
+    '/service/reload': 'service.reload',
+    '/service/check': 'service.check',
   },
-  PUT: { '/selection': 'selection.write', '/mode': 'mode.write', '/config': 'config.write' },
+  PUT: {
+    '/selection': 'selection.write',
+    '/mode': 'mode.write',
+    '/config': 'config.write',
+    '/nodes': 'nodes.edit',
+  },
+  DELETE: { '/logs': 'logs.clear', '/nodes': 'nodes.remove' },
 }
 export function requestOperation(request: ApiRequest): ApiOperation | undefined {
+  if (request.method === 'GET' && /^\/android\/icons\/[a-f0-9]{64}$/.test(request.path))
+    return 'android.icon'
   if (request.query === undefined && request.method === 'POST') {
     if (request.path === '/subscriptions') return 'subscriptions.add'
     if (request.path === '/subscriptions/update-all' && request.body === undefined)

@@ -29,10 +29,12 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromStream
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import java.io.InputStream
 import java.io.FilterInputStream
 import java.lang.ref.WeakReference
+import java.util.Base64
 
 internal data class ReadResult(val status: Int, val body: JsonObject)
 internal data class EventResult(val name: String, val body: JsonObject)
@@ -72,6 +74,7 @@ internal class ModuleApiBridge(
     private val scope: CoroutineScope,
     private val nowMillis: () -> Long = { System.nanoTime() / 1_000_000 },
     private val workDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val shareDiagnostics: (suspend () -> Unit)? = null,
 ) {
     private val lock = Any()
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
@@ -165,6 +168,9 @@ internal class ModuleApiBridge(
         val path = when (action) {
             "start" -> "/service/start"
             "stop" -> "/service/stop"
+            "restart" -> "/service/restart"
+            "reload" -> "/service/reload"
+            "check" -> "/service/check"
             else -> throw BridgeFailure("api.invalid_request", 400)
         }
         return request(requestId, path, mutation = true)
@@ -195,6 +201,24 @@ internal class ModuleApiBridge(
             body = args.input ?: JsonObject(emptyMap()), query = query,
             subscriptionGroup = args.groupId, subscriptionMutation = true,
             subscriptionSummary = args.action == "update_all")
+    }
+
+    suspend fun management(raw: String): ReadResult {
+        val args = Management.parse(raw)
+        if (args.operation == "icon") return perform(args.requestId, mutation = false) {
+            val key = args.input!!.getValue("icon_key").jsonPrimitive.content
+            val bytes = transport.image("/android/icons/$key")
+            val signature = byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 13, 10, 26, 10)
+            if (bytes.size > 256 * 1024) throw BridgeFailure("api.body_too_large")
+            if (bytes.size < signature.size || !bytes.copyOfRange(0, signature.size).contentEquals(signature)) throw BridgeFailure("api.invalid_response")
+            ReadResult(200, envelope(true, "android.icon", buildJsonObject { put("content", Base64.getEncoder().encodeToString(bytes)) }))
+        }
+        if (args.operation == "diagnostics") return perform(args.requestId, mutation = false) {
+            (shareDiagnostics ?: throw BridgeFailure("api.connection_unavailable"))()
+            ReadResult(200, envelope(true, "diagnostics.shared", buildJsonObject { put("shared", true) }))
+        }
+        val route = Management.route(args)
+        return request(args.requestId, route.path, route.mutation, route.method, route.body, route.query, management = args)
     }
 
     suspend fun selectNode(requestId: String, target: Map<String, Any?>?): ReadResult =
@@ -229,11 +253,23 @@ internal class ModuleApiBridge(
         subscriptionGroup: String? = null,
         subscriptionMutation: Boolean = subscriptionGroup != null,
         subscriptionSummary: Boolean = false,
-    ): ReadResult = coroutineScope {
-        validateId(requestId)
+        management: Management.Request? = null,
+    ): ReadResult {
         if (body != null && body.toString().toByteArray(Charsets.UTF_8).size > BODY_LIMIT) {
             throw BridgeFailure("api.body_too_large")
         }
+        return perform(requestId, mutation, control) {
+            transport.request(method, path, body, query, mutation) { status, input ->
+                ReadResult(status, decode(status, input, subscriptionGroup = subscriptionGroup,
+                    subscriptionMutation = subscriptionMutation, subscriptionSummary = subscriptionSummary,
+                    management = management) { PublicCatalog.read(path, it) })
+            }
+        }
+    }
+
+    private suspend fun <T> perform(requestId: String, mutation: Boolean, control: Boolean = false,
+        action: suspend () -> T): T = coroutineScope {
+        validateId(requestId)
         val job = currentCoroutineContext().job
         synchronized(lock) {
             requireForeground()
@@ -255,13 +291,7 @@ internal class ModuleApiBridge(
             requests[requestId] = job
         }
         try {
-            // 方法、路径与正文仅由上方固定业务入口构造，不接收通用 HTTP 参数。
-            val response = transport.request(
-                method, path, body, query, mutation,
-            ) { status, input ->
-                ReadResult(status, decode(status, input, subscriptionGroup = subscriptionGroup,
-                    subscriptionMutation = subscriptionMutation, subscriptionSummary = subscriptionSummary) { PublicCatalog.read(path, it) })
-            }
+            val response = action()
             currentCoroutineContext().ensureActive()
             synchronized(lock) { requireForeground() }
             response
@@ -439,6 +469,7 @@ internal class ModuleApiBridge(
         subscriptionGroup: String? = null,
         subscriptionMutation: Boolean = subscriptionGroup != null,
         subscriptionSummary: Boolean = false,
+        management: Management.Request? = null,
         project: (JsonElement) -> JsonElement = { it }): JsonObject {
         val header = try {
             BodyLimitInputStream(input).use {
@@ -454,7 +485,10 @@ internal class ModuleApiBridge(
         if (safeCode(header.code) != header.code) throw BridgeFailure("api.invalid_response")
         val ok = status in 200..299 && header.ok
         if (!ok && !allowBusinessFailure) throw safeFailure(ModuleApiException(header.code, SAFE_FAILURE_MESSAGE))
-        val data = if (subscriptionMutation) {
+        val data = if (management != null) {
+            if (ok) Management.success(management, header.data ?: throw BridgeFailure("api.invalid_response"))
+            else Management.failure(management, header.data)
+        } else if (subscriptionMutation) {
             if (ok && header.data !is JsonObject) throw BridgeFailure("api.invalid_response", 502)
             SubscriptionActions.result(header.data, subscriptionGroup, subscriptionSummary)
         } else if (ok) {

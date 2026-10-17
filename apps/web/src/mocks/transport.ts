@@ -13,6 +13,8 @@ import {
   type SubscriptionInput,
 } from '@/api/subscription-input'
 import { z } from 'zod'
+import { ManagementMock } from './management'
+import { managementRequest } from '@/api/management'
 
 const success = <T>(code: string, data: T) => ({
   status: 200,
@@ -33,13 +35,13 @@ export class MockTransport implements ApiTransport {
   }>()
   private timer: ReturnType<typeof setInterval> | undefined
   private tick = 0
-  private config = { auto_start: false }
-  private revision = 1
   private subscriptionUpdates = new Map<string, { cancelled: boolean }>()
   private histories = new Map<string, SubscriptionHistory>()
   private settings = new Map<string, SubscriptionInput>()
   private cachedSubscriptions = new Set<string>()
   private subscriptionCounter = 0
+  private management = new ManagementMock()
+  private nodeDocuments = new Map<string, unknown>()
   constructor(private readonly latency = 180) {}
 
   async request(request: ApiRequest, signal?: AbortSignal) {
@@ -59,6 +61,138 @@ export class MockTransport implements ApiTransport {
       if (request.method === 'GET') signal?.addEventListener('abort', cancel, { once: true })
     })
     const { service, snapshot } = this.state
+    const managed = await this.management.request(request)
+    if (managed) return managed
+    const operation = managementRequest(request)
+    if (operation?.operation.startsWith('node_')) {
+      const input = operation.input as { group_id?: string; node_tag?: string; content?: string }
+      const group = snapshot.groups.find((item) => item.group.id === (input.group_id ?? 'default'))
+      if (!group) return failure(404, 'node.not_found')
+      const node = group.nodes.find((item) => item.tag === input.node_tag)
+      const documentKey = `${group.group.id}/${input.node_tag ?? ''}`
+      if (operation.operation === 'node_read' || operation.operation === 'node_export') {
+        if (!node) return failure(404, 'node.not_found')
+        return operation.operation === 'node_read'
+          ? success(
+              'node.loaded',
+              this.nodeDocuments.get(documentKey) ?? {
+                outbounds: [
+                  {
+                    type: node.protocol,
+                    tag: node.tag,
+                    server: node.server ?? '127.0.0.1',
+                    server_port: node.port ?? 1080,
+                  },
+                ],
+              },
+            )
+          : success('node.exported', {
+              tag: node.tag,
+              protocol: node.protocol,
+              link: `socks://127.0.0.1:1080#${encodeURIComponent(node.tag)}`,
+            })
+      }
+      if (group.group.type !== 'local') return failure(422, 'node.read_only')
+      if (operation.operation === 'node_remove') {
+        if (!node) return failure(404, 'node.not_found')
+        group.nodes = group.nodes.filter((item) => item !== node)
+        this.nodeDocuments.delete(documentKey)
+      } else {
+        let outbounds: unknown[]
+        try {
+          const value: unknown = JSON.parse(input.content!)
+          outbounds = Array.isArray(value)
+            ? value
+            : value &&
+                typeof value === 'object' &&
+                'outbounds' in value &&
+                Array.isArray(value.outbounds)
+              ? value.outbounds
+              : [value]
+        } catch {
+          try {
+            outbounds = input
+              .content!.split(/\r?\n/)
+              .filter(Boolean)
+              .map((line) => {
+                const url = new URL(line)
+                return {
+                  tag: decodeURIComponent(url.hash.slice(1)) || 'Imported node',
+                  type: url.protocol.slice(0, -1),
+                  server: url.hostname,
+                  server_port: Number(url.port || 1080),
+                }
+              })
+          } catch {
+            return failure(422, 'node.invalid')
+          }
+        }
+        const parsed = z
+          .array(
+            z
+              .object({
+                tag: z.string().min(1),
+                type: z.string().min(1),
+                server: z.string().optional(),
+                server_port: z.number().int().optional(),
+              })
+              .passthrough(),
+          )
+          .min(1)
+          .safeParse(outbounds)
+        if (
+          !parsed.success ||
+          (operation.operation === 'node_edit' && (!node || parsed.data.length !== 1))
+        )
+          return failure(422, 'node.invalid')
+        if (
+          parsed.data.some((item) =>
+            group.nodes.some((existing) => existing.tag === item.tag && existing !== node),
+          )
+        )
+          return failure(409, 'node.duplicate')
+        if (operation.operation === 'node_edit')
+          group.nodes = group.nodes.filter((item) => item !== node)
+        for (const item of parsed.data) {
+          group.nodes.push({
+            tag: item.tag,
+            protocol: item.type,
+            ...(item.server ? { server: item.server } : {}),
+            ...(item.server_port ? { port: item.server_port } : {}),
+          })
+          this.nodeDocuments.set(`${group.group.id}/${item.tag}`, { outbounds: [item] })
+        }
+      }
+      group.group.node_count = group.nodes.length
+      group.group.revision++
+      if (group.group.active) {
+        snapshot.selection.active_group_node_count = group.nodes.length
+        service.active_group_node_count = group.nodes.length
+        const selected = snapshot.selection.selected_node_ref.slice(group.group.id.length + 1)
+        if (selected && !group.nodes.some((item) => item.tag === selected)) {
+          snapshot.selection.selector_mode = 'urltest'
+          snapshot.selection.selected_node_ref = ''
+          snapshot.selection.selected = `Auto/${group.group.runtime_tag}`
+          snapshot.selection.runtime_selected =
+            service.state === 'ready' && group.nodes[0]
+              ? `${group.group.runtime_tag}/${group.nodes[0].tag}`
+              : ''
+          service.selector_mode = 'urltest'
+          service.selected_node_ref = ''
+          service.runtime_selected = snapshot.selection.runtime_selected
+        }
+      }
+      this.emit('groups')
+      this.emit('subscriptions')
+      this.emit('status')
+      return success('node.applied', {
+        group_id: group.group.id,
+        revision: group.group.revision,
+        node_count: group.group.node_count,
+        persisted: true,
+        runtime_synced: service.state === 'ready',
+      })
+    }
     const allowed =
       request.path === '/config'
         ? ['target']
@@ -265,8 +399,10 @@ export class MockTransport implements ApiTransport {
           available: service.available_outbound_modes,
         })
       case 'POST /service/start':
+      case 'POST /service/restart':
+      case 'POST /service/reload':
       case 'POST /service/stop': {
-        const running = request.path === '/service/start'
+        const running = request.path !== '/service/stop'
         if (request.body !== undefined && JSON.stringify(request.body) !== '{}')
           return failure(400, 'usage.invalid')
         service.state = running ? 'ready' : 'stopped'
@@ -292,10 +428,12 @@ export class MockTransport implements ApiTransport {
         this.emit('traffic')
         this.emit('groups')
         return success(running ? 'service.start' : 'service.stop', {
-          action: running ? 'start' : 'stop',
+          action: request.path.slice('/service/'.length),
           status: structuredClone(service),
         })
       }
+      case 'POST /service/check':
+        return success('service.check', { action: 'check', status: structuredClone(service) })
       case 'PUT /selection': {
         const parsed = z
           .strictObject({ group_id: z.string().min(1), node_tag: z.string() })
@@ -396,43 +534,6 @@ export class MockTransport implements ApiTransport {
               items,
             },
           ],
-        })
-      }
-      case 'GET /config':
-        if (request.query?.target !== 'module/auto_start') return failure(400, 'usage.invalid')
-        return success('config.read', {
-          target: 'module/auto_start',
-          revision: `demo-revision-${this.revision}`,
-          content: JSON.stringify(this.config),
-        })
-      case 'PUT /config': {
-        if (request.query?.target !== 'module/auto_start') return failure(400, 'usage.invalid')
-        const parsed = z
-          .strictObject({ revision: z.string().min(1), content: z.string() })
-          .safeParse(request.body)
-        if (!parsed.success) return failure(400, 'usage.invalid')
-        const body = parsed.data
-        if (body.revision !== `demo-revision-${this.revision}`)
-          return failure(409, 'config.conflict')
-        let value: unknown
-        try {
-          value = JSON.parse(body.content)
-        } catch {
-          return failure(500, 'command.failed')
-        }
-        if (
-          typeof value !== 'object' ||
-          value === null ||
-          !('auto_start' in value) ||
-          typeof value.auto_start !== 'boolean' ||
-          Object.keys(value).length !== 1
-        )
-          return failure(500, 'command.failed')
-        this.config = { auto_start: value.auto_start }
-        this.revision++
-        return success('config.apply', {
-          target: 'module/auto_start',
-          revision: `demo-revision-${this.revision}`,
         })
       }
       default:

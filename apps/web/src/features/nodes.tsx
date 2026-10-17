@@ -26,6 +26,7 @@ import { Details } from '@/components/details'
 import { EmptyState, ErrorState, LoadingState } from '@/components/states'
 import { displayNode } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { NodeManager } from './node-manager'
 
 type Node = NodeSnapshot['groups'][number]['nodes'][number]
 export function NodesPage() {
@@ -61,6 +62,7 @@ export function NodesPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
+        <NodeManager snapshot={data} />
         <div className="relative min-w-0 flex-1 sm:max-w-sm">
           <Search
             aria-hidden

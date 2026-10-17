@@ -10,6 +10,7 @@ import {
 } from './contracts'
 import { unavailableTransport } from './client'
 import { subscriptionCreateSchema, subscriptionInputSchema } from './subscription-input'
+import { managementRequest } from './management'
 
 export interface NativeIpc {
   invoke<T>(command: string, args: Record<string, unknown>): Promise<T>
@@ -95,6 +96,26 @@ export class NativeTransport implements ApiTransport {
     'subscriptions.edit',
     'subscriptions.remove',
     'subscriptions.update_all',
+    'config.list',
+    'config.read',
+    'config.write',
+    'config.validate',
+    'android.apps',
+    'android.icon',
+    'network.wifi',
+    'logs.read',
+    'logs.clear',
+    'diagnostics.ebpf',
+    'diagnostics.export',
+    'nodes.get',
+    'nodes.export',
+    'nodes.add',
+    'nodes.edit',
+    'nodes.remove',
+    'nodes.import',
+    'service.restart',
+    'service.reload',
+    'service.check',
   ] as const
   private releaseEvents: (() => void) | undefined
   private eventGeneration = 0
@@ -122,7 +143,12 @@ export class NativeTransport implements ApiTransport {
       ? readResources[request.path]
       : undefined
     let deleteQuery = false
-    if (request.method === 'POST' && request.path === '/subscriptions') {
+    const management = managementRequest(request)
+    if (management) {
+      operation = 'management'
+      args = management
+      deleteQuery = true
+    } else if (request.method === 'POST' && request.path === '/subscriptions') {
       const parsed = subscriptionCreateSchema.safeParse(request.body)
       if (!parsed.success)
         throw new ApiError('client.operation_denied', 'Invalid subscription input', 403)
@@ -193,7 +219,13 @@ export class NativeTransport implements ApiTransport {
       args = { groupId: match[1], resource: match[2] ?? 'detail' }
     } else if (
       request.method === 'POST' &&
-      ['/service/start', '/service/stop'].includes(request.path) &&
+      [
+        '/service/start',
+        '/service/stop',
+        '/service/restart',
+        '/service/reload',
+        '/service/check',
+      ].includes(request.path) &&
       request.body === undefined
     ) {
       operation = 'service_action'

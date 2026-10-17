@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { clearMocks, mockIPC } from '@tauri-apps/api/mocks'
 import { z } from 'zod'
 import { ApiClient } from './client'
-import { type ApiEvent, type ApiRequest } from './contracts'
+import { apiOperations, type ApiEvent, type ApiRequest } from './contracts'
 import { NativeTransport, createNativeTransport, type NativeIpc } from './native'
 
 afterEach(() => {
@@ -92,34 +92,35 @@ describe('restricted native requests', () => {
       requestId: expect.any(String),
       resource: path === '/nodes/snapshot' ? 'nodes' : path.slice(1),
     })
-    expect(transport.capabilities).toEqual([
-      'info.read',
-      'service.read',
-      'service.start',
-      'service.stop',
-      'nodes.read',
-      'selection.read',
-      'selection.write',
-      'mode.read',
-      'mode.write',
-      'nodes.delay',
-      'catalog.read',
-      'subscriptions.read',
-      'subscriptions.detail',
-      'subscriptions.history',
-      'subscriptions.progress',
-      'subscriptions.update',
-      'subscriptions.cancel',
-      'subscriptions.add',
-      'subscriptions.edit',
-      'subscriptions.remove',
-      'subscriptions.update_all',
-    ])
+    expect(transport.capabilities).toEqual(
+      expect.arrayContaining([
+        'info.read',
+        'service.read',
+        'service.start',
+        'service.stop',
+        'nodes.read',
+        'selection.read',
+        'selection.write',
+        'mode.read',
+        'mode.write',
+        'nodes.delay',
+        'catalog.read',
+        'subscriptions.read',
+        'subscriptions.detail',
+        'subscriptions.history',
+        'subscriptions.progress',
+        'subscriptions.update',
+        'subscriptions.cancel',
+        'subscriptions.add',
+        'subscriptions.edit',
+        'subscriptions.remove',
+        'subscriptions.update_all',
+      ]),
+    )
+    expect(new Set(transport.capabilities)).toEqual(new Set(apiOperations))
   })
   it.each([
-    { method: 'POST', path: '/service/restart' },
-    { method: 'POST', path: '/service/reload' },
-    { method: 'POST', path: '/service/check' },
+    { method: 'POST', path: '/service/reboot' },
     { method: 'POST', path: '/service/start', body: {} },
     { method: 'PUT', path: '/selection', body: {} },
     { method: 'DELETE', path: '/subscriptions' },
@@ -329,7 +330,7 @@ describe('restricted native requests', () => {
     ).rejects.toMatchObject({ code: 'client.operation_denied' })
     expect(invoke).toHaveBeenCalledTimes(2)
   })
-  it.each(['start', 'stop'] as const)(
+  it.each(['start', 'stop', 'restart', 'reload', 'check'] as const)(
     'maps only service.%s to the restricted write command',
     async (action) => {
       const { transport, invoke } = setup()
@@ -341,6 +342,38 @@ describe('restricted native requests', () => {
       })
     },
   )
+  it.each([
+    [
+      { method: 'GET', path: '/config', query: { target: 'module' } },
+      { operation: 'config_read', input: { target: 'module' } },
+    ],
+    [
+      {
+        method: 'PUT',
+        path: '/config',
+        query: { target: 'inbound/app' },
+        body: { revision: 'a'.repeat(64), content: '{"app":{}}' },
+      },
+      {
+        operation: 'config_apply',
+        input: { target: 'inbound/app', revision: 'a'.repeat(64), content: '{"app":{}}' },
+      },
+    ],
+    [{ method: 'GET', path: '/android/apps' }, { operation: 'apps' }],
+    [
+      { method: 'GET', path: '/android/icons/' + 'a'.repeat(64) },
+      { operation: 'icon', input: { icon_key: 'a'.repeat(64) } },
+    ],
+    [{ method: 'GET', path: '/diagnostics/export' }, { operation: 'diagnostics' }],
+  ])('maps an authorized management request into a fixed native command', async (request, args) => {
+    const { transport, invoke } = setup()
+    invoke.mockResolvedValue({ status: 200, body: event.body })
+    await transport.request(request as ApiRequest)
+    expect(invoke).toHaveBeenCalledExactlyOnceWith('plugin:module-api|management', {
+      requestId: expect.any(String),
+      ...args,
+    })
+  })
   it.each([
     ['PUT', '/selection', 'select_node'],
     ['POST', '/nodes/delay', 'test_delay'],

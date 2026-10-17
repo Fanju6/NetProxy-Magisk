@@ -81,6 +81,7 @@ class ModuleApiPlugin(activity: Activity) : Plugin(activity) {
         ModuleApiBridge(
             transport,
             CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+            shareDiagnostics = ::shareDiagnostics,
         )
     }
     private val bridge get() = lifecycle.bridge
@@ -146,6 +147,20 @@ class ModuleApiPlugin(activity: Activity) : Plugin(activity) {
             put("status", result.status)
             put("body", JSONObject(result.body.toString()))
         }
+    }
+
+    @Command
+    fun management(invoke: Invoke) = dispatch(invoke) {
+        val result = bridge.management(invoke.getRawArgs())
+        JSObject().apply {
+            put("status", result.status)
+            put("body", JSONObject(result.body.toString()))
+        }
+    }
+
+    private suspend fun shareDiagnostics() {
+        val owner = lifecycle.owner ?: throw BridgeFailure("api.destroyed")
+        DiagnosticShare.share(owner, transport)
     }
 
     @Command
