@@ -29,6 +29,7 @@ import {
   type RoutingOperation,
 } from './routing-control'
 import type { NodeSnapshot } from './contracts'
+import { acceptResourceEvent, resetResourceSession } from './resources'
 
 export function acceptTraffic(service: ServiceStatus | undefined, traffic: Traffic): boolean {
   return (
@@ -92,6 +93,7 @@ export function ModuleEvents() {
       const release = close
       close = undefined
       clearTraffic()
+      resetResourceSession(cache)
       // 先撤销会话身份，关闭回调即使同步重入也不能再次释放或发布数据。
       release?.()
       return stopped
@@ -142,6 +144,7 @@ export function ModuleEvents() {
       // 单一会话只接受当前连接的完整快照，断流后不沿用旧核心流量。
       let status: ServiceStatus | undefined
       let pendingNodes: NodeSnapshot | undefined
+      let initialResources = true
       const routing = cache.getQueryData<RoutingOperation | null>(routingOperationKey)
       const checkRouting = routing != null && routing.phase !== 'pending'
       let confirmed = !checkRouting
@@ -229,9 +232,13 @@ export function ModuleEvents() {
                     if (status) publishNodes(nodes)
                     else pendingNodes = nodes
                   }
-                } else if (event.name === 'subscriptions')
-                  publish('subscriptions', z.array(groupSchema).parse(envelope.data))
-                else {
+                } else if (event.name === 'subscriptions') {
+                  const summaries = z.array(groupSchema).parse(envelope.data)
+                  if (api.supports('catalog.read'))
+                    acceptResourceEvent(cache, summaries, initialResources)
+                  else publish('subscriptions', summaries)
+                  initialResources = false
+                } else {
                   const traffic = trafficSchema.parse(envelope.data)
                   if (!traffic.available) clearTraffic()
                   else if (confirmed && acceptTraffic(status, traffic)) {

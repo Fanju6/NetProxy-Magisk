@@ -41,6 +41,16 @@ pub enum Resource {
     Nodes,
     Selection,
     Mode,
+    Catalog,
+    Subscriptions,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SubscriptionResource {
+    Detail,
+    History,
+    Progress,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -211,6 +221,27 @@ async fn service_action<R: Runtime>(
 }
 
 #[tauri::command]
+async fn subscription_read<R: Runtime>(
+    app: AppHandle<R>,
+    request_id: String,
+    group_id: String,
+    resource: SubscriptionResource,
+) -> Result<Value, BridgeError> {
+    if !valid_id(&request_id) || !valid_group_id(&group_id) {
+        return Err(BridgeError::invalid());
+    }
+    validate_body(&group_id)?;
+    dispatch(
+        app,
+        "subscriptionRead",
+        json!({
+            "requestId": request_id, "groupId": group_id, "resource": resource
+        }),
+    )
+    .await
+}
+
+#[tauri::command]
 async fn select_node<R: Runtime>(
     app: AppHandle<R>,
     request_id: String,
@@ -325,6 +356,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("module-api")
         .invoke_handler(tauri::generate_handler![
             read,
+            subscription_read,
             service_action,
             select_node,
             change_mode,
@@ -354,7 +386,7 @@ mod tests {
     fn resources_are_not_arbitrary_paths_or_methods() {
         assert!(serde_json::from_str::<Resource>("\"info\"").is_ok());
         assert!(serde_json::from_str::<Resource>("\"service\"").is_ok());
-        for resource in ["nodes", "selection", "mode"] {
+        for resource in ["nodes", "selection", "mode", "catalog", "subscriptions"] {
             assert!(serde_json::from_value::<Resource>(json!(resource)).is_ok());
         }
         for forbidden in [
@@ -365,6 +397,46 @@ mod tests {
             "https://127.0.0.1",
         ] {
             assert!(serde_json::from_value::<Resource>(json!(forbidden)).is_err());
+        }
+    }
+
+    #[test]
+    fn subscription_resources_are_public_readonly_and_group_ids_cannot_change_paths() {
+        for resource in ["detail", "history", "progress"] {
+            assert!(serde_json::from_value::<SubscriptionResource>(json!(resource)).is_ok());
+        }
+        for forbidden in [
+            "private",
+            "detail?private=true",
+            "update",
+            "update-all",
+            "cancel",
+            "add",
+            "edit",
+            "delete",
+            "POST",
+            "/subscriptions/default",
+            "https://localhost",
+        ] {
+            assert!(serde_json::from_value::<SubscriptionResource>(json!(forbidden)).is_err());
+        }
+        for group in ["default", "a.b-C_1"] {
+            assert!(valid_group_id(group));
+        }
+        for group in [
+            "",
+            "staging",
+            "..",
+            "a..b",
+            "a/b",
+            "a%2fb",
+            "a?private=true",
+            "a#b",
+            "a\\b",
+            "_a",
+            "中文",
+        ] {
+            assert!(!valid_group_id(group));
         }
     }
 

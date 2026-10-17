@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-subscription-read"
+description = "Enables the subscription_read command without any pre-configured scope."
+commands.allow = ["subscription_read"]
+
+[[permission]]
+identifier = "deny-subscription-read"
+description = "Denies the subscription_read command without any pre-configured scope."
+commands.deny = ["subscription_read"]

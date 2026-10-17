@@ -1,10 +1,11 @@
 ## Default Permission
 
-Module state, service control, selection, mode, delay and bounded events, without shell, files or arbitrary HTTP access
+Module state, public Catalog and subscription reads, service control, selection, mode, delay and bounded events, without shell, files or arbitrary HTTP access
 
 #### This default permission set includes the following:
 
 - `allow-read`
+- `allow-subscription-read`
 - `allow-service-action`
 - `allow-select-node`
 - `allow-change-mode`
@@ -282,6 +283,32 @@ Enables the service_action command without any pre-configured scope.
 <td>
 
 Denies the service_action command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`module-api:allow-subscription-read`
+
+</td>
+<td>
+
+Enables the subscription_read command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`module-api:deny-subscription-read`
+
+</td>
+<td>
+
+Denies the subscription_read command without any pre-configured scope.
 
 </td>
 </tr>

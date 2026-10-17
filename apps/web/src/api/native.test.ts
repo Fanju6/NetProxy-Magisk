@@ -75,31 +75,41 @@ describe('restricted native requests', () => {
       'plugin:module-api|remove_listener',
     ])
   })
-  it.each(['/info', '/service', '/nodes/snapshot', '/selection', '/mode'] as const)(
-    'maps %s to a resource, never a URL or secret',
-    async (path) => {
-      const { transport, invoke } = setup()
-      const response = { status: 200, body: event.body }
-      invoke.mockResolvedValue(response)
-      expect(await transport.request({ method: 'GET', path })).toEqual(response)
-      expect(invoke).toHaveBeenCalledExactlyOnceWith('plugin:module-api|read', {
-        requestId: expect.any(String),
-        resource: path === '/nodes/snapshot' ? 'nodes' : path.slice(1),
-      })
-      expect(transport.capabilities).toEqual([
-        'info.read',
-        'service.read',
-        'service.start',
-        'service.stop',
-        'nodes.read',
-        'selection.read',
-        'selection.write',
-        'mode.read',
-        'mode.write',
-        'nodes.delay',
-      ])
-    },
-  )
+  it.each([
+    '/info',
+    '/service',
+    '/nodes/snapshot',
+    '/selection',
+    '/mode',
+    '/catalog',
+    '/subscriptions',
+  ] as const)('maps %s to a resource, never a URL or secret', async (path) => {
+    const { transport, invoke } = setup()
+    const response = { status: 200, body: event.body }
+    invoke.mockResolvedValue(response)
+    expect(await transport.request({ method: 'GET', path })).toEqual(response)
+    expect(invoke).toHaveBeenCalledExactlyOnceWith('plugin:module-api|read', {
+      requestId: expect.any(String),
+      resource: path === '/nodes/snapshot' ? 'nodes' : path.slice(1),
+    })
+    expect(transport.capabilities).toEqual([
+      'info.read',
+      'service.read',
+      'service.start',
+      'service.stop',
+      'nodes.read',
+      'selection.read',
+      'selection.write',
+      'mode.read',
+      'mode.write',
+      'nodes.delay',
+      'catalog.read',
+      'subscriptions.read',
+      'subscriptions.detail',
+      'subscriptions.history',
+      'subscriptions.progress',
+    ])
+  })
   it.each([
     { method: 'POST', path: '/service/restart' },
     { method: 'POST', path: '/service/reload' },
@@ -108,7 +118,19 @@ describe('restricted native requests', () => {
     { method: 'PUT', path: '/selection', body: {} },
     { method: 'DELETE', path: '/subscriptions' },
     { method: 'POST', path: '/nodes/snapshot' },
-    { method: 'GET', path: '/subscriptions' },
+    { method: 'GET', path: '/subscriptions', query: { private: 'true' } },
+    { method: 'GET', path: '/subscriptions/default?private=true' },
+    { method: 'GET', path: '/subscriptions/default', query: { private: 'true' } },
+    { method: 'GET', path: '/subscriptions/a%2Fb' },
+    { method: 'GET', path: '/subscriptions/../default' },
+    { method: 'GET', path: '/subscriptions/staging' },
+    { method: 'GET', path: '/subscriptions/a..b' },
+    { method: 'POST', path: '/subscriptions' },
+    { method: 'PUT', path: '/subscriptions/default' },
+    { method: 'DELETE', path: '/subscriptions/default' },
+    { method: 'POST', path: '/subscriptions/default/update' },
+    { method: 'POST', path: '/subscriptions/default/cancel' },
+    { method: 'POST', path: '/subscriptions/update-all' },
     { method: 'GET', path: '/config' },
     { method: 'GET', path: '/info', query: {} },
     { method: 'GET', path: '/info', body: null },
@@ -122,6 +144,22 @@ describe('restricted native requests', () => {
     })
     expect(invoke).not.toHaveBeenCalled()
   })
+  it.each(['detail', 'history', 'progress'] as const)(
+    'uses a typed public %s resource and an original group ID',
+    async (resource) => {
+      const { transport, invoke } = setup()
+      invoke.mockResolvedValue({ status: 200, body: event.body })
+      await transport.request({
+        method: 'GET',
+        path: `/subscriptions/a.b-C_1${resource === 'detail' ? '' : `/${resource}`}`,
+      })
+      expect(invoke).toHaveBeenCalledExactlyOnceWith('plugin:module-api|subscription_read', {
+        requestId: expect.any(String),
+        groupId: 'a.b-C_1',
+        resource,
+      })
+    },
+  )
   it('cancels only the matching request and ignores its late response', async () => {
     const { transport, invoke } = setup()
     const first = deferred<unknown>()

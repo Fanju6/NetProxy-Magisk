@@ -415,6 +415,18 @@
           "markdownDescription": "Denies the service_action command without any pre-configured scope."
         },
         {
+          "description": "Enables the subscription_read command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-subscription-read",
+          "markdownDescription": "Enables the subscription_read command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the subscription_read command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-subscription-read",
+          "markdownDescription": "Denies the subscription_read command without any pre-configured scope."
+        },
+        {
           "description": "Enables the test_delay command without any pre-configured scope.",
           "type": "string",
           "const": "allow-test-delay",
@@ -439,10 +451,10 @@
           "markdownDescription": "Denies the visibility command without any pre-configured scope."
         },
         {
-          "description": "Module state, service control, selection, mode, delay and bounded events, without shell, files or arbitrary HTTP access\n#### This default permission set includes:\n\n- `allow-read`\n- `allow-service-action`\n- `allow-select-node`\n- `allow-change-mode`\n- `allow-test-delay`\n- `allow-cancel`\n- `allow-open-events`\n- `allow-next-event`\n- `allow-close-events`\n- `allow-visibility`\n- `allow-register-listener`\n- `allow-remove-listener`",
+          "description": "Module state, public Catalog and subscription reads, service control, selection, mode, delay and bounded events, without shell, files or arbitrary HTTP access\n#### This default permission set includes:\n\n- `allow-read`\n- `allow-subscription-read`\n- `allow-service-action`\n- `allow-select-node`\n- `allow-change-mode`\n- `allow-test-delay`\n- `allow-cancel`\n- `allow-open-events`\n- `allow-next-event`\n- `allow-close-events`\n- `allow-visibility`\n- `allow-register-listener`\n- `allow-remove-listener`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Module state, service control, selection, mode, delay and bounded events, without shell, files or arbitrary HTTP access\n#### This default permission set includes:\n\n- `allow-read`\n- `allow-service-action`\n- `allow-select-node`\n- `allow-change-mode`\n- `allow-test-delay`\n- `allow-cancel`\n- `allow-open-events`\n- `allow-next-event`\n- `allow-close-events`\n- `allow-visibility`\n- `allow-register-listener`\n- `allow-remove-listener`"
+          "markdownDescription": "Module state, public Catalog and subscription reads, service control, selection, mode, delay and bounded events, without shell, files or arbitrary HTTP access\n#### This default permission set includes:\n\n- `allow-read`\n- `allow-subscription-read`\n- `allow-service-action`\n- `allow-select-node`\n- `allow-change-mode`\n- `allow-test-delay`\n- `allow-cancel`\n- `allow-open-events`\n- `allow-next-event`\n- `allow-close-events`\n- `allow-visibility`\n- `allow-register-listener`\n- `allow-remove-listener`"
         }
       ]
     }

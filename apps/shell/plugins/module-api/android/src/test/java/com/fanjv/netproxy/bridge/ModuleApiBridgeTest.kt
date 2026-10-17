@@ -57,6 +57,39 @@ class ModuleApiBridgeTest {
         assertEquals(5, transport.paths.size)
     }
 
+    @Test fun publicSubscriptionReadsHaveFixedGETPathsAndRejectPrivateAndWriteResources() = runTest {
+        val transport = FakeTransport().apply { content = envelope(data = "[]") }
+        val bridge = bridge(transport)
+        bridge.read("catalog", "catalog")
+        bridge.read("subscriptions", "subscriptions")
+        bridge.subscriptionRead("history", "a.b-C_1", "history")
+        transport.content = envelope(data = """{"id":"a.b-C_1","progress":null}""")
+        bridge.subscriptionRead("progress", "a.b-C_1", "progress")
+        assertEquals(listOf("/catalog", "/subscriptions", "/subscriptions/a.b-C_1/history", "/subscriptions/a.b-C_1/progress"), transport.paths)
+        for (id in listOf("", "staging", "a..b", "a/b", "a%2fb", "a?private=true", "a#b", "_a", "中文")) {
+            assertFailure("api.invalid_request", runCatching { bridge.subscriptionRead("bad", id, "detail") })
+        }
+        for (resource in listOf("private", "detail?private=true", "update", "update-all", "cancel", "add", "edit", "delete", "POST", "/subscriptions/default")) {
+            assertFailure("api.read_only", runCatching { bridge.subscriptionRead("bad", "default", resource) })
+        }
+        assertEquals(4, transport.paths.size)
+    }
+
+    @Test fun newResourceReadsAreCancelledOnBackgroundAndNeverReplayed() = runTest {
+        val transport = FakeTransport().apply { holdReads = true }
+        val bridge = bridge(transport)
+        val pending = async { runCatching { bridge.subscriptionRead("history", "default", "history") } }
+        runCurrent()
+        bridge.pause()
+        runCurrent()
+        assertTrue(pending.await().exceptionOrNull() is CancellationException)
+        assertEquals(1, transport.cancelledReads)
+        assertFailure("api.background", runCatching { bridge.subscriptionRead("next", "default", "detail") })
+        bridge.resume()
+        runCurrent()
+        assertEquals(1, transport.paths.size)
+    }
+
     @Test fun nodeAndModeOperationsUseOnlyFixedMethodsPathsAndTypedBodies() = runTest {
         val transport = FakeTransport()
         val bridge = bridge(transport)

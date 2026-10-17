@@ -152,6 +152,23 @@ it('keeps a new event snapshot when an earlier HTTP read resolves later', async 
   expect(cache.getQueryData(['service'])).toEqual(service)
 })
 
+it('discards the initial resource replay after reconnect while accepting newer subsequent summaries', () => {
+  const h = setup()
+  const fresh = createFixtures().snapshot.groups.map(({ group }) => ({ ...group, revision: 5 }))
+  h.cache.setQueryData(['subscriptions'], fresh)
+  h.complete()
+  expect(h.cache.getQueryData(['subscriptions'])).toEqual(fresh)
+  act(() => h.sessions[0]!.fail(new Error('offline')))
+  act(() => screen.getByRole('button', { name: 'Reconnect' }).click())
+  h.complete()
+  expect(h.cache.getQueryData(['subscriptions'])).toEqual(fresh)
+  const latest = fresh.map((group) => ({ ...group, revision: 6 }))
+  h.emit('subscriptions', latest)
+  expect(h.cache.getQueryData(['subscriptions'])).toEqual(latest)
+  h.emit('subscriptions', fresh, h.sessions[0]!)
+  expect(h.cache.getQueryData(['subscriptions'])).toEqual(latest)
+})
+
 it('clears traffic and history when ready core A changes directly to ready core B', () => {
   const { cache, emit, complete } = setup()
   const { service: coreA } = createFixtures()

@@ -10,7 +10,6 @@ import { z } from 'zod'
 import { useApi } from '@/app/context'
 import {
   configSchema,
-  groupSchema,
   infoSchema,
   modeSchema,
   selectionSchema,
@@ -22,6 +21,7 @@ import {
 } from './contracts'
 import type { ApiClient } from './client'
 import { ApiError } from './contracts'
+import { resourceQueries } from './resources'
 import type { NodeTarget } from './contracts'
 import {
   observeRouting,
@@ -128,12 +128,7 @@ export const moduleQueries = (api: ApiClient) => ({
       return result
     },
   }),
-  subscriptions: queryOptions({
-    queryKey: ['subscriptions'],
-    enabled: api.supports('subscriptions.read'),
-    queryFn: ({ signal }) =>
-      api.request({ method: 'GET', path: '/subscriptions' }, z.array(groupSchema), signal),
-  }),
+  subscriptions: resourceQueries(api).subscriptions,
   autoStart: queryOptions({
     queryKey: ['config', 'module/auto_start'],
     enabled: api.supports('config.read'),

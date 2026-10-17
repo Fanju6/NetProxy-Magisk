@@ -4,7 +4,7 @@ const timestamp = '2026-10-15T12:00:00Z'
 export function demoGroup(
   id: string,
   name: string,
-  type: 'local' | 'url',
+  type: 'local' | 'subscription',
   nodeCount: number,
 ): GroupSummary {
   return {
@@ -15,24 +15,32 @@ export function demoGroup(
     active: id === 'demo-global',
     node_count: nodeCount,
     revision: 1,
-    auto_update: type === 'url',
+    auto_update: type === 'subscription',
     update_interval: 86400,
     update_via_proxy: 'auto',
     usage: null,
     profile_title: '',
     profile_web_page_url: '',
-    last_attempt_at: type === 'url' ? timestamp : '',
-    last_success_at: type === 'url' ? timestamp : '',
-    next_update_at: '',
+    last_attempt_at: type === 'subscription' ? timestamp : '',
+    last_success_at: type === 'subscription' ? timestamp : '',
+    next_update_at: type === 'subscription' ? '2026-10-18T12:00:00Z' : '',
     last_error: '',
     updated_at: timestamp,
     progress: null,
   }
 }
 export function createFixtures(): { service: ServiceStatus; snapshot: NodeSnapshot } {
-  const groups = [
+  const groups: NodeSnapshot['groups'] = [
     {
-      group: demoGroup('demo-global', 'Global Connect', 'url', 6),
+      group: {
+        ...demoGroup('demo-global', 'Global Connect', 'subscription', 6),
+        usage: {
+          upload: 1073741824,
+          download: 10737418240,
+          total: 107374182400,
+          expire: 1794657600,
+        },
+      },
       nodes: [
         { tag: 'Hong Kong 01', protocol: 'vless', server: 'hk-01.example.invalid', port: 443 },
         { tag: 'Tokyo 01', protocol: 'trojan', server: 'jp-01.example.invalid', port: 443 },
@@ -58,7 +66,21 @@ export function createFixtures(): { service: ServiceStatus; snapshot: NodeSnapsh
         { tag: 'Local relay', protocol: 'socks', server: 'relay.example.invalid', port: 1080 },
       ],
     },
-    { group: demoGroup('demo-empty', '备用线路', 'url', 0), nodes: [] },
+    {
+      group: {
+        ...demoGroup('demo-empty', '备用线路', 'subscription', 0),
+        last_error: 'Subscription download failed',
+        progress: {
+          schema: 1,
+          group_id: 'demo-empty',
+          stage: 'download',
+          message: 'Downloading',
+          updated_at: timestamp,
+        },
+      },
+      nodes: [],
+    },
+    { group: demoGroup('demo-local', 'Travel backup', 'local', 0), nodes: [] },
   ]
   const selection = {
     active_group_id: 'demo-global',
@@ -121,6 +143,41 @@ export function createFixtures(): { service: ServiceStatus; snapshot: NodeSnapsh
     worker_pid: 2400,
   }
   return { service, snapshot }
+}
+export function demoHistory(id: string) {
+  return id === 'demo-empty'
+    ? [
+        {
+          at: timestamp,
+          ok: false,
+          code: 'subscription.convert_failed',
+          message: 'Download failed',
+          duration_seconds: 15,
+        },
+      ]
+    : [
+        {
+          at: '2026-10-14T12:00:00Z',
+          ok: false,
+          code: 'subscription.convert_failed',
+          message: 'Download failed',
+          duration_seconds: 12,
+        },
+        {
+          at: timestamp,
+          ok: true,
+          code: 'subscription.updated',
+          node_count: 6,
+          revision: 1,
+          duration_seconds: 2,
+        },
+        {
+          at: timestamp,
+          ok: true,
+          code: 'subscription.runtime_sync_applied',
+          message: 'Runtime applied',
+        },
+      ]
 }
 export function demoTraffic(service: ServiceStatus, tick = 0): Traffic {
   if (service.state !== 'ready') return { available: false }

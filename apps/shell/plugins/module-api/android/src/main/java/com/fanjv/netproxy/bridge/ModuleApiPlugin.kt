@@ -26,6 +26,13 @@ class ReadArgs {
 }
 
 @InvokeArg
+class SubscriptionReadArgs {
+    var requestId: String = ""
+    var groupId: String = ""
+    var resource: String = ""
+}
+
+@InvokeArg
 class ServiceActionArgs {
     var requestId: String = ""
     var action: String = ""
@@ -120,6 +127,16 @@ class ModuleApiPlugin(activity: Activity) : Plugin(activity) {
             context = (context as? ContextWrapper)?.baseContext ?: return null
         }
         return null
+    }
+
+    @Command
+    fun subscriptionRead(invoke: Invoke) = dispatch(invoke) {
+        val args = invoke.parseArgs(SubscriptionReadArgs::class.java)
+        val result = bridge.subscriptionRead(args.requestId, args.groupId, args.resource)
+        JSObject().apply {
+            put("status", result.status)
+            put("body", JSONObject(result.body.toString()))
+        }
     }
 
     @Command

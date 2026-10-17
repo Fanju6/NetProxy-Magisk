@@ -139,9 +139,24 @@ internal class ModuleApiBridge(
             "nodes" -> "/nodes/snapshot"
             "selection" -> "/selection"
             "mode" -> "/mode"
+            "catalog" -> "/catalog"
+            "subscriptions" -> "/subscriptions"
             else -> throw BridgeFailure("api.read_only", 403)
         }
         return request(requestId, path, mutation = false)
+    }
+
+    suspend fun subscriptionRead(requestId: String, groupId: String, resource: String): ReadResult {
+        if (!groupId.matches(Regex("[A-Za-z0-9][A-Za-z0-9._-]*")) || groupId == "staging" || groupId.contains(".."))
+            throw BridgeFailure("api.invalid_request")
+        if (groupId.toByteArray(Charsets.UTF_8).size > BODY_LIMIT) throw BridgeFailure("api.body_too_large")
+        val suffix = when (resource) {
+            "detail" -> ""
+            "history" -> "/history"
+            "progress" -> "/progress"
+            else -> throw BridgeFailure("api.read_only", 403)
+        }
+        return request(requestId, "/subscriptions/$groupId$suffix", mutation = false)
     }
 
     suspend fun serviceAction(requestId: String, action: String): ReadResult {
@@ -207,7 +222,7 @@ internal class ModuleApiBridge(
             val response = transport.request(
                 method, path, body, emptyMap(), mutation,
             ) { status, input ->
-                ReadResult(status, decode(status, input))
+                ReadResult(status, decode(status, input) { PublicCatalog.read(path, it) })
             }
             currentCoroutineContext().ensureActive()
             synchronized(lock) { requireForeground() }
@@ -264,7 +279,7 @@ internal class ModuleApiBridge(
                             if (event.content.toByteArray(Charsets.UTF_8).size > BODY_LIMIT) {
                                 throw BridgeFailure("api.body_too_large", 413)
                             }
-                            val body = decode(200, event.content.byteInputStream(), allowBusinessFailure = false)
+                            val body = decode(200, event.content.byteInputStream(), allowBusinessFailure = false) { PublicCatalog.event(event.name, it) }
                             session.queue.send(EventResult(event.name, body))
                         }
                         throw BridgeFailure("api.disconnected")
@@ -381,7 +396,8 @@ internal class ModuleApiBridge(
     }
 
     @OptIn(ExperimentalSerializationApi::class)
-    private fun decode(status: Int, input: InputStream, allowBusinessFailure: Boolean = true): JsonObject {
+    private fun decode(status: Int, input: InputStream, allowBusinessFailure: Boolean = true,
+        project: (JsonElement) -> JsonElement = { it }): JsonObject {
         val header = try {
             BodyLimitInputStream(input).use {
                 // 复用共享 Envelope 的严格字段校验；Go 错误响应可省略 data。
@@ -397,7 +413,7 @@ internal class ModuleApiBridge(
         val ok = status in 200..299 && header.ok
         if (!ok && !allowBusinessFailure) throw safeFailure(ModuleApiException(header.code, SAFE_FAILURE_MESSAGE))
         val data = if (ok) {
-            header.data?.takeUnless { it is JsonNull } ?: throw BridgeFailure("api.invalid_response")
+            project(header.data?.takeUnless { it is JsonNull } ?: throw BridgeFailure("api.invalid_response"))
         } else buildJsonObject {
             val persisted = ((header.data as? JsonObject)?.get("persisted") as? JsonPrimitive)
                 ?.takeUnless { it.isString }?.booleanOrNull

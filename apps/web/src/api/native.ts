@@ -2,6 +2,7 @@ import { addPluginListener, invoke, isTauri } from '@tauri-apps/api/core'
 import { z } from 'zod'
 import {
   ApiError,
+  groupIdSchema,
   type ApiEvent,
   type ApiRequest,
   type ApiTransport,
@@ -37,6 +38,8 @@ const readResources: Readonly<Record<string, string>> = {
   '/nodes/snapshot': 'nodes',
   '/selection': 'selection',
   '/mode': 'mode',
+  '/catalog': 'catalog',
+  '/subscriptions': 'subscriptions',
 }
 const failureSchema = z.object({
   code: z
@@ -80,6 +83,11 @@ export class NativeTransport implements ApiTransport {
     'mode.read',
     'mode.write',
     'nodes.delay',
+    'catalog.read',
+    'subscriptions.read',
+    'subscriptions.detail',
+    'subscriptions.history',
+    'subscriptions.progress',
   ] as const
   private releaseEvents: (() => void) | undefined
   private eventGeneration = 0
@@ -109,6 +117,16 @@ export class NativeTransport implements ApiTransport {
     if (request.method === 'GET' && resource && request.body === undefined) {
       operation = 'read'
       args = { resource }
+    } else if (
+      request.method === 'GET' &&
+      request.body === undefined &&
+      request.path.startsWith('/subscriptions/')
+    ) {
+      const match = /^\/subscriptions\/([^/]+)(?:\/(history|progress))?$/.exec(request.path)
+      if (!match || !groupIdSchema.safeParse(match[1]).success)
+        throw new ApiError('client.operation_denied', 'Invalid native resource', 403)
+      operation = 'subscription_read'
+      args = { groupId: match[1], resource: match[2] ?? 'detail' }
     } else if (
       request.method === 'POST' &&
       ['/service/start', '/service/stop'].includes(request.path) &&

@@ -1,5 +1,46 @@
 import { expect, test } from '@playwright/test'
 
+test('resources show public local and subscription details in both themes without write controls', async ({
+  page,
+}) => {
+  const failures: string[] = []
+  page.on('pageerror', (error) => failures.push(error.message))
+  await page.goto('/#/subscriptions')
+  await expect(page.getByRole('heading', { name: '资源', exact: true })).toBeVisible()
+  await expect(page.locator('main h1')).toHaveCount(0)
+  await expect(page.getByText('订阅与本地配置，集中管理。', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: '本地分组', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'URL 订阅', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '查看详情 Global Connect', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByRole('heading', { name: '订阅流量', exact: true })).toBeVisible()
+  await expect(dialog.getByText('100 GB', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('运行时已同步', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('失败', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('1440 分钟', { exact: true })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: /新增|删除|更新全部|取消更新/ })).toHaveCount(0)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({
+    path: `test-results/${test.info().project.name}-resource-detail.png`,
+    fullPage: true,
+  })
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.getByRole('button', { name: '主题', exact: true }).click()
+  await page.getByRole('button', { name: '查看详情 备用线路', exact: true }).click()
+  await expect(dialog.getByText(/下载中/)).toBeVisible()
+  await expect(dialog.getByText('阶段不代表完成百分比，最终结果请查看历史。')).toBeVisible()
+  await page.screenshot({
+    path: `test-results/${test.info().project.name}-resource-dark.png`,
+    fullPage: true,
+  })
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.getByRole('button', { name: '查看详情 本地配置', exact: true }).click()
+  await expect(dialog.getByText('节点', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('更新历史', { exact: true })).toHaveCount(0)
+  await expect(dialog.getByText('自动更新', { exact: true })).toHaveCount(0)
+  expect(failures).toEqual([])
+})
+
 test('service confirmation, stopped Catalog and selection work without a backend', async ({
   page,
 }) => {
@@ -34,7 +75,7 @@ test('service confirmation, stopped Catalog and selection work without a backend
   await page.getByRole('searchbox').clear()
   await page.getByRole('button', { name: 'Global Connect', exact: false }).first().click()
   await expect(page.getByRole('button', { name: '选择 Tokyo 01', exact: true })).not.toBeVisible()
-  await navigation.getByRole('link', { name: '订阅', exact: true }).click()
+  await navigation.getByRole('link', { name: '资源', exact: true }).click()
   await expect(page.getByRole('heading', { name: '本地配置', exact: true })).toBeVisible()
   await navigation.getByRole('link', { name: '仪表盘', exact: true }).click()
   await page.getByRole('button', { name: '开启服务', exact: true }).click()

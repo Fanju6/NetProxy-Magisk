@@ -81,7 +81,11 @@ export function AppShell() {
           <div className="flex items-center gap-2 text-sm">
             <span className="font-medium md:font-normal md:text-muted-foreground">NetProxy</span>
             <span className="text-muted-foreground/40">/</span>
-            <span>{t(current.key)}</span>
+            {current.key === 'subscriptions' ? (
+              <h1 className="text-sm font-medium">{t(current.key)}</h1>
+            ) : (
+              <span>{t(current.key)}</span>
+            )}
           </div>
           <div className="flex items-center gap-1">
             <Tooltip>
@@ -134,10 +138,12 @@ export function AppShell() {
         )}
         {api.transport.kind !== 'unavailable' && <ModuleEvents />}
         <main id="main" className="page-content" tabIndex={-1}>
-          <div className="mb-8 space-y-2">
-            <h1 className="text-2xl font-semibold sm:text-3xl">{t(current.key)}</h1>
-            <p className="text-sm text-muted-foreground">{t(current.description)}</p>
-          </div>
+          {current.key !== 'subscriptions' && (
+            <div className="mb-8 space-y-2">
+              <h1 className="text-2xl font-semibold sm:text-3xl">{t(current.key)}</h1>
+              <p className="text-sm text-muted-foreground">{t(current.description)}</p>
+            </div>
+          )}
           <Outlet />
         </main>
       </div>

@@ -14,7 +14,7 @@ V9 目标架构见 [完整架构设计规范](apps/web/docs/NETPROXY_V9_ARCHITEC
 - `src/native/netproxy/`：模块专用 Go 组件，负责节点转换、Provider、订阅、配置、eBPF 运行时、Service API 与唯一允许的后台 Worker。
 - `src/webui/`：原生 TypeScript 终端式 WebUI，构建产物写入 `src/module/webroot/netproxy/`。
 - `apps/web/`：独立的 V9 React WebUI；开发与演示构建使用显式标识的 Mock，普通生产构建在可信 Transport 缺失时拒绝连接。此工程不写入 V8 模块构建目录，不使用 Root Shell，不代表 Tauri 或跨平台接管已经可用。
-- `apps/shell/`：V9 Tauri Android 壳，复用 `apps/web/dist-native` 与 V8 Kotlin 安全传输源码；当前开放 info/service/nodes/selection/mode 读取、既有 SSE，以及 service start/stop、节点选择、模式保存和测速。能力标记不替代 Rust/Kotlin 固定操作与参数白名单，订阅、配置及节点编辑等其他写入不得通过 IPC。构建、权限与验收边界见 [原生通信说明](apps/shell/README.md)，不进入 V8 模块流水线。
+- `apps/shell/`：V9 Tauri Android 壳，复用 `apps/web/dist-native` 与 V8 Kotlin 安全传输源码；当前开放 info/service/nodes/selection/mode/catalog/subscriptions 公开读取、既有 SSE，以及 service start/stop、节点选择、模式保存和测速。订阅详情、历史和进度由原生层校验分组 ID 后构造固定 GET，禁止 private 查询；公开 Catalog DTO 在 Kotlin 边界按字段白名单投影，GET 与 SSE 都不能将订阅 URL、Headers、HWID 或原始异常带入 JS。能力标记不替代 Rust/Kotlin 固定操作与参数白名单，订阅、配置及节点编辑等其他写入不得通过 IPC。构建、权限与验收边界见 [原生通信说明](apps/shell/README.md)，不进入 V8 模块流水线。
 - `src/android/`：Android 管理器，使用 Compose、miuix-nav 和内置 Scripta 源码快照。
 - `docs/`：VitePress 用户文档；`tests/`：Shell 契约与运行时回归测试。
 

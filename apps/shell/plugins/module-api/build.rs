@@ -1,5 +1,6 @@
 const COMMANDS: &[&str] = &[
     "read",
+    "subscription_read",
     "service_action",
     "select_node",
     "change_mode",

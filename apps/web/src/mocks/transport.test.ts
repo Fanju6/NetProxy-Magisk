@@ -52,7 +52,7 @@ describe('Go API shaped mock', () => {
     expect(
       (await client.request({ method: 'GET', path: '/subscriptions' }, z.array(groupSchema)))
         .length,
-    ).toBe(3)
+    ).toBe(4)
     await client.request(
       { method: 'PUT', path: '/selection', body: { group_id: 'default', node_tag: 'Local relay' } },
       z.unknown(),
@@ -149,7 +149,7 @@ describe('Go API shaped mock', () => {
   it('keeps deterministic fixtures independent across sessions', () => {
     const first = createFixtures()
     first.snapshot.groups.splice(0)
-    expect(createFixtures().snapshot.groups).toHaveLength(3)
+    expect(createFixtures().snapshot.groups).toHaveLength(4)
   })
   it('filters group snapshots without changing the global selection', async () => {
     const client = new ApiClient(new MockTransport(0))

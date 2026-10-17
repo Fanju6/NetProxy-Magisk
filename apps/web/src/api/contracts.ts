@@ -39,33 +39,72 @@ export const serviceSchema = z.looseObject({
   worker_state: z.string(),
   worker_pid: count.nullable(),
 })
-export const groupSchema = z.looseObject({
-  id: z.string(),
-  name: z.string(),
-  runtime_tag: z.string(),
-  type: z.enum(['local', 'url']),
-  active: z.boolean(),
-  node_count: count,
-  revision: count,
-  auto_update: z.boolean(),
-  update_interval: count,
-  update_via_proxy: z.enum(['auto', 'always', 'never']),
-  usage: z.unknown(),
-  profile_title: z.string(),
-  profile_web_page_url: z.string(),
-  last_attempt_at: z.string(),
-  last_success_at: z.string(),
-  next_update_at: z.string(),
-  last_error: z.string(),
-  updated_at: z.string(),
-  progress: z.unknown(),
+export const groupIdSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/)
+  .refine((id) => id !== 'staging' && !id.includes('..'))
+export const usageSchema = z.object({
+  upload: count.optional(),
+  download: count.optional(),
+  total: count.optional(),
+  expire: count.optional(),
 })
-export const nodeSchema = z.looseObject({
+export const updateProgressSchema = z.object({
+  schema: z.literal(1),
+  group_id: groupIdSchema,
+  stage: z.enum(['download', 'convert', 'validate', 'apply']),
+  message: z.string(),
+  updated_at: z.iso.datetime({ offset: true }),
+})
+export const groupSchema = z
+  .object({
+    id: groupIdSchema,
+    name: z.string(),
+    runtime_tag: z.string(),
+    type: z.enum(['local', 'subscription']),
+    active: z.boolean(),
+    node_count: count,
+    revision: count,
+    auto_update: z.boolean(),
+    update_interval: count,
+    update_via_proxy: z.enum(['auto', 'always', 'never']),
+    usage: usageSchema.nullable(),
+    profile_title: z.string(),
+    profile_web_page_url: z.string().default(''),
+    last_attempt_at: z.string(),
+    last_success_at: z.string(),
+    next_update_at: z.string(),
+    last_error: z.string(),
+    updated_at: z.string(),
+    progress: updateProgressSchema.nullable(),
+  })
+  .refine((group) => group.progress === null || group.progress.group_id === group.id)
+export const nodeSchema = z.object({
   tag: z.string(),
   protocol: z.string(),
   server: z.string().optional(),
   port: count.optional(),
 })
+export const subscriptionDetailSchema = z.object({ group: groupSchema, nodes: z.array(nodeSchema) })
+export const historySchema = z.array(
+  z.object({
+    at: z.iso.datetime({ offset: true }),
+    ok: z.boolean(),
+    code: z.string().min(1),
+    message: z.string().optional(),
+    node_count: count.optional(),
+    revision: count.optional(),
+    duration_seconds: count.optional(),
+  }),
+)
+export const subscriptionProgressSchema = z.object({
+  id: groupIdSchema,
+  progress: updateProgressSchema.nullable(),
+})
+export type SubscriptionDetail = z.infer<typeof subscriptionDetailSchema>
+export type SubscriptionHistory = z.infer<typeof historySchema>
+export type SubscriptionProgress = z.infer<typeof subscriptionProgressSchema>
+export type UpdateProgress = z.infer<typeof updateProgressSchema>
 export const selectionSchema = z.looseObject({
   active_group_id: z.string(),
   active_group_name: z.string(),
@@ -174,6 +213,8 @@ export type ApiPath =
   | '/selection'
   | '/mode'
   | '/subscriptions'
+  | '/catalog'
+  | `/subscriptions/${string}`
   | '/config'
 export interface ApiRequest {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE'
@@ -206,6 +247,10 @@ export const apiOperations = [
   'mode.read',
   'mode.write',
   'subscriptions.read',
+  'catalog.read',
+  'subscriptions.detail',
+  'subscriptions.history',
+  'subscriptions.progress',
   'config.read',
   'config.write',
 ] as const
@@ -219,6 +264,7 @@ const operations: Partial<Record<ApiRequest['method'], Partial<Record<ApiPath, A
     '/selection': 'selection.read',
     '/mode': 'mode.read',
     '/subscriptions': 'subscriptions.read',
+    '/catalog': 'catalog.read',
     '/config': 'config.read',
   },
   POST: {
@@ -229,6 +275,21 @@ const operations: Partial<Record<ApiRequest['method'], Partial<Record<ApiPath, A
   PUT: { '/selection': 'selection.write', '/mode': 'mode.write', '/config': 'config.write' },
 }
 export function requestOperation(request: ApiRequest): ApiOperation | undefined {
+  if (request.method === 'GET' && request.path.startsWith('/subscriptions/')) {
+    const match = /^\/subscriptions\/([^/]+)(?:\/(history|progress))?$/.exec(request.path)
+    if (
+      !match ||
+      !groupIdSchema.safeParse(match[1]).success ||
+      request.query !== undefined ||
+      request.body !== undefined
+    )
+      return
+    return match[2] === 'history'
+      ? 'subscriptions.history'
+      : match[2] === 'progress'
+        ? 'subscriptions.progress'
+        : 'subscriptions.detail'
+  }
   return operations[request.method]?.[request.path]
 }
 

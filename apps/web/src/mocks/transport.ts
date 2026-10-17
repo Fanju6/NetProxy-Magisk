@@ -1,6 +1,6 @@
 import type { ApiEvent, ApiRequest, ApiTransport, EventTopic } from '@/api/contracts'
-import { apiOperations } from '@/api/contracts'
-import { createFixtures, demoTraffic } from './fixtures'
+import { apiOperations, groupIdSchema } from '@/api/contracts'
+import { createFixtures, demoTraffic, demoHistory } from './fixtures'
 import { z } from 'zod'
 
 const success = (code: string, data: unknown) => ({
@@ -51,6 +51,21 @@ export class MockTransport implements ApiTransport {
           : []
     if (Object.keys(request.query ?? {}).some((key) => !allowed.includes(key)))
       return failure(400, 'usage.invalid')
+    if (request.method === 'GET' && request.path.startsWith('/subscriptions/')) {
+      const match = /^\/subscriptions\/([^/]+)(?:\/(history|progress))?$/.exec(request.path)
+      if (!match || !groupIdSchema.safeParse(match[1]).success || request.body !== undefined)
+        return failure(400, 'usage.invalid')
+      const item = snapshot.groups.find(({ group }) => group.id === match[1])
+      if (!item) return failure(404, 'subscription.not_found')
+      if (!match[2]) return success('subscription.show', structuredClone(item))
+      if (item.group.type !== 'subscription') return failure(422, 'subscription.read_only')
+      return match[2] === 'history'
+        ? success('subscription.history', demoHistory(item.group.id))
+        : success('subscription.progress', {
+            id: item.group.id,
+            progress: structuredClone(item.group.progress),
+          })
+    }
     const key = `${request.method} ${request.path}`
     switch (key) {
       case 'GET /info':
@@ -84,9 +99,10 @@ export class MockTransport implements ApiTransport {
         }
         return success('node.snapshot', result)
       }
+      case 'GET /catalog':
       case 'GET /subscriptions':
         return success(
-          'subscription.list',
+          request.path === '/catalog' ? 'catalog.groups' : 'subscription.list',
           structuredClone(snapshot.groups.map((item) => item.group)),
         )
       case 'GET /mode':

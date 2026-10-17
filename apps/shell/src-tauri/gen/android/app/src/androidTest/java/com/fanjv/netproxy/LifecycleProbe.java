@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class LifecycleProbe extends Instrumentation {
     private final AtomicReference<Activity> current = new AtomicReference<>();
     private final AtomicInteger destroyed = new AtomicInteger();
+    private String phase = "launch";
 
     @Override public void onCreate(Bundle args) {
         super.onCreate(args);
@@ -41,6 +42,7 @@ public final class LifecycleProbe extends Instrumentation {
             current.set(first);
             app = first.getApplication();
             app.registerActivityLifecycleCallbacks(callbacks);
+            phase = "initial-reads";
             verifyRead(first);
             for (int i = 0; i < 2; i++) {
                 Activity old = current.get();
@@ -49,23 +51,28 @@ public final class LifecycleProbe extends Instrumentation {
                     + "window.__probe=false;window.__TAURI_INTERNALS__.invoke('plugin:module-api|open_events',"
                     + "{subscriptionId:'activity-probe-" + i + "',topics:['status','groups','subscriptions']})"
                     + ".then(()=>window.__probe=true).catch(()=>window.__probe='error');";
+                phase = "subscribe-" + i;
                 evaluate(old, begin);
                 waitValue(old, "window.__probe", "true");
+                phase = "recreate-" + i;
                 runOnMainSync(old::recreate);
                 long deadline = SystemClock.uptimeMillis() + 15_000;
                 while ((current.get() == old || !old.isDestroyed()) && SystemClock.uptimeMillis() < deadline) {
                     SystemClock.sleep(50);
                 }
                 if (current.get() == old || !old.isDestroyed()) throw new AssertionError("Activity not recreated");
+                phase = "recreated-reads-" + i;
                 verifyRead(current.get());
             }
             result.putInt("recreated", destroyed.get());
             result.putBoolean("read_after_recreate", true);
             result.putBoolean("nodes_mode_after_recreate", true);
+            result.putBoolean("catalog_detail_after_recreate", true);
             result.putBoolean("sse_open_before_destroy", true);
             finish(Activity.RESULT_OK, result);
         } catch (Throwable failure) {
             result.putString("failure", failure.getClass().getSimpleName());
+            result.putString("phase", phase);
             // 不将包含设备内容的异常原文写入 instrumentation 输出。
             finish(Activity.RESULT_CANCELED, result);
         } finally {
@@ -79,9 +86,15 @@ public final class LifecycleProbe extends Instrumentation {
             if ("true".equals(evaluate(activity, "Boolean(window.__TAURI_INTERNALS__?.invoke)"))) break;
             SystemClock.sleep(100);
         }
-        evaluate(activity, "window.__probeRead=null;Promise.all(['info','nodes','selection','mode'].map(resource=>"
-            + "window.__TAURI_INTERNALS__.invoke('plugin:module-api|read',"
-            + "{requestId:crypto.randomUUID(),resource}))).then(results=>window.__probeRead=results.every(r=>r.status===200)?200:'error')"
+        // 与页面初始读取共存，不能为测试突破原生有界读取槽位。
+        evaluate(activity, "window.__probeRead=null;(async()=>{const results=[];for(const resource of ['info','nodes','selection','mode','catalog','subscriptions']){"
+            + "results.push(await window.__TAURI_INTERNALS__.invoke('plugin:module-api|read',"
+            + "{requestId:crypto.randomUUID(),resource}));}"
+            + "if(!results.every(r=>r.status===200))throw Error('read');"
+            + "const groups=results[4].body.data;const group=groups[0];"
+            + "if(group){const r=await window.__TAURI_INTERNALS__.invoke('plugin:module-api|subscription_read',"
+            + "{requestId:crypto.randomUUID(),groupId:group.id,resource:'detail'});if(r.status!==200)throw Error('detail');}"
+            + "window.__probeRead=200;})()"
             + ".catch(e=>window.__probeRead=e.code);");
         waitValue(activity, "window.__probeRead", "200");
     }
