@@ -4,7 +4,7 @@ test('configuration JSON validation and local rule editing use real-shaped revis
   page,
 }) => {
   await page.goto('/#/settings/configuration')
-  await page.getByRole('button', { name: 'auto_start', exact: true }).click()
+  await page.getByRole('button', { name: /开机启动 module\/auto_start/ }).click()
   let dialog = page.getByRole('dialog')
   const editor = dialog.locator('.cm-content')
   await editor.click()
@@ -16,13 +16,14 @@ test('configuration JSON validation and local rule editing use real-shaped revis
   await dialog.getByRole('button', { name: '保存', exact: true }).click()
   await expect(dialog.getByRole('status')).toHaveText('已保存')
   await dialog.getByRole('button', { name: '关闭', exact: true }).click()
-  await page.getByRole('button', { name: 'proxy.json', exact: true }).click()
-  dialog = page.getByRole('dialog')
+  await page.getByRole('button', { name: /代理规则 singbox\/rules\/local\/proxy.json/ }).click()
+  dialog = page.getByRole('dialog', { name: 'proxy.json', exact: true })
   await dialog.getByRole('button', { name: '添加规则', exact: true }).click()
-  await dialog.getByRole('combobox', { name: '匹配方式', exact: true }).click()
+  const rule = page.getByRole('dialog', { name: '添加规则', exact: true })
+  await rule.getByRole('combobox', { name: '匹配方式', exact: true }).click()
   await page.getByRole('option', { name: 'IP 地址或网段', exact: true }).click()
-  await dialog.getByRole('textbox', { name: '每行一个值', exact: true }).fill('192.168.10.0/24')
-  await dialog.getByRole('button', { name: '保存', exact: true }).first().click()
+  await rule.getByRole('textbox', { name: '每行一个值', exact: true }).fill('192.168.10.0/24')
+  await rule.getByRole('button', { name: '保存', exact: true }).click()
   await expect(dialog.getByText('192.168.10.0/24', { exact: true })).toBeVisible()
   await dialog.getByRole('button', { name: '保存', exact: true }).click()
   await expect(dialog.getByRole('status')).toHaveText('已保存')
@@ -32,25 +33,21 @@ test('configuration JSON validation and local rule editing use real-shaped revis
 test('application and Wi-Fi policies preserve selections and offer native inbound controls', async ({
   page,
 }) => {
-  await page.goto('/#/settings/policies')
-  await page.getByRole('button', { name: '应用代理', exact: true }).click()
-  let dialog = page.getByRole('dialog')
-  await dialog.getByRole('combobox', { name: '代理模式', exact: true }).click()
+  await page.goto('/#/settings/policies?section=apps')
+  await page.getByRole('combobox', { name: '代理模式', exact: true }).click()
   await page.getByRole('option', { name: '白名单', exact: true }).click()
-  await dialog.getByRole('textbox', { name: '搜索应用或包名', exact: true }).fill('termux')
-  await dialog.getByRole('button', { name: /Termux com.termux/ }).click()
-  await dialog.getByRole('button', { name: '保存', exact: true }).click()
-  await expect(dialog.getByRole('status')).toHaveText('已保存')
-  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
-  await page.getByRole('button', { name: '网络匹配', exact: true }).click()
-  dialog = page.getByRole('dialog')
-  await dialog.getByRole('combobox', { name: '网络匹配', exact: true }).click()
+  await page.getByRole('searchbox', { name: '搜索应用或包名', exact: true }).fill('termux')
+  await page.getByRole('button', { name: /Termux com.termux/ }).click()
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: /^已保存$/ })).toBeVisible()
+  await page.goto('/#/settings/policies?section=wifi')
+  await page.getByRole('combobox', { name: '网络匹配', exact: true }).click()
   await page.getByRole('option', { name: '黑名单', exact: true }).click()
-  await dialog.getByRole('textbox', { name: 'Wi-Fi 名称', exact: true }).fill(' WiFi, Name ')
-  await dialog.getByRole('button', { name: '添加 Wi-Fi 名称', exact: true }).click()
-  await dialog.getByRole('button', { name: '保存', exact: true }).click()
-  await expect(dialog.getByRole('status')).toHaveText('已保存')
-  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.getByRole('textbox', { name: 'Wi-Fi 名称', exact: true }).fill(' WiFi, Name ')
+  await page.getByRole('button', { name: '添加 Wi-Fi 名称', exact: true }).click()
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: /^已保存$/ })).toBeVisible()
+  await page.goto('/#/settings/policies?section=inbound')
   await page.getByRole('button', { name: 'TUN', exact: true }).click()
   await expect(
     page.getByRole('dialog').getByText('接口地址，每行一个', { exact: true }),
@@ -65,14 +62,15 @@ test('local node import and logs are usable without platform file permissions', 
   page,
 }) => {
   await page.goto('/#/nodes')
-  await page.getByRole('button', { name: '管理本地节点', exact: true }).click()
+  await page.getByRole('button', { name: '添加节点', exact: true }).click()
+  await page.getByRole('menuitem', { name: '导入文本', exact: true }).click()
   const dialog = page.getByRole('dialog')
-  await dialog.locator('.cm-content').click()
-  await page.keyboard.press('ControlOrMeta+A')
-  await page.keyboard.insertText(
-    '{"outbounds":[{"tag":"Anonymous fixture","type":"socks","server":"127.0.0.1","server_port":1080}]}',
-  )
-  await dialog.getByRole('button', { name: '执行', exact: true }).click()
+  await dialog
+    .getByRole('textbox', { name: '节点内容', exact: true })
+    .fill(
+      '{"outbounds":[{"tag":"Anonymous fixture","type":"socks","server":"127.0.0.1","server_port":1080}]}',
+    )
+  await dialog.getByRole('button', { name: '保存', exact: true }).click()
   await expect(dialog.getByRole('status')).toContainText('操作完成')
   await dialog.getByRole('button', { name: '关闭', exact: true }).click()
   await expect(
@@ -80,6 +78,7 @@ test('local node import and logs are usable without platform file permissions', 
   ).toBeVisible()
   await page.goto('/#/settings/logs')
   await expect(page.getByText(/Service ready/)).toBeVisible()
+  await page.getByText('工具', { exact: true }).click()
   await page.getByRole('button', { name: 'eBPF 能力检查', exact: true }).click()
   await expect(page.getByText(/does not prove that traffic is intercepted/)).toBeVisible()
   await page.getByRole('button', { name: '清空', exact: true }).click()

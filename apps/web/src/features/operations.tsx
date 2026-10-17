@@ -37,6 +37,7 @@ export function OperationsPage() {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('')
   const [level, setLevel] = useState('all')
+  const [view, setView] = useState<'entries' | 'raw'>('entries')
   const [refresh, setRefresh] = useState(0)
   const [diagnostic, setDiagnostic] = useState<string>()
   const [notice, setNotice] = useState('')
@@ -114,23 +115,36 @@ export function OperationsPage() {
       /* Report through the action error. */
     }
   }
-  const lines =
-    kind === 'service' && logs?.entries.length
-      ? logs.entries
-          .filter((entry) => level === 'all' || entry.level.toUpperCase() === level)
-          .map(
-            (entry) =>
-              `[${entry.timestamp}] [${entry.level}] [${entry.component}] [${entry.event}] [${entry.result}] [${entry.error_code}] ${entry.message}`,
-          )
-      : (logs?.content.split('\n') ?? []).filter(
-          (line) => level === 'all' || line.toUpperCase().includes(level),
-        )
-  const visible = lines
-    .filter((line) => line.toLocaleLowerCase().includes(filter.toLocaleLowerCase()))
-    .join('\n')
-  return (
-    <div className="max-w-5xl space-y-6">
-      <section className="space-y-3">
+  const entries =
+    kind === 'service'
+      ? (logs?.entries ?? []).map((entry) => ({
+          ...entry,
+          raw: `[${entry.timestamp}] [${entry.level}] [${entry.component}] [${entry.event}] [${entry.result}] [${entry.error_code}] ${entry.message}`,
+        }))
+      : (logs?.content.split('\n').filter(Boolean) ?? []).map((line) => ({
+          timestamp: '',
+          level: '',
+          component: '',
+          event: '',
+          result: '',
+          error_code: '',
+          message: line,
+          raw: line,
+        }))
+  const visible = entries.filter(
+    (entry) =>
+      (level === 'all' ||
+        (kind === 'service'
+          ? entry.level.toUpperCase() === level
+          : entry.raw.toUpperCase().includes(level))) &&
+      entry.raw.toLocaleLowerCase().includes(filter.toLocaleLowerCase()),
+  )
+  const tools = (
+    <details className="border-t pt-2">
+      <summary className="min-h-11 cursor-pointer py-3 text-sm font-medium">
+        {text('工具', 'Tools')}
+      </summary>
+      <div className="space-y-4 py-2">
         <h2 className="section-label">{text('服务维护', 'Service maintenance')}</h2>
         <div className="flex flex-wrap gap-2">
           {(['restart', 'reload', 'check'] as const).map((value) => (
@@ -147,6 +161,9 @@ export function OperationsPage() {
                   : text('检查配置', 'Check configuration')}
             </Button>
           ))}
+        </div>
+        <h2 className="section-label">{text('诊断', 'Diagnostics')}</h2>
+        <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
             disabled={action.pending || !api.supports('diagnostics.ebpf')}
@@ -164,19 +181,27 @@ export function OperationsPage() {
             {text('导出诊断包', 'Export diagnostics')}
           </Button>
         </div>
-        {notice && (
-          <p role="status" className="text-sm text-muted-foreground">
-            {notice}
-          </p>
-        )}
-        {action.error != null && <ErrorState compact error={action.error} />}
-        {diagnostic !== undefined && (
-          <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md border p-3 text-xs">
-            {diagnostic}
-          </pre>
-        )}
-      </section>
-      <section className="space-y-3">
+      </div>
+    </details>
+  )
+  const feedback = (
+    <div className="space-y-3">
+      {notice && (
+        <p role="status" className="text-sm text-muted-foreground">
+          {notice}
+        </p>
+      )}
+      {action.error != null && <ErrorState compact error={action.error} />}
+      {diagnostic !== undefined && (
+        <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md border p-3 text-xs">
+          {diagnostic}
+        </pre>
+      )}
+    </div>
+  )
+  return (
+    <div className="max-w-5xl space-y-5">
+      <section className="min-w-0 space-y-3" aria-label={text('日志', 'Logs')}>
         <div className="flex flex-wrap items-center gap-2">
           <Choice
             label={text('日志', 'Logs')}
@@ -193,6 +218,17 @@ export function OperationsPage() {
             }}
           />
           <Choice
+            label={text('显示方式', 'Log view')}
+            value={view}
+            items={[
+              { value: 'entries', label: text('条目', 'Entries') },
+              { value: 'raw', label: text('原始', 'Raw') },
+            ]}
+            onChange={(value) => {
+              if (value === 'entries' || value === 'raw') setView(value)
+            }}
+          />
+          <Choice
             label={text('级别', 'Level')}
             value={level}
             items={['all', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL'].map((value) => ({
@@ -204,6 +240,7 @@ export function OperationsPage() {
           <Button
             variant="outline"
             size="icon"
+            className="size-11 shrink-0"
             aria-label={text('刷新日志', 'Refresh logs')}
             onClick={reload}
           >
@@ -211,6 +248,7 @@ export function OperationsPage() {
           </Button>
           <Button
             variant="outline"
+            className="min-h-11"
             disabled={action.pending || !api.supports('logs.clear')}
             onClick={() => setConfirm('clear')}
           >
@@ -220,6 +258,7 @@ export function OperationsPage() {
         </div>
         <Input
           type="search"
+          className="h-11 text-base md:text-sm"
           aria-label={text('筛选日志', 'Filter logs')}
           placeholder={text('筛选日志', 'Filter logs')}
           value={filter}
@@ -230,14 +269,53 @@ export function OperationsPage() {
         ) : error != null ? (
           <ErrorState error={error} retry={reload} />
         ) : (
-          <pre
-            className="min-h-48 max-h-[55dvh] overflow-auto whitespace-pre rounded-md border p-3 font-mono text-xs leading-5"
+          <div
+            className="min-h-48 max-h-[55dvh] overflow-auto overscroll-contain"
             tabIndex={0}
+            aria-label={text('日志内容', 'Log content')}
           >
-            {visible || text('暂无日志内容', 'No log entries')}
-          </pre>
+            {!visible.length ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                {text('暂无日志内容', 'No log entries')}
+              </p>
+            ) : view === 'raw' ? (
+              <pre className="whitespace-pre font-mono text-xs leading-5">
+                {visible.map((entry) => entry.raw).join('\n')}
+              </pre>
+            ) : (
+              <ol className="divide-y">
+                {visible.map((entry, index) => (
+                  <li key={index} className="space-y-1.5 py-3">
+                    <p className="whitespace-pre-wrap break-words text-sm leading-6">
+                      {entry.message}
+                    </p>
+                    {kind === 'service' && (
+                      <div className="flex flex-wrap gap-x-3 gap-y-1 break-all text-xs text-muted-foreground">
+                        <time>{entry.timestamp}</time>
+                        <span
+                          className={
+                            ['ERROR', 'FATAL'].includes(entry.level.toUpperCase())
+                              ? 'font-medium text-destructive'
+                              : 'font-medium'
+                          }
+                        >
+                          {entry.level}
+                        </span>
+                        <span>{entry.component}</span>
+                        <span>{entry.event}</span>
+                        {entry.result !== '-' && <span>{entry.result}</span>}
+                        {entry.error_code !== '-' && <span>{entry.error_code}</span>}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
         )}
       </section>
+      {tools}
+      {feedback}
       <Details
         open={confirm !== undefined}
         onOpenChange={(open) => {

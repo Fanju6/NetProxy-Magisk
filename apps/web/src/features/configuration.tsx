@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { z } from 'zod'
+import { useSearch } from '@tanstack/react-router'
 import { Braces, FileJson, Plus, RefreshCw } from 'lucide-react'
-import { useApi } from '@/app/context'
+import { useApi, usePreferences } from '@/app/context'
 import { ApiError } from '@/api/contracts'
 import { configTargetsSchema, readConfig, useManagementAction } from '@/api/management'
 import {
@@ -31,6 +32,7 @@ export interface ConfigurationEditorProps {
   target: string
   title: string
   readOnly?: boolean
+  inline?: boolean
   renderForm?: (content: string, change: (content: string) => void) => ReactNode
   onClose: () => void
 }
@@ -81,6 +83,7 @@ export function ConfigurationEditor({
   target,
   title,
   readOnly = false,
+  inline = false,
   renderForm,
   onClose,
 }: ConfigurationEditorProps) {
@@ -90,6 +93,7 @@ export function ConfigurationEditor({
   const readonly = readOnly || target.startsWith('runtime/')
   const rules = /^singbox\/rules\/local\/(proxy|direct|block)\.json$/.test(target)
   const [draft, setDraft] = useState<{ revision: string; content: string } | null>(null)
+  const [savedContent, setSavedContent] = useState('')
   const [error, setError] = useState<ApiError | null>(null)
   const [generation, setGeneration] = useState(0)
   const [form, setForm] = useState(!readonly && (rules || renderForm !== undefined))
@@ -107,6 +111,7 @@ export function ConfigurationEditor({
         if (document.target !== target)
           throw new ApiError('client.invalid_response', 'Invalid target', 502)
         setDraft({ revision: document.revision, content: document.content })
+        setSavedContent(document.content)
       })
       .catch((failure: unknown) => {
         if (!controller.signal.aborted) setError(safeManagementError(failure))
@@ -149,8 +154,10 @@ export function ConfigurationEditor({
         controller.signal,
       )
       if (!mounted.current) return
-      if (!validateOnly)
+      if (!validateOnly) {
         setDraft((current) => (current ? { ...current, revision: result.revision } : null))
+        setSavedContent(draft.content)
+      }
       setNotice(validateOnly ? 'validated' : 'saved')
     } catch (failure) {
       if (!mounted.current) return
@@ -164,16 +171,36 @@ export function ConfigurationEditor({
     }
   }
   const conflict = error?.code === 'config.conflict'
+  const footer = draft && !readonly && (
+    <>
+      <Button
+        variant="outline"
+        disabled={action.pending || blocked}
+        onClick={() => void apply(true)}
+      >
+        {copy.validate}
+      </Button>
+      <Button disabled={action.pending || blocked} onClick={() => void apply(false)}>
+        {copy.save}
+      </Button>
+    </>
+  )
   return (
     <Details
       open
+      mode={form ? (inline ? 'inline' : 'sheet') : 'fullscreen'}
+      dirty={!readonly && draft !== null && draft.content !== savedContent && !(inline && !form)}
+      footer={footer}
       onOpenChange={(open) => {
-        if (!open) onClose()
+        if (!open) {
+          if (inline && !form) setForm(true)
+          else onClose()
+        }
       }}
       title={title}
-      description={readonly ? copy.readOnly : copy.sensitive}
+      description={!form ? (readonly ? copy.readOnly : copy.sensitive) : undefined}
     >
-      <div className="space-y-4">
+      <div className={form ? 'space-y-4' : 'flex min-h-0 flex-1 flex-col gap-3'}>
         {error && (
           <div role="alert" className="space-y-3 text-sm text-destructive">
             <p>
@@ -220,7 +247,10 @@ export function ConfigurationEditor({
                 </Button>
               </div>
             )}
-            <fieldset disabled={action.pending || blocked} className="min-w-0">
+            <fieldset
+              disabled={action.pending || blocked}
+              className={form ? 'min-w-0' : 'flex min-h-0 flex-1 flex-col'}
+            >
               {form && !readonly ? (
                 renderForm ? (
                   renderForm(draft.content, change)
@@ -244,25 +274,6 @@ export function ConfigurationEditor({
               <p role="status" className="text-sm text-muted-foreground">
                 {copy[notice]}
               </p>
-            )}
-            {!readonly && (
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="outline"
-                  className="min-h-11"
-                  disabled={action.pending || blocked}
-                  onClick={() => void apply(true)}
-                >
-                  {copy.validate}
-                </Button>
-                <Button
-                  className="min-h-11"
-                  disabled={action.pending || blocked}
-                  onClick={() => void apply(false)}
-                >
-                  {copy.save}
-                </Button>
-              </div>
             )}
           </>
         )}
@@ -317,39 +328,48 @@ function RuleForm({
         </Button>
       </div>
       {editing && (
-        <div className="space-y-3 border-y py-4">
-          <ManagementSelect
-            label={copy.match}
-            value={editing.field}
-            choices={ruleFields.map((field) => ({ value: field, label: copy[field] }))}
-            onChange={(value) => {
-              if (ruleFields.includes(value as RuleField))
-                setEditing({ ...editing, field: value as RuleField })
-            }}
-          />
-          <label className="block space-y-2 text-sm">
-            <span>{copy.values}</span>
-            <textarea
-              rows={4}
-              className="w-full rounded-md border bg-transparent p-3 text-base"
-              autoCapitalize="none"
-              spellCheck={false}
-              value={editing.text}
-              onChange={(event) => setEditing({ ...editing, text: event.target.value })}
+        <Details
+          open
+          title={editing.index === null ? copy.addRule : copy.editRule}
+          onOpenChange={(open) => {
+            if (!open) setEditing(null)
+          }}
+          dirty={Boolean(editing.text)}
+        >
+          <div className="space-y-3">
+            <ManagementSelect
+              label={copy.match}
+              value={editing.field}
+              choices={ruleFields.map((field) => ({ value: field, label: copy[field] }))}
+              onChange={(value) => {
+                if (ruleFields.includes(value as RuleField))
+                  setEditing({ ...editing, field: value as RuleField })
+              }}
             />
-          </label>
-          {invalid && (
-            <p role="alert" className="text-sm text-destructive">
-              {copy.invalidRule}
-            </p>
-          )}
-          <div className="flex gap-2">
-            <Button onClick={save}>{copy.save}</Button>
-            <Button variant="outline" onClick={() => setEditing(null)}>
-              {copy.cancel}
-            </Button>
+            <label className="block space-y-2 text-sm">
+              <span>{copy.values}</span>
+              <textarea
+                rows={4}
+                className="w-full rounded-md border bg-transparent p-3 text-base"
+                autoCapitalize="none"
+                spellCheck={false}
+                value={editing.text}
+                onChange={(event) => setEditing({ ...editing, text: event.target.value })}
+              />
+            </label>
+            {invalid && (
+              <p role="alert" className="text-sm text-destructive">
+                {copy.invalidRule}
+              </p>
+            )}
+            <div className="flex gap-2">
+              <Button onClick={save}>{copy.save}</Button>
+              <Button variant="outline" onClick={() => setEditing(null)}>
+                {copy.cancel}
+              </Button>
+            </div>
           </div>
-        </div>
+        </Details>
       )}
       {!document.rules.length && <EmptyState title={copy.noRules} />}
       <ol className="divide-y">
@@ -416,7 +436,66 @@ function RuleForm({
 
 export function ConfigurationPage() {
   const api = useApi()
+  const { preferences } = usePreferences()
+  const section = useSearch({ from: '/settings/configuration' }).section
+  const text = (zh: string, en: string) => (preferences.locale === 'zh' ? zh : en)
   const copy = useManagementCopy()
+  const labels: Record<string, string> = {
+    module: text('模块设置', 'Module settings'),
+    'module/auto_start': text('开机启动', 'Start on boot'),
+    'module/wifi': text('Wi-Fi 策略', 'Wi-Fi policy'),
+    inbound: text('完整入站配置', 'Full inbound configuration'),
+    'inbound/backend': copy.backend,
+    'inbound/root_policy': copy.root,
+    'inbound/app': copy.apps,
+    'inbound/ebpf': 'eBPF',
+    'inbound/tun': 'TUN',
+    'singbox/config.json': text('完整主配置', 'Full core configuration'),
+    'singbox/rules/local/proxy.json': text('代理规则', 'Proxy rules'),
+    'singbox/rules/local/direct.json': text('直连规则', 'Direct rules'),
+    'singbox/rules/local/block.json': text('拦截规则', 'Block rules'),
+    'runtime/inbound.json': text('运行时入站', 'Runtime inbound'),
+    'runtime/outbounds.json': text('运行时出站', 'Runtime outbounds'),
+    'runtime/providers.json': text('运行时节点', 'Runtime providers'),
+    ...Object.fromEntries(
+      [
+        'log',
+        'dns',
+        'ntp',
+        'certificate',
+        'certificate_providers',
+        'http_clients',
+        'network_namespaces',
+        'endpoints',
+        'inbounds',
+        'outbounds',
+        'providers',
+        'route',
+        'services',
+        'experimental',
+      ].map((key, index) => [
+        `singbox/${key}`,
+        preferences.locale === 'zh'
+          ? [
+              '日志',
+              'DNS',
+              '时间同步',
+              '证书',
+              '证书提供器',
+              'HTTP 客户端',
+              '网络命名空间',
+              '端点',
+              '入站',
+              '出站',
+              '节点提供器',
+              '路由',
+              '服务',
+              '实验功能',
+            ][index]!
+          : key.replaceAll('_', ' '),
+      ]),
+    ),
+  }
   const [targets, setTargets] = useState<z.infer<typeof configTargetsSchema> | null>(null)
   const [error, setError] = useState<ApiError | null>(null)
   const [generation, setGeneration] = useState(0)
@@ -435,8 +514,7 @@ export function ConfigurationPage() {
   }, [api, generation])
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">{copy.configurationHint}</p>
+      <div className="flex items-center justify-end gap-3">
         <Button
           variant="ghost"
           size="icon"
@@ -454,6 +532,8 @@ export function ConfigurationPage() {
       {!targets && !error && <LoadingState />}
       {targets?.length === 0 && <EmptyState title={copy.noConfigurations} />}
       {(['module', 'config', 'rules', 'inbound', 'runtime'] as const).map((category) => {
+        if (section === 'rules' && category !== 'rules') return null
+        if (section === 'core' && !['config', 'runtime'].includes(category)) return null
         const entries = targets?.filter((target) => target.category === category) ?? []
         if (!entries.length) return null
         return (
@@ -465,7 +545,7 @@ export function ConfigurationPage() {
                   ? copy.core
                   : copy[category]}
             </h2>
-            <div className="divide-y rounded-lg border">
+            <div className="divide-y divide-border/60">
               {entries.map((target) => (
                 <Button
                   key={target.id}
@@ -474,7 +554,14 @@ export function ConfigurationPage() {
                   onClick={() => setSelected(target)}
                 >
                   <FileJson className="size-4 shrink-0" />
-                  <span className="min-w-0 flex-1 break-words">{target.filename}</span>
+                  <span className="min-w-0 flex-1 space-y-1">
+                    <span className="block break-words">
+                      {labels[target.id] ?? target.section ?? target.filename}
+                    </span>
+                    <span className="block truncate text-xs font-normal text-muted-foreground">
+                      {target.id}
+                    </span>
+                  </span>
                   {!target.editable && (
                     <span className="text-xs text-muted-foreground">{copy.readOnly}</span>
                   )}

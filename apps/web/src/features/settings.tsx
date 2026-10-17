@@ -1,7 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import { Link } from '@tanstack/react-router'
-import { ArrowUpRight, Code2, FileText, Network, Route, Wifi } from 'lucide-react'
+import {
+  AppWindow,
+  ArrowUpRight,
+  ChevronRight,
+  Code2,
+  FileText,
+  Network,
+  Route,
+  Settings2,
+  Wifi,
+} from 'lucide-react'
 import { useApi, usePreferences } from '@/app/context'
 import { moduleQueries } from '@/api/queries'
 import { Choice } from '@/components/choice'
@@ -15,6 +25,8 @@ export function SettingsPage() {
   const cache = useQueryClient()
   const { preferences, update, t } = usePreferences()
   const management = useManagementAction()
+  const info = useQuery({ ...moduleQueries(api).info, enabled: api.supports('info.read') })
+  const text = (zh: string, en: string) => (preferences.locale === 'zh' ? zh : en)
   const config = useQuery({
     ...moduleQueries(api).autoStart,
     select: (document) => ({
@@ -39,44 +51,66 @@ export function SettingsPage() {
       await cache.invalidateQueries({ queryKey: ['config', 'module/auto_start'] })
     },
   })
-  const pages = [
+  const policies = [
     {
       title: t('inbound'),
-      description: t('inboundDescription'),
       icon: Network,
-      to: '/settings/policies' as const,
+      section: 'inbound' as const,
     },
     {
-      title: t('network'),
-      description: t('networkDescription'),
-      icon: Wifi,
-      to: '/settings/policies' as const,
+      title: text('Root 进程', 'Root processes'),
+      icon: Settings2,
+      section: 'root' as const,
     },
+    {
+      title: text('应用代理', 'Application proxy'),
+      icon: AppWindow,
+      section: 'apps' as const,
+    },
+    {
+      title: 'Wi-Fi',
+      icon: Wifi,
+      section: 'wifi' as const,
+    },
+  ]
+  const advanced = [
     {
       title: t('routes'),
-      description: t('routesDescription'),
       icon: Route,
-      to: '/settings/configuration' as const,
+      section: 'rules' as const,
     },
     {
       title: t('kernel'),
-      description: t('kernelDescription'),
       icon: Code2,
-      to: '/settings/configuration' as const,
-    },
-    {
-      title: t('logs'),
-      description: t('logsDescription'),
-      icon: FileText,
-      to: '/settings/logs' as const,
+      section: 'core' as const,
     },
   ]
   return (
-    <div className="max-w-3xl space-y-9">
-      <section aria-labelledby="appearance-title" className="space-y-2">
-        <h2 id="appearance-title" className="section-label">
-          {t('appearance')}
+    <div className="max-w-3xl space-y-7">
+      <section aria-labelledby="general-title" className="space-y-1">
+        <h2 id="general-title" className="section-label">
+          {t('general')}
         </h2>
+        {!api.supports('config.read') ? (
+          <p className="py-4 text-sm text-muted-foreground">{t('readOnlyNotice')}</p>
+        ) : config.isError ? (
+          <ErrorState compact error={config.error} retry={() => void config.refetch()} />
+        ) : (
+          <div className="setting-row">
+            <label htmlFor="auto-start">{t('autoStart')}</label>
+            {config.isPending ? (
+              <Skeleton className="h-5 w-8" />
+            ) : (
+              <Switch
+                id="auto-start"
+                checked={config.data.value}
+                disabled={!api.supports('config.write') || save.isPending || management.pending}
+                onCheckedChange={(value) => save.mutate(value)}
+              />
+            )}
+          </div>
+        )}
+        {save.isError && <ErrorState compact error={save.error} />}
         <div className="setting-row">
           <p>{t('theme')}</p>
           <Choice
@@ -107,57 +141,64 @@ export function SettingsPage() {
           />
         </div>
       </section>
-      <section aria-labelledby="general-title" className="space-y-2">
-        <h2 id="general-title" className="section-label">
-          {t('general')}
+      <section aria-labelledby="policies-title" className="space-y-1">
+        <h2 id="policies-title" className="section-label">
+          {text('代理与网络', 'Proxy & network')}
         </h2>
-        {!api.supports('config.read') ? (
-          <p className="py-4 text-sm text-muted-foreground">{t('readOnlyNotice')}</p>
-        ) : config.isError ? (
-          <ErrorState compact error={config.error} retry={() => void config.refetch()} />
-        ) : (
-          <div className="setting-row">
-            <div className="space-y-1">
-              <label htmlFor="auto-start">{t('autoStart')}</label>
-              <p className="text-xs text-muted-foreground">{t('autoStartDescription')}</p>
-            </div>
-            {config.isPending ? (
-              <Skeleton className="h-5 w-8" />
-            ) : (
-              <Switch
-                id="auto-start"
-                checked={config.data.value}
-                disabled={!api.supports('config.write') || save.isPending || management.pending}
-                onCheckedChange={(value) => save.mutate(value)}
-              />
-            )}
-          </div>
-        )}
-        {save.isError && <ErrorState compact error={save.error} />}
-      </section>
-      <section aria-labelledby="management-title" className="space-y-2">
-        <h2 id="management-title" className="section-label">
-          {t('general')}
-        </h2>
-        {pages.map((item) => (
-          <Link to={item.to} key={item.title} className="setting-row">
-            <div className="flex min-w-0 gap-3">
-              <item.icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-              <div className="min-w-0 space-y-1">
-                <p>{item.title}</p>
-                <p className="text-xs text-muted-foreground">{item.description}</p>
-              </div>
-            </div>
-            <ArrowUpRight className="size-4 shrink-0 text-muted-foreground" />
+        {policies.map((item) => (
+          <Link
+            to="/settings/policies"
+            search={{ section: item.section }}
+            key={item.section}
+            className="setting-row"
+          >
+            <span className="flex min-w-0 items-center gap-3">
+              <item.icon className="size-4 shrink-0 text-muted-foreground" />
+              <span className="break-words">{item.title}</span>
+            </span>
+            <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
           </Link>
         ))}
       </section>
-      <section className="space-y-4 border-t pt-6">
-        <h2 className="text-sm font-medium">{t('about')}</h2>
-        <p className="text-sm text-muted-foreground">
-          {t(api.transport.kind === 'native' ? 'nativeConnection' : 'aboutDescription')}
-        </p>
-        <p className="text-xs leading-6 text-muted-foreground">{t('trustNotice')}</p>
+      <section aria-labelledby="advanced-title" className="space-y-1">
+        <h2 id="advanced-title" className="section-label">
+          {text('高级', 'Advanced')}
+        </h2>
+        {advanced.map((item) => (
+          <Link
+            to="/settings/configuration"
+            search={{ section: item.section }}
+            key={item.section}
+            className="setting-row"
+          >
+            <span className="flex min-w-0 items-center gap-3">
+              <item.icon className="size-4 shrink-0 text-muted-foreground" />
+              <span className="break-words">{item.title}</span>
+            </span>
+            <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+          </Link>
+        ))}
+        <Link to="/settings/logs" className="setting-row">
+          <span className="flex min-w-0 items-center gap-3">
+            <FileText className="size-4 shrink-0 text-muted-foreground" />
+            {t('logs')}
+          </span>
+          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+        </Link>
+      </section>
+      <section aria-labelledby="about-title" className="space-y-3">
+        <h2 id="about-title" className="section-label">
+          {t('about')}
+        </h2>
+        <p className="font-medium">NetProxy V9</p>
+        {info.data && (
+          <p className="text-sm text-muted-foreground">
+            {t('version')} {info.data.version} ({info.data.version_code})
+          </p>
+        )}
+        {info.isError && (
+          <ErrorState compact error={info.error} retry={() => void info.refetch()} />
+        )}
         <a
           href="https://github.com/Fanju6/NetProxy-Magisk"
           target="_blank"

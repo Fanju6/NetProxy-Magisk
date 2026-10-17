@@ -60,7 +60,8 @@ it('shows native data but disables every business write and reads no unsupported
       <RouterProvider router={router} />
     </AppProviders>,
   )
-  expect(await screen.findByRole('note')).toHaveTextContent('Native connection · core controls')
+  expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeVisible()
+  expect(screen.queryByRole('note')).not.toBeInTheDocument()
   expect(screen.queryByText('Demo mode')).not.toBeInTheDocument()
   expect(await screen.findByRole('button', { name: 'Stop service' })).toBeDisabled()
   expect(screen.getByRole('combobox', { name: 'Outbound mode' })).toBeDisabled()

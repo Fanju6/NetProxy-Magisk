@@ -1,41 +1,71 @@
-import { Link, Outlet, useLocation } from '@tanstack/react-router'
-import {
-  LayoutDashboard,
-  Network,
-  Rss,
-  Settings,
-  Moon,
-  Sun,
-  Languages,
-  FlaskConical,
-  ArrowUpRight,
-} from 'lucide-react'
+import { useEffect } from 'react'
+import { Link, Outlet, useLocation, useRouter } from '@tanstack/react-router'
+import { LayoutDashboard, Network, Rss, Settings, ArrowLeft } from 'lucide-react'
 import { useApi, usePreferences } from './context'
 import { ModuleEvents } from '@/api/events'
 import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
 const routes = [
-  { to: '/', key: 'dashboard', description: 'overviewDescription', icon: LayoutDashboard },
-  { to: '/nodes', key: 'nodes', description: 'nodesDescription', icon: Network },
-  {
-    to: '/subscriptions',
-    key: 'subscriptions',
-    description: 'subscriptionsDescription',
-    icon: Rss,
-  },
-  { to: '/settings', key: 'settings', description: 'settingsDescription', icon: Settings },
+  { to: '/', key: 'dashboard', icon: LayoutDashboard },
+  { to: '/nodes', key: 'nodes', icon: Network },
+  { to: '/subscriptions', key: 'subscriptions', icon: Rss },
+  { to: '/settings', key: 'settings', icon: Settings },
 ] as const
 
 export function AppShell() {
-  const { t, preferences, update } = usePreferences()
+  const { t } = usePreferences()
   const api = useApi()
-  const pathname = useLocation({ select: (location) => location.pathname })
+  const router = useRouter()
+  const location = useLocation()
+  const pathname = location.pathname
   const current =
     routes.find(
       (route) => route.to === pathname || (route.to !== '/' && pathname.startsWith(`${route.to}/`)),
     ) ?? routes[0]
+  const secondary = pathname.startsWith('/settings/')
+  const section = 'section' in location.search ? location.search.section : undefined
+  const title =
+    pathname === '/settings/configuration'
+      ? t(section === 'rules' ? 'routes' : 'kernel')
+      : pathname === '/settings/policies'
+        ? t(
+            section === 'wifi'
+              ? 'network'
+              : section === 'apps'
+                ? 'appPolicy'
+                : section === 'root'
+                  ? 'rootPolicy'
+                  : 'inbound',
+          )
+        : pathname === '/settings/logs'
+          ? t('logs')
+          : t(current.key)
+
+  useEffect(() => {
+    let baseline = window.innerHeight
+    const update = () => {
+      const editing = document.activeElement?.matches('input, textarea, [contenteditable="true"]')
+      const height = window.visualViewport?.height ?? window.innerHeight
+      if (!editing) baseline = Math.max(height, window.innerHeight)
+      document.documentElement.toggleAttribute(
+        'data-keyboard-open',
+        Boolean(editing && baseline - height > 120),
+      )
+    }
+    window.visualViewport?.addEventListener('resize', update)
+    window.addEventListener('resize', update)
+    document.addEventListener('focusin', update)
+    document.addEventListener('focusout', update)
+    return () => {
+      window.visualViewport?.removeEventListener('resize', update)
+      window.removeEventListener('resize', update)
+      document.removeEventListener('focusin', update)
+      document.removeEventListener('focusout', update)
+      document.documentElement.removeAttribute('data-keyboard-open')
+    }
+  }, [])
+
   return (
     <div className="app-shell">
       <a
@@ -54,99 +84,45 @@ export function AppShell() {
           <span className="font-semibold">NetProxy</span>
           <span className="ml-auto text-xs text-muted-foreground">V9</span>
         </Link>
-        <nav aria-label={t('mainNavigation')} className="mt-10 space-y-1">
+        <nav aria-label={t('mainNavigation')} className="mt-6 space-y-1">
           {routes.map((route) => (
             <Link
               key={route.to}
               to={route.to}
-              aria-current={pathname === route.to ? 'page' : undefined}
-              className={cn('nav-link', pathname === route.to && 'bg-accent text-foreground')}
+              aria-current={current.to === route.to ? 'page' : undefined}
+              className={cn(
+                'nav-link',
+                current.to === route.to && 'bg-accent font-medium text-foreground',
+              )}
             >
-              <route.icon className="size-4" />
+              <route.icon className="size-5" />
               {t(route.key)}
             </Link>
           ))}
         </nav>
-        <div className="mt-auto space-y-5 px-3 pb-2">
-          <p className="max-w-36 text-sm leading-6 text-muted-foreground">{t('intro')}</p>
-          <a
-            href="https://github.com/Fanju6/NetProxy-Magisk"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 text-xs text-muted-foreground"
-          >
-            GitHub <ArrowUpRight className="size-3" />
-          </a>
-        </div>
       </aside>
       <div className="min-w-0 flex-1">
         <header className="app-header">
-          <div className="flex items-center gap-2 text-sm">
-            <span className="font-medium md:font-normal md:text-muted-foreground">NetProxy</span>
-            <span className="text-muted-foreground/40">/</span>
-            {current.key === 'subscriptions' ? (
-              <h1 className="text-sm font-medium">{t(current.key)}</h1>
-            ) : (
-              <span>{t(current.key)}</span>
-            )}
-          </div>
-          <div className="flex items-center gap-1">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={t('theme')}
-                    onClick={() =>
-                      update({
-                        theme: document.documentElement.classList.contains('dark')
-                          ? 'light'
-                          : 'dark',
-                      })
-                    }
-                  />
-                }
+          <div className="flex min-w-0 items-center gap-2">
+            {secondary && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="-ml-2 size-12 shrink-0"
+                aria-label={t('back')}
+                onClick={() => {
+                  if (router.history.canGoBack()) router.history.back()
+                  else void router.navigate({ to: '/settings', replace: true })
+                }}
               >
-                {preferences.theme === 'dark' ? (
-                  <Sun className="size-4" />
-                ) : (
-                  <Moon className="size-4" />
-                )}
-              </TooltipTrigger>
-              <TooltipContent className="hidden md:block">{t('theme')}</TooltipContent>
-            </Tooltip>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={t('language')}
-              onClick={() => update({ locale: preferences.locale === 'zh' ? 'en' : 'zh' })}
-            >
-              <Languages className="size-4" />
-            </Button>
+                <ArrowLeft />
+              </Button>
+            )}
+            <h1 className="truncate text-lg font-semibold">{title}</h1>
           </div>
         </header>
-        {api.transport.kind === 'mock' && (
-          <div className="demo-notice" role="note">
-            <FlaskConical className="size-3.5 shrink-0" />
-            <strong className="font-medium">{t('demo')}</strong>
-            <span className="text-muted-foreground">{t('demoNotice')}</span>
-          </div>
-        )}
-        {api.transport.kind === 'native' && (
-          <div className="demo-notice" role="note">
-            <strong className="font-medium">{t('nativeConnection')}</strong>
-            <span className="text-muted-foreground">{t('readOnlyNotice')}</span>
-          </div>
-        )}
         {api.transport.kind !== 'unavailable' && <ModuleEvents />}
         <main id="main" className="page-content" tabIndex={-1}>
-          {current.key !== 'subscriptions' && (
-            <div className="mb-8 space-y-2">
-              <h1 className="text-2xl font-semibold sm:text-3xl">{t(current.key)}</h1>
-              <p className="text-sm text-muted-foreground">{t(current.description)}</p>
-            </div>
-          )}
           <Outlet />
         </main>
       </div>
@@ -155,14 +131,13 @@ export function AppShell() {
           <Link
             key={route.to}
             to={route.to}
-            aria-current={pathname === route.to ? 'page' : undefined}
-            className={cn(
-              'flex min-h-14 flex-1 flex-col items-center justify-center gap-1 text-[11px] text-muted-foreground',
-              pathname === route.to && 'text-foreground',
-            )}
+            aria-current={current.to === route.to ? 'page' : undefined}
+            className={cn('mobile-nav-link', current.to === route.to && 'mobile-nav-selected')}
           >
-            <route.icon className="size-5" />
-            {t(route.key)}
+            <span className="nav-icon">
+              <route.icon className="size-5" />
+            </span>
+            <span>{t(route.key)}</span>
           </Link>
         ))}
       </nav>

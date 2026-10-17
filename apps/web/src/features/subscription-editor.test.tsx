@@ -130,7 +130,10 @@ it('discards optional replacements when disabled and drops drafts on close/unmou
   fireEvent.change(screen.getByRole('textbox', { name: 'HWID' }), {
     target: { value: 'anonymous-hwid' },
   })
-  fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+  fireEvent.click(screen.getAllByRole('button', { name: 'Close' }).at(-1)!)
+  expect(h.onClose).not.toHaveBeenCalled()
+  expect(screen.getByDisplayValue('anonymous-hwid')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }))
   expect(h.onClose).toHaveBeenCalledOnce()
   expect(screen.queryByDisplayValue('anonymous-hwid')).not.toBeInTheDocument()
   h.unmount()
@@ -202,7 +205,7 @@ it('closes once if a delayed admission finishes after dismissal', async () => {
       }),
   })
   save()
-  fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+  fireEvent.click(screen.getAllByRole('button', { name: 'Close' }).at(-1)!)
   expect(h.onClose).toHaveBeenCalledOnce()
   await act(async () => {
     admit(true)
@@ -220,8 +223,8 @@ it('uses the existing mobile drawer and keeps inputs touch-sized', async () => {
   }))
   const h = renderEditor()
   expect(await screen.findByRole('dialog')).toBeVisible()
-  expect(screen.getByRole('textbox', { name: 'Subscription URL' })).toHaveClass('h-11')
+  expect(screen.getByRole('textbox', { name: 'Subscription URL' })).toHaveClass('h-12')
   expect(screen.getByRole('textbox', { name: 'Subscription URL' })).toHaveClass('text-base')
-  fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+  fireEvent.click(screen.getAllByRole('button', { name: 'Close' }).at(-1)!)
   expect(h.onClose).toHaveBeenCalledOnce()
 })

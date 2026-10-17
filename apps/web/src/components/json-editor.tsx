@@ -44,7 +44,7 @@ export function JsonEditor({ value, onChange, readOnly = false, label = 'JSON' }
               backgroundColor: 'var(--background)',
               color: 'var(--foreground)',
               fontSize: '16px',
-              height: 'min(45dvh, 24rem)',
+              height: 'var(--json-editor-height, min(45dvh, 24rem))',
             },
             '.cm-scroller': {
               fontFamily: 'ui-monospace, monospace',

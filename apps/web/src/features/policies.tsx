@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import {
   AppWindow,
   Check,
@@ -152,17 +153,7 @@ function ApplicationPolicyForm({ content, change }: { content: string; change: C
           first.label.localeCompare(second.label),
       ) ?? []
   return (
-    <div className="space-y-4">
-      <Input
-        aria-label={copy.searchApps}
-        placeholder={copy.searchApps}
-        className="h-11"
-        value={search}
-        onChange={(event) => {
-          setSearch(event.target.value)
-          setLimit(50)
-        }}
-      />
+    <div className="space-y-3">
       <ManagementSelect
         label={copy.appMode}
         value={mode}
@@ -180,6 +171,17 @@ function ApplicationPolicyForm({ content, change }: { content: string; change: C
           <p className="text-sm text-muted-foreground">
             {policy.mode === 'blacklist' ? copy.blacklistHint : copy.whitelistHint}
           </p>
+          <Input
+            type="search"
+            aria-label={copy.searchApps}
+            placeholder={copy.searchApps}
+            className="h-11 text-base md:text-sm"
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value)
+              setLimit(50)
+            }}
+          />
           {error && (
             <ErrorState
               error={error}
@@ -193,15 +195,17 @@ function ApplicationPolicyForm({ content, change }: { content: string; change: C
           {!users && !error && <LoadingState />}
           {users && (
             <>
-              <ManagementSelect
-                label={copy.users}
-                value={selectedUser ? String(selectedUser.id) : ''}
-                choices={users.map((user) => ({ value: String(user.id), label: user.name }))}
-                onChange={(value) => {
-                  setUserId(value)
-                  setLimit(50)
-                }}
-              />
+              {users.length > 1 && (
+                <ManagementSelect
+                  label={copy.users}
+                  value={selectedUser ? String(selectedUser.id) : ''}
+                  choices={users.map((user) => ({ value: String(user.id), label: user.name }))}
+                  onChange={(value) => {
+                    setUserId(value)
+                    setLimit(50)
+                  }}
+                />
+              )}
               {!apps.length && <EmptyState title={copy.noApps} />}
               <div className="divide-y">
                 {apps.slice(0, limit).map((app) => {
@@ -211,7 +215,7 @@ function ApplicationPolicyForm({ content, change }: { content: string; change: C
                     <Button
                       key={reference}
                       variant="ghost"
-                      className="min-h-16 w-full justify-start gap-3 whitespace-normal px-1 text-left"
+                      className="h-auto min-h-16 w-full justify-start gap-3 whitespace-normal rounded-none px-1 py-2 text-left"
                       aria-pressed={active}
                       onClick={() =>
                         change(
@@ -228,7 +232,7 @@ function ApplicationPolicyForm({ content, change }: { content: string; change: C
                     >
                       <AppIcon key={app.icon_key} iconKey={app.icon_key} />
                       <span className="min-w-0 flex-1">
-                        <span className="block break-words">{app.label}</span>
+                        <span className="block break-words font-medium">{app.label}</span>
                         <span className="block break-all text-xs text-muted-foreground">
                           {app.package_name}
                         </span>
@@ -302,7 +306,7 @@ function WiFiPolicyForm({ content, change }: { content: string; change: Change }
     setInvalid(false)
   }
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <ManagementSelect
         label={copy.wifi}
         value={mode}
@@ -337,7 +341,7 @@ function WiFiPolicyForm({ content, change }: { content: string; change: Change }
             <Input
               aria-label={copy.ssid}
               placeholder={copy.ssid}
-              className="h-11"
+              className="h-11 min-w-0 text-base md:text-sm"
               autoComplete="off"
               autoCapitalize="none"
               value={name}
@@ -375,26 +379,31 @@ function WiFiPolicyForm({ content, change }: { content: string; change: Change }
           </Button>
           {error && <ErrorState error={error} compact />}
           {saved && (
-            <div className="flex flex-wrap gap-2">
+            <ul className="divide-y" aria-label={copy.savedWifi}>
               {saved
                 .filter((ssid) => !entries.includes(ssid))
                 .map((ssid) => (
-                  <Button
-                    key={ssid}
-                    variant="secondary"
-                    className="min-h-11 max-w-full whitespace-pre-wrap break-all"
-                    onClick={() => add(ssid)}
-                  >
-                    {ssid}
-                  </Button>
+                  <li key={ssid}>
+                    <Button
+                      variant="ghost"
+                      className="h-auto min-h-11 w-full justify-start gap-3 rounded-none px-1 py-2 text-left"
+                      onClick={() => add(ssid)}
+                    >
+                      <Wifi className="size-4 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 whitespace-pre-wrap break-all">{ssid}</span>
+                      <Plus className="size-4 shrink-0" />
+                    </Button>
+                  </li>
                 ))}
-            </div>
+            </ul>
           )}
+          <h3 className="text-sm font-medium">{copy[policy.mode]}</h3>
           {!entries.length && <EmptyState title={copy.noWifi} />}
-          <ul className="divide-y">
+          <ul className="divide-y" aria-label={copy[policy.mode]}>
             {entries.map((ssid) => (
               <li key={ssid} className="flex items-center justify-between gap-3 py-2">
-                <span className="min-w-0 whitespace-pre-wrap break-all text-sm">{ssid}</span>
+                <Wifi className="size-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 whitespace-pre-wrap break-all text-sm">{ssid}</span>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -467,8 +476,24 @@ function InboundChoice({
 }
 
 export function PoliciesPage() {
+  const { section } = useSearch({ from: '/settings/policies' })
+  return <PolicyPanel key={section ?? 'all'} section={section} />
+}
+
+type PolicySection = 'inbound' | 'root' | 'apps' | 'wifi'
+
+function PolicyPanel({ section }: { section?: PolicySection }) {
   const copy = useManagementCopy()
-  const [target, setTarget] = useState<string | null>(null)
+  const navigate = useNavigate()
+  const initial =
+    section === 'root'
+      ? 'inbound/root_policy'
+      : section === 'apps'
+        ? 'inbound/app'
+        : section === 'wifi'
+          ? 'module/wifi'
+          : null
+  const [target, setTarget] = useState<string | null>(initial)
   const entries = [
     { target: 'inbound/backend', title: copy.backend, icon: Network },
     { target: 'inbound/root_policy', title: copy.root, icon: Settings2 },
@@ -478,31 +503,50 @@ export function PoliciesPage() {
     { target: 'module/wifi', title: copy.wifi, icon: Wifi },
   ]
   const selected = entries.find((entry) => entry.target === target)
+  const groups = [
+    { section: 'inbound', title: copy.inbound, entries: entries.slice(0, 4) },
+    { section: 'apps', title: copy.apps, entries: entries.slice(4, 5) },
+    { section: 'wifi', title: 'Wi-Fi', entries: entries.slice(5) },
+  ]
+  const close = () => {
+    setTarget(null)
+    if (section && section !== 'inbound') void navigate({ to: '/settings' })
+  }
   return (
-    <div className="space-y-6">
-      <section className="space-y-3">
-        <h2 className="text-sm font-medium text-muted-foreground">{copy.inbound}</h2>
-        <div className="divide-y rounded-lg border">
-          {entries.map((entry) => (
-            <Button
-              key={entry.target}
-              variant="ghost"
-              className="min-h-14 w-full justify-start gap-3 rounded-none"
-              onClick={() => setTarget(entry.target)}
-            >
-              <entry.icon className="size-4" />
-              <span className="flex-1 text-left">{entry.title}</span>
-              <ChevronRight className="size-4" />
-            </Button>
+    <div className="max-w-3xl space-y-6">
+      {(!section || section === 'inbound') &&
+        groups
+          .filter((group) => !section || group.section === section)
+          .map((group) => (
+            <section key={group.section} className="space-y-2">
+              <h2 className="section-label">{group.title}</h2>
+              <div className="divide-y">
+                {group.entries
+                  .filter((entry) => !section || entry.target !== 'inbound/root_policy')
+                  .map((entry) => (
+                    <Button
+                      key={entry.target}
+                      variant="ghost"
+                      className="min-h-14 w-full justify-start gap-3 rounded-none"
+                      onClick={() => setTarget(entry.target)}
+                    >
+                      <entry.icon className="size-4" />
+                      <span className="min-w-0 flex-1 whitespace-normal break-words text-left">
+                        {entry.title}
+                      </span>
+                      <ChevronRight className="size-4" />
+                    </Button>
+                  ))}
+              </div>
+            </section>
           ))}
-        </div>
-      </section>
       {selected && (
         <ConfigurationEditor
           key={selected.target}
           target={selected.target}
           title={selected.title}
-          onClose={() => setTarget(null)}
+          inline={section !== undefined && section !== 'inbound'}
+          onClose={close}
           {...(target === 'inbound/app'
             ? {
                 renderForm: (content: string, change: Change) => (

@@ -26,7 +26,10 @@ test('resources show public details in both themes and restrict URL actions to s
     fullPage: true,
   })
   await dialog.getByRole('button', { name: '关闭', exact: true }).click()
-  await page.getByRole('button', { name: '主题', exact: true }).click()
+  await page.goto('/#/settings')
+  await page.getByRole('combobox', { name: '主题', exact: true }).click()
+  await page.getByRole('option', { name: '深色', exact: true }).click()
+  await page.goto('/#/subscriptions')
   await page.getByRole('button', { name: '查看详情 备用线路', exact: true }).click()
   await expect(dialog.getByText(/下载中/)).toBeVisible()
   await expect(dialog.getByText('阶段不代表完成百分比，最终结果请查看历史。')).toBeVisible()
@@ -97,7 +100,8 @@ test('active subscription deletion requires a named replacement and update-all r
   page,
 }) => {
   await page.goto('/#/subscriptions')
-  await page.getByRole('button', { name: '更新全部订阅', exact: true }).click()
+  await page.getByRole('button', { name: '更多操作', exact: true }).click()
+  await page.getByRole('menuitem', { name: '更新全部订阅', exact: true }).click()
   await expect(page.getByText('部分订阅未能更新，请逐项查看结果。', { exact: true })).toBeVisible()
   const operation = page.getByRole('region', { name: '订阅操作' })
   await expect(operation.getByText('Global Connect', { exact: true })).toBeVisible()
@@ -171,13 +175,17 @@ test('theme, language and configuration survive page navigation; preferences sur
   await expect(page.getByRole('switch', { name: '开机自启', exact: true })).toBeVisible()
   await page.getByRole('switch', { name: '开机自启', exact: true }).click()
   await expect(page.getByRole('switch', { name: '开机自启', exact: true })).toBeChecked()
-  await page.getByRole('button', { name: '主题', exact: true }).click()
+  await page.getByRole('combobox', { name: '主题', exact: true }).click()
+  await page.getByRole('option', { name: '深色', exact: true }).click()
   await expect(page.locator('html')).toHaveClass(/dark/)
-  await page.getByRole('button', { name: '语言', exact: true }).click()
+  await page.getByRole('combobox', { name: '语言', exact: true }).click()
+  await page.getByRole('option', { name: 'English', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
   await page.reload()
   await expect(page.locator('html')).toHaveClass(/dark/)
   await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+  await expect(page.getByRole('note')).toHaveCount(0)
+  await page.goto('/')
   await expect(page.getByRole('note')).toContainText('Demo mode')
 })
 
@@ -223,7 +231,6 @@ test('node testing and saved routing changes remain usable while the core is sto
   await page.getByRole('option', { name: '代理', exact: true }).click()
   await expect(mode).toContainText('代理')
   await expect(mode).toBeEnabled()
-  await expect(page.getByText('已保存的默认模式', { exact: true })).toBeVisible()
   await expect(page.getByText(/运行时模式 ·/)).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   expect(failures).toEqual([])
@@ -249,12 +256,15 @@ test('details, keyboard navigation and responsive content stay inside the viewpo
   })
   await page.goto('/')
   await expect(page.getByRole('heading', { name: '运行中', exact: true })).toBeVisible()
-  await expect(page.getByText('v8.6.1', { exact: true })).toBeVisible()
+  await expect(page.getByText('v8.6.1', { exact: true })).toHaveCount(0)
   await page.screenshot({
     path: `test-results/${test.info().project.name}-dashboard-light.png`,
     fullPage: true,
   })
-  await page.getByRole('button', { name: '主题', exact: true }).click()
+  await page.goto('/#/settings')
+  await page.getByRole('combobox', { name: '主题', exact: true }).click()
+  await page.getByRole('option', { name: '深色', exact: true }).click()
+  await page.goto('/')
   await page.screenshot({
     path: `test-results/${test.info().project.name}-dashboard-dark.png`,
     fullPage: true,

@@ -101,7 +101,7 @@ it('reads real-shaped local and URL details, traffic, history and progress witho
   expect(
     h.request.mock.calls.filter(([input]) => input.path.startsWith('/subscriptions/default')),
   ).toHaveLength(1)
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }))
+  fireEvent.click(within(dialog).getAllByRole('button', { name: 'Close' }).at(-1)!)
   fireEvent.click(screen.getByRole('button', { name: 'View details Global Connect' }))
   dialog = await screen.findByRole('dialog')
   expect(await within(dialog).findByText('Subscription usage')).toBeVisible()
@@ -116,7 +116,7 @@ it('reads real-shaped local and URL details, traffic, history and progress witho
   expect(
     screen.queryByRole('button', { name: /add|delete|cancel|update all/i }),
   ).not.toBeInTheDocument()
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }))
+  fireEvent.click(within(dialog).getAllByRole('button', { name: 'Close' }).at(-1)!)
   fireEvent.click(screen.getByRole('button', { name: 'View details 备用线路' }))
   dialog = await screen.findByRole('dialog')
   expect(await within(dialog).findByText(/Downloading/)).toBeVisible()
@@ -124,6 +124,8 @@ it('reads real-shaped local and URL details, traffic, history and progress witho
     within(dialog).getByText('Stages are not a percentage. Final results appear in history.'),
   ).toBeVisible()
   expect(within(dialog).queryByText('Succeeded')).not.toBeInTheDocument()
+  fireEvent.click(within(dialog).getAllByRole('button', { name: 'Close' }).at(-1)!)
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
   await act(() => h.router.navigate({ to: '/nodes' }))
   h.view.unmount()
 })
@@ -143,6 +145,10 @@ async function openDetails(name = 'Global Connect') {
   const dialog = await screen.findByRole('dialog')
   await waitFor(() => expect(within(dialog).getByText('Nodes')).toBeVisible())
   return dialog
+}
+async function updateAll() {
+  fireEvent.click(await screen.findByRole('button', { name: 'More actions' }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Update all subscriptions' }))
 }
 const writes = (request: ReturnType<typeof setup>['request']) =>
   request.mock.calls.filter(([input]) => input.method !== 'GET')
@@ -178,7 +184,7 @@ it('keeps the operation visible after closing details and blocks service, mode a
   const h = setup('normal', { controls: true })
   const dialog = await openDetails()
   fireEvent.click(within(dialog).getByRole('button', { name: 'Update subscription' }))
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }))
+  fireEvent.click(within(dialog).getAllByRole('button', { name: 'Close' }).at(-1)!)
   expect(await screen.findByText('Subscription operation in progress')).toBeVisible()
   for (const name of ['test-stop', 'test-mode', 'test-selection'])
     fireEvent.click(screen.getByRole('button', { name }))
@@ -245,7 +251,7 @@ it('keeps a lost response uncertain and only performs reads when checking the re
     ).toBeGreaterThan(1),
   )
   expect(writes(h.request)).toHaveLength(1)
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }))
+  fireEvent.click(within(dialog).getAllByRole('button', { name: 'Close' }).at(-1)!)
   expect(await screen.findByText('Subscription result awaiting confirmation')).toBeVisible()
   expect(screen.getAllByRole('alert')).toHaveLength(1)
 })
@@ -354,7 +360,7 @@ it('distinguishes 304 responses from new content updates', async () => {
 
 it('renders partial update-all results individually without a false all-success notice', async () => {
   const h = setup()
-  fireEvent.click(await screen.findByRole('button', { name: 'Update all subscriptions' }))
+  await updateAll()
   expect(
     await screen.findByText('Some subscriptions did not update. Review each result.'),
   ).toBeVisible()
@@ -380,7 +386,7 @@ it('requests cancellation without claiming that the transaction was rolled back'
     '/subscriptions/demo-global/cancel',
   ])
   expect(within(dialog).queryByText('Cancelled', { exact: true })).not.toBeInTheDocument()
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }))
+  fireEvent.click(within(dialog).getAllByRole('button', { name: 'Close' }).at(-1)!)
   expect(await screen.findByText('Cancellation requested; check the final result.')).toBeVisible()
 })
 
@@ -413,7 +419,7 @@ it('preserves a persisted runtime failure and renders its warning only inside th
   expect(screen.getAllByRole('alert', { hidden: true })).toHaveLength(1)
   expect(screen.queryByText('Subscription updated', { exact: true })).not.toBeInTheDocument()
   expect(screen.getByRole('alert')).not.toHaveTextContent('anonymous private original error')
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }))
+  fireEvent.click(within(dialog).getAllByRole('button', { name: 'Close' }).at(-1)!)
   expect(await screen.findByRole('alert')).toHaveTextContent(
     'Saved, but runtime application failed.',
   )
@@ -437,7 +443,7 @@ it('tracks cancellation of an external update without creating an own-operation 
   expect(writes(h.request).map(([input]) => input.path)).toEqual([
     '/subscriptions/demo-empty/cancel',
   ])
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }))
+  fireEvent.click(within(dialog).getAllByRole('button', { name: 'Close' }).at(-1)!)
   expect(await screen.findByText('Cancellation requested; check the final result.')).toBeVisible()
   const other = await openDetails()
   expect(
@@ -478,7 +484,7 @@ it('uses the batch deadline for progress while still allowing cancellation of th
         ? held.then(() => backend.request(input, signal))
         : undefined,
   })
-  fireEvent.click(await screen.findByRole('button', { name: 'Update all subscriptions' }))
+  await updateAll()
   try {
     const dialog = await openDetails('备用线路')
     for (const name of ['Update subscription', 'Edit subscription', 'Delete subscription'])

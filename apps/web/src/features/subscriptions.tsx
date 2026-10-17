@@ -1,6 +1,16 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowUpRight, Folder, Rss, RefreshCw, LoaderCircle, Plus } from 'lucide-react'
+import { Menu } from '@base-ui/react/menu'
+import {
+  ArrowUpRight,
+  ChevronRight,
+  Folder,
+  Rss,
+  RefreshCw,
+  LoaderCircle,
+  MoreHorizontal,
+  Plus,
+} from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { useApi, usePreferences } from '@/app/context'
 import { resourceQueries, useResourceDetails } from '@/api/resources'
@@ -72,7 +82,7 @@ function SubscriptionFeedback({
             <Button
               variant="outline"
               size="sm"
-              className="min-h-11"
+              className="min-h-12"
               disabled={connection !== 'live'}
               onClick={() => void actions.verify()}
             >
@@ -183,7 +193,7 @@ function DeleteSubscription({
             <Select value={replacement} onValueChange={(value) => setReplacement(value ?? '')}>
               <SelectTrigger
                 id="subscription-replacement"
-                className="min-h-11 w-full text-base md:text-sm"
+                className="min-h-12 w-full text-base md:text-sm"
               >
                 <SelectValue placeholder={t('chooseReplacement')} />
               </SelectTrigger>
@@ -209,7 +219,7 @@ function DeleteSubscription({
         )}
         <Button
           variant="destructive"
-          className="min-h-11 w-full"
+          className="min-h-12 w-full"
           disabled={!allowed || connection !== 'live' || isWaiting(actions.operation)}
           onClick={() => {
             if (allowed && actions.remove(target.id, current?.active ? replacement : undefined))
@@ -310,7 +320,7 @@ function ResourceDetails({
         <div className="flex flex-wrap gap-2">
           {api.supports('subscriptions.update') && (
             <Button
-              className="min-h-11"
+              className="min-h-12"
               disabled={connection !== 'live' || blocked}
               onClick={() => actions.update(id)}
             >
@@ -320,7 +330,7 @@ function ResourceDetails({
           {(waiting || stage) && api.supports('subscriptions.cancel') && (
             <Button
               variant="outline"
-              className="min-h-11"
+              className="min-h-12"
               disabled={
                 connection !== 'live' || cancelState === 'pending' || cancelState === 'requested'
               }
@@ -332,7 +342,7 @@ function ResourceDetails({
           {api.supports('subscriptions.edit') && (
             <Button
               variant="outline"
-              className="min-h-11"
+              className="min-h-12"
               disabled={connection !== 'live' || blocked}
               onClick={() => edit(group)}
             >
@@ -342,7 +352,7 @@ function ResourceDetails({
           {api.supports('subscriptions.remove') && (
             <Button
               variant="outline"
-              className="min-h-11 text-destructive"
+              className="min-h-12 text-destructive"
               disabled={connection !== 'live' || blocked}
               onClick={() => remove(group)}
             >
@@ -508,7 +518,7 @@ export function SubscriptionsPage() {
         {connection !== 'live' && <Badge variant="outline">{t('staleSnapshot')}</Badge>}
         {api.supports('subscriptions.add') && (
           <Button
-            className="min-h-11"
+            className="min-h-12"
             disabled={connection !== 'live' || isWaiting(actions.operation)}
             onClick={() => setPanel({ kind: 'add' })}
           >
@@ -516,30 +526,41 @@ export function SubscriptionsPage() {
             {t('addSubscription')}
           </Button>
         )}
-        {api.supports('subscriptions.update_all') && (
-          <Button
-            variant="outline"
-            className="min-h-11"
-            disabled={
-              connection !== 'live' ||
-              isWaiting(actions.operation) ||
-              !list.data.some((group) => group.type === 'subscription')
-            }
-            onClick={() => actions.updateAll()}
+        <Menu.Root>
+          <Menu.Trigger
+            render={<Button variant="ghost" size="icon" className="size-12" />}
+            aria-label={preferences.locale === 'zh' ? '更多操作' : 'More actions'}
           >
-            {t('updateAllSubscriptions')}
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-11"
-          aria-label={t('refreshResources')}
-          disabled={connection !== 'live' || list.isFetching}
-          onClick={() => void list.refetch()}
-        >
-          <RefreshCw />
-        </Button>
+            <MoreHorizontal />
+          </Menu.Trigger>
+          <Menu.Portal>
+            <Menu.Positioner align="end" sideOffset={4} className="z-50">
+              <Menu.Popup className="min-w-48 max-w-[calc(100vw-2rem)] rounded-md border bg-popover p-1 text-popover-foreground shadow-md outline-none">
+                {api.supports('subscriptions.update_all') && (
+                  <Menu.Item
+                    className="flex min-h-12 cursor-pointer items-center rounded-sm px-3 text-sm outline-none data-highlighted:bg-muted data-disabled:opacity-50"
+                    disabled={
+                      connection !== 'live' ||
+                      isWaiting(actions.operation) ||
+                      !list.data.some((group) => group.type === 'subscription')
+                    }
+                    onClick={() => actions.updateAll()}
+                  >
+                    {t('updateAllSubscriptions')}
+                  </Menu.Item>
+                )}
+                <Menu.Item
+                  className="flex min-h-12 cursor-pointer items-center gap-2 rounded-sm px-3 text-sm outline-none data-highlighted:bg-muted data-disabled:opacity-50"
+                  disabled={connection !== 'live' || list.isFetching}
+                  onClick={() => void list.refetch()}
+                >
+                  <RefreshCw className="size-4 shrink-0" />
+                  {t('refreshResources')}
+                </Menu.Item>
+              </Menu.Popup>
+            </Menu.Positioner>
+          </Menu.Portal>
+        </Menu.Root>
       </div>
       {!panel && list.isError && (
         <ErrorState error={list.error} compact retry={() => void list.refetch()} />
@@ -553,53 +574,45 @@ export function SubscriptionsPage() {
             <h2 className="text-sm font-medium text-muted-foreground">
               {t(type === 'local' ? 'localResources' : 'subscriptionResources')}
             </h2>
-            <div className="divide-y rounded-lg border">
+            <div className="divide-y border-y">
               {groups.map((group) => (
-                <article
+                <button
+                  type="button"
                   key={group.id}
-                  className="flex min-w-0 items-start gap-3 p-4 sm:gap-4 sm:p-5"
+                  className="flex min-h-20 w-full min-w-0 items-center gap-3 py-4 text-left outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring active:bg-muted sm:gap-4"
+                  aria-label={`${t('viewDetails')} ${group.name}`}
+                  disabled={!api.supports('subscriptions.detail')}
+                  onClick={() => setPanel({ kind: 'detail', id: group.id })}
                 >
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted">
+                  <span
+                    className="flex size-12 shrink-0 items-center justify-center rounded-md bg-muted"
+                    aria-hidden
+                  >
                     {type === 'local' ? <Folder className="size-5" /> : <Rss className="size-5" />}
-                  </div>
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="break-words font-medium">{group.name}</h3>
+                  </span>
+                  <span className="min-w-0 flex-1 space-y-2">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span role="heading" aria-level={3} className="min-w-0 break-all font-medium">
+                        {group.name}
+                      </span>
                       {group.active && <Badge variant="secondary">{t('activeGroup')}</Badge>}
-                    </div>
-                    <p className="text-xs text-muted-foreground">
+                    </span>
+                    <span className="block text-xs text-muted-foreground">
                       {t('nodeCount', { count: group.node_count })}
                       {type === 'subscription' &&
                         ` · ${t('autoUpdate')} ${t(group.auto_update ? 'enabled' : 'disabled')}`}
-                    </p>
-                    {group.updated_at && Number.isFinite(Date.parse(group.updated_at)) && (
-                      <p className="text-xs text-muted-foreground">
-                        {new Intl.DateTimeFormat(preferences.locale, {
-                          dateStyle: 'medium',
-                          timeStyle: 'short',
-                        }).format(new Date(group.updated_at))}
-                      </p>
-                    )}
+                    </span>
                     {group.last_error && (
-                      <p className="text-xs text-destructive">{t('updateError')}</p>
+                      <span className="block text-xs text-destructive">{t('updateError')}</span>
                     )}
                     {group.progress && (
-                      <p className="text-xs text-muted-foreground">
+                      <span className="block text-xs text-muted-foreground">
                         {t(`${group.progress.stage}Stage`)}
-                      </p>
+                      </span>
                     )}
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-11 shrink-0"
-                    aria-label={`${t('viewDetails')} ${group.name}`}
-                    disabled={!api.supports('subscriptions.detail')}
-                    onClick={() => setPanel({ kind: 'detail', id: group.id })}
-                  >
-                    <ArrowUpRight />
-                  </Button>
-                </article>
+                  </span>
+                  <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                </button>
               ))}
             </div>
           </section>

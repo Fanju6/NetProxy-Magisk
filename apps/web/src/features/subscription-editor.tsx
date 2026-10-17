@@ -64,6 +64,7 @@ function Editor({
   const [open, setOpen] = useState(true)
   const [waiting, setWaiting] = useState(false)
   const [invalid, setInvalid] = useState(false)
+  const [dirty, setDirty] = useState(false)
   const [replacements, setReplacements] = useState<Replacement[]>([])
   const [initial] = useState(() => ({
     name: group?.name ?? '',
@@ -137,7 +138,7 @@ function Editor({
     const id = `${prefix}-${key}`
     if (key === 'allow_insecure')
       return (
-        <label htmlFor={id} className="flex min-h-11 items-center justify-between gap-4 text-sm">
+        <label htmlFor={id} className="flex min-h-12 items-center justify-between gap-4 text-sm">
           {t('subscriptionAllowInsecureValue')}
           <Switch id={id} name={key} />
         </label>
@@ -169,7 +170,7 @@ function Editor({
         autoComplete="off"
         autoCapitalize="none"
         spellCheck={false}
-        className="h-11"
+        className="h-12"
       />
     )
   }
@@ -177,6 +178,7 @@ function Editor({
   return (
     <Details
       open={open}
+      dirty={dirty}
       onOpenChange={(value) => {
         if (!value) close()
       }}
@@ -188,6 +190,8 @@ function Editor({
           ref={form}
           autoComplete="off"
           noValidate
+          onInput={() => setDirty(true)}
+          onChange={() => setDirty(true)}
           onSubmit={(event) => {
             event.preventDefault()
             void submit(event.currentTarget)
@@ -201,7 +205,7 @@ function Editor({
                 id={`${prefix}-name`}
                 name="name"
                 defaultValue={initial.name}
-                className="h-11"
+                className="h-12"
               />
             </Labeled>
             {!group && (
@@ -210,7 +214,7 @@ function Editor({
               </Labeled>
             )}
             <label
-              className="flex min-h-11 items-center justify-between gap-4 text-sm"
+              className="flex min-h-12 items-center justify-between gap-4 text-sm"
               htmlFor={`${prefix}-auto`}
             >
               {t('autoUpdate')}
@@ -218,6 +222,7 @@ function Editor({
                 id={`${prefix}-auto`}
                 name="auto_update"
                 defaultChecked={initial.auto_update}
+                onCheckedChange={() => setDirty(true)}
               />
             </label>
             <Labeled label={t('subscriptionIntervalSeconds')} htmlFor={`${prefix}-interval`}>
@@ -229,14 +234,18 @@ function Editor({
                 min={900}
                 step={1}
                 defaultValue={initial.update_interval}
-                className="h-11"
+                className="h-12"
               />
             </Labeled>
             <Labeled label={t('subscriptionViaProxy')} htmlFor={`${prefix}-via`}>
-              <Select name="update_via_proxy" defaultValue={initial.update_via_proxy}>
+              <Select
+                name="update_via_proxy"
+                defaultValue={initial.update_via_proxy}
+                onValueChange={() => setDirty(true)}
+              >
                 <SelectTrigger
                   id={`${prefix}-via`}
-                  className="min-h-11 w-full text-base md:text-sm"
+                  className="min-h-12 w-full text-base md:text-sm"
                 >
                   <SelectValue>
                     {(value: unknown) =>
@@ -251,14 +260,20 @@ function Editor({
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="auto">{t('subscriptionViaAuto')}</SelectItem>
-                  <SelectItem value="always">{t('Proxy')}</SelectItem>
-                  <SelectItem value="never">{t('Direct')}</SelectItem>
+                  <SelectItem value="auto" className="min-h-12">
+                    {t('subscriptionViaAuto')}
+                  </SelectItem>
+                  <SelectItem value="always" className="min-h-12">
+                    {t('Proxy')}
+                  </SelectItem>
+                  <SelectItem value="never" className="min-h-12">
+                    {t('Direct')}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </Labeled>
             <details className="border-t pt-4">
-              <summary className="min-h-11 cursor-pointer text-sm font-medium">
+              <summary className="min-h-12 cursor-pointer text-sm font-medium">
                 {t('subscriptionAdvanced')}
               </summary>
               <p className="mb-4 text-sm text-muted-foreground">{t('subscriptionUnchanged')}</p>
@@ -268,20 +283,21 @@ function Editor({
                   .map(([key, label]) => (
                     <div key={key} className="space-y-2">
                       <label
-                        className="flex min-h-11 items-center justify-between gap-4 text-sm"
+                        className="flex min-h-12 items-center justify-between gap-4 text-sm"
                         htmlFor={`${prefix}-modify-${key}`}
                       >
                         {t('subscriptionModify', { field: t(label) })}
                         <Switch
                           id={`${prefix}-modify-${key}`}
                           checked={replacements.includes(key)}
-                          onCheckedChange={(checked) =>
+                          onCheckedChange={(checked) => {
+                            setDirty(true)
                             setReplacements((current) =>
                               checked
                                 ? [...current, key]
                                 : current.filter((entry) => entry !== key),
                             )
-                          }
+                          }}
                         />
                       </label>
                       {replacements.includes(key) && field(key)}
@@ -294,7 +310,7 @@ function Editor({
                 {t('subscriptionInputInvalid')}
               </p>
             )}
-            <Button type="submit" className="min-h-11 w-full">
+            <Button type="submit" className="min-h-12 w-full">
               {t(waiting ? 'working' : 'save')}
             </Button>
           </fieldset>

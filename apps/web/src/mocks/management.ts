@@ -231,7 +231,20 @@ export class ManagementMock {
         return envelope({
           kind: input!.kind,
           content: this.logs[input!.kind as 'service' | 'core'],
-          entries: [],
+          entries:
+            input!.kind === 'service' && this.logs.service
+              ? [
+                  {
+                    timestamp: '2026-10-17 12:00:00',
+                    level: 'INFO',
+                    component: 'service',
+                    event: 'start',
+                    result: 'success',
+                    error_code: '-',
+                    message: 'Service ready',
+                  },
+                ]
+              : [],
         })
       case 'logs_clear':
         this.logs[input!.kind as 'service' | 'core'] = ''

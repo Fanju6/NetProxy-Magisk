@@ -870,7 +870,7 @@ it('allows native start/stop capabilities without enabling mode, selection, or c
   for (const button of screen.getAllByRole('button', { name: /^Select / }))
     expect(button).toBeDisabled()
   await act(async () => router.navigate({ to: '/settings' }))
-  expect(await screen.findByRole('heading', { name: 'Appearance' })).toBeVisible()
+  expect(await screen.findByRole('heading', { name: 'General' })).toBeVisible()
   expect(screen.queryByRole('switch', { name: 'Start on boot' })).not.toBeInTheDocument()
   expect(request.mock.calls.filter(([req]) => req.method !== 'GET').map(([req]) => req)).toEqual([
     { method: 'POST', path: '/service/start' },

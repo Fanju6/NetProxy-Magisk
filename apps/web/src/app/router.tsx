@@ -29,11 +29,30 @@ const routeTree = root.addChildren([
   createRoute({
     getParentRoute: () => root,
     path: '/settings/configuration',
+    validateSearch: (
+      search: Record<string, unknown>,
+    ): { section?: 'all' | 'core' | 'rules' | undefined } => ({
+      section:
+        search.section === 'rules' || search.section === 'core' || search.section === 'all'
+          ? search.section
+          : undefined,
+    }),
     component: lazyRouteComponent(() => import('@/features/configuration'), 'ConfigurationPage'),
   }),
   createRoute({
     getParentRoute: () => root,
     path: '/settings/policies',
+    validateSearch: (
+      search: Record<string, unknown>,
+    ): { section?: 'inbound' | 'root' | 'apps' | 'wifi' | undefined } => ({
+      section:
+        search.section === 'inbound' ||
+        search.section === 'root' ||
+        search.section === 'apps' ||
+        search.section === 'wifi'
+          ? search.section
+          : undefined,
+    }),
     component: lazyRouteComponent(() => import('@/features/policies'), 'PoliciesPage'),
   }),
   createRoute({

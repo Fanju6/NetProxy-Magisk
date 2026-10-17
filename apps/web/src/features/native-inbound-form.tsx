@@ -31,9 +31,11 @@ export function NativeInboundForm({
       <span>{label}</span>
       <textarea
         key={`${backend}-${key}`}
-        rows={3}
-        className="w-full rounded-md border bg-transparent p-3 text-base"
+        rows={2}
+        className="w-full resize-y rounded-md border bg-transparent p-3 text-base md:text-sm"
         spellCheck={false}
+        autoCapitalize="none"
+        autoComplete="off"
         defaultValue={
           Array.isArray(parent[key])
             ? (parent[key] as unknown[]).join('\n')
@@ -53,8 +55,8 @@ export function NativeInboundForm({
     </label>
   )
   const toggle = (label: string, key: string, parent = native, save = patch) => (
-    <label className="flex min-h-11 items-center justify-between gap-3 text-sm">
-      <span>{label}</span>
+    <label className="flex min-h-11 items-center justify-between gap-3 border-b py-2 text-sm">
+      <span className="min-w-0 break-words">{label}</span>
       <Switch
         checked={parent[key] === true}
         onCheckedChange={(checked) => save({ [key]: checked })}
@@ -81,43 +83,57 @@ export function NativeInboundForm({
   return (
     <div className="space-y-5">
       {backend === 'tun' ? (
-        <>
+        <section className="space-y-4">
+          <h3 className="section-label">{text('网络接口', 'Network interface')}</h3>
           <label className="block space-y-2 text-sm">
             <span>{text('接口名称', 'Interface name')}</span>
             <Input
+              className="h-11 text-base md:text-sm"
+              autoCapitalize="none"
+              autoComplete="off"
               defaultValue={String(native.interface_name ?? '')}
               onBlur={(event) => patch({ interface_name: event.target.value })}
             />
           </label>
           {list(text('接口地址，每行一个', 'Interface addresses, one per line'), 'address')}
           {choice(text('DNS 接管', 'DNS capture'), 'dns_mode', ['hijack', 'disabled'])}
-          {toggle(text('严格路由', 'Strict routing'), 'strict_route')}
-          {choice(text('协议栈', 'Stack'), 'stack', ['system', 'mixed', 'gvisor'])}
-          <label className="block space-y-2 text-sm">
-            <span>MTU</span>
-            <Input
-              type="number"
-              min={576}
-              placeholder={text('内核默认', 'Core default')}
-              defaultValue={typeof native.mtu === 'number' ? native.mtu : ''}
-              onBlur={(event) =>
-                patch({ mtu: event.target.value === '' ? undefined : Number(event.target.value) })
-              }
-            />
-          </label>
-          {list(
-            text('接管接口，每行一个', 'Included interfaces, one per line'),
-            'include_interface',
-          )}
-          {list(
-            text('绕过接口，每行一个', 'Excluded interfaces, one per line'),
-            'exclude_interface',
-          )}
-          {list(
-            text('绕过网段，每行一个', 'Excluded CIDRs, one per line'),
-            'route_exclude_address',
-          )}
-        </>
+          <details className="group border-t pt-3">
+            <summary className="min-h-11 cursor-pointer py-3 text-sm font-medium">
+              {text('高级参数', 'Advanced parameters')}
+            </summary>
+            <div className="space-y-4 pt-2">
+              {toggle(text('严格路由', 'Strict routing'), 'strict_route')}
+              {choice(text('协议栈', 'Stack'), 'stack', ['system', 'mixed', 'gvisor'])}
+              <label className="block space-y-2 text-sm">
+                <span>MTU</span>
+                <Input
+                  className="h-11 text-base md:text-sm"
+                  type="number"
+                  min={576}
+                  placeholder={text('内核默认', 'Core default')}
+                  defaultValue={typeof native.mtu === 'number' ? native.mtu : ''}
+                  onBlur={(event) =>
+                    patch({
+                      mtu: event.target.value === '' ? undefined : Number(event.target.value),
+                    })
+                  }
+                />
+              </label>
+              {list(
+                text('接管接口，每行一个', 'Included interfaces, one per line'),
+                'include_interface',
+              )}
+              {list(
+                text('绕过接口，每行一个', 'Excluded interfaces, one per line'),
+                'exclude_interface',
+              )}
+              {list(
+                text('绕过网段，每行一个', 'Excluded CIDRs, one per line'),
+                'route_exclude_address',
+              )}
+            </div>
+          </details>
+        </section>
       ) : (
         <>
           {(['local', 'shared'] as const).map((path) => {
@@ -129,13 +145,15 @@ export function NativeInboundForm({
             const save = (values: Record<string, unknown>) =>
               patch({ [path]: { ...part, ...values } })
             return (
-              <section key={path} className="space-y-3 border-b pb-4">
-                <h3 className="text-sm font-medium">
-                  {path === 'local'
+              <section key={path} className="space-y-3 pb-4">
+                {toggle(
+                  path === 'local'
                     ? text('本机网络', 'Local network')
-                    : text('共享网络', 'Shared network')}
-                </h3>
-                {toggle(text('启用', 'Enabled'), 'enabled', part, save)}
+                    : text('共享网络', 'Shared network'),
+                  'enabled',
+                  part,
+                  save,
+                )}
                 {choice(
                   text('数据平面', 'Data plane'),
                   'data_plane',
