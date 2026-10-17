@@ -21,6 +21,7 @@ import {
 } from './contracts'
 import { ModuleEvents } from './events'
 import { DashboardPage } from '@/features/dashboard'
+import { subscriptionOperationKey } from './subscription-control'
 
 type Session = {
   consume: (event: ApiEvent) => void
@@ -35,6 +36,59 @@ afterEach(() => {
 const frame = (name: ApiEvent['name'], data: unknown): ApiEvent => ({
   name,
   body: { schema: 1, ok: true, code: 'fixture', message: '', data },
+})
+
+it('does not resurrect a removed group from the initial or later stale SSE snapshot', async () => {
+  const { cache, transport, emit, complete, view, sessions } = setup()
+  complete()
+  const original = createFixtures()
+  const fresh = structuredClone(original.snapshot)
+  fresh.groups = fresh.groups.filter((entry) => entry.group.id !== 'demo-empty')
+  cache.setQueryData(
+    ['subscriptions'],
+    fresh.groups.map((entry) => entry.group),
+  )
+  vi.mocked(transport.request).mockImplementation(async (request) => ({
+    status: 200,
+    body: {
+      schema: 1,
+      ok: true,
+      code: 'fixture.read',
+      message: '',
+      data:
+        request.path === '/service'
+          ? original.service
+          : request.path === '/mode'
+            ? {
+                mode: original.service.configured_outbound_mode,
+                available: original.service.available_outbound_modes,
+                runtime_mode: original.service.outbound_mode,
+              }
+            : request.path === '/selection'
+              ? fresh.selection
+              : request.path === '/nodes/snapshot'
+                ? fresh
+                : fresh.groups.map((entry) => entry.group),
+    },
+  }))
+  act(() =>
+    cache.setQueryData(subscriptionOperationKey, {
+      epoch: 2,
+      action: 'remove',
+      groupId: 'demo-empty',
+      phase: 'idle',
+      deadline: 0,
+      error: null,
+      cancel: 'idle',
+    }),
+  )
+  await waitFor(() => expect(sessions).toHaveLength(2))
+  complete()
+  await waitFor(() => expect(cache.getQueryData(['events-connection'])).toBe('live'))
+  expect(cache.getQueryData(['nodes'])).toEqual(fresh)
+  emit('groups', original.snapshot)
+  expect(cache.getQueryData(['nodes'])).toEqual(fresh)
+  view.unmount()
 })
 
 function setup(

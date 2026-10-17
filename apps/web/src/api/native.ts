@@ -9,6 +9,7 @@ import {
   type EventTopic,
 } from './contracts'
 import { unavailableTransport } from './client'
+import { subscriptionCreateSchema, subscriptionInputSchema } from './subscription-input'
 
 export interface NativeIpc {
   invoke<T>(command: string, args: Record<string, unknown>): Promise<T>
@@ -88,6 +89,12 @@ export class NativeTransport implements ApiTransport {
     'subscriptions.detail',
     'subscriptions.history',
     'subscriptions.progress',
+    'subscriptions.update',
+    'subscriptions.cancel',
+    'subscriptions.add',
+    'subscriptions.edit',
+    'subscriptions.remove',
+    'subscriptions.update_all',
   ] as const
   private releaseEvents: (() => void) | undefined
   private eventGeneration = 0
@@ -114,9 +121,66 @@ export class NativeTransport implements ApiTransport {
     const resource = Object.hasOwn(readResources, request.path)
       ? readResources[request.path]
       : undefined
-    if (request.method === 'GET' && resource && request.body === undefined) {
+    let deleteQuery = false
+    if (request.method === 'POST' && request.path === '/subscriptions') {
+      const parsed = subscriptionCreateSchema.safeParse(request.body)
+      if (!parsed.success)
+        throw new ApiError('client.operation_denied', 'Invalid subscription input', 403)
+      operation = 'subscription_write'
+      args = { action: 'add', input: bounded(subscriptionCreateSchema, parsed.data) }
+    } else if (
+      request.method === 'POST' &&
+      request.path === '/subscriptions/update-all' &&
+      request.body === undefined
+    ) {
+      operation = 'subscription_write'
+      args = { action: 'update_all' }
+    } else if (
+      (request.method === 'PUT' || request.method === 'DELETE') &&
+      request.path.startsWith('/subscriptions/')
+    ) {
+      const match = /^\/subscriptions\/([^/]+)$/.exec(request.path)
+      if (!match || !groupIdSchema.safeParse(match[1]).success)
+        throw new ApiError('client.operation_denied', 'Invalid subscription target', 403)
+      operation = 'subscription_write'
+      if (request.method === 'PUT') {
+        const parsed = subscriptionInputSchema.safeParse(request.body)
+        if (!parsed.success)
+          throw new ApiError('client.operation_denied', 'Invalid subscription input', 403)
+        args = {
+          action: 'edit',
+          groupId: match[1],
+          input: bounded(subscriptionInputSchema, parsed.data),
+        }
+      } else {
+        const replacement = request.query?.replacement_group_id
+        if (
+          request.body !== undefined ||
+          Object.keys(request.query ?? {}).some((key) => key !== 'replacement_group_id') ||
+          (replacement !== undefined &&
+            (!groupIdSchema.safeParse(replacement).success || replacement === match[1]))
+        )
+          throw new ApiError('client.operation_denied', 'Invalid subscription replacement', 403)
+        args = {
+          action: 'remove',
+          groupId: match[1],
+          ...(replacement ? { replacementGroupId: replacement } : {}),
+        }
+        deleteQuery = true
+      }
+    } else if (request.method === 'GET' && resource && request.body === undefined) {
       operation = 'read'
       args = { resource }
+    } else if (
+      request.method === 'POST' &&
+      request.body === undefined &&
+      /^\/subscriptions\/[^/]+\/(update|cancel)$/.test(request.path)
+    ) {
+      const match = /^\/subscriptions\/([^/]+)\/(update|cancel)$/.exec(request.path)!
+      if (!groupIdSchema.safeParse(match[1]).success)
+        throw new ApiError('client.operation_denied', 'Invalid subscription target', 403)
+      operation = 'subscription_action'
+      args = { groupId: match[1], action: match[2] }
     } else if (
       request.method === 'GET' &&
       request.body === undefined &&
@@ -151,7 +215,7 @@ export class NativeTransport implements ApiTransport {
     } else {
       throw new ApiError('client.operation_denied', 'Native API resource is not allowed', 403)
     }
-    if (request.query !== undefined)
+    if (request.query !== undefined && !deleteQuery)
       throw new ApiError('client.operation_denied', 'Native API resource is not allowed', 403)
     if (signal?.aborted) throw signal.reason
     const requestId = crypto.randomUUID()

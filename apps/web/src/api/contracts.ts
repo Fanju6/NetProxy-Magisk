@@ -251,6 +251,12 @@ export const apiOperations = [
   'subscriptions.detail',
   'subscriptions.history',
   'subscriptions.progress',
+  'subscriptions.update',
+  'subscriptions.cancel',
+  'subscriptions.add',
+  'subscriptions.edit',
+  'subscriptions.remove',
+  'subscriptions.update_all',
   'config.read',
   'config.write',
 ] as const
@@ -275,6 +281,39 @@ const operations: Partial<Record<ApiRequest['method'], Partial<Record<ApiPath, A
   PUT: { '/selection': 'selection.write', '/mode': 'mode.write', '/config': 'config.write' },
 }
 export function requestOperation(request: ApiRequest): ApiOperation | undefined {
+  if (request.query === undefined && request.method === 'POST') {
+    if (request.path === '/subscriptions') return 'subscriptions.add'
+    if (request.path === '/subscriptions/update-all' && request.body === undefined)
+      return 'subscriptions.update_all'
+  }
+  if (
+    (request.method === 'PUT' || request.method === 'DELETE') &&
+    request.path.startsWith('/subscriptions/')
+  ) {
+    const match = /^\/subscriptions\/([^/]+)$/.exec(request.path)
+    if (!match || !groupIdSchema.safeParse(match[1]).success) return
+    if (request.method === 'PUT' && request.query === undefined) return 'subscriptions.edit'
+    if (
+      request.method === 'DELETE' &&
+      request.body === undefined &&
+      Object.keys(request.query ?? {}).every((key) => key === 'replacement_group_id') &&
+      (request.query?.replacement_group_id === undefined ||
+        groupIdSchema.safeParse(request.query.replacement_group_id).success)
+    )
+      return 'subscriptions.remove'
+    return
+  }
+  if (request.method === 'POST' && request.path.startsWith('/subscriptions/')) {
+    const match = /^\/subscriptions\/([^/]+)\/(update|cancel)$/.exec(request.path)
+    if (
+      match &&
+      groupIdSchema.safeParse(match[1]).success &&
+      request.query === undefined &&
+      request.body === undefined
+    )
+      return match[2] === 'update' ? 'subscriptions.update' : 'subscriptions.cancel'
+    return
+  }
   if (request.method === 'GET' && request.path.startsWith('/subscriptions/')) {
     const match = /^\/subscriptions\/([^/]+)(?:\/(history|progress))?$/.exec(request.path)
     if (

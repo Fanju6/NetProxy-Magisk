@@ -17,6 +17,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.channels.Channel
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.builtins.nullable
@@ -76,6 +77,7 @@ internal class ModuleApiBridge(
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
     private val requests = HashMap<String, Job>()
     private var serviceWrite: Job? = null
+    private var subscriptionCancel: Job? = null
     private val cancellations = LinkedHashMap<String, Long>()
     private var cancellationOverflowUntil = Long.MIN_VALUE
     private var loadedView: WeakReference<Any>? = null
@@ -168,6 +170,33 @@ internal class ModuleApiBridge(
         return request(requestId, path, mutation = true)
     }
 
+    suspend fun subscriptionAction(raw: String): ReadResult {
+        val args = SubscriptionActions.parse(raw)
+        val path = "/subscriptions/${args.groupId}/${args.action}"
+        return if (args.action == "cancel") {
+            // A control request must not wait for the update's shared business-write slot.
+            withTimeout(30_000) {
+                request(args.requestId, path, mutation = true, control = true, subscriptionGroup = args.groupId)
+            }
+        } else request(args.requestId, path, mutation = true, subscriptionGroup = args.groupId)
+    }
+
+    suspend fun subscriptionWrite(raw: String): ReadResult {
+        val args = SubscriptionActions.parseWrite(raw)
+        val (method, path) = when (args.action) {
+            "add" -> "POST" to "/subscriptions"
+            "edit" -> "PUT" to "/subscriptions/${args.groupId}"
+            "remove" -> "DELETE" to "/subscriptions/${args.groupId}"
+            "update_all" -> "POST" to "/subscriptions/update-all"
+            else -> throw BridgeFailure("api.invalid_request", 400)
+        }
+        val query = args.replacementGroupId?.let { mapOf("replacement_group_id" to it) } ?: emptyMap()
+        return request(args.requestId, path, mutation = true, method = method,
+            body = args.input ?: JsonObject(emptyMap()), query = query,
+            subscriptionGroup = args.groupId, subscriptionMutation = true,
+            subscriptionSummary = args.action == "update_all")
+    }
+
     suspend fun selectNode(requestId: String, target: Map<String, Any?>?): ReadResult =
         request(requestId, "/selection", mutation = true, method = "PUT", body = nodeTarget(target))
 
@@ -195,6 +224,11 @@ internal class ModuleApiBridge(
         mutation: Boolean,
         method: String = if (mutation) "POST" else "GET",
         body: JsonObject? = if (mutation) JsonObject(emptyMap()) else null,
+        query: Map<String, String> = emptyMap(),
+        control: Boolean = false,
+        subscriptionGroup: String? = null,
+        subscriptionMutation: Boolean = subscriptionGroup != null,
+        subscriptionSummary: Boolean = false,
     ): ReadResult = coroutineScope {
         validateId(requestId)
         if (body != null && body.toString().toByteArray(Charsets.UTF_8).size > BODY_LIMIT) {
@@ -209,10 +243,13 @@ internal class ModuleApiBridge(
                 throw BridgeFailure("api.cancelled")
             }
             if (requests.containsKey(requestId)) throw BridgeFailure("api.request_exists", 409)
-            if (mutation) {
+            if (control) {
+                if (subscriptionCancel != null) throw BridgeFailure("api.busy", 429)
+                subscriptionCancel = job
+            } else if (mutation) {
                 if (serviceWrite != null) throw BridgeFailure("api.busy", 429)
                 serviceWrite = job
-            } else if (requests.size - (if (serviceWrite != null) 1 else 0) >= 8) {
+            } else if (requests.size - (if (serviceWrite != null) 1 else 0) - (if (subscriptionCancel != null) 1 else 0) >= 8) {
                 throw BridgeFailure("api.busy", 429)
             }
             requests[requestId] = job
@@ -220,9 +257,10 @@ internal class ModuleApiBridge(
         try {
             // 方法、路径与正文仅由上方固定业务入口构造，不接收通用 HTTP 参数。
             val response = transport.request(
-                method, path, body, emptyMap(), mutation,
+                method, path, body, query, mutation,
             ) { status, input ->
-                ReadResult(status, decode(status, input) { PublicCatalog.read(path, it) })
+                ReadResult(status, decode(status, input, subscriptionGroup = subscriptionGroup,
+                    subscriptionMutation = subscriptionMutation, subscriptionSummary = subscriptionSummary) { PublicCatalog.read(path, it) })
             }
             currentCoroutineContext().ensureActive()
             synchronized(lock) { requireForeground() }
@@ -235,6 +273,7 @@ internal class ModuleApiBridge(
             synchronized(lock) {
                 if (requests[requestId] === job) requests.remove(requestId)
                 if (serviceWrite === job) serviceWrite = null
+                if (subscriptionCancel === job) subscriptionCancel = null
             }
         }
     }
@@ -397,6 +436,9 @@ internal class ModuleApiBridge(
 
     @OptIn(ExperimentalSerializationApi::class)
     private fun decode(status: Int, input: InputStream, allowBusinessFailure: Boolean = true,
+        subscriptionGroup: String? = null,
+        subscriptionMutation: Boolean = subscriptionGroup != null,
+        subscriptionSummary: Boolean = false,
         project: (JsonElement) -> JsonElement = { it }): JsonObject {
         val header = try {
             BodyLimitInputStream(input).use {
@@ -412,7 +454,10 @@ internal class ModuleApiBridge(
         if (safeCode(header.code) != header.code) throw BridgeFailure("api.invalid_response")
         val ok = status in 200..299 && header.ok
         if (!ok && !allowBusinessFailure) throw safeFailure(ModuleApiException(header.code, SAFE_FAILURE_MESSAGE))
-        val data = if (ok) {
+        val data = if (subscriptionMutation) {
+            if (ok && header.data !is JsonObject) throw BridgeFailure("api.invalid_response", 502)
+            SubscriptionActions.result(header.data, subscriptionGroup, subscriptionSummary)
+        } else if (ok) {
             project(header.data?.takeUnless { it is JsonNull } ?: throw BridgeFailure("api.invalid_response"))
         } else buildJsonObject {
             val persisted = ((header.data as? JsonObject)?.get("persisted") as? JsonPrimitive)

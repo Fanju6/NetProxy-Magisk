@@ -106,3 +106,13 @@ Kotlin 继续直接编译 V8 安全源码，补齐宿主实例重绑和代际任
 - Go 缺少全局 Catalog revision、操作 ID 和进度单调序号；同 revision、同秒的外部并发修改不能形成线性一致性证明。当前实现不为消除该限制更改 Go 或引入第二套重连与轮询框架。
 
 实际测试、真机样本限制及下一步设计建议见 [M4.3.1 验收报告](../../shell/docs/resources-report.md)。
+
+## M4.3.2：URL 订阅写入
+
+- 受限命令只增加订阅 update/cancel 与 add/edit/remove/update_all；不开放通用 HTTP 或私有 Metadata。用户主动输入可短暂经过表单与 IPC，不声称完全不进入 JS；不进入 Query/Mutation 缓存、持久存储或错误原文。编辑省略保留、显式空值清空，见 [ADR 002](../../shell/docs/adr-002-subscription-writes.md)。
+- 服务、路由和订阅在现有 QueryClient 内同步准入，原生共享写槽独立防护；取消有单独有界控制槽。操作状态不包含敏感输入，不创建新全局 Store 或重连器，业务写入不重放。
+- 复用 Go 600 秒长事务和 Kotlin 615 秒请求预算，未知结果保留至有界观察结束；后台/离页只取消客户端等待。确认响应之后读取 Catalog、详情、历史和进度，明确保留 persisted/runtime 同步错误。没有任务 ID 时不把历史变化或空进度归因成本次成功。
+- Go 更新全部的错误响应补充 updated/failed/first_error，保留原 HTTP 状态和错误码；不改引擎、锁或持久化结构。每组成功与失败独立展示，不能把部分失败宣告为全部成功。
+- 删除确认后再次读取 Catalog，活动组需有效非空替代；写后校准节点与选择。操作结束的新 SSE 首帧先消耗后 GET，成员不一致的旧 groups 帧不能恢复已删除分组。
+
+验收范围与限制见 [订阅管理报告](../../shell/docs/subscriptions-report.md)。

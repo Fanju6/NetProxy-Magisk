@@ -1,11 +1,13 @@
 ## Default Permission
 
-Module state, public Catalog and subscription reads, service control, selection, mode, delay and bounded events, without shell, files or arbitrary HTTP access
+Module state, public Catalog reads, URL subscription management, service control, selection, mode, delay and bounded events, without shell, files or arbitrary HTTP access
 
 #### This default permission set includes the following:
 
 - `allow-read`
 - `allow-subscription-read`
+- `allow-subscription-action`
+- `allow-subscription-write`
 - `allow-service-action`
 - `allow-select-node`
 - `allow-change-mode`
@@ -290,6 +292,32 @@ Denies the service_action command without any pre-configured scope.
 <tr>
 <td>
 
+`module-api:allow-subscription-action`
+
+</td>
+<td>
+
+Enables the subscription_action command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`module-api:deny-subscription-action`
+
+</td>
+<td>
+
+Denies the subscription_action command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `module-api:allow-subscription-read`
 
 </td>
@@ -309,6 +337,32 @@ Enables the subscription_read command without any pre-configured scope.
 <td>
 
 Denies the subscription_read command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`module-api:allow-subscription-write`
+
+</td>
+<td>
+
+Enables the subscription_write command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`module-api:deny-subscription-write`
+
+</td>
+<td>
+
+Denies the subscription_write command without any pre-configured scope.
 
 </td>
 </tr>

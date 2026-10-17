@@ -14,7 +14,7 @@ V9 目标架构见 [完整架构设计规范](apps/web/docs/NETPROXY_V9_ARCHITEC
 - `src/native/netproxy/`：模块专用 Go 组件，负责节点转换、Provider、订阅、配置、eBPF 运行时、Service API 与唯一允许的后台 Worker。
 - `src/webui/`：原生 TypeScript 终端式 WebUI，构建产物写入 `src/module/webroot/netproxy/`。
 - `apps/web/`：独立的 V9 React WebUI；开发与演示构建使用显式标识的 Mock，普通生产构建在可信 Transport 缺失时拒绝连接。此工程不写入 V8 模块构建目录，不使用 Root Shell，不代表 Tauri 或跨平台接管已经可用。
-- `apps/shell/`：V9 Tauri Android 壳，复用 `apps/web/dist-native` 与 V8 Kotlin 安全传输源码；当前开放 info/service/nodes/selection/mode/catalog/subscriptions 公开读取、既有 SSE，以及 service start/stop、节点选择、模式保存和测速。订阅详情、历史和进度由原生层校验分组 ID 后构造固定 GET，禁止 private 查询；公开 Catalog DTO 在 Kotlin 边界按字段白名单投影，GET 与 SSE 都不能将订阅 URL、Headers、HWID 或原始异常带入 JS。能力标记不替代 Rust/Kotlin 固定操作与参数白名单，订阅、配置及节点编辑等其他写入不得通过 IPC。构建、权限与验收边界见 [原生通信说明](apps/shell/README.md)，不进入 V8 模块流水线。
+- `apps/shell/`：V9 Tauri Android 壳，复用 `apps/web/dist-native` 与 V8 Kotlin 安全传输源码；开放公开读取与 SSE、service start/stop、节点选择、模式保存、测速及固定 URL 订阅增删改/更新/取消。原生层独立校验操作、分组 ID 和正文，不接收任意 HTTP 参数；禁止 private 查询。公开 DTO 和写入结果在 Kotlin 边界按白名单投影，不能将已有订阅 URL、Headers、HWID 或原始异常带入 JS。用户主动输入采用只写表单，省略保留、显式空值清空，敏感草稿不进入 Query/Mutation 缓存或持久存储，安全取舍见 [订阅写入 ADR](apps/shell/docs/adr-002-subscription-writes.md)。能力标记不替代原生白名单，配置及节点编辑等其他写入仍禁止。构建与验收见 [原生通信说明](apps/shell/README.md)，不进入 V8 模块流水线。
 - `src/android/`：Android 管理器，使用 Compose、miuix-nav 和内置 Scripta 源码快照。
 - `docs/`：VitePress 用户文档；`tests/`：Shell 契约与运行时回归测试。
 
@@ -133,7 +133,7 @@ src/module/service.sh
 
 ## WebUI
 
-- V9 原生桥只允许读取 info、service 与有界 SSE，不能接收任意 URL、方法、文件路径或 Shell。主 Secret 和证书资料只留在 Android 私有存储，JS 只接收业务 Envelope。首次配对遵循 [可信配对 ADR](apps/shell/docs/adr-001-trusted-pairing.md)：未认证 TLS 仅能发送无敏感信息的固定 provision 触发，响应不能作为身份或错误事实源；必须等到新的 Root 私有 Provider 交付，再以精确证书与主机名验证发送 Bearer 业务请求，不能回退 Root、Mock 或信任初始证书。
+- V9 原生桥只开放上述已审查的业务操作与有界 SSE，不能接收任意管理 HTTP URL、方法、文件路径或 Shell。订阅源 URL 是受限新增/编辑正文，不是通用 HTTP IPC。主 Secret 和证书资料只留在 Android 私有存储，JS 只接收投影后的业务 Envelope。首次配对遵循 [可信配对 ADR](apps/shell/docs/adr-001-trusted-pairing.md)：未认证 TLS 仅能发送无敏感信息的固定 provision 触发，响应不能作为身份或错误事实源；必须等到新的 Root 私有 Provider 交付，再以精确证书与主机名验证发送 Bearer 业务请求，不能回退 Root、Mock 或信任初始证书。
 - V9 普通 Web、演示与 Native 分别显式构建，Native 只在 Tauri 环境启用；JS 使用既有事件生命周期，Kotlin 负责取消与背压。后台释放原生工作，恢复重新等待完整快照；新文档的订阅替换遗留订阅，迟到的旧关闭操作不能取消新会话。
 
 - 当前 WebUI 是原生 TypeScript 终端式界面：所有 Root 命令统一经 `src/webui/src/exec.ts` 调用 `netproxyctl` 并渲染输出，其他模块不得自行拼接 Root 命令。

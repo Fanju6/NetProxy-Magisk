@@ -140,7 +140,12 @@ export const resourceQueries = (api: ApiClient) => {
   }
 }
 
-export function useResourceDetails(id: string, isURL: boolean, live: boolean) {
+export function useResourceDetails(
+  id: string,
+  isURL: boolean,
+  live: boolean,
+  observationUntil?: number,
+) {
   const api = useApi()
   const cache = useQueryClient()
   const queries = resourceQueries(api)
@@ -167,7 +172,7 @@ export function useResourceDetails(id: string, isURL: boolean, live: boolean) {
       live &&
       expired !== `${id}:${refreshEpoch}:${session}` &&
       !query.state.error &&
-      query.state.data?.progress
+      (query.state.data?.progress || (observationUntil ?? 0) > Date.now())
         ? 5000
         : false,
     refetchIntervalInBackground: false,
@@ -184,12 +189,15 @@ export function useResourceDetails(id: string, isURL: boolean, live: boolean) {
     }
   }, [active, cache, id, live])
   const window = `${id}:${refreshEpoch}:${session}`
-  const observing = live && active && expired !== window
+  const observing = live && (active || !!observationUntil) && expired !== window
   useEffect(() => {
     if (!id || !observing) return
-    const timer = setTimeout(() => setExpired(window), 60_000)
+    const timer = setTimeout(
+      () => setExpired(window),
+      observationUntil ? Math.max(0, observationUntil - Date.now()) : 60_000,
+    )
     return () => clearTimeout(timer)
-  }, [id, observing, window])
+  }, [id, observing, window, observationUntil])
   useEffect(() => {
     if (!live)
       void cache.cancelQueries({ queryKey: ['resource', id] }, { revert: false, silent: true })

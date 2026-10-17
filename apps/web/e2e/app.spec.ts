@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('resources show public local and subscription details in both themes without write controls', async ({
+test('resources show public details in both themes and restrict URL actions to subscriptions', async ({
   page,
 }) => {
   const failures: string[] = []
@@ -18,7 +18,8 @@ test('resources show public local and subscription details in both themes withou
   await expect(dialog.getByText('运行时已同步', { exact: true })).toBeVisible()
   await expect(dialog.getByText('失败', { exact: true })).toBeVisible()
   await expect(dialog.getByText('1440 分钟', { exact: true })).toBeVisible()
-  await expect(dialog.getByRole('button', { name: /新增|删除|更新全部|取消更新/ })).toHaveCount(0)
+  await expect(dialog.getByRole('button', { name: '编辑订阅', exact: true })).toBeVisible()
+  await expect(dialog.getByRole('button', { name: '删除订阅', exact: true })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.screenshot({
     path: `test-results/${test.info().project.name}-resource-detail.png`,
@@ -38,7 +39,84 @@ test('resources show public local and subscription details in both themes withou
   await expect(dialog.getByText('节点', { exact: true })).toBeVisible()
   await expect(dialog.getByText('更新历史', { exact: true })).toHaveCount(0)
   await expect(dialog.getByText('自动更新', { exact: true })).toHaveCount(0)
+  await expect(
+    dialog.getByRole('button', { name: /编辑订阅|删除订阅|更新订阅|请求取消更新/ }),
+  ).toHaveCount(0)
   expect(failures).toEqual([])
+})
+
+test('subscription form creates, patches and deletes a demo source without revealing private values', async ({
+  page,
+}) => {
+  const failures: string[] = []
+  page.on('pageerror', (error) => failures.push(error.message))
+  await page.goto('/#/subscriptions')
+  await page.getByRole('button', { name: '添加订阅', exact: true }).click()
+  let dialog = page.getByRole('dialog')
+  await dialog.getByRole('textbox', { name: '名称', exact: true }).fill('端到端订阅')
+  const url = dialog.getByRole('textbox', { name: '订阅 URL', exact: true })
+  await url.fill('https://example.invalid/feed?key=anonymous')
+  if (page.viewportSize()!.width < 768)
+    expect(
+      await url.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize)),
+    ).toBeGreaterThanOrEqual(16)
+  await dialog.getByRole('spinbutton', { name: '更新周期（秒，至少 900）' }).fill('1800')
+  await page.setViewportSize({ width: page.viewportSize()!.width, height: 430 })
+  const save = dialog.getByRole('button', { name: '保存', exact: true })
+  await save.scrollIntoViewIfNeeded()
+  await page.screenshot({
+    path: `test-results/${test.info().project.name}-subscription-form-short.png`,
+    fullPage: true,
+  })
+  await save.click()
+  await expect(page.getByRole('heading', { name: '端到端订阅', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '查看详情 端到端订阅', exact: true }).click()
+  await dialog.getByRole('button', { name: '编辑订阅', exact: true }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(1)
+  dialog = page.getByRole('dialog')
+  await expect(dialog.getByRole('textbox', { name: '订阅 URL', exact: true })).toHaveCount(0)
+  await dialog.getByRole('textbox', { name: '名称', exact: true }).fill('已编辑订阅')
+  await dialog.getByRole('button', { name: '保存', exact: true }).scrollIntoViewIfNeeded()
+  await dialog.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '已编辑订阅', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '查看详情 已编辑订阅', exact: true }).click()
+  await dialog.getByRole('button', { name: '删除订阅', exact: true }).click()
+  await expect(dialog.getByText('已编辑订阅', { exact: true })).toBeVisible()
+  await expect(
+    dialog.getByText('删除此订阅及其节点？此操作无法撤销。', { exact: true }),
+  ).toBeVisible()
+  await dialog.getByRole('button', { name: '删除订阅', exact: true }).click()
+  await expect(page.getByText('订阅已删除', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '已编辑订阅', exact: true })).toHaveCount(0)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain('example.invalid')
+  expect(failures).toEqual([])
+})
+
+test('active subscription deletion requires a named replacement and update-all reports partial results', async ({
+  page,
+}) => {
+  await page.goto('/#/subscriptions')
+  await page.getByRole('button', { name: '更新全部订阅', exact: true }).click()
+  await expect(page.getByText('部分订阅未能更新，请逐项查看结果。', { exact: true })).toBeVisible()
+  const operation = page.getByRole('region', { name: '订阅操作' })
+  await expect(operation.getByText('Global Connect', { exact: true })).toBeVisible()
+  await expect(operation.getByText('备用线路', { exact: true })).toBeVisible()
+  await expect(operation.getByText('成功', { exact: true })).toBeVisible()
+  await expect(operation.getByText('失败', { exact: true })).toBeVisible()
+  await expect(page.getByText('全部订阅已更新', { exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: '查看详情 Global Connect', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('button', { name: '删除订阅', exact: true }).click()
+  const confirm = dialog.getByRole('button', { name: '删除订阅', exact: true })
+  await expect(confirm).toBeDisabled()
+  await dialog.getByRole('combobox', { name: '替代分组', exact: true }).click()
+  await expect(page.getByRole('option', { name: 'Travel backup', exact: true })).toHaveCount(0)
+  await page.getByRole('option', { name: '本地配置', exact: true }).click()
+  await expect(confirm).toBeEnabled()
+  await confirm.click()
+  await expect(page.getByText('订阅已删除', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Global Connect', exact: true })).toHaveCount(0)
 })
 
 test('service confirmation, stopped Catalog and selection work without a backend', async ({

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-subscription-action"
+description = "Enables the subscription_action command without any pre-configured scope."
+commands.allow = ["subscription_action"]
+
+[[permission]]
+identifier = "deny-subscription-action"
+description = "Denies the subscription_action command without any pre-configured scope."
+commands.deny = ["subscription_action"]

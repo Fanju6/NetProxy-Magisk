@@ -71,6 +71,9 @@ jobs:
           components: rustfmt, clippy
           targets: aarch64-linux-android
 
+      - name: Check controlled subscription source
+        run: node --test apps/shell/tests/subscription-source.test.mjs
+
       - name: Install Linux dependencies for host Rust tests
         run: |
           sudo apt-get update

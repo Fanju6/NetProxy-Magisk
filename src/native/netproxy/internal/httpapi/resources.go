@@ -481,6 +481,18 @@ func (s *Server) updateAllSubscriptions(ctx context.Context, r *http.Request) (c
 		return contract.Result{}, err
 	}
 	data, err := module.UpdateAllSubscriptions(ctx, s.options)
+	if err != nil {
+		// Keep the completed per-group outcomes when the ordinary error path discards response.Data.
+		failure, _ := contract.Failure(ctx, err)
+		partial := map[string]any{"updated": append([]string{}, data.Updated...), "failed": append([]string{}, data.Failed...), "first_error": failure.Data}
+		if fields, ok := failure.Data.(map[string]any); ok {
+			if persisted, ok := fields["persisted"].(bool); ok {
+				partial["persisted"] = persisted
+			}
+		}
+		return contract.Result{}, &contract.Error{Code: failure.Code, Message: failure.Message,
+			HTTPStatus: failureStatus(failure.Code, err), Data: partial}
+	}
 	return contract.Success("subscription.updated_all", "全部订阅更新完成", data), err
 }
 

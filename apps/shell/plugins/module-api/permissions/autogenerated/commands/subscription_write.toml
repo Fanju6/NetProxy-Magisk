@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-subscription-write"
+description = "Enables the subscription_write command without any pre-configured scope."
+commands.allow = ["subscription_write"]
+
+[[permission]]
+identifier = "deny-subscription-write"
+description = "Denies the subscription_write command without any pre-configured scope."
+commands.deny = ["subscription_write"]

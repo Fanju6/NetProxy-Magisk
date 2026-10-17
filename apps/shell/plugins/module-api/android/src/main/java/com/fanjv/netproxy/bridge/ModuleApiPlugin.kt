@@ -140,6 +140,24 @@ class ModuleApiPlugin(activity: Activity) : Plugin(activity) {
     }
 
     @Command
+    fun subscriptionAction(invoke: Invoke) = dispatch(invoke) {
+        val result = bridge.subscriptionAction(invoke.getRawArgs())
+        JSObject().apply {
+            put("status", result.status)
+            put("body", JSONObject(result.body.toString()))
+        }
+    }
+
+    @Command
+    fun subscriptionWrite(invoke: Invoke) = dispatch(invoke) {
+        val result = bridge.subscriptionWrite(invoke.getRawArgs())
+        JSObject().apply {
+            put("status", result.status)
+            put("body", JSONObject(result.body.toString()))
+        }
+    }
+
+    @Command
     fun read(invoke: Invoke) = dispatch(invoke) {
         val args = invoke.parseArgs(ReadArgs::class.java)
         val result = bridge.read(args.requestId, args.resource)

@@ -108,6 +108,12 @@ describe('restricted native requests', () => {
       'subscriptions.detail',
       'subscriptions.history',
       'subscriptions.progress',
+      'subscriptions.update',
+      'subscriptions.cancel',
+      'subscriptions.add',
+      'subscriptions.edit',
+      'subscriptions.remove',
+      'subscriptions.update_all',
     ])
   })
   it.each([
@@ -127,10 +133,10 @@ describe('restricted native requests', () => {
     { method: 'GET', path: '/subscriptions/a..b' },
     { method: 'POST', path: '/subscriptions' },
     { method: 'PUT', path: '/subscriptions/default' },
-    { method: 'DELETE', path: '/subscriptions/default' },
-    { method: 'POST', path: '/subscriptions/default/update' },
-    { method: 'POST', path: '/subscriptions/default/cancel' },
-    { method: 'POST', path: '/subscriptions/update-all' },
+    { method: 'DELETE', path: '/subscriptions/default', body: {} },
+    { method: 'POST', path: '/subscriptions/default/update', body: {} },
+    { method: 'POST', path: '/subscriptions/default/cancel', query: { private: 'true' } },
+    { method: 'POST', path: '/subscriptions/update-all', body: {} },
     { method: 'GET', path: '/config' },
     { method: 'GET', path: '/info', query: {} },
     { method: 'GET', path: '/info', body: null },
@@ -144,6 +150,91 @@ describe('restricted native requests', () => {
     })
     expect(invoke).not.toHaveBeenCalled()
   })
+  it.each([
+    [
+      {
+        method: 'POST',
+        path: '/subscriptions',
+        body: { url: 'https://source.example.invalid/feed', custom_headers: {} },
+      },
+      { action: 'add', input: { url: 'https://source.example.invalid/feed', custom_headers: {} } },
+    ],
+    [
+      {
+        method: 'PUT',
+        path: '/subscriptions/demo-global',
+        body: { user_agent: '', auto_update: false },
+      },
+      { action: 'edit', groupId: 'demo-global', input: { user_agent: '', auto_update: false } },
+    ],
+    [
+      {
+        method: 'DELETE',
+        path: '/subscriptions/demo-global',
+        query: { replacement_group_id: 'default' },
+      },
+      { action: 'remove', groupId: 'demo-global', replacementGroupId: 'default' },
+    ],
+    [{ method: 'POST', path: '/subscriptions/update-all' }, { action: 'update_all' }],
+  ] as const)('uses a fixed typed subscription write: %j', async (request, args) => {
+    const { transport, invoke } = setup()
+    invoke.mockResolvedValue({ status: 200, body: event.body })
+    await transport.request(request)
+    expect(invoke).toHaveBeenCalledExactlyOnceWith('plugin:module-api|subscription_write', {
+      requestId: expect.any(String),
+      ...args,
+    })
+  })
+  it.each([
+    {
+      method: 'POST',
+      path: '/subscriptions',
+      body: { url: 'https://source.example.invalid/feed', method: 'POST' },
+    },
+    { method: 'PUT', path: '/subscriptions/demo-global', body: { url: null } },
+    { method: 'PUT', path: '/subscriptions/demo-global', body: { update_interval: 1 } },
+    {
+      method: 'PUT',
+      path: '/subscriptions/demo-global',
+      body: { custom_headers: { 'Bad Header': 'value' } },
+    },
+    {
+      method: 'PUT',
+      path: '/subscriptions/demo-global',
+      body: { custom_headers: { Authorization: 'bad\r\nvalue' } },
+    },
+    { method: 'PUT', path: '/subscriptions/demo-global', body: {}, query: { private: 'true' } },
+    {
+      method: 'DELETE',
+      path: '/subscriptions/demo-global',
+      query: { replacement_group_id: 'demo-global' },
+    },
+    {
+      method: 'DELETE',
+      path: '/subscriptions/demo-global',
+      query: { replacement_group_id: '../default' },
+    },
+    { method: 'DELETE', path: '/subscriptions/demo-global', query: { private: 'true' } },
+  ])('rejects malformed subscription writes before IPC: %j', async (request) => {
+    const { transport, invoke } = setup()
+    await expect(transport.request(request as ApiRequest)).rejects.toMatchObject({
+      code: 'client.operation_denied',
+    })
+    expect(invoke).not.toHaveBeenCalled()
+  })
+  it.each(['update', 'cancel'] as const)(
+    'uses the fixed subscription %s command without HTTP parameters',
+    async (action) => {
+      const { transport, invoke } = setup()
+      invoke.mockResolvedValue({ status: 200, body: event.body })
+      await transport.request({ method: 'POST', path: `/subscriptions/demo-global/${action}` })
+      expect(invoke).toHaveBeenCalledExactlyOnceWith('plugin:module-api|subscription_action', {
+        requestId: expect.any(String),
+        groupId: 'demo-global',
+        action,
+      })
+    },
+  )
   it.each(['detail', 'history', 'progress'] as const)(
     'uses a typed public %s resource and an original group ID',
     async (resource) => {

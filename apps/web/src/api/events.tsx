@@ -30,6 +30,7 @@ import {
 } from './routing-control'
 import type { NodeSnapshot } from './contracts'
 import { acceptResourceEvent, resetResourceSession } from './resources'
+import { subscriptionEventEpoch, useSubscriptionOperation } from './subscription-control'
 
 export function acceptTraffic(service: ServiceStatus | undefined, traffic: Traffic): boolean {
   return (
@@ -64,6 +65,9 @@ export function ModuleEvents() {
   const [attempt, setAttempt] = useState(0)
   const operationEpoch = useServiceOperation()?.epoch ?? 0
   const routeEpoch = useRoutingOperation()?.epoch ?? 0
+  const subscriptionOperation = useSubscriptionOperation()
+  const resourceEpoch =
+    (subscriptionOperation?.epoch ?? 0) - (subscriptionOperation?.phase === 'pending' ? 1 : 0)
   useEffect(() => {
     let close: (() => void) | undefined
     let retryTimer: ReturnType<typeof setTimeout> | undefined
@@ -111,7 +115,8 @@ export function ModuleEvents() {
         !disposed &&
         generation === currentGeneration &&
         serviceEpoch(cache) === operationEpoch &&
-        routingEpoch(cache) === routeEpoch
+        routingEpoch(cache) === routeEpoch &&
+        subscriptionEventEpoch(cache) === resourceEpoch
       const pending = new Set(['status', 'groups', 'subscriptions'])
       let liveAt: number | undefined
       const fail = (retry = true) => {
@@ -146,11 +151,22 @@ export function ModuleEvents() {
       let pendingNodes: NodeSnapshot | undefined
       let initialResources = true
       const routing = cache.getQueryData<RoutingOperation | null>(routingOperationKey)
-      const checkRouting = routing != null && routing.phase !== 'pending'
+      const checkRouting = (routing != null && routing.phase !== 'pending') || resourceEpoch > 0
       let confirmed = !checkRouting
       let confirming = false
       let changedDuringCheck = false
       const publishNodes = (snapshot: NodeSnapshot) => {
+        const catalog = cache.getQueryData<z.infer<typeof groupSchema>[]>(['subscriptions'])
+        if (
+          api.supports('catalog.read') &&
+          catalog &&
+          (catalog.length !== snapshot.groups.length ||
+            snapshot.groups.some((entry) => !catalog.some((group) => group.id === entry.group.id)))
+        ) {
+          for (const key of ['nodes', 'selection'])
+            void cache.invalidateQueries({ queryKey: [key], exact: true })
+          return
+        }
         const nodes =
           status?.state === 'ready'
             ? snapshot
@@ -348,7 +364,7 @@ export function ModuleEvents() {
       stop()
       setConnection('paused')
     }
-  }, [api, cache, attempt, operationEpoch, routeEpoch])
+  }, [api, cache, attempt, operationEpoch, routeEpoch, resourceEpoch])
   return connection !== 'live' ? (
     <div
       role={connection === 'offline' || connection === 'reconnecting' ? 'alert' : 'status'}

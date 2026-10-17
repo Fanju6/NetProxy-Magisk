@@ -59,7 +59,17 @@ function nativeFixture(customMode = false, failRuntime = false) {
   })
   const transport: ApiTransport = {
     kind: 'native',
-    capabilities: new NativeTransport().capabilities,
+    // Preserve the M4.2/M4.3.1 restricted-capability regression as newer Native operations are added.
+    capabilities: new NativeTransport().capabilities.filter(
+      (operation) =>
+        !operation.startsWith('subscriptions.') ||
+        [
+          'subscriptions.read',
+          'subscriptions.detail',
+          'subscriptions.history',
+          'subscriptions.progress',
+        ].includes(operation),
+    ),
     request,
     subscribe: (topics, consume) =>
       backend.subscribe(topics, (event) => {
