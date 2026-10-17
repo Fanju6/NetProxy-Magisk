@@ -95,6 +95,7 @@ Secret、证书指纹和私有交付资料不进入 JS；没有新增 Root、She
 | Worker 中断恢复      | Worker 停止时读取失败，恢复后新快照与节点控件可用，核心启动身份不变                                  |
 | 前后台               | 连续三轮后台/前台，节点和模式重新读取成功                                                            |
 | Activity 真正重建    | 测试 APK 两次 Activity.recreate，旧实例销毁；每次 info/nodes/selection/mode 读取成功，重建前存在 SSE |
+| 真机视觉             | 实际屏幕核对默认/运行时模式，节点页浅深色截图正常；恢复原主题和语言偏好                              |
 | 实际业务拒绝         | 不存在的模式返回 422/mode.invalid；非法目标、未授权读取和 reload IPC 被拒绝                          |
 | 数据恢复             | 原始选择、模式与 ready 状态恢复；逐项比较 module.json 与主配置的完整 JSON，与备份相等                |
 
@@ -102,6 +103,12 @@ Secret、证书指纹和私有交付资料不进入 JS；没有新增 Root、She
 设备备份留在 Root 私有测试目录。没有在本轮篡改证书、关闭钉扎或向 JS 注入 Secret。
 
 ## 自动化与构建
+
+主要源码范围：Web 的 `api/contracts.ts`、`native.ts`、`queries.ts`、`events.tsx`、新增
+`routing-control.ts` 与 `node-delay.ts`；`features/nodes.tsx`、`dashboard.tsx`、中英文本和
+匿名 Mock；原生插件 `src/lib.rs`、`build.rs`、权限生成物、`ModuleApiPlugin.kt` 与
+`ModuleApiBridge.kt`。对应契约/组件/E2E、Kotlin/Rust 测试、Activity 探针和文档同步。
+完整文件清单以本轮源码提交 diff 为准，V8 与 Go 生产源码没有改动。
 
 本机 pnpm 全局 shim 不适合子进程，实际用 `npx --yes --package=pnpm@12.11.2 pnpm`
 执行相同锁定版本；CI 直接使用 pnpm。
@@ -139,4 +146,9 @@ Secret、证书指纹和私有交付资料不进入 JS；没有新增 Root、She
 
 ## 远端验证记录
 
-源码提交及两条 GitHub Actions 的实际结果在推送后补充，本地测试不能替代远端 CI。
+源码提交：`c9f79585ce02feb0cdf38bc7bae39a5cf20b6603`。
+
+- [V9 WebUI CI](https://github.com/Fanju6/NetProxy-Magisk/actions/runs/38988000306)：成功，耗时 1 分 34 秒，远端 Playwright 12 项通过。
+- [V9 Android Shell CI](https://github.com/Fanju6/NetProxy-Magisk/actions/runs/38988000234)：成功，耗时 5 分 20 秒，Rust、Kotlin、Lint、隔离 arm64 APK、身份/签名及锁文件检查通过。
+
+远端验证不读取正式签名 Secrets；上传的隔离 Debug APK 不是正式版或同包覆盖验收替代品。
