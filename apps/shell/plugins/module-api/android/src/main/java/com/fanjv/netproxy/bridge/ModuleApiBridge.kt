@@ -36,7 +36,8 @@ import java.io.FilterInputStream
 import java.lang.ref.WeakReference
 import java.util.Base64
 
-internal data class ReadResult(val status: Int, val body: JsonObject)
+internal data class ReadResult(val status: Int, val body: JsonObject,
+    val afterDelivery: DiagnosticShare.Prepared? = null)
 internal data class EventResult(val name: String, val body: JsonObject)
 
 internal class BridgeFailure(val code: String, val status: Int = failureStatus(code)) :
@@ -74,7 +75,7 @@ internal class ModuleApiBridge(
     private val scope: CoroutineScope,
     private val nowMillis: () -> Long = { System.nanoTime() / 1_000_000 },
     private val workDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val shareDiagnostics: (suspend () -> Unit)? = null,
+    private val prepareDiagnostics: (suspend () -> DiagnosticShare.Prepared)? = null,
 ) {
     private val lock = Any()
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
@@ -112,6 +113,7 @@ internal class ModuleApiBridge(
         // 调度前进入协程，确保尚未执行 IO 时取消也能完成 Invoke。
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             val job = currentCoroutineContext().job
+            var prepared: T? = null
             try {
                 val result = runCatching {
                     synchronized(lock) {
@@ -120,14 +122,23 @@ internal class ModuleApiBridge(
                     }
                     val value = withContext(workDispatcher) {
                         synchronized(lock) { requireGeneration(expected) }
-                        action()
+                        action().also { prepared = it }
                     }
                     currentCoroutineContext().ensureActive()
                     synchronized(lock) { requireGeneration(expected) }
                     value
                 }
                 // 旧文档可能已释放回调，交付异常时不能再次完成同一个 Invoke。
-                runCatching { complete(result) }
+                val delivered = runCatching {
+                    complete(result)
+                    if (result.isSuccess) (prepared as? ReadResult)?.afterDelivery?.let {
+                        // Complete IPC first; opening Android's chooser then pauses this Activity.
+                        currentCoroutineContext().ensureActive()
+                        synchronized(lock) { requireGeneration(expected) }
+                        it.deliver()
+                    }
+                }.isSuccess
+                if (result.isFailure || !delivered) (prepared as? ReadResult)?.afterDelivery?.discard()
             } finally {
                 synchronized(lock) {
                     dispatchedJobs.remove(job)
@@ -214,8 +225,8 @@ internal class ModuleApiBridge(
             ReadResult(200, envelope(true, "android.icon", buildJsonObject { put("content", Base64.getEncoder().encodeToString(bytes)) }))
         }
         if (args.operation == "diagnostics") return perform(args.requestId, mutation = false) {
-            (shareDiagnostics ?: throw BridgeFailure("api.connection_unavailable"))()
-            ReadResult(200, envelope(true, "diagnostics.shared", buildJsonObject { put("shared", true) }))
+            val prepared = (prepareDiagnostics ?: throw BridgeFailure("api.connection_unavailable"))()
+            ReadResult(200, envelope(true, "diagnostics.prepared", buildJsonObject { put("prepared", true) }), prepared)
         }
         val route = Management.route(args)
         return request(args.requestId, route.path, route.mutation, route.method, route.body, route.query, management = args)
@@ -290,14 +301,17 @@ internal class ModuleApiBridge(
             }
             requests[requestId] = job
         }
+        var prepared: T? = null
         try {
-            val response = action()
+            val response = action().also { prepared = it }
             currentCoroutineContext().ensureActive()
             synchronized(lock) { requireForeground() }
             response
         } catch (error: CancellationException) {
+            (prepared as? ReadResult)?.afterDelivery?.discard()
             throw error
         } catch (error: Exception) {
+            (prepared as? ReadResult)?.afterDelivery?.discard()
             throw safeFailure(error)
         } finally {
             synchronized(lock) {

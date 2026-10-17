@@ -98,7 +98,7 @@ export function OperationsPage() {
     try {
       await action.run(
         { method: 'GET', path: '/diagnostics/export' },
-        z.object({ shared: z.literal(true) }),
+        z.object({ prepared: z.literal(true) }),
       )
       setNotice(
         text(

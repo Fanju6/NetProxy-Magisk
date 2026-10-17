@@ -107,12 +107,14 @@ class ManagementTest {
 
     @Test fun diagnosticsSharingHasNoPathInputAndWaitIsCancelledWithoutReplay() = runTest {
         var shares = 0
-        val bridge = bridge(Transport(), share = { shares++ })
+        val bridge = bridge(Transport(), prepare = { DiagnosticShare.Prepared({ shares++ }, {}) })
         val result = bridge.management(args("diagnostics"))
-        assertTrue(result.body["data"]!!.jsonObject["shared"]!!.jsonPrimitive.boolean)
+        assertTrue(result.body["data"]!!.jsonObject["prepared"]!!.jsonPrimitive.boolean)
+        assertEquals(0, shares)
+        result.afterDelivery!!.deliver()
         assertEquals(1, shares)
         invalid(args("diagnostics", obj("""{"path":"/secret"}""")))
-        val waiting = bridge(Transport(), share = { shares++; awaitCancellation() })
+        val waiting = bridge(Transport(), prepare = { shares++; awaitCancellation() })
         val pending = async { runCatching { waiting.management(args("diagnostics")) } }
         runCurrent(); waiting.destroy(); runCurrent(); waiting.resume()
         assertTrue(pending.await().exceptionOrNull() is CancellationException)
@@ -136,7 +138,7 @@ class ManagementTest {
         }
     }
 
-    private fun TestScope.bridge(transport: ModuleApiTransport, share: (suspend () -> Unit)? = null) = ModuleApiBridge(transport, CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)), workDispatcher = StandardTestDispatcher(testScheduler), shareDiagnostics = share).also { bridges.add(it); it.resume() }
+    private fun TestScope.bridge(transport: ModuleApiTransport, prepare: (suspend () -> DiagnosticShare.Prepared)? = null) = ModuleApiBridge(transport, CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler)), workDispatcher = StandardTestDispatcher(testScheduler), prepareDiagnostics = prepare).also { bridges.add(it); it.resume() }
     private fun invalid(raw: String) = failure("api.invalid_request", runCatching { Management.parse(raw) })
     private fun failure(code: String, result: Result<*>) { assertEquals(code, (result.exceptionOrNull() as? BridgeFailure)?.code) }
     private class Transport : ModuleApiTransport {

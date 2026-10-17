@@ -6,7 +6,11 @@ test('configuration JSON validation and local rule editing use real-shaped revis
   await page.goto('/#/settings/configuration')
   await page.getByRole('button', { name: 'auto_start', exact: true }).click()
   let dialog = page.getByRole('dialog')
-  await dialog.locator('.cm-content').fill('{"auto_start":true}')
+  const editor = dialog.locator('.cm-content')
+  await editor.click()
+  await page.keyboard.press('ControlOrMeta+A')
+  await page.keyboard.insertText('{"auto_start":true}')
+  await expect(editor).toHaveText('{"auto_start":true}')
   await dialog.getByRole('button', { name: '校验', exact: true }).click()
   await expect(dialog.getByRole('status')).toHaveText('校验通过')
   await dialog.getByRole('button', { name: '保存', exact: true }).click()
@@ -63,11 +67,11 @@ test('local node import and logs are usable without platform file permissions', 
   await page.goto('/#/nodes')
   await page.getByRole('button', { name: '管理本地节点', exact: true }).click()
   const dialog = page.getByRole('dialog')
-  await dialog
-    .locator('.cm-content')
-    .fill(
-      '{"outbounds":[{"tag":"Anonymous fixture","type":"socks","server":"127.0.0.1","server_port":1080}]}',
-    )
+  await dialog.locator('.cm-content').click()
+  await page.keyboard.press('ControlOrMeta+A')
+  await page.keyboard.insertText(
+    '{"outbounds":[{"tag":"Anonymous fixture","type":"socks","server":"127.0.0.1","server_port":1080}]}',
+  )
   await dialog.getByRole('button', { name: '执行', exact: true }).click()
   await expect(dialog.getByRole('status')).toContainText('操作完成')
   await dialog.getByRole('button', { name: '关闭', exact: true }).click()

@@ -12,7 +12,7 @@ const initialInbound = {
   ebpf: {
     type: 'ebpf',
     tag: 'netproxy-in',
-    local: { enabled: true, data_plane: 'tc', dns: 'hijack' },
+    local: { enabled: true, data_plane: 'tc', dns_mode: 'respect_policy' },
     shared: { enabled: false },
   },
   tun: {
@@ -243,7 +243,7 @@ export class ManagementMock {
             'Demo: eBPF capability checks passed. This does not prove that traffic is intercepted.',
         })
       case 'diagnostics':
-        return envelope({ shared: true })
+        return envelope({ prepared: true })
     }
   }
   private async revision(content: string) {
