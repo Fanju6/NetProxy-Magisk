@@ -68,7 +68,7 @@ export function createFixtures(): { service: ServiceStatus; snapshot: NodeSnapsh
     selector_mode: 'urltest' as const,
     selected_node_ref: '',
     selected: 'Auto/Global Connect',
-    runtime_selected: 'demo-global/Hong Kong 01',
+    runtime_selected: 'Global Connect/Hong Kong 01',
   }
   const snapshot: NodeSnapshot = {
     groups,
@@ -78,12 +78,12 @@ export function createFixtures(): { service: ServiceStatus; snapshot: NodeSnapsh
         tag: 'Auto/Global Connect',
         type: 'urltest',
         selectable: false,
-        selected: 'demo-global/Hong Kong 01',
+        selected: 'Global Connect/Hong Kong 01',
         expanded: true,
         items: groups[0]!.nodes.map((node, index) => ({
-          tag: `demo-global/${node.tag}`,
+          tag: `Global Connect/${node.tag}`,
           type: node.protocol,
-          url_test_time: 1792065600000,
+          url_test_time: 1792065600,
           url_test_delay: [32, 68, 54, 156, 192, 201][index]!,
         })),
       },

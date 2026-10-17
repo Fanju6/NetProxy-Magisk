@@ -136,6 +136,9 @@ internal class ModuleApiBridge(
         val path = when (resource) {
             "info" -> "/info"
             "service" -> "/service"
+            "nodes" -> "/nodes/snapshot"
+            "selection" -> "/selection"
+            "mode" -> "/mode"
             else -> throw BridgeFailure("api.read_only", 403)
         }
         return request(requestId, path, mutation = false)
@@ -150,8 +153,38 @@ internal class ModuleApiBridge(
         return request(requestId, path, mutation = true)
     }
 
-    private suspend fun request(requestId: String, path: String, mutation: Boolean): ReadResult = coroutineScope {
+    suspend fun selectNode(requestId: String, target: Map<String, Any?>?): ReadResult =
+        request(requestId, "/selection", mutation = true, method = "PUT", body = nodeTarget(target))
+
+    suspend fun changeMode(requestId: String, mode: Any?): ReadResult {
+        if (mode !is String || mode.isBlank()) throw BridgeFailure("api.invalid_request")
+        return request(requestId, "/mode", mutation = true, method = "PUT", body = buildJsonObject { put("mode", mode) })
+    }
+
+    suspend fun testDelay(requestId: String, target: Map<String, Any?>?): ReadResult =
+        request(requestId, "/nodes/delay", mutation = true, body = nodeTarget(target))
+
+    private fun nodeTarget(target: Map<String, Any?>?): JsonObject {
+        if (target == null || target.keys != setOf("group_id", "node_tag")) throw BridgeFailure("api.invalid_request")
+        val group = target["group_id"] as? String ?: throw BridgeFailure("api.invalid_request")
+        val tag = target["node_tag"] as? String ?: throw BridgeFailure("api.invalid_request")
+        if (!group.matches(Regex("[A-Za-z0-9][A-Za-z0-9._-]*")) || group == "staging" || group.contains("..")) {
+            throw BridgeFailure("api.invalid_request")
+        }
+        return buildJsonObject { put("group_id", group); put("node_tag", tag) }
+    }
+
+    private suspend fun request(
+        requestId: String,
+        path: String,
+        mutation: Boolean,
+        method: String = if (mutation) "POST" else "GET",
+        body: JsonObject? = if (mutation) JsonObject(emptyMap()) else null,
+    ): ReadResult = coroutineScope {
         validateId(requestId)
+        if (body != null && body.toString().toByteArray(Charsets.UTF_8).size > BODY_LIMIT) {
+            throw BridgeFailure("api.body_too_large")
+        }
         val job = currentCoroutineContext().job
         synchronized(lock) {
             requireForeground()
@@ -170,10 +203,9 @@ internal class ModuleApiBridge(
             requests[requestId] = job
         }
         try {
-            // 共享传输要求 POST 正文；固定空对象符合 Go 服务操作契约。
+            // 方法、路径与正文仅由上方固定业务入口构造，不接收通用 HTTP 参数。
             val response = transport.request(
-                if (mutation) "POST" else "GET", path,
-                if (mutation) JsonObject(emptyMap()) else null, emptyMap(), mutation,
+                method, path, body, emptyMap(), mutation,
             ) { status, input ->
                 ReadResult(status, decode(status, input))
             }

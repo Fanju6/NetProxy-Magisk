@@ -1,6 +1,6 @@
 # NetProxy Android Native PoC
 
-这是 V9 第一阶段的 Android 原生壳，不是正式管理器替代版本。M4.1 在既有只读通信上仅开放服务启动和停止，不修改 Go 业务、模块配置或 V8 发布流水线，不实现桌面平台。
+这是 V9 第一阶段的 Android 原生壳，不是正式管理器替代版本。M4.2 在服务启停基础上增加节点选择、出站模式和测速，不修改 Go 业务、模块配置结构或 V8 发布流水线，不实现桌面平台。
 
 ## 工程
 
@@ -42,7 +42,7 @@ pnpm android:build
 pnpm android:build:upgrade
 ```
 
-它构建 `com.fanjv.netproxy` 的 **未签名 Release APK**，版本码 1096 是 M4.1 覆盖验证基线，不是后续发布计数器。安装前必须确认高于设备现有版本，使用正式固定密钥签名，并以 `apksigner verify --print-certs` 核对模块辅助程序接受的公开指纹。不得生成替代签名后声称升级成功。密钥和密码不属于本工程，沿用已有安全签名方式，不改 V8 CI。
+它构建 `com.fanjv.netproxy` 的 **未签名 Release APK**，版本码 1097 是 M4.2 覆盖验证基线，不是后续发布计数器。安装前必须确认高于设备现有版本，使用正式固定密钥签名，并以 `apksigner verify --print-certs` 核对模块辅助程序接受的公开指纹。不得生成替代签名后声称升级成功。密钥和密码不属于本工程，沿用已有安全签名方式，不改 V8 CI。
 
 两种 APK 都使用同一份 React Native-mode 构建产物。`pnpm tauri android dev` 使用本机 1420 端口的显式 Native 模式开发服务，不会退回 Mock。
 
@@ -86,7 +86,7 @@ React / TanStack Query / Zod
   -> 共用 LocalHttpTransport -> Go loopback HTTPS API
 ```
 
-- 只读资源枚举只有 `info`、`service`，事件主题只有 `status/groups/subscriptions`，traffic 随 status 到达。`service_action` 仅接受 `start/stop` 枚举，Kotlin 固定映射 POST 路径和空对象正文；没有传入任意方法、URL、凭据、文件或命令的 IPC。
+- 只读资源枚举为 `info/service/nodes/selection/mode`，事件主题只有 `status/groups/subscriptions`，traffic 随 status 到达。`service_action` 仍仅接受 `start/stop`；`select_node/test_delay` 接收严格的 `group_id/node_tag`，`change_mode` 接收非空模式名。Kotlin 独立构造固定方法、路径与正文，不提供任意 HTTP、凭据、文件或命令的 IPC。
 - Kotlin 通过 Gradle sourceSet 直接编译 V8 `core/api` 源码，不复制或分叉证书、Bearer、Provider 和取消实现。首次配对同样复用该传输，安全流程见 [ADR 001](docs/adr-001-trusted-pairing.md)。
 - 凭据仍由非导出、仅接受 Binder UID 0 的 `ConnectionProvider` 写入 `noBackupFilesDir/module-connection.json`。证书精确 SHA-256 和主机名验证、禁用代理/重定向、请求取消继续使用原有实现。
 - 无凭据时，原生层只发送固定、无凭据的配对触发；不信其响应，必须等到新的 Root 私有交付后才进行精确钉扎业务读取。401 或身份失败先拒绝本次请求，下一次连接经同一可信交付恢复，不重放业务写入。不要求用户粘贴主 Secret。
@@ -94,7 +94,7 @@ React / TanStack Query / Zod
 - SSE 原生队列容量为 1，JS 同时只等待一个 next_event。没有无界事件 IPC、原生重连循环或 HTTP 轮询。慢端背压到已有有界传输；关闭和后台取消对应 Call。
 - 新订阅替换遗留文档的会话，同 ID 重复建立被拒绝；旧 ID 关闭不影响新会话。读取最多 8 项并行，取消先到的 ID 有界记录，不因 IPC 重排遗漏取消。
 - Kotlin Activity-aware 生命周期是原生可见性事实源；JS 将它与 document 可见性合并，继续负责有界重连、完整快照和核心身份隔离。
-- Capability 仅授予本插件七项命令和官方 listener 注册/移除。没有通用 HTTP、FS、Shell 或远程页面授权，CSP 不允许 JS 直连 Go。
+- Capability 仅授予本插件十项命令和官方 listener 注册/移除。没有通用 HTTP、FS、Shell 或远程页面授权，CSP 不允许 JS 直连 Go。
 
 ## 验证与限制
 
@@ -103,6 +103,8 @@ React / TanStack Query / Zod
 第三里程碑的后续结果见 [可信配对与生命周期报告](docs/trusted-pairing-report.md)，包含首次配对 ADR、真实 401、错误签名/证书拒绝、Activity.recreate 和独立原生 CI；第二里程碑报告保留其历史时间点，不代表当前所有验收状态。
 
 M4.1 的 start/stop 白名单、权威状态复核、真实控制与 V8 覆盖回归，以及通过的远端 CI 见 [服务控制验收报告](docs/service-control-report.md)。本阶段止于服务启停，不代表其他业务写入已经迁移。
+
+后续 M4.2 的节点、模式和测速范围见 [核心管理验收报告](docs/core-controls-report.md)。历史报告保留原里程碑的验收时间点，不代表当前能力白名单。
 
 上游 Tauri 2.12.4 Android 框架与官方生成模板仍使用独立 Kotlin 插件和旧 AGP DSL，本工程保留官方要求的两项兼容设置 `android.builtInKotlin=false`、`android.newDsl=false`，构建会提示未来 AGP 10 移除。没有隐藏警告或手工修改下载的 Tauri 源码。它们属于上游工程限制，不是已完成现代 Android 构建迁移的证明；升级 AGP 10 前必须先解决。已删除无必要的旧模板 ProGuard 缺失文件开关。
 

@@ -38,6 +38,54 @@ impl BridgeError {
 pub enum Resource {
     Info,
     Service,
+    Nodes,
+    Selection,
+    Mode,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct NodeTarget {
+    group_id: String,
+    node_tag: String,
+}
+
+const BODY_LIMIT: usize = 4 * 1024 * 1024;
+
+fn valid_group_id(value: &str) -> bool {
+    value
+        .as_bytes()
+        .first()
+        .is_some_and(u8::is_ascii_alphanumeric)
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+        && value != "staging"
+        && !value.contains("..")
+}
+
+fn validate_body(value: &impl Serialize) -> Result<(), BridgeError> {
+    if serde_json::to_vec(value)
+        .map_err(|_| BridgeError::invalid())?
+        .len()
+        > BODY_LIMIT
+    {
+        return Err(BridgeError {
+            code: "api.body_too_large".into(),
+            status: 413,
+            message: "Native request exceeds 4 MiB",
+        });
+    }
+    Ok(())
+}
+
+impl NodeTarget {
+    fn validate(&self) -> Result<(), BridgeError> {
+        if !valid_group_id(&self.group_id) {
+            return Err(BridgeError::invalid());
+        }
+        validate_body(self)
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -163,6 +211,60 @@ async fn service_action<R: Runtime>(
 }
 
 #[tauri::command]
+async fn select_node<R: Runtime>(
+    app: AppHandle<R>,
+    request_id: String,
+    target: NodeTarget,
+) -> Result<Value, BridgeError> {
+    if !valid_id(&request_id) {
+        return Err(BridgeError::invalid());
+    }
+    target.validate()?;
+    dispatch(
+        app,
+        "selectNode",
+        json!({"requestId": request_id, "target": target}),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn change_mode<R: Runtime>(
+    app: AppHandle<R>,
+    request_id: String,
+    mode: String,
+) -> Result<Value, BridgeError> {
+    if !valid_id(&request_id) || mode.trim().is_empty() {
+        return Err(BridgeError::invalid());
+    }
+    validate_body(&json!({"mode": mode}))?;
+    dispatch(
+        app,
+        "changeMode",
+        json!({"requestId": request_id, "mode": mode}),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn test_delay<R: Runtime>(
+    app: AppHandle<R>,
+    request_id: String,
+    target: NodeTarget,
+) -> Result<Value, BridgeError> {
+    if !valid_id(&request_id) {
+        return Err(BridgeError::invalid());
+    }
+    target.validate()?;
+    dispatch(
+        app,
+        "testDelay",
+        json!({"requestId": request_id, "target": target}),
+    )
+    .await
+}
+
+#[tauri::command]
 async fn cancel<R: Runtime>(app: AppHandle<R>, request_id: String) -> Result<Value, BridgeError> {
     if !valid_id(&request_id) {
         return Err(BridgeError::invalid());
@@ -224,6 +326,9 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
         .invoke_handler(tauri::generate_handler![
             read,
             service_action,
+            select_node,
+            change_mode,
+            test_delay,
             cancel,
             open_events,
             next_event,
@@ -249,6 +354,9 @@ mod tests {
     fn resources_are_not_arbitrary_paths_or_methods() {
         assert!(serde_json::from_str::<Resource>("\"info\"").is_ok());
         assert!(serde_json::from_str::<Resource>("\"service\"").is_ok());
+        for resource in ["nodes", "selection", "mode"] {
+            assert!(serde_json::from_value::<Resource>(json!(resource)).is_ok());
+        }
         for forbidden in [
             "/info",
             "POST",
@@ -258,6 +366,61 @@ mod tests {
         ] {
             assert!(serde_json::from_value::<Resource>(json!(forbidden)).is_err());
         }
+    }
+
+    #[test]
+    fn node_targets_reject_unsafe_groups_and_unknown_fields_but_preserve_original_tags() {
+        for group in ["default", "a.b-C_1", "012"] {
+            for tag in ["", "香港 / 节点🚀", "Auto/default", " name "] {
+                let target: NodeTarget =
+                    serde_json::from_value(json!({"group_id":group,"node_tag":tag})).unwrap();
+                target.validate().unwrap();
+                assert_eq!(target.node_tag, tag);
+            }
+        }
+        for group in [
+            "",
+            ".",
+            "..",
+            "staging",
+            "a..b",
+            "../default",
+            "a/b",
+            "a\\b",
+            "a?x",
+            "中文",
+            " a",
+            "_a",
+        ] {
+            assert!(
+                NodeTarget {
+                    group_id: group.into(),
+                    node_tag: "".into()
+                }
+                .validate()
+                .is_err()
+            );
+        }
+        for target in [
+            json!({"group_id":"default"}),
+            json!({"group_id":"default","node_tag":null}),
+            json!({"group_id":"default","node_tag":2}),
+            json!({"group_id":"default","node_tag":"","path":"/config"}),
+        ] {
+            assert!(serde_json::from_value::<NodeTarget>(target).is_err());
+        }
+        let target = NodeTarget {
+            group_id: "default".into(),
+            node_tag: "龙".repeat(BODY_LIMIT / 3),
+        };
+        assert_eq!(target.validate().unwrap_err().status, 413);
+        // JSON 转义也计入正文上限，不能只检查字符串字符数。
+        assert_eq!(
+            validate_body(&json!({"mode":"\n".repeat(BODY_LIMIT / 2)}))
+                .unwrap_err()
+                .status,
+            413
+        );
     }
 
     #[test]

@@ -21,6 +21,14 @@ import {
   type ServiceOperation,
 } from './service-control'
 import { moduleQueries } from './queries'
+import {
+  observeRouting,
+  routingEpoch,
+  routingOperationKey,
+  useRoutingOperation,
+  type RoutingOperation,
+} from './routing-control'
+import type { NodeSnapshot } from './contracts'
 
 export function acceptTraffic(service: ServiceStatus | undefined, traffic: Traffic): boolean {
   return (
@@ -54,6 +62,7 @@ export function ModuleEvents() {
   const connection = useEventConnection()
   const [attempt, setAttempt] = useState(0)
   const operationEpoch = useServiceOperation()?.epoch ?? 0
+  const routeEpoch = useRoutingOperation()?.epoch ?? 0
   useEffect(() => {
     let close: (() => void) | undefined
     let retryTimer: ReturnType<typeof setTimeout> | undefined
@@ -97,7 +106,10 @@ export function ModuleEvents() {
       }
       setConnection(retries === 0 ? 'connecting' : 'reconnecting')
       const active = () =>
-        !disposed && generation === currentGeneration && serviceEpoch(cache) === operationEpoch
+        !disposed &&
+        generation === currentGeneration &&
+        serviceEpoch(cache) === operationEpoch &&
+        routingEpoch(cache) === routeEpoch
       const pending = new Set(['status', 'groups', 'subscriptions'])
       let liveAt: number | undefined
       const fail = (retry = true) => {
@@ -129,6 +141,25 @@ export function ModuleEvents() {
         )
       // 单一会话只接受当前连接的完整快照，断流后不沿用旧核心流量。
       let status: ServiceStatus | undefined
+      let pendingNodes: NodeSnapshot | undefined
+      const routing = cache.getQueryData<RoutingOperation | null>(routingOperationKey)
+      const checkRouting = routing != null && routing.phase !== 'pending'
+      let confirmed = !checkRouting
+      let confirming = false
+      let changedDuringCheck = false
+      const publishNodes = (snapshot: NodeSnapshot) => {
+        const nodes =
+          status?.state === 'ready'
+            ? snapshot
+            : {
+                ...snapshot,
+                runtime_groups: [],
+                selection: { ...snapshot.selection, runtime_selected: '' },
+              }
+        publish('nodes', nodes)
+        publish('selection', nodes.selection)
+        observeRouting(cache, nodes.selection)
+      }
       const subscribe = () => {
         if (!active()) return
         snapshotTimer = setTimeout(fail, 30_000)
@@ -142,23 +173,68 @@ export function ModuleEvents() {
                 if (!envelope.ok) throw new Error(envelope.code)
                 if (event.name === 'status') {
                   const next = serviceSchema.parse(envelope.data)
-                  if (
-                    next.state !== 'ready' ||
-                    status?.core_started_at_millis !== next.core_started_at_millis
-                  )
-                    clearTraffic()
-                  status = next
-                  if (!active()) return
-                  publish('service', next)
-                  observeService(cache, next)
-                } else if (event.name === 'groups')
-                  publish('nodes', snapshotSchema.parse(envelope.data))
-                else if (event.name === 'subscriptions')
+                  if (!confirmed) {
+                    if (
+                      confirming &&
+                      status &&
+                      (status.core_started_at_millis !== next.core_started_at_millis ||
+                        status.state !== next.state)
+                    )
+                      changedDuringCheck = true
+                    status = next
+                  } else {
+                    if (
+                      next.state !== 'ready' ||
+                      status?.core_started_at_millis !== next.core_started_at_millis
+                    ) {
+                      clearTraffic()
+                      // 核心身份改变后不得在新分组快照前沿用旧实例的选择和延迟。
+                      for (const key of ['nodes', 'selection']) {
+                        void cache.cancelQueries(
+                          { queryKey: [key], exact: true },
+                          { revert: false, silent: true },
+                        )
+                      }
+                      cache.setQueryData<NodeSnapshot>(['nodes'], (nodes) =>
+                        nodes
+                          ? {
+                              ...nodes,
+                              runtime_groups: [],
+                              selection: { ...nodes.selection, runtime_selected: '' },
+                            }
+                          : undefined,
+                      )
+                    }
+                    status = next
+                    if (!active()) return
+                    publish('service', next)
+                    observeService(cache, next)
+                    if (api.supports('mode.read')) {
+                      const mode = {
+                        mode: next.configured_outbound_mode,
+                        available: next.available_outbound_modes,
+                        ...(next.state === 'ready' ? { runtime_mode: next.outbound_mode } : {}),
+                      }
+                      publish('mode', mode)
+                      observeRouting(cache, mode)
+                    }
+                    if (pendingNodes) {
+                      publishNodes(pendingNodes)
+                      pendingNodes = undefined
+                    }
+                  }
+                } else if (event.name === 'groups') {
+                  const nodes = snapshotSchema.parse(envelope.data)
+                  if (confirmed) {
+                    if (status) publishNodes(nodes)
+                    else pendingNodes = nodes
+                  }
+                } else if (event.name === 'subscriptions')
                   publish('subscriptions', z.array(groupSchema).parse(envelope.data))
                 else {
                   const traffic = trafficSchema.parse(envelope.data)
                   if (!traffic.available) clearTraffic()
-                  else if (acceptTraffic(status, traffic)) {
+                  else if (confirmed && acceptTraffic(status, traffic)) {
                     cache.setQueryData(['traffic'], traffic)
                     if (!active()) return
                     cache.setQueryData<number[]>(['traffic-history'], (previous) =>
@@ -171,8 +247,50 @@ export function ModuleEvents() {
                 if (pending.size === 0 && liveAt === undefined) {
                   clearTimeout(snapshotTimer)
                   snapshotTimer = undefined
-                  liveAt = performance.now()
-                  setConnection('live')
+                  if (confirmed) {
+                    liveAt = performance.now()
+                    setConnection('live')
+                  } else if (!confirming) {
+                    confirming = true
+                    // Hub 可能重放同核心的旧缓存。先消耗初始帧，再查询权威状态；
+                    // 复核期间到达的帧不能覆盖 GET，也不能作为写入确认。
+                    void (async () => {
+                      const queries = moduleQueries(api)
+                      await Promise.all(
+                        ['service', 'nodes', 'selection', 'mode'].map((key) =>
+                          cache.cancelQueries(
+                            { queryKey: [key], exact: true },
+                            { revert: false, silent: true },
+                          ),
+                        ),
+                      )
+                      if (!active()) return
+                      await cache.fetchQuery({ ...queries.service, staleTime: 0 })
+                      if (!active()) return
+                      const reads: Promise<unknown>[] = []
+                      if (api.supports('nodes.read'))
+                        reads.push(cache.fetchQuery({ ...queries.nodes, staleTime: 0 }))
+                      if (api.supports('selection.read'))
+                        reads.push(cache.fetchQuery({ ...queries.selection, staleTime: 0 }))
+                      if (api.supports('mode.read'))
+                        reads.push(cache.fetchQuery({ ...queries.mode, staleTime: 0 }))
+                      await Promise.all(reads)
+                      if (!active()) return
+                      const authoritative = cache.getQueryData<ServiceStatus>(['service'])
+                      if (
+                        changedDuringCheck &&
+                        (status?.core_started_at_millis !== authoritative?.core_started_at_millis ||
+                          status?.state !== authoritative?.state)
+                      ) {
+                        fail()
+                        return
+                      }
+                      status = authoritative
+                      confirmed = true
+                      liveAt = performance.now()
+                      setConnection('live')
+                    })().catch(onError)
+                  }
                 }
               } catch {
                 fail(false)
@@ -188,10 +306,11 @@ export function ModuleEvents() {
         }
       }
       const operation = cache.getQueryData<ServiceOperation | null>(serviceOperationKey)
-      if (operation && operation.phase !== 'pending') {
+      if (operation && operation.phase !== 'pending' && !checkRouting) {
         // 操作后的 GET 必须先于新流建立；旧连接迟到帧没有服务端序号可供可靠排序。
+        const queries = moduleQueries(api)
         void cache
-          .fetchQuery({ ...moduleQueries(api).service, staleTime: 0 })
+          .fetchQuery({ ...queries.service, staleTime: 0 })
           .catch(() => {})
           .finally(subscribe)
       } else subscribe()
@@ -222,7 +341,7 @@ export function ModuleEvents() {
       stop()
       setConnection('paused')
     }
-  }, [api, cache, attempt, operationEpoch])
+  }, [api, cache, attempt, operationEpoch, routeEpoch])
   return connection !== 'live' ? (
     <div
       role={connection === 'offline' || connection === 'reconnecting' ? 'alert' : 'status'}

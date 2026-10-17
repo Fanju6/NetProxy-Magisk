@@ -32,6 +32,18 @@ class ServiceActionArgs {
 }
 
 @InvokeArg
+class NodeTargetArgs {
+    var requestId: String = ""
+    var target: Map<String, Any?>? = null
+}
+
+@InvokeArg
+class ChangeModeArgs {
+    var requestId: String = ""
+    var mode: Any? = null
+}
+
+@InvokeArg
 class CancelArgs {
     var requestId: String = ""
 }
@@ -124,6 +136,36 @@ class ModuleApiPlugin(activity: Activity) : Plugin(activity) {
     fun serviceAction(invoke: Invoke) = dispatch(invoke) {
         val args = invoke.parseArgs(ServiceActionArgs::class.java)
         val result = bridge.serviceAction(args.requestId, args.action)
+        JSObject().apply {
+            put("status", result.status)
+            put("body", JSONObject(result.body.toString()))
+        }
+    }
+
+    @Command
+    fun selectNode(invoke: Invoke) = dispatch(invoke) {
+        val args = invoke.parseArgs(NodeTargetArgs::class.java)
+        val result = bridge.selectNode(args.requestId, args.target)
+        JSObject().apply {
+            put("status", result.status)
+            put("body", JSONObject(result.body.toString()))
+        }
+    }
+
+    @Command
+    fun changeMode(invoke: Invoke) = dispatch(invoke) {
+        val args = invoke.parseArgs(ChangeModeArgs::class.java)
+        val result = bridge.changeMode(args.requestId, args.mode)
+        JSObject().apply {
+            put("status", result.status)
+            put("body", JSONObject(result.body.toString()))
+        }
+    }
+
+    @Command
+    fun testDelay(invoke: Invoke) = dispatch(invoke) {
+        val args = invoke.parseArgs(NodeTargetArgs::class.java)
+        val result = bridge.testDelay(args.requestId, args.target)
         JSObject().apply {
             put("status", result.status)
             put("body", JSONObject(result.body.toString()))

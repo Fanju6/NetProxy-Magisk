@@ -8,24 +8,29 @@
 - `pnpm build:demo` → `dist/`：显式 Mock，可操作模拟数据。
 - `pnpm build:native` → `dist-native/`：不包含 Mock，仅在官方 `isTauri()` 返回真时创建 Native Transport。在普通浏览器打开仍拒绝连接。
 - `pnpm exec vite --mode native` 可用于 Tauri 开发，不能回退到 Mock。父工程应将 `frontendDist` 指向 `../web/dist-native`，具体相对路径以壳工程位置为准。
-- `ApiTransport.capabilities` 按具体操作表达范围，不从平台名称或单一只读标记推断。Native 仅有 `info.read/service.read/service.start/service.stop`，Mock 保留演示能力，Unavailable 没有能力。`ApiClient`、NativeTransport、Rust 和 Kotlin 分别检查；前端标记不能扩大原生授权。模式、节点选择和配置写入仍禁用，配置不读取。节点和订阅只消费 SSE 完整快照。
+- `ApiTransport.capabilities` 按具体操作表达范围，不从平台名称或单一只读标记推断。Native 开放 info/service/nodes/selection/mode 读取、service.start/stop、selection.write、mode.write、nodes.delay；Mock 保留演示能力，Unavailable 没有能力。`ApiClient`、NativeTransport、Rust 和 Kotlin 分别检查；前端标记不能扩大原生授权。订阅仅消费 SSE，配置不读取、不写入。
 - 普通 Web CSP 不变。只有 native mode 的 HTML 增加 `ipc:` 和 `http://ipc.localhost`，不允许前端直连 Go HTTPS 或任意 URL；父工程 Tauri CSP 仍须单独限制。
 
 ## IPC 协议
 
 全部通过官方 `@tauri-apps/api@2.12.4` 的 `invoke` 和 `addPluginListener`，业务页面不直接调用 IPC。
 
-| 命令                                | 参数                                           | 返回                   |
-| ----------------------------------- | ---------------------------------------------- | ---------------------- |
-| `plugin:module-api\|read`           | `{ requestId, resource: "info" \| "service" }` | `{ status, body }`     |
-| `plugin:module-api\|service_action` | `{ requestId, action: "start" \| "stop" }`     | `{ status, body }`     |
-| `plugin:module-api\|cancel`         | `{ requestId }`                                | 无数据                 |
-| `plugin:module-api\|open_events`    | `{ subscriptionId, topics }`                   | 订阅建立后完成         |
-| `plugin:module-api\|next_event`     | `{ subscriptionId }`                           | `{ name, body }`       |
-| `plugin:module-api\|close_events`   | `{ subscriptionId }`                           | 无数据                 |
-| `plugin:module-api\|visibility`     | `{}`                                           | `{ visible: boolean }` |
+| 命令                                | 参数                                                                               | 返回                   |
+| ----------------------------------- | ---------------------------------------------------------------------------------- | ---------------------- |
+| `plugin:module-api\|read`           | `{ requestId, resource: "info" \| "service" \| "nodes" \| "selection" \| "mode" }` | `{ status, body }`     |
+| `plugin:module-api\|service_action` | `{ requestId, action: "start" \| "stop" }`                                         | `{ status, body }`     |
+| `plugin:module-api\|select_node`    | `{ requestId, target: { group_id, node_tag } }`                                    | `{ status, body }`     |
+| `plugin:module-api\|change_mode`    | `{ requestId, mode }`                                                              | `{ status, body }`     |
+| `plugin:module-api\|test_delay`     | `{ requestId, target: { group_id, node_tag } }`                                    | `{ status, body }`     |
+| `plugin:module-api\|cancel`         | `{ requestId }`                                                                    | 无数据                 |
+| `plugin:module-api\|open_events`    | `{ subscriptionId, topics }`                                                       | 订阅建立后完成         |
+| `plugin:module-api\|next_event`     | `{ subscriptionId }`                                                               | `{ name, body }`       |
+| `plugin:module-api\|close_events`   | `{ subscriptionId }`                                                               | 无数据                 |
+| `plugin:module-api\|visibility`     | `{}`                                                                               | `{ visible: boolean }` |
 
-`topics` 是 `status/groups/subscriptions` 的非空子集，`traffic` 仅随 status 接收。HTTP 只允许 GET `/info`、`/service` 和 POST `/service/start`、`/service/stop`；JS 不传 query/body、方法或 URL，Kotlin 对写入使用固定空对象。API 前缀 `/api/v1` 由原生层固定。Rust 拒绝返回 `{ code, status, message }`；前端保留合法错误码和状态，但不展示原始异常消息。HTTP 响应继续由 `ApiClient` 校验 `schema=1`、HTTP 状态与 Zod 数据类型，不把 IPC 成功当业务成功。
+`topics` 是 `status/groups/subscriptions` 的非空子集，`traffic` 仅随 status 接收。读取映射为固定 GET `/info`、`/service`、`/nodes/snapshot`、`/selection`、`/mode`；三条新增命令固定映射 PUT `/selection`、PUT `/mode` 和 POST `/nodes/delay`。原有服务 POST 仍使用固定空对象。JS 只提供业务参数，不传方法、URL 或 query；API 前缀 `/api/v1` 由原生层固定。Rust 拒绝返回 `{ code, status, message }`；前端保留合法错误码和状态，但不展示原始异常消息。HTTP 响应继续由 `ApiClient` 校验 `schema=1`、HTTP 状态与 Zod 数据类型，不把 IPC 成功当业务成功。
+
+选择使用持久分组 ID 与原始 tag，空 tag 代表组内 Auto；只有结果关联使用 Go 提供的运行时分组标签。模式选项来自 GET `/mode` 的 available，默认模式与网络策略下的实际模式分别显示。测速的 `url_test_time` 为 Unix 秒，成功响应可能含旧缓存，不能宣称全部为本轮结果。节点和模式写入不重放，断线只通过权威读取或新 SSE 快照复核，保留 `persisted=true` 和原始错误码。
 
 原生层必须在传入 JS 前限制正文和帧大小、移除凭据、校验 TLS 身份，并用自己的白名单与 Capability 拒绝未授权写入。前端也限制桥接帧为 4 MiB，但这不能替代原生读取限制。
 

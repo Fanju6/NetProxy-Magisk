@@ -101,6 +101,22 @@ export const modeSchema = z.looseObject({
   runtime_mode: z.string().optional(),
   available: z.array(z.string()),
 })
+export const nodeTargetSchema = z.strictObject({
+  group_id: z.string().min(1),
+  node_tag: z.string(),
+})
+export const selectedSchema = z.object({
+  group_id: z.string(),
+  mode: z.enum(['manual', 'urltest']),
+  selected: z.string(),
+})
+export const delaySchema = z.object({
+  target: z.string(),
+  groups: z.array(runtimeGroupSchema),
+})
+export type NodeTarget = z.infer<typeof nodeTargetSchema>
+export type Selection = z.infer<typeof selectionSchema>
+export type ModeState = z.infer<typeof modeSchema>
 export const configSchema = z.looseObject({
   target: z.string(),
   revision: z.string(),
@@ -154,6 +170,7 @@ export type ApiPath =
   | '/service/start'
   | '/service/stop'
   | '/nodes/snapshot'
+  | '/nodes/delay'
   | '/selection'
   | '/mode'
   | '/subscriptions'
@@ -183,6 +200,8 @@ export const apiOperations = [
   'service.start',
   'service.stop',
   'nodes.read',
+  'nodes.delay',
+  'selection.read',
   'selection.write',
   'mode.read',
   'mode.write',
@@ -197,11 +216,16 @@ const operations: Partial<Record<ApiRequest['method'], Partial<Record<ApiPath, A
     '/info': 'info.read',
     '/service': 'service.read',
     '/nodes/snapshot': 'nodes.read',
+    '/selection': 'selection.read',
     '/mode': 'mode.read',
     '/subscriptions': 'subscriptions.read',
     '/config': 'config.read',
   },
-  POST: { '/service/start': 'service.start', '/service/stop': 'service.stop' },
+  POST: {
+    '/service/start': 'service.start',
+    '/service/stop': 'service.stop',
+    '/nodes/delay': 'nodes.delay',
+  },
   PUT: { '/selection': 'selection.write', '/mode': 'mode.write', '/config': 'config.write' },
 }
 export function requestOperation(request: ApiRequest): ApiOperation | undefined {

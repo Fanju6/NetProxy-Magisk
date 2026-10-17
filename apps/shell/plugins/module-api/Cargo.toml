@@ -2,7 +2,7 @@
 name = "tauri-plugin-module-api"
 version = "0.1.0"
 authors = [ "NetProxy" ]
-description = "Restricted Android read-only NetProxy bridge"
+description = "Restricted Android NetProxy management bridge"
 license = "GPL-3.0-only"
 edition = "2024"
 rust-version = "1.90"

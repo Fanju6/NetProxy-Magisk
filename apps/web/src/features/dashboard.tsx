@@ -3,9 +3,10 @@ import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowDown, ArrowUp, ArrowUpRight, Power, Activity, MemoryStick, Link2 } from 'lucide-react'
 import { useApi, usePreferences } from '@/app/context'
-import { moduleQueries, useChangeMode, useServiceAction } from '@/api/queries'
+import { moduleQueries, useChangeMode, useSelectNode, useServiceAction } from '@/api/queries'
 import type { Traffic } from '@/api/contracts'
 import { useEventConnection } from '@/api/events'
+import { useRoutingOperation } from '@/api/routing-control'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -27,6 +28,7 @@ export function DashboardPage() {
   const connection = useEventConnection()
   const status = useQuery(moduleQueries(api).service)
   const info = useQuery(moduleQueries(api).info)
+  const modeState = useQuery(moduleQueries(api).mode)
   const live = useQuery<Traffic>({
     queryKey: ['traffic'],
     queryFn: () => ({ available: false }),
@@ -39,11 +41,17 @@ export function DashboardPage() {
   })
   const action = useServiceAction()
   const mode = useChangeMode()
+  const selection = useSelectNode()
+  const routingOperation = useRoutingOperation()
   const [confirmStop, setConfirmStop] = useState(false)
   if (status.isPending) return <LoadingState />
   if (!status.data) return <ErrorState error={status.error} retry={() => void status.refetch()} />
   const service = status.data
   const running = service.state === 'ready'
+  const defaultMode = modeState.data?.mode ?? service.configured_outbound_mode
+  const runtimeMode = modeState.data?.runtime_mode || (running ? service.outbound_mode : '')
+  const modeLabel = (value: string) =>
+    ['Rule', 'Proxy', 'Direct', 'RuleAllowAds'].includes(value) ? t(value as MessageKey) : value
   const traffic =
     connection === 'live' &&
     live.data?.available &&
@@ -113,6 +121,10 @@ export function DashboardPage() {
             !api.supports(running ? 'service.stop' : 'service.start') ||
             action.isPending ||
             action.isUncertain ||
+            mode.isPending ||
+            mode.isUncertain ||
+            selection.isPending ||
+            selection.isUncertain ||
             status.isError ||
             connection !== 'live' ||
             !['ready', 'stopped', 'failed'].includes(service.state)
@@ -210,18 +222,78 @@ export function DashboardPage() {
             <p className="text-sm text-muted-foreground">{t('routing')}</p>
             <Choice
               label={t('routing')}
-              value={service.outbound_mode}
-              items={service.available_outbound_modes.map((value) => ({
+              value={defaultMode}
+              items={(modeState.data?.available ?? []).map((value) => ({
                 value,
-                label: ['Rule', 'Proxy', 'Direct', 'RuleAllowAds'].includes(value)
-                  ? t(value as MessageKey)
-                  : value,
+                label: modeLabel(value),
               }))}
               onChange={(value) => mode.mutate(value)}
-              disabled={!api.supports('mode.write') || mode.isPending}
+              disabled={
+                !api.supports('mode.write') ||
+                !modeState.data ||
+                modeState.isError ||
+                mode.isPending ||
+                mode.isUncertain ||
+                selection.isPending ||
+                selection.isUncertain ||
+                action.isPending ||
+                action.isUncertain ||
+                connection !== 'live' ||
+                !['ready', 'stopped', 'failed'].includes(service.state)
+              }
             />
           </div>
-          {mode.isError && <ErrorState error={mode.error} compact />}
+          <div className="space-y-2 text-xs text-muted-foreground">
+            <p>{t('defaultModeDescription')}</p>
+            {running && (
+              <p>
+                {t('runtimeMode')} ·{' '}
+                {runtimeMode && runtimeMode !== 'unknown'
+                  ? modeLabel(runtimeMode)
+                  : t('runtimeUnknown')}
+              </p>
+            )}
+            {running &&
+              runtimeMode &&
+              runtimeMode !== 'unknown' &&
+              runtimeMode !== defaultMode &&
+              !mode.persisted && <p>{t('modePolicyDifference')}</p>}
+          </div>
+          {mode.isUncertain && (
+            <section role="status" className="space-y-3 rounded-md border p-4 text-sm">
+              <p className="font-medium">
+                {t(
+                  routingOperation?.target.kind === 'selection'
+                    ? 'selectionUncertain'
+                    : 'modeUncertain',
+                )}
+              </p>
+              <p className="text-muted-foreground">
+                {t(
+                  mode.persisted || selection.persisted
+                    ? 'persisted'
+                    : routingOperation?.target.kind === 'selection'
+                      ? 'selectionUncertainDescription'
+                      : 'modeUncertainDescription',
+                )}
+              </p>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  void (routingOperation?.target.kind === 'selection'
+                    ? selection.verify()
+                    : mode.verify())
+                }
+              >
+                {t('checkStatus')}
+              </Button>
+            </section>
+          )}
+          {mode.error != null && <ErrorState error={mode.error} compact />}
+          {selection.error != null && <ErrorState error={selection.error} compact />}
+          {modeState.isError && (
+            <ErrorState compact error={modeState.error} retry={() => void modeState.refetch()} />
+          )}
           <dl className="space-y-4 text-sm">
             <div className="flex justify-between gap-4">
               <dt className="text-muted-foreground">{t('version')}</dt>
@@ -254,6 +326,10 @@ export function DashboardPage() {
                 !api.supports('service.stop') ||
                 action.isPending ||
                 action.isUncertain ||
+                mode.isPending ||
+                mode.isUncertain ||
+                selection.isPending ||
+                selection.isUncertain ||
                 status.isError ||
                 !running ||
                 connection !== 'live'

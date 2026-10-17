@@ -1,11 +1,14 @@
 ## Default Permission
 
-Module state, start/stop and bounded events, without shell, files or arbitrary HTTP access
+Module state, service control, selection, mode, delay and bounded events, without shell, files or arbitrary HTTP access
 
 #### This default permission set includes the following:
 
 - `allow-read`
 - `allow-service-action`
+- `allow-select-node`
+- `allow-change-mode`
+- `allow-test-delay`
 - `allow-cancel`
 - `allow-open-events`
 - `allow-next-event`
@@ -45,6 +48,32 @@ Enables the cancel command without any pre-configured scope.
 <td>
 
 Denies the cancel command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`module-api:allow-change-mode`
+
+</td>
+<td>
+
+Enables the change_mode command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`module-api:deny-change-mode`
+
+</td>
+<td>
+
+Denies the change_mode command without any pre-configured scope.
 
 </td>
 </tr>
@@ -208,6 +237,32 @@ Denies the remove_listener command without any pre-configured scope.
 <tr>
 <td>
 
+`module-api:allow-select-node`
+
+</td>
+<td>
+
+Enables the select_node command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`module-api:deny-select-node`
+
+</td>
+<td>
+
+Denies the select_node command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `module-api:allow-service-action`
 
 </td>
@@ -227,6 +282,32 @@ Enables the service_action command without any pre-configured scope.
 <td>
 
 Denies the service_action command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`module-api:allow-test-delay`
+
+</td>
+<td>
+
+Enables the test_delay command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`module-api:deny-test-delay`
+
+</td>
+<td>
+
+Denies the test_delay command without any pre-configured scope.
 
 </td>
 </tr>

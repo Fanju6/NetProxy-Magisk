@@ -14,7 +14,7 @@ class ModuleApiPluginContractTest {
         assertEquals("com.fanjv.netproxy.bridge.ModuleApiPlugin", plugin.name)
         assertNotNull(plugin.getAnnotation(TauriPlugin::class.java))
         val commands = plugin.declaredMethods.filter { it.getAnnotation(Command::class.java) != null }
-        assertEquals(setOf("read", "serviceAction", "cancel", "openEvents", "nextEvent", "closeEvents", "visibility", "registerListener", "removeListener"), commands.map { it.name }.toSet())
+        assertEquals(setOf("read", "serviceAction", "selectNode", "changeMode", "testDelay", "cancel", "openEvents", "nextEvent", "closeEvents", "visibility", "registerListener", "removeListener"), commands.map { it.name }.toSet())
         commands.forEach { assertArrayEquals(arrayOf(Invoke::class.java), it.parameterTypes) }
     }
 
@@ -45,5 +45,12 @@ class ModuleApiPluginContractTest {
         assertEquals(setOf("requestId", "action"), ServiceActionArgs::class.java.declaredFields.map { it.name }.toSet())
         assertEquals("", ServiceActionArgs().requestId)
         assertEquals("", ServiceActionArgs().action)
+    }
+
+    @Test fun m42ArgumentsCannotSupplyURLMethodBodyOrCredentials() {
+        assertEquals(setOf("requestId", "target"), NodeTargetArgs::class.java.declaredFields.map { it.name }.toSet())
+        assertNull(NodeTargetArgs().target)
+        assertEquals(setOf("requestId", "mode"), ChangeModeArgs::class.java.declaredFields.map { it.name }.toSet())
+        assertNull(ChangeModeArgs().mode)
     }
 }

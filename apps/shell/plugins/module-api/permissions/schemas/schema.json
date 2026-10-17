@@ -307,6 +307,18 @@
           "markdownDescription": "Denies the cancel command without any pre-configured scope."
         },
         {
+          "description": "Enables the change_mode command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-change-mode",
+          "markdownDescription": "Enables the change_mode command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the change_mode command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-change-mode",
+          "markdownDescription": "Denies the change_mode command without any pre-configured scope."
+        },
+        {
           "description": "Enables the close_events command without any pre-configured scope.",
           "type": "string",
           "const": "allow-close-events",
@@ -379,6 +391,18 @@
           "markdownDescription": "Denies the remove_listener command without any pre-configured scope."
         },
         {
+          "description": "Enables the select_node command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-select-node",
+          "markdownDescription": "Enables the select_node command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the select_node command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-select-node",
+          "markdownDescription": "Denies the select_node command without any pre-configured scope."
+        },
+        {
           "description": "Enables the service_action command without any pre-configured scope.",
           "type": "string",
           "const": "allow-service-action",
@@ -389,6 +413,18 @@
           "type": "string",
           "const": "deny-service-action",
           "markdownDescription": "Denies the service_action command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the test_delay command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-test-delay",
+          "markdownDescription": "Enables the test_delay command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the test_delay command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-test-delay",
+          "markdownDescription": "Denies the test_delay command without any pre-configured scope."
         },
         {
           "description": "Enables the visibility command without any pre-configured scope.",
@@ -403,10 +439,10 @@
           "markdownDescription": "Denies the visibility command without any pre-configured scope."
         },
         {
-          "description": "Module state, start/stop and bounded events, without shell, files or arbitrary HTTP access\n#### This default permission set includes:\n\n- `allow-read`\n- `allow-service-action`\n- `allow-cancel`\n- `allow-open-events`\n- `allow-next-event`\n- `allow-close-events`\n- `allow-visibility`\n- `allow-register-listener`\n- `allow-remove-listener`",
+          "description": "Module state, service control, selection, mode, delay and bounded events, without shell, files or arbitrary HTTP access\n#### This default permission set includes:\n\n- `allow-read`\n- `allow-service-action`\n- `allow-select-node`\n- `allow-change-mode`\n- `allow-test-delay`\n- `allow-cancel`\n- `allow-open-events`\n- `allow-next-event`\n- `allow-close-events`\n- `allow-visibility`\n- `allow-register-listener`\n- `allow-remove-listener`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Module state, start/stop and bounded events, without shell, files or arbitrary HTTP access\n#### This default permission set includes:\n\n- `allow-read`\n- `allow-service-action`\n- `allow-cancel`\n- `allow-open-events`\n- `allow-next-event`\n- `allow-close-events`\n- `allow-visibility`\n- `allow-register-listener`\n- `allow-remove-listener`"
+          "markdownDescription": "Module state, service control, selection, mode, delay and bounded events, without shell, files or arbitrary HTTP access\n#### This default permission set includes:\n\n- `allow-read`\n- `allow-service-action`\n- `allow-select-node`\n- `allow-change-mode`\n- `allow-test-delay`\n- `allow-cancel`\n- `allow-open-events`\n- `allow-next-event`\n- `allow-close-events`\n- `allow-visibility`\n- `allow-register-listener`\n- `allow-remove-listener`"
         }
       ]
     }

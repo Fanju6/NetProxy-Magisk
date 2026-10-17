@@ -47,14 +47,112 @@ class ModuleApiBridgeTest {
     @Test fun onlyWhitelistedResourcesProduceReadonlyGETs() = runTest {
         val transport = FakeTransport()
         val bridge = bridge(transport)
-        for (resource in listOf("info", "service")) {
+        for (resource in listOf("info", "service", "nodes", "selection", "mode")) {
             assertEquals(200, bridge.read(resource, resource).status)
         }
-        assertEquals(listOf("/info", "/service"), transport.paths)
+        assertEquals(listOf("/info", "/service", "/nodes/snapshot", "/selection", "/mode"), transport.paths)
         for (resource in listOf("/info", "config", "service/start", "../info", "info?secret=x", "")) {
             assertFailure("api.read_only", runCatching { bridge.read("forbidden", resource) })
         }
-        assertEquals(2, transport.paths.size)
+        assertEquals(5, transport.paths.size)
+    }
+
+    @Test fun nodeAndModeOperationsUseOnlyFixedMethodsPathsAndTypedBodies() = runTest {
+        val transport = FakeTransport()
+        val bridge = bridge(transport)
+        for (tag in listOf("", "香港 / 节点🚀", "Auto/default", " name ")) {
+            val target = mapOf("group_id" to "a.b-C_1", "node_tag" to tag)
+            bridge.selectNode("selection", target)
+            assertEquals("PUT", transport.methods.last())
+            assertEquals("/selection", transport.paths.last())
+            assertEquals(Json.parseToJsonElement(Json.encodeToString(target)), transport.bodies.last())
+            bridge.testDelay("delay", target)
+            assertEquals("POST", transport.methods.last())
+            assertEquals("/nodes/delay", transport.paths.last())
+            assertEquals(Json.parseToJsonElement(Json.encodeToString(target)), transport.bodies.last())
+        }
+        bridge.changeMode("mode", "规则（允许广告）/自定义")
+        assertEquals("PUT", transport.methods.last())
+        assertEquals("/mode", transport.paths.last())
+        assertEquals(Json.parseToJsonElement("""{"mode":"规则（允许广告）/自定义"}"""), transport.bodies.last())
+        assertEquals(9, transport.paths.size)
+    }
+
+    @Test fun directKotlinBypassRejectsInvalidTargetsModesAndOversizedEncodedBodies() = runTest {
+        val transport = FakeTransport()
+        val bridge = bridge(transport)
+        val targets = listOf(null, emptyMap(), mapOf("group_id" to "default"),
+            mapOf("group_id" to "default", "node_tag" to null),
+            mapOf("group_id" to "default", "node_tag" to 1),
+            mapOf("group_id" to "default", "node_tag" to "", "path" to "/config")) +
+            listOf("", "staging", "a..b", "../default", "a/b", "a\\b", "_a", " a", "中文")
+                .map { mapOf("group_id" to it, "node_tag" to "") }
+        for (target in targets) {
+            assertFailure("api.invalid_request", runCatching { bridge.selectNode("bad", target) })
+            assertFailure("api.invalid_request", runCatching { bridge.testDelay("bad", target) })
+        }
+        for (mode in listOf(null, 1, true, emptyMap<String, String>(), "", "  ", "\n")) {
+            assertFailure("api.invalid_request", runCatching { bridge.changeMode("bad", mode) })
+        }
+        assertFailure("api.body_too_large", runCatching {
+            bridge.selectNode("large", mapOf("group_id" to "default", "node_tag" to "龙".repeat(1_400_000)))
+        })
+        assertFailure("api.body_too_large", runCatching { bridge.changeMode("large", "\n".repeat(2_100_000) + "Rule") })
+        assertTrue(transport.paths.isEmpty())
+    }
+
+    @Test fun m42FailuresCancellationAndBackgroundNeverReplayMutations() = runTest {
+        val target = mapOf("group_id" to "default", "node_tag" to "")
+        val operations: List<suspend (ModuleApiBridge, String) -> ReadResult> = listOf(
+            { bridge, id -> bridge.selectNode(id, target) },
+            { bridge, id -> bridge.testDelay(id, target) },
+            { bridge, id -> bridge.changeMode(id, "Rule") },
+        )
+        for (operation in operations) {
+            val transport = FakeTransport().apply { requestFailure = IOException(PRIVATE) }
+            val bridge = bridge(transport)
+            assertTrue(runCatching { operation(bridge, "error") }.isFailure)
+            bridge.pause()
+            bridge.resume()
+            runCurrent()
+            assertEquals(1, transport.paths.size)
+            transport.requestFailure = null
+            transport.status = 502
+            transport.content = envelope(ok = false, code = "node.runtime_sync_failed", data = """{"persisted":true}""")
+            assertEquals(Json.parseToJsonElement("""{"persisted":true}"""), operation(bridge, "persisted").body["data"])
+            transport.holdWrites = true
+            val pending = async { runCatching { operation(bridge, "cancel") } }
+            runCurrent()
+            bridge.cancel("cancel")
+            runCurrent()
+            assertTrue(pending.await().exceptionOrNull() is CancellationException)
+            bridge.pause()
+            bridge.resume()
+            runCurrent()
+            assertEquals(3, transport.paths.size)
+            assertEquals(1, transport.cancelledWrites)
+        }
+    }
+
+    @Test fun m42MutationsShareServiceAdmissionAndCannotOverlapAnAcceptedWrite() = runTest {
+        val transport = FakeTransport().apply { holdWrites = true }
+        val bridge = bridge(transport)
+        val target = mapOf("group_id" to "default", "node_tag" to "")
+        val service = async { runCatching { bridge.serviceAction("service", "start") } }
+        runCurrent()
+        assertFailure("api.busy", runCatching { bridge.selectNode("selection", target) })
+        assertFailure("api.busy", runCatching { bridge.changeMode("mode", "Rule") })
+        assertFailure("api.busy", runCatching { bridge.testDelay("delay", target) })
+        assertEquals(200, bridge.read("read", "nodes").status)
+        bridge.cancel("service")
+        runCurrent()
+        assertTrue(service.await().exceptionOrNull() is CancellationException)
+        val selection = async { runCatching { bridge.selectNode("selection", target) } }
+        runCurrent()
+        assertFailure("api.busy", runCatching { bridge.serviceAction("service2", "stop") })
+        bridge.pause()
+        runCurrent()
+        assertTrue(selection.await().exceptionOrNull() is CancellationException)
     }
 
     @Test fun successIsAnEnvelopeObjectWithFixedMessage() = runTest {
@@ -946,6 +1044,8 @@ class ModuleApiBridgeTest {
 
     private class FakeTransport : ModuleApiTransport {
         val paths = mutableListOf<String>()
+        val methods = mutableListOf<String>()
+        val bodies = mutableListOf<JsonObject?>()
         val events = Channel<ModuleEvent>(8)
         var content = envelope()
         var status = 200
@@ -968,12 +1068,18 @@ class ModuleApiBridgeTest {
                 assertEquals("POST", method)
                 assertEquals(JsonObject(emptyMap()), body)
                 assertTrue(mutation)
+            } else if (path in setOf("/selection", "/mode") && mutation || path == "/nodes/delay") {
+                assertEquals(if (path == "/nodes/delay") "POST" else "PUT", method)
+                assertNotNull(body)
+                assertTrue(mutation)
             } else {
                 assertEquals("GET", method)
                 assertNull(body)
                 assertFalse(mutation)
             }
             paths.add(path)
+            methods.add(method)
+            bodies.add(body)
             requestFailure?.let { throw it }
             if (mutation && holdWrites) try { awaitCancellation() } finally {
                 writeCleanup?.let { withContext(NonCancellable) { it.await() } }

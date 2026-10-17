@@ -62,6 +62,54 @@ test('theme, language and configuration survive page navigation; preferences sur
   await expect(page.getByRole('note')).toContainText('Demo mode')
 })
 
+test('node testing and saved routing changes remain usable while the core is stopped', async ({
+  page,
+}) => {
+  const failures: string[] = []
+  page.on('pageerror', (error) => failures.push(error.message))
+  await page.goto('/')
+  await page.getByRole('button', { name: '停止服务', exact: true }).click()
+  await page.getByRole('button', { name: '确定', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '已停止', exact: true })).toBeVisible()
+  const navigation = page.getByRole('navigation', { name: '主导航' }).filter({ visible: true })
+  await navigation.getByRole('link', { name: '节点', exact: true }).click()
+  const group = page.getByTestId('group-demo-global')
+  const manual = group.getByRole('button', { name: '选择 Tokyo 01', exact: true })
+  await expect(manual).toBeEnabled()
+  await manual.click()
+  await expect(manual).toHaveAttribute('aria-pressed', 'true')
+  await expect(manual).toBeEnabled()
+  const auto = group.getByRole('button', { name: '选择 Auto-Fastest', exact: true })
+  await auto.click()
+  await expect(auto).toHaveAttribute('aria-pressed', 'true')
+  await expect(group.getByRole('button', { name: '测试分组 Global Connect' })).toBeEnabled()
+  await group.getByRole('button', { name: '测试分组 Global Connect' }).click()
+  await expect(page.getByText('已收到最近可用结果，其中可能包含缓存。')).toBeVisible()
+  await expect(manual).toContainText('53 ms')
+  const single = group.getByRole('button', { name: '测试 Hong Kong 01 的延迟' })
+  await expect(single).toBeEnabled()
+  await single.click()
+  await expect(single).toBeEnabled()
+  await expect(group.getByRole('button', { name: '选择 Hong Kong 01', exact: true })).toContainText(
+    '32 ms',
+  )
+  await expect(manual).toContainText('53 ms')
+  expect(await single.locator('xpath=ancestor::button').count()).toBe(0)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await navigation.getByRole('link', { name: '仪表盘', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '已停止', exact: true })).toBeVisible()
+  const mode = page.getByRole('combobox', { name: '出站模式', exact: true })
+  await expect(mode).toBeEnabled()
+  await mode.click()
+  await page.getByRole('option', { name: '代理', exact: true }).click()
+  await expect(mode).toContainText('代理')
+  await expect(mode).toBeEnabled()
+  await expect(page.getByText('已保存的默认模式', { exact: true })).toBeVisible()
+  await expect(page.getByText(/运行时模式 ·/)).toHaveCount(0)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  expect(failures).toEqual([])
+})
+
 test('details, keyboard navigation and responsive content stay inside the viewport', async ({
   page,
 }) => {

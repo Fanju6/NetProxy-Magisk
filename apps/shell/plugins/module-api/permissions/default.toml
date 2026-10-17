@@ -1,3 +1,3 @@
 [default]
-description = "Module state, start/stop and bounded events, without shell, files or arbitrary HTTP access"
-permissions = ["allow-read", "allow-service-action", "allow-cancel", "allow-open-events", "allow-next-event", "allow-close-events", "allow-visibility", "allow-register-listener", "allow-remove-listener"]
+description = "Module state, service control, selection, mode, delay and bounded events, without shell, files or arbitrary HTTP access"
+permissions = ["allow-read", "allow-service-action", "allow-select-node", "allow-change-mode", "allow-test-delay", "allow-cancel", "allow-open-events", "allow-next-event", "allow-close-events", "allow-visibility", "allow-register-listener", "allow-remove-listener"]

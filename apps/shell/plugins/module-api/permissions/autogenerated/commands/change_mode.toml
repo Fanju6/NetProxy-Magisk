@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-change-mode"
+description = "Enables the change_mode command without any pre-configured scope."
+commands.allow = ["change_mode"]
+
+[[permission]]
+identifier = "deny-change-mode"
+description = "Denies the change_mode command without any pre-configured scope."
+commands.deny = ["change_mode"]

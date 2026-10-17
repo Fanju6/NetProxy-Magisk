@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-test-delay"
+description = "Enables the test_delay command without any pre-configured scope."
+commands.allow = ["test_delay"]
+
+[[permission]]
+identifier = "deny-test-delay"
+description = "Denies the test_delay command without any pre-configured scope."
+commands.deny = ["test_delay"]

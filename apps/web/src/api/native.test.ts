@@ -75,7 +75,7 @@ describe('restricted native requests', () => {
       'plugin:module-api|remove_listener',
     ])
   })
-  it.each(['/info', '/service'] as const)(
+  it.each(['/info', '/service', '/nodes/snapshot', '/selection', '/mode'] as const)(
     'maps %s to a resource, never a URL or secret',
     async (path) => {
       const { transport, invoke } = setup()
@@ -84,13 +84,19 @@ describe('restricted native requests', () => {
       expect(await transport.request({ method: 'GET', path })).toEqual(response)
       expect(invoke).toHaveBeenCalledExactlyOnceWith('plugin:module-api|read', {
         requestId: expect.any(String),
-        resource: path.slice(1),
+        resource: path === '/nodes/snapshot' ? 'nodes' : path.slice(1),
       })
       expect(transport.capabilities).toEqual([
         'info.read',
         'service.read',
         'service.start',
         'service.stop',
+        'nodes.read',
+        'selection.read',
+        'selection.write',
+        'mode.read',
+        'mode.write',
+        'nodes.delay',
       ])
     },
   )
@@ -101,12 +107,13 @@ describe('restricted native requests', () => {
     { method: 'POST', path: '/service/start', body: {} },
     { method: 'PUT', path: '/selection', body: {} },
     { method: 'DELETE', path: '/subscriptions' },
-    { method: 'GET', path: '/nodes/snapshot' },
+    { method: 'POST', path: '/nodes/snapshot' },
     { method: 'GET', path: '/subscriptions' },
     { method: 'GET', path: '/config' },
     { method: 'GET', path: '/info', query: {} },
     { method: 'GET', path: '/info', body: null },
     { method: 'GET', path: 'https://example.invalid/' },
+    { method: 'GET', path: '__proto__' },
   ])('rejects unauthorized resources before IPC: %j', async (request) => {
     const { transport, invoke } = setup()
     await expect(transport.request(request as ApiRequest)).rejects.toMatchObject({
@@ -203,6 +210,126 @@ describe('restricted native requests', () => {
         requestId: expect.any(String),
         action,
       })
+    },
+  )
+  it.each([
+    ['PUT', '/selection', 'select_node'],
+    ['POST', '/nodes/delay', 'test_delay'],
+  ] as const)(
+    'maps %s %s to a fixed typed command preserving original tags',
+    async (method, path, name) => {
+      const { transport, invoke } = setup()
+      invoke.mockResolvedValue({ status: 200, body: event.body })
+      for (const node_tag of ['', '香港 / 节点🚀', 'Auto/default']) {
+        const target = { group_id: 'a.b-C_1', node_tag }
+        await transport.request({ method, path, body: target })
+        expect(invoke).toHaveBeenLastCalledWith(`plugin:module-api|${name}`, {
+          requestId: expect.any(String),
+          target,
+        })
+      }
+      expect(invoke).toHaveBeenCalledTimes(3)
+    },
+  )
+  it('forwards native mode names without a fixed enumeration', async () => {
+    const { transport, invoke } = setup()
+    invoke.mockResolvedValue({ status: 200, body: event.body })
+    await transport.request({
+      method: 'PUT',
+      path: '/mode',
+      body: { mode: '规则（允许广告）/自定义' },
+    })
+    expect(invoke).toHaveBeenCalledExactlyOnceWith('plugin:module-api|change_mode', {
+      requestId: expect.any(String),
+      mode: '规则（允许广告）/自定义',
+    })
+  })
+  it.each([
+    { group_id: 'staging', node_tag: '' },
+    { group_id: 'a..b', node_tag: '' },
+    { group_id: '../default', node_tag: '' },
+    { group_id: 'a/b', node_tag: '' },
+    { group_id: '_a', node_tag: '' },
+    { group_id: ' a', node_tag: '' },
+    { group_id: 'default' },
+    { group_id: 'default', node_tag: 1 },
+    { group_id: 'default', node_tag: null },
+    { group_id: 'default', node_tag: '', path: '/config' },
+    null,
+  ])('rejects malformed targets independently of ApiClient: %j', async (body) => {
+    const { transport, invoke } = setup()
+    for (const request of [
+      { method: 'PUT', path: '/selection', body },
+      { method: 'POST', path: '/nodes/delay', body },
+    ] as ApiRequest[]) {
+      await expect(transport.request(request)).rejects.toMatchObject({
+        code: 'client.operation_denied',
+      })
+    }
+    expect(invoke).not.toHaveBeenCalled()
+  })
+  it.each([
+    { method: 'PUT', path: '/mode', body: { mode: '' } },
+    { method: 'PUT', path: '/mode', body: { mode: '   ' } },
+    { method: 'PUT', path: '/mode', body: { mode: 1 } },
+    { method: 'PUT', path: '/mode', body: { mode: 'Rule', url: 'https://example.invalid' } },
+    { method: 'PUT', path: '/selection', query: {}, body: { group_id: 'default', node_tag: '' } },
+    { method: 'GET', path: '/selection', query: {} },
+    { method: 'GET', path: '/mode', body: {} },
+    { method: 'GET', path: '/nodes/snapshot', body: {} },
+    { method: 'PUT', path: '/nodes/delay', body: { group_id: 'default', node_tag: '' } },
+    { method: 'POST', path: '/mode', body: { mode: 'Rule' } },
+  ])('rejects invalid mode bodies and method/query bypasses: %j', async (request) => {
+    const { transport, invoke } = setup()
+    await expect(transport.request(request as ApiRequest)).rejects.toMatchObject({
+      code: 'client.operation_denied',
+    })
+    expect(invoke).not.toHaveBeenCalled()
+  })
+  it('bounds encoded Unicode and escaped request bodies before IPC', async () => {
+    const { transport, invoke } = setup()
+    for (const request of [
+      {
+        method: 'PUT',
+        path: '/selection',
+        body: { group_id: 'default', node_tag: '龙'.repeat(1_400_000) },
+      },
+      { method: 'PUT', path: '/mode', body: { mode: '\n'.repeat(2_100_000) + 'Rule' } },
+    ] as ApiRequest[]) {
+      await expect(transport.request(request)).rejects.toMatchObject({
+        code: 'api.body_too_large',
+        status: 413,
+      })
+    }
+    expect(invoke).not.toHaveBeenCalled()
+  })
+  it.each([
+    { method: 'PUT', path: '/selection', body: { group_id: 'default', node_tag: '' } },
+    { method: 'PUT', path: '/mode', body: { mode: 'Rule' } },
+    { method: 'POST', path: '/nodes/delay', body: { group_id: 'default', node_tag: '' } },
+  ] as const)(
+    'does not replay M4.2 operations after errors, cancellation or late replies: %j',
+    async (operation) => {
+      const { transport, invoke } = setup()
+      invoke.mockRejectedValue({ code: 'api.connection_failed', status: 503, message: 'private' })
+      await expect(transport.request(operation)).rejects.toMatchObject({
+        code: 'api.connection_failed',
+      })
+      expect(invoke).toHaveBeenCalledOnce()
+      invoke.mockClear()
+      const pending = deferred<unknown>()
+      invoke.mockImplementation((name) =>
+        name.endsWith('|cancel') ? Promise.resolve() : pending.promise,
+      )
+      const abort = new AbortController()
+      const request = transport.request(operation, abort.signal)
+      const rejected = expect(request).rejects.toMatchObject({ name: 'AbortError' })
+      abort.abort()
+      await rejected
+      pending.resolve({ status: 200, body: event.body })
+      await flush()
+      expect(invoke).toHaveBeenCalledTimes(2)
+      expect(invoke.mock.calls[1]![0]).toBe('plugin:module-api|cancel')
     },
   )
   it.each([401, 403, 409, 502, 504])(

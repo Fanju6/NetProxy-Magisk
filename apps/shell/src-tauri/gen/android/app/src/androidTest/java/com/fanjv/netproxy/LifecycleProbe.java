@@ -61,6 +61,7 @@ public final class LifecycleProbe extends Instrumentation {
             }
             result.putInt("recreated", destroyed.get());
             result.putBoolean("read_after_recreate", true);
+            result.putBoolean("nodes_mode_after_recreate", true);
             result.putBoolean("sse_open_before_destroy", true);
             finish(Activity.RESULT_OK, result);
         } catch (Throwable failure) {
@@ -78,8 +79,9 @@ public final class LifecycleProbe extends Instrumentation {
             if ("true".equals(evaluate(activity, "Boolean(window.__TAURI_INTERNALS__?.invoke)"))) break;
             SystemClock.sleep(100);
         }
-        evaluate(activity, "window.__probeRead=null;window.__TAURI_INTERNALS__.invoke('plugin:module-api|read',"
-            + "{requestId:crypto.randomUUID(),resource:'info'}).then(r=>window.__probeRead=r.status)"
+        evaluate(activity, "window.__probeRead=null;Promise.all(['info','nodes','selection','mode'].map(resource=>"
+            + "window.__TAURI_INTERNALS__.invoke('plugin:module-api|read',"
+            + "{requestId:crypto.randomUUID(),resource}))).then(results=>window.__probeRead=results.every(r=>r.status===200)?200:'error')"
             + ".catch(e=>window.__probeRead=e.code);");
         waitValue(activity, "window.__probeRead", "200");
     }

@@ -71,6 +71,8 @@ export class MockTransport implements ApiTransport {
         })
       case 'GET /service':
         return success('service.status', structuredClone(service))
+      case 'GET /selection':
+        return success('node.current', structuredClone(snapshot.selection))
       case 'GET /nodes/snapshot': {
         const id = request.query?.group_id?.trim()
         if (id && (!/^[\w.-]+$/.test(id) || id.includes('..') || id === 'staging'))
@@ -90,7 +92,7 @@ export class MockTransport implements ApiTransport {
       case 'GET /mode':
         return success('mode.current', {
           mode: service.configured_outbound_mode,
-          runtime_mode: service.outbound_mode,
+          ...(service.state === 'ready' ? { runtime_mode: service.outbound_mode } : {}),
           available: service.available_outbound_modes,
         })
       case 'POST /service/start':
@@ -109,9 +111,12 @@ export class MockTransport implements ApiTransport {
         service.connections_in = 0
         service.connections_out = 0
         if (!running) snapshot.runtime_groups = []
+        const active = snapshot.groups.find(
+          (item) => item.group.id === snapshot.selection.active_group_id,
+        )!
+        const selectedTag = snapshot.selection.selected_node_ref.slice(active.group.id.length + 1)
         snapshot.selection.runtime_selected = running
-          ? snapshot.selection.selected_node_ref ||
-            `${snapshot.selection.active_group_id}/${snapshot.groups.find((item) => item.group.active)!.nodes[0]!.tag}`
+          ? `${active.group.runtime_tag}/${selectedTag || active.nodes[0]!.tag}`
           : ''
         service.runtime_selected = snapshot.selection.runtime_selected
         this.emit('status')
@@ -148,8 +153,8 @@ export class MockTransport implements ApiTransport {
           runtime_selected:
             service.state === 'ready'
               ? manual
-                ? reference
-                : `${group.group.id}/${group.nodes[0]!.tag}`
+                ? `${group.group.runtime_tag}/${body.node_tag}`
+                : `${group.group.runtime_tag}/${group.nodes[0]!.tag}`
               : '',
         }
         for (const item of snapshot.groups) item.group.active = item.group.id === group.group.id
@@ -168,7 +173,9 @@ export class MockTransport implements ApiTransport {
         return success('node.selected', {
           group_id: group.group.id,
           mode: snapshot.selection.selector_mode,
-          selected: snapshot.selection.selected,
+          selected: manual
+            ? `${group.group.runtime_tag}/${body.node_tag}`
+            : `Auto/${group.group.runtime_tag}`,
         })
       }
       case 'PUT /mode': {
@@ -182,8 +189,44 @@ export class MockTransport implements ApiTransport {
         this.emit('status')
         return success('mode.changed', {
           mode: body.mode,
-          runtime_mode: body.mode,
+          ...(service.state === 'ready' ? { runtime_mode: body.mode } : {}),
           available: service.available_outbound_modes,
+        })
+      }
+      case 'POST /nodes/delay': {
+        const parsed = z
+          .strictObject({ group_id: z.string().min(1), node_tag: z.string() })
+          .safeParse(request.body)
+        if (!parsed.success) return failure(400, 'usage.invalid')
+        const { group_id, node_tag } = parsed.data
+        const group = snapshot.groups.find((entry) => entry.group.id === group_id)
+        if (
+          !group ||
+          group.nodes.length === 0 ||
+          (node_tag !== '' && !group.nodes.some((node) => node.tag === node_tag))
+        )
+          return failure(500, 'command.failed')
+        const items = group.nodes
+          .filter((node) => node_tag === '' || node.tag === node_tag)
+          .map((node, index) => ({
+            tag: `${group.group.runtime_tag}/${node.tag}`,
+            type: node.protocol,
+            url_test_delay: 32 + index * 21,
+            url_test_time: Math.floor(Date.now() / 1000),
+          }))
+        return success('node.delay', {
+          target: node_tag
+            ? `${group.group.runtime_tag}/${node_tag}`
+            : `Auto/${group.group.runtime_tag}`,
+          groups: [
+            {
+              tag: `Auto/${group.group.runtime_tag}`,
+              type: node_tag ? '' : 'urltest',
+              selectable: false,
+              expanded: false,
+              items,
+            },
+          ],
         })
       }
       case 'GET /config':

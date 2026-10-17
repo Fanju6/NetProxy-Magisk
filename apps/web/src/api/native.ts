@@ -23,6 +23,21 @@ const eventSchema = z.object({
   body: z.unknown(),
 })
 const visibilitySchema = z.object({ visible: z.boolean() })
+const targetSchema = z.strictObject({
+  group_id: z
+    .string()
+    .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/)
+    .refine((id) => id !== 'staging' && !id.includes('..')),
+  node_tag: z.string(),
+})
+const modeBodySchema = z.strictObject({ mode: z.string().refine((mode) => mode.trim().length > 0) })
+const readResources: Readonly<Record<string, string>> = {
+  '/info': 'info',
+  '/service': 'service',
+  '/nodes/snapshot': 'nodes',
+  '/selection': 'selection',
+  '/mode': 'mode',
+}
 const failureSchema = z.object({
   code: z
     .string()
@@ -54,7 +69,18 @@ function bounded<T>(schema: z.ZodType<T>, value: unknown): T {
 
 export class NativeTransport implements ApiTransport {
   readonly kind = 'native' as const
-  readonly capabilities = ['info.read', 'service.read', 'service.start', 'service.stop'] as const
+  readonly capabilities = [
+    'info.read',
+    'service.read',
+    'service.start',
+    'service.stop',
+    'nodes.read',
+    'selection.read',
+    'selection.write',
+    'mode.read',
+    'mode.write',
+    'nodes.delay',
+  ] as const
   private releaseEvents: (() => void) | undefined
   private eventGeneration = 0
   private releaseVisibility: (() => void) | undefined
@@ -75,10 +101,39 @@ export class NativeTransport implements ApiTransport {
   }
 
   async request(request: ApiRequest, signal?: AbortSignal) {
-    const read = request.method === 'GET' && ['/info', '/service'].includes(request.path)
-    const action =
-      request.method === 'POST' && ['/service/start', '/service/stop'].includes(request.path)
-    if ((!read && !action) || request.body !== undefined || request.query !== undefined)
+    let operation: string
+    let args: Record<string, unknown>
+    const resource = Object.hasOwn(readResources, request.path)
+      ? readResources[request.path]
+      : undefined
+    if (request.method === 'GET' && resource && request.body === undefined) {
+      operation = 'read'
+      args = { resource }
+    } else if (
+      request.method === 'POST' &&
+      ['/service/start', '/service/stop'].includes(request.path) &&
+      request.body === undefined
+    ) {
+      operation = 'service_action'
+      args = { action: request.path.slice('/service/'.length) }
+    } else if (
+      (request.method === 'PUT' && request.path === '/selection') ||
+      (request.method === 'POST' && request.path === '/nodes/delay')
+    ) {
+      const parsed = targetSchema.safeParse(request.body)
+      if (!parsed.success)
+        throw new ApiError('client.operation_denied', 'Invalid native target', 403)
+      operation = request.path === '/selection' ? 'select_node' : 'test_delay'
+      args = { target: bounded(targetSchema, parsed.data) }
+    } else if (request.method === 'PUT' && request.path === '/mode') {
+      const parsed = modeBodySchema.safeParse(request.body)
+      if (!parsed.success) throw new ApiError('client.operation_denied', 'Invalid native mode', 403)
+      operation = 'change_mode'
+      args = bounded(modeBodySchema, parsed.data)
+    } else {
+      throw new ApiError('client.operation_denied', 'Native API resource is not allowed', 403)
+    }
+    if (request.query !== undefined)
       throw new ApiError('client.operation_denied', 'Native API resource is not allowed', 403)
     if (signal?.aborted) throw signal.reason
     const requestId = crypto.randomUUID()
@@ -98,12 +153,7 @@ export class NativeTransport implements ApiTransport {
         })
       signal?.addEventListener('abort', cancel, { once: true })
       window.addEventListener('pagehide', cancel, { once: true })
-      void this.call(
-        read ? 'read' : 'service_action',
-        read
-          ? { requestId, resource: request.path.slice(1) }
-          : { requestId, action: request.path.slice('/service/'.length) },
-      )
+      void this.call(operation, { requestId, ...args })
         .then((value) => {
           if (!settled) {
             const response = bounded(responseSchema, value)
