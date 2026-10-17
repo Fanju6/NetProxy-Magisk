@@ -234,8 +234,12 @@ function ApplicationPolicyForm({ content, change }: { content: string; change: C
                       <span className="min-w-0 flex-1">
                         <span className="block break-words font-medium">{app.label}</span>
                         <span className="block break-all text-xs text-muted-foreground">
-                          {app.package_name} · UID {app.uid}
-                          {app.system ? ` · ${copy.systemApp}` : ''}
+                          <span>{app.package_name}</span>
+                          <span>
+                            {' '}
+                            · UID {app.uid}
+                            {app.system ? ` · ${copy.systemApp}` : ''}
+                          </span>
                         </span>
                       </span>
                       <Check
