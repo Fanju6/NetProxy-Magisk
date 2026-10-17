@@ -91,22 +91,30 @@ export function NodesPage() {
           </ToggleGroupItem>
         </ToggleGroup>
       </div>
-      {selection.isUncertain && (
+      {(selection.isUncertain || selection.isUnconfirmed) && (
         <section
           role="status"
           className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-4 text-sm"
         >
           <div className="space-y-1">
             <p className="font-medium">
-              {t(routingOperation?.target.kind === 'mode' ? 'modeUncertain' : 'selectionUncertain')}
+              {t(
+                selection.isUnconfirmed
+                  ? 'routingUnconfirmed'
+                  : routingOperation?.target.kind === 'mode'
+                    ? 'modeUncertain'
+                    : 'selectionUncertain',
+              )}
             </p>
             <p className="text-muted-foreground">
               {t(
-                selection.persisted || mode.persisted
-                  ? 'persisted'
-                  : routingOperation?.target.kind === 'mode'
-                    ? 'modeUncertainDescription'
-                    : 'selectionUncertainDescription',
+                selection.isUnconfirmed
+                  ? 'routingUnconfirmedDescription'
+                  : selection.persisted || mode.persisted
+                    ? 'persisted'
+                    : routingOperation?.target.kind === 'mode'
+                      ? 'modeUncertainDescription'
+                      : 'selectionUncertainDescription',
               )}
             </p>
           </div>

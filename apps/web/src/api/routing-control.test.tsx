@@ -1,10 +1,11 @@
-import { act, cleanup, render, renderHook, waitFor } from '@testing-library/react'
+import { act, cleanup, render, renderHook, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiContext, PreferencesContext } from '@/app/context'
 import { translator } from '@/app/i18n'
 import { createFixtures } from '@/mocks/fixtures'
+import { NodesPage } from '@/features/nodes'
 import { ApiClient } from './client'
 import {
   ApiError,
@@ -15,8 +16,14 @@ import {
   type NodeSnapshot,
 } from './contracts'
 import { ModuleEvents } from './events'
-import { moduleQueries, useChangeMode, useNodeDelay, useSelectNode } from './queries'
-import { routingOperationKey, type RoutingOperation } from './routing-control'
+import {
+  moduleQueries,
+  useChangeMode,
+  useNodeDelay,
+  useSelectNode,
+  useServiceAction,
+} from './queries'
+import { observeRouting, routingOperationKey, type RoutingOperation } from './routing-control'
 
 type Response = Awaited<ReturnType<ApiTransport['request']>>
 const response = (data: unknown): Response => ({
@@ -115,6 +122,192 @@ function setup() {
 }
 
 describe('routing transactions', () => {
+  it('displays an unconfirmed result without disabling new node choices', async () => {
+    const h = setup()
+    h.cache.setQueryData<RoutingOperation>(routingOperationKey, {
+      epoch: 2,
+      target: { kind: 'selection', value: { group_id: 'demo-global', node_tag: 'Tokyo 01' } },
+      phase: 'unconfirmed',
+      deadline: Date.now() - 1,
+      responseReceived: true,
+      error: null,
+    })
+    render(<NodesPage />, { wrapper: h.Wrapper })
+    expect(await screen.findByText('Result could not be confirmed')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Check status' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Select Tokyo 01' })).toBeEnabled()
+    expect(h.writes).toHaveLength(0)
+  })
+  it.each(['selection', 'mode'] as const)(
+    'does not confirm a successful %s PUT from an old GET',
+    async (kind) => {
+      const h = setup()
+      const hook = renderHook(() => ({ selection: useSelectNode(), mode: useChangeMode() }), {
+        wrapper: h.Wrapper,
+      })
+      act(() =>
+        kind === 'selection'
+          ? hook.result.current.selection.mutate({ group_id: 'demo-global', node_tag: 'Tokyo 01' })
+          : hook.result.current.mode.mutate('Custom mode'),
+      )
+      await waitFor(() => expect(h.writes).toHaveLength(1))
+      await act(async () =>
+        h.writes[0]!.task.resolve(
+          response(
+            kind === 'selection'
+              ? { group_id: 'demo-global', mode: 'manual', selected: 'Global Connect/Tokyo 01' }
+              : { ...h.state, mode: 'Custom mode' },
+          ),
+        ),
+      )
+      await waitFor(() => expect(h.cache.isMutating()).toBe(0))
+      expect(hook.result.current[kind].isUncertain).toBe(true)
+      expect(h.cache.getQueryData<RoutingOperation>(routingOperationKey)?.responseReceived).toBe(
+        true,
+      )
+      // 后续读取只确认当前目标，不根据 PUT 的响应伪造缓存。
+      if (kind === 'selection') h.select()
+      else h.state.mode = 'Custom mode'
+      await act(async () => hook.result.current[kind].verify())
+      await waitFor(() => expect(hook.result.current[kind].isUncertain).toBe(false))
+      expect(h.writes).toHaveLength(1)
+    },
+  )
+  it.each(['success', 'lost', 'persisted'] as const)(
+    'bounds an unmatched %s result without claiming success or replaying a write',
+    async (result) => {
+      vi.useFakeTimers()
+      const h = setup()
+      const hook = renderHook(useChangeMode, { wrapper: h.Wrapper })
+      await act(async () => {
+        hook.result.current.mutate('Custom mode')
+        await vi.advanceTimersByTimeAsync(1)
+      })
+      expect(h.writes).toHaveLength(1)
+      await act(async () => {
+        if (result === 'lost')
+          h.writes[0]!.task.reject(new ApiError('api.connection_failed', 'fixture', 503))
+        else if (result === 'persisted')
+          h.writes[0]!.task.resolve({
+            status: 502,
+            body: {
+              schema: 1,
+              ok: false,
+              code: 'mode.runtime_sync_failed',
+              message: 'fixture',
+              data: { persisted: true },
+            },
+          })
+        else h.writes[0]!.task.resolve(response({ ...h.state, mode: 'Custom mode' }))
+      })
+      await act(async () => vi.advanceTimersByTimeAsync(1))
+      expect(h.cache.isMutating()).toBe(0)
+      const original = h.cache.getQueryData<RoutingOperation>(routingOperationKey)!
+      const originalError = original.error
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(150_001)
+      })
+      expect(h.cache.getQueryData<RoutingOperation>(routingOperationKey)).toMatchObject({
+        phase: 'unconfirmed',
+        error: originalError,
+      })
+      expect(hook.result.current.isPending || hook.result.current.isUncertain).toBe(false)
+      if (result === 'persisted') expect(hook.result.current.persisted).toBe(true)
+      act(() => observeRouting(h.cache, h.state))
+      expect(h.cache.getQueryData<RoutingOperation>(routingOperationKey)?.phase).toBe('unconfirmed')
+      // 迟到的匹配状态仍可核对，但不能因经过窗口而吞掉明确的业务错误。
+      act(() => observeRouting(h.cache, { ...h.state, mode: 'Custom mode' }))
+      expect(h.cache.getQueryData<RoutingOperation>(routingOperationKey)?.phase).toBe('idle')
+      expect(h.cache.getQueryData<RoutingOperation>(routingOperationKey)?.error).toBe(
+        result === 'persisted' ? originalError : null,
+      )
+      expect(h.writes).toHaveLength(1)
+    },
+  )
+  it('does not attribute another client changing the same resource to this write', async () => {
+    const h = setup()
+    const hook = renderHook(useChangeMode, { wrapper: h.Wrapper })
+    act(() => hook.result.current.mutate('Custom mode'))
+    await waitFor(() => expect(h.writes).toHaveLength(1))
+    // 外部客户端先写入另一个值，不能据此确认或回滚当前请求。
+    h.state.mode = 'External mode'
+    await act(async () => h.writes[0]!.task.resolve(response({ ...h.state, mode: 'Custom mode' })))
+    await waitFor(() => expect(h.cache.isMutating()).toBe(0))
+    expect(h.cache.getQueryData(['mode'])).toMatchObject({ mode: 'External mode' })
+    expect(hook.result.current.isUncertain).toBe(true)
+    expect(h.writes).toHaveLength(1)
+  })
+  it.each(['service', 'routing'] as const)(
+    'allows a new %s operation after an unconfirmed observation expires',
+    async (domain) => {
+      const h = setup()
+      h.cache.setQueryData<RoutingOperation>(routingOperationKey, {
+        epoch: 2,
+        target: { kind: 'mode', value: 'Custom mode' },
+        phase: 'uncertain',
+        deadline: Date.now() - 1,
+        responseReceived: true,
+        error: null,
+      })
+      const hook = renderHook(() => ({ service: useServiceAction(), routing: useChangeMode() }), {
+        wrapper: h.Wrapper,
+      })
+      act(() =>
+        domain === 'service'
+          ? hook.result.current.service.mutate('stop')
+          : hook.result.current.routing.mutate('Rule'),
+      )
+      await waitFor(() => expect(h.writes).toHaveLength(1))
+      expect(h.writes[0]!.request.path).toBe(domain === 'service' ? '/service/stop' : '/mode')
+    },
+  )
+  it.each(['service-first', 'routing-first'] as const)(
+    'admits only the first mutation in the same event loop: %s',
+    async (order) => {
+      const h = setup()
+      const hook = renderHook(() => ({ service: useServiceAction(), routing: useChangeMode() }), {
+        wrapper: h.Wrapper,
+      })
+      act(() => {
+        if (order === 'service-first') {
+          hook.result.current.service.mutate('stop')
+          hook.result.current.routing.mutate('Custom mode')
+        } else {
+          hook.result.current.routing.mutate('Custom mode')
+          hook.result.current.service.mutate('stop')
+        }
+      })
+      await waitFor(() => expect(h.writes.length).toBeGreaterThan(0))
+      expect(h.writes).toHaveLength(1)
+      expect(h.writes[0]!.request.path).toBe(order === 'service-first' ? '/service/stop' : '/mode')
+    },
+  )
+  it.each(['service', 'routing'] as const)(
+    'blocks the other domain while %s is awaiting confirmation',
+    async (domain) => {
+      const h = setup()
+      const hook = renderHook(() => ({ service: useServiceAction(), routing: useChangeMode() }), {
+        wrapper: h.Wrapper,
+      })
+      act(() =>
+        domain === 'service'
+          ? hook.result.current.service.mutate('stop')
+          : hook.result.current.routing.mutate('Custom mode'),
+      )
+      await waitFor(() => expect(h.writes).toHaveLength(1))
+      await act(async () =>
+        h.writes[0]!.task.reject(new ApiError('api.connection_failed', 'fixture', 503)),
+      )
+      await waitFor(() => expect(h.cache.isMutating()).toBe(0))
+      expect(hook.result.current[domain].isUncertain).toBe(true)
+      act(() =>
+        domain === 'service'
+          ? hook.result.current.routing.mutate('Custom mode')
+          : hook.result.current.service.mutate('stop'),
+      )
+      expect(h.writes).toHaveLength(1)
+    },
+  )
   it('does not claim live when the core changed during authoritative resource verification', async () => {
     const h = setup()
     h.cache.setQueryData<RoutingOperation>(routingOperationKey, {
@@ -465,7 +658,7 @@ describe('delay queries', () => {
           {
             tag: 'Global Connect/Tokyo 01',
             type: 'trojan',
-            url_test_time: 1792065600000,
+            url_test_time: 1792065600,
             url_test_delay: delay,
           },
         ],

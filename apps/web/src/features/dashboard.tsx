@@ -259,22 +259,26 @@ export function DashboardPage() {
               runtimeMode !== defaultMode &&
               !mode.persisted && <p>{t('modePolicyDifference')}</p>}
           </div>
-          {mode.isUncertain && (
+          {(mode.isUncertain || mode.isUnconfirmed) && (
             <section role="status" className="space-y-3 rounded-md border p-4 text-sm">
               <p className="font-medium">
                 {t(
-                  routingOperation?.target.kind === 'selection'
-                    ? 'selectionUncertain'
-                    : 'modeUncertain',
+                  mode.isUnconfirmed
+                    ? 'routingUnconfirmed'
+                    : routingOperation?.target.kind === 'selection'
+                      ? 'selectionUncertain'
+                      : 'modeUncertain',
                 )}
               </p>
               <p className="text-muted-foreground">
                 {t(
-                  mode.persisted || selection.persisted
-                    ? 'persisted'
-                    : routingOperation?.target.kind === 'selection'
-                      ? 'selectionUncertainDescription'
-                      : 'modeUncertainDescription',
+                  mode.isUnconfirmed
+                    ? 'routingUnconfirmedDescription'
+                    : mode.persisted || selection.persisted
+                      ? 'persisted'
+                      : routingOperation?.target.kind === 'selection'
+                        ? 'selectionUncertainDescription'
+                        : 'modeUncertainDescription',
                 )}
               </p>
               <Button

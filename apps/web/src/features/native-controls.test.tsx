@@ -142,6 +142,14 @@ it('permits native node and delay controls without enabling subscription or conf
   await act(() => fixture.router.navigate({ to: '/nodes' }))
   const manual = await screen.findByRole('button', { name: 'Select Tokyo 01' })
   await waitFor(() => expect(manual).toBeEnabled())
+  const measured = within(manual).getByText('68 ms')
+  const upstreamSeconds = 1792065600
+  expect(new Date(upstreamSeconds * 1000).getFullYear()).toBe(2026)
+  expect(measured).toHaveAttribute(
+    'title',
+    `Last result: ${new Date(upstreamSeconds * 1000).toLocaleString()}`,
+  )
+  expect(measured.title).not.toContain('Invalid Date')
   fireEvent.click(manual)
   await waitFor(() => expect(manual).toHaveAttribute('aria-pressed', 'true'))
   await waitFor(() => expect(manual).toBeEnabled())

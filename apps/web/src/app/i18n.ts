@@ -53,6 +53,9 @@ export const en = {
   runtimeUnknown: 'Not confirmed',
   modePolicyDifference: 'Network policy may use a different runtime mode.',
   modeUncertain: 'Mode change awaiting confirmation',
+  routingUnconfirmed: 'Result could not be confirmed',
+  routingUnconfirmedDescription:
+    'The observation window ended without a matching state. Current data may reflect another change. Check again or make a new request; the previous request will not be resent.',
   modeUncertainDescription: 'Check the saved and runtime modes before making another change.',
   Rule: 'Rule',
   Proxy: 'Proxy',
@@ -223,6 +226,9 @@ export const zh: Record<MessageKey, string> = {
   runtimeUnknown: '尚未确认',
   modePolicyDifference: '网络策略可能使用不同的运行时模式。',
   modeUncertain: '模式切换结果待确认',
+  routingUnconfirmed: '结果仍无法确认',
+  routingUnconfirmedDescription:
+    '观察窗口已结束，尚未读到目标状态，当前数据也可能来自其他修改。可以再次核对或执行新操作，不会自动重发上次请求。',
   modeUncertainDescription: '请先核对默认模式与运行时模式，再进行修改。',
   Rule: '规则',
   Proxy: '代理',

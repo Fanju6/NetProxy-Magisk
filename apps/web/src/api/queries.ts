@@ -26,6 +26,7 @@ import type { NodeTarget } from './contracts'
 import {
   observeRouting,
   routingEpoch,
+  routingBusy,
   routingOperationKey,
   useRoutingOperation,
   type RoutingOperation,
@@ -190,7 +191,7 @@ export function useServiceAction() {
   return {
     mutate: (action: ServiceAction) => {
       const current = cache.getQueryData<ServiceOperation | null>(serviceOperationKey)
-      if (current && current.phase !== 'idle') return
+      if ((current && current.phase !== 'idle') || routingBusy(cache)) return
       if (!api.supports(`service.${action}`)) return
       const epoch = serviceEpoch(cache) + 1
       cache.setQueryData<ServiceOperation>(serviceOperationKey, {
@@ -304,10 +305,9 @@ function useRoutingAction(kind: 'selection' | 'mode') {
   })
   return {
     mutate: (target: RoutingOperation['target']) => {
-      const current = cache.getQueryData<RoutingOperation>(routingOperationKey)
       const service = cache.getQueryData<ServiceOperation>(serviceOperationKey)
       if (
-        (current && current.phase !== 'idle') ||
+        routingBusy(cache) ||
         (service && service.phase !== 'idle') ||
         !api.supports(`${target.kind}.write`)
       )
@@ -326,6 +326,7 @@ function useRoutingAction(kind: 'selection' | 'mode') {
     },
     isPending: operation?.phase === 'pending',
     isUncertain: operation?.phase === 'uncertain',
+    isUnconfirmed: operation?.phase === 'unconfirmed',
     error: operation?.target.kind === kind ? operation.error : null,
     persisted:
       operation?.target.kind === kind &&

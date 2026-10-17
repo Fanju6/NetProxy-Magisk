@@ -152,3 +152,25 @@ Secret、证书指纹和私有交付资料不进入 JS；没有新增 Root、She
 - [V9 Android Shell CI](https://github.com/Fanju6/NetProxy-Magisk/actions/runs/38988000234)：成功，耗时 5 分 20 秒，Rust、Kotlin、Lint、隔离 arm64 APK、身份/签名及锁文件检查通过。
 
 远端验证不读取正式签名 Secrets；上传的隔离 Debug APK 不是正式版或同包覆盖验收替代品。
+
+## M4.2 审查收尾（2026-10-17）
+
+本轮仅修改 V9 Web 查询、交互提示和回归测试；Go、V8、Native IPC 枚举及 Capability
+与基线 `164c987ba9bc88c2b9c7fa9c39e17fb71b989348` 相同，没有新增业务 API。
+
+- 先新增失败测试，在基线上复现 7 项失败，再修复收到 PUT 响应或观察窗口结束即确认的错误。
+  只有权威读取匹配目标才结束待确认；窗口结束保留 `unconfirmed` 提示和原始错误，解除互斥，
+  允许主动复核或新操作。没有轮询、自动重发、乐观回滚或新的全局状态框架。
+- 新增服务与路由双向准入检查，覆盖同一事件循环的两种调用顺序，以及 pending、uncertain
+  和窗口结束后的行为。Kotlin 共享写入槽不变。
+- 保留明确拒绝与 persisted 失败的原始错误；分别覆盖响应丢失后匹配、持续不匹配、迟到匹配
+  和其他客户端修改。Go 没有操作 ID，目标匹配只证明当前状态吻合，不证明某次请求的执行归属。
+- 内核 `StartedService` 从 `history.Time.Unix()` 输出 `url_test_time`。将误用毫秒的夹具
+  改为秒，实际节点页面验证准确的 2026 年日期，而不只检查是否出现 Invalid Date。
+
+本轮本地检查：`pnpm check`（221 项 Vitest）、`pnpm test:e2e`（12 项）、三种 Web
+生产构建、Rust fmt/test（4 项）/clippy、Kotlin 单测与 Lint、隔离 arm64 Debug APK、
+`sh tests/verify.sh quick webui`、V8 `app:testDebugUnitTest app:lintDebug platform:test`
+及 `git diff --check`。Kotlin 测试另以任务级 `--rerun` 强制执行，V8 平台 18 项复用缓存。
+Windows 权限位、flock 与真实 sing-box 相关检查仍有平台跳过，本轮没有新增真机故障注入，
+不将 Mock 或 JVM 测试视为真实网络并发验收。远端两条 CI 结果随修复提交交付。
