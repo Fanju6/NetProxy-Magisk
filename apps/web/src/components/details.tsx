@@ -203,7 +203,7 @@ export function Details({
           <DrawerContent
             id={id}
             data-panel
-            className="max-h-[88dvh] pb-[env(safe-area-inset-bottom)]"
+            className="editor-drawer max-h-[88dvh] pb-[env(safe-area-inset-bottom)]"
           >
             <DrawerHeader className="text-left">
               <DrawerTitle>{title}</DrawerTitle>
@@ -229,7 +229,7 @@ export function Details({
           className={
             full
               ? 'editor-panel gap-0 data-[side=right]:w-full sm:data-[side=right]:max-w-none md:data-[side=right]:w-[min(56rem,calc(100%-216px))]'
-              : 'gap-0 data-[side=right]:w-full sm:data-[side=right]:max-w-xl'
+              : 'editor-panel gap-0 data-[side=right]:w-full sm:data-[side=right]:max-w-xl'
           }
         >
           <SheetHeader className="shrink-0 border-b pb-3 pt-[max(12px,env(safe-area-inset-top))]">

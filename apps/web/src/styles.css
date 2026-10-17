@@ -339,8 +339,13 @@ select {
   background: var(--muted);
 }
 .editor-panel {
-  height: 100dvh;
-  max-height: 100dvh;
+  top: var(--keyboard-viewport-top, 0px);
+  height: var(--keyboard-viewport-height, 100dvh);
+  max-height: var(--keyboard-viewport-height, 100dvh);
+}
+[data-keyboard-open] .editor-drawer {
+  bottom: var(--keyboard-inset);
+  max-height: calc(var(--keyboard-viewport-height) * 0.88);
 }
 .editor-body {
   display: flex;
@@ -364,7 +369,7 @@ select {
   z-index: 10;
 }
 [data-keyboard-open] .panel-inline-actions {
-  bottom: 0;
+  bottom: var(--keyboard-inset, 0px);
 }
 @media (min-width: 768px) {
   .panel-inline-actions {

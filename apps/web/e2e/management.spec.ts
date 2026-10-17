@@ -1,5 +1,51 @@
 import { expect, test } from '@playwright/test'
 
+test('editor actions remain above a keyboard that only resizes the visual viewport', async ({
+  page,
+}) => {
+  await page.goto('/#/settings/configuration')
+  await page.getByRole('button', { name: /开机启动 module\/auto_start/ }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.locator('.cm-content').click()
+  const height = 420
+  await page.evaluate((height) => {
+    Object.defineProperty(window.visualViewport, 'height', { configurable: true, value: height })
+    window.visualViewport?.dispatchEvent(new Event('resize'))
+  }, height)
+  await expect(page.locator('html')).toHaveAttribute('data-keyboard-open')
+  const footer = dialog.locator('[data-slot="sheet-footer"]')
+  await expect
+    .poll(async () => (await footer.boundingBox())!.y + (await footer.boundingBox())!.height)
+    .toBeLessThanOrEqual(height + 1)
+  await expect(dialog.getByRole('button', { name: '保存', exact: true })).toBeInViewport()
+  await page.evaluate(() => {
+    Object.defineProperty(window.visualViewport, 'height', {
+      configurable: true,
+      value: window.innerHeight,
+    })
+    window.visualViewport?.dispatchEvent(new Event('resize'))
+  })
+  await expect(page.locator('html')).not.toHaveAttribute('data-keyboard-open')
+  await expect.poll(async () => (await dialog.boundingBox())!.height).toBeGreaterThan(height)
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.goto('/#/nodes')
+  await page.getByRole('button', { name: '添加节点', exact: true }).click()
+  await page.getByRole('menuitem', { name: '导入文本', exact: true }).click()
+  await dialog.getByRole('textbox', { name: '节点内容', exact: true }).focus()
+  await page.evaluate((height) => {
+    Object.defineProperty(window.visualViewport, 'height', { configurable: true, value: height })
+    window.visualViewport?.dispatchEvent(new Event('resize'))
+  }, height)
+  await expect(page.locator('html')).toHaveAttribute('data-keyboard-open')
+  const actions = dialog.locator('[data-slot="drawer-footer"], [data-slot="sheet-footer"]')
+  await expect
+    .poll(async () => {
+      const bounds = (await actions.boundingBox())!
+      return bounds.y + bounds.height
+    })
+    .toBeLessThanOrEqual(height + 1)
+})
+
 test('configuration JSON validation and local rule editing use real-shaped revisions', async ({
   page,
 }) => {

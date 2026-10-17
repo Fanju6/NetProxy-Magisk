@@ -54,21 +54,38 @@ export function AppShell() {
       const editing = document.activeElement?.matches('input, textarea, [contenteditable="true"]')
       const height = window.visualViewport?.height ?? window.innerHeight
       if (!editing) baseline = Math.max(height, window.innerHeight)
-      document.documentElement.toggleAttribute(
-        'data-keyboard-open',
-        Boolean(editing && baseline - height > 120),
-      )
+      const keyboard = Boolean(editing && baseline - height > 120)
+      const root = document.documentElement
+      root.toggleAttribute('data-keyboard-open', keyboard)
+      // Android WebView can shrink only the visual viewport, leaving dvh behind the IME.
+      const top = window.visualViewport?.offsetTop ?? 0
+      for (const [name, value] of Object.entries({
+        '--keyboard-viewport-height': height,
+        '--keyboard-viewport-top': top,
+        '--keyboard-inset': Math.max(0, window.innerHeight - height - top),
+      })) {
+        if (keyboard) root.style.setProperty(name, `${value}px`)
+        else root.style.removeProperty(name)
+      }
     }
     window.visualViewport?.addEventListener('resize', update)
+    window.visualViewport?.addEventListener('scroll', update)
     window.addEventListener('resize', update)
     document.addEventListener('focusin', update)
     document.addEventListener('focusout', update)
     return () => {
       window.visualViewport?.removeEventListener('resize', update)
+      window.visualViewport?.removeEventListener('scroll', update)
       window.removeEventListener('resize', update)
       document.removeEventListener('focusin', update)
       document.removeEventListener('focusout', update)
       document.documentElement.removeAttribute('data-keyboard-open')
+      for (const name of [
+        '--keyboard-viewport-height',
+        '--keyboard-viewport-top',
+        '--keyboard-inset',
+      ])
+        document.documentElement.style.removeProperty(name)
     }
   }, [])
 
