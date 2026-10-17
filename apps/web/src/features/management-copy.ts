@@ -77,6 +77,7 @@ const en = {
   wifiWhitelistHint: 'Only listed Wi-Fi networks use the saved outbound mode.',
   unavailable: 'This operation is not available for this connection.',
   selected: 'Selected',
+  systemApp: 'System app',
   more: 'Show more',
 } as const
 type Key = keyof typeof en
@@ -153,6 +154,7 @@ const zh: Record<Key, string> = {
   wifiWhitelistHint: '仅名单内的 Wi-Fi 使用默认出站模式。',
   unavailable: '当前连接未开放此操作。',
   selected: '已选择',
+  systemApp: '系统应用',
   more: '显示更多',
 }
 export function useManagementCopy() {

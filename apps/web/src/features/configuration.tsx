@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { z } from 'zod'
-import { useSearch } from '@tanstack/react-router'
+import { Link, useSearch } from '@tanstack/react-router'
 import { Braces, FileJson, Plus, RefreshCw } from 'lucide-react'
 import { useApi, usePreferences } from '@/app/context'
 import { ApiError } from '@/api/contracts'
@@ -515,6 +515,15 @@ export function ConfigurationPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-end gap-3">
+        {section === 'core' && (
+          <Link
+            to="/settings/configuration"
+            search={{ section: 'all' }}
+            className="mr-auto flex min-h-12 items-center text-sm text-muted-foreground underline underline-offset-4"
+          >
+            {text('全部配置文件', 'All configuration files')}
+          </Link>
+        )}
         <Button
           variant="ghost"
           size="icon"

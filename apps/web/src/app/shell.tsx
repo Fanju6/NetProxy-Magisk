@@ -27,7 +27,13 @@ export function AppShell() {
   const section = 'section' in location.search ? location.search.section : undefined
   const title =
     pathname === '/settings/configuration'
-      ? t(section === 'rules' ? 'routes' : 'kernel')
+      ? t(
+          section === 'rules'
+            ? 'routes'
+            : section === 'core'
+              ? 'kernel'
+              : 'configurationManagement',
+        )
       : pathname === '/settings/policies'
         ? t(
             section === 'wifi'

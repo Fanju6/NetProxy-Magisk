@@ -33,6 +33,11 @@ test('one compact title and owned navigation across primary and settings pages',
   )
   await page.locator('header').getByRole('button', { name: '返回', exact: true }).click()
   await expect(page.locator('header h1')).toHaveText('设置')
+  await page.getByRole('link', { name: '内核配置', exact: true }).click()
+  await page.getByRole('link', { name: '全部配置文件', exact: true }).click()
+  await expect(page.locator('header h1')).toHaveText('配置管理')
+  await expect(page.getByRole('button', { name: /模块设置 module$/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /完整入站配置 inbound$/ })).toBeVisible()
 })
 
 test('full JSON editor guards drafts and browser back closes the editor before its page', async ({
