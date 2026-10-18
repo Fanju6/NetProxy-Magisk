@@ -1,13 +1,30 @@
 import { useEffect, useState } from 'react'
 import { z } from 'zod'
-import { RefreshCw, Download, Trash2, Stethoscope } from 'lucide-react'
+import { RefreshCw, Download, Ellipsis, Trash2, Stethoscope, ListFilter } from 'lucide-react'
+import { Details } from '@/components/details'
 import { useApi, usePreferences } from '@/app/context'
 import { useManagementAction } from '@/api/management'
 import { serviceSchema, type ApiRequest } from '@/api/contracts'
-import { Details } from '@/components/details'
 import { Choice } from '@/components/choice'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { ErrorState, LoadingState } from '@/components/states'
 
 const logsSchema = z.object({
@@ -38,6 +55,7 @@ export function OperationsPage() {
   const [filter, setFilter] = useState('')
   const [level, setLevel] = useState('all')
   const [view, setView] = useState<'entries' | 'raw'>('entries')
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [refresh, setRefresh] = useState(0)
   const [diagnostic, setDiagnostic] = useState<string>()
   const [notice, setNotice] = useState('')
@@ -139,18 +157,26 @@ export function OperationsPage() {
           : entry.raw.toUpperCase().includes(level))) &&
       entry.raw.toLocaleLowerCase().includes(filter.toLocaleLowerCase()),
   )
-  const tools = (
-    <details className="border-t pt-2">
-      <summary className="min-h-11 cursor-pointer py-3 text-sm font-medium">
-        {text('工具', 'Tools')}
-      </summary>
-      <div className="space-y-4 py-2">
-        <h2 className="section-label">{text('服务维护', 'Service maintenance')}</h2>
-        <div className="flex flex-wrap gap-2">
+  const options = (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-11 shrink-0"
+            aria-label={text('日志选项', 'Log options')}
+          />
+        }
+      >
+        <Ellipsis />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-56">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>{text('服务维护', 'Service maintenance')}</DropdownMenuLabel>
           {(['restart', 'reload', 'check'] as const).map((value) => (
-            <Button
+            <DropdownMenuItem
               key={value}
-              variant="outline"
               disabled={action.pending || !api.supports(`service.${value}`)}
               onClick={() => (value === 'check' ? void service(value) : setConfirm(value))}
             >
@@ -159,30 +185,38 @@ export function OperationsPage() {
                 : value === 'reload'
                   ? text('重载服务', 'Reload')
                   : text('检查配置', 'Check configuration')}
-            </Button>
+            </DropdownMenuItem>
           ))}
-        </div>
-        <h2 className="section-label">{text('诊断', 'Diagnostics')}</h2>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>{text('诊断', 'Diagnostics')}</DropdownMenuLabel>
+          <DropdownMenuItem
             disabled={action.pending || !api.supports('diagnostics.ebpf')}
             onClick={() => void probe()}
           >
             <Stethoscope />
             {text('eBPF 能力检查', 'eBPF capabilities')}
-          </Button>
-          <Button
-            variant="outline"
+          </DropdownMenuItem>
+          <DropdownMenuItem
             disabled={action.pending || !api.supports('diagnostics.export')}
             onClick={() => void exportDiagnostics()}
           >
             <Download />
             {text('导出诊断包', 'Export diagnostics')}
-          </Button>
-        </div>
-      </div>
-    </details>
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          variant="destructive"
+          disabled={action.pending || !api.supports('logs.clear')}
+          onClick={() => setConfirm('clear')}
+        >
+          <Trash2 />
+          {text('清空', 'Clear')}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
   const feedback = (
     <div className="space-y-3">
@@ -193,7 +227,7 @@ export function OperationsPage() {
       )}
       {action.error != null && <ErrorState compact error={action.error} />}
       {diagnostic !== undefined && (
-        <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md border p-3 text-xs">
+        <pre className="max-h-80 overflow-auto overscroll-contain whitespace-pre-wrap break-words rounded-md border p-4 font-mono text-xs leading-5">
           {diagnostic}
         </pre>
       )}
@@ -202,7 +236,7 @@ export function OperationsPage() {
   return (
     <div className="max-w-5xl space-y-5">
       <section className="min-w-0 space-y-3" aria-label={text('日志', 'Logs')}>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <Choice
             label={text('日志', 'Logs')}
             value={kind}
@@ -217,28 +251,17 @@ export function OperationsPage() {
               }
             }}
           />
-          <Choice
-            label={text('显示方式', 'Log view')}
-            value={view}
-            items={[
-              { value: 'entries', label: text('条目', 'Entries') },
-              { value: 'raw', label: text('原始', 'Raw') },
-            ]}
-            onChange={(value) => {
-              if (value === 'entries' || value === 'raw') setView(value)
-            }}
-          />
-          <Choice
-            label={text('级别', 'Level')}
-            value={level}
-            items={['all', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL'].map((value) => ({
-              value,
-              label: value === 'all' ? text('全部级别', 'All levels') : value,
-            }))}
-            onChange={setLevel}
-          />
+          <div className="flex-1" />
           <Button
-            variant="outline"
+            variant="ghost"
+            size="icon"
+            aria-label={text('筛选选项', 'Filter options')}
+            onClick={() => setFiltersOpen(true)}
+          >
+            <ListFilter />
+          </Button>
+          <Button
+            variant="ghost"
             size="icon"
             className="size-11 shrink-0"
             aria-label={text('刷新日志', 'Refresh logs')}
@@ -246,15 +269,7 @@ export function OperationsPage() {
           >
             <RefreshCw />
           </Button>
-          <Button
-            variant="outline"
-            className="min-h-11"
-            disabled={action.pending || !api.supports('logs.clear')}
-            onClick={() => setConfirm('clear')}
-          >
-            <Trash2 />
-            {text('清空', 'Clear')}
-          </Button>
+          {options}
         </div>
         <Input
           type="search"
@@ -270,7 +285,7 @@ export function OperationsPage() {
           <ErrorState error={error} retry={reload} />
         ) : (
           <div
-            className="min-h-48 max-h-[55dvh] overflow-auto overscroll-contain"
+            className="min-h-64 max-h-[60dvh] overflow-auto overscroll-contain border-y"
             tabIndex={0}
             aria-label={text('日志内容', 'Log content')}
           >
@@ -279,7 +294,7 @@ export function OperationsPage() {
                 {text('暂无日志内容', 'No log entries')}
               </p>
             ) : view === 'raw' ? (
-              <pre className="whitespace-pre font-mono text-xs leading-5">
+              <pre className="whitespace-pre py-3 font-mono text-xs leading-5">
                 {visible.map((entry) => entry.raw).join('\n')}
               </pre>
             ) : (
@@ -314,39 +329,87 @@ export function OperationsPage() {
           </div>
         )}
       </section>
-      {tools}
       {feedback}
       <Details
+        open={filtersOpen}
+        onOpenChange={setFiltersOpen}
+        title={text('筛选选项', 'Filter options')}
+      >
+        <div className="settings-group">
+          <div className="setting-row">
+            <span>{text('显示方式', 'Log view')}</span>
+            <Choice
+              variant="ghost"
+              label={text('显示方式', 'Log view')}
+              value={view}
+              items={[
+                { value: 'entries', label: text('条目', 'Entries') },
+                { value: 'raw', label: text('原始', 'Raw') },
+              ]}
+              onChange={(value) => {
+                if (value === 'entries' || value === 'raw') setView(value)
+              }}
+            />
+          </div>
+          <div className="setting-row">
+            <span>{text('级别', 'Level')}</span>
+            <Choice
+              variant="ghost"
+              label={text('级别', 'Level')}
+              value={level}
+              onChange={setLevel}
+              items={['all', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL'].map((value) => ({
+                value,
+                label: value === 'all' ? text('全部级别', 'All levels') : value,
+              }))}
+            />
+          </div>
+        </div>
+      </Details>
+      <Dialog
         open={confirm !== undefined}
         onOpenChange={(open) => {
           if (!open) setConfirm(undefined)
         }}
-        title={text('确认操作', 'Confirm operation')}
-        description={
-          confirm === 'clear'
-            ? text('清空当前日志，无法撤销。', 'Clear the selected log. This cannot be undone.')
-            : text('操作可能短暂中断代理连接。', 'Proxy connections may be interrupted briefly.')
-        }
       >
-        <Button
-          disabled={action.pending}
-          onClick={() => {
-            const target = confirm
-            setConfirm(undefined)
-            if (target === 'clear')
-              void action
-                .run(
-                  { method: 'DELETE', path: '/logs', query: { kind } } satisfies ApiRequest,
-                  z.object({ kind: z.literal(kind) }),
-                )
-                .then(reload)
-                .catch(() => {})
-            else if (target) void service(target)
-          }}
-        >
-          {text('确认', 'Confirm')}
-        </Button>
-      </Details>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>{text('确认操作', 'Confirm operation')}</DialogTitle>
+            <DialogDescription>
+              {confirm === 'clear'
+                ? text('清空当前日志，无法撤销。', 'Clear the selected log. This cannot be undone.')
+                : text(
+                    '操作可能短暂中断代理连接。',
+                    'Proxy connections may be interrupted briefly.',
+                  )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirm(undefined)}>
+              {text('取消', 'Cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={action.pending}
+              onClick={() => {
+                const target = confirm
+                setConfirm(undefined)
+                if (target === 'clear')
+                  void action
+                    .run(
+                      { method: 'DELETE', path: '/logs', query: { kind } } satisfies ApiRequest,
+                      z.object({ kind: z.literal(kind) }),
+                    )
+                    .then(reload)
+                    .catch(() => {})
+                else if (target) void service(target)
+              }}
+            >
+              {text('确认', 'Confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

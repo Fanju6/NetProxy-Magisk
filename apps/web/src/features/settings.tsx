@@ -86,127 +86,139 @@ export function SettingsPage() {
     },
   ]
   return (
-    <div className="max-w-3xl space-y-7">
-      <section aria-labelledby="general-title" className="space-y-1">
+    <div className="max-w-3xl space-y-5">
+      <section aria-labelledby="general-title">
         <h2 id="general-title" className="section-label">
           {t('general')}
         </h2>
-        {!api.supports('config.read') ? (
-          <p className="py-4 text-sm text-muted-foreground">{t('readOnlyNotice')}</p>
-        ) : config.isError ? (
-          <ErrorState compact error={config.error} retry={() => void config.refetch()} />
-        ) : (
+        <div className="settings-group">
+          {!api.supports('config.read') ? (
+            <p className="px-4 py-4 text-sm text-muted-foreground">{t('readOnlyNotice')}</p>
+          ) : config.isError ? (
+            <ErrorState compact error={config.error} retry={() => void config.refetch()} />
+          ) : (
+            <div className="setting-row">
+              <label htmlFor="auto-start">{t('autoStart')}</label>
+              {config.isPending ? (
+                <Skeleton className="h-5 w-8" />
+              ) : (
+                <Switch
+                  id="auto-start"
+                  checked={config.data.value}
+                  disabled={!api.supports('config.write') || save.isPending || management.pending}
+                  onCheckedChange={(value) => save.mutate(value)}
+                />
+              )}
+            </div>
+          )}
+          {save.isError && <ErrorState compact error={save.error} />}
           <div className="setting-row">
-            <label htmlFor="auto-start">{t('autoStart')}</label>
-            {config.isPending ? (
-              <Skeleton className="h-5 w-8" />
-            ) : (
-              <Switch
-                id="auto-start"
-                checked={config.data.value}
-                disabled={!api.supports('config.write') || save.isPending || management.pending}
-                onCheckedChange={(value) => save.mutate(value)}
-              />
-            )}
+            <p>{t('theme')}</p>
+            <Choice
+              variant="ghost"
+              label={t('theme')}
+              value={preferences.theme}
+              items={(['system', 'light', 'dark'] as const).map((value) => ({
+                value,
+                label: t(value),
+              }))}
+              onChange={(value) => {
+                if (value === 'system' || value === 'light' || value === 'dark')
+                  update({ theme: value })
+              }}
+            />
           </div>
-        )}
-        {save.isError && <ErrorState compact error={save.error} />}
-        <div className="setting-row">
-          <p>{t('theme')}</p>
-          <Choice
-            label={t('theme')}
-            value={preferences.theme}
-            items={(['system', 'light', 'dark'] as const).map((value) => ({
-              value,
-              label: t(value),
-            }))}
-            onChange={(value) => {
-              if (value === 'system' || value === 'light' || value === 'dark')
-                update({ theme: value })
-            }}
-          />
-        </div>
-        <div className="setting-row">
-          <p>{t('language')}</p>
-          <Choice
-            label={t('language')}
-            value={preferences.locale}
-            items={[
-              { value: 'zh', label: t('chinese') },
-              { value: 'en', label: t('english') },
-            ]}
-            onChange={(value) => {
-              if (value === 'zh' || value === 'en') update({ locale: value })
-            }}
-          />
+          <div className="setting-row">
+            <p>{t('language')}</p>
+            <Choice
+              variant="ghost"
+              label={t('language')}
+              value={preferences.locale}
+              items={[
+                { value: 'zh', label: t('chinese') },
+                { value: 'en', label: t('english') },
+              ]}
+              onChange={(value) => {
+                if (value === 'zh' || value === 'en') update({ locale: value })
+              }}
+            />
+          </div>
         </div>
       </section>
-      <section aria-labelledby="policies-title" className="space-y-1">
+      <section aria-labelledby="policies-title">
         <h2 id="policies-title" className="section-label">
           {text('代理与网络', 'Proxy & network')}
         </h2>
-        {policies.map((item) => (
-          <Link
-            to="/settings/policies"
-            search={{ section: item.section }}
-            key={item.section}
-            className="setting-row"
-          >
-            <span className="flex min-w-0 items-center gap-3">
-              <item.icon className="size-4 shrink-0 text-muted-foreground" />
-              <span className="break-words">{item.title}</span>
-            </span>
-            <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-          </Link>
-        ))}
+        <div className="settings-group">
+          {policies.map((item) => (
+            <Link
+              to="/settings/policies"
+              search={{ section: item.section }}
+              key={item.section}
+              className="setting-row"
+            >
+              <span className="flex min-w-0 items-center gap-3">
+                <item.icon className="size-4 shrink-0 text-muted-foreground" />
+                <span className="break-words">{item.title}</span>
+              </span>
+              <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+            </Link>
+          ))}
+        </div>
       </section>
-      <section aria-labelledby="advanced-title" className="space-y-1">
+      <section aria-labelledby="advanced-title">
         <h2 id="advanced-title" className="section-label">
           {text('高级', 'Advanced')}
         </h2>
-        {advanced.map((item) => (
-          <Link
-            to="/settings/configuration"
-            search={{ section: item.section }}
-            key={item.section}
-            className="setting-row"
-          >
+        <div className="settings-group">
+          {advanced.map((item) => (
+            <Link
+              to="/settings/configuration"
+              search={{ section: item.section }}
+              key={item.section}
+              className="setting-row"
+            >
+              <span className="flex min-w-0 items-center gap-3">
+                <item.icon className="size-4 shrink-0 text-muted-foreground" />
+                <span className="break-words">{item.title}</span>
+              </span>
+              <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+            </Link>
+          ))}
+          <Link to="/settings/logs" className="setting-row">
             <span className="flex min-w-0 items-center gap-3">
-              <item.icon className="size-4 shrink-0 text-muted-foreground" />
-              <span className="break-words">{item.title}</span>
+              <FileText className="size-4 shrink-0 text-muted-foreground" />
+              {t('logs')}
             </span>
             <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
           </Link>
-        ))}
-        <Link to="/settings/logs" className="setting-row">
-          <span className="flex min-w-0 items-center gap-3">
-            <FileText className="size-4 shrink-0 text-muted-foreground" />
-            {t('logs')}
-          </span>
-          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-        </Link>
+        </div>
       </section>
-      <section aria-labelledby="about-title" className="space-y-3">
+      <section aria-labelledby="about-title">
         <h2 id="about-title" className="section-label">
           {t('about')}
         </h2>
-        <p className="font-medium">NetProxy V9</p>
-        {info.data && (
-          <p className="text-sm text-muted-foreground">
-            {t('version')} {info.data.version} ({info.data.version_code})
-          </p>
-        )}
-        {info.isError && (
-          <ErrorState compact error={info.error} retry={() => void info.refetch()} />
-        )}
-        <a
-          href="https://github.com/Fanju6/NetProxy-Magisk"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-sm underline underline-offset-4"
-        >
-          GitHub <ArrowUpRight className="size-3" />
-        </a>
+        <div className="settings-group">
+          <div className="setting-row">
+            <p className="font-medium">NetProxy V9</p>
+            {info.data && (
+              <p className="min-w-0 break-words text-right text-sm text-muted-foreground">
+                {t('version')} {info.data.version} ({info.data.version_code})
+              </p>
+            )}
+          </div>
+          {info.isError && (
+            <ErrorState compact error={info.error} retry={() => void info.refetch()} />
+          )}
+          <a
+            href="https://github.com/Fanju6/NetProxy-Magisk"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="setting-row"
+          >
+            GitHub <ArrowUpRight className="size-4 shrink-0 text-muted-foreground" />
+          </a>
+        </div>
       </section>
     </div>
   )

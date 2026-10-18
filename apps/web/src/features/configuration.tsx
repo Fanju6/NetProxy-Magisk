@@ -15,7 +15,7 @@ import {
   simpleRule,
   type RuleField,
 } from '@/api/management-data'
-import { Details } from '@/components/details'
+import { Details, DraftGuard, EditorPanel } from '@/components/details'
 import { JsonEditor } from '@/components/json-editor'
 import { Button } from '@/components/ui/button'
 import {
@@ -174,7 +174,8 @@ export function ConfigurationEditor({
   const footer = draft && !readonly && (
     <>
       <Button
-        variant="outline"
+        variant="ghost"
+        size="sm"
         disabled={action.pending || blocked}
         onClick={() => void apply(true)}
       >
@@ -185,100 +186,91 @@ export function ConfigurationEditor({
       </Button>
     </>
   )
+  const body = (
+    <div className={form ? 'space-y-4' : 'flex min-h-0 flex-1 flex-col'}>
+      {error && (
+        <div role="alert" className="space-y-3 text-sm text-destructive">
+          <p>
+            {conflict
+              ? copy.conflict
+              : error.persisted
+                ? copy.persisted
+                : blocked
+                  ? copy.unknown
+                  : copy.failed}
+          </p>
+          <Button variant="outline" className="min-h-11" disabled={action.pending} onClick={reload}>
+            {draft ? copy.discard : copy.retry}
+          </Button>
+        </div>
+      )}
+      {!draft && !error && <LoadingState />}
+      {draft && (
+        <>
+          <fieldset
+            disabled={action.pending || blocked}
+            className={form ? 'min-w-0' : 'flex min-h-0 flex-1 flex-col'}
+          >
+            {form && !readonly ? (
+              renderForm ? (
+                renderForm(draft.content, change)
+              ) : (
+                <RuleForm content={draft.content} change={change} editJson={() => setForm(false)} />
+              )
+            ) : (
+              <JsonEditor
+                value={draft.content}
+                onChange={change}
+                readOnly={readonly || action.pending || blocked}
+                label={`${title} JSON`}
+              />
+            )}
+          </fieldset>
+          {notice && (
+            <p role="status" className="text-sm text-muted-foreground">
+              {copy[notice]}
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  )
+  const dirty = !readonly && draft !== null && draft.content !== savedContent
+  const switchView = !readonly && (renderForm || rules) && (
+    <Button variant="ghost" size="sm" disabled={action.pending} onClick={() => setForm(!form)}>
+      <Braces />
+      {form ? copy.json : copy.form}
+    </Button>
+  )
+  if (inline && form)
+    return (
+      <DraftGuard dirty={dirty}>
+        {body}
+        <div className="panel-inline-actions mt-4 flex items-center gap-2 bg-background py-3">
+          {switchView}
+          <div className="flex-1" />
+          {footer}
+        </div>
+      </DraftGuard>
+    )
+  const Panel = form ? Details : EditorPanel
   return (
-    <Details
+    <Panel
       open
-      mode={form ? (inline ? 'inline' : 'sheet') : 'fullscreen'}
-      dirty={!readonly && draft !== null && draft.content !== savedContent && !(inline && !form)}
+      title={title}
+      description={form ? undefined : readonly ? copy.readOnly : copy.sensitive}
+      dirty={dirty && !(inline && !form)}
       footer={footer}
+      headerActions={switchView}
       onOpenChange={(open) => {
         if (!open) {
           if (inline && !form) setForm(true)
           else onClose()
         }
       }}
-      title={title}
-      description={!form ? (readonly ? copy.readOnly : copy.sensitive) : undefined}
     >
-      <div className={form ? 'space-y-4' : 'flex min-h-0 flex-1 flex-col gap-3'}>
-        {error && (
-          <div role="alert" className="space-y-3 text-sm text-destructive">
-            <p>
-              {conflict
-                ? copy.conflict
-                : error.persisted
-                  ? copy.persisted
-                  : blocked
-                    ? copy.unknown
-                    : copy.failed}
-            </p>
-            <Button
-              variant="outline"
-              className="min-h-11"
-              disabled={action.pending}
-              onClick={reload}
-            >
-              {draft ? copy.discard : copy.retry}
-            </Button>
-          </div>
-        )}
-        {!draft && !error && <LoadingState />}
-        {draft && (
-          <>
-            {!readonly && (renderForm || rules) && (
-              <div className="flex gap-2" aria-label={copy.form}>
-                <Button
-                  variant={form ? 'secondary' : 'ghost'}
-                  className="min-h-11"
-                  disabled={action.pending}
-                  aria-pressed={form}
-                  onClick={() => setForm(true)}
-                >
-                  {copy.form}
-                </Button>
-                <Button
-                  variant={form ? 'ghost' : 'secondary'}
-                  className="min-h-11"
-                  disabled={action.pending}
-                  aria-pressed={!form}
-                  onClick={() => setForm(false)}
-                >
-                  {copy.json}
-                </Button>
-              </div>
-            )}
-            <fieldset
-              disabled={action.pending || blocked}
-              className={form ? 'min-w-0' : 'flex min-h-0 flex-1 flex-col'}
-            >
-              {form && !readonly ? (
-                renderForm ? (
-                  renderForm(draft.content, change)
-                ) : (
-                  <RuleForm
-                    content={draft.content}
-                    change={change}
-                    editJson={() => setForm(false)}
-                  />
-                )
-              ) : (
-                <JsonEditor
-                  value={draft.content}
-                  onChange={change}
-                  readOnly={readonly || action.pending || blocked}
-                  label={`${title} JSON`}
-                />
-              )}
-            </fieldset>
-            {notice && (
-              <p role="status" className="text-sm text-muted-foreground">
-                {copy[notice]}
-              </p>
-            )}
-          </>
-        )}
-      </div>
-    </Details>
+      {body}
+    </Panel>
   )
 }
 
@@ -335,6 +327,7 @@ function RuleForm({
             if (!open) setEditing(null)
           }}
           dirty={Boolean(editing.text)}
+          footer={<Button onClick={save}>{copy.save}</Button>}
         >
           <div className="space-y-3">
             <ManagementSelect
@@ -362,12 +355,6 @@ function RuleForm({
                 {copy.invalidRule}
               </p>
             )}
-            <div className="flex gap-2">
-              <Button onClick={save}>{copy.save}</Button>
-              <Button variant="outline" onClick={() => setEditing(null)}>
-                {copy.cancel}
-              </Button>
-            </div>
           </div>
         </Details>
       )}
@@ -546,15 +533,15 @@ export function ConfigurationPage() {
         const entries = targets?.filter((target) => target.category === category) ?? []
         if (!entries.length) return null
         return (
-          <section key={category} className="space-y-3">
-            <h2 className="text-sm font-medium text-muted-foreground">
+          <section key={category} className="space-y-2">
+            <h2 className="section-label">
               {category === 'module'
                 ? 'NetProxy'
                 : category === 'config'
                   ? copy.core
                   : copy[category]}
             </h2>
-            <div className="divide-y divide-border/60">
+            <div className="settings-group">
               {entries.map((target) => (
                 <Button
                   key={target.id}

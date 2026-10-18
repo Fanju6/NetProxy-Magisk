@@ -18,6 +18,7 @@ Module state, public Catalog reads, URL subscription management, service control
 - `allow-next-event`
 - `allow-close-events`
 - `allow-visibility`
+- `allow-set-appearance`
 - `allow-register-listener`
 - `allow-remove-listener`
 
@@ -312,6 +313,32 @@ Enables the service_action command without any pre-configured scope.
 <td>
 
 Denies the service_action command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`module-api:allow-set-appearance`
+
+</td>
+<td>
+
+Enables the set_appearance command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`module-api:deny-set-appearance`
+
+</td>
+<td>
+
+Denies the set_appearance command without any pre-configured scope.
 
 </td>
 </tr>

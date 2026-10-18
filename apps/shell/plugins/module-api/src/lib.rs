@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
+mod appearance;
 mod management;
 #[cfg(target_os = "android")]
 use tauri::Manager;
@@ -596,6 +597,15 @@ async fn visibility<R: Runtime>(app: AppHandle<R>) -> Result<Value, BridgeError>
     dispatch(app, "visibility", json!({})).await
 }
 
+#[tauri::command]
+async fn set_appearance<R: Runtime>(
+    app: AppHandle<R>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<Value, BridgeError> {
+    let request = appearance::Request::parse(request.body())?;
+    dispatch(app, "setAppearance", json!(request)).await
+}
+
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("module-api")
         .invoke_handler(tauri::generate_handler![
@@ -612,7 +622,8 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             open_events,
             next_event,
             close_events,
-            visibility
+            visibility,
+            set_appearance
         ])
         .setup(|_app, _api| {
             #[cfg(target_os = "android")]

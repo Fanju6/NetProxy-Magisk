@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { RouterProvider } from '@tanstack/react-router'
+import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ApiClient } from '@/api/client'
 import type { ApiTransport } from '@/api/contracts'
@@ -66,6 +67,11 @@ function closePanel() {
   fireEvent.click(screen.getAllByRole('button', { name: 'Close' }).at(-1)!)
 }
 
+async function nodeAction(panel: HTMLElement, name: string) {
+  fireEvent.click(within(panel).getByRole('button', { name: 'More actions' }))
+  fireEvent.click(await screen.findByRole('menuitem', { name }))
+}
+
 it('defaults to a list and keeps group and individual tests beside direct selection', async () => {
   const h = await setup()
   for (const grid of screen.getAllByTestId('node-grid')) expect(grid).toHaveClass('grid-cols-1')
@@ -110,7 +116,7 @@ it('offers manual creation and text import without an operation or node picker',
 it('edits the node opened from its own details and confirms before discarding its draft', async () => {
   const h = await setup()
   const panel = await details()
-  fireEvent.click(within(panel).getByRole('button', { name: 'Edit node' }))
+  await nodeAction(panel, 'Edit node')
   const editor = await screen.findByRole('textbox', { name: 'Node content' })
   expect(editor.closest('[data-panel]')).toHaveClass('editor-panel')
   expect(h.request.mock.calls.find(([input]) => input.path === '/nodes/get')?.[0].query).toEqual({
@@ -143,7 +149,7 @@ it('shares subscription nodes but retains local-only edit/delete and explicit de
   const h = await setup()
   let panel = await details('Tokyo 01')
   expect(within(panel).queryByRole('button', { name: 'Edit node' })).not.toBeInTheDocument()
-  fireEvent.click(within(panel).getByRole('button', { name: 'Share link' }))
+  await nodeAction(panel, 'Share link')
   const share = await screen.findByRole('textbox', { name: 'Node content' })
   expect(share).toHaveAttribute('readonly')
   expect(h.request.mock.calls.find(([input]) => input.path === '/nodes/export')?.[0].query).toEqual(
@@ -154,8 +160,8 @@ it('shares subscription nodes but retains local-only edit/delete and explicit de
     expect(screen.queryByRole('textbox', { name: 'Node content' })).not.toBeInTheDocument(),
   )
   panel = await details()
-  fireEvent.click(within(panel).getByRole('button', { name: 'Delete node' }))
-  fireEvent.click(await screen.findByRole('button', { name: 'Delete node' }))
+  await nodeAction(panel, 'Delete node')
+  expect(await screen.findByRole('button', { name: 'Confirm delete' })).toBeVisible()
   expect(h.request.mock.calls.filter(([input]) => input.method === 'DELETE')).toHaveLength(0)
   fireEvent.click(screen.getByRole('button', { name: 'Confirm delete' }))
   expect(await screen.findByText('Operation completed. Nodes refreshed.')).toBeVisible()
@@ -164,6 +170,22 @@ it('shares subscription nodes but retains local-only edit/delete and explicit de
       .filter(([input]) => input.method === 'DELETE')
       .map(([input]) => input.query),
   ).toEqual([{ group_id: 'default', node_tag: 'Local relay' }])
+})
+
+it('copies a share link only after an explicit click without putting it in persistent storage', async () => {
+  await setup()
+  userEvent.setup()
+  const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+  const panel = await details('Tokyo 01')
+  await nodeAction(panel, 'Share link')
+  const input = await screen.findByRole('textbox', { name: 'Node content' })
+  await waitFor(() => expect(input).not.toHaveValue(''))
+  const link = (input as HTMLTextAreaElement).value
+  expect(copy).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: 'Copy link' }))
+  expect(await screen.findByText('Link copied')).toBeVisible()
+  expect(copy).toHaveBeenCalledExactlyOnceWith(link)
+  expect(JSON.stringify(localStorage)).not.toContain(link)
 })
 
 it('keeps Chinese add labels and long names available', async () => {

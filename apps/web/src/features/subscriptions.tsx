@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Menu } from '@base-ui/react/menu'
 import {
   ArrowUpRight,
   ChevronRight,
@@ -9,7 +8,9 @@ import {
   RefreshCw,
   LoaderCircle,
   MoreHorizontal,
+  Pencil,
   Plus,
+  Trash2,
 } from 'lucide-react'
 import { Link } from '@tanstack/react-router'
 import { useApi, usePreferences } from '@/app/context'
@@ -20,6 +21,21 @@ import type { GroupSummary } from '@/api/contracts'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Details } from '@/components/details'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   Select,
   SelectContent,
@@ -174,62 +190,71 @@ function DeleteSubscription({
   const replacementValid = candidates.some((group) => group.id === replacement)
   const allowed = current?.type === 'subscription' && (!current.active || replacementValid)
   return (
-    <Details
+    <Dialog
       open
       onOpenChange={(open) => {
         if (!open) close()
       }}
-      title={t('deleteSubscription')}
-      description={t('deleteSubscriptionConfirm')}
     >
-      <div className="space-y-5">
-        <p className="break-words font-medium">{target.name}</p>
-        <SubscriptionFeedback actions={actions} groups={groups} />
-        {current?.active && (
-          <div className="space-y-2">
-            <label htmlFor="subscription-replacement" className="text-sm font-medium">
-              {t('replacementGroup')}
-            </label>
-            <Select value={replacement} onValueChange={(value) => setReplacement(value ?? '')}>
-              <SelectTrigger
-                id="subscription-replacement"
-                className="min-h-12 w-full text-base md:text-sm"
-              >
-                <SelectValue placeholder={t('chooseReplacement')} />
-              </SelectTrigger>
-              <SelectContent>
-                {candidates.map((group) => (
-                  <SelectItem key={group.id} value={group.id}>
-                    {group.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {!candidates.length && (
-              <p role="status" className="text-sm text-muted-foreground">
-                {t('noReplacementGroup')}
-              </p>
-            )}
-          </div>
-        )}
-        {!current && (
-          <p role="status" className="text-sm text-destructive">
-            {t('subscriptionTargetChanged')}
-          </p>
-        )}
-        <Button
-          variant="destructive"
-          className="min-h-12 w-full"
-          disabled={!allowed || connection !== 'live' || isWaiting(actions.operation)}
-          onClick={() => {
-            if (allowed && actions.remove(target.id, current?.active ? replacement : undefined))
-              close()
-          }}
-        >
-          {t('deleteSubscription')}
-        </Button>
-      </div>
-    </Details>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain rounded-lg">
+        <DialogHeader className="pr-8">
+          <DialogTitle>{t('deleteSubscription')}</DialogTitle>
+          <DialogDescription>{t('deleteSubscriptionConfirm')}</DialogDescription>
+        </DialogHeader>
+        <div className="min-w-0 space-y-4">
+          <p className="break-words font-medium">{target.name}</p>
+          <SubscriptionFeedback actions={actions} groups={groups} />
+          {current?.active && (
+            <div className="space-y-2">
+              <label htmlFor="subscription-replacement" className="text-sm font-medium">
+                {t('replacementGroup')}
+              </label>
+              <Select value={replacement} onValueChange={(value) => setReplacement(value ?? '')}>
+                <SelectTrigger
+                  id="subscription-replacement"
+                  className="min-h-12 w-full text-base md:text-sm"
+                >
+                  <SelectValue placeholder={t('chooseReplacement')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {candidates.map((group) => (
+                    <SelectItem key={group.id} value={group.id}>
+                      {group.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {!candidates.length && (
+                <p role="status" className="text-sm text-muted-foreground">
+                  {t('noReplacementGroup')}
+                </p>
+              )}
+            </div>
+          )}
+          {!current && (
+            <p role="status" className="text-sm text-destructive">
+              {t('subscriptionTargetChanged')}
+            </p>
+          )}
+        </div>
+        <DialogFooter className="flex-row flex-wrap">
+          <Button variant="outline" className="min-h-11" onClick={close}>
+            {t('cancel')}
+          </Button>
+          <Button
+            variant="destructive"
+            className="min-h-11"
+            disabled={!allowed || connection !== 'live' || isWaiting(actions.operation)}
+            onClick={() => {
+              if (allowed && actions.remove(target.id, current?.active ? replacement : undefined))
+                close()
+            }}
+          >
+            {t('deleteSubscription')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -266,6 +291,7 @@ function ResourceDetails({
     observation && isWaiting(observation) ? observation.deadline : undefined,
   )
   const group = data.detail.data?.group
+  const displayGroup = group ?? summary
   const date = (value: string) =>
     value && Number.isFinite(Date.parse(value))
       ? new Intl.DateTimeFormat(preferences.locale, {
@@ -274,214 +300,252 @@ function ResourceDetails({
         }).format(new Date(value))
       : t('notProvided')
   const stage = data.progress.data?.progress
-  if (!data.detail.data && data.detail.isError)
-    return (
-      <>
-        <SubscriptionFeedback actions={actions} groups={groups} targetId={id} />
-        <ErrorState error={data.detail.error} retry={() => void data.refresh()} />
-      </>
-    )
-  if (!group)
-    return connection === 'live' ? (
-      <LoadingState />
-    ) : (
-      <EmptyState title={t('resourceUnavailable')} />
-    )
-  const rows = [
-    [t('nodes'), String(group.node_count)],
-    [
-      t(group.type === 'subscription' ? 'lastUpdate' : 'modifiedAt'),
-      date(group.type === 'subscription' ? group.last_success_at : group.updated_at),
-    ],
-    ...(group.type === 'subscription'
-      ? [
-          [t('autoUpdate'), t(group.auto_update ? 'enabled' : 'disabled')],
-          [t('interval'), t('intervalMinutes', { count: group.update_interval / 60 })],
-          [t('nextUpdate'), group.auto_update ? date(group.next_update_at) : t('disabled')],
-        ]
-      : []),
-  ]
+  const rows = group
+    ? [
+        [t('nodes'), String(group.node_count)],
+        [
+          t(group.type === 'subscription' ? 'lastUpdate' : 'modifiedAt'),
+          date(group.type === 'subscription' ? group.last_success_at : group.updated_at),
+        ],
+        ...(group.type === 'subscription'
+          ? [
+              [t('autoUpdate'), t(group.auto_update ? 'enabled' : 'disabled')],
+              [t('interval'), t('intervalMinutes', { count: group.update_interval / 60 })],
+              [t('nextUpdate'), group.auto_update ? date(group.next_update_at) : t('disabled')],
+            ]
+          : []),
+      ]
+    : []
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        {connection !== 'live' && <Badge variant="outline">{t('staleSnapshot')}</Badge>}
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={connection !== 'live' || data.detail.isFetching}
-          onClick={() => void data.refresh()}
-        >
-          <RefreshCw />
-          {t('refreshResources')}
-        </Button>
-      </div>
-      {data.detail.isError && <ErrorState error={data.detail.error} compact />}
-      {group.type === 'subscription' && (
-        <div className="flex flex-wrap gap-2">
-          {api.supports('subscriptions.update') && (
-            <Button
-              className="min-h-12"
-              disabled={connection !== 'live' || blocked}
-              onClick={() => actions.update(id)}
+    <Details
+      open
+      onOpenChange={(open) => {
+        if (!open) close()
+      }}
+      title={group?.name ?? summary?.name ?? t('subscriptionDetails')}
+      description={displayGroup ? t(displayGroup.type) : ''}
+      headerActions={
+        group && (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={<Button variant="ghost" size="icon" className="size-11 shrink-0" />}
+              aria-label={preferences.locale === 'zh' ? '更多操作' : 'More actions'}
             >
-              {t('updateSubscription')}
-            </Button>
+              <MoreHorizontal />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-60 max-w-[calc(100vw-2rem)]">
+              <DropdownMenuItem
+                className="min-h-11"
+                disabled={connection !== 'live' || data.detail.isFetching}
+                onClick={() => void data.refresh()}
+              >
+                <RefreshCw />
+                {t('refreshResources')}
+              </DropdownMenuItem>
+              {group.type === 'subscription' && (
+                <>
+                  {api.supports('subscriptions.edit') && (
+                    <DropdownMenuItem
+                      className="min-h-11"
+                      disabled={connection !== 'live' || blocked}
+                      onClick={() => edit(group)}
+                    >
+                      <Pencil />
+                      {t('editSubscription')}
+                    </DropdownMenuItem>
+                  )}
+                  {api.supports('subscriptions.remove') && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        variant="destructive"
+                        className="min-h-11"
+                        disabled={connection !== 'live' || blocked}
+                        onClick={() => remove(group)}
+                      >
+                        <Trash2 />
+                        {t('deleteSubscription')}
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )
+      }
+      footer={
+        group?.type === 'subscription' &&
+        api.supports('subscriptions.update') && (
+          <Button
+            className="min-h-11 flex-1"
+            disabled={connection !== 'live' || blocked}
+            onClick={() => actions.update(id)}
+          >
+            {t('updateSubscription')}
+          </Button>
+        )
+      }
+    >
+      {!data.detail.data && data.detail.isError ? (
+        <>
+          <SubscriptionFeedback actions={actions} groups={groups} targetId={id} />
+          <ErrorState error={data.detail.error} retry={() => void data.refresh()} />
+        </>
+      ) : !group ? (
+        connection === 'live' ? (
+          <LoadingState />
+        ) : (
+          <EmptyState title={t('resourceUnavailable')} />
+        )
+      ) : (
+        <div className="space-y-6">
+          {connection !== 'live' && <Badge variant="outline">{t('staleSnapshot')}</Badge>}
+          {data.detail.isError && <ErrorState error={data.detail.error} compact />}
+          <SubscriptionFeedback actions={actions} groups={groups} targetId={id} />
+          <dl className="settings-group divide-y text-sm">
+            {rows.map(([label, value]) => (
+              <div key={label} className="flex min-w-0 items-baseline justify-between gap-4 py-3">
+                <dt className="min-w-0 text-muted-foreground">{label}</dt>
+                <dd className="min-w-0 break-words text-right">{value}</dd>
+              </div>
+            ))}
+          </dl>
+          {group.last_error && (
+            <p role="status" className="text-sm text-destructive">
+              {t('updateError')}
+            </p>
           )}
-          {(waiting || stage) && api.supports('subscriptions.cancel') && (
-            <Button
-              variant="outline"
-              className="min-h-12"
-              disabled={
-                connection !== 'live' || cancelState === 'pending' || cancelState === 'requested'
-              }
-              onClick={() => void actions.cancel(id)}
-            >
-              {t('cancelUpdate')}
-            </Button>
+          {group.type === 'subscription' && (
+            <>
+              <section className="space-y-3 border-t pt-5">
+                <h3 className="text-sm font-medium">{t('subscriptionUsage')}</h3>
+                {group.usage === null ? (
+                  <p className="text-sm text-muted-foreground">{t('notProvided')}</p>
+                ) : (
+                  <dl className="space-y-3 text-sm">
+                    <div className="flex justify-between gap-4">
+                      <dt>{t('usedTraffic')}</dt>
+                      <dd>
+                        {group.usage.upload !== undefined || group.usage.download !== undefined
+                          ? bytes(
+                              (group.usage.upload ?? 0) + (group.usage.download ?? 0),
+                              preferences.locale,
+                            )
+                          : t('notProvided')}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt>{t('trafficLimit')}</dt>
+                      <dd>
+                        {group.usage.total === undefined
+                          ? t('notProvided')
+                          : bytes(group.usage.total, preferences.locale)}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <dt>{t('expiresAt')}</dt>
+                      <dd>
+                        {group.usage.expire &&
+                        Number.isFinite(new Date(group.usage.expire * 1000).getTime())
+                          ? date(new Date(group.usage.expire * 1000).toISOString())
+                          : t('notProvided')}
+                      </dd>
+                    </div>
+                  </dl>
+                )}
+              </section>
+              <section className="space-y-3 border-t pt-5">
+                <h3 className="text-sm font-medium">{t('updateProgress')}</h3>
+                {data.progress.isError ? (
+                  <ErrorState error={data.progress.error} compact />
+                ) : data.progress.isPending ? (
+                  <LoadingState />
+                ) : stage ? (
+                  <p role="status" className="flex items-center gap-2 text-sm">
+                    {data.observing && <LoaderCircle className="size-4 motion-safe:animate-spin" />}
+                    {t(`${stage.stage}Stage`)} · {date(stage.updated_at)}
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">{t('noUpdateInProgress')}</p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  {t(data.refreshLimitReached ? 'progressLimit' : 'progressCaution')}
+                </p>
+                {(waiting || stage) && api.supports('subscriptions.cancel') && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="min-h-11"
+                    disabled={
+                      connection !== 'live' ||
+                      cancelState === 'pending' ||
+                      cancelState === 'requested'
+                    }
+                    onClick={() => void actions.cancel(id)}
+                  >
+                    {t('cancelUpdate')}
+                  </Button>
+                )}
+              </section>
+              <section className="space-y-3 border-t pt-5">
+                <h3 className="text-sm font-medium">{t('updateHistory')}</h3>
+                {data.history.isError ? (
+                  <ErrorState error={data.history.error} compact />
+                ) : data.history.isPending ? (
+                  <LoadingState />
+                ) : data.history.data?.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">{t('noHistory')}</p>
+                ) : (
+                  <ol className="divide-y">
+                    {data.history.data
+                      ?.slice()
+                      .reverse()
+                      .map((entry, index) => (
+                        <li
+                          key={`${entry.at}-${entry.code}-${index}`}
+                          className="space-y-2 py-3 text-sm"
+                        >
+                          <div className="flex flex-wrap justify-between gap-2">
+                            <span className={entry.ok ? '' : 'text-destructive'}>
+                              {t(
+                                !entry.ok
+                                  ? 'historyFailure'
+                                  : entry.code === 'subscription.not_modified'
+                                    ? 'historyUnchanged'
+                                    : entry.code === 'subscription.runtime_sync_applied'
+                                      ? 'historyRuntime'
+                                      : 'historySuccess',
+                              )}
+                            </span>
+                            <time className="text-xs text-muted-foreground">{date(entry.at)}</time>
+                          </div>
+                          <p className="break-words text-xs text-muted-foreground">{entry.code}</p>
+                          {entry.node_count !== undefined && (
+                            <p className="text-xs text-muted-foreground">
+                              {t('nodeCount', { count: entry.node_count })}
+                            </p>
+                          )}
+                        </li>
+                      ))}
+                  </ol>
+                )}
+              </section>
+            </>
           )}
-          {api.supports('subscriptions.edit') && (
-            <Button
-              variant="outline"
-              className="min-h-12"
-              disabled={connection !== 'live' || blocked}
-              onClick={() => edit(group)}
-            >
-              {t('editSubscription')}
-            </Button>
-          )}
-          {api.supports('subscriptions.remove') && (
-            <Button
-              variant="outline"
-              className="min-h-12 text-destructive"
-              disabled={connection !== 'live' || blocked}
-              onClick={() => remove(group)}
-            >
-              {t('deleteSubscription')}
-            </Button>
-          )}
+          <Button
+            variant="ghost"
+            className="min-h-11"
+            nativeButton={false}
+            render={<Link to="/nodes" />}
+            onClick={close}
+          >
+            {t('viewGroup')}
+            <ArrowUpRight />
+          </Button>
         </div>
       )}
-      <SubscriptionFeedback actions={actions} groups={groups} targetId={id} />
-      <dl className="space-y-4 text-sm">
-        {rows.map(([label, value]) => (
-          <div key={label} className="flex justify-between gap-4">
-            <dt className="text-muted-foreground">{label}</dt>
-            <dd className="text-right">{value}</dd>
-          </div>
-        ))}
-      </dl>
-      {group.last_error && (
-        <p role="status" className="text-sm text-destructive">
-          {t('updateError')}
-        </p>
-      )}
-      {group.type === 'subscription' && (
-        <>
-          <section className="space-y-3 border-t pt-5">
-            <h3 className="text-sm font-medium">{t('subscriptionUsage')}</h3>
-            {group.usage === null ? (
-              <p className="text-sm text-muted-foreground">{t('notProvided')}</p>
-            ) : (
-              <dl className="space-y-3 text-sm">
-                <div className="flex justify-between gap-4">
-                  <dt>{t('usedTraffic')}</dt>
-                  <dd>
-                    {group.usage.upload !== undefined || group.usage.download !== undefined
-                      ? bytes(
-                          (group.usage.upload ?? 0) + (group.usage.download ?? 0),
-                          preferences.locale,
-                        )
-                      : t('notProvided')}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt>{t('trafficLimit')}</dt>
-                  <dd>
-                    {group.usage.total === undefined
-                      ? t('notProvided')
-                      : bytes(group.usage.total, preferences.locale)}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt>{t('expiresAt')}</dt>
-                  <dd>
-                    {group.usage.expire &&
-                    Number.isFinite(new Date(group.usage.expire * 1000).getTime())
-                      ? date(new Date(group.usage.expire * 1000).toISOString())
-                      : t('notProvided')}
-                  </dd>
-                </div>
-              </dl>
-            )}
-          </section>
-          <section className="space-y-3 border-t pt-5">
-            <h3 className="text-sm font-medium">{t('updateProgress')}</h3>
-            {data.progress.isError ? (
-              <ErrorState error={data.progress.error} compact />
-            ) : data.progress.isPending ? (
-              <LoadingState />
-            ) : stage ? (
-              <p role="status" className="flex items-center gap-2 text-sm">
-                {data.observing && <LoaderCircle className="size-4 motion-safe:animate-spin" />}
-                {t(`${stage.stage}Stage`)} · {date(stage.updated_at)}
-              </p>
-            ) : (
-              <p className="text-sm text-muted-foreground">{t('noUpdateInProgress')}</p>
-            )}
-            <p className="text-xs text-muted-foreground">
-              {t(data.refreshLimitReached ? 'progressLimit' : 'progressCaution')}
-            </p>
-          </section>
-          <section className="space-y-3 border-t pt-5">
-            <h3 className="text-sm font-medium">{t('updateHistory')}</h3>
-            {data.history.isError ? (
-              <ErrorState error={data.history.error} compact />
-            ) : data.history.isPending ? (
-              <LoadingState />
-            ) : data.history.data?.length === 0 ? (
-              <p className="text-sm text-muted-foreground">{t('noHistory')}</p>
-            ) : (
-              <ol className="divide-y">
-                {data.history.data
-                  ?.slice()
-                  .reverse()
-                  .map((entry, index) => (
-                    <li
-                      key={`${entry.at}-${entry.code}-${index}`}
-                      className="space-y-2 py-3 text-sm"
-                    >
-                      <div className="flex flex-wrap justify-between gap-2">
-                        <span className={entry.ok ? '' : 'text-destructive'}>
-                          {t(
-                            !entry.ok
-                              ? 'historyFailure'
-                              : entry.code === 'subscription.not_modified'
-                                ? 'historyUnchanged'
-                                : entry.code === 'subscription.runtime_sync_applied'
-                                  ? 'historyRuntime'
-                                  : 'historySuccess',
-                          )}
-                        </span>
-                        <time className="text-xs text-muted-foreground">{date(entry.at)}</time>
-                      </div>
-                      <p className="break-words text-xs text-muted-foreground">{entry.code}</p>
-                      {entry.node_count !== undefined && (
-                        <p className="text-xs text-muted-foreground">
-                          {t('nodeCount', { count: entry.node_count })}
-                        </p>
-                      )}
-                    </li>
-                  ))}
-              </ol>
-            )}
-          </section>
-        </>
-      )}
-      <Button nativeButton={false} render={<Link to="/nodes" />} onClick={close}>
-        {t('viewGroup')}
-        <ArrowUpRight />
-      </Button>
-    </div>
+    </Details>
   )
 }
 
@@ -526,41 +590,37 @@ export function SubscriptionsPage() {
             {t('addSubscription')}
           </Button>
         )}
-        <Menu.Root>
-          <Menu.Trigger
+        <DropdownMenu>
+          <DropdownMenuTrigger
             render={<Button variant="ghost" size="icon" className="size-12" />}
             aria-label={preferences.locale === 'zh' ? '更多操作' : 'More actions'}
           >
             <MoreHorizontal />
-          </Menu.Trigger>
-          <Menu.Portal>
-            <Menu.Positioner align="end" sideOffset={4} className="z-50">
-              <Menu.Popup className="min-w-48 max-w-[calc(100vw-2rem)] rounded-md border bg-popover p-1 text-popover-foreground shadow-md outline-none">
-                {api.supports('subscriptions.update_all') && (
-                  <Menu.Item
-                    className="flex min-h-12 cursor-pointer items-center rounded-sm px-3 text-sm outline-none data-highlighted:bg-muted data-disabled:opacity-50"
-                    disabled={
-                      connection !== 'live' ||
-                      isWaiting(actions.operation) ||
-                      !list.data.some((group) => group.type === 'subscription')
-                    }
-                    onClick={() => actions.updateAll()}
-                  >
-                    {t('updateAllSubscriptions')}
-                  </Menu.Item>
-                )}
-                <Menu.Item
-                  className="flex min-h-12 cursor-pointer items-center gap-2 rounded-sm px-3 text-sm outline-none data-highlighted:bg-muted data-disabled:opacity-50"
-                  disabled={connection !== 'live' || list.isFetching}
-                  onClick={() => void list.refetch()}
-                >
-                  <RefreshCw className="size-4 shrink-0" />
-                  {t('refreshResources')}
-                </Menu.Item>
-              </Menu.Popup>
-            </Menu.Positioner>
-          </Menu.Portal>
-        </Menu.Root>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-60 max-w-[calc(100vw-2rem)]">
+            {api.supports('subscriptions.update_all') && (
+              <DropdownMenuItem
+                className="min-h-11"
+                disabled={
+                  connection !== 'live' ||
+                  isWaiting(actions.operation) ||
+                  !list.data.some((group) => group.type === 'subscription')
+                }
+                onClick={() => actions.updateAll()}
+              >
+                {t('updateAllSubscriptions')}
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem
+              className="min-h-11"
+              disabled={connection !== 'live' || list.isFetching}
+              onClick={() => void list.refetch()}
+            >
+              <RefreshCw className="size-4 shrink-0" />
+              {t('refreshResources')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       {!panel && list.isError && (
         <ErrorState error={list.error} compact retry={() => void list.refetch()} />
@@ -618,28 +678,17 @@ export function SubscriptionsPage() {
           </section>
         )
       })}
-      {panel?.kind === 'detail' && (
-        <Details
-          open
-          onOpenChange={(open) => {
-            if (!open) setPanel(null)
-          }}
-          title={summary?.name ?? t('subscriptionDetails')}
-          description={summary ? t(summary.type) : ''}
-        >
-          {selected && (
-            <ResourceDetails
-              key={selected}
-              id={selected}
-              summary={summary}
-              close={() => setPanel(null)}
-              actions={actions}
-              groups={list.data}
-              edit={(group) => setPanel({ kind: 'edit', group })}
-              remove={(group) => setPanel({ kind: 'remove', group })}
-            />
-          )}
-        </Details>
+      {panel?.kind === 'detail' && selected && (
+        <ResourceDetails
+          key={selected}
+          id={selected}
+          summary={summary}
+          close={() => setPanel(null)}
+          actions={actions}
+          groups={list.data}
+          edit={(group) => setPanel({ kind: 'edit', group })}
+          remove={(group) => setPanel({ kind: 'remove', group })}
+        />
       )}
       {(panel?.kind === 'add' || panel?.kind === 'edit') && (
         <SubscriptionEditor

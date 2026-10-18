@@ -109,7 +109,7 @@
   --chart-5: oklch(0.274 0.006 286.033);
   --sidebar: oklch(0.21 0.006 285.885);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.274 0.006 286.033);
   --sidebar-accent-foreground: oklch(0.985 0 0);
@@ -213,42 +213,24 @@ select {
   font-size: 14px;
 }
 .section-label {
-  padding: 8px 0;
+  padding: 4px 0 8px;
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
+}
+.settings-group > :not(:last-child) {
+  border-bottom: 1px solid var(--border);
 }
 .setting-row {
   display: flex;
-  min-height: 60px;
+  min-height: 56px;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   padding: 12px 0;
   font-size: 14px;
 }
-.node-tile {
-  display: flex;
-  min-width: 0;
-  height: 100px;
-  flex-direction: column;
-  justify-content: center;
-  gap: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 16px;
-  background: var(--background);
-  text-align: left;
-  font-size: 14px;
-  transition:
-    border-color 120ms ease-out,
-    background-color 120ms ease-out;
-}
-.node-tile:disabled {
-  cursor: wait;
-}
 .node-selected {
-  border-color: var(--foreground);
   background: var(--muted);
 }
 .traffic-plot {
@@ -269,13 +251,17 @@ select {
 
 @media (pointer: coarse) {
   [data-slot='button'],
-  [data-slot='select-trigger'],
-  [data-slot='toggle-group-item'] {
-    min-height: 48px;
+  [data-slot='select-trigger'] {
+    min-height: 44px;
   }
-  [data-slot='button']:has(> svg:only-child),
-  [data-slot='toggle-group-item'] {
-    min-width: 48px;
+  [data-slot='button']:has(> svg:only-child) {
+    min-width: 44px;
+  }
+  [data-slot='dropdown-menu-item'],
+  [data-slot='dropdown-menu-checkbox-item'],
+  [data-slot='dropdown-menu-radio-item'],
+  [data-slot='select-item'] {
+    min-height: 44px;
   }
 }
 
@@ -343,21 +329,56 @@ select {
   height: var(--keyboard-viewport-height, 100dvh);
   max-height: var(--keyboard-viewport-height, 100dvh);
 }
+.editor-workspace {
+  position: fixed;
+  left: 0;
+  z-index: 50;
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  background: var(--background);
+  outline: none;
+}
+.editor-toolbar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  padding: max(8px, env(safe-area-inset-top)) 12px 8px;
+}
+.editor-drawer {
+  max-height: calc(var(--keyboard-viewport-height, 100dvh) - max(20px, env(safe-area-inset-top)));
+  padding-bottom: env(safe-area-inset-bottom);
+  border-radius: 8px 8px 0 0;
+}
 [data-keyboard-open] .editor-drawer {
   bottom: var(--keyboard-inset);
-  max-height: calc(var(--keyboard-viewport-height) * 0.88);
+}
+[data-keyboard-open] .details-dialog {
+  top: calc(var(--keyboard-viewport-top) + var(--keyboard-viewport-height) / 2);
+  max-height: calc(var(--keyboard-viewport-height) - 32px);
+}
+.panel-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 20px 20px;
 }
 .editor-body {
   display: flex;
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  overflow: auto;
+  overflow: hidden;
   overscroll-behavior: contain;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 .editor-body [data-testid='json-editor'] {
   flex: 1;
-  min-height: 160px;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
   --json-editor-height: 100%;
 }
 .editor-body .cm-editor {
@@ -367,6 +388,7 @@ select {
   position: sticky;
   bottom: calc(64px + env(safe-area-inset-bottom));
   z-index: 10;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
 }
 [data-keyboard-open] .panel-inline-actions {
   bottom: var(--keyboard-inset, 0px);
@@ -380,9 +402,6 @@ select {
   .nav-link:hover {
     background: var(--accent);
     color: var(--foreground);
-  }
-  .node-tile:hover {
-    background: var(--muted);
   }
 }
 @media (prefers-reduced-motion: reduce) {

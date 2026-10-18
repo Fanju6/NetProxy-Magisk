@@ -184,9 +184,22 @@ function Editor({
       }}
       title={t(group ? 'editSubscription' : 'addSubscription')}
       description={t('subscriptionWriteOnly')}
+      footer={
+        open && (
+          <Button
+            type="submit"
+            form={`${prefix}-form`}
+            disabled={busy || disabled || waiting}
+            className="min-h-11 flex-1"
+          >
+            {t(waiting ? 'working' : 'save')}
+          </Button>
+        )
+      }
     >
       {open && (
         <form
+          id={`${prefix}-form`}
           ref={form}
           autoComplete="off"
           noValidate
@@ -196,92 +209,95 @@ function Editor({
             event.preventDefault()
             void submit(event.currentTarget)
           }}
-          className="space-y-5 overscroll-contain pb-2"
+          className="space-y-4 overscroll-contain"
         >
           {feedback}
-          <fieldset disabled={busy || disabled || waiting} className="min-w-0 space-y-5">
-            <Labeled label={t('subscriptionName')} htmlFor={`${prefix}-name`}>
-              <Input
-                id={`${prefix}-name`}
-                name="name"
-                defaultValue={initial.name}
-                className="h-12"
-              />
-            </Labeled>
-            {!group && (
-              <Labeled label={t('subscriptionUrl')} htmlFor={`${prefix}-url`}>
-                {field('url')}
+          <fieldset disabled={busy || disabled || waiting} className="min-w-0 space-y-4">
+            <div className="space-y-4">
+              <Labeled label={t('subscriptionName')} htmlFor={`${prefix}-name`}>
+                <Input
+                  id={`${prefix}-name`}
+                  name="name"
+                  defaultValue={initial.name}
+                  className="h-12"
+                />
               </Labeled>
-            )}
-            <label
-              className="flex min-h-12 items-center justify-between gap-4 text-sm"
-              htmlFor={`${prefix}-auto`}
-            >
-              {t('autoUpdate')}
-              <Switch
-                id={`${prefix}-auto`}
-                name="auto_update"
-                defaultChecked={initial.auto_update}
-                onCheckedChange={() => setDirty(true)}
-              />
-            </label>
-            <Labeled label={t('subscriptionIntervalSeconds')} htmlFor={`${prefix}-interval`}>
-              <Input
-                id={`${prefix}-interval`}
-                name="update_interval"
-                type="number"
-                inputMode="numeric"
-                min={900}
-                step={1}
-                defaultValue={initial.update_interval}
-                className="h-12"
-              />
-            </Labeled>
-            <Labeled label={t('subscriptionViaProxy')} htmlFor={`${prefix}-via`}>
-              <Select
-                name="update_via_proxy"
-                defaultValue={initial.update_via_proxy}
-                onValueChange={() => setDirty(true)}
-              >
-                <SelectTrigger
-                  id={`${prefix}-via`}
-                  className="min-h-12 w-full text-base md:text-sm"
-                >
-                  <SelectValue>
-                    {(value: unknown) =>
-                      t(
-                        value === 'always'
-                          ? 'Proxy'
-                          : value === 'never'
-                            ? 'Direct'
-                            : 'subscriptionViaAuto',
-                      )
-                    }
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="auto" className="min-h-12">
-                    {t('subscriptionViaAuto')}
-                  </SelectItem>
-                  <SelectItem value="always" className="min-h-12">
-                    {t('Proxy')}
-                  </SelectItem>
-                  <SelectItem value="never" className="min-h-12">
-                    {t('Direct')}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </Labeled>
-            <details className="border-t pt-4">
-              <summary className="min-h-12 cursor-pointer text-sm font-medium">
+              {!group && (
+                <Labeled label={t('subscriptionUrl')} htmlFor={`${prefix}-url`}>
+                  {field('url')}
+                </Labeled>
+              )}
+            </div>
+            <div className="settings-group divide-y">
+              <label className="setting-row" htmlFor={`${prefix}-auto`}>
+                {t('autoUpdate')}
+                <Switch
+                  id={`${prefix}-auto`}
+                  name="auto_update"
+                  defaultChecked={initial.auto_update}
+                  onCheckedChange={() => setDirty(true)}
+                />
+              </label>
+              <div className="min-w-0 space-y-4 py-4">
+                <Labeled label={t('subscriptionIntervalSeconds')} htmlFor={`${prefix}-interval`}>
+                  <Input
+                    id={`${prefix}-interval`}
+                    name="update_interval"
+                    type="number"
+                    inputMode="numeric"
+                    min={900}
+                    step={1}
+                    defaultValue={initial.update_interval}
+                    className="h-12"
+                  />
+                </Labeled>
+                <Labeled label={t('subscriptionViaProxy')} htmlFor={`${prefix}-via`}>
+                  <Select
+                    name="update_via_proxy"
+                    defaultValue={initial.update_via_proxy}
+                    onValueChange={() => setDirty(true)}
+                  >
+                    <SelectTrigger
+                      id={`${prefix}-via`}
+                      className="min-h-12 w-full text-base md:text-sm"
+                    >
+                      <SelectValue>
+                        {(value: unknown) =>
+                          t(
+                            value === 'always'
+                              ? 'Proxy'
+                              : value === 'never'
+                                ? 'Direct'
+                                : 'subscriptionViaAuto',
+                          )
+                        }
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto" className="min-h-12">
+                        {t('subscriptionViaAuto')}
+                      </SelectItem>
+                      <SelectItem value="always" className="min-h-12">
+                        {t('Proxy')}
+                      </SelectItem>
+                      <SelectItem value="never" className="min-h-12">
+                        {t('Direct')}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </Labeled>
+              </div>
+            </div>
+            <details className="settings-group">
+              <summary className="min-h-12 cursor-pointer py-3 text-sm font-medium">
                 {t('subscriptionAdvanced')}
               </summary>
-              <p className="mb-4 text-sm text-muted-foreground">{t('subscriptionUnchanged')}</p>
-              <div className="space-y-5">
+              <p className="pb-3 text-sm text-muted-foreground">{t('subscriptionUnchanged')}</p>
+              <div className="divide-y border-t">
                 {replacementFields
                   .filter(([key]) => key !== 'url' || group)
                   .map(([key, label]) => (
-                    <div key={key} className="space-y-2">
+                    <div key={key} className="space-y-2 py-2">
                       <label
                         className="flex min-h-12 items-center justify-between gap-4 text-sm"
                         htmlFor={`${prefix}-modify-${key}`}
@@ -310,9 +326,6 @@ function Editor({
                 {t('subscriptionInputInvalid')}
               </p>
             )}
-            <Button type="submit" className="min-h-12 w-full">
-              {t(waiting ? 'working' : 'save')}
-            </Button>
           </fieldset>
         </form>
       )}
@@ -330,7 +343,7 @@ function Labeled({
   children: ReactNode
 }) {
   return (
-    <div className="space-y-2">
+    <div className="min-w-0 space-y-2">
       <label htmlFor={htmlFor} className="text-sm font-medium">
         {label}
       </label>

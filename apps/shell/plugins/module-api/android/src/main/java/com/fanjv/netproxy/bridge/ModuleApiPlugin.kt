@@ -2,8 +2,10 @@ package com.fanjv.netproxy.bridge
 
 import android.app.Activity
 import android.content.ContextWrapper
+import android.content.res.Configuration
 import android.webkit.WebView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.Lifecycle
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
@@ -76,6 +78,7 @@ class RemoveVisibilityListenerArgs {
 @TauriPlugin
 class ModuleApiPlugin(activity: Activity) : Plugin(activity) {
     private val ownerClass = activity.javaClass
+    private val appearance = SystemBarAppearance()
     private val transport = LocalHttpTransport(ConnectionStore(activity.applicationContext))
     private val lifecycle = ModuleApiLifecycle(activity) {
         ModuleApiBridge(
@@ -91,6 +94,7 @@ class ModuleApiPlugin(activity: Activity) : Plugin(activity) {
         val candidate = viewActivity(webView) ?: lifecycle.owner ?: return
         if (!attachOwner(candidate)) return
         super.load(webView)
+        applyAppearance()
         val owner = lifecycle.owner as? AppCompatActivity
         bridge.load(webView, owner?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) == true)
     }
@@ -105,7 +109,13 @@ class ModuleApiPlugin(activity: Activity) : Plugin(activity) {
         if (!attachOwner(activity)) return
         lifecycle.resume(activity, replaceOwner = false)
         super.onResume(activity)
+        applyAppearance()
         publishVisibility()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        applyAppearance()
     }
 
     override fun onDestroy(activity: AppCompatActivity) {
@@ -255,6 +265,34 @@ class ModuleApiPlugin(activity: Activity) : Plugin(activity) {
 
     @Command
     fun visibility(invoke: Invoke) = immediate(invoke) { JSObject().put("visible", bridge.visible) }
+
+    @Command
+    fun setAppearance(invoke: Invoke) {
+        val owner = lifecycle.owner
+        if (owner == null) {
+            reject(invoke, BridgeFailure("api.destroyed"))
+            return
+        }
+        owner.runOnUiThread {
+            immediate(invoke) {
+                if (owner !== lifecycle.owner || owner.isDestroyed || owner.isFinishing) throw BridgeFailure("api.destroyed")
+                appearance.update(invoke.getRawArgs())
+                applyAppearance()
+                null
+            }
+        }
+    }
+
+    private fun applyAppearance() {
+        val owner = lifecycle.owner ?: return
+        if (owner.isDestroyed || owner.isFinishing) return
+        appearance.reapply { light ->
+            WindowCompat.getInsetsController(owner.window, owner.window.decorView).apply {
+                isAppearanceLightStatusBars = light
+                isAppearanceLightNavigationBars = light
+            }
+        }
+    }
 
     // 沿用官方 listener 协议，但新文档必须替换旧回调，不能累积已失联的 Channel。
     @Command

@@ -26,7 +26,11 @@ Query 管理权威远端快照；组件维护搜索、展开、弹层和视图�
 | pnpm                    | 12.11.2            | 精确依赖、独立锁、严格 peer；近期稳定包逐项固定 release-age 例外                                                               |
 | Vitest / Playwright     | 5.0.5 / 1.64.1     | 契约/组件与真实浏览器测试                                                                                                      |
 
-shadcn 初始化使用官方 CLI，实际配置位于 `components.json`。UI 文件保留官方实现，不复制 Compose 风格，不手写 Dialog/Select 的焦点与键盘系统。未使用的生成组件已删除。局部主题仅将默认圆角上限收敛至 8px，并加入安全区、100dvh、触摸目标、reduced-motion 和移动滚动约束。
+shadcn 初始化使用官方 CLI，实际配置位于 `components.json`。基础组件保留官方 Vega 实现，菜单统一使用官方生成的 DropdownMenu，不复制 Compose 风格或手写焦点系统。项目定制限于统一安全区、触摸目标、克制的遮罩和移动滚动约束。
+
+界面组合约定：`Details` 只承载只读详情和短表单，手机使用 Drawer、桌面使用 Dialog；标题栏关闭，底部仅展示显式业务操作。`EditorPanel` 是独立编辑工作区，手机使用全屏 Dialog、桌面使用宽 Sheet，校验与保存位于顶部工具栏，CodeMirror 内部滚动。页面配置通过 `DraftGuard` 复用原有路由拦截，不另建 Overlay 历史或业务状态机。设置按组组织行，不把每项做成卡片；列表的低频操作统一放入菜单。
+
+Android 系统栏通过唯一 UI 命令 `set_appearance` 同步 WebUI 已解析的 `light/dark`，Rust/Kotlin 都拒绝其他值和额外字段。该命令只改变系统栏图标对比度，不读取管理凭据、不访问业务 API，也不开放通用窗口或系统权限。跟随系统由同一前端主题监听解析，Activity 恢复时重用最近的已确认外观。
 
 许可证沿用仓库顶层 LICENSE；上游组件仍受各自许可证约束，完整依赖及声明由锁文件/安装包保留。React、Vite、Tailwind、TanStack、Base UI、shadcn、Zod 为 MIT，Lucide 为 ISC，Geist 字体为 SIL OFL 1.1。正式分发前应生成并核对完整传递依赖的 notices，不将本表当完整 SBOM。
 

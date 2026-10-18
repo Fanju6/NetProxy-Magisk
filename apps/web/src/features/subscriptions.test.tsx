@@ -150,6 +150,11 @@ async function updateAll() {
   fireEvent.click(await screen.findByRole('button', { name: 'More actions' }))
   fireEvent.click(await screen.findByRole('menuitem', { name: 'Update all subscriptions' }))
 }
+
+async function resourceMenu(dialog: HTMLElement, name: string) {
+  fireEvent.click(within(dialog).getByRole('button', { name: 'More actions' }))
+  return screen.findByRole('menuitem', { name })
+}
 const writes = (request: ReturnType<typeof setup>['request']) =>
   request.mock.calls.filter(([input]) => input.method !== 'GET')
 
@@ -269,10 +274,9 @@ it('supports Mock add, public-only edit and confirmed deletion without nested pa
   fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))
   expect(await screen.findByRole('heading', { name: 'Anonymous source' })).toBeVisible()
   dialog = await openDetails('Anonymous source')
-  await waitFor(() =>
-    expect(within(dialog).getByRole('button', { name: 'Edit subscription' })).toBeEnabled(),
-  )
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Edit subscription' }))
+  const editItem = await resourceMenu(dialog, 'Edit subscription')
+  await waitFor(() => expect(editItem).not.toHaveAttribute('aria-disabled', 'true'))
+  fireEvent.click(editItem)
   dialog = await screen.findByRole('dialog')
   expect(screen.getAllByRole('dialog')).toHaveLength(1)
   expect(
@@ -286,10 +290,9 @@ it('supports Mock add, public-only edit and confirmed deletion without nested pa
   const edit = writes(h.request).find(([input]) => input.method === 'PUT')![0]
   expect(edit.body).toEqual({ name: 'Renamed source' })
   dialog = await openDetails('Renamed source')
-  await waitFor(() =>
-    expect(within(dialog).getByRole('button', { name: 'Delete subscription' })).toBeEnabled(),
-  )
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Delete subscription' }))
+  const deleteItem = await resourceMenu(dialog, 'Delete subscription')
+  await waitFor(() => expect(deleteItem).not.toHaveAttribute('aria-disabled', 'true'))
+  fireEvent.click(deleteItem)
   dialog = await screen.findByRole('dialog')
   expect(within(dialog).getByText('Renamed source', { exact: true })).toBeVisible()
   expect(
@@ -311,19 +314,20 @@ it('supports Mock add, public-only edit and confirmed deletion without nested pa
 it('does not expose URL edit or deletion for a local group', async () => {
   setup()
   const dialog = await openDetails('本地配置')
+  fireEvent.click(within(dialog).getByRole('button', { name: 'More actions' }))
   for (const name of [
     'Edit subscription',
     'Delete subscription',
     'Update subscription',
     'Request cancellation',
   ])
-    expect(within(dialog).queryByRole('button', { name })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name })).not.toBeInTheDocument()
 })
 
 it('requires an explicit valid replacement before deleting the active subscription', async () => {
   const h = setup()
   let dialog = await openDetails()
-  fireEvent.click(within(dialog).getByRole('button', { name: 'Delete subscription' }))
+  fireEvent.click(await resourceMenu(dialog, 'Delete subscription'))
   dialog = await screen.findByRole('dialog')
   const confirm = within(dialog).getByRole('button', { name: 'Delete subscription' })
   expect(confirm).toBeDisabled()
@@ -487,8 +491,11 @@ it('uses the batch deadline for progress while still allowing cancellation of th
   await updateAll()
   try {
     const dialog = await openDetails('备用线路')
-    for (const name of ['Update subscription', 'Edit subscription', 'Delete subscription'])
-      expect(within(dialog).getByRole('button', { name })).toBeDisabled()
+    expect(within(dialog).getByRole('button', { name: 'Update subscription' })).toBeDisabled()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'More actions' }))
+    for (const name of ['Edit subscription', 'Delete subscription'])
+      expect(await screen.findByRole('menuitem', { name })).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
     const call = details.mock.calls.findLast(
       ([id, , , deadline]) => id === 'demo-empty' && typeof deadline === 'number',
     )

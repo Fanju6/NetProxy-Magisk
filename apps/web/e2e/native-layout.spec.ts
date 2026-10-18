@@ -49,10 +49,12 @@ test('full JSON editor guards drafts and browser back closes the editor before i
   const editor = page.getByRole('dialog', { name: 'config.json', exact: true })
   await expect(editor).toBeVisible()
   if (page.viewportSize()!.width < 768) {
+    await expect(editor).toHaveAttribute('data-slot', 'editor-workspace')
+    await expect(editor.locator('[data-slot="sheet-content"]')).toHaveCount(0)
     const box = await editor.boundingBox()
     expect(box!.width).toBeGreaterThanOrEqual(page.viewportSize()!.width - 1)
     expect(box!.height).toBeGreaterThanOrEqual(page.viewportSize()!.height - 1)
-  }
+  } else expect((await editor.boundingBox())!.width).toBeGreaterThanOrEqual(600)
   const content = editor.locator('.cm-content')
   await content.click()
   await page.keyboard.press('ControlOrMeta+A')

@@ -1,4 +1,9 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
+
+async function resourceAction(page: Page, name: string) {
+  await page.getByRole('dialog').getByRole('button', { name: '更多操作', exact: true }).click()
+  await page.getByRole('menuitem', { name, exact: true }).click()
+}
 
 test('resources show public details in both themes and restrict URL actions to subscriptions', async ({
   page,
@@ -18,8 +23,14 @@ test('resources show public details in both themes and restrict URL actions to s
   await expect(dialog.getByText('运行时已同步', { exact: true })).toBeVisible()
   await expect(dialog.getByText('失败', { exact: true })).toBeVisible()
   await expect(dialog.getByText('1440 分钟', { exact: true })).toBeVisible()
-  await expect(dialog.getByRole('button', { name: '编辑订阅', exact: true })).toBeVisible()
-  await expect(dialog.getByRole('button', { name: '删除订阅', exact: true })).toBeVisible()
+  await expect(
+    dialog.locator('[data-slot="drawer-footer"], [data-slot="dialog-footer"]').getByRole('button'),
+  ).toHaveCount(1)
+  await expect(dialog.getByRole('button', { name: '编辑订阅', exact: true })).toHaveCount(0)
+  await dialog.getByRole('button', { name: '更多操作', exact: true }).click()
+  await expect(page.getByRole('menuitem', { name: '编辑订阅', exact: true })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: '删除订阅', exact: true })).toBeVisible()
+  await page.keyboard.press('Escape')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.screenshot({
     path: `test-results/${test.info().project.name}-resource-detail.png`,
@@ -74,7 +85,7 @@ test('subscription form creates, patches and deletes a demo source without revea
   await save.click()
   await expect(page.getByRole('heading', { name: '端到端订阅', exact: true })).toBeVisible()
   await page.getByRole('button', { name: '查看详情 端到端订阅', exact: true }).click()
-  await dialog.getByRole('button', { name: '编辑订阅', exact: true }).click()
+  await resourceAction(page, '编辑订阅')
   await expect(page.getByRole('dialog')).toHaveCount(1)
   dialog = page.getByRole('dialog')
   await expect(dialog.getByRole('textbox', { name: '订阅 URL', exact: true })).toHaveCount(0)
@@ -83,7 +94,7 @@ test('subscription form creates, patches and deletes a demo source without revea
   await dialog.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.getByRole('heading', { name: '已编辑订阅', exact: true })).toBeVisible()
   await page.getByRole('button', { name: '查看详情 已编辑订阅', exact: true }).click()
-  await dialog.getByRole('button', { name: '删除订阅', exact: true }).click()
+  await resourceAction(page, '删除订阅')
   await expect(dialog.getByText('已编辑订阅', { exact: true })).toBeVisible()
   await expect(
     dialog.getByText('删除此订阅及其节点？此操作无法撤销。', { exact: true }),
@@ -111,7 +122,7 @@ test('active subscription deletion requires a named replacement and update-all r
   await expect(page.getByText('全部订阅已更新', { exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: '查看详情 Global Connect', exact: true }).click()
   const dialog = page.getByRole('dialog')
-  await dialog.getByRole('button', { name: '删除订阅', exact: true }).click()
+  await resourceAction(page, '删除订阅')
   const confirm = dialog.getByRole('button', { name: '删除订阅', exact: true })
   await expect(confirm).toBeDisabled()
   await dialog.getByRole('combobox', { name: '替代分组', exact: true }).click()
@@ -151,7 +162,9 @@ test('service confirmation, stopped Catalog and selection work without a backend
     'aria-pressed',
     'true',
   )
-  await page.getByRole('button', { name: '列表视图' }).click()
+  await page.getByRole('button', { name: '显示方式', exact: true }).click()
+  await page.getByRole('menuitemradio', { name: '列表视图' }).click()
+  await expect(page.getByRole('menu')).toHaveCount(0)
   await page.getByRole('searchbox').fill('Tokyo')
   await expect(page.getByRole('button', { name: '选择 Hong Kong 01', exact: true })).toHaveCount(0)
   await page.getByRole('searchbox').clear()
@@ -212,15 +225,14 @@ test('node testing and saved routing changes remain usable while the core is sto
   await expect(group.getByRole('button', { name: '测试分组 Global Connect' })).toBeEnabled()
   await group.getByRole('button', { name: '测试分组 Global Connect' }).click()
   await expect(page.getByText('已收到最近可用结果，其中可能包含缓存。')).toBeVisible()
-  await expect(manual).toContainText('53 ms')
+  const measured = group.getByRole('button', { name: '测试 Tokyo 01 的延迟', exact: true })
+  await expect(measured).toContainText('53 ms')
   const single = group.getByRole('button', { name: '测试 Hong Kong 01 的延迟' })
   await expect(single).toBeEnabled()
   await single.click()
   await expect(single).toBeEnabled()
-  await expect(group.getByRole('button', { name: '选择 Hong Kong 01', exact: true })).toContainText(
-    '32 ms',
-  )
-  await expect(manual).toContainText('53 ms')
+  await expect(single).toContainText('32 ms')
+  await expect(measured).toContainText('53 ms')
   expect(await single.locator('xpath=ancestor::button').count()).toBe(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await navigation.getByRole('link', { name: '仪表盘', exact: true }).click()
@@ -243,6 +255,9 @@ test('details, keyboard navigation and responsive content stay inside the viewpo
   await page.getByRole('button', { name: '查看详情 Tokyo 01', exact: true }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
   await expect(page.getByRole('dialog')).toContainText('jp-01.example.invalid')
+  await expect(
+    page.getByRole('dialog').locator('[data-slot="drawer-footer"], [data-slot="dialog-footer"]'),
+  ).toHaveCount(0)
   await page.getByRole('button', { name: '关闭', exact: true }).click()
   await expect(page.getByRole('dialog')).not.toBeVisible()
   await expect(page.getByRole('button', { name: '查看详情 Tokyo 01', exact: true })).toBeFocused()

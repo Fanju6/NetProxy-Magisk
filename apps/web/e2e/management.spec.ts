@@ -13,7 +13,7 @@ test('editor actions remain above a keyboard that only resizes the visual viewpo
     window.visualViewport?.dispatchEvent(new Event('resize'))
   }, height)
   await expect(page.locator('html')).toHaveAttribute('data-keyboard-open')
-  const footer = dialog.locator('[data-slot="sheet-footer"]')
+  const footer = dialog.locator('.editor-toolbar')
   await expect
     .poll(async () => (await footer.boundingBox())!.y + (await footer.boundingBox())!.height)
     .toBeLessThanOrEqual(height + 1)
@@ -37,7 +37,7 @@ test('editor actions remain above a keyboard that only resizes the visual viewpo
     window.visualViewport?.dispatchEvent(new Event('resize'))
   }, height)
   await expect(page.locator('html')).toHaveAttribute('data-keyboard-open')
-  const actions = dialog.locator('[data-slot="drawer-footer"], [data-slot="sheet-footer"]')
+  const actions = dialog.locator('[data-slot="drawer-footer"], [data-slot="dialog-footer"]')
   await expect
     .poll(async () => {
       const bounds = (await actions.boundingBox())!
@@ -124,10 +124,11 @@ test('local node import and logs are usable without platform file permissions', 
   ).toBeVisible()
   await page.goto('/#/settings/logs')
   await expect(page.getByText(/Service ready/)).toBeVisible()
-  await page.getByText('工具', { exact: true }).click()
-  await page.getByRole('button', { name: 'eBPF 能力检查', exact: true }).click()
+  await page.getByRole('button', { name: '日志选项', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'eBPF 能力检查', exact: true }).click()
   await expect(page.getByText(/does not prove that traffic is intercepted/)).toBeVisible()
-  await page.getByRole('button', { name: '清空', exact: true }).click()
+  await page.getByRole('button', { name: '日志选项', exact: true }).click()
+  await page.getByRole('menuitem', { name: '清空', exact: true }).click()
   await page.getByRole('dialog').getByRole('button', { name: '确认', exact: true }).click()
   await expect(page.getByText('暂无日志内容', { exact: true })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)

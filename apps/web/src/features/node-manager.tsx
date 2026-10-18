@@ -1,10 +1,19 @@
 import { useEffect, useState } from 'react'
 import { z } from 'zod'
+import { Copy } from 'lucide-react'
 import { useApi, usePreferences } from '@/app/context'
 import { useManagementAction } from '@/api/management'
 import type { NodeSnapshot } from '@/api/contracts'
-import { Details } from '@/components/details'
+import { Details, EditorPanel } from '@/components/details'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   Select,
   SelectContent,
@@ -44,8 +53,8 @@ export function NodeManager({
   const [error, setError] = useState<unknown>(null)
   const [notice, setNotice] = useState('')
   const [insecure, setInsecure] = useState(false)
-  const [deleting, setDeleting] = useState(false)
   const [loaded, setLoaded] = useState(operation !== 'edit' && operation !== 'export')
+  const [copyState, setCopyState] = useState<'idle' | 'copying' | 'copied' | 'failed'>('idle')
   const requiresTarget = 'tag' in target
   const validTarget =
     operation === 'import' ||
@@ -83,10 +92,6 @@ export function NodeManager({
   const save = async () => {
     if (action.pending || !validTarget || !loaded || notice) return
     setError(null)
-    if (operation === 'remove' && !deleting) {
-      setDeleting(true)
-      return
-    }
     try {
       const request =
         operation === 'remove'
@@ -109,7 +114,6 @@ export function NodeManager({
       setContent('')
       setOriginal('')
       setInsecure(false)
-      setDeleting(false)
       setNotice(text('操作完成，已重新读取节点。', 'Operation completed. Nodes refreshed.'))
     } catch (failure) {
       setError(failure)
@@ -123,39 +127,110 @@ export function NodeManager({
     export: text('分享链接', 'Share link'),
     remove: text('删除节点', 'Delete node'),
   }[operation]
+  const targetChanged = !validTarget && !notice && (
+    <p role="alert" className="text-sm text-destructive">
+      {text(
+        '节点或本地分组已变更，请关闭后重新选择。',
+        'The node or local group changed. Close and select it again.',
+      )}
+    </p>
+  )
+  if (operation === 'remove') {
+    return (
+      <Dialog
+        open
+        onOpenChange={(open) => {
+          if (!open) onClose()
+        }}
+      >
+        <DialogContent className="rounded-lg">
+          <DialogHeader className="pr-8">
+            <DialogTitle>{title}</DialogTitle>
+            <DialogDescription>
+              {text('删除后无法恢复。', 'This cannot be undone.')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-w-0 space-y-3">
+            <p className="break-all font-medium">{tag}</p>
+            <p className="break-all text-sm text-muted-foreground">{group?.group.name}</p>
+            {targetChanged}
+            {error != null && <ErrorState compact error={error} />}
+            {notice && (
+              <p role="status" className="text-sm">
+                {notice}
+              </p>
+            )}
+          </div>
+          {!notice && (
+            <DialogFooter>
+              <Button variant="outline" onClick={onClose}>
+                {text('取消', 'Cancel')}
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={action.pending || !validTarget || !loaded}
+                onClick={() => void save()}
+              >
+                {text('确认删除', 'Confirm delete')}
+              </Button>
+            </DialogFooter>
+          )}
+        </DialogContent>
+      </Dialog>
+    )
+  }
+  const raw = operation === 'add' || operation === 'edit'
+  const Panel = raw ? EditorPanel : Details
   return (
-    <Details
+    <Panel
       open
-      mode={operation === 'add' || operation === 'edit' ? 'fullscreen' : 'sheet'}
       dirty={!notice && operation !== 'export' && (content !== original || insecure)}
       onOpenChange={(value) => {
         if (!value) onClose()
       }}
       title={title}
-      description={
-        operation === 'remove'
-          ? text('删除后无法恢复。', 'This cannot be undone.')
-          : text(
-              '节点原文和分享链接可能包含凭据，仅在当前页面内存中保留。',
-              'Node content and share links may contain credentials and stay only in this page memory.',
-            )
+      description={text(
+        '节点原文和分享链接可能包含凭据，仅在当前页面内存中保留。',
+        'Node content and share links may contain credentials and stay only in this page memory.',
+      )}
+      footer={
+        operation === 'export' ? (
+          <Button
+            variant="outline"
+            disabled={!loaded || !content || copyState === 'copying'}
+            onClick={() => {
+              setCopyState('copying')
+              void (async () => {
+                try {
+                  await navigator.clipboard.writeText(content)
+                  setCopyState('copied')
+                } catch {
+                  setCopyState('failed')
+                }
+              })()
+            }}
+          >
+            <Copy />
+            {text('复制链接', 'Copy link')}
+          </Button>
+        ) : !notice ? (
+          <Button
+            disabled={action.pending || !validTarget || !loaded || !content.trim()}
+            onClick={() => void save()}
+          >
+            {text('保存', 'Save')}
+          </Button>
+        ) : undefined
       }
     >
-      <div className="min-w-0 space-y-5">
+      <div className={raw ? 'flex min-h-0 flex-1 flex-col gap-3' : 'min-w-0 space-y-4'}>
         {requiresTarget && (
           <div className="min-w-0 space-y-1">
             <p className="break-all font-medium">{tag}</p>
             <p className="break-all text-sm text-muted-foreground">{group?.group.name}</p>
           </div>
         )}
-        {!validTarget && !notice && (
-          <p role="alert" className="text-sm text-destructive">
-            {text(
-              '节点或本地分组已变更，请关闭后重新选择。',
-              'The node or local group changed. Close and select it again.',
-            )}
-          </p>
-        )}
+        {targetChanged}
         {operation === 'add' && groups.length > 1 && (
           <Select
             value={localGroupId}
@@ -175,8 +250,7 @@ export function NodeManager({
           </Select>
         )}
         {!loaded && error == null && <LoadingState />}
-        {operation !== 'remove' &&
-          loaded &&
+        {loaded &&
           !notice &&
           (operation === 'add' || operation === 'edit' ? (
             <JsonEditor
@@ -206,9 +280,17 @@ export function NodeManager({
             <Switch checked={insecure} onCheckedChange={setInsecure} disabled={action.pending} />
           </label>
         )}
-        {deleting && (
+        {copyState === 'copied' && (
+          <p role="status" className="text-sm">
+            {text('链接已复制', 'Link copied')}
+          </p>
+        )}
+        {copyState === 'failed' && (
           <p role="alert" className="text-sm text-destructive">
-            {text('再次确认将永久删除此节点。', 'Confirm again to permanently delete this node.')}
+            {text(
+              '复制失败，请手动选择链接复制。',
+              'Copy failed. Select the link and copy it manually.',
+            )}
           </p>
         )}
         {error != null && <ErrorState compact error={error} />}
@@ -217,26 +299,7 @@ export function NodeManager({
             {notice}
           </p>
         )}
-        {operation !== 'export' && !notice && (
-          <Button
-            className="min-h-12 w-full"
-            variant={deleting ? 'destructive' : 'default'}
-            disabled={
-              action.pending ||
-              !validTarget ||
-              !loaded ||
-              (operation !== 'remove' && !content.trim())
-            }
-            onClick={() => void save()}
-          >
-            {deleting
-              ? text('确认删除', 'Confirm delete')
-              : operation === 'remove'
-                ? title
-                : text('保存', 'Save')}
-          </Button>
-        )}
       </div>
-    </Details>
+    </Panel>
   )
 }

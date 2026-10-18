@@ -31,8 +31,9 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { Choice } from '@/components/choice'
 import { EmptyState, ErrorState, LoadingState } from '@/components/states'
-import { ConfigurationEditor, ManagementSelect } from './configuration'
+import { ConfigurationEditor } from './configuration'
 import { useManagementCopy } from './management-copy'
 import { NativeInboundForm } from './native-inbound-form'
 
@@ -153,19 +154,40 @@ function ApplicationPolicyForm({ content, change }: { content: string; change: C
           first.label.localeCompare(second.label),
       ) ?? []
   return (
-    <div className="space-y-3">
-      <ManagementSelect
-        label={copy.appMode}
-        value={mode}
-        choices={(['off', 'blacklist', 'whitelist'] as const).map((value) => ({
-          value,
-          label: copy[value],
-        }))}
-        onChange={(value) => {
-          if (['off', 'blacklist', 'whitelist'].includes(value))
-            change(serialize({ app: changeListMode(policy, value as ListMode) }))
-        }}
-      />
+    <div className="space-y-5">
+      <div className="settings-group">
+        <div className="setting-row">
+          <span className="min-w-0 break-words">{copy.appMode}</span>
+          <Choice
+            variant="ghost"
+            label={copy.appMode}
+            value={mode}
+            items={(['off', 'blacklist', 'whitelist'] as const).map((value) => ({
+              value,
+              label: copy[value],
+            }))}
+            onChange={(value) => {
+              if (['off', 'blacklist', 'whitelist'].includes(value))
+                change(serialize({ app: changeListMode(policy, value as ListMode) }))
+            }}
+          />
+        </div>
+        {mode !== 'off' && users && users.length > 1 && (
+          <div className="setting-row">
+            <span className="min-w-0 break-words">{copy.users}</span>
+            <Choice
+              variant="ghost"
+              label={copy.users}
+              value={selectedUser ? String(selectedUser.id) : ''}
+              items={users.map((user) => ({ value: String(user.id), label: user.name }))}
+              onChange={(value) => {
+                setUserId(value)
+                setLimit(50)
+              }}
+            />
+          </div>
+        )}
+      </div>
       {mode !== 'off' && (
         <>
           <p className="text-sm text-muted-foreground">
@@ -195,19 +217,8 @@ function ApplicationPolicyForm({ content, change }: { content: string; change: C
           {!users && !error && <LoadingState />}
           {users && (
             <>
-              {users.length > 1 && (
-                <ManagementSelect
-                  label={copy.users}
-                  value={selectedUser ? String(selectedUser.id) : ''}
-                  choices={users.map((user) => ({ value: String(user.id), label: user.name }))}
-                  onChange={(value) => {
-                    setUserId(value)
-                    setLimit(50)
-                  }}
-                />
-              )}
               {!apps.length && <EmptyState title={copy.noApps} />}
-              <div className="divide-y">
+              <div className={apps.length ? 'settings-group' : undefined}>
                 {apps.slice(0, limit).map((app) => {
                   const reference = `${selectedUser!.id}:${app.package_name}`
                   const active = selected.has(reference)
@@ -215,7 +226,7 @@ function ApplicationPolicyForm({ content, change }: { content: string; change: C
                     <Button
                       key={reference}
                       variant="ghost"
-                      className="h-auto min-h-16 w-full justify-start gap-3 whitespace-normal rounded-none px-1 py-2 text-left"
+                      className="setting-row h-auto min-h-16 w-full justify-start whitespace-normal rounded-none text-left font-normal"
                       aria-pressed={active}
                       onClick={() =>
                         change(
@@ -311,32 +322,35 @@ function WiFiPolicyForm({ content, change }: { content: string; change: Change }
     setInvalid(false)
   }
   return (
-    <div className="space-y-4">
-      <ManagementSelect
-        label={copy.wifi}
-        value={mode}
-        choices={(['off', 'blacklist', 'whitelist'] as const).map((value) => ({
-          value,
-          label: copy[value],
-        }))}
-        onChange={(value) => {
-          if (['off', 'blacklist', 'whitelist'].includes(value))
-            change(serialize({ wifi: changeListMode(policy, value as ListMode) }))
-        }}
-      />
-      <label
-        className="flex min-h-11 items-center justify-between gap-4 text-sm"
-        htmlFor="network-non-wifi"
-      >
-        <span>{copy.nonWifi}</span>
-        <Switch
-          id="network-non-wifi"
-          checked={policy.proxy_on_non_wifi}
-          onCheckedChange={(checked) =>
-            change(serialize({ wifi: { ...policy, proxy_on_non_wifi: checked } }))
-          }
-        />
-      </label>
+    <div className="space-y-5">
+      <div className="settings-group">
+        <div className="setting-row">
+          <span className="min-w-0 break-words">{copy.wifi}</span>
+          <Choice
+            variant="ghost"
+            label={copy.wifi}
+            value={mode}
+            items={(['off', 'blacklist', 'whitelist'] as const).map((value) => ({
+              value,
+              label: copy[value],
+            }))}
+            onChange={(value) => {
+              if (['off', 'blacklist', 'whitelist'].includes(value))
+                change(serialize({ wifi: changeListMode(policy, value as ListMode) }))
+            }}
+          />
+        </div>
+        <label className="setting-row" htmlFor="network-non-wifi">
+          <span className="min-w-0 break-words">{copy.nonWifi}</span>
+          <Switch
+            id="network-non-wifi"
+            checked={policy.proxy_on_non_wifi}
+            onCheckedChange={(checked) =>
+              change(serialize({ wifi: { ...policy, proxy_on_non_wifi: checked } }))
+            }
+          />
+        </label>
+      </div>
       {mode !== 'off' && (
         <>
           <p className="text-sm text-muted-foreground">
@@ -384,14 +398,14 @@ function WiFiPolicyForm({ content, change }: { content: string; change: Change }
           </Button>
           {error && <ErrorState error={error} compact />}
           {saved && (
-            <ul className="divide-y" aria-label={copy.savedWifi}>
+            <ul className="settings-group empty:hidden" aria-label={copy.savedWifi}>
               {saved
                 .filter((ssid) => !entries.includes(ssid))
                 .map((ssid) => (
                   <li key={ssid}>
                     <Button
                       variant="ghost"
-                      className="h-auto min-h-11 w-full justify-start gap-3 rounded-none px-1 py-2 text-left"
+                      className="setting-row h-auto w-full justify-start rounded-none text-left font-normal"
                       onClick={() => add(ssid)}
                     >
                       <Wifi className="size-4 shrink-0 text-muted-foreground" />
@@ -402,34 +416,41 @@ function WiFiPolicyForm({ content, change }: { content: string; change: Change }
                 ))}
             </ul>
           )}
-          <h3 className="text-sm font-medium">{copy[policy.mode]}</h3>
-          {!entries.length && <EmptyState title={copy.noWifi} />}
-          <ul className="divide-y" aria-label={copy[policy.mode]}>
-            {entries.map((ssid) => (
-              <li key={ssid} className="flex items-center justify-between gap-3 py-2">
-                <Wifi className="size-4 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 whitespace-pre-wrap break-all text-sm">{ssid}</span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-11 shrink-0"
-                  aria-label={`${copy.remove} ${ssid}`}
-                  onClick={() =>
-                    change(
-                      serialize({
-                        wifi: {
-                          ...policy,
-                          [policy.mode]: entries.filter((value) => value !== ssid),
-                        },
-                      }),
-                    )
-                  }
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              </li>
-            ))}
-          </ul>
+          <section>
+            <h3 className="section-label">{copy[policy.mode]}</h3>
+            {!entries.length && <EmptyState title={copy.noWifi} />}
+            <ul
+              className={entries.length ? 'settings-group' : undefined}
+              aria-label={copy[policy.mode]}
+            >
+              {entries.map((ssid) => (
+                <li key={ssid} className="setting-row">
+                  <Wifi className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 whitespace-pre-wrap break-all text-sm">
+                    {ssid}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-11 shrink-0"
+                    aria-label={`${copy.remove} ${ssid}`}
+                    onClick={() =>
+                      change(
+                        serialize({
+                          wifi: {
+                            ...policy,
+                            [policy.mode]: entries.filter((value) => value !== ssid),
+                          },
+                        }),
+                      )
+                    }
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </section>
         </>
       )}
     </div>
@@ -449,32 +470,44 @@ function InboundChoice({
   if (target === 'backend') {
     const parsed = parseDocument(content, backendDocumentSchema)
     return parsed ? (
-      <ManagementSelect
-        label={copy.backend}
-        value={parsed.backend}
-        choices={(['ebpf', 'tun'] as const).map((value) => ({ value, label: copy[value] }))}
-        onChange={(backend) => {
-          if (backend === 'ebpf' || backend === 'tun') change(serialize({ backend }))
-        }}
-      />
+      <div className="settings-group">
+        <div className="setting-row">
+          <span className="min-w-0 break-words">{copy.backend}</span>
+          <Choice
+            variant="ghost"
+            label={copy.backend}
+            value={parsed.backend}
+            items={(['ebpf', 'tun'] as const).map((value) => ({ value, label: copy[value] }))}
+            onChange={(backend) => {
+              if (backend === 'ebpf' || backend === 'tun') change(serialize({ backend }))
+            }}
+          />
+        </div>
+      </div>
     ) : (
       <EmptyState title={copy.invalid} />
     )
   }
   const parsed = parseDocument(content, rootDocumentSchema)
   return parsed ? (
-    <ManagementSelect
-      label={copy.root}
-      value={parsed.root_policy}
-      choices={(['default', 'include', 'exclude'] as const).map((value) => ({
-        value,
-        label: copy[value],
-      }))}
-      onChange={(root_policy) => {
-        if (['default', 'include', 'exclude'].includes(root_policy))
-          change(serialize({ root_policy }))
-      }}
-    />
+    <div className="settings-group">
+      <div className="setting-row">
+        <span className="min-w-0 break-words">{copy.root}</span>
+        <Choice
+          variant="ghost"
+          label={copy.root}
+          value={parsed.root_policy}
+          items={(['default', 'include', 'exclude'] as const).map((value) => ({
+            value,
+            label: copy[value],
+          }))}
+          onChange={(root_policy) => {
+            if (['default', 'include', 'exclude'].includes(root_policy))
+              change(serialize({ root_policy }))
+          }}
+        />
+      </div>
+    </div>
   ) : (
     <EmptyState title={copy.invalid} />
   )
@@ -518,28 +551,28 @@ function PolicyPanel({ section }: { section?: PolicySection }) {
     if (section && section !== 'inbound') void navigate({ to: '/settings' })
   }
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="max-w-3xl space-y-5">
       {(!section || section === 'inbound') &&
         groups
           .filter((group) => !section || group.section === section)
           .map((group) => (
-            <section key={group.section} className="space-y-2">
+            <section key={group.section}>
               <h2 className="section-label">{group.title}</h2>
-              <div className="divide-y">
+              <div className="settings-group">
                 {group.entries
                   .filter((entry) => !section || entry.target !== 'inbound/root_policy')
                   .map((entry) => (
                     <Button
                       key={entry.target}
                       variant="ghost"
-                      className="min-h-14 w-full justify-start gap-3 rounded-none"
+                      className="setting-row h-auto w-full justify-start rounded-none text-left font-normal"
                       onClick={() => setTarget(entry.target)}
                     >
-                      <entry.icon className="size-4" />
+                      <entry.icon className="size-4 shrink-0 text-muted-foreground" />
                       <span className="min-w-0 flex-1 whitespace-normal break-words text-left">
                         {entry.title}
                       </span>
-                      <ChevronRight className="size-4" />
+                      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
                     </Button>
                   ))}
               </div>

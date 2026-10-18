@@ -227,12 +227,20 @@ function logsPage(empty = false) {
   return data
 }
 
+async function logMenu() {
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: 'Log options' }))
+  return user
+}
+
 it('shows readable service entries and a filtered monospace raw view', async () => {
   logsPage()
   expect(await screen.findByText('Ready for traffic')).toBeVisible()
   expect(screen.getByRole('list')).toBeVisible()
   expect(screen.queryByText('DO NOT INFER SERVICE ENTRIES')).not.toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Filter options' }))
   await choose('Log view', 'Raw')
+  fireEvent.click(screen.getByRole('button', { name: 'Close' }))
   expect(screen.getByText(/\[INFO\] \[service\]/).tagName).toBe('PRE')
   fireEvent.change(screen.getByRole('searchbox', { name: 'Filter logs' }), {
     target: { value: 'not a match' },
@@ -243,25 +251,28 @@ it('shows readable service entries and a filtered monospace raw view', async () 
 it('does not infer service entries from legacy content when entries is empty', async () => {
   logsPage(true)
   expect(await screen.findByText('No log entries')).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: 'Filter options' }))
   await choose('Log view', 'Raw')
+  fireEvent.click(screen.getByRole('button', { name: 'Close' }))
   expect(screen.queryByText('DO NOT INFER SERVICE ENTRIES')).not.toBeInTheDocument()
 })
 
 it('requires confirmation before clearing logs or restarting and groups diagnostic tools', async () => {
   const data = logsPage()
   await screen.findByText('Ready for traffic')
-  fireEvent.click(screen.getByRole('button', { name: 'Clear' }))
+  const user = await logMenu()
+  await user.click(await screen.findByRole('menuitem', { name: 'Clear' }))
   expect(await screen.findByText('Clear the selected log. This cannot be undone.')).toBeVisible()
   expect(data.request.mock.calls.every(([input]) => input.method === 'GET')).toBe(true)
   fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
   await waitFor(() =>
     expect(data.request.mock.calls.filter(([input]) => input.method === 'DELETE')).toHaveLength(1),
   )
-  fireEvent.click(screen.getByText('Tools', { selector: 'summary' }))
-  expect(screen.getByRole('button', { name: 'Export diagnostics' })).toBeVisible()
-  const restart = screen.getByRole('button', { name: 'Restart' })
-  await waitFor(() => expect(restart).toBeEnabled())
-  fireEvent.click(restart)
+  await logMenu()
+  expect(await screen.findByRole('menuitem', { name: 'Export diagnostics' })).toBeVisible()
+  const restart = await screen.findByRole('menuitem', { name: 'Restart' })
+  await waitFor(() => expect(restart).not.toHaveAttribute('aria-disabled', 'true'))
+  await user.click(restart)
   expect(await screen.findByText('Proxy connections may be interrupted briefly.')).toBeVisible()
   expect(data.request.mock.calls.some(([input]) => input.path === '/service/restart')).toBe(false)
 })

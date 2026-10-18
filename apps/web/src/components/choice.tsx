@@ -6,12 +6,14 @@ export function Choice({
   items,
   onChange,
   disabled = false,
+  variant = 'outline',
 }: {
   label: string
   value: string
   items: { value: string; label: string }[]
   onChange: (value: string) => void
   disabled?: boolean
+  variant?: 'outline' | 'ghost'
 }) {
   return (
     <Select
@@ -22,7 +24,14 @@ export function Choice({
       }}
       disabled={disabled}
     >
-      <SelectTrigger aria-label={label}>
+      <SelectTrigger
+        aria-label={label}
+        className={
+          variant === 'ghost'
+            ? 'border-transparent bg-transparent shadow-none dark:bg-transparent'
+            : undefined
+        }
+      >
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

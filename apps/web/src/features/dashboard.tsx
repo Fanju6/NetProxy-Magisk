@@ -72,14 +72,14 @@ export function DashboardPage() {
     connection !== 'live' ||
     !['ready', 'stopped', 'failed'].includes(service.state)
   return (
-    <div className="space-y-5">
-      <section className="flex items-center justify-between gap-4 rounded-lg bg-muted/60 p-4 sm:p-5">
+    <div className="max-w-5xl space-y-5">
+      <section className="flex items-center justify-between gap-4 py-2">
         <div className="min-w-0 space-y-2">
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <Activity className="size-4" />
             {t('service')}
           </p>
-          <h2 className="text-2xl font-semibold">{t(service.state)}</h2>
+          <h2 className="text-2xl font-medium">{t(service.state)}</h2>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline">
               {service.configured_backend === 'ebpf' ? 'eBPF' : 'TUN'}
@@ -88,9 +88,9 @@ export function DashboardPage() {
           </div>
         </div>
         <Button
-          size="lg"
+          size="default"
           variant={running ? 'outline' : 'default'}
-          className="min-h-12 shrink-0"
+          className="shrink-0"
           disabled={!api.supports(running ? 'service.stop' : 'service.start') || blocked}
           onClick={() => (running ? setConfirmStop(true) : action.mutate('start'))}
         >
@@ -114,7 +114,7 @@ export function DashboardPage() {
         <ErrorState compact error={status.error} retry={() => void status.refetch()} />
       )}
 
-      <div className="grid grid-cols-2 gap-4 px-1 py-1">
+      <div className="grid grid-cols-2 gap-4 border-y py-4">
         {[
           { title: t('download'), value: traffic?.downlink, icon: ArrowDown },
           { title: t('upload'), value: traffic?.uplink, icon: ArrowUp },
@@ -124,7 +124,7 @@ export function DashboardPage() {
               <item.icon className="size-4" />
               {item.title}
             </p>
-            <p className="text-2xl font-medium tabular-nums sm:text-3xl">
+            <p className="text-xl font-medium tabular-nums sm:text-2xl">
               {rateUnavailable ? '—' : `${bytes(item.value ?? 0, preferences.locale)}/s`}
             </p>
           </section>
@@ -237,7 +237,7 @@ export function DashboardPage() {
             </div>
           </>
         )}
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-5 rounded-lg bg-muted/40 p-4 text-sm lg:grid-cols-4">
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-4 py-2 text-sm lg:grid-cols-4">
           {[
             {
               label: t('totalDownload'),

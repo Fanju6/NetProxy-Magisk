@@ -152,7 +152,8 @@ it('permits native node and delay controls without enabling subscription or conf
   await act(() => fixture.router.navigate({ to: '/nodes' }))
   const manual = await screen.findByRole('button', { name: 'Select Tokyo 01' })
   await waitFor(() => expect(manual).toBeEnabled())
-  const measured = within(manual).getByText('68 ms')
+  const measured = screen.getByRole('button', { name: 'Test latency for Tokyo 01' })
+  expect(measured).toHaveTextContent('68 ms')
   const upstreamSeconds = 1792065600
   expect(new Date(upstreamSeconds * 1000).getFullYear()).toBe(2026)
   expect(measured).toHaveAttribute(
@@ -173,7 +174,7 @@ it('permits native node and delay controls without enabling subscription or conf
   expect(
     await screen.findByText('Latest available results received; some may be cached.'),
   ).toBeVisible()
-  expect(within(manual).getByText('32 ms')).toBeVisible()
+  expect(singleTest).toHaveTextContent('32 ms')
   expect(singleTest.closest('button')?.parentElement?.closest('button')).toBeNull()
   await act(() => fixture.router.navigate({ to: '/settings' }))
   await screen.findByRole('heading', { name: 'Settings' })

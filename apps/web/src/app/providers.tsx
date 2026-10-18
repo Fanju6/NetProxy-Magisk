@@ -4,6 +4,7 @@ import type { ApiClient } from '@/api/client'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ApiContext, PreferencesContext, type Preferences } from './context'
 import { translator } from './i18n'
+import { syncNativeAppearance } from './appearance'
 
 const key = 'netproxy.web.preferences'
 function initialPreferences(): Preferences {
@@ -49,6 +50,7 @@ export function AppProviders({ api, children }: { api: ApiClient; children: Reac
       const dark = preferences.theme === 'dark' || (preferences.theme === 'system' && media.matches)
       document.documentElement.classList.toggle('dark', dark)
       document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+      void syncNativeAppearance(dark ? 'dark' : 'light')
       document.documentElement.lang = preferences.locale === 'zh' ? 'zh-CN' : 'en'
       document
         .querySelector('meta[name="theme-color"]')

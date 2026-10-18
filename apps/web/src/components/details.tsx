@@ -7,17 +7,11 @@ import {
   type ReactNode,
 } from 'react'
 import { useBlocker, useRouter } from '@tanstack/react-router'
-import { ArrowLeft } from 'lucide-react'
+import { Dialog as DialogPrimitive } from '@base-ui/react/dialog'
+import { ArrowLeft, X } from 'lucide-react'
 import { usePreferences } from '@/app/context'
 import { Button } from './ui/button'
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-  SheetFooter,
-} from './ui/sheet'
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from './ui/sheet'
 import {
   Drawer,
   DrawerContent,
@@ -33,6 +27,8 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogPortal,
+  DialogOverlay,
 } from './ui/dialog'
 
 const query = '(max-width: 767px)'
@@ -40,6 +36,13 @@ const subscribe = (notify: () => void) => {
   const media = matchMedia(query)
   media.addEventListener('change', notify)
   return () => media.removeEventListener('change', notify)
+}
+function useMobile() {
+  return useSyncExternalStore(
+    subscribe,
+    () => matchMedia(query).matches,
+    () => false,
+  )
 }
 
 function DiscardPrompt({
@@ -77,16 +80,16 @@ function DiscardPrompt({
   )
 }
 
-/** Use the existing router blocker, not a second overlay history stack. */
+/** Existing router history remains the single owner of system/browser back. */
 function PanelNavigation({
   id,
   dirty,
-  inline,
+  inline = false,
   close,
 }: {
   id: string
   dirty: boolean
-  inline: boolean
+  inline?: boolean
   close: () => void
 }) {
   const blocker = useBlocker({
@@ -119,146 +122,188 @@ function PanelNavigation({
   )
 }
 
-export function Details({
-  open,
-  onOpenChange,
-  title,
-  description,
-  children,
-  footer,
-  mode = 'sheet',
-  dirty = false,
-}: {
+export function DraftGuard({ dirty, children }: { dirty: boolean; children: ReactNode }) {
+  const id = useId()
+  const router = useRouter({ warn: false })
+  return (
+    <div id={id} data-panel>
+      {children}
+      {router && <PanelNavigation id={id} dirty={dirty} inline close={() => {}} />}
+    </div>
+  )
+}
+
+interface PanelProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   title: string
   description?: string | undefined
   children: ReactNode
   footer?: ReactNode
-  mode?: 'sheet' | 'fullscreen' | 'inline'
+  headerActions?: ReactNode
   dirty?: boolean
-}) {
-  const mobile = useSyncExternalStore(
-    subscribe,
-    () => matchMedia(query).matches,
-    () => false,
-  )
-  const { t } = usePreferences()
-  const router = useRouter({ warn: false })
+}
+function useDismiss({ open, onOpenChange, dirty = false }: PanelProps) {
   const id = useId()
+  const router = useRouter({ warn: false })
   const [confirm, setConfirm] = useState(false)
   const close = () => {
     if (dirty) setConfirm(true)
     else onOpenChange(false)
   }
-  const change = (next: boolean) => {
-    if (!next) close()
-  }
-  const guard = (
-    <>
-      {open && router && (
-        <PanelNavigation
-          id={id}
-          dirty={dirty}
-          inline={mode === 'inline'}
-          close={() => onOpenChange(false)}
+  return {
+    id,
+    close,
+    change: (next: boolean) => {
+      if (!next) close()
+    },
+    guard: (
+      <>
+        {open && router && (
+          <PanelNavigation id={id} dirty={dirty} close={() => onOpenChange(false)} />
+        )}
+        <DiscardPrompt
+          open={confirm}
+          cancel={() => setConfirm(false)}
+          discard={() => {
+            setConfirm(false)
+            onOpenChange(false)
+          }}
         />
-      )}
-      <DiscardPrompt
-        open={confirm}
-        cancel={() => setConfirm(false)}
-        discard={() => {
-          setConfirm(false)
-          onOpenChange(false)
-        }}
-      />
-    </>
-  )
-  const actions = (
-    <>
-      {footer}
-      <Button variant="outline" onClick={close}>
-        {t('close')}
-      </Button>
-    </>
-  )
-  if (mode === 'inline')
-    return (
-      <>
-        <div id={id} data-panel>
-          {children}
-          {footer && (
-            <div className="panel-inline-actions flex gap-2 border-t bg-background py-3">
-              {footer}
-            </div>
-          )}
-        </div>
-        {guard}
       </>
-    )
-  if (mobile && mode !== 'fullscreen')
-    return (
-      <>
-        <Drawer open={open} onOpenChange={change} showSwipeHandle>
-          <DrawerContent
-            id={id}
-            data-panel
-            className="editor-drawer max-h-[88dvh] pb-[env(safe-area-inset-bottom)]"
-          >
-            <DrawerHeader className="text-left">
-              <DrawerTitle>{title}</DrawerTitle>
-              <DrawerDescription className={description ? '' : 'sr-only'}>
-                {description ?? title}
-              </DrawerDescription>
-            </DrawerHeader>
-            <div className="min-h-0 overflow-y-auto overscroll-contain px-4 py-4">{children}</div>
-            <DrawerFooter className="flex-row flex-wrap gap-2 pt-2">{actions}</DrawerFooter>
-          </DrawerContent>
-        </Drawer>
-        {guard}
-      </>
-    )
-  const full = mode === 'fullscreen'
+    ),
+  }
+}
+
+/** Short forms and read-only details: explicit business footer, dismissal in the header. */
+export function Details(props: PanelProps) {
+  const { open, title, description, children, footer, headerActions } = props
+  const mobile = useMobile()
+  const { t } = usePreferences()
+  const { id, close, change, guard } = useDismiss(props)
+  const dismiss = (
+    <Button variant="ghost" size="icon" aria-label={t('close')} onClick={close}>
+      <X />
+    </Button>
+  )
   return (
     <>
-      <Sheet open={open} onOpenChange={change}>
-        <SheetContent
-          id={id}
-          data-panel
-          showCloseButton={false}
-          className={
-            full
-              ? 'editor-panel gap-0 data-[side=right]:w-full sm:data-[side=right]:max-w-none md:data-[side=right]:w-[min(56rem,calc(100%-216px))]'
-              : 'editor-panel gap-0 data-[side=right]:w-full sm:data-[side=right]:max-w-xl'
-          }
-        >
-          <SheetHeader className="shrink-0 border-b pb-3 pt-[max(12px,env(safe-area-inset-top))]">
-            <div className="flex min-w-0 items-center gap-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="-ml-2 size-12 shrink-0"
-                aria-label={t('back')}
-                onClick={close}
-              >
-                <ArrowLeft />
-              </Button>
-              <SheetTitle className="min-w-0 break-all text-base">{title}</SheetTitle>
-            </div>
-            <SheetDescription className={full || !description ? 'sr-only' : ''}>
-              {description ?? title}
-            </SheetDescription>
-          </SheetHeader>
-          <div
-            className={full ? 'editor-body p-4' : 'min-h-0 overflow-y-auto overscroll-contain p-4'}
+      {mobile ? (
+        <Drawer open={open} onOpenChange={change} showSwipeHandle>
+          <DrawerContent id={id} data-panel className="editor-drawer">
+            <DrawerHeader className="text-left">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 space-y-1 py-2">
+                  <DrawerTitle>{title}</DrawerTitle>
+                  <DrawerDescription className={description ? '' : 'sr-only'}>
+                    {description ?? title}
+                  </DrawerDescription>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  {headerActions}
+                  {dismiss}
+                </div>
+              </div>
+            </DrawerHeader>
+            <div className="panel-body">{children}</div>
+            {footer && (
+              <DrawerFooter className="flex-row justify-end border-t">{footer}</DrawerFooter>
+            )}
+          </DrawerContent>
+        </Drawer>
+      ) : (
+        <Dialog open={open} onOpenChange={change}>
+          <DialogContent
+            id={id}
+            data-panel
+            showCloseButton={false}
+            className="details-dialog flex max-h-[85dvh] flex-col gap-0 p-0 sm:max-w-lg"
           >
-            {children}
-          </div>
-          <SheetFooter className="shrink-0 flex-row flex-wrap border-t pb-[max(12px,env(safe-area-inset-bottom))] pt-3">
-            {actions}
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+            <DialogHeader className="shrink-0 flex-row items-start justify-between gap-3 px-5 py-3">
+              <div className="min-w-0 space-y-1 py-2">
+                <DialogTitle>{title}</DialogTitle>
+                <DialogDescription className={description ? '' : 'sr-only'}>
+                  {description ?? title}
+                </DialogDescription>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                {headerActions}
+                {dismiss}
+              </div>
+            </DialogHeader>
+            <div className="panel-body">{children}</div>
+            {footer && (
+              <DialogFooter className="shrink-0 flex-row justify-end border-t px-5 py-4">
+                {footer}
+              </DialogFooter>
+            )}
+          </DialogContent>
+        </Dialog>
+      )}
+      {guard}
+    </>
+  )
+}
+
+/** A dedicated editing workspace, not an expanded details drawer. */
+export function EditorPanel(props: PanelProps) {
+  const { open, title, description, children, footer, headerActions } = props
+  const mobile = useMobile()
+  const { t } = usePreferences()
+  const { id, close, change, guard } = useDismiss(props)
+  const titleBar = (titleNode: ReactNode, descriptionNode: ReactNode) => (
+    <>
+      <div className="editor-toolbar">
+        <Button variant="ghost" size="icon" aria-label={t('close')} onClick={close}>
+          {mobile ? <ArrowLeft /> : <X />}
+        </Button>
+        <div className="min-w-0 flex-1">
+          {titleNode}
+          {descriptionNode}
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {headerActions}
+          {footer}
+        </div>
+      </div>
+      <div className="editor-body">{children}</div>
+    </>
+  )
+  return (
+    <>
+      {mobile ? (
+        <Dialog open={open} onOpenChange={change}>
+          <DialogPortal>
+            <DialogOverlay />
+            <DialogPrimitive.Popup
+              id={id}
+              data-panel
+              data-slot="editor-workspace"
+              className="editor-panel editor-workspace"
+            >
+              {titleBar(
+                <DialogTitle className="truncate text-base">{title}</DialogTitle>,
+                <DialogDescription className="sr-only">{description ?? title}</DialogDescription>,
+              )}
+            </DialogPrimitive.Popup>
+          </DialogPortal>
+        </Dialog>
+      ) : (
+        <Sheet open={open} onOpenChange={change}>
+          <SheetContent
+            id={id}
+            data-panel
+            showCloseButton={false}
+            className="editor-panel gap-0 data-[side=right]:w-[min(56rem,calc(100vw-216px))] sm:data-[side=right]:max-w-none"
+          >
+            <SheetHeader className="sr-only">
+              <SheetTitle>{title}</SheetTitle>
+              <SheetDescription>{description ?? title}</SheetDescription>
+            </SheetHeader>
+            {titleBar(<span className="truncate text-base font-medium">{title}</span>, null)}
+          </SheetContent>
+        </Sheet>
+      )}
       {guard}
     </>
   )

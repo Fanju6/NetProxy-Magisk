@@ -1,13 +1,11 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Menu } from '@base-ui/react/menu'
 import {
   Check,
   ChevronDown,
   Grid2X2,
   List,
   Search,
-  Zap,
   MoreHorizontal,
   Plus,
   Gauge,
@@ -23,7 +21,14 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+} from '@/components/ui/dropdown-menu'
 import { Details } from '@/components/details'
 import { EmptyState, ErrorState, LoadingState } from '@/components/states'
 import { displayNode } from '@/lib/format'
@@ -65,41 +70,11 @@ export function NodesPage() {
     snapshot.isError
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-3">
-        {(api.supports('nodes.add') || api.supports('nodes.import')) && (
-          <Menu.Root>
-            <Menu.Trigger render={<Button className="min-h-12" />}>
-              <Plus />
-              {text('添加节点', 'Add node')}
-            </Menu.Trigger>
-            <Menu.Portal>
-              <Menu.Positioner sideOffset={4} className="z-50">
-                <Menu.Popup className="min-w-48 max-w-[calc(100vw-2rem)] rounded-md border bg-popover p-1 text-popover-foreground shadow-md outline-none">
-                  {api.supports('nodes.add') && (
-                    <Menu.Item
-                      className="flex min-h-12 cursor-pointer items-center rounded-sm px-3 text-sm outline-none data-highlighted:bg-muted"
-                      onClick={() => setManager({ operation: 'add' })}
-                    >
-                      {text('手动添加节点', 'Add node manually')}
-                    </Menu.Item>
-                  )}
-                  {api.supports('nodes.import') && (
-                    <Menu.Item
-                      className="flex min-h-12 cursor-pointer items-center rounded-sm px-3 text-sm outline-none data-highlighted:bg-muted"
-                      onClick={() => setManager({ operation: 'import' })}
-                    >
-                      {text('导入文本', 'Import text')}
-                    </Menu.Item>
-                  )}
-                </Menu.Popup>
-              </Menu.Positioner>
-            </Menu.Portal>
-          </Menu.Root>
-        )}
-        <div className="relative min-w-0 flex-1 sm:max-w-sm">
+      <div className="flex min-w-0 items-center gap-2">
+        <div className="relative min-w-0 flex-1">
           <Search
             aria-hidden
-            className="pointer-events-none absolute left-3 top-4 size-4 text-muted-foreground"
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
           />
           <Input
             aria-label={t('search')}
@@ -107,24 +82,51 @@ export function NodesPage() {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder={t('search')}
-            className="h-12 pl-9"
+            className="h-11 pl-9"
           />
         </div>
-        <ToggleGroup
-          value={[view]}
-          onValueChange={(values) => {
-            if (values[0]) setView(values[0])
-          }}
-          variant="outline"
-          aria-label={t('nodes')}
-        >
-          <ToggleGroupItem value="grid" aria-label={t('grid')} className="size-12">
-            <Grid2X2 />
-          </ToggleGroupItem>
-          <ToggleGroupItem value="list" aria-label={t('list')} className="size-12">
-            <List />
-          </ToggleGroupItem>
-        </ToggleGroup>
+        {(api.supports('nodes.add') || api.supports('nodes.import')) && (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={<Button variant="outline" size="icon" className="size-11" />}
+              aria-label={text('添加节点', 'Add node')}
+            >
+              <Plus />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-48">
+              {api.supports('nodes.add') && (
+                <DropdownMenuItem onClick={() => setManager({ operation: 'add' })}>
+                  {text('手动添加节点', 'Add node manually')}
+                </DropdownMenuItem>
+              )}
+              {api.supports('nodes.import') && (
+                <DropdownMenuItem onClick={() => setManager({ operation: 'import' })}>
+                  {text('导入文本', 'Import text')}
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={<Button variant="ghost" size="icon" className="size-11" />}
+            aria-label={text('显示方式', 'View options')}
+          >
+            <MoreHorizontal />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-40">
+            <DropdownMenuRadioGroup value={view} onValueChange={setView}>
+              <DropdownMenuRadioItem value="list" closeOnClick>
+                <List />
+                {t('list')}
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="grid" closeOnClick>
+                <Grid2X2 />
+                {t('grid')}
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       {(selection.isUncertain || selection.isUnconfirmed) && (
         <section
@@ -193,11 +195,21 @@ export function NodesPage() {
         )
         const active = data.selection.active_group_id === group.id
         const auto = active && data.selection.selector_mode === 'urltest'
+        const rowClassName = cn(
+          'relative min-w-0 rounded-md',
+          view === 'grid' ? 'border' : 'flex items-center',
+        )
+        const selectionClassName = cn(
+          'min-w-0 space-y-1 rounded-md px-3 text-left text-sm hover:bg-muted active:bg-muted focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50',
+          view === 'grid'
+            ? 'flex h-28 w-full flex-col items-start justify-start py-3'
+            : 'h-16 flex-1',
+        )
         return (
           <Collapsible
             key={group.id}
             defaultOpen
-            className="border-b pb-6"
+            className="border-b pb-3"
             data-testid={`group-${group.id}`}
           >
             <div className="flex min-w-0 items-center gap-2">
@@ -230,38 +242,38 @@ export function NodesPage() {
                 </Button>
               )}
             </div>
-            <CollapsibleContent className="pt-4">
+            <CollapsibleContent className="pt-1">
               {nodes.length === 0 ? (
-                <EmptyState title={t('emptyGroup')} />
+                <p className="px-3 py-2 text-sm text-muted-foreground">{t('emptyGroup')}</p>
               ) : filtered.length === 0 ? (
-                <EmptyState title={t('noMatches')} />
+                <p className="px-3 py-2 text-sm text-muted-foreground">{t('noMatches')}</p>
               ) : (
                 <div
                   className={cn(
                     'grid',
-                    view === 'grid' ? 'grid-cols-2 gap-3 xl:grid-cols-3' : 'grid-cols-1 divide-y',
+                    view === 'grid' ? 'grid-cols-2 gap-2 xl:grid-cols-3' : 'grid-cols-1 divide-y',
                   )}
                   data-testid="node-grid"
                 >
                   {search === '' && (
-                    <div className="min-w-0 space-y-1">
+                    <div className={cn(rowClassName, auto && 'node-selected')}>
                       <button
                         type="button"
-                        className={cn(
-                          view === 'grid'
-                            ? 'node-tile w-full'
-                            : 'min-h-16 w-full space-y-1 rounded-md px-3 py-3 text-left hover:bg-muted active:bg-muted',
-                          auto && 'node-selected',
-                        )}
+                        className={selectionClassName}
                         aria-label={t('selectNode', { name: t('auto') })}
                         aria-pressed={auto}
                         disabled={!api.supports('selection.write') || blocked || delay.isPending}
                         onClick={() => selection.mutate({ group_id: group.id, node_tag: '' })}
                       >
                         <div className="flex min-w-0 items-center gap-2">
-                          <Zap className="size-4 shrink-0" />
                           <span className="truncate font-medium">{t('auto')}</span>
-                          {auto && <Check className="ml-auto size-4 shrink-0" />}
+                          <Check
+                            className={cn(
+                              'size-4 shrink-0',
+                              view === 'grid' && 'absolute bottom-3 left-3',
+                              !auto && 'invisible',
+                            )}
+                          />
                         </div>
                         <p className="truncate text-xs text-muted-foreground">
                           {auto && data.selection.runtime_selected
@@ -271,6 +283,7 @@ export function NodesPage() {
                             : t('autoDescription')}
                         </p>
                       </button>
+                      {view === 'list' && <div aria-hidden className="w-28 shrink-0" />}
                     </div>
                   )}
                   {filtered.map((node) => {
@@ -299,21 +312,10 @@ export function NodesPage() {
                       active &&
                       data.selection.runtime_selected === runtimeTag
                     return (
-                      <div
-                        key={node.tag}
-                        className={cn(
-                          'min-w-0',
-                          view === 'list' ? 'flex w-full items-center' : 'space-y-1',
-                        )}
-                      >
+                      <div key={node.tag} className={cn(rowClassName, selected && 'node-selected')}>
                         <button
                           type="button"
-                          className={cn(
-                            view === 'grid'
-                              ? 'node-tile w-full'
-                              : 'min-h-16 min-w-0 flex-1 space-y-1 rounded-md px-3 py-3 text-left hover:bg-muted active:bg-muted',
-                            selected && 'node-selected',
-                          )}
+                          className={selectionClassName}
                           aria-pressed={selected}
                           disabled={!api.supports('selection.write') || blocked || delay.isPending}
                           aria-label={t('selectNode', { name: node.tag })}
@@ -321,65 +323,96 @@ export function NodesPage() {
                             selection.mutate({ group_id: group.id, node_tag: node.tag })
                           }
                         >
-                          <div className="flex min-w-0 items-center gap-2">
-                            <span className="truncate font-medium">{node.tag}</span>
-                            {selected && <Check className="size-4 shrink-0" />}
-                          </div>
-                          <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                            <span className="uppercase">{node.protocol}</span>
+                          <div
+                            className={cn(
+                              'flex min-w-0 items-center gap-2',
+                              view === 'grid' && 'pr-8',
+                            )}
+                          >
                             <span
-                              className="truncate tabular-nums"
+                              className={cn(
+                                'font-medium',
+                                view === 'grid' ? 'line-clamp-2 leading-5' : 'truncate',
+                              )}
+                            >
+                              {node.tag}
+                            </span>
+                            <Check
+                              className={cn(
+                                'size-4 shrink-0',
+                                view === 'grid' && 'absolute bottom-3 left-3',
+                                !selected && 'invisible',
+                              )}
+                            />
+                          </div>
+                          <div
+                            className={cn(
+                              'flex min-w-0 items-center gap-2 text-xs text-muted-foreground',
+                              view === 'grid' && 'absolute bottom-9 left-3 right-3',
+                            )}
+                          >
+                            <span className="truncate uppercase">{node.protocol}</span>
+                            {runtimeSelected && (
+                              <span className="truncate">{t('runtimeNode')}</span>
+                            )}
+                          </div>
+                        </button>
+                        <div
+                          className={
+                            view === 'list' ? 'flex w-28 shrink-0 items-center' : 'contents'
+                          }
+                        >
+                          {api.supports('nodes.delay') && (
+                            <Button
+                              variant="ghost"
+                              className={cn(
+                                'size-12 w-16 min-w-0 px-1 text-xs font-normal tabular-nums text-muted-foreground',
+                                view === 'grid' && 'absolute bottom-1 right-1 h-8',
+                              )}
+                              aria-label={t('testNode', { name: node.tag })}
                               title={
                                 result && result.time > 0
                                   ? `${t('lastMeasured')}: ${new Date(result.time * 1000).toLocaleString()}`
-                                  : undefined
+                                  : t('testNode', { name: node.tag })
+                              }
+                              disabled={blocked || delay.isPending}
+                              onClick={() =>
+                                delay.mutate({ group_id: group.id, node_tag: node.tag })
                               }
                             >
-                              {result && result.delay > 0
-                                ? `${result.delay} ms`
-                                : testing
+                              <span className="truncate">
+                                {testing
                                   ? t('testing')
-                                  : result && result.time > 0
-                                    ? t('delayFailed')
-                                    : t('noLatency')}
-                            </span>
-                          </div>
-                          {runtimeSelected && (
-                            <p className="truncate text-xs text-muted-foreground">
-                              {t('runtimeNode')}
-                            </p>
-                          )}
-                        </button>
-                        <div className="flex min-h-12 shrink-0 items-center gap-1">
-                          <div className="ml-auto flex shrink-0 items-center">
-                            {api.supports('nodes.delay') && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="size-12"
-                                aria-label={t('testNode', { name: node.tag })}
-                                disabled={blocked || delay.isPending}
-                                onClick={() =>
-                                  delay.mutate({ group_id: group.id, node_tag: node.tag })
-                                }
-                              >
-                                {testing ? (
-                                  <LoaderCircle className="motion-safe:animate-spin" />
-                                ) : (
-                                  <Gauge />
-                                )}
-                              </Button>
-                            )}
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="size-12"
-                              aria-label={`${t('viewDetails')} ${node.tag}`}
-                              onClick={() => setDetails({ node, groupId: group.id })}
-                            >
-                              <MoreHorizontal />
+                                  : result && result.delay > 0
+                                    ? `${result.delay} ms`
+                                    : result && result.time > 0
+                                      ? t('delayFailed')
+                                      : t('noLatency')}
+                              </span>
                             </Button>
-                          </div>
+                          )}
+                          {!api.supports('nodes.delay') && (
+                            <span
+                              className={cn(
+                                'w-20 truncate px-1 text-center text-xs tabular-nums text-muted-foreground',
+                                view === 'grid' && 'absolute bottom-3 right-1',
+                              )}
+                            >
+                              {result && result.delay > 0 ? `${result.delay} ms` : t('noLatency')}
+                            </span>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className={cn(
+                              'size-12',
+                              view === 'grid' && 'absolute right-0 top-0 size-10',
+                            )}
+                            aria-label={`${t('viewDetails')} ${node.tag}`}
+                            onClick={() => setDetails({ node, groupId: group.id })}
+                          >
+                            <MoreHorizontal />
+                          </Button>
                         </div>
                       </div>
                     )
@@ -397,6 +430,43 @@ export function NodesPage() {
         }}
         title={t('nodeDetails')}
         description={details?.node.tag ?? ''}
+        headerActions={
+          details && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={<Button variant="ghost" size="icon" />}
+                aria-label={text('更多操作', 'More actions')}
+              >
+                <MoreHorizontal />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-40">
+                {(['edit', 'export', 'remove'] as const).map((operation) => {
+                  const local =
+                    data.groups.find((item) => item.group.id === details.groupId)?.group.type ===
+                    'local'
+                  if (!api.supports(`nodes.${operation}`) || (operation !== 'export' && !local))
+                    return null
+                  return (
+                    <DropdownMenuItem
+                      key={operation}
+                      variant={operation === 'remove' ? 'destructive' : 'default'}
+                      onClick={() => {
+                        setManager({ operation, groupId: details.groupId, tag: details.node.tag })
+                        setDetails(null)
+                      }}
+                    >
+                      {operation === 'edit'
+                        ? text('编辑节点', 'Edit node')
+                        : operation === 'export'
+                          ? text('分享链接', 'Share link')
+                          : text('删除节点', 'Delete node')}
+                    </DropdownMenuItem>
+                  )
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )
+        }
       >
         <dl className="space-y-5 text-sm">
           <div className="flex justify-between gap-5">
@@ -412,37 +482,6 @@ export function NodesPage() {
             <dd>{details?.node.port ?? '—'}</dd>
           </div>
         </dl>
-        {details && (
-          <div className="mt-6 divide-y border-t">
-            {(['edit', 'export', 'remove'] as const).map((operation) => {
-              const local =
-                data.groups.find((item) => item.group.id === details.groupId)?.group.type ===
-                'local'
-              if (!api.supports(`nodes.${operation}`) || (operation !== 'export' && !local))
-                return null
-              return (
-                <Button
-                  key={operation}
-                  variant="ghost"
-                  className={cn(
-                    'min-h-12 w-full justify-start whitespace-normal text-left',
-                    operation === 'remove' && 'text-destructive',
-                  )}
-                  onClick={() => {
-                    setManager({ operation, groupId: details.groupId, tag: details.node.tag })
-                    setDetails(null)
-                  }}
-                >
-                  {operation === 'edit'
-                    ? text('编辑节点', 'Edit node')
-                    : operation === 'export'
-                      ? text('分享链接', 'Share link')
-                      : text('删除节点', 'Delete node')}
-                </Button>
-              )
-            })}
-          </div>
-        )}
       </Details>
       {manager && <NodeManager snapshot={data} target={manager} onClose={() => setManager(null)} />}
     </div>
