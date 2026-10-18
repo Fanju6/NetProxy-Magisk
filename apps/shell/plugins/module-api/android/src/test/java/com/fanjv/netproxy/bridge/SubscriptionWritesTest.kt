@@ -17,17 +17,16 @@ class SubscriptionWritesTest {
     private val bridges = mutableListOf<ModuleApiBridge>()
     @After fun close() = bridges.forEach { it.destroy() }
 
-    @Test fun fixedMethodsPathsBodiesAndReplacementQueryPreserveOmittedAndClearedFields() = runTest {
+    @Test fun fixedMethodsPathsAndBodiesPreserveOmittedAndClearedFieldsWithoutReplacementQuery() = runTest {
         val transport = Transport()
         val bridge = bridge(transport)
         for (value in validWrites()) bridge.subscriptionWrite(value.toString())
-        assertEquals(listOf("POST", "PUT", "PUT", "DELETE", "DELETE", "POST"), transport.calls.map { it.method })
-        assertEquals(listOf("/subscriptions", "/subscriptions/sub-a", "/subscriptions/sub-a", "/subscriptions/sub-a", "/subscriptions/sub-a", "/subscriptions/update-all"), transport.calls.map { it.path })
+        assertEquals(listOf("POST", "PUT", "PUT", "DELETE", "POST"), transport.calls.map { it.method })
+        assertEquals(listOf("/subscriptions", "/subscriptions/sub-a", "/subscriptions/sub-a", "/subscriptions/sub-a", "/subscriptions/update-all"), transport.calls.map { it.path })
         assertEquals(Json.parseToJsonElement("""{"url":"https://example.invalid/feed"}"""), transport.calls[0].body)
         assertEquals(JsonObject(emptyMap()), transport.calls[1].body)
         assertEquals(Json.parseToJsonElement("""{"user_agent":"","hwid":"","custom_headers":{},"include":"","exclude":"","auto_update":false}"""), transport.calls[2].body)
-        assertEquals(mapOf("replacement_group_id" to "default"), transport.calls[4].query)
-        assertTrue(transport.calls.filterIndexed { i, _ -> i != 4 }.all { it.query.isEmpty() })
+        assertTrue(transport.calls.all { it.query.isEmpty() })
         assertTrue(transport.calls.all { it.mutation })
     }
 
@@ -40,7 +39,7 @@ class SubscriptionWritesTest {
             }
             for (key in value.keys) {
                 rejected(bridge, JsonObject(value + (key to JsonNull)))
-                if (key != "replacementGroupId") rejected(bridge, JsonObject(value - key))
+                rejected(bridge, JsonObject(value - key))
             }
             rejected(bridge, JsonObject(value + ("requestId" to JsonPrimitive(1))))
             rejected(bridge, JsonObject(value + ("requestId" to JsonPrimitive("bad/id"))))
@@ -142,7 +141,7 @@ class SubscriptionWritesTest {
             runCurrent()
             assertFailure("api.busy", runCatching { bridge.serviceAction("service", "start") })
             assertFailure("api.busy", runCatching { bridge.changeMode("mode", "Rule") })
-            assertFailure("api.busy", runCatching { bridge.selectNode("node", mapOf("group_id" to "default", "node_tag" to "")) })
+            assertFailure("api.busy", runCatching { bridge.policySelect("""{"requestId":"node","groupTag":"Proxy","memberTag":"a"}""") })
             assertFailure("api.busy", runCatching { bridge.subscriptionAction("""{"requestId":"update","groupId":"sub-a","action":"update"}""") })
             assertFailure("api.busy", runCatching { bridge.subscriptionWrite(write("update_all", id = "other").toString()) })
             assertEquals(200, bridge.subscriptionAction("""{"requestId":"cancel","groupId":"sub-a","action":"cancel"}""").status)
@@ -236,6 +235,6 @@ class SubscriptionWritesTest {
             if (action in setOf("add", "edit")) put("input", input ?: if (action == "add") buildJsonObject { put("url", "https://example.invalid/feed") } else JsonObject(emptyMap()))
         }
         private fun validWrites() = listOf(write("add"), write("edit"), write("edit", input = Json.parseToJsonElement("""{"user_agent":"","hwid":"","custom_headers":{},"include":"","exclude":"","auto_update":false}""") as JsonObject),
-            write("remove"), JsonObject(write("remove") + ("replacementGroupId" to JsonPrimitive("default"))), write("update_all"))
+            write("remove"), write("update_all"))
     }
 }

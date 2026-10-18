@@ -34,7 +34,7 @@ describe('schema=1 boundary', () => {
     ] as const) {
       const mock = transport(status, { schema: 1, ok: false, code, message: 'fixture', data })
       const error = await new ApiClient(mock)
-        .request({ method: 'PUT', path: '/selection', body: {} }, z.unknown())
+        .request({ method: 'POST', path: '/policy-groups/select', body: {} }, z.unknown())
         .catch((value: unknown) => value)
       expect(error).toMatchObject({ code, status, persisted: status === 502 })
       expect(mock.request).toHaveBeenCalledTimes(1)

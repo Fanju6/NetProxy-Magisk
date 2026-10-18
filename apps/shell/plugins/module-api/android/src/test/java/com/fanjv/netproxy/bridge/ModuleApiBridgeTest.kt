@@ -47,20 +47,22 @@ class ModuleApiBridgeTest {
     @Test fun onlyWhitelistedResourcesProduceReadonlyGETs() = runTest {
         val transport = FakeTransport()
         val bridge = bridge(transport)
-        for (resource in listOf("info", "service", "nodes", "selection", "mode")) {
+        for (resource in listOf("info", "service", "nodes", "policy_groups", "mode")) {
+            transport.content = envelope(data = if (resource == "nodes") """{"groups":[]}""" else POLICY)
             assertEquals(200, bridge.read(resource, resource).status)
         }
-        assertEquals(listOf("/info", "/service", "/nodes/snapshot", "/selection", "/mode"), transport.paths)
-        for (resource in listOf("/info", "config", "service/start", "../info", "info?secret=x", "")) {
+        assertEquals(listOf("/info", "/service", "/nodes/snapshot", "/policy-groups", "/mode"), transport.paths)
+        for (resource in listOf("selection", "/info", "config", "service/start", "../info", "info?secret=x", "")) {
             assertFailure("api.read_only", runCatching { bridge.read("forbidden", resource) })
         }
         assertEquals(5, transport.paths.size)
     }
 
     @Test fun publicSubscriptionReadsHaveFixedGETPathsAndRejectPrivateAndWriteResources() = runTest {
-        val transport = FakeTransport().apply { content = envelope(data = "[]") }
+        val transport = FakeTransport().apply { content = envelope(data = """{"groups":[]}""") }
         val bridge = bridge(transport)
         bridge.read("catalog", "catalog")
+        transport.content = envelope(data = "[]")
         bridge.read("subscriptions", "subscriptions")
         bridge.subscriptionRead("history", "a.b-C_1", "history")
         transport.content = envelope(data = """{"id":"a.b-C_1","progress":null}""")
@@ -90,55 +92,24 @@ class ModuleApiBridgeTest {
         assertEquals(1, transport.paths.size)
     }
 
-    @Test fun nodeAndModeOperationsUseOnlyFixedMethodsPathsAndTypedBodies() = runTest {
+    @Test fun modeOperationsRetainFixedMethodAndBodyValidation() = runTest {
         val transport = FakeTransport()
         val bridge = bridge(transport)
-        for (tag in listOf("", "香港 / 节点🚀", "Auto/default", " name ")) {
-            val target = mapOf("group_id" to "a.b-C_1", "node_tag" to tag)
-            bridge.selectNode("selection", target)
-            assertEquals("PUT", transport.methods.last())
-            assertEquals("/selection", transport.paths.last())
-            assertEquals(Json.parseToJsonElement(Json.encodeToString(target)), transport.bodies.last())
-            bridge.testDelay("delay", target)
-            assertEquals("POST", transport.methods.last())
-            assertEquals("/nodes/delay", transport.paths.last())
-            assertEquals(Json.parseToJsonElement(Json.encodeToString(target)), transport.bodies.last())
-        }
-        bridge.changeMode("mode", "规则（允许广告）/自定义")
+        bridge.changeMode("mode", "Rule")
         assertEquals("PUT", transport.methods.last())
         assertEquals("/mode", transport.paths.last())
-        assertEquals(Json.parseToJsonElement("""{"mode":"规则（允许广告）/自定义"}"""), transport.bodies.last())
-        assertEquals(9, transport.paths.size)
-    }
-
-    @Test fun directKotlinBypassRejectsInvalidTargetsModesAndOversizedEncodedBodies() = runTest {
-        val transport = FakeTransport()
-        val bridge = bridge(transport)
-        val targets = listOf(null, emptyMap(), mapOf("group_id" to "default"),
-            mapOf("group_id" to "default", "node_tag" to null),
-            mapOf("group_id" to "default", "node_tag" to 1),
-            mapOf("group_id" to "default", "node_tag" to "", "path" to "/config")) +
-            listOf("", "staging", "a..b", "../default", "a/b", "a\\b", "_a", " a", "中文")
-                .map { mapOf("group_id" to it, "node_tag" to "") }
-        for (target in targets) {
-            assertFailure("api.invalid_request", runCatching { bridge.selectNode("bad", target) })
-            assertFailure("api.invalid_request", runCatching { bridge.testDelay("bad", target) })
-        }
+        assertEquals(Json.parseToJsonElement("""{"mode":"Rule"}"""), transport.bodies.last())
         for (mode in listOf(null, 1, true, emptyMap<String, String>(), "", "  ", "\n")) {
             assertFailure("api.invalid_request", runCatching { bridge.changeMode("bad", mode) })
         }
-        assertFailure("api.body_too_large", runCatching {
-            bridge.selectNode("large", mapOf("group_id" to "default", "node_tag" to "龙".repeat(1_400_000)))
-        })
         assertFailure("api.body_too_large", runCatching { bridge.changeMode("large", "\n".repeat(2_100_000) + "Rule") })
-        assertTrue(transport.paths.isEmpty())
+        assertEquals(1, transport.paths.size)
     }
 
     @Test fun m42FailuresCancellationAndBackgroundNeverReplayMutations() = runTest {
-        val target = mapOf("group_id" to "default", "node_tag" to "")
         val operations: List<suspend (ModuleApiBridge, String) -> ReadResult> = listOf(
-            { bridge, id -> bridge.selectNode(id, target) },
-            { bridge, id -> bridge.testDelay(id, target) },
+            { bridge, id -> bridge.policySelect(policyRequest(id, true)) },
+            { bridge, id -> bridge.policyDelay(policyRequest(id, false)) },
             { bridge, id -> bridge.changeMode(id, "Rule") },
         )
         for (operation in operations) {
@@ -170,17 +141,17 @@ class ModuleApiBridgeTest {
     @Test fun m42MutationsShareServiceAdmissionAndCannotOverlapAnAcceptedWrite() = runTest {
         val transport = FakeTransport().apply { holdWrites = true }
         val bridge = bridge(transport)
-        val target = mapOf("group_id" to "default", "node_tag" to "")
         val service = async { runCatching { bridge.serviceAction("service", "start") } }
         runCurrent()
-        assertFailure("api.busy", runCatching { bridge.selectNode("selection", target) })
+        assertFailure("api.busy", runCatching { bridge.policySelect(policyRequest("select", true)) })
         assertFailure("api.busy", runCatching { bridge.changeMode("mode", "Rule") })
-        assertFailure("api.busy", runCatching { bridge.testDelay("delay", target) })
+        assertFailure("api.busy", runCatching { bridge.policyDelay(policyRequest("delay", false)) })
+        transport.content = envelope(data = """{"groups":[]}""")
         assertEquals(200, bridge.read("read", "nodes").status)
         bridge.cancel("service")
         runCurrent()
         assertTrue(service.await().exceptionOrNull() is CancellationException)
-        val selection = async { runCatching { bridge.selectNode("selection", target) } }
+        val selection = async { runCatching { bridge.policySelect(policyRequest("select", true)) } }
         runCurrent()
         assertFailure("api.busy", runCatching { bridge.serviceAction("service2", "stop") })
         bridge.pause()
@@ -221,20 +192,20 @@ class ModuleApiBridgeTest {
         assertEquals(listOf("/service/start", "/service/stop", "/service/restart", "/service/reload", "/service/check"), transport.paths)
     }
 
-    @Test fun serviceErrorsPreserveOnlyBooleanPersistedAlongsideHTTPStatusAndCode() = runTest {
+    @Test fun serviceErrorsPreserveOnlyBooleanConfirmationFactsAlongsideHTTPStatusAndCode() = runTest {
         val transport = FakeTransport()
         val bridge = bridge(transport)
         for (status in listOf(200, 401, 409, 503)) {
             for (value in listOf("true", "false", "null", "\"true\"", "\"false\"", "1", "{}", "[]")) {
                 transport.status = status
                 transport.content = envelope(ok = false, code = "service.operation_failed", message = PRIVATE,
-                    data = """{"persisted":$value,"url":"$PRIVATE","diagnostics":{"secret":"$PRIVATE"}}""")
+                    data = """{"accepted":$value,"persisted":$value,"url":"$PRIVATE","diagnostics":{"secret":"$PRIVATE"}}""")
                 val result = bridge.serviceAction("error", "start")
                 assertEquals(status, result.status)
                 assertFalse(result.body.getValue("ok").jsonPrimitive.boolean)
                 assertEquals("service.operation_failed", result.body.getValue("code").jsonPrimitive.content)
                 assertEquals(SAFE_FAILURE_MESSAGE, result.body.getValue("message").jsonPrimitive.content)
-                assertEquals(Json.parseToJsonElement(if (value in listOf("true", "false")) """{"persisted":$value}""" else "{}"), result.body["data"])
+                assertEquals(Json.parseToJsonElement(if (value in listOf("true", "false")) """{"accepted":$value,"persisted":$value}""" else "{}"), result.body["data"])
                 assertFalse(result.body.toString().contains(PRIVATE))
             }
         }
@@ -831,7 +802,7 @@ class ModuleApiBridgeTest {
         assertEquals(1, transport.watchStops)
         val newPull = async { bridge.nextEvent("new-document") }
         runCurrent()
-        transport.events.send(ModuleEvent("groups", envelope()))
+        transport.events.send(ModuleEvent("groups", envelope(data = POLICY)))
         runCurrent()
         assertEquals("groups", newPull.await().name)
     }
@@ -840,13 +811,13 @@ class ModuleApiBridgeTest {
         val transport = FakeTransport()
         val bridge = bridge(transport)
         bridge.openEvents("one", listOf("status"))
-        repeat(3) { transport.events.send(ModuleEvent("status", envelope(data = """{"index":$it}"""))) }
+        repeat(3) { transport.events.send(ModuleEvent("status", envelope(data = """{"pid":$it}"""))) }
         runCurrent()
         assertEquals(1, transport.delivered)
         repeat(3) { index ->
             val result = bridge.nextEvent("one")
             assertEquals("status", result.name)
-            assertEquals(Json.parseToJsonElement("""{"index":$index}"""), result.body["data"])
+            assertEquals(Json.parseToJsonElement("""{"pid":$index}"""), result.body["data"])
             runCurrent()
             assertEquals((index + 2).coerceAtMost(3), transport.delivered)
         }
@@ -865,7 +836,7 @@ class ModuleApiBridgeTest {
         bridge.closeEvents("old")
         val pull = async { bridge.nextEvent("new") }
         runCurrent()
-        transport.events.send(ModuleEvent("groups", envelope()))
+        transport.events.send(ModuleEvent("groups", envelope(data = POLICY)))
         runCurrent()
         assertEquals("groups", pull.await().name)
         assertEquals(1, transport.watchStarts)
@@ -1101,8 +1072,8 @@ class ModuleApiBridgeTest {
                 assertEquals("POST", method)
                 assertEquals(JsonObject(emptyMap()), body)
                 assertTrue(mutation)
-            } else if (path in setOf("/selection", "/mode") && mutation || path == "/nodes/delay") {
-                assertEquals(if (path == "/nodes/delay") "POST" else "PUT", method)
+            } else if (path == "/mode" && mutation || path in setOf("/policy-groups/select", "/policy-groups/delay")) {
+                assertEquals(if (path == "/mode") "PUT" else "POST", method)
                 assertNotNull(body)
                 assertTrue(mutation)
             } else {
@@ -1142,6 +1113,9 @@ class ModuleApiBridgeTest {
     }
 
     companion object {
+        private const val POLICY = """{"groups":[],"live":false,"core_started_at_millis":0,"default_outbound":"Proxy"}"""
+        private fun policyRequest(id: String, select: Boolean) =
+            """{"requestId":"$id","groupTag":"Proxy"${if (select) ",\"memberTag\":\"a\"" else ""}}"""
         private const val PRIVATE = "https://private.invalid/Bearer-private-secret"
 
         private fun envelope(ok: Boolean = true, code: String = "fixture.status", message: String = "safe", data: String = "{}") =

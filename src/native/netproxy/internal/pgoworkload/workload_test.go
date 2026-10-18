@@ -58,9 +58,7 @@ func BenchmarkAndroidPGO(b *testing.B) {
 		outputDir := b.TempDir()
 		runtimeOptions := catalog.RuntimeOptions{
 			Root:            layout.Catalog(),
-			ModuleConfig:    layout.ModuleConfig(),
 			ProvidersOutput: filepath.Join(outputDir, "providers.json"),
-			OutboundsOutput: filepath.Join(outputDir, "outbounds.json"),
 		}
 		b.ReportAllocs()
 		for range b.N {

@@ -35,8 +35,8 @@ class ManagementTest {
         for (target in listOf("api", "telemetry", "api.json", "module/selection", "/module", "singbox/../api.json", "singbox/rules/local/a%2fb.json", "runtime/unknown.json")) {
             invalid(args("config_read", obj("""{"target":"$target"}""")))
         }
-        for (target in listOf("module", "module/wifi", "module/auto_start", "inbound/root_policy", "singbox/dns", "singbox/rules/local/user-1.json", "runtime/inbound.json", "runtime/providers.json", "runtime/outbounds.json")) assertTrue(Management.target(target))
-        for (target in listOf("runtime/inbound.json", "runtime/providers.json", "runtime/outbounds.json")) {
+        for (target in listOf("module", "module/wifi", "module/auto_start", "inbound/root_policy", "singbox/dns", "singbox/rules/local/user-1.json", "runtime/inbound.json", "runtime/providers.json")) assertTrue(Management.target(target))
+        for (target in listOf("runtime/inbound.json", "runtime/providers.json")) {
             assertFalse(Management.target(target, true))
             invalid(args("config_apply", buildJsonObject { put("target", target); put("revision", "a".repeat(64)); put("content", "{}") }))
         }
@@ -58,6 +58,36 @@ class ManagementTest {
         assertEquals(409, error.status)
         assertTrue(error.body["data"]!!.jsonObject["persisted"]!!.jsonPrimitive.boolean)
         assertFalse(error.body.toString().contains(PRIVATE))
+    }
+
+    @Test fun managementRejectsMalformedUnicodeBeforeTransportAndEnforcesTheUtf8BodyLimit() = runTest {
+        val transport = Transport()
+        val bridge = bridge(transport)
+        for (text in listOf("\uD800", "\uDC00")) {
+            for ((operation, input) in listOf(
+                "node_read" to buildJsonObject { put("group_id", "default"); put("node_tag", text) },
+                "node_add" to buildJsonObject { put("content", text) },
+                "catalog_create" to buildJsonObject { put("id", "local-1"); put("name", text) },
+            )) {
+                for (raw in listOf(args(operation, input), args(operation, input).replace(text, if (text == "\uD800") "\\ud800" else "\\udc00"))) {
+                    failure("api.invalid_request", runCatching { bridge.management(raw) })
+                }
+            }
+        }
+        assertTrue(transport.paths.isEmpty())
+        val limit = 4 * 1024 * 1024
+        val overhead = args("node_import", buildJsonObject { put("content", "") }).encodeToByteArray().size
+        for (extra in 0..1) {
+            val raw = args("node_import", buildJsonObject { put("content", "x".repeat(limit - overhead + extra)) })
+            assertEquals(limit + extra, raw.encodeToByteArray().size)
+            if (extra == 0) Management.parse(raw) else {
+                val error = runCatching { bridge.management(raw) }.exceptionOrNull() as? BridgeFailure
+                assertNotNull(error)
+                assertEquals("api.body_too_large", error!!.code)
+                assertEquals(413, error.status)
+            }
+        }
+        assertTrue(transport.paths.isEmpty())
     }
 
     @Test fun configListFiltersForbiddenFilesAndAppsAreQueriedOnceForAllUsers() = runTest {
@@ -90,7 +120,7 @@ class ManagementTest {
     }
 
     @Test fun managementWritesCoordinateWithServiceRoutingAndSubscriptionWrites() = runTest {
-        for (operation in listOf("config_apply", "config_validate", "logs_clear", "ebpf", "node_add", "node_edit", "node_remove", "node_import")) {
+        for (operation in listOf("config_apply", "config_validate", "logs_clear", "ebpf", "node_add", "node_edit", "node_remove", "node_import", "catalog_create", "catalog_rename", "catalog_remove")) {
             val transport = Transport().apply { hold = true }
             val bridge = bridge(transport)
             val input = cases().first { it.operation == operation }.input
@@ -98,10 +128,54 @@ class ManagementTest {
             runCurrent()
             failure("api.busy", runCatching { bridge.serviceAction("service", "restart") })
             failure("api.busy", runCatching { bridge.changeMode("mode", "Rule") })
+            failure("api.busy", runCatching { bridge.policySelect("""{"requestId":"policy","groupTag":"Proxy","memberTag":"a"}""") })
+            failure("api.busy", runCatching { bridge.policyDelay("""{"requestId":"delay","groupTag":"Proxy"}""") })
             failure("api.busy", runCatching { bridge.subscriptionAction("""{"requestId":"sub","groupId":"default","action":"update"}""") })
             bridge.pause(); runCurrent(); bridge.resume(); runCurrent()
             assertTrue(pending.await().exceptionOrNull() is CancellationException)
             assertEquals(1, transport.paths.size)
+        }
+    }
+
+    @Test fun catalogOperationsValidateIdentityNameAndFixedRoutesWithoutAdditionalPermissions() = runTest {
+        val transport = Transport()
+        val bridge = bridge(transport)
+        for (operation in listOf("catalog_create", "catalog_rename", "catalog_remove")) {
+            val input = buildJsonObject { put("id", "local-1"); if (operation != "catalog_remove") put("name", " Local \u9999\u6e2f ") }
+            val request = Management.parse(args(operation, input))
+            val route = Management.route(request)
+            assertTrue(route.mutation)
+            assertTrue(route.query.isEmpty())
+            assertEquals(when (operation) { "catalog_create" -> input; "catalog_rename" -> JsonObject(input - "id"); else -> JsonObject(emptyMap()) }, route.body)
+            transport.content = envelope(obj("""{"id":"local-1","name":"$PRIVATE","url":"$PRIVATE","headers":{"Authorization":"$PRIVATE"},"active":true}"""))
+            assertEquals(obj("""{"id":"local-1"}"""), bridge.management(args(operation, input)).body["data"])
+            for (id in listOf("", "staging", "a..b", "a/b", "a%2fb", "a?x=1", "_a", "\u4e2d\u6587")) invalid(args(operation, JsonObject(input + ("id" to JsonPrimitive(id)))))
+            for (key in input.keys) invalid(args(operation, JsonObject(input - key)))
+            for (extra in listOf("method", "path", "query", "url", "headers", "type", "provider_tag")) invalid(args(operation, JsonObject(input + (extra to JsonPrimitive(PRIVATE)))))
+            for (bad in listOf(JsonNull, JsonPrimitive(1), JsonPrimitive(false), JsonArray(emptyList()), JsonObject(emptyMap()))) {
+                invalid(args(operation, JsonObject(input + ("id" to bad))))
+                if (operation != "catalog_remove") invalid(args(operation, JsonObject(input + ("name" to bad))))
+            }
+            transport.content = envelope(obj("""{"id":"other"}"""))
+            failure("api.invalid_response", runCatching { bridge.management(args(operation, input)) })
+            transport.status = 409
+            transport.content = envelope(obj("""{"accepted":true,"persisted":true,"runtime_synced":false,"core_started_at_millis":1234,"url":"$PRIVATE","cause":"$PRIVATE","path":"$PRIVATE","id":"other"}"""), false)
+            val result = bridge.management(args(operation, input))
+            assertEquals(409, result.status)
+            assertEquals(obj("""{"accepted":true,"persisted":true,"runtime_synced":false,"core_started_at_millis":1234}"""), result.body["data"])
+            assertFalse(result.body.toString().contains(PRIVATE))
+            transport.status = 200
+        }
+        invalid(args("catalog_remove", obj("""{"id":"default"}""")))
+        invalid(args("catalog_remove", obj("""{"id":"local-1","name":"unexpected"}""")))
+        for (operation in listOf("catalog_create", "catalog_rename")) {
+            for (name in listOf("", " ", "a\n", "\u007f", "\u0085", "x".repeat(257), "\u9f99".repeat(86), "\uD800", "\uDC00")) {
+                invalid(args(operation, buildJsonObject { put("id", "local-1"); put("name", name) }))
+            }
+            for (name in listOf("x".repeat(256), "\u9f99".repeat(85) + "a", " Local ")) {
+                val parsed = Management.parse(args(operation, buildJsonObject { put("id", "local-1"); put("name", name) }))
+                assertEquals(name, parsed.input!!.getValue("name").jsonPrimitive.content)
+            }
         }
     }
 
@@ -167,6 +241,9 @@ class ManagementTest {
             Case("apps", obj("{}"), "GET", "/android/apps"), Case("wifi", obj("{}"), "GET", "/network/wifi-list"),
             Case("logs", obj("""{"kind":"service","lines":200}"""), "GET", "/logs"), Case("logs_clear", obj("{}"), "DELETE", "/logs"), Case("ebpf", obj("{}"), "POST", "/diagnostics/ebpf"),
             Case("node_read", obj("""{"group_id":"default","node_tag":"node"}"""), "GET", "/nodes/get"), Case("node_export", obj("""{"group_id":"default","node_tag":"node"}"""), "GET", "/nodes/export"), Case("node_remove", obj("""{"group_id":"default","node_tag":"node"}"""), "DELETE", "/nodes"),
-            Case("node_add", obj("""{"content":"{}"}"""), "POST", "/nodes"), Case("node_edit", obj("""{"group_id":"default","node_tag":"node","content":"{}"}"""), "PUT", "/nodes"), Case("node_import", obj("""{"content":"{}"}"""), "POST", "/nodes/import"))
+            Case("node_add", obj("""{"content":"{}"}"""), "POST", "/nodes"), Case("node_edit", obj("""{"group_id":"default","node_tag":"node","content":"{}"}"""), "PUT", "/nodes"), Case("node_import", obj("""{"content":"{}"}"""), "POST", "/nodes/import"),
+            Case("catalog_create", obj("""{"id":"local-1","name":"Local"}"""), "POST", "/catalog"),
+            Case("catalog_rename", obj("""{"id":"local-1","name":"Renamed"}"""), "PUT", "/catalog/local-1"),
+            Case("catalog_remove", obj("""{"id":"local-1"}"""), "DELETE", "/catalog/local-1"))
     }
 }

@@ -9,18 +9,8 @@ import (
 
 	json "encoding/json/v2"
 
-	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/contract"
-	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
 )
-
-func readActiveGroup(options moduleapp.Options) string {
-	module, err := moduleconfig.LoadModule(options.ModuleConfig)
-	if err != nil {
-		return ""
-	}
-	return module.ActiveGroupID
-}
 
 func usageError(message string) error {
 	return &resultError{Code: "usage.invalid", Message: message, Status: 2}
@@ -55,8 +45,9 @@ func (c *cli) help() {
 用法:
   netproxyctl [--json] [--timeout <秒|时长>] service status|start|stop|restart|reload|check|toggle
   netproxyctl [--json] [--timeout <秒|时长>] catalog list|show <分组>
-  netproxyctl [--json] [--timeout <秒|时长>] node list|current|show|get|export|delay|add|import|edit|remove|use
-  netproxyctl [--json] [--timeout <秒|时长>] sub list|show|add|edit|update|update-all|activate|remove|history|cancel
+  netproxyctl [--json] [--timeout <秒|时长>] node list|snapshot|show|get|export|add|import|edit|remove
+  netproxyctl [--json] [--timeout <秒|时长>] policy groups|select <策略组> <成员>|delay <策略组>
+  netproxyctl [--json] [--timeout <秒|时长>] sub list|show|add|edit|update|update-all|remove|history|cancel
   netproxyctl [--json] [--timeout <秒|时长>] mode [模式名称]（不带参数列出配置中的模式）
   netproxyctl [--json] [--timeout <秒|时长>] network evaluate --type <wifi|not_wifi> [--ssid <名称>]
   netproxyctl [--json] [--timeout <秒|时长>] network wifi-list
@@ -73,7 +64,7 @@ func (c *cli) help() {
   RuleAllowAds  规则（允许广告）
 实际可选名称以 mode 返回的主配置模式列表为准。
 
-节点引用固定为 <group-id>/<tag>；自动模式使用 node use auto [分组]。
+节点引用固定为 <group-id>/<tag>；策略组与成员使用 policy groups 返回的原生标签。
 node import <文件> 会将文件中的全部节点追加到 default 本地配置组。
 默认命令超时为 30 秒，service start 默认 120 秒；订阅变更由各订阅下载超时控制。
 所有命令均可使用 --timeout 显式覆盖。

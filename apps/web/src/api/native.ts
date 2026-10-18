@@ -3,6 +3,8 @@ import { z } from 'zod'
 import {
   ApiError,
   groupIdSchema,
+  policySelectSchema,
+  policyDelaySchema,
   type ApiEvent,
   type ApiRequest,
   type ApiTransport,
@@ -26,19 +28,12 @@ const eventSchema = z.object({
   body: z.unknown(),
 })
 const visibilitySchema = z.object({ visible: z.boolean() })
-const targetSchema = z.strictObject({
-  group_id: z
-    .string()
-    .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/)
-    .refine((id) => id !== 'staging' && !id.includes('..')),
-  node_tag: z.string(),
-})
 const modeBodySchema = z.strictObject({ mode: z.string().refine((mode) => mode.trim().length > 0) })
 const readResources: Readonly<Record<string, string>> = {
   '/info': 'info',
   '/service': 'service',
+  '/policy-groups': 'policy_groups',
   '/nodes/snapshot': 'nodes',
-  '/selection': 'selection',
   '/mode': 'mode',
   '/catalog': 'catalog',
   '/subscriptions': 'subscriptions',
@@ -79,13 +74,14 @@ export class NativeTransport implements ApiTransport {
     'service.read',
     'service.start',
     'service.stop',
+    'policy.read',
     'nodes.read',
-    'selection.read',
-    'selection.write',
+    'policy.select',
     'mode.read',
     'mode.write',
-    'nodes.delay',
+    'policy.delay',
     'catalog.read',
+    'catalog.write',
     'subscriptions.read',
     'subscriptions.detail',
     'subscriptions.history',
@@ -179,18 +175,11 @@ export class NativeTransport implements ApiTransport {
           input: bounded(subscriptionInputSchema, parsed.data),
         }
       } else {
-        const replacement = request.query?.replacement_group_id
-        if (
-          request.body !== undefined ||
-          Object.keys(request.query ?? {}).some((key) => key !== 'replacement_group_id') ||
-          (replacement !== undefined &&
-            (!groupIdSchema.safeParse(replacement).success || replacement === match[1]))
-        )
-          throw new ApiError('client.operation_denied', 'Invalid subscription replacement', 403)
+        if (request.body !== undefined || request.query !== undefined)
+          throw new ApiError('client.operation_denied', 'Invalid subscription deletion', 403)
         args = {
           action: 'remove',
           groupId: match[1],
-          ...(replacement ? { replacementGroupId: replacement } : {}),
         }
         deleteQuery = true
       }
@@ -230,15 +219,19 @@ export class NativeTransport implements ApiTransport {
     ) {
       operation = 'service_action'
       args = { action: request.path.slice('/service/'.length) }
-    } else if (
-      (request.method === 'PUT' && request.path === '/selection') ||
-      (request.method === 'POST' && request.path === '/nodes/delay')
-    ) {
-      const parsed = targetSchema.safeParse(request.body)
+    } else if (request.method === 'POST' && request.path === '/policy-groups/select') {
+      const parsed = policySelectSchema.safeParse(request.body)
       if (!parsed.success)
         throw new ApiError('client.operation_denied', 'Invalid native target', 403)
-      operation = request.path === '/selection' ? 'select_node' : 'test_delay'
-      args = { target: bounded(targetSchema, parsed.data) }
+      operation = 'policy_select'
+      const target = bounded(policySelectSchema, parsed.data)
+      args = { groupTag: target.group_tag, memberTag: target.member_tag }
+    } else if (request.method === 'POST' && request.path === '/policy-groups/delay') {
+      const parsed = policyDelaySchema.safeParse(request.body)
+      if (!parsed.success)
+        throw new ApiError('client.operation_denied', 'Invalid native target', 403)
+      operation = 'policy_delay'
+      args = { groupTag: bounded(policyDelaySchema, parsed.data).group_tag }
     } else if (request.method === 'PUT' && request.path === '/mode') {
       const parsed = modeBodySchema.safeParse(request.body)
       if (!parsed.success) throw new ApiError('client.operation_denied', 'Invalid native mode', 403)

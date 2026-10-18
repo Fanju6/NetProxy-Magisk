@@ -40,7 +40,6 @@ export const configTargetSchema = z
         'inbound/tun',
         'singbox/config.json',
         'runtime/inbound.json',
-        'runtime/outbounds.json',
         'runtime/providers.json',
         ...sections.map((section) => `singbox/${section}`),
       ].includes(target) ||
@@ -69,6 +68,14 @@ const nodeInput = z.strictObject({
 })
 const nodeTarget = z.strictObject({ group_id: groupIdSchema, node_tag: z.string().min(1) })
 const kindSchema = z.enum(['service', 'core'])
+const catalogName = z
+  .string()
+  .refine(
+    (name) =>
+      name.trim().length > 0 &&
+      new TextEncoder().encode(name).length <= 256 &&
+      !/[\p{Cc}\uD800-\uDFFF]/u.test(name),
+  )
 
 /** Converts only named domain requests, never a caller-controlled native HTTP request. */
 export function managementRequest(
@@ -76,6 +83,20 @@ export function managementRequest(
 ): { operation: string; input?: unknown } | undefined {
   const { path, method, query, body } = request
   const noQuery = query === undefined
+  if (path === '/catalog' && method === 'POST' && noQuery) {
+    const parsed = z.strictObject({ id: groupIdSchema, name: catalogName }).safeParse(body)
+    if (parsed.success) return { operation: 'catalog_create', input: parsed.data }
+  }
+  if (path.startsWith('/catalog/') && noQuery) {
+    const match = /^\/catalog\/([^/]+)$/.exec(path)
+    if (match && groupIdSchema.safeParse(match[1]).success) {
+      if (method === 'DELETE' && body === undefined && match[1] !== 'default')
+        return { operation: 'catalog_remove', input: { id: match[1] } }
+      const parsed = z.strictObject({ name: catalogName }).safeParse(body)
+      if (method === 'PUT' && parsed.success)
+        return { operation: 'catalog_rename', input: { id: match[1], name: parsed.data.name } }
+    }
+  }
   if (method === 'GET' && body === undefined && noQuery) {
     const reads: Record<string, string> = {
       '/configs': 'config_list',
@@ -241,7 +262,7 @@ export function useManagementAction() {
           for (const key of [
             'service',
             'nodes',
-            'selection',
+            'policy-groups',
             'mode',
             'subscriptions',
             'resource',

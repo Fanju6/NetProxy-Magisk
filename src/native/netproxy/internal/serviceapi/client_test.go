@@ -1,6 +1,7 @@
 package serviceapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -270,16 +271,45 @@ func writeTestFrame(t *testing.T, writer io.Writer, flag byte, payload []byte) {
 
 func TestWireCodecMarshalSelectOutbound(t *testing.T) {
 	content, err := (wireCodec{}).Marshal(&selectOutboundRequest{
-		Group:    "Proxy",
-		Outbound: "Auto/default",
+		Group:    "Custom/Main",
+		Outbound: "provider-a/same",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := appendString(nil, 1, "Proxy")
-	expected = appendString(expected, 2, "Auto/default")
+	expected := appendString(nil, 1, "Custom/Main")
+	expected = appendString(expected, 2, "provider-a/same")
 	if !reflect.DeepEqual(content, expected) {
 		t.Fatalf("unexpected protobuf payload: %x", content)
+	}
+}
+
+func TestSelectSendsOnlyTheExactNativeGroupAndMember(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.URL.Path != methodSelectOutbound {
+			t.Errorf("unexpected method: %s", r.URL.Path)
+		}
+		payload, trailer, err := readFrame(r.Body)
+		expected := appendString(nil, 1, "Custom/Main")
+		expected = appendString(expected, 2, "provider-a/same")
+		if err != nil || trailer || !bytes.Equal(payload, expected) {
+			t.Errorf("native tags changed: %x, %v", payload, err)
+		}
+		_, _ = w.Write([]byte{0, 0, 0, 0, 0})
+	}))
+	defer server.Close()
+	client, err := New(server.URL, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if err := client.Select(t.Context(), "Custom/Main", "provider-a/same"); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("selection issued %d requests", calls)
 	}
 }
 

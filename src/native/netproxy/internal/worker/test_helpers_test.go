@@ -4,7 +4,6 @@ import (
 	"context"
 	"path/filepath"
 
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 )
@@ -22,14 +21,7 @@ func newTestOptions(root string) Options {
 			return subscription.RuntimeSyncNotRunning, false, err
 		}
 		defer editor.Release()
-		module, err := moduleconfig.LoadModule(options.ModuleConfig)
-		if err != nil {
-			return subscription.RuntimeSyncNotRunning, false, err
-		}
-		selection, _, err := catalog.NormalizeSelection(ctx, root, module.Selection, groupID)
-		if err == nil && selection != module.Selection {
-			err = editor.UpdateSelection(selection)
-		}
+		_, err = moduleconfig.LoadModule(options.ModuleConfig)
 		return subscription.RuntimeSyncNotRunning, false, err
 	}
 	return options

@@ -406,7 +406,7 @@ func TestInboundBackendSwitchRunningAndStopped(t *testing.T) {
 					if journal.Phase != "reload_started" || journal.Backend != oldBackend {
 						t.Fatal(journal)
 					}
-					prepared, err := Prepare(ctx, locked, true)
+					prepared, err := Prepare(ctx, locked)
 					if err != nil || prepared.Backend != newBackend {
 						t.Fatal(prepared, err)
 					}
@@ -474,7 +474,7 @@ func TestInboundRecordedBackendMismatchCannotStopWithoutStart(t *testing.T) {
 			}
 			configStart = func(ctx context.Context, locked Options) error {
 				events = append(events, "start")
-				if _, err := Prepare(ctx, locked, true); err != nil {
+				if _, err := Prepare(ctx, locked); err != nil {
 					t.Fatal(err)
 				}
 				*alive = true
@@ -548,7 +548,7 @@ func TestInboundSwitchFailureRestoresDiskRuntimeAndInstance(t *testing.T) {
 				}
 				configStart = func(ctx context.Context, locked Options) error {
 					events = append(events, "start")
-					prepared, err := Prepare(ctx, locked, true)
+					prepared, err := Prepare(ctx, locked)
 					if err != nil || prepared.Backend != newBackend {
 						t.Fatal(prepared, err)
 					}
@@ -680,7 +680,7 @@ func TestInboundCandidateForcedCleanupKeepsRecoverySnapshots(t *testing.T) {
 			}
 			configStart = func(ctx context.Context, locked Options) error {
 				starts++
-				if _, err := Prepare(ctx, locked, true); err != nil {
+				if _, err := Prepare(ctx, locked); err != nil {
 					t.Fatal(err)
 				}
 				*alive = true

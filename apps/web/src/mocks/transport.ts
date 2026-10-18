@@ -5,7 +5,12 @@ import type {
   EventTopic,
   SubscriptionHistory,
 } from '@/api/contracts'
-import { apiOperations, groupIdSchema } from '@/api/contracts'
+import {
+  apiOperations,
+  groupIdSchema,
+  policySelectSchema,
+  policyDelaySchema,
+} from '@/api/contracts'
 import { createFixtures, demoTraffic, demoHistory, demoGroup } from './fixtures'
 import {
   subscriptionCreateSchema,
@@ -42,7 +47,73 @@ export class MockTransport implements ApiTransport {
   private subscriptionCounter = 0
   private management = new ManagementMock()
   private nodeDocuments = new Map<string, unknown>()
-  constructor(private readonly latency = 180) {}
+  constructor(private readonly latency = 180) {
+    this.refreshPolicies()
+  }
+
+  private refreshPolicies() {
+    const { policy, service, snapshot } = this.state
+    const objects = this.management.nativeOutbounds()
+    policy.live = service.state === 'ready'
+    policy.core_started_at_millis = policy.live ? service.core_started_at_millis : 0
+    policy.default_outbound = this.management.nativeDefaultOutbound()
+    service.default_outbound = policy.default_outbound
+    policy.groups = objects
+      .filter((object) => ['selector', 'urltest'].includes(object.type))
+      .map((object) => {
+        const previous = policy.groups.find((group) => group.tag === object.tag)
+        const tags = Array.isArray(object.outbounds) ? (object.outbounds as string[]) : []
+        const items = tags.map((tag) => ({
+          tag,
+          type: objects.find((item) => item.tag === tag)?.type ?? '',
+        }))
+        if (policy.live) {
+          const providers = Array.isArray(object.providers) ? (object.providers as string[]) : []
+          for (const resource of snapshot.groups) {
+            if (
+              object.use_all_providers !== true &&
+              !providers.includes(resource.group.provider_tag)
+            )
+              continue
+            for (const node of resource.nodes)
+              if (!items.some((item) => item.tag === node.tag))
+                items.push({ tag: node.tag, type: node.protocol })
+          }
+        }
+        return {
+          tag: object.tag ?? '',
+          type: object.type,
+          selectable: object.type === 'selector',
+          selected: !policy.live
+            ? ''
+            : previous?.selected && items.some((item) => item.tag === previous.selected)
+              ? previous.selected
+              : typeof object.default === 'string'
+                ? object.default
+                : (items[0]?.tag ?? ''),
+          items: items.map((item) => ({
+            ...previous?.items.find((old) => old.tag === item.tag),
+            ...item,
+          })),
+        }
+      })
+    this.resolveDefault()
+  }
+  private resolveDefault() {
+    const { policy, service } = this.state
+    let tag = policy.default_outbound
+    const visited = new Set<string>()
+    while (tag && !visited.has(tag)) {
+      visited.add(tag)
+      const group = policy.groups.find((item) => item.tag === tag)
+      if (!group) {
+        service.runtime_selected = policy.live ? tag : ''
+        return
+      }
+      tag = group.selected ?? ''
+    }
+    service.runtime_selected = ''
+  }
 
   async request(request: ApiRequest, signal?: AbortSignal) {
     // 读取可取消；写入一旦被接受即完成，模拟 Go 的事务语义。
@@ -60,10 +131,40 @@ export class MockTransport implements ApiTransport {
       }
       if (request.method === 'GET') signal?.addEventListener('abort', cancel, { once: true })
     })
-    const { service, snapshot } = this.state
+    const { service, snapshot, policy } = this.state
     const managed = await this.management.request(request)
-    if (managed) return managed
     const operation = managementRequest(request)
+    if (managed) {
+      if (operation?.operation === 'config_apply' && managed.body.ok) {
+        this.refreshPolicies()
+        this.emit('groups')
+      }
+      return managed
+    }
+    if (
+      (request.path === '/catalog' && request.method === 'POST') ||
+      (request.path.startsWith('/catalog/') && ['PUT', 'DELETE'].includes(request.method))
+    ) {
+      if (!operation?.operation.startsWith('catalog_')) return failure(400, 'usage.invalid')
+      const input = operation.input as { id: string; name?: string }
+      const existing = snapshot.groups.find((entry) => entry.group.id === input.id)
+      if (operation.operation === 'catalog_create') {
+        if (existing) return failure(409, 'catalog.conflict')
+        snapshot.groups.push({ group: demoGroup(input.id, input.name!, 'local', 0), nodes: [] })
+      } else {
+        if (!existing) return failure(404, 'catalog.not_found')
+        if (existing.group.type !== 'local') return failure(422, 'catalog.read_only')
+        if (operation.operation === 'catalog_remove') {
+          if (input.id === 'default') return failure(422, 'catalog.protected')
+          snapshot.groups = snapshot.groups.filter((entry) => entry !== existing)
+        } else {
+          existing.group.name = input.name!
+          existing.group.revision++
+        }
+      }
+      this.emit('subscriptions')
+      return success('catalog.applied', { id: input.id })
+    }
     if (operation?.operation.startsWith('node_')) {
       const input = operation.input as { group_id?: string; node_tag?: string; content?: string }
       const group = snapshot.groups.find((item) => item.group.id === (input.group_id ?? 'default'))
@@ -165,24 +266,6 @@ export class MockTransport implements ApiTransport {
       }
       group.group.node_count = group.nodes.length
       group.group.revision++
-      if (group.group.active) {
-        snapshot.selection.active_group_node_count = group.nodes.length
-        service.active_group_node_count = group.nodes.length
-        const selected = snapshot.selection.selected_node_ref.slice(group.group.id.length + 1)
-        if (selected && !group.nodes.some((item) => item.tag === selected)) {
-          snapshot.selection.selector_mode = 'urltest'
-          snapshot.selection.selected_node_ref = ''
-          snapshot.selection.selected = `Auto/${group.group.runtime_tag}`
-          snapshot.selection.runtime_selected =
-            service.state === 'ready' && group.nodes[0]
-              ? `${group.group.runtime_tag}/${group.nodes[0].tag}`
-              : ''
-          service.selector_mode = 'urltest'
-          service.selected_node_ref = ''
-          service.runtime_selected = snapshot.selection.runtime_selected
-        }
-      }
-      this.emit('groups')
       this.emit('subscriptions')
       this.emit('status')
       return success('node.applied', {
@@ -226,7 +309,6 @@ export class MockTransport implements ApiTransport {
       if (!parsed.success) return failure(422, 'subscription.edit_invalid')
       const id = `demo-subscription-${++this.subscriptionCounter}`
       const group = demoGroup(id, parsed.data.name ?? 'Subscription', 'subscription', 0)
-      group.active = false
       group.auto_update = parsed.data.auto_update ?? true
       group.update_interval = parsed.data.update_interval ?? 86400
       group.update_via_proxy = parsed.data.update_via_proxy ?? 'auto'
@@ -269,36 +351,9 @@ export class MockTransport implements ApiTransport {
       if (item.group.type !== 'subscription') return failure(422, 'subscription.read_only')
       if (this.subscriptionUpdates.has(item.group.id)) return failure(409, 'subscription.busy')
       if (request.method === 'DELETE') {
-        const replacement = snapshot.groups.find(
-          (entry) => entry.group.id === request.query?.replacement_group_id,
-        )
-        if (
-          request.body !== undefined ||
-          (request.query?.replacement_group_id &&
-            (!replacement || replacement === item || replacement.nodes.length === 0)) ||
-          (item.group.active && !replacement)
-        )
-          return failure(409, 'subscription.conflict')
+        if (request.body !== undefined || request.query !== undefined)
+          return failure(400, 'usage.invalid')
         snapshot.groups = snapshot.groups.filter((entry) => entry !== item)
-        if (item.group.active && replacement) {
-          replacement.group.active = true
-          snapshot.selection = {
-            active_group_id: replacement.group.id,
-            active_group_name: replacement.group.name,
-            active_group_runtime_tag: replacement.group.runtime_tag,
-            active_group_node_count: replacement.nodes.length,
-            selector_mode: 'urltest',
-            selected_node_ref: '',
-            selected: `Auto/${replacement.group.runtime_tag}`,
-            runtime_selected:
-              service.state === 'ready'
-                ? `${replacement.group.runtime_tag}/${replacement.nodes[0]!.tag}`
-                : '',
-          }
-          service.active_group_id = replacement.group.id
-          service.active_group_name = replacement.group.name
-          service.runtime_selected = snapshot.selection.runtime_selected
-        }
         this.settings.delete(item.group.id)
         this.histories.delete(item.group.id)
         this.emit('subscriptions')
@@ -373,18 +428,42 @@ export class MockTransport implements ApiTransport {
         })
       case 'GET /service':
         return success('service.status', structuredClone(service))
-      case 'GET /selection':
-        return success('node.current', structuredClone(snapshot.selection))
+      case 'GET /policy-groups':
+        return success('policy.groups', structuredClone(policy))
       case 'GET /nodes/snapshot': {
-        const id = request.query?.group_id?.trim()
-        if (id && (!/^[\w.-]+$/.test(id) || id.includes('..') || id === 'staging'))
+        const id = request.query?.group_id
+        if (id !== undefined && !groupIdSchema.safeParse(id).success)
           return failure(400, 'usage.invalid')
-        const result = structuredClone(snapshot)
-        if (id) {
-          result.groups = result.groups.filter((item) => item.group.id === id)
-          if (result.groups.length === 0) return failure(500, 'command.failed')
+        return success('node.snapshot', {
+          groups: structuredClone(
+            id ? snapshot.groups.filter((entry) => entry.group.id === id) : snapshot.groups,
+          ),
+        })
+      }
+      case 'POST /policy-groups/select': {
+        const parsed = policySelectSchema.safeParse(request.body)
+        if (!parsed.success) return failure(400, 'usage.invalid')
+        if (!policy.live) return failure(409, 'policy.not_live')
+        const group = policy.groups.find((group) => group.tag === parsed.data.group_tag)
+        if (!group?.selectable || !group.items.some((item) => item.tag === parsed.data.member_tag))
+          return failure(422, 'policy.invalid_member')
+        group.selected = parsed.data.member_tag
+        this.resolveDefault()
+        this.emit('groups')
+        return success('policy.selected', structuredClone(policy))
+      }
+      case 'POST /policy-groups/delay': {
+        const parsed = policyDelaySchema.safeParse(request.body)
+        if (!parsed.success) return failure(400, 'usage.invalid')
+        if (!policy.live) return failure(409, 'policy.not_live')
+        const group = policy.groups.find((group) => group.tag === parsed.data.group_tag)
+        if (!group) return failure(404, 'policy.not_found')
+        for (const [index, item] of group.items.entries()) {
+          item.url_test_delay = 32 + index * 21
+          item.url_test_time = Math.floor(Date.now() / 1000)
         }
-        return success('node.snapshot', result)
+        this.emit('groups')
+        return success('policy.delay', structuredClone(policy))
       }
       case 'GET /catalog':
       case 'GET /subscriptions':
@@ -415,15 +494,7 @@ export class MockTransport implements ApiTransport {
         service.memory_bytes = running ? 48234496 : 0
         service.connections_in = 0
         service.connections_out = 0
-        if (!running) snapshot.runtime_groups = []
-        const active = snapshot.groups.find(
-          (item) => item.group.id === snapshot.selection.active_group_id,
-        )!
-        const selectedTag = snapshot.selection.selected_node_ref.slice(active.group.id.length + 1)
-        snapshot.selection.runtime_selected = running
-          ? `${active.group.runtime_tag}/${selectedTag || active.nodes[0]!.tag}`
-          : ''
-        service.runtime_selected = snapshot.selection.runtime_selected
+        this.refreshPolicies()
         this.emit('status')
         this.emit('traffic')
         this.emit('groups')
@@ -434,57 +505,6 @@ export class MockTransport implements ApiTransport {
       }
       case 'POST /service/check':
         return success('service.check', { action: 'check', status: structuredClone(service) })
-      case 'PUT /selection': {
-        const parsed = z
-          .strictObject({ group_id: z.string().min(1), node_tag: z.string() })
-          .safeParse(request.body)
-        if (!parsed.success) return failure(400, 'usage.invalid')
-        const body = parsed.data
-        const group = snapshot.groups.find((item) => item.group.id === body.group_id)
-        if (
-          !group ||
-          group.nodes.length === 0 ||
-          (body.node_tag !== '' && !group.nodes.some((item) => item.tag === body.node_tag))
-        )
-          return failure(500, 'command.failed')
-        const manual = body.node_tag !== ''
-        const reference = manual ? `${group.group.id}/${body.node_tag}` : ''
-        snapshot.selection = {
-          active_group_id: group.group.id,
-          active_group_name: group.group.name,
-          active_group_runtime_tag: group.group.runtime_tag,
-          active_group_node_count: group.nodes.length,
-          selector_mode: manual ? 'manual' : 'urltest',
-          selected_node_ref: reference,
-          selected: manual ? reference : `Auto/${group.group.runtime_tag}`,
-          runtime_selected:
-            service.state === 'ready'
-              ? manual
-                ? `${group.group.runtime_tag}/${body.node_tag}`
-                : `${group.group.runtime_tag}/${group.nodes[0]!.tag}`
-              : '',
-        }
-        for (const item of snapshot.groups) item.group.active = item.group.id === group.group.id
-        Object.assign(service, {
-          selector_mode: snapshot.selection.selector_mode,
-          active_group_id: group.group.id,
-          active_group_name: group.group.name,
-          active_group_runtime_tag: group.group.runtime_tag,
-          active_group_node_count: group.nodes.length,
-          selected_node_ref: reference,
-          runtime_selected: snapshot.selection.runtime_selected,
-        })
-        this.emit('groups')
-        this.emit('status')
-        this.emit('subscriptions')
-        return success('node.selected', {
-          group_id: group.group.id,
-          mode: snapshot.selection.selector_mode,
-          selected: manual
-            ? `${group.group.runtime_tag}/${body.node_tag}`
-            : `Auto/${group.group.runtime_tag}`,
-        })
-      }
       case 'PUT /mode': {
         const parsed = z.strictObject({ mode: z.string() }).safeParse(request.body)
         if (!parsed.success) return failure(400, 'usage.invalid')
@@ -498,42 +518,6 @@ export class MockTransport implements ApiTransport {
           mode: body.mode,
           ...(service.state === 'ready' ? { runtime_mode: body.mode } : {}),
           available: service.available_outbound_modes,
-        })
-      }
-      case 'POST /nodes/delay': {
-        const parsed = z
-          .strictObject({ group_id: z.string().min(1), node_tag: z.string() })
-          .safeParse(request.body)
-        if (!parsed.success) return failure(400, 'usage.invalid')
-        const { group_id, node_tag } = parsed.data
-        const group = snapshot.groups.find((entry) => entry.group.id === group_id)
-        if (
-          !group ||
-          group.nodes.length === 0 ||
-          (node_tag !== '' && !group.nodes.some((node) => node.tag === node_tag))
-        )
-          return failure(500, 'command.failed')
-        const items = group.nodes
-          .filter((node) => node_tag === '' || node.tag === node_tag)
-          .map((node, index) => ({
-            tag: `${group.group.runtime_tag}/${node.tag}`,
-            type: node.protocol,
-            url_test_delay: 32 + index * 21,
-            url_test_time: Math.floor(Date.now() / 1000),
-          }))
-        return success('node.delay', {
-          target: node_tag
-            ? `${group.group.runtime_tag}/${node_tag}`
-            : `Auto/${group.group.runtime_tag}`,
-          groups: [
-            {
-              tag: `Auto/${group.group.runtime_tag}`,
-              type: node_tag ? '' : 'urltest',
-              selectable: false,
-              expanded: false,
-              items,
-            },
-          ],
         })
       }
       default:
@@ -641,12 +625,12 @@ export class MockTransport implements ApiTransport {
     listener: { topics: readonly EventTopic[]; consume: (event: ApiEvent) => void },
   ) {
     if (!listener.topics.includes(name === 'traffic' ? 'status' : name)) return
-    const { service, snapshot } = this.state
+    const { service, snapshot, policy } = this.state
     const response =
       name === 'status'
         ? success('service.status', service)
         : name === 'groups'
-          ? success('node.snapshot', snapshot)
+          ? success('policy.groups', policy)
           : name === 'subscriptions'
             ? success(
                 'subscription.list',

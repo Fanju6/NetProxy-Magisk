@@ -5,7 +5,7 @@ test('one compact title and owned navigation across primary and settings pages',
 }) => {
   for (const [path, title] of [
     ['/', '仪表盘'],
-    ['/nodes', '节点'],
+    ['/nodes', '代理'],
     ['/subscriptions', '资源'],
     ['/settings', '设置'],
   ] as const) {

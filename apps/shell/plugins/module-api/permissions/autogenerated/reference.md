@@ -1,6 +1,6 @@
 ## Default Permission
 
-Module state, public Catalog reads, URL subscription management, service control, selection, mode, delay and bounded events, without shell, files or arbitrary HTTP access
+Module state, public Catalog reads, URL subscription management, service control, policy groups, mode and bounded events, without shell, files or arbitrary HTTP access
 
 #### This default permission set includes the following:
 
@@ -10,9 +10,9 @@ Module state, public Catalog reads, URL subscription management, service control
 - `allow-subscription-write`
 - `allow-management`
 - `allow-service-action`
-- `allow-select-node`
+- `allow-policy-select`
 - `allow-change-mode`
-- `allow-test-delay`
+- `allow-policy-delay`
 - `allow-cancel`
 - `allow-open-events`
 - `allow-next-event`
@@ -190,6 +190,58 @@ Denies the open_events command without any pre-configured scope.
 <tr>
 <td>
 
+`module-api:allow-policy-delay`
+
+</td>
+<td>
+
+Enables the policy_delay command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`module-api:deny-policy-delay`
+
+</td>
+<td>
+
+Denies the policy_delay command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`module-api:allow-policy-select`
+
+</td>
+<td>
+
+Enables the policy_select command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`module-api:deny-policy-select`
+
+</td>
+<td>
+
+Denies the policy_select command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `module-api:allow-read`
 
 </td>
@@ -261,32 +313,6 @@ Enables the remove_listener command without any pre-configured scope.
 <td>
 
 Denies the remove_listener command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`module-api:allow-select-node`
-
-</td>
-<td>
-
-Enables the select_node command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`module-api:deny-select-node`
-
-</td>
-<td>
-
-Denies the select_node command without any pre-configured scope.
 
 </td>
 </tr>
@@ -417,32 +443,6 @@ Enables the subscription_write command without any pre-configured scope.
 <td>
 
 Denies the subscription_write command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`module-api:allow-test-delay`
-
-</td>
-<td>
-
-Enables the test_delay command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`module-api:deny-test-delay`
-
-</td>
-<td>
-
-Denies the test_delay command without any pre-configured scope.
 
 </td>
 </tr>

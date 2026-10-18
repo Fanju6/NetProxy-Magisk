@@ -39,7 +39,7 @@ export type SubscriptionCommand =
   | { action: 'update'; groupId: string }
   | { action: 'add'; input: SubscriptionInput }
   | { action: 'edit'; groupId: string; input: SubscriptionInput }
-  | { action: 'remove'; groupId: string; replacementId?: string }
+  | { action: 'remove'; groupId: string }
   | { action: 'update_all' }
 export type SubscriptionOperation = {
   epoch: number
@@ -185,12 +185,6 @@ export function beginSubscriptionWrite(
     ).success
   )
     return null
-  if (
-    command.action === 'remove' &&
-    command.replacementId !== undefined &&
-    (!groupIdSchema.safeParse(command.replacementId).success || command.replacementId === groupId)
-  )
-    return null
   const epoch = subscriptionEpoch(cache) + 1
   cache.setQueryData<SubscriptionOperation>(subscriptionOperationKey, {
     epoch,
@@ -216,15 +210,10 @@ export function beginSubscriptionWrite(
         )
         const fresh = await cache.fetchQuery({ ...resourceQueries(api).catalog, staleTime: 0 })
         const target = fresh.find((item) => item.id === groupId)
-        const replacement = fresh.find((item) => item.id === command.replacementId)
-        if (
-          target?.type !== 'subscription' ||
-          (target.active && (!replacement || replacement.node_count === 0)) ||
-          (command.replacementId !== undefined && (!replacement || replacement.node_count === 0))
-        )
+        if (target?.type !== 'subscription')
           throw new ApiError(
             'subscription.conflict',
-            'The deletion target or replacement changed',
+            'The deletion target changed',
             409,
             null,
             true,
@@ -232,9 +221,6 @@ export function beginSubscriptionWrite(
         request = {
           method: 'DELETE',
           path: `/subscriptions/${groupId}`,
-          ...(command.replacementId
-            ? { query: { replacement_group_id: command.replacementId } }
-            : {}),
         }
         schema = z.object({ id: z.literal(groupId!) })
       } else if (command.action === 'add')
@@ -289,7 +275,7 @@ export function beginSubscriptionWrite(
       error,
       ...(result ? { result } : {}),
     })
-    for (const key of ['subscriptions', 'resource', 'nodes', 'selection', 'service', 'mode'])
+    for (const key of ['subscriptions', 'resource', 'nodes', 'policy-groups', 'service', 'mode'])
       void cache.invalidateQueries({ queryKey: [key] })
     if (!signal.aborted) await verifySubscription(api, cache)
   })()
@@ -356,8 +342,7 @@ export function useSubscriptionActions() {
     update: (groupId: string) => start({ action: 'update', groupId }),
     add: (input: SubscriptionInput) => start({ action: 'add', input }),
     edit: (groupId: string, input: SubscriptionInput) => start({ action: 'edit', groupId, input }),
-    remove: (groupId: string, replacementId?: string) =>
-      start({ action: 'remove', groupId, ...(replacementId ? { replacementId } : {}) }),
+    remove: (groupId: string) => start({ action: 'remove', groupId }),
     updateAll: () => start({ action: 'update_all' }),
     verify: () => verifySubscription(api, cache),
     cancel: async (groupId: string) => {

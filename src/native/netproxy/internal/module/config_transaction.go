@@ -13,6 +13,7 @@ import (
 
 	json "encoding/json/v2"
 
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/inbound"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
@@ -35,6 +36,7 @@ type configApplyJournal struct {
 	Phase      string               `json:"phase"`
 	Static     []configFileSnapshot `json:"static"`
 	Runtime    []configFileSnapshot `json:"runtime"`
+	Catalog    []configFileSnapshot `json:"catalog,omitempty"`
 	WasRunning bool                 `json:"was_running"`
 	Backend    string               `json:"backend"`
 	Action     string               `json:"action"`
@@ -105,7 +107,7 @@ func beginConfigApply(options Options, destination string) (*configApplyTransact
 			Action:     "none",
 			BootID:     currentBootID(),
 			Static:     make([]configFileSnapshot, 0, 2),
-			Runtime:    make([]configFileSnapshot, 0, 3),
+			Runtime:    make([]configFileSnapshot, 0, 2),
 		},
 	}
 	if transaction.journal.WasRunning {
@@ -134,7 +136,7 @@ func beginConfigApply(options Options, destination string) (*configApplyTransact
 		}
 		transaction.journal.Static = append(transaction.journal.Static, snapshot)
 	}
-	for index, name := range []string{"providers.json", "outbounds.json", "inbound.json"} {
+	for index, name := range []string{"providers.json", "inbound.json"} {
 		path := filepath.Join(options.RuntimeDir, name)
 		snapshot, err := createConfigSnapshot(directory, fmt.Sprintf("runtime-%d", index), path)
 		if err != nil {
@@ -216,6 +218,19 @@ func (transaction *configApplyTransaction) commit() error {
 }
 
 func (transaction *configApplyTransaction) restore() error {
+	if len(transaction.journal.Catalog) != 0 {
+		root := filepath.Dir(filepath.Dir(transaction.journal.Catalog[0].Path))
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		release, err := catalog.AcquireRoot(ctx, root)
+		if err != nil {
+			return err
+		}
+		defer release()
+		if err := catalog.RecoverLocked(root); err != nil {
+			return err
+		}
+	}
 	return restoreConfigSnapshots(transaction.journal)
 }
 
@@ -334,7 +349,7 @@ func validateConfigJournal(options Options, journal configApplyJournal) error {
 		allowedStatic[path] = struct{}{}
 	}
 	allowedRuntime := make(map[string]struct{})
-	for _, name := range []string{"providers.json", "outbounds.json", "inbound.json"} {
+	for _, name := range []string{"providers.json", "inbound.json"} {
 		allowedRuntime[filepath.Clean(filepath.Join(options.RuntimeDir, name))] = struct{}{}
 	}
 	for _, snapshot := range journal.Static {
@@ -346,6 +361,17 @@ func validateConfigJournal(options Options, journal configApplyJournal) error {
 	for _, snapshot := range journal.Runtime {
 		if _, ok := allowedRuntime[filepath.Clean(snapshot.Path)]; !ok {
 			return fmt.Errorf("配置事务运行时目标不匹配: %s", snapshot.Path)
+		}
+	}
+	for _, snapshot := range journal.Catalog {
+		groupDir := filepath.Dir(filepath.Clean(snapshot.Path))
+		if filepath.Dir(groupDir) != filepath.Clean(options.CatalogRoot) || filepath.Base(groupDir) == "staging" {
+			return fmt.Errorf("Catalog snapshot outside resource group: %s", snapshot.Path)
+		}
+		switch filepath.Base(snapshot.Path) {
+		case "meta.json", "provider.json", "history.jsonl":
+		default:
+			return fmt.Errorf("Invalid Catalog snapshot target: %s", snapshot.Path)
 		}
 	}
 	return nil
@@ -361,6 +387,12 @@ func isSingBoxStaticPath(singBoxDir, path string) bool {
 }
 
 func restoreConfigSnapshots(journal configApplyJournal) error {
+	// Restore Provider content before publishing runtime definitions that refer to it.
+	for _, snapshot := range journal.Catalog {
+		if err := configSnapshotRestore(snapshot); err != nil {
+			return err
+		}
+	}
 	var restoreErr error
 	for _, snapshot := range append(append([]configFileSnapshot{}, journal.Static...), journal.Runtime...) {
 		restoreErr = errors.Join(restoreErr, configSnapshotRestore(snapshot))
@@ -418,8 +450,6 @@ func prepareFromConfigJournal(options Options, journal configApplyJournal) Prepa
 		switch filepath.Base(snapshot.Path) {
 		case "providers.json":
 			prepared.Providers = snapshot.Path
-		case "outbounds.json":
-			prepared.Outbounds = snapshot.Path
 		case "inbound.json":
 			prepared.Inbound = snapshot.Path
 		}

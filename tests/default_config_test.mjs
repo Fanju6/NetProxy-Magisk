@@ -15,7 +15,6 @@ test('模块设置只有 module.json 默认文件，字段使用 JSON 原生类�
   assert.equal(existsSync(new URL('src/module/config/module.conf', root)), false)
   assert.deepEqual(readJSON('src/module/config/module.json'), {
     auto_start: false,
-    selection: { group_id: 'default', node_tag: '' },
     wifi: { enabled: false, mode: 'blacklist', blacklist: [], whitelist: [], proxy_on_non_wifi: true },
   })
 })
@@ -32,7 +31,11 @@ test('默认配置仅保留部署、运行时生成、模式命名与原生 DNS 
   expected.services[0].dashboard.path = '/data/adb/modules/netproxy/webroot/sing-box-dashboard'
   expected.inbounds = expected.inbounds.filter(inbound => inbound.type !== 'ebpf')
   expected.inbounds[0].listen = '127.0.0.1'
-  delete expected.outbounds
+  expected.outbounds = [
+    { type: 'selector', tag: 'Proxy', outbounds: ['direct'], use_all_providers: true, default: 'direct' },
+    { type: 'direct', tag: 'direct' },
+    { type: 'block', tag: 'block' },
+  ]
   delete expected.providers
   for (const rule of expected.route.rule_set) {
     rule.path = rule.path.replace('./source/rule_set/', './rules/remote/').replace('./source/', './rules/local/')

@@ -3,6 +3,7 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 mod appearance;
 mod management;
+mod policy;
 #[cfg(target_os = "android")]
 use tauri::Manager;
 use tauri::{
@@ -42,7 +43,8 @@ pub enum Resource {
     Info,
     Service,
     Nodes,
-    Selection,
+    #[serde(rename = "policy_groups")]
+    PolicyGroups,
     Mode,
     Catalog,
     Subscriptions,
@@ -202,8 +204,6 @@ enum SubscriptionWriteRequest {
         request_id: String,
         #[serde(rename = "groupId")]
         group_id: String,
-        #[serde(rename = "replacementGroupId", skip_serializing_if = "Option::is_none")]
-        replacement_group_id: Option<String>,
     },
     UpdateAll {
         #[serde(rename = "requestId")]
@@ -248,13 +248,8 @@ impl SubscriptionWriteRequest {
             Self::Remove {
                 request_id,
                 group_id,
-                replacement_group_id,
             } => {
-                if !valid_group_id(group_id)
-                    || replacement_group_id
-                        .as_ref()
-                        .is_some_and(|id| !valid_group_id(id) || id == group_id)
-                {
+                if !valid_group_id(group_id) {
                     return Err(BridgeError::invalid());
                 }
                 request_id
@@ -266,13 +261,6 @@ impl SubscriptionWriteRequest {
         }
         Ok(request)
     }
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct NodeTarget {
-    group_id: String,
-    node_tag: String,
 }
 
 const BODY_LIMIT: usize = 4 * 1024 * 1024;
@@ -302,15 +290,6 @@ fn validate_body(value: &impl Serialize) -> Result<(), BridgeError> {
         });
     }
     Ok(())
-}
-
-impl NodeTarget {
-    fn validate(&self) -> Result<(), BridgeError> {
-        if !valid_group_id(&self.group_id) {
-            return Err(BridgeError::invalid());
-        }
-        validate_body(self)
-    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -487,21 +466,12 @@ async fn management<R: Runtime>(
 }
 
 #[tauri::command]
-async fn select_node<R: Runtime>(
+async fn policy_select<R: Runtime>(
     app: AppHandle<R>,
-    request_id: String,
-    target: NodeTarget,
+    request: tauri::ipc::Request<'_>,
 ) -> Result<Value, BridgeError> {
-    if !valid_id(&request_id) {
-        return Err(BridgeError::invalid());
-    }
-    target.validate()?;
-    dispatch(
-        app,
-        "selectNode",
-        json!({"requestId": request_id, "target": target}),
-    )
-    .await
+    let request = policy::Select::parse(request.body())?;
+    dispatch(app, "policySelect", json!(request)).await
 }
 
 #[tauri::command]
@@ -523,21 +493,12 @@ async fn change_mode<R: Runtime>(
 }
 
 #[tauri::command]
-async fn test_delay<R: Runtime>(
+async fn policy_delay<R: Runtime>(
     app: AppHandle<R>,
-    request_id: String,
-    target: NodeTarget,
+    request: tauri::ipc::Request<'_>,
 ) -> Result<Value, BridgeError> {
-    if !valid_id(&request_id) {
-        return Err(BridgeError::invalid());
-    }
-    target.validate()?;
-    dispatch(
-        app,
-        "testDelay",
-        json!({"requestId": request_id, "target": target}),
-    )
-    .await
+    let request = policy::Delay::parse(request.body())?;
+    dispatch(app, "policyDelay", json!(request)).await
 }
 
 #[tauri::command]
@@ -615,9 +576,9 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             subscription_write,
             management,
             service_action,
-            select_node,
+            policy_select,
             change_mode,
-            test_delay,
+            policy_delay,
             cancel,
             open_events,
             next_event,
@@ -652,7 +613,6 @@ mod tests {
             json!({"action":"edit","requestId":"r","groupId":"sub-a","input":{}}),
             json!({"action":"edit","requestId":"r","groupId":"sub-a","input":{"user_agent":"","hwid":"","custom_headers":{},"include":"","exclude":""}}),
             json!({"action":"remove","requestId":"r","groupId":"sub-a"}),
-            json!({"action":"remove","requestId":"r","groupId":"sub-a","replacementGroupId":"default"}),
             json!({"action":"update_all","requestId":"r"}),
         ] {
             let request = write_request(value.clone())
@@ -882,10 +842,11 @@ mod tests {
     fn resources_are_not_arbitrary_paths_or_methods() {
         assert!(serde_json::from_str::<Resource>("\"info\"").is_ok());
         assert!(serde_json::from_str::<Resource>("\"service\"").is_ok());
-        for resource in ["nodes", "selection", "mode", "catalog", "subscriptions"] {
+        for resource in ["nodes", "policy_groups", "mode", "catalog", "subscriptions"] {
             assert!(serde_json::from_value::<Resource>(json!(resource)).is_ok());
         }
         for forbidden in [
+            "selection",
             "/info",
             "POST",
             "config",
@@ -934,61 +895,6 @@ mod tests {
         ] {
             assert!(!valid_group_id(group));
         }
-    }
-
-    #[test]
-    fn node_targets_reject_unsafe_groups_and_unknown_fields_but_preserve_original_tags() {
-        for group in ["default", "a.b-C_1", "012"] {
-            for tag in ["", "香港 / 节点🚀", "Auto/default", " name "] {
-                let target: NodeTarget =
-                    serde_json::from_value(json!({"group_id":group,"node_tag":tag})).unwrap();
-                target.validate().unwrap();
-                assert_eq!(target.node_tag, tag);
-            }
-        }
-        for group in [
-            "",
-            ".",
-            "..",
-            "staging",
-            "a..b",
-            "../default",
-            "a/b",
-            "a\\b",
-            "a?x",
-            "中文",
-            " a",
-            "_a",
-        ] {
-            assert!(
-                NodeTarget {
-                    group_id: group.into(),
-                    node_tag: "".into()
-                }
-                .validate()
-                .is_err()
-            );
-        }
-        for target in [
-            json!({"group_id":"default"}),
-            json!({"group_id":"default","node_tag":null}),
-            json!({"group_id":"default","node_tag":2}),
-            json!({"group_id":"default","node_tag":"","path":"/config"}),
-        ] {
-            assert!(serde_json::from_value::<NodeTarget>(target).is_err());
-        }
-        let target = NodeTarget {
-            group_id: "default".into(),
-            node_tag: "龙".repeat(BODY_LIMIT / 3),
-        };
-        assert_eq!(target.validate().unwrap_err().status, 413);
-        // JSON 转义也计入正文上限，不能只检查字符串字符数。
-        assert_eq!(
-            validate_body(&json!({"mode":"\n".repeat(BODY_LIMIT / 2)}))
-                .unwrap_err()
-                .status,
-            413
-        );
     }
 
     #[test]

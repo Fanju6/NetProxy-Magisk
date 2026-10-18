@@ -381,14 +381,16 @@ func (h *eventHub) changedTopics(event fsnotify.Event) int {
 	path := filepath.Clean(event.Name)
 	options := h.server.options
 	switch path {
-	case options.StateFile, options.ModuleConfig, filepath.Dir(options.ModuleConfig), filepath.Dir(options.StateFile):
+	case options.StateFile, filepath.Dir(options.StateFile):
 		return topicStatus | topicGroups
-	case options.InboundConfig, filepath.Dir(options.InboundConfig), options.SingBoxDir, paths.SingBoxConfig(options.SingBoxDir):
+	case options.ModuleConfig, options.InboundConfig, filepath.Dir(options.ModuleConfig), filepath.Dir(options.InboundConfig):
 		return topicStatus
+	case options.SingBoxDir, paths.SingBoxConfig(options.SingBoxDir):
+		return topicStatus | topicGroups
 	case options.ProgressDir:
 		return topicSubscriptions
 	case options.CatalogRoot, filepath.Dir(options.CatalogRoot):
-		return allTopics
+		return topicSubscriptions
 	}
 	if filepath.Dir(path) == options.ProgressDir {
 		return topicSubscriptions
@@ -396,7 +398,7 @@ func (h *eventHub) changedTopics(event fsnotify.Event) int {
 	if relative, err := filepath.Rel(options.CatalogRoot, path); err == nil && filepath.IsLocal(relative) {
 		group, file, _ := strings.Cut(filepath.ToSlash(relative), "/")
 		if group != "staging" && !strings.HasPrefix(group, ".") && (file == "" || file == "meta.json" || file == "provider.json") {
-			return allTopics
+			return topicSubscriptions
 		}
 	}
 	return 0

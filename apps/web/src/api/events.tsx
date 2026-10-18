@@ -6,7 +6,7 @@ import {
   envelopeSchema,
   groupSchema,
   serviceSchema,
-  snapshotSchema,
+  policySnapshotSchema,
   trafficSchema,
   type ServiceStatus,
   type Traffic,
@@ -28,7 +28,7 @@ import {
   useRoutingOperation,
   type RoutingOperation,
 } from './routing-control'
-import type { NodeSnapshot } from './contracts'
+import type { PolicySnapshot } from './contracts'
 import { acceptResourceEvent, resetResourceSession } from './resources'
 import { subscriptionEventEpoch, useSubscriptionOperation } from './subscription-control'
 import { managementEpoch, managementKey } from './management'
@@ -156,7 +156,7 @@ export function ModuleEvents() {
         )
       // 单一会话只接受当前连接的完整快照，断流后不沿用旧核心流量。
       let status: ServiceStatus | undefined
-      let pendingNodes: NodeSnapshot | undefined
+      let pendingNodes: PolicySnapshot | undefined
       let initialResources = true
       const routing = cache.getQueryData<RoutingOperation | null>(routingOperationKey)
       const checkRouting =
@@ -166,29 +166,16 @@ export function ModuleEvents() {
       let confirmed = !checkRouting
       let confirming = false
       let changedDuringCheck = false
-      const publishNodes = (snapshot: NodeSnapshot) => {
-        const catalog = cache.getQueryData<z.infer<typeof groupSchema>[]>(['subscriptions'])
+      const publishNodes = (snapshot: PolicySnapshot) => {
         if (
-          api.supports('catalog.read') &&
-          catalog &&
-          (catalog.length !== snapshot.groups.length ||
-            snapshot.groups.some((entry) => !catalog.some((group) => group.id === entry.group.id)))
-        ) {
-          for (const key of ['nodes', 'selection'])
-            void cache.invalidateQueries({ queryKey: [key], exact: true })
+          !status ||
+          (snapshot.live &&
+            (status.state !== 'ready' ||
+              snapshot.core_started_at_millis !== status.core_started_at_millis))
+        )
           return
-        }
-        const nodes =
-          status?.state === 'ready'
-            ? snapshot
-            : {
-                ...snapshot,
-                runtime_groups: [],
-                selection: { ...snapshot.selection, runtime_selected: '' },
-              }
-        publish('nodes', nodes)
-        publish('selection', nodes.selection)
-        observeRouting(cache, nodes.selection)
+        publish('policy-groups', snapshot)
+        observeRouting(cache, snapshot)
       }
       const subscribe = () => {
         if (!active()) return
@@ -219,18 +206,26 @@ export function ModuleEvents() {
                     ) {
                       clearTraffic()
                       // 核心身份改变后不得在新分组快照前沿用旧实例的选择和延迟。
-                      for (const key of ['nodes', 'selection']) {
+                      for (const key of ['policy-groups']) {
                         void cache.cancelQueries(
                           { queryKey: [key], exact: true },
                           { revert: false, silent: true },
                         )
                       }
-                      cache.setQueryData<NodeSnapshot>(['nodes'], (nodes) =>
-                        nodes
+                      cache.setQueryData<PolicySnapshot>(['policy-groups'], (snapshot) =>
+                        snapshot
                           ? {
-                              ...nodes,
-                              runtime_groups: [],
-                              selection: { ...nodes.selection, runtime_selected: '' },
+                              ...snapshot,
+                              live: false,
+                              core_started_at_millis: 0,
+                              groups: snapshot.groups.map((group) => ({
+                                ...group,
+                                selected: '',
+                                items: group.items.map((item) => ({
+                                  tag: item.tag,
+                                  type: item.type,
+                                })),
+                              })),
                             }
                           : undefined,
                       )
@@ -254,10 +249,14 @@ export function ModuleEvents() {
                     }
                   }
                 } else if (event.name === 'groups') {
-                  const nodes = snapshotSchema.parse(envelope.data)
+                  const nodes = policySnapshotSchema.parse(envelope.data)
                   if (confirmed) {
-                    if (status) publishNodes(nodes)
-                    else pendingNodes = nodes
+                    if (
+                      !status ||
+                      (nodes.live && nodes.core_started_at_millis !== status.core_started_at_millis)
+                    )
+                      pendingNodes = nodes
+                    else publishNodes(nodes)
                   }
                 } else if (event.name === 'subscriptions') {
                   const summaries = z.array(groupSchema).parse(envelope.data)
@@ -291,7 +290,7 @@ export function ModuleEvents() {
                     void (async () => {
                       const queries = moduleQueries(api)
                       await Promise.all(
-                        ['service', 'nodes', 'selection', 'mode'].map((key) =>
+                        ['service', 'policy-groups', 'mode'].map((key) =>
                           cache.cancelQueries(
                             { queryKey: [key], exact: true },
                             { revert: false, silent: true },
@@ -302,10 +301,8 @@ export function ModuleEvents() {
                       await cache.fetchQuery({ ...queries.service, staleTime: 0 })
                       if (!active()) return
                       const reads: Promise<unknown>[] = []
-                      if (api.supports('nodes.read'))
-                        reads.push(cache.fetchQuery({ ...queries.nodes, staleTime: 0 }))
-                      if (api.supports('selection.read'))
-                        reads.push(cache.fetchQuery({ ...queries.selection, staleTime: 0 }))
+                      if (api.supports('policy.read'))
+                        reads.push(cache.fetchQuery({ ...queries.policyGroups, staleTime: 0 }))
                       if (api.supports('mode.read'))
                         reads.push(cache.fetchQuery({ ...queries.mode, staleTime: 0 }))
                       await Promise.all(reads)

@@ -8,6 +8,7 @@ import {
   infoSchema,
   serviceSchema,
   snapshotSchema,
+  policySnapshotSchema,
   trafficSchema,
 } from '@/api/contracts'
 import { MockTransport } from './transport'
@@ -15,6 +16,38 @@ import { createFixtures } from './fixtures'
 
 afterEach(() => vi.useRealTimers())
 describe('Go API shaped mock', () => {
+  it('creates, renames and removes only local groups with stable provider identity', async () => {
+    const client = new ApiClient(new MockTransport(0))
+    const shape = z.object({ id: z.literal('fixture-local') })
+    expect(
+      await client.request(
+        { method: 'POST', path: '/catalog', body: { id: 'fixture-local', name: '旅行' } },
+        shape,
+      ),
+    ).toEqual({ id: 'fixture-local' })
+    await client.request(
+      { method: 'PUT', path: '/catalog/fixture-local', body: { name: 'Renamed' } },
+      shape,
+    )
+    const groups = await client.request({ method: 'GET', path: '/catalog' }, z.array(groupSchema))
+    expect(groups.find((group) => group.id === 'fixture-local')).toMatchObject({
+      name: 'Renamed',
+      provider_tag: 'np/fixture-local',
+      type: 'local',
+    })
+    await expect(
+      client.request({ method: 'DELETE', path: '/catalog/demo-global' }, z.unknown()),
+    ).rejects.toMatchObject({ code: 'catalog.read_only' })
+    await client.request({ method: 'DELETE', path: '/catalog/fixture-local' }, shape)
+    expect(
+      (await client.request({ method: 'GET', path: '/catalog' }, z.array(groupSchema))).some(
+        (group) => group.id === 'fixture-local',
+      ),
+    ).toBe(false)
+    await expect(
+      client.request({ method: 'DELETE', path: '/catalog/default' }, z.unknown()),
+    ).rejects.toBeDefined()
+  })
   it('validates all first-batch read responses against the source-derived DTOs', async () => {
     const client = new ApiClient(new MockTransport(0))
     expect(await client.request({ method: 'GET', path: '/info' }, infoSchema)).toMatchObject({
@@ -37,42 +70,56 @@ describe('Go API shaped mock', () => {
     )
     expect(snapshot.groups.find((item) => item.group.id === 'demo-empty')?.nodes).toEqual([])
   })
-  it('keeps Catalog readable after stopping and changes selection while stopped', async () => {
+  it('keeps Catalog independent and readable while native groups are not live', async () => {
     const client = new ApiClient(new MockTransport(0))
-    const result = await client.request(
-      { method: 'POST', path: '/service/stop' },
-      z.object({ action: z.literal('stop'), status: serviceSchema }),
-    )
-    expect(result.status).toMatchObject({
-      state: 'stopped',
-      active_backend: null,
-      pid: null,
-      core_started_at_millis: 0,
-    })
+    await client.request({ method: 'POST', path: '/service/stop' }, z.unknown())
     expect(
       (await client.request({ method: 'GET', path: '/subscriptions' }, z.array(groupSchema)))
         .length,
     ).toBe(4)
-    await client.request(
-      { method: 'PUT', path: '/selection', body: { group_id: 'default', node_tag: 'Local relay' } },
-      z.unknown(),
+    const catalog = await client.request({ method: 'GET', path: '/nodes/snapshot' }, snapshotSchema)
+    expect(catalog).not.toHaveProperty('selection')
+    const policy = await client.request(
+      { method: 'GET', path: '/policy-groups' },
+      policySnapshotSchema,
     )
-    const snapshot = await client.request(
-      { method: 'GET', path: '/nodes/snapshot' },
-      snapshotSchema,
-    )
-    expect(snapshot.selection).toMatchObject({
-      selected_node_ref: 'default/Local relay',
-      runtime_selected: '',
-      selector_mode: 'manual',
+    expect(policy).toMatchObject({
+      live: false,
+      core_started_at_millis: 0,
+      default_outbound: 'Internet',
     })
-    await client.request(
-      { method: 'PUT', path: '/selection', body: { group_id: 'default', node_tag: '' } },
-      z.unknown(),
+    await expect(
+      client.request(
+        {
+          method: 'POST',
+          path: '/policy-groups/select',
+          body: { group_tag: 'Internet', member_tag: 'Fastest' },
+        },
+        policySnapshotSchema,
+      ),
+    ).rejects.toMatchObject({ code: 'policy.not_live' })
+  })
+  it('uses complete snapshots for native group selection and delay without changing Catalog', async () => {
+    const client = new ApiClient(new MockTransport(0))
+    const catalog = await client.request({ method: 'GET', path: '/catalog' }, z.array(groupSchema))
+    const selected = await client.request(
+      {
+        method: 'POST',
+        path: '/policy-groups/select',
+        body: { group_tag: 'Internet', member_tag: 'Hong Kong 01' },
+      },
+      policySnapshotSchema,
     )
-    expect(
-      (await client.request({ method: 'GET', path: '/nodes/snapshot' }, snapshotSchema)).selection,
-    ).toMatchObject({ selected: 'Auto/本地配置', selected_node_ref: '', selector_mode: 'urltest' })
+    expect(selected.groups[0]!.selected).toBe('Hong Kong 01')
+    expect(await client.request({ method: 'GET', path: '/catalog' }, z.array(groupSchema))).toEqual(
+      catalog,
+    )
+    const measured = await client.request(
+      { method: 'POST', path: '/policy-groups/delay', body: { group_tag: 'Fastest' } },
+      policySnapshotSchema,
+    )
+    expect(measured.groups[1]!.items[0]!.url_test_time).toBeGreaterThan(1_000_000_000)
+    expect(measured).not.toHaveProperty('selection')
   })
   it('requires the read revision and does not overwrite on conflict', async () => {
     const client = new ApiClient(new MockTransport(0))
@@ -151,14 +198,14 @@ describe('Go API shaped mock', () => {
     first.snapshot.groups.splice(0)
     expect(createFixtures().snapshot.groups).toHaveLength(4)
   })
-  it('filters group snapshots without changing the global selection', async () => {
+  it('filters pure Catalog snapshots without inventing a selection', async () => {
     const client = new ApiClient(new MockTransport(0))
     const filtered = await client.request(
       { method: 'GET', path: '/nodes/snapshot', query: { group_id: 'demo-empty' } },
       snapshotSchema,
     )
     expect(filtered.groups.map((item) => item.group.id)).toEqual(['demo-empty'])
-    expect(filtered.selection.active_group_id).not.toBe('demo-empty')
+    expect(filtered).not.toHaveProperty('selection')
     await expect(
       client.request(
         { method: 'GET', path: '/nodes/snapshot', query: { group_id: '../private' } },
@@ -170,7 +217,7 @@ describe('Go API shaped mock', () => {
     const client = new ApiClient(new MockTransport(0))
     for (const request of [
       { method: 'GET', path: '/service', query: { unknown: 'value' } },
-      { method: 'PUT', path: '/selection', body: { group_id: 'default' } },
+      { method: 'POST', path: '/policy-groups/select', body: { group_tag: 'Internet' } },
     ] as const) {
       await expect(client.request(request, z.unknown())).rejects.toMatchObject({
         code: 'usage.invalid',

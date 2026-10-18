@@ -3,27 +3,25 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useApi } from '@/app/context'
 import {
   ApiError,
-  delaySchema,
-  type NodeSnapshot,
-  type NodeTarget,
+  policySnapshotSchema,
+  type PolicySnapshot,
   type ServiceStatus,
 } from './contracts'
-import { serviceEpoch } from './service-control'
-import { routingEpoch } from './routing-control'
+import { serviceEpoch, serviceOperationKey, type ServiceOperation } from './service-control'
+import { routingBusy, routingEpoch } from './routing-control'
+import { managementBusy } from './management'
+import { subscriptionBusy } from './subscription-control'
 
-type Result = { delay: number; time: number }
-export function useNodeDelay() {
+export function usePolicyDelay() {
   const api = useApi()
   const cache = useQueryClient()
   const request = useRef<AbortController | null>(null)
   const [state, setState] = useState<{
-    target: NodeTarget | null
+    target: string | null
     isPending: boolean
     error: unknown
-    results: Record<string, Result>
-    core: number
     outcome: 'cached' | 'empty' | null
-  }>({ target: null, isPending: false, error: null, results: {}, core: 0, outcome: null })
+  }>({ target: null, isPending: false, error: null, outcome: null })
   const service = useQuery<ServiceStatus | null>({
     queryKey: ['service'],
     queryFn: () => null,
@@ -41,7 +39,6 @@ export function useNodeDelay() {
     setState((current) => ({ ...current, isPending: false }))
   }, [])
   useEffect(() => {
-    // 离页、后台及连接中断只终止本次等待，不能补发已经接受的测速。
     const visibility = () => {
       if (document.visibilityState === 'hidden') cancel()
     }
@@ -54,77 +51,64 @@ export function useNodeDelay() {
   }, [cancel])
   useEffect(() => {
     cancel()
-    setState((current) => ({ ...current, core, results: {}, outcome: null, error: null }))
+    setState((current) => ({ ...current, outcome: null, error: null }))
   }, [core, cancel])
   useEffect(() => {
-    if (connection.data && connection.data !== 'live') cancel()
+    if (connection.data !== 'live') cancel()
   }, [connection.data, cancel])
   return {
     ...state,
-    results: state.core === core ? state.results : {},
     cancel,
-    mutate: (target: NodeTarget) => {
-      if (request.current || !api.supports('nodes.delay')) return
-      const snapshot = cache.getQueryData<NodeSnapshot>(['nodes'])
-      const group = snapshot?.groups.find((entry) => entry.group.id === target.group_id)
+    mutate: (groupTag: string) => {
+      const snapshot = cache.getQueryData<PolicySnapshot>(['policy-groups'])
+      const group = snapshot?.groups.find((group) => group.tag === groupTag)
+      const action = cache.getQueryData<ServiceOperation>(serviceOperationKey)
       if (
+        request.current ||
+        !api.supports('policy.delay') ||
+        !snapshot?.live ||
         !group ||
-        group.nodes.length === 0 ||
-        (target.node_tag !== '' && !group.nodes.some((node) => node.tag === target.node_tag))
+        routingBusy(cache) ||
+        managementBusy(cache) ||
+        subscriptionBusy(cache) ||
+        (action && action.phase !== 'idle') ||
+        service.data?.state !== 'ready' ||
+        snapshot.core_started_at_millis !== core
       )
         return
       const controller = new AbortController()
       request.current = controller
       const epoch = routingEpoch(cache)
-      const service = serviceEpoch(cache)
-      const runtime = group.group.runtime_tag
-      const expected = target.node_tag ? `${runtime}/${target.node_tag}` : `Auto/${runtime}`
-      const allowed = new Set(group.nodes.map((node) => `${runtime}/${node.tag}`))
-      setState((current) => ({
-        ...current,
-        core,
-        target,
-        isPending: true,
-        error: null,
-        outcome: null,
-      }))
+      const serviceVersion = serviceEpoch(cache)
+      setState({ target: groupTag, isPending: true, error: null, outcome: null })
       void (async () => {
         try {
           const result = await api.request(
-            { method: 'POST', path: '/nodes/delay', body: target },
-            delaySchema,
+            { method: 'POST', path: '/policy-groups/delay', body: { group_tag: groupTag } },
+            policySnapshotSchema,
             controller.signal,
           )
           if (
             controller.signal.aborted ||
             request.current !== controller ||
             epoch !== routingEpoch(cache) ||
-            service !== serviceEpoch(cache) ||
-            core !== (cache.getQueryData<ServiceStatus>(['service'])?.core_started_at_millis ?? 0)
+            serviceVersion !== serviceEpoch(cache) ||
+            core !== cache.getQueryData<ServiceStatus>(['service'])?.core_started_at_millis
           )
             return
-          if (
-            result.target !== expected ||
-            result.groups.length !== 1 ||
-            result.groups[0]!.tag !== `Auto/${runtime}` ||
-            result.groups[0]!.items.length === 0 ||
-            result.groups[0]!.items.some(
-              (item) => !allowed.has(item.tag) || (target.node_tag !== '' && item.tag !== expected),
-            )
-          )
-            throw new ApiError('client.invalid_response', 'Invalid delay target', 502)
-          const results: Record<string, Result> = {}
-          for (const item of result.groups[0]!.items) {
-            if ((item.url_test_delay ?? 0) > 0 && (item.url_test_time ?? 0) > 0)
-              results[`${target.group_id}/${item.tag.slice(runtime.length + 1)}`] = {
-                delay: item.url_test_delay!,
-                time: item.url_test_time!,
-              }
-          }
+          const measured = result.groups.find((item) => item.tag === groupTag)
+          if (!result.live || result.core_started_at_millis !== core || !measured)
+            throw new ApiError('client.invalid_response', 'Invalid policy delay snapshot', 502)
+          // A delay response may race a selection event; read back instead of publishing it.
+          await cache.invalidateQueries({ queryKey: ['policy-groups'], exact: true })
+          if (controller.signal.aborted || request.current !== controller) return
           setState((current) => ({
             ...current,
-            results: { ...current.results, ...results },
-            outcome: Object.keys(results).length ? 'cached' : 'empty',
+            outcome: measured.items.some(
+              (item) => (item.url_test_delay ?? 0) > 0 && (item.url_test_time ?? 0) > 0,
+            )
+              ? 'cached'
+              : 'empty',
           }))
         } catch (error) {
           if (!controller.signal.aborted && request.current === controller)

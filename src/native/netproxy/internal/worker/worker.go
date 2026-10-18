@@ -36,7 +36,6 @@ const (
 var (
 	workerProcessRunning = isProcessRunning
 	workerProcessPID     = isWorkerProcessPID
-	workerVerifyRuntime  = verifyRuntimeState
 )
 
 // logWorker 按 Native 统一事件格式写入 Worker 日志。
@@ -77,6 +76,7 @@ type Options struct {
 	PersistedBeforeUpdate   bool
 	NetworkWatchEnabled     bool
 	SyncCatalog             func(context.Context, string, bool) (string, bool, error)
+	ValidateProvider        func(string, provider.Document) error
 	NetworkEvaluate         func(context.Context, string, string) error
 	NetworkEventSource      NetworkEventSource
 	NetworkStateReader      NetworkStateReader
@@ -417,6 +417,12 @@ func UpdateGroup(ctx context.Context, options Options, groupID string, now time.
 		ProxyURL:        options.ProxyURL, FallbackDirect: options.FallbackDirect,
 		UseConfiguredProxy: true, RuntimeSyncPending: runtimeRunning,
 		PersistedBeforeUpdate: options.PersistedBeforeUpdate, Now: now,
+		ValidateProvider: func(document provider.Document) error {
+			if options.ValidateProvider != nil {
+				return options.ValidateProvider(groupID, document)
+			}
+			return nil
+		},
 	})
 	if err != nil {
 		providerPersisted := result.Persisted
@@ -524,7 +530,7 @@ func applyUpdateEffects(ctx context.Context, options Options, result subscriptio
 	if options.SyncCatalog == nil {
 		return currentRuntimeSyncState(options), false, errors.New("未配置 Catalog 同步回调")
 	}
-	state, attempted, err := options.SyncCatalog(ctx, groupID, forceReload || result.StructureChanged)
+	state, attempted, err := options.SyncCatalog(ctx, groupID, forceReload || result.StructureChanged || result.ReloadRequired)
 	if err != nil {
 		if attempted {
 			return subscription.RuntimeSyncFailed, true, err
@@ -536,9 +542,6 @@ func applyUpdateEffects(ctx context.Context, options Options, result subscriptio
 	}
 	if state != subscription.RuntimeSyncApplied {
 		return currentRuntimeSyncState(options), attempted, fmt.Errorf("Catalog 同步返回无效状态: %s", state)
-	}
-	if err := workerVerifyRuntime(ctx, options, groupID); err != nil {
-		return subscription.RuntimeSyncFailed, true, err
 	}
 	return subscription.RuntimeSyncApplied, true, nil
 }
@@ -580,11 +583,8 @@ func persistedEffectFailure(result subscription.Result, cause error) error {
 	}
 }
 
-func verifyRuntimeState(ctx context.Context, options Options, groupID string) error {
-	runtimeTag, err := catalog.RuntimeTag(ctx, options.Root, groupID)
-	if err != nil {
-		return err
-	}
+func VerifyRuntimeState(ctx context.Context, options Options, groupID string) error {
+	runtimeTag := catalog.ProviderTag(groupID)
 	document, err := provider.Load(ctx, filepath.Join(options.Root, groupID, "provider.json"))
 	if err != nil {
 		return fmt.Errorf("读取已持久化 Provider 失败: %w", err)

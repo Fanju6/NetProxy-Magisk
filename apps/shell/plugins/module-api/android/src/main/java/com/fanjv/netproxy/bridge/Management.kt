@@ -16,14 +16,16 @@ internal object Management {
     fun target(value: String, write: Boolean = false): Boolean {
         if (value in setOf("module", "module/wifi", "module/auto_start", "inbound", "inbound/backend", "inbound/root_policy", "inbound/app", "inbound/ebpf", "inbound/tun", "singbox/config.json")) return true
         if (value.removePrefix("singbox/") in sections && value.startsWith("singbox/")) return true
-        if (!write && value in setOf("runtime/inbound.json", "runtime/outbounds.json", "runtime/providers.json")) return true
+        if (!write && value in setOf("runtime/inbound.json", "runtime/providers.json")) return true
         if (!value.startsWith("singbox/rules/local/")) return false
         val name = value.removePrefix("singbox/rules/local/")
         return name.length <= 255 && !name.startsWith('.') && !name.contains("..") && name.matches(Regex("[A-Za-z0-9_-][A-Za-z0-9._-]*\\.json"))
     }
 
     fun parse(raw: String): Request {
-        if (raw.toByteArray(Charsets.UTF_8).size > 4 * 1024 * 1024) throw BridgeFailure("api.body_too_large")
+        val bytes = try { raw.encodeToByteArray(throwOnInvalidSequence = true) }
+            catch (_: Exception) { invalid() }
+        if (bytes.size > 4 * 1024 * 1024) throw BridgeFailure("api.body_too_large", 413)
         val request = try {
             val value = json.parseToJsonElement(raw) as? JsonObject ?: invalid()
             if (value.values.any { it is JsonNull }) invalid()
@@ -42,6 +44,8 @@ internal object Management {
             "node_add" -> setOf("content") to setOf("group_id", "allow_insecure")
             "node_edit" -> setOf("group_id", "node_tag", "content") to setOf("allow_insecure")
             "node_import" -> setOf("content") to setOf("allow_insecure")
+            "catalog_create", "catalog_rename" -> setOf("id", "name") to emptySet()
+            "catalog_remove" -> setOf("id") to emptySet()
             else -> invalid()
         }
         val input = request.input ?: empty
@@ -51,10 +55,12 @@ internal object Management {
             val valid = when (key) {
                 "raw", "allow_insecure" -> !primitive.isString && primitive.booleanOrNull != null
                 "lines" -> !primitive.isString && primitive.longOrNull?.let { it in 1..2000 } == true
-                else -> primitive.isString && when (key) {
+                else -> primitive.isString && validUnicode(primitive.content) && when (key) {
                     "target" -> target(primitive.content, request.operation != "config_read")
                     "revision", "icon_key" -> primitive.content.matches(hash)
                     "group_id" -> group(primitive.content)
+                    "id" -> group(primitive.content) && !(request.operation == "catalog_remove" && primitive.content == "default")
+                    "name" -> name(primitive.content)
                     "node_tag" -> primitive.content.isNotBlank() && primitive.content.none { it.isISOControl() }
                     "kind" -> primitive.content in setOf("service", "core")
                     "mode" -> primitive.content in setOf("configured", "all", "local", "shared")
@@ -82,6 +88,9 @@ internal object Management {
             "ebpf" -> Route("POST", "/diagnostics/ebpf", true, input)
             "node_read", "node_export", "node_remove" -> Route(if (request.operation == "node_remove") "DELETE" else "GET", when (request.operation) { "node_read" -> "/nodes/get"; "node_export" -> "/nodes/export"; else -> "/nodes" }, request.operation == "node_remove", if (request.operation == "node_remove") empty else null, query("group_id", "node_tag"))
             "node_add", "node_edit", "node_import" -> Route(if (request.operation == "node_edit") "PUT" else "POST", if (request.operation == "node_import") "/nodes/import" else "/nodes", true, input)
+            "catalog_create" -> Route("POST", "/catalog", true, input)
+            "catalog_rename" -> Route("PUT", "/catalog/${text("id")}", true, JsonObject(input - "id"))
+            "catalog_remove" -> Route("DELETE", "/catalog/${text("id")}", true, empty)
             else -> invalid()
         }
     }
@@ -104,6 +113,11 @@ internal object Management {
             "node_read" -> obj(data)
             "node_export" -> pick(obj(data), setOf("tag", "protocol", "link"))
             "node_add", "node_edit", "node_remove", "node_import" -> facts(data)
+            "catalog_create", "catalog_rename", "catalog_remove" -> {
+                val id = text(obj(data), "id")
+                if (!group(id) || input["id"] != JsonPrimitive(id)) responseInvalid()
+                buildJsonObject { put("id", id) }
+            }
             "apps" -> buildJsonObject { put("users", JsonArray(array(obj(data)["users"]).map { entry ->
                 val value = obj(entry)
                 JsonObject(pick(value, setOf("id", "name", "revision")) + ("apps" to JsonArray(array(value["apps"]).map { pick(obj(it), setOf("package_name", "uid", "label", "system", "version_code", "last_update_time", "icon_key")) })))
@@ -124,7 +138,8 @@ internal object Management {
     }
 
     fun failure(request: Request, data: JsonElement?): JsonElement =
-        if (request.operation == "ebpf" && (data as? JsonObject)?.get("report") is JsonObject) probe(data, failed = true) else facts(data)
+        if (request.operation in setOf("catalog_create", "catalog_rename", "catalog_remove")) PolicyGroups.failure(data)
+        else if (request.operation == "ebpf" && (data as? JsonObject)?.get("report") is JsonObject) probe(data, failed = true) else facts(data)
 
     private fun facts(data: JsonElement?): JsonObject {
         val value = data as? JsonObject ?: return empty
@@ -193,6 +208,14 @@ internal object Management {
     private fun safeText(value: String) = value.replace(Regex("(?i)(?:https?|socks5?)://\\S+"), "[redacted]")
         .replace(Regex("(?im)^.*(?:authorization|cookie|password|secret|hwid|headers?).*$"), "[redacted]")
     private fun group(value: String) = value.matches(Regex("[A-Za-z0-9][A-Za-z0-9._-]*")) && value != "staging" && !value.contains("..")
+    private fun validUnicode(value: String): Boolean = try {
+        value.encodeToByteArray(throwOnInvalidSequence = true); true
+    } catch (_: Exception) { false }
+    private fun name(value: String): Boolean {
+        if (value.isBlank() || value.any { it.isISOControl() }) return false
+        return try { value.encodeToByteArray(throwOnInvalidSequence = true).size <= 256 }
+            catch (_: Exception) { false }
+    }
     private fun pick(value: JsonObject, keys: Set<String>): JsonObject = JsonObject(value.filterKeys { it in keys }.also { if (it.values.any { item -> item !is JsonPrimitive || item is JsonNull }) responseInvalid() })
     private fun obj(value: JsonElement?) = value as? JsonObject ?: responseInvalid()
     private fun array(value: JsonElement?) = value as? JsonArray ?: responseInvalid()

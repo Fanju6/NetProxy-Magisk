@@ -1,7 +1,6 @@
 package catalog
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,18 +9,15 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"time"
 	"uuid"
 
 	"encoding/json/jsontext"
 	json "encoding/json/v2"
 
-	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/option"
 	SJSON "github.com/sagernet/sing/common/json"
-	"github.com/sagernet/sing/common/json/badoption"
 )
 
 var validGroupID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
@@ -41,9 +37,8 @@ func isGroupDir(entry os.DirEntry) bool {
 type GroupSummary struct {
 	ID                string         `json:"id"`
 	Name              string         `json:"name"`
-	RuntimeTag        string         `json:"runtime_tag"`
+	ProviderTag       string         `json:"provider_tag"`
 	Type              string         `json:"type"`
-	Active            bool           `json:"active"`
 	NodeCount         int            `json:"node_count"`
 	Revision          int64          `json:"revision"`
 	AutoUpdate        bool           `json:"auto_update"`
@@ -67,7 +62,6 @@ type GroupSnapshot struct {
 
 type ScanOptions struct {
 	Root        string
-	ActiveGroup string
 	ProgressDir string
 	Type        string
 	WithNodes   bool
@@ -75,23 +69,18 @@ type ScanOptions struct {
 }
 
 type RuntimeOptions struct {
-	Root            string
-	ModuleConfig    string
-	ProvidersOutput string
-	OutboundsOutput string
-	Selection       moduleconfig.Selection
-	AllowEmpty      bool
+	Root             string
+	ProvidersOutput  string
+	UserProviderTags []string
 }
 
 type RuntimeResult struct {
-	Selection       moduleconfig.Selection `json:"-"`
-	ActiveGroup     string                 `json:"active_group_id"`
-	ActiveGroupTag  string                 `json:"active_group_tag"`
-	SelectorMode    string                 `json:"selector_mode"`
-	SelectedNodeRef string                 `json:"selected_node_ref"`
-	GroupCount      int                    `json:"group_count"`
-	NodeCount       int                    `json:"node_count"`
+	GroupCount int `json:"group_count"`
+	NodeCount  int `json:"node_count"`
 }
+
+// ProviderTag is independent of display names and native outbound tags.
+func ProviderTag(groupID string) string { return "np/" + groupID }
 
 type ScheduleResult struct {
 	Nearest     int64            `json:"nearest"`
@@ -109,7 +98,6 @@ func Scan(ctx context.Context, options ScanOptions) ([]GroupSnapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	assignRuntimeTags(groups)
 	result := make([]GroupSnapshot, 0, len(groups))
 	for _, group := range groups {
 		if options.Type != "" && options.Type != "all" && group.Metadata.Type != options.Type {
@@ -125,7 +113,7 @@ func Scan(ctx context.Context, options ScanOptions) ([]GroupSnapshot, error) {
 			}
 			group.Nodes = nodes
 		}
-		summary := summaryFor(group, options.ActiveGroup, options.ProgressDir)
+		summary := summaryFor(group, options.ProgressDir)
 		nodes := []provider.NodeSummary{}
 		if options.WithNodes {
 			nodes = group.Nodes
@@ -170,152 +158,6 @@ func Schedule(ctx context.Context, root string, now int64) (ScheduleResult, erro
 		}
 	}
 	return result, nil
-}
-
-func RuntimeTag(ctx context.Context, root, groupID string) (string, error) {
-	if !isValidGroupID(groupID) {
-		return "", fmt.Errorf("非法分组 ID: %s", groupID)
-	}
-	release, err := acquireCatalogRootAndRecover(ctx, root)
-	if err != nil {
-		return "", err
-	}
-	defer release()
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		return "", err
-	}
-	targetName := ""
-	targetHasNodes := false
-	duplicateCount := 0
-	runtimeNames := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if !isGroupDir(entry) {
-			continue
-		}
-		metadata, err := loadMetadata(filepath.Join(root, entry.Name(), "meta.json"), entry.Name())
-		if err != nil {
-			return "", fmt.Errorf("读取分组 %s 元数据: %w", entry.Name(), err)
-		}
-		if metadata.NodeCount > 0 {
-			runtimeNames = append(runtimeNames, metadata.Name)
-		}
-		if entry.Name() == groupID {
-			targetName = metadata.Name
-			targetHasNodes = metadata.NodeCount > 0
-		}
-	}
-	if targetName == "" {
-		return "", fmt.Errorf("分组不存在: %s", groupID)
-	}
-	if !targetHasNodes {
-		return targetName, nil
-	}
-	for _, name := range runtimeNames {
-		if name == targetName {
-			duplicateCount++
-		}
-	}
-	if duplicateCount > 1 {
-		return fmt.Sprintf("%s [%s]", targetName, groupID), nil
-	}
-	return targetName, nil
-}
-
-func ResolveSelection(ctx context.Context, root string, selection moduleconfig.Selection) (moduleconfig.Selection, string, error) {
-	if strings.TrimSpace(root) == "" || strings.TrimSpace(selection.ActiveGroupID) == "" {
-		return selection, "", errors.New("Catalog 根目录和分组查询不能为空")
-	}
-	release, err := acquireCatalogRootAndRecover(ctx, root)
-	if err != nil {
-		return selection, "", err
-	}
-	defer release()
-	groups, err := loadGroups(ctx, root, true)
-	if err != nil {
-		return selection, "", err
-	}
-	index := findGroup(groups, selection.ActiveGroupID)
-	if index < 0 {
-		for i, group := range groups {
-			if group.Metadata.Name == selection.ActiveGroupID {
-				if index >= 0 {
-					return selection, "", errors.New("分组名称不唯一，请使用分组 ID")
-				}
-				index = i
-			}
-		}
-	}
-	if index < 0 || !groups[index].hasNodes {
-		return selection, "", errors.New("目标分组不存在或没有可用节点")
-	}
-	selection.ActiveGroupID = groups[index].ID
-	var present bool
-	if selection.SelectedNodeTag == "" {
-		present, err = provider.FileHasNodes(ctx, groups[index].ProviderPath)
-	} else {
-		present, err = provider.FileContainsTag(ctx, groups[index].ProviderPath, selection.SelectedNodeTag)
-	}
-	if err != nil {
-		return selection, "", err
-	}
-	if !present {
-		return selection, "", fmt.Errorf("目标分组没有可用节点或未找到手动节点: %s", selection.Ref())
-	}
-	assignRuntimeTags(groups)
-	return selection, groups[index].RuntimeTag, nil
-}
-
-func NormalizeSelection(ctx context.Context, root string, selection moduleconfig.Selection, preferredGroup string) (moduleconfig.Selection, string, error) {
-	release, err := acquireCatalogRootAndRecover(ctx, root)
-	if err != nil {
-		return selection, "", err
-	}
-	defer release()
-	groups, err := loadGroups(ctx, root, true)
-	if err != nil {
-		return selection, "", err
-	}
-	return normalizeSelection(ctx, groups, selection, preferredGroup)
-}
-
-func normalizeSelection(ctx context.Context, groups []*loadedGroup, selection moduleconfig.Selection, preferredGroup string) (moduleconfig.Selection, string, error) {
-	indices := []int{findGroup(groups, selection.ActiveGroupID), findGroup(groups, preferredGroup)}
-	for index := range groups {
-		indices = append(indices, index)
-	}
-	for _, index := range indices {
-		if index < 0 || !groups[index].hasNodes {
-			continue
-		}
-		group := groups[index]
-		hasNodes, err := provider.FileHasNodes(ctx, group.ProviderPath)
-		if err != nil {
-			return selection, "", err
-		}
-		if !hasNodes {
-			continue
-		}
-		if selection.ActiveGroupID != group.ID {
-			selection = moduleconfig.Selection{ActiveGroupID: group.ID}
-		}
-		if selection.SelectedNodeTag != "" {
-			present, err := provider.FileContainsTag(ctx, group.ProviderPath, selection.SelectedNodeTag)
-			if err != nil {
-				return selection, "", err
-			}
-			if !present {
-				selection.SelectedNodeTag = ""
-			}
-		}
-		assignRuntimeTags(groups)
-		return selection, group.RuntimeTag, nil
-	}
-	selection = moduleconfig.Selection{}
-	if findGroup(groups, "default") >= 0 {
-		selection.ActiveGroupID = "default"
-	}
-	return selection, "", nil
 }
 
 func GroupIDs(ctx context.Context, root, groupType string) ([]string, error) {
@@ -368,64 +210,38 @@ func NewSubscriptionGroupID(ctx context.Context, root string) (string, error) {
 }
 
 func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, error) {
-	if options.Root == "" || options.ProvidersOutput == "" || options.OutboundsOutput == "" {
-		return RuntimeResult{}, errors.New("Catalog 根目录和运行时输出路径不能为空")
+	if options.Root == "" || options.ProvidersOutput == "" {
+		return RuntimeResult{}, errors.New("Catalog 根目录和 Provider 输出路径不能为空")
 	}
 	release, err := acquireCatalogRootAndRecover(ctx, options.Root)
 	if err != nil {
 		return RuntimeResult{}, err
 	}
 	defer release()
-	if options.ModuleConfig != "" {
-		module, err := moduleconfig.LoadModule(options.ModuleConfig)
-		if err != nil {
-			return RuntimeResult{}, fmt.Errorf("读取 module.json 失败: %w", err)
-		}
-		options.Selection = module.Selection
-	}
 	groups, err := loadGroups(ctx, options.Root, false)
 	if err != nil {
 		return RuntimeResult{}, err
 	}
-	if len(groups) == 0 {
-		if !options.AllowEmpty {
-			return RuntimeResult{}, errors.New("Catalog 中没有可用节点，请先导入单节点、文件或订阅")
+	result := RuntimeResult{}
+	for _, group := range groups {
+		for _, tag := range options.UserProviderTags {
+			if tag == ProviderTag(group.ID) {
+				return RuntimeResult{}, fmt.Errorf("Catalog Provider 标签与原生配置冲突: %s", tag)
+			}
 		}
-		if err := writeEmptyRuntime(options); err != nil {
-			return RuntimeResult{}, err
+		nodes, err := provider.InspectFile(ctx, group.ProviderPath)
+		if err != nil {
+			return RuntimeResult{}, fmt.Errorf("校验资源 %s: %w", group.ID, err)
 		}
-		return RuntimeResult{SelectorMode: "urltest"}, nil
+		if len(nodes) == 0 {
+			return RuntimeResult{}, fmt.Errorf("Catalog 资源 %s 元数据与节点内容不一致", group.ID)
+		}
+		result.NodeCount += len(nodes)
 	}
-
-	selection, runtimeTag, err := normalizeSelection(ctx, groups, options.Selection, "")
-	if err != nil {
-		return RuntimeResult{}, err
-	}
-	if runtimeTag == "" {
-		return RuntimeResult{}, errors.New("Catalog 元数据与 Provider 节点数量不一致")
-	}
-
 	if err := writeRuntimeProviders(options.ProvidersOutput, groups); err != nil {
 		return RuntimeResult{}, err
 	}
-	activeTag, _ := selection.RuntimeTargets(runtimeTag)
-	if err := writeRuntimeOutbounds(options.OutboundsOutput, groups, activeTag); err != nil {
-		return RuntimeResult{}, err
-	}
-
-	nodeCount := 0
-	for _, group := range groups {
-		nodeCount += group.Metadata.NodeCount
-	}
-	result := RuntimeResult{
-		Selection:       selection,
-		ActiveGroup:     selection.ActiveGroupID,
-		ActiveGroupTag:  runtimeTag,
-		SelectorMode:    selection.Mode(),
-		SelectedNodeRef: selection.Ref(),
-		GroupCount:      len(groups),
-		NodeCount:       nodeCount,
-	}
+	result.GroupCount = len(groups)
 	return result, nil
 }
 
@@ -434,8 +250,6 @@ type loadedGroup struct {
 	Metadata     Metadata
 	ProviderPath string
 	Nodes        []provider.NodeSummary
-	RuntimeTag   string
-	hasNodes     bool
 }
 
 func loadGroups(ctx context.Context, root string, includeEmpty bool) ([]*loadedGroup, error) {
@@ -462,7 +276,6 @@ func loadGroups(ctx context.Context, root string, includeEmpty bool) ([]*loadedG
 		}
 		groups = append(groups, &loadedGroup{
 			ID: entry.Name(), Metadata: metadata, ProviderPath: providerPath,
-			hasNodes: metadata.NodeCount > 0,
 		})
 	}
 	sort.Slice(groups, func(i, j int) bool { return groups[i].ID < groups[j].ID })
@@ -473,36 +286,12 @@ func loadMetadata(path, fallbackID string) (Metadata, error) {
 	return LoadMetadataLocked(path, fallbackID)
 }
 
-func summaryFor(group *loadedGroup, activeGroup, progressDir string) GroupSummary {
+func summaryFor(group *loadedGroup, progressDir string) GroupSummary {
 	nodeCount := group.Metadata.NodeCount
 	if group.Nodes != nil {
 		nodeCount = len(group.Nodes)
 	}
-	return summaryForMetadata(group.Metadata, group.RuntimeTag, activeGroup, progressDir, nodeCount)
-}
-
-func assignRuntimeTags(groups []*loadedGroup) {
-	counts := make(map[string]int, len(groups))
-	for _, group := range groups {
-		if group.hasNodes {
-			counts[group.Metadata.Name]++
-		}
-	}
-	for _, group := range groups {
-		group.RuntimeTag = group.Metadata.Name
-		if group.hasNodes && counts[group.Metadata.Name] > 1 {
-			group.RuntimeTag = fmt.Sprintf("%s [%s]", group.Metadata.Name, group.ID)
-		}
-	}
-}
-
-func findGroup(groups []*loadedGroup, id string) int {
-	for index, group := range groups {
-		if group.ID == id {
-			return index
-		}
-	}
-	return -1
+	return summaryForMetadata(group.Metadata, progressDir, nodeCount)
 }
 
 func writeRuntimeProviders(path string, groups []*loadedGroup) error {
@@ -510,15 +299,9 @@ func writeRuntimeProviders(path string, groups []*loadedGroup) error {
 	for _, group := range groups {
 		items = append(items, option.Provider{
 			Type: C.ProviderTypeLocal,
-			Tag:  group.RuntimeTag,
+			Tag:  ProviderTag(group.ID),
 			Options: &option.ProviderLocalOptions{
 				Path: group.ProviderPath,
-				HealthCheck: option.ProviderHealthCheckOptions{
-					Enabled:  true,
-					URL:      "https://www.gstatic.com/generate_204",
-					Interval: badoption.Duration(10 * time.Minute),
-					Timeout:  badoption.Duration(5 * time.Second),
-				},
 			},
 		})
 	}
@@ -527,106 +310,12 @@ func writeRuntimeProviders(path string, groups []*loadedGroup) error {
 	}{Providers: items})
 }
 
-func writeRuntimeOutbounds(path string, groups []*loadedGroup, defaultTag string) error {
-	outbounds := []option.Outbound{
-		{Type: C.TypeDirect, Tag: "direct", Options: new(option.DirectOutboundOptions)},
-		{Type: C.TypeBlock, Tag: "block", Options: new(option.StubOptions)},
-	}
-	options := make([]string, 0, len(groups)*2)
-	for _, group := range groups {
-		autoTag := "Auto/" + group.RuntimeTag
-		selectTag := "Select/" + group.RuntimeTag
-		outbounds = append(outbounds,
-			option.Outbound{
-				Type: C.TypeURLTest,
-				Tag:  autoTag,
-				Options: &option.URLTestOutboundOptions{
-					Providers:                 []string{group.RuntimeTag},
-					URL:                       "https://www.gstatic.com/generate_204",
-					Interval:                  badoption.Duration(3 * time.Minute),
-					Tolerance:                 50,
-					InterruptExistConnections: true,
-				},
-			},
-			option.Outbound{
-				Type: C.TypeSelector,
-				Tag:  selectTag,
-				Options: &option.SelectorOutboundOptions{
-					Providers:                 []string{group.RuntimeTag},
-					InterruptExistConnections: true,
-				},
-			},
-		)
-		options = append(options, autoTag, selectTag)
-	}
-	outbounds = append(outbounds, option.Outbound{
-		Type: C.TypeSelector,
-		Tag:  "Proxy",
-		Options: &option.SelectorOutboundOptions{
-			Outbounds:                 options,
-			Default:                   defaultTag,
-			InterruptExistConnections: true,
-		},
-	})
-	return writeRuntimeOutboundsAtomic(path, outbounds)
-}
-
-func writeRuntimeOutboundsAtomic(path string, outbounds []option.Outbound) error {
-	content, err := SJSON.MarshalContext(provider.RuntimeContext(context.Background()), struct {
-		Outbounds []option.Outbound `json:"outbounds"`
-	}{Outbounds: outbounds})
-	if err != nil {
-		return err
-	}
-	var document struct {
-		Outbounds []map[string]jsontext.Value `json:"outbounds"`
-	}
-	if err := json.Unmarshal(content, &document); err != nil {
-		return err
-	}
-	for _, outbound := range document.Outbounds {
-		for _, field := range []string{"outbounds", "providers"} {
-			if value, exists := outbound[field]; exists && bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
-				delete(outbound, field)
-			}
-		}
-	}
-	return writeJSONAtomic(path, document)
-}
-
-func writeEmptyRuntime(options RuntimeOptions) error {
-	if err := writeRuntimeJSONAtomic(options.ProvidersOutput, struct {
-		Providers []option.Provider `json:"providers"`
-	}{Providers: []option.Provider{}}); err != nil {
-		return err
-	}
-	if err := writeRuntimeJSONAtomic(options.OutboundsOutput, struct {
-		Outbounds []option.Outbound `json:"outbounds"`
-	}{Outbounds: []option.Outbound{
-		{Type: C.TypeDirect, Tag: "direct", Options: new(option.DirectOutboundOptions)},
-		{Type: C.TypeBlock, Tag: "block", Options: new(option.StubOptions)},
-		{Type: C.TypeDirect, Tag: "Proxy", Options: new(option.DirectOutboundOptions)},
-	}}); err != nil {
-		return err
-	}
-	return nil
-}
-
 func writeRuntimeJSONAtomic(path string, value any) error {
 	content, err := SJSON.MarshalContext(provider.RuntimeContext(context.Background()), value)
 	if err != nil {
 		return err
 	}
-	formatted := jsontext.Value(append([]byte(nil), content...))
-	if err := formatted.Indent(jsontext.WithIndent("  ")); err != nil {
-		return err
-	}
-	formatted = append(formatted, '\n')
-	return provider.WriteAtomic(path, formatted, 0o600)
-}
-
-func writeJSONAtomic(path string, value any) error {
-	content, err := json.Marshal(value, json.Deterministic(true), jsontext.WithIndent("  "))
+	content, err = json.Marshal(jsontext.Value(content), json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
 		return err
 	}

@@ -12,19 +12,18 @@ import {
   configSchema,
   infoSchema,
   modeSchema,
-  selectionSchema,
-  selectedSchema,
+  policySnapshotSchema,
+  policySelectSchema,
   serviceSchema,
-  snapshotSchema,
-  type NodeSnapshot,
   type ServiceStatus,
+  type PolicySnapshot,
 } from './contracts'
 import type { ApiClient } from './client'
 import { ApiError } from './contracts'
 import { resourceQueries } from './resources'
 import { subscriptionBusy } from './subscription-control'
 import { managementBusy } from './management'
-import type { NodeTarget } from './contracts'
+import type { PolicyTarget } from './contracts'
 import {
   observeRouting,
   routingEpoch,
@@ -62,48 +61,26 @@ export const moduleQueries = (api: ApiClient) => ({
       return status
     },
   }),
-  nodes: queryOptions({
-    queryKey: ['nodes'],
+  policyGroups: queryOptions({
+    queryKey: ['policy-groups'],
+    retry: false,
     networkMode: 'always',
-    enabled: api.supports('nodes.read'),
+    enabled: api.supports('policy.read'),
     queryFn: async ({ signal, client }) => {
       const epoch = routingEpoch(client)
       const service = serviceEpoch(client)
       const core = coreIdentity(client)
       const result = await api.request(
-        { method: 'GET', path: '/nodes/snapshot' },
-        snapshotSchema,
+        { method: 'GET', path: '/policy-groups' },
+        policySnapshotSchema,
         signal,
       )
       if (
         signal.aborted ||
         epoch !== routingEpoch(client) ||
         service !== serviceEpoch(client) ||
-        core !== coreIdentity(client)
-      )
-        throw new CancelledError({ silent: true, revert: false })
-      observeRouting(client, result.selection)
-      return result
-    },
-  }),
-  selection: queryOptions({
-    queryKey: ['selection'],
-    networkMode: 'always',
-    enabled: api.supports('selection.read'),
-    queryFn: async ({ signal, client }) => {
-      const epoch = routingEpoch(client)
-      const service = serviceEpoch(client)
-      const core = coreIdentity(client)
-      const result = await api.request(
-        { method: 'GET', path: '/selection' },
-        selectionSchema,
-        signal,
-      )
-      if (
-        signal.aborted ||
-        epoch !== routingEpoch(client) ||
-        service !== serviceEpoch(client) ||
-        core !== coreIdentity(client)
+        core !== coreIdentity(client) ||
+        (result.live && result.core_started_at_millis !== core)
       )
         throw new CancelledError({ silent: true, revert: false })
       observeRouting(client, result)
@@ -226,7 +203,7 @@ function coreIdentity(cache: QueryClient) {
 }
 
 // 节点与模式只共享写入准入和复核边界，各自仍读取自己的权威资源。
-function useRoutingAction(kind: 'selection' | 'mode') {
+function useRoutingAction(kind: 'policy' | 'mode') {
   const api = useApi()
   const cache = useQueryClient()
   const operation = useRoutingOperation()
@@ -239,17 +216,14 @@ function useRoutingAction(kind: 'selection' | 'mode') {
       return
     }
     const requests =
-      kind === 'selection'
-        ? [
-            cache.fetchQuery({ ...queries.nodes, staleTime: 0 }),
-            cache.fetchQuery({ ...queries.selection, staleTime: 0 }),
-          ]
+      kind === 'policy'
+        ? [cache.fetchQuery({ ...queries.policyGroups, staleTime: 0 })]
         : [cache.fetchQuery({ ...queries.mode, staleTime: 0 })]
     await Promise.allSettled(requests)
   }, [api, cache, kind])
   const cancelReads = async () => {
     await Promise.all(
-      ['nodes', 'selection', 'mode', 'service'].map((key) =>
+      ['policy-groups', 'mode', 'service'].map((key) =>
         cache.cancelQueries({ queryKey: [key], exact: true }, { revert: false, silent: true }),
       ),
     )
@@ -261,20 +235,21 @@ function useRoutingAction(kind: 'selection' | 'mode') {
       let failure: unknown = null
       let responseReceived = false
       try {
-        if (target.kind === 'selection') {
-          const runtime = cache
-            .getQueryData<NodeSnapshot>(['nodes'])
-            ?.groups.find((group) => group.group.id === target.value.group_id)?.group.runtime_tag
+        if (target.kind === 'policy') {
           const result = await api.request(
-            { method: 'PUT', path: '/selection', body: target.value },
-            selectedSchema,
+            { method: 'POST', path: '/policy-groups/select', body: target.value },
+            policySnapshotSchema,
           )
           if (
-            result.group_id !== target.value.group_id ||
-            result.mode !== (target.value.node_tag ? 'manual' : 'urltest') ||
-            (runtime !== undefined &&
-              result.selected !==
-                (target.value.node_tag ? `${runtime}/${target.value.node_tag}` : `Auto/${runtime}`))
+            !result.live ||
+            result.core_started_at_millis !== coreIdentity(cache) ||
+            !result.groups.some(
+              (group) =>
+                group.tag === target.value.group_tag &&
+                group.selectable &&
+                group.selected === target.value.member_tag &&
+                group.items.some((item) => item.tag === target.value.member_tag),
+            )
           )
             throw new ApiError('client.invalid_response', 'Invalid selection result', 502)
         } else {
@@ -308,13 +283,28 @@ function useRoutingAction(kind: 'selection' | 'mode') {
   })
   return {
     mutate: (target: RoutingOperation['target']) => {
+      if (target.kind === 'policy') {
+        const snapshot = cache.getQueryData<PolicySnapshot>(['policy-groups'])
+        const status = cache.getQueryData<ServiceStatus>(['service'])
+        const group = snapshot?.groups.find((group) => group.tag === target.value.group_tag)
+        if (
+          !policySelectSchema.safeParse(target.value).success ||
+          !snapshot?.live ||
+          status?.state !== 'ready' ||
+          snapshot.core_started_at_millis !== status.core_started_at_millis ||
+          cache.getQueryData(['events-connection']) !== 'live' ||
+          !group?.selectable ||
+          !group.items.some((item) => item.tag === target.value.member_tag)
+        )
+          return
+      }
       const service = cache.getQueryData<ServiceOperation>(serviceOperationKey)
       if (
         routingBusy(cache) ||
         subscriptionBusy(cache) ||
         managementBusy(cache) ||
         (service && service.phase !== 'idle') ||
-        !api.supports(`${target.kind}.write`)
+        !api.supports(target.kind === 'policy' ? 'policy.select' : 'mode.write')
       )
         return
       const epoch = routingEpoch(cache) + 1
@@ -346,12 +336,12 @@ function useRoutingAction(kind: 'selection' | 'mode') {
     },
   }
 }
-export function useSelectNode() {
-  const action = useRoutingAction('selection')
-  return { ...action, mutate: (value: NodeTarget) => action.mutate({ kind: 'selection', value }) }
+export function useSelectPolicyGroup() {
+  const action = useRoutingAction('policy')
+  return { ...action, mutate: (value: PolicyTarget) => action.mutate({ kind: 'policy', value }) }
 }
 export function useChangeMode() {
   const action = useRoutingAction('mode')
   return { ...action, mutate: (value: string) => action.mutate({ kind: 'mode', value }) }
 }
-export { useNodeDelay } from './node-delay'
+export { usePolicyDelay } from './node-delay'

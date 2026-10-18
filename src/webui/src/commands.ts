@@ -47,28 +47,35 @@ configured_backend 是保存的入站；active_backend 仅在 ready 且 PID/API 
   },
   node: {
     overview: 'node <命令>     节点管理',
-    actions: ['list', 'snapshot', 'current', 'show', 'get', 'export', 'delay', 'add', 'import', 'edit', 'remove', 'use'],
+    actions: ['list', 'snapshot', 'show', 'get', 'export', 'add', 'import', 'edit', 'remove'],
     help: `node - 节点管理
 
   node list [分组]                 列出节点
   node snapshot [分组]             查看运行时节点快照
-  node current                     查看当前选择
   node show <分组>                 查看分组节点
   node get <分组>/<tag>            获取节点配置摘要
   node export <分组>/<tag>         导出节点链接
-  node delay [目标] [分组]         测量节点延迟
-  node delay auto <分组>           测量分组内所有节点
   node add <链接> [分组]           添加单节点链接
   node import <文件>               导入节点文件
   node edit <分组>/<tag> <来源>    编辑节点
   node remove <分组>/<tag>         删除节点
-  node use auto [分组]             自动选择最快节点
-  node use <分组>/<tag>            手动选择节点
+`,
+  },
+  policy: {
+    overview: 'policy <命令>   原生策略组',
+    actions: ['groups', 'select', 'delay'],
+    help: `policy - sing-box 原生策略组
+
+  policy groups                         查看配置或实时策略组
+  policy select <group-tag> <member-tag> 选择 Selector 成员
+  policy delay <group-tag>              策略组测速
+
+标签使用核心返回的完整原始值；选择由 sing-box cache_file 保存。
 `,
   },
   sub: {
     overview: 'sub <命令>      订阅管理',
-    actions: ['list', 'show', 'add', 'edit', 'update', 'update-all', 'activate', 'remove', 'history', 'cancel'],
+    actions: ['list', 'show', 'add', 'edit', 'update', 'update-all', 'remove', 'history', 'cancel'],
     help: `sub - 订阅管理
 
   sub list                         列出订阅
@@ -77,7 +84,6 @@ configured_backend 是保存的入站；active_backend 仅在 ready 且 PID/API 
   sub edit <名称>                  编辑订阅
   sub update <名称>                更新单个订阅
   sub update-all                   更新所有订阅
-  sub activate <名称>              激活订阅分组
   sub remove <名称>                删除订阅
   sub history <名称>               查看更新历史
   sub cancel <名称>                取消更新任务
@@ -152,12 +158,12 @@ configured_backend 是保存的入站；active_backend 仅在 ready 且 PID/API 
   完整配置：module（module.json）、singbox/config.json、inbound
   模块分区：module/wifi、module/auto_start
   模块分区保留顶层字段，例如 {"auto_start":true}、{"wifi":{...}}；不能用 {} 删除。
-  模块分区 revision 独立，保存时保留 selection 和其他字段；auto_start 只影响下次开机。
+  模块分区 revision 独立，保存时保留其他字段；auto_start 只影响下次开机。
   入站分区：inbound/backend、inbound/root_policy、inbound/app、inbound/ebpf、inbound/tun
   入站分区保留顶层字段，例如 {"backend":"tun"}；不能用 {} 删除。
   核心分区：singbox/dns、singbox/inbounds、singbox/route 等
   核心分区保留顶层字段，例如 {"dns":{...}}；{} 删除该分区。
-  只读运行时：runtime/inbound.json、runtime/providers.json、runtime/outbounds.json
+  只读运行时：runtime/inbound.json、runtime/providers.json
   apply/validate 在目标前加 --revision <读取值>，避免覆盖并发修改。
   切换强杀或清理未确认时中止并保留 journal，需要设备重启后再恢复。
 `,
@@ -193,7 +199,7 @@ export const VALUE_COMPLETIONS: Record<string, string[]> = {
   'logs clear': ['service', 'core'],
   'network evaluate': ['--type', '--ssid'],
   'network evaluate --type': ['wifi', 'not_wifi'],
-  'config read': [...CONFIG_TARGETS, 'runtime/inbound.json', 'runtime/providers.json', 'runtime/outbounds.json'],
+  'config read': [...CONFIG_TARGETS, 'runtime/inbound.json', 'runtime/providers.json'],
   'config apply': CONFIG_TARGETS,
   'config validate': CONFIG_TARGETS,
 }

@@ -1,4 +1,10 @@
-import type { GroupSummary, NodeSnapshot, ServiceStatus, Traffic } from '@/api/contracts'
+import type {
+  GroupSummary,
+  NodeSnapshot,
+  PolicySnapshot,
+  ServiceStatus,
+  Traffic,
+} from '@/api/contracts'
 
 const timestamp = '2026-10-15T12:00:00Z'
 export function demoGroup(
@@ -10,9 +16,8 @@ export function demoGroup(
   return {
     id,
     name,
-    runtime_tag: name,
+    provider_tag: `np/${id}`,
     type,
-    active: id === 'demo-global',
     node_count: nodeCount,
     revision: 1,
     auto_update: type === 'subscription',
@@ -29,7 +34,11 @@ export function demoGroup(
     progress: null,
   }
 }
-export function createFixtures(): { service: ServiceStatus; snapshot: NodeSnapshot } {
+export function createFixtures(): {
+  service: ServiceStatus
+  snapshot: NodeSnapshot
+  policy: PolicySnapshot
+} {
   const groups: NodeSnapshot['groups'] = [
     {
       group: {
@@ -82,32 +91,32 @@ export function createFixtures(): { service: ServiceStatus; snapshot: NodeSnapsh
     },
     { group: demoGroup('demo-local', 'Travel backup', 'local', 0), nodes: [] },
   ]
-  const selection = {
-    active_group_id: 'demo-global',
-    active_group_name: 'Global Connect',
-    active_group_runtime_tag: 'Global Connect',
-    active_group_node_count: 6,
-    selector_mode: 'urltest' as const,
-    selected_node_ref: '',
-    selected: 'Auto/Global Connect',
-    runtime_selected: 'Global Connect/Hong Kong 01',
-  }
-  const snapshot: NodeSnapshot = {
-    groups,
-    selection,
-    runtime_groups: [
+  const snapshot: NodeSnapshot = { groups }
+  const policy: PolicySnapshot = {
+    live: true,
+    core_started_at_millis: 1792065600000,
+    default_outbound: 'Internet',
+    groups: [
       {
-        tag: 'Auto/Global Connect',
+        tag: 'Internet',
+        type: 'selector',
+        selectable: true,
+        selected: 'Fastest',
+        items: [
+          { tag: 'Fastest', type: 'urltest' },
+          { tag: 'Hong Kong 01', type: 'vless' },
+          { tag: 'direct', type: 'direct' },
+        ],
+      },
+      {
+        tag: 'Fastest',
         type: 'urltest',
         selectable: false,
-        selected: 'Global Connect/Hong Kong 01',
-        expanded: true,
-        items: groups[0]!.nodes.map((node, index) => ({
-          tag: `Global Connect/${node.tag}`,
-          type: node.protocol,
-          url_test_time: 1792065600,
-          url_test_delay: [32, 68, 54, 156, 192, 201][index]!,
-        })),
+        selected: 'Hong Kong 01',
+        items: [
+          { tag: 'Hong Kong 01', type: 'vless', url_test_time: 1792065600, url_test_delay: 32 },
+          { tag: 'Tokyo 01', type: 'trojan', url_test_time: 1792065600, url_test_delay: 68 },
+        ],
       },
     ],
   }
@@ -124,13 +133,8 @@ export function createFixtures(): { service: ServiceStatus; snapshot: NodeSnapsh
     outbound_mode: 'Rule',
     configured_outbound_mode: 'Rule',
     available_outbound_modes: ['Rule', 'Proxy', 'Direct', 'RuleAllowAds'],
-    selector_mode: selection.selector_mode,
-    active_group_id: selection.active_group_id,
-    active_group_name: selection.active_group_name,
-    active_group_runtime_tag: selection.active_group_runtime_tag,
-    active_group_node_count: 6,
-    selected_node_ref: '',
-    runtime_selected: selection.runtime_selected,
+    default_outbound: policy.default_outbound,
+    runtime_selected: 'Hong Kong 01',
     memory_bytes: 46 * 1024 * 1024,
     process_cpu_ticks: 420,
     system_cpu_ticks: 42000,
@@ -142,7 +146,7 @@ export function createFixtures(): { service: ServiceStatus; snapshot: NodeSnapsh
     worker_state: 'running',
     worker_pid: 2400,
   }
-  return { service, snapshot }
+  return { service, snapshot, policy }
 }
 export function demoHistory(id: string) {
   return id === 'demo-empty'

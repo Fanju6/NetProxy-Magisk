@@ -27,7 +27,7 @@ func TestNodeImportContentAppendsSupportedFormats(t *testing.T) {
 		"json":   `{"outbounds":[{"type":"socks","tag":"IMPORTED","server":"example.test","server_port":1080}]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			options := selectionFixture(t)
+			options := catalogFixture(t)
 			result, err := NodeImportContent(t.Context(), options, []byte(content), false)
 			if err != nil || result.GroupID != "default" || result.NodeCount != 3 || result.Revision != 3 || result.StructureChanged {
 				t.Fatal("内容导入结果错误", result, err)
@@ -51,7 +51,7 @@ func TestNodeImportContentAppendsSupportedFormats(t *testing.T) {
 }
 
 func TestNodeImportContentAppliesAllowInsecure(t *testing.T) {
-	options := selectionFixture(t)
+	options := catalogFixture(t)
 	content := []byte(`{"outbounds":[{"type":"trojan","tag":"TLS","server":"example.test","server_port":443,"password":"fixture-password","tls":{"enabled":true}}]}`)
 	if _, err := NodeImportContent(t.Context(), options, content, true); err != nil {
 		t.Fatal(err)
@@ -71,7 +71,7 @@ func TestNodeImportContentAppliesAllowInsecure(t *testing.T) {
 }
 
 func TestNodeContentDoesNotReadSystemPaths(t *testing.T) {
-	options := selectionFixture(t)
+	options := catalogFixture(t)
 	source := writeSectionSource(t, "socks://example.test:1080#FILE_ONLY")
 	inputFile := writeSectionSource(t, source)
 	providerPath := filepath.Join(options.CatalogRoot, "default", "provider.json")
@@ -121,7 +121,7 @@ func TestNodeContentDoesNotReadSystemPaths(t *testing.T) {
 }
 
 func TestNodeImportContentWaitsForLifecycleLock(t *testing.T) {
-	options := selectionFixture(t)
+	options := catalogFixture(t)
 	lock, err := acquireLifecycleLock(options.StateFile)
 	if err != nil {
 		t.Fatal(err)
@@ -138,21 +138,24 @@ func TestNodeImportContentWaitsForLifecycleLock(t *testing.T) {
 	}
 }
 
-func TestNodeImportContentKeepsPersistedFailureSemantics(t *testing.T) {
-	options := selectionFixture(t)
-	if err := moduleconfig.UpdateSelection(t.Context(), options.ModuleConfig, moduleconfig.Selection{}); err != nil {
+func TestCatalogValidationFailureAfterCommitKeepsPersistedSemantics(t *testing.T) {
+	options := catalogFixture(t)
+	options, release, err := lockCatalogChange(t.Context(), options)
+	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := nodeAppend(t.Context(), options, "default", "import", false, func(mutationOptions catalog.MutationOptions) (catalog.MutationResult, error) {
-		result, err := catalog.AppendNodeContent(t.Context(), mutationOptions, []byte("socks://example.test:1080#COMMITTED"))
-		if err != nil {
-			return result, err
-		}
-		if err := os.WriteFile(options.ModuleConfig, []byte(`{"broken":`), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		return result, nil
-	})
+	defer release()
+	result, err := catalog.AppendNodeContent(t.Context(), catalog.MutationOptions{
+		GroupDir: filepath.Join(options.CatalogRoot, "default"), GroupID: "default",
+	}, []byte("socks://example.test:1080#COMMITTED"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(options.SingBoxDir, "config.json"), []byte(`{"broken":`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, attempted, cause := syncCatalogChange(t.Context(), options, "default", true, false)
+	err = catalogChangeError("node", attempted, cause)
 	var persisted *service.Error
 	if result.Revision != 3 || !errors.As(err, &persisted) || persisted.Code != "node.persisted_effect_failed" {
 		t.Fatal("提交后错误语义发生变化", result, err)
@@ -170,11 +173,8 @@ func TestNodeImportContentKeepsPersistedFailureSemantics(t *testing.T) {
 	}
 }
 
-func TestNodeImportContentFinishesSelectionAfterCommitCancellation(t *testing.T) {
-	options := selectionFixture(t)
-	if err := moduleconfig.UpdateSelection(t.Context(), options.ModuleConfig, moduleconfig.Selection{}); err != nil {
-		t.Fatal(err)
-	}
+func TestNodeImportContentPreservesModuleAfterCommitCancellation(t *testing.T) {
+	options := catalogFixture(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	result, err := nodeAppend(ctx, options, "default", "import", false, func(mutationOptions catalog.MutationOptions) (catalog.MutationResult, error) {
@@ -186,8 +186,8 @@ func TestNodeImportContentFinishesSelectionAfterCommitCancellation(t *testing.T)
 		t.Fatal("取消导致已提交内容未完成本地收尾", result, err)
 	}
 	module, err := moduleconfig.LoadModule(options.ModuleConfig)
-	if err != nil || module.ActiveGroupID != "default" {
-		t.Fatal("取消后没有保存完整选择", module, err)
+	if err != nil || len(module.WiFi.Blacklist) != 1 || module.WiFi.Blacklist[0] != "office" {
+		t.Fatal("取消后改变了独立模块配置", module, err)
 	}
 }
 

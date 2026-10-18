@@ -21,6 +21,23 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 )
 
+func TestDirectRouteAcceptsNativeListSyntax(t *testing.T) {
+	for _, mode := range []string{`"Direct"`, `["Direct"]`} {
+		options := newTestOptions(t.TempDir())
+		path := paths.SingBoxConfig(options.SingBoxDir)
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		content := `{"outbounds":[{"type":"direct","tag":"LAN"}],"route":{"rules":[{"clash_mode":` + mode + `,"action":"route","outbound":"LAN"}]}}`
+		if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := validateDirectRouting(options); err != nil {
+			t.Fatalf("native list syntax rejected: %v", err)
+		}
+	}
+}
+
 func TestNetworkPolicyIndependentLists(t *testing.T) {
 	module := moduleconfig.DefaultModule()
 	module.WiFi.Blacklist = []string{"Home, Wi-Fi"}
@@ -125,7 +142,7 @@ func TestNetworkTargetCoreDNSCheck(t *testing.T) {
 					t.Fatal(err)
 				}
 				targetCoreWrite(t, paths.SingBoxConfig(options.SingBoxDir), content)
-				prepared, err := Check(t.Context(), options, false)
+				prepared, err := Check(t.Context(), options)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -270,7 +287,7 @@ func TestEvaluateNetworkPreservesDefaultAndPersistsPolicyState(t *testing.T) {
 	root := t.TempDir()
 	modulePath := filepath.Join(root, "module.json")
 	statePath := filepath.Join(root, "wifi_state")
-	content := "{\"auto_start\":true,\"selection\":{\"group_id\":\"default\",\"node_tag\":\"\"},\"wifi\":{\"blacklist\":[\"办公 WiFi\",\"家庭 WiFi\"],\"enabled\":true,\"mode\":\"blacklist\",\"proxy_on_non_wifi\":true}}"
+	content := "{\"auto_start\":true,\"wifi\":{\"blacklist\":[\"办公 WiFi\",\"家庭 WiFi\"],\"enabled\":true,\"mode\":\"blacklist\",\"proxy_on_non_wifi\":true}}"
 	if err := os.WriteFile(modulePath, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -319,7 +336,7 @@ func TestEvaluateNetworkClearsDisabledOverride(t *testing.T) {
 	root := t.TempDir()
 	modulePath := filepath.Join(root, "module.json")
 	statePath := filepath.Join(root, "wifi_state")
-	content := "{\"auto_start\":true,\"selection\":{\"group_id\":\"default\",\"node_tag\":\"\"},\"wifi\":{\"enabled\":false,\"mode\":\"whitelist\",\"proxy_on_non_wifi\":true}}"
+	content := "{\"auto_start\":true,\"wifi\":{\"enabled\":false,\"mode\":\"whitelist\",\"proxy_on_non_wifi\":true}}"
 	if err := os.WriteFile(modulePath, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}

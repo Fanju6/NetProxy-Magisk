@@ -17,7 +17,7 @@ internal object SubscriptionActions {
 
     @Serializable
     data class Write(val requestId: String, val action: String, val groupId: String? = null,
-        val replacementGroupId: String? = null, val input: JsonObject? = null)
+        val input: JsonObject? = null)
 
     fun parse(raw: String): Request {
         checkSize(raw)
@@ -41,13 +41,11 @@ internal object SubscriptionActions {
             "update_all" -> emptySet()
             else -> badRequest()
         }
-        val allowed = required + if (action == "remove") setOf("replacementGroupId") else emptySet()
-        if (!value.keys.containsAll(required) || value.keys.any { it !in allowed } || value.values.any { it is JsonNull }) badRequest()
+        if (value.keys != required || value.values.any { it is JsonNull }) badRequest()
         val request = try { json.decodeFromJsonElement<Write>(value) }
             catch (_: Exception) { badRequest() }
         if (!request.requestId.matches(Regex("[A-Za-z0-9_-]{1,96}")) ||
-            request.groupId?.let { !validGroup(it) } == true ||
-            request.replacementGroupId?.let { !validGroup(it) || it == request.groupId } == true) badRequest()
+            request.groupId?.let { !validGroup(it) } == true) badRequest()
         request.input?.let { validateInput(it, action == "add") }
         return request
     }

@@ -16,8 +16,8 @@ const GROUP_DEFAULTS = {
 }
 
 const GROUPS = [
-  { ...GROUP_DEFAULTS, id: 'default', name: '本地配置', runtime_tag: '本地配置', type: 'local' as const, active: true, node_count: 1, revision: 1 },
-  { ...GROUP_DEFAULTS, id: 'demo-sub', name: '示例订阅', runtime_tag: '示例订阅', type: 'subscription' as const, active: false, node_count: 2, revision: 3, auto_update: true, update_interval: 86400 },
+  { ...GROUP_DEFAULTS, id: 'default', name: '本地配置', provider_tag: 'np/default', type: 'local' as const, node_count: 1, revision: 1 },
+  { ...GROUP_DEFAULTS, id: 'demo-sub', name: '示例订阅', provider_tag: 'np/demo-sub', type: 'subscription' as const, node_count: 2, revision: 3, auto_update: true, update_interval: 86400 },
 ]
 
 const NODE = { tag: 'demo-node', protocol: 'socks', server: 'example.test', port: 1080 }
@@ -28,7 +28,6 @@ let runtimePrepared = false
 
 const MODULE_CONFIG = {
   auto_start: false,
-  selection: { group_id: 'default', node_tag: '' },
   wifi: { enabled: false, mode: 'blacklist', blacklist: [] as string[], whitelist: [] as string[], proxy_on_non_wifi: true },
 }
 
@@ -58,6 +57,7 @@ const STATIC_CONFIG: Record<string, unknown> = {
   log: { level: 'info' },
   dns: { final: 'dns-proxy' },
   inbounds: [],
+  outbounds: [{ type: 'selector', tag: 'Proxy', outbounds: ['direct'], use_all_providers: true, default: 'direct' }, { type: 'direct', tag: 'direct' }],
   route: { final: 'Proxy' },
   experimental: {},
   http_clients: [],
@@ -77,10 +77,10 @@ const CONFIG_DOCUMENTS = [
     id: `inbound/${section}`, filename: section, category: 'inbound', editable: true, section,
   })),
   { id: 'singbox/config.json', filename: 'config.json', category: 'config', editable: true },
-  ...[...Object.keys(STATIC_CONFIG), 'outbounds'].map(section => ({
+  ...Object.keys(STATIC_CONFIG).map(section => ({
     id: `singbox/${section}`, filename: section, category: 'config', editable: true, section,
   })),
-  ...['inbound.json', 'providers.json', 'outbounds.json'].map(filename => ({
+  ...['inbound.json', 'providers.json'].map(filename => ({
     id: `runtime/${filename}`, filename, category: 'runtime', editable: false,
   })),
 ]
@@ -109,13 +109,8 @@ function serviceStatus() {
     configured_outbound_mode: outboundMode,
     available_outbound_modes: availableModes,
     ...backendStatus,
-    selector_mode: 'urltest',
-    active_group_id: 'default',
-    active_group_name: '本地配置',
-    active_group_runtime_tag: '本地配置',
-    active_group_node_count: 1,
-    selected_node_ref: '',
-    runtime_selected: serviceState === 'ready' ? '本地配置/demo-node' : '',
+    default_outbound: 'Proxy',
+    runtime_selected: serviceState === 'ready' ? policySelected : '',
     memory_bytes: 0,
     process_cpu_ticks: 0,
     system_cpu_ticks: 0,
@@ -133,16 +128,14 @@ function snapshot() {
   return { group: GROUPS[0], nodes: [NODE] }
 }
 
-function selection() {
+let policySelected = 'direct'
+function policySnapshot() {
   return {
-    active_group_id: 'default',
-    active_group_name: '本地配置',
-    active_group_runtime_tag: '本地配置',
-    active_group_node_count: 1,
-    selector_mode: 'urltest',
-    selected_node_ref: '',
-    selected: 'Auto/本地配置',
-    runtime_selected: serviceState === 'ready' ? '本地配置/demo-node' : '',
+    live: serviceState === 'ready', core_started_at_millis: serviceState === 'ready' ? 1_700_000_000_000 : 0,
+    default_outbound: 'Proxy', groups: [{ tag: 'Proxy', type: 'selector', selectable: true, expanded: true,
+      selected: serviceState === 'ready' ? policySelected : '',
+      items: [{ tag: 'direct', type: 'direct' }, { tag: 'np/default/demo-node', type: 'socks' }],
+    }],
   }
 }
 
@@ -197,9 +190,22 @@ function execute(args: string[]): CtlResult<unknown> {
   if (command === 'node') {
     if (action === 'list') return response('node.list', '节点列表', [snapshot()])
     if (action === 'show') return response('catalog.show', 'Catalog 分组快照', snapshot())
-    if (action === 'snapshot') return response('node.snapshot', '节点快照', { groups: [snapshot()], selection: selection() })
-    if (action === 'current') return response('node.current', '当前节点选择', selection())
+    if (action === 'snapshot') return response('node.snapshot', '资源节点快照', { groups: [snapshot()] })
+    if (!['add', 'import', 'edit', 'remove', 'get', 'export'].includes(action)) return failure('usage.invalid', '未知节点操作')
     return response(`node.${action || 'list'}`, '节点操作完成', {})
+  }
+
+  if (command === 'policy') {
+    if (!action || action === 'groups') return response('policy.groups', '策略组', policySnapshot())
+    if (serviceState !== 'ready') return failure('policy.core_not_ready', 'sing-box 尚未就绪')
+    if (clean[2] !== 'Proxy') return failure('policy.group_not_found', '未找到策略组')
+    if (action === 'select') {
+      if (!['direct', 'np/default/demo-node'].includes(clean[3])) return failure('policy.member_not_found', '未找到成员')
+      policySelected = clean[3]
+      return response('policy.selected', '策略组选择已确认', policySnapshot())
+    }
+    if (action === 'delay') return response('policy.delay', '策略组测速', policySnapshot())
+    return failure('usage.invalid', '未知策略组操作')
   }
 
   if (command === 'mode') {
@@ -276,7 +282,6 @@ function execute(args: string[]): CtlResult<unknown> {
     else if (document.category === 'inbound') content = { [document.filename]: INBOUND_CONFIG[document.filename as keyof typeof INBOUND_CONFIG] }
     else if (document.id === 'runtime/inbound.json') content = { inbounds: [{ ...INBOUND_CONFIG.ebpf, shared: { enabled: false } }] }
     else if (document.id === 'runtime/providers.json') content = { providers: [] }
-    else if (document.id === 'runtime/outbounds.json') content = { outbounds: [] }
     else if (document.id === 'singbox/config.json') content = STATIC_CONFIG
     else if (Object.prototype.hasOwnProperty.call(STATIC_CONFIG, document.filename)) content = { [document.filename]: STATIC_CONFIG[document.filename] }
     return response('config.read', '配置内容', {

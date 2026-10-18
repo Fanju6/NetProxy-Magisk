@@ -277,7 +277,7 @@ describe('subscription update and cancellation', () => {
     ).toBe(old.node_count)
     expect(h.request.mock.calls.filter(([request]) => request.method === 'PUT')).toHaveLength(1)
   })
-  it('rechecks deletion targets and requires a populated replacement for the active group', async () => {
+  it('deletes a URL resource without a replacement or a policy selection', async () => {
     const h = await setup()
     await beginSubscriptionWrite(
       h.api,
@@ -285,28 +285,19 @@ describe('subscription update and cancellation', () => {
       { action: 'remove', groupId: 'demo-global' },
       new AbortController().signal,
     )
-    expect(h.cache.getQueryData<SubscriptionOperation>(subscriptionOperationKey)?.error?.code).toBe(
-      'subscription.conflict',
-    )
-    expect(h.request.mock.calls.filter(([request]) => request.method === 'DELETE')).toHaveLength(0)
-    await beginSubscriptionWrite(
-      h.api,
-      h.cache,
-      { action: 'remove', groupId: 'demo-global', replacementId: 'default' },
-      new AbortController().signal,
-    )
     expect(h.cache.getQueryData<SubscriptionOperation>(subscriptionOperationKey)?.phase).toBe(
       'idle',
     )
+    expect(
+      h.request.mock.calls
+        .filter(([request]) => request.method === 'DELETE')
+        .map(([request]) => request),
+    ).toEqual([{ method: 'DELETE', path: '/subscriptions/demo-global' }])
     expect(
       h.cache
         .getQueryData<z.infer<typeof groupSchema>[]>(['subscriptions'])!
         .some((group) => group.id === 'demo-global'),
     ).toBe(false)
-    const reads = h.request.mock.calls.map(([request]) => `${request.method} ${request.path}`)
-    expect(reads.lastIndexOf('GET /catalog')).toBeGreaterThan(
-      reads.indexOf('DELETE /subscriptions/demo-global'),
-    )
   })
   it('never repeats a deletion with a lost response; the missing group is a current fact, not a task ID', async () => {
     const h = await setup()
@@ -318,7 +309,7 @@ describe('subscription update and cancellation', () => {
     await beginSubscriptionWrite(
       h.api,
       h.cache,
-      { action: 'remove', groupId: 'demo-global', replacementId: 'default' },
+      { action: 'remove', groupId: 'demo-global' },
       new AbortController().signal,
     )
     await verifySubscription(h.api, h.cache)

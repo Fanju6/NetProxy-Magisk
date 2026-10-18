@@ -119,7 +119,7 @@ class SubscriptionActionsTest {
         assertFalse(update.isCompleted)
         assertFailure("api.busy", runCatching { bridge.serviceAction("service", "start") })
         assertFailure("api.busy", runCatching { bridge.changeMode("mode", "Rule") })
-        assertFailure("api.busy", runCatching { bridge.selectNode("node", mapOf("group_id" to "default", "node_tag" to "")) })
+        assertFailure("api.busy", runCatching { bridge.policySelect("""{"requestId":"node","groupTag":"Proxy","memberTag":"a"}""") })
         assertFailure("api.busy", runCatching { bridge.subscriptionAction(args("update", "other-update")) })
         val cancel = async { bridge.subscriptionAction(args("cancel", "cancel")) }
         runCurrent()

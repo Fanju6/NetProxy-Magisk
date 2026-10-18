@@ -568,7 +568,7 @@ func TestEventsSendSnapshotAndCloseWithServer(t *testing.T) {
 			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &result); err != nil {
 				t.Fatal(err)
 			}
-			if err := json.Unmarshal(result.Data, &groups); err != nil || len(groups) != 1 || groups[0].ID != "default" || !groups[0].Active {
+			if err := json.Unmarshal(result.Data, &groups); err != nil || len(groups) != 1 || groups[0].ID != "default" {
 				t.Fatalf("订阅事件遗漏本地分组: %+v %v", groups, err)
 			}
 			found = true

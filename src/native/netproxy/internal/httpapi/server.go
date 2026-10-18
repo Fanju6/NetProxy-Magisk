@@ -260,6 +260,7 @@ func (s *Server) registerRoute(pattern string, budget time.Duration, expensive, 
 
 func (s *Server) fail(w http.ResponseWriter, ctx context.Context, err error) {
 	response, _ := contract.Failure(ctx, err)
+	response = resourcePublicFailure(response)
 	writeResult(w, failureStatus(response.Code, err), response)
 }
 
@@ -271,21 +272,24 @@ func failureStatus(code string, err error) int {
 		return http.StatusUnprocessableEntity
 	}
 	switch code {
-	case "usage.invalid", "api.query_invalid":
+	case "usage.invalid", "api.query_invalid", "policy.invalid":
 		return http.StatusBadRequest
-	case "config.conflict", "subscription.conflict", "subscription.busy", "api.busy", "node.delay_busy":
+	case "config.conflict", "subscription.conflict", "subscription.busy", "api.busy", "node.delay_busy",
+		"policy.core_not_ready", "catalog.provider_in_use", "catalog.provider_conflict":
 		return http.StatusConflict
-	case "android.icon.not_found", "node.delay_target_missing":
+	case "android.icon.not_found", "node.delay_target_missing", "policy.group_not_found", "policy.member_not_found":
 		return http.StatusNotFound
 	case "command.timeout", "node.delay_timeout":
 		return http.StatusGatewayTimeout
 	case "command.canceled", "subscription.cancelled":
 		return http.StatusRequestTimeout
-	case "node.runtime_sync_failed", "mode.runtime_sync_failed", "subscription.runtime_sync_failed", "node.delay_api_failed":
+	case "node.runtime_sync_failed", "mode.runtime_sync_failed", "subscription.runtime_sync_failed", "node.delay_api_failed",
+		"policy.runtime_sync_failed", "policy.api_failed":
 		return http.StatusBadGateway
 	case "subscription.invalid_target", "subscription.invalid_group", "subscription.read_only", "subscription.interval_too_short",
 		"subscription.edit_invalid", "subscription.proxy_mode_invalid", "subscription.timeout_invalid", "subscription.text_invalid", "mode.invalid", "mode.unavailable",
-		"ebpf.status_invalid", "ebpf.unsupported", "network.direct_route_required":
+		"ebpf.status_invalid", "ebpf.unsupported", "network.direct_route_required",
+		"policy.not_selectable", "policy.config_invalid", "catalog.invalid", "catalog.read_only":
 		return http.StatusUnprocessableEntity
 	default:
 		if errors.Is(err, os.ErrNotExist) {
@@ -365,10 +369,9 @@ func busy() error {
 }
 
 func (s *Server) controlOptions() service.Options {
-	layout := paths.New(s.options.ModuleDir)
 	return service.Options{CatalogRoot: s.options.CatalogRoot, ModuleConfig: s.options.ModuleConfig,
 		SingBoxConfig: paths.SingBoxConfig(s.options.SingBoxDir), InboundConfig: s.options.InboundConfig,
-		StateFile: s.options.StateFile, ProgressDir: s.options.ProgressDir, DelayDir: layout.DelayDir(),
+		StateFile: s.options.StateFile, ProgressDir: s.options.ProgressDir,
 		WorkerPIDFile: s.options.WorkerPIDFile, SingBoxPath: s.options.SingBoxPath,
 		ServiceAddress: s.options.ServiceAddress, ServiceSecret: s.options.ServiceSecret, RequestTimeout: s.options.RequestTimeout}
 }
@@ -381,7 +384,7 @@ func (s *Server) info(context.Context, *http.Request) (contract.Result, error) {
 		"memory": map[string]uint64{"heap_alloc_bytes": memory[0].Value.Uint64(), "heap_inuse_bytes": memory[0].Value.Uint64() + memory[1].Value.Uint64(),
 			"heap_released_bytes": memory[2].Value.Uint64(), "stack_inuse_bytes": memory[3].Value.Uint64()},
 		"version_code": s.versionCode, "instance_id": s.instance, "pid": os.Getpid(), "platform": runtime.GOOS,
-		"capabilities": []string{"module", "catalog", "subscriptions", "offline_delay", "events"}}), nil
+		"capabilities": []string{"module", "catalog", "subscriptions", "policy_groups", "events"}}), nil
 }
 
 func readModuleVersion(path string) (string, string) {

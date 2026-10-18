@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/contract"
 	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
 )
@@ -97,9 +97,8 @@ type coreFeed struct {
 	saved         moduleapp.ServiceState
 	groups        []serviceapi.Group
 	groupsReady   bool
-	snapshot      service.Snapshot
+	snapshot      service.PolicySnapshot
 	snapshotReady bool
-	module        moduleconfig.ModuleConfig
 	status        service.Status
 	statusReady   bool
 	groupTimer    *time.Timer
@@ -289,13 +288,8 @@ func (f *coreFeed) refresh(topics int) {
 			f.h.emitAt(topicStatus, "status", contract.Success("service.status", "服务状态", f.status), epoch)
 		}
 	}
-	// status-only 消费者同样需要 Catalog 与 module，供 groups 流派生实际选择。
 	if topics&(topicStatus|topicGroups) != 0 {
-		groups, err := service.ReadNodes(ctx, f.h.server.controlOptions(), "")
-		module, moduleErr := moduleconfig.LoadModule(f.h.server.options.ModuleConfig)
-		if err == nil {
-			err = moduleErr
-		}
+		snapshot, err := service.ReadConfiguredPolicyGroups(paths.SingBoxConfig(f.h.server.options.SingBoxDir))
 		f.snapshotReady = err == nil
 		if err != nil {
 			if topics&topicGroups != 0 {
@@ -303,7 +297,7 @@ func (f *coreFeed) refresh(topics int) {
 				f.h.emitAt(topicGroups, "groups", response, epoch)
 			}
 		} else {
-			f.module, f.snapshot = module, service.Snapshot{Groups: groups}
+			f.snapshot = snapshot
 			f.publishGroups(epoch)
 		}
 	}
@@ -322,24 +316,29 @@ func (f *coreFeed) publishGroups(epoch uint64) {
 	if !f.snapshotReady {
 		return
 	}
-	f.snapshot.RuntimeGroups = nil
-	if f.identity > 0 && f.groupsReady {
-		f.snapshot.RuntimeGroups = f.groups
+	// A bound core must deliver its complete first groups frame before publication.
+	if f.identity > 0 && !f.groupsReady {
+		return
 	}
-	f.snapshot.Selection = service.SelectionFromRuntimeGroups(f.module, f.snapshot.Groups, f.snapshot.RuntimeGroups)
+	snapshot := f.snapshot
+	if f.identity > 0 {
+		snapshot.Groups = f.groups
+		if snapshot.Groups == nil {
+			snapshot.Groups = []serviceapi.Group{}
+		}
+		snapshot.Live = true
+		snapshot.CoreStartedAtMillis = f.identity
+	}
 	topics := f.h.interests()
 	if topics&topicGroups != 0 {
-		f.h.emitAt(topicGroups, "groups", contract.Success("node.snapshot", "节点快照", f.snapshot), epoch)
+		f.h.emitAt(topicGroups, "groups", contract.Success("policy.groups", "策略组快照", snapshot), epoch)
 	}
-	if topics&topicStatus != 0 && f.statusReady && f.groupsReady {
-		selection := f.snapshot.Selection
-		f.status.SelectorMode = selection.SelectorMode
-		f.status.ActiveGroupID = selection.ActiveGroupID
-		f.status.ActiveGroupName = selection.ActiveGroupName
-		f.status.ActiveGroupRuntimeTag = selection.ActiveGroupRuntimeTag
-		f.status.ActiveGroupNodeCount = selection.ActiveGroupNodeCount
-		f.status.SelectedNodeRef = selection.SelectedNodeRef
-		f.status.RuntimeSelected = selection.RuntimeSelected
+	if topics&topicStatus != 0 && f.statusReady {
+		f.status.DefaultOutbound = snapshot.DefaultOutbound
+		f.status.RuntimeSelected = ""
+		if snapshot.Live {
+			f.status.RuntimeSelected = service.RuntimeSelected(snapshot.DefaultOutbound, snapshot.Groups)
+		}
 		f.h.emitAt(topicStatus, "status", contract.Success("service.status", "服务状态", f.status), epoch)
 	}
 }

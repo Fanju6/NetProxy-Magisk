@@ -22,6 +22,7 @@ type MutationResult struct {
 	NodeCount        int    `json:"node_count"`
 	Revision         int64  `json:"revision"`
 	StructureChanged bool   `json:"structure_changed"`
+	ReloadRequired   bool   `json:"-"`
 }
 
 // MutationOptions 描述一次本地节点变更。
@@ -34,6 +35,7 @@ type MutationOptions struct {
 	Tag           string
 	AllowInsecure bool
 	Now           time.Time
+	Validate      func(provider.Document) error
 }
 
 // GroupOptions 描述一个 Catalog 分组的初始化配置。
@@ -254,7 +256,7 @@ func appendNode(ctx context.Context, options MutationOptions, parse func() (prov
 		return MutationResult{}, err
 	}
 	result := mutationResult(options, metadata, document, oldNodeCount == 0)
-	return commitMutation(ctx, options.GroupDir, document, metadata, result, options.Now)
+	return commitMutation(ctx, options, document, metadata, result)
 }
 
 // RemoveNode 从 Catalog 分组中删除指定标签。
@@ -282,7 +284,7 @@ func RemoveNode(ctx context.Context, options MutationOptions) (MutationResult, e
 		return MutationResult{}, err
 	}
 	result := mutationResult(options, metadata, document, len(document.Outbounds)+len(document.Endpoints) == 0)
-	return commitMutation(ctx, options.GroupDir, document, metadata, result, options.Now)
+	return commitMutation(ctx, options, document, metadata, result)
 }
 
 // EditNode 原子替换 Catalog 分组中的一个节点。
@@ -328,7 +330,7 @@ func editNode(ctx context.Context, options MutationOptions, parse func() (provid
 		return MutationResult{}, err
 	}
 	result := mutationResult(options, metadata, document, false)
-	return commitMutation(ctx, options.GroupDir, document, metadata, result, options.Now)
+	return commitMutation(ctx, options, document, metadata, result)
 }
 
 func validateMutationOptions(options MutationOptions, requireTag bool) error {
@@ -394,7 +396,18 @@ func mutationResultFor(groupID string, metadata Metadata, document provider.Docu
 	}
 }
 
-func commitMutation(ctx context.Context, groupDir string, document provider.Document, metadata Metadata, result MutationResult, now time.Time) (MutationResult, error) {
+func commitMutation(ctx context.Context, options MutationOptions, document provider.Document, metadata Metadata, result MutationResult) (MutationResult, error) {
+	previous, err := loadProvider(ctx, options.GroupDir)
+	if err != nil {
+		return MutationResult{}, err
+	}
+	result.ReloadRequired = provider.ReplacesMembers(previous, document)
+	if options.Validate != nil {
+		if err := options.Validate(document); err != nil {
+			return MutationResult{}, err
+		}
+	}
+	now := options.Now
 	if result.Revision <= 0 {
 		result.Revision = 1
 	}
@@ -404,7 +417,7 @@ func commitMutation(ctx context.Context, groupDir string, document provider.Docu
 	metadata.NodeCount = result.NodeCount
 	metadata.Revision = result.Revision
 	metadata.UpdatedAt = FormatEpochUTC(now.Unix())
-	if err := commitPair(ctx, groupDir, document, metadata); err != nil {
+	if err := commitPair(ctx, options.GroupDir, document, metadata); err != nil {
 		return MutationResult{}, err
 	}
 	return result, nil

@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 
 const routes = [
   { to: '/', key: 'dashboard', icon: LayoutDashboard },
-  { to: '/nodes', key: 'nodes', icon: Network },
+  { to: '/nodes', key: 'proxies', icon: Network },
   { to: '/subscriptions', key: 'subscriptions', icon: Rss },
   { to: '/settings', key: 'settings', icon: Settings },
 ] as const

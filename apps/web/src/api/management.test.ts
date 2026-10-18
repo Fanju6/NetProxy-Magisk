@@ -86,7 +86,6 @@ describe('restricted management requests', () => {
     expect((await readConfig(api, 'module/wifi')).content).toContain('Comma, SSID')
     expect(JSON.parse((await readConfig(api, 'module')).content)).toMatchObject({
       auto_start: true,
-      selection: { group_id: 'default' },
     })
   })
   it('validates without committing and never changes the revision on failure', async () => {

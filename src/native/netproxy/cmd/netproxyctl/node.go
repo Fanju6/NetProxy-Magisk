@@ -30,7 +30,7 @@ func (c *cli) node(ctx context.Context, args []string) error {
 		ServiceAddress: options.ServiceAddress, ServiceSecret: options.ServiceSecret, RequestTimeout: options.RequestTimeout,
 	}
 	switch action {
-	case "add", "import", "edit", "remove", "use", "show":
+	case "add", "import", "edit", "remove", "show":
 		if len(positionals) == 0 {
 			return usageError("node 操作缺少参数")
 		}
@@ -49,23 +49,6 @@ func (c *cli) node(ctx context.Context, args []string) error {
 			return err
 		}
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "node.snapshot", Message: "节点快照", Data: snapshot})
-		return nil
-	case "current":
-		selection, err := service.ReadSelection(ctx, control)
-		if err != nil {
-			return err
-		}
-		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "node.current", Message: "当前节点选择", Data: selection})
-		return nil
-	case "delay":
-		delay, err := service.Delay(ctx, control, first(positionals), second(positionals))
-		if err != nil {
-			if structured, ok := errors.AsType[*service.Error](err); ok {
-				return &resultError{Code: structured.Code, Message: structured.Message, Data: structured.Data}
-			}
-			return err
-		}
-		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "node.delay", Message: "节点测速完成", Data: delay})
 		return nil
 
 	case "show":
@@ -127,21 +110,8 @@ func (c *cli) node(ctx context.Context, args []string) error {
 		}
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "node.removed", Message: "节点已删除", Data: data})
 
-	case "use":
-		data, err := moduleapp.SelectNode(ctx, options, positionals[0], second(positionals))
-		if err != nil {
-			return err
-		}
-		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "node.selected", Message: "节点选择已更新", Data: data})
 	default:
-		return usageError("用法: netproxyctl node list|snapshot|current|show|get|export|delay|add|import|edit|remove|use")
+		return usageError("用法: netproxyctl node list|snapshot|show|get|export|add|import|edit|remove")
 	}
 	return nil
-}
-
-func second(values []string) string {
-	if len(values) < 2 {
-		return ""
-	}
-	return values[1]
 }

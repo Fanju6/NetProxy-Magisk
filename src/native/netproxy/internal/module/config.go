@@ -102,7 +102,7 @@ func ListConfigs(options Options) ([]ConfigDocument, error) {
 			Editable: true,
 		})
 	}
-	for _, name := range []string{"inbound.json", "outbounds.json", "providers.json"} {
+	for _, name := range []string{"inbound.json", "providers.json"} {
 		path := filepath.Join(options.RuntimeDir, name)
 		info, err := os.Stat(path)
 		if os.IsNotExist(err) {
@@ -350,15 +350,13 @@ func applyConfigLocked(ctx context.Context, options Options, target, destination
 		return revision, nil
 	}
 	applyRuntime := true
-	selectionChanged := false
 	switchBackend := false
 	transactionOptions := options
 	var repairedBackend string
 	if moduleTarget {
 		previous, previousErr := moduleconfig.LoadModule(destination)
 		if previousErr == nil {
-			selectionChanged = previous.Selection != moduleConfig.Selection
-			applyRuntime = selectionChanged || !previous.WiFi.Equal(moduleConfig.WiFi)
+			applyRuntime = !previous.WiFi.Equal(moduleConfig.WiFi)
 		}
 	}
 	if inboundTarget {
@@ -462,19 +460,15 @@ func applyConfigLocked(ctx context.Context, options Options, target, destination
 	}
 	var applyErr error
 	if moduleTarget {
-		if !selectionChanged {
-			previousMode, modeErr := service.ReadRuntimeMode(ctx, networkControlOptions(options))
-			if modeErr != nil {
-				return "", rollbackConfigApply(options, transaction, modeErr)
-			}
-			transaction.journal.Mode, transaction.journal.Action = previousMode, "mode"
-			if err := transaction.setPhase("mode_started"); err != nil {
-				return "", rollbackConfigApply(options, transaction, err)
-			}
-			_, applyErr = applyConfiguredNetwork(ctx, options, reload)
-		} else {
-			applyErr = reload(ctx, options)
+		previousMode, modeErr := service.ReadRuntimeMode(ctx, networkControlOptions(options))
+		if modeErr != nil {
+			return "", rollbackConfigApply(options, transaction, modeErr)
 		}
+		transaction.journal.Mode, transaction.journal.Action = previousMode, "mode"
+		if err := transaction.setPhase("mode_started"); err != nil {
+			return "", rollbackConfigApply(options, transaction, err)
+		}
+		_, applyErr = applyConfiguredNetwork(ctx, options, reload)
 	} else {
 		applyErr = reload(ctx, options)
 	}
@@ -482,7 +476,7 @@ func applyConfigLocked(ctx context.Context, options Options, target, destination
 		return "", rollbackConfigApply(options, transaction, fmt.Errorf("配置应用失败: %w", applyErr))
 	}
 	if moduleTarget {
-		// reload 可能校正已失效的节点选择，revision 必须对应锁内最终内容。
+		// revision 对应锁内最终配置，不重新合并客户端旧快照。
 		applied, err := ReadConfig(options, target)
 		if err != nil {
 			return "", rollbackAfterCommitFailure(ctx, options, transaction, err)
@@ -575,7 +569,7 @@ func validateInboundTree(ctx context.Context, options Options, candidate string,
 	checkOptions := options
 	checkOptions.RuntimeDir = temporary
 	checkOptions.InboundConfig = candidate
-	prepared, err := Prepare(ctx, checkOptions, true)
+	prepared, err := Prepare(ctx, checkOptions)
 	if err != nil {
 		return err
 	}
@@ -702,7 +696,7 @@ func validateSingBoxTree(ctx context.Context, options Options, candidate string)
 	checkOptions := options
 	checkOptions.RuntimeDir = filepath.Join(temporary, "runtime")
 	checkOptions.SingBoxDir = temporary
-	prepared, err := Prepare(ctx, checkOptions, true)
+	prepared, err := Prepare(ctx, checkOptions)
 	if err != nil {
 		return err
 	}
@@ -781,7 +775,7 @@ func ResolveConfig(options Options, target string) (string, error) {
 
 func isRuntimeConfigName(name string) bool {
 	switch name {
-	case "providers.json", "outbounds.json", "inbound.json":
+	case "providers.json", "inbound.json":
 		return true
 	default:
 		return false

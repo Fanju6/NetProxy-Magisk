@@ -28,8 +28,8 @@ test('editor actions remain above a keyboard that only resizes the visual viewpo
   await expect(page.locator('html')).not.toHaveAttribute('data-keyboard-open')
   await expect.poll(async () => (await dialog.boundingBox())!.height).toBeGreaterThan(height)
   await dialog.getByRole('button', { name: '关闭', exact: true }).click()
-  await page.goto('/#/nodes')
-  await page.getByRole('button', { name: '添加节点', exact: true }).click()
+  await page.goto('/#/subscriptions')
+  await page.getByRole('button', { name: '更多操作', exact: true }).click()
   await page.getByRole('menuitem', { name: '导入文本', exact: true }).click()
   await dialog.getByRole('textbox', { name: '节点内容', exact: true }).focus()
   await page.evaluate((height) => {
@@ -107,8 +107,8 @@ test('application and Wi-Fi policies preserve selections and offer native inboun
 test('local node import and logs are usable without platform file permissions', async ({
   page,
 }) => {
-  await page.goto('/#/nodes')
-  await page.getByRole('button', { name: '添加节点', exact: true }).click()
+  await page.goto('/#/subscriptions')
+  await page.getByRole('button', { name: '更多操作', exact: true }).click()
   await page.getByRole('menuitem', { name: '导入文本', exact: true }).click()
   const dialog = page.getByRole('dialog')
   await dialog
@@ -119,9 +119,11 @@ test('local node import and logs are usable without platform file permissions', 
   await dialog.getByRole('button', { name: '保存', exact: true }).click()
   await expect(dialog.getByRole('status')).toContainText('操作完成')
   await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  await page.getByRole('button', { name: '查看详情 本地配置', exact: true }).click()
   await expect(
-    page.getByRole('button', { name: '选择 Anonymous fixture', exact: true }),
+    page.getByRole('dialog').getByText('Anonymous fixture', { exact: true }),
   ).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click()
   await page.goto('/#/settings/logs')
   await expect(page.getByText(/Service ready/)).toBeVisible()
   await page.getByRole('button', { name: '日志选项', exact: true }).click()

@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowDown, ArrowUp, ChevronRight, Power, Activity, FlaskConical } from 'lucide-react'
 import { useApi, usePreferences } from '@/app/context'
-import { moduleQueries, useChangeMode, useSelectNode, useServiceAction } from '@/api/queries'
+import { moduleQueries, useChangeMode, useSelectPolicyGroup, useServiceAction } from '@/api/queries'
 import type { Traffic } from '@/api/contracts'
 import { useEventConnection } from '@/api/events'
 import { useRoutingOperation } from '@/api/routing-control'
@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/dialog'
 import { Choice } from '@/components/choice'
 import { EmptyState, ErrorState, LoadingState } from '@/components/states'
-import { bytes, displayNode } from '@/lib/format'
+import { bytes } from '@/lib/format'
 import type { MessageKey } from '@/app/i18n'
 
 export function DashboardPage() {
@@ -28,6 +28,7 @@ export function DashboardPage() {
   const connection = useEventConnection()
   const status = useQuery(moduleQueries(api).service)
   const modeState = useQuery(moduleQueries(api).mode)
+  const policies = useQuery(moduleQueries(api).policyGroups)
   const live = useQuery<Traffic>({
     queryKey: ['traffic'],
     queryFn: () => ({ available: false }),
@@ -40,7 +41,7 @@ export function DashboardPage() {
   })
   const action = useServiceAction()
   const mode = useChangeMode()
-  const selection = useSelectNode()
+  const selection = useSelectPolicyGroup()
   const routingOperation = useRoutingOperation()
   const [confirmStop, setConfirmStop] = useState(false)
   if (status.isPending) return <LoadingState />
@@ -58,7 +59,12 @@ export function DashboardPage() {
       ? live.data.status
       : undefined
   const rateUnavailable = connection !== 'live' || (running && !traffic)
-  const current = displayNode(service.runtime_selected || service.selected_node_ref) || t('auto')
+  const current = policies.data?.default_outbound || service.default_outbound || t('runtimeUnknown')
+  const defaultGroup = policies.data?.groups.find((group) => group.tag === current)
+  const policyLive =
+    connection === 'live' &&
+    policies.data?.live &&
+    policies.data.core_started_at_millis === service.core_started_at_millis
   const history = samples.data ?? []
   const maximum = Math.max(1, ...history)
   const blocked =
@@ -134,11 +140,15 @@ export function DashboardPage() {
       <div className="grid gap-x-8 gap-y-1 lg:grid-cols-2">
         <Link to="/nodes" className="flex min-w-0 items-center justify-between gap-3 py-4">
           <div className="min-w-0 space-y-1">
-            <p className="text-sm text-muted-foreground">{t('currentNode')}</p>
+            <p className="text-sm text-muted-foreground">{t('defaultOutbound')}</p>
             <p className="break-words font-medium [overflow-wrap:anywhere]">{current}</p>
             <p className="truncate text-xs text-muted-foreground">
-              {service.active_group_name} ·{' '}
-              {t(service.selector_mode === 'urltest' ? 'automatic' : 'manual')}
+              {policyLive
+                ? service.runtime_selected ||
+                  defaultGroup?.selected ||
+                  defaultGroup?.type ||
+                  current
+                : t('runtimeUnknown')}
             </p>
           </div>
           <ChevronRight className="size-5 shrink-0 text-muted-foreground" />
@@ -180,7 +190,7 @@ export function DashboardPage() {
                 {t(
                   mode.isUnconfirmed
                     ? 'routingUnconfirmed'
-                    : routingOperation?.target.kind === 'selection'
+                    : routingOperation?.target.kind === 'policy'
                       ? 'selectionUncertain'
                       : 'modeUncertain',
                 )}
@@ -191,7 +201,7 @@ export function DashboardPage() {
                     ? 'routingUnconfirmedDescription'
                     : mode.persisted || selection.persisted
                       ? 'persisted'
-                      : routingOperation?.target.kind === 'selection'
+                      : routingOperation?.target.kind === 'policy'
                         ? 'selectionUncertainDescription'
                         : 'modeUncertainDescription',
                 )}
@@ -199,7 +209,7 @@ export function DashboardPage() {
               <Button
                 variant="outline"
                 onClick={() =>
-                  void (routingOperation?.target.kind === 'selection'
+                  void (routingOperation?.target.kind === 'policy'
                     ? selection.verify()
                     : mode.verify())
                 }

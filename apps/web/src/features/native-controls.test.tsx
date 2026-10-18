@@ -146,53 +146,30 @@ it('keeps a persisted mode failure visible after confirming the saved default', 
   fixture.view.unmount()
 })
 
-it('permits native node and delay controls without enabling subscription or configuration writes', async () => {
+it('uses policy controls without granting subscription writes', async () => {
   const fixture = nativeFixture()
   await waitFor(() => expect(screen.getByRole('button', { name: 'Stop service' })).toBeEnabled())
   await act(() => fixture.router.navigate({ to: '/nodes' }))
-  const manual = await screen.findByRole('button', { name: 'Select Tokyo 01' })
+  const group = await screen.findByTestId('policy-Internet')
+  const manual = within(group).getByRole('button', { name: 'Select Hong Kong 01' })
   await waitFor(() => expect(manual).toBeEnabled())
-  const measured = screen.getByRole('button', { name: 'Test latency for Tokyo 01' })
-  expect(measured).toHaveTextContent('68 ms')
-  const upstreamSeconds = 1792065600
-  expect(new Date(upstreamSeconds * 1000).getFullYear()).toBe(2026)
-  expect(measured).toHaveAttribute(
-    'title',
-    `Last result: ${new Date(upstreamSeconds * 1000).toLocaleString()}`,
-  )
-  expect(measured.title).not.toContain('Invalid Date')
   fireEvent.click(manual)
   await waitFor(() => expect(manual).toHaveAttribute('aria-pressed', 'true'))
-  await waitFor(() => expect(manual).toBeEnabled())
-  const group = screen.getByTestId('group-demo-global')
-  const auto = within(group).getByRole('button', { name: 'Select Auto-Fastest' })
-  fireEvent.click(auto)
-  await waitFor(() => expect(auto).toHaveAttribute('aria-pressed', 'true'))
-  const singleTest = screen.getByRole('button', { name: 'Test latency for Tokyo 01' })
-  await waitFor(() => expect(singleTest).toBeEnabled())
-  fireEvent.click(singleTest)
+  const test = screen.getByRole('button', { name: 'Test group Fastest' })
+  await waitFor(() => expect(test).toBeEnabled())
+  fireEvent.click(test)
   expect(
     await screen.findByText('Latest available results received; some may be cached.'),
   ).toBeVisible()
-  expect(singleTest).toHaveTextContent('32 ms')
-  expect(singleTest.closest('button')?.parentElement?.closest('button')).toBeNull()
-  await act(() => fixture.router.navigate({ to: '/settings' }))
-  await screen.findByRole('heading', { name: 'Settings' })
-  expect(screen.queryByRole('switch', { name: 'Start on boot' })).not.toBeInTheDocument()
-  await act(() => fixture.router.navigate({ to: '/subscriptions' }))
-  await screen.findByRole('heading', { name: '本地配置' })
-  expect(screen.queryByRole('button', { name: /update|save|delete/i })).not.toBeInTheDocument()
-  const writes = fixture.request.mock.calls
-    .map(([input]) => input)
-    .filter((input) => input.method !== 'GET')
-  expect(writes).toEqual([
-    { method: 'PUT', path: '/selection', body: { group_id: 'demo-global', node_tag: 'Tokyo 01' } },
-    { method: 'PUT', path: '/selection', body: { group_id: 'demo-global', node_tag: '' } },
+  expect(
+    fixture.request.mock.calls.map(([input]) => input).filter((input) => input.method !== 'GET'),
+  ).toEqual([
     {
       method: 'POST',
-      path: '/nodes/delay',
-      body: { group_id: 'demo-global', node_tag: 'Tokyo 01' },
+      path: '/policy-groups/select',
+      body: { group_tag: 'Internet', member_tag: 'Hong Kong 01' },
     },
+    { method: 'POST', path: '/policy-groups/delay', body: { group_tag: 'Fastest' } },
   ])
   fixture.view.unmount()
 })

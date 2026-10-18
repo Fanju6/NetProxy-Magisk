@@ -46,7 +46,7 @@ test('补全使用当前 Catalog，候选替换保留空格、引号与反斜杠
       assert.deepEqual(parseCommandLine(replaceCompletion(source, group)), ['catalog', 'show', group])
     }
   }
-  assert.equal(complete('node use auto def', groups).completed, 'node use auto default ')
+  assert.equal(complete('policy gro', groups).completed, 'policy groups ')
 })
 
 test('格式化只改变 JSON 排版，文本、错误和危险字符保持原样', () => {
@@ -128,7 +128,8 @@ test('模块 JSON 帮助、补全和 mock 使用完整目标与独立分区', ()
   }
   assert.match(COMMANDS.config.help, /module\.json/)
   assert.match(COMMANDS.config.help, /module\/wifi、module\/auto_start/)
-  assert.match(COMMANDS.config.help, /revision 独立.*selection/)
+  assert.match(COMMANDS.config.help, /revision 独立.*其他字段/)
+  assert.doesNotMatch(COMMANDS.config.help, /selection|outbounds\.json/)
   const full = run('config', 'read', 'module').data
   assert.deepEqual(JSON.parse(full.content), defaults)
   const revisions = [full.revision]
@@ -170,7 +171,7 @@ test('mock 同步单文件模板、分区与真实后端状态边界', () => {
   assert.equal(runtime.inbounds[0].tag, 'netproxy-in')
   assert.deepEqual(runtime.inbounds[0].shared, { enabled: false })
   assert.deepEqual(run('config', 'list').data.filter(item => item.category === 'runtime').map(item => [item.id, item.editable]), [
-    ['runtime/inbound.json', false], ['runtime/providers.json', false], ['runtime/outbounds.json', false],
+    ['runtime/inbound.json', false], ['runtime/providers.json', false],
   ])
   run('service', 'stop')
   assert.equal(run('service', 'status').data.active_backend, null)

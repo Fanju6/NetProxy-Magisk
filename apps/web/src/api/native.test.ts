@@ -49,6 +49,48 @@ const event: ApiEvent = {
 }
 
 describe('restricted native requests', () => {
+  it.each([
+    [
+      { method: 'POST', path: '/catalog', body: { id: 'travel', name: '旅行' } },
+      { operation: 'catalog_create', input: { id: 'travel', name: '旅行' } },
+    ],
+    [
+      { method: 'PUT', path: '/catalog/travel', body: { name: 'Renamed' } },
+      { operation: 'catalog_rename', input: { id: 'travel', name: 'Renamed' } },
+    ],
+    [
+      { method: 'DELETE', path: '/catalog/travel' },
+      { operation: 'catalog_remove', input: { id: 'travel' } },
+    ],
+  ])(
+    'maps local catalog mutations only through named management IPC: %j',
+    async (request, args) => {
+      const { transport, invoke } = setup()
+      invoke.mockResolvedValue({ status: 200, body: event.body })
+      await transport.request(request as ApiRequest)
+      expect(invoke).toHaveBeenCalledExactlyOnceWith('plugin:module-api|management', {
+        requestId: expect.any(String),
+        ...args,
+      })
+    },
+  )
+  it.each([
+    { method: 'POST', path: '/catalog', body: { id: '../bad', name: 'Group' } },
+    { method: 'POST', path: '/catalog', body: { id: 'travel', name: ' ' } },
+    { method: 'POST', path: '/catalog', body: { id: 'travel', name: 'a\nb' } },
+    { method: 'POST', path: '/catalog', body: { id: 'travel', name: '名'.repeat(100) } },
+    { method: 'POST', path: '/catalog', body: { id: 'travel', name: 'Group', path: '/tmp' } },
+    { method: 'DELETE', path: '/catalog/default' },
+    { method: 'DELETE', path: '/catalog/travel', body: {} },
+    { method: 'DELETE', path: '/catalog/travel', query: {} },
+    { method: 'PUT', path: '/catalog/travel', body: { name: 'Group', id: 'other' } },
+  ])('rejects catalog path, body and protected-default bypasses: %j', async (request) => {
+    const { transport, invoke } = setup()
+    await expect(transport.request(request as ApiRequest)).rejects.toMatchObject({
+      code: 'client.operation_denied',
+    })
+    expect(invoke).not.toHaveBeenCalled()
+  })
   it('uses official invoke and plugin listener registration without credential commands', async () => {
     vi.stubGlobal('isTauri', true)
     const calls = vi.fn((name: string) =>
@@ -79,7 +121,7 @@ describe('restricted native requests', () => {
     '/info',
     '/service',
     '/nodes/snapshot',
-    '/selection',
+    '/policy-groups',
     '/mode',
     '/catalog',
     '/subscriptions',
@@ -90,7 +132,12 @@ describe('restricted native requests', () => {
     expect(await transport.request({ method: 'GET', path })).toEqual(response)
     expect(invoke).toHaveBeenCalledExactlyOnceWith('plugin:module-api|read', {
       requestId: expect.any(String),
-      resource: path === '/nodes/snapshot' ? 'nodes' : path.slice(1),
+      resource:
+        path === '/nodes/snapshot'
+          ? 'nodes'
+          : path === '/policy-groups'
+            ? 'policy_groups'
+            : path.slice(1),
     })
     expect(transport.capabilities).toEqual(
       expect.arrayContaining([
@@ -99,11 +146,11 @@ describe('restricted native requests', () => {
         'service.start',
         'service.stop',
         'nodes.read',
-        'selection.read',
-        'selection.write',
+        'policy.read',
+        'policy.select',
         'mode.read',
         'mode.write',
-        'nodes.delay',
+        'policy.delay',
         'catalog.read',
         'subscriptions.read',
         'subscriptions.detail',
@@ -122,7 +169,7 @@ describe('restricted native requests', () => {
   it.each([
     { method: 'POST', path: '/service/reboot' },
     { method: 'POST', path: '/service/start', body: {} },
-    { method: 'PUT', path: '/selection', body: {} },
+    { method: 'POST', path: '/policy-groups/select', body: {} },
     { method: 'DELETE', path: '/subscriptions' },
     { method: 'POST', path: '/nodes/snapshot' },
     { method: 'GET', path: '/subscriptions', query: { private: 'true' } },
@@ -172,9 +219,8 @@ describe('restricted native requests', () => {
       {
         method: 'DELETE',
         path: '/subscriptions/demo-global',
-        query: { replacement_group_id: 'default' },
       },
-      { action: 'remove', groupId: 'demo-global', replacementGroupId: 'default' },
+      { action: 'remove', groupId: 'demo-global' },
     ],
     [{ method: 'POST', path: '/subscriptions/update-all' }, { action: 'update_all' }],
   ] as const)('uses a fixed typed subscription write: %j', async (request, args) => {
@@ -326,7 +372,7 @@ describe('restricted native requests', () => {
       client.request({ method: 'GET', path: '/info' }, z.unknown()),
     ).rejects.toMatchObject({ code: 'client.invalid_response' })
     await expect(
-      client.request({ method: 'PUT', path: '/selection', body: {} }, z.unknown()),
+      client.request({ method: 'POST', path: '/policy-groups/select', body: {} }, z.unknown()),
     ).rejects.toMatchObject({ code: 'client.operation_denied' })
     expect(invoke).toHaveBeenCalledTimes(2)
   })
@@ -375,19 +421,23 @@ describe('restricted native requests', () => {
     })
   })
   it.each([
-    ['PUT', '/selection', 'select_node'],
-    ['POST', '/nodes/delay', 'test_delay'],
+    ['POST', '/policy-groups/select', 'policy_select'],
+    ['POST', '/policy-groups/delay', 'policy_delay'],
   ] as const)(
     'maps %s %s to a fixed typed command preserving original tags',
     async (method, path, name) => {
       const { transport, invoke } = setup()
       invoke.mockResolvedValue({ status: 200, body: event.body })
-      for (const node_tag of ['', '香港 / 节点🚀', 'Auto/default']) {
-        const target = { group_id: 'a.b-C_1', node_tag }
-        await transport.request({ method, path, body: target })
+      for (const memberTag of [' node ', '香港 / 节点🚀', '../tag?x=1']) {
+        const body = path.endsWith('/select')
+          ? { group_tag: '原生 / group', member_tag: memberTag }
+          : { group_tag: memberTag }
+        await transport.request({ method, path, body })
         expect(invoke).toHaveBeenLastCalledWith(`plugin:module-api|${name}`, {
           requestId: expect.any(String),
-          target,
+          ...(path.endsWith('/select')
+            ? { groupTag: '原生 / group', memberTag }
+            : { groupTag: memberTag }),
         })
       }
       expect(invoke).toHaveBeenCalledTimes(3)
@@ -421,8 +471,8 @@ describe('restricted native requests', () => {
   ])('rejects malformed targets independently of ApiClient: %j', async (body) => {
     const { transport, invoke } = setup()
     for (const request of [
-      { method: 'PUT', path: '/selection', body },
-      { method: 'POST', path: '/nodes/delay', body },
+      { method: 'POST', path: '/policy-groups/select', body },
+      { method: 'POST', path: '/policy-groups/delay', body },
     ] as ApiRequest[]) {
       await expect(transport.request(request)).rejects.toMatchObject({
         code: 'client.operation_denied',
@@ -435,11 +485,16 @@ describe('restricted native requests', () => {
     { method: 'PUT', path: '/mode', body: { mode: '   ' } },
     { method: 'PUT', path: '/mode', body: { mode: 1 } },
     { method: 'PUT', path: '/mode', body: { mode: 'Rule', url: 'https://example.invalid' } },
-    { method: 'PUT', path: '/selection', query: {}, body: { group_id: 'default', node_tag: '' } },
-    { method: 'GET', path: '/selection', query: {} },
+    {
+      method: 'POST',
+      path: '/policy-groups/select',
+      query: {},
+      body: { group_tag: 'Internet', member_tag: 'Fastest' },
+    },
+    { method: 'GET', path: '/policy-groups/select', query: {} },
     { method: 'GET', path: '/mode', body: {} },
     { method: 'GET', path: '/nodes/snapshot', body: {} },
-    { method: 'PUT', path: '/nodes/delay', body: { group_id: 'default', node_tag: '' } },
+    { method: 'PUT', path: '/policy-groups/delay', body: { group_tag: 'Fastest' } },
     { method: 'POST', path: '/mode', body: { mode: 'Rule' } },
   ])('rejects invalid mode bodies and method/query bypasses: %j', async (request) => {
     const { transport, invoke } = setup()
@@ -452,9 +507,9 @@ describe('restricted native requests', () => {
     const { transport, invoke } = setup()
     for (const request of [
       {
-        method: 'PUT',
-        path: '/selection',
-        body: { group_id: 'default', node_tag: '龙'.repeat(1_400_000) },
+        method: 'POST',
+        path: '/policy-groups/select',
+        body: { group_tag: 'Internet', member_tag: '龙'.repeat(1_400_000) },
       },
       { method: 'PUT', path: '/mode', body: { mode: '\n'.repeat(2_100_000) + 'Rule' } },
     ] as ApiRequest[]) {
@@ -466,9 +521,17 @@ describe('restricted native requests', () => {
     expect(invoke).not.toHaveBeenCalled()
   })
   it.each([
-    { method: 'PUT', path: '/selection', body: { group_id: 'default', node_tag: '' } },
+    {
+      method: 'POST',
+      path: '/policy-groups/select',
+      body: { group_tag: 'Internet', member_tag: 'Fastest' },
+    },
     { method: 'PUT', path: '/mode', body: { mode: 'Rule' } },
-    { method: 'POST', path: '/nodes/delay', body: { group_id: 'default', node_tag: '' } },
+    {
+      method: 'POST',
+      path: '/policy-groups/delay',
+      body: { group_tag: 'Fastest' },
+    },
   ] as const)(
     'does not replay M4.2 operations after errors, cancellation or late replies: %j',
     async (operation) => {

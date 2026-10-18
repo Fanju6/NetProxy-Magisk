@@ -41,12 +41,6 @@ class ServiceActionArgs {
 }
 
 @InvokeArg
-class NodeTargetArgs {
-    var requestId: String = ""
-    var target: Map<String, Any?>? = null
-}
-
-@InvokeArg
 class ChangeModeArgs {
     var requestId: String = ""
     var mode: Any? = null
@@ -206,9 +200,8 @@ class ModuleApiPlugin(activity: Activity) : Plugin(activity) {
     }
 
     @Command
-    fun selectNode(invoke: Invoke) = dispatch(invoke) {
-        val args = invoke.parseArgs(NodeTargetArgs::class.java)
-        val result = bridge.selectNode(args.requestId, args.target)
+    fun policySelect(invoke: Invoke) = dispatch(invoke) {
+        val result = bridge.policySelect(invoke.getRawArgs())
         JSObject().apply {
             put("status", result.status)
             put("body", JSONObject(result.body.toString()))
@@ -226,9 +219,8 @@ class ModuleApiPlugin(activity: Activity) : Plugin(activity) {
     }
 
     @Command
-    fun testDelay(invoke: Invoke) = dispatch(invoke) {
-        val args = invoke.parseArgs(NodeTargetArgs::class.java)
-        val result = bridge.testDelay(args.requestId, args.target)
+    fun policyDelay(invoke: Invoke) = dispatch(invoke) {
+        val result = bridge.policyDelay(invoke.getRawArgs())
         JSObject().apply {
             put("status", result.status)
             put("body", JSONObject(result.body.toString()))

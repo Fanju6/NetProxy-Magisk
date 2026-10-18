@@ -7,7 +7,8 @@ import org.junit.Test
 class PublicCatalogTest {
     private val secret = "private-auth-marker"
     private fun group(type: String = "subscription") = Json.parseToJsonElement("""{
-      "id":"default","type":"$type","active":true,"runtime_tag":"Group","name":"Group",
+      "id":"default","type":"$type","provider_tag":"Group","name":"Group",
+      "active":true,"runtime_tag":"$secret",
       "node_count":1,"revision":2,"auto_update":true,"update_interval":3600,"update_via_proxy":"auto",
       "profile_title":"Group","last_attempt_at":"","last_success_at":"","next_update_at":"","updated_at":"",
       "usage":{"total":100,"download":2,"hwid":"$secret"},"progress":null,
@@ -19,7 +20,7 @@ class PublicCatalogTest {
         for (type in listOf("local", "subscription")) {
             val item = group(type)
             val list = JsonArray(listOf(item))
-            for (path in listOf("/catalog", "/subscriptions")) assertFalse(PublicCatalog.read(path, list).toString().contains(secret))
+            assertFalse(PublicCatalog.read("/subscriptions", list).toString().contains(secret))
             assertFalse(PublicCatalog.event("subscriptions", list).toString().contains(secret))
             val detail = buildJsonObject {
                 put("group", item)
@@ -29,9 +30,21 @@ class PublicCatalogTest {
             val result = PublicCatalog.read("/subscriptions/default", detail).jsonObject
             assertFalse(result.toString().contains(secret))
             assertEquals(type, result.getValue("group").jsonObject.getValue("type").jsonPrimitive.content)
-            assertFalse(PublicCatalog.event("groups", buildJsonObject { put("groups", JsonArray(listOf(detail))) }).toString().contains(secret))
+            val snapshot = buildJsonObject {
+                put("groups", JsonArray(listOf(detail)))
+                put("selection", secret); put("runtime_groups", secret)
+            }
+            val nodes = PublicCatalog.read("/nodes/snapshot", snapshot).jsonObject
+            assertEquals(nodes, PublicCatalog.read("/catalog", snapshot))
+            assertEquals(setOf("groups"), nodes.keys)
+            assertFalse(nodes.toString().contains(secret))
+            assertFalse(result.getValue("group").jsonObject.containsKey("active"))
+            assertFalse(result.getValue("group").jsonObject.containsKey("runtime_tag"))
+            assertEquals("Group", result.getValue("group").jsonObject.getValue("provider_tag").jsonPrimitive.content)
         }
-        assertEquals(JsonArray(emptyList()), PublicCatalog.read("/catalog", JsonArray(emptyList())))
+        assertEquals(JsonArray(emptyList()), PublicCatalog.read("/subscriptions", JsonArray(emptyList())))
+        val empty = buildJsonObject { put("groups", JsonArray(emptyList())) }
+        assertEquals(empty, PublicCatalog.read("/catalog", empty))
     }
 
     @Test fun historyProgressAndErrorsNeverForwardRawExceptionText() {
@@ -46,11 +59,11 @@ class PublicCatalogTest {
     }
 
     @Test fun privateMetadataWrongGroupAndNestedSensitiveValuesFailClosed() {
-        for (data in listOf(Json.parseToJsonElement("""{"id":"default","type":"subscription","url":"$secret"}"""), JsonObject(group().jsonObject - "active"))) {
-            assertTrue(runCatching { PublicCatalog.read("/catalog", JsonArray(listOf(data))) }.exceptionOrNull() is BridgeFailure)
+        for (data in listOf(Json.parseToJsonElement("""{"id":"default","type":"subscription","url":"$secret"}"""), JsonObject(group().jsonObject - "provider_tag"))) {
+            assertTrue(runCatching { PublicCatalog.read("/subscriptions", JsonArray(listOf(data))) }.exceptionOrNull() is BridgeFailure)
         }
         val nested = JsonObject(group().jsonObject + ("name" to buildJsonObject { put("secret", secret) }))
-        assertTrue(runCatching { PublicCatalog.read("/catalog", JsonArray(listOf(nested))) }.exceptionOrNull() is BridgeFailure)
+        assertTrue(runCatching { PublicCatalog.read("/subscriptions", JsonArray(listOf(nested))) }.exceptionOrNull() is BridgeFailure)
         val mismatched = Json.parseToJsonElement("""{"id":"other","progress":null}""")
         assertTrue(runCatching { PublicCatalog.read("/subscriptions/default/progress", mismatched) }.exceptionOrNull() is BridgeFailure)
     }

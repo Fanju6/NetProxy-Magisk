@@ -8,7 +8,7 @@ export const envelopeSchema = z.looseObject({
   message: z.string(),
   data: z.unknown().optional(),
 })
-export const serviceSchema = z.looseObject({
+export const serviceSchema = z.object({
   state: z.enum(['stopped', 'preparing', 'starting', 'ready', 'stopping', 'failed']),
   configured_backend: z.enum(['ebpf', 'tun']),
   active_backend: z.enum(['ebpf', 'tun']).nullable(),
@@ -21,12 +21,7 @@ export const serviceSchema = z.looseObject({
   outbound_mode: z.string(),
   configured_outbound_mode: z.string(),
   available_outbound_modes: z.array(z.string()),
-  selector_mode: z.enum(['manual', 'urltest']),
-  active_group_id: z.string(),
-  active_group_name: z.string(),
-  active_group_runtime_tag: z.string(),
-  active_group_node_count: count,
-  selected_node_ref: z.string(),
+  default_outbound: z.string(),
   runtime_selected: z.string(),
   memory_bytes: count,
   process_cpu_ticks: count,
@@ -60,9 +55,8 @@ export const groupSchema = z
   .object({
     id: groupIdSchema,
     name: z.string(),
-    runtime_tag: z.string(),
+    provider_tag: z.string(),
     type: z.enum(['local', 'subscription']),
-    active: z.boolean(),
     node_count: count,
     revision: count,
     auto_update: z.boolean(),
@@ -105,24 +99,13 @@ export type SubscriptionDetail = z.infer<typeof subscriptionDetailSchema>
 export type SubscriptionHistory = z.infer<typeof historySchema>
 export type SubscriptionProgress = z.infer<typeof subscriptionProgressSchema>
 export type UpdateProgress = z.infer<typeof updateProgressSchema>
-export const selectionSchema = z.looseObject({
-  active_group_id: z.string(),
-  active_group_name: z.string(),
-  active_group_runtime_tag: z.string(),
-  active_group_node_count: count,
-  selector_mode: z.enum(['manual', 'urltest']),
-  selected_node_ref: z.string(),
-  selected: z.string(),
-  runtime_selected: z.string(),
-})
-export const runtimeGroupSchema = z.looseObject({
+export const runtimeGroupSchema = z.object({
   tag: z.string(),
   type: z.string(),
   selectable: z.boolean(),
   selected: z.string().optional(),
-  expanded: z.boolean(),
   items: z.array(
-    z.looseObject({
+    z.object({
       tag: z.string(),
       type: z.string(),
       url_test_time: count.optional(),
@@ -130,31 +113,34 @@ export const runtimeGroupSchema = z.looseObject({
     }),
   ),
 })
-export const snapshotSchema = z.looseObject({
+export const snapshotSchema = z.object({
   groups: z.array(z.object({ group: groupSchema, nodes: z.array(nodeSchema) })),
-  selection: selectionSchema,
-  runtime_groups: z.array(runtimeGroupSchema).optional(),
 })
+export const policySnapshotSchema = z
+  .object({
+    groups: z.array(runtimeGroupSchema),
+    live: z.boolean(),
+    core_started_at_millis: count,
+    default_outbound: z.string(),
+  })
+  .refine((snapshot) => !snapshot.live || snapshot.core_started_at_millis > 0)
+export const policyTagSchema = z
+  .string()
+  .min(1)
+  .refine((tag) => !/[\p{Cc}\uD800-\uDFFF]/u.test(tag))
+export const policySelectSchema = z.strictObject({
+  group_tag: policyTagSchema,
+  member_tag: policyTagSchema,
+})
+export const policyDelaySchema = z.strictObject({ group_tag: policyTagSchema })
+export type PolicySnapshot = z.infer<typeof policySnapshotSchema>
+export type PolicyGroup = z.infer<typeof runtimeGroupSchema>
+export type PolicyTarget = z.infer<typeof policySelectSchema>
 export const modeSchema = z.looseObject({
   mode: z.string(),
   runtime_mode: z.string().optional(),
   available: z.array(z.string()),
 })
-export const nodeTargetSchema = z.strictObject({
-  group_id: z.string().min(1),
-  node_tag: z.string(),
-})
-export const selectedSchema = z.object({
-  group_id: z.string(),
-  mode: z.enum(['manual', 'urltest']),
-  selected: z.string(),
-})
-export const delaySchema = z.object({
-  target: z.string(),
-  groups: z.array(runtimeGroupSchema),
-})
-export type NodeTarget = z.infer<typeof nodeTargetSchema>
-export type Selection = z.infer<typeof selectionSchema>
 export type ModeState = z.infer<typeof modeSchema>
 export const configSchema = z.looseObject({
   target: z.string(),
@@ -224,11 +210,13 @@ export type ApiPath =
   | '/nodes/export'
   | '/nodes/import'
   | '/nodes/snapshot'
-  | '/nodes/delay'
-  | '/selection'
+  | '/policy-groups'
+  | '/policy-groups/select'
+  | '/policy-groups/delay'
   | '/mode'
   | '/subscriptions'
   | '/catalog'
+  | `/catalog/${string}`
   | `/subscriptions/${string}`
   | '/config'
 export interface ApiRequest {
@@ -255,14 +243,15 @@ export const apiOperations = [
   'service.read',
   'service.start',
   'service.stop',
+  'policy.read',
   'nodes.read',
-  'nodes.delay',
-  'selection.read',
-  'selection.write',
+  'policy.select',
+  'policy.delay',
   'mode.read',
   'mode.write',
   'subscriptions.read',
   'catalog.read',
+  'catalog.write',
   'subscriptions.detail',
   'subscriptions.history',
   'subscriptions.progress',
@@ -299,8 +288,8 @@ const operations: Partial<Record<ApiRequest['method'], Partial<Record<ApiPath, A
   GET: {
     '/info': 'info.read',
     '/service': 'service.read',
+    '/policy-groups': 'policy.read',
     '/nodes/snapshot': 'nodes.read',
-    '/selection': 'selection.read',
     '/mode': 'mode.read',
     '/subscriptions': 'subscriptions.read',
     '/catalog': 'catalog.read',
@@ -316,7 +305,8 @@ const operations: Partial<Record<ApiRequest['method'], Partial<Record<ApiPath, A
   POST: {
     '/service/start': 'service.start',
     '/service/stop': 'service.stop',
-    '/nodes/delay': 'nodes.delay',
+    '/policy-groups/select': 'policy.select',
+    '/policy-groups/delay': 'policy.delay',
     '/nodes': 'nodes.add',
     '/nodes/import': 'nodes.import',
     '/config/validate': 'config.validate',
@@ -326,7 +316,6 @@ const operations: Partial<Record<ApiRequest['method'], Partial<Record<ApiPath, A
     '/service/check': 'service.check',
   },
   PUT: {
-    '/selection': 'selection.write',
     '/mode': 'mode.write',
     '/config': 'config.write',
     '/nodes': 'nodes.edit',
@@ -334,6 +323,22 @@ const operations: Partial<Record<ApiRequest['method'], Partial<Record<ApiPath, A
   DELETE: { '/logs': 'logs.clear', '/nodes': 'nodes.remove' },
 }
 export function requestOperation(request: ApiRequest): ApiOperation | undefined {
+  if (request.path === '/catalog' && request.method === 'POST' && request.query === undefined)
+    return 'catalog.write'
+  if (
+    request.path.startsWith('/catalog/') &&
+    (request.method === 'PUT' || request.method === 'DELETE')
+  ) {
+    const match = /^\/catalog\/([^/]+)$/.exec(request.path)
+    if (
+      match &&
+      groupIdSchema.safeParse(match[1]).success &&
+      request.query === undefined &&
+      (request.method !== 'DELETE' || request.body === undefined)
+    )
+      return 'catalog.write'
+    return
+  }
   if (request.method === 'GET' && /^\/android\/icons\/[a-f0-9]{64}$/.test(request.path))
     return 'android.icon'
   if (request.query === undefined && request.method === 'POST') {
@@ -348,13 +353,7 @@ export function requestOperation(request: ApiRequest): ApiOperation | undefined 
     const match = /^\/subscriptions\/([^/]+)$/.exec(request.path)
     if (!match || !groupIdSchema.safeParse(match[1]).success) return
     if (request.method === 'PUT' && request.query === undefined) return 'subscriptions.edit'
-    if (
-      request.method === 'DELETE' &&
-      request.body === undefined &&
-      Object.keys(request.query ?? {}).every((key) => key === 'replacement_group_id') &&
-      (request.query?.replacement_group_id === undefined ||
-        groupIdSchema.safeParse(request.query.replacement_group_id).success)
-    )
+    if (request.method === 'DELETE' && request.body === undefined && request.query === undefined)
       return 'subscriptions.remove'
     return
   }

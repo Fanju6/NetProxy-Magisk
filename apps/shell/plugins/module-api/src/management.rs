@@ -22,6 +22,9 @@ enum Operation {
     NodeEdit,
     NodeRemove,
     NodeImport,
+    CatalogCreate,
+    CatalogRename,
+    CatalogRemove,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -70,12 +73,7 @@ pub(super) fn config_target(value: &str, write: bool) -> bool {
             return true;
         }
     }
-    if !write
-        && matches!(
-            value,
-            "runtime/inbound.json" | "runtime/providers.json" | "runtime/outbounds.json"
-        )
-    {
+    if !write && matches!(value, "runtime/inbound.json" | "runtime/providers.json") {
         return true;
     }
     value
@@ -125,6 +123,8 @@ impl Request {
             Operation::NodeAdd => (&["content"], &["group_id", "allow_insecure"]),
             Operation::NodeEdit => (&["group_id", "node_tag", "content"], &["allow_insecure"]),
             Operation::NodeImport => (&["content"], &["allow_insecure"]),
+            Operation::CatalogCreate | Operation::CatalogRename => (&["id", "name"], &[]),
+            Operation::CatalogRemove => (&["id"], &[]),
             _ => (&[], &[]),
         };
         if required.iter().any(|key| !input.contains_key(*key))
@@ -149,6 +149,16 @@ impl Request {
                                 .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
                     }
                     "group_id" => valid_group_id(text),
+                    "id" => {
+                        valid_group_id(text)
+                            && !(matches!(request.operation, Operation::CatalogRemove)
+                                && text == "default")
+                    }
+                    "name" => {
+                        !text.trim().is_empty()
+                            && text.len() <= 256
+                            && !text.chars().any(char::is_control)
+                    }
                     "node_tag" => !text.trim().is_empty() && !text.chars().any(char::is_control),
                     "kind" => matches!(text, "service" | "core"),
                     "mode" => matches!(text, "configured" | "all" | "local" | "shared"),
@@ -202,11 +212,7 @@ mod tests {
         ] {
             assert!(!config_target(value, false));
         }
-        for value in [
-            "runtime/inbound.json",
-            "runtime/providers.json",
-            "runtime/outbounds.json",
-        ] {
+        for value in ["runtime/inbound.json", "runtime/providers.json"] {
             assert!(config_target(value, false));
             assert!(!config_target(value, true));
         }
@@ -278,5 +284,123 @@ mod tests {
             assert!(!parse(value));
         }
         assert!(Request::parse(&tauri::ipc::InvokeBody::Json(json!({"requestId":"r","operation":"node_import","input":{"content":"x".repeat(BODY_LIMIT)}}))).is_err());
+    }
+
+    #[test]
+    fn management_requests_enforce_the_complete_utf8_body_limit() {
+        let mut value = json!({"requestId":"r","operation":"node_import","input":{"content":""}});
+        let overhead = serde_json::to_vec(&value).unwrap().len();
+        value["input"]["content"] = json!("x".repeat(BODY_LIMIT - overhead));
+        assert_eq!(serde_json::to_vec(&value).unwrap().len(), BODY_LIMIT);
+        Request::parse(&tauri::ipc::InvokeBody::Json(value.clone())).unwrap();
+        value["input"]["content"] = json!("x".repeat(BODY_LIMIT - overhead + 1));
+        let error = Request::parse(&tauri::ipc::InvokeBody::Json(value))
+            .err()
+            .unwrap();
+        assert_eq!(error.status, 413);
+        assert_eq!(error.code, "api.body_too_large");
+        for escaped in [r"\ud800", r"\udc00"] {
+            for (operation, input) in [
+                (
+                    "node_read",
+                    format!(r#"{{"group_id":"default","node_tag":"{escaped}"}}"#),
+                ),
+                ("node_add", format!(r#"{{"content":"{escaped}"}}"#)),
+                (
+                    "catalog_create",
+                    format!(r#"{{"id":"local-1","name":"{escaped}"}}"#),
+                ),
+            ] {
+                let raw =
+                    format!(r#"{{"requestId":"r","operation":"{operation}","input":{input}}}"#);
+                assert!(serde_json::from_str::<Value>(&raw).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn catalog_operations_are_fixed_strict_and_validate_utf8_byte_lengths() {
+        for operation in ["catalog_create", "catalog_rename", "catalog_remove"] {
+            let mut input = json!({"id":"local-1"});
+            if operation != "catalog_remove" {
+                input["name"] = json!(" Local ");
+            }
+            let accepted =
+                |input| parse(json!({"requestId":"r","operation":operation,"input":input}));
+            assert!(accepted(input.clone()));
+            for key in input.as_object().unwrap().keys() {
+                let mut missing = input.clone();
+                missing.as_object_mut().unwrap().remove(key);
+                assert!(!accepted(missing));
+                for item in [json!(null), json!(1), json!(true), json!([]), json!({})] {
+                    let mut invalid = input.clone();
+                    invalid[key] = item;
+                    assert!(!accepted(invalid));
+                }
+            }
+            for key in [
+                "method",
+                "path",
+                "url",
+                "query",
+                "body",
+                "headers",
+                "type",
+                "provider_tag",
+            ] {
+                let mut invalid = input.clone();
+                invalid[key] = json!("x");
+                assert!(!accepted(invalid));
+            }
+            for id in [
+                "",
+                "staging",
+                "a..b",
+                "a/b",
+                "a%2fb",
+                "a?x=1",
+                "_a",
+                "\u{4e2d}\u{6587}",
+            ] {
+                let mut invalid = input.clone();
+                invalid["id"] = json!(id);
+                assert!(!accepted(invalid));
+            }
+            if operation != "catalog_remove" {
+                for name in [
+                    String::new(),
+                    " ".into(),
+                    "a\n".into(),
+                    "\u{7f}".into(),
+                    "\u{85}".into(),
+                    "x".repeat(257),
+                    "\u{9f99}".repeat(86),
+                ] {
+                    assert!(!accepted(json!({"id":"local-1","name":name})));
+                }
+                for name in [
+                    "x".repeat(256),
+                    "\u{9f99}".repeat(85) + "a",
+                    " Local ".into(),
+                ] {
+                    let value = json!({"requestId":"r","operation":operation,"input":{"id":"local-1","name":name}});
+                    let request =
+                        Request::parse(&tauri::ipc::InvokeBody::Json(value.clone())).unwrap();
+                    assert_eq!(serde_json::to_value(request).unwrap(), value);
+                }
+            }
+        }
+        assert!(!parse(
+            json!({"requestId":"r","operation":"catalog_remove","input":{"id":"default"}})
+        ));
+        assert!(!parse(
+            json!({"requestId":"r","operation":"catalog_remove","input":{"id":"local-1","name":"extra"}})
+        ));
+        assert!(!parse(
+            json!({"requestId":"r","operation":"catalog_delete","input":{"id":"local-1"}})
+        ));
+        assert!(serde_json::from_str::<Request>(r#"{"requestId":"r","operation":"catalog_create","input":{"id":"local-1","name":"\ud800"}}"#).is_err());
+        assert!(include_str!("../permissions/default.toml").contains("allow-management"));
+        assert!(!include_str!("../build.rs").contains("\"catalog_create\""));
     }
 }

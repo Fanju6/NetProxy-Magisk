@@ -21,7 +21,6 @@ import {
 } from './contracts'
 import { ModuleEvents } from './events'
 import { DashboardPage } from '@/features/dashboard'
-import { subscriptionOperationKey } from './subscription-control'
 
 type Session = {
   consume: (event: ApiEvent) => void
@@ -38,57 +37,32 @@ const frame = (name: ApiEvent['name'], data: unknown): ApiEvent => ({
   body: { schema: 1, ok: true, code: 'fixture', message: '', data },
 })
 
-it('does not resurrect a removed group from the initial or later stale SSE snapshot', async () => {
-  const { cache, transport, emit, complete, view, sessions } = setup()
-  complete()
-  const original = createFixtures()
-  const fresh = structuredClone(original.snapshot)
-  fresh.groups = fresh.groups.filter((entry) => entry.group.id !== 'demo-empty')
-  cache.setQueryData(
-    ['subscriptions'],
-    fresh.groups.map((entry) => entry.group),
-  )
-  vi.mocked(transport.request).mockImplementation(async (request) => ({
-    status: 200,
-    body: {
-      schema: 1,
-      ok: true,
-      code: 'fixture.read',
-      message: '',
-      data:
-        request.path === '/service'
-          ? original.service
-          : request.path === '/mode'
-            ? {
-                mode: original.service.configured_outbound_mode,
-                available: original.service.available_outbound_modes,
-                runtime_mode: original.service.outbound_mode,
-              }
-            : request.path === '/selection'
-              ? fresh.selection
-              : request.path === '/nodes/snapshot'
-                ? fresh
-                : fresh.groups.map((entry) => entry.group),
-    },
-  }))
-  act(() =>
-    cache.setQueryData(subscriptionOperationKey, {
-      epoch: 2,
-      action: 'remove',
-      groupId: 'demo-empty',
-      phase: 'idle',
-      deadline: 0,
-      error: null,
-      cancel: 'idle',
-    }),
-  )
-  await waitFor(() => expect(sessions).toHaveLength(2))
-  complete()
-  await waitFor(() => expect(cache.getQueryData(['events-connection'])).toBe('live'))
-  expect(cache.getQueryData(['nodes'])).toEqual(fresh)
-  emit('groups', original.snapshot)
-  expect(cache.getQueryData(['nodes'])).toEqual(fresh)
-  view.unmount()
+it('stages policy frames before status and rejects old-core runtime data', () => {
+  const h = setup()
+  const { service, policy } = createFixtures()
+  h.emit('groups', policy)
+  expect(h.cache.getQueryData(['policy-groups'])).toBeUndefined()
+  h.emit('status', service)
+  expect(h.cache.getQueryData(['policy-groups'])).toEqual(policy)
+  const next = { ...policy, core_started_at_millis: policy.core_started_at_millis + 1000 }
+  h.emit('groups', next)
+  expect(h.cache.getQueryData(['policy-groups'])).toEqual(policy)
+  h.emit('status', { ...service, core_started_at_millis: next.core_started_at_millis })
+  expect(h.cache.getQueryData(['policy-groups'])).toEqual(next)
+  h.emit('groups', policy)
+  expect(h.cache.getQueryData(['policy-groups'])).toEqual(next)
+})
+
+it('does not use Catalog membership to filter or manufacture policy groups', () => {
+  const h = setup()
+  const fixture = createFixtures()
+  h.cache.setQueryData(['subscriptions'], [])
+  h.emit('status', fixture.service)
+  h.emit('groups', fixture.policy)
+  expect(h.cache.getQueryData(['policy-groups'])).toEqual(fixture.policy)
+  h.emit('subscriptions', [])
+  expect(h.cache.getQueryData(['policy-groups'])).toEqual(fixture.policy)
+  expect(h.cache.getQueryData(['selection'])).toBeUndefined()
 })
 
 function setup(
@@ -152,9 +126,13 @@ function setup(
     act(() => session.consume(frame(name, data)))
   }
   const complete = (service = createFixtures().service) => {
-    const { snapshot } = createFixtures()
+    const { snapshot, policy } = createFixtures()
     emit('status', service)
-    emit('groups', snapshot)
+    emit('groups', {
+      ...policy,
+      live: service.state === 'ready',
+      core_started_at_millis: service.core_started_at_millis,
+    })
     emit(
       'subscriptions',
       snapshot.groups.map((item) => item.group),
@@ -243,10 +221,10 @@ it('clears traffic and history when ready core A changes directly to ready core 
 })
 
 it('accepts synchronous complete snapshots and owns their disposer until unmount', () => {
-  const { service, snapshot } = createFixtures()
+  const { service, snapshot, policy } = createFixtures()
   const { cache, active, sessions, view } = setup((session) => {
     session.consume(frame('status', service))
-    session.consume(frame('groups', snapshot))
+    session.consume(frame('groups', policy))
     session.consume(
       frame(
         'subscriptions',
@@ -398,11 +376,11 @@ it('does not release twice when the close callback reports another error', () =>
 })
 
 it('releases Strict Mode probe subscriptions and rejects their queued callbacks after cleanup', async () => {
-  const { service, snapshot } = createFixtures()
+  const { service, snapshot, policy } = createFixtures()
   const { sessions, active, cache, view } = setup(
     (session, index) => {
       session.consume(frame('status', service))
-      session.consume(frame('groups', snapshot))
+      session.consume(frame('groups', policy))
       session.consume(
         frame(
           'subscriptions',

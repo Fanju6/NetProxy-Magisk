@@ -145,7 +145,7 @@ func ExportDiagnostics(options Options, output io.Writer) (err error) {
 		"config/singbox/rules/remote", false, false,
 	)
 	appendDirectoryFiles(&files, options.CatalogRoot, "data/catalog", true, true)
-	for _, name := range []string{"providers.json", "outbounds.json", "inbound.json"} {
+	for _, name := range []string{"providers.json", "inbound.json"} {
 		files = append(files, archiveFile{
 			source: filepath.Join(options.RuntimeDir, name),
 			name:   "runtime/" + name,

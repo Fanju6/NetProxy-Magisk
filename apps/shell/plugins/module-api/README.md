@@ -23,12 +23,12 @@ Stage B additionally exposes `subscription_write`, a flat tagged payload:
 
 - `add`: `requestId`, `input` (HTTP(S) `url` required).
 - `edit`: `requestId`, `groupId`, `input`.
-- `remove`: `requestId`, `groupId`, optional `replacementGroupId`.
+- `remove`: `requestId`, `groupId` only.
 - `update_all`: `requestId` only.
 
 All business writes share the existing write slot. Kotlin alone constructs
 POST `/subscriptions`, PUT/DELETE `/subscriptions/{id}`, POST
-`/subscriptions/update-all` and the optional `replacement_group_id` query.
+`/subscriptions/update-all`. Deletion never sends a replacement-group query.
 Input keys follow the WebUI subscription schema; omission preserves a value,
 while an empty string or header object explicitly clears supported fields.
 Explicit nulls, unknown fields, invalid types, unsafe IDs, control characters,
@@ -41,3 +41,42 @@ input, never returned through private GET, cached, logged or echoed in errors.
 The module Bearer and certificate remain native-only. Update-all responses retain
 strictly validated `updated`/`failed` ID arrays and a single projected
 `first_error`; raw exception text and nested private metadata are dropped.
+
+## Native Policy Groups
+
+- `read({ requestId, resource: "policy_groups" })`: GET `/policy-groups`.
+- `policy_select({ requestId, groupTag, memberTag })`: POST
+  `/policy-groups/select` with `{ group_tag, member_tag }`.
+- `policy_delay({ requestId, groupTag })`: POST `/policy-groups/delay` with
+  `{ group_tag }`.
+
+Rust and Kotlin independently reject unknown fields, wrong types, blank tags,
+control characters and requests above 4 MiB. Tags retain their Unicode and
+spacing; malformed Unicode is rejected. Tags never enter a URL or query.
+Both POSTs share the existing business-write slot and never retry or replay.
+
+All three responses and SSE `groups` use the same public snapshot projection:
+`{ groups: serviceapi.Group[], live, core_started_at_millis, default_outbound }`.
+Only public group and member fields cross IPC; credentials, private metadata,
+unknown extensions and original exception messages are discarded. Error results
+retain HTTP status and business code; error data retains only boolean
+`accepted`/`persisted`/`runtime_synced` and a nonnegative integer
+`core_started_at_millis`, when present.
+
+`nodes` remains GET `/nodes/snapshot`; `catalog` uses GET `/catalog`. Both return
+`{ groups: [{ group, nodes }] }`. Catalog groups expose `provider_tag`, not
+`runtime_tag` or `active`. Service status GET, action responses and SSE `status`
+use a public-field whitelist including `default_outbound` and `runtime_selected`;
+the former single-selection fields are absent. Mode and service controls remain
+unchanged. There is no `selection` resource, `select_node` or `test_delay`
+permission or command. Native state remains owned by each plugin lifecycle.
+
+Local resource groups use the existing `management` permission and strict
+operations: `catalog_create` with `input: { id, name }`, `catalog_rename` with
+`input: { id, name }`, and `catalog_remove` with `input: { id }`. Kotlin alone
+constructs POST `/catalog`, PUT `/catalog/{id}` with `{ name }`, or DELETE
+`/catalog/{id}`. IDs follow the existing Catalog ID rules; deleting `default`
+is rejected in both Rust and Kotlin. Names must be nonblank, valid UTF-8, at
+most 256 bytes and free of control characters. Successful responses expose
+only the matching `{ id }`; group type and transaction checks remain authoritative
+on the Go server. No additional command, scope or caller-controlled path is added.

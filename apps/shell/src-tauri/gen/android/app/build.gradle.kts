@@ -28,7 +28,7 @@ android {
     }
     buildTypes {
         getByName("debug") {
-            applicationIdSuffix = ""
+            applicationIdSuffix = ".v9poc"
             manifestPlaceholders["usesCleartextTraffic"] = "true"
             isDebuggable = true
             isJniDebuggable = true

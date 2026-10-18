@@ -17,6 +17,7 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/worker"
+	"github.com/sagernet/sing-box/option"
 )
 
 // NetworkEvaluation 描述一次网络事件评估以及实际应用结果。
@@ -249,14 +250,18 @@ func validateDirectRouting(options Options) error {
 	}
 	if len(document.Route.Rules) > 0 {
 		rule := document.Route.Rules[0]
-		var mode, action, outbound string
-		_ = json.Unmarshal(rule["clash_mode"], &mode)
+		var native option.DefaultRule
+		raw, err := json.Marshal(rule, json.Deterministic(true))
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(raw, &native); err != nil {
+			return err
+		}
+		var action, outbound string
 		_ = json.Unmarshal(rule["action"], &action)
 		_ = json.Unmarshal(rule["outbound"], &outbound)
-		if len(rule) == 3 && mode == "Direct" && action == "route" {
-			if outbound == "direct" {
-				return nil
-			}
+		if len(rule) == 3 && len(native.ClashMode) == 1 && native.ClashMode[0] == "Direct" && action == "route" {
 			for _, entry := range document.Outbounds {
 				if entry.Type == "direct" && entry.Tag == outbound {
 					return nil

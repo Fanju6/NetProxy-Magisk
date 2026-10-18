@@ -9,6 +9,9 @@ on:
       - "!apps/web/**/*.md"
       - "src/android/app/src/main/java/com/fanjv/netproxy/core/api/**"
       - "src/android/app/src/test/java/com/fanjv/netproxy/core/api/**"
+      - "src/native/netproxy/**"
+      - "src/module/config/**"
+      - "tests/native-policy-core.mjs"
       - ".github/workflows/v9-shell.yml"
       - ".gitattributes"
   pull_request:
@@ -19,6 +22,9 @@ on:
       - "!apps/web/**/*.md"
       - "src/android/app/src/main/java/com/fanjv/netproxy/core/api/**"
       - "src/android/app/src/test/java/com/fanjv/netproxy/core/api/**"
+      - "src/native/netproxy/**"
+      - "src/module/config/**"
+      - "tests/native-policy-core.mjs"
       - ".github/workflows/v9-shell.yml"
       - ".gitattributes"
   workflow_dispatch:
@@ -38,6 +44,49 @@ env:
   NDK_VERSION: "29.0.14206865"
 
 jobs:
+  native:
+    name: Go and locked sing-box policy contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: src/native/netproxy/go.mod
+          cache: true
+          cache-dependency-path: src/native/netproxy/go.sum
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Verify Go domains and fixed HTTP contracts
+        working-directory: src/native/netproxy
+        run: |
+          go test ./...
+          go vet ./...
+          go mod verify
+      - name: Build exact locked core and verify native policy behavior
+        working-directory: src/native/netproxy
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          core="$(go list -m -f '{{.Dir}}' github.com/sagernet/sing-box)"
+          version="$(go list -m -f '{{.Version}}' github.com/sagernet/sing-box)"
+          cd "$core"
+          go build -mod=readonly -trimpath -tags with_clash_api \
+            -ldflags="-X github.com/sagernet/sing-box/constant.Version=${version#v}" \
+            -o "$RUNNER_TEMP/sing-box-policy" ./cmd/sing-box
+          cd "$GITHUB_WORKSPACE"
+          node tests/native-policy-core.mjs "$RUNNER_TEMP/sing-box-policy" "$GITHUB_WORKSPACE/.agents/runs/ci-policy-evidence"
+      - name: Preserve isolated core verification results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: v9-native-policy-evidence
+          path: .agents/runs/ci-policy-evidence/
+          if-no-files-found: ignore
+          retention-days: 7
   android:
     name: Rust, Kotlin and arm64 Debug APK
     runs-on: ubuntu-24.04

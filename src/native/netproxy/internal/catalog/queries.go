@@ -143,6 +143,11 @@ func GroupType(ctx context.Context, root, groupID string) (string, error) {
 
 // DeleteGroup 删除 Catalog 分组目录。
 func DeleteGroup(ctx context.Context, root, groupID string) error {
+	return DeleteGroupWithGuard(ctx, root, groupID, nil)
+}
+
+// DeleteGroupWithGuard checks and snapshots the resource while its mutation locks are held.
+func DeleteGroupWithGuard(ctx context.Context, root, groupID string, beforeDelete func() error) error {
 	if !isValidGroupID(groupID) || groupID == "default" {
 		return fmt.Errorf("不允许删除分组: %s", groupID)
 	}
@@ -154,6 +159,11 @@ func DeleteGroup(ctx context.Context, root, groupID string) error {
 	groupDir := filepath.Join(root, groupID)
 	if _, err := os.Stat(groupDir); err != nil {
 		return err
+	}
+	if beforeDelete != nil {
+		if err := beforeDelete(); err != nil {
+			return err
+		}
 	}
 	return os.RemoveAll(groupDir)
 }

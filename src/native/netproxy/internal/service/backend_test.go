@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"google.golang.org/protobuf/encoding/protowire"
@@ -35,6 +36,14 @@ func TestStatusBackendRequiresMatchingInstance(t *testing.T) {
 				t.Fatal(err)
 			}
 			modePath := modeConfigFixture(t, root, "Rule")
+			main, err := os.ReadFile(modePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			main = []byte(strings.Replace(string(main), `"rules":`, `"final":"Main","rules":`, 1))
+			if err := os.WriteFile(modePath, main, 0600); err != nil {
+				t.Fatal(err)
+			}
 			withServiceProcess(t, test.pid)
 			inboundPath := filepath.Join(root, "inbound.json")
 			content := `{"backend":"tun","root_policy":"default","app":{"enabled":false,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]},"ebpf":{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true}},"tun":{"type":"tun","tag":"netproxy-in","interface_name":"netproxy","address":["172.19.0.1/30"],"auto_route":true,"auto_redirect":true}}`
@@ -56,6 +65,19 @@ func TestStatusBackendRequiresMatchingInstance(t *testing.T) {
 					payload = protowire.AppendTag(payload, 1, protowire.VarintType)
 					payload = protowire.AppendVarint(payload, uint64(test.apiStarted))
 				}
+				if request.URL.Path == "/daemon.StartedService/SubscribeGroups" {
+					encodeGroup := func(tag, selected, memberType string) {
+						group := protowire.AppendString(protowire.AppendTag(nil, 1, protowire.BytesType), tag)
+						group = protowire.AppendString(protowire.AppendTag(group, 2, protowire.BytesType), "selector")
+						group = protowire.AppendString(protowire.AppendTag(group, 4, protowire.BytesType), selected)
+						item := protowire.AppendString(protowire.AppendTag(nil, 1, protowire.BytesType), selected)
+						item = protowire.AppendString(protowire.AppendTag(item, 2, protowire.BytesType), memberType)
+						group = protowire.AppendBytes(protowire.AppendTag(group, 6, protowire.BytesType), item)
+						payload = protowire.AppendBytes(protowire.AppendTag(payload, 1, protowire.BytesType), group)
+					}
+					encodeGroup("Main", "Nested", "selector")
+					encodeGroup("Nested", "provider-a/same", "socks")
+				}
 				writeServiceAPIFrame(t, writer, payload)
 			}))
 			defer server.Close()
@@ -71,6 +93,13 @@ func TestStatusBackendRequiresMatchingInstance(t *testing.T) {
 			}
 			if status.ActiveBackend != nil && *status.ActiveBackend != "ebpf" {
 				t.Fatalf("active backend incorrectly guessed from configured backend: %s", *status.ActiveBackend)
+			}
+			wantSelected := ""
+			if test.wantActive {
+				wantSelected = "provider-a/same"
+			}
+			if status.DefaultOutbound != "Main" || status.RuntimeSelected != wantSelected {
+				t.Fatalf("selection escaped instance identity: %+v", status)
 			}
 		})
 	}

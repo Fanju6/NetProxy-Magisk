@@ -3,109 +3,117 @@ import { useQuery } from '@tanstack/react-query'
 import {
   Check,
   ChevronDown,
+  ChevronRight,
+  Gauge,
   Grid2X2,
   List,
-  Search,
   MoreHorizontal,
   Plus,
-  Gauge,
-  LoaderCircle,
+  Search,
 } from 'lucide-react'
 import { useApi, usePreferences } from '@/app/context'
-import { moduleQueries, useChangeMode, useNodeDelay, useSelectNode } from '@/api/queries'
-import type { NodeSnapshot } from '@/api/contracts'
-import { useServiceOperation } from '@/api/service-control'
-import { useRoutingOperation } from '@/api/routing-control'
+import {
+  moduleQueries,
+  useSelectPolicyGroup,
+  usePolicyDelay,
+  useChangeMode,
+  useServiceAction,
+} from '@/api/queries'
 import { useEventConnection } from '@/api/events'
+import { useRoutingOperation } from '@/api/routing-control'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
   DropdownMenu,
-  DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Details } from '@/components/details'
 import { EmptyState, ErrorState, LoadingState } from '@/components/states'
-import { displayNode } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { NodeManager, type NodeManagerTarget } from './node-manager'
+import { PolicyEditor } from './policy-editor'
 
-type Node = NodeSnapshot['groups'][number]['nodes'][number]
 export function NodesPage() {
   const api = useApi()
   const { t, preferences } = usePreferences()
   const text = (zh: string, en: string) => (preferences.locale === 'zh' ? zh : en)
-  const snapshot = useQuery(moduleQueries(api).nodes)
   const service = useQuery(moduleQueries(api).service)
-  const selection = useSelectNode()
-  const mode = useChangeMode()
-  const delay = useNodeDelay()
-  const serviceOperation = useServiceOperation()
-  const routingOperation = useRoutingOperation()
+  const snapshot = useQuery(moduleQueries(api).policyGroups)
   const connection = useEventConnection()
+  const selection = useSelectPolicyGroup()
+  const operation = useRoutingOperation()
+  const mode = useChangeMode()
+  const action = useServiceAction()
+  const delay = usePolicyDelay()
   const [search, setSearch] = useState('')
   const [view, setView] = useState('list')
-  const [details, setDetails] = useState<{ node: Node; groupId: string } | null>(null)
-  const [manager, setManager] = useState<NodeManagerTarget | null>(null)
+  const [presentation, setPresentation] = useState('expanded')
+  const [activeTag, setActiveTag] = useState('')
+  const [editor, setEditor] = useState<{ tag: string | null; remove?: boolean } | null>(null)
+  if (!api.supports('policy.read') && !snapshot.data)
+    return (
+      <EmptyState
+        title={t('proxies')}
+        description={text(
+          '此连接不支持策略组',
+          'Policy groups are not available for this connection',
+        )}
+      />
+    )
   if (snapshot.isPending) return <LoadingState />
   if (!snapshot.data)
     return <ErrorState error={snapshot.error} retry={() => void snapshot.refetch()} />
   const data = snapshot.data
-  const runtimeItems = new Map(
-    data.runtime_groups?.flatMap((group) => group.items.map((item) => [item.tag, item] as const)),
-  )
+  const live =
+    connection === 'live' &&
+    data.live &&
+    service.data?.state === 'ready' &&
+    data.core_started_at_millis === service.data.core_started_at_millis
   const blocked =
+    !live ||
+    snapshot.isError ||
     selection.isPending ||
     selection.isUncertain ||
-    mode.isPending ||
-    mode.isUncertain ||
-    (serviceOperation != null && serviceOperation.phase !== 'idle') ||
-    ['preparing', 'starting', 'stopping'].includes(service.data?.state ?? '') ||
-    connection !== 'live' ||
-    snapshot.isError
+    action.isPending ||
+    action.isUncertain ||
+    delay.isPending
+  const selectedTab = data.groups.some((group) => group.tag === activeTag)
+    ? activeTag
+    : data.groups[0]?.tag
+  const query = search.toLocaleLowerCase()
+  const nested = (tag: string) => {
+    setSearch('')
+    setActiveTag(tag)
+    setPresentation('tabs')
+  }
   return (
-    <div className="space-y-6">
-      <div className="flex min-w-0 items-center gap-2">
+    <div className="max-w-5xl space-y-4">
+      <div className="flex items-center gap-2">
         <div className="relative min-w-0 flex-1">
-          <Search
-            aria-hidden
-            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-          />
+          <Search className="pointer-events-none absolute left-3 top-3.5 size-4 text-muted-foreground" />
           <Input
-            aria-label={t('search')}
             type="search"
+            aria-label={text('搜索代理', 'Search proxies')}
+            placeholder={text('搜索代理', 'Search proxies')}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder={t('search')}
             className="h-11 pl-9"
           />
         </div>
-        {(api.supports('nodes.add') || api.supports('nodes.import')) && (
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={<Button variant="outline" size="icon" className="size-11" />}
-              aria-label={text('添加节点', 'Add node')}
-            >
-              <Plus />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-48">
-              {api.supports('nodes.add') && (
-                <DropdownMenuItem onClick={() => setManager({ operation: 'add' })}>
-                  {text('手动添加节点', 'Add node manually')}
-                </DropdownMenuItem>
-              )}
-              {api.supports('nodes.import') && (
-                <DropdownMenuItem onClick={() => setManager({ operation: 'import' })}>
-                  {text('导入文本', 'Import text')}
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+        {api.supports('config.read') && api.supports('config.write') && (
+          <Button
+            variant="outline"
+            size="icon"
+            className="size-11"
+            aria-label={text('新增策略组', 'Add policy group')}
+            onClick={() => setEditor({ tag: null })}
+          >
+            <Plus />
+          </Button>
         )}
         <DropdownMenu>
           <DropdownMenuTrigger
@@ -114,7 +122,7 @@ export function NodesPage() {
           >
             <MoreHorizontal />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-40">
+          <DropdownMenuContent align="end">
             <DropdownMenuRadioGroup value={view} onValueChange={setView}>
               <DropdownMenuRadioItem value="list" closeOnClick>
                 <List />
@@ -125,365 +133,246 @@ export function NodesPage() {
                 {t('grid')}
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
+            <DropdownMenuRadioGroup value={presentation} onValueChange={setPresentation}>
+              <DropdownMenuRadioItem value="expanded" closeOnClick>
+                {text('展开列表', 'Expanded groups')}
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="tabs" closeOnClick>
+                {text('标签视图', 'Group tabs')}
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <span>
+          {t('defaultOutbound')}:{' '}
+          <span className="break-all">{data.default_outbound || t('runtimeUnknown')}</span>
+        </span>
+        {!live && <Badge variant="outline">{t('staleSnapshot')}</Badge>}
+      </div>
       {(selection.isUncertain || selection.isUnconfirmed) && (
-        <section
-          role="status"
-          className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-4 text-sm"
-        >
-          <div className="space-y-1">
-            <p className="font-medium">
-              {t(
-                selection.isUnconfirmed
-                  ? 'routingUnconfirmed'
-                  : routingOperation?.target.kind === 'mode'
-                    ? 'modeUncertain'
-                    : 'selectionUncertain',
-              )}
-            </p>
-            <p className="text-muted-foreground">
-              {t(
-                selection.isUnconfirmed
-                  ? 'routingUnconfirmedDescription'
-                  : selection.persisted || mode.persisted
-                    ? 'persisted'
-                    : routingOperation?.target.kind === 'mode'
-                      ? 'modeUncertainDescription'
-                      : 'selectionUncertainDescription',
-              )}
-            </p>
-          </div>
+        <section role="status" className="space-y-2 border-y py-3 text-sm">
+          <p>
+            {t(
+              selection.isUnconfirmed
+                ? 'routingUnconfirmed'
+                : operation?.target.kind === 'mode'
+                  ? 'modeUncertain'
+                  : 'selectionUncertain',
+            )}
+          </p>
+          <p className="text-muted-foreground">
+            {t(
+              selection.persisted || mode.persisted ? 'persisted' : 'routingUnconfirmedDescription',
+            )}
+          </p>
           <Button
             variant="outline"
-            className="min-h-12"
             onClick={() =>
-              void (routingOperation?.target.kind === 'mode' ? mode.verify() : selection.verify())
+              void (operation?.target.kind === 'mode' ? mode.verify() : selection.verify())
             }
           >
             {t('checkStatus')}
           </Button>
         </section>
       )}
-      {selection.error != null && <ErrorState error={selection.error} compact />}
-      {mode.error != null && <ErrorState error={mode.error} compact />}
+      {selection.error != null && <ErrorState compact error={selection.error} />}
+      {mode.error != null && <ErrorState compact error={mode.error} />}
       {snapshot.isError && (
         <ErrorState compact error={snapshot.error} retry={() => void snapshot.refetch()} />
       )}
-      {api.supports('nodes.delay') && (
-        <div className="space-y-2 text-xs text-muted-foreground">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p>{t('delayCaption')}</p>
-            {delay.isPending && (
-              <Button size="sm" variant="outline" className="min-h-12" onClick={delay.cancel}>
-                {t('cancelDelay')}
-              </Button>
-            )}
-          </div>
-          {delay.isPending && <p role="status">{t('testing')}</p>}
-          {delay.outcome != null && (
-            <p role="status">{t(delay.outcome === 'cached' ? 'delayCached' : 'delayEmpty')}</p>
-          )}
+      {delay.error != null && <ErrorState compact error={delay.error} />}
+      {delay.isPending && (
+        <div role="status" className="flex items-center justify-between text-sm">
+          <span>{t('testing')}</span>
+          <Button variant="outline" onClick={delay.cancel}>
+            {t('cancelDelay')}
+          </Button>
         </div>
       )}
-      {delay.error != null && <ErrorState compact error={delay.error} />}
-      {data.groups.length === 0 && <EmptyState />}
-      {data.groups.map(({ group, nodes }) => {
-        const filtered = nodes.filter((node) =>
-          node.tag.toLocaleLowerCase().includes(search.toLocaleLowerCase()),
-        )
-        const active = data.selection.active_group_id === group.id
-        const auto = active && data.selection.selector_mode === 'urltest'
-        const rowClassName = cn(
-          'relative min-w-0 rounded-md',
-          view === 'grid' ? 'border' : 'flex items-center',
-        )
-        const selectionClassName = cn(
-          'min-w-0 space-y-1 rounded-md px-3 text-left text-sm hover:bg-muted active:bg-muted focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50',
-          view === 'grid'
-            ? 'flex h-28 w-full flex-col items-start justify-start py-3'
-            : 'h-16 flex-1',
-        )
-        return (
-          <Collapsible
-            key={group.id}
-            defaultOpen
-            className="border-b pb-3"
-            data-testid={`group-${group.id}`}
-          >
-            <div className="flex min-w-0 items-center gap-2">
-              <CollapsibleTrigger className="group flex min-h-12 min-w-0 flex-1 items-center gap-3 py-2 text-left">
-                <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-data-closed:-rotate-90" />
-                <span className="min-w-0 truncate font-medium">{group.name}</span>
-                <span className="text-xs tabular-nums text-muted-foreground">{nodes.length}</span>
-                {active && (
-                  <Badge variant="secondary" className="ml-auto">
-                    {t('selected')}
-                  </Badge>
-                )}
-              </CollapsibleTrigger>
-              {api.supports('nodes.delay') && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-12 shrink-0"
-                  disabled={blocked || delay.isPending || nodes.length === 0}
-                  aria-label={t('testGroup', { name: group.name })}
-                  onClick={() => delay.mutate({ group_id: group.id, node_tag: '' })}
-                >
-                  {delay.isPending &&
-                  delay.target?.group_id === group.id &&
-                  delay.target.node_tag === '' ? (
-                    <LoaderCircle className="motion-safe:animate-spin" />
-                  ) : (
-                    <Gauge />
-                  )}
-                </Button>
+      {delay.outcome && (
+        <p role="status" className="text-xs text-muted-foreground">
+          {t(delay.outcome === 'cached' ? 'delayCached' : 'delayEmpty')}
+        </p>
+      )}
+      {presentation === 'tabs' && (
+        <div
+          role="tablist"
+          aria-label={text('策略组', 'Policy groups')}
+          className="flex flex-wrap gap-1 border-b pb-2"
+        >
+          {data.groups.map((group) => (
+            <button
+              key={group.tag}
+              role="tab"
+              aria-selected={selectedTab === group.tag}
+              className={cn(
+                'min-h-11 max-w-full break-all rounded-md px-3 text-sm',
+                selectedTab === group.tag && 'bg-accent font-medium',
               )}
-            </div>
-            <CollapsibleContent className="pt-1">
-              {nodes.length === 0 ? (
-                <p className="px-3 py-2 text-sm text-muted-foreground">{t('emptyGroup')}</p>
-              ) : filtered.length === 0 ? (
-                <p className="px-3 py-2 text-sm text-muted-foreground">{t('noMatches')}</p>
-              ) : (
-                <div
-                  className={cn(
-                    'grid',
-                    view === 'grid' ? 'grid-cols-2 gap-2 xl:grid-cols-3' : 'grid-cols-1 divide-y',
-                  )}
-                  data-testid="node-grid"
-                >
-                  {search === '' && (
-                    <div className={cn(rowClassName, auto && 'node-selected')}>
-                      <button
-                        type="button"
-                        className={selectionClassName}
-                        aria-label={t('selectNode', { name: t('auto') })}
-                        aria-pressed={auto}
-                        disabled={!api.supports('selection.write') || blocked || delay.isPending}
-                        onClick={() => selection.mutate({ group_id: group.id, node_tag: '' })}
-                      >
-                        <div className="flex min-w-0 items-center gap-2">
-                          <span className="truncate font-medium">{t('auto')}</span>
-                          <Check
-                            className={cn(
-                              'size-4 shrink-0',
-                              view === 'grid' && 'absolute bottom-3 left-3',
-                              !auto && 'invisible',
-                            )}
-                          />
-                        </div>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {auto && data.selection.runtime_selected
-                            ? data.selection.runtime_selected.startsWith(`${group.runtime_tag}/`)
-                              ? data.selection.runtime_selected.slice(group.runtime_tag.length + 1)
-                              : displayNode(data.selection.runtime_selected)
-                            : t('autoDescription')}
-                        </p>
-                      </button>
-                      {view === 'list' && <div aria-hidden className="w-28 shrink-0" />}
-                    </div>
-                  )}
-                  {filtered.map((node) => {
-                    const selected =
-                      active && data.selection.selected_node_ref === `${group.id}/${node.tag}`
-                    const runtimeTag = `${group.runtime_tag}/${node.tag}`
-                    const runtime = runtimeItems.get(runtimeTag)
-                    const measured = delay.results[`${group.id}/${node.tag}`]
-                    const runtimeResult = runtime
-                      ? { delay: runtime.url_test_delay ?? 0, time: runtime.url_test_time ?? 0 }
-                      : undefined
-                    const result =
-                      measured &&
-                      (!runtimeResult ||
-                        runtimeResult.delay <= 0 ||
-                        measured.time >= runtimeResult.time)
-                        ? measured
-                        : runtimeResult
-                    const testing =
-                      delay.isPending &&
-                      delay.target?.group_id === group.id &&
-                      (delay.target.node_tag === '' || delay.target.node_tag === node.tag)
-                    const runtimeSelected =
-                      connection === 'live' &&
-                      service.data?.state === 'ready' &&
-                      active &&
-                      data.selection.runtime_selected === runtimeTag
-                    return (
-                      <div key={node.tag} className={cn(rowClassName, selected && 'node-selected')}>
-                        <button
-                          type="button"
-                          className={selectionClassName}
-                          aria-pressed={selected}
-                          disabled={!api.supports('selection.write') || blocked || delay.isPending}
-                          aria-label={t('selectNode', { name: node.tag })}
-                          onClick={() =>
-                            selection.mutate({ group_id: group.id, node_tag: node.tag })
-                          }
+              onClick={() => setActiveTag(group.tag)}
+            >
+              {group.tag}
+            </button>
+          ))}
+        </div>
+      )}
+      {data.groups.length === 0 && <EmptyState />}
+      {data.groups
+        .filter(
+          (group) =>
+            (presentation !== 'tabs' || group.tag === selectedTab) &&
+            (group.tag.toLocaleLowerCase().includes(query) ||
+              group.items.some((item) => item.tag.toLocaleLowerCase().includes(query))),
+        )
+        .map((group) => {
+          const members = group.tag.toLocaleLowerCase().includes(query)
+            ? group.items
+            : group.items.filter((item) => item.tag.toLocaleLowerCase().includes(query))
+          return (
+            <Collapsible
+              key={group.tag}
+              defaultOpen
+              className="border-b pb-3"
+              data-testid={`policy-${group.tag}`}
+            >
+              <div className="flex min-w-0 items-center gap-1">
+                <CollapsibleTrigger className="group flex min-h-12 min-w-0 flex-1 items-center gap-2 text-left">
+                  <ChevronDown className="size-4 shrink-0 text-muted-foreground group-data-closed:-rotate-90" />
+                  <span className="min-w-0 break-all font-medium">{group.tag}</span>
+                  <Badge variant="outline">{group.type}</Badge>
+                  <span className="text-xs text-muted-foreground">{group.items.length}</span>
+                </CollapsibleTrigger>
+                {api.supports('policy.delay') && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="size-11 shrink-0"
+                    disabled={blocked || group.items.length === 0}
+                    aria-label={t('testGroup', { name: group.tag })}
+                    onClick={() => delay.mutate(group.tag)}
+                  >
+                    <Gauge />
+                  </Button>
+                )}
+                {api.supports('config.read') && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={<Button variant="ghost" size="icon" className="size-11 shrink-0" />}
+                      aria-label={text('编辑策略组', 'Edit policy group') + ' ' + group.tag}
+                    >
+                      <MoreHorizontal />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => setEditor({ tag: group.tag })}>
+                        {text('原生配置', 'Native configuration')}
+                      </DropdownMenuItem>
+                      {api.supports('config.write') && (
+                        <DropdownMenuItem
+                          variant="destructive"
+                          onClick={() => setEditor({ tag: group.tag, remove: true })}
                         >
-                          <div
-                            className={cn(
-                              'flex min-w-0 items-center gap-2',
-                              view === 'grid' && 'pr-8',
-                            )}
+                          {text('删除策略组', 'Delete policy group')}
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
+              <CollapsibleContent className="pt-1">
+                {group.items.length === 0 ? (
+                  <p className="p-3 text-sm text-muted-foreground">{t('emptyGroup')}</p>
+                ) : (
+                  <div
+                    className={cn(
+                      'grid',
+                      view === 'grid' ? 'grid-cols-2 gap-2 xl:grid-cols-3' : 'grid-cols-1 divide-y',
+                    )}
+                    data-testid="node-grid"
+                  >
+                    {members.map((item) => {
+                      const child = data.groups.find((entry) => entry.tag === item.tag)
+                      const selected = live && group.selected === item.tag
+                      return (
+                        <div
+                          key={item.tag}
+                          className={cn(
+                            'relative flex min-w-0 items-center rounded-md',
+                            view === 'grid' ? 'h-32 border' : 'h-16',
+                            selected && 'node-selected',
+                          )}
+                        >
+                          <button
+                            type="button"
+                            className="flex h-full min-w-0 flex-1 flex-col justify-center gap-1 rounded-md px-3 text-left hover:bg-muted disabled:opacity-60"
+                            aria-label={t('selectNode', { name: item.tag })}
+                            aria-pressed={selected}
+                            disabled={
+                              blocked || !group.selectable || !api.supports('policy.select')
+                            }
+                            onClick={() =>
+                              selection.mutate({ group_tag: group.tag, member_tag: item.tag })
+                            }
                           >
                             <span
                               className={cn(
-                                'font-medium',
-                                view === 'grid' ? 'line-clamp-2 leading-5' : 'truncate',
+                                'flex min-w-0 items-center gap-1 text-sm font-medium',
+                                view === 'grid' ? 'pr-4' : '',
                               )}
                             >
-                              {node.tag}
+                              <Check className={cn('size-3 shrink-0', !selected && 'invisible')} />
+                              <span
+                                className={view === 'grid' ? 'line-clamp-2 break-all' : 'truncate'}
+                              >
+                                {item.tag}
+                              </span>
                             </span>
-                            <Check
-                              className={cn(
-                                'size-4 shrink-0',
-                                view === 'grid' && 'absolute bottom-3 left-3',
-                                !selected && 'invisible',
-                              )}
-                            />
-                          </div>
-                          <div
-                            className={cn(
-                              'flex min-w-0 items-center gap-2 text-xs text-muted-foreground',
-                              view === 'grid' && 'absolute bottom-9 left-3 right-3',
-                            )}
-                          >
-                            <span className="truncate uppercase">{node.protocol}</span>
-                            {runtimeSelected && (
-                              <span className="truncate">{t('runtimeNode')}</span>
-                            )}
-                          </div>
-                        </button>
-                        <div
-                          className={
-                            view === 'list' ? 'flex w-28 shrink-0 items-center' : 'contents'
-                          }
-                        >
-                          {api.supports('nodes.delay') && (
+                            <span className="truncate text-xs text-muted-foreground">
+                              {item.type}
+                              {child && live && child.selected ? ` · ${child.selected}` : ''}
+                            </span>
+                            <span
+                              className="text-xs tabular-nums text-muted-foreground"
+                              title={
+                                live && item.url_test_time
+                                  ? new Date(item.url_test_time * 1000).toLocaleString()
+                                  : ''
+                              }
+                            >
+                              {live && (item.url_test_delay ?? 0) > 0
+                                ? `${item.url_test_delay} ms`
+                                : t('noLatency')}
+                            </span>
+                          </button>
+                          {child && (
                             <Button
                               variant="ghost"
-                              className={cn(
-                                'size-12 w-16 min-w-0 px-1 text-xs font-normal tabular-nums text-muted-foreground',
-                                view === 'grid' && 'absolute bottom-1 right-1 h-8',
-                              )}
-                              aria-label={t('testNode', { name: node.tag })}
-                              title={
-                                result && result.time > 0
-                                  ? `${t('lastMeasured')}: ${new Date(result.time * 1000).toLocaleString()}`
-                                  : t('testNode', { name: node.tag })
-                              }
-                              disabled={blocked || delay.isPending}
-                              onClick={() =>
-                                delay.mutate({ group_id: group.id, node_tag: node.tag })
-                              }
+                              size="icon"
+                              className="size-11 shrink-0"
+                              aria-label={text('打开策略组', 'Open group') + ' ' + child.tag}
+                              onClick={() => nested(child.tag)}
                             >
-                              <span className="truncate">
-                                {testing
-                                  ? t('testing')
-                                  : result && result.delay > 0
-                                    ? `${result.delay} ms`
-                                    : result && result.time > 0
-                                      ? t('delayFailed')
-                                      : t('noLatency')}
-                              </span>
+                              <ChevronRight />
                             </Button>
                           )}
-                          {!api.supports('nodes.delay') && (
-                            <span
-                              className={cn(
-                                'w-20 truncate px-1 text-center text-xs tabular-nums text-muted-foreground',
-                                view === 'grid' && 'absolute bottom-3 right-1',
-                              )}
-                            >
-                              {result && result.delay > 0 ? `${result.delay} ms` : t('noLatency')}
-                            </span>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className={cn(
-                              'size-12',
-                              view === 'grid' && 'absolute right-0 top-0 size-10',
-                            )}
-                            aria-label={`${t('viewDetails')} ${node.tag}`}
-                            onClick={() => setDetails({ node, groupId: group.id })}
-                          >
-                            <MoreHorizontal />
-                          </Button>
                         </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </CollapsibleContent>
-          </Collapsible>
-        )
-      })}
-      <Details
-        open={details !== null}
-        onOpenChange={(open) => {
-          if (!open) setDetails(null)
-        }}
-        title={t('nodeDetails')}
-        description={details?.node.tag ?? ''}
-        headerActions={
-          details && (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={<Button variant="ghost" size="icon" />}
-                aria-label={text('更多操作', 'More actions')}
-              >
-                <MoreHorizontal />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-40">
-                {(['edit', 'export', 'remove'] as const).map((operation) => {
-                  const local =
-                    data.groups.find((item) => item.group.id === details.groupId)?.group.type ===
-                    'local'
-                  if (!api.supports(`nodes.${operation}`) || (operation !== 'export' && !local))
-                    return null
-                  return (
-                    <DropdownMenuItem
-                      key={operation}
-                      variant={operation === 'remove' ? 'destructive' : 'default'}
-                      onClick={() => {
-                        setManager({ operation, groupId: details.groupId, tag: details.node.tag })
-                        setDetails(null)
-                      }}
-                    >
-                      {operation === 'edit'
-                        ? text('编辑节点', 'Edit node')
-                        : operation === 'export'
-                          ? text('分享链接', 'Share link')
-                          : text('删除节点', 'Delete node')}
-                    </DropdownMenuItem>
-                  )
-                })}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                      )
+                    })}
+                  </div>
+                )}
+              </CollapsibleContent>
+            </Collapsible>
           )
-        }
-      >
-        <dl className="space-y-5 text-sm">
-          <div className="flex justify-between gap-5">
-            <dt className="text-muted-foreground">{t('protocol')}</dt>
-            <dd className="uppercase">{details?.node.protocol}</dd>
-          </div>
-          <div className="space-y-2">
-            <dt className="text-muted-foreground">{t('address')}</dt>
-            <dd className="break-all font-mono text-xs">{details?.node.server ?? '—'}</dd>
-          </div>
-          <div className="flex justify-between">
-            <dt className="text-muted-foreground">{t('port')}</dt>
-            <dd>{details?.node.port ?? '—'}</dd>
-          </div>
-        </dl>
-      </Details>
-      {manager && <NodeManager snapshot={data} target={manager} onClose={() => setManager(null)} />}
+        })}
+      {editor && (
+        <PolicyEditor
+          key={editor.tag ?? 'new'}
+          tag={editor.tag}
+          remove={editor.remove ?? false}
+          onClose={() => setEditor(null)}
+        />
+      )}
     </div>
   )
 }

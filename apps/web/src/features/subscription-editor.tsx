@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { ResourceProviderTag } from './resource-provider-tag'
 
 export interface SubscriptionEditorProps {
   group?: GroupSummary
@@ -222,6 +223,7 @@ function Editor({
                   className="h-12"
                 />
               </Labeled>
+              {group && <ResourceProviderTag group={group} />}
               {!group && (
                 <Labeled label={t('subscriptionUrl')} htmlFor={`${prefix}-url`}>
                   {field('url')}

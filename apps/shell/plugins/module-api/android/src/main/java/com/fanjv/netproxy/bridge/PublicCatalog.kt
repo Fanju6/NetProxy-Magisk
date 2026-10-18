@@ -4,15 +4,18 @@ import kotlinx.serialization.json.*
 
 /** 在原生边界投影公开 DTO，不让新增或意外返回的私有字段进入 WebView。 */
 internal object PublicCatalog {
-    private val groupKeys = setOf("id", "name", "runtime_tag", "type", "active", "node_count", "revision",
+    private val groupKeys = setOf("id", "name", "provider_tag", "type", "node_count", "revision",
         "auto_update", "update_interval", "update_via_proxy", "profile_title", "last_attempt_at",
         "last_success_at", "next_update_at", "updated_at")
     private val nodeKeys = setOf("tag", "protocol", "server", "port")
     private val historyKeys = setOf("at", "ok", "code", "node_count", "revision", "duration_seconds")
 
     fun read(path: String, data: JsonElement): JsonElement = when {
-        path == "/catalog" || path == "/subscriptions" -> groups(data)
-        path == "/nodes/snapshot" -> snapshot(data)
+        path == "/service" -> PublicStatus.status(data)
+        path in setOf("/service/start", "/service/stop", "/service/restart", "/service/reload", "/service/check") -> PublicStatus.action(data)
+        path == "/subscriptions" -> groups(data)
+        path == "/catalog" || path == "/nodes/snapshot" -> snapshot(data)
+        path in setOf("/policy-groups", "/policy-groups/select", "/policy-groups/delay") -> PolicyGroups.snapshot(data)
         path.startsWith("/subscriptions/") && path.endsWith("/history") -> history(data)
         path.startsWith("/subscriptions/") && path.endsWith("/progress") -> {
             val value = obj(data)
@@ -33,8 +36,9 @@ internal object PublicCatalog {
     }
 
     fun event(name: String, data: JsonElement): JsonElement = when (name) {
+        "status" -> PublicStatus.status(data)
         "subscriptions" -> groups(data)
-        "groups" -> snapshot(data)
+        "groups" -> PolicyGroups.snapshot(data)
         else -> data
     }
 
@@ -43,30 +47,20 @@ internal object PublicCatalog {
     private fun snapshot(data: JsonElement): JsonObject {
         val value = obj(data)
         return buildJsonObject {
-            value["selection"]?.let { put("selection", pick(obj(it), setOf("active_group_id", "active_group_name", "active_group_runtime_tag", "active_group_node_count", "selector_mode", "selected_node_ref", "selected", "runtime_selected"))) }
-            value["runtime_groups"]?.let { runtime ->
-                put("runtime_groups", JsonArray(array(runtime).map { entry ->
-                    val item = obj(entry)
-                    JsonObject(pick(item, setOf("tag", "type", "selectable", "selected", "expanded")) +
-                        ("items" to JsonArray(array(item["items"]).map { pick(obj(it), setOf("tag", "type", "url_test_time", "url_test_delay")) })))
-                }))
-            }
-            value["groups"]?.let { groups ->
-                put("groups", JsonArray(array(groups).map { entry ->
-                    val item = obj(entry)
-                    buildJsonObject {
-                        put("group", group(item["group"] ?: invalid()))
-                        put("nodes", JsonArray(array(item["nodes"]).map { pick(obj(it), nodeKeys) }))
-                    }
-                }))
-            }
+            put("groups", JsonArray(array(value["groups"]).map { entry ->
+                val item = obj(entry)
+                buildJsonObject {
+                    put("group", group(item["group"] ?: invalid()))
+                    put("nodes", JsonArray(array(item["nodes"]).map { pick(obj(it), nodeKeys) }))
+                }
+            }))
         }
     }
 
     private fun group(data: JsonElement): JsonObject {
         val value = obj(data)
         if (text(value, "type") !in setOf("local", "subscription") ||
-            (value["active"] as? JsonPrimitive)?.booleanOrNull == null || value["runtime_tag"] == null) invalid()
+            (value["provider_tag"] as? JsonPrimitive)?.isString != true) invalid()
         val id = text(value, "id")
         return JsonObject(pick(value, groupKeys) + mapOf(
             "usage" to (value["usage"]?.takeUnless { it is JsonNull }?.let { pick(obj(it), setOf("upload", "download", "total", "expire")) } ?: JsonNull),

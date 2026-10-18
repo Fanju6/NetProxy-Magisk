@@ -19,11 +19,11 @@ ${COMMAND_NAMES.map(name => `  ${COMMANDS[name].overview}`).join('\n')}
 
 示例:
   service start
-  node use auto default
+  policy groups
   mode Rule
   mode Proxy
   sub update-all
-  node delay auto default
+  policy delay Proxy
 
 输入 help all 查看完整命令说明。
 `

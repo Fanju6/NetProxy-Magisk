@@ -22,7 +22,7 @@ func TestModuleJSONDefaultsAndStrictValidation(t *testing.T) {
 		"", "null", "[]", "true", "{}{}", "{",
 		`{"auto_start":1}`, `{"auto_start":"true"}`, `{"auto_start":null}`,
 		`{"auto_start":true,"auto_start":false}`, `{"AUTO_START":true}`,
-		`{"unknown":1}`, `{"selection":null}`, `{"selection":[]}`,
+		`{"unknown":1}`, `{"selection":{"group_id":"default","node_tag":""}}`, `{"selection":null}`, `{"selection":[]}`,
 		`{"selection":{"group_id":1}}`, `{"selection":{"node_tag":null}}`,
 		`{"selection":{"group_id":"","node_tag":"NODE"}}`,
 		`{"selection":{"node_tag":" "}}`, `{"selection":{"mode":"manual"}}`,
@@ -56,71 +56,6 @@ func TestWiFiListsStrictAndLossless(t *testing.T) {
 	got, err := ParseModule(content)
 	if err != nil || !reflect.DeepEqual(got, module) {
 		t.Fatalf("Wi-Fi 名称未原样保留: %+v %v", got, err)
-	}
-}
-
-func TestSelectionUpdateKeepsOtherFieldsAndSkipsUnchangedWrites(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "module.json")
-	original := `{"auto_start":true,"selection":{"group_id":"default"},"wifi":{"mode":"whitelist","blacklist":["Home"],"whitelist":["Office"]}}`
-	if err := os.WriteFile(path, []byte(original), 0600); err != nil {
-		t.Fatal(err)
-	}
-	before, _ := os.Stat(path)
-	if err := UpdateSelection(t.Context(), path, Selection{ActiveGroupID: "default"}); err != nil {
-		t.Fatal(err)
-	}
-	after, _ := os.Stat(path)
-	content, _ := os.ReadFile(path)
-	if !os.SameFile(before, after) || string(content) != original {
-		t.Fatal("无变更仍替换了原文件")
-	}
-	for _, tag := range []string{"香港 / 节点", ""} {
-		if err := UpdateSelection(t.Context(), path, Selection{ActiveGroupID: "fixture", SelectedNodeTag: tag}); err != nil {
-			t.Fatal(err)
-		}
-		got, err := LoadModule(path)
-		if err != nil || got.WiFi.Enabled || got.WiFi.Mode != "whitelist" || !got.AutoStart || got.SelectedNodeTag != tag ||
-			!reflect.DeepEqual(got.WiFi.Blacklist, []string{"Home"}) || !reflect.DeepEqual(got.WiFi.Whitelist, []string{"Office"}) {
-			t.Fatalf("更新丢失其他字段: %+v %v", got, err)
-		}
-	}
-}
-
-func TestSelectionUpdateFailurePreservesOriginal(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "module.json")
-	original := `{"selection":{"group_id":"default"}}`
-	if err := os.WriteFile(path, []byte(original), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := UpdateSelection(t.Context(), path, Selection{SelectedNodeTag: "NODE"}); err == nil {
-		t.Fatal("接受了无效更新")
-	}
-	content, _ := os.ReadFile(path)
-	if string(content) != original {
-		t.Fatal("失败更新修改了原文件")
-	}
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	if err := UpdateSelection(ctx, path, Selection{ActiveGroupID: "default", SelectedNodeTag: "NODE"}); err == nil {
-		t.Fatal("取消没有传播")
-	}
-	content, _ = os.ReadFile(path)
-	if string(content) != original {
-		t.Fatal("取消更新修改了原文件")
-	}
-}
-
-func TestSelectionDerivesModeAndReference(t *testing.T) {
-	for _, tag := range []string{"", "香港 / 🇭🇰 节点"} {
-		selection := Selection{ActiveGroupID: "default", SelectedNodeTag: tag}
-		mode, ref, group, node := "urltest", "", "Auto/本地配置", ""
-		if tag != "" {
-			mode, ref, group, node = "manual", "default/"+tag, "Select/本地配置", "本地配置/"+tag
-		}
-		runtimeGroup, runtimeNode := selection.RuntimeTargets("本地配置")
-		if selection.Mode() != mode || selection.Ref() != ref || runtimeGroup != group || runtimeNode != node {
-			t.Fatalf("选择派生不一致: %+v", selection)
-		}
 	}
 }
 

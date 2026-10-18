@@ -442,7 +442,6 @@ export function ConfigurationPage() {
     'singbox/rules/local/direct.json': text('直连规则', 'Direct rules'),
     'singbox/rules/local/block.json': text('拦截规则', 'Block rules'),
     'runtime/inbound.json': text('运行时入站', 'Runtime inbound'),
-    'runtime/outbounds.json': text('运行时出站', 'Runtime outbounds'),
     'runtime/providers.json': text('运行时节点', 'Runtime providers'),
     ...Object.fromEntries(
       [

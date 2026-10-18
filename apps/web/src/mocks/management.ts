@@ -1,5 +1,10 @@
 import { managementRequest, configTargetSchema } from '@/api/management'
 import type { ApiRequest } from '@/api/contracts'
+import {
+  applyOutboundsPartition,
+  readOutboundsPartition,
+  outboundsDocumentSchema,
+} from '@/api/policy-config'
 
 const envelope = (data: unknown, code = 'demo.management', status = 200) => ({
   status,
@@ -30,7 +35,6 @@ export class ManagementMock {
       'module',
       JSON.stringify({
         auto_start: false,
-        selection: { group_id: 'default', node_tag: '' },
         wifi: {
           enabled: false,
           mode: 'blacklist',
@@ -43,7 +47,29 @@ export class ManagementMock {
     ['inbound', JSON.stringify(initialInbound)],
     [
       'singbox/config.json',
-      JSON.stringify({ log: { level: 'info' }, dns: { servers: [] }, route: { rules: [] } }),
+      JSON.stringify({
+        log: { level: 'info' },
+        dns: { servers: [] },
+        route: { rules: [], final: 'Internet' },
+        outbounds: [
+          {
+            type: 'selector',
+            tag: 'Internet',
+            outbounds: ['Fastest', 'Hong Kong 01', 'direct'],
+            default: 'Fastest',
+          },
+          {
+            type: 'urltest',
+            tag: 'Fastest',
+            providers: ['np/demo-global'],
+            url: 'https://example.invalid/generate_204',
+            interval: '3m',
+            tolerance: 50,
+          },
+          { type: 'direct', tag: 'direct' },
+          { type: 'socks', tag: 'Hong Kong 01', server: 'hk.example.invalid', server_port: 1080 },
+        ],
+      }),
     ],
     ...['proxy', 'direct', 'block'].map((name): [string, string] => [
       `singbox/rules/local/${name}.json`,
@@ -58,6 +84,18 @@ export class ManagementMock {
     service: '[2026-10-17 12:00:00] [INFO] [service] [start] [success] [-] Service ready',
     core: 'INFO sing-box started',
   }
+  nativeOutbounds() {
+    return (
+      outboundsDocumentSchema.parse(JSON.parse(this.documents.get('singbox/config.json')!))
+        .outbounds ?? []
+    )
+  }
+  nativeDefaultOutbound(): string {
+    const config = JSON.parse(this.documents.get('singbox/config.json')!) as {
+      route?: { final?: string }
+    }
+    return config.route?.final ?? ''
+  }
   private root(target: string) {
     return target.startsWith('module/')
       ? 'module'
@@ -70,6 +108,7 @@ export class ManagementMock {
   private content(target: string) {
     const root = this.root(target)
     const content = this.documents.get(root) ?? '{}'
+    if (target === 'singbox/outbounds') return readOutboundsPartition(content)
     return root === target
       ? content
       : JSON.stringify({
@@ -156,12 +195,41 @@ export class ManagementMock {
             typeof (value as Record<string, unknown>).auto_start !== 'boolean'
           )
             throw new Error()
+          if (target === 'singbox/outbounds' || target === 'singbox/config.json') {
+            const candidate =
+              root === target ? value : { ...JSON.parse(this.documents.get(root)!), ...value }
+            const outbounds = outboundsDocumentSchema.parse(candidate).outbounds ?? []
+            const tagged = outbounds.filter((item) => item.tag !== undefined)
+            const tags = new Set(tagged.map((item) => item.tag))
+            if (tags.size !== tagged.length) throw new Error()
+            const final = (candidate as { route?: { final?: string } }).route?.final
+            if (final && !tags.has(final)) throw new Error()
+            for (const item of outbounds) {
+              if (!['selector', 'urltest'].includes(item.type)) continue
+              if (!item.tag) throw new Error()
+              if (
+                item.outbounds !== undefined &&
+                (!Array.isArray(item.outbounds) ||
+                  item.outbounds.some(
+                    (tag: unknown) => typeof tag !== 'string' || !tags.has(tag) || tag === item.tag,
+                  ))
+              )
+                throw new Error()
+              if (
+                typeof item.default === 'string' &&
+                (!Array.isArray(item.outbounds) || !item.outbounds.includes(item.default))
+              )
+                throw new Error()
+            }
+          }
           if (management.operation === 'config_apply') {
             this.documents.set(
               root,
-              root === target
-                ? content
-                : JSON.stringify({ ...JSON.parse(this.documents.get(root)!), ...value }),
+              target === 'singbox/outbounds'
+                ? applyOutboundsPartition(this.documents.get(root)!, content)
+                : root === target
+                  ? content
+                  : JSON.stringify({ ...JSON.parse(this.documents.get(root)!), ...value }),
             )
           }
           return envelope({

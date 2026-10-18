@@ -41,7 +41,7 @@ func TestConfigSectionEditsPreserveOtherSections(t *testing.T) {
 	if strings.Contains(dns["content"], "route") {
 		t.Fatal("DNS 编辑内容泄漏了其他分区")
 	}
-	if _, err := ApplyConfig(context.Background(), options, "singbox/route", writeSectionSource(t, `{"route":{"final":"Proxy","rules":[{"port":443},{"port":80}]}}`), false, route["revision"]); err != nil {
+	if _, err := ApplyConfig(context.Background(), options, "singbox/route", writeSectionSource(t, `{"route":{"final":"Compatible","rules":[{"port":443},{"port":80}]}}`), false, route["revision"]); err != nil {
 		t.Fatal(err)
 	}
 	revision, err := ApplyConfig(context.Background(), options, "singbox/dns", writeSectionSource(t, `{"dns":{"final":"new","servers":[{"tag":"\u006eew","type":"local"}],"rules":[{"domain":["example.test"],"server":"new"}]}}`), false, dns["revision"])
@@ -60,7 +60,7 @@ func TestConfigSectionEditsPreserveOtherSections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(object["custom"], []byte("9007199254740993")) || !bytes.Contains(object["route"], []byte(`"Proxy"`)) {
+	if !bytes.Contains(object["custom"], []byte("9007199254740993")) || !bytes.Contains(object["route"], []byte(`"Compatible"`)) {
 		t.Fatalf("修改分区覆盖其他配置或丢失数字精度: %s", content)
 	}
 	if bytes.Index(object["route"], []byte("443")) > bytes.Index(object["route"], []byte("80")) {
@@ -78,7 +78,7 @@ func TestConfigSectionEditsPreserveOtherSections(t *testing.T) {
 func TestConfigSectionValidateRollbackAndDelete(t *testing.T) {
 	options, destination, _, runtimeContent := configApplyOptions(t)
 	isolateConfigApplyHooks(t, false)
-	initial := []byte(`{"dns":{"final":"old"},"route":{"final":"Proxy"}}`)
+	initial := []byte(`{"dns":{"final":"old"},"route":{"final":"Compatible"}}`)
 	if err := os.WriteFile(destination, initial, 0o600); err != nil {
 		t.Fatal(err)
 	}

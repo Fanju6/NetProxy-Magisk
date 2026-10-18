@@ -53,6 +53,7 @@ const secret = '<仅在本地使用的凭据>'
 async function request(path, method = 'GET', body) {
   const response = await fetch(base + path, {
     method,
+    redirect: 'error',
     headers: {
       Authorization: 'Bearer ' + secret,
       ...(body === undefined ? {} : { 'Content-Type': 'application/json' })
@@ -68,10 +69,56 @@ async function request(path, method = 'GET', body) {
 }
 
 const service = await request('/service')
-await request('/selection', 'PUT', { group_id: 'default', node_tag: '' })
+const policy = await request('/policy-groups')
 ```
 
-空 `node_tag` 使用同组 Auto。手动选择传原始节点标签，不把节点标签拼到 URL 路径中。
+Catalog 资源与原生策略组是两类数据：`/catalog`、`/nodes` 返回持久资源与节点，`/policy-groups` 返回 sing-box 原生策略组。不存在模块级活动资源或空标签 Auto 选择，也不提供旧 `/selection`、`/nodes/delay` 接口。
+
+## 策略组选择与测速
+
+`GET /policy-groups` 的 `data` 包含：
+
+| 字段 | 含义 |
+| --- | --- |
+| `groups` | 原生组数组；每组包含 `tag/type/selectable/expanded/items`，运行时可含 `selected` |
+| `live` | 是否为已验证核心身份的运行时快照 |
+| `core_started_at_millis` | 核心启动身份；非实时摘要为 `0` |
+| `default_outbound` | 主配置 `route.final`，不是所有 Selector 的统一选择 |
+
+`items` 使用原始成员 `tag/type`，可含 `url_test_time`（Unix 秒）和 `url_test_delay`（毫秒）。没有测速值不代表延迟为零或测试成功。
+
+服务未就绪时只返回配置中的 selector/urltest 摘要与显式 `outbounds` 引用，`live=false`；不展开 Provider 成员、不读取缓存伪造实际选择，也不启动临时核心测速。ready 状态下核心身份或 API 校验失败会返回错误，不能将配置摘要冒充实时状态。
+
+选择与测速都要求 sing-box 就绪。以下 `groupTag` 和 `memberTag` 必须来自当前实时快照，且选择目标的 `selectable=true`：
+
+```js
+await request('/policy-groups/select', 'POST', {
+  group_tag: groupTag,
+  member_tag: memberTag
+})
+await request('/policy-groups/delay', 'POST', { group_tag: groupTag })
+```
+
+标签作为正文原样传递，不拆分斜杠、不修剪空格、不从显示名称重建。同名节点使用核心返回的完整 Provider/member 标签区分。每个 Selector 独立选择，持久化由 sing-box `experimental.cache_file` 负责，不写入 `module.json`；urltest 由核心自动选择，不能手动切换。
+
+成功响应同样返回完整策略快照，测速响应表示已请求及当前可用结果，不保证全部成员已完成新测试。选择后 Go 回读核对；`policy.runtime_sync_failed` 可带 `accepted=true`，表示核心已接受但未能确认快照。断线、超时或确认失败后重新读取，不重发 POST。核心重启后等待新身份的完整快照，不复用旧实例的选择与测速显示缓存；这不清除核心 cache_file 中保存的选择。
+
+## 本地资源管理
+
+```js
+await request('/catalog', 'POST', { id: 'local-work', name: '工作节点' })
+await request('/catalog/local-work', 'PUT', { name: '工作备用节点' })
+// 添加节点使用 POST /nodes，并指定 group_id: 'local-work'
+await request('/catalog/local-work', 'DELETE')
+```
+
+创建产生空本地资源，重命名只改显示名称，删除移除该资源及其节点。创建使用新 `id`；ID 以 ASCII 字母或数字开头，后续可含字母、数字、`.`、`_`、`-`，不得包含 `..` 或等于 `staging`。名称为非空、无控制字符的 UTF-8 文本，最多 256 字节。重命名和删除仅适用于 `local`，默认资源 `default` 不能删除；URL 订阅继续使用 `/subscriptions`。
+
+每个非空资源投影为稳定的 `np/<catalog-id>` Local Provider，公开摘要的 `provider_tag` 给出该标签；空资源虽有标签标识，但不会生成运行时 Provider。重命名不改变标签，也不改主配置的 outbounds、route 或 DNS，更不会生成固定 Auto/Select/Proxy 图。用户 Provider 与内部标签冲突返回 `catalog.provider_conflict`。
+
+删除资源、删除或重命名节点前，若原生配置显式引用将消失的 Provider 或成员，返回 `catalog.provider_in_use`，不擅自改写用户引用。请先通过配置事务调整引用，再执行删除。Provider 定义集变化需要校验并重载；仅内容变化复用核心文件监听并有界核对。Catalog 已提交而运行时同步失败时保留 `persisted=true`，重新读取真实结果，不重复提交。
+
+V9 Native 将这些 HTTP 操作映射为固定 `management` 枚举 `catalog_create/catalog_rename/catalog_remove`；策略组使用独立 `policy_select/policy_delay`。Rust 与 Kotlin 分别校验参数，不开放任意 HTTP 或订阅私有查询。
 
 ## 配置保存
 
@@ -87,7 +134,9 @@ await request('/config?target=' + target, 'PUT', {
 })
 ```
 
-HTTP 保存必须提供读取时的 revision。发生 `config.conflict` 时重新读取并让用户处理冲突，不用旧草稿自动重试。候选内容遵循 CLI 的分区格式，例如 `inbound/app` 使用 `{"app": {...}}`。
+HTTP 保存必须提供读取时的 revision。发生 `config.conflict` 时保留草稿并让用户处理冲突，只有显式放弃草稿后才重新读取，不借新 revision 自动重试旧草稿。候选内容遵循 CLI 的分区格式，例如 `inbound/app` 使用 `{"app": {...}}`。
+
+`module` 完整文档只有 `auto_start/wifi`；分区只有 `module/auto_start` 和 `module/wifi`，没有 `module/selection`。策略组定义编辑 `singbox/outbounds`，路由与 DNS 仍由用户维护；替换整个 outbounds 分区前须保留其他出站及未知字段，不能只提交新建的一个组覆盖原数组。
 
 完整配置损坏时，读取 `module`、`inbound` 或 `singbox/config.json` 的原文和 revision，再提交完整有效内容；不能通过单个分区修复无法解析的整份 JSON。运行时配置保持只读。
 
@@ -98,19 +147,23 @@ HTTP 保存必须提供读取时的 revision。发生 `config.conflict` 时重�
 | 方法与路径 | 用途 |
 | --- | --- |
 | `GET /info` | 模块版本、API 版本、后台实例身份与 Go 堆/栈内存字节数 |
-| `GET /service` | 服务状态、实际后端、模式与当前节点 |
+| `GET /service` | 服务状态、实际后端、模式、默认出站与运行时选择摘要 |
 | `POST /service/start`、`stop`、`restart`、`reload`、`check` | 对应服务操作，无正文或传空对象 |
-| `GET /catalog` | 持久分组摘要 |
+| `GET /catalog` | 持久 Catalog 快照，`data.groups[]` 含 `group` 摘要与 `nodes` |
+| `POST /catalog` | 创建空本地资源，正文为 `{"id":"local-work","name":"工作节点"}` |
+| `PUT /catalog/{id}` | 重命名本地资源，正文为 `{"name":"新名称"}` |
+| `DELETE /catalog/{id}` | 删除本地资源；不允许删除 `default` |
+| `GET /policy-groups` | 原生策略组快照；未就绪时为配置摘要 |
+| `POST /policy-groups/select` | 选择可手动切换的组成员，正文含 `group_tag/member_tag` |
+| `POST /policy-groups/delay` | 请求策略组测速，正文含 `group_tag` |
 | `GET /nodes?group_id=...` | 分组节点 |
-| `GET /nodes/snapshot?group_id=...` | 持久节点与运行时快照 |
+| `GET /nodes/snapshot?group_id=...` | 持久 Catalog 节点快照，不含策略选择或运行时测速 |
 | `GET /nodes/get?group_id=...&node_tag=...` | 节点原生配置 |
 | `GET /nodes/export?group_id=...&node_tag=...` | 节点分享内容 |
 | `POST /nodes` | 添加节点，正文含 `group_id/content/allow_insecure` |
 | `PUT /nodes` | 编辑节点，另含原节点 `node_tag` |
 | `DELETE /nodes?group_id=...&node_tag=...` | 删除节点 |
 | `POST /nodes/import` | 导入文本，正文含 `content/allow_insecure` |
-| `POST /nodes/delay` | 测速，正文含 `group_id/node_tag`；空 tag 测整个分组 |
-| `GET/PUT /selection` | 查询或保存节点选择 |
 | `GET/PUT /mode` | 查询或保存内核原生模式；正文为 `{"mode":"Rule"}` 等 |
 | `GET/POST /subscriptions` | 本地与订阅分组列表，或添加 URL 订阅 |
 | `GET/PUT/DELETE /subscriptions/{id}` | 查询分组详情，或编辑、删除 URL 订阅；`?private=true` 仅读取 URL 订阅私有设置 |
@@ -133,7 +186,7 @@ HTTP 保存必须提供读取时的 revision。发生 `config.conflict` 时重�
 
 订阅添加与编辑支持 `name/url/user_agent/hwid/custom_headers/auto_update/update_interval/update_via_proxy/include/exclude/allow_insecure/download_timeout`。`update_interval` 与 `download_timeout` 使用秒；下载方式为 `auto/always/never`，分别对应自动、代理、直连。编辑时省略字段保留原值，清空请求头使用空对象，而不是 null。
 
-`subscriptions` 事件与列表接口返回同一组摘要，包含“本地配置”和活动分组状态；更新订阅操作只处理 URL 订阅。
+`subscriptions` 事件与列表接口返回同一组摘要，包含本地与 URL 订阅资源及其 `provider_tag`，没有模块级活动分组状态；更新订阅操作只处理 URL 订阅。
 
 `POST /subscriptions/update-all` 按 Catalog 顺序执行。部分失败仍返回原始错误码和 HTTP 状态，错误 `data` 同时包含 `updated`、`failed` 两个分组 ID 数组及 `first_error`（首个错误原始数据）；首个错误的 `persisted` 若存在也保留在顶层。不能把部分失败当作全部成功，也不能据此推断每个失败组均未保存。单组的当前持久结果继续从公开详情与历史读取。
 
@@ -151,10 +204,10 @@ HTTP 保存必须提供读取时的 revision。发生 `config.conflict` 时重�
 
 - `status`：模块服务状态。
 - `traffic`：核心实时状态及 CPU 计数，属于 `status` 主题；`available=false` 表示核心不可用。
-- `groups`：节点快照与实际选择。
+- `groups`：与 `GET /policy-groups` 同结构的原生策略组快照，code 为 `policy.groups`，不是 Catalog 节点列表。
 - `subscriptions`：订阅状态与更新进度。
 
-连接后先发快照，再发送变化。核心重载后重新订阅新实例；关闭核心不关闭模块事件入口。断线重新获取完整快照，不依赖历史事件回放。
+连接后先发快照，再发送变化。运行中等待核心完整 groups 首帧，不先发配置占位覆盖已有运行时状态；停止时发 `live=false` 的配置摘要。核心重载后重新订阅新实例；关闭核心不关闭模块事件入口。断线重新获取完整快照，不依赖历史事件回放。Catalog 节点内容从 `/catalog` 或 `/nodes` 读取，不从 groups 事件推断。
 
 页面进入后台时取消订阅，恢复前台再连接。官方管理器保留 2 秒切页宽限，会话内不因移除主题重连；真正停止后清空快照。没有订阅者时模块停止文件监听和核心高频订阅。慢客户端会断开，避免无限堆积数据。
 
@@ -171,14 +224,16 @@ JSON 响应使用与 CLI 一致的 `schema=1`、`ok/code/message/data`。同时�
 - `400`：请求格式或参数错误。
 - `401/403`：凭据、Host 或 Origin 不允许。
 - `404`：接口或目标不存在。
-- `409`：revision 冲突或操作忙。
+- `409`：revision 冲突、操作忙、核心未就绪或 Provider 引用/标签冲突。
 - `413`：请求正文超过上限。
 - `422`：已识别的配置或参数校验错误。
-- `502`：保存成功后运行时同步失败。
+- `502`：核心 API 失败或运行时同步未确认，不必然表示数据已保存。
 - `504`：操作超时。
 - `500`：其他内部错误。
 
 错误带有 `persisted=true` 时，数据已保存，不能当作未保存自动重试。客户端断线不会取消已接受的写入；重新连接后读取真实状态。Worker 关停时会取消正在进行的订阅网络下载，保留上一份 Provider；已经下载完成并进入提交的事务仍完成收尾。这个同步接口不提供持久任务队列或 exactly-once 保证。
+
+策略组常见错误为 `policy.core_not_ready`（409）、`policy.group_not_found/member_not_found`（404）、`policy.not_selectable/config_invalid`（422）和 `policy.api_failed/runtime_sync_failed`（502）。`accepted` 是核心已接受的确认标记，不等同于模块持久化的 `persisted`；错误没有这些标记时也不能据此认定操作未发生。HTTP 与 Native 对策略组/Catalog 错误仅交付公开标记，不透传核心异常或私有路径。
 
 官方管理器仅对普通只读 GET 在响应前的连接故障最多恢复一次，并沿用原调用总时限。取消、超时、TLS 验证失败和正文读取错误不重试，写操作不自动重发。重新连接失败会保留原本可用的连接资料，不覆盖新收到的可信交付。
 

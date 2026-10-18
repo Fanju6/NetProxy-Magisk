@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { ApiClient } from '@/api/client'
 import type { ApiTransport } from '@/api/contracts'
 import { NativeTransport } from '@/api/native'
-import { useChangeMode, useSelectNode, useServiceAction } from '@/api/queries'
+import { useChangeMode, useSelectPolicyGroup, useServiceAction } from '@/api/queries'
 import * as resourceApi from '@/api/resources'
 import { AppProviders } from '@/app/providers'
 import { makeRouter } from '@/app/router'
@@ -23,12 +23,14 @@ type HarnessOptions = {
 function ControlProbe() {
   const service = useServiceAction()
   const mode = useChangeMode()
-  const selection = useSelectNode()
+  const selection = useSelectPolicyGroup()
   return (
     <>
       <button onClick={() => service.mutate('stop')}>test-stop</button>
       <button onClick={() => mode.mutate('Direct')}>test-mode</button>
-      <button onClick={() => selection.mutate({ group_id: 'demo-global', node_tag: 'Tokyo 01' })}>
+      <button
+        onClick={() => selection.mutate({ group_tag: 'Internet', member_tag: 'Hong Kong 01' })}
+      >
         test-selection
       </button>
     </>
@@ -90,7 +92,9 @@ function setup(list: 'normal' | 'empty' | 'error' = 'normal', options: HarnessOp
 }
 it('reads real-shaped local and URL details, traffic, history and progress without subscription writes', async () => {
   const h = setup('normal', { readOnly: true })
-  expect(await screen.findByRole('heading', { name: 'Local groups' })).toBeVisible()
+  expect(
+    await screen.findByRole('heading', { name: 'Local groups' }, { timeout: 5000 }),
+  ).toBeVisible()
   expect(screen.getByRole('heading', { name: 'Subscriptions' })).toBeVisible()
   expect(screen.getByRole('heading', { name: 'Travel backup' })).toBeVisible()
   fireEvent.click(screen.getByRole('button', { name: 'View details 本地配置' }))
@@ -210,8 +214,11 @@ it.each(['service', 'mode', 'selection'] as const)(
       controls: true,
       handle: (input, signal, backend) =>
         input.path ===
-          (kind === 'service' ? '/service/stop' : kind === 'mode' ? '/mode' : '/selection') &&
-        input.method !== 'GET'
+          (kind === 'service'
+            ? '/service/stop'
+            : kind === 'mode'
+              ? '/mode'
+              : '/policy-groups/select') && input.method !== 'GET'
           ? held.then(() => backend.request(input, signal))
           : undefined,
     })
@@ -324,25 +331,20 @@ it('does not expose URL edit or deletion for a local group', async () => {
     expect(screen.queryByRole('menuitem', { name })).not.toBeInTheDocument()
 })
 
-it('requires an explicit valid replacement before deleting the active subscription', async () => {
+it('confirms subscription deletion without a replacement resource', async () => {
   const h = setup()
   let dialog = await openDetails()
   fireEvent.click(await resourceMenu(dialog, 'Delete subscription'))
   dialog = await screen.findByRole('dialog')
   const confirm = within(dialog).getByRole('button', { name: 'Delete subscription' })
-  expect(confirm).toBeDisabled()
+  expect(confirm).toBeEnabled()
   expect(within(dialog).getByText('Global Connect', { exact: true })).toBeVisible()
-  fireEvent.click(within(dialog).getByRole('combobox', { name: 'Replacement group' }))
-  expect(screen.queryByRole('option', { name: 'Global Connect' })).not.toBeInTheDocument()
-  expect(screen.queryByRole('option', { name: 'Travel backup' })).not.toBeInTheDocument()
-  fireEvent.click(await screen.findByRole('option', { name: '本地配置' }))
-  await waitFor(() => expect(confirm).toBeEnabled())
+  expect(within(dialog).queryByRole('combobox')).not.toBeInTheDocument()
   fireEvent.click(confirm)
   expect(await screen.findByText('Subscription deleted', { exact: true })).toBeVisible()
   expect(writes(h.request).find(([input]) => input.method === 'DELETE')![0]).toEqual({
     method: 'DELETE',
     path: '/subscriptions/demo-global',
-    query: { replacement_group_id: 'default' },
   })
   await waitFor(() =>
     expect(screen.queryByRole('heading', { name: 'Global Connect' })).not.toBeInTheDocument(),

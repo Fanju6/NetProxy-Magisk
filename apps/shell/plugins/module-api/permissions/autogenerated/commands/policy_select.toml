@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-policy-select"
+description = "Enables the policy_select command without any pre-configured scope."
+commands.allow = ["policy_select"]
+
+[[permission]]
+identifier = "deny-policy-select"
+description = "Denies the policy_select command without any pre-configured scope."
+commands.deny = ["policy_select"]

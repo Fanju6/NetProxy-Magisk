@@ -32,16 +32,15 @@ V9 不要求保留 V8 历史兼容性；成熟实现和旧测试是参考，不�
 - Native 运行日志固定为 `[timestamp] [LEVEL] [component] [event] [result] [error_code] message`，成功或无错误码时写 `-`；消息必须在落盘前统一脱敏和限长。`logs show service` 的 `entries` 是 Android 展示事实源，不得回退到旧文本猜测。`logs show core` 保持 sing-box 文本，由客户端使用独立解析逻辑。
 - 核心日志使用原生 `log.output=stderr`（省略时同样使用内核默认 stderr），Go 将 stdout/stderr 绑定同一个 `0600` 追加文件句柄并禁用颜色；不得让内核另开日志文件或使用随 CLI 退出的管道采集。核心退出后才允许在下次启动前轮转，清空必须截断当前 inode 并删除备份，不能重命名运行中的日志，否则继承句柄会继续写入不可见文件。
 - Catalog 是持久节点事实源：每组使用 `data/catalog/<group-id>/meta.json` 与 `provider.json`。`staging/` 只存事务临时文件，不得作为持久状态读取。
-- 模块设置唯一事实源是 `config/module.json`，顶层固定为 `auto_start/selection/wifi`，开关使用 JSON boolean，名单使用字符串数组；不读取、迁移或兼容旧格式，缺失或损坏不得回退默认配置。
-- 节点选择只持久化 `selection.group_id` 与 `selection.node_tag`：空 tag 使用同组 Auto，非空 tag 手动选择。模式、节点引用和运行时标签由这两项派生，不读取旧选择字段或增加迁移逻辑。
-- 用户选节点按生命周期锁、配置文件锁串行保存和应用；启动与重载只同步已保存选择，不再次调用用户保存入口。选择器 API 仅对临时通信或服务错误在总时限内重试，遵循请求取消；最终失败返回 `node.runtime_sync_failed` 并保留已保存选择，不重载兜底；Catalog 结构变化显式重载。
-- 本地节点变更与删除订阅先等待生命周期锁、恢复未完成配置事务，再提交 Catalog；提交后即使取消也要有界完成本地选择整理，Worker 同步必须在取锁前建立独立收尾上下文，并在锁内读取最新选择。订阅同步状态落盘同样有界且不受请求取消影响，运行时操作仍使用原请求上下文。提交后的本地或运行时失败分别返回 `node.persisted_effect_failed` / `node.runtime_sync_failed` 或对应的 `subscription.*`，并携带 `persisted=true`。Worker 通过 `SyncCatalog` 回调复用同一流程；pending 重试必须重新应用已保存选择，不能只验证 Provider 后清除 pending。
-- Provider 的运行时显示标签来自分组名称；名称冲突时才附加分组 ID。用户界面不得直接显示 UUID 代替可读名称。
-- 自动选择必须落到 `Auto/<group>`，Provider/selector 的默认值绝不能静默回退到 `direct`。
+- 模块设置唯一事实源是 `config/module.json`，顶层固定为 `auto_start/wifi`；不读取、迁移或兼容旧 selection 与旧格式，缺失或损坏不得回退默认配置。
+- 策略组只存在于用户维护的原生 `config/singbox/config.json`，Catalog 不生成 Auto/Select/Proxy，也不随资源增删改写 outbounds、route 或 DNS。图形编辑仅修改目标原生出站，保留其他对象、未知字段与未编辑的数值原文，复用 revision 和配置事务。
+- Catalog 非空资源投影为稳定 `np/<catalog-id>` Local Provider；重命名不改 tag，同名节点由完整 Provider/member 标签区分。空资源不生成 Provider；用户 Provider 与内部 tag 冲突须明确失败，不能隐式覆盖。
+- 策略组选择通过核心 Service API 使用原始 group_tag/member_tag，不重试写请求；各 Selector 独立，持久化归 sing-box cache_file。停止时仅展示配置摘要，不伪造运行中选择、Provider 成员或测速结果；重启后以新核心身份的完整快照为准。
+- 本地节点变更与资源删除先等待生命周期锁、恢复配置事务，再提交 Catalog；原生配置显式引用将移除的 Provider 或节点时拒绝破坏性操作，不擅自修改用户引用。Provider 定义集变化需校验并重载，内容变化复用核心监听并有界核对出站。提交后同步失败保留 persisted=true；Worker 通过 SyncCatalog 复用同一流程，取锁收尾与同步元数据有界且不受请求取消影响，运行时操作仍遵循原请求上下文。
 - eBPF 与 TUN 都是 sing-box 的入站实现，不是独立代理核心。服务、模式和节点切换文案继续使用“服务”或“sing-box”，不要泛化为“eBPF 服务”或“TUN 服务”。
 - `config/inbound/inbound.json` 是 backend、独立 Root 策略、共用 app 策略与两套原生入站参数的唯一事实源，不在 module.json 或客户端偏好中双写。外层固定为 `backend/root_policy/app/ebpf/tun`，两个原生对象的 type 匹配分区、tag 均固定为 `netproxy-in`；主配置不得重复定义受管 eBPF/TUN 或占用该标签。
 - `root_policy=default/include/exclude` 独立于 app 开关与名单模式，只投影本机 UID 0，不改原生模板；default 不干预，include 覆盖 UID 0 的原生 UID 排除，exclude 排除 UID 0。空 include 原生表示不限 UID，不得为接管 Root 将其收窄为只含 0；空应用白名单仍可仅接管 Root。原生 include_android_user 通过内核生成排除范围，不能当成 UID include；接管 Root 时该用户范围必须包含用户 0，否则报冲突，不扩大用户范围。仅 eBPF shared 时不应用 Root 策略，也不因该字段变化重载。管理器通用选择即时保存，先提交已确认原生草稿；完整 JSON 编辑入口位于右上角菜单，不在应用列表伪造 Root 条目。
-- 透明代理运行时只有 `runtime/inbound.json`，包含当前选择的一个入站；providers/outbounds 仍独立生成。切换不转换或清空另一套参数，失败不自动改用另一后端。
+- 透明代理运行时只有 `runtime/inbound.json`，包含当前选择的一个入站；`runtime/providers.json` 仅装配 Catalog 资源，不另生成 outbounds。切换不转换或清空另一套参数，失败不自动改用另一后端。
 - 分应用策略持久化严格的 `<user-id>:<package>` 引用，Android 每个用户独立展示；Go 通过 Android package service 查询 UID，运行时生成 `include_uid` / `exclude_uid`。
 - eBPF 数据路径由 `ebpf.local.enabled` 与 `ebpf.shared.enabled` 独立启用，选择 eBPF 时至少开启一条；本机 `data_plane` 只允许 `cgroup/tc`，共享网络只允许 `packet_rewrite/socket_assign`。禁用路径可保存全部偏好，但运行时只输出 `enabled: false`。
 - 受管 TUN 固定 `auto_route=true` 与 `auto_redirect=true`，地址必须有效；不额外固定 MTU、stack、strict_route、marks 或 NFQUEUE 默认值。端口 bypass 使用主配置 route 的原生 pre-match 规则，不伪装成 TUN 字段或自动注入第四个 runtime。
@@ -55,7 +54,7 @@ V9 不要求保留 V8 历史兼容性；成熟实现和旧测试是参考，不�
 ## 命令入口与脚本布局
 
 - `src/module/netproxyctl` 只负责定位 `bin/netproxyctl`；公共实现位于 `src/native/netproxy/cmd/netproxyctl`。Shell 不再保留公共命令 dispatcher。
-- 命令组权威清单：`service catalog node sub mode network app ebpf config logs api`。新增命令组必须同时更新 Go CLI、Android `ModuleApiClient`、WebUI 命令表与传输判断和契约测试。
+- 命令组权威清单：`service catalog node policy sub mode network app ebpf config logs api`。新增命令组必须同步 Go CLI、当前 WebUI/Native 权限与契约测试；保留的 V8 管理器不再代表 V9 接口兼容承诺。
 - `scripts/` 不承载运行时业务；配置、Catalog、状态和 Service API 业务统一由 Go 实现。
 - 根目录 `service.sh` 负责模块开机桥接；运行时配置、节点切换、订阅事务和调度由 Go 负责。
 - Go Worker 负责 Android 网络变化采集、Wi-Fi 状态读取和策略评估。
@@ -104,7 +103,7 @@ src/module/service.sh
 - 配置应用按「生命周期锁 → 固定顺序的配置文件锁」执行。内部选择同步显式复用已持有的配置写入器，不能重复获取文件锁；所有配置写入共享同一路径锁，分应用增删必须在锁内读取最新名单。
 - Catalog 等待锁使用调用方 context，分组锁先于根锁。锁文件不保存业务或 owner 状态，互斥由操作系统文件锁保证。
 - sing-box 静态事实源只有 `config/singbox/config.json`。分区编辑由 Go 在配置事务锁内替换指定顶层字段，保留其他字段和数组顺序；客户端使用读取时的 `revision`，同分区冲突返回 `config.conflict`。不能在 Android 中把整份旧快照合并写回。
-- 模块复用 `config read/apply/validate` 的 `module` 完整 JSON 与 `module/wifi`、`module/auto_start` 分区；分区保留对应顶层键，必需且不支持 `{}` 删除，各自 revision 只跟踪所属分区。配置应用复用现有事务，全部模块写入共用 `module.json.lock`，仅在锁内合并最新文件；内部节点选择写入保留未修改分区的原始字段，不能因补齐默认值使 Wi-Fi 草稿 revision 失效。网络匹配与开机自启不得用整份旧快照写回，没有 `module/selection` 公共目标。
+- 模块复用 `config read/apply/validate` 的 `module` 完整 JSON 与 `module/wifi`、`module/auto_start` 分区；分区保留对应顶层键且不可删除，各自 revision 只跟踪所属分区。全部模块写入共用 module.json.lock，仅在锁内合并最新文件，不用整份旧快照写回。
 - 入站复用 `config read/apply/validate` 的 `inbound`、`inbound/backend`、`inbound/root_policy`、`inbound/app`、`inbound/ebpf`、`inbound/tun` 目标，不增加公共 inbound 命令组或旧 config ebpf 别名。入站分区必需，不能用 `{}` 删除；全部目标与 app 增删共用配置事务和 `inbound.json.lock`，仅在锁内合并最新文件。
 - `auto_start` 只影响下次开机，单独修改不得重载运行实例。分应用有效策略变化通过配置事务自动 reload，停止时只保存；管理器分应用、入站原生参数与网络匹配只在离页或进入后台合并提交，不使用闲置计时器或待保存提示。普通返回立即导航，提交时先登记目标与本次草稿快照，再由应用级短生命周期任务完成，不随页面销毁取消；重新读取只等待同配置文件的在途写入，不扫描整个作用域。写入阶段不得读取配置，写后确认须在解除该等待后执行；已确认的后端切换与重启同样完成收尾，未确认切换不得在离页后自动执行。保存失败须在页面退出后仍通知用户，页面存续时保留草稿；冲突只能显式放弃草稿后重新加载，恢复前台不得刷新覆盖草稿或借用新 revision 重试。开机自启、后端切换、节点与模式选择仍立即执行；切换后端、重启或进入入站子页前先提交已确认参数。搜索勾选只更新统一名单，不切换加载分支或重新计算搜索结果；默认与搜索列表共用选中优先和反序的显示排序，搜索重排不跟随已选条目滚动。Auto 节点选择只发布完整确认快照，不用缺少实际节点的占位状态覆盖已有显示。
 - `ebpf status` 是保存的 eBPF 模板所选能力的预检，TUN 模式也可执行，不代表当前挂载状态。普通 `data.content` 始终是可读诊断，原始 JSON 仅在显式 `--raw` 时作为正文返回；预检通过不能表述为实际接管成功。
@@ -222,7 +221,7 @@ Android Root、开机启动、模块命令、快捷设置磁贴、eBPF、热点�
 - 分应用策略按 `<user-id>:<package>` 保存并在 Go 中按用户查询 UID——把多个 Android 用户合并成包名或直接把包名交给 sing-box 会在应用分身场景下静默漏配。
 - Service API 与 Clash API 使用主配置中 `services`、`experimental.clash_api` 的固定监听与密钥——改回运行时随机 bootstrap 会让 WebUI 连不上核心且无任何报错。
 - Android 依赖由 `AppContainer` 与 `NetProxyViewModelFactory` 手工构造——引入 Hilt/Koin 需先有全项目架构决策。
-- Provider 与 selector 的默认值必须落到 `Auto/<group>`——回退到 `direct` 会让用户以为已代理而实际直连。
+- 默认原生 Selector 含 direct 与 use_all_providers，空 Catalog 可启动；这只是初始模板，不能强制恢复用户已删除的 Proxy，也不能为显示 Auto 生成空 URLTest。
 - CI 与 Release 管理器 APK 使用同一固定签名；轮换密钥或改回临时签名会导致后续 APK 无法覆盖已安装版本。应用不按安装来源或签名证书限制使用，也不显示来源警告。
 - 订阅自定义请求头走 `--headers-file` 而非命令行参数——命令行对全系统可见（`/proc/<pid>/cmdline`），会泄露鉴权 token。
 - 订阅请求的默认 User-Agent 是 `sing-box`——多数机场按 UA 白名单返回 `Subscription-Userinfo`，改成自定义 UA 会拿到 200 但没有流量信息。
@@ -260,13 +259,13 @@ WebUI ───────────┼─> netproxyctl ─> Go 业务层 ─
 | 数据 | 唯一事实源 | 说明 |
 |---|---|---|
 | 模块版本 | `src/module/module.prop` | `versionCode` 由打包工作流写入 |
-| 模块设置 | `src/module/config/module.json` | `auto_start`、`selection` 与 `wifi` |
+| 模块设置 | `src/module/config/module.json` | `auto_start` 与 `wifi` |
 | 默认出站模式 | `config/singbox/config.json` 的 `experimental.clash_api.default_mode` | 可选模式来自 route/DNS 规则与默认模式；API 报告运行时实际模式 |
 | 设备统计队列 | `config/telemetry/state.json` | 每日去重和离线队列；设备身份由 Worker 从系统派生，不作为用户配置展示 |
 | 入站与应用策略 | `src/module/config/inbound/inbound.json` | backend、root_policy、app 与 eBPF/TUN 原生对象；只生成当前所选入站 |
 | 节点与订阅 | `src/module/data/catalog/<group-id>/` | `meta.json` + `provider.json` |
 | sing-box 静态配置 | `src/module/config/singbox/config.json` | 单一主配置，支持整份或按顶层字段编辑 |
-| sing-box 运行时配置 | `src/module/runtime/` | inbound.json、providers.json、outbounds.json；可重建，不由客户端编辑或安装保留 |
+| sing-box 运行时配置 | `src/module/runtime/` | inbound.json、providers.json；可重建，不由客户端编辑或安装保留 |
 | 服务状态 | `/dev/netproxy/service.json` | 本次启动周期的状态快照；缺失时按 stopped 处理 |
 | 实时核心状态 | Service API / Clash API | 连接、流量、测速和实际选择 |
 
@@ -293,33 +292,13 @@ data/catalog/
 - `history.jsonl` 只记录脱敏后的更新结果，默认保留最近 20 条。
 - `staging/` 用于锁、下载、转换和校验的临时事务。进程崩溃后可清理，业务代码不得依赖其中内容恢复节点状态。
 
-运行时把每个非空分组投影为 Local Provider，并生成：
-
-- `Auto/<group>`：urltest，默认自动测速。
-- `Select/<group>`：selector，手动选择。
-- `Proxy`：顶层 selector，连接各分组的 Auto/Select 出站。
-
-分组 ID 是内部稳定身份，运行时标签和界面优先使用分组名称；只有名称冲突时追加 ID 消歧。同组和跨组节点切换优先使用 Service API，新增或删除整个分组时才需要重新加载运行时配置。已有 Local Provider 的内容更新依赖 sing-box 文件监听，并通过 Service API 出站快照确认；不得把 `runtime_sync_pending` 直接当作整核 reload 条件。
+运行时仅将非空资源投影为 `np/<catalog-id>` Local Provider；显示名称与稳定引用分离。用户在原生 outbounds 中使用 providers 或 use_all_providers 组织策略组，也可完全不用 Catalog。已有 Local Provider 的内容更新依赖 sing-box 文件监听，并通过 Service API 出站快照确认；不得把 runtime_sync_pending 直接当作整核 reload 条件。
 
 订阅名称留空时按 `Profile-Title`、`Content-Disposition` 文件名、URL 主机名、默认名「订阅」的顺序自动取名，在首次取得响应头后回填。
 
 ## 选择状态
 
-`module.json` 的 `selection` 使用以下字段：
-
-```json
-{
-  "selection": {
-    "group_id": "default",
-    "node_tag": ""
-  }
-}
-```
-
-- `selection.node_tag` 为空使用同组 Auto，实际选中节点由 Service API 报告，不写回手动选择。
-- 手动模式仅保存当前分组节点的 tag，不重复保存分组 ID 或文件路径。
-- 手动节点在 Provider 更新后消失时回退该组 Auto。
-- 公开命令仍使用 `node use auto [group]` 或 `node use <group-id>/<tag>`；JSON 的 `selector_mode` 与 `selected_node_ref` 是派生结果，不是另一个持久事实源。订阅更新在配置文件锁内读取最新选择后计算变更，不能覆盖并发用户选择。
+使用 `policy groups`、`policy select <group-tag> <member-tag>` 与 `policy delay <group-tag>`。HTTP 与 Native 使用相同业务标签；没有单一活动 Catalog 组或模块 selection。Selector 的 selected 是直接成员，嵌套后的实际节点另行解析，不能混为同一概念。选择持久化由核心 cache_file 承担；禁用核心缓存时不承诺重启恢复。
 - 出站模式使用主配置与内核生成的原生列表；默认规则的模式值为 `Rule/Proxy/Direct/RuleAllowAds`，配置、CTL 和 API 使用同一名称，不提供旧名别名。客户端翻译已知模式的显示文案，自定义名称原样显示。模式切换保存默认值，当前 Wi-Fi 绕过策略仍可使实际模式为 `Direct`。
 
 ## 订阅事务
@@ -382,18 +361,17 @@ TUN 使用原生 `include_interface/exclude_interface`、CIDR、规则集与 MAC
 Go 生命周期控制器通过 `-c config/singbox/config.json` 加载静态配置，并追加运行时文件：
 
 - `providers.json`：Catalog Local Provider 投影。
-- `outbounds.json`：Auto/Select/Proxy 出站图。
 - `inbound.json`：由 `config/inbound/inbound.json` 当前后端生成的唯一受管透明代理入站。
 
 主配置包含日志、实验特性/Clash API、DNS、用户入站、路由、HTTP Client 和 Service API。Android 的分区是 `config list` 返回的逻辑文档，不对应额外磁盘文件；完整编辑入口保留所有受核心支持的字段。运行时文件由 Go 生成并只读展示。
 
 `config read` 返回 `content` 和 `revision`；`config apply/validate --revision <值> <目标> <候选文件>` 检测并发修改。`singbox/dns` 等分区使用带顶层键的 JSON，空对象删除该字段；`singbox/config.json` 替换整份主配置。保存后的 revision 对应本次实际写入内容，不通过无锁重新读取生成。
 
-模块目标 `module` 读取或替换完整 `auto_start/selection/wifi` JSON；`module/wifi` 与 `module/auto_start` 分别使用 `{"wifi": {...}}`、`{"auto_start": true}`。完整 revision 跟踪整个文件，分区 revision 只跟踪所属分区，不受节点选择或其他分区变更影响。同分区冲突返回 `config.conflict`；分区不能删除或包含其他顶层字段，写入只在 `module.json.lock` 内合并最新文件，保护 `selection`，不维护第二份配置或旧格式别名。
+模块目标 `module` 读取或替换完整 `auto_start/wifi` JSON；两个分区分别使用 `{"wifi": {...}}`、`{"auto_start": true}`。分区 revision 只跟踪所属字段，冲突返回 config.conflict；写入在 module.json.lock 内合并最新文件，不维护第二份配置或旧格式别名。
 
 入站目标 `inbound` 替换完整五字段包装；`inbound/backend`、`inbound/root_policy`、`inbound/app`、`inbound/ebpf`、`inbound/tun` 分别使用对应顶层键。分区 revision 只跟踪该分区，完整 revision 跟踪整个文件；入站分区不支持空对象删除，所有写入在同一个配置文件锁内合并最新其他字段。
 
-`config list` 的六个入站逻辑目标归类为 `category=inbound`；Prepare JSON 使用 `providers/outbounds/inbound` 路径字段与 `backend`，不保留旧 `ebpf` 路径字段。schema=1 字段与类别变化需同步 Shell、Go、Android、WebUI 与 tests。
+`config list` 的六个入站逻辑目标归类为 `category=inbound`；Prepare JSON 使用 `providers/inbound` 路径字段与 `backend`。schema=1 字段与类别变化需同步当前调用方与测试，不提供旧选择接口适配。
 
 安装只处理当前数据布局，不读取、转换或清理旧版配置。保留现有数据包含整个用户配置目录（包括核心持久状态）、Catalog 与日志，但 `config/singbox/rules/remote` 始终使用本次安装包的内置规则；仅保留节点与订阅包含 Catalog 与日志；全新安装使用包内默认内容。保留模式要求对应数据完整，不能因缺失而静默回退默认配置。热切换前重新复制最新数据，不复制 Catalog staging 或可重建的运行时文件。
 

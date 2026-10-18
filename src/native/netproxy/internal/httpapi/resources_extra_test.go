@@ -286,23 +286,16 @@ func TestResourcesReadAndStopDoNotWaitForExpensiveSlots(t *testing.T) {
 	}
 }
 
-func TestResourcesDelayKeepsSlashedTagAndOfflineDomainError(t *testing.T) {
+func TestResourcesPolicyDelayWhileStoppedNeverCreatesOfflineSession(t *testing.T) {
 	server := resourceFixture(t)
 	server.options.RequestTimeout = time.Second
-	response, result := resourceRequest(t, server, "POST", "/api/v1/nodes/delay", `{"group_id":"default","node_tag":"节点 / 02"}`)
-	if response.Code == http.StatusOK || result.Code != "node.delay_offline_failed" {
-		t.Fatalf("停止时没有进入领域离线测速: %s", response.Body.String())
-	}
-	var data map[string]any
-	if err := json.Unmarshal(result.Data, &data); err != nil {
-		t.Fatal(err)
-	}
-	if data["target"] != "本地配置/节点 / 02" {
-		t.Fatalf("测速引用丢失标签: %s", result.Data)
+	response, result := resourceRequest(t, server, "POST", "/api/v1/policy-groups/delay", `{"group_tag":"任意 / 原生策略组"}`)
+	if response.Code != http.StatusConflict || result.Code != "policy.core_not_ready" {
+		t.Fatalf("停止时错误地接受策略组测速: %s", response.Body.String())
 	}
 	for _, path := range []string{server.options.StateFile, server.options.WorkerPIDFile} {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
-			t.Fatalf("离线测速改写了正式服务状态: %s %v", path, err)
+			t.Fatalf("停止时策略组测速改写了正式服务状态: %s %v", path, err)
 		}
 	}
 }

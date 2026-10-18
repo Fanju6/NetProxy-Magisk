@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowUpRight,
   ChevronRight,
   Folder,
   Rss,
@@ -12,7 +11,6 @@ import {
   Plus,
   Trash2,
 } from 'lucide-react'
-import { Link } from '@tanstack/react-router'
 import { useApi, usePreferences } from '@/app/context'
 import { resourceQueries, useResourceDetails } from '@/api/resources'
 import { useEventConnection } from '@/api/events'
@@ -36,16 +34,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { EmptyState, ErrorState, LoadingState } from '@/components/states'
 import { bytes } from '@/lib/format'
 import { SubscriptionEditor } from './subscription-editor'
+import { ResourceNodes, ResourceNodeManager } from './resource-nodes'
+import { ResourceProviderTag } from './resource-provider-tag'
+import type { NodeManagerTarget } from './node-manager'
+import { ResourceGroupManager, type ResourceGroupTarget } from './resource-group-manager'
 
 type SubscriptionActions = ReturnType<typeof useSubscriptionActions>
 const isWaiting = (operation: SubscriptionActions['operation']) =>
@@ -184,11 +179,8 @@ function DeleteSubscription({
 }) {
   const { t } = usePreferences()
   const connection = useEventConnection()
-  const [replacement, setReplacement] = useState('')
   const current = groups.find((group) => group.id === target.id)
-  const candidates = groups.filter((group) => group.id !== target.id && group.node_count > 0)
-  const replacementValid = candidates.some((group) => group.id === replacement)
-  const allowed = current?.type === 'subscription' && (!current.active || replacementValid)
+  const allowed = current?.type === 'subscription'
   return (
     <Dialog
       open
@@ -204,33 +196,6 @@ function DeleteSubscription({
         <div className="min-w-0 space-y-4">
           <p className="break-words font-medium">{target.name}</p>
           <SubscriptionFeedback actions={actions} groups={groups} />
-          {current?.active && (
-            <div className="space-y-2">
-              <label htmlFor="subscription-replacement" className="text-sm font-medium">
-                {t('replacementGroup')}
-              </label>
-              <Select value={replacement} onValueChange={(value) => setReplacement(value ?? '')}>
-                <SelectTrigger
-                  id="subscription-replacement"
-                  className="min-h-12 w-full text-base md:text-sm"
-                >
-                  <SelectValue placeholder={t('chooseReplacement')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {candidates.map((group) => (
-                    <SelectItem key={group.id} value={group.id}>
-                      {group.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {!candidates.length && (
-                <p role="status" className="text-sm text-muted-foreground">
-                  {t('noReplacementGroup')}
-                </p>
-              )}
-            </div>
-          )}
           {!current && (
             <p role="status" className="text-sm text-destructive">
               {t('subscriptionTargetChanged')}
@@ -246,8 +211,7 @@ function DeleteSubscription({
             className="min-h-11"
             disabled={!allowed || connection !== 'live' || isWaiting(actions.operation)}
             onClick={() => {
-              if (allowed && actions.remove(target.id, current?.active ? replacement : undefined))
-                close()
+              if (allowed && actions.remove(target.id)) close()
             }}
           >
             {t('deleteSubscription')}
@@ -266,6 +230,8 @@ function ResourceDetails({
   groups,
   edit,
   remove,
+  manage,
+  manageGroup,
 }: {
   id: string
   summary: GroupSummary | undefined
@@ -274,9 +240,13 @@ function ResourceDetails({
   groups: GroupSummary[]
   edit: (group: GroupSummary) => void
   remove: (group: GroupSummary) => void
+  manage: (target: NodeManagerTarget) => void
+  manageGroup: (target: ResourceGroupTarget) => void
 }) {
   const api = useApi()
   const { t, preferences } = usePreferences()
+  const text = (zh: string, en: string) => (preferences.locale === 'zh' ? zh : en)
+  const cache = useQueryClient()
   const connection = useEventConnection()
   const operation = actions.operation?.groupId === id ? actions.operation : null
   const observation = actions.operation?.action === 'update_all' ? actions.operation : operation
@@ -291,6 +261,11 @@ function ResourceDetails({
     observation && isWaiting(observation) ? observation.deadline : undefined,
   )
   const group = data.detail.data?.group
+  const refresh = () =>
+    Promise.allSettled([
+      data.refresh(),
+      cache.invalidateQueries({ queryKey: ['resource', id, 'nodes'], exact: true }),
+    ])
   const displayGroup = group ?? summary
   const date = (value: string) =>
     value && Number.isFinite(Date.parse(value))
@@ -337,7 +312,7 @@ function ResourceDetails({
               <DropdownMenuItem
                 className="min-h-11"
                 disabled={connection !== 'live' || data.detail.isFetching}
-                onClick={() => void data.refresh()}
+                onClick={() => void refresh()}
               >
                 <RefreshCw />
                 {t('refreshResources')}
@@ -370,6 +345,32 @@ function ResourceDetails({
                   )}
                 </>
               )}
+              {group.type === 'local' && api.supports('catalog.write') && (
+                <>
+                  <DropdownMenuItem
+                    className="min-h-11"
+                    disabled={connection !== 'live' || blocked}
+                    onClick={() => manageGroup({ operation: 'rename', group })}
+                  >
+                    <Pencil />
+                    {text('重命名分组', 'Rename group')}
+                  </DropdownMenuItem>
+                  {group.id !== 'default' && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        variant="destructive"
+                        className="min-h-11"
+                        disabled={connection !== 'live' || blocked}
+                        onClick={() => manageGroup({ operation: 'remove', group })}
+                      >
+                        <Trash2 />
+                        {text('删除分组', 'Delete group')}
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )
@@ -390,7 +391,7 @@ function ResourceDetails({
       {!data.detail.data && data.detail.isError ? (
         <>
           <SubscriptionFeedback actions={actions} groups={groups} targetId={id} />
-          <ErrorState error={data.detail.error} retry={() => void data.refresh()} />
+          <ErrorState error={data.detail.error} retry={() => void refresh()} />
         </>
       ) : !group ? (
         connection === 'live' ? (
@@ -403,6 +404,7 @@ function ResourceDetails({
           {connection !== 'live' && <Badge variant="outline">{t('staleSnapshot')}</Badge>}
           {data.detail.isError && <ErrorState error={data.detail.error} compact />}
           <SubscriptionFeedback actions={actions} groups={groups} targetId={id} />
+          <ResourceProviderTag group={group} />
           <dl className="settings-group divide-y text-sm">
             {rows.map(([label, value]) => (
               <div key={label} className="flex min-w-0 items-baseline justify-between gap-4 py-3">
@@ -416,6 +418,7 @@ function ResourceDetails({
               {t('updateError')}
             </p>
           )}
+          <ResourceNodes id={id} blocked={blocked} manage={manage} />
           {group.type === 'subscription' && (
             <>
               <section className="space-y-3 border-t pt-5">
@@ -533,16 +536,6 @@ function ResourceDetails({
               </section>
             </>
           )}
-          <Button
-            variant="ghost"
-            className="min-h-11"
-            nativeButton={false}
-            render={<Link to="/nodes" />}
-            onClick={close}
-          >
-            {t('viewGroup')}
-            <ArrowUpRight />
-          </Button>
         </div>
       )}
     </Details>
@@ -563,6 +556,8 @@ export function SubscriptionsPage() {
     | { kind: 'detail'; id: string }
     | { kind: 'add' }
     | { kind: 'edit' | 'remove'; group: GroupSummary }
+    | { kind: 'node'; target: NodeManagerTarget; returnId?: string }
+    | { kind: 'group'; target: ResourceGroupTarget }
     | null
   >(null)
   const selected = panel?.kind === 'detail' ? panel.id : null
@@ -575,6 +570,7 @@ export function SubscriptionsPage() {
       <LoadingState />
     )
   const summary = list.data.find((group) => group.id === selected)
+  const text = (zh: string, en: string) => (preferences.locale === 'zh' ? zh : en)
   return (
     <div className="space-y-6">
       {!panel && <SubscriptionFeedback actions={actions} groups={list.data} />}
@@ -598,6 +594,39 @@ export function SubscriptionsPage() {
             <MoreHorizontal />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-60 max-w-[calc(100vw-2rem)]">
+            {api.supports('catalog.write') && (
+              <DropdownMenuItem
+                className="min-h-11"
+                disabled={connection !== 'live' || isWaiting(actions.operation)}
+                onClick={() => setPanel({ kind: 'group', target: { operation: 'create' } })}
+              >
+                <Folder />
+                {text('新建本地分组', 'Create local group')}
+              </DropdownMenuItem>
+            )}
+            {api.supports('nodes.read') && api.supports('nodes.add') && (
+              <DropdownMenuItem
+                className="min-h-11"
+                disabled={
+                  connection !== 'live' ||
+                  isWaiting(actions.operation) ||
+                  !list.data.some((group) => group.type === 'local')
+                }
+                onClick={() => setPanel({ kind: 'node', target: { operation: 'add' } })}
+              >
+                <Plus />
+                {text('手动添加节点', 'Add node manually')}
+              </DropdownMenuItem>
+            )}
+            {api.supports('nodes.read') && api.supports('nodes.import') && (
+              <DropdownMenuItem
+                className="min-h-11"
+                disabled={connection !== 'live' || isWaiting(actions.operation)}
+                onClick={() => setPanel({ kind: 'node', target: { operation: 'import' } })}
+              >
+                {text('导入文本', 'Import text')}
+              </DropdownMenuItem>
+            )}
             {api.supports('subscriptions.update_all') && (
               <DropdownMenuItem
                 className="min-h-11"
@@ -655,7 +684,6 @@ export function SubscriptionsPage() {
                       <span role="heading" aria-level={3} className="min-w-0 break-all font-medium">
                         {group.name}
                       </span>
-                      {group.active && <Badge variant="secondary">{t('activeGroup')}</Badge>}
                     </span>
                     <span className="block text-xs text-muted-foreground">
                       {t('nodeCount', { count: group.node_count })}
@@ -688,6 +716,8 @@ export function SubscriptionsPage() {
           groups={list.data}
           edit={(group) => setPanel({ kind: 'edit', group })}
           remove={(group) => setPanel({ kind: 'remove', group })}
+          manage={(target) => setPanel({ kind: 'node', target, returnId: selected })}
+          manageGroup={(target) => setPanel({ kind: 'group', target })}
         />
       )}
       {(panel?.kind === 'add' || panel?.kind === 'edit') && (
@@ -710,6 +740,24 @@ export function SubscriptionsPage() {
           groups={list.data}
           actions={actions}
           close={() => setPanel(null)}
+        />
+      )}
+      {panel?.kind === 'node' && (
+        <ResourceNodeManager
+          target={panel.target}
+          onClose={() => setPanel(panel.returnId ? { kind: 'detail', id: panel.returnId } : null)}
+        />
+      )}
+      {panel?.kind === 'group' && (
+        <ResourceGroupManager
+          target={panel.target}
+          groups={list.data}
+          onClose={(result) => {
+            const id =
+              result?.id ??
+              (panel.target.operation === 'create' ? undefined : panel.target.group.id)
+            setPanel(result?.removed || !id ? null : { kind: 'detail', id })
+          }}
         />
       )}
     </div>

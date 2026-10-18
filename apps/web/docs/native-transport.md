@@ -28,7 +28,7 @@
 | `plugin:module-api\|close_events`   | `{ subscriptionId }`                                                               | 无数据                 |
 | `plugin:module-api\|visibility`     | `{}`                                                                               | `{ visible: boolean }` |
 
-`topics` 是 `status/groups/subscriptions` 的非空子集，`traffic` 仅随 status 接收。读取映射为固定 GET `/info`、`/service`、`/nodes/snapshot`、`/selection`、`/mode`；三条新增命令固定映射 PUT `/selection`、PUT `/mode` 和 POST `/nodes/delay`。原有服务 POST 仍使用固定空对象。JS 只提供业务参数，不传方法、URL 或 query；API 前缀 `/api/v1` 由原生层固定。Rust 拒绝返回 `{ code, status, message }`；前端保留合法错误码和状态，但不展示原始异常消息。HTTP 响应继续由 `ApiClient` 校验 `schema=1`、HTTP 状态与 Zod 数据类型，不把 IPC 成功当业务成功。
+`topics` 是 `status/groups/subscriptions` 的非空子集，`traffic` 仅随 status 接收。策略组读取固定映射 GET `/policy-groups`，选择和测速分别固定映射 POST `/policy-groups/select` 与 `/policy-groups/delay`；资源、配置和诊断也各自使用 Rust 与 Kotlin 的独立固定操作白名单。JS 只提供已校验的业务参数，不传方法、URL 或任意 query；API 前缀 `/api/v1` 由原生层固定。Rust 拒绝返回 `{ code, status, message }`；前端保留合法错误码和状态，但不展示原始异常消息。HTTP 响应继续由 `ApiClient` 校验 `schema=1`、HTTP 状态与 Zod 数据类型，不把 IPC 成功当业务成功。
 
 选择使用持久分组 ID 与原始 tag，空 tag 代表组内 Auto；只有结果关联使用 Go 提供的运行时分组标签。模式选项来自 GET `/mode` 的 available，默认模式与网络策略下的实际模式分别显示。测速的 `url_test_time` 为 Unix 秒，成功响应可能含旧缓存，不能宣称全部为本轮结果。节点和模式写入不重放，断线只通过权威读取或新 SSE 快照复核，保留 `persisted=true` 和原始错误码。
 

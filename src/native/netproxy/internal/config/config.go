@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"unicode"
@@ -19,14 +18,8 @@ import (
 )
 
 type ModuleConfig struct {
-	AutoStart bool `json:"auto_start"`
-	Selection `json:"selection"`
+	AutoStart bool       `json:"auto_start"`
 	WiFi      WiFiPolicy `json:"wifi"`
-}
-
-type Selection struct {
-	ActiveGroupID   string `json:"group_id"`
-	SelectedNodeTag string `json:"node_tag"`
 }
 
 type WiFiPolicy struct {
@@ -43,32 +36,10 @@ func (policy WiFiPolicy) Equal(other WiFiPolicy) bool {
 		slices.Equal(policy.Blacklist, other.Blacklist) && slices.Equal(policy.Whitelist, other.Whitelist)
 }
 
-func (selection Selection) Mode() string {
-	if selection.SelectedNodeTag == "" {
-		return "urltest"
-	}
-	return "manual"
-}
-
-func (selection Selection) Ref() string {
-	if selection.SelectedNodeTag == "" {
-		return ""
-	}
-	return selection.ActiveGroupID + "/" + selection.SelectedNodeTag
-}
-
-func (selection Selection) RuntimeTargets(runtimeTag string) (group, node string) {
-	if selection.SelectedNodeTag == "" {
-		return "Auto/" + runtimeTag, ""
-	}
-	return "Select/" + runtimeTag, runtimeTag + "/" + selection.SelectedNodeTag
-}
-
 // DefaultModule 返回全新配置使用的唯一默认值集合。
 func DefaultModule() ModuleConfig {
 	return ModuleConfig{
-		Selection: Selection{ActiveGroupID: "default"},
-		WiFi:      WiFiPolicy{Mode: "blacklist", Blacklist: []string{}, Whitelist: []string{}, ProxyOnNonWiFi: true},
+		WiFi: WiFiPolicy{Mode: "blacklist", Blacklist: []string{}, Whitelist: []string{}, ProxyOnNonWiFi: true},
 	}
 }
 
@@ -103,9 +74,6 @@ func ParseModule(content []byte) (ModuleConfig, error) {
 }
 
 func (config ModuleConfig) validate() error {
-	if config.SelectedNodeTag != "" && (config.ActiveGroupID == "" || strings.TrimSpace(config.SelectedNodeTag) == "") {
-		return errors.New("手动选择必须指定活动分组和有效节点 tag")
-	}
 	if config.WiFi.Mode != "blacklist" && config.WiFi.Mode != "whitelist" {
 		return errors.New("wifi.mode 只能是 blacklist 或 whitelist")
 	}
@@ -134,15 +102,6 @@ func ValidateSSID(ssid string) error {
 	return nil
 }
 
-func UpdateSelection(ctx context.Context, path string, selection Selection) error {
-	editor, err := Lock(ctx, path)
-	if err != nil {
-		return err
-	}
-	defer editor.Release()
-	return editor.UpdateSelection(selection)
-}
-
 // Editor 在显式持有文件锁期间完成配置读改写。
 type Editor struct {
 	path string
@@ -155,52 +114,4 @@ func Lock(ctx context.Context, path string) (*Editor, error) {
 		return nil, err
 	}
 	return &Editor{path: path, Lock: lock}, nil
-}
-
-func (editor *Editor) UpdateSelection(selection Selection) error {
-	content, err := os.ReadFile(editor.path)
-	if err != nil {
-		return err
-	}
-	config, err := ParseModule(content)
-	if err != nil {
-		return err
-	}
-	if config.Selection == selection {
-		return nil
-	}
-	config.Selection = selection
-	if err := config.validate(); err != nil {
-		return err
-	}
-	// 保留未修改分区的原始字段，内部选择同步不能改变 Wi-Fi 草稿的 revision。
-	var fields map[string]jsontext.Value
-	if err := json.Unmarshal(content, &fields); err != nil {
-		return err
-	}
-	fields["selection"], err = json.Marshal(selection, json.Deterministic(true))
-	if err != nil {
-		return err
-	}
-	content, err = json.Marshal(fields, json.Deterministic(true), jsontext.WithIndent("  "))
-	if err != nil {
-		return err
-	}
-	temporary, err := os.CreateTemp(filepath.Dir(editor.path), ".module-json-")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(temporary.Name())
-	if _, err := temporary.Write(append(content, '\n')); err != nil {
-		_ = temporary.Close()
-		return err
-	}
-	if err := temporary.Sync(); err != nil {
-		_ = temporary.Close()
-		return err
-	}
-	if err := temporary.Close(); err != nil {
-		return err
-	}
-	return os.Rename(temporary.Name(), editor.path)
 }

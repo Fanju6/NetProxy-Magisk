@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -19,6 +20,7 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/contract"
 	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
 	"github.com/fsnotify/fsnotify"
 )
@@ -71,8 +73,10 @@ func BenchmarkEventGroupsBurst(b *testing.B) {
 				b.Fatal(err)
 			}
 			f.saved, f.identity = state, 1000
+			f.snapshot.DefaultOutbound = "Main"
+			f.status.DefaultOutbound = "Main"
 			h.native.Store(&state)
-			groups := []serviceapi.Group{{Tag: "Auto/fixture", Items: make([]serviceapi.GroupItem, 128)}}
+			groups := []serviceapi.Group{{Tag: "Main", Items: make([]serviceapi.GroupItem, 128)}}
 			for i := range groups[0].Items {
 				groups[0].Items[i] = serviceapi.GroupItem{Tag: fmt.Sprintf("fixture/node-%d", i), Type: "socks", URLTestDelay: 100}
 			}
@@ -254,6 +258,8 @@ func fixtureCoreFeed(t *testing.T, topics int) (*coreFeed, *eventSubscriber) {
 		t.Fatal(err)
 	}
 	f.saved, f.identity = state, 1000
+	f.snapshot.DefaultOutbound = "Main"
+	f.status.DefaultOutbound = "Main"
 	h.native.Store(&state)
 	return f, client
 }
@@ -270,7 +276,7 @@ func TestCoreGroupsFixedWindowPublishesLatestWithoutRPC(t *testing.T) {
 			defer api.Close()
 			f.h.server.options.ServiceAddress = api.URL
 			send := func(selected string) {
-				groups := []serviceapi.Group{{Tag: "Auto/" + f.snapshot.Selection.ActiveGroupRuntimeTag, Selected: selected}}
+				groups := []serviceapi.Group{{Tag: "Main", Type: "selector", Selected: selected, Items: []serviceapi.GroupItem{{Tag: selected, Type: "socks"}}}}
 				if f.consume(coreEvent{generation: f.generation, groups: &groups}) {
 					t.Fatal("相同 core 身份触发重新校准")
 				}
@@ -323,6 +329,68 @@ func TestCoreGroupsFixedWindowPublishesLatestWithoutRPC(t *testing.T) {
 				t.Fatal("第二个窗口未重新启用")
 			}
 		})
+	}
+}
+
+func TestStoppedPolicyEventDoesNotReadCatalogOrInferSelection(t *testing.T) {
+	h := testHub(t)
+	h.server = resourceFixture(t)
+	h.server.options.CatalogRoot = filepath.Join(t.TempDir(), "broken-catalog")
+	resourceWriteFile(t, h.server.options.CatalogRoot, "not a directory")
+	resourceWriteFile(t, paths.SingBoxConfig(h.server.options.SingBoxDir),
+		`{"route":{"final":"RoutePick"},"outbounds":[{"type":"selector","tag":"RoutePick","outbounds":["direct"],"default":"direct"},{"type":"direct","tag":"direct"}]}`)
+	client := testSubscriber()
+	client.topics = topicGroups
+	h.clients[client] = struct{}{}
+	f := newCoreFeed(h)
+	defer f.close()
+	f.sync()
+	f.refresh(topicGroups)
+	select {
+	case event := <-client.messages:
+		var response struct {
+			OK   bool                   `json:"ok"`
+			Code string                 `json:"code"`
+			Data service.PolicySnapshot `json:"data"`
+		}
+		if err := json.Unmarshal(event.content, &response); err != nil {
+			t.Fatal(err)
+		}
+		snapshot := response.Data
+		if !response.OK || response.Code != "policy.groups" || snapshot.Live || snapshot.CoreStartedAtMillis != 0 || snapshot.DefaultOutbound != "RoutePick" ||
+			len(snapshot.Groups) != 1 || snapshot.Groups[0].Tag != "RoutePick" || snapshot.Groups[0].Selected != "" {
+			t.Fatalf("unexpected stopped policy snapshot: %s", event.content)
+		}
+		if strings.Contains(string(event.content), `"selection"`) || strings.Contains(string(event.content), `"runtime_groups"`) {
+			t.Fatalf("policy event contains retired node state: %s", event.content)
+		}
+	default:
+		t.Fatal("missing initial configured policy snapshot")
+	}
+}
+
+func TestBoundPolicyWaitsForCompleteFirstGroupsFrame(t *testing.T) {
+	f, client := fixtureCoreFeed(t, topicGroups)
+	f.publishGroups(f.h.epoch.Load())
+	if len(client.messages) != 0 {
+		t.Fatal("bound core published a configured placeholder before its first groups frame")
+	}
+	groups := []serviceapi.Group{}
+	f.consume(coreEvent{generation: f.generation, groups: &groups})
+	f.flushGroups()
+	select {
+	case event := <-client.messages:
+		var response struct {
+			Data service.PolicySnapshot `json:"data"`
+		}
+		if err := json.Unmarshal(event.content, &response); err != nil {
+			t.Fatal(err)
+		}
+		if !response.Data.Live || response.Data.CoreStartedAtMillis != 1000 || response.Data.Groups == nil || len(response.Data.Groups) != 0 {
+			t.Fatalf("empty native frame is not a complete live snapshot: %s", event.content)
+		}
+	default:
+		t.Fatal("complete first native frame was not published")
 	}
 }
 
@@ -466,7 +534,7 @@ func TestMissingTopicsRequiresFullInitialStatus(t *testing.T) {
 		t.Fatal("traffic 错误替代了完整 status", got)
 	}
 	h.emit(topicStatus, "status", contract.Success("service.status", "状态", nil))
-	h.emit(topicGroups, "groups", contract.Success("node.snapshot", "节点", nil))
+	h.emit(topicGroups, "groups", contract.Success("policy.groups", "策略组", nil))
 	h.emit(topicSubscriptions, "subscriptions", contract.Success("subscription.list", "订阅", nil))
 	if h.missingTopics() != 0 {
 		t.Fatal("已存在的快照仍需重新读取")
@@ -601,14 +669,14 @@ func TestFileEventsOnlyRefreshAffectedTopics(t *testing.T) {
 		op     fsnotify.Op
 		topics int
 	}{
-		{options.ModuleConfig, fsnotify.Write, topicStatus | topicGroups},
+		{options.ModuleConfig, fsnotify.Write, topicStatus},
 		{options.StateFile, fsnotify.Create, topicStatus | topicGroups},
 		{options.InboundConfig, fsnotify.Write, topicStatus},
-		{paths.SingBoxConfig(options.SingBoxDir), fsnotify.Rename, topicStatus},
-		{options.CatalogRoot, fsnotify.Create, allTopics},
-		{filepath.Join(options.CatalogRoot, "default"), fsnotify.Remove, allTopics},
-		{filepath.Join(options.CatalogRoot, "default", "provider.json"), fsnotify.Write, allTopics},
-		{filepath.Join(options.CatalogRoot, "default", "meta.json"), fsnotify.Write, allTopics},
+		{paths.SingBoxConfig(options.SingBoxDir), fsnotify.Rename, topicStatus | topicGroups},
+		{options.CatalogRoot, fsnotify.Create, topicSubscriptions},
+		{filepath.Join(options.CatalogRoot, "default"), fsnotify.Remove, topicSubscriptions},
+		{filepath.Join(options.CatalogRoot, "default", "provider.json"), fsnotify.Write, topicSubscriptions},
+		{filepath.Join(options.CatalogRoot, "default", "meta.json"), fsnotify.Write, topicSubscriptions},
 		{filepath.Join(options.CatalogRoot, "default", "history.jsonl"), fsnotify.Write, 0},
 		{filepath.Join(options.CatalogRoot, "staging", "provider.json"), fsnotify.Write, 0},
 		{filepath.Join(options.ProgressDir, "subscription-test.progress.json"), fsnotify.Write, topicSubscriptions},

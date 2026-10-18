@@ -168,6 +168,17 @@
       "listen_port": 7080
     }
   ],
+  "outbounds": [
+    {
+      "type": "selector",
+      "tag": "Proxy",
+      "outbounds": ["direct"],
+      "use_all_providers": true,
+      "default": "direct"
+    },
+    { "type": "direct", "tag": "direct" },
+    { "type": "block", "tag": "block" }
+  ],
   "route": {
     "default_domain_resolver": "dns-direct",
     "rule_set": [

@@ -153,7 +153,7 @@ internal class ModuleApiBridge(
             "info" -> "/info"
             "service" -> "/service"
             "nodes" -> "/nodes/snapshot"
-            "selection" -> "/selection"
+            "policy_groups" -> "/policy-groups"
             "mode" -> "/mode"
             "catalog" -> "/catalog"
             "subscriptions" -> "/subscriptions"
@@ -207,9 +207,8 @@ internal class ModuleApiBridge(
             "update_all" -> "POST" to "/subscriptions/update-all"
             else -> throw BridgeFailure("api.invalid_request", 400)
         }
-        val query = args.replacementGroupId?.let { mapOf("replacement_group_id" to it) } ?: emptyMap()
         return request(args.requestId, path, mutation = true, method = method,
-            body = args.input ?: JsonObject(emptyMap()), query = query,
+            body = args.input ?: JsonObject(emptyMap()),
             subscriptionGroup = args.groupId, subscriptionMutation = true,
             subscriptionSummary = args.action == "update_all")
     }
@@ -232,25 +231,23 @@ internal class ModuleApiBridge(
         return request(args.requestId, route.path, route.mutation, route.method, route.body, route.query, management = args)
     }
 
-    suspend fun selectNode(requestId: String, target: Map<String, Any?>?): ReadResult =
-        request(requestId, "/selection", mutation = true, method = "PUT", body = nodeTarget(target))
+    suspend fun policySelect(raw: String): ReadResult {
+        val args = PolicyGroups.select(raw)
+        return request(args.requestId, "/policy-groups/select", mutation = true, body = buildJsonObject {
+            put("group_tag", args.groupTag); put("member_tag", args.memberTag)
+        })
+    }
 
     suspend fun changeMode(requestId: String, mode: Any?): ReadResult {
         if (mode !is String || mode.isBlank()) throw BridgeFailure("api.invalid_request")
         return request(requestId, "/mode", mutation = true, method = "PUT", body = buildJsonObject { put("mode", mode) })
     }
 
-    suspend fun testDelay(requestId: String, target: Map<String, Any?>?): ReadResult =
-        request(requestId, "/nodes/delay", mutation = true, body = nodeTarget(target))
-
-    private fun nodeTarget(target: Map<String, Any?>?): JsonObject {
-        if (target == null || target.keys != setOf("group_id", "node_tag")) throw BridgeFailure("api.invalid_request")
-        val group = target["group_id"] as? String ?: throw BridgeFailure("api.invalid_request")
-        val tag = target["node_tag"] as? String ?: throw BridgeFailure("api.invalid_request")
-        if (!group.matches(Regex("[A-Za-z0-9][A-Za-z0-9._-]*")) || group == "staging" || group.contains("..")) {
-            throw BridgeFailure("api.invalid_request")
-        }
-        return buildJsonObject { put("group_id", group); put("node_tag", tag) }
+    suspend fun policyDelay(raw: String): ReadResult {
+        val args = PolicyGroups.delay(raw)
+        return request(args.requestId, "/policy-groups/delay", mutation = true, body = buildJsonObject {
+            put("group_tag", args.groupTag)
+        })
     }
 
     private suspend fun request(
@@ -273,7 +270,8 @@ internal class ModuleApiBridge(
             transport.request(method, path, body, query, mutation) { status, input ->
                 ReadResult(status, decode(status, input, subscriptionGroup = subscriptionGroup,
                     subscriptionMutation = subscriptionMutation, subscriptionSummary = subscriptionSummary,
-                    management = management) { PublicCatalog.read(path, it) })
+                    management = management,
+                    policy = path in setOf("/policy-groups", "/policy-groups/select", "/policy-groups/delay")) { PublicCatalog.read(path, it) })
             }
         }
     }
@@ -484,6 +482,7 @@ internal class ModuleApiBridge(
         subscriptionMutation: Boolean = subscriptionGroup != null,
         subscriptionSummary: Boolean = false,
         management: Management.Request? = null,
+        policy: Boolean = false,
         project: (JsonElement) -> JsonElement = { it }): JsonObject {
         val header = try {
             BodyLimitInputStream(input).use {
@@ -507,10 +506,12 @@ internal class ModuleApiBridge(
             SubscriptionActions.result(header.data, subscriptionGroup, subscriptionSummary)
         } else if (ok) {
             project(header.data?.takeUnless { it is JsonNull } ?: throw BridgeFailure("api.invalid_response"))
-        } else buildJsonObject {
-            val persisted = ((header.data as? JsonObject)?.get("persisted") as? JsonPrimitive)
-                ?.takeUnless { it.isString }?.booleanOrNull
-            if (persisted != null) put("persisted", persisted)
+        } else if (policy) PolicyGroups.failure(header.data) else buildJsonObject {
+            for (key in listOf("accepted", "persisted")) {
+                val flag = ((header.data as? JsonObject)?.get(key) as? JsonPrimitive)
+                    ?.takeUnless { it.isString }?.booleanOrNull
+                if (flag != null) put(key, flag)
+            }
         }
         return envelope(ok, header.code, data)
     }

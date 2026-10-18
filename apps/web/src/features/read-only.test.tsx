@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import { RouterProvider } from '@tanstack/react-router'
 import { expect, it, vi } from 'vitest'
 import { ApiClient } from '@/api/client'
@@ -8,7 +8,7 @@ import { makeRouter } from '@/app/router'
 import { createFixtures } from '@/mocks/fixtures'
 
 it('shows native data but disables every business write and reads no unsupported endpoint', async () => {
-  const { service, snapshot } = createFixtures()
+  const { service, snapshot, policy } = createFixtures()
   const info = {
     api_version: 1,
     version: 'fixture',
@@ -44,7 +44,7 @@ it('shows native data but disables every business write and reads no unsupported
     subscribe: (_topics, consume) => {
       for (const [name, data] of [
         ['status', service],
-        ['groups', snapshot],
+        ['groups', policy],
         ['subscriptions', snapshot.groups.map(({ group }) => group)],
       ] as const)
         consume({ name, body: { schema: 1, ok: true, code: 'fixture', message: '', data } })
@@ -66,7 +66,11 @@ it('shows native data but disables every business write and reads no unsupported
   expect(await screen.findByRole('button', { name: 'Stop service' })).toBeDisabled()
   expect(screen.getByRole('combobox', { name: 'Outbound mode' })).toBeDisabled()
   await router.navigate({ to: '/nodes' })
-  expect(await screen.findByRole('button', { name: 'Select Tokyo 01' })).toBeDisabled()
+  expect(
+    within(await screen.findByTestId('policy-Internet')).getByRole('button', {
+      name: 'Select Hong Kong 01',
+    }),
+  ).toBeDisabled()
   for (const button of screen.getAllByRole('button', { name: /^Select / }))
     expect(button).toBeDisabled()
   await router.navigate({ to: '/subscriptions' })

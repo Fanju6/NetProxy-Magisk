@@ -1,6 +1,6 @@
 # NetProxy V9 Android Prototype
 
-这是可试用的 V9 Android 管理器原型，尚未正式发布。已接入服务控制、节点与订阅管理、配置和本地规则、入站、应用/Wi-Fi 策略、日志与诊断。V9 不以兼容 V8 为目标，但继续复用经过验证的 TLS、私有凭据交付和 Go 事务；不修改 V8 发布流水线，不实现桌面平台。
+这是可试用的 V9 Android 管理器原型，尚未正式发布。已接入服务控制、原生策略组选择与测速、本地 Catalog 资源/节点与 URL 订阅管理、配置和本地规则、入站、应用/Wi-Fi 策略、日志与诊断。V9 不以兼容 V8 为目标，但继续复用经过验证的 TLS、私有凭据交付和 Go 事务；不修改 V8 发布流水线，不实现桌面平台。
 
 ## 工程
 
@@ -86,18 +86,21 @@ React / TanStack Query / Zod
   -> 共用 LocalHttpTransport -> Go loopback HTTPS API
 ```
 
-- 只读资源枚举为 `info/service/nodes/selection/mode/catalog/subscriptions`，`subscription_read` 只接受严格分组 ID 与 `detail/history/progress`，禁止私有查询。`subscription_action(update/cancel)` 和 `subscription_write(add/edit/remove/update_all)` 严格验证操作、字段与 ID；方法、路径及删除替代组 query 仅在原生层构造。事件主题只有 `status/groups/subscriptions`，traffic 随 status 到达。其他核心操作边界不变，不提供任意 HTTP、凭据、文件或命令的 IPC。
-- `management` 是固定业务枚举，不是通用 HTTP：配置目标仅限 module、inbound、sing-box 主配置/分区、本地规则和只读 runtime；另允许应用/图标、Wi-Fi、日志、eBPF、节点内容操作与固定诊断导出。`service_action` 支持 start/stop/restart/reload/check。请求仍受双层字段、revision、类型及大小校验，不允许访问 api.json 或统计状态。
+- 只读资源枚举为 `info/service/nodes/policy_groups/mode/catalog/subscriptions`；`policy_groups` 固定读取 `GET /policy-groups`，`nodes/catalog` 读取持久资源，不承载模块级选择。`subscription_read` 只接受严格分组 ID 与 `detail/history/progress`，禁止 private 查询；`subscription_action(update/cancel)` 和 `subscription_write(add/edit/remove/update_all)` 严格验证操作、字段与 ID。方法与路径仅在原生层构造，不接收删除替代组 query。事件主题只有 `status/groups/subscriptions`，traffic 随 status 到达，groups 是原生策略快照。
+- 策略操作为 `policy_select(requestId, groupTag, memberTag)` 与 `policy_delay(requestId, groupTag)`，分别映射固定 POST `/policy-groups/select`、`/policy-groups/delay`。原始标签不修剪或拆分，Rust/Kotlin 独立检查字段、控制字符、UTF-8 与 4 MiB 上限；不再开放 `select_node/test_delay` 或 selection 资源。仅已验证就绪核心可操作，可手动选择的 Selector 各自独立，选择持久化归 sing-box cache_file；测速不承诺所有成员已经完成新测试。写入不重放，未确认结果通过新快照核对。
+- `management` 是固定业务枚举，不是通用 HTTP：配置目标仅限 module、inbound、sing-box 主配置/分区、本地规则和只读 runtime；另允许应用/图标、Wi-Fi、日志、eBPF、节点内容操作与固定诊断导出。`module` 只有 `auto_start/wifi`，没有 `module/selection`。本地资源新增 `catalog_create(id,name)`、`catalog_rename(id,name)`、`catalog_remove(id)`，映射 POST `/catalog`、PUT/DELETE `/catalog/{id}`；不允许删除 default，重命名/删除由 Go 限定 local。`service_action` 支持 start/stop/restart/reload/check。请求仍受双层字段、revision、类型及大小校验，不允许访问 api.json 或统计状态。
+- Catalog 非空资源投影为稳定 `np/<catalog-id>` Provider，公开摘要提供 `provider_tag`；重命名不改标签，空资源不生成 Provider。资源增删不生成 Auto/Select/Proxy 图，不改主配置 outbounds、route 或 DNS；引用仍存在时拒绝破坏性删除，提交后同步失败保留 persisted。策略编辑复用 `singbox/outbounds` 的 revision 与配置事务，仅修改目标出站，保留其他对象、未知字段和未编辑的数值原文。
+- 策略 GET、POST 和 groups SSE 共用 `groups/live/core_started_at_millis/default_outbound` 投影。停止时仅有配置摘要和显式出站引用，不展开 Provider、不伪造选择或测速，也不启动离线测速核心；新核心须等待新身份的完整快照，旧实例结果不得复用。
 - 配置与节点原文只在用户主动打开的编辑器中保留；新输入的凭据可经过 JS/IPC，不声称永远不进入 JS。敏感内容不进入 Query/Mutation 缓存、持久存储或日志。诊断包留在原生私有缓存，系统分享仅授予选定接收方读取权限；前端只收到分享启动结果，不收到设备路径。
 - 公开 Catalog 的 GET 与 SSE 共用原生字段投影，剔除私有设置、官网 URL、未知扩展与原始异常；前端仍按实际 Go 结构验证 `local/subscription`、流量、稀疏历史及当前阶段，不把进度消失当作成功。
 - Kotlin 通过 Gradle sourceSet 直接编译 V8 `core/api` 源码，不复制或分叉证书、Bearer、Provider 和取消实现。首次配对同样复用该传输，安全流程见 [ADR 001](docs/adr-001-trusted-pairing.md)。
 - 凭据仍由非导出、仅接受 Binder UID 0 的 `ConnectionProvider` 写入 `noBackupFilesDir/module-connection.json`。证书精确 SHA-256 和主机名验证、禁用代理/重定向、请求取消继续使用原有实现。
 - 无凭据时，原生层只发送固定、无凭据的配对触发；不信其响应，必须等到新的 Root 私有交付后才进行精确钉扎业务读取。401 或身份失败先拒绝本次请求，下一次连接经同一可信交付恢复，不重放业务写入。不要求用户粘贴主 Secret。
-- Kotlin 检查 schema=1、HTTP 状态、类型和 4 MiB 上限；业务错误保留状态、错误码和布尔 `persisted`，丢弃原始异常消息与其他错误详情。JS 再经现有 ApiClient/Zod 校验。
+- Kotlin 检查 schema=1、HTTP 状态、类型和 4 MiB 上限；业务错误保留状态、错误码和布尔 `persisted`，策略组/Catalog 错误另按白名单保留 `accepted/runtime_synced/core_started_at_millis`，丢弃原始异常消息与其他错误详情。`accepted` 不等于 `persisted`，缺少标记也不能证明操作未发生。JS 再经现有 ApiClient/Zod 校验。
 - SSE 原生队列容量为 1，JS 同时只等待一个 next_event。没有无界事件 IPC、原生重连循环或 HTTP 轮询。慢端背压到已有有界传输；关闭和后台取消对应 Call。
 - 新订阅替换遗留文档的会话，同 ID 重复建立被拒绝；旧 ID 关闭不影响新会话。读取最多 8 项并行，取消先到的 ID 有界记录，不因 IPC 重排遗漏取消。
 - Kotlin Activity-aware 生命周期是原生可见性事实源；JS 将它与 document 可见性合并，继续负责有界重连、完整快照和核心身份隔离。
-- Capability 仅授予本插件十三项命令和官方 listener 注册/移除。没有通用 HTTP、FS、Shell 或远程页面授权，CSP 不允许 JS 直连 Go。
+- Capability 仅授予本插件固定命令和官方 listener 注册/移除，实际清单见 [default.toml](plugins/module-api/permissions/default.toml)；本地资源管理复用 management，不增加通用权限。没有通用 HTTP、FS、Shell 或远程页面授权，CSP 不允许 JS 直连 Go。
 
 ## 验证与限制
 

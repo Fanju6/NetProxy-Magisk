@@ -210,7 +210,7 @@ func prepareWorkerFixture(t *testing.T, serverURL string, now time.Time) (string
 		t.Fatal(err)
 	}
 	moduleConf := filepath.Join(root, "module.json")
-	content := "{\"selection\":{\"group_id\":\"default\"}}"
+	content := "{}"
 	if err := os.WriteFile(moduleConf, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -253,6 +253,8 @@ func markStaleWorker(t *testing.T, pidFile string) {
 	}
 }
 
+var workerVerifyRuntime = func(context.Context, Options, string) error { return nil }
+
 func installRuntimeHooks(t *testing.T, options *Options, running bool, reload func(context.Context, Options) error) {
 	t.Helper()
 	originalRunning, originalVerify := workerProcessRunning, workerVerifyRuntime
@@ -261,7 +263,7 @@ func installRuntimeHooks(t *testing.T, options *Options, running bool, reload fu
 	if options != nil {
 		syncCatalog := options.SyncCatalog
 		options.SyncCatalog = func(ctx context.Context, groupID string, structureChanged bool) (string, bool, error) {
-			before, err := moduleconfig.LoadModule(options.ModuleConfig)
+			_, err := moduleconfig.LoadModule(options.ModuleConfig)
 			if err != nil {
 				return currentRuntimeSyncState(*options), false, err
 			}
@@ -269,9 +271,12 @@ func installRuntimeHooks(t *testing.T, options *Options, running bool, reload fu
 			if err != nil || !running {
 				return state, attempted, err
 			}
-			after, err := moduleconfig.LoadModule(options.ModuleConfig)
-			if err == nil && reload != nil && (structureChanged || before.ActiveGroupID != after.ActiveGroupID) {
+			_, err = moduleconfig.LoadModule(options.ModuleConfig)
+			if err == nil && reload != nil && structureChanged {
 				err = reload(ctx, *options)
+			}
+			if err == nil {
+				err = workerVerifyRuntime(ctx, *options, groupID)
 			}
 			return subscription.RuntimeSyncApplied, true, err
 		}
@@ -549,7 +554,7 @@ func TestUpdateGroupWhenServiceRunningUsesProviderWatch(t *testing.T) {
 	options := newTestOptions(root)
 	options.ModuleConfig = moduleConf
 	options.SingBoxPath = filepath.Join(root, "sing-box")
-	if err := os.WriteFile(moduleConf, []byte("{\"selection\":{\"group_id\":\"fixture\"}}"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConf, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := provider.WriteAtomic(filepath.Join(root, "fixture", "provider.json"), []byte(`{"outbounds":[{"type":"socks","tag":"old-node","server":"127.0.0.1","server_port":1080}]}`+"\n"), 0o600); err != nil {
@@ -584,7 +589,7 @@ func TestUpdateGroupProviderWatchFailureDoesNotReload(t *testing.T) {
 	options := newTestOptions(root)
 	options.ModuleConfig = moduleConf
 	options.SingBoxPath = filepath.Join(root, "sing-box")
-	if err := os.WriteFile(moduleConf, []byte("{\"selection\":{\"group_id\":\"fixture\"}}"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConf, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := provider.WriteAtomic(filepath.Join(root, "fixture", "provider.json"), []byte(`{"outbounds":[{"type":"socks","tag":"old-node","server":"127.0.0.1","server_port":1080}]}`+"\n"), 0o600); err != nil {
@@ -688,9 +693,8 @@ func TestUpdateGroupRuntimeSyncFailureReturnsStructuredErrorAndKeepsProvider(t *
 		t.Fatal(err)
 	}
 	runtime, err := catalog.BuildRuntime(context.Background(), catalog.RuntimeOptions{
-		Root: root, ModuleConfig: moduleConf,
+		Root:            root,
 		ProvidersOutput: filepath.Join(runtimeDir, "providers.json"),
-		OutboundsOutput: filepath.Join(runtimeDir, "outbounds.json"),
 	})
 	if err != nil {
 		t.Fatalf("重启准备阶段无法读取最新 Provider: %v", err)
@@ -952,7 +956,7 @@ func TestNextUpdateUsesNearestEnabledSubscription(t *testing.T) {
 func TestRunExitsWhenNoAutomaticSubscription(t *testing.T) {
 	root := t.TempDir()
 	moduleConf := filepath.Join(root, "module.json")
-	if err := os.WriteFile(moduleConf, []byte("{\"selection\":{\"group_id\":\"default\"}}"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConf, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	options := newTestOptions(root)
@@ -1068,7 +1072,7 @@ func TestNetworkWatchFollowsPolicyWithoutStoppingOtherTasks(t *testing.T) {
 func TestTelemetrySharesWorkerLifecycleWithoutSubscriptions(t *testing.T) {
 	options := newTestOptions(t.TempDir())
 	options.ModuleConfig = filepath.Join(t.TempDir(), "module.json")
-	if err := os.WriteFile(options.ModuleConfig, []byte("{\"selection\":{\"group_id\":\"default\"}}"), 0o600); err != nil {
+	if err := os.WriteFile(options.ModuleConfig, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	task := &testTelemetryTask{make(chan struct{}), make(chan struct{}, 1), make(chan struct{})}
@@ -1273,7 +1277,7 @@ func TestRunDueContinuesAfterOneSubscriptionFails(t *testing.T) {
 
 	root := t.TempDir()
 	moduleConf := filepath.Join(root, "module.json")
-	if err := os.WriteFile(moduleConf, []byte("{\"selection\":{\"group_id\":\"good\"}}"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConf, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	for _, item := range []struct {

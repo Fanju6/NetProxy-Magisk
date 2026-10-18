@@ -50,8 +50,10 @@ type UpdateOptions struct {
 	TransferContext context.Context
 	// PersistedBeforeUpdate 表示调用方已先保存编辑设置；更新失败时仍须在错误数据中报告已保存。
 	PersistedBeforeUpdate bool
-	Now                   time.Time
-	snapshot              *catalog.Metadata
+	// ValidateProvider checks the candidate before atomic publication under the Catalog root lock.
+	ValidateProvider func(provider.Document) error
+	Now              time.Time
+	snapshot         *catalog.Metadata
 }
 
 // Result 是订阅更新对 Shell 暴露的最小结构化结果。
@@ -66,6 +68,7 @@ type Result struct {
 	RuntimeSynced      bool   `json:"runtime_synced"`
 	RuntimeSyncState   string `json:"runtime_sync_state"`
 	RuntimeSyncPending bool   `json:"runtime_sync_pending"`
+	ReloadRequired     bool   `json:"-"`
 }
 
 // Error 是可以直接映射为 schema=1 错误响应的订阅错误。
@@ -467,6 +470,12 @@ func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 		clearProgress(options.ProgressDir, options.GroupID)
 		return Result{}, updateConflict(options.GroupID, initialSnapshot, current)
 	}
+	if options.ValidateProvider != nil {
+		if err := options.ValidateProvider(filtered); err != nil {
+			commitReleaseRoot()
+			return updateFailure(ctx, options, metadata, groupDir, started, response, "provider.invalid", "候选资源与原生配置冲突，保留原有节点", err)
+		}
+	}
 	if current.RuntimeSyncPending != initialSnapshot.RuntimeSyncPending ||
 		current.RuntimeSyncState != initialSnapshot.RuntimeSyncState ||
 		current.LastError != initialSnapshot.LastError {
@@ -498,7 +507,8 @@ func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 		clearProgress(options.ProgressDir, options.GroupID)
 		return Result{GroupID: options.GroupID, NodeCount: metadata.NodeCount, Revision: metadata.Revision,
 				StructureChanged: oldHasNodes != (metadata.NodeCount > 0), UsedProxy: usedProxy,
-				Persisted: true, RuntimeSyncState: RuntimeSyncNotRunning, RuntimeSyncPending: metadata.RuntimeSyncPending},
+				Persisted: true, RuntimeSyncState: RuntimeSyncNotRunning, RuntimeSyncPending: metadata.RuntimeSyncPending,
+				ReloadRequired: provider.ReplacesMembers(oldDocument, filtered)},
 			&Error{Code: "subscription.history_write_failed", Message: "订阅历史写入失败", Data: map[string]any{
 				"persisted": true, "cause": err.Error(),
 			}}
@@ -508,6 +518,7 @@ func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 		GroupID: options.GroupID, NodeCount: metadata.NodeCount, Revision: metadata.Revision,
 		StructureChanged: oldHasNodes != (metadata.NodeCount > 0), UsedProxy: usedProxy,
 		Persisted: true, RuntimeSyncState: RuntimeSyncNotRunning, RuntimeSyncPending: metadata.RuntimeSyncPending,
+		ReloadRequired: provider.ReplacesMembers(oldDocument, filtered),
 	}, nil
 }
 

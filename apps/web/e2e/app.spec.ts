@@ -113,7 +113,7 @@ test('subscription form creates, patches and deletes a demo source without revea
   expect(failures).toEqual([])
 })
 
-test('active subscription deletion requires a named replacement and update-all reports partial results', async ({
+test('resource deletion does not use a policy replacement and update-all reports partial results', async ({
   page,
 }) => {
   await page.goto('/#/subscriptions')
@@ -130,10 +130,7 @@ test('active subscription deletion requires a named replacement and update-all r
   const dialog = page.getByRole('dialog')
   await resourceAction(page, '删除订阅')
   const confirm = dialog.getByRole('button', { name: '删除订阅', exact: true })
-  await expect(confirm).toBeDisabled()
-  await dialog.getByRole('combobox', { name: '替代分组', exact: true }).click()
-  await expect(page.getByRole('option', { name: 'Travel backup', exact: true })).toHaveCount(0)
-  await page.getByRole('option', { name: '本地配置', exact: true }).click()
+  await expect(dialog.getByRole('combobox', { name: '替代分组', exact: true })).toHaveCount(0)
   await expect(confirm).toBeEnabled()
   await confirm.click()
   await expect(page.getByText('订阅已删除', { exact: true })).toBeVisible()
@@ -158,24 +155,15 @@ test('service confirmation, stopped Catalog and selection work without a backend
   await page.getByRole('button', { name: '确定', exact: true }).click()
   await expect(page.getByRole('heading', { name: '已停止', exact: true })).toBeVisible()
   const navigation = page.getByRole('navigation', { name: '主导航' }).filter({ visible: true })
-  await navigation.getByRole('link', { name: '节点', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '节点', exact: true })).toBeVisible()
+  await navigation.getByRole('link', { name: '代理', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '代理', exact: true })).toBeVisible()
   await expect(
-    page.getByTestId('group-demo-empty').getByRole('button', { name: /Auto-Fastest/ }),
-  ).toHaveCount(0)
-  await page.getByRole('button', { name: '选择 Tokyo 01', exact: true }).click()
-  await expect(page.getByRole('button', { name: '选择 Tokyo 01', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  )
+    page.getByTestId('policy-Internet').getByRole('button', { name: '选择 Fastest', exact: true }),
+  ).toBeDisabled()
+  await expect(page.getByRole('button', { name: '测试分组 Internet', exact: true })).toBeDisabled()
   await page.getByRole('button', { name: '显示方式', exact: true }).click()
   await page.getByRole('menuitemradio', { name: '列表视图' }).click()
   await expect(page.getByRole('menu')).toHaveCount(0)
-  await page.getByRole('searchbox').fill('Tokyo')
-  await expect(page.getByRole('button', { name: '选择 Hong Kong 01', exact: true })).toHaveCount(0)
-  await page.getByRole('searchbox').clear()
-  await page.getByRole('button', { name: 'Global Connect', exact: false }).first().click()
-  await expect(page.getByRole('button', { name: '选择 Tokyo 01', exact: true })).not.toBeVisible()
   await navigation.getByRole('link', { name: '资源', exact: true }).click()
   await expect(page.getByRole('heading', { name: '本地配置', exact: true })).toBeVisible()
   await navigation.getByRole('link', { name: '仪表盘', exact: true }).click()
@@ -208,71 +196,100 @@ test('theme, language and configuration survive page navigation; preferences sur
   await expect(page.getByRole('note')).toContainText('Demo mode')
 })
 
-test('node testing and saved routing changes remain usable while the core is stopped', async ({
+test('policy controls require a live core while saved routing remains available when stopped', async ({
   page,
 }) => {
   const failures: string[] = []
   page.on('pageerror', (error) => failures.push(error.message))
-  await page.goto('/')
-  await page.getByRole('button', { name: '停止服务', exact: true }).click()
+  await page.goto('/#/nodes')
+  const group = page.getByTestId('policy-Internet')
+  const member = group.getByRole('button', { name: '选择 Hong Kong 01', exact: true })
+  await expect(member).toBeEnabled()
+  await member.click()
+  await expect(member).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('button', { name: '测试分组 Fastest', exact: true }).click()
+  await expect(page.getByText('已收到最近可用结果，其中可能包含缓存。')).toBeVisible()
+  const navigation = page.getByRole('navigation', { name: '主导航' }).filter({ visible: true })
+  await navigation.getByRole('link', { name: '仪表盘', exact: true }).click()
+  const stop = page.getByRole('button', { name: '停止服务', exact: true })
+  await expect(stop).toBeEnabled()
+  await stop.click()
   await page.getByRole('button', { name: '确定', exact: true }).click()
   await expect(page.getByRole('heading', { name: '已停止', exact: true })).toBeVisible()
-  const navigation = page.getByRole('navigation', { name: '主导航' }).filter({ visible: true })
-  await navigation.getByRole('link', { name: '节点', exact: true }).click()
-  const group = page.getByTestId('group-demo-global')
-  const manual = group.getByRole('button', { name: '选择 Tokyo 01', exact: true })
-  await expect(manual).toBeEnabled()
-  await manual.click()
-  await expect(manual).toHaveAttribute('aria-pressed', 'true')
-  await expect(manual).toBeEnabled()
-  const auto = group.getByRole('button', { name: '选择 Auto-Fastest', exact: true })
-  await auto.click()
-  await expect(auto).toHaveAttribute('aria-pressed', 'true')
-  await expect(group.getByRole('button', { name: '测试分组 Global Connect' })).toBeEnabled()
-  await group.getByRole('button', { name: '测试分组 Global Connect' }).click()
-  await expect(page.getByText('已收到最近可用结果，其中可能包含缓存。')).toBeVisible()
-  const measured = group.getByRole('button', { name: '测试 Tokyo 01 的延迟', exact: true })
-  await expect(measured).toContainText('53 ms')
-  const single = group.getByRole('button', { name: '测试 Hong Kong 01 的延迟' })
-  await expect(single).toBeEnabled()
-  await single.click()
-  await expect(single).toBeEnabled()
-  await expect(single).toContainText('32 ms')
-  await expect(measured).toContainText('53 ms')
-  expect(await single.locator('xpath=ancestor::button').count()).toBe(0)
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await navigation.getByRole('link', { name: '代理', exact: true }).click()
+  await expect(
+    page
+      .getByTestId('policy-Internet')
+      .getByRole('button', { name: '选择 Hong Kong 01', exact: true }),
+  ).toBeDisabled()
+  await expect(page.getByRole('button', { name: '测试分组 Internet', exact: true })).toBeDisabled()
   await navigation.getByRole('link', { name: '仪表盘', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '已停止', exact: true })).toBeVisible()
   const mode = page.getByRole('combobox', { name: '出站模式', exact: true })
   await expect(mode).toBeEnabled()
   await mode.click()
   await page.getByRole('option', { name: '代理', exact: true }).click()
   await expect(mode).toContainText('代理')
-  await expect(mode).toBeEnabled()
-  await expect(page.getByText(/运行时模式 ·/)).toHaveCount(0)
+  await navigation.getByRole('link', { name: '代理', exact: true }).click()
+  await expect(
+    page
+      .getByTestId('policy-Internet')
+      .getByRole('button', { name: '选择 Hong Kong 01', exact: true }),
+  ).toBeDisabled()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   expect(failures).toEqual([])
+})
+
+test('nested policy tabs, grid search and native delete checks retain their boundaries', async ({
+  page,
+}) => {
+  await page.goto('/#/nodes')
+  await page.getByRole('button', { name: '打开策略组 Fastest', exact: true }).click()
+  await expect(page.getByRole('tab', { name: 'Fastest', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  )
+  await expect(page.getByTestId('policy-Internet')).toHaveCount(0)
+  await page.getByRole('button', { name: '显示方式', exact: true }).click()
+  await page.getByRole('menuitemradio', { name: '网格视图', exact: true }).click()
+  await expect(page.getByRole('menu')).toHaveCount(0)
+  await expect(page.getByTestId('node-grid')).toHaveClass(/grid-cols-2/)
+  await page.getByRole('searchbox').fill('Tokyo')
+  await expect(page.getByRole('button', { name: '选择 Tokyo 01', exact: true })).toBeDisabled()
+  await expect(page.getByRole('button', { name: '选择 Hong Kong 01', exact: true })).toHaveCount(0)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({
+    path: `test-results/${test.info().project.name}-policy-tabs-grid.png`,
+    fullPage: true,
+  })
+  await page.getByRole('searchbox').clear()
+  await page.getByRole('button', { name: '编辑策略组 Fastest', exact: true }).click()
+  await page.getByRole('menuitem', { name: '删除策略组', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '删除策略组', exact: true })
+  await expect(dialog.locator('[data-slot="drawer-content"]')).toHaveCount(0)
+  await dialog.getByRole('button', { name: '删除', exact: true }).click()
+  await expect(dialog.getByRole('alert')).toContainText('config.invalid')
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(page.getByRole('tab', { name: 'Fastest', exact: true })).toBeVisible()
 })
 
 test('details, keyboard navigation and responsive content stay inside the viewport', async ({
   page,
 }) => {
   await page.goto('/#/nodes')
-  await page.getByRole('button', { name: '查看详情 Tokyo 01', exact: true }).click()
-  await expect(page.getByRole('dialog')).toBeVisible()
-  await expect(page.getByRole('dialog')).toContainText('jp-01.example.invalid')
-  await expect(
-    page.getByRole('dialog').locator('[data-slot="drawer-footer"], [data-slot="dialog-footer"]'),
-  ).toHaveCount(0)
-  await page.getByRole('button', { name: '关闭', exact: true }).click()
-  await expect(page.getByRole('dialog')).not.toBeVisible()
-  await expect(page.getByRole('button', { name: '查看详情 Tokyo 01', exact: true })).toBeFocused()
+  await page.getByRole('button', { name: '编辑策略组 Fastest', exact: true }).click()
+  await page.getByRole('menuitem', { name: '原生配置', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByRole('textbox', { name: 'interval', exact: true })).toHaveValue('3m')
+  await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+  await expect(dialog).not.toBeVisible()
+  await expect(page.getByRole('button', { name: '编辑策略组 Fastest', exact: true })).toBeFocused()
   await page.getByRole('searchbox').fill('🇬🇧')
   await expect(page.getByRole('button', { name: /选择 🇬🇧/ })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.getByRole('searchbox').clear()
   await page.screenshot({
-    path: `test-results/${test.info().project.name}-nodes.png`,
+    path: `test-results/${test.info().project.name}-policies.png`,
     fullPage: true,
   })
   await page.goto('/')
@@ -301,7 +318,7 @@ test('narrow layouts, reduced motion and keyboard focus stay usable', async ({ p
   await expect(page.getByRole('link', { name: '跳到正文' })).toBeFocused()
   await page.keyboard.press('Enter')
   await expect(page.getByRole('main')).toBeFocused()
-  await expect(page.getByRole('heading', { name: '节点', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '代理', exact: true })).toBeVisible()
   const search = page.getByRole('searchbox')
   await search.fill('Tokyo')
   await page.setViewportSize({ width: 320, height: 400 })

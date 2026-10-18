@@ -167,9 +167,9 @@ func TestPublicCommandsKeepSingleJSONContract(t *testing.T) {
 	options.WorkerPIDFile = filepath.Join(root, "state", "worker.pid")
 	options.WiFiStateFile = filepath.Join(root, "state", "wifi_state")
 	for path, content := range map[string]string{
-		options.ModuleConfig:                             "{\"selection\":{\"group_id\":\"default\"}}",
+		options.ModuleConfig:                             "{}",
 		options.InboundConfig:                            `{"backend":"ebpf","root_policy":"default","app":{"enabled":false,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]},"ebpf":{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true},"shared":{"enabled":false}},"tun":{"type":"tun","tag":"netproxy-in","interface_name":"netproxy","address":["172.19.0.1/30"],"auto_route":true,"auto_redirect":true}}`,
-		filepath.Join(options.SingBoxDir, "config.json"): `{"experimental":{"clash_api":{"default_mode":"Rule"}},"route":{"rules":[{"clash_mode":["Rule","Proxy","Direct","RuleAllowAds"]}]}}`,
+		filepath.Join(options.SingBoxDir, "config.json"): `{"experimental":{"clash_api":{"default_mode":"Rule"}},"outbounds":[{"type":"selector","tag":"Main","outbounds":["direct","block"]},{"type":"direct","tag":"direct"},{"type":"direct","tag":"block"}],"route":{"final":"Main","rules":[{"clash_mode":["Rule","Proxy","Direct","RuleAllowAds"]}]}}`,
 	} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatal(err)
@@ -194,9 +194,19 @@ func TestPublicCommandsKeepSingleJSONContract(t *testing.T) {
 		{"catalog list", "catalog.groups", 0},
 		{"catalog show default", "catalog.show", 0},
 		{"node list", "node.list", 0},
-		{"node current", "node.current", 0},
-		{"node use auto default", "node.selected", 0},
-		{"node use default/NODE", "node.selected", 0},
+		{"node snapshot", "node.snapshot", 0},
+		{"policy groups", "policy.groups", 0},
+		{"policy select Main direct", "policy.core_not_ready", 1},
+		{"policy delay Main", "policy.core_not_ready", 1},
+		{"node current", "usage.invalid", 2},
+		{"node selection", "usage.invalid", 2},
+		{"node delay Main", "usage.invalid", 2},
+		{"policy groups extra", "usage.invalid", 2},
+		{"policy select Main", "usage.invalid", 2},
+		{"policy delay", "usage.invalid", 2},
+		{"sub remove default replacement", "usage.invalid", 2},
+		{"node use auto default", "usage.invalid", 2},
+		{"node use default/NODE", "usage.invalid", 2},
 		{"sub list", "subscription.list", 0},
 		{"mode", "mode.current", 0},
 		{"mode Proxy", "mode.changed", 0},

@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { z } from 'zod'
 import { Copy } from 'lucide-react'
 import { useApi, usePreferences } from '@/app/context'
 import { useManagementAction } from '@/api/management'
-import type { NodeSnapshot } from '@/api/contracts'
+import type { GroupSummary } from '@/api/contracts'
+import { useEventConnection } from '@/api/events'
 import { Details, EditorPanel } from '@/components/details'
 import { Button } from '@/components/ui/button'
 import {
@@ -24,45 +25,68 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { ErrorState, LoadingState } from '@/components/states'
 import { JsonEditor } from '@/components/json-editor'
+import { resourceWriteUnconfirmed } from './resource-write'
 
 export type NodeManagerTarget =
-  | { operation: 'add' | 'import' }
+  | { operation: 'add'; groupId?: string }
+  | { operation: 'import' }
   | { operation: 'edit' | 'export' | 'remove'; groupId: string; tag: string }
+
+export type NodeManagerSnapshot = {
+  groups: {
+    group: Pick<GroupSummary, 'id' | 'name' | 'type'>
+    nodes: { tag: string }[]
+  }[]
+}
 
 export function NodeManager({
   snapshot,
   target,
   onClose,
+  disabled = false,
+  snapshotError,
 }: {
-  snapshot: NodeSnapshot
+  snapshot: NodeManagerSnapshot
   target: NodeManagerTarget
   onClose: () => void
+  disabled?: boolean
+  snapshotError?: unknown
 }) {
   const api = useApi()
+  const connection = useEventConnection()
   const { preferences } = usePreferences()
   const text = (zh: string, en: string) => (preferences.locale === 'zh' ? zh : en)
   const action = useManagementAction()
+  const submitting = useRef(false)
   const { operation } = target
   const groups = snapshot.groups.filter((item) => item.group.type === 'local')
   const [localGroupId, setLocalGroupId] = useState(groups[0]?.group.id ?? 'default')
-  const groupId = 'groupId' in target ? target.groupId : localGroupId
+  const groupId = ('groupId' in target && target.groupId) || localGroupId
   const tag = 'tag' in target ? target.tag : ''
   const group = snapshot.groups.find((item) => item.group.id === groupId)
   const [content, setContent] = useState('')
   const [original, setOriginal] = useState('')
   const [error, setError] = useState<unknown>(null)
   const [notice, setNotice] = useState('')
+  const [uncertain, setUncertain] = useState(false)
   const [insecure, setInsecure] = useState(false)
   const [loaded, setLoaded] = useState(operation !== 'edit' && operation !== 'export')
   const [copyState, setCopyState] = useState<'idle' | 'copying' | 'copied' | 'failed'>('idle')
   const requiresTarget = 'tag' in target
+  const blocked = disabled || action.pending || connection !== 'live' || uncertain
   const validTarget =
     operation === 'import' ||
     (!!group &&
       (operation === 'export' || group.group.type === 'local') &&
       (!requiresTarget || group.nodes.some((node) => node.tag === tag)))
   useEffect(() => {
-    if (operation !== 'edit' && operation !== 'export') return
+    if (
+      (operation !== 'edit' && operation !== 'export') ||
+      loaded ||
+      !validTarget ||
+      connection !== 'live'
+    )
+      return
     const controller = new AbortController()
     void api
       .request(
@@ -76,6 +100,7 @@ export function NodeManager({
       )
       .then((value) => {
         if (controller.signal.aborted) return
+        setError(null)
         const result =
           operation === 'export'
             ? z.object({ link: z.string() }).parse(value).link
@@ -88,9 +113,10 @@ export function NodeManager({
         if (!controller.signal.aborted) setError(failure)
       })
     return () => controller.abort()
-  }, [api, groupId, tag, operation])
+  }, [api, groupId, tag, operation, validTarget, connection, loaded])
   const save = async () => {
-    if (action.pending || !validTarget || !loaded || notice) return
+    if (submitting.current || blocked || !validTarget || !loaded || notice) return
+    submitting.current = true
     setError(null)
     try {
       const request =
@@ -117,6 +143,9 @@ export function NodeManager({
       setNotice(text('操作完成，已重新读取节点。', 'Operation completed. Nodes refreshed.'))
     } catch (failure) {
       setError(failure)
+      setUncertain(resourceWriteUnconfirmed(failure))
+    } finally {
+      submitting.current = false
     }
   }
   if (!api.supports(operation === 'export' ? 'nodes.export' : `nodes.${operation}`)) return null
@@ -134,6 +163,20 @@ export function NodeManager({
         'The node or local group changed. Close and select it again.',
       )}
     </p>
+  )
+  const feedback = (
+    <>
+      {snapshotError != null && <ErrorState compact error={snapshotError} />}
+      {error != null && <ErrorState compact error={error} />}
+      {uncertain && (
+        <p role="status" className="text-sm">
+          {text(
+            '结果未确认，请关闭后刷新资源核对。',
+            'Result not confirmed. Close and refresh resources to check.',
+          )}
+        </p>
+      )}
+    </>
   )
   if (operation === 'remove') {
     return (
@@ -154,7 +197,7 @@ export function NodeManager({
             <p className="break-all font-medium">{tag}</p>
             <p className="break-all text-sm text-muted-foreground">{group?.group.name}</p>
             {targetChanged}
-            {error != null && <ErrorState compact error={error} />}
+            {feedback}
             {notice && (
               <p role="status" className="text-sm">
                 {notice}
@@ -168,7 +211,7 @@ export function NodeManager({
               </Button>
               <Button
                 variant="destructive"
-                disabled={action.pending || !validTarget || !loaded}
+                disabled={blocked || !validTarget || !loaded}
                 onClick={() => void save()}
               >
                 {text('确认删除', 'Confirm delete')}
@@ -215,7 +258,7 @@ export function NodeManager({
           </Button>
         ) : !notice ? (
           <Button
-            disabled={action.pending || !validTarget || !loaded || !content.trim()}
+            disabled={blocked || !validTarget || !loaded || !content.trim()}
             onClick={() => void save()}
           >
             {text('保存', 'Save')}
@@ -231,11 +274,11 @@ export function NodeManager({
           </div>
         )}
         {targetChanged}
-        {operation === 'add' && groups.length > 1 && (
+        {operation === 'add' && !target.groupId && groups.length > 1 && (
           <Select
             value={localGroupId}
             onValueChange={(value) => value && setLocalGroupId(value)}
-            disabled={action.pending}
+            disabled={blocked}
           >
             <SelectTrigger className="min-h-12 w-full" aria-label={text('本地分组', 'Local group')}>
               <SelectValue />
@@ -256,7 +299,7 @@ export function NodeManager({
             <JsonEditor
               value={content}
               onChange={setContent}
-              readOnly={action.pending}
+              readOnly={action.pending || uncertain}
               label={text('节点内容', 'Node content')}
             />
           ) : (
@@ -265,7 +308,7 @@ export function NodeManager({
               <textarea
                 value={content}
                 onChange={(event) => setContent(event.target.value)}
-                readOnly={operation === 'export' || action.pending}
+                readOnly={operation === 'export' || action.pending || uncertain}
                 autoComplete="off"
                 autoCapitalize="none"
                 spellCheck={false}
@@ -277,7 +320,11 @@ export function NodeManager({
         {['add', 'edit', 'import'].includes(operation) && !notice && (
           <label className="flex min-h-12 items-center justify-between gap-4 text-sm">
             <span>{text('允许不安全 TLS', 'Allow insecure TLS')}</span>
-            <Switch checked={insecure} onCheckedChange={setInsecure} disabled={action.pending} />
+            <Switch
+              checked={insecure}
+              onCheckedChange={setInsecure}
+              disabled={action.pending || uncertain}
+            />
           </label>
         )}
         {copyState === 'copied' && (
@@ -293,7 +340,7 @@ export function NodeManager({
             )}
           </p>
         )}
-        {error != null && <ErrorState compact error={error} />}
+        {feedback}
         {notice && (
           <p role="status" className="text-sm">
             {notice}

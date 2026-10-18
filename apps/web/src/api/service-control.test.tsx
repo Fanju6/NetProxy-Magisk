@@ -133,10 +133,10 @@ function setup(initial: ServiceStatus['state'] = 'stopped') {
   }
   const settled = () => waitFor(() => expect(cache.isMutating()).toBe(0))
   const complete = (value: ServiceStatus, session = sessions.at(-1)!) => {
-    const { snapshot } = createFixtures()
+    const { snapshot, policy } = createFixtures()
     act(() => {
       session.consume(frame('status', value))
-      session.consume(frame('groups', snapshot))
+      session.consume(frame('groups', policy))
       session.consume(
         frame(
           'subscriptions',
@@ -820,7 +820,7 @@ it('allows native start/stop capabilities without enabling mode, selection, or c
     request,
     subscribe: (_topics, consume) => {
       consume(frame('status', service))
-      consume(frame('groups', fixtures.snapshot))
+      consume(frame('groups', fixtures.policy))
       consume(
         frame(
           'subscriptions',
