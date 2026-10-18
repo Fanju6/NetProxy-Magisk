@@ -18,6 +18,12 @@ test('resources show public details in both themes and restrict URL actions to s
   await expect(page.getByRole('heading', { name: 'URL 订阅', exact: true })).toBeVisible()
   await page.getByRole('button', { name: '查看详情 Global Connect', exact: true }).click()
   const dialog = page.getByRole('dialog')
+  if (page.viewportSize()!.width < 768)
+    expect(
+      await dialog
+        .locator('[data-slot="drawer-title"]')
+        .evaluate((element) => getComputedStyle(element).textAlign),
+    ).toBe('left')
   await expect(dialog.getByRole('heading', { name: '订阅流量', exact: true })).toBeVisible()
   await expect(dialog.getByText('100 GB', { exact: true })).toBeVisible()
   await expect(dialog.getByText('运行时已同步', { exact: true })).toBeVisible()
