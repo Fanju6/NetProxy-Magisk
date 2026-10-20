@@ -407,10 +407,7 @@ export function ModuleEvents() {
         />
       </Button>
       {connection !== 'live' && (
-        <span
-          role={connection === 'offline' || connection === 'reconnecting' ? 'alert' : 'status'}
-          className="sr-only"
-        >
+        <span role={connection === 'offline' ? 'alert' : 'status'} className="sr-only">
           {t(connectionMessages[connection])} · {t('offlineDescription')}
         </span>
       )}

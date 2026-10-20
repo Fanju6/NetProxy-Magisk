@@ -17,6 +17,27 @@ test('event reconnect, offline and background transitions keep the header and co
         };`,
     })
   })
+  const disconnect = (terminal: boolean) =>
+    page.evaluate((terminal) => {
+      ;(window as unknown as { disconnectFixture: (terminal: boolean) => void }).disconnectFixture(
+        terminal,
+      )
+    }, terminal)
+  await page.goto('/')
+  await expect(page.getByRole('img', { name: '实时流量', exact: true })).toBeVisible()
+  const chartFollowers = () =>
+    page.evaluate(() => [
+      document.querySelector('main dl')!.getBoundingClientRect().top,
+      ...[...document.querySelectorAll('main section[aria-label]')]
+        .filter((section) => ['出站模式', '当前节点'].includes(section.getAttribute('aria-label')!))
+        .map((section) => section.getBoundingClientRect().top),
+    ])
+  const chartPosition = await chartFollowers()
+  await disconnect(false)
+  await expect(page.getByText('等待实时流量', { exact: true })).toBeVisible()
+  expect(await chartFollowers()).toEqual(chartPosition)
+  await expect(page.locator('header').getByRole('button', { name: /^管理连接:/ })).toBeHidden()
+  expect(await chartFollowers()).toEqual(chartPosition)
   await page.goto('/#/nodes')
   const search = page.getByRole('searchbox', { name: '搜索代理' })
   await expect(
@@ -35,12 +56,6 @@ test('event reconnect, offline and background transitions keep the header and co
         search: document.querySelector('input[type=search]')!.getBoundingClientRect().top,
       })),
     ).toEqual(initial)
-  const disconnect = (terminal: boolean) =>
-    page.evaluate((terminal) => {
-      ;(window as unknown as { disconnectFixture: (terminal: boolean) => void }).disconnectFixture(
-        terminal,
-      )
-    }, terminal)
   await disconnect(false)
   const indicator = page.locator('header').getByRole('button', { name: /^管理连接:/ })
   await expect(indicator).toBeVisible()

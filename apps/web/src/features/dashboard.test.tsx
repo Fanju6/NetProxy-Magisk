@@ -95,6 +95,28 @@ function value(label: string) {
   return screen.getByText(label, { selector: 'dt' }).nextElementSibling!
 }
 
+it('keeps only the chart space during a same-core reconnect and drops it for a new core', async () => {
+  const h = setup()
+  await screen.findByRole('img', { name: 'Live traffic' })
+  act(() => {
+    h.cache.setQueryData(['events-connection'], 'reconnecting')
+    h.cache.setQueryData(['traffic'], { available: false })
+    h.cache.setQueryData(['traffic-history'], [])
+  })
+  expect(await screen.findByText('Waiting for live traffic')).toHaveClass('h-20')
+  expect(screen.queryByRole('img', { name: 'Live traffic' })).not.toBeInTheDocument()
+  expect(screen.queryByText(/MB\/s/)).not.toBeInTheDocument()
+  act(() =>
+    h.cache.setQueryData(['service'], {
+      ...h.service,
+      core_started_at_millis: h.service.core_started_at_millis + 1,
+    }),
+  )
+  await waitFor(() =>
+    expect(screen.queryByText('Waiting for live traffic')).not.toBeInTheDocument(),
+  )
+})
+
 it('orders service and uptime, speeds, SSE chart, statistics, mode, then native outbound details', async () => {
   setup({ kind: 'mock' })
   await screen.findByRole('heading', { name: 'Running' })

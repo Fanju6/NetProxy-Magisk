@@ -61,6 +61,7 @@ export function DashboardPage() {
   const selection = useSelectPolicyGroup()
   const routingOperation = useRoutingOperation()
   const [confirmStop, setConfirmStop] = useState(false)
+  const [plottedCore, setPlottedCore] = useState<number | null>(null)
   if (status.isPending) return <LoadingState />
   if (!status.data) return <ErrorState error={status.error} retry={() => void status.refetch()} />
   const service = status.data
@@ -95,6 +96,10 @@ export function DashboardPage() {
   const currentNode =
     policyLive && current === service.default_outbound ? service.runtime_selected : ''
   const history = samples.data ?? []
+  // Keep this core's chart space during reconnects without retaining invalid SSE samples.
+  if (traffic && history.length > 1 && plottedCore !== service.core_started_at_millis)
+    setPlottedCore(service.core_started_at_millis)
+  const showPlot = running && plottedCore === service.core_started_at_millis
   const maximum = Math.max(1, ...history)
   const blocked =
     action.isPending ||
@@ -208,24 +213,30 @@ export function DashboardPage() {
         aria-label={preferences.locale === 'zh' ? '服务统计' : 'Service statistics'}
         className="space-y-3"
       >
-        {connection === 'live' && running && traffic && history.length > 1 && (
+        {showPlot && (
           <>
             <h2 className="text-sm font-medium">{t('traffic')}</h2>
-            <div
-              role="img"
-              aria-label={t('traffic')}
-              className="traffic-plot flex h-20 items-end gap-1 px-1 pt-3"
-            >
-              {Array.from({ length: 30 }, (_, index) => (
-                <div
-                  key={index}
-                  className="min-w-0 flex-1 rounded-t-sm bg-foreground/70"
-                  style={{
-                    height: `${((history[index - (30 - history.length)] ?? 0) / maximum) * 90}%`,
-                  }}
-                />
-              ))}
-            </div>
+            {traffic && history.length > 1 ? (
+              <div
+                role="img"
+                aria-label={t('traffic')}
+                className="traffic-plot flex h-20 items-end gap-1 px-1 pt-3"
+              >
+                {Array.from({ length: 30 }, (_, index) => (
+                  <div
+                    key={index}
+                    className="min-w-0 flex-1 rounded-t-sm bg-foreground/70"
+                    style={{
+                      height: `${((history[index - (30 - history.length)] ?? 0) / maximum) * 90}%`,
+                    }}
+                  />
+                ))}
+              </div>
+            ) : (
+              <p role="status" className="flex h-20 items-center text-sm text-muted-foreground">
+                {t('waiting')}
+              </p>
+            )}
           </>
         )}
         <dl className="grid grid-cols-2 gap-x-6 gap-y-4 py-2 text-sm lg:grid-cols-4">
