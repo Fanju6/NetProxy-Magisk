@@ -200,7 +200,7 @@ export function SettingsPage() {
         </h2>
         <div className="settings-group">
           <div className="setting-row">
-            <p className="font-medium">NetProxy V9</p>
+            <p className="font-medium">NETPROXY V9</p>
             {info.data && (
               <p className="min-w-0 break-words text-right text-sm text-muted-foreground">
                 {t('version')} {info.data.version} ({info.data.version_code})

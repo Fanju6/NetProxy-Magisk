@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
@@ -11,6 +11,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { ApiClient } from '@/api/client'
 import { apiOperations, type ApiTransport, type GroupSummary } from '@/api/contracts'
 import { ApiContext, PreferencesContext } from '@/app/context'
+import { HeaderActionsProvider } from '@/app/header-actions'
 import { translator } from '@/app/i18n'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { JsonEditorProps } from '@/components/json-editor'
@@ -54,6 +55,16 @@ function group(id: string, name: string, type: 'local' | 'subscription') {
     updated_at: '2026-10-18T00:00:00Z',
     progress: null,
   } satisfies GroupSummary & { provider_tag: string }
+}
+
+function ResourcePageHarness({ children }: { children: ReactNode }) {
+  const [target, setTarget] = useState<HTMLElement | null>(null)
+  return (
+    <HeaderActionsProvider target={target}>
+      <header ref={setTarget} />
+      {children}
+    </HeaderActionsProvider>
+  )
 }
 
 function setup(element?: ReactNode, options: { catalogWrite?: boolean } = {}) {
@@ -126,7 +137,9 @@ function setup(element?: ReactNode, options: { catalogWrite?: boolean } = {}) {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   cache.setQueryData(['events-connection'], 'live')
-  const root = createRootRoute({ component: () => <>{element ?? <SubscriptionsPage />}</> })
+  const root = createRootRoute({
+    component: () => <ResourcePageHarness>{element ?? <SubscriptionsPage />}</ResourcePageHarness>,
+  })
   const router = createRouter({ routeTree: root, history: createMemoryHistory() })
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
   const view = render(
@@ -172,6 +185,19 @@ async function submitNode(name = 'Save') {
   await waitFor(() => expect(button).toBeEnabled())
   fireEvent.click(button)
 }
+
+it('opens subscription creation from the resource header without issuing a write', async () => {
+  const h = setup()
+  const trigger = await screen.findByRole('button', { name: 'Resource actions' })
+  expect(within(screen.getByRole('banner')).getByRole('button', { name: 'Resource actions' })).toBe(
+    trigger,
+  )
+  fireEvent.click(trigger)
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Add subscription' }))
+  const panel = await screen.findByRole('dialog')
+  expect(within(panel).getByRole('textbox', { name: 'Subscription URL' })).toBeVisible()
+  expect(h.request.mock.calls.every(([input]) => input.method === 'GET')).toBe(true)
+})
 
 it('reads Catalog-only nodes into their resource details without runtime selection or navigation', async () => {
   const h = setup()
@@ -290,7 +316,7 @@ it('confirms a local node deletion without issuing a resource selection write', 
 
 it('keeps text import on the resource page with its existing default-group API semantics', async () => {
   const h = setup()
-  fireEvent.click(await screen.findByRole('button', { name: 'More actions' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Resource actions' }))
   fireEvent.click(await screen.findByRole('menuitem', { name: 'Import text' }))
   const input = await screen.findByRole('textbox', { name: 'Node content' })
   fireEvent.change(input, { target: { value: 'socks://localhost:1080#fixture' } })
@@ -367,7 +393,7 @@ it('does not synthesize a ProviderTag from a resource id or name', async () => {
 
 it('creates, renames and deletes local resources through fixed Catalog business requests', async () => {
   const h = setup()
-  fireEvent.click(await screen.findByRole('button', { name: 'More actions' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Resource actions' }))
   fireEvent.click(await screen.findByRole('menuitem', { name: 'Create local group' }))
   fireEvent.change(await screen.findByRole('textbox', { name: 'Group ID' }), {
     target: { value: 'local-created' },
@@ -438,7 +464,7 @@ it('never offers default resource deletion or local-group mutations for a subscr
 
 it('rejects invalid or occupied resource ids without issuing a write', async () => {
   const h = setup()
-  fireEvent.click(await screen.findByRole('button', { name: 'More actions' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Resource actions' }))
   fireEvent.click(await screen.findByRole('menuitem', { name: 'Create local group' }))
   for (const id of ['../private', 'staging', 'default']) {
     fireEvent.change(await screen.findByRole('textbox', { name: 'Group ID' }), {
@@ -465,7 +491,7 @@ it('keeps a lost group write response uncertain without replaying it', async () 
         })
       : original(input, signal),
   )
-  fireEvent.click(await screen.findByRole('button', { name: 'More actions' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Resource actions' }))
   fireEvent.click(await screen.findByRole('menuitem', { name: 'Create local group' }))
   fireEvent.change(await screen.findByRole('textbox', { name: 'Group ID' }), {
     target: { value: 'lost-fixture' },
@@ -482,7 +508,7 @@ it('keeps a lost group write response uncertain without replaying it', async () 
 
 it('hides Catalog group writes when the transport does not support the fixed capability', async () => {
   setup(undefined, { catalogWrite: false })
-  fireEvent.click(await screen.findByRole('button', { name: 'More actions' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Resource actions' }))
   expect(await screen.findByRole('menuitem', { name: 'Refresh resources' })).toBeVisible()
   expect(screen.queryByRole('menuitem', { name: 'Create local group' })).not.toBeInTheDocument()
   fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
@@ -563,7 +589,7 @@ it.each(['x'.repeat(257), '\u754c'.repeat(86), 'fixture\u0001name'])(
   'rejects an invalid local resource name before admission: %s',
   async (name) => {
     const h = setup()
-    fireEvent.click(await screen.findByRole('button', { name: 'More actions' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Resource actions' }))
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Create local group' }))
     fireEvent.change(await screen.findByRole('textbox', { name: 'Group ID' }), {
       target: { value: 'name-fixture' },

@@ -71,7 +71,8 @@ test('subscription form creates, patches and deletes a demo source without revea
   const failures: string[] = []
   page.on('pageerror', (error) => failures.push(error.message))
   await page.goto('/#/subscriptions')
-  await page.getByRole('button', { name: '添加订阅', exact: true }).click()
+  await page.locator('header').getByRole('button', { name: '资源操作', exact: true }).click()
+  await page.getByRole('menuitem', { name: '添加订阅', exact: true }).click()
   let dialog = page.getByRole('dialog')
   await dialog.getByRole('textbox', { name: '名称', exact: true }).fill('端到端订阅')
   const url = dialog.getByRole('textbox', { name: '订阅 URL', exact: true })
@@ -117,7 +118,7 @@ test('resource deletion does not use a policy replacement and update-all reports
   page,
 }) => {
   await page.goto('/#/subscriptions')
-  await page.getByRole('button', { name: '更多操作', exact: true }).click()
+  await page.locator('header').getByRole('button', { name: '资源操作', exact: true }).click()
   await page.getByRole('menuitem', { name: '更新全部订阅', exact: true }).click()
   await expect(page.getByText('部分订阅未能更新，请逐项查看结果。', { exact: true })).toBeVisible()
   const operation = page.getByRole('region', { name: '订阅操作' })

@@ -13,6 +13,15 @@ import {
   ApiError,
 } from './contracts'
 import { Button } from '@/components/ui/button'
+import { LoaderCircle, Pause, WifiOff } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   observeService,
   serviceEpoch,
@@ -64,6 +73,7 @@ export function ModuleEvents() {
   const { t } = usePreferences()
   const connection = useEventConnection()
   const [attempt, setAttempt] = useState(0)
+  const [showConnection, setShowConnection] = useState(false)
   const operationEpoch = useServiceOperation()?.epoch ?? 0
   const routeEpoch = useRoutingOperation()?.epoch ?? 0
   const subscriptionOperation = useSubscriptionOperation()
@@ -373,23 +383,57 @@ export function ModuleEvents() {
       setConnection('paused')
     }
   }, [api, cache, attempt, operationEpoch, routeEpoch, resourceEpoch, managementVersion])
-  return connection !== 'live' ? (
-    <div
-      role={connection === 'offline' || connection === 'reconnecting' ? 'alert' : 'status'}
-      className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/50 px-5 py-3 text-sm"
-    >
-      <div className="space-y-1">
-        <p>{t(connectionMessages[connection])}</p>
-        <p className="text-xs text-muted-foreground">{t('offlineDescription')}</p>
-      </div>
+  const Icon = connection === 'offline' ? WifiOff : connection === 'paused' ? Pause : LoaderCircle
+  return (
+    <>
       <Button
-        variant="link"
-        onClick={() => {
-          setAttempt((value) => value + 1)
-        }}
+        variant="ghost"
+        size="icon"
+        className={`size-12 ${connection === 'live' ? 'invisible' : ''}`}
+        aria-hidden={connection === 'live'}
+        tabIndex={connection === 'live' ? -1 : undefined}
+        aria-label={`${t('connection')}: ${t(connectionMessages[connection])}`}
+        title={t(connectionMessages[connection])}
+        onClick={() => setShowConnection(true)}
       >
-        {t('reconnect')}
+        <Icon
+          className={
+            connection === 'offline'
+              ? 'text-destructive'
+              : connection === 'paused'
+                ? 'text-muted-foreground'
+                : 'animate-spin text-muted-foreground motion-reduce:animate-none'
+          }
+        />
       </Button>
-    </div>
-  ) : null
+      {connection !== 'live' && (
+        <span
+          role={connection === 'offline' || connection === 'reconnecting' ? 'alert' : 'status'}
+          className="sr-only"
+        >
+          {t(connectionMessages[connection])} · {t('offlineDescription')}
+        </span>
+      )}
+      <Dialog open={showConnection} onOpenChange={setShowConnection}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t(connectionMessages[connection])}</DialogTitle>
+            <DialogDescription>
+              {t(connection === 'live' ? 'connected' : 'offlineDescription')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              onClick={() => {
+                setShowConnection(false)
+                setAttempt((value) => value + 1)
+              }}
+            >
+              {t('reconnect')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
 }

@@ -12,6 +12,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useApi, usePreferences } from '@/app/context'
+import { HeaderActions } from '@/app/header-actions'
 import { resourceQueries, useResourceDetails } from '@/api/resources'
 import { useEventConnection } from '@/api/events'
 import { useSubscriptionActions } from '@/api/subscription-control'
@@ -574,26 +575,26 @@ export function SubscriptionsPage() {
   return (
     <div className="space-y-6">
       {!panel && <SubscriptionFeedback actions={actions} groups={list.data} />}
-      <div className="flex flex-wrap items-center justify-end gap-3">
-        {connection !== 'live' && <Badge variant="outline">{t('staleSnapshot')}</Badge>}
-        {api.supports('subscriptions.add') && (
-          <Button
-            className="min-h-12"
-            disabled={connection !== 'live' || isWaiting(actions.operation)}
-            onClick={() => setPanel({ kind: 'add' })}
-          >
-            <Plus />
-            {t('addSubscription')}
-          </Button>
-        )}
+      {connection !== 'live' && <Badge variant="outline">{t('staleSnapshot')}</Badge>}
+      <HeaderActions>
         <DropdownMenu>
           <DropdownMenuTrigger
             render={<Button variant="ghost" size="icon" className="size-12" />}
-            aria-label={preferences.locale === 'zh' ? '更多操作' : 'More actions'}
+            aria-label={text('资源操作', 'Resource actions')}
           >
             <MoreHorizontal />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-60 max-w-[calc(100vw-2rem)]">
+            {api.supports('subscriptions.add') && (
+              <DropdownMenuItem
+                className="min-h-11"
+                disabled={connection !== 'live' || isWaiting(actions.operation)}
+                onClick={() => setPanel({ kind: 'add' })}
+              >
+                <Plus />
+                {t('addSubscription')}
+              </DropdownMenuItem>
+            )}
             {api.supports('catalog.write') && (
               <DropdownMenuItem
                 className="min-h-11"
@@ -627,6 +628,12 @@ export function SubscriptionsPage() {
                 {text('导入文本', 'Import text')}
               </DropdownMenuItem>
             )}
+            {(api.supports('subscriptions.add') ||
+              api.supports('catalog.write') ||
+              (api.supports('nodes.read') &&
+                (api.supports('nodes.add') || api.supports('nodes.import')))) && (
+              <DropdownMenuSeparator />
+            )}
             {api.supports('subscriptions.update_all') && (
               <DropdownMenuItem
                 className="min-h-11"
@@ -650,7 +657,7 @@ export function SubscriptionsPage() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-      </div>
+      </HeaderActions>
       {!panel && list.isError && (
         <ErrorState error={list.error} compact retry={() => void list.refetch()} />
       )}
@@ -668,13 +675,13 @@ export function SubscriptionsPage() {
                 <button
                   type="button"
                   key={group.id}
-                  className="flex min-h-20 w-full min-w-0 items-center gap-3 py-4 text-left outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring active:bg-muted sm:gap-4"
+                  className="flex min-h-18 w-full min-w-0 items-center gap-3 py-3 text-left outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring active:bg-muted sm:gap-4"
                   aria-label={`${t('viewDetails')} ${group.name}`}
                   disabled={!api.supports('subscriptions.detail')}
                   onClick={() => setPanel({ kind: 'detail', id: group.id })}
                 >
                   <span
-                    className="flex size-12 shrink-0 items-center justify-center rounded-md bg-muted"
+                    className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted"
                     aria-hidden
                   >
                     {type === 'local' ? <Folder className="size-5" /> : <Rss className="size-5" />}

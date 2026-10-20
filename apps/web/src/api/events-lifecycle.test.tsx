@@ -37,6 +37,11 @@ const frame = (name: ApiEvent['name'], data: unknown): ApiEvent => ({
   body: { schema: 1, ok: true, code: 'fixture', message: '', data },
 })
 
+function reconnect() {
+  act(() => screen.getByLabelText(/^Management connection:/).click())
+  act(() => screen.getByRole('button', { name: 'Reconnect' }).click())
+}
+
 it('stages policy frames before status and rejects old-core runtime data', () => {
   const h = setup()
   const { service, policy } = createFixtures()
@@ -154,7 +159,7 @@ it('clears traffic on disconnect and rejects old-session frames after reconnect'
   expect(cache.getQueryData(['traffic'])).toEqual({ available: false })
   expect(cache.getQueryData(['traffic-history'])).toEqual([])
   expect(await screen.findByRole('alert')).toBeVisible()
-  act(() => screen.getByRole('button', { name: 'Reconnect' }).click())
+  reconnect()
   expect(sessions).toHaveLength(2)
   emit('status', service, old)
   emit('traffic', demoTraffic(service))
@@ -191,7 +196,7 @@ it('discards the initial resource replay after reconnect while accepting newer s
   h.complete()
   expect(h.cache.getQueryData(['subscriptions'])).toEqual(fresh)
   act(() => h.sessions[0]!.fail(new Error('offline')))
-  act(() => screen.getByRole('button', { name: 'Reconnect' }).click())
+  reconnect()
   h.complete()
   expect(h.cache.getQueryData(['subscriptions'])).toEqual(fresh)
   const latest = fresh.map((group) => ({ ...group, revision: 6 }))
@@ -321,7 +326,7 @@ it.each(['ready', 'stopped'] as const)(
     expect(screen.getByRole('heading', { name: label })).toBeVisible()
     expect(screen.queryByText('2.1 MB/s')).not.toBeInTheDocument()
     expect(screen.getAllByText('—')).toHaveLength(2)
-    act(() => screen.getByRole('button', { name: 'Reconnect' }).click())
+    reconnect()
     emit('status', service)
     expect(screen.getByText('Last snapshot · not live')).toBeVisible()
     complete(service)
@@ -428,7 +433,7 @@ it('retries only the event subscription with a finite budget and fresh snapshots
   act(() => vi.advanceTimersByTime(120_000))
   expect(sessions).toHaveLength(4)
   expect(transport.request).not.toHaveBeenCalled()
-  act(() => screen.getByRole('button', { name: 'Reconnect' }).click())
+  reconnect()
   expect(sessions).toHaveLength(5)
   emit('status', createFixtures().service)
   expect(cache.getQueryData(['events-connection'])).not.toBe('live')

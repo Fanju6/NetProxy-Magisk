@@ -151,7 +151,7 @@ async function openDetails(name = 'Global Connect') {
   return dialog
 }
 async function updateAll() {
-  fireEvent.click(await screen.findByRole('button', { name: 'More actions' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Resource actions' }))
   fireEvent.click(await screen.findByRole('menuitem', { name: 'Update all subscriptions' }))
 }
 
@@ -161,6 +161,70 @@ async function resourceMenu(dialog: HTMLElement, name: string) {
 }
 const writes = (request: ReturnType<typeof setup>['request']) =>
   request.mock.calls.filter(([input]) => input.method !== 'GET')
+
+it('places all resource actions in the title header and refreshes without writing', async () => {
+  const h = setup()
+  const trigger = await screen.findByRole('button', { name: 'Resource actions' })
+  expect(within(screen.getByRole('banner')).getByRole('button', { name: 'Resource actions' })).toBe(
+    trigger,
+  )
+  expect(
+    within(screen.getByRole('main')).queryByRole('button', { name: 'Add subscription' }),
+  ).not.toBeInTheDocument()
+  expect(trigger).toHaveClass('size-12')
+  fireEvent.click(trigger)
+  expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
+    'Add subscription',
+    'Create local group',
+    'Add node manually',
+    'Import text',
+    'Update all subscriptions',
+    'Refresh resources',
+  ])
+  const reads = h.request.mock.calls.filter(([input]) => input.path === '/catalog').length
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Refresh resources' }))
+  await waitFor(() =>
+    expect(
+      h.request.mock.calls.filter(([input]) => input.path === '/catalog').length,
+    ).toBeGreaterThan(reads),
+  )
+  expect(writes(h.request)).toHaveLength(0)
+})
+
+it('keeps resource refresh available while update-all blocks further writes', async () => {
+  let release!: () => void
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const h = setup('normal', {
+    handle: (input, signal, backend) =>
+      input.method === 'POST' && input.path === '/subscriptions/update-all'
+        ? held.then(() => backend.request(input, signal))
+        : undefined,
+  })
+  try {
+    await updateAll()
+    expect(await screen.findByText('Subscription operation in progress')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Resource actions' }))
+    for (const name of [
+      'Add subscription',
+      'Create local group',
+      'Add node manually',
+      'Import text',
+      'Update all subscriptions',
+    ])
+      expect(await screen.findByRole('menuitem', { name })).toHaveAttribute('aria-disabled', 'true')
+    const refresh = screen.getByRole('menuitem', { name: 'Refresh resources' })
+    expect(refresh).not.toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(refresh)
+    expect(writes(h.request)).toHaveLength(1)
+  } finally {
+    release()
+  }
+  expect(
+    await screen.findByText('Some subscriptions did not update. Review each result.'),
+  ).toBeVisible()
+})
 
 it('completes an actual Mock update through ModuleEvents without aborting its own request or replaying it', async () => {
   let liveAtResponse = false
@@ -270,7 +334,8 @@ it('keeps a lost response uncertain and only performs reads when checking the re
 
 it('supports Mock add, public-only edit and confirmed deletion without nested panels or private GETs', async () => {
   const h = setup()
-  fireEvent.click(await screen.findByRole('button', { name: 'Add subscription' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Resource actions' }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Add subscription' }))
   let dialog = await screen.findByRole('dialog')
   fireEvent.change(within(dialog).getByRole('textbox', { name: 'Name' }), {
     target: { value: 'Anonymous source' },

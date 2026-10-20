@@ -29,7 +29,7 @@ test('editor actions remain above a keyboard that only resizes the visual viewpo
   await expect.poll(async () => (await dialog.boundingBox())!.height).toBeGreaterThan(height)
   await dialog.getByRole('button', { name: '关闭', exact: true }).click()
   await page.goto('/#/subscriptions')
-  await page.getByRole('button', { name: '更多操作', exact: true }).click()
+  await page.locator('header').getByRole('button', { name: '资源操作', exact: true }).click()
   await page.getByRole('menuitem', { name: '导入文本', exact: true }).click()
   await dialog.getByRole('textbox', { name: '节点内容', exact: true }).focus()
   await page.evaluate((height) => {
@@ -108,7 +108,7 @@ test('local node import and logs are usable without platform file permissions', 
   page,
 }) => {
   await page.goto('/#/subscriptions')
-  await page.getByRole('button', { name: '更多操作', exact: true }).click()
+  await page.locator('header').getByRole('button', { name: '资源操作', exact: true }).click()
   await page.getByRole('menuitem', { name: '导入文本', exact: true }).click()
   const dialog = page.getByRole('dialog')
   await dialog

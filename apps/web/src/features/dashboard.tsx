@@ -1,14 +1,31 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowDown, ArrowUp, ChevronRight, Power, Activity, FlaskConical } from 'lucide-react'
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronRight,
+  Power,
+  Activity,
+  FlaskConical,
+  Ellipsis,
+  RefreshCw,
+  ScrollText,
+} from 'lucide-react'
 import { useApi, usePreferences } from '@/app/context'
+import { HeaderActions } from '@/app/header-actions'
 import { moduleQueries, useChangeMode, useSelectPolicyGroup, useServiceAction } from '@/api/queries'
 import type { Traffic } from '@/api/contracts'
 import { useEventConnection } from '@/api/events'
 import { useRoutingOperation } from '@/api/routing-control'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   Dialog,
   DialogContent,
@@ -53,6 +70,8 @@ export function DashboardPage() {
   const modeLabel = (value: string) =>
     ['Rule', 'Proxy', 'Direct', 'RuleAllowAds'].includes(value) ? t(value as MessageKey) : value
   const traffic =
+    running &&
+    service.core_started_at_millis > 0 &&
     connection === 'live' &&
     live.data?.available &&
     live.data.started_at_millis === service.core_started_at_millis
@@ -62,9 +81,19 @@ export function DashboardPage() {
   const current = policies.data?.default_outbound || service.default_outbound || t('runtimeUnknown')
   const defaultGroup = policies.data?.groups.find((group) => group.tag === current)
   const policyLive =
+    running &&
+    service.core_started_at_millis > 0 &&
     connection === 'live' &&
     policies.data?.live &&
     policies.data.core_started_at_millis === service.core_started_at_millis
+  const selected =
+    policyLive &&
+    defaultGroup?.selected &&
+    defaultGroup.items.filter((item) => item.tag === defaultGroup.selected).length === 1
+      ? defaultGroup.selected
+      : undefined
+  const currentNode =
+    policyLive && current === service.default_outbound ? service.runtime_selected : ''
   const history = samples.data ?? []
   const maximum = Math.max(1, ...history)
   const blocked =
@@ -79,6 +108,32 @@ export function DashboardPage() {
     !['ready', 'stopped', 'failed'].includes(service.state)
   return (
     <div className="max-w-5xl space-y-5">
+      <HeaderActions>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button variant="ghost" size="icon" className="size-12" aria-label={t('dashboard')} />
+            }
+          >
+            <Ellipsis />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuItem
+              disabled={!api.supports('service.read') || status.isFetching}
+              onClick={() => void status.refetch()}
+            >
+              <RefreshCw />
+              {t('checkStatus')}
+            </DropdownMenuItem>
+            {api.supports('logs.read') && (
+              <DropdownMenuItem render={<Link to="/settings/logs" />}>
+                <ScrollText />
+                {t('logs')}
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </HeaderActions>
       <section className="flex items-center justify-between gap-4 py-2">
         <div className="min-w-0 space-y-2">
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -92,6 +147,15 @@ export function DashboardPage() {
             </Badge>
             {connection !== 'live' && <Badge variant="outline">{t('staleSnapshot')}</Badge>}
           </div>
+          {running && (
+            <p className="text-xs text-muted-foreground tabular-nums">
+              {t('uptime')} ·{' '}
+              {t('duration', {
+                hours: Math.floor(service.uptime_seconds / 3600),
+                minutes: Math.floor(service.uptime_seconds / 60) % 60,
+              })}
+            </p>
+          )}
         </div>
         <Button
           size="default"
@@ -120,7 +184,10 @@ export function DashboardPage() {
         <ErrorState compact error={status.error} retry={() => void status.refetch()} />
       )}
 
-      <div className="grid grid-cols-2 gap-4 border-y py-4">
+      <section
+        aria-label={preferences.locale === 'zh' ? '实时速率' : 'Transfer speeds'}
+        className="grid grid-cols-2 gap-4 border-y py-4"
+      >
         {[
           { title: t('download'), value: traffic?.downlink, icon: ArrowDown },
           { title: t('upload'), value: traffic?.uplink, icon: ArrowUp },
@@ -130,30 +197,63 @@ export function DashboardPage() {
               <item.icon className="size-4" />
               {item.title}
             </p>
-            <p className="text-xl font-medium tabular-nums sm:text-2xl">
+            <p className="break-words text-2xl font-medium tabular-nums [overflow-wrap:anywhere]">
               {rateUnavailable ? '—' : `${bytes(item.value ?? 0, preferences.locale)}/s`}
             </p>
           </section>
         ))}
-      </div>
+      </section>
 
-      <div className="grid gap-x-8 gap-y-1 lg:grid-cols-2">
-        <Link to="/nodes" className="flex min-w-0 items-center justify-between gap-3 py-4">
-          <div className="min-w-0 space-y-1">
-            <p className="text-sm text-muted-foreground">{t('defaultOutbound')}</p>
-            <p className="break-words font-medium [overflow-wrap:anywhere]">{current}</p>
-            <p className="truncate text-xs text-muted-foreground">
-              {policyLive
-                ? service.runtime_selected ||
-                  defaultGroup?.selected ||
-                  defaultGroup?.type ||
-                  current
-                : t('runtimeUnknown')}
-            </p>
-          </div>
-          <ChevronRight className="size-5 shrink-0 text-muted-foreground" />
-        </Link>
-        <section className="space-y-2 py-4">
+      <section
+        aria-label={preferences.locale === 'zh' ? '服务统计' : 'Service statistics'}
+        className="space-y-3"
+      >
+        {connection === 'live' && running && traffic && history.length > 1 && (
+          <>
+            <h2 className="text-sm font-medium">{t('traffic')}</h2>
+            <div
+              role="img"
+              aria-label={t('traffic')}
+              className="traffic-plot flex h-20 items-end gap-1 px-1 pt-3"
+            >
+              {Array.from({ length: 30 }, (_, index) => (
+                <div
+                  key={index}
+                  className="min-w-0 flex-1 rounded-t-sm bg-foreground/70"
+                  style={{
+                    height: `${((history[index - (30 - history.length)] ?? 0) / maximum) * 90}%`,
+                  }}
+                />
+              ))}
+            </div>
+          </>
+        )}
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-4 py-2 text-sm lg:grid-cols-4">
+          {[
+            {
+              label: t('totalDownload'),
+              value: bytes(traffic?.downlink_total ?? service.download_total, preferences.locale),
+            },
+            {
+              label: t('totalUpload'),
+              value: bytes(traffic?.uplink_total ?? service.upload_total, preferences.locale),
+            },
+            { label: t('memory'), value: bytes(service.memory_bytes, preferences.locale) },
+            {
+              label: t('connections'),
+              value: String(service.connections_in + service.connections_out),
+            },
+          ].map((item) => (
+            <div key={item.label} className="min-w-0 space-y-1">
+              <dt className="text-xs text-muted-foreground">{item.label}</dt>
+              <dd className="break-words font-medium tabular-nums">{item.value}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
+      <div className="divide-y border-t">
+        <section aria-label={t('routing')} className="space-y-2 py-4">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-sm text-muted-foreground">{t('routing')}</h2>
             <Choice
@@ -224,59 +324,31 @@ export function DashboardPage() {
             <ErrorState compact error={modeState.error} retry={() => void modeState.refetch()} />
           )}
         </section>
+        <section aria-label={t('currentNode')}>
+          <Link to="/nodes" className="flex min-w-0 items-center justify-between gap-3 py-4">
+            <dl className="min-w-0 space-y-3 [overflow-wrap:anywhere]">
+              <div className="space-y-1">
+                <dt className="text-sm text-muted-foreground">{t('currentNode')}</dt>
+                <dd className="break-words font-medium">{currentNode || t('runtimeUnknown')}</dd>
+              </div>
+              <div className="space-y-1">
+                <dt className="text-xs text-muted-foreground">{t('defaultOutbound')}</dt>
+                <dd className="break-words text-sm">{current}</dd>
+              </div>
+              {defaultGroup && (
+                <div className="space-y-1">
+                  <dt className="text-xs text-muted-foreground">{t('selected')}</dt>
+                  <dd className="break-words text-sm">{selected || t('runtimeUnknown')}</dd>
+                </div>
+              )}
+            </dl>
+            <ChevronRight className="size-5 shrink-0 text-muted-foreground" />
+          </Link>
+          {policies.isError && (
+            <ErrorState compact error={policies.error} retry={() => void policies.refetch()} />
+          )}
+        </section>
       </div>
-
-      <section className="space-y-3">
-        {connection === 'live' && running && history.length > 1 && (
-          <>
-            <h2 className="text-sm font-medium">{t('traffic')}</h2>
-            <div
-              role="img"
-              aria-label={t('traffic')}
-              className="traffic-plot flex h-20 items-end gap-1 px-1 pt-3"
-            >
-              {Array.from({ length: 30 }, (_, index) => (
-                <div
-                  key={index}
-                  className="min-w-0 flex-1 rounded-t-sm bg-foreground/70"
-                  style={{
-                    height: `${((history[index - (30 - history.length)] ?? 0) / maximum) * 90}%`,
-                  }}
-                />
-              ))}
-            </div>
-          </>
-        )}
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-4 py-2 text-sm lg:grid-cols-4">
-          {[
-            {
-              label: t('totalDownload'),
-              value: bytes(traffic?.downlink_total ?? service.download_total, preferences.locale),
-            },
-            {
-              label: t('totalUpload'),
-              value: bytes(traffic?.uplink_total ?? service.upload_total, preferences.locale),
-            },
-            { label: t('memory'), value: bytes(service.memory_bytes, preferences.locale) },
-            {
-              label: t('connections'),
-              value: String(service.connections_in + service.connections_out),
-            },
-          ].map((item) => (
-            <div key={item.label} className="min-w-0 space-y-1">
-              <dt className="text-xs text-muted-foreground">{item.label}</dt>
-              <dd className="break-words font-medium tabular-nums">{item.value}</dd>
-            </div>
-          ))}
-        </dl>
-        <p className="text-xs text-muted-foreground">
-          {t('uptime')} ·{' '}
-          {t('duration', {
-            hours: Math.floor(service.uptime_seconds / 3600),
-            minutes: Math.floor(service.uptime_seconds / 60) % 60,
-          })}
-        </p>
-      </section>
       {service.error && <EmptyState title={t('failed')} description={t('requestFailed')} />}
       {api.transport.kind === 'mock' && (
         <p role="note" className="flex items-center gap-2 pb-1 text-xs text-muted-foreground">

@@ -770,6 +770,7 @@ describe('useServiceAction lifecycle', () => {
       expect(h.reads()).toHaveLength(3)
       const disconnected = h.sessions[1]!
       act(() => disconnected.fail(new TypeError('Stream disconnected')))
+      fireEvent.click(screen.getByLabelText(/^Management connection:/))
       fireEvent.click(await screen.findByRole('button', { name: 'Reconnect' }))
       await waitFor(() => expect(h.reads()).toHaveLength(4))
       expect(h.sessions).toHaveLength(2)

@@ -53,7 +53,7 @@ async function choose(label: string, option: string) {
 
 it('groups settings and links directly to each policy and configuration section', async () => {
   page('/settings')
-  expect(await screen.findByText('NetProxy V9')).toBeVisible()
+  expect(await screen.findByText('NETPROXY V9')).toBeVisible()
   expect(screen.getAllByRole('heading', { name: 'General' })).toHaveLength(1)
   expect(screen.getByRole('heading', { name: 'Proxy & network' })).toBeVisible()
   expect(screen.getByRole('heading', { name: 'Advanced' })).toBeVisible()
@@ -88,7 +88,7 @@ it.each([
       .map(([input]) => input.query?.target),
   ).toEqual([target])
   await act(() => data.router.navigate({ to: '/settings' }))
-  expect(await screen.findByText('NetProxy V9')).toBeVisible()
+  expect(await screen.findByText('NETPROXY V9')).toBeVisible()
 })
 
 it('keeps the unsectioned policy entry grouped and usable', async () => {

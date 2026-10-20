@@ -13,7 +13,9 @@ test('one compact title and owned navigation across primary and settings pages',
     await expect(page.locator('h1')).toHaveCount(1)
     await expect(page.locator('header h1')).toHaveText(title)
     await expect(page.locator('main h1')).toHaveCount(0)
-    await expect(page.locator('header button')).toHaveCount(0)
+    await expect(page.locator('header').getByRole('button')).toHaveCount(
+      path === '/nodes' ? 2 : path === '/settings' ? 0 : 1,
+    )
     await expect(page.getByRole('note')).toHaveCount(path === '/' ? 1 : 0)
     await expect(page.getByText('原生连接 · 核心管理', { exact: true })).toHaveCount(0)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)

@@ -10,6 +10,7 @@ import {
   MoreHorizontal,
   Plus,
   Search,
+  LoaderCircle,
 } from 'lucide-react'
 import { useApi, usePreferences } from '@/app/context'
 import {
@@ -31,11 +32,13 @@ import {
   DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { EmptyState, ErrorState, LoadingState } from '@/components/states'
 import { cn } from '@/lib/utils'
 import { PolicyEditor } from './policy-editor'
+import { HeaderActions } from '@/app/header-actions'
 
 export function NodesPage() {
   const api = useApi()
@@ -92,23 +95,12 @@ export function NodesPage() {
   }
   return (
     <div className="max-w-5xl space-y-4">
-      <div className="flex items-center gap-2">
-        <div className="relative min-w-0 flex-1">
-          <Search className="pointer-events-none absolute left-3 top-3.5 size-4 text-muted-foreground" />
-          <Input
-            type="search"
-            aria-label={text('搜索代理', 'Search proxies')}
-            placeholder={text('搜索代理', 'Search proxies')}
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            className="h-11 pl-9"
-          />
-        </div>
+      <HeaderActions>
         {api.supports('config.read') && api.supports('config.write') && (
           <Button
-            variant="outline"
+            variant="ghost"
             size="icon"
-            className="size-11"
+            className="size-12"
             aria-label={text('新增策略组', 'Add policy group')}
             onClick={() => setEditor({ tag: null })}
           >
@@ -117,12 +109,12 @@ export function NodesPage() {
         )}
         <DropdownMenu>
           <DropdownMenuTrigger
-            render={<Button variant="ghost" size="icon" className="size-11" />}
+            render={<Button variant="ghost" size="icon" className="size-12" />}
             aria-label={text('显示方式', 'View options')}
           >
             <MoreHorizontal />
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent align="end" className="w-52">
             <DropdownMenuRadioGroup value={view} onValueChange={setView}>
               <DropdownMenuRadioItem value="list" closeOnClick>
                 <List />
@@ -133,6 +125,7 @@ export function NodesPage() {
                 {t('grid')}
               </DropdownMenuRadioItem>
             </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
             <DropdownMenuRadioGroup value={presentation} onValueChange={setPresentation}>
               <DropdownMenuRadioItem value="expanded" closeOnClick>
                 {text('展开列表', 'Expanded groups')}
@@ -143,8 +136,19 @@ export function NodesPage() {
             </DropdownMenuRadioGroup>
           </DropdownMenuContent>
         </DropdownMenu>
+      </HeaderActions>
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-3.5 size-4 text-muted-foreground" />
+        <Input
+          type="search"
+          aria-label={text('搜索代理', 'Search proxies')}
+          placeholder={text('搜索代理', 'Search proxies')}
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          className="h-11 pl-9"
+        />
       </div>
-      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+      <div className="flex min-h-6 flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <span>
           {t('defaultOutbound')}:{' '}
           <span className="break-all">{data.default_outbound || t('runtimeUnknown')}</span>
@@ -182,33 +186,37 @@ export function NodesPage() {
       {snapshot.isError && (
         <ErrorState compact error={snapshot.error} retry={() => void snapshot.refetch()} />
       )}
-      {delay.error != null && <ErrorState compact error={delay.error} />}
-      {delay.isPending && (
-        <div role="status" className="flex items-center justify-between text-sm">
-          <span>{t('testing')}</span>
-          <Button variant="outline" onClick={delay.cancel}>
-            {t('cancelDelay')}
-          </Button>
-        </div>
-      )}
-      {delay.outcome && (
-        <p role="status" className="text-xs text-muted-foreground">
-          {t(delay.outcome === 'cached' ? 'delayCached' : 'delayEmpty')}
-        </p>
-      )}
       {presentation === 'tabs' && (
         <div
           role="tablist"
           aria-label={text('策略组', 'Policy groups')}
-          className="flex flex-wrap gap-1 border-b pb-2"
+          className="flex gap-1 overflow-x-auto border-b pb-2"
+          onKeyDown={(event) => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+            event.preventDefault()
+            const tabs = [
+              ...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+            ]
+            const current = tabs.findIndex((tab) => tab.getAttribute('aria-selected') === 'true')
+            const next =
+              event.key === 'Home'
+                ? 0
+                : event.key === 'End'
+                  ? tabs.length - 1
+                  : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length
+            tabs[next]?.click()
+            tabs[next]?.focus()
+          }}
         >
           {data.groups.map((group) => (
             <button
               key={group.tag}
               role="tab"
               aria-selected={selectedTab === group.tag}
+              tabIndex={selectedTab === group.tag ? 0 : -1}
+              title={group.tag}
               className={cn(
-                'min-h-11 max-w-full break-all rounded-md px-3 text-sm',
+                'min-h-12 max-w-48 shrink-0 truncate rounded-md px-3 text-sm',
                 selectedTab === group.tag && 'bg-accent font-medium',
               )}
               onClick={() => setActiveTag(group.tag)}
@@ -242,7 +250,19 @@ export function NodesPage() {
                   <ChevronDown className="size-4 shrink-0 text-muted-foreground group-data-closed:-rotate-90" />
                   <span className="min-w-0 break-all font-medium">{group.tag}</span>
                   <Badge variant="outline">{group.type}</Badge>
-                  <span className="text-xs text-muted-foreground">{group.items.length}</span>
+                  <span className="inline-flex h-5 min-w-6 shrink-0 items-center text-xs text-muted-foreground">
+                    {selection.isPending &&
+                    operation?.target.kind === 'policy' &&
+                    operation.target.value.group_tag === group.tag ? (
+                      <LoaderCircle
+                        role="status"
+                        aria-label={t('working')}
+                        className="size-4 animate-spin motion-reduce:animate-none"
+                      />
+                    ) : (
+                      group.items.length
+                    )}
+                  </span>
                 </CollapsibleTrigger>
                 {api.supports('policy.delay') && (
                   <Button
@@ -253,7 +273,11 @@ export function NodesPage() {
                     aria-label={t('testGroup', { name: group.tag })}
                     onClick={() => delay.mutate(group.tag)}
                   >
-                    <Gauge />
+                    {delay.isPending && delay.target === group.tag ? (
+                      <LoaderCircle className="animate-spin motion-reduce:animate-none" />
+                    ) : (
+                      <Gauge />
+                    )}
                   </Button>
                 )}
                 {api.supports('config.read') && (
@@ -280,6 +304,27 @@ export function NodesPage() {
                   </DropdownMenu>
                 )}
               </div>
+              {delay.target === group.tag && (
+                <>
+                  {delay.isPending && (
+                    <div
+                      role="status"
+                      className="flex items-center justify-between gap-2 py-2 text-sm"
+                    >
+                      <span>{t('testing')}</span>
+                      <Button variant="ghost" size="sm" onClick={delay.cancel}>
+                        {t('cancelDelay')}
+                      </Button>
+                    </div>
+                  )}
+                  {delay.error != null && <ErrorState compact error={delay.error} />}
+                  {delay.outcome && (
+                    <p role="status" className="py-2 text-xs text-muted-foreground">
+                      {t(delay.outcome === 'cached' ? 'delayCached' : 'delayEmpty')}
+                    </p>
+                  )}
+                </>
+              )}
               <CollapsibleContent className="pt-1">
                 {group.items.length === 0 ? (
                   <p className="p-3 text-sm text-muted-foreground">{t('emptyGroup')}</p>
@@ -323,6 +368,7 @@ export function NodesPage() {
                             >
                               <Check className={cn('size-3 shrink-0', !selected && 'invisible')} />
                               <span
+                                title={item.tag}
                                 className={view === 'grid' ? 'line-clamp-2 break-all' : 'truncate'}
                               >
                                 {item.tag}
