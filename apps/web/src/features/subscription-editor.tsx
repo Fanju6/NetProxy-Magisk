@@ -22,6 +22,7 @@ import { ResourceProviderTag } from './resource-provider-tag'
 
 export interface SubscriptionEditorProps {
   group?: GroupSummary
+  initialURL?: string
   busy: boolean
   disabled?: boolean
   feedback?: ReactNode
@@ -50,6 +51,7 @@ export function SubscriptionEditor(props: SubscriptionEditorProps) {
 
 function Editor({
   group,
+  initialURL,
   busy,
   disabled = false,
   feedback,
@@ -65,7 +67,7 @@ function Editor({
   const [open, setOpen] = useState(true)
   const [waiting, setWaiting] = useState(false)
   const [invalid, setInvalid] = useState(false)
-  const [dirty, setDirty] = useState(false)
+  const [dirty, setDirty] = useState(!group && !!initialURL)
   const [replacements, setReplacements] = useState<Replacement[]>([])
   const [initial] = useState(() => ({
     name: group?.name ?? '',
@@ -167,7 +169,9 @@ function Editor({
         inputMode={key === 'download_timeout' ? 'numeric' : key === 'url' ? 'url' : 'text'}
         min={key === 'download_timeout' ? 1 : undefined}
         step={key === 'download_timeout' ? 1 : undefined}
-        defaultValue={key === 'download_timeout' ? 60 : ''}
+        defaultValue={
+          key === 'download_timeout' ? 60 : key === 'url' && !group ? (initialURL ?? '') : ''
+        }
         autoComplete="off"
         autoCapitalize="none"
         spellCheck={false}

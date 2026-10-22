@@ -45,12 +45,14 @@ export function NodeManager({
   onClose,
   disabled = false,
   snapshotError,
+  initialContent,
 }: {
   snapshot: NodeManagerSnapshot
   target: NodeManagerTarget
   onClose: () => void
   disabled?: boolean
   snapshotError?: unknown
+  initialContent?: string
 }) {
   const api = useApi()
   const connection = useEventConnection()
@@ -60,11 +62,13 @@ export function NodeManager({
   const submitting = useRef(false)
   const { operation } = target
   const groups = snapshot.groups.filter((item) => item.group.type === 'local')
-  const [localGroupId, setLocalGroupId] = useState(groups[0]?.group.id ?? 'default')
+  const [localGroupId, setLocalGroupId] = useState(
+    operation === 'import' ? 'default' : (groups[0]?.group.id ?? 'default'),
+  )
   const groupId = ('groupId' in target && target.groupId) || localGroupId
   const tag = 'tag' in target ? target.tag : ''
   const group = snapshot.groups.find((item) => item.group.id === groupId)
-  const [content, setContent] = useState('')
+  const [content, setContent] = useState(operation === 'import' ? (initialContent ?? '') : '')
   const [original, setOriginal] = useState('')
   const [error, setError] = useState<unknown>(null)
   const [notice, setNotice] = useState('')
@@ -73,12 +77,16 @@ export function NodeManager({
   const [loaded, setLoaded] = useState(operation !== 'edit' && operation !== 'export')
   const [copyState, setCopyState] = useState<'idle' | 'copying' | 'copied' | 'failed'>('idle')
   const requiresTarget = 'tag' in target
-  const blocked = disabled || action.pending || connection !== 'live' || uncertain
+  const blocked =
+    disabled ||
+    action.pending ||
+    connection !== 'live' ||
+    uncertain ||
+    (operation === 'import' && groupId !== 'default' && !api.supports('nodes.add'))
   const validTarget =
-    operation === 'import' ||
-    (!!group &&
-      (operation === 'export' || group.group.type === 'local') &&
-      (!requiresTarget || group.nodes.some((node) => node.tag === tag)))
+    !!group &&
+    (operation === 'export' || group.group.type === 'local') &&
+    (!requiresTarget || group.nodes.some((node) => node.tag === tag))
   useEffect(() => {
     if (
       (operation !== 'edit' && operation !== 'export') ||
@@ -128,9 +136,12 @@ export function NodeManager({
             }
           : {
               method: operation === 'edit' ? ('PUT' as const) : ('POST' as const),
-              path: operation === 'import' ? ('/nodes/import' as const) : ('/nodes' as const),
+              path:
+                operation === 'import' && groupId === 'default'
+                  ? ('/nodes/import' as const)
+                  : ('/nodes' as const),
               body: {
-                ...(operation === 'import' ? {} : { group_id: groupId }),
+                ...(operation === 'import' && groupId === 'default' ? {} : { group_id: groupId }),
                 ...(operation === 'edit' ? { node_tag: tag } : {}),
                 content,
                 allow_insecure: insecure,
@@ -274,24 +285,33 @@ export function NodeManager({
           </div>
         )}
         {targetChanged}
-        {operation === 'add' && !target.groupId && groups.length > 1 && (
-          <Select
-            value={localGroupId}
-            onValueChange={(value) => value && setLocalGroupId(value)}
-            disabled={blocked}
-          >
-            <SelectTrigger className="min-h-12 w-full" aria-label={text('本地分组', 'Local group')}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {groups.map((item) => (
-                <SelectItem key={item.group.id} value={item.group.id} className="min-h-12">
-                  {item.group.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        {operation === 'import' && groups.length === 1 && (
+          <p className="text-sm text-muted-foreground">
+            {text('导入到默认本地分组', 'Import into the default local group')}
+          </p>
         )}
+        {(operation === 'import' || (operation === 'add' && !target.groupId)) &&
+          groups.length > 1 && (
+            <Select
+              value={localGroupId}
+              onValueChange={(value) => value && setLocalGroupId(value)}
+              disabled={blocked}
+            >
+              <SelectTrigger
+                className="min-h-12 w-full"
+                aria-label={text('本地分组', 'Local group')}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {groups.map((item) => (
+                  <SelectItem key={item.group.id} value={item.group.id} className="min-h-12">
+                    {item.group.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         {!loaded && error == null && <LoadingState />}
         {loaded &&
           !notice &&

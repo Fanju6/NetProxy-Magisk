@@ -44,6 +44,20 @@ public final class LifecycleProbe extends Instrumentation {
             app.registerActivityLifecycleCallbacks(callbacks);
             phase = "initial-reads";
             verifyRead(first);
+            phase = "shared-preview-recreate";
+            runOnMainSync(() -> first.startActivity(new Intent(Intent.ACTION_SEND)
+                .setClassName(getTargetContext(), "com.fanjv.netproxy.MainActivity")
+                .setType("text/plain")
+                .putExtra(Intent.EXTRA_TEXT, "trojan://fixture@example.invalid:443#M5-RECREATE")));
+            waitValue(first, "Boolean(document.querySelector('textarea')?.value.includes('M5-RECREATE'))", "true");
+            runOnMainSync(first::recreate);
+            long recreatedDeadline = SystemClock.uptimeMillis() + 15_000;
+            while ((current.get() == first || !first.isDestroyed()) && SystemClock.uptimeMillis() < recreatedDeadline) SystemClock.sleep(50);
+            if (current.get() == first || !first.isDestroyed()) throw new AssertionError("Activity not recreated");
+            verifyRead(current.get());
+            waitValue(current.get(), "Boolean(document.querySelector('textarea')?.value.includes('M5-RECREATE'))", "true");
+            evaluate(current.get(), "[...document.querySelectorAll('button')].find(b=>['取消','Cancel'].includes(b.textContent.trim()))?.click()");
+            waitValue(current.get(), "!Boolean(document.querySelector('textarea')?.value.includes('M5-RECREATE'))", "true");
             for (int i = 0; i < 2; i++) {
                 Activity old = current.get();
                 String begin = "Object.defineProperty(document,'visibilityState',{configurable:true,get:()=> 'hidden'});"
@@ -69,6 +83,7 @@ public final class LifecycleProbe extends Instrumentation {
             result.putBoolean("nodes_mode_after_recreate", true);
             result.putBoolean("catalog_detail_after_recreate", true);
             result.putBoolean("sse_open_before_destroy", true);
+            result.putBoolean("shared_preview_after_recreate", true);
             finish(Activity.RESULT_OK, result);
         } catch (Throwable failure) {
             result.putString("failure", failure.getClass().getSimpleName());
@@ -87,7 +102,10 @@ public final class LifecycleProbe extends Instrumentation {
             SystemClock.sleep(100);
         }
         // 与页面初始读取共存，不能为测试突破原生有界读取槽位。
-        evaluate(activity, "window.__probeRead=null;(async()=>{const results=[];for(const resource of ['info','nodes','selection','mode','catalog','subscriptions']){"
+        evaluate(activity, "window.__probeRead=null;(async()=>{"
+            + "const ack=await window.__TAURI_INTERNALS__.invoke('plugin:module-api|take_import',{completedId:'lifecycle-empty-id'});"
+            + "if(ack!==null)throw Error('void-response');"
+            + "const results=[];for(const resource of ['info','nodes','policy_groups','mode','catalog','subscriptions']){"
             + "results.push(await window.__TAURI_INTERNALS__.invoke('plugin:module-api|read',"
             + "{requestId:crypto.randomUUID(),resource}));}"
             + "if(!results.every(r=>r.status===200))throw Error('read');"

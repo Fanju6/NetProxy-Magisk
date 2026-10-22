@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="netproxy_tile_label">NetProxy</string>
+    <string name="netproxy_tile_ready">Service running</string>
+    <string name="netproxy_tile_stopped">Service stopped</string>
+    <string name="netproxy_tile_preparing">Preparing service</string>
+    <string name="netproxy_tile_starting">Starting service</string>
+    <string name="netproxy_tile_stopping">Stopping service</string>
+    <string name="netproxy_tile_failed">Service failed; open app</string>
+    <string name="netproxy_tile_unknown">Status unknown; open app</string>
+    <string name="netproxy_tile_checking">Checking service</string>
+    <string name="netproxy_tile_working">Updating service</string>
+    <string name="netproxy_tile_busy">Another operation is in progress</string>
+</resources>

@@ -49,7 +49,8 @@ private val codePattern = Regex("[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+")
 
 private fun failureStatus(code: String): Int = when (code) {
     "api.unauthorized" -> 401
-    "api.invalid_request" -> 400
+    "api.invalid_request", "api.import_invalid" -> 400
+    "api.import_unreadable" -> 403
     "api.read_only" -> 403
     "api.body_too_large" -> 413
     "api.invalid_response", "api.unsupported_schema" -> 502
@@ -280,6 +281,7 @@ internal class ModuleApiBridge(
         action: suspend () -> T): T = coroutineScope {
         validateId(requestId)
         val job = currentCoroutineContext().job
+        var mutationLease: MutationAdmissionGate.Lease? = null
         synchronized(lock) {
             requireForeground()
             job.ensureActive()
@@ -293,6 +295,7 @@ internal class ModuleApiBridge(
                 subscriptionCancel = job
             } else if (mutation) {
                 if (serviceWrite != null) throw BridgeFailure("api.busy", 429)
+                mutationLease = MutationAdmissionGate.process.tryAcquire() ?: throw BridgeFailure("api.busy", 429)
                 serviceWrite = job
             } else if (requests.size - (if (serviceWrite != null) 1 else 0) - (if (subscriptionCancel != null) 1 else 0) >= 8) {
                 throw BridgeFailure("api.busy", 429)
@@ -317,6 +320,7 @@ internal class ModuleApiBridge(
                 if (serviceWrite === job) serviceWrite = null
                 if (subscriptionCancel === job) subscriptionCancel = null
             }
+            mutationLease?.close()
         }
     }
 

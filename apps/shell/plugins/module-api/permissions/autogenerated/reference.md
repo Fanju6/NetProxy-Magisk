@@ -19,6 +19,8 @@ Module state, public Catalog reads, URL subscription management, service control
 - `allow-close-events`
 - `allow-visibility`
 - `allow-set-appearance`
+- `allow-pick-document`
+- `allow-take-import`
 - `allow-register-listener`
 - `allow-remove-listener`
 
@@ -183,6 +185,32 @@ Enables the open_events command without any pre-configured scope.
 <td>
 
 Denies the open_events command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`module-api:allow-pick-document`
+
+</td>
+<td>
+
+Enables the pick_document command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`module-api:deny-pick-document`
+
+</td>
+<td>
+
+Denies the pick_document command without any pre-configured scope.
 
 </td>
 </tr>
@@ -443,6 +471,32 @@ Enables the subscription_write command without any pre-configured scope.
 <td>
 
 Denies the subscription_write command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`module-api:allow-take-import`
+
+</td>
+<td>
+
+Enables the take_import command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`module-api:deny-take-import`
+
+</td>
+<td>
+
+Denies the take_import command without any pre-configured scope.
 
 </td>
 </tr>

@@ -367,6 +367,18 @@
           "markdownDescription": "Denies the open_events command without any pre-configured scope."
         },
         {
+          "description": "Enables the pick_document command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pick-document",
+          "markdownDescription": "Enables the pick_document command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pick_document command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pick-document",
+          "markdownDescription": "Denies the pick_document command without any pre-configured scope."
+        },
+        {
           "description": "Enables the policy_delay command without any pre-configured scope.",
           "type": "string",
           "const": "allow-policy-delay",
@@ -487,6 +499,18 @@
           "markdownDescription": "Denies the subscription_write command without any pre-configured scope."
         },
         {
+          "description": "Enables the take_import command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-take-import",
+          "markdownDescription": "Enables the take_import command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the take_import command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-take-import",
+          "markdownDescription": "Denies the take_import command without any pre-configured scope."
+        },
+        {
           "description": "Enables the visibility command without any pre-configured scope.",
           "type": "string",
           "const": "allow-visibility",
@@ -499,10 +523,10 @@
           "markdownDescription": "Denies the visibility command without any pre-configured scope."
         },
         {
-          "description": "Module state, public Catalog reads, URL subscription management, service control, policy groups, mode and bounded events, without shell, files or arbitrary HTTP access\n#### This default permission set includes:\n\n- `allow-read`\n- `allow-subscription-read`\n- `allow-subscription-action`\n- `allow-subscription-write`\n- `allow-management`\n- `allow-service-action`\n- `allow-policy-select`\n- `allow-change-mode`\n- `allow-policy-delay`\n- `allow-cancel`\n- `allow-open-events`\n- `allow-next-event`\n- `allow-close-events`\n- `allow-visibility`\n- `allow-set-appearance`\n- `allow-register-listener`\n- `allow-remove-listener`",
+          "description": "Module state, public Catalog reads, URL subscription management, service control, policy groups, mode and bounded events, without shell, files or arbitrary HTTP access\n#### This default permission set includes:\n\n- `allow-read`\n- `allow-subscription-read`\n- `allow-subscription-action`\n- `allow-subscription-write`\n- `allow-management`\n- `allow-service-action`\n- `allow-policy-select`\n- `allow-change-mode`\n- `allow-policy-delay`\n- `allow-cancel`\n- `allow-open-events`\n- `allow-next-event`\n- `allow-close-events`\n- `allow-visibility`\n- `allow-set-appearance`\n- `allow-pick-document`\n- `allow-take-import`\n- `allow-register-listener`\n- `allow-remove-listener`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Module state, public Catalog reads, URL subscription management, service control, policy groups, mode and bounded events, without shell, files or arbitrary HTTP access\n#### This default permission set includes:\n\n- `allow-read`\n- `allow-subscription-read`\n- `allow-subscription-action`\n- `allow-subscription-write`\n- `allow-management`\n- `allow-service-action`\n- `allow-policy-select`\n- `allow-change-mode`\n- `allow-policy-delay`\n- `allow-cancel`\n- `allow-open-events`\n- `allow-next-event`\n- `allow-close-events`\n- `allow-visibility`\n- `allow-set-appearance`\n- `allow-register-listener`\n- `allow-remove-listener`"
+          "markdownDescription": "Module state, public Catalog reads, URL subscription management, service control, policy groups, mode and bounded events, without shell, files or arbitrary HTTP access\n#### This default permission set includes:\n\n- `allow-read`\n- `allow-subscription-read`\n- `allow-subscription-action`\n- `allow-subscription-write`\n- `allow-management`\n- `allow-service-action`\n- `allow-policy-select`\n- `allow-change-mode`\n- `allow-policy-delay`\n- `allow-cancel`\n- `allow-open-events`\n- `allow-next-event`\n- `allow-close-events`\n- `allow-visibility`\n- `allow-set-appearance`\n- `allow-pick-document`\n- `allow-take-import`\n- `allow-register-listener`\n- `allow-remove-listener`"
         }
       ]
     }

@@ -116,6 +116,14 @@ M4.3.1 的资源只读矩阵、敏感字段隔离及真实设备覆盖见 [资�
 
 M4.3.2 的只写私有输入与事务设计见 [订阅写入 ADR](docs/adr-002-subscription-writes.md)，实际验收见 [订阅管理报告](docs/subscriptions-report.md)。
 
+## M5 Android 集成
+
+- 系统文件选择和分享只接收一次性 `content://` 读取授权；读取限制为 1 MiB、严格 UTF-8，拒绝本应用 Provider、路径和未授权 URI。内容只在当前原生会话内存中保留，用户确认后才交给既有配置、节点或订阅事务；取消、完成或进程死亡都会丢弃它。
+- 文本分享和文件分享共用同一预览与确认流程。配置导入先读取当前 revision、校验后才允许覆盖；节点导入沿用既有解析器，并可选择本地 Catalog 分组。不会为分享内容新建 Root、文件或通用 HTTP 权限。
+- 快捷设置磁贴复用可信 HTTPS 传输和既有 `service/start|stop` 业务操作。它先读取权威服务状态，共享进程内写入准入，操作接受后有界收尾并回读确认；不保存独立服务状态、不重放写入，也不会在后台主动配对。无法确认时引导打开应用。
+
+在 Android API 26+ 的实体设备上已验证固定签名覆盖、可信读取、分享预览取消、受授权文件 URI、错误与过大文件拒绝、Activity 三次重建后的 SSE/导入恢复，以及 Tile 的启动和停止。配置覆盖保存、破坏性订阅更新与所有 Android 版本的系统 Tile 生命周期仍应在各自安全测试环境验收。
+
 上游 Tauri 2.12.4 Android 框架与官方生成模板仍使用独立 Kotlin 插件和旧 AGP DSL，本工程保留官方要求的两项兼容设置 `android.builtInKotlin=false`、`android.newDsl=false`，构建会提示未来 AGP 10 移除。没有隐藏警告或手工修改下载的 Tauri 源码。它们属于上游工程限制，不是已完成现代 Android 构建迁移的证明；升级 AGP 10 前必须先解决。已删除无必要的旧模板 ProGuard 缺失文件开关。
 
 官方依据：[移动插件](https://v2.tauri.app/develop/plugins/develop-mobile/)、[Capability](https://v2.tauri.app/security/capabilities/)、[Android 签名](https://v2.tauri.app/distribute/sign/android/)、[Android 更新签名要求](https://developer.android.com/studio/publish/app-signing)。

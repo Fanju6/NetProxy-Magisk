@@ -12,6 +12,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useApi, usePreferences } from '@/app/context'
+import { useAndroidImport } from '@/app/android-import-context'
 import { HeaderActions } from '@/app/header-actions'
 import { resourceQueries, useResourceDetails } from '@/api/resources'
 import { useEventConnection } from '@/api/events'
@@ -47,7 +48,7 @@ type SubscriptionActions = ReturnType<typeof useSubscriptionActions>
 const isWaiting = (operation: SubscriptionActions['operation']) =>
   operation?.phase === 'pending' || operation?.phase === 'uncertain'
 
-function SubscriptionFeedback({
+export function SubscriptionFeedback({
   actions,
   groups,
   targetId,
@@ -545,6 +546,7 @@ function ResourceDetails({
 
 export function SubscriptionsPage() {
   const api = useApi()
+  const androidImport = useAndroidImport()
   const { t, preferences } = usePreferences()
   const connection = useEventConnection()
   const actions = useSubscriptionActions()
@@ -585,6 +587,17 @@ export function SubscriptionsPage() {
             <MoreHorizontal />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-60 max-w-[calc(100vw-2rem)]">
+            {androidImport.available &&
+              api.supports('nodes.read') &&
+              api.supports('nodes.import') && (
+                <DropdownMenuItem
+                  className="min-h-11"
+                  disabled={androidImport.busy || panel !== null || isWaiting(actions.operation)}
+                  onClick={() => androidImport.pick('nodes')}
+                >
+                  {text('从文件导入', 'Import from file')}
+                </DropdownMenuItem>
+              )}
             {api.supports('subscriptions.add') && (
               <DropdownMenuItem
                 className="min-h-11"

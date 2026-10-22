@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="netproxy_tile_label">NetProxy</string>
+    <string name="netproxy_tile_ready">服务运行中</string>
+    <string name="netproxy_tile_stopped">服务已停止</string>
+    <string name="netproxy_tile_preparing">正在准备服务</string>
+    <string name="netproxy_tile_starting">正在启动服务</string>
+    <string name="netproxy_tile_stopping">正在停止服务</string>
+    <string name="netproxy_tile_failed">服务失败，请打开应用</string>
+    <string name="netproxy_tile_unknown">状态未知，请打开应用</string>
+    <string name="netproxy_tile_checking">正在检查服务</string>
+    <string name="netproxy_tile_working">正在操作服务</string>
+    <string name="netproxy_tile_busy">其他操作正在进行</string>
+</resources>

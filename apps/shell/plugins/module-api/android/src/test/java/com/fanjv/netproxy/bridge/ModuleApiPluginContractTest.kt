@@ -14,7 +14,7 @@ class ModuleApiPluginContractTest {
         assertEquals("com.fanjv.netproxy.bridge.ModuleApiPlugin", plugin.name)
         assertNotNull(plugin.getAnnotation(TauriPlugin::class.java))
         val commands = plugin.declaredMethods.filter { it.getAnnotation(Command::class.java) != null }
-        assertEquals(setOf("read", "subscriptionRead", "subscriptionAction", "subscriptionWrite", "management", "serviceAction", "policySelect", "changeMode", "policyDelay", "cancel", "openEvents", "nextEvent", "closeEvents", "visibility", "setAppearance", "registerListener", "removeListener"), commands.map { it.name }.toSet())
+        assertEquals(setOf("read", "subscriptionRead", "subscriptionAction", "subscriptionWrite", "management", "serviceAction", "policySelect", "changeMode", "policyDelay", "cancel", "openEvents", "nextEvent", "closeEvents", "visibility", "setAppearance", "pickDocument", "takeImport", "registerListener", "removeListener"), commands.map { it.name }.toSet())
         commands.forEach { assertArrayEquals(arrayOf(Invoke::class.java), it.parameterTypes) }
     }
 

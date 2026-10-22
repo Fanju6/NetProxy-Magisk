@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { Link, useSearch } from '@tanstack/react-router'
 import { Braces, FileJson, Plus, RefreshCw } from 'lucide-react'
 import { useApi, usePreferences } from '@/app/context'
+import { useAndroidImport } from '@/app/android-import-context'
 import { ApiError } from '@/api/contracts'
 import { configTargetsSchema, readConfig, useManagementAction } from '@/api/management'
 import {
@@ -19,6 +20,14 @@ import { Details, DraftGuard, EditorPanel } from '@/components/details'
 import { JsonEditor } from '@/components/json-editor'
 import { Button } from '@/components/ui/button'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -33,6 +42,7 @@ export interface ConfigurationEditorProps {
   title: string
   readOnly?: boolean
   inline?: boolean
+  initialContent?: string
   renderForm?: (content: string, change: (content: string) => void) => ReactNode
   onClose: () => void
 }
@@ -84,10 +94,13 @@ export function ConfigurationEditor({
   title,
   readOnly = false,
   inline = false,
+  initialContent,
   renderForm,
   onClose,
 }: ConfigurationEditorProps) {
   const api = useApi()
+  const { preferences } = usePreferences()
+  const text = (zh: string, en: string) => (preferences.locale === 'zh' ? zh : en)
   const copy = useManagementCopy()
   const action = useManagementAction()
   const readonly = readOnly || target.startsWith('runtime/')
@@ -99,6 +112,7 @@ export function ConfigurationEditor({
   const [form, setForm] = useState(!readonly && (rules || renderForm !== undefined))
   const [notice, setNotice] = useState<'validated' | 'saved' | null>(null)
   const [blocked, setBlocked] = useState(false)
+  const [overwrite, setOverwrite] = useState(false)
   const writing = useRef(false)
   const mounted = useRef(false)
   const calls = useRef(new Set<AbortController>())
@@ -110,7 +124,11 @@ export function ConfigurationEditor({
         if (controller.signal.aborted) return
         if (document.target !== target)
           throw new ApiError('client.invalid_response', 'Invalid target', 502)
-        setDraft({ revision: document.revision, content: document.content })
+        setDraft({
+          revision: document.revision,
+          content:
+            !readonly && generation === 0 ? (initialContent ?? document.content) : document.content,
+        })
         setSavedContent(document.content)
       })
       .catch((failure: unknown) => {
@@ -122,7 +140,7 @@ export function ConfigurationEditor({
       controller.abort()
       for (const call of pending) call.abort()
     }
-  }, [api, target, generation])
+  }, [api, target, generation, initialContent, readonly])
   function reload() {
     if (writing.current) return
     setDraft(null)
@@ -136,7 +154,7 @@ export function ConfigurationEditor({
     setNotice(null)
   }
   async function apply(validateOnly: boolean) {
-    if (!draft || readonly || blocked || writing.current) return
+    if (!draft || readonly || blocked || writing.current) return false
     const controller = new AbortController()
     calls.current.add(controller)
     writing.current = true
@@ -153,18 +171,20 @@ export function ConfigurationEditor({
         z.object({ target: z.literal(target), revision: z.string().min(1) }),
         controller.signal,
       )
-      if (!mounted.current) return
+      if (!mounted.current) return false
       if (!validateOnly) {
         setDraft((current) => (current ? { ...current, revision: result.revision } : null))
         setSavedContent(draft.content)
       }
       setNotice(validateOnly ? 'validated' : 'saved')
+      return true
     } catch (failure) {
-      if (!mounted.current) return
+      if (!mounted.current) return false
       const safe = safeManagementError(failure)
       setError(safe)
       if (safe.code === 'config.conflict' || safe.persisted || !safe.responseReceived)
         setBlocked(true)
+      return false
     } finally {
       writing.current = false
       calls.current.delete(controller)
@@ -181,7 +201,10 @@ export function ConfigurationEditor({
       >
         {copy.validate}
       </Button>
-      <Button disabled={action.pending || blocked} onClick={() => void apply(false)}>
+      <Button
+        disabled={action.pending || blocked}
+        onClick={() => (initialContent !== undefined ? setOverwrite(true) : void apply(false))}
+      >
         {copy.save}
       </Button>
     </>
@@ -255,22 +278,53 @@ export function ConfigurationEditor({
     )
   const Panel = form ? Details : EditorPanel
   return (
-    <Panel
-      open
-      title={title}
-      description={form ? undefined : readonly ? copy.readOnly : copy.sensitive}
-      dirty={dirty && !(inline && !form)}
-      footer={footer}
-      headerActions={switchView}
-      onOpenChange={(open) => {
-        if (!open) {
-          if (inline && !form) setForm(true)
-          else onClose()
-        }
-      }}
-    >
-      {body}
-    </Panel>
+    <>
+      <Panel
+        open
+        title={title}
+        description={form ? undefined : readonly ? copy.readOnly : copy.sensitive}
+        dirty={dirty && !(inline && !form)}
+        footer={footer}
+        headerActions={switchView}
+        onOpenChange={(open) => {
+          if (!open) {
+            if (inline && !form) setForm(true)
+            else onClose()
+          }
+        }}
+      >
+        {body}
+      </Panel>
+      <Dialog open={overwrite} onOpenChange={setOverwrite}>
+        <DialogContent className="rounded-lg">
+          <DialogHeader>
+            <DialogTitle>{text('覆盖现有配置？', 'Overwrite current configuration?')}</DialogTitle>
+            <DialogDescription>
+              {text(
+                '将先校验草稿，再使用读取时的版本替换主配置。',
+                'The draft will be validated, then replace the core configuration using the revision you opened.',
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOverwrite(false)}>
+              {text('取消', 'Cancel')}
+            </Button>
+            <Button
+              disabled={action.pending || blocked}
+              onClick={() => {
+                setOverwrite(false)
+                void (async () => {
+                  if (await apply(true)) await apply(false)
+                })()
+              }}
+            >
+              {text('确认覆盖', 'Confirm overwrite')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
@@ -423,6 +477,7 @@ function RuleForm({
 
 export function ConfigurationPage() {
   const api = useApi()
+  const androidImport = useAndroidImport()
   const { preferences } = usePreferences()
   const section = useSearch({ from: '/settings/configuration' }).section
   const text = (zh: string, en: string) => (preferences.locale === 'zh' ? zh : en)
@@ -501,6 +556,15 @@ export function ConfigurationPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-end gap-3">
+        {section === 'core' && androidImport.available && api.supports('config.write') && (
+          <Button
+            variant="outline"
+            disabled={androidImport.busy || selected !== null}
+            onClick={() => androidImport.pick('config')}
+          >
+            {text('从文件导入', 'Import from file')}
+          </Button>
+        )}
         {section === 'core' && (
           <Link
             to="/settings/configuration"

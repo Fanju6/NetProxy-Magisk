@@ -14,6 +14,8 @@ const COMMANDS: &[&str] = &[
     "close_events",
     "visibility",
     "set_appearance",
+    "pick_document",
+    "take_import",
     "register_listener",
     "remove_listener",
 ];

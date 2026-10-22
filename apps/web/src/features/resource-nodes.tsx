@@ -169,9 +169,11 @@ export function ResourceNodes({
 export function ResourceNodeManager({
   target,
   onClose,
+  initialContent,
 }: {
   target: NodeManagerTarget
   onClose: () => void
+  initialContent?: string
 }) {
   const api = useApi()
   const { t } = usePreferences()
@@ -183,6 +185,7 @@ export function ResourceNodeManager({
         key={JSON.stringify(target)}
         snapshot={query.data}
         target={target}
+        {...(initialContent !== undefined ? { initialContent } : {})}
         onClose={onClose}
         disabled={query.isFetching || query.isError}
         snapshotError={query.error}

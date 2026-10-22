@@ -8,6 +8,7 @@ import {
   RouterProvider,
 } from '@tanstack/react-router'
 import { afterEach, expect, it, vi } from 'vitest'
+import userEvent from '@testing-library/user-event'
 import { ApiClient } from '@/api/client'
 import { apiOperations, type ApiTransport, type GroupSummary } from '@/api/contracts'
 import { ApiContext, PreferencesContext } from '@/app/context'
@@ -17,6 +18,8 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import type { JsonEditorProps } from '@/components/json-editor'
 import { SubscriptionsPage } from './subscriptions'
 import { ResourceProviderTag } from './resource-provider-tag'
+import { AndroidImports } from './android-imports'
+import type { AndroidInputAdapter } from '@/api/android-input'
 
 vi.mock('@/components/json-editor', () => ({
   JsonEditor: ({ value, onChange, readOnly, label }: JsonEditorProps) => (
@@ -67,7 +70,10 @@ function ResourcePageHarness({ children }: { children: ReactNode }) {
   )
 }
 
-function setup(element?: ReactNode, options: { catalogWrite?: boolean } = {}) {
+function setup(
+  element?: ReactNode,
+  options: { catalogWrite?: boolean; androidInput?: AndroidInputAdapter } = {},
+) {
   let groups = [
     group('default', 'Local default', 'local'),
     group('local-second', 'Local second', 'local'),
@@ -138,7 +144,17 @@ function setup(element?: ReactNode, options: { catalogWrite?: boolean } = {}) {
   })
   cache.setQueryData(['events-connection'], 'live')
   const root = createRootRoute({
-    component: () => <ResourcePageHarness>{element ?? <SubscriptionsPage />}</ResourcePageHarness>,
+    component: () => (
+      <ResourcePageHarness>
+        {options.androidInput ? (
+          <AndroidImports adapter={options.androidInput}>
+            {element ?? <SubscriptionsPage />}
+          </AndroidImports>
+        ) : (
+          (element ?? <SubscriptionsPage />)
+        )}
+      </ResourcePageHarness>
+    ),
   })
   const router = createRouter({ routeTree: root, history: createMemoryHistory() })
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
@@ -196,6 +212,34 @@ it('opens subscription creation from the resource header without issuing a write
   fireEvent.click(await screen.findByRole('menuitem', { name: 'Add subscription' }))
   const panel = await screen.findByRole('dialog')
   expect(within(panel).getByRole('textbox', { name: 'Subscription URL' })).toBeVisible()
+  expect(h.request.mock.calls.every(([input]) => input.method === 'GET')).toBe(true)
+})
+
+it('opens a system document from the resource header menu without importing automatically', async () => {
+  const pickDocument = vi.fn<AndroidInputAdapter['pickDocument']>().mockResolvedValue({
+    id: 'file-fixture',
+    name: 'nodes.txt',
+    content: 'ss://test-only-file@localhost:1234',
+  })
+  const h = setup(undefined, {
+    androidInput: {
+      pickDocument,
+      takeImport: async () => null,
+      completeImport: async () => {},
+      listen: async (_notify, visibility) => {
+        visibility(true)
+        return () => {}
+      },
+    },
+  })
+  fireEvent.click(await screen.findByRole('button', { name: 'Resource actions' }))
+  const item = await screen.findByRole('menuitem', { name: 'Import from file' })
+  await waitFor(() => expect(item).not.toHaveAttribute('aria-disabled', 'true'))
+  fireEvent.click(item)
+  expect(await screen.findByRole('textbox', { name: 'Import content' })).toHaveValue(
+    'ss://test-only-file@localhost:1234',
+  )
+  expect(pickDocument).toHaveBeenCalledWith('nodes')
   expect(h.request.mock.calls.every(([input]) => input.method === 'GET')).toBe(true)
 })
 
@@ -329,6 +373,28 @@ it('keeps text import on the resource page with its existing default-group API s
   })
 })
 
+it('imports shared node text into a selected local group through the existing append API', async () => {
+  const h = setup()
+  const user = userEvent.setup()
+  fireEvent.click(await screen.findByRole('button', { name: 'Resource actions' }))
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Import text' }))
+  const input = await screen.findByRole('textbox', { name: 'Node content' })
+  fireEvent.change(input, { target: { value: 'socks://localhost:1080#fixture' } })
+  await user.click(screen.getByRole('combobox', { name: 'Local group' }))
+  await user.click(await screen.findByRole('option', { name: 'Local second' }))
+  await submitNode()
+  await screen.findByText('Operation completed. Nodes refreshed.')
+  expect(h.request.mock.calls.find(([call]) => call.method === 'POST')?.[0]).toEqual({
+    method: 'POST',
+    path: '/nodes',
+    body: {
+      group_id: 'local-second',
+      content: 'socks://localhost:1080#fixture',
+      allow_insecure: false,
+    },
+  })
+})
+
 it('deletes a subscription without an active resource or replacement group', async () => {
   const h = setup()
   const panel = await details('Subscription fixture')
@@ -374,7 +440,7 @@ it('copies the server ProviderTag unchanged after a display-name rename', async 
   const copy = vi.fn().mockResolvedValue(undefined)
   vi.stubGlobal(
     'navigator',
-    Object.assign(Object.create(navigator), { clipboard: { writeText: copy } }),
+    Object.create(navigator, { clipboard: { value: { writeText: copy }, configurable: true } }),
   )
   const entry = group('stable-fixture', 'Renamed display name', 'local')
   setup(<ResourceProviderTag group={entry} />)
@@ -556,7 +622,7 @@ it('offers manual ProviderTag copying when clipboard access fails', async () => 
   const copy = vi.fn().mockRejectedValue(new Error('fixture clipboard denied'))
   vi.stubGlobal(
     'navigator',
-    Object.assign(Object.create(navigator), { clipboard: { writeText: copy } }),
+    Object.create(navigator, { clipboard: { value: { writeText: copy }, configurable: true } }),
   )
   setup(<ResourceProviderTag group={group('local-fixture', 'Fixture', 'local')} />)
   fireEvent.click(await screen.findByRole('button', { name: 'Copy ProviderTag' }))
@@ -572,7 +638,7 @@ it('copies ProviderTag in subscription editing without reading private settings'
   const copy = vi.fn().mockResolvedValue(undefined)
   vi.stubGlobal(
     'navigator',
-    Object.assign(Object.create(navigator), { clipboard: { writeText: copy } }),
+    Object.create(navigator, { clipboard: { value: { writeText: copy }, configurable: true } }),
   )
   const h = setup()
   const panel = await details('Subscription fixture')

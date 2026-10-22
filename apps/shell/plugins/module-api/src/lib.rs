@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
+mod android_input;
 mod appearance;
 mod management;
 mod policy;
@@ -357,7 +358,8 @@ async fn dispatch<R: Runtime>(
                 };
                 let status = match code.as_str() {
                     "api.unauthorized" => 401,
-                    "api.invalid_request" => 400,
+                    "api.invalid_request" | "api.import_invalid" => 400,
+                    "api.import_unreadable" => 403,
                     "api.read_only" => 403,
                     "api.body_too_large" => 413,
                     "api.invalid_response" | "api.unsupported_schema" => 502,
@@ -567,6 +569,24 @@ async fn set_appearance<R: Runtime>(
     dispatch(app, "setAppearance", json!(request)).await
 }
 
+#[tauri::command]
+async fn pick_document<R: Runtime>(
+    app: AppHandle<R>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<Value, BridgeError> {
+    let request: android_input::PickDocument = android_input::parse(request.body())?;
+    dispatch(app, "pickDocument", json!(request)).await
+}
+
+#[tauri::command]
+async fn take_import<R: Runtime>(
+    app: AppHandle<R>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<Value, BridgeError> {
+    let request = android_input::TakeImport::parse(request.body())?;
+    dispatch(app, "takeImport", json!(request)).await
+}
+
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("module-api")
         .invoke_handler(tauri::generate_handler![
@@ -584,7 +604,9 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             next_event,
             close_events,
             visibility,
-            set_appearance
+            set_appearance,
+            pick_document,
+            take_import
         ])
         .setup(|_app, _api| {
             #[cfg(target_os = "android")]
