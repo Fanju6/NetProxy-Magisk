@@ -11,13 +11,28 @@ import { useApi } from '@/app/context'
 import type { ApiClient } from './client'
 import {
   groupSchema,
+  groupIdSchema,
   historySchema,
+  nodeSchema,
   subscriptionDetailSchema,
   subscriptionProgressSchema,
   type GroupSummary,
 } from './contracts'
 
 const sessionKey = ['resource-session'] as const
+export const catalogNodesKey = ['resource', 'catalog-nodes-snapshot'] as const
+const catalogNodesSchema = z.object({
+  groups: z.array(
+    z.object({
+      group: z.object({
+        id: groupIdSchema,
+        name: z.string(),
+        type: z.enum(['local', 'subscription']),
+      }),
+      nodes: z.array(nodeSchema),
+    }),
+  ),
+})
 const epoch = (cache: QueryClient) => cache.getQueryData<number>(sessionKey) ?? 0
 const resourceKey = (key: readonly unknown[]) => key[0] === 'resource' || key[0] === 'subscriptions'
 export function resetResourceSession(cache: QueryClient) {
@@ -26,6 +41,7 @@ export function resetResourceSession(cache: QueryClient) {
     { predicate: (query) => resourceKey(query.queryKey) },
     { revert: false, silent: true },
   )
+  void cache.invalidateQueries({ queryKey: catalogNodesKey, exact: true, refetchType: 'none' })
 }
 function version(group: GroupSummary) {
   return Date.parse(group.updated_at) || 0
@@ -49,6 +65,7 @@ export function acceptResourceEvent(
   initial: boolean,
 ) {
   const previous = cache.getQueryData<GroupSummary[]>(['subscriptions'])
+  let nodesChanged = initial || !previous
   // Hub 首帧没有全局版本，不能据此覆盖更新的 GET，分组增删同样要重新读取。
   if (
     initial ||
@@ -73,6 +90,17 @@ export function acceptResourceEvent(
       !group ||
       !old ||
       old.revision !== group.revision ||
+      old.node_count !== group.node_count ||
+      old.name !== group.name ||
+      old.type !== group.type ||
+      old.updated_at !== group.updated_at
+    )
+      nodesChanged = true
+    if (
+      !group ||
+      !old ||
+      old.name !== group.name ||
+      old.revision !== group.revision ||
       old.updated_at !== group.updated_at ||
       JSON.stringify(old.progress) !== JSON.stringify(group.progress)
     )
@@ -80,6 +108,10 @@ export function acceptResourceEvent(
         .cancelQueries({ queryKey: ['resource', id] }, { revert: false, silent: true })
         .then(() => cache.invalidateQueries({ queryKey: ['resource', id] }))
   }
+  if (nodesChanged)
+    void cache
+      .cancelQueries({ queryKey: catalogNodesKey, exact: true }, { revert: false, silent: true })
+      .then(() => cache.invalidateQueries({ queryKey: catalogNodesKey, exact: true }))
 }
 export const resourceQueries = (api: ApiClient) => {
   const list = (path: '/catalog' | '/subscriptions') =>
@@ -120,6 +152,24 @@ export const resourceQueries = (api: ApiClient) => {
       },
     })
   return {
+    nodes: queryOptions({
+      queryKey: catalogNodesKey,
+      networkMode: 'always',
+      retry: false,
+      staleTime: 30_000,
+      enabled: api.supports('nodes.read'),
+      queryFn: async ({ signal, client }) => {
+        const generation = epoch(client)
+        const result = await api.request(
+          { method: 'GET', path: '/nodes/snapshot' },
+          catalogNodesSchema,
+          signal,
+        )
+        if (signal.aborted || generation !== epoch(client))
+          throw new CancelledError({ silent: true, revert: false })
+        return result
+      },
+    }),
     catalog: list('/catalog'),
     subscriptions: list('/subscriptions'),
     detail: (id: string) =>

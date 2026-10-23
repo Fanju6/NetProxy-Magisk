@@ -1,9 +1,8 @@
 import { useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { z } from 'zod'
 import { MoreHorizontal, Pencil, Plus, Share2, Trash2 } from 'lucide-react'
 import { useApi, usePreferences } from '@/app/context'
-import { groupIdSchema, nodeSchema } from '@/api/contracts'
+import { catalogNodesKey, resourceQueries } from '@/api/resources'
 import { useEventConnection } from '@/api/events'
 import { Details } from '@/components/details'
 import { Button } from '@/components/ui/button'
@@ -17,41 +16,21 @@ import {
 import { EmptyState, ErrorState, LoadingState } from '@/components/states'
 import { NodeManager, type NodeManagerTarget } from './node-manager'
 
-// Catalog reads must not require a running core, selection or runtime groups.
-const catalogNodesSchema = z.object({
-  groups: z.array(
-    z.object({
-      group: z.object({
-        id: groupIdSchema,
-        name: z.string(),
-        type: z.enum(['local', 'subscription']),
-      }),
-      nodes: z.array(nodeSchema),
-    }),
-  ),
-})
-
-function useCatalogNodes(id?: string) {
+function useCatalogNodes() {
   const api = useApi()
   const cache = useQueryClient()
   const connection = useEventConnection()
-  const scope = id ?? 'catalog'
   const query = useQuery({
-    queryKey: ['resource', scope, 'nodes'],
-    networkMode: 'always',
-    retry: false,
-    staleTime: 0,
+    ...resourceQueries(api).nodes,
     enabled: connection === 'live' && api.supports('nodes.read'),
-    queryFn: ({ signal }) =>
-      api.request({ method: 'GET', path: '/nodes/snapshot' }, catalogNodesSchema, signal),
   })
   useEffect(() => {
     if (connection !== 'live')
       void cache.cancelQueries(
-        { queryKey: ['resource', scope, 'nodes'], exact: true },
+        { queryKey: catalogNodesKey, exact: true },
         { revert: false, silent: true },
       )
-  }, [cache, connection, scope])
+  }, [cache, connection])
   return query
 }
 
@@ -68,7 +47,7 @@ export function ResourceNodes({
   const { t, preferences } = usePreferences()
   const text = (zh: string, en: string) => (preferences.locale === 'zh' ? zh : en)
   const connection = useEventConnection()
-  const query = useCatalogNodes(id)
+  const query = useCatalogNodes()
   const group = query.data?.groups.find((entry) => entry.group.id === id)
   const disabled = blocked || connection !== 'live' || query.isError || query.isFetching
   if (!api.supports('nodes.read')) return null
@@ -178,7 +157,7 @@ export function ResourceNodeManager({
   const api = useApi()
   const { t } = usePreferences()
   const connection = useEventConnection()
-  const query = useCatalogNodes('groupId' in target ? target.groupId : undefined)
+  const query = useCatalogNodes()
   if (query.data)
     return (
       <NodeManager

@@ -14,6 +14,7 @@ import {
 } from './contracts'
 import {
   acceptResourceEvent,
+  catalogNodesKey,
   mergeResourceSummaries,
   resetResourceSession,
   resourceQueries,
@@ -54,6 +55,75 @@ function setup() {
   return { api, cache, request, Wrapper, queries: resourceQueries(api) }
 }
 const summaries = () => createFixtures().snapshot.groups.map(({ group }) => group)
+
+describe('shared public Catalog nodes', () => {
+  it('shares concurrent observers and remounts for 30 seconds without private fields', async () => {
+    const h = setup()
+    const snapshot = createFixtures().snapshot
+    h.request.mockResolvedValue(
+      response({
+        ...snapshot,
+        groups: snapshot.groups.map((entry) => ({ ...entry, private_key: 'FAKE_PRIVATE' })),
+      }),
+    )
+    const first = renderHook(() => useQuery(h.queries.nodes), { wrapper: h.Wrapper })
+    const second = renderHook(() => useQuery(h.queries.nodes), { wrapper: h.Wrapper })
+    await waitFor(() => expect(first.result.current.isSuccess).toBe(true))
+    expect(second.result.current.data).toEqual(first.result.current.data)
+    expect(h.request).toHaveBeenCalledTimes(1)
+    first.unmount()
+    second.unmount()
+    const again = renderHook(() => useQuery(h.queries.nodes), { wrapper: h.Wrapper })
+    await waitFor(() => expect(again.result.current.isSuccess).toBe(true))
+    expect(h.request).toHaveBeenCalledTimes(1)
+    expect(h.cache.getQueryCache().findAll({ queryKey: catalogNodesKey })).toHaveLength(1)
+    expect(JSON.stringify(again.result.current.data)).not.toContain('FAKE_PRIVATE')
+    h.cache.setQueryData(catalogNodesKey, again.result.current.data, {
+      updatedAt: Date.now() - 30_001,
+    })
+    await h.cache.fetchQuery(h.queries.nodes)
+    expect(h.request).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['initial', 'rename', 'revision', 'count', 'add', 'remove'])(
+    'invalidates the shared snapshot on %s events',
+    async (change) => {
+      const h = setup()
+      const previous = summaries()
+      h.cache.setQueryData(['subscriptions'], previous)
+      h.cache.setQueryData(catalogNodesKey, { groups: [] })
+      const incoming = previous.map((group) => ({ ...group }))
+      if (change === 'rename') incoming[0]!.name += ' renamed'
+      if (change === 'revision') incoming[0]!.revision++
+      if (change === 'count') incoming[0]!.node_count++
+      if (change === 'remove') incoming.pop()
+      if (change === 'add') incoming.push({ ...previous[0]!, id: 'new-resource' })
+      acceptResourceEvent(h.cache, incoming, change === 'initial')
+      await act(async () => {})
+      expect(h.cache.getQueryState(catalogNodesKey)?.isInvalidated).toBe(true)
+    },
+  )
+
+  it('cancels old session reads and invalidates otherwise fresh cached nodes', async () => {
+    const h = setup()
+    let finish!: (value: ReturnType<typeof response>) => void
+    h.request.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    const read = h.cache.fetchQuery(h.queries.nodes).catch(() => undefined)
+    resetResourceSession(h.cache)
+    expect(h.request.mock.calls[0]?.[1]?.aborted).toBe(true)
+    finish(response(createFixtures().snapshot))
+    await read
+    expect(h.cache.getQueryData(catalogNodesKey)).toBeUndefined()
+    h.cache.setQueryData(catalogNodesKey, { groups: [] })
+    resetResourceSession(h.cache)
+    expect(h.cache.getQueryState(catalogNodesKey)?.isInvalidated).toBe(true)
+  })
+})
 
 describe('public Catalog contracts', () => {
   it('uses actual Go types, optional traffic counters, sparse history and active-only progress', () => {
