@@ -23,6 +23,7 @@ const configTransactionDirectory = ".config-apply"
 
 var configJournalWrite = writeConfigAtomic
 var configSnapshotRestore = restoreConfigSnapshot
+var configBootID = currentBootID
 
 type configFileSnapshot struct {
 	Path   string `json:"path"`
@@ -32,16 +33,17 @@ type configFileSnapshot struct {
 }
 
 type configApplyJournal struct {
-	Version    int                  `json:"version"`
-	Phase      string               `json:"phase"`
-	Static     []configFileSnapshot `json:"static"`
-	Runtime    []configFileSnapshot `json:"runtime"`
-	Catalog    []configFileSnapshot `json:"catalog,omitempty"`
-	WasRunning bool                 `json:"was_running"`
-	Backend    string               `json:"backend"`
-	Action     string               `json:"action"`
-	BootID     string               `json:"boot_id"`
-	Mode       string               `json:"mode,omitempty"`
+	Version     int                  `json:"version"`
+	Phase       string               `json:"phase"`
+	Static      []configFileSnapshot `json:"static"`
+	Runtime     []configFileSnapshot `json:"runtime"`
+	Catalog     []configFileSnapshot `json:"catalog,omitempty"`
+	WasRunning  bool                 `json:"was_running"`
+	KeepStopped bool                 `json:"keep_stopped,omitempty"`
+	Backend     string               `json:"backend"`
+	Action      string               `json:"action"`
+	BootID      string               `json:"boot_id"`
+	Mode        string               `json:"mode,omitempty"`
 }
 
 type configApplyTransaction struct {
@@ -105,7 +107,7 @@ func beginConfigApply(options Options, destination string) (*configApplyTransact
 			Phase:      "prepared",
 			WasRunning: configProcessRunning(options.SingBoxPath),
 			Action:     "none",
-			BootID:     currentBootID(),
+			BootID:     configBootID(),
 			Static:     make([]configFileSnapshot, 0, 2),
 			Runtime:    make([]configFileSnapshot, 0, 2),
 		},
@@ -209,6 +211,16 @@ func (transaction *configApplyTransaction) writeJournal() error {
 	return configJournalWrite(transaction.journalPath, content, 0o600)
 }
 
+func (transaction *configApplyTransaction) markCleanupFailed(phase string) error {
+	previousBootID := transaction.journal.BootID
+	transaction.journal.BootID = configBootID()
+	if err := transaction.setPhase(phase); err != nil {
+		transaction.journal.BootID = previousBootID
+		return err
+	}
+	return nil
+}
+
 func (transaction *configApplyTransaction) commit() error {
 	if err := transaction.setPhase("committed"); err != nil {
 		return err
@@ -249,11 +261,18 @@ func (transaction *configApplyTransaction) rollback() error {
 }
 
 func recoverConfigApply(ctx context.Context, options Options) error {
+	return recoverConfigApplyWithStop(ctx, options, false)
+}
+
+func recoverConfigApplyWithStop(ctx context.Context, options Options, keepStopped bool) error {
 	directory := configTransactionPath(options)
 	content, err := os.ReadFile(filepath.Join(directory, "journal.json"))
 	if os.IsNotExist(err) {
 		if removeErr := os.RemoveAll(directory); removeErr != nil && !os.IsNotExist(removeErr) {
 			return removeErr
+		}
+		if keepStopped {
+			return configStop(ctx, options)
 		}
 		return nil
 	}
@@ -267,7 +286,21 @@ func recoverConfigApply(ctx context.Context, options Options) error {
 	if journal.Version != 2 || journal.Phase == "" {
 		return errors.New("配置应用事务版本或阶段无效")
 	}
-	if journal.Phase == "committed" || journal.Phase == "rolled_back" {
+	if err := validateCleanupBoot(journal); err != nil {
+		return err
+	}
+	transaction := configApplyTransaction{directory: directory, journalPath: filepath.Join(directory, "journal.json"), journal: journal}
+	if journal.Phase == "committed" || journal.Phase == "rolled_back" || journal.Phase == "stop_cleanup_failed" {
+		if keepStopped || journal.KeepStopped {
+			if err := configStop(ctx, options); err != nil {
+				if errors.Is(err, ErrForcedTermination) {
+					// 磁盘事务已完成，备份可能已清理；只保留强杀门禁，不重做快照恢复。
+					transaction.journal.KeepStopped = true
+					return errors.Join(err, transaction.markCleanupFailed("stop_cleanup_failed"))
+				}
+				return err
+			}
+		}
 		return os.RemoveAll(directory)
 	}
 	if err := validateConfigJournal(options, journal); err != nil {
@@ -283,8 +316,17 @@ func recoverConfigApply(ctx context.Context, options Options) error {
 	}
 	defer release()
 	options = lockedOptions
-	transaction := configApplyTransaction{directory: directory, journalPath: filepath.Join(directory, "journal.json"), journal: journal}
-	return restoreConfigApply(ctx, options, &transaction, reloadConfigSnapshot)
+	return restoreConfigApplyWithStop(ctx, options, &transaction, reloadConfigSnapshot, keepStopped)
+}
+
+func validateCleanupBoot(journal configApplyJournal) error {
+	if journal.Phase == "cleanup_failed" || journal.Phase == "stop_cleanup_failed" {
+		bootID := configBootID()
+		if bootID == "" || journal.BootID == "" || bootID == journal.BootID {
+			return ErrForcedTermination
+		}
+	}
+	return nil
 }
 
 func currentBootID() string {
@@ -297,25 +339,35 @@ func rollbackConfigApply(options Options, transaction *configApplyTransaction, c
 	ctx, cancel := context.WithTimeout(context.Background(), 2*serviceReadyTimeout+2*serviceStopTimeout+10*time.Second)
 	defer cancel()
 	if errors.Is(cause, ErrForcedTermination) {
-		journalErr := transaction.setPhase("cleanup_failed")
+		journalErr := transaction.markCleanupFailed("cleanup_failed")
 		return errors.Join(cause, journalErr, transaction.restore())
 	}
 	return errors.Join(cause, restoreConfigApply(ctx, options, transaction, configRestoreReload))
 }
 
 func restoreConfigApply(ctx context.Context, options Options, transaction *configApplyTransaction, restoreRuntime func(context.Context, Options, configApplyJournal) error) error {
+	return restoreConfigApplyWithStop(ctx, options, transaction, restoreRuntime, false)
+}
+
+func restoreConfigApplyWithStop(ctx context.Context, options Options, transaction *configApplyTransaction, restoreRuntime func(context.Context, Options, configApplyJournal) error, keepStopped bool) error {
 	journal := transaction.journal
-	if journal.Phase == "cleanup_failed" {
-		bootID := currentBootID()
-		if bootID == "" || journal.BootID == "" || bootID == journal.BootID {
-			return ErrForcedTermination
+	if err := validateCleanupBoot(journal); err != nil {
+		return err
+	}
+	// 停止意图必须先落入原 journal；进程在磁盘恢复或收尾中断后也不能复活旧核心。
+	if keepStopped && !journal.KeepStopped {
+		transaction.journal.KeepStopped = true
+		if err := transaction.writeJournal(); err != nil {
+			transaction.journal.KeepStopped = false
+			return fmt.Errorf("记录停止意图失败: %w", err)
 		}
+		journal = transaction.journal
 	}
 	affectedRuntime := journal.Action == "switch" && journal.Phase != "prepared" || journal.Action == "reload" && journal.Phase == "reload_started" || journal.Phase == "cleanup_failed"
-	if affectedRuntime && configProcessRunning(options.SingBoxPath) {
+	if journal.KeepStopped || affectedRuntime && configProcessRunning(options.SingBoxPath) {
 		if err := configStop(ctx, options); err != nil {
 			if errors.Is(err, ErrForcedTermination) {
-				return errors.Join(err, transaction.setPhase("cleanup_failed"))
+				return errors.Join(err, transaction.markCleanupFailed("cleanup_failed"))
 			}
 			return fmt.Errorf("停止候选运行实例失败: %w", err)
 		}
@@ -323,18 +375,26 @@ func restoreConfigApply(ctx context.Context, options Options, transaction *confi
 	if err := transaction.restore(); err != nil {
 		return fmt.Errorf("磁盘恢复失败: %w", err)
 	}
-	if affectedRuntime && journal.WasRunning {
+	if !journal.KeepStopped && affectedRuntime && journal.WasRunning {
 		if err := restoreRuntime(ctx, options, journal); err != nil {
 			if errors.Is(err, ErrForcedTermination) {
-				return errors.Join(err, transaction.setPhase("cleanup_failed"))
+				return errors.Join(err, transaction.markCleanupFailed("cleanup_failed"))
 			}
 			return fmt.Errorf("旧 runtime 恢复失败: %w", err)
 		}
 	}
-	if journal.Action == "mode" && journal.Phase == "mode_started" && journal.WasRunning {
+	if !journal.KeepStopped && journal.Action == "mode" && journal.Phase == "mode_started" && journal.WasRunning {
 		options.networkEvaluation = prepareFromConfigJournal(options, journal).Network
 		if _, err := syncConfiguredMode(ctx, options); err != nil {
 			return fmt.Errorf("旧模式恢复失败: %w", err)
+		}
+	}
+	if journal.KeepStopped {
+		if err := cleanupRuntimeFiles(options); err != nil {
+			return fmt.Errorf("清理恢复的运行时失败: %w", err)
+		}
+		if err := writeServiceState(options.StateFile, "stopped", 0, 0, 0, ""); err != nil {
+			return fmt.Errorf("确认停止状态失败: %w", err)
 		}
 	}
 	if err := transaction.cleanup(); err != nil {

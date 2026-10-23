@@ -85,7 +85,7 @@ func ManageService(ctx context.Context, options Options, action string) (Service
 	case "start":
 		err = StartService(ctx, options)
 	case "stop":
-		err = StopService(ctx, options)
+		err = recoverConfigApplyWithStop(ctx, options, true)
 	case "restart":
 		if err = StopService(ctx, options); err == nil {
 			err = StartService(ctx, options)
@@ -244,10 +244,10 @@ func StopService(_ context.Context, options Options) error {
 			return errors.Join(fmt.Errorf("%s: %w", message, err), stateErr, stateWriteErr, failedWriteErr)
 		}
 	}
-	cleanupRuntimeFiles(options)
+	cleanupErr := cleanupRuntimeFiles(options)
 	stoppedWriteErr := writeServiceState(options.StateFile, "stopped", 0, 0, 0, "")
-	if err := errors.Join(stateErr, stateWriteErr, stoppedWriteErr); err != nil {
-		return fmt.Errorf("停止 sing-box 已完成，但服务状态写入失败: %w", err)
+	if err := errors.Join(stateErr, stateWriteErr, cleanupErr, stoppedWriteErr); err != nil {
+		return fmt.Errorf("停止 sing-box 已完成，但运行时清理或服务状态写入失败: %w", err)
 	}
 	logService(options, "INFO", "service.stop", "success", "sing-box 服务已停止")
 	return nil
@@ -624,10 +624,14 @@ func restoreReloadState(_ context.Context, options Options, pid int, startedAt, 
 	return fmt.Errorf("sing-box 原位重新加载失败: %w", cause)
 }
 
-func cleanupRuntimeFiles(options Options) {
+func cleanupRuntimeFiles(options Options) error {
+	var cleanupErr error
 	for _, name := range []string{"providers.json", "inbound.json"} {
-		_ = os.Remove(filepath.Join(options.RuntimeDir, name))
+		if err := os.Remove(filepath.Join(options.RuntimeDir, name)); err != nil && !os.IsNotExist(err) {
+			cleanupErr = errors.Join(cleanupErr, err)
+		}
 	}
+	return cleanupErr
 }
 
 func logService(options Options, level, event, result, format string, args ...any) {
