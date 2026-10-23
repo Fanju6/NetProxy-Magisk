@@ -116,7 +116,8 @@ export class NativeTransport implements ApiTransport {
   private releaseEvents: (() => void) | undefined
   private eventGeneration = 0
   private releaseVisibility: (() => void) | undefined
-  private visibilityGeneration = 0
+  private readonly visibilityListeners = new Set<(visible: boolean) => void>()
+  private visibilityValue: boolean | undefined
 
   constructor(private readonly ipc: NativeIpc = officialIpc) {}
 
@@ -333,21 +334,32 @@ export class NativeTransport implements ApiTransport {
   }
 
   observeVisibility(listener: (visible: boolean) => void) {
-    const generation = ++this.visibilityGeneration
-    this.releaseVisibility?.()
-    if (generation !== this.visibilityGeneration) return () => {}
+    // Each subscription owns a token, even when callers reuse the same callback.
+    const consumer = (visible: boolean) => {
+      try {
+        listener(visible)
+      } catch {
+        // One consumer must not interrupt the shared lifecycle notification.
+      }
+    }
+    this.visibilityListeners.add(consumer)
+    const unsubscribe = () => {
+      if (!this.visibilityListeners.delete(consumer)) return
+      if (this.visibilityListeners.size === 0) this.releaseVisibility?.()
+    }
+    if (this.releaseVisibility) {
+      if (this.visibilityValue !== undefined) consumer(this.visibilityValue)
+      return unsubscribe
+    }
     let disposed = false
     let registration: { unregister(): Promise<void> } | undefined
     let revision = 0
-    let previous: boolean | undefined
     const publish = (visible: boolean) => {
-      if (!disposed && visible !== previous) {
-        previous = visible
-        try {
-          listener(visible)
-        } catch {
-          // 消费方异常不能破坏原生事件分发或阻止后续清理。
-        }
+      if (disposed || visible === this.visibilityValue) return
+      this.visibilityValue = visible
+      for (const consumer of [...this.visibilityListeners]) {
+        if (disposed || visible !== this.visibilityValue) break
+        if (this.visibilityListeners.has(consumer)) consumer(visible)
       }
     }
     const unregister = (handle: { unregister(): Promise<void> }) => {
@@ -361,9 +373,12 @@ export class NativeTransport implements ApiTransport {
       if (disposed) return
       disposed = true
       window.removeEventListener('pagehide', release)
-      if (this.releaseVisibility === release) this.releaseVisibility = undefined
-      if (registration) unregister(registration)
+      this.releaseVisibility = undefined
+      this.visibilityListeners.clear()
+      this.visibilityValue = undefined
+      const handle = registration
       registration = undefined
+      if (handle) unregister(handle)
     }
     this.releaseVisibility = release
     window.addEventListener('pagehide', release, { once: true })
@@ -392,7 +407,9 @@ export class NativeTransport implements ApiTransport {
           if (revision === 0) publish(false)
         }
       })
-      .catch(() => publish(false))
-    return release
+      .catch(() => {
+        if (revision === 0) publish(false)
+      })
+    return unsubscribe
   }
 }
