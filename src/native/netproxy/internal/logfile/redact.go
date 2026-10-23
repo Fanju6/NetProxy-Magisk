@@ -38,7 +38,7 @@ func RedactText(value string) string {
 	if json.Unmarshal([]byte(value), &document) == nil {
 		switch document.(type) {
 		case map[string]any, []any:
-			redactJSON(document, false)
+			document = redactJSON(document, false)
 			if encoded, err := json.Marshal(document, json.Deterministic(true), jsontext.WithIndent("  ")); err == nil {
 				value = string(encoded) + "\n"
 			}
@@ -85,10 +85,16 @@ func redactJSON(value any, tls bool) any {
 				continue
 			}
 			// TLS 密钥列表可能逐行存 PEM；仅沿已知 TLS 子结构传播上下文。
-			childTLS := normalized == "tls" || tls && (normalized == "ech" || normalized == "control_wrap")
+			childTLS := normalized == "tls" || normalized == "override_tls" || tls && (normalized == "ech" || normalized == "control_wrap")
 			item[key] = redactJSON(child, childTLS)
 		}
 	case []any:
+		// 未知结构也可能逐行存 PEM；清掉 BEGIN 前必须隐藏同数组的材料。
+		for _, child := range item {
+			if line, ok := child.(string); ok && privateKeyPattern.MatchString(line) {
+				return "***"
+			}
+		}
 		for index, child := range item {
 			item[index] = redactJSON(child, tls)
 		}

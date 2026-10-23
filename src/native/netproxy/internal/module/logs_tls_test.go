@@ -39,6 +39,13 @@ func TestExportLogsRedactsTLSPrivateKeysInCompleteArchive(t *testing.T) {
 		"outbounds":   []any{map[string]any{"type": "trojan", "tag": "tls-out", "tls": clientTLS}},
 		"nested":      map[string]any{"tls": map[string]any{"key": secret(), "client_key": secret()}, "key": "ordinary-nested-key"},
 		"private_key": secret(), "token": secret(),
+		"unknown_pem_lines": []string{"-----BEGIN EC PRIVATE KEY-----", secret(), "-----END EC PRIVATE KEY-----"},
+		"providers": []any{map[string]any{
+			"type": "local", "tag": "user", "path": "user.json", "key": "ordinary-provider-definition-key",
+			"override_tls": map[string]any{
+				"client_key": []string{"-----BEGIN PRIVATE KEY-----", secret(), "-----END PRIVATE KEY-----"},
+			},
+		}},
 	}
 	configContent, err := json.Marshal(configuration, json.Deterministic(true))
 	if err != nil {

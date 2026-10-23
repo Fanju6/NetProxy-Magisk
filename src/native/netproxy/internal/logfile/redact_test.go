@@ -76,8 +76,50 @@ func TestRedactTextPrivateKeyPEM(t *testing.T) {
 	}
 }
 
+func TestRedactTextOverrideTLSKeyContext(t *testing.T) {
+	for _, label := range []string{"PRIVATE KEY", "RSA PRIVATE KEY", "EC PRIVATE KEY", "ENCRYPTED PRIVATE KEY", "OPENSSH PRIVATE KEY"} {
+		t.Run(label, func(t *testing.T) {
+			input, err := json.Marshal(map[string]any{
+				"key": "ordinary-business-key",
+				"providers": []any{map[string]any{
+					"key": "ordinary-provider-key",
+					"override_tls": map[string]any{
+						"client_key": []string{"-----BEGIN " + label + "-----", "FAKE_OVERRIDE_MATERIAL", "-----END " + label + "-----"},
+						"extension":  map[string]any{"key": "ordinary-extension-key"},
+					},
+				}},
+			}, json.Deterministic(true))
+			if err != nil {
+				t.Fatal(err)
+			}
+			output := RedactText(string(input))
+			if strings.Contains(output, "FAKE_OVERRIDE_MATERIAL") {
+				t.Fatal("Provider TLS 覆盖中的逐行私钥数组未整体脱敏")
+			}
+			var decoded struct {
+				Providers []struct {
+					OverrideTLS struct {
+						ClientKey any `json:"client_key"`
+					} `json:"override_tls"`
+				} `json:"providers"`
+			}
+			if err := json.Unmarshal([]byte(output), &decoded); err != nil {
+				t.Fatal("Provider TLS 脱敏后 JSON 无效")
+			}
+			if len(decoded.Providers) != 1 || decoded.Providers[0].OverrideTLS.ClientKey != "***" {
+				t.Fatal("Provider TLS 私钥没有整体替换")
+			}
+			for _, keep := range []string{"ordinary-business-key", "ordinary-provider-key", "ordinary-extension-key"} {
+				if !strings.Contains(output, keep) {
+					t.Fatal("Provider TLS 以外的普通 key 被误脱敏")
+				}
+			}
+		})
+	}
+}
+
 func TestRedactTextPEMInJSONStringsAndOrdinaryKeys(t *testing.T) {
-	input := `{"key":"business-value","nested":{"key":"-----BEGIN EC PRIVATE KEY-----\nFAKE_JSON_PEM\n-----END EC PRIVATE KEY-----"},"list":["-----BEGIN OPENSSH PRIVATE KEY-----\nFAKE_JSON_PEM\n-----END OPENSSH PRIVATE KEY-----"],"certificate":"-----BEGIN CERTIFICATE-----\nPUBLIC_CERTIFICATE\n-----END CERTIFICATE-----","private_key":"FAKE_EXISTING_SECRET","token":"FAKE_EXISTING_SECRET","password":"FAKE_EXISTING_SECRET"}`
+	input := `{"key":"business-value","nested":{"key":"-----BEGIN EC PRIVATE KEY-----\nFAKE_JSON_PEM\n-----END EC PRIVATE KEY-----"},"list":["-----BEGIN OPENSSH PRIVATE KEY-----\nFAKE_JSON_PEM\n-----END OPENSSH PRIVATE KEY-----"],"unknown_lines":["-----BEGIN PRIVATE KEY-----","FAKE_JSON_PEM","-----END PRIVATE KEY-----"],"certificate":"-----BEGIN CERTIFICATE-----\nPUBLIC_CERTIFICATE\n-----END CERTIFICATE-----","private_key":"FAKE_EXISTING_SECRET","token":"FAKE_EXISTING_SECRET","password":"FAKE_EXISTING_SECRET"}`
 	output := RedactText(input)
 	for _, secret := range []string{"FAKE_JSON_PEM", "FAKE_EXISTING_SECRET"} {
 		if strings.Contains(output, secret) {
@@ -92,5 +134,25 @@ func TestRedactTextPEMInJSONStringsAndOrdinaryKeys(t *testing.T) {
 	var decoded map[string]any
 	if err := json.Unmarshal([]byte(output), &decoded); err != nil {
 		t.Fatal("PEM 脱敏破坏 JSON 格式")
+	}
+}
+
+func TestRedactTextPrivateKeyLineArrays(t *testing.T) {
+	for _, input := range []string{
+		`["-----BEGIN PRIVATE KEY-----","FAKE_ARRAY_MATERIAL","-----END PRIVATE KEY-----"]`,
+		`{"key":["-----BEGIN PRIVATE KEY-----","FAKE_ARRAY_MATERIAL","-----END PRIVATE KEY-----"],"nested":{"key":"ordinary-business-key"}}`,
+		`{"unknown":["-----BEGIN OPENSSH PRIVATE KEY-----","FAKE_ARRAY_MATERIAL"],"key":"ordinary-business-key"}`,
+	} {
+		output := RedactText(input)
+		if strings.Contains(output, "FAKE_ARRAY_MATERIAL") || strings.Contains(output, "-----BEGIN") {
+			t.Fatal("逐行 PEM 数组兜底漏出私钥材料")
+		}
+		if strings.Contains(input, "ordinary-business-key") && !strings.Contains(output, "ordinary-business-key") {
+			t.Fatal("逐行 PEM 数组兜底误清普通 key")
+		}
+		var document any
+		if err := json.Unmarshal([]byte(output), &document); err != nil {
+			t.Fatal("逐行 PEM 数组脱敏后 JSON 无效")
+		}
 	}
 }
