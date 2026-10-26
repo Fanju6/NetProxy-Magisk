@@ -6,6 +6,7 @@ import (
 	json "encoding/json/v2"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -154,6 +155,9 @@ func validateNativePolicyReferences(ctx context.Context, options Options) error 
 			return err
 		}
 	}
+	if err := namespace.validateSelectorDefaults(config); err != nil {
+		return err
+	}
 	if err := visitNativePolicyReferences(config, namespace.requireOutbound, func(field, tag string) error {
 		if !namespace.providers[tag] {
 			return nativePolicyError("policy.provider_not_found", field, tag)
@@ -163,6 +167,33 @@ func validateNativePolicyReferences(ctx context.Context, options Options) error 
 		return err
 	}
 	return ctx.Err()
+}
+
+func (namespace *nativePolicyNamespace) validateSelectorDefaults(config nativePolicyConfig) error {
+	for index, raw := range config.Outbounds {
+		identity, err := nativePolicyIdentity(raw, index)
+		if err != nil {
+			return err
+		}
+		if identity.Type != C.TypeSelector {
+			continue
+		}
+		field := fmt.Sprintf("outbounds[%d].default", index)
+		var selector option.SelectorOutboundOptions
+		if err := json.Unmarshal(raw, &selector); err != nil {
+			return nativePolicyError("policy.config_invalid", fmt.Sprintf("outbounds[%d]", index), identity.Tag)
+		}
+		if err := namespace.requireOutbound(field, selector.Default); err != nil {
+			return err
+		}
+		// alpha11 在 Provider 回调前只装载显式成员；空成员列表仅补入 Compatible。
+		// 此限制只用于启动预检，不能改变删除守卫对真实 default 引用的保护。
+		if selector.Default == "" || slices.Contains(selector.Outbounds, selector.Default) || len(selector.Outbounds) == 0 && selector.Default == "Compatible" {
+			continue
+		}
+		return &service.Error{Code: "policy.selector_default_invalid", Message: fmt.Sprintf("%s 必须属于 Selector 的显式 outbounds；仅空列表可使用 Compatible，Provider-only 成员无法作为启动 default", field)}
+	}
+	return nil
 }
 
 func visitNativePolicyReferences(config nativePolicyConfig, outbound, providerRef func(string, string) error) error {

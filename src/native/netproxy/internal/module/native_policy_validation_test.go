@@ -3,9 +3,12 @@ package module
 import (
 	"bytes"
 	"context"
+	json "encoding/json/v2"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -182,4 +185,82 @@ func TestNativePolicyInvalidStoppedConfigDoesNotPersist(t *testing.T) {
 		t.Fatal("invalid stopped config replaced native config")
 	}
 	assertRuntimeContent(t, options, runtimeContent)
+}
+
+func TestSelectorDefaultApplyConfigContent(t *testing.T) {
+	for _, test := range []struct{ name, selector, code string }{
+		{"provider-only", `"providers":["np/default"],"default":"np/default/node-a"`, "policy.selector_default_invalid"},
+		{"provider-use-all", `"use_all_providers":true,"default":"np/default/node-a"`, "policy.selector_default_invalid"},
+		{"unknown-default", `"providers":["np/default"],"default":"missing"`, "policy.outbound_not_found"},
+		{"static-nonmember", `"outbounds":["direct"],"default":"other"`, "policy.selector_default_invalid"},
+		{"static-not-explicit", `"providers":["np/default"],"default":"direct"`, "policy.selector_default_invalid"},
+		{"static-member", `"outbounds":["direct"],"default":"direct"`, ""},
+		{"slash-member", `"outbounds":["np/custom/node-a"],"default":"np/custom/node-a"`, ""},
+		{"compatible-implicit", `"providers":["np/default"],"default":"Compatible"`, ""},
+		{"compatible-empty-members", `"outbounds":[],"providers":["np/default"],"default":"Compatible"`, ""},
+		{"compatible-explicit", `"outbounds":["Compatible"],"default":"Compatible"`, ""},
+		{"compatible-not-member", `"outbounds":["direct"],"default":"Compatible"`, "policy.selector_default_invalid"},
+		{"without-default", `"providers":["np/default"]`, ""},
+		{"empty-default", `"providers":["np/default"],"default":""`, ""},
+	} {
+		for _, target := range []string{"singbox/config.json", "singbox/outbounds"} {
+			for _, validateOnly := range []bool{true, false} {
+				t.Run(fmt.Sprintf("%s/%s/validate=%t", test.name, target, validateOnly), func(t *testing.T) {
+					options, destination, _, runtimeContent := configApplyOptions(t)
+					isolateConfigApplyHooks(t, false)
+					if _, err := catalog.AppendNode(t.Context(), catalog.MutationOptions{
+						GroupDir: filepath.Join(options.CatalogRoot, "default"), GroupID: "default", Type: "local",
+						Input: "socks://127.0.0.1:1080#node-a",
+					}); err != nil {
+						t.Fatal(err)
+					}
+					before := targetCoreRead(t, destination)
+					read, err := ReadConfig(options, target)
+					if err != nil {
+						t.Fatal(err)
+					}
+					providerPath := filepath.Join(options.CatalogRoot, "default", "provider.json")
+					metaPath := filepath.Join(options.CatalogRoot, "default", "meta.json")
+					providerBefore, metaBefore := targetCoreRead(t, providerPath), targetCoreRead(t, metaPath)
+					candidate := `{"outbounds":[{"type":"selector","tag":"Main",` + test.selector + `},{"type":"direct","tag":"direct"},{"type":"direct","tag":"other"},{"type":"direct","tag":"np/custom/node-a"}]}`
+					revision, err := ApplyConfigContent(t.Context(), options, target, []byte(candidate), validateOnly, read["revision"])
+					if test.code != "" {
+						requireNativePolicyError(t, err, test.code, "outbounds[0].default")
+						if revision != "" {
+							t.Fatal("rejected default returned a saved revision")
+						}
+					} else if err != nil || revision == "" {
+						t.Fatalf("valid default rejected: %s %v", revision, err)
+					}
+					after, readErr := ReadConfig(options, target)
+					if readErr != nil {
+						t.Fatal(readErr)
+					}
+					if test.code != "" || validateOnly {
+						if !bytes.Equal(before, targetCoreRead(t, destination)) || after["revision"] != read["revision"] {
+							t.Fatal("default preflight changed config or revision")
+						}
+					} else {
+						var saved, expected struct {
+							Outbounds []map[string]any `json:"outbounds"`
+						}
+						if err := json.Unmarshal([]byte(after["content"]), &saved); err != nil {
+							t.Fatal(err)
+						}
+						if err := json.Unmarshal([]byte(candidate), &expected); err != nil {
+							t.Fatal(err)
+						}
+						if after["revision"] != revision || !reflect.DeepEqual(saved, expected) {
+							t.Fatal("saved default or revision differs from candidate")
+						}
+					}
+					assertRuntimeContent(t, options, runtimeContent)
+					assertInboundJournalAbsent(t, options)
+					if !bytes.Equal(providerBefore, targetCoreRead(t, providerPath)) || !bytes.Equal(metaBefore, targetCoreRead(t, metaPath)) {
+						t.Fatal("default preflight changed Catalog or revision")
+					}
+				})
+			}
+		}
+	}
 }

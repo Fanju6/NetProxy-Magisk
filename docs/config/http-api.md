@@ -235,6 +235,8 @@ JSON 响应使用与 CLI 一致的 `schema=1`、`ok/code/message/data`。同时�
 
 策略组常见错误为 `policy.core_not_ready`（409）、`policy.group_not_found/member_not_found`（404）、`policy.not_selectable/config_invalid`（422）和 `policy.api_failed/runtime_sync_failed`（502）。`accepted` 是核心已接受的确认标记，不等同于模块持久化的 `persisted`；错误没有这些标记时也不能据此认定操作未发生。HTTP 与 Native 对策略组/Catalog 错误仅交付公开标记，不透传核心异常或私有路径。
 
+配置校验或保存时，Selector 的非空 `default` 必须属于该组显式 `outbounds`；列表为空时仅允许隐式 `Compatible`。alpha11 在 Provider 成员加载前选择默认出站，因此 Provider-only 成员不能作为启动 `default`，即使核心 `check` 通过也不能据此认为可以启动。不满足成员关系时提前返回 `policy.selector_default_invalid`（422），错误明确指向 `default`，不写入配置、不修改 revision 或运行时、不静默清空或改写默认值；不存在的默认出站仍保留原 `policy.outbound_not_found` 错误。此规则不改变资源删除时对真实引用的保护。
+
 官方管理器仅对普通只读 GET 在响应前的连接故障最多恢复一次，并沿用原调用总时限。取消、超时、TLS 验证失败和正文读取错误不重试，写操作不自动重发。重新连接失败会保留原本可用的连接资料，不覆盖新收到的可信交付。
 
 JSON 正文统一最大 4 MiB，包含节点导入；按序拆分较大导入文件后分别提交。同时最多 8 个事件客户端。耗时操作有独立时限和并发限制，不阻塞普通状态读取。下载诊断包时检查传输是否完整，不把中断的文件当作有效包。

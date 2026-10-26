@@ -137,6 +137,7 @@ func TestPolicyHTTPMapsDomainErrorsAndAcceptedSideEffects(t *testing.T) {
 	}{
 		{"policy.invalid", 400}, {"policy.core_not_ready", 409}, {"policy.group_not_found", 404},
 		{"policy.member_not_found", 404}, {"policy.not_selectable", 422}, {"policy.config_invalid", 422},
+		{"policy.selector_default_invalid", 422},
 		{"policy.api_failed", 502}, {"policy.runtime_sync_failed", 502},
 		{"catalog.provider_in_use", 409}, {"catalog.provider_conflict", 409},
 		{"catalog.read_only", 422}, {"catalog.invalid", 422},
@@ -150,6 +151,35 @@ func TestPolicyHTTPMapsDomainErrorsAndAcceptedSideEffects(t *testing.T) {
 		if _, exists := envelope.Data.(map[string]any)["cause"]; exists || strings.Contains(envelope.Message, "private") {
 			t.Fatalf("private cause exposed: %+v", envelope)
 		}
+	}
+}
+
+func TestSelectorDefaultHTTPRejectsBeforeCoreCheck(t *testing.T) {
+	for _, method := range []string{"PUT", "POST"} {
+		t.Run(method, func(t *testing.T) {
+			server := resourceFixture(t)
+			path := paths.SingBoxConfig(server.options.SingBoxDir)
+			resourceWriteFile(t, path, `{"route":{"auto_detect_interface":true}}`)
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			target := "/api/v1/config?target=singbox/outbounds"
+			var snapshot map[string]string
+			resourceAssertSuccess(t, server, "GET", target, "", "config.read", &snapshot)
+			if method == "POST" {
+				target = "/api/v1/config/validate?target=singbox/outbounds"
+			}
+			body := resourceJSON(t, map[string]string{"revision": snapshot["revision"], "content": `{"outbounds":[{"type":"selector","tag":"Main","providers":["np/default"],"default":"direct"},{"type":"direct","tag":"direct"}]}`})
+			response, result := resourceRequest(t, server, method, target, body)
+			if response.Code != http.StatusUnprocessableEntity || result.Code != "policy.selector_default_invalid" || !strings.Contains(result.Message, "default") || !strings.Contains(result.Message, "Provider-only") {
+				t.Fatalf("invalid selector default lost safe field explanation or 422: %s", response.Body.String())
+			}
+			after, err := os.ReadFile(path)
+			if err != nil || string(after) != string(before) {
+				t.Fatal("rejected default changed native config")
+			}
+		})
 	}
 }
 

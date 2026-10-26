@@ -258,18 +258,19 @@ func resourcePublicFailure(response contract.Result) contract.Result {
 		return response
 	}
 	message := map[string]string{
-		"policy.invalid":             "策略组请求参数无效",
-		"policy.core_not_ready":      "sing-box 尚未就绪",
-		"policy.group_not_found":     "未找到原生策略组",
-		"policy.member_not_found":    "该策略组中不存在指定成员",
-		"policy.not_selectable":      "该策略组不支持手动选择",
-		"policy.config_invalid":      "无法读取原生策略组配置",
-		"policy.api_failed":          "核心策略组接口不可用",
-		"policy.runtime_sync_failed": "策略组操作未能确认，请刷新后核对",
-		"catalog.invalid":            "资源分组参数无效",
-		"catalog.read_only":          "该操作仅适用于本地资源分组",
-		"catalog.provider_in_use":    "原生配置仍引用该资源，请先修改策略组或出站引用",
-		"catalog.provider_conflict":  "原生 Provider 与资源标签冲突",
+		"policy.invalid":                  "策略组请求参数无效",
+		"policy.core_not_ready":           "sing-box 尚未就绪",
+		"policy.group_not_found":          "未找到原生策略组",
+		"policy.member_not_found":         "该策略组中不存在指定成员",
+		"policy.not_selectable":           "该策略组不支持手动选择",
+		"policy.config_invalid":           "无法读取原生策略组配置",
+		"policy.selector_default_invalid": "Selector 的 default 必须属于显式 outbounds；仅空列表可使用 Compatible，Provider-only 成员无法作为启动 default",
+		"policy.api_failed":               "核心策略组接口不可用",
+		"policy.runtime_sync_failed":      "策略组操作未能确认，请刷新后核对",
+		"catalog.invalid":                 "资源分组参数无效",
+		"catalog.read_only":               "该操作仅适用于本地资源分组",
+		"catalog.provider_in_use":         "原生配置仍引用该资源，请先修改策略组或出站引用",
+		"catalog.provider_conflict":       "原生 Provider 与资源标签冲突",
 	}[response.Code]
 	if message == "" {
 		message = "策略组或资源分组操作失败"

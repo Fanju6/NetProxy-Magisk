@@ -289,7 +289,7 @@ func failureStatus(code string, err error) int {
 	case "subscription.invalid_target", "subscription.invalid_group", "subscription.read_only", "subscription.interval_too_short",
 		"subscription.edit_invalid", "subscription.proxy_mode_invalid", "subscription.timeout_invalid", "subscription.text_invalid", "mode.invalid", "mode.unavailable",
 		"ebpf.status_invalid", "ebpf.unsupported", "network.direct_route_required",
-		"policy.not_selectable", "policy.config_invalid", "catalog.invalid", "catalog.read_only":
+		"policy.not_selectable", "policy.config_invalid", "policy.selector_default_invalid", "catalog.invalid", "catalog.read_only":
 		return http.StatusUnprocessableEntity
 	default:
 		if errors.Is(err, os.ErrNotExist) {
