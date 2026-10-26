@@ -206,7 +206,7 @@ internal fun InboundSettingsScreen(
                         }
                     ) else emptyList()).withProgress(applyingField))
                     if (state.backend == "ebpf") {
-                        ebpfForm(state.native, enabled, applyingField, viewModel, ::openField)
+                        ebpfForm(state.native, enabled, applyingField, advanced, { advanced = !advanced }, viewModel, ::openField)
                     } else {
                         tunForm(state.native, enabled, applyingField, advanced, { advanced = !advanced }, viewModel, ::openField)
                     }
@@ -279,7 +279,10 @@ internal fun InboundSettingsScreen(
     }
 }
 
-private fun LazyListScope.ebpfForm(native: JsonObject, enabled: Boolean, applyingField: String?, vm: InboundViewModel, edit: (FieldEdit) -> Unit) {
+private fun LazyListScope.ebpfForm(
+    native: JsonObject, enabled: Boolean, applyingField: String?, advanced: Boolean, toggleAdvanced: () -> Unit,
+    vm: InboundViewModel, edit: (FieldEdit) -> Unit
+) {
     val local = native.objectAt("local")
     val shared = native.objectAt("shared")
     groupedCardSection("ebpf_core", { stringResource(R.string.ebpf_core_settings) }, listOf(
@@ -301,11 +304,22 @@ private fun LazyListScope.ebpfForm(native: JsonObject, enabled: Boolean, applyin
                 enabled = enabled,
                 onSelectedIndexChange = { vm.setField("network", if (it == 0) null else JsonPrimitive(if (it == 1) "tcp" else "udp")) }
             )
+        },
+        CardItem("advanced") {
+            SwitchPreference(title = stringResource(R.string.inbound_advanced), checked = advanced, onCheckedChange = { toggleAdvanced() })
         }
     ).withProgress(applyingField))
     for ((path, part, title) in listOf(Triple("local", local, R.string.ebpf_local_settings), Triple("shared", shared, R.string.ebpf_shared_settings))) {
         val isLocal = path == "local"
         val items = mutableListOf(
+            CardItem("$path.data_plane") {
+                NativeDropdown(R.string.ebpf_data_plane, part.ebpfDataPlane(),
+                    if (isLocal) LOCAL_EBPF_DATA_PLANES else SHARED_EBPF_DATA_PLANES,
+                    listOf(R.string.ebpf_data_plane_socket_assign,
+                        if (isLocal) R.string.ebpf_data_plane_cgroup else R.string.ebpf_data_plane_packet_rewrite), enabled) {
+                    vm.setEbpfDataPlane(path, it)
+                }
+            },
             CardItem("$path.dns_mode") {
                 NativeDropdown(if (isLocal) R.string.ebpf_local_dns_mode else R.string.ebpf_shared_dns_mode,
                     part.ebpfDnsMode(), listOf("hijack", "respect_policy", "off"),
@@ -331,6 +345,14 @@ private fun LazyListScope.ebpfForm(native: JsonObject, enabled: Boolean, applyin
         )
         groupedCardSection("ebpf_$path", { stringResource(title) }, items.withProgress(applyingField))
     }
+    if (advanced) groupedCardSection("ebpf_advanced", { stringResource(R.string.inbound_advanced) }, listOf(
+        CardItem("shared.default_interface") {
+            SwitchPreference(title = stringResource(R.string.ebpf_shared_default_interface),
+                summary = stringResource(R.string.ebpf_shared_default_interface_hint),
+                checked = shared.flagAt("default_interface"), enabled = enabled,
+                onCheckedChange = { vm.setField("shared.default_interface", JsonPrimitive(it)) })
+        }
+    ).withProgress(applyingField))
 }
 
 private fun LazyListScope.tunForm(

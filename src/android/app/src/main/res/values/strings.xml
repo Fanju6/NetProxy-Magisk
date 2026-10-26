@@ -354,6 +354,12 @@
     <string name="ebpf_data_paths_shared">Hotspot and shared networks only</string>
     <string name="ebpf_data_paths_both">Local and shared networks</string>
     <string name="ebpf_local_settings">Local network</string>
+    <string name="ebpf_data_plane">Data plane</string>
+    <string name="ebpf_data_plane_socket_assign">socket_assign (recommended)</string>
+    <string name="ebpf_data_plane_cgroup">cgroup (compatibility)</string>
+    <string name="ebpf_data_plane_packet_rewrite">packet_rewrite (compatibility)</string>
+    <string name="ebpf_shared_default_interface">Keep shared interception on the default upstream</string>
+    <string name="ebpf_shared_default_interface_hint">Off by default. For single-interface gateways only: keep configured shared interfaces attached when they become the default upstream. Does not enable forwarding, NAT or hotspot services.</string>
     <string name="ebpf_local_dns_mode">Local DNS mode</string>
     <string name="ebpf_shared_dns_mode">Shared network DNS mode</string>
     <string name="ebpf_dns_mode_hijack">Hijack first</string>

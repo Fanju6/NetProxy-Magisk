@@ -14,16 +14,16 @@ func validateEBPF(native option.EBPFInboundOptions) error {
 	if !local && !shared {
 		return validationError("ebpf.path_required", "ebpf", "本机或共享网络至少需要启用一条 eBPF 数据路径")
 	}
-	if time.Duration(native.UDPTimeout) < 0 {
-		return validationError("ebpf.udp_timeout_invalid", "ebpf.udp_timeout", "UDP 会话超时不能为负数")
+	if timeout := time.Duration(native.UDPTimeout); timeout != 0 && timeout < 5*time.Second {
+		return validationError("ebpf.udp_timeout_invalid", "ebpf.udp_timeout", "UDP 会话超时不能小于 5 秒")
 	}
 	if native.FakeIPICMP != "" && native.FakeIPICMP != "off" && native.FakeIPICMP != "reply" {
 		return validationError("ebpf.fakeip_icmp_invalid", "ebpf.fakeip_icmp", "FakeIP ICMP 模式只能是 off 或 reply")
 	}
 	{
-		plane := localDataPlane(native.Local.DataPlane)
-		if plane != "cgroup" && plane != "tc" {
-			return validationError("ebpf.local_data_plane_invalid", "ebpf.local.data_plane", "本机数据平面只能是 cgroup 或 tc")
+		plane := dataPlane(native.Local.DataPlane)
+		if plane != "cgroup" && plane != "socket_assign" {
+			return validationError("ebpf.local_data_plane_invalid", "ebpf.local.data_plane", "本机数据平面只能是 socket_assign 或 cgroup")
 		}
 		if native.Local.CgroupPath != "" && (plane != "cgroup" || !strings.HasPrefix(native.Local.CgroupPath, "/")) {
 			return validationError("ebpf.local_cgroup_path_invalid", "ebpf.local.cgroup_path", "本机 cgroup 路径必须为绝对路径且使用 cgroup 数据平面")
@@ -39,7 +39,7 @@ func validateEBPF(native option.EBPFInboundOptions) error {
 		}
 	}
 	{
-		plane := sharedDataPlane(native.Shared.DataPlane)
+		plane := dataPlane(native.Shared.DataPlane)
 		if plane != "packet_rewrite" && plane != "socket_assign" {
 			return validationError("ebpf.shared_data_plane_invalid", "ebpf.shared.data_plane", "共享网络数据平面只能是 packet_rewrite 或 socket_assign")
 		}
@@ -93,16 +93,9 @@ func validateEBPFDNS(mode, field string) error {
 	return nil
 }
 
-func localDataPlane(value string) string {
+func dataPlane(value string) string {
 	if value == "" {
-		return "cgroup"
-	}
-	return value
-}
-
-func sharedDataPlane(value string) string {
-	if value == "" {
-		return "packet_rewrite"
+		return "socket_assign"
 	}
 	return value
 }
@@ -113,6 +106,7 @@ func normalizeEBPF(native option.EBPFInboundOptions) (option.EBPFInboundOptions,
 	local, shared := native.EffectiveEnablement()
 	if local {
 		native.Local.Enabled = new(true)
+		native.Local.DataPlane = dataPlane(native.Local.DataPlane)
 		var err error
 		native.Local.IncludeUID, native.Local.IncludeUIDRange, err = normalizeUIDFilters(native.Local.IncludeUID, native.Local.IncludeUIDRange)
 		if err != nil {
@@ -127,6 +121,7 @@ func normalizeEBPF(native option.EBPFInboundOptions) (option.EBPFInboundOptions,
 	}
 	if shared {
 		native.Shared.Enabled = new(true)
+		native.Shared.DataPlane = dataPlane(native.Shared.DataPlane)
 	} else {
 		native.Shared = option.EBPFSharedOptions{Enabled: new(false)}
 	}

@@ -18,7 +18,7 @@ export function checkEbpfSchema(schema) {
       'include_android_user', 'include_package', 'exclude_package',
     ]],
     ['shared', 'EBPFSharedOptions', [
-      'enabled', 'data_plane', 'interface', 'dns_mode', 'ipv6', 'bypass_private_address',
+      'enabled', 'default_interface', 'data_plane', 'interface', 'dns_mode', 'ipv6', 'bypass_private_address',
       'bypass_port', 'bypass_port_range', 'bypass_rule_set', 'bypass_exclude',
       'include_source_cidr', 'exclude_source_cidr', 'include_mac_address', 'exclude_mac_address',
     ]],
@@ -30,9 +30,10 @@ export function checkEbpfSchema(schema) {
     }
     assert.equal(properties.enabled.type, 'boolean', name + ' enabled 必须是布尔值')
     assert.deepEqual(properties.data_plane.enum.toSorted(),
-      (field === 'local' ? ['cgroup', 'tc'] : ['packet_rewrite', 'socket_assign']), name + ' 数据平面不匹配')
+      (field === 'local' ? ['cgroup', 'socket_assign'] : ['packet_rewrite', 'socket_assign']), name + ' 数据平面不匹配')
     assert.deepEqual(properties.dns_mode.enum.toSorted(), ['hijack', 'off', 'respect_policy'], name + ' DNS 模式不匹配')
   }
+  assert.equal(definitions.EBPFSharedOptions.properties.default_interface.type, 'boolean', 'shared default_interface 必须是布尔值')
   const tunBranches = definitions?.Inbound?.oneOf?.filter(branch => branch.properties?.type?.const === 'tun') ?? []
   assert.equal(tunBranches.length, 1, 'Inbound 必须且只能包含一个 TUN 分支')
   const tun = tunBranches[0].properties

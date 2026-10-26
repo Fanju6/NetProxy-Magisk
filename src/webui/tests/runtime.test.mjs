@@ -178,6 +178,7 @@ test('mock 同步单文件模板、分区与真实后端状态边界', () => {
 })
 
 test('eBPF mock 区分可读预检与显式原始报告', () => {
+  const defaults = JSON.parse(readFileSync(new URL('../../module/config/inbound/inbound.json', import.meta.url))).ebpf
   const readable = decodeCtlResult(mockCtl(['ebpf', 'status'])).data
   assert.equal(readable.raw, false)
   assert.match(readable.content, /能力预检通过/)
@@ -185,12 +186,16 @@ test('eBPF mock 区分可读预检与显式原始报告', () => {
   assert.equal(readable.report.result, 'preflight_passed')
   assert.equal(readable.report.preflight, true)
   assert.equal(readable.report.exact_object_load, true)
+  assert.equal(readable.report.local_data_plane, defaults.local.data_plane)
+  assert.equal(Object.hasOwn(readable.report, 'shared_data_plane'), false)
   assert.equal(Object.hasOwn(readable.report, 'active_programs'), false)
   for (const args of [['--raw'], ['shared', '--raw'], ['--raw', 'all']]) {
     const raw = decodeCtlResult(mockCtl(['ebpf', 'status', ...args])).data
     assert.equal(raw.raw, true)
     assert.deepEqual(JSON.parse(raw.content), raw.report)
     assert.ok(['configured', 'shared', 'all'].includes(raw.mode))
+    assert.equal(raw.report.local_data_plane, raw.report.mode === 'shared' ? undefined : defaults.local.data_plane)
+    assert.equal(raw.report.shared_data_plane, raw.report.mode === 'local' ? undefined : defaults.shared.data_plane)
   }
 })
 

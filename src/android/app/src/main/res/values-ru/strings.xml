@@ -354,6 +354,12 @@
     <string name="ebpf_data_paths_shared">Только точка доступа и общие сети</string>
     <string name="ebpf_data_paths_both">Локальное устройство и общие сети</string>
     <string name="ebpf_local_settings">Локальное устройство</string>
+    <string name="ebpf_data_plane">Механизм перехвата</string>
+    <string name="ebpf_data_plane_socket_assign">socket_assign (рекомендуется)</string>
+    <string name="ebpf_data_plane_cgroup">cgroup (совместимость)</string>
+    <string name="ebpf_data_plane_packet_rewrite">packet_rewrite (совместимость)</string>
+    <string name="ebpf_shared_default_interface">Сохранять перехват общей сети на основном интерфейсе</string>
+    <string name="ebpf_shared_default_interface_hint">По умолчанию выключено. Только для шлюзов с одним интерфейсом: сохраняет перехват на настроенном общем интерфейсе, когда он становится основным восходящим. Не включает пересылку пакетов, NAT или точку доступа.</string>
     <string name="ebpf_local_dns_mode">Режим DNS устройства</string>
     <string name="ebpf_shared_dns_mode">Режим DNS общей сети</string>
     <string name="ebpf_dns_mode_hijack">Приоритетный перехват</string>

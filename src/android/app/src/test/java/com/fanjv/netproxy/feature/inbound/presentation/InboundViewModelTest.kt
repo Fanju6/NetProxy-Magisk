@@ -9,6 +9,7 @@ import com.fanjv.netproxy.feature.inbound.data.textAt
 import com.fanjv.netproxy.feature.inbound.data.listAt
 import com.fanjv.netproxy.feature.inbound.data.objectAt
 import com.fanjv.netproxy.feature.inbound.data.stringArray
+import com.fanjv.netproxy.feature.inbound.data.withFields
 import com.fanjv.netproxy.feature.settings.data.ConfigRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CompletableDeferred
@@ -118,6 +119,50 @@ class InboundViewModelTest {
     private suspend fun InboundViewModel.idle() {
         flush()
         withTimeout(5_000) { state.first { !it.isSaving } }
+    }
+
+    @Test fun ebpfDataPlanesAndAdvancedOptionShareOneRevisionedDraft() = runBlocking {
+        ebpf = """{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true,"data_plane":"cgroup","cgroup_path":"/sys/fs/cgroup","dns_mode":"respect_policy","bypass_port":[853],"include_uid":[0,10001],"include_package":["org.example.app"]},"shared":{"enabled":false},"udp_timeout":"3m"}"""
+        val vm = viewModel(this)
+        vm.refresh(); vm.loaded()
+        val original = vm.state.value.native
+        val originalTun = tun
+        val savedRevision = configRevision("inbound/ebpf")
+        calls.clear()
+        vm.setEbpfDataPlane("local", "socket_assign")
+        vm.setEbpfDataPlane("shared", "packet_rewrite")
+        vm.setField("shared.default_interface", JsonPrimitive(true))
+        assertTrue(calls.none { it.method == "PUT" })
+        vm.idle()
+        val saved = kotlinx.serialization.json.Json.parseToJsonElement(ebpf).jsonObject
+        assertEquals(original.objectAt("local").withFields("cgroup_path" to null, "data_plane" to JsonPrimitive("socket_assign")), saved.objectAt("local"))
+        assertFalse(saved.objectAt("local").containsKey("cgroup_path"))
+        assertEquals("socket_assign", saved.objectAt("local").textAt("data_plane"))
+        assertEquals("packet_rewrite", saved.objectAt("shared").textAt("data_plane"))
+        assertEquals(JsonPrimitive(true), saved.objectAt("shared")["default_interface"])
+        assertEquals(original.objectAt("shared")["enabled"], saved.objectAt("shared")["enabled"])
+        assertEquals(originalTun, tun)
+        assertEquals("default", rootPolicy)
+        assertEquals("ebpf", backend)
+        val write = calls.single { it.method == "PUT" }
+        assertEquals("inbound/ebpf", write.target)
+        assertEquals(savedRevision, write.text("revision"))
+        assertEquals(setOf("ebpf"), kotlinx.serialization.json.Json.parseToJsonElement(write.text("content")).jsonObject.keys)
+    }
+
+    @Test fun ebpfDataPlaneTcIsNotAcceptedOrSilentlyConverted() = runBlocking {
+        ebpf = """{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true,"data_plane":"tc"},"shared":{"enabled":false}}"""
+        val previous = ebpf
+        val vm = viewModel(this)
+        vm.refresh(); vm.loaded()
+        calls.clear()
+        vm.setEbpfDataPlane("local", "tc")
+        assertTrue(vm.state.value.error.isNotBlank())
+        assertFalse(vm.state.value.hasPendingChanges)
+        vm.idle()
+        assertEquals(previous, ebpf)
+        assertEquals("tc", vm.state.value.native.objectAt("local").textAt("data_plane"))
+        assertTrue(calls.none { it.method == "PUT" })
     }
 
     @Test fun rootPolicyCommitsPendingParametersAndKeepsBackend() = runBlocking {

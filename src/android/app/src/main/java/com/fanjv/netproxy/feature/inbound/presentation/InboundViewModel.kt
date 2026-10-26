@@ -124,6 +124,7 @@ internal class InboundViewModel(
 
     fun setField(path: String, value: JsonElement?, backend: String = state.value.backend, revision: String? = null) =
         edit(backend, revision) { it.withPath(path.split('.'), value) }
+    fun setEbpfDataPlane(path: String, value: String) = edit("ebpf") { it.withEbpfDataPlane(path, value) }
     fun setDataPaths(value: String) = edit {
         it.withPath(listOf("local", "enabled"), JsonPrimitive(value != "shared"))
             .withPath(listOf("shared", "enabled"), JsonPrimitive(value != "local"))

@@ -10,6 +10,8 @@ import kotlinx.serialization.json.contentOrNull
 
 internal val inboundJson = Json { prettyPrint = true }
 internal const val DEFAULT_TUN_IPV6 = "fdfe:dcba:9876::1/126"
+internal val LOCAL_EBPF_DATA_PLANES = listOf("socket_assign", "cgroup")
+internal val SHARED_EBPF_DATA_PLANES = listOf("socket_assign", "packet_rewrite")
 
 internal fun JsonObject.objectAt(key: String): JsonObject = this[key] as? JsonObject ?: JsonObject(emptyMap())
 internal fun JsonObject.textAt(key: String, default: String = ""): String =
@@ -17,6 +19,7 @@ internal fun JsonObject.textAt(key: String, default: String = ""): String =
 internal fun JsonObject.flagAt(key: String, default: Boolean = false): Boolean =
     (this[key] as? JsonPrimitive)?.booleanOrNull ?: default
 internal fun JsonObject.ebpfDnsMode(): String = textAt("dns_mode").ifBlank { "respect_policy" }
+internal fun JsonObject.ebpfDataPlane(): String = textAt("data_plane").ifEmpty { "socket_assign" }
 internal fun JsonObject.tunDnsMode(): String = textAt("dns_mode").ifEmpty { "hijack" }
 internal fun JsonObject.listAt(key: String): List<String> = when (val value = this[key]) {
     is JsonArray -> value.map { (it as JsonPrimitive).content }
@@ -32,6 +35,14 @@ internal fun JsonObject.withPath(path: List<String>, value: JsonElement?): JsonO
     require(path.isNotEmpty())
     return if (path.size == 1) withFields(path.first() to value)
     else withFields(path.first() to objectAt(path.first()).withPath(path.drop(1), value))
+}
+
+internal fun JsonObject.withEbpfDataPlane(path: String, value: String): JsonObject {
+    require(path in setOf("local", "shared"))
+    require(value in if (path == "local") LOCAL_EBPF_DATA_PLANES else SHARED_EBPF_DATA_PLANES)
+    val updated = withPath(listOf(path, "data_plane"), JsonPrimitive(value))
+    return if (path == "local" && value == "socket_assign") updated.withPath(listOf(path, "cgroup_path"), null)
+    else updated
 }
 
 internal fun stringArray(values: List<String>): JsonArray = JsonArray(values.map(::JsonPrimitive))

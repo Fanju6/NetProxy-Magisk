@@ -156,7 +156,7 @@ func TestInboundConfigTargetsAndPartitionRevisions(t *testing.T) {
 	ebpf, _ := ReadConfig(options, "inbound/ebpf")
 	tun, _ := ReadConfig(options, "inbound/tun")
 	appBefore, _ := configObject(original)
-	ebpfSource := writeSectionSource(t, `{"ebpf":{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true,"data_plane":"tc","dns_mode":"off"},"shared":{"enabled":false}}}`)
+	ebpfSource := writeSectionSource(t, `{"ebpf":{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true,"data_plane":"socket_assign","dns_mode":"off"},"shared":{"enabled":false}}}`)
 	first, err := ApplyConfig(t.Context(), options, "inbound/ebpf", ebpfSource, false, ebpf["revision"])
 	if err != nil {
 		t.Fatal(err)
@@ -168,7 +168,7 @@ func TestInboundConfigTargetsAndPartitionRevisions(t *testing.T) {
 	}
 	saved := inboundDisk(t, options)
 	object, _ := configObject(saved)
-	if !bytes.Contains(object["ebpf"], []byte(`"tc"`)) || !bytes.Contains(object["tun"], []byte(`"saved-tun"`)) || !inboundJSONEqual(object["app"], appBefore["app"]) {
+	if !bytes.Contains(object["ebpf"], []byte(`"socket_assign"`)) || !bytes.Contains(object["tun"], []byte(`"saved-tun"`)) || !inboundJSONEqual(object["app"], appBefore["app"]) {
 		t.Fatalf("分区保存覆盖其他内容: %s", saved)
 	}
 	for _, test := range []struct{ target, revision string }{{"inbound/ebpf", first}, {"inbound/tun", second}} {
@@ -335,7 +335,7 @@ func TestInboundUnselectedSaveDoesNotReload(t *testing.T) {
 			source := `{"tun":{"type":"tun","tag":"netproxy-in","interface_name":"saved-tun","address":"172.19.0.1/30","auto_route":true,"auto_redirect":true}}`
 			if backend == "tun" {
 				target = "inbound/ebpf"
-				source = `{"ebpf":{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true,"data_plane":"tc"},"shared":{"enabled":false}}}`
+				source = `{"ebpf":{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true,"data_plane":"socket_assign"},"shared":{"enabled":false}}}`
 			}
 			configJournalWrite = func(path string, content []byte, mode os.FileMode) error {
 				var journal configApplyJournal

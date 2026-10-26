@@ -39,11 +39,11 @@ const INBOUND_CONFIG = {
   ebpf: {
     type: 'ebpf', tag: 'netproxy-in', network: ['tcp', 'udp'], udp_timeout: '5m', tc_priority: 1,
     local: {
-      enabled: true, data_plane: 'cgroup', dns_mode: 'respect_policy', ipv6: true,
+      enabled: true, data_plane: 'socket_assign', dns_mode: 'respect_policy', ipv6: true,
       bypass_private_address: true, bypass_rule_set: ['geoip/cn'],
     },
     shared: {
-      enabled: false, data_plane: 'packet_rewrite', dns_mode: 'hijack', interface: ['wlan2'],
+      enabled: false, data_plane: 'socket_assign', dns_mode: 'hijack', interface: ['wlan2'],
       ipv6: true, bypass_private_address: true, bypass_rule_set: ['geoip/cn'],
     },
   },
@@ -236,8 +236,8 @@ function execute(args: string[]): CtlResult<unknown> {
     const requestedMode = clean.slice(2).find(arg => arg !== '--raw') || 'configured'
     const raw = clean.includes('--raw')
     const reportMode = requestedMode === 'configured' ? 'local' : requestedMode
-    const localDataPlane = reportMode === 'local' || reportMode === 'all' ? 'cgroup' : undefined
-    const sharedDataPlane = reportMode === 'shared' || reportMode === 'all' ? 'packet_rewrite' : undefined
+    const localDataPlane = reportMode === 'local' || reportMode === 'all' ? INBOUND_CONFIG.ebpf.local.data_plane : undefined
+    const sharedDataPlane = reportMode === 'shared' || reportMode === 'all' ? INBOUND_CONFIG.ebpf.shared.data_plane : undefined
     const report = {
       platform: 'android',
       kernel_release: 'mock',

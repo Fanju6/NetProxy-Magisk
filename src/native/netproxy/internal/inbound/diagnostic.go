@@ -21,6 +21,8 @@ type ProbeOptions struct {
 	Network         []string
 	IPv6            bool
 	Interface       string
+	CgroupPath      string
+	FakeIPICMP      bool
 }
 
 // ResolveProbeOptions 根据当前 eBPF 配置解析能力检查范围与数据平面。
@@ -62,11 +64,13 @@ func ResolveProbeOptions(config option.EBPFInboundOptions, requestedMode string)
 	return ProbeOptions{
 		RequestedMode:   requested,
 		CoreMode:        coreMode,
-		LocalDataPlane:  localDataPlane(config.Local.DataPlane),
-		SharedDataPlane: sharedDataPlane(config.Shared.DataPlane),
+		LocalDataPlane:  dataPlane(config.Local.DataPlane),
+		SharedDataPlane: dataPlane(config.Shared.DataPlane),
 		Network:         network,
 		IPv6:            ipv6,
 		Interface:       interfaceName,
+		CgroupPath:      config.Local.CgroupPath,
+		FakeIPICMP:      config.FakeIPICMP == "reply",
 	}, nil
 }
 
@@ -75,6 +79,9 @@ func (o ProbeOptions) Args() []string {
 	args := []string{"tools", "ebpf", "status", "--mode", o.CoreMode}
 	if o.CoreMode == "all" || o.CoreMode == "local" {
 		args = append(args, "--local-data-plane", o.LocalDataPlane)
+		if o.LocalDataPlane == "cgroup" && o.CgroupPath != "" {
+			args = append(args, "--cgroup-path", o.CgroupPath)
+		}
 	}
 	if o.CoreMode == "all" || o.CoreMode == "shared" {
 		args = append(args, "--shared-data-plane", o.SharedDataPlane)
@@ -84,6 +91,9 @@ func (o ProbeOptions) Args() []string {
 	}
 	if !o.IPv6 {
 		args = append(args, "--ipv6=false")
+	}
+	if o.FakeIPICMP {
+		args = append(args, "--fakeip-icmp")
 	}
 	if o.CoreMode == "all" || o.CoreMode == "shared" {
 		if o.Interface != "" {
@@ -168,7 +178,7 @@ func ParseProbeReport(raw string) (ProbeReport, error) {
 	if report.Mode != "all" && report.Mode != "local" && report.Mode != "shared" {
 		return ProbeReport{}, fmt.Errorf("sing-box eBPF JSON 诊断报告模式无效: %q", report.Mode)
 	}
-	if (report.Mode == "all" || report.Mode == "local") && report.LocalDataPlane != "cgroup" && report.LocalDataPlane != "tc" {
+	if (report.Mode == "all" || report.Mode == "local") && report.LocalDataPlane != "cgroup" && report.LocalDataPlane != "socket_assign" {
 		return ProbeReport{}, fmt.Errorf("sing-box eBPF JSON 诊断报告本机数据平面无效: %q", report.LocalDataPlane)
 	}
 	if (report.Mode == "all" || report.Mode == "shared") && report.SharedDataPlane != "packet_rewrite" && report.SharedDataPlane != "socket_assign" {
@@ -214,7 +224,7 @@ func FormatProbeOutput(report ProbeReport, probeErr error) string {
 		fmt.Fprintf(&builder, "设备架构: %s\n", report.Architecture)
 	}
 	planeNames := map[string]string{
-		"cgroup": "应用套接字（cgroup）", "tc": "网卡流量（TC）",
+		"cgroup":         "应用套接字（cgroup，兼容）",
 		"packet_rewrite": "数据包重写", "socket_assign": "套接字分配",
 	}
 	if report.LocalDataPlane != "" {

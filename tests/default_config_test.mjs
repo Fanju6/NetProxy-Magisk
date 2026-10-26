@@ -105,11 +105,11 @@ test('单一入站默认保留 eBPF 原生语义和禁用共享路径偏好', ()
   assert.deepEqual(managed.ebpf, {
     type: 'ebpf', tag: 'netproxy-in', network: ['tcp', 'udp'], udp_timeout: '5m', tc_priority: 1,
     local: {
-      enabled: true, data_plane: 'cgroup', dns_mode: 'respect_policy', ipv6: true,
+      enabled: true, data_plane: 'socket_assign', dns_mode: 'respect_policy', ipv6: true,
       bypass_private_address: true, bypass_rule_set: ['geoip/cn'],
     },
     shared: {
-      enabled: false, data_plane: 'packet_rewrite', dns_mode: 'hijack', interface: ['wlan2'],
+      enabled: false, data_plane: 'socket_assign', dns_mode: 'hijack', interface: ['wlan2'],
       ipv6: true, bypass_private_address: true, bypass_rule_set: ['geoip/cn'],
     },
   })

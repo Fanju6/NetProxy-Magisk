@@ -303,7 +303,11 @@ func TestTUNNativeFieldsRoundTrip(t *testing.T) {
 
 func TestNativeDurationScalarAndArrayRoundTrips(t *testing.T) {
 	for _, backend := range []string{"ebpf", "tun"} {
-		for _, duration := range []string{`90`, `"90s"`, `"1m30s"`, `"1500ms"`} {
+		durations := []string{`90`, `"90s"`, `"1m30s"`, `"1500ms"`}
+		if backend == "ebpf" {
+			durations[3] = `"5000ms"`
+		}
+		for _, duration := range durations {
 			config := fixture(t, backend, "", "")
 			if backend == "ebpf" {
 				config.EBPF = jsontext.Value(`{"type":"ebpf","tag":"netproxy-in","udp_timeout":` + duration + `,"local":{"include_android_user":10,"include_package":"com.example.native"}}`)
@@ -421,6 +425,9 @@ func TestEBPFEnablementAndDisabledPathProjection(t *testing.T) {
 	for _, invalid := range []string{
 		`{"local":{"enabled":false},"shared":{"enabled":false}}`,
 		`{"local":{"enabled":true,"data_plane":"legacy"}}`,
+		`{"local":{"data_plane":"tc"}}`,
+		`{"local":{"enabled":false,"data_plane":"tc"},"shared":{"enabled":true,"interface":"wlan2"}}`,
+		`{"local":{"data_plane":"socket_assign","cgroup_path":"/sys/fs/cgroup"}}`,
 		`{"local":{"data_plane":"tc","cgroup_path":"/sys/fs/cgroup"}}`,
 		`{"local":{"cgroup_path":"relative"}}`,
 		`{"local":{"dns_mode":"bad"}}`,
@@ -428,6 +435,7 @@ func TestEBPFEnablementAndDisabledPathProjection(t *testing.T) {
 		`{"shared":{"enabled":true,"interface":""}}`,
 		`{"shared":{"enabled":true,"interface":"wlan2","data_plane":"tc"}}`,
 		`{"shared":{"enabled":true,"interface":"wlan2","dns_mode":"bad"}}`,
+		`{"shared":{"default_interface":"true"}}`,
 		`{"shared":{"enabled":true,"interface":"wlan2","include_mac_address":"bad"}}`,
 		`{"local":{"bypass_port":0}}`,
 		`{"local":{"bypass_port":65536}}`,
@@ -437,6 +445,7 @@ func TestEBPFEnablementAndDisabledPathProjection(t *testing.T) {
 		`{"local":{"include_uid_range":"1:4294967296"}}`,
 		`{"shared":{"enabled":false,"data_plane":"legacy"}}`,
 		`{"udp_timeout":"-1s"}`,
+		`{"udp_timeout":"4s"}`,
 		`{"fakeip_icmp":"legacy"}`,
 		`{"tc_priority":65536}`,
 	} {
@@ -444,6 +453,47 @@ func TestEBPFEnablementAndDisabledPathProjection(t *testing.T) {
 		config.EBPF = jsontext.Value(`{"type":"ebpf","tag":"netproxy-in",` + strings.TrimPrefix(invalid, "{"))
 		if _, err := config.EBPFOptions(); err == nil {
 			t.Fatalf("接受非法 eBPF 配置: %s", invalid)
+		}
+	}
+}
+
+func TestEBPFDataPlanesMatchRuntimeAndPreflight(t *testing.T) {
+	for _, localPlane := range []string{"", "socket_assign", "cgroup"} {
+		for _, sharedPlane := range []string{"", "socket_assign", "packet_rewrite"} {
+			t.Run(localPlane+"/"+sharedPlane, func(t *testing.T) {
+				config := fixture(t, "ebpf", `{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true,"data_plane":"`+localPlane+`"},"shared":{"enabled":true,"interface":"wlan2","data_plane":"`+sharedPlane+`","default_interface":true}}`, "")
+				before := string(config.EBPF)
+				native, err := config.EBPFOptions()
+				if err != nil {
+					t.Fatal(err)
+				}
+				probe, err := ResolveProbeOptions(native, "configured")
+				if err != nil {
+					t.Fatal(err)
+				}
+				built, err := config.BuildWithResolver(nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var runtime ebpfInbound
+				if err := unmarshalNative(built.Runtime.Inbounds[0], &runtime); err != nil {
+					t.Fatal(err)
+				}
+				wantLocal, wantShared := localPlane, sharedPlane
+				if wantLocal == "" {
+					wantLocal = "socket_assign"
+				}
+				if wantShared == "" {
+					wantShared = "socket_assign"
+				}
+				if runtime.Local.DataPlane != wantLocal || runtime.Shared.DataPlane != wantShared ||
+					probe.LocalDataPlane != wantLocal || probe.SharedDataPlane != wantShared || !runtime.Shared.DefaultInterface {
+					t.Fatalf("运行时与预检不一致: runtime=%+v probe=%+v", runtime, probe)
+				}
+				if string(config.EBPF) != before {
+					t.Fatal("运行时生成修改了保存的原生配置")
+				}
+			})
 		}
 	}
 }

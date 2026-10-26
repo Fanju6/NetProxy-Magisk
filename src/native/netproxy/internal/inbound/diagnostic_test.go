@@ -25,7 +25,7 @@ func TestResolveProbeOptionsUsesConfiguredScope(t *testing.T) {
 	if options.CoreMode != "all" {
 		t.Fatalf("expected all mode, got %q", options.CoreMode)
 	}
-	want := []string{"tools", "ebpf", "status", "--mode", "all", "--local-data-plane", "cgroup", "--shared-data-plane", "packet_rewrite", "--network", "tcp,udp", "--interface", "wlan2", "--json"}
+	want := []string{"tools", "ebpf", "status", "--mode", "all", "--local-data-plane", "socket_assign", "--shared-data-plane", "socket_assign", "--network", "tcp,udp", "--interface", "wlan2", "--json"}
 	if !reflect.DeepEqual(options.Args(), want) {
 		t.Fatalf("unexpected probe args: %#v", options.Args())
 	}
@@ -33,7 +33,7 @@ func TestResolveProbeOptionsUsesConfiguredScope(t *testing.T) {
 
 func TestProbeNativeDefaultsAndInvalidScopes(t *testing.T) {
 	defaults, err := ResolveProbeOptions(option.EBPFInboundOptions{}, "")
-	if err != nil || defaults.CoreMode != "local" || defaults.LocalDataPlane != "cgroup" || defaults.SharedDataPlane != "packet_rewrite" || !defaults.IPv6 || !reflect.DeepEqual(defaults.Network, []string{"tcp", "udp"}) {
+	if err != nil || defaults.CoreMode != "local" || defaults.LocalDataPlane != "socket_assign" || defaults.SharedDataPlane != "socket_assign" || !defaults.IPv6 || !reflect.DeepEqual(defaults.Network, []string{"tcp", "udp"}) {
 		t.Fatal(defaults, err)
 	}
 	config := fixture(t, "ebpf", `{"type":"ebpf","tag":"netproxy-in","local":{"enabled":false,"ipv6":false},"shared":{"enabled":true,"interface":"wlan2","ipv6":false}}`, "")
@@ -88,7 +88,7 @@ func TestRunProbeUsesNativeOptionsAndPropagatesCancellation(t *testing.T) {
 }
 
 func TestResolveProbeOptionsSupportsExplicitScopes(t *testing.T) {
-	config := fixture(t, "ebpf", `{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true,"data_plane":"tc","ipv6":false},"shared":{"enabled":true,"data_plane":"socket_assign","ipv6":true,"interface":"wlan2"}}`, "")
+	config := fixture(t, "ebpf", `{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true,"data_plane":"socket_assign","ipv6":false},"shared":{"enabled":true,"data_plane":"socket_assign","ipv6":true,"interface":"wlan2"}}`, "")
 	native, err := config.EBPFOptions()
 	if err != nil {
 		t.Fatal(err)
@@ -97,7 +97,7 @@ func TestResolveProbeOptionsSupportsExplicitScopes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if local.CoreMode != "local" || !reflect.DeepEqual(local.Args(), []string{"tools", "ebpf", "status", "--mode", "local", "--local-data-plane", "tc", "--network", "tcp,udp", "--ipv6=false", "--json"}) {
+	if local.CoreMode != "local" || !reflect.DeepEqual(local.Args(), []string{"tools", "ebpf", "status", "--mode", "local", "--local-data-plane", "socket_assign", "--network", "tcp,udp", "--ipv6=false", "--json"}) {
 		t.Fatalf("unexpected local options: %#v", local)
 	}
 
@@ -107,6 +107,23 @@ func TestResolveProbeOptionsSupportsExplicitScopes(t *testing.T) {
 	}
 	if shared.CoreMode != "shared" || !reflect.DeepEqual(shared.Args(), []string{"tools", "ebpf", "status", "--mode", "shared", "--shared-data-plane", "socket_assign", "--network", "tcp,udp", "--interface", "wlan2", "--json"}) {
 		t.Fatalf("unexpected shared options: %#v", shared)
+	}
+}
+
+func TestProbeUsesConfiguredCgroupAndFakeIPICMP(t *testing.T) {
+	config := fixture(t, "ebpf", `{"type":"ebpf","tag":"netproxy-in","fakeip_icmp":"reply","local":{"enabled":true,"data_plane":"cgroup","cgroup_path":"/sys/fs/cgroup/test"},"shared":{"enabled":true,"interface":"wlan2"}}`, "")
+	native, err := config.EBPFOptions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe, err := ResolveProbeOptions(native, "configured")
+	want := []string{"tools", "ebpf", "status", "--mode", "all", "--local-data-plane", "cgroup", "--cgroup-path", "/sys/fs/cgroup/test", "--shared-data-plane", "socket_assign", "--network", "tcp,udp", "--fakeip-icmp", "--interface", "wlan2", "--json"}
+	if err != nil || !reflect.DeepEqual(probe.Args(), want) {
+		t.Fatal(probe.Args(), err)
+	}
+	shared, err := ResolveProbeOptions(native, "shared")
+	if err != nil || strings.Contains(strings.Join(shared.Args(), " "), "--cgroup-path") {
+		t.Fatal(shared.Args(), err)
 	}
 }
 
@@ -138,7 +155,7 @@ func TestFormatProbeOutputReturnsCapabilityReport(t *testing.T) {
 		"检测范围: 本机应用流量、热点与共享网络",
 		"内核版本: 6.1.0",
 		"设备架构: arm64",
-		"本机接管方式: 应用套接字（cgroup）",
+		"本机接管方式: 应用套接字（cgroup，兼容）",
 		"共享网络接管方式: 数据包重写",
 		"网络协议: TCP/UDP",
 		"IPv6: 检测",
@@ -203,6 +220,7 @@ func TestParseProbeReportRejectsInvalidReports(t *testing.T) {
 		`{"mode":"legacy","result":"supported"}`,
 		`{"mode":"local","local_data_plane":"cgroup","result":"unknown"}`,
 		`{"mode":"local","local_data_plane":"legacy","result":"supported"}`,
+		`{"mode":"local","local_data_plane":"tc","preflight":true,"result":"preflight_passed"}`,
 		`{"mode":"shared","shared_data_plane":"legacy","result":"supported"}`,
 		`{"mode":"local","local_data_plane":"cgroup","preflight":true,"result":"supported"}`,
 		`{"mode":"local","local_data_plane":"cgroup","result":"preflight_passed"}`,

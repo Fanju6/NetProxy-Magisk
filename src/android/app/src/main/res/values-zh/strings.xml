@@ -382,6 +382,12 @@
     <string name="ebpf_data_paths_shared">仅热点与共享网络</string>
     <string name="ebpf_data_paths_both">本机网络与共享网络</string>
     <string name="ebpf_local_settings">本机网络</string>
+    <string name="ebpf_data_plane">数据平面</string>
+    <string name="ebpf_data_plane_socket_assign">socket_assign（推荐）</string>
+    <string name="ebpf_data_plane_cgroup">cgroup（兼容）</string>
+    <string name="ebpf_data_plane_packet_rewrite">packet_rewrite（兼容）</string>
+    <string name="ebpf_shared_default_interface">默认上游接口继续接管共享流量</string>
+    <string name="ebpf_shared_default_interface_hint">默认关闭。仅用于单接口网关：已配置的共享接口成为默认上游时仍保持挂载；不会开启转发、NAT 或热点服务。</string>
     <string name="ebpf_local_dns_mode">本机网络 DNS 模式</string>
     <string name="ebpf_shared_dns_mode">共享网络 DNS 模式</string>
     <string name="ebpf_dns_mode_hijack">优先劫持</string>

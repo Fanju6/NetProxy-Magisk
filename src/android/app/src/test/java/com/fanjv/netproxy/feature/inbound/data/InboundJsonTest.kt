@@ -6,6 +6,58 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class InboundJsonTest {
+    @Test fun ebpfMissingAndEmptyDataPlanesUseModuleDefaultWithoutWritingIt() {
+        for (content in listOf("{}", """{"data_plane":""}""")) {
+            val original = inboundJson.parseToJsonElement(content).jsonObject
+            assertEquals("socket_assign", original.ebpfDataPlane())
+            assertEquals(content, original.toString())
+        }
+        for (plane in listOf("socket_assign", "cgroup", "packet_rewrite", "tc", " ")) {
+            val original = inboundJson.parseToJsonElement("""{"data_plane":"$plane"}""").jsonObject
+            assertEquals(plane, original.ebpfDataPlane())
+        }
+    }
+
+    @Test fun ebpfDataPlaneSelectionsAreIndependentAndPreserveNativePolicies() {
+        val original = inboundJson.parseToJsonElement("""
+            {"type":"ebpf","tag":"netproxy-in","udp_timeout":"5m",
+             "local":{"enabled":true,"data_plane":"cgroup","dns_mode":"respect_policy","include_uid":[0,10001],"exclude_uid":[10002],"include_package":["org.example.app"],"cgroup_path":"/sys/fs/cgroup"},
+             "shared":{"enabled":false,"data_plane":"packet_rewrite","dns_mode":"hijack","interface":["ap0"],"default_interface":true}}
+        """).jsonObject
+        for ((path, planes) in listOf("local" to LOCAL_EBPF_DATA_PLANES, "shared" to SHARED_EBPF_DATA_PLANES)) {
+            for (plane in planes) {
+                val changed = original.withEbpfDataPlane(path, plane)
+                assertEquals(plane, changed.objectAt(path).ebpfDataPlane())
+                val expected = original.withPath(listOf(path, "data_plane"), JsonPrimitive(plane)).let {
+                    if (path == "local" && plane == "socket_assign") it.withPath(listOf("local", "cgroup_path"), null) else it
+                }
+                assertEquals(expected, changed)
+            }
+        }
+        val switchedBack = original.withEbpfDataPlane("local", "socket_assign").withEbpfDataPlane("local", "cgroup")
+        assertEquals(original.withPath(listOf("local", "cgroup_path"), null), switchedBack)
+    }
+
+    @Test fun ebpfDataPlaneSelectionRejectsTcAndCrossPathValuesWithoutConversion() {
+        val original = inboundJson.parseToJsonElement("""{"local":{"data_plane":"tc"},"shared":{"enabled":false}}""").jsonObject
+        assertEquals(listOf("socket_assign", "cgroup"), LOCAL_EBPF_DATA_PLANES)
+        assertEquals(listOf("socket_assign", "packet_rewrite"), SHARED_EBPF_DATA_PLANES)
+        for ((path, plane) in listOf("local" to "tc", "local" to "packet_rewrite", "shared" to "cgroup", "shared" to "tc", "other" to "socket_assign")) {
+            assertThrows(IllegalArgumentException::class.java) { original.withEbpfDataPlane(path, plane) }
+        }
+        assertEquals("tc", original.objectAt("local").ebpfDataPlane())
+        assertEquals("tc", original.withPath(listOf("shared", "default_interface"), JsonPrimitive(true)).objectAt("local").ebpfDataPlane())
+    }
+
+    @Test fun ebpfDefaultInterfaceIsOptInAndDoesNotChangeInterfacesOrEnablePaths() {
+        val original = inboundJson.parseToJsonElement("""{"enabled":false,"interface":["ap0"],"data_plane":"packet_rewrite"}""").jsonObject
+        assertFalse(original.flagAt("default_interface"))
+        assertFalse(original.containsKey("default_interface"))
+        val changed = original.withFields("default_interface" to JsonPrimitive(true))
+        assertTrue(changed.flagAt("default_interface"))
+        assertEquals(original, changed.withFields("default_interface" to null))
+    }
+
     @Test fun tunMissingAndEmptyDnsUseNativeDefaultWithoutWritingIt() {
         for (content in listOf("{}", """{"dns_mode":""}""")) {
             val original = inboundJson.parseToJsonElement(content).jsonObject

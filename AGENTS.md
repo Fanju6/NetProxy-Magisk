@@ -37,7 +37,7 @@
 - `root_policy=default/include/exclude` 独立于 app 开关与名单模式，只投影本机 UID 0，不改原生模板；default 不干预，include 覆盖 UID 0 的原生 UID 排除，exclude 排除 UID 0。空 include 原生表示不限 UID，不得为接管 Root 将其收窄为只含 0；空应用白名单仍可仅接管 Root。原生 include_android_user 通过内核生成排除范围，不能当成 UID include；接管 Root 时该用户范围必须包含用户 0，否则报冲突，不扩大用户范围。仅 eBPF shared 时不应用 Root 策略，也不因该字段变化重载。管理器通用选择即时保存，先提交已确认原生草稿；完整 JSON 编辑入口位于右上角菜单，不在应用列表伪造 Root 条目。
 - 透明代理运行时只有 `runtime/inbound.json`，包含当前选择的一个入站；providers/outbounds 仍独立生成。切换不转换或清空另一套参数，失败不自动改用另一后端。
 - 分应用策略持久化严格的 `<user-id>:<package>` 引用，Android 每个用户独立展示；Go 通过 Android package service 查询 UID，运行时生成 `include_uid` / `exclude_uid`。
-- eBPF 数据路径由 `ebpf.local.enabled` 与 `ebpf.shared.enabled` 独立启用，选择 eBPF 时至少开启一条；本机 `data_plane` 只允许 `cgroup/tc`，共享网络只允许 `packet_rewrite/socket_assign`。禁用路径可保存全部偏好，但运行时只输出 `enabled: false`。
+- eBPF 数据路径由 `ebpf.local.enabled` 与 `ebpf.shared.enabled` 独立启用，选择 eBPF 时至少开启一条；本机 `data_plane` 只允许 `socket_assign/cgroup`，共享网络只允许 `socket_assign/packet_rewrite`。模块两路径缺省均显式投影为 `socket_assign`，不依赖核心的不同默认值；`cgroup` 和 `packet_rewrite` 为手动兼容选择，不接受旧 `tc` 别名或静默回退。禁用路径可保存全部偏好，但运行时只输出 `enabled: false`；`shared.default_interface` 默认关闭，仅按用户配置允许同一上游接口接管。
 - 受管 TUN 固定 `auto_route=true` 与 `auto_redirect=true`，地址必须有效；不额外固定 MTU、stack、strict_route、marks 或 NFQUEUE 默认值。端口 bypass 使用主配置 route 的原生 pre-match 规则，不伪装成 TUN 字段或自动注入第四个 runtime。
 - Service API 与 Clash API 的固定监听和密钥位于 `config/singbox/config.json` 的 `services` 与 `experimental.clash_api`。不要重新引入运行时随机 bootstrap，现有 WebUI 依赖固定入口。
 - 服务状态只允许 `stopped/preparing/starting/ready/stopping/failed`。`ready_at` 只能在 sing-box API 与所选入站均就绪后写入。
