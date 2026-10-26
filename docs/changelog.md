@@ -2,6 +2,24 @@
 
 本页收录 GitHub Releases 中发布的正式版本，按发布时间倒序排列；不包含持续更新的 `nightly Pre-release`。
 
+## 版本 8.6.2（2026-10-26）
+
+### 内核与入站设置
+
+- 内核更新至 `sing-box 1.15.0-alpha.13-reF1nd`，同步 Go 依赖及 JSON 编辑器补全与校验。
+- 新安装的 eBPF 本机与共享网络数据平面默认使用 `socket_assign`；共享网络仍默认关闭。
+- 入站设置新增独立的数据平面选择：本机支持 `socket_assign` 与兼容模式 `cgroup`，共享网络支持 `socket_assign` 与兼容模式 `packet_rewrite`，两者可以不同。
+- 高级设置新增“允许共享接口作为默认上游”，默认关闭，用于按需配置单接口网关。
+- eBPF 能力预检同步所选数据平面、cgroup 路径与 FakeIP ICMP 设置；非默认 UDP 会话超时不得短于 5 秒。
+
+### 升级说明
+
+- 保留现有数据升级不会强制改写已有的 `cgroup` 或 `packet_rewrite` 选择；省略数据平面时使用模块默认的 `socket_assign`。
+- 旧本机 `local.data_plane: "tc"` 已移除，使用自定义入站 JSON 的用户需手动改为 `socket_assign`，不提供自动转换。
+- `socket_assign` 需要相应的 BPF、网络命名空间、veth 和系统权限支持；不支持时会明确报错，不自动回退，可手动选择对应兼容模式。
+
+* * *
+
 ## 版本 8.6.1（2026-10-15）
 
 - 修复部分设备因应用图标或字体初始化异常，导致应用代理列表无法加载、提示“无法读取 Android 平台信息”的问题。
