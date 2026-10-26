@@ -428,7 +428,12 @@ describe('restricted native requests', () => {
     async (method, path, name) => {
       const { transport, invoke } = setup()
       invoke.mockResolvedValue({ status: 200, body: event.body })
-      for (const memberTag of [' node ', '香港 / 节点🚀', '../tag?x=1']) {
+      for (const memberTag of [
+        ' node ',
+        '香港 / 节点🚀',
+        '../tag?x=1',
+        'np/subscription/香港 01',
+      ]) {
         const body = path.endsWith('/select')
           ? { group_tag: '原生 / group', member_tag: memberTag }
           : { group_tag: memberTag }
@@ -440,7 +445,7 @@ describe('restricted native requests', () => {
             : { groupTag: memberTag }),
         })
       }
-      expect(invoke).toHaveBeenCalledTimes(3)
+      expect(invoke).toHaveBeenCalledTimes(4)
     },
   )
   it('forwards native mode names without a fixed enumeration', async () => {
