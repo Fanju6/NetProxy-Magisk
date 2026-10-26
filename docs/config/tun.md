@@ -24,7 +24,7 @@ TUN 是 sing-box 的透明代理入站，在 NetProxy 中通过 Root 权限运�
 
 `type`、`tag`、`auto_route: true` 与 `auto_redirect: true` 是受管 TUN 约束。接口名和有效地址前缀可调整，避免与设备网络冲突。移除 IPv6 地址只改变入站接管，不关闭系统 IPv6。
 
-默认不固定 `mtu`、`strict_route`、marks、NFQUEUE 编号、路由表或规则编号，沿用锁定内核的原生默认；不输出 `stack`，也不提供 system/gvisor/mixed 选择器。主配置默认使用 `route.auto_detect_interface: true` 防止回环，修改后必须满足其他有效的出口绑定条件。`auto_redirect` 与 `default_mark` / `routing_mark` 的真实冲突会在组合检查时失败。
+默认不固定 `mtu`、`strict_route`、marks、NFQUEUE 编号或路由表，沿用锁定内核的原生默认；不输出 `stack`，也不提供 system/gvisor/mixed 选择器。Android 运行时在未指定 `auto_redirect_iproute2_fallback_rule_index` 时使用 `31999`，让初始路由先于系统的 `32000 unreachable`，避免物理网络没有 IPv6 路由时请求无法到达 TUN。此默认值只投影到运行时，不改写保存的配置，显式规则编号保持不变。其他平台不覆盖核心默认值。主配置默认使用 `route.auto_detect_interface: true` 防止回环，修改后必须满足其他有效的出口绑定条件。`auto_redirect` 与 `default_mark` / `routing_mark` 的真实冲突会在组合检查时失败。
 
 ## 常用范围
 

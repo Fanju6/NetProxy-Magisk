@@ -37,6 +37,43 @@ func builtFilters(t *testing.T, built BuildResult) (include []uint32, includeRan
 	return native.IncludeUID, native.IncludeUIDRange, native.ExcludeUID, native.ExcludeUIDRange
 }
 
+func TestTUNRuntimeFallbackPrecedesAndroidUnreachable(t *testing.T) {
+	for _, explicit := range []int{0, 31001, 32768} {
+		config := fixture(t, "tun", "", "")
+		if explicit != 0 {
+			var native tunInbound
+			if err := unmarshalNative(config.TUN, &native); err != nil {
+				t.Fatal(err)
+			}
+			native.AutoRedirectFallbackRuleIndex = explicit
+			var err error
+			config.TUN, err = marshalNative(native)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		before := encodeConfig(t, config)
+		built, err := config.Build(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		var native tunInbound
+		if err := unmarshalNative(built.Runtime.Inbounds[0], &native); err != nil {
+			t.Fatal(err)
+		}
+		want := explicit
+		if runtime.GOOS == "android" && explicit == 0 {
+			want = 31999
+		}
+		if native.AutoRedirectFallbackRuleIndex != want {
+			t.Fatalf("fallback priority: got %d, want %d", native.AutoRedirectFallbackRuleIndex, want)
+		}
+		if !bytes.Equal(before, encodeConfig(t, config)) {
+			t.Fatal("runtime default changed saved inbound preferences")
+		}
+	}
+}
+
 func TestDNSBypassDoesNotChangeSavedPreferences(t *testing.T) {
 	for _, backend := range []string{"ebpf", "tun"} {
 		original := fixture(t, backend, `{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true,"dns_mode":"respect_policy"},"shared":{"enabled":false,"dns_mode":"hijack"}}`, strings.TrimSuffix(testTUN, "}")+`,"dns_mode":"native"}`)

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 
 	"github.com/sagernet/sing-box/option"
@@ -175,6 +176,10 @@ func (c Config) BuildWithResolver(resolve PackageUIDResolver) (BuildResult, erro
 		}
 		native, err = normalizeTUN(native)
 		if err == nil {
+			// Android 的 32000 unreachable 会截断核心默认 32768 fallback，须先提供初始路由。
+			if runtime.GOOS == "android" && native.AutoRedirectFallbackRuleIndex == 0 {
+				native.AutoRedirectFallbackRuleIndex = 31999
+			}
 			content, err = marshalNative(tunInbound{Type: "tun", Tag: Tag, TunInboundOptions: native})
 		}
 	}
