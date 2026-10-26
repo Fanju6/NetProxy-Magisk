@@ -153,7 +153,7 @@ HTTP 保存必须提供读取时的 revision。发生 `config.conflict` 时保�
 | `POST /catalog` | 创建空本地资源，正文为 `{"id":"local-work","name":"工作节点"}` |
 | `PUT /catalog/{id}` | 重命名本地资源，正文为 `{"name":"新名称"}` |
 | `DELETE /catalog/{id}` | 删除本地资源；不允许删除 `default` |
-| `GET /policy-groups` | 原生策略组快照；未就绪时为配置摘要 |
+| `GET /policy-groups` | 原生策略组快照；未就绪时按持久配置与 Catalog 展开配置成员 |
 | `POST /policy-groups/select` | 选择可手动切换的组成员，正文含 `group_tag/member_tag` |
 | `POST /policy-groups/delay` | 请求策略组测速，正文含 `group_tag` |
 | `GET /nodes?group_id=...` | 分组节点 |
@@ -208,6 +208,8 @@ HTTP 保存必须提供读取时的 revision。发生 `config.conflict` 时保�
 - `subscriptions`：订阅状态与更新进度。
 
 连接后先发快照，再发送变化。运行中等待核心完整 groups 首帧，不先发配置占位覆盖已有运行时状态；停止时发 `live=false` 的配置摘要。核心重载后重新订阅新实例；关闭核心不关闭模块事件入口。断线重新获取完整快照，不依赖历史事件回放。Catalog 节点内容从 `/catalog` 或 `/nodes` 读取，不从 groups 事件推断。
+
+配置策略快照额外携带 `source: "configuration"`，且 `live=false/core_started_at_millis=0`。成员按显式 outbounds、所引用 Catalog Provider 的顺序展开，标签仍为 `np/<id>/<node-tag>`；`use_all_providers` 取代显式 Provider 列表，include/exclude 仅匹配 Provider 完整标签，不过滤显式成员。同一身份去重，不合并不同资源同名节点。Selector 可携带 `configured_default`，绝不把它当作 `selected` 或 cache_file 的实时选择。无法安全离线读取的原生 Provider、缺失或空资源仅列入组的 `unavailable_providers`；不会读取其外部路径、联网下载或启动核心。读取失败仍返回错误，不以历史缓存冒充当前配置。GET 的核心身份或实时接口不可用时也可回读此配置快照；写入接口仍必须验证真实核心身份，不能凭配置摘要放行。
 
 页面进入后台时取消订阅，恢复前台再连接。官方管理器保留 2 秒切页宽限，会话内不因移除主题重连；真正停止后清空快照。没有订阅者时模块停止文件监听和核心高频订阅。慢客户端会断开，避免无限堆积数据。
 

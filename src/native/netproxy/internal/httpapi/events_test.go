@@ -332,13 +332,11 @@ func TestCoreGroupsFixedWindowPublishesLatestWithoutRPC(t *testing.T) {
 	}
 }
 
-func TestStoppedPolicyEventDoesNotReadCatalogOrInferSelection(t *testing.T) {
+func TestStoppedPolicyEventIncludesPersistedCatalogWithoutInferringSelection(t *testing.T) {
 	h := testHub(t)
 	h.server = resourceFixture(t)
-	h.server.options.CatalogRoot = filepath.Join(t.TempDir(), "broken-catalog")
-	resourceWriteFile(t, h.server.options.CatalogRoot, "not a directory")
 	resourceWriteFile(t, paths.SingBoxConfig(h.server.options.SingBoxDir),
-		`{"route":{"final":"RoutePick"},"outbounds":[{"type":"selector","tag":"RoutePick","outbounds":["direct"],"default":"direct"},{"type":"direct","tag":"direct"}]}`)
+		`{"route":{"final":"RoutePick"},"outbounds":[{"type":"selector","tag":"RoutePick","outbounds":["direct"],"providers":["np/default"],"default":"direct"},{"type":"direct","tag":"direct"}]}`)
 	client := testSubscriber()
 	client.topics = topicGroups
 	h.clients[client] = struct{}{}
@@ -360,6 +358,9 @@ func TestStoppedPolicyEventDoesNotReadCatalogOrInferSelection(t *testing.T) {
 		if !response.OK || response.Code != "policy.groups" || snapshot.Live || snapshot.CoreStartedAtMillis != 0 || snapshot.DefaultOutbound != "RoutePick" ||
 			len(snapshot.Groups) != 1 || snapshot.Groups[0].Tag != "RoutePick" || snapshot.Groups[0].Selected != "" {
 			t.Fatalf("unexpected stopped policy snapshot: %s", event.content)
+		}
+		if snapshot.Source != "configuration" || snapshot.Groups[0].ConfiguredDefault != "direct" || len(snapshot.Groups[0].Items) < 2 {
+			t.Fatalf("Catalog members or offline source missing: %s", event.content)
 		}
 		if strings.Contains(string(event.content), `"selection"`) || strings.Contains(string(event.content), `"runtime_groups"`) {
 			t.Fatalf("policy event contains retired node state: %s", event.content)
@@ -673,10 +674,10 @@ func TestFileEventsOnlyRefreshAffectedTopics(t *testing.T) {
 		{options.StateFile, fsnotify.Create, topicStatus | topicGroups},
 		{options.InboundConfig, fsnotify.Write, topicStatus},
 		{paths.SingBoxConfig(options.SingBoxDir), fsnotify.Rename, topicStatus | topicGroups},
-		{options.CatalogRoot, fsnotify.Create, topicSubscriptions},
-		{filepath.Join(options.CatalogRoot, "default"), fsnotify.Remove, topicSubscriptions},
-		{filepath.Join(options.CatalogRoot, "default", "provider.json"), fsnotify.Write, topicSubscriptions},
-		{filepath.Join(options.CatalogRoot, "default", "meta.json"), fsnotify.Write, topicSubscriptions},
+		{options.CatalogRoot, fsnotify.Create, topicSubscriptions | topicGroups},
+		{filepath.Join(options.CatalogRoot, "default"), fsnotify.Remove, topicSubscriptions | topicGroups},
+		{filepath.Join(options.CatalogRoot, "default", "provider.json"), fsnotify.Write, topicSubscriptions | topicGroups},
+		{filepath.Join(options.CatalogRoot, "default", "meta.json"), fsnotify.Write, topicSubscriptions | topicGroups},
 		{filepath.Join(options.CatalogRoot, "default", "history.jsonl"), fsnotify.Write, 0},
 		{filepath.Join(options.CatalogRoot, "staging", "provider.json"), fsnotify.Write, 0},
 		{filepath.Join(options.ProgressDir, "subscription-test.progress.json"), fsnotify.Write, topicSubscriptions},

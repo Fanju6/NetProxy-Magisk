@@ -13,7 +13,6 @@ import (
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/contract"
 	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
 )
@@ -289,7 +288,13 @@ func (f *coreFeed) refresh(topics int) {
 		}
 	}
 	if topics&(topicStatus|topicGroups) != 0 {
-		snapshot, err := service.ReadConfiguredPolicyGroups(paths.SingBoxConfig(f.h.server.options.SingBoxDir))
+		var snapshot service.PolicySnapshot
+		var err error
+		if f.identity > 0 {
+			snapshot.DefaultOutbound, err = service.ReadDefaultOutbound(f.h.server.controlOptions().SingBoxConfig)
+		} else {
+			snapshot, err = service.ReadConfiguredPolicyGroups(ctx, f.h.server.controlOptions())
+		}
 		f.snapshotReady = err == nil
 		if err != nil {
 			if topics&topicGroups != 0 {
@@ -327,6 +332,7 @@ func (f *coreFeed) publishGroups(epoch uint64) {
 			snapshot.Groups = []serviceapi.Group{}
 		}
 		snapshot.Live = true
+		snapshot.Source = ""
 		snapshot.CoreStartedAtMillis = f.identity
 	}
 	topics := f.h.interests()

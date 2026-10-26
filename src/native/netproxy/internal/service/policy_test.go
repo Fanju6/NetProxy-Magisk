@@ -45,9 +45,9 @@ func TestPolicyConfiguredSummaryHasNoRuntimeOrCatalogState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := PolicySnapshot{DefaultOutbound: "Configured", Groups: []serviceapi.Group{
-		{Tag: "Configured", Type: "selector", Selectable: true, Items: []serviceapi.GroupItem{{Tag: "Auto", Type: "urltest"}, {Tag: "direct", Type: "direct"}}},
-		{Tag: "Auto", Type: "urltest", Items: []serviceapi.GroupItem{}},
+	want := PolicySnapshot{DefaultOutbound: "Configured", Source: "configuration", Groups: []serviceapi.Group{
+		{Tag: "Configured", Type: "selector", Selectable: true, ConfiguredDefault: "direct", Items: []serviceapi.GroupItem{{Tag: "Auto", Type: "urltest"}, {Tag: "direct", Type: "direct"}}},
+		{Tag: "Auto", Type: "urltest", UnavailableProviders: []string{"provider-a"}, Items: []serviceapi.GroupItem{}},
 	}}
 	if !reflect.DeepEqual(result, want) {
 		t.Fatalf("summary = %+v, want %+v", result, want)
@@ -79,11 +79,11 @@ func TestPolicyConfiguredSummaryStrictJSONAndNativeFields(t *testing.T) {
 		"{\"outbounds\":[{\"type\":\"selector\",\"tag\":\"\xff\"}]}",
 	} {
 		policyWriteFile(t, path, content)
-		_, err := ReadConfiguredPolicyGroups(path)
+		_, err := ReadConfiguredPolicyGroups(t.Context(), Options{SingBoxConfig: path})
 		policyRequireCode(t, err, "policy.config_invalid")
 	}
 	policyWriteFile(t, path, `{"log":{"level":"info"},"outbounds":[{"type":"selector","tag":"Custom / 组","use_all_providers":true,"include":"same","interrupt_exist_connections":true,"custom_future_field":{}}],"route":{"final":"Custom / 组"}}`)
-	result, err := ReadConfiguredPolicyGroups(path)
+	result, err := ReadConfiguredPolicyGroups(t.Context(), Options{SingBoxConfig: path})
 	if err != nil || len(result.Groups) != 1 || result.Groups[0].Tag != "Custom / 组" {
 		t.Fatalf("native extensions blocked: %+v %v", result, err)
 	}
@@ -298,10 +298,19 @@ func TestPolicyRejectsStaleIdentityAndDropsOldGroups(t *testing.T) {
 				f.writeState(t, 0)
 			}
 			result, err := ReadPolicyGroups(t.Context(), f.options)
-			policyRequireCode(t, err, "policy.core_not_ready")
-			if result.Live || result.CoreStartedAtMillis != 0 || len(result.Groups) != 0 {
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Live || result.CoreStartedAtMillis != 0 || result.Source != "configuration" {
 				t.Fatalf("old groups leaked: %+v", result)
 			}
+			for _, group := range result.Groups {
+				if group.Selected != "" || group.Tag == "Custom / 组" {
+					t.Fatal("old runtime group or selected member survived")
+				}
+			}
+			_, err = SelectPolicyGroup(t.Context(), f.options, "Custom / 组", "provider-b/same")
+			policyRequireCode(t, err, "policy.core_not_ready")
 		})
 	}
 }

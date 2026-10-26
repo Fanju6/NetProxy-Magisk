@@ -35,7 +35,7 @@ V9 不要求保留 V8 历史兼容性；成熟实现和旧测试是参考，不�
 - 模块设置唯一事实源是 `config/module.json`，顶层固定为 `auto_start/wifi`；不读取、迁移或兼容旧 selection 与旧格式，缺失或损坏不得回退默认配置。
 - 策略组只存在于用户维护的原生 `config/singbox/config.json`，Catalog 不生成 Auto/Select/Proxy，也不随资源增删改写 outbounds、route 或 DNS。图形编辑仅修改目标原生出站，保留其他对象、未知字段与未编辑的数值原文，复用 revision 和配置事务。
 - Catalog 非空资源投影为稳定 `np/<catalog-id>` Local Provider；重命名不改 tag，同名节点由完整 Provider/member 标签区分。空资源不生成 Provider；用户 Provider 与内部 tag 冲突须明确失败，不能隐式覆盖。
-- 策略组选择通过核心 Service API 使用原始 group_tag/member_tag，不重试写请求；各 Selector 独立，持久化归 sing-box cache_file。停止时仅展示配置摘要，不伪造运行中选择、Provider 成员或测速结果；重启后以新核心身份的完整快照为准。
+- 策略组选择通过核心 Service API 使用原始 group_tag/member_tag，不重试写请求；各 Selector 独立，持久化归 sing-box cache_file。停止或实时核心身份不可确认时，按当前原生配置与持久 Catalog 展开配置成员，保持 live=false、身份0，不读取缓存伪造选择或测速；外部原生 Provider 只保留未解析引用，不联网或读取任意路径。运行时以新核心身份的完整快照为准。
 - 本地节点变更与资源删除先等待生命周期锁、恢复配置事务，再提交 Catalog；原生配置显式引用将移除的 Provider 或节点时拒绝破坏性操作，不擅自修改用户引用。Provider 定义集变化需校验并重载，内容变化复用核心监听并有界核对出站。提交后同步失败保留 persisted=true；Worker 通过 SyncCatalog 复用同一流程，取锁收尾与同步元数据有界且不受请求取消影响，运行时操作仍遵循原请求上下文。
 - eBPF 与 TUN 都是 sing-box 的入站实现，不是独立代理核心。服务、模式和节点切换文案继续使用“服务”或“sing-box”，不要泛化为“eBPF 服务”或“TUN 服务”。
 - `config/inbound/inbound.json` 是 backend、独立 Root 策略、共用 app 策略与两套原生入站参数的唯一事实源，不在 module.json 或客户端偏好中双写。外层固定为 `backend/root_policy/app/ebpf/tun`，两个原生对象的 type 匹配分区、tag 均固定为 `netproxy-in`；主配置不得重复定义受管 eBPF/TUN 或占用该标签。

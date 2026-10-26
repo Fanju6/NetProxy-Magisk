@@ -84,12 +84,14 @@ type GroupItem struct {
 }
 
 type Group struct {
-	Tag        string      `json:"tag"`
-	Type       string      `json:"type"`
-	Selectable bool        `json:"selectable"`
-	Selected   string      `json:"selected,omitempty"`
-	Expanded   bool        `json:"expanded"`
-	Items      []GroupItem `json:"items"`
+	Tag                  string      `json:"tag"`
+	Type                 string      `json:"type"`
+	Selectable           bool        `json:"selectable"`
+	Selected             string      `json:"selected,omitempty"`
+	ConfiguredDefault    string      `json:"configured_default,omitempty"`
+	UnavailableProviders []string    `json:"unavailable_providers,omitempty"`
+	Expanded             bool        `json:"expanded"`
+	Items                []GroupItem `json:"items"`
 }
 
 type emptyMessage struct{}

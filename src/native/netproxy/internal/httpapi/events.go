@@ -390,7 +390,7 @@ func (h *eventHub) changedTopics(event fsnotify.Event) int {
 	case options.ProgressDir:
 		return topicSubscriptions
 	case options.CatalogRoot, filepath.Dir(options.CatalogRoot):
-		return topicSubscriptions
+		return topicSubscriptions | topicGroups
 	}
 	if filepath.Dir(path) == options.ProgressDir {
 		return topicSubscriptions
@@ -398,7 +398,7 @@ func (h *eventHub) changedTopics(event fsnotify.Event) int {
 	if relative, err := filepath.Rel(options.CatalogRoot, path); err == nil && filepath.IsLocal(relative) {
 		group, file, _ := strings.Cut(filepath.ToSlash(relative), "/")
 		if group != "staging" && !strings.HasPrefix(group, ".") && (file == "" || file == "meta.json" || file == "provider.json") {
-			return topicSubscriptions
+			return topicSubscriptions | topicGroups
 		}
 	}
 	return 0

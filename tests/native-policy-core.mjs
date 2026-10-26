@@ -643,6 +643,27 @@ try {
     current.checks.push('disjoint provider membership and selection are independent despite identical node names');
   });
 
+  await scenario('configured-provider-membership-semantics', async () => {
+    const providers = [
+      await provider('np/alpha', [node('same'), node('skip')]),
+      await provider('np/beta', [node('same')]),
+    ];
+    await jsonFile('main.json', config([
+      { type: 'selector', tag: 'Mixed', outbounds: ['direct'], providers: ['np/alpha', 'np/beta'], include: '^np/alpha/', exclude: 'skip', default: 'direct' },
+      { type: 'selector', tag: 'All', providers: ['does-not-exist'], use_all_providers: true, include: '/same$' },
+      { type: 'selector', tag: 'Nested', outbounds: ['Mixed', 'All'] },
+      direct('direct'),
+    ], providers));
+    await checkConfig();
+    await start();
+    current.snapshot = await groups();
+    assert.deepEqual(members(current.snapshot, 'Mixed'), ['direct', 'np/alpha/same']);
+    assert.deepEqual(members(current.snapshot, 'All'), ['np/alpha/same', 'np/beta/same']);
+    assert.deepEqual(members(current.snapshot, 'Nested'), ['Mixed', 'All']);
+    assert.equal(groupBy(current.snapshot, 'Mixed').selected, 'direct');
+    current.checks.push('explicit members precede providers and bypass regex; full prefixed Provider tags are filtered; use_all overrides missing explicit provider; nesting remains a group reference');
+  });
+
   for (const useAll of [false, true]) {
     await scenario(useAll ? 'urltest-use-all-providers' : 'urltest-multiple-providers', async () => {
       const socksPort = remote ? remote.port() : await freePort();
