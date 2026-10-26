@@ -2,6 +2,7 @@ package com.fanjv.netproxy.bridge
 
 import com.fanjv.netproxy.core.api.ModuleApiTransport
 import com.fanjv.netproxy.core.api.ModuleEvent
+import com.fanjv.netproxy.core.api.ModuleApiException
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.*
 import kotlinx.serialization.json.*
@@ -15,6 +16,20 @@ import java.io.InputStream
 class DiagnosticDeliveryTest {
     private val bridges = mutableListOf<ModuleApiBridge>()
     @After fun close() = bridges.forEach { it.destroy() }
+
+    @Test fun oversizedDownloadRejectsOnceWithTypedStatusAndNeverPreparesDelivery() = runTest {
+        val bridge = bridge { throw ModuleApiException("api.body_too_large", "private fixture") }
+        var replies = 0
+        bridge.dispatch({ bridge.management(REQUEST) }) { result ->
+            replies++
+            val error = result.exceptionOrNull() as BridgeFailure
+            assertEquals("api.body_too_large", error.code)
+            assertEquals(413, error.status)
+            assertFalse(error.message.orEmpty().contains("private fixture"))
+        }
+        runCurrent()
+        assertEquals(1, replies)
+    }
 
     @Test fun ipcResolvesBeforeChooserPauseAndNeverEmitsASecondFailure() = runTest {
         val order = mutableListOf<String>()

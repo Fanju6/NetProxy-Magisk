@@ -58,4 +58,18 @@ class LogRepositoryTest {
         assertFalse(file.exists())
         assertTrue(folder.root.listFiles()!!.isEmpty())
     }
+
+    @Test fun oversizedDownloadPropagatesThroughClientAndRemovesOnlyPartialReport() = runBlocking {
+        val unrelated = folder.newFile("keep.txt").apply { writeText("keep") }
+        val failure = ModuleApiException("api.body_too_large", "Diagnostic archive exceeds 64 MiB")
+        val repository = LogRepository(client { file ->
+            file.writeBytes(byteArrayOf(1, 2, 3))
+            throw failure
+        }, folder.root)
+        val error = runCatching { repository.createReport() }.exceptionOrNull()
+        assertSame(failure, error)
+        assertEquals("api.body_too_large", (error as ModuleApiException).resultCode)
+        assertEquals(listOf(unrelated), folder.root.listFiles()!!.toList())
+        assertEquals("keep", unrelated.readText())
+    }
 }

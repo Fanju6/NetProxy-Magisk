@@ -5,6 +5,7 @@ import android.content.ClipData
 import android.content.Intent
 import androidx.core.content.FileProvider
 import com.fanjv.netproxy.core.api.ModuleApiTransport
+import com.fanjv.netproxy.core.api.DIAGNOSTIC_DOWNLOAD_LIMIT
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -39,7 +40,7 @@ internal object DiagnosticShare {
                 val file = File.createTempFile("NetProxy-", ".tar.gz", directory)
                 pending = file
                 transport.download("/diagnostics/export", emptyMap(), file)
-                if (file.length() <= 0 || file.length() > 64L * 1024 * 1024) throw BridgeFailure("api.body_too_large")
+                if (file.length() <= 0 || file.length() > DIAGNOSTIC_DOWNLOAD_LIMIT) throw BridgeFailure("api.body_too_large")
                 file.inputStream().use { if (it.read() != 0x1f || it.read() != 0x8b) throw BridgeFailure("api.invalid_response") }
                 Prepared(open = {
                     if (owner.isDestroyed || owner.isFinishing) throw BridgeFailure("api.destroyed")

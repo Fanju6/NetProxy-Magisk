@@ -153,9 +153,23 @@ internal class LocalHttpTransport internal constructor(
                 credentials, 150_000) { response ->
                 if (!response.isSuccessful) fail(response, "api.download_failed", "诊断包下载失败")
                 require(response.body.contentType()?.toString() == "application/gzip")
+                val length = response.body.contentLength()
+                fun tooLarge(): Nothing = throw ModuleApiException("api.body_too_large", "Diagnostic archive exceeds 64 MiB")
+                if (length > DIAGNOSTIC_DOWNLOAD_LIMIT) tooLarge()
                 try {
-                    val count = destination.outputStream().use { output -> response.body.byteStream().copyTo(output) }
-                    val length = response.body.contentLength()
+                    val count = destination.outputStream().use { output ->
+                        val input = response.body.byteStream()
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        var copied = 0L
+                        while (true) {
+                            val size = input.read(buffer, 0, minOf(buffer.size.toLong(), DIAGNOSTIC_DOWNLOAD_LIMIT - copied + 1).toInt())
+                            if (size < 0) break
+                            if (copied + size > DIAGNOSTIC_DOWNLOAD_LIMIT) tooLarge()
+                            output.write(buffer, 0, size)
+                            copied += size
+                        }
+                        copied
+                    }
                     require(count > 0 && (length < 0 || count == length))
                 } catch (error: Throwable) {
                     // 取消可能先唤醒调用方，正文线程须在关闭文件后再次清理部分下载。

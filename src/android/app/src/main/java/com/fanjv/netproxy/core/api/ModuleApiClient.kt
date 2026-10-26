@@ -8,6 +8,8 @@ import kotlinx.serialization.json.*
 import java.io.File
 import java.io.InputStream
 
+internal const val DIAGNOSTIC_DOWNLOAD_LIMIT = 64 * 1024 * 1024
+
 internal data class ModuleApiResponse(val code: String, val message: String, val data: JsonElement)
 internal data class ModuleEvent(val name: String, val content: String)
 
@@ -23,6 +25,7 @@ internal interface ModuleApiTransport {
     suspend fun reconnect(address: String)
     suspend fun <T> request(method: String, path: String, body: JsonObject?, query: Map<String, String>, mutation: Boolean,
         decode: (Int, InputStream) -> T): T
+    /** 诊断归档固定限制为 DIAGNOSTIC_DOWNLOAD_LIMIT 字节，未知响应长度也必须限额。 */
     suspend fun download(path: String, query: Map<String, String>, destination: File)
     suspend fun image(path: String): ByteArray
     suspend fun watch(topics: Set<String>, consume: suspend (ModuleEvent) -> Unit)

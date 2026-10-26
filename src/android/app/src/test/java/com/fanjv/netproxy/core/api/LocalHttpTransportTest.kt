@@ -12,10 +12,12 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
+import mockwebserver3.MockResponseBody
 import mockwebserver3.MockWebServer
 import mockwebserver3.RecordedRequest
 import mockwebserver3.SocketEffect
 import okhttp3.Protocol
+import okio.BufferedSink
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -611,11 +613,11 @@ class LocalHttpTransportTest {
         val destination = Files.createTempFile(parent, "transport-download-", ".gz").toFile()
         try {
             server.enqueue(MockResponse.Builder().addHeader("Content-Type", "application/gzip").body("archive").build())
-            transport.download("/logs/export", emptyMap(), destination)
+            transport.download("/diagnostics/export", emptyMap(), destination)
             assertEquals("archive", destination.readText())
             server.enqueue(MockResponse.Builder().addHeader("Content-Type", "application/gzip").body("x".repeat(100))
                 .throttleBody(1, 100, TimeUnit.MILLISECONDS).build())
-            val downloading = launch(Dispatchers.IO) { transport.download("/logs/export", emptyMap(), destination) }
+            val downloading = launch(Dispatchers.IO) { transport.download("/diagnostics/export", emptyMap(), destination) }
             withTimeout(3_000) {
                 while (destination.length() != 1L) delay(10)
             }
@@ -626,6 +628,110 @@ class LocalHttpTransportTest {
             assertFalse(destination.exists())
             assertNotNull(store.read())
         } finally { destination.delete() }
+    }
+
+    @Test fun diagnosticDownloadRejectsKnownOversizeBeforeReadingBody() = runBlocking {
+        val destination = Files.createTempFile("diagnostic-limit-", ".gz").toFile()
+        try {
+            server.enqueue(MockResponse.Builder().addHeader("Content-Type", "application/gzip")
+                .body("small").setHeader("Content-Length", DIAGNOSTIC_DOWNLOAD_LIMIT.toLong() + 1)
+                .bodyDelay(5, TimeUnit.SECONDS).build())
+            val error = withTimeout(3_000) {
+                runCatching { transport.download("/diagnostics/export", emptyMap(), destination) }.exceptionOrNull()
+            }
+            assertEquals("api.body_too_large", (error as ModuleApiException).resultCode)
+            assertFalse(destination.exists())
+            assertNotNull(store.read())
+            server.enqueue(MockResponse(body = "healthy"))
+            assertEquals("healthy", read())
+            assertEquals(2, server.requestCount)
+        } finally { destination.delete() }
+    }
+
+    @Test fun diagnosticDownloadAcceptsExactLimitWithKnownOrChunkedLength() = runBlocking {
+        for (chunked in listOf(false, true)) {
+            val destination = Files.createTempFile("diagnostic-exact-", ".gz").toFile()
+            try {
+                server.enqueue(diagnosticResponse(DIAGNOSTIC_DOWNLOAD_LIMIT.toLong(), chunked))
+                transport.download("/diagnostics/export", emptyMap(), destination)
+                assertEquals(DIAGNOSTIC_DOWNLOAD_LIMIT.toLong(), destination.length())
+            } finally { destination.delete() }
+        }
+    }
+
+    @Test fun diagnosticDownloadRejectsChunkedOversizeAndKeepsCredentials() = runBlocking {
+        var lengthBeforeCleanup = 0L
+        val destination = object : File(Files.createTempFile("diagnostic-chunked-", ".gz").toString()) {
+            override fun delete(): Boolean {
+                lengthBeforeCleanup = maxOf(lengthBeforeCleanup, length())
+                return super.delete()
+            }
+        }
+        try {
+            server.enqueue(diagnosticResponse(DIAGNOSTIC_DOWNLOAD_LIMIT.toLong() + 1, true))
+            val error = runCatching { transport.download("/diagnostics/export", emptyMap(), destination) }.exceptionOrNull()
+            assertEquals("api.body_too_large", (error as ModuleApiException).resultCode)
+            assertTrue(lengthBeforeCleanup > 0)
+            assertTrue(lengthBeforeCleanup <= DIAGNOSTIC_DOWNLOAD_LIMIT)
+            assertFalse(destination.exists())
+            assertNotNull(store.read())
+            server.enqueue(MockResponse(body = "healthy"))
+            assertEquals("healthy", read())
+            assertEquals(2, server.requestCount)
+        } finally { destination.delete() }
+    }
+
+    @Test fun diagnosticDownloadOutputFailureCleansTargetWithoutRetry() = runBlocking {
+        val destination = Files.createTempDirectory("diagnostic-output-failure-").toFile()
+        try {
+            server.enqueue(MockResponse.Builder().addHeader("Content-Type", "application/gzip").body("archive").build())
+            val error = runCatching { transport.download("/diagnostics/export", emptyMap(), destination) }.exceptionOrNull()
+            assertEquals("api.connection_failed", (error as ModuleApiException).resultCode)
+            assertFalse(destination.exists())
+            assertNotNull(store.read())
+            server.enqueue(MockResponse(body = "healthy"))
+            assertEquals("healthy", read())
+            assertEquals(2, server.requestCount)
+        } finally { destination.delete() }
+    }
+
+    @Test fun diagnosticDownloadRejectsEmptyWrongTypeAndTruncatedBodies() = runBlocking {
+        for (response in listOf(
+            MockResponse.Builder().addHeader("Content-Type", "application/gzip").body("").build(),
+            MockResponse.Builder().addHeader("Content-Type", "text/plain").body("wrong").build(),
+            MockResponse.Builder().addHeader("Content-Type", "application/gzip").body("short")
+                .setHeader("Content-Length", 100).onResponseEnd(SocketEffect.CloseSocket()).build(),
+        )) {
+            val destination = Files.createTempFile("diagnostic-invalid-", ".gz").toFile()
+            try {
+                server.enqueue(response)
+                assertTrue(runCatching { transport.download("/diagnostics/export", emptyMap(), destination) }.isFailure)
+                assertFalse(destination.exists())
+                assertNotNull(store.read())
+            } finally { destination.delete() }
+        }
+    }
+
+    private fun diagnosticResponse(size: Long, chunked: Boolean): MockResponse {
+        val body = object : MockResponseBody {
+            override val contentLength = size
+            override fun writeTo(sink: BufferedSink) {
+                val buffer = ByteArray(8191) { 1 }
+                var remaining = size
+                while (remaining > 0) {
+                    val count = minOf(buffer.size.toLong(), remaining).toInt()
+                    if (chunked) sink.writeHexadecimalUnsignedLong(count.toLong()).writeUtf8("\r\n")
+                    sink.write(buffer, 0, count)
+                    if (chunked) sink.writeUtf8("\r\n")
+                    remaining -= count
+                }
+                // MockWebServer 自行追加 trailer 的终止空行，不能在正文中重复写入。
+                if (chunked) sink.writeUtf8("0\r\n")
+            }
+        }
+        val response = MockResponse.Builder().addHeader("Content-Type", "application/gzip").body(body)
+        if (chunked) response.removeHeader("Content-Length").addHeader("Transfer-Encoding", "chunked")
+        return response.build()
     }
 
     @Test fun sseCancellationDoesNotInterruptPooledShortRequests() = runBlocking {
