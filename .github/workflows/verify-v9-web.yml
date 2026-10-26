@@ -45,7 +45,13 @@ jobs:
           pnpm audit --prod --audit-level=high
           pnpm build:demo
       - name: 安装测试浏览器
-        run: pnpm exec playwright install --with-deps chromium
+        run: |
+          for source in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
+            if [ -f "$source" ]; then
+              sudo sed -i -E 's|https?://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$source"
+            fi
+          done
+          pnpm exec playwright install --with-deps chromium
       - name: 验证桌面、移动与普通生产构建
         run: pnpm test:e2e
       - name: 保留页面与失败证据
