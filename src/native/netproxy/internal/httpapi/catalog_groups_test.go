@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +13,30 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 )
+
+func TestCatalogCandidateCollisionHTTPConflictKeepsProvider(t *testing.T) {
+	server := resourceFixture(t)
+	resourceWriteFile(t, paths.SingBoxConfig(server.options.SingBoxDir), `{"outbounds":[{"type":"direct","tag":"np/default/NEW"}]}`)
+	providerPath := filepath.Join(server.options.CatalogRoot, "default", "provider.json")
+	metaPath := filepath.Join(server.options.CatalogRoot, "default", "meta.json")
+	beforeProvider, err := os.ReadFile(providerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeMeta, err := os.ReadFile(metaPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, envelope := resourceRequest(t, server, "POST", "/api/v1/nodes", `{"group_id":"default","content":"socks://127.0.0.1:1080#NEW"}`)
+	if response.Code != http.StatusConflict || envelope.Code != "catalog.outbound_conflict" || envelope.OK {
+		t.Fatalf("candidate conflict lost HTTP status or business code: %s", response.Body.String())
+	}
+	afterProvider, providerErr := os.ReadFile(providerPath)
+	afterMeta, metaErr := os.ReadFile(metaPath)
+	if providerErr != nil || metaErr != nil || !bytes.Equal(beforeProvider, afterProvider) || !bytes.Equal(beforeMeta, afterMeta) {
+		t.Fatal("rejected HTTP candidate changed Provider or revision")
+	}
+}
 
 func TestCatalogGroupsHTTPFixedCRUDKeepsProviderIdentity(t *testing.T) {
 	server := resourceFixture(t)

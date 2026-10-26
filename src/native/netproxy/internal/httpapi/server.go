@@ -275,7 +275,7 @@ func failureStatus(code string, err error) int {
 	case "usage.invalid", "api.query_invalid", "policy.invalid":
 		return http.StatusBadRequest
 	case "config.conflict", "subscription.conflict", "subscription.busy", "api.busy", "node.delay_busy",
-		"policy.core_not_ready", "catalog.provider_in_use", "catalog.provider_conflict":
+		"policy.core_not_ready", "catalog.provider_in_use", "catalog.provider_conflict", "catalog.outbound_conflict":
 		return http.StatusConflict
 	case "android.icon.not_found", "node.delay_target_missing", "policy.group_not_found", "policy.member_not_found":
 		return http.StatusNotFound

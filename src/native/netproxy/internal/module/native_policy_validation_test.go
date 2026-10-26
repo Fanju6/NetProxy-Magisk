@@ -51,6 +51,9 @@ func TestNativePolicyReferenceValidation(t *testing.T) {
 		{"empty-outbound-reference", `{"outbounds":[{"type":"selector","tag":"Main","outbounds":[""]}]}`, "policy.outbound_not_found", "outbounds[0].outbounds"},
 		{"route-final", `{"route":{"final":"missing"}}`, "policy.outbound_not_found", "route.final"},
 		{"route-rule", `{"route":{"rules":[{"domain_suffix":["example.test"],"outbound":"missing"}]}}`, "policy.outbound_not_found", "route.rules[0].outbound"},
+		{"logical-route", `{"route":{"rules":[{"type":"logical","mode":"and","rules":[{"type":"logical","mode":"or","rules":[{"domain_suffix":["example.test"]}]}],"outbound":"missing"}]}}`, "policy.outbound_not_found", "route.rules[0].outbound"},
+		{"dns-match", `{"dns":{"rules":[{"outbound":"missing","server":"resolver"}]}}`, "policy.outbound_not_found", "dns.rules[0].outbound"},
+		{"nested-dns-match", `{"dns":{"rules":[{"type":"logical","mode":"and","rules":[{"type":"logical","mode":"or","rules":[{"outbound":["missing"]}]}],"server":"resolver"}]}}`, "policy.outbound_not_found", "dns.rules[0].rules[0].rules[0].outbound"},
 		{"outbound-detour", `{"outbounds":[{"type":"socks","tag":"SOCKS","server":"127.0.0.1","server_port":1080,"detour":"missing"}]}`, "policy.outbound_not_found", "outbounds[0].detour"},
 		{"endpoint-detour", `{"endpoints":[{"type":"wireguard","tag":"WG","detour":"missing"}]}`, "policy.outbound_not_found", "endpoints[0].detour"},
 		{"dns-detour", `{"dns":{"servers":[{"type":"https","tag":"dns","detour":"missing"}]}}`, "policy.outbound_not_found", "dns.servers[0].detour"},
@@ -98,6 +101,8 @@ func TestNativePolicyReferenceValidationPreservesNativeExtensions(t *testing.T) 
 		`{"providers":[{"type":"local","tag":"user","path":"missing.json"}],"route":{"final":"user/dynamic"}}`,
 		`{"endpoints":[{"type":"wireguard","tag":"WG"}],"outbounds":[{"type":"selector","tag":"Main","outbounds":["WG"]}],"route":{"final":"Main"}}`,
 		`{"outbounds":[{"type":"direct","tag":"Direct","vendor":{"outbounds":["missing"],"providers":["np/missing"],"detour":"missing"}}],"route":{"final":"Direct","vendor":{"final":"missing"}},"vendor":{"outbound":"missing","default":"missing","precision":9007199254740993}}`,
+		`{"dns":{"servers":[{"type":"local","tag":"np/default/missing"}],"rules":[{"outbound":"any","server":"np/default/missing"}],"final":"np/default/missing"}}`,
+		`{"route":{"rules":[{"type":"logical","mode":"and","rules":[{"type":"logical","mode":"or","rules":[{"domain_suffix":["example.test"]}]}],"outbound":"np/default/NODE"} ]},"dns":{"rules":[{"type":"logical","mode":"and","rules":[{"outbound":["np/default/NODE"]}],"server":"resolver"}]}}`,
 	} {
 		writeNativePolicyFixture(t, options, config)
 		if err := validateNativePolicyReferences(t.Context(), options); err != nil {

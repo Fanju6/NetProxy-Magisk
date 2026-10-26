@@ -47,61 +47,32 @@ func resourceValidator(options Options, groupID string) func(provider.Document) 
 }
 
 func validateResourceDocument(options Options, groupID string, document provider.Document) error {
+	if err := validateNativeResourceCollisions(options, groupID, document); err != nil {
+		return err
+	}
 	available := make(map[string]bool)
 	for _, item := range provider.Inspect(document) {
 		available[item.Tag] = true
 	}
-	if len(available) != 0 {
-		tags, err := nativeProviderTags(options)
-		if err != nil {
-			return err
-		}
-		for _, tag := range tags {
-			if tag == catalog.ProviderTag(groupID) {
-				return &service.Error{Code: "catalog.provider_conflict", Message: "原生 Provider 与 Catalog 标签冲突: " + tag}
-			}
-		}
-	}
-	content, err := os.ReadFile(paths.SingBoxConfig(options.SingBoxDir))
+	config, err := readNativePolicyConfig(options)
 	if err != nil {
 		return err
 	}
-	var value any
-	if err := json.Unmarshal(content, &value); err != nil {
-		return err
-	}
 	tag := catalog.ProviderTag(groupID)
-	var referenced func(any, string) bool
-	referenced = func(value any, field string) bool {
-		switch current := value.(type) {
-		case string:
-			if field == "providers" && current == tag {
-				return len(available) == 0
-			}
-			if field == "outbounds" || field == "default" || field == "detour" || field == "outbound" || field == "final" {
-				member, matches := strings.CutPrefix(current, tag+"/")
-				return matches && !available[member]
-			}
-			return false
-		case []any:
-			for _, child := range current {
-				if referenced(child, field) {
-					return true
-				}
-			}
-		case map[string]any:
-			for key, child := range current {
-				if referenced(child, key) {
-					return true
-				}
-			}
-		}
-		return false
-	}
-	if referenced(value, "") {
+	inUse := func() error {
 		return &service.Error{Code: "catalog.provider_in_use", Message: fmt.Sprintf("原生配置仍引用 Provider %s 或将被移除的节点；请先修改策略组或出站引用", tag)}
 	}
-	return nil
+	return visitNativePolicyReferences(config, func(_ string, reference string) error {
+		if member, matches := strings.CutPrefix(reference, tag+"/"); matches && !available[member] {
+			return inUse()
+		}
+		return nil
+	}, func(_ string, reference string) error {
+		if reference == tag && len(available) == 0 {
+			return inUse()
+		}
+		return nil
+	})
 }
 
 type catalogResourceChange struct {

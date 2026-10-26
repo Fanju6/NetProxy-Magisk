@@ -25,6 +25,7 @@ type nativePolicyConfig struct {
 	NTP         jsontext.Value   `json:"ntp"`
 	DNS         *struct {
 		Servers []jsontext.Value `json:"servers"`
+		Rules   []jsontext.Value `json:"rules"`
 	} `json:"dns"`
 	Route *struct {
 		Final string           `json:"final"`
@@ -153,6 +154,18 @@ func validateNativePolicyReferences(ctx context.Context, options Options) error 
 			return err
 		}
 	}
+	if err := visitNativePolicyReferences(config, namespace.requireOutbound, func(field, tag string) error {
+		if !namespace.providers[tag] {
+			return nativePolicyError("policy.provider_not_found", field, tag)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	return ctx.Err()
+}
+
+func visitNativePolicyReferences(config nativePolicyConfig, outbound, providerRef func(string, string) error) error {
 	for index, raw := range config.Outbounds {
 		identity, err := nativePolicyIdentity(raw, index)
 		if err != nil {
@@ -166,7 +179,7 @@ func validateNativePolicyReferences(ctx context.Context, options Options) error 
 			if err := json.Unmarshal(raw, &selector); err != nil {
 				return nativePolicyError("policy.config_invalid", field, identity.Tag)
 			}
-			if err := namespace.requireOutbound(field+".default", selector.Default); err != nil {
+			if err := outbound(field+".default", selector.Default); err != nil {
 				return err
 			}
 			common = selector.GroupCommonOption
@@ -180,8 +193,8 @@ func validateNativePolicyReferences(ctx context.Context, options Options) error 
 		// use_all_providers replaces the explicit list in the native core.
 		if !common.UseAllProviders {
 			for _, tag := range common.Providers {
-				if !namespace.providers[tag] {
-					return nativePolicyError("policy.provider_not_found", field+".providers", tag)
+				if err := providerRef(field+".providers", tag); err != nil {
+					return err
 				}
 			}
 		}
@@ -189,23 +202,22 @@ func validateNativePolicyReferences(ctx context.Context, options Options) error 
 			if tag == "" {
 				return nativePolicyError("policy.outbound_not_found", field+".outbounds", tag)
 			}
-			if err := namespace.requireOutbound(field+".outbounds", tag); err != nil {
+			if err := outbound(field+".outbounds", tag); err != nil {
 				return err
 			}
 		}
 	}
 	if config.Route != nil {
-		if err := namespace.requireOutbound("route.final", config.Route.Final); err != nil {
+		if err := outbound("route.final", config.Route.Final); err != nil {
 			return err
 		}
-		for index, raw := range config.Route.Rules {
-			var action option.RouteActionOptions
-			if err := json.Unmarshal(raw, &action); err != nil {
-				return nativePolicyError("policy.config_invalid", "route.rules", "")
-			}
-			if err := namespace.requireOutbound(fmt.Sprintf("route.rules[%d].outbound", index), action.Outbound); err != nil {
-				return err
-			}
+		if err := visitNativeRuleReferences(config.Route.Rules, "route.rules", false, false, outbound); err != nil {
+			return err
+		}
+	}
+	if config.DNS != nil {
+		if err := visitNativeRuleReferences(config.DNS.Rules, "dns.rules", true, false, outbound); err != nil {
+			return err
 		}
 	}
 	sections := []struct {
@@ -230,12 +242,73 @@ func validateNativePolicyReferences(ctx context.Context, options Options) error 
 			if err := json.Unmarshal(raw, &dialer); err != nil {
 				return nativePolicyError("policy.config_invalid", section.name, "")
 			}
-			if err := namespace.requireOutbound(fmt.Sprintf("%s[%d].detour", section.name, index), dialer.Detour); err != nil {
+			if err := outbound(fmt.Sprintf("%s[%d].detour", section.name, index), dialer.Detour); err != nil {
 				return err
 			}
 		}
 	}
-	return ctx.Err()
+	return nil
+}
+
+func visitNativeRuleReferences(rules []jsontext.Value, field string, dns, nested bool, outbound func(string, string) error) error {
+	for index, raw := range rules {
+		path := fmt.Sprintf("%s[%d]", field, index)
+		var rule struct {
+			Type   string           `json:"type"`
+			Action string           `json:"action"`
+			Rules  []jsontext.Value `json:"rules"`
+		}
+		if err := json.Unmarshal(raw, &rule); err != nil {
+			return nativePolicyError("policy.config_invalid", path, "")
+		}
+		if rule.Type != "" && rule.Type != "default" && rule.Type != "logical" {
+			continue
+		}
+		if dns && rule.Type != "logical" {
+			// DNS outbound matches outbound tags; server belongs to the DNS namespace.
+			var match struct {
+				Outbound jsontext.Value `json:"outbound"`
+			}
+			if err := json.Unmarshal(raw, &match); err != nil {
+				return nativePolicyError("policy.config_invalid", path, "")
+			}
+			var tags []string
+			if match.Outbound.Kind() == '"' {
+				var tag string
+				if err := json.Unmarshal(match.Outbound, &tag); err != nil {
+					return nativePolicyError("policy.config_invalid", path+".outbound", "")
+				}
+				tags = []string{tag}
+			} else if len(match.Outbound) > 0 {
+				if err := json.Unmarshal(match.Outbound, &tags); err != nil {
+					return nativePolicyError("policy.config_invalid", path+".outbound", "")
+				}
+			}
+			for _, tag := range tags {
+				if tag == "any" {
+					continue
+				}
+				if err := outbound(path+".outbound", tag); err != nil {
+					return err
+				}
+			}
+		} else if !dns && !nested && (rule.Action == "" || rule.Action == C.RuleActionTypeRoute || rule.Action == C.RuleActionTypeBypass) {
+			// Nested route rules are match-only. The core rejects nested actions.
+			var action option.RouteActionOptions
+			if err := json.Unmarshal(raw, &action); err != nil {
+				return nativePolicyError("policy.config_invalid", path, "")
+			}
+			if err := outbound(path+".outbound", action.Outbound); err != nil {
+				return err
+			}
+		}
+		if rule.Type == "logical" {
+			if err := visitNativeRuleReferences(rule.Rules, path+".rules", dns, true, outbound); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (namespace *nativePolicyNamespace) requireOutbound(field, tag string) error {
