@@ -221,6 +221,8 @@ export function useManagementAction() {
       signal?: AbortSignal,
     ): Promise<z.infer<S>> => {
       const writing = request.method !== 'GET'
+      const operation = managementRequest(request)?.operation
+      const reconcile = writing && operation !== 'config_validate' && operation !== 'ebpf'
       const service = cache.getQueryData<ServiceOperation>(serviceOperationKey)
       if (
         writing &&
@@ -258,7 +260,12 @@ export function useManagementAction() {
         calls.current.delete(controller)
         setPending(calls.current.size > 0)
         if (writing) {
-          cache.setQueryData(managementKey, { epoch: managementEpoch(cache) + 1, pending: false })
+          cache.setQueryData(managementKey, {
+            epoch: managementEpoch(cache) + Number(reconcile),
+            pending: false,
+          })
+        }
+        if (reconcile) {
           for (const key of [
             'service',
             'nodes',
