@@ -55,6 +55,8 @@ function setup() {
   return { api, cache, request, Wrapper, queries: resourceQueries(api) }
 }
 const summaries = () => createFixtures().snapshot.groups.map(({ group }) => group)
+const catalogResponse = (groups: ReturnType<typeof summaries>) =>
+  response({ groups: groups.map((group) => ({ group, nodes: [] })) })
 
 describe('shared public Catalog nodes', () => {
   it('shares concurrent observers and remounts for 30 seconds without private fields', async () => {
@@ -126,6 +128,17 @@ describe('shared public Catalog nodes', () => {
 })
 
 describe('public Catalog contracts', () => {
+  it('reads the Go Catalog snapshot as resource summaries, not a subscriptions array', async () => {
+    const h = setup()
+    h.request.mockResolvedValue(response(createFixtures().snapshot))
+    await expect(h.cache.fetchQuery(h.queries.catalog)).resolves.toEqual(summaries())
+    expect(h.request).toHaveBeenCalledWith(
+      { method: 'GET', path: '/catalog' },
+      expect.any(AbortSignal),
+    )
+    expect(h.cache.getQueryData(['subscriptions'])).toEqual(summaries())
+  })
+
   it('uses actual Go types, optional traffic counters, sparse history and active-only progress', () => {
     const list = summaries()
     expect(list.filter((group) => group.type === 'local')).toHaveLength(2)
@@ -214,7 +227,7 @@ describe('resource snapshot ordering', () => {
           finish = resolve
         }),
     )
-    h.request.mockResolvedValue(response(next))
+    h.request.mockResolvedValue(catalogResponse(next))
     const hook = renderHook(() => useQuery(h.queries.catalog), { wrapper: h.Wrapper })
     await waitFor(() => expect(h.request).toHaveBeenCalledTimes(1))
     act(() => acceptResourceEvent(h.cache, next, false))
@@ -222,7 +235,7 @@ describe('resource snapshot ordering', () => {
     expect(h.request).toHaveBeenCalledTimes(2)
     expect(h.request.mock.calls[0]?.[1]?.aborted).toBe(true)
     await act(async () => {
-      finish(response(summaries()))
+      finish(catalogResponse(summaries()))
     })
     expect(hook.result.current.data).toHaveLength(2)
   })
@@ -245,7 +258,7 @@ describe('resource snapshot ordering', () => {
     expect(h.cache.getQueryData(['subscriptions'])).toHaveLength(4)
     await act(async () => {})
     expect(h.cache.getQueryState(['subscriptions'])?.isInvalidated).toBe(true)
-    h.request.mockResolvedValue(response([]))
+    h.request.mockResolvedValue(catalogResponse([]))
     expect(await h.cache.fetchQuery(h.queries.catalog)).toEqual([])
   })
   it('discards a delayed GET after a newer SSE publication or session shutdown', async () => {
@@ -262,7 +275,7 @@ describe('resource snapshot ordering', () => {
     const read = h.cache.fetchQuery(h.queries.catalog).catch(() => undefined)
     const newer = old.map((group) => ({ ...group, revision: 10 }))
     acceptResourceEvent(h.cache, newer, false)
-    finish(response(old))
+    finish(catalogResponse(old))
     await read
     expect(h.cache.getQueryData(['subscriptions'])).toEqual(newer)
     const detail = h.cache.fetchQuery(h.queries.detail('default')).catch(() => undefined)

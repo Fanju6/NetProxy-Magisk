@@ -466,9 +466,10 @@ export class MockTransport implements ApiTransport {
         return success('policy.delay', structuredClone(policy))
       }
       case 'GET /catalog':
+        return success('catalog.groups', structuredClone(snapshot))
       case 'GET /subscriptions':
         return success(
-          request.path === '/catalog' ? 'catalog.groups' : 'subscription.list',
+          'subscription.list',
           structuredClone(snapshot.groups.map((item) => item.group)),
         )
       case 'GET /mode':

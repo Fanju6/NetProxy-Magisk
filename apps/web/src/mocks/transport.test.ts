@@ -29,7 +29,10 @@ describe('Go API shaped mock', () => {
       { method: 'PUT', path: '/catalog/fixture-local', body: { name: 'Renamed' } },
       shape,
     )
-    const groups = await client.request({ method: 'GET', path: '/catalog' }, z.array(groupSchema))
+    const groups = await client.request(
+      { method: 'GET', path: '/subscriptions' },
+      z.array(groupSchema),
+    )
     expect(groups.find((group) => group.id === 'fixture-local')).toMatchObject({
       name: 'Renamed',
       provider_tag: 'np/fixture-local',
@@ -40,7 +43,7 @@ describe('Go API shaped mock', () => {
     ).rejects.toMatchObject({ code: 'catalog.read_only' })
     await client.request({ method: 'DELETE', path: '/catalog/fixture-local' }, shape)
     expect(
-      (await client.request({ method: 'GET', path: '/catalog' }, z.array(groupSchema))).some(
+      (await client.request({ method: 'GET', path: '/subscriptions' }, z.array(groupSchema))).some(
         (group) => group.id === 'fixture-local',
       ),
     ).toBe(false)
@@ -65,6 +68,9 @@ describe('Go API shaped mock', () => {
       { method: 'GET', path: '/subscriptions' },
       z.array(groupSchema),
     )
+    const catalog = await client.request({ method: 'GET', path: '/catalog' }, snapshotSchema)
+    expect(catalog).toEqual(snapshot)
+    expect(catalog.groups.map(({ group }) => group)).toEqual(subscriptions)
     expect(subscriptions.some((group) => group.id === 'default' && group.type === 'local')).toBe(
       true,
     )
@@ -101,7 +107,7 @@ describe('Go API shaped mock', () => {
   })
   it('uses complete snapshots for native group selection and delay without changing Catalog', async () => {
     const client = new ApiClient(new MockTransport(0))
-    const catalog = await client.request({ method: 'GET', path: '/catalog' }, z.array(groupSchema))
+    const catalog = await client.request({ method: 'GET', path: '/catalog' }, snapshotSchema)
     const selected = await client.request(
       {
         method: 'POST',
@@ -111,7 +117,7 @@ describe('Go API shaped mock', () => {
       policySnapshotSchema,
     )
     expect(selected.groups[0]!.selected).toBe('Hong Kong 01')
-    expect(await client.request({ method: 'GET', path: '/catalog' }, z.array(groupSchema))).toEqual(
+    expect(await client.request({ method: 'GET', path: '/catalog' }, snapshotSchema)).toEqual(
       catalog,
     )
     const measured = await client.request(

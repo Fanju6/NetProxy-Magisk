@@ -41,7 +41,7 @@ async function setup() {
   caches.push(cache)
   cache.setQueryData(
     ['subscriptions'],
-    await api.request({ method: 'GET', path: '/catalog' }, z.array(groupSchema)),
+    await api.request({ method: 'GET', path: '/subscriptions' }, z.array(groupSchema)),
   )
   cache.setQueryData(['events-connection'], 'live')
   function Wrapper({ children }: { children: ReactNode }) {

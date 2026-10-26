@@ -16,6 +16,7 @@ import {
   nodeSchema,
   subscriptionDetailSchema,
   subscriptionProgressSchema,
+  snapshotSchema,
   type GroupSummary,
 } from './contracts'
 
@@ -122,7 +123,12 @@ export const resourceQueries = (api: ApiClient) => {
       enabled: api.supports(path === '/catalog' ? 'catalog.read' : 'subscriptions.read'),
       queryFn: async ({ signal, client }) => {
         const generation = epoch(client)
-        const result = await api.request({ method: 'GET', path }, z.array(groupSchema), signal)
+        const result =
+          path === '/catalog'
+            ? (await api.request({ method: 'GET', path }, snapshotSchema, signal)).groups.map(
+                ({ group }) => group,
+              )
+            : await api.request({ method: 'GET', path }, z.array(groupSchema), signal)
         if (signal.aborted || generation !== epoch(client))
           throw new CancelledError({ silent: true, revert: false })
         return mergeResourceSummaries(client.getQueryData(['subscriptions']), result)

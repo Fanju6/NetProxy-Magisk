@@ -90,8 +90,7 @@ function setup(
   })
   const request = vi.fn<ApiTransport['request']>(async (input) => {
     if (input.method === 'GET') {
-      if (input.path === '/catalog') return ok(groups)
-      if (input.path === '/nodes/snapshot')
+      if (input.path === '/catalog' || input.path === '/nodes/snapshot')
         return ok({ groups: groups.map((entry) => ({ group: entry, nodes: nodes(entry.id) })) })
       if (input.path === '/nodes/get')
         return ok({ type: 'socks', tag: input.query?.node_tag, password: 'test-only-node-secret' })

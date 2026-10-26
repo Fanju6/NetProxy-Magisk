@@ -46,7 +46,13 @@ function setup(list: 'normal' | 'empty' | 'error' = 'normal', options: HarnessOp
         list === 'empty'
           ? {
               status: 200,
-              body: { schema: 1, ok: true, code: 'catalog.groups', message: '', data: [] },
+              body: {
+                schema: 1,
+                ok: true,
+                code: 'catalog.groups',
+                message: '',
+                data: { groups: [] },
+              },
             }
           : {
               status: 503,
