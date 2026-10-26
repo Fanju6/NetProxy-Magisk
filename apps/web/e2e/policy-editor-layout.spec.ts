@@ -1,0 +1,32 @@
+import { expect, test } from '@playwright/test'
+
+test('policy form has aligned insets and scrolls on narrow and short screens', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 640 })
+  await page.goto('/#/nodes')
+  await page.getByRole('button', { name: '新增策略组', exact: true }).click()
+  const panel = page.locator('[data-slot="editor-workspace"]')
+  await expect(panel.getByLabel('Tag', { exact: true })).toBeVisible()
+  const insets = await panel.evaluate((el) => {
+    const panel = el.getBoundingClientRect()
+    const input = el.querySelector('input')!.getBoundingClientRect()
+    return { left: input.left - panel.left, right: panel.right - input.right }
+  })
+  expect(insets.left).toBeGreaterThanOrEqual(16)
+  expect(insets.right).toBe(insets.left)
+  await panel.getByLabel('Tag', { exact: true }).fill('Test group')
+  await panel.getByLabel('default', { exact: true }).scrollIntoViewIfNeeded()
+  await expect(panel.getByLabel('default', { exact: true })).toBeInViewport()
+  await page.setViewportSize({ width: 393, height: 390 })
+  await panel.getByLabel('default', { exact: true }).scrollIntoViewIfNeeded()
+  await expect(panel.getByLabel('default', { exact: true })).toBeInViewport()
+  await expect(panel.getByRole('button', { name: '保存', exact: true })).toBeInViewport()
+  await panel.getByLabel('类型', { exact: true }).click()
+  await page.getByRole('option', { name: 'urltest', exact: true }).click()
+  await panel.getByLabel('idle_timeout', { exact: true }).scrollIntoViewIfNeeded()
+  await expect(panel.getByLabel('idle_timeout', { exact: true })).toBeInViewport()
+  await panel.getByRole('button', { name: 'JSON', exact: true }).click()
+  await expect(panel.getByTestId('json-editor')).toBeVisible()
+  await panel.getByRole('button', { name: '表单', exact: true }).click()
+  await expect(panel.getByLabel('Tag', { exact: true })).toHaveValue('Test group')
+  await page.screenshot({ path: `test-results/${test.info().project.name}-policy-editor.png` })
+})

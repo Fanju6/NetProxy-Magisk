@@ -200,22 +200,8 @@ export function PolicyEditor({
       }}
       title={tag ?? text('新增策略组', 'Add policy group')}
       dirty={draft !== initial}
-      headerActions={
-        !readonly && (
-          <Button variant="ghost" onClick={() => setJson((value) => !value)}>
-            {json ? copy.form : copy.json}
-          </Button>
-        )
-      }
       footer={
         <>
-          <Button
-            variant="ghost"
-            disabled={!document || blocked || action.pending || !api.supports('config.validate')}
-            onClick={() => void apply(true)}
-          >
-            {copy.validate}
-          </Button>
           <Button
             disabled={!document || blocked || action.pending || !api.supports('config.write')}
             onClick={() => void apply(false)}
@@ -225,13 +211,36 @@ export function PolicyEditor({
         </>
       }
     >
-      <div className="space-y-4">
-        {failure}
-        {notice && <p role="status">{notice}</p>}
-        {!document && !error && <LoadingState />}
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex shrink-0 justify-end gap-1 px-4 py-2">
+          <Button
+            variant="ghost"
+            disabled={action.pending}
+            onClick={() => setJson((value) => !value)}
+          >
+            {json ? copy.form : copy.json}
+          </Button>
+          <Button
+            variant="ghost"
+            disabled={!document || blocked || action.pending || !api.supports('config.validate')}
+            onClick={() => void apply(true)}
+          >
+            {copy.validate}
+          </Button>
+        </div>
+        {(failure || notice || !document) && (
+          <div className="shrink-0 space-y-2 px-4 pb-2">
+            {failure}
+            {notice && <p role="status">{notice}</p>}
+            {!document && !error && <LoadingState />}
+          </div>
+        )}
         {document &&
           (form ? (
-            <fieldset disabled={readonly || action.pending || blocked} className="space-y-4">
+            <fieldset
+              disabled={readonly || action.pending || blocked}
+              className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 pb-4 pt-2"
+            >
               <label className="block space-y-2 text-sm">
                 <span>Tag</span>
                 <Input
