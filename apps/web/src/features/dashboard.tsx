@@ -4,7 +4,6 @@ import { useQuery } from '@tanstack/react-query'
 import {
   ArrowDown,
   ArrowUp,
-  ChevronRight,
   Power,
   Activity,
   FlaskConical,
@@ -45,7 +44,6 @@ export function DashboardPage() {
   const connection = useEventConnection()
   const status = useQuery(moduleQueries(api).service)
   const modeState = useQuery(moduleQueries(api).mode)
-  const policies = useQuery(moduleQueries(api).policyGroups)
   const live = useQuery<Traffic>({
     queryKey: ['traffic'],
     queryFn: () => ({ available: false }),
@@ -79,22 +77,6 @@ export function DashboardPage() {
       ? live.data.status
       : undefined
   const rateUnavailable = connection !== 'live' || (running && !traffic)
-  const current = policies.data?.default_outbound || service.default_outbound || t('runtimeUnknown')
-  const defaultGroup = policies.data?.groups.find((group) => group.tag === current)
-  const policyLive =
-    running &&
-    service.core_started_at_millis > 0 &&
-    connection === 'live' &&
-    policies.data?.live &&
-    policies.data.core_started_at_millis === service.core_started_at_millis
-  const selected =
-    policyLive &&
-    defaultGroup?.selected &&
-    defaultGroup.items.filter((item) => item.tag === defaultGroup.selected).length === 1
-      ? defaultGroup.selected
-      : undefined
-  const currentNode =
-    policyLive && current === service.default_outbound ? service.runtime_selected : ''
   const history = samples.data ?? []
   // Keep this core's chart space during reconnects without retaining invalid SSE samples.
   if (traffic && history.length > 1 && plottedCore !== service.core_started_at_millis)
@@ -333,30 +315,6 @@ export function DashboardPage() {
           {selection.error != null && <ErrorState error={selection.error} compact />}
           {modeState.isError && (
             <ErrorState compact error={modeState.error} retry={() => void modeState.refetch()} />
-          )}
-        </section>
-        <section aria-label={t('currentNode')}>
-          <Link to="/nodes" className="flex min-w-0 items-center justify-between gap-3 py-4">
-            <dl className="min-w-0 space-y-3 [overflow-wrap:anywhere]">
-              <div className="space-y-1">
-                <dt className="text-sm text-muted-foreground">{t('currentNode')}</dt>
-                <dd className="break-words font-medium">{currentNode || t('runtimeUnknown')}</dd>
-              </div>
-              <div className="space-y-1">
-                <dt className="text-xs text-muted-foreground">{t('defaultOutbound')}</dt>
-                <dd className="break-words text-sm">{current}</dd>
-              </div>
-              {defaultGroup && (
-                <div className="space-y-1">
-                  <dt className="text-xs text-muted-foreground">{t('selected')}</dt>
-                  <dd className="break-words text-sm">{selected || t('runtimeUnknown')}</dd>
-                </div>
-              )}
-            </dl>
-            <ChevronRight className="size-5 shrink-0 text-muted-foreground" />
-          </Link>
-          {policies.isError && (
-            <ErrorState compact error={policies.error} retry={() => void policies.refetch()} />
           )}
         </section>
       </div>

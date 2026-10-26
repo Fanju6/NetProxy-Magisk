@@ -31,7 +31,6 @@ function setup(
 ) {
   const fixture = createFixtures()
   const service = { ...fixture.service, ...options.service }
-  const policy = { ...fixture.policy, ...options.policy }
   const request = vi.fn<ApiTransport['request']>(async (input) => {
     if (input.method !== 'GET' || input.path !== '/service')
       throw new Error('Unexpected dashboard request')
@@ -55,7 +54,6 @@ function setup(
     runtime_mode: service.outbound_mode,
     available: service.available_outbound_modes,
   })
-  cache.setQueryData(['policy-groups'], policy)
   cache.setQueryData(['events-connection'], options.connection ?? 'live')
   cache.setQueryData(['traffic'], demoTraffic(fixture.service))
   cache.setQueryData(['traffic-history'], [1024, 2048, 3072])
@@ -91,8 +89,10 @@ function setup(
   return { cache, request, service, view }
 }
 
-function value(label: string) {
-  return screen.getByText(label, { selector: 'dt' }).nextElementSibling!
+function expectNoNodeDetails() {
+  for (const label of ['Current node', 'Default outbound', 'Selected'])
+    expect(screen.queryByText(label)).not.toBeInTheDocument()
+  expect(screen.queryByText('Not confirmed')).not.toBeInTheDocument()
 }
 
 it('keeps only the chart space during a same-core reconnect and drops it for a new core', async () => {
@@ -117,7 +117,7 @@ it('keeps only the chart space during a same-core reconnect and drops it for a n
   )
 })
 
-it('orders service and uptime, speeds, SSE chart, statistics, mode, then native outbound details', async () => {
+it('orders service and uptime, speeds, SSE chart, statistics and mode without duplicate node details', async () => {
   setup({ kind: 'mock' })
   await screen.findByRole('heading', { name: 'Running' })
   const order = [
@@ -127,17 +127,14 @@ it('orders service and uptime, speeds, SSE chart, statistics, mode, then native 
     screen.getByRole('img', { name: 'Live traffic' }),
     screen.getByText('Total download'),
     screen.getByRole('heading', { name: 'Outbound mode' }),
-    screen.getByText('Current node'),
     screen.getByRole('note'),
   ]
   for (let index = 1; index < order.length; index++)
     expect(
       order[index - 1]!.compareDocumentPosition(order[index]!) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
-  expect(value('Default outbound')).toHaveTextContent('Internet')
-  expect(value('Selected')).toHaveTextContent('Fastest')
-  expect(value('Current node')).toHaveTextContent('Hong Kong 01')
-  for (const name of ['Transfer speeds', 'Service statistics', 'Outbound mode', 'Current node'])
+  expectNoNodeDetails()
+  for (const name of ['Transfer speeds', 'Service statistics', 'Outbound mode'])
     expect(screen.getByRole('region', { name })).toBeVisible()
 })
 
@@ -145,12 +142,10 @@ it.each(['stopped', 'preparing', 'starting', 'stopping', 'failed'] as const)(
   'hides uptime and runtime selections for %s even if old cached fields remain',
   async (state) => {
     setup({ service: { state } })
-    await screen.findByText('Current node')
+    await screen.findByRole('heading', { name: 'Outbound mode' })
     expect(screen.queryByText(/^Uptime/)).not.toBeInTheDocument()
     expect(screen.queryByRole('img', { name: 'Live traffic' })).not.toBeInTheDocument()
-    expect(value('Current node')).toHaveTextContent('Not confirmed')
-    expect(value('Selected')).toHaveTextContent('Not confirmed')
-    expect(value('Default outbound')).toHaveTextContent('Internet')
+    expectNoNodeDetails()
   },
 )
 
@@ -162,9 +157,8 @@ it.each(['offline', 'old-core', 'zero-core'] as const)(
         ? { connection: 'offline' }
         : { service: { core_started_at_millis: snapshot === 'zero-core' ? 0 : 1792065600001 } },
     )
-    await screen.findByText('Current node')
-    expect(value('Current node')).toHaveTextContent('Not confirmed')
-    expect(value('Selected')).toHaveTextContent('Not confirmed')
+    await screen.findByRole('heading', { name: 'Outbound mode' })
+    expectNoNodeDetails()
     expect(screen.queryByRole('img', { name: 'Live traffic' })).not.toBeInTheDocument()
     expect(screen.queryByText(/MB\/s/)).not.toBeInTheDocument()
   },
@@ -172,9 +166,8 @@ it.each(['offline', 'old-core', 'zero-core'] as const)(
 
 it('never substitutes a selected group or its type for an unconfirmed final node', async () => {
   setup({ service: { runtime_selected: '' } })
-  await screen.findByText('Current node')
-  expect(value('Selected')).toHaveTextContent('Fastest')
-  expect(value('Current node')).toHaveTextContent('Not confirmed')
+  await screen.findByRole('heading', { name: 'Outbound mode' })
+  expectNoNodeDetails()
 })
 
 it('does not invent a default Proxy group or final node for native outbounds without groups', async () => {
@@ -182,10 +175,8 @@ it('does not invent a default Proxy group or final node for native outbounds wit
     service: { default_outbound: 'direct', runtime_selected: '' },
     policy: { default_outbound: 'direct', groups: [] },
   })
-  await screen.findByText('Current node')
-  expect(value('Default outbound')).toHaveTextContent('direct')
-  expect(value('Current node')).toHaveTextContent('Not confirmed')
-  expect(screen.queryByText('Selected', { selector: 'dt' })).not.toBeInTheDocument()
+  await screen.findByRole('heading', { name: 'Outbound mode' })
+  expectNoNodeDetails()
 })
 
 it('refreshes only service status from the header menu without replacing SSE traffic history', async () => {

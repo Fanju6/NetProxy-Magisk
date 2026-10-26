@@ -92,7 +92,9 @@ test('page actions stay in the header, dashboard order is stable and group tabs 
 }) => {
   await page.goto('/')
   await expect(page.getByRole('img', { name: '实时流量', exact: true })).toBeVisible()
-  const regions = ['实时速率', '服务统计', '出站模式', '当前节点']
+  const regions = ['实时速率', '服务统计', '出站模式']
+  await expect(page.getByRole('region', { name: '当前节点', exact: true })).toHaveCount(0)
+  await expect(page.getByText('默认出站', { exact: true })).toHaveCount(0)
   let previous = 0
   for (const name of regions) {
     const top = (await page.getByRole('region', { name, exact: true }).boundingBox())!.y
