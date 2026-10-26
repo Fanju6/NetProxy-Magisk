@@ -1,4 +1,4 @@
-# NetProxy V9 Android Prototype
+# NETPROXY V9 Android Prototype
 
 这是可试用的 V9 Android 管理器原型，尚未正式发布。已接入服务控制、原生策略组选择与测速、本地 Catalog 资源/节点与 URL 订阅管理、配置和本地规则、入站、应用/Wi-Fi 策略、日志与诊断。V9 不以兼容 V8 为目标，但继续复用经过验证的 TLS、私有凭据交付和 Go 事务；不修改 V8 发布流水线，不实现桌面平台。
 
@@ -100,6 +100,7 @@ React / TanStack Query / Zod
 - SSE 原生队列容量为 1，JS 同时只等待一个 next_event。没有无界事件 IPC、原生重连循环或 HTTP 轮询。慢端背压到已有有界传输；关闭和后台取消对应 Call。
 - 新订阅替换遗留文档的会话，同 ID 重复建立被拒绝；旧 ID 关闭不影响新会话。读取最多 8 项并行，取消先到的 ID 有界记录，不因 IPC 重排遗漏取消。
 - Kotlin Activity-aware 生命周期是原生可见性事实源；JS 将它与 document 可见性合并，继续负责有界重连、完整快照和核心身份隔离。
+- NativeTransport 在同一文档内共享一个原生可见性监听，独立向 SSE 与管理操作消费者分发；最后消费者离开或文档释放后清理，旧文档的异步清理不能注销新监听。
 - Capability 仅授予本插件固定命令和官方 listener 注册/移除，实际清单见 [default.toml](plugins/module-api/permissions/default.toml)；本地资源管理复用 management，不增加通用权限。没有通用 HTTP、FS、Shell 或远程页面授权，CSP 不允许 JS 直连 Go。
 
 ## 验证与限制

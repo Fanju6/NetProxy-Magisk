@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/mobile-schema.json",
   "identifier": "default",
-  "description": "Only the bundled main WebView may read module state",
+  "description": "Allow the bundled main WebView to use fixed module operations and bounded Android integration",
   "windows": [
     "main"
   ],

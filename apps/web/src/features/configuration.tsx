@@ -599,7 +599,7 @@ export function ConfigurationPage() {
           <section key={category} className="space-y-2">
             <h2 className="section-label">
               {category === 'module'
-                ? 'NetProxy'
+                ? 'NETPROXY'
                 : category === 'config'
                   ? copy.core
                   : copy[category]}
