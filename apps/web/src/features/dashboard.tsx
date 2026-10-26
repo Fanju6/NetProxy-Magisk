@@ -59,11 +59,22 @@ export function DashboardPage() {
   const selection = useSelectPolicyGroup()
   const routingOperation = useRoutingOperation()
   const [confirmStop, setConfirmStop] = useState(false)
-  const [plottedCore, setPlottedCore] = useState<number | null>(null)
+  const [hasPlot, setHasPlot] = useState(false)
   if (status.isPending) return <LoadingState />
   if (!status.data) return <ErrorState error={status.error} retry={() => void status.refetch()} />
   const service = status.data
   const running = service.state === 'ready'
+  const serviceWorking = action.isPending || action.isConfirming
+  const displayState =
+    service.state === 'failed'
+      ? 'failed'
+      : serviceWorking
+        ? action.target === 'stop'
+          ? 'stopping'
+          : 'starting'
+        : service.state === 'preparing'
+          ? 'starting'
+          : service.state
   const defaultMode = modeState.data?.mode ?? service.configured_outbound_mode
   const runtimeMode = modeState.data?.runtime_mode || (running ? service.outbound_mode : '')
   const modeLabel = (value: string) =>
@@ -78,10 +89,8 @@ export function DashboardPage() {
       : undefined
   const rateUnavailable = connection !== 'live' || (running && !traffic)
   const history = samples.data ?? []
-  // Keep this core's chart space during reconnects without retaining invalid SSE samples.
-  if (traffic && history.length > 1 && plottedCore !== service.core_started_at_millis)
-    setPlottedCore(service.core_started_at_millis)
-  const showPlot = running && plottedCore === service.core_started_at_millis
+  // Retain only the chart's space across transitions, never the previous core's samples.
+  if (traffic && history.length > 1 && !hasPlot) setHasPlot(true)
   const maximum = Math.max(1, ...history)
   const blocked =
     action.isPending ||
@@ -127,35 +136,39 @@ export function DashboardPage() {
             <Activity className="size-4" />
             {t('service')}
           </p>
-          <h2 className="text-2xl font-medium">{t(service.state)}</h2>
+          <h2 className="text-2xl font-medium">{t(displayState)}</h2>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline">
               {service.configured_backend === 'ebpf' ? 'eBPF' : 'TUN'}
             </Badge>
-            {connection !== 'live' && <Badge variant="outline">{t('staleSnapshot')}</Badge>}
+            {(connection === 'offline' || status.isError) && (
+              <Badge variant="outline">{t('staleSnapshot')}</Badge>
+            )}
           </div>
-          {running && (
-            <p className="text-xs text-muted-foreground tabular-nums">
-              {t('uptime')} ·{' '}
-              {t('duration', {
-                hours: Math.floor(service.uptime_seconds / 3600),
-                minutes: Math.floor(service.uptime_seconds / 60) % 60,
-              })}
-            </p>
-          )}
+          <div className="min-h-4">
+            {running && (
+              <p className="text-xs text-muted-foreground tabular-nums">
+                {t('uptime')} ·{' '}
+                {t('duration', {
+                  hours: Math.floor(service.uptime_seconds / 3600),
+                  minutes: Math.floor(service.uptime_seconds / 60) % 60,
+                })}
+              </p>
+            )}
+          </div>
         </div>
         <Button
           size="default"
           variant={running ? 'outline' : 'default'}
-          className="shrink-0"
+          className="min-w-28 shrink-0"
           disabled={!api.supports(running ? 'service.stop' : 'service.start') || blocked}
           onClick={() => (running ? setConfirmStop(true) : action.mutate('start'))}
         >
           <Power />
-          {action.isPending ? t('working') : running ? t('stop') : t('start')}
+          {serviceWorking ? t('working') : running ? t('stop') : t('start')}
         </Button>
       </section>
-      {action.isUncertain && (
+      {action.isUncertain && !action.isConfirming && (
         <section role="status" className="space-y-2 rounded-md border p-3 text-sm">
           <p className="font-medium">{t('serviceUncertain')}</p>
           <p className="text-muted-foreground">
@@ -184,7 +197,7 @@ export function DashboardPage() {
               <item.icon className="size-4" />
               {item.title}
             </p>
-            <p className="break-words text-2xl font-medium tabular-nums [overflow-wrap:anywhere]">
+            <p className="min-h-8 break-words text-2xl font-medium tabular-nums [overflow-wrap:anywhere]">
               {rateUnavailable ? '—' : `${bytes(item.value ?? 0, preferences.locale)}/s`}
             </p>
           </section>
@@ -195,7 +208,7 @@ export function DashboardPage() {
         aria-label={preferences.locale === 'zh' ? '服务统计' : 'Service statistics'}
         className="space-y-3"
       >
-        {showPlot && (
+        {hasPlot && (
           <>
             <h2 className="text-sm font-medium">{t('traffic')}</h2>
             {traffic && history.length > 1 ? (
@@ -216,7 +229,7 @@ export function DashboardPage() {
               </div>
             ) : (
               <p role="status" className="flex h-20 items-center text-sm text-muted-foreground">
-                {t('waiting')}
+                {t(running ? 'waiting' : 'stopped')}
               </p>
             )}
           </>

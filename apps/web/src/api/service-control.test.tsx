@@ -275,6 +275,7 @@ describe('useServiceAction lifecycle', () => {
       await act(async () => h.writes()[0]!.result.resolve(response({ action, status: posted })))
       await waitFor(() => expect(h.reads()).toHaveLength(1))
       await waitFor(() => expect(hook.result.current.isUncertain).toBe(true))
+      expect(hook.result.current.isConfirming).toBe(true)
       expect(h.cache.getQueryData(['service'])).toBe(before)
       const confirmed = { ...status(target(action)), memory_bytes: 202 }
       await h.read(0, confirmed)

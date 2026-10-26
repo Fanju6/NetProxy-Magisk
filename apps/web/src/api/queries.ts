@@ -162,6 +162,13 @@ export function useServiceAction() {
       }
     },
   })
+  // A successful POST still awaits its authoritative GET; this is normal progress,
+  // not an unknown outcome. Keep the shared operation slot locked throughout.
+  const confirming =
+    operation?.phase === 'uncertain' &&
+    operation.responseReceived &&
+    operation.error === null &&
+    mutation.isPending
   return {
     mutate: (action: ServiceAction) => {
       const current = cache.getQueryData<ServiceOperation | null>(serviceOperationKey)
@@ -187,6 +194,8 @@ export function useServiceAction() {
     },
     isPending: operation?.phase === 'pending',
     isUncertain: operation?.phase === 'uncertain',
+    isConfirming: confirming,
+    target: operation?.action,
     error: operation?.phase === 'idle' ? operation.error : null,
     persisted: operation?.error instanceof ApiError && operation.error.persisted,
     verify: async () => {

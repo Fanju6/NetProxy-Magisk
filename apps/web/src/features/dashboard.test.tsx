@@ -95,7 +95,7 @@ function expectNoNodeDetails() {
   expect(screen.queryByText('Not confirmed')).not.toBeInTheDocument()
 }
 
-it('keeps only the chart space during a same-core reconnect and drops it for a new core', async () => {
+it('keeps chart space across reconnects and new cores without keeping old samples', async () => {
   const h = setup()
   await screen.findByRole('img', { name: 'Live traffic' })
   act(() => {
@@ -112,9 +112,8 @@ it('keeps only the chart space during a same-core reconnect and drops it for a n
       core_started_at_millis: h.service.core_started_at_millis + 1,
     }),
   )
-  await waitFor(() =>
-    expect(screen.queryByText('Waiting for live traffic')).not.toBeInTheDocument(),
-  )
+  expect(await screen.findByText('Waiting for live traffic')).toHaveClass('h-20')
+  expect(screen.queryByRole('img', { name: 'Live traffic' })).not.toBeInTheDocument()
 })
 
 it('orders service and uptime, speeds, SSE chart, statistics and mode without duplicate node details', async () => {
@@ -191,4 +190,26 @@ it('refreshes only service status from the header menu without replacing SSE tra
   expect(h.request.mock.calls[0]![0]).toEqual({ method: 'GET', path: '/service' })
   expect(h.cache.getQueryData(['traffic-history'])).toEqual([1024, 2048, 3072])
   await act(async () => h.view.unmount())
+})
+
+it('presents one starting label through pending internal phases without masking failure', async () => {
+  const h = setup({ service: { state: 'stopped' } })
+  await screen.findByRole('heading', { name: 'Stopped' })
+  act(() =>
+    h.cache.setQueryData(['service-operation'], {
+      epoch: 1,
+      action: 'start',
+      phase: 'pending',
+      deadline: Date.now() + 150000,
+      responseReceived: false,
+      error: null,
+    }),
+  )
+  await screen.findByRole('heading', { name: 'Starting' })
+  for (const state of ['preparing', 'starting', 'ready'] as const) {
+    act(() => h.cache.setQueryData(['service'], { ...h.service, state }))
+    expect(await screen.findByRole('heading', { name: 'Starting' })).toBeVisible()
+  }
+  act(() => h.cache.setQueryData(['service'], { ...h.service, state: 'failed' }))
+  expect(await screen.findByRole('heading', { name: 'Failed' })).toBeVisible()
 })
