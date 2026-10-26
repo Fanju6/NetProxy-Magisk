@@ -14,7 +14,7 @@ import {
 import { useApi, usePreferences } from '@/app/context'
 import { useAndroidImport } from '@/app/android-import-context'
 import { HeaderActions } from '@/app/header-actions'
-import { resourceQueries, useResourceDetails } from '@/api/resources'
+import { catalogNodesKey, resourceQueries, useResourceDetails } from '@/api/resources'
 import { useEventConnection } from '@/api/events'
 import { useSubscriptionActions } from '@/api/subscription-control'
 import type { GroupSummary } from '@/api/contracts'
@@ -266,7 +266,7 @@ function ResourceDetails({
   const refresh = () =>
     Promise.allSettled([
       data.refresh(),
-      cache.invalidateQueries({ queryKey: ['resource', id, 'nodes'], exact: true }),
+      cache.invalidateQueries({ queryKey: catalogNodesKey, exact: true }),
     ])
   const displayGroup = group ?? summary
   const date = (value: string) =>

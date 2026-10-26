@@ -10,6 +10,7 @@ import {
 import { afterEach, expect, it, vi } from 'vitest'
 import userEvent from '@testing-library/user-event'
 import { ApiClient } from '@/api/client'
+import { catalogNodesKey } from '@/api/resources'
 import { apiOperations, type ApiTransport, type GroupSummary } from '@/api/contracts'
 import { ApiContext, PreferencesContext } from '@/app/context'
 import { HeaderActionsProvider } from '@/app/header-actions'
@@ -427,7 +428,7 @@ it('cancels Catalog node reads on loss of the live foreground session', async ()
     })
   })
   act(() => {
-    void h.cache.invalidateQueries({ queryKey: ['resource', 'local-second', 'nodes'] })
+    void h.cache.invalidateQueries({ queryKey: catalogNodesKey })
   })
   await waitFor(() => expect(reading).toBeDefined())
   await act(async () => h.cache.setQueryData(['events-connection'], 'paused'))
@@ -791,7 +792,7 @@ it('disables node writes while rechecking a stale Catalog snapshot and retains t
       : original(input, signal),
   )
   act(() => {
-    void h.cache.invalidateQueries({ queryKey: ['resource', 'local-second', 'nodes'] })
+    void h.cache.invalidateQueries({ queryKey: catalogNodesKey })
   })
   await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled())
   await act(async () => rejectRead(new TypeError('private snapshot fixture')))
