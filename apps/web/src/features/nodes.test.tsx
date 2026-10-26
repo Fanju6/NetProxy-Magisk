@@ -7,6 +7,7 @@ import type { ApiTransport } from '@/api/contracts'
 import { AppProviders } from '@/app/providers'
 import { makeRouter } from '@/app/router'
 import { MockTransport } from '@/mocks/transport'
+import { z } from 'zod'
 
 vi.mock('@/components/json-editor', () => ({
   JsonEditor: ({
@@ -26,8 +27,10 @@ vi.mock('@/components/json-editor', () => ({
   ),
 }))
 afterEach(() => vi.restoreAllMocks())
-async function setup(locale: 'en' | 'zh' = 'en') {
+async function setup(locale: 'en' | 'zh' = 'en', stopped = false) {
   const backend = new MockTransport(0)
+  if (stopped)
+    await new ApiClient(backend).request({ method: 'POST', path: '/service/stop' }, z.unknown())
   const request = vi.fn<ApiTransport['request']>((input, signal) => backend.request(input, signal))
   const transport: ApiTransport = {
     kind: 'mock',
@@ -47,6 +50,24 @@ async function setup(locale: 'en' | 'zh' = 'en') {
   await screen.findByTestId('policy-Internet', {}, { timeout: 10000 })
   return { request, backend, ...view }
 }
+it('shows configured Provider members while stopped without claiming a live choice or delay', async () => {
+  const h = await setup('en', true)
+  const manual = within(screen.getByTestId('policy-Internet'))
+  expect(manual.getByText(/Configured default/)).toBeVisible()
+  const auto = within(screen.getByTestId('policy-Fastest'))
+  for (const name of ['Hong Kong 01', 'Tokyo 01']) {
+    const button = auto.getByRole('button', { name: `Select ${name}` })
+    expect(button).toBeDisabled()
+    expect(button).toHaveAttribute('aria-pressed', 'false')
+  }
+  expect(
+    screen.queryByText('Last snapshot · not live'),
+  ).not.toBeInTheDocument()
+  expect(screen.queryByText(/\d+ ms/)).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Test group Fastest' })).toBeDisabled()
+  expect(h.request.mock.calls.every(([request]) => request.method === 'GET')).toBe(true)
+  expect(auto.queryByText('Local default')).not.toBeInTheDocument()
+})
 it('defaults to expanded native groups and selects the exact member tag', async () => {
   const h = await setup()
   expect(await screen.findByRole('heading', { name: 'Proxies' })).toBeVisible()

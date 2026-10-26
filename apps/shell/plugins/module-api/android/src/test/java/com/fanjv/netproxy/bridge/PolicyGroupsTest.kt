@@ -18,6 +18,21 @@ class PolicyGroupsTest {
     private val bridges = mutableListOf<ModuleApiBridge>()
     @After fun close() = bridges.forEach { it.destroy() }
 
+    @Test fun configuredMembersAndDefaultsRemainDistinctFromRuntimeSelection() {
+        val raw = Json.parseToJsonElement("""{"source":"configuration","live":false,"core_started_at_millis":0,"default_outbound":"Proxy","groups":[{"tag":"Proxy","type":"selector","selectable":true,"expanded":false,"configured_default":"direct","unavailable_providers":["external"],"secret":"$PRIVATE","items":[{"tag":"np/default/香港","type":"socks","password":"$PRIVATE"}]}]}""")
+        val result = PolicyGroups.snapshot(raw)
+        val group = result.getValue("groups").jsonArray.single().jsonObject
+        assertEquals(JsonPrimitive("configuration"), result["source"])
+        assertEquals(JsonPrimitive("direct"), group["configured_default"])
+        assertEquals(JsonArray(listOf(JsonPrimitive("external"))), group["unavailable_providers"])
+        assertFalse(group.containsKey("selected"))
+        assertFalse(result.toString().contains(PRIVATE))
+        for (bad in listOf(JsonNull, JsonPrimitive(true), JsonPrimitive("runtime"))) {
+            assertTrue(runCatching { PolicyGroups.snapshot(JsonObject(raw.jsonObject + ("source" to bad))) }.isFailure)
+        }
+        assertTrue(runCatching { PolicyGroups.snapshot(JsonObject(raw.jsonObject + ("live" to JsonPrimitive(true)) + ("core_started_at_millis" to JsonPrimitive(1)))) }.isFailure)
+    }
+
     @Test fun fixedReadAndPostsShareTheSamePublicSnapshotAsGroupsEvents() = runTest {
         val transport = Transport()
         val bridge = bridge(transport)

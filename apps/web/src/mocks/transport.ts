@@ -55,11 +55,12 @@ export class MockTransport implements ApiTransport {
     const { policy, service, snapshot } = this.state
     const objects = this.management.nativeOutbounds()
     policy.live = service.state === 'ready'
+    policy.source = policy.live ? undefined : 'configuration'
     policy.core_started_at_millis = policy.live ? service.core_started_at_millis : 0
     policy.default_outbound = this.management.nativeDefaultOutbound()
     service.default_outbound = policy.default_outbound
     policy.groups = objects
-      .filter((object) => ['selector', 'urltest'].includes(object.type))
+      .filter((object) => ['selector', 'urltest', 'loadbalance'].includes(object.type))
       .map((object) => {
         const previous = policy.groups.find((group) => group.tag === object.tag)
         const tags = Array.isArray(object.outbounds) ? (object.outbounds as string[]) : []
@@ -67,23 +68,38 @@ export class MockTransport implements ApiTransport {
           tag,
           type: objects.find((item) => item.tag === tag)?.type ?? '',
         }))
-        if (policy.live) {
+        {
           const providers = Array.isArray(object.providers) ? (object.providers as string[]) : []
-          for (const resource of snapshot.groups) {
+          const resources =
+            object.use_all_providers === true
+              ? snapshot.groups
+              : providers.flatMap((tag) =>
+                  snapshot.groups.filter((resource) => resource.group.provider_tag === tag),
+                )
+          for (const resource of resources) {
             if (
               object.use_all_providers !== true &&
               !providers.includes(resource.group.provider_tag)
             )
               continue
-            for (const node of resource.nodes)
-              if (!items.some((item) => item.tag === node.tag))
-                items.push({ tag: node.tag, type: node.protocol })
+            for (const node of resource.nodes) {
+              const tag = `${resource.group.provider_tag}/${node.tag}`
+              if (
+                (typeof object.exclude === 'string' && new RegExp(object.exclude).test(tag)) ||
+                (typeof object.include === 'string' && !new RegExp(object.include).test(tag))
+              )
+                continue
+              if (!items.some((item) => item.tag === tag)) items.push({ tag, type: node.protocol })
+            }
           }
         }
         return {
           tag: object.tag ?? '',
           type: object.type,
           selectable: object.type === 'selector',
+          ...(!policy.live && typeof object.default === 'string'
+            ? { configured_default: object.default }
+            : {}),
           selected: !policy.live
             ? ''
             : previous?.selected && items.some((item) => item.tag === previous.selected)
@@ -92,7 +108,7 @@ export class MockTransport implements ApiTransport {
                 ? object.default
                 : (items[0]?.tag ?? ''),
           items: items.map((item) => ({
-            ...previous?.items.find((old) => old.tag === item.tag),
+            ...(policy.live ? previous?.items.find((old) => old.tag === item.tag) : {}),
             ...item,
           })),
         }
@@ -429,6 +445,7 @@ export class MockTransport implements ApiTransport {
       case 'GET /service':
         return success('service.status', structuredClone(service))
       case 'GET /policy-groups':
+        this.refreshPolicies()
         return success('policy.groups', structuredClone(policy))
       case 'GET /nodes/snapshot': {
         const id = request.query?.group_id
@@ -619,6 +636,9 @@ export class MockTransport implements ApiTransport {
     }
   }
   private emit(name: ApiEvent['name']) {
+    if (name === 'groups' || name === 'subscriptions') this.refreshPolicies()
+    if (name === 'subscriptions')
+      for (const listener of this.listeners) this.deliver('groups', listener)
     for (const listener of this.listeners) this.deliver(name, listener)
   }
   private deliver(

@@ -104,6 +104,8 @@ export const runtimeGroupSchema = z.object({
   type: z.string(),
   selectable: z.boolean(),
   selected: z.string().optional(),
+  configured_default: z.string().optional(),
+  unavailable_providers: z.array(z.string()).optional(),
   items: z.array(
     z.object({
       tag: z.string(),
@@ -122,8 +124,13 @@ export const policySnapshotSchema = z
     live: z.boolean(),
     core_started_at_millis: count,
     default_outbound: z.string(),
+    source: z.literal('configuration').optional(),
   })
-  .refine((snapshot) => !snapshot.live || snapshot.core_started_at_millis > 0)
+  .refine((snapshot) =>
+    snapshot.source
+      ? !snapshot.live && snapshot.core_started_at_millis === 0
+      : !snapshot.live || snapshot.core_started_at_millis > 0,
+  )
 export const policyTagSchema = z
   .string()
   .min(1)

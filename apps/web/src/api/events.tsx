@@ -227,6 +227,7 @@ export function ModuleEvents() {
                           ? {
                               ...snapshot,
                               live: false,
+                              source: undefined,
                               core_started_at_millis: 0,
                               groups: snapshot.groups.map((group) => ({
                                 ...group,

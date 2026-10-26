@@ -148,13 +148,13 @@ export function NodesPage() {
           className="h-11 pl-9"
         />
       </div>
-      <div className="flex min-h-6 flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span>
-          {t('defaultOutbound')}:{' '}
-          <span className="break-all">{data.default_outbound || t('runtimeUnknown')}</span>
-        </span>
-        {!live && <Badge variant="outline">{t('staleSnapshot')}</Badge>}
-      </div>
+      {connection !== 'live' || snapshot.isError || (!live && data.source !== 'configuration') ? (
+        <Badge variant="outline">{t('staleSnapshot')}</Badge>
+      ) : data.source === 'configuration' && service.data?.state === 'ready' ? (
+        <p className="text-xs text-muted-foreground">
+          {text('实时状态暂不可用', 'Live state unavailable')}
+        </p>
+      ) : null}
       {(selection.isUncertain || selection.isUnconfirmed) && (
         <section role="status" className="space-y-2 border-y py-3 text-sm">
           <p>
@@ -326,6 +326,12 @@ export function NodesPage() {
                 </>
               )}
               <CollapsibleContent className="pt-1">
+                {!live && group.unavailable_providers?.length ? (
+                  <p className="px-3 py-2 text-xs text-muted-foreground">
+                    {text('无法离线展开的 Provider', 'Providers unavailable offline')}:{' '}
+                    {group.unavailable_providers.join(', ')}
+                  </p>
+                ) : null}
                 {group.items.length === 0 ? (
                   <p className="p-3 text-sm text-muted-foreground">{t('emptyGroup')}</p>
                 ) : (
@@ -337,6 +343,8 @@ export function NodesPage() {
                     data-testid="node-grid"
                   >
                     {members.map((item) => {
+                      const name = item.tag.replace(/^np\/[^/]+\//, '')
+                      const provider = /^np\/[^/]+\//.exec(item.tag)?.[0].slice(0, -1)
                       const child = data.groups.find((entry) => entry.tag === item.tag)
                       const selected = live && group.selected === item.tag
                       return (
@@ -351,7 +359,7 @@ export function NodesPage() {
                           <button
                             type="button"
                             className="flex h-full min-w-0 flex-1 flex-col justify-center gap-1 rounded-md px-3 text-left hover:bg-muted disabled:opacity-60"
-                            aria-label={t('selectNode', { name: item.tag })}
+                            aria-label={t('selectNode', { name })}
                             aria-pressed={selected}
                             disabled={
                               blocked || !group.selectable || !api.supports('policy.select')
@@ -371,25 +379,33 @@ export function NodesPage() {
                                 title={item.tag}
                                 className={view === 'grid' ? 'line-clamp-2 break-all' : 'truncate'}
                               >
-                                {item.tag}
+                                {name}
                               </span>
                             </span>
                             <span className="truncate text-xs text-muted-foreground">
                               {item.type}
+                              {provider ? ` · ${provider}` : ''}
+                              {!live &&
+                              data.source === 'configuration' &&
+                              group.configured_default === item.tag
+                                ? ` · ${text('配置默认', 'Configured default')}`
+                                : ''}
                               {child && live && child.selected ? ` · ${child.selected}` : ''}
                             </span>
-                            <span
-                              className="text-xs tabular-nums text-muted-foreground"
-                              title={
-                                live && item.url_test_time
-                                  ? new Date(item.url_test_time * 1000).toLocaleString()
-                                  : ''
-                              }
-                            >
-                              {live && (item.url_test_delay ?? 0) > 0
-                                ? `${item.url_test_delay} ms`
-                                : t('noLatency')}
-                            </span>
+                            {live && (
+                              <span
+                                className="text-xs tabular-nums text-muted-foreground"
+                                title={
+                                  live && item.url_test_time
+                                    ? new Date(item.url_test_time * 1000).toLocaleString()
+                                    : ''
+                                }
+                              >
+                                {live && (item.url_test_delay ?? 0) > 0
+                                  ? `${item.url_test_delay} ms`
+                                  : t('noLatency')}
+                              </span>
+                            )}
                           </button>
                           {child && (
                             <Button

@@ -112,10 +112,20 @@ export function createFixtures(): {
         tag: 'Fastest',
         type: 'urltest',
         selectable: false,
-        selected: 'Hong Kong 01',
+        selected: 'np/demo-global/Hong Kong 01',
         items: [
-          { tag: 'Hong Kong 01', type: 'vless', url_test_time: 1792065600, url_test_delay: 32 },
-          { tag: 'Tokyo 01', type: 'trojan', url_test_time: 1792065600, url_test_delay: 68 },
+          {
+            tag: 'np/demo-global/Hong Kong 01',
+            type: 'vless',
+            url_test_time: 1792065600,
+            url_test_delay: 32,
+          },
+          {
+            tag: 'np/demo-global/Tokyo 01',
+            type: 'trojan',
+            url_test_time: 1792065600,
+            url_test_delay: 68,
+          },
         ],
       },
     ],

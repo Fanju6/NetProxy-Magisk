@@ -60,6 +60,12 @@ internal object PolicyGroups {
                     put("selectable", boolean(group, "selectable"))
                     put("expanded", boolean(group, "expanded"))
                     group["selected"]?.let { put("selected", text(group, "selected")) }
+                    group["configured_default"]?.let { put("configured_default", tag(group, "configured_default")) }
+                    group["unavailable_providers"]?.let { unavailable ->
+                        put("unavailable_providers", JsonArray((unavailable as? JsonArray ?: invalid()).map { ref ->
+                            (ref as? JsonPrimitive)?.takeIf { it.isString && validTag(it.content) } ?: invalid()
+                        }))
+                    }
                     val items = group["items"] as? JsonArray ?: invalid()
                     put("items", JsonArray(items.map { item ->
                         val member = obj(item)
@@ -75,6 +81,10 @@ internal object PolicyGroups {
             put("live", live)
             put("core_started_at_millis", startedAt)
             put("default_outbound", text(value, "default_outbound"))
+            value["source"]?.let {
+                if (it != JsonPrimitive("configuration") || live.booleanOrNull == true || startedAt.longOrNull != 0L) invalid()
+                put("source", it)
+            }
         }
     }
 
