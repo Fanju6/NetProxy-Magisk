@@ -60,9 +60,7 @@ it('shows configured Provider members while stopped without claiming a live choi
     expect(button).toBeDisabled()
     expect(button).toHaveAttribute('aria-pressed', 'false')
   }
-  expect(
-    screen.queryByText('Last snapshot · not live'),
-  ).not.toBeInTheDocument()
+  expect(screen.queryByText('Last snapshot · not live')).not.toBeInTheDocument()
   expect(screen.queryByText(/\d+ ms/)).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Test group Fastest' })).toBeDisabled()
   expect(h.request.mock.calls.every(([request]) => request.method === 'GET')).toBe(true)
