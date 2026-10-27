@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/dialog'
 import { ResourceProviderTag } from './resource-provider-tag'
 import { resourceWriteUnconfirmed } from './resource-write'
+import { useResultToast } from '@/components/ui/toast'
 
 export type ResourceGroupTarget =
   { operation: 'create' } | { operation: 'rename' | 'remove'; group: GroupSummary }
@@ -43,6 +44,13 @@ export function ResourceGroupManager({
   const [invalid, setInvalid] = useState(false)
   const [error, setError] = useState<unknown>(null)
   const [saved, setSaved] = useState(false)
+  useResultToast(
+    `resource-group-${prefix}`,
+    saved,
+    target.operation === 'remove'
+      ? text('分组已删除', 'Group deleted')
+      : text('分组已保存', 'Group saved'),
+  )
   const [uncertain, setUncertain] = useState(false)
   const current = groups.find((group) => group.id === id)
   const validTarget =
@@ -195,13 +203,6 @@ export function ResourceGroupManager({
             '结果未确认，请刷新资源后核对。',
             'Result not confirmed. Refresh resources to check.',
           )}
-        </p>
-      )}
-      {saved && (
-        <p role="status" className="text-sm">
-          {target.operation === 'remove'
-            ? text('分组已删除', 'Group deleted')
-            : text('分组已保存', 'Group saved')}
         </p>
       )}
     </div>

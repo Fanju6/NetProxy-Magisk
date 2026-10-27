@@ -8,7 +8,11 @@ import {
   LoaderCircle,
   MoreHorizontal,
   Pencil,
-  Plus,
+  FolderPlus,
+  Server,
+  FileUp,
+  ClipboardPaste,
+  RotateCw,
   Trash2,
 } from 'lucide-react'
 import { useApi, usePreferences } from '@/app/context'
@@ -78,6 +82,15 @@ export function SubscriptionFeedback({
   const updated = batch?.updated ?? []
   const failed = batch?.failed ?? []
   const pendingRuntime = result && 'runtime_sync_pending' in result && result.runtime_sync_pending
+  if (
+    operation?.phase === 'idle' &&
+    !operation.error &&
+    !pendingRuntime &&
+    (!batch || failed.length === 0) &&
+    (!cancelState || cancelState === 'idle') &&
+    !cancellation?.error
+  )
+    return null
   return (
     <section aria-label={t('subscriptionOperation')} className="space-y-3 text-sm">
       {operation && operation.phase !== 'idle' && (
@@ -123,47 +136,46 @@ export function SubscriptionFeedback({
       {cancellation?.error && cancellation.error !== operation?.error && (
         <ErrorState error={cancellation.error} compact />
       )}
-      {operation && result && !batch && (
-        <p role="status" className={pendingRuntime ? 'text-destructive' : 'text-muted-foreground'}>
-          {t(
-            pendingRuntime
-              ? 'subscriptionSavedRuntimePending'
-              : operation.action === 'remove'
-                ? 'subscriptionDeleted'
-                : operation.action === 'add' || operation.action === 'edit'
-                  ? 'subscriptionSaved'
-                  : 'not_modified' in result && result.not_modified
-                    ? 'subscriptionNotModified'
-                    : 'subscriptionUpdated',
-          )}
+      {pendingRuntime && (
+        <p role="status" className="text-destructive">
+          {t('subscriptionSavedRuntimePending')}
         </p>
       )}
-      {batch && (
-        <div className="space-y-3">
-          <p role="status" className={failed.length ? 'text-destructive' : 'text-muted-foreground'}>
-            {t(failed.length ? 'updateAllPartial' : 'updateAllCompleted')}
-          </p>
-          <ul className="divide-y">
-            {[
-              ...updated.map((id) => ({ id, ok: true })),
-              ...failed.map((id) => ({ id, ok: false })),
-            ]
-              .filter(({ id }) => !targetId || id === targetId)
-              .map(({ id, ok }) => (
-                <li key={id} className="flex justify-between gap-4 py-2">
-                  <span className="min-w-0 break-words">
-                    {groups.find((group) => group.id === id)?.name ?? t('subscription')}
-                  </span>
-                  <span
-                    className={ok ? 'shrink-0 text-muted-foreground' : 'shrink-0 text-destructive'}
-                  >
-                    {t(ok ? 'historySuccess' : 'historyFailure')}
-                  </span>
-                </li>
-              ))}
-          </ul>
-        </div>
-      )}
+      {batch &&
+        (failed.length > 0 ||
+          pendingRuntime ||
+          operation?.error ||
+          operation?.phase !== 'idle') && (
+          <div className="space-y-3">
+            <p
+              role="status"
+              className={failed.length ? 'text-destructive' : 'text-muted-foreground'}
+            >
+              {t(failed.length ? 'updateAllPartial' : 'updateAllCompleted')}
+            </p>
+            <ul className="divide-y">
+              {[
+                ...updated.map((id) => ({ id, ok: true })),
+                ...failed.map((id) => ({ id, ok: false })),
+              ]
+                .filter(({ id }) => !targetId || id === targetId)
+                .map(({ id, ok }) => (
+                  <li key={id} className="flex justify-between gap-4 py-2">
+                    <span className="min-w-0 break-words">
+                      {groups.find((group) => group.id === id)?.name ?? t('subscription')}
+                    </span>
+                    <span
+                      className={
+                        ok ? 'shrink-0 text-muted-foreground' : 'shrink-0 text-destructive'
+                      }
+                    >
+                      {t(ok ? 'historySuccess' : 'historyFailure')}
+                    </span>
+                  </li>
+                ))}
+            </ul>
+          </div>
+        )}
     </section>
   )
 }
@@ -316,7 +328,7 @@ function ResourceDetails({
                 disabled={connection !== 'live' || data.detail.isFetching}
                 onClick={() => void refresh()}
               >
-                <RefreshCw />
+                <RotateCw />
                 {t('refreshResources')}
               </DropdownMenuItem>
               {group.type === 'subscription' && (
@@ -595,6 +607,7 @@ export function SubscriptionsPage() {
                   disabled={androidImport.busy || panel !== null || isWaiting(actions.operation)}
                   onClick={() => androidImport.pick('nodes')}
                 >
+                  <FileUp />
                   {text('从文件导入', 'Import from file')}
                 </DropdownMenuItem>
               )}
@@ -604,7 +617,7 @@ export function SubscriptionsPage() {
                 disabled={connection !== 'live' || isWaiting(actions.operation)}
                 onClick={() => setPanel({ kind: 'add' })}
               >
-                <Plus />
+                <Rss />
                 {t('addSubscription')}
               </DropdownMenuItem>
             )}
@@ -614,7 +627,7 @@ export function SubscriptionsPage() {
                 disabled={connection !== 'live' || isWaiting(actions.operation)}
                 onClick={() => setPanel({ kind: 'group', target: { operation: 'create' } })}
               >
-                <Folder />
+                <FolderPlus />
                 {text('新建本地分组', 'Create local group')}
               </DropdownMenuItem>
             )}
@@ -628,7 +641,7 @@ export function SubscriptionsPage() {
                 }
                 onClick={() => setPanel({ kind: 'node', target: { operation: 'add' } })}
               >
-                <Plus />
+                <Server />
                 {text('手动添加节点', 'Add node manually')}
               </DropdownMenuItem>
             )}
@@ -638,6 +651,7 @@ export function SubscriptionsPage() {
                 disabled={connection !== 'live' || isWaiting(actions.operation)}
                 onClick={() => setPanel({ kind: 'node', target: { operation: 'import' } })}
               >
+                <ClipboardPaste />
                 {text('导入文本', 'Import text')}
               </DropdownMenuItem>
             )}
@@ -657,6 +671,7 @@ export function SubscriptionsPage() {
                 }
                 onClick={() => actions.updateAll()}
               >
+                <RefreshCw />
                 {t('updateAllSubscriptions')}
               </DropdownMenuItem>
             )}
@@ -665,7 +680,7 @@ export function SubscriptionsPage() {
               disabled={connection !== 'live' || list.isFetching}
               onClick={() => void list.refetch()}
             >
-              <RefreshCw className="size-4 shrink-0" />
+              <RotateCw />
               {t('refreshResources')}
             </DropdownMenuItem>
           </DropdownMenuContent>

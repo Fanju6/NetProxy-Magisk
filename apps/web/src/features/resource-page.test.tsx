@@ -16,6 +16,7 @@ import { ApiContext, PreferencesContext } from '@/app/context'
 import { HeaderActionsProvider } from '@/app/header-actions'
 import { translator } from '@/app/i18n'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { ToastProvider } from '@/components/ui/toast'
 import type { JsonEditorProps } from '@/components/json-editor'
 import { SubscriptionsPage } from './subscriptions'
 import { ResourceProviderTag } from './resource-provider-tag'
@@ -169,7 +170,9 @@ function setup(
       <ApiContext value={new ApiClient(transport)}>
         <QueryClientProvider client={cache}>
           <TooltipProvider>
-            <RouterProvider router={router} />
+            <ToastProvider>
+              <RouterProvider router={router} />
+            </ToastProvider>
           </TooltipProvider>
         </QueryClientProvider>
       </ApiContext>

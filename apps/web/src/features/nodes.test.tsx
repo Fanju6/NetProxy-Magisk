@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { RouterProvider } from '@tanstack/react-router'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -27,11 +27,19 @@ vi.mock('@/components/json-editor', () => ({
   ),
 }))
 afterEach(() => vi.restoreAllMocks())
-async function setup(locale: 'en' | 'zh' = 'en', stopped = false) {
+async function setup(locale: 'en' | 'zh' = 'en', stopped = false, missingSources = false) {
   const backend = new MockTransport(0)
   if (stopped)
     await new ApiClient(backend).request({ method: 'POST', path: '/service/stop' }, z.unknown())
-  const request = vi.fn<ApiTransport['request']>((input, signal) => backend.request(input, signal))
+  const request = vi.fn<ApiTransport['request']>(async (input, signal) => {
+    const response = await backend.request(input, signal)
+    return missingSources && input.path === '/subscriptions'
+      ? {
+          status: 200,
+          body: { schema: 1, ok: true, code: 'subscription.list', message: '', data: [] },
+        }
+      : response
+  })
   const transport: ApiTransport = {
     kind: 'mock',
     capabilities: backend.capabilities,
@@ -120,6 +128,38 @@ it('tests a whole native group and retains seconds-based result timestamps', asy
       .filter(([input]) => input.path === '/policy-groups/delay')
       .map(([input]) => input.body),
   ).toEqual([{ group_tag: 'Fastest' }])
+})
+
+it('resolves resource display names by stable Provider identity and follows renames', async () => {
+  const h = await setup()
+  const auto = within(screen.getByTestId('policy-Fastest'))
+  const member = auto.getByRole('button', { name: 'Select Tokyo 01' })
+  await waitFor(() => expect(member).toHaveTextContent('Global Connect'))
+  expect(member).not.toHaveTextContent('np/demo-global')
+  const api = new ApiClient(h.backend)
+  await api.request(
+    { method: 'PUT', path: '/subscriptions/demo-global', body: { name: 'My renamed source' } },
+    z.unknown(),
+  )
+  await waitFor(() => expect(member).toHaveTextContent('My renamed source'))
+  expect(member.querySelector('[title]')).toHaveAttribute('title', 'np/demo-global/Tokyo 01')
+  await act(async () => {
+    await api.request(
+      { method: 'PUT', path: '/subscriptions/demo-empty', body: { name: 'My renamed source' } },
+      z.unknown(),
+    )
+  })
+  expect(member).toHaveTextContent('My renamed source')
+})
+
+it('keeps Provider member identity when the resource summary is unavailable', async () => {
+  await setup('en', false, true)
+  const member = within(screen.getByTestId('policy-Fastest')).getByRole('button', {
+    name: 'Select Tokyo 01',
+  })
+  await waitFor(() => expect(member).toHaveTextContent('Source unavailable'))
+  expect(member).not.toHaveTextContent('np/demo-global')
+  expect(member.querySelector('[title]')).toHaveAttribute('title', 'np/demo-global/Tokyo 01')
 })
 it('edits only a native outbound object with the partition revision', async () => {
   const h = await setup()

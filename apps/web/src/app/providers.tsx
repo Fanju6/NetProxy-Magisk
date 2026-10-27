@@ -6,6 +6,7 @@ import { ToastProvider } from '@/components/ui/toast'
 import { ApiContext, PreferencesContext, type Preferences } from './context'
 import { translator } from './i18n'
 import { syncNativeAppearance } from './appearance'
+import { SubscriptionNotifications } from './subscription-notifications'
 
 const key = 'netproxy.web.preferences'
 function initialPreferences(): Preferences {
@@ -77,7 +78,10 @@ export function AppProviders({ api, children }: { api: ApiClient; children: Reac
       <ApiContext value={api}>
         <QueryClientProvider client={queryClient}>
           <TooltipProvider>
-            <ToastProvider>{children}</ToastProvider>
+            <ToastProvider>
+              <SubscriptionNotifications />
+              {children}
+            </ToastProvider>
           </TooltipProvider>
         </QueryClientProvider>
       </ApiContext>

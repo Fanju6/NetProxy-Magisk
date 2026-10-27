@@ -50,6 +50,7 @@ export function NodesPage() {
   const text = (zh: string, en: string) => (preferences.locale === 'zh' ? zh : en)
   const service = useQuery(moduleQueries(api).service)
   const snapshot = useQuery(moduleQueries(api).policyGroups)
+  const resources = useQuery(moduleQueries(api).subscriptions)
   const connection = useEventConnection()
   const selection = useSelectPolicyGroup()
   const operation = useRoutingOperation()
@@ -109,6 +110,9 @@ export function NodesPage() {
   if (!snapshot.data)
     return <ErrorState error={snapshot.error} retry={() => void snapshot.refetch()} />
   const data = snapshot.data
+  const resourceNames = new Map(
+    resources.data?.map((resource) => [resource.provider_tag, resource.name]),
+  )
   const live =
     (connection === 'live' || connection === 'refreshing') &&
     data.live &&
@@ -365,6 +369,9 @@ export function NodesPage() {
                     {members.map((item) => {
                       const name = item.tag.replace(/^np\/[^/]+\//, '')
                       const provider = /^np\/[^/]+\//.exec(item.tag)?.[0].slice(0, -1)
+                      const source = provider
+                        ? resourceNames.get(provider) || text('来源暂不可用', 'Source unavailable')
+                        : undefined
                       const child = data.groups.find((entry) => entry.tag === item.tag)
                       const selected = live && group.selected === item.tag
                       return (
@@ -415,7 +422,7 @@ export function NodesPage() {
                             <span className="flex w-full min-w-0 items-end justify-between gap-2 text-xs text-muted-foreground">
                               <span className="min-w-0 truncate">
                                 {item.type}
-                                {provider ? ` · ${provider}` : ''}
+                                {source ? ` · ${source}` : ''}
                                 {!live &&
                                 data.source === 'configuration' &&
                                 group.configured_default === item.tag

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { z } from 'zod'
 import { Copy } from 'lucide-react'
+import { useResultToast } from '@/components/ui/toast'
 import { useApi, usePreferences } from '@/app/context'
 import { useManagementAction } from '@/api/management'
 import type { GroupSummary } from '@/api/contracts'
@@ -72,6 +73,7 @@ export function NodeManager({
   const [original, setOriginal] = useState('')
   const [error, setError] = useState<unknown>(null)
   const [notice, setNotice] = useState('')
+  useResultToast('resource-node-result', notice, notice)
   const [uncertain, setUncertain] = useState(false)
   const [insecure, setInsecure] = useState(false)
   const [loaded, setLoaded] = useState(operation !== 'edit' && operation !== 'export')
@@ -209,11 +211,6 @@ export function NodeManager({
             <p className="break-all text-sm text-muted-foreground">{group?.group.name}</p>
             {targetChanged}
             {feedback}
-            {notice && (
-              <p role="status" className="text-sm">
-                {notice}
-              </p>
-            )}
           </div>
           {!notice && (
             <DialogFooter>
@@ -361,11 +358,6 @@ export function NodeManager({
           </p>
         )}
         {feedback}
-        {notice && (
-          <p role="status" className="text-sm">
-            {notice}
-          </p>
-        )}
       </div>
     </Panel>
   )

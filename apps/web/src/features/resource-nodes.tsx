@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { MoreHorizontal, Pencil, Plus, Share2, Trash2 } from 'lucide-react'
+import { MoreHorizontal, Pencil, Server, Share2, Trash2 } from 'lucide-react'
 import { useApi, usePreferences } from '@/app/context'
 import { catalogNodesKey, resourceQueries } from '@/api/resources'
 import { useEventConnection } from '@/api/events'
@@ -65,7 +65,7 @@ export function ResourceNodes({
             disabled={disabled}
             onClick={() => manage({ operation: 'add', groupId: id })}
           >
-            <Plus />
+            <Server />
             {text('手动添加节点', 'Add node manually')}
           </Button>
         )}

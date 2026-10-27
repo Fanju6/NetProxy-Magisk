@@ -152,7 +152,7 @@ it('distinguishes an empty Catalog from a read failure without using Mock as fal
 
 async function openDetails(name = 'Global Connect') {
   fireEvent.click(await screen.findByRole('button', { name: `View details ${name}` }))
-  const dialog = await screen.findByRole('dialog')
+  const dialog = await screen.findByRole('dialog', { name })
   await waitFor(() => expect(within(dialog).getByText('Nodes')).toBeVisible())
   return dialog
 }
@@ -247,7 +247,7 @@ it('completes an actual Mock update through ModuleEvents without aborting its ow
   fireEvent.click(within(dialog).getByRole('button', { name: 'Update subscription' }))
   expect(await within(dialog).findByText('Subscription operation in progress')).toBeVisible()
   await waitFor(() =>
-    expect(within(dialog).getByText('Subscription updated', { exact: true })).toBeVisible(),
+    expect(screen.getByText('Subscription updated', { exact: true })).toBeVisible(),
   )
   expect(liveAtResponse).toBe(true)
   expect(writes(h.request)).toHaveLength(1)
@@ -355,8 +355,15 @@ it('supports Mock add, public-only edit and confirmed deletion without nested pa
   const editItem = await resourceMenu(dialog, 'Edit subscription')
   await waitFor(() => expect(editItem).not.toHaveAttribute('aria-disabled', 'true'))
   fireEvent.click(editItem)
-  dialog = await screen.findByRole('dialog')
-  expect(screen.getAllByRole('dialog')).toHaveLength(1)
+  dialog = await screen.findByRole('dialog', { name: 'Edit subscription' })
+  expect(
+    screen
+      .getAllByRole('dialog')
+      .filter(
+        (element) =>
+          !element.hasAttribute('data-slot') || element.getAttribute('data-slot') !== 'toast',
+      ),
+  ).toHaveLength(1)
   expect(
     within(dialog).queryByRole('textbox', { name: 'Subscription URL' }),
   ).not.toBeInTheDocument()
@@ -371,7 +378,7 @@ it('supports Mock add, public-only edit and confirmed deletion without nested pa
   const deleteItem = await resourceMenu(dialog, 'Delete subscription')
   await waitFor(() => expect(deleteItem).not.toHaveAttribute('aria-disabled', 'true'))
   fireEvent.click(deleteItem)
-  dialog = await screen.findByRole('dialog')
+  dialog = await screen.findByRole('dialog', { name: 'Delete subscription' })
   expect(within(dialog).getByText('Renamed source', { exact: true })).toBeVisible()
   expect(
     within(dialog).getByText('Delete this subscription and its nodes? This cannot be undone.'),
@@ -427,11 +434,11 @@ it('distinguishes 304 responses from new content updates', async () => {
   const dialog = await openDetails()
   const update = within(dialog).getByRole('button', { name: 'Update subscription' })
   fireEvent.click(update)
-  expect(await within(dialog).findByText('Subscription updated', { exact: true })).toBeVisible()
+  expect(await screen.findByText('Subscription updated', { exact: true })).toBeVisible()
   await waitFor(() => expect(update).toBeEnabled())
   fireEvent.click(update)
   expect(
-    await within(dialog).findByText('Subscription content has not changed', { exact: true }),
+    await screen.findByText('Subscription content has not changed', { exact: true }),
   ).toBeVisible()
 })
 

@@ -110,14 +110,14 @@ test('local node import and logs are usable without platform file permissions', 
   await page.goto('/#/subscriptions')
   await page.locator('header').getByRole('button', { name: '资源操作', exact: true }).click()
   await page.getByRole('menuitem', { name: '导入文本', exact: true }).click()
-  const dialog = page.getByRole('dialog')
+  const dialog = page.getByRole('dialog', { name: '导入文本', exact: true })
   await dialog
     .getByRole('textbox', { name: '节点内容', exact: true })
     .fill(
       '{"outbounds":[{"tag":"Anonymous fixture","type":"socks","server":"127.0.0.1","server_port":1080}]}',
     )
   await dialog.getByRole('button', { name: '保存', exact: true }).click()
-  await expect(dialog.getByRole('status')).toContainText('操作完成')
+  await expect(page.locator('[data-slot="toast"]')).toContainText('操作完成')
   await dialog.getByRole('button', { name: '关闭', exact: true }).click()
   await page.getByRole('button', { name: '查看详情 本地配置', exact: true }).click()
   await expect(
