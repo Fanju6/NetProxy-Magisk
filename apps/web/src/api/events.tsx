@@ -384,10 +384,17 @@ export function ModuleEvents() {
       } else subscribe()
     }
     const visibility = () => {
+      // Re-registering a native listener is not a background transition.
+      // Wait for its trusted result before opening the replacement stream.
+      if (handover && nativeVisible === undefined && document.visibilityState !== 'hidden') {
+        setConnection('refreshing')
+        return
+      }
       const visible = isVisible()
       if (lastVisible === visible) return
       lastVisible = visible
       if (!visible) {
+        handover = false
         const stopped = stop()
         if (generation === stopped && !disposed) setConnection('paused')
       } else {

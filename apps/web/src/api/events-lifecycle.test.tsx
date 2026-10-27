@@ -219,6 +219,39 @@ function setup(
   return { cache, sessions, active, transport, emit, complete, view }
 }
 
+it('waits for asynchronous native visibility during handover without pretending the app went background', async () => {
+  const listeners: ((visible: boolean) => void)[] = []
+  const h = setup(undefined, {}, (listener) => {
+    listeners.push(listener)
+    return vi.fn()
+  })
+  act(() => listeners[0]!(true))
+  h.complete()
+  h.emit('traffic', demoTraffic(createFixtures().service))
+  act(() =>
+    h.cache.setQueryData(['routing-operation'], {
+      epoch: 2,
+      eventEpoch: 2,
+      phase: 'idle',
+      target: { kind: 'policy', value: { group_tag: 'Internet', member_tag: 'Hong Kong 01' } },
+      deadline: Date.now() + 150000,
+      responseReceived: true,
+      error: null,
+    }),
+  )
+  await waitFor(() => expect(listeners).toHaveLength(2))
+  expect(h.cache.getQueryData(['events-connection'])).toBe('refreshing')
+  expect(h.cache.getQueryData(['traffic-history'])).toHaveLength(1)
+  expect(h.cache.getQueryData(['policy-groups'])).toMatchObject({ live: true })
+  expect(h.sessions).toHaveLength(1)
+  act(() => listeners[1]!(false))
+  expect(h.cache.getQueryData(['events-connection'])).toBe('paused')
+  expect(h.cache.getQueryData(['traffic-history'])).toEqual([])
+  act(() => listeners[1]!(true))
+  expect(h.cache.getQueryData(['events-connection'])).toBe('connecting')
+  h.view.unmount()
+})
+
 it('clears traffic on disconnect and rejects old-session frames after reconnect', async () => {
   const { service } = createFixtures()
   const { cache, sessions, emit } = setup()
