@@ -337,8 +337,8 @@ export function NodesPage() {
                 ) : (
                   <div
                     className={cn(
-                      'grid',
-                      view === 'grid' ? 'grid-cols-2 gap-2 xl:grid-cols-3' : 'grid-cols-1 divide-y',
+                      'grid gap-2',
+                      view === 'grid' ? 'grid-cols-2 xl:grid-cols-3' : 'grid-cols-1',
                     )}
                     data-testid="node-grid"
                   >
@@ -350,15 +350,17 @@ export function NodesPage() {
                       return (
                         <div
                           key={item.tag}
+                          data-slot="node-card"
+                          data-selected={selected}
                           className={cn(
-                            'relative flex min-w-0 items-center rounded-md',
-                            view === 'grid' ? 'h-32 border' : 'h-16',
-                            selected && 'node-selected',
+                            'flex min-w-0 items-center rounded-lg border bg-card',
+                            view === 'grid' ? 'h-24' : 'h-20',
+                            selected ? 'border-foreground/50 bg-accent' : 'border-border',
                           )}
                         >
                           <button
                             type="button"
-                            className="flex h-full min-w-0 flex-1 flex-col justify-center gap-1 rounded-md px-3 text-left hover:bg-muted disabled:opacity-60"
+                            className="flex h-full min-w-0 flex-1 flex-col justify-between gap-2 rounded-lg px-3 py-3 text-left enabled:hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-60"
                             aria-label={t('selectNode', { name })}
                             aria-pressed={selected}
                             disabled={
@@ -368,44 +370,53 @@ export function NodesPage() {
                               selection.mutate({ group_tag: group.tag, member_tag: item.tag })
                             }
                           >
-                            <span
-                              className={cn(
-                                'flex min-w-0 items-center gap-1 text-sm font-medium',
-                                view === 'grid' ? 'pr-4' : '',
-                              )}
-                            >
-                              <Check className={cn('size-3 shrink-0', !selected && 'invisible')} />
+                            <span className="flex w-full min-w-0 items-start justify-between gap-2 text-sm font-medium">
                               <span
                                 title={item.tag}
-                                className={view === 'grid' ? 'line-clamp-2 break-all' : 'truncate'}
+                                data-slot="node-name"
+                                className={cn(
+                                  'min-w-0 flex-1',
+                                  view === 'grid' ? 'line-clamp-2 break-all' : 'truncate',
+                                )}
                               >
                                 {name}
                               </span>
-                            </span>
-                            <span className="truncate text-xs text-muted-foreground">
-                              {item.type}
-                              {provider ? ` · ${provider}` : ''}
-                              {!live &&
-                              data.source === 'configuration' &&
-                              group.configured_default === item.tag
-                                ? ` · ${text('配置默认', 'Configured default')}`
-                                : ''}
-                              {child && live && child.selected ? ` · ${child.selected}` : ''}
-                            </span>
-                            {live && (
                               <span
-                                className="text-xs tabular-nums text-muted-foreground"
-                                title={
-                                  live && item.url_test_time
-                                    ? new Date(item.url_test_time * 1000).toLocaleString()
-                                    : ''
-                                }
+                                data-slot="node-choice"
+                                aria-hidden="true"
+                                className="flex size-5 shrink-0 items-center justify-end"
                               >
-                                {live && (item.url_test_delay ?? 0) > 0
-                                  ? `${item.url_test_delay} ms`
-                                  : t('noLatency')}
+                                {selected && <Check className="size-4" />}
                               </span>
-                            )}
+                            </span>
+                            <span className="flex w-full min-w-0 items-end justify-between gap-2 text-xs text-muted-foreground">
+                              <span className="min-w-0 truncate">
+                                {item.type}
+                                {provider ? ` · ${provider}` : ''}
+                                {!live &&
+                                data.source === 'configuration' &&
+                                group.configured_default === item.tag
+                                  ? ` · ${text('配置默认', 'Configured default')}`
+                                  : ''}
+                                {child && live && child.selected
+                                  ? ` · ${child.selected.replace(/^np\/[^/]+\//, '')}`
+                                  : ''}
+                              </span>
+                              {live && (
+                                <span
+                                  className="shrink-0 text-xs font-medium tabular-nums"
+                                  title={
+                                    live && item.url_test_time
+                                      ? new Date(item.url_test_time * 1000).toLocaleString()
+                                      : ''
+                                  }
+                                >
+                                  {live && (item.url_test_delay ?? 0) > 0
+                                    ? `${item.url_test_delay} ms`
+                                    : t('noLatency')}
+                                </span>
+                              )}
+                            </span>
                           </button>
                           {child && (
                             <Button

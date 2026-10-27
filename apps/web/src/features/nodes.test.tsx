@@ -75,6 +75,12 @@ it('defaults to expanded native groups and selects the exact member tag', async 
   await waitFor(() => expect(member).toBeEnabled())
   fireEvent.click(member)
   await waitFor(() => expect(member).toHaveAttribute('aria-pressed', 'true'))
+  const card = member.closest('[data-slot="node-card"]')!
+  await waitFor(() => expect(card).toHaveAttribute('data-selected', 'true'))
+  expect(card).toHaveClass('border', 'rounded-lg', 'bg-accent')
+  expect(member.querySelector('[data-slot="node-choice"] svg')).toBeInTheDocument()
+  const unselected = group.getByRole('button', { name: 'Select direct' })
+  expect(unselected.querySelector('[data-slot="node-choice"] svg')).not.toBeInTheDocument()
   expect(
     h.request.mock.calls
       .filter(([input]) => input.method === 'POST' && input.path === '/policy-groups/select')

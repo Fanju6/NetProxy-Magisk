@@ -230,9 +230,6 @@ select {
   padding: 12px 0;
   font-size: 14px;
 }
-.node-selected {
-  background: var(--muted);
-}
 .traffic-plot {
   background-image: repeating-linear-gradient(
     to top,
