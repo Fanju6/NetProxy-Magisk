@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ApiClient } from '@/api/client'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { ToastProvider } from '@/components/ui/toast'
 import { ApiContext, PreferencesContext, type Preferences } from './context'
 import { translator } from './i18n'
 import { syncNativeAppearance } from './appearance'
@@ -75,7 +76,9 @@ export function AppProviders({ api, children }: { api: ApiClient; children: Reac
     >
       <ApiContext value={api}>
         <QueryClientProvider client={queryClient}>
-          <TooltipProvider>{children}</TooltipProvider>
+          <TooltipProvider>
+            <ToastProvider>{children}</ToastProvider>
+          </TooltipProvider>
         </QueryClientProvider>
       </ApiContext>
     </PreferencesContext>

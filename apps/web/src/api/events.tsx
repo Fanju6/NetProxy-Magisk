@@ -32,7 +32,7 @@ import {
 import { moduleQueries } from './queries'
 import {
   observeRouting,
-  routingEpoch,
+  routingEventEpoch,
   routingOperationKey,
   useRoutingOperation,
   type RoutingOperation,
@@ -50,10 +50,11 @@ export function acceptTraffic(service: ServiceStatus | undefined, traffic: Traff
   )
 }
 
-type EventConnection = 'connecting' | 'live' | 'reconnecting' | 'offline' | 'paused'
+type EventConnection = 'connecting' | 'live' | 'refreshing' | 'reconnecting' | 'offline' | 'paused'
 const connectionMessages = {
   connecting: 'eventConnecting',
   live: 'connected',
+  refreshing: 'eventConnecting',
   reconnecting: 'eventReconnecting',
   offline: 'offline',
   paused: 'eventPaused',
@@ -75,7 +76,8 @@ export function ModuleEvents() {
   const [attempt, setAttempt] = useState(0)
   const [showConnection, setShowConnection] = useState(false)
   const operationEpoch = useServiceOperation()?.epoch ?? 0
-  const routeEpoch = useRoutingOperation()?.epoch ?? 0
+  const routingOperation = useRoutingOperation()
+  const routeEpoch = routingOperation?.eventEpoch ?? routingOperation?.epoch ?? 0
   const subscriptionOperation = useSubscriptionOperation()
   const resourceEpoch =
     (subscriptionOperation?.epoch ?? 0) - (subscriptionOperation?.phase === 'pending' ? 1 : 0)
@@ -94,6 +96,15 @@ export function ModuleEvents() {
     let retries = 0
     let nativeVisible: boolean | undefined = api.transport.observeVisibility ? undefined : true
     let lastVisible: boolean | undefined
+    const cachedService = cache.getQueryData<ServiceStatus>(['service'])
+    const cachedGroups = cache.getQueryData<PolicySnapshot>(['policy-groups'])
+    let handover =
+      cache.getQueryData(['events-connection']) === 'live' &&
+      cache.getQueryData<RoutingOperation | null>(routingOperationKey)?.target.kind === 'policy' &&
+      routeEpoch > 0 &&
+      cachedService?.state === 'ready' &&
+      cachedGroups?.live === true &&
+      cachedGroups.core_started_at_millis === cachedService.core_started_at_millis
     const isVisible = () => document.visibilityState !== 'hidden' && nativeVisible === true
     const setConnection = (value: EventConnection) =>
       cache.setQueryData(['events-connection'], value)
@@ -105,7 +116,7 @@ export function ModuleEvents() {
       void cache.cancelQueries({ queryKey: [key], exact: true }, { revert: false, silent: true })
       cache.setQueryData([key], value)
     }
-    const stop = () => {
+    const stop = (preserveSnapshot = false) => {
       const stopped = ++generation
       clearTimeout(retryTimer)
       clearTimeout(snapshotTimer)
@@ -113,26 +124,30 @@ export function ModuleEvents() {
       snapshotTimer = undefined
       const release = close
       close = undefined
-      clearTraffic()
-      resetResourceSession(cache)
+      if (!preserveSnapshot) {
+        clearTraffic()
+        resetResourceSession(cache)
+      }
       // 先撤销会话身份，关闭回调即使同步重入也不能再次释放或发布数据。
       release?.()
       return stopped
     }
     const start = () => {
-      const currentGeneration = stop()
+      const preserveSnapshot = handover
+      handover = false
+      const currentGeneration = stop(preserveSnapshot)
       if (disposed || generation !== currentGeneration) return
       if (!isVisible()) {
         lastVisible = false
         setConnection('paused')
         return
       }
-      setConnection(retries === 0 ? 'connecting' : 'reconnecting')
+      setConnection(preserveSnapshot ? 'refreshing' : retries === 0 ? 'connecting' : 'reconnecting')
       const active = () =>
         !disposed &&
         generation === currentGeneration &&
         serviceEpoch(cache) === operationEpoch &&
-        routingEpoch(cache) === routeEpoch &&
+        routingEventEpoch(cache) === routeEpoch &&
         subscriptionEventEpoch(cache) === resourceEpoch &&
         managementEpoch(cache) === managementVersion
       const pending = new Set(['status', 'groups', 'subscriptions'])
@@ -165,7 +180,7 @@ export function ModuleEvents() {
           ),
         )
       // 单一会话只接受当前连接的完整快照，断流后不沿用旧核心流量。
-      let status: ServiceStatus | undefined
+      let status: ServiceStatus | undefined = preserveSnapshot ? cachedService : undefined
       let pendingNodes: PolicySnapshot | undefined
       let initialResources = true
       const routing = cache.getQueryData<RoutingOperation | null>(routingOperationKey)
@@ -176,8 +191,13 @@ export function ModuleEvents() {
       let confirmed = !checkRouting
       let confirming = false
       let changedDuringCheck = false
+      const routingFramesAllowed = () => {
+        const operation = cache.getQueryData<RoutingOperation | null>(routingOperationKey)
+        return !operation || (operation.phase !== 'pending' && operation.epoch === routeEpoch)
+      }
       const publishNodes = (snapshot: PolicySnapshot) => {
         if (
+          !routingFramesAllowed() ||
           !status ||
           (snapshot.live &&
             (status.state !== 'ready' ||
@@ -245,7 +265,7 @@ export function ModuleEvents() {
                     if (!active()) return
                     publish('service', next)
                     observeService(cache, next)
-                    if (api.supports('mode.read')) {
+                    if (routingFramesAllowed() && api.supports('mode.read')) {
                       const mode = {
                         mode: next.configured_outbound_mode,
                         available: next.available_outbound_modes,
@@ -311,6 +331,12 @@ export function ModuleEvents() {
                       if (!active()) return
                       await cache.fetchQuery({ ...queries.service, staleTime: 0 })
                       if (!active()) return
+                      const traffic = cache.getQueryData<Traffic>(['traffic'])
+                      if (
+                        traffic?.available &&
+                        !acceptTraffic(cache.getQueryData(['service']), traffic)
+                      )
+                        clearTraffic()
                       const reads: Promise<unknown>[] = []
                       if (api.supports('policy.read'))
                         reads.push(cache.fetchQuery({ ...queries.policyGroups, staleTime: 0 }))
@@ -380,8 +406,16 @@ export function ModuleEvents() {
       disposed = true
       document.removeEventListener('visibilitychange', visibility)
       releaseVisibility?.()
-      stop()
-      setConnection('paused')
+      const next = cache.getQueryData<RoutingOperation | null>(routingOperationKey)
+      const policyHandover =
+        next?.target.kind === 'policy' &&
+        routingEventEpoch(cache) !== routeEpoch &&
+        serviceEpoch(cache) === operationEpoch &&
+        subscriptionEventEpoch(cache) === resourceEpoch &&
+        managementEpoch(cache) === managementVersion &&
+        isVisible()
+      stop(policyHandover)
+      if (!policyHandover) setConnection('paused')
     }
   }, [api, cache, attempt, operationEpoch, routeEpoch, resourceEpoch, managementVersion])
   const Icon = connection === 'offline' ? WifiOff : connection === 'paused' ? Pause : LoaderCircle

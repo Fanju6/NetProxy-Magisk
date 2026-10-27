@@ -70,6 +70,79 @@ it('does not use Catalog membership to filter or manufacture policy groups', () 
   expect(h.cache.getQueryData(['selection'])).toBeUndefined()
 })
 
+it('keeps actual status and traffic during selection, fences old groups, and hands over once', async () => {
+  const h = setup()
+  const fixture = createFixtures()
+  h.complete()
+  h.emit('traffic', demoTraffic(fixture.service))
+  const old = h.sessions[0]!
+  const target = {
+    kind: 'policy' as const,
+    value: { group_tag: 'Internet', member_tag: 'Hong Kong 01' },
+  }
+  const operation = {
+    epoch: 1,
+    eventEpoch: 0,
+    target,
+    phase: 'pending',
+    deadline: Date.now() + 150000,
+    responseReceived: false,
+    error: null,
+  }
+  act(() => h.cache.setQueryData(['routing-operation'], operation))
+  expect(h.sessions).toHaveLength(1)
+  const selected = structuredClone(fixture.policy)
+  selected.groups[0]!.selected = target.value.member_tag
+  h.emit('groups', selected)
+  expect(h.cache.getQueryData(['policy-groups'])).toEqual(fixture.policy)
+  h.emit('traffic', demoTraffic(fixture.service))
+  expect(h.cache.getQueryData(['traffic-history'])).toHaveLength(2)
+  expect(h.cache.getQueryData(['events-connection'])).toBe('live')
+  vi.mocked(h.transport.request).mockImplementation(async (request) => ({
+    status: 200,
+    body: {
+      schema: 1,
+      ok: true,
+      code: 'fixture',
+      message: '',
+      data:
+        request.path === '/service'
+          ? fixture.service
+          : request.path === '/mode'
+            ? {
+                mode: fixture.service.configured_outbound_mode,
+                available: fixture.service.available_outbound_modes,
+              }
+            : selected,
+    },
+  }))
+  act(() => {
+    h.cache.setQueryData(['policy-groups'], selected)
+    h.cache.setQueryData(['routing-operation'], {
+      ...operation,
+      epoch: 2,
+      eventEpoch: 2,
+      phase: 'idle',
+      responseReceived: true,
+    })
+  })
+  await waitFor(() => expect(h.sessions).toHaveLength(2))
+  expect(old.close).toHaveBeenCalledOnce()
+  expect(h.cache.getQueryData(['events-connection'])).toBe('refreshing')
+  expect(h.cache.getQueryData(['traffic-history'])).toHaveLength(2)
+  h.emit('groups', fixture.policy, old)
+  h.emit('status', { ...fixture.service, state: 'stopped' }, old)
+  expect(h.cache.getQueryData(['policy-groups'])).toEqual(selected)
+  h.complete()
+  await waitFor(() => expect(h.cache.getQueryData(['events-connection'])).toBe('live'))
+  expect(h.cache.getQueryData(['policy-groups'])).toEqual(selected)
+  expect(h.cache.getQueryData(['traffic-history'])).toHaveLength(2)
+  act(() => h.sessions[1]!.fail(new Error('real disconnect')))
+  expect(h.cache.getQueryData(['traffic-history'])).toEqual([])
+  expect(h.cache.getQueryData(['events-connection'])).toBe('reconnecting')
+  h.view.unmount()
+})
+
 function setup(
   onSubscribe?: (session: Session, index: number) => void,
   { dashboard = false, strict = false } = {},

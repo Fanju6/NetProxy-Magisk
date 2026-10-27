@@ -5,6 +5,8 @@ import { ApiError, type ModeState, type PolicyTarget, type PolicySnapshot } from
 // 两种持久写入共用一个短生命周期槽位，不把草稿或运行时数据另存一份。
 export type RoutingOperation = {
   epoch: number
+  // Reads fence immediately; the event session advances after authoritative verification.
+  eventEpoch?: number
   target: { kind: 'policy'; value: PolicyTarget } | { kind: 'mode'; value: string }
   phase: 'pending' | 'uncertain' | 'unconfirmed' | 'idle'
   deadline: number
@@ -47,6 +49,10 @@ export function useRoutingOperation() {
 }
 export function routingEpoch(cache: QueryClient) {
   return cache.getQueryData<RoutingOperation | null>(routingOperationKey)?.epoch ?? 0
+}
+export function routingEventEpoch(cache: QueryClient) {
+  const operation = cache.getQueryData<RoutingOperation | null>(routingOperationKey)
+  return operation?.eventEpoch ?? operation?.epoch ?? 0
 }
 export function observeRouting(cache: QueryClient, value: PolicySnapshot | ModeState) {
   const operation = cache.getQueryData<RoutingOperation | null>(routingOperationKey)

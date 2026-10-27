@@ -36,6 +36,7 @@ import {
 } from '@/components/ui/select'
 import { EmptyState, ErrorState, LoadingState } from '@/components/states'
 import { useManagementCopy } from './management-copy'
+import { useResultToast } from '@/components/ui/toast'
 
 export interface ConfigurationEditorProps {
   target: string
@@ -111,6 +112,7 @@ export function ConfigurationEditor({
   const [generation, setGeneration] = useState(0)
   const [form, setForm] = useState(!readonly && (rules || renderForm !== undefined))
   const [notice, setNotice] = useState<'validated' | 'saved' | null>(null)
+  useResultToast(`config-result-${target}`, notice, notice ? copy[notice] : '')
   const [blocked, setBlocked] = useState(false)
   const [overwrite, setOverwrite] = useState(false)
   const writing = useRef(false)
@@ -249,11 +251,6 @@ export function ConfigurationEditor({
               />
             )}
           </fieldset>
-          {notice && (
-            <p role="status" className="text-sm text-muted-foreground">
-              {copy[notice]}
-            </p>
-          )}
         </>
       )}
     </div>

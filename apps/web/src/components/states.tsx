@@ -3,6 +3,7 @@ import { ApiError } from '@/api/contracts'
 import { usePreferences } from '@/app/context'
 import { Button } from './ui/button'
 import { Skeleton } from './ui/skeleton'
+import { errorTitle } from '@/lib/error-title'
 
 export function LoadingState() {
   const { t } = usePreferences()
@@ -35,22 +36,7 @@ export function ErrorState({
 }) {
   const { t } = usePreferences()
   const code = error instanceof ApiError ? error.code : ''
-  const title =
-    code === 'config.conflict'
-      ? t('conflict')
-      : error instanceof ApiError && error.persisted
-        ? t('persisted')
-        : code === 'client.transport_unavailable'
-          ? t('unavailable')
-          : code === 'api.connection_unavailable'
-            ? t('connectionUnavailable')
-            : code === 'api.unauthorized'
-              ? t('unauthorized')
-              : error instanceof ApiError && error.status === 403
-                ? t('operationDenied')
-                : error instanceof ApiError && [409, 429].includes(error.status)
-                  ? t('operationBusy')
-                  : t('requestFailed')
+  const title = errorTitle(error, t)
   return (
     <div
       role="alert"

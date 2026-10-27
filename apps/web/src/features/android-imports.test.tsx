@@ -9,6 +9,7 @@ import { ApiContext, PreferencesContext } from '@/app/context'
 import { useAndroidImport } from '@/app/android-import-context'
 import { translator } from '@/app/i18n'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { ToastProvider } from '@/components/ui/toast'
 import { AndroidImports } from './android-imports'
 
 vi.mock('@/components/json-editor', () => ({
@@ -125,7 +126,9 @@ function setup(
       >
         <ApiContext value={new ApiClient(transport)}>
           <QueryClientProvider client={cache}>
-            <TooltipProvider>{children}</TooltipProvider>
+            <TooltipProvider>
+              <ToastProvider>{children}</ToastProvider>
+            </TooltipProvider>
           </QueryClientProvider>
         </ApiContext>
       </PreferencesContext>

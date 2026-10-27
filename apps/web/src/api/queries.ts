@@ -27,6 +27,7 @@ import type { PolicyTarget } from './contracts'
 import {
   observeRouting,
   routingEpoch,
+  routingEventEpoch,
   routingBusy,
   routingOperationKey,
   useRoutingOperation,
@@ -276,7 +277,7 @@ function useRoutingAction(kind: 'policy' | 'mode') {
         throw error
       } finally {
         if (routingEpoch(cache) === epoch) {
-          // 先失效旧流和旧读取，再查询已提交状态；迟到响应不能覆盖新快照。
+          // Fence old routing frames and reads; hand over the stream after authoritative reads.
           cache.setQueryData<RoutingOperation>(routingOperationKey, (current) => ({
             ...current!,
             epoch: epoch + 1,
@@ -286,6 +287,9 @@ function useRoutingAction(kind: 'policy' | 'mode') {
           }))
           await cancelReads()
           await verify()
+          cache.setQueryData<RoutingOperation>(routingOperationKey, (current) =>
+            current?.epoch === epoch + 1 ? { ...current, eventEpoch: current.epoch } : current,
+          )
         }
       }
     },
@@ -317,8 +321,10 @@ function useRoutingAction(kind: 'policy' | 'mode') {
       )
         return
       const epoch = routingEpoch(cache) + 1
+      const eventEpoch = routingEventEpoch(cache)
       cache.setQueryData<RoutingOperation>(routingOperationKey, {
         epoch,
+        eventEpoch,
         target,
         phase: 'pending',
         deadline: Date.now() + 150_000,
@@ -330,6 +336,11 @@ function useRoutingAction(kind: 'policy' | 'mode') {
     },
     isPending: operation?.phase === 'pending',
     isUncertain: operation?.phase === 'uncertain',
+    isConfirming:
+      operation?.phase === 'uncertain' &&
+      operation.responseReceived &&
+      operation.error === null &&
+      mutation.isPending,
     isUnconfirmed: operation?.phase === 'unconfirmed',
     error: operation?.target.kind === kind ? operation.error : null,
     persisted:
@@ -342,6 +353,9 @@ function useRoutingAction(kind: 'policy' | 'mode') {
       if (current) cache.setQueryData(routingOperationKey, { ...current, epoch: current.epoch + 1 })
       await cancelReads()
       await verify()
+      cache.setQueryData<RoutingOperation>(routingOperationKey, (operation) =>
+        operation ? { ...operation, eventEpoch: operation.epoch } : operation,
+      )
     },
   }
 }

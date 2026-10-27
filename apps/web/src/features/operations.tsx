@@ -26,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { ErrorState, LoadingState } from '@/components/states'
+import { useResultToast } from '@/components/ui/toast'
 
 const logsSchema = z.object({
   kind: z.enum(['service', 'core']),
@@ -59,6 +60,7 @@ export function OperationsPage() {
   const [refresh, setRefresh] = useState(0)
   const [diagnostic, setDiagnostic] = useState<string>()
   const [notice, setNotice] = useState('')
+  useResultToast('tools-result', notice, notice)
   const [confirm, setConfirm] = useState<'clear' | 'restart' | 'reload'>()
   useEffect(() => {
     const controller = new AbortController()
@@ -82,7 +84,6 @@ export function OperationsPage() {
   const reload = () => {
     setLoading(true)
     setError(null)
-    setLogs(undefined)
     setRefresh((value) => value + 1)
   }
   const service = async (value: 'restart' | 'reload' | 'check') => {
@@ -220,11 +221,6 @@ export function OperationsPage() {
   )
   const feedback = (
     <div className="space-y-3">
-      {notice && (
-        <p role="status" className="text-sm text-muted-foreground">
-          {notice}
-        </p>
-      )}
       {action.error != null && <ErrorState compact error={action.error} />}
       {diagnostic !== undefined && (
         <pre className="max-h-80 overflow-auto overscroll-contain whitespace-pre-wrap break-words rounded-md border p-4 font-mono text-xs leading-5">

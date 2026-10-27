@@ -11,6 +11,7 @@ import {
   Plus,
   Search,
   LoaderCircle,
+  RefreshCw,
 } from 'lucide-react'
 import { useApi, usePreferences } from '@/app/context'
 import {
@@ -36,9 +37,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { EmptyState, ErrorState, LoadingState } from '@/components/states'
+import { errorTitle } from '@/lib/error-title'
 import { cn } from '@/lib/utils'
 import { PolicyEditor } from './policy-editor'
 import { HeaderActions } from '@/app/header-actions'
+import { useResultToast } from '@/components/ui/toast'
+import { ApiError } from '@/api/contracts'
 
 export function NodesPage() {
   const api = useApi()
@@ -57,6 +61,40 @@ export function NodesPage() {
   const [presentation, setPresentation] = useState('expanded')
   const [activeTag, setActiveTag] = useState('')
   const [editor, setEditor] = useState<{ tag: string | null; remove?: boolean } | null>(null)
+  const pendingConfirmation =
+    operation && ['uncertain', 'unconfirmed'].includes(operation.phase) && !selection.isConfirming
+  useResultToast(
+    'policy-error',
+    pendingConfirmation || selection.persisted ? null : selection.error,
+    errorTitle(selection.error, t),
+  )
+  useResultToast(
+    'mode-error',
+    pendingConfirmation || mode.persisted ? null : mode.error,
+    errorTitle(mode.error, t),
+  )
+  useResultToast(
+    'policy-delay',
+    delay.error ?? delay.outcome,
+    delay.error
+      ? errorTitle(delay.error, t)
+      : t(delay.outcome === 'cached' ? 'delayCached' : 'delayEmpty'),
+  )
+  useResultToast(
+    'policy-confirmation',
+    pendingConfirmation ? operation.epoch : null,
+    t(
+      operation?.phase === 'unconfirmed'
+        ? 'routingUnconfirmed'
+        : operation?.target.kind === 'mode'
+          ? 'modeUncertain'
+          : 'selectionUncertain',
+    ),
+    {
+      label: t('checkStatus'),
+      run: () => void (operation?.target.kind === 'mode' ? mode.verify() : selection.verify()),
+    },
+  )
   if (!api.supports('policy.read') && !snapshot.data)
     return (
       <EmptyState
@@ -72,12 +110,13 @@ export function NodesPage() {
     return <ErrorState error={snapshot.error} retry={() => void snapshot.refetch()} />
   const data = snapshot.data
   const live =
-    connection === 'live' &&
+    (connection === 'live' || connection === 'refreshing') &&
     data.live &&
     service.data?.state === 'ready' &&
     data.core_started_at_millis === service.data.core_started_at_millis
   const blocked =
     !live ||
+    connection !== 'live' ||
     snapshot.isError ||
     selection.isPending ||
     selection.isUncertain ||
@@ -96,6 +135,19 @@ export function NodesPage() {
   return (
     <div className="max-w-5xl space-y-4">
       <HeaderActions>
+        {pendingConfirmation && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-12"
+            aria-label={t('checkStatus')}
+            onClick={() =>
+              void (operation?.target.kind === 'mode' ? mode.verify() : selection.verify())
+            }
+          >
+            <RefreshCw />
+          </Button>
+        )}
         {api.supports('config.read') && api.supports('config.write') && (
           <Button
             variant="ghost"
@@ -148,41 +200,19 @@ export function NodesPage() {
           className="h-11 pl-9"
         />
       </div>
-      {connection !== 'live' || snapshot.isError || (!live && data.source !== 'configuration') ? (
+      {!['live', 'refreshing'].includes(connection) ||
+      snapshot.isError ||
+      (!live && data.source !== 'configuration') ? (
         <Badge variant="outline">{t('staleSnapshot')}</Badge>
       ) : data.source === 'configuration' && service.data?.state === 'ready' ? (
         <p className="text-xs text-muted-foreground">
           {text('实时状态暂不可用', 'Live state unavailable')}
         </p>
       ) : null}
-      {(selection.isUncertain || selection.isUnconfirmed) && (
-        <section role="status" className="space-y-2 border-y py-3 text-sm">
-          <p>
-            {t(
-              selection.isUnconfirmed
-                ? 'routingUnconfirmed'
-                : operation?.target.kind === 'mode'
-                  ? 'modeUncertain'
-                  : 'selectionUncertain',
-            )}
-          </p>
-          <p className="text-muted-foreground">
-            {t(
-              selection.persisted || mode.persisted ? 'persisted' : 'routingUnconfirmedDescription',
-            )}
-          </p>
-          <Button
-            variant="outline"
-            onClick={() =>
-              void (operation?.target.kind === 'mode' ? mode.verify() : selection.verify())
-            }
-          >
-            {t('checkStatus')}
-          </Button>
-        </section>
+      {selection.error instanceof ApiError && selection.persisted && (
+        <ErrorState compact error={selection.error} />
       )}
-      {selection.error != null && <ErrorState compact error={selection.error} />}
-      {mode.error != null && <ErrorState compact error={mode.error} />}
+      {mode.persisted && mode.error != null && <ErrorState compact error={mode.error} />}
       {snapshot.isError && (
         <ErrorState compact error={snapshot.error} retry={() => void snapshot.refetch()} />
       )}
@@ -251,7 +281,7 @@ export function NodesPage() {
                   <span className="min-w-0 break-all font-medium">{group.tag}</span>
                   <Badge variant="outline">{group.type}</Badge>
                   <span className="inline-flex h-5 min-w-6 shrink-0 items-center text-xs text-muted-foreground">
-                    {selection.isPending &&
+                    {(selection.isPending || selection.isConfirming) &&
                     operation?.target.kind === 'policy' &&
                     operation.target.value.group_tag === group.tag ? (
                       <LoaderCircle
@@ -269,9 +299,20 @@ export function NodesPage() {
                     size="icon"
                     variant="ghost"
                     className="size-11 shrink-0"
-                    disabled={blocked || group.items.length === 0}
-                    aria-label={t('testGroup', { name: group.tag })}
-                    onClick={() => delay.mutate(group.tag)}
+                    disabled={
+                      (blocked && !(delay.isPending && delay.target === group.tag)) ||
+                      group.items.length === 0
+                    }
+                    aria-label={
+                      delay.isPending && delay.target === group.tag
+                        ? `${t('cancelDelay')} ${group.tag}`
+                        : t('testGroup', { name: group.tag })
+                    }
+                    onClick={() =>
+                      delay.isPending && delay.target === group.tag
+                        ? delay.cancel()
+                        : delay.mutate(group.tag)
+                    }
                   >
                     {delay.isPending && delay.target === group.tag ? (
                       <LoaderCircle className="animate-spin motion-reduce:animate-none" />
@@ -304,27 +345,6 @@ export function NodesPage() {
                   </DropdownMenu>
                 )}
               </div>
-              {delay.target === group.tag && (
-                <>
-                  {delay.isPending && (
-                    <div
-                      role="status"
-                      className="flex items-center justify-between gap-2 py-2 text-sm"
-                    >
-                      <span>{t('testing')}</span>
-                      <Button variant="ghost" size="sm" onClick={delay.cancel}>
-                        {t('cancelDelay')}
-                      </Button>
-                    </div>
-                  )}
-                  {delay.error != null && <ErrorState compact error={delay.error} />}
-                  {delay.outcome && (
-                    <p role="status" className="py-2 text-xs text-muted-foreground">
-                      {t(delay.outcome === 'cached' ? 'delayCached' : 'delayEmpty')}
-                    </p>
-                  )}
-                </>
-              )}
               <CollapsibleContent className="pt-1">
                 {!live && group.unavailable_providers?.length ? (
                   <p className="px-3 py-2 text-xs text-muted-foreground">

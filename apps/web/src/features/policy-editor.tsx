@@ -26,6 +26,7 @@ import { Switch } from '@/components/ui/switch'
 import { LoadingState } from '@/components/states'
 import { ManagementSelect } from './configuration'
 import { useManagementCopy } from './management-copy'
+import { useResultToast } from '@/components/ui/toast'
 
 export function PolicyEditor({
   tag,
@@ -50,6 +51,7 @@ export function PolicyEditor({
   const [generation, setGeneration] = useState(0)
   const [json, setJson] = useState(false)
   const [notice, setNotice] = useState('')
+  useResultToast('policy-editor-result', notice, notice)
   const writing = useRef(false)
   const mounted = useRef(false)
   useEffect(() => {
@@ -228,10 +230,9 @@ export function PolicyEditor({
             {copy.validate}
           </Button>
         </div>
-        {(failure || notice || !document) && (
+        {(failure || !document) && (
           <div className="shrink-0 space-y-2 px-4 pb-2">
             {failure}
-            {notice && <p role="status">{notice}</p>}
             {!document && !error && <LoadingState />}
           </div>
         )}

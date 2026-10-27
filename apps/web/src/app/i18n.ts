@@ -1,5 +1,6 @@
 export const en = {
   back: 'Back',
+  notifications: 'Notifications',
   appPolicy: 'App proxy',
   rootPolicy: 'Root processes',
   configurationManagement: 'Configuration',
@@ -256,6 +257,7 @@ export const en = {
 export type MessageKey = keyof typeof en
 export const zh: Record<MessageKey, string> = {
   back: '返回',
+  notifications: '通知',
   appPolicy: '应用代理',
   rootPolicy: 'Root 进程',
   configurationManagement: '配置管理',

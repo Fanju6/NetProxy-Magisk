@@ -82,12 +82,12 @@ export function DashboardPage() {
   const traffic =
     running &&
     service.core_started_at_millis > 0 &&
-    connection === 'live' &&
+    (connection === 'live' || connection === 'refreshing') &&
     live.data?.available &&
     live.data.started_at_millis === service.core_started_at_millis
       ? live.data.status
       : undefined
-  const rateUnavailable = connection !== 'live' || (running && !traffic)
+  const rateUnavailable = !['live', 'refreshing'].includes(connection) || (running && !traffic)
   const history = samples.data ?? []
   // Retain only the chart's space across transitions, never the previous core's samples.
   if (traffic && history.length > 1 && !hasPlot) setHasPlot(true)
@@ -290,40 +290,42 @@ export function DashboardPage() {
             !mode.persisted && (
               <p className="text-xs text-muted-foreground">{t('modePolicyDifference')}</p>
             )}
-          {(mode.isUncertain || mode.isUnconfirmed) && (
-            <section role="status" className="space-y-2 rounded-md border p-3 text-sm">
-              <p className="font-medium">
-                {t(
-                  mode.isUnconfirmed
-                    ? 'routingUnconfirmed'
-                    : routingOperation?.target.kind === 'policy'
-                      ? 'selectionUncertain'
-                      : 'modeUncertain',
-                )}
-              </p>
-              <p className="text-muted-foreground">
-                {t(
-                  mode.isUnconfirmed
-                    ? 'routingUnconfirmedDescription'
-                    : mode.persisted || selection.persisted
-                      ? 'persisted'
+          {(mode.isUncertain || mode.isUnconfirmed) &&
+            !mode.isConfirming &&
+            !selection.isConfirming && (
+              <section role="status" className="space-y-2 rounded-md border p-3 text-sm">
+                <p className="font-medium">
+                  {t(
+                    mode.isUnconfirmed
+                      ? 'routingUnconfirmed'
                       : routingOperation?.target.kind === 'policy'
-                        ? 'selectionUncertainDescription'
-                        : 'modeUncertainDescription',
-                )}
-              </p>
-              <Button
-                variant="outline"
-                onClick={() =>
-                  void (routingOperation?.target.kind === 'policy'
-                    ? selection.verify()
-                    : mode.verify())
-                }
-              >
-                {t('checkStatus')}
-              </Button>
-            </section>
-          )}
+                        ? 'selectionUncertain'
+                        : 'modeUncertain',
+                  )}
+                </p>
+                <p className="text-muted-foreground">
+                  {t(
+                    mode.isUnconfirmed
+                      ? 'routingUnconfirmedDescription'
+                      : mode.persisted || selection.persisted
+                        ? 'persisted'
+                        : routingOperation?.target.kind === 'policy'
+                          ? 'selectionUncertainDescription'
+                          : 'modeUncertainDescription',
+                  )}
+                </p>
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    void (routingOperation?.target.kind === 'policy'
+                      ? selection.verify()
+                      : mode.verify())
+                  }
+                >
+                  {t('checkStatus')}
+                </Button>
+              </section>
+            )}
           {mode.error != null && <ErrorState error={mode.error} compact />}
           {selection.error != null && <ErrorState error={selection.error} compact />}
           {modeState.isError && (
