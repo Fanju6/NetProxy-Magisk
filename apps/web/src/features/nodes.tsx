@@ -380,7 +380,10 @@ export function NodesPage() {
                         >
                           <button
                             type="button"
-                            className="flex h-full min-w-0 flex-1 flex-col justify-between gap-2 rounded-lg px-3 py-3 text-left enabled:hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-60"
+                            className={cn(
+                              'flex h-full min-w-0 flex-1 flex-col justify-between gap-2 rounded-lg px-3 py-3 text-left enabled:hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+                              !live && 'opacity-70',
+                            )}
                             aria-label={t('selectNode', { name })}
                             aria-pressed={selected}
                             disabled={

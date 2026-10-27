@@ -31,7 +31,7 @@ test('selection preserves policy cards and traffic while confirming one write', 
   )
   await page.evaluate(() => {
     const state = window as unknown as {
-      selectionEvidence: { frames: { top: number; warning: boolean }[] }
+      selectionEvidence: { frames: { top: number; warning: boolean; opacity: string }[] }
       sample: number
     }
     state.sample = window.setInterval(() => {
@@ -40,6 +40,9 @@ test('selection preserves policy cards and traffic while confirming one write', 
         warning: /历史快照|实时状态暂不可用|结果待确认/.test(
           document.querySelector('main')!.textContent!,
         ),
+        opacity: getComputedStyle(
+          document.querySelector('[data-testid="policy-Internet"] button[aria-pressed]')!,
+        ).opacity,
       })
     }, 20)
   })
@@ -52,7 +55,7 @@ test('selection preserves policy cards and traffic while confirming one write', 
       selectionEvidence: {
         streams: number
         writes: number
-        frames: { top: number; warning: boolean }[]
+        frames: { top: number; warning: boolean; opacity: string }[]
       }
       sample: number
     }
@@ -65,6 +68,7 @@ test('selection preserves policy cards and traffic while confirming one write', 
   for (const frame of after.frames) {
     expect(frame.warning).toBe(false)
     expect(frame.top).toBe(top)
+    expect(frame.opacity).toBe('1')
   }
 })
 
