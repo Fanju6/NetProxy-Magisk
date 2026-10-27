@@ -450,7 +450,8 @@ export function ModuleEvents() {
       </Button>
       {connection !== 'live' && (
         <span role={connection === 'offline' ? 'alert' : 'status'} className="sr-only">
-          {t(connectionMessages[connection])} · {t('offlineDescription')}
+          {t(connectionMessages[connection])}
+          {connection !== 'refreshing' && <> · {t('offlineDescription')}</>}
         </span>
       )}
       <Dialog open={showConnection} onOpenChange={setShowConnection}>
@@ -458,7 +459,7 @@ export function ModuleEvents() {
           <DialogHeader>
             <DialogTitle>{t(connectionMessages[connection])}</DialogTitle>
             <DialogDescription>
-              {t(connection === 'live' ? 'connected' : 'offlineDescription')}
+              {t(['live', 'refreshing'].includes(connection) ? 'connected' : 'offlineDescription')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

@@ -241,6 +241,7 @@ it('waits for asynchronous native visibility during handover without pretending 
   )
   await waitFor(() => expect(listeners).toHaveLength(2))
   expect(h.cache.getQueryData(['events-connection'])).toBe('refreshing')
+  expect(screen.getByRole('status')).not.toHaveTextContent(/snapshot.*not live/i)
   expect(h.cache.getQueryData(['traffic-history'])).toHaveLength(1)
   expect(h.cache.getQueryData(['policy-groups'])).toMatchObject({ live: true })
   expect(h.sessions).toHaveLength(1)
