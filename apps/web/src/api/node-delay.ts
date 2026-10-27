@@ -54,7 +54,7 @@ export function usePolicyDelay() {
     setState((current) => ({ ...current, outcome: null, error: null }))
   }, [core, cancel])
   useEffect(() => {
-    if (connection.data !== 'live') cancel()
+    if (!['live', 'refreshing'].includes(connection.data ?? '')) cancel()
   }, [connection.data, cancel])
   return {
     ...state,
