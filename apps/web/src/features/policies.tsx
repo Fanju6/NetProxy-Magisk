@@ -1,26 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import {
-  AppWindow,
-  Check,
-  ChevronRight,
-  Wifi,
-  Network,
-  Settings2,
-  Plus,
-  Trash2,
-} from 'lucide-react'
+import { AppWindow, Check, Wifi, Plus, Trash2 } from 'lucide-react'
 import { useApi } from '@/app/context'
 import type { ApiClient } from '@/api/client'
 import {
   androidAppsSchema,
   androidIconSchema,
   appDocumentSchema,
-  backendDocumentSchema,
   changeListMode,
   listMode,
   parseDocument,
-  rootDocumentSchema,
   safeManagementError,
   savedWifiSchema,
   ssidSchema,
@@ -35,7 +24,7 @@ import { Choice } from '@/components/choice'
 import { EmptyState, ErrorState, LoadingState } from '@/components/states'
 import { ConfigurationEditor } from './configuration'
 import { useManagementCopy } from './management-copy'
-import { NativeInboundForm } from './native-inbound-form'
+import { InboundSettingsForm } from './inbound-settings-form'
 
 type Change = (content: string) => void
 const serialize = (value: unknown) => JSON.stringify(value, null, 2)
@@ -457,169 +446,29 @@ function WiFiPolicyForm({ content, change }: { content: string; change: Change }
   )
 }
 
-function InboundChoice({
-  target,
-  content,
-  change,
-}: {
-  target: 'backend' | 'root_policy'
-  content: string
-  change: Change
-}) {
-  const copy = useManagementCopy()
-  if (target === 'backend') {
-    const parsed = parseDocument(content, backendDocumentSchema)
-    return parsed ? (
-      <div className="settings-group">
-        <div className="setting-row">
-          <span className="min-w-0 break-words">{copy.backend}</span>
-          <Choice
-            variant="ghost"
-            label={copy.backend}
-            value={parsed.backend}
-            items={(['ebpf', 'tun'] as const).map((value) => ({ value, label: copy[value] }))}
-            onChange={(backend) => {
-              if (backend === 'ebpf' || backend === 'tun') change(serialize({ backend }))
-            }}
-          />
-        </div>
-      </div>
-    ) : (
-      <EmptyState title={copy.invalid} />
-    )
-  }
-  const parsed = parseDocument(content, rootDocumentSchema)
-  return parsed ? (
-    <div className="settings-group">
-      <div className="setting-row">
-        <span className="min-w-0 break-words">{copy.root}</span>
-        <Choice
-          variant="ghost"
-          label={copy.root}
-          value={parsed.root_policy}
-          items={(['default', 'include', 'exclude'] as const).map((value) => ({
-            value,
-            label: copy[value],
-          }))}
-          onChange={(root_policy) => {
-            if (['default', 'include', 'exclude'].includes(root_policy))
-              change(serialize({ root_policy }))
-          }}
-        />
-      </div>
-    </div>
-  ) : (
-    <EmptyState title={copy.invalid} />
-  )
-}
-
 export function PoliciesPage() {
   const { section } = useSearch({ from: '/settings/policies' })
-  return <PolicyPanel key={section ?? 'all'} section={section} />
-}
-
-type PolicySection = 'inbound' | 'root' | 'apps' | 'wifi'
-
-function PolicyPanel({ section }: { section?: PolicySection }) {
   const copy = useManagementCopy()
   const navigate = useNavigate()
-  const initial =
-    section === 'root'
-      ? 'inbound/root_policy'
-      : section === 'apps'
-        ? 'inbound/app'
-        : section === 'wifi'
-          ? 'module/wifi'
-          : null
-  const [target, setTarget] = useState<string | null>(initial)
-  const entries = [
-    { target: 'inbound/backend', title: copy.backend, icon: Network },
-    { target: 'inbound/root_policy', title: copy.root, icon: Settings2 },
-    { target: 'inbound/ebpf', title: copy.ebpf, icon: Network },
-    { target: 'inbound/tun', title: copy.tun, icon: Network },
-    { target: 'inbound/app', title: copy.apps, icon: AppWindow },
-    { target: 'module/wifi', title: copy.wifi, icon: Wifi },
-  ]
-  const selected = entries.find((entry) => entry.target === target)
-  const groups = [
-    { section: 'inbound', title: copy.inbound, entries: entries.slice(0, 4) },
-    { section: 'apps', title: copy.apps, entries: entries.slice(4, 5) },
-    { section: 'wifi', title: 'Wi-Fi', entries: entries.slice(5) },
-  ]
-  const close = () => {
-    setTarget(null)
-    if (section && section !== 'inbound') void navigate({ to: '/settings' })
-  }
+  const target = section === 'apps' ? 'inbound/app' : section === 'wifi' ? 'module/wifi' : 'inbound'
   return (
     <div className="max-w-3xl space-y-5">
-      {(!section || section === 'inbound') &&
-        groups
-          .filter((group) => !section || group.section === section)
-          .map((group) => (
-            <section key={group.section}>
-              <h2 className="section-label">{group.title}</h2>
-              <div className="settings-group">
-                {group.entries
-                  .filter((entry) => !section || entry.target !== 'inbound/root_policy')
-                  .map((entry) => (
-                    <Button
-                      key={entry.target}
-                      variant="ghost"
-                      className="setting-row h-auto w-full justify-start rounded-none text-left font-normal"
-                      onClick={() => setTarget(entry.target)}
-                    >
-                      <entry.icon className="size-4 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 flex-1 whitespace-normal break-words text-left">
-                        {entry.title}
-                      </span>
-                      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-                    </Button>
-                  ))}
-              </div>
-            </section>
-          ))}
-      {selected && (
-        <ConfigurationEditor
-          key={selected.target}
-          target={selected.target}
-          title={selected.title}
-          inline={section !== undefined && section !== 'inbound'}
-          onClose={close}
-          {...(target === 'inbound/app'
-            ? {
-                renderForm: (content: string, change: Change) => (
-                  <ApplicationPolicyForm content={content} change={change} />
-                ),
-              }
-            : target === 'module/wifi'
-              ? {
-                  renderForm: (content: string, change: Change) => (
-                    <WiFiPolicyForm content={content} change={change} />
-                  ),
-                }
-              : target === 'inbound/ebpf' || target === 'inbound/tun'
-                ? {
-                    renderForm: (content: string, change: Change) => (
-                      <NativeInboundForm
-                        backend={target === 'inbound/ebpf' ? 'ebpf' : 'tun'}
-                        content={content}
-                        change={change}
-                      />
-                    ),
-                  }
-                : target === 'inbound/backend' || target === 'inbound/root_policy'
-                  ? {
-                      renderForm: (content: string, change: Change) => (
-                        <InboundChoice
-                          target={target === 'inbound/backend' ? 'backend' : 'root_policy'}
-                          content={content}
-                          change={change}
-                        />
-                      ),
-                    }
-                  : {})}
-        />
-      )}
+      <ConfigurationEditor
+        key={target}
+        target={target}
+        title={section === 'apps' ? copy.apps : section === 'wifi' ? copy.wifi : copy.inbound}
+        inline
+        onClose={() => void navigate({ to: '/settings' })}
+        renderForm={(content, change) =>
+          section === 'apps' ? (
+            <ApplicationPolicyForm content={content} change={change} />
+          ) : section === 'wifi' ? (
+            <WiFiPolicyForm content={content} change={change} />
+          ) : (
+            <InboundSettingsForm content={content} change={change} />
+          )
+        }
+      />
     </div>
   )
 }

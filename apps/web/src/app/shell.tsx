@@ -45,15 +45,7 @@ export function AppShell() {
               : 'configurationManagement',
         )
       : pathname === '/settings/policies'
-        ? t(
-            section === 'wifi'
-              ? 'network'
-              : section === 'apps'
-                ? 'appPolicy'
-                : section === 'root'
-                  ? 'rootPolicy'
-                  : 'inbound',
-          )
+        ? t(section === 'wifi' ? 'network' : section === 'apps' ? 'appPolicy' : 'inbound')
         : pathname === '/settings/logs'
           ? t('logs')
           : t(current.key)

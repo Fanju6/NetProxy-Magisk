@@ -94,10 +94,11 @@ test('application and Wi-Fi policies preserve selections and offer native inboun
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await expect(page.locator('[data-slot="toast"]')).toContainText('已保存')
   await page.goto('/#/settings/policies?section=inbound')
-  await page.getByRole('button', { name: 'TUN', exact: true }).click()
-  await expect(
-    page.getByRole('dialog').getByText('接口地址，每行一个', { exact: true }),
-  ).toBeVisible()
+  await page.getByRole('combobox', { name: '入站后端', exact: true }).click()
+  await page.getByRole('option', { name: 'TUN', exact: true }).click()
+  await expect(page.getByText('接口地址，每行一个', { exact: true })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Root 进程', exact: true })).toBeVisible()
+  await expect(page.locator('[role="dialog"][data-panel]')).toHaveCount(0)
   await page.screenshot({
     path: `test-results/${test.info().project.name}-tun-editor.png`,
     fullPage: true,

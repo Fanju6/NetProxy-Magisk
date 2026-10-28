@@ -4,6 +4,8 @@ import userEvent from '@testing-library/user-event'
 import { createMemoryHistory, RouterProvider } from '@tanstack/react-router'
 import { expect, it, vi } from 'vitest'
 import { ApiClient } from '@/api/client'
+import { readConfig } from '@/api/management'
+import { z } from 'zod'
 import type { ApiTransport } from '@/api/contracts'
 import { AppProviders } from '@/app/providers'
 import { makeRouter } from '@/app/router'
@@ -58,7 +60,7 @@ it('groups settings and links directly to each policy and configuration section'
   expect(screen.getByRole('heading', { name: 'Proxy & network' })).toBeVisible()
   expect(screen.getByRole('heading', { name: 'Advanced' })).toBeVisible()
   for (const [name, section] of [
-    ['Root processes', 'root'],
+    ['Inbound settings', 'inbound'],
     ['Application proxy', 'apps'],
     ['Wi-Fi', 'wifi'],
   ] as const)
@@ -66,6 +68,7 @@ it('groups settings and links directly to each policy and configuration section'
       'href',
       expect.stringContaining(`section=${section}`),
     )
+  expect(screen.queryByRole('link', { name: 'Root processes' })).not.toBeInTheDocument()
   expect(screen.getByRole('link', { name: 'Routing rules' })).toHaveAttribute(
     'href',
     expect.stringContaining('section=rules'),
@@ -74,7 +77,7 @@ it('groups settings and links directly to each policy and configuration section'
 })
 
 it.each([
-  ['root', 'inbound/root_policy', 'Root processes'],
+  ['inbound', 'inbound', 'Root processes'],
   ['apps', 'inbound/app', 'Proxy mode'],
   ['wifi', 'module/wifi', 'Network matching'],
 ])('opens the %s form inline without a second mixed list', async (section, target, label) => {
@@ -91,12 +94,89 @@ it.each([
   expect(await screen.findByText('NETPROXY V9')).toBeVisible()
 })
 
-it('keeps the unsectioned policy entry grouped and usable', async () => {
+it('opens unsectioned policies directly as the combined inbound form', async () => {
   page('/settings/policies')
-  expect(await screen.findByRole('button', { name: 'Inbound backend' })).toBeVisible()
-  expect(screen.getByRole('button', { name: 'Network matching' })).toBeVisible()
-  fireEvent.click(screen.getByRole('button', { name: 'Root processes' }))
+  expect(await screen.findByRole('combobox', { name: 'Inbound backend' })).toBeVisible()
   expect(await screen.findByRole('combobox', { name: 'Root processes' })).toBeVisible()
+  expect(screen.getByRole('link', { name: 'Application proxy' })).toBeVisible()
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+})
+
+it('edits backend, Root and native parameters in one revisioned save without clearing the other backend', async () => {
+  const data = page('/settings/policies?section=inbound')
+  await screen.findByRole('combobox', { name: 'Inbound backend' })
+  expect(screen.getByText('Local network')).toBeVisible()
+  expect(screen.queryByRole('textbox', { name: 'Interface name' })).not.toBeInTheDocument()
+  expect(screen.getAllByText('Advanced parameters')).toHaveLength(2)
+  expect(screen.getAllByText('Data plane')[0]).not.toBeVisible()
+  await choose('Root processes', 'Bypass')
+  await choose('Inbound backend', 'TUN')
+  const input = await screen.findByRole('textbox', { name: 'Interface name' })
+  fireEvent.change(input, { target: { value: 'netproxy-test' } })
+  fireEvent.blur(input)
+  await choose('Inbound backend', 'eBPF')
+  expect(screen.getByText('Local network')).toBeVisible()
+  await choose('Inbound backend', 'TUN')
+  expect(screen.getByRole('textbox', { name: 'Interface name' })).toHaveValue('netproxy-test')
+  expect(data.request.mock.calls.some(([input]) => input.method === 'PUT')).toBe(false)
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  expect(await screen.findByText('Saved')).toBeVisible()
+  const writes = data.request.mock.calls.filter(([input]) => input.method === 'PUT')
+  expect(writes).toHaveLength(1)
+  expect(writes[0]![0].query).toEqual({ target: 'inbound' })
+  const body = writes[0]![0].body as { content: string; revision: string }
+  expect(body.revision).not.toBe('')
+  expect(JSON.parse(body.content)).toMatchObject({
+    backend: 'tun',
+    root_policy: 'exclude',
+    ebpf: {
+      local: { enabled: true, data_plane: 'tc', dns_mode: 'respect_policy' },
+      shared: { enabled: false },
+    },
+    tun: { interface_name: 'netproxy-test', auto_route: true, auto_redirect: true },
+    app: { enabled: false, mode: 'blacklist', proxy_apps: [], bypass_apps: [] },
+  })
+  const saved = await readConfig(data.api, 'inbound')
+  expect(JSON.parse(saved.content)).toEqual(JSON.parse(body.content))
+  expect(saved.revision).not.toBe(body.revision)
+})
+
+it('rejects a stale combined inbound save after another client changes application policy', async () => {
+  const data = page('/settings/policies?section=inbound')
+  await screen.findByRole('combobox', { name: 'Root processes' })
+  const apps = await readConfig(data.api, 'inbound/app')
+  await data.api.request(
+    {
+      method: 'PUT',
+      path: '/config',
+      query: { target: 'inbound/app' },
+      body: {
+        revision: apps.revision,
+        content: JSON.stringify({
+          app: {
+            enabled: true,
+            mode: 'whitelist',
+            proxy_apps: ['0:com.termux'],
+            bypass_apps: [],
+          },
+        }),
+      },
+    },
+    z.unknown(),
+  )
+  await choose('Root processes', 'Bypass')
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  expect(await screen.findByText(/This partition changed elsewhere/)).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+  expect(screen.getByRole('combobox', { name: 'Root processes' })).toHaveTextContent('Bypass')
+  const saved = JSON.parse((await readConfig(data.api, 'inbound')).content)
+  expect(saved.root_policy).toBe('include')
+  expect(saved.app.proxy_apps).toEqual(['0:com.termux'])
+  expect(
+    data.request.mock.calls.filter(
+      ([input]) => input.method === 'PUT' && input.query?.target === 'inbound',
+    ),
+  ).toHaveLength(1)
 })
 
 it('preserves exact Wi-Fi names and inactive lists when switching the policy off', async () => {
@@ -162,6 +242,7 @@ it('keeps advanced TUN preferences untouched when editing the interface', async 
           auto_route: true,
           auto_redirect: true,
           address: ['172.19.0.1/30'],
+          future_option: { preserve: 'untouched' },
         },
       }),
     )
@@ -184,6 +265,7 @@ it('keeps advanced TUN preferences untouched when editing the interface', async 
   expect(draft.tun.interface_name).toBe('netproxy-test')
   expect(draft.tun.auto_route).toBe(true)
   expect(draft.tun.auto_redirect).toBe(true)
+  expect(draft.tun.future_option).toEqual({ preserve: 'untouched' })
   expect(draft.tun).not.toHaveProperty('mtu')
   expect(draft.tun).not.toHaveProperty('stack')
   expect(draft.tun).not.toHaveProperty('strict_route')

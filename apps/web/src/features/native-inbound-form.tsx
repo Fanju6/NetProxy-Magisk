@@ -81,7 +81,17 @@ export function NativeInboundForm({
         value={typeof parent[key] === 'string' ? parent[key] : ''}
         items={[
           { value: '', label: text('内核默认', 'Core default') },
-          ...choices.map((value) => ({ value, label: value })),
+          ...choices.map((value) => ({
+            value,
+            label:
+              value === 'respect_policy'
+                ? text('遵循代理策略', 'Follow proxy policy')
+                : value === 'hijack'
+                  ? text('劫持 DNS', 'Hijack DNS')
+                  : value === 'off' || value === 'disabled'
+                    ? text('关闭', 'Off')
+                    : value,
+          })),
         ]}
         onChange={(value) => save({ [key]: value || undefined })}
       />
@@ -168,13 +178,6 @@ export function NativeInboundForm({
                 <div className="settings-group">
                   {toggle(text('启用', 'Enabled'), 'enabled', part, save)}
                   {choice(
-                    text('数据平面', 'Data plane'),
-                    'data_plane',
-                    path === 'local' ? ['cgroup', 'tc'] : ['packet_rewrite', 'socket_assign'],
-                    part,
-                    save,
-                  )}
-                  {choice(
                     text('DNS 接管', 'DNS capture'),
                     'dns_mode',
                     ['respect_policy', 'hijack', 'off'],
@@ -188,19 +191,34 @@ export function NativeInboundForm({
                     part,
                     save,
                   )}
-                  {path === 'shared' &&
-                    list(
-                      text('下游接口，每行一个', 'Downstream interfaces, one per line'),
-                      'interface',
-                      part,
-                      save,
-                    )}
-                  {list(
-                    text('绕过规则集，每行一个', 'Bypass rule sets, one per line'),
-                    'bypass_rule_set',
-                    part,
-                    save,
-                  )}
+                  <details className="group">
+                    <summary className="setting-row cursor-pointer list-none font-medium [&::-webkit-details-marker]:hidden">
+                      {text('高级参数', 'Advanced parameters')}
+                      <ChevronDown className="size-4 shrink-0 text-muted-foreground group-open:rotate-180" />
+                    </summary>
+                    <div className="divide-y border-t">
+                      {choice(
+                        text('数据平面', 'Data plane'),
+                        'data_plane',
+                        path === 'local' ? ['cgroup', 'tc'] : ['packet_rewrite', 'socket_assign'],
+                        part,
+                        save,
+                      )}
+                      {path === 'shared' &&
+                        list(
+                          text('下游接口，每行一个', 'Downstream interfaces, one per line'),
+                          'interface',
+                          part,
+                          save,
+                        )}
+                      {list(
+                        text('绕过规则集，每行一个', 'Bypass rule sets, one per line'),
+                        'bypass_rule_set',
+                        part,
+                        save,
+                      )}
+                    </div>
+                  </details>
                 </div>
               </section>
             )

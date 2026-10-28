@@ -44,12 +44,9 @@ const routeTree = root.addChildren([
     path: '/settings/policies',
     validateSearch: (
       search: Record<string, unknown>,
-    ): { section?: 'inbound' | 'root' | 'apps' | 'wifi' | undefined } => ({
+    ): { section?: 'inbound' | 'apps' | 'wifi' | undefined } => ({
       section:
-        search.section === 'inbound' ||
-        search.section === 'root' ||
-        search.section === 'apps' ||
-        search.section === 'wifi'
+        search.section === 'inbound' || search.section === 'apps' || search.section === 'wifi'
           ? search.section
           : undefined,
     }),

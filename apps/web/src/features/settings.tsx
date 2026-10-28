@@ -9,7 +9,6 @@ import {
   FileText,
   Network,
   Route,
-  Settings2,
   Wifi,
 } from 'lucide-react'
 import { useApi, usePreferences } from '@/app/context'
@@ -56,11 +55,6 @@ export function SettingsPage() {
       title: t('inbound'),
       icon: Network,
       section: 'inbound' as const,
-    },
-    {
-      title: text('Root 进程', 'Root processes'),
-      icon: Settings2,
-      section: 'root' as const,
     },
     {
       title: text('应用代理', 'Application proxy'),
