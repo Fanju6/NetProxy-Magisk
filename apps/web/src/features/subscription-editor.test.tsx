@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import type { SubscriptionInput } from '@/api/subscription-input'
 import { PreferencesContext } from '@/app/context'
 import { translator } from '@/app/i18n'
+import { ToastProvider } from '@/components/ui/toast'
 import { demoGroup } from '@/mocks/fixtures'
 import { SubscriptionEditor, type SubscriptionEditorProps } from './subscription-editor'
 
@@ -19,7 +20,9 @@ function renderEditor(props: Partial<SubscriptionEditorProps> = {}) {
         t: translator('en'),
       }}
     >
-      <SubscriptionEditor busy={false} onSubmit={onSubmit} onClose={onClose} {...props} />
+      <ToastProvider>
+        <SubscriptionEditor busy={false} onSubmit={onSubmit} onClose={onClose} {...props} />
+      </ToastProvider>
     </PreferencesContext>,
   )
   return { ...view, onSubmit, onClose }

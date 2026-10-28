@@ -418,7 +418,6 @@ function ResourceDetails({
           {connection !== 'live' && <Badge variant="outline">{t('staleSnapshot')}</Badge>}
           {data.detail.isError && <ErrorState error={data.detail.error} compact />}
           <SubscriptionFeedback actions={actions} groups={groups} targetId={id} />
-          <ResourceProviderTag group={group} />
           <dl className="settings-group divide-y text-sm">
             {rows.map(([label, value]) => (
               <div key={label} className="flex min-w-0 items-baseline justify-between gap-4 py-3">
@@ -550,6 +549,12 @@ function ResourceDetails({
               </section>
             </>
           )}
+          <details className="border-t pt-4">
+            <summary className="min-h-11 cursor-pointer py-3 text-sm font-medium">
+              {text('高级信息', 'Advanced information')}
+            </summary>
+            <ResourceProviderTag group={group} />
+          </details>
         </div>
       )}
     </Details>

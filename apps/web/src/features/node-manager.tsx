@@ -78,6 +78,16 @@ export function NodeManager({
   const [insecure, setInsecure] = useState(false)
   const [loaded, setLoaded] = useState(operation !== 'edit' && operation !== 'export')
   const [copyState, setCopyState] = useState<'idle' | 'copying' | 'copied' | 'failed'>('idle')
+  useResultToast(
+    'node-link-copy',
+    copyState === 'copied' || copyState === 'failed' ? copyState : null,
+    copyState === 'copied'
+      ? text('链接已复制', 'Link copied')
+      : text(
+          '复制失败，请手动选择链接复制。',
+          'Copy failed. Select the link and copy it manually.',
+        ),
+  )
   const requiresTarget = 'tag' in target
   const blocked =
     disabled ||
@@ -343,19 +353,6 @@ export function NodeManager({
               disabled={action.pending || uncertain}
             />
           </label>
-        )}
-        {copyState === 'copied' && (
-          <p role="status" className="text-sm">
-            {text('链接已复制', 'Link copied')}
-          </p>
-        )}
-        {copyState === 'failed' && (
-          <p role="alert" className="text-sm text-destructive">
-            {text(
-              '复制失败，请手动选择链接复制。',
-              'Copy failed. Select the link and copy it manually.',
-            )}
-          </p>
         )}
         {feedback}
       </div>

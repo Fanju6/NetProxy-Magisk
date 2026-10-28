@@ -120,14 +120,72 @@ it('tests a whole native group and retains seconds-based result timestamps', asy
   const latency = within(screen.getByTestId('policy-Fastest')).getByText('68 ms')
   expect(latency).toHaveAttribute('title', new Date(1792065600 * 1000).toLocaleString())
   fireEvent.click(test)
-  expect(
-    await screen.findByText('Latest available results received; some may be cached.'),
-  ).toBeVisible()
+  await waitFor(() => expect(test).toBeEnabled())
+  expect(screen.queryByText(/some may be cached/)).not.toBeInTheDocument()
+  expect(document.querySelector('[data-slot="toast"]')).not.toBeInTheDocument()
   expect(
     h.request.mock.calls
       .filter(([input]) => input.path === '/policy-groups/delay')
       .map(([input]) => input.body),
   ).toEqual([{ group_tag: 'Fastest' }])
+})
+
+it('leaves unmeasured latency blank without hiding existing results', async () => {
+  await setup()
+  const direct = within(screen.getByTestId('policy-Internet')).getByRole('button', {
+    name: 'Select direct',
+  })
+  expect(direct).not.toHaveTextContent('Not measured')
+  expect(direct.querySelector('.tabular-nums')).toBeEmptyDOMElement()
+  expect(within(screen.getByTestId('policy-Fastest')).getByText('68 ms')).toBeVisible()
+})
+
+it('keeps delay errors visible as a toast without replacing the group list', async () => {
+  const h = await setup()
+  const original = h.request.getMockImplementation()!
+  h.request.mockImplementation((input, signal) =>
+    input.path === '/policy-groups/delay'
+      ? Promise.reject(new Error('test-only delay failure'))
+      : original(input, signal),
+  )
+  const test = screen.getByRole('button', { name: 'Test group Fastest' })
+  await waitFor(() => expect(test).toBeEnabled())
+  fireEvent.click(test)
+  await waitFor(() => expect(document.querySelector('[data-slot="toast"]')).toBeInTheDocument())
+  await waitFor(() => expect(test).toBeEnabled())
+  expect(within(screen.getByTestId('policy-Fastest')).getByText('68 ms')).toBeVisible()
+  expect(
+    h.request.mock.calls.filter(([input]) => input.path === '/policy-groups/delay'),
+  ).toHaveLength(1)
+})
+
+it('shows card progress during a single delay request and restores measured values quietly', async () => {
+  const h = await setup()
+  const original = h.request.getMockImplementation()!
+  let finish = () => {}
+  const waiting = new Promise<void>((resolve) => {
+    finish = resolve
+  })
+  h.request.mockImplementation(async (input, signal) => {
+    if (input.path === '/policy-groups/delay') await waiting
+    return original(input, signal)
+  })
+  const group = screen.getByTestId('policy-Fastest')
+  const test = screen.getByRole('button', { name: 'Test group Fastest' })
+  await waitFor(() => expect(test).toBeEnabled())
+  fireEvent.click(test)
+  await waitFor(() =>
+    expect(group.querySelector('[data-slot="node-card"] .tabular-nums svg')).toBeInTheDocument(),
+  )
+  expect(screen.getByRole('button', { name: 'Stop waiting Fastest' })).toBeEnabled()
+  await act(async () => finish())
+  await waitFor(() => expect(test).toBeEnabled())
+  await waitFor(() =>
+    expect(
+      group.querySelector('[data-slot="node-card"] .tabular-nums svg'),
+    ).not.toBeInTheDocument(),
+  )
+  expect(document.querySelector('[data-slot="toast"]')).not.toBeInTheDocument()
 })
 
 it('resolves resource display names by stable Provider identity and follows renames', async () => {

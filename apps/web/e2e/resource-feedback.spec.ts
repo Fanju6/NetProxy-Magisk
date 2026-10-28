@@ -49,3 +49,37 @@ test('policy members show resource names, while runtime member identity is uncha
   )
   await page.screenshot({ path: `test-results/${test.info().project.name}-resource-names.png` })
 })
+
+test('delay results stay on cards and Provider references stay in advanced details', async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.goto('/#/nodes')
+  const direct = page
+    .getByTestId('policy-Internet')
+    .getByRole('button', { name: '选择 direct', exact: true })
+  await expect(direct).not.toContainText('未测速')
+  await expect(direct.locator('.tabular-nums')).toBeEmpty()
+  const group = page.getByTestId('policy-Fastest')
+  const testDelay = group.getByRole('button', { name: '测试分组 Fastest' })
+  await expect(testDelay).toBeEnabled()
+  await testDelay.click()
+  await expect(testDelay).toBeEnabled()
+  await expect(group).toContainText(/\d+ ms/)
+  await expect(page.locator('[data-slot="toast"]')).toHaveCount(0)
+  await page.screenshot({ path: `test-results/${test.info().project.name}-quiet-delay.png` })
+  await page.goto('/#/subscriptions')
+  await page.getByRole('button', { name: '查看详情 Global Connect', exact: true }).click()
+  const details = page.getByRole('dialog', { name: 'Global Connect', exact: true })
+  const tag = details.getByText('np/demo-global', { exact: true })
+  await expect(tag).not.toBeVisible()
+  await details.getByText('高级信息', { exact: true }).click()
+  await expect(tag).toBeVisible()
+  await details.getByRole('button', { name: '复制 ProviderTag', exact: true }).click()
+  await expect(page.locator('[data-slot="toast"]')).toContainText('Provider Tag 已复制')
+  await expect(details.getByText('Provider Tag 已复制', { exact: true })).toHaveCount(0)
+  await page.mouse.move(0, 0)
+  await expect(page.locator('[data-slot="toast"]')).toHaveCount(0, { timeout: 8000 })
+  await page.screenshot({ path: `test-results/${test.info().project.name}-advanced-provider.png` })
+})

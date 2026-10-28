@@ -3,10 +3,22 @@ import { Copy } from 'lucide-react'
 import type { GroupSummary } from '@/api/contracts'
 import { usePreferences } from '@/app/context'
 import { Button } from '@/components/ui/button'
+import { useResultToast } from '@/components/ui/toast'
 
 export function ResourceProviderTag({ group }: { group: Pick<GroupSummary, 'provider_tag'> }) {
   const { t, preferences } = usePreferences()
   const [copy, setCopy] = useState<'idle' | 'pending' | 'done' | 'failed'>('idle')
+  useResultToast(
+    'provider-copy',
+    copy === 'done' || copy === 'failed' ? copy : null,
+    copy === 'done'
+      ? preferences.locale === 'zh'
+        ? 'Provider Tag 已复制'
+        : 'Provider Tag copied'
+      : preferences.locale === 'zh'
+        ? '复制失败，请手动选择 Provider Tag 复制。'
+        : 'Copy failed. Select the Provider Tag and copy it manually.',
+  )
   const tag = group.provider_tag
   return (
     <div className="min-w-0 space-y-2">
@@ -37,18 +49,6 @@ export function ResourceProviderTag({ group }: { group: Pick<GroupSummary, 'prov
           <Copy />
         </Button>
       </div>
-      {copy === 'done' && (
-        <p role="status" className="text-sm text-muted-foreground">
-          {preferences.locale === 'zh' ? 'ProviderTag 已复制' : 'ProviderTag copied'}
-        </p>
-      )}
-      {copy === 'failed' && (
-        <p role="alert" className="text-sm text-destructive">
-          {preferences.locale === 'zh'
-            ? '复制失败，请手动选择 ProviderTag 复制。'
-            : 'Copy failed. Select the ProviderTag and copy it manually.'}
-        </p>
-      )}
     </div>
   )
 }

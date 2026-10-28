@@ -251,6 +251,8 @@ it('reads Catalog-only nodes into their resource details without runtime selecti
   const panel = await details()
   expect(await within(panel).findByText('local-second node', { exact: true })).toBeVisible()
   expect(within(panel).queryByText('default node', { exact: true })).not.toBeInTheDocument()
+  expect(within(panel).getByText('np/local-second')).not.toBeVisible()
+  fireEvent.click(await within(panel).findByText('Advanced information'))
   expect(within(panel).getByText('np/local-second')).toBeVisible()
   expect(screen.queryByText('Active group')).not.toBeInTheDocument()
   expect(within(panel).queryByRole('link')).not.toBeInTheDocument()
@@ -317,12 +319,24 @@ it('edits and adds nodes in the opened local resource and returns to that resour
 })
 
 it('shares subscription nodes locally without exposing edit or delete actions', async () => {
+  const copy = vi.fn().mockResolvedValue(undefined)
+  vi.stubGlobal(
+    'navigator',
+    Object.create(navigator, {
+      clipboard: { value: { writeText: copy }, configurable: true },
+    }),
+  )
   const h = setup()
   await details('Subscription fixture')
   await nodeAction('source-fixture node', 'Share link')
   const content = await screen.findByRole('textbox', { name: 'Node content' })
   expect(content).toHaveAttribute('readonly')
   expect(content).toHaveValue('socks://fixture:test-only-link@localhost:1080')
+  fireEvent.click(screen.getByRole('button', { name: 'Copy link' }))
+  expect(await screen.findByText('Link copied')).toBeVisible()
+  expect(document.querySelector('[data-slot="toast"]')).toHaveTextContent('Link copied')
+  expect(screen.getByRole('dialog', { name: 'Share link' })).not.toHaveTextContent('Link copied')
+  expect(copy).toHaveBeenCalledExactlyOnceWith('socks://fixture:test-only-link@localhost:1080')
   expect(h.request.mock.calls.find(([input]) => input.path === '/nodes/export')?.[0].query).toEqual(
     { group_id: 'source-fixture', node_tag: 'source-fixture node' },
   )
@@ -448,8 +462,15 @@ it('copies the server ProviderTag unchanged after a display-name rename', async 
   const entry = group('stable-fixture', 'Renamed display name', 'local')
   setup(<ResourceProviderTag group={entry} />)
   fireEvent.click(await screen.findByRole('button', { name: 'Copy ProviderTag' }))
-  expect(await screen.findByText('ProviderTag copied')).toBeVisible()
+  expect(await screen.findByText('Provider Tag copied')).toBeVisible()
+  expect(document.querySelector('[data-slot="toast"]')).toHaveTextContent('Provider Tag copied')
   expect(copy).toHaveBeenCalledExactlyOnceWith('np/stable-fixture')
+  fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+  await waitFor(() => expect(document.querySelector('[data-slot="toast"]')).not.toBeInTheDocument())
+  fireEvent.click(screen.getByRole('button', { name: 'Copy ProviderTag' }))
+  expect(await screen.findByText('Provider Tag copied')).toBeVisible()
+  expect(document.querySelectorAll('[data-slot="toast"]')).toHaveLength(1)
+  expect(copy).toHaveBeenCalledTimes(2)
   vi.unstubAllGlobals()
 })
 
@@ -483,6 +504,7 @@ it('creates, renames and deletes local resources through fixed Catalog business 
   })
   closePanel()
   let panel = await screen.findByRole('dialog', { name: 'Created fixture' })
+  fireEvent.click(await within(panel).findByText('Advanced information'))
   expect(await within(panel).findByText('np/local-created')).toBeVisible()
   fireEvent.click(within(panel).getByRole('button', { name: 'More actions' }))
   fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename group' }))
@@ -499,6 +521,7 @@ it('creates, renames and deletes local resources through fixed Catalog business 
   })
   closePanel()
   panel = await screen.findByRole('dialog', { name: 'Renamed fixture' })
+  fireEvent.click(await within(panel).findByText('Advanced information'))
   expect(await within(panel).findByText('np/local-created')).toBeVisible()
   fireEvent.click(within(panel).getByRole('button', { name: 'More actions' }))
   fireEvent.click(await screen.findByRole('menuitem', { name: 'Delete group' }))
@@ -629,12 +652,14 @@ it('offers manual ProviderTag copying when clipboard access fails', async () => 
   )
   setup(<ResourceProviderTag group={group('local-fixture', 'Fixture', 'local')} />)
   fireEvent.click(await screen.findByRole('button', { name: 'Copy ProviderTag' }))
-  expect(await screen.findByRole('alert')).toHaveTextContent(
-    'Copy failed. Select the ProviderTag and copy it manually.',
-  )
+  expect(
+    await screen.findByText('Copy failed. Select the Provider Tag and copy it manually.'),
+  ).toBeVisible()
   expect(screen.getByText('np/local-fixture')).toHaveClass('select-text')
   expect(screen.getByRole('button', { name: 'Copy ProviderTag' })).toBeEnabled()
-  expect(screen.getByRole('alert')).not.toHaveTextContent('fixture clipboard denied')
+  expect(document.querySelector('[data-slot="toast"]')).not.toHaveTextContent(
+    'fixture clipboard denied',
+  )
 })
 
 it('copies ProviderTag in subscription editing without reading private settings', async () => {
@@ -648,7 +673,7 @@ it('copies ProviderTag in subscription editing without reading private settings'
   fireEvent.click(within(panel).getByRole('button', { name: 'More actions' }))
   fireEvent.click(await screen.findByRole('menuitem', { name: 'Edit subscription' }))
   fireEvent.click(await screen.findByRole('button', { name: 'Copy ProviderTag' }))
-  expect(await screen.findByText('ProviderTag copied')).toBeVisible()
+  expect(await screen.findByText('Provider Tag copied')).toBeVisible()
   expect(copy).toHaveBeenCalledExactlyOnceWith('np/source-fixture')
   expect(h.request.mock.calls.every(([input]) => input.method === 'GET')).toBe(true)
   expect(h.request.mock.calls.some(([input]) => input.query?.private !== undefined)).toBe(false)

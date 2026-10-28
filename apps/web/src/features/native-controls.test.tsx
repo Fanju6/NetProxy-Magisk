@@ -158,9 +158,8 @@ it('uses policy controls without granting subscription writes', async () => {
   const test = screen.getByRole('button', { name: 'Test group Fastest' })
   await waitFor(() => expect(test).toBeEnabled())
   fireEvent.click(test)
-  expect(
-    await screen.findByText('Latest available results received; some may be cached.'),
-  ).toBeVisible()
+  await waitFor(() => expect(test).toBeEnabled())
+  expect(screen.queryByText(/some may be cached/)).not.toBeInTheDocument()
   expect(
     fixture.request.mock.calls.map(([input]) => input).filter((input) => input.method !== 'GET'),
   ).toEqual([

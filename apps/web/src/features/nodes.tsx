@@ -76,10 +76,8 @@ export function NodesPage() {
   )
   useResultToast(
     'policy-delay',
-    delay.error ?? delay.outcome,
-    delay.error
-      ? errorTitle(delay.error, t)
-      : t(delay.outcome === 'cached' ? 'delayCached' : 'delayEmpty'),
+    delay.error ?? (delay.outcome === 'empty' ? delay.outcome : null),
+    delay.error ? errorTitle(delay.error, t) : t('delayEmpty'),
   )
   useResultToast(
     'policy-confirmation',
@@ -441,9 +439,14 @@ export function NodesPage() {
                                       : ''
                                   }
                                 >
-                                  {live && (item.url_test_delay ?? 0) > 0
-                                    ? `${item.url_test_delay} ms`
-                                    : t('noLatency')}
+                                  {delay.isPending && delay.target === group.tag ? (
+                                    <LoaderCircle
+                                      aria-label={t('working')}
+                                      className="size-3 animate-spin motion-reduce:animate-none"
+                                    />
+                                  ) : (item.url_test_delay ?? 0) > 0 ? (
+                                    `${item.url_test_delay} ms`
+                                  ) : null}
                                 </span>
                               )}
                             </span>
