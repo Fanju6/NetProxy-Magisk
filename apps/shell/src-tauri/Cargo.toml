@@ -22,3 +22,9 @@ serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 tauri = { version = "=2.12.4", features = [] }
 tauri-plugin-module-api = { path = "../plugins/module-api" }
+
+[profile.release]
+opt-level = "s"
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

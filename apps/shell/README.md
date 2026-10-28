@@ -46,6 +46,14 @@ pnpm android:build:upgrade
 
 两种 APK 都使用同一份 React Native-mode 构建产物。`pnpm tauri android dev` 使用本机 1420 端口的显式 Native 模式开发服务，不会退回 Mock。
 
+### 分发测试包
+
+提供给测试用户的 APK 使用 Release 构建，不带 `--debug`，并通过独立配置明确设置测试版名称和递增的 versionCode。保持原包名及固定签名；不要直接分发隔离 Debug 包或使用上述历史覆盖验证版本码。
+
+Rust Release 使用体积优化、thin LTO、单代码生成单元及符号剥离，Android 沿用 Release 优化和资源裁剪。Debug 为调试保留大型原生符号库，其体积不能代表分发 APK。只构建当前支持的 arm64，不使用二进制加壳或删除安全校验来缩小体积。
+
+模块中必须内置本次签名 APK、从当前 Go 源码构建的 `netproxyctl`、匹配锁定版本的 sing-box，以及 Android 平台辅助 DEX。默认资源只能来自源码，不能复制设备的 API 凭据、订阅或运行状态。测试模块不指向稳定版更新地址，也不等同于正式 Release。
+
 ## CI
 
 独立工作流 [v9-shell.yml](../../.github/workflows/v9-shell.yml) 在壳、V9 WebUI、共用 V8 `core/api` 源码与测试或自身配置变化的 push / Pull Request 上运行，也可手动执行。它不调用或修改 V8 验证、签名、模块打包与发布流水线，不读取签名 Secrets。
