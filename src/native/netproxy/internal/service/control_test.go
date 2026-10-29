@@ -87,6 +87,56 @@ func TestReadStatusWithoutService(t *testing.T) {
 	}
 }
 
+func TestReadStatusStartupPhases(t *testing.T) {
+	for _, tt := range []struct {
+		name, state, failure, wantState, wantError string
+		pid, runningPID                            int
+	}{
+		{name: "stopped", state: "stopped", wantState: "stopped"},
+		{name: "preparing before launch", state: "preparing", wantState: "preparing"},
+		{name: "launched before state write", state: "preparing", runningPID: 123, wantState: "starting"},
+		{name: "waiting for readiness", state: "starting", pid: 123, runningPID: 123, wantState: "starting"},
+		{name: "ready", state: "ready", pid: 123, runningPID: 123, wantState: "ready"},
+		{name: "configuration rejected", state: "failed", failure: "sing-box 配置检查失败", wantState: "failed", wantError: "sing-box 配置检查失败"},
+		{name: "launch rejected", state: "failed", failure: "sing-box 进程启动失败", wantState: "failed", wantError: "sing-box 进程启动失败"},
+		{name: "lost preparing process", state: "preparing", pid: 123, wantState: "failed", wantError: "sing-box 进程已退出"},
+		{name: "died before ready", state: "starting", pid: 123, wantState: "failed", wantError: "sing-box 进程已退出"},
+		{name: "died after ready", state: "ready", pid: 123, wantState: "failed", wantError: "sing-box 进程已退出"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			temp := t.TempDir()
+			statePath := filepath.Join(temp, "service.json")
+			content, err := json.Marshal(stateFile{State: tt.state, PID: tt.pid, Error: tt.failure})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(statePath, content, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			withServiceProcess(t, tt.runningPID)
+			server := serviceStatusFixture(t, "Rule", true)
+			defer server.Close()
+			status, err := ReadStatus(t.Context(), Options{
+				SingBoxConfig: modeConfigFixture(t, temp, "Rule"), StateFile: statePath,
+				ServiceAddress: server.URL, RequestTimeout: time.Second,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if status.State != tt.wantState || status.Error != tt.wantError {
+				t.Fatalf("state=%q error=%q, want state=%q error=%q", status.State, status.Error, tt.wantState, tt.wantError)
+			}
+			if (status.PID != nil) != (tt.runningPID > 0) || status.CoreStartedAtMillis != 0 {
+				t.Fatalf("unconfirmed process identity: %#v", status)
+			}
+			after, err := os.ReadFile(statePath)
+			if err != nil || !bytes.Equal(after, content) {
+				t.Fatalf("status read modified lifecycle state: %v", err)
+			}
+		})
+	}
+}
+
 func TestReadStatusDoesNotWaitForCatalog(t *testing.T) {
 	temp := t.TempDir()
 	root := filepath.Join(temp, "catalog")

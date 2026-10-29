@@ -34,7 +34,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Choice } from '@/components/choice'
-import { EmptyState, ErrorState, LoadingState } from '@/components/states'
+import { ErrorState, LoadingState } from '@/components/states'
 import { bytes } from '@/lib/format'
 import type { MessageKey } from '@/app/i18n'
 
@@ -130,7 +130,7 @@ export function DashboardPage() {
           </DropdownMenuContent>
         </DropdownMenu>
       </HeaderActions>
-      <section className="flex items-center justify-between gap-4">
+      <section aria-label={t('service')} className="flex items-center justify-between gap-4">
         <div className="min-w-0 space-y-2">
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <Activity className="size-4" />
@@ -156,6 +156,11 @@ export function DashboardPage() {
               </p>
             )}
           </div>
+          {service.error && (
+            <p role="alert" className="break-words text-sm text-destructive">
+              {service.error}
+            </p>
+          )}
         </div>
         <Button
           size="default"
@@ -179,7 +184,9 @@ export function DashboardPage() {
           </Button>
         </section>
       )}
-      {action.error != null && <ErrorState compact error={action.error} />}
+      {action.error != null && (!service.error || action.persisted) && (
+        <ErrorState compact error={action.error} />
+      )}
       {status.isError && (
         <ErrorState compact error={status.error} retry={() => void status.refetch()} />
       )}
@@ -331,7 +338,6 @@ export function DashboardPage() {
           <ErrorState compact error={modeState.error} retry={() => void modeState.refetch()} />
         )}
       </section>
-      {service.error && <EmptyState title={t('failed')} description={t('requestFailed')} />}
       {api.transport.kind === 'mock' && (
         <p role="note" className="flex items-center gap-2 pb-1 text-xs text-muted-foreground">
           <FlaskConical className="size-4 shrink-0" />

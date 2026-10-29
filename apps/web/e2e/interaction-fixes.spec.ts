@@ -38,9 +38,18 @@ test('service transitions retain chart and mode positions without replaying writ
     }))
   const before = await positions()
   await page.evaluate(() => {
-    const probe = window as unknown as { transitionFrames: number[][]; frameTimer: number }
+    const probe = window as unknown as {
+      transitionFrames: number[][]
+      transitionErrors: string[]
+      frameTimer: number
+    }
     probe.transitionFrames = []
+    probe.transitionErrors = []
     probe.frameTimer = window.setInterval(() => {
+      for (const alert of document.querySelectorAll('main [role="alert"]'))
+        probe.transitionErrors.push(alert.textContent ?? '')
+      if (document.querySelector('main h2')?.textContent === '启动失败')
+        probe.transitionErrors.push('Unexpected failed service state')
       probe.transitionFrames.push(
         ['实时速率', '出站模式'].map(
           (name) => document.querySelector(`[aria-label="${name}"]`)!.getBoundingClientRect().top,
@@ -75,4 +84,9 @@ test('service transitions retain chart and mode positions without replaying writ
     expect(speed).toBeCloseTo(before.speed, 0)
     expect(mode).toBeCloseTo(before.mode, 0)
   }
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { transitionErrors: string[] }).transitionErrors,
+    ),
+  ).toEqual([])
 })

@@ -9,7 +9,66 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 )
+
+func TestStartServiceStatusDuringPreparationAndCheckFailure(t *testing.T) {
+	options := catalogFixture(t)
+	// A regular but non-executable core passes path validation and fails check,
+	// without ever launching a proxy or touching real module state.
+	if err := os.WriteFile(options.SingBoxPath, []byte("not an executable core"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	release, err := catalog.AcquireRoot(ctx, options.CatalogRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	done := make(chan struct{})
+	var startErr error
+	go func() {
+		defer close(done)
+		startErr = StartService(ctx, options)
+	}()
+	defer func() { cancel(); <-done }()
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		state, _ := ReadServiceState(options.StateFile)
+		if state.State == "preparing" {
+			if state.PID != 0 {
+				t.Fatalf("unexpected preparing PID: %d", state.PID)
+			}
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("start did not enter preparing")
+		case <-ticker.C:
+		}
+	}
+	status, err := service.ReadStatus(ctx, networkControlOptions(options))
+	if err != nil || status.State != "preparing" || status.Error != "" || status.PID != nil {
+		t.Fatalf("preparation was reported as failure: %#v, %v", status, err)
+	}
+	release()
+	select {
+	case <-ctx.Done():
+		t.Fatal("invalid core did not produce a startup failure")
+	case <-done:
+	}
+	if startErr == nil || !strings.Contains(startErr.Error(), "sing-box 配置检查失败") {
+		t.Fatalf("expected core check failure: %v", startErr)
+	}
+	status, err = service.ReadStatus(ctx, networkControlOptions(options))
+	if err != nil || status.State != "failed" || status.Error != "sing-box 配置检查失败" {
+		t.Fatalf("real startup failure was lost: %#v, %v", status, err)
+	}
+}
 
 func TestServiceStartFailureReportsCheckError(t *testing.T) {
 	root := t.TempDir()

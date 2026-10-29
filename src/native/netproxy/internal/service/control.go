@@ -136,7 +136,8 @@ func ReadStatus(ctx context.Context, options Options) (Status, error) {
 	pid := serviceFindProcess(options.SingBoxPath, state.PID)
 	if pid <= 0 {
 		status.PID = nil
-		if state.State == "preparing" || state.State == "starting" || state.State == "ready" || state.State == "stopping" {
+		// Preparing precedes process creation; only a recorded PID can have exited.
+		if (state.State == "preparing" && state.PID > 0) || state.State == "starting" || state.State == "ready" || state.State == "stopping" {
 			status.State = "failed"
 			if status.Error == "" {
 				status.Error = "sing-box 进程已退出"
