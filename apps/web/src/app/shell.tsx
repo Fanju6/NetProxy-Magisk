@@ -136,26 +136,28 @@ export function AppShell() {
             </aside>
             <div className="min-w-0 flex-1">
               <header className="app-header">
-                <div className="flex min-w-0 items-center gap-2">
-                  {secondary && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="-ml-2 size-12 shrink-0"
-                      aria-label={t('back')}
-                      onClick={() => {
-                        if (router.history.canGoBack()) router.history.back()
-                        else void router.navigate({ to: '/settings', replace: true })
-                      }}
-                    >
-                      <ArrowLeft />
-                    </Button>
-                  )}
-                  <h1 className="truncate text-lg font-semibold">{title}</h1>
-                </div>
-                <div className="flex shrink-0 items-center">
-                  {api.transport.kind !== 'unavailable' && <ModuleEvents />}
-                  <div ref={setActionsTarget} className="flex items-center" />
+                <div className="app-header-content">
+                  <div className="flex min-w-0 items-center gap-2">
+                    {secondary && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="-ml-2 size-12 shrink-0"
+                        aria-label={t('back')}
+                        onClick={() => {
+                          if (router.history.canGoBack()) router.history.back()
+                          else void router.navigate({ to: '/settings', replace: true })
+                        }}
+                      >
+                        <ArrowLeft />
+                      </Button>
+                    )}
+                    <h1 className="truncate text-lg font-semibold">{title}</h1>
+                  </div>
+                  <div className="flex shrink-0 items-center">
+                    {api.transport.kind !== 'unavailable' && <ModuleEvents />}
+                    <div ref={setActionsTarget} className="flex items-center" />
+                  </div>
                 </div>
               </header>
               <main id="main" className="page-content" tabIndex={-1}>

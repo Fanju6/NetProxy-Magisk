@@ -103,7 +103,7 @@ export function DashboardPage() {
     connection !== 'live' ||
     !['ready', 'stopped', 'failed'].includes(service.state)
   return (
-    <div className="max-w-5xl space-y-5">
+    <div className="page-stack">
       <HeaderActions>
         <DropdownMenu>
           <DropdownMenuTrigger
@@ -130,7 +130,7 @@ export function DashboardPage() {
           </DropdownMenuContent>
         </DropdownMenu>
       </HeaderActions>
-      <section className="flex items-center justify-between gap-4 py-2">
+      <section className="flex items-center justify-between gap-4">
         <div className="min-w-0 space-y-2">
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <Activity className="size-4" />
@@ -210,7 +210,7 @@ export function DashboardPage() {
       >
         {hasPlot && (
           <>
-            <h2 className="text-sm font-medium">{t('traffic')}</h2>
+            <h2 className="section-label">{t('traffic')}</h2>
             {traffic && history.length > 1 ? (
               <div
                 role="img"
@@ -258,81 +258,79 @@ export function DashboardPage() {
         </dl>
       </section>
 
-      <div className="divide-y border-t">
-        <section aria-label={t('routing')} className="space-y-2 py-4">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-sm text-muted-foreground">{t('routing')}</h2>
-            <Choice
-              label={t('routing')}
-              value={defaultMode}
-              items={(modeState.data?.available ?? []).map((value) => ({
-                value,
-                label: modeLabel(value),
-              }))}
-              onChange={(value) => mode.mutate(value)}
-              disabled={
-                !api.supports('mode.write') || !modeState.data || modeState.isError || blocked
-              }
-            />
-          </div>
-          {running && runtimeMode !== defaultMode && (
-            <p className="text-xs text-muted-foreground">
-              {t('runtimeMode')} ·{' '}
-              {runtimeMode && runtimeMode !== 'unknown'
-                ? modeLabel(runtimeMode)
-                : t('runtimeUnknown')}
-            </p>
+      <section aria-label={t('routing')} className="page-section">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="section-label">{t('routing')}</h2>
+          <Choice
+            label={t('routing')}
+            value={defaultMode}
+            items={(modeState.data?.available ?? []).map((value) => ({
+              value,
+              label: modeLabel(value),
+            }))}
+            onChange={(value) => mode.mutate(value)}
+            disabled={
+              !api.supports('mode.write') || !modeState.data || modeState.isError || blocked
+            }
+          />
+        </div>
+        {running && runtimeMode !== defaultMode && (
+          <p className="text-xs text-muted-foreground">
+            {t('runtimeMode')} ·{' '}
+            {runtimeMode && runtimeMode !== 'unknown'
+              ? modeLabel(runtimeMode)
+              : t('runtimeUnknown')}
+          </p>
+        )}
+        {running &&
+          runtimeMode &&
+          runtimeMode !== 'unknown' &&
+          runtimeMode !== defaultMode &&
+          !mode.persisted && (
+            <p className="text-xs text-muted-foreground">{t('modePolicyDifference')}</p>
           )}
-          {running &&
-            runtimeMode &&
-            runtimeMode !== 'unknown' &&
-            runtimeMode !== defaultMode &&
-            !mode.persisted && (
-              <p className="text-xs text-muted-foreground">{t('modePolicyDifference')}</p>
-            )}
-          {(mode.isUncertain || mode.isUnconfirmed) &&
-            !mode.isConfirming &&
-            !selection.isConfirming && (
-              <section role="status" className="space-y-2 rounded-md border p-3 text-sm">
-                <p className="font-medium">
-                  {t(
-                    mode.isUnconfirmed
-                      ? 'routingUnconfirmed'
+        {(mode.isUncertain || mode.isUnconfirmed) &&
+          !mode.isConfirming &&
+          !selection.isConfirming && (
+            <section role="status" className="space-y-2 rounded-md border p-3 text-sm">
+              <p className="font-medium">
+                {t(
+                  mode.isUnconfirmed
+                    ? 'routingUnconfirmed'
+                    : routingOperation?.target.kind === 'policy'
+                      ? 'selectionUncertain'
+                      : 'modeUncertain',
+                )}
+              </p>
+              <p className="text-muted-foreground">
+                {t(
+                  mode.isUnconfirmed
+                    ? 'routingUnconfirmedDescription'
+                    : mode.persisted || selection.persisted
+                      ? 'persisted'
                       : routingOperation?.target.kind === 'policy'
-                        ? 'selectionUncertain'
-                        : 'modeUncertain',
-                  )}
-                </p>
-                <p className="text-muted-foreground">
-                  {t(
-                    mode.isUnconfirmed
-                      ? 'routingUnconfirmedDescription'
-                      : mode.persisted || selection.persisted
-                        ? 'persisted'
-                        : routingOperation?.target.kind === 'policy'
-                          ? 'selectionUncertainDescription'
-                          : 'modeUncertainDescription',
-                  )}
-                </p>
-                <Button
-                  variant="outline"
-                  onClick={() =>
-                    void (routingOperation?.target.kind === 'policy'
-                      ? selection.verify()
-                      : mode.verify())
-                  }
-                >
-                  {t('checkStatus')}
-                </Button>
-              </section>
-            )}
-          {mode.error != null && <ErrorState error={mode.error} compact />}
-          {selection.error != null && <ErrorState error={selection.error} compact />}
-          {modeState.isError && (
-            <ErrorState compact error={modeState.error} retry={() => void modeState.refetch()} />
+                        ? 'selectionUncertainDescription'
+                        : 'modeUncertainDescription',
+                )}
+              </p>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  void (routingOperation?.target.kind === 'policy'
+                    ? selection.verify()
+                    : mode.verify())
+                }
+              >
+                {t('checkStatus')}
+              </Button>
+            </section>
           )}
-        </section>
-      </div>
+        {mode.error != null && <ErrorState error={mode.error} compact />}
+        {selection.error != null && <ErrorState error={selection.error} compact />}
+        {modeState.isError && (
+          <ErrorState compact error={modeState.error} retry={() => void modeState.refetch()} />
+        )}
+      </section>
       {service.error && <EmptyState title={t('failed')} description={t('requestFailed')} />}
       {api.transport.kind === 'mock' && (
         <p role="note" className="flex items-center gap-2 pb-1 text-xs text-muted-foreground">

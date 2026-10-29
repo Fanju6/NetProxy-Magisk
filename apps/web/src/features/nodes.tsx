@@ -135,7 +135,7 @@ export function NodesPage() {
     setPresentation('tabs')
   }
   return (
-    <div className="max-w-5xl space-y-4">
+    <div className="page-stack">
       <HeaderActions>
         {pendingConfirmation && (
           <Button

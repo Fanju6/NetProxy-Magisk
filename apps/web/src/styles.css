@@ -177,20 +177,38 @@ select {
   position: sticky;
   top: 0;
   z-index: 20;
+  padding-top: env(safe-area-inset-top);
+  background: var(--background);
+}
+.app-header-content {
   display: flex;
-  min-height: calc(56px + env(safe-area-inset-top));
+  min-height: 56px;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: env(safe-area-inset-top) max(16px, env(safe-area-inset-right)) 0
-    max(16px, env(safe-area-inset-left));
-  background: var(--background);
+}
+.app-header-content,
+.page-content {
+  width: 100%;
+  max-width: 1200px;
+  margin-inline: auto;
+  padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right));
 }
 .page-content {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 12px max(16px, env(safe-area-inset-right)) calc(88px + env(safe-area-inset-bottom))
-    max(16px, env(safe-area-inset-left));
+  padding-top: 16px;
+  padding-bottom: calc(88px + env(safe-area-inset-bottom));
+}
+.page-stack {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 24px;
+}
+.page-section {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
 }
 .mobile-navigation {
   position: fixed;
@@ -213,9 +231,10 @@ select {
   font-size: 14px;
 }
 .section-label {
-  padding: 4px 0 8px;
+  margin: 0;
   color: var(--muted-foreground);
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 500;
 }
 .settings-group > :not(:last-child) {
@@ -275,12 +294,12 @@ select {
     padding: 20px 16px;
     background: var(--sidebar);
   }
-  .app-header {
-    padding-right: 36px;
-    padding-left: 36px;
+  .app-header-content,
+  .page-content {
+    padding-inline: max(32px, env(safe-area-inset-left)) max(32px, env(safe-area-inset-right));
   }
   .page-content {
-    padding: 20px 36px 48px;
+    padding-bottom: 48px;
   }
   .mobile-navigation {
     display: none;

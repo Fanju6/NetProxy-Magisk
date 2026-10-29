@@ -592,7 +592,7 @@ export function SubscriptionsPage() {
   const summary = list.data.find((group) => group.id === selected)
   const text = (zh: string, en: string) => (preferences.locale === 'zh' ? zh : en)
   return (
-    <div className="space-y-6">
+    <div className="page-stack">
       {!panel && <SubscriptionFeedback actions={actions} groups={list.data} />}
       {connection !== 'live' && <Badge variant="outline">{t('staleSnapshot')}</Badge>}
       <HeaderActions>
@@ -699,8 +699,8 @@ export function SubscriptionsPage() {
         const groups = list.data.filter((group) => group.type === type)
         if (!groups.length) return null
         return (
-          <section key={type} className="space-y-3">
-            <h2 className="text-sm font-medium text-muted-foreground">
+          <section key={type} className="page-section">
+            <h2 className="section-label">
               {t(type === 'local' ? 'localResources' : 'subscriptionResources')}
             </h2>
             <div className="divide-y border-y">

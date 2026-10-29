@@ -80,8 +80,8 @@ export function SettingsPage() {
     },
   ]
   return (
-    <div className="max-w-3xl space-y-5">
-      <section aria-labelledby="general-title">
+    <div className="page-stack">
+      <section aria-labelledby="general-title" className="page-section">
         <h2 id="general-title" className="section-label">
           {t('general')}
         </h2>
@@ -139,7 +139,7 @@ export function SettingsPage() {
           </div>
         </div>
       </section>
-      <section aria-labelledby="policies-title">
+      <section aria-labelledby="policies-title" className="page-section">
         <h2 id="policies-title" className="section-label">
           {text('代理与网络', 'Proxy & network')}
         </h2>
@@ -160,7 +160,7 @@ export function SettingsPage() {
           ))}
         </div>
       </section>
-      <section aria-labelledby="advanced-title">
+      <section aria-labelledby="advanced-title" className="page-section">
         <h2 id="advanced-title" className="section-label">
           {text('高级', 'Advanced')}
         </h2>
@@ -188,7 +188,7 @@ export function SettingsPage() {
           </Link>
         </div>
       </section>
-      <section aria-labelledby="about-title">
+      <section aria-labelledby="about-title" className="page-section">
         <h2 id="about-title" className="section-label">
           {t('about')}
         </h2>
