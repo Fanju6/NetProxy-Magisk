@@ -102,6 +102,76 @@ class CatalogDashboardViewModelTest {
         assertEquals("", vm.state.value.serviceError)
     }
 
+    @Test fun failedStatusReadPreservesLastConfirmedRunningState() = runBlocking {
+        var fail = false
+        val vm = model(this, Transport {
+            if (fail) throw IllegalStateException("fixture: status connection closed")
+            snapshot("Rule", "ready")
+        })
+        vm.refresh()
+        withTimeout(5_000) { vm.state.first { it.isReady } }
+        fail = true
+        vm.refresh()
+        withTimeout(5_000) { vm.state.first { it.serviceError.isNotEmpty() } }
+        assertEquals("ready", vm.state.value.serviceState)
+        assertEquals("fixture: status connection closed", vm.state.value.serviceError)
+        fail = false
+        vm.refresh()
+        withTimeout(5_000) { vm.state.first { it.serviceError.isEmpty() } }
+        settle()
+        assertTrue(vm.state.value.isReady)
+    }
+
+    @Test fun availabilityRecoveryReadsCurrentServiceWithoutWaitingForEvents() = runBlocking {
+        val transport = Transport { snapshot("Rule", "ready") }
+        val vm = CatalogDashboardViewModel(
+            ServiceRepository(ModuleApiClient(transport)), 1_000L, this
+        )
+        vm.setVisible(true)
+        vm.setAvailability(ModuleAvailability(ModuleConnectionState.UNAVAILABLE))
+        vm.setAvailability(ModuleAvailability(ModuleConnectionState.READY))
+        try {
+            withTimeout(5_000) { vm.state.first { it.isReady } }
+            assertEquals(1, transport.calls.count { it.path == "/service" })
+        } finally {
+            vm.setVisible(false)
+        }
+        settle()
+    }
+
+    @Test fun eventDisconnectCannotInvalidateForegroundStatusRead() = runBlocking {
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val disconnect = CompletableDeferred<Unit>()
+        val transport = object : TestApiTransport() {
+            override suspend fun respond(request: ApiTestRequest): ModuleHttpResponse {
+                entered.complete(Unit)
+                release.await()
+                return apiSuccess(snapshot("Rule", "ready"))
+            }
+            override suspend fun watch(topics: Set<String>, consume: suspend (ModuleEvent) -> Unit) {
+                disconnect.await()
+                throw java.io.IOException("fixture: event connection closed")
+            }
+        }
+        val vm = CatalogDashboardViewModel(
+            ServiceRepository(ModuleApiClient(transport)), 1_000L, this
+        )
+        vm.setAvailability(ModuleAvailability(ModuleConnectionState.READY))
+        vm.setVisible(true)
+        try {
+            withTimeout(5_000) { entered.await() }
+            disconnect.complete(Unit)
+            withTimeout(5_000) { vm.state.first { it.serviceError.isNotEmpty() } }
+            release.complete(Unit)
+            withTimeout(5_000) { vm.state.first { it.isReady } }
+            assertEquals("", vm.state.value.serviceError)
+        } finally {
+            vm.setVisible(false)
+        }
+        settle()
+    }
+
     @Test fun modeChangesRunInOrderAndInvalidateOldRefresh() = runBlocking {
         val count = AtomicInteger()
         var savedMode = "Rule"

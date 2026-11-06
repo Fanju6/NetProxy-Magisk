@@ -122,7 +122,7 @@ internal fun CatalogDashboardScreen(
                     item {
                         DashboardWarning(noModuleMessage, onReconnect)
                     }
-                } else if (state.serviceState == "failed" && state.serviceError.isNotBlank()) {
+                } else if (state.serviceError.isNotBlank()) {
                     item { DashboardWarning(state.serviceError) }
                 }
 

@@ -90,6 +90,7 @@ internal class CatalogDashboardViewModel(
                 loading = available && (!previous.connected || previous.loading))
         }
         if (available && visible) {
+            if (!previous.connected) refreshSnapshot()
             startUptimeTicker()
             startEvents()
         } else if (!available) {
@@ -165,9 +166,8 @@ internal class CatalogDashboardViewModel(
         eventsJob = viewModelScope.launch {
             repository.observe().collect { result ->
                 if (_state.value.operation.isEmpty()) {
-                    val revision = ++stateRevision
                     result.fold(
-                        onSuccess = { readSnapshot(revision, it) },
+                        onSuccess = { readSnapshot(++stateRevision, it) },
                         onFailure = { error -> _state.update { it.copy(loading = false, serviceError = error.userMessage()) } }
                     )
                 }
@@ -241,7 +241,6 @@ internal class CatalogDashboardViewModel(
             _state.update {
                 it.copy(
                     loading = false,
-                    serviceState = "failed",
                     serviceError = error.userMessage()
                 )
             }
