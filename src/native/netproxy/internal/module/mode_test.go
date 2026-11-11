@@ -206,7 +206,7 @@ func TestNetworkPolicyRejectsMissingDirectMode(t *testing.T) {
 	}
 	targetCoreWrite(t, paths.SingBoxConfig(options.SingBoxDir), []byte(`{}`))
 	targetCoreWrite(t, options.ModuleConfig, []byte("{\"wifi\":{\"enabled\":true,\"mode\":\"blacklist\",\"proxy_on_non_wifi\":false}}"))
-	_, err := EvaluateNetwork(t.Context(), options, "not_wifi", "")
+	_, err := EvaluateNetwork(t.Context(), options, "not_wifi", "", false)
 	structured, ok := errors.AsType[*service.Error](err)
 	if !ok || structured.Code != "mode.unavailable" {
 		t.Fatalf("缺少 Direct 时未返回明确错误: %v", err)

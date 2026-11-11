@@ -77,7 +77,7 @@ type Options struct {
 	PersistedBeforeUpdate   bool
 	NetworkWatchEnabled     bool
 	SyncCatalog             func(context.Context, string, bool) (string, bool, error)
-	NetworkEvaluate         func(context.Context, string, string) error
+	NetworkEvaluate         func(ctx context.Context, networkType, ssid string, networkChanged bool) error
 	NetworkEventSource      NetworkEventSource
 	NetworkStateReader      NetworkStateReader
 	NetworkDebounceInterval time.Duration
@@ -173,12 +173,10 @@ func Run(ctx context.Context, options Options, wake <-chan struct{}, logger *log
 		var configErr error
 		watch := options.NetworkWatchEnabled && options.NetworkEvaluate != nil
 		if watch && options.ModuleConfig != "" {
-			module, err := moduleconfig.LoadModule(options.ModuleConfig)
+			_, err := moduleconfig.LoadModule(options.ModuleConfig)
 			if err != nil {
 				configErr = err
 				watch = false
-			} else {
-				watch = module.WiFi.Enabled
 			}
 		}
 		if networkWatchEnabled != watch {

@@ -149,6 +149,56 @@ func TestNetworkTargetCoreDNSCheck(t *testing.T) {
 	}
 }
 
+func TestNetworkHandoverClosesStaleConnections(t *testing.T) {
+	options := newTestOptions(t.TempDir())
+	writeModeConfig(t, options, "Rule")
+	targetCoreWrite(t, options.ModuleConfig, []byte(`{"wifi":{"enabled":false}}`))
+	original, err := inbound.Parse([]byte(testInboundConfig))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(options.InboundConfig), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := json.Marshal(original, json.Deterministic(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetCoreWrite(t, options.InboundConfig, saved)
+	if _, err := inbound.WriteAtomic(t.Context(), filepath.Join(options.RuntimeDir, "inbound.json"), original); err != nil {
+		t.Fatal(err)
+	}
+	var closes atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload []byte
+		switch r.URL.Path {
+		case "/daemon.StartedService/GetClashModeStatus":
+			payload = protowire.AppendTag(payload, 2, protowire.BytesType)
+			payload = protowire.AppendString(payload, "Rule")
+		case "/daemon.StartedService/CloseAllConnections":
+			closes.Add(1)
+		}
+		header := make([]byte, 5)
+		binary.BigEndian.PutUint32(header[1:], uint32(len(payload)))
+		w.Write(append(header, payload...))
+	}))
+	defer server.Close()
+	options.ServiceAddress = server.URL
+
+	if _, err := evaluateNetwork(t.Context(), options, "not_wifi", "", true, true); err != nil {
+		t.Fatal(err)
+	}
+	if closes.Load() != 1 {
+		t.Fatalf("真实网络切换未中断旧连接: %d", closes.Load())
+	}
+	if _, err := evaluateNetwork(t.Context(), options, "not_wifi", "", false, true); err != nil {
+		t.Fatal(err)
+	}
+	if closes.Load() != 1 {
+		t.Fatalf("非切换评估不应中断连接: %d", closes.Load())
+	}
+}
+
 func TestNetworkDNSReloadOnlyForParameterChanges(t *testing.T) {
 	for _, backend := range []string{"ebpf", "tun"} {
 		t.Run(backend, func(t *testing.T) {
@@ -280,7 +330,7 @@ func TestEvaluateNetworkPreservesDefaultAndPersistsPolicyState(t *testing.T) {
 	options.WiFiStateFile = statePath
 	options.SingBoxPath = filepath.Join(root, "missing-sing-box")
 
-	result, err := EvaluateNetwork(context.Background(), options, "wifi", "家庭 WiFi")
+	result, err := EvaluateNetwork(context.Background(), options, "wifi", "家庭 WiFi", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +348,7 @@ func TestEvaluateNetworkPreservesDefaultAndPersistsPolicyState(t *testing.T) {
 		t.Fatalf("网络策略日志缺少网络类型或目标模式: %s", logContent)
 	}
 
-	result, err = EvaluateNetwork(context.Background(), options, "wifi", "移动热点")
+	result, err = EvaluateNetwork(context.Background(), options, "wifi", "移动热点", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,7 +356,7 @@ func TestEvaluateNetworkPreservesDefaultAndPersistsPolicyState(t *testing.T) {
 		t.Fatalf("代理网络评估错误: %+v", result)
 	}
 
-	result, err = EvaluateNetwork(context.Background(), options, "wifi", "")
+	result, err = EvaluateNetwork(context.Background(), options, "wifi", "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -332,7 +382,7 @@ func TestEvaluateNetworkClearsDisabledOverride(t *testing.T) {
 	options.ModuleConfig = modulePath
 	options.WiFiStateFile = statePath
 	options.SingBoxPath = filepath.Join(root, "missing-sing-box")
-	result, err := EvaluateNetwork(context.Background(), options, "not_wifi", "")
+	result, err := EvaluateNetwork(context.Background(), options, "not_wifi", "", false)
 	if err != nil {
 		t.Fatal(err)
 	}

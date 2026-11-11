@@ -981,7 +981,7 @@ func (task *testTelemetryTask) Run(ctx context.Context, _ func() bool, _ func())
 
 func (task *testTelemetryTask) Notify() { task.notified <- struct{}{} }
 
-func TestNetworkWatchFollowsPolicyWithoutStoppingOtherTasks(t *testing.T) {
+func TestNetworkWatchSurvivesPolicyChangesWithoutStoppingOtherTasks(t *testing.T) {
 	options := newTestOptions(t.TempDir())
 	options.ModuleConfig = filepath.Join(t.TempDir(), "module.json")
 	writePolicy := func(enabled, mode string) {
@@ -1007,7 +1007,7 @@ func TestNetworkWatchFollowsPolicyWithoutStoppingOtherTasks(t *testing.T) {
 	options.NetworkStateReader = func(context.Context) (NetworkState, error) {
 		return NetworkState{NetworkType: "not_wifi"}, nil
 	}
-	options.NetworkEvaluate = func(context.Context, string, string) error { return nil }
+	options.NetworkEvaluate = func(context.Context, string, string, bool) error { return nil }
 	started, stopped := make(chan struct{}, 2), make(chan struct{}, 2)
 	options.NetworkEventSource = func(ctx context.Context, _ func()) error {
 		started <- struct{}{}
@@ -1029,20 +1029,19 @@ func TestNetworkWatchFollowsPolicyWithoutStoppingOtherTasks(t *testing.T) {
 		}
 	}
 	await(task.started)
+	await(started)
 	await(roundReady)
-	select {
-	case <-started:
-		t.Fatal("关闭策略时仍启动监听")
-	default:
-	}
 	writePolicy("1", "blacklist")
 	wake <- struct{}{}
-	await(started)
 	await(roundReady)
 	writePolicy("0", "blacklist")
 	wake <- struct{}{}
-	await(stopped)
 	await(roundReady)
+	select {
+	case <-stopped:
+		t.Fatal("关闭策略不应停止网络监听，切网仍需恢复旧连接")
+	default:
+	}
 	select {
 	case <-task.stopped:
 		t.Fatal("关闭网络监听同时停止了统计任务")
@@ -1050,8 +1049,12 @@ func TestNetworkWatchFollowsPolicyWithoutStoppingOtherTasks(t *testing.T) {
 	}
 	writePolicy("1", "whitelist")
 	wake <- struct{}{}
-	await(started)
 	await(roundReady)
+	select {
+	case <-started:
+		t.Fatal("切换策略不应重复启动网络监听")
+	default:
+	}
 	cancel()
 	select {
 	case err := <-done:

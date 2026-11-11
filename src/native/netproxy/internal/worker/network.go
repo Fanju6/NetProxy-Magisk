@@ -234,7 +234,7 @@ func readAndEvaluateNetworkState(
 	}
 	return networkEvaluationResult{
 		state:       state,
-		evaluateErr: evaluateNetworkState(ctx, options, state),
+		evaluateErr: evaluateNetworkState(ctx, options, state, havePrevious),
 	}
 }
 
@@ -262,13 +262,13 @@ func stopNetworkTimer(timer *time.Timer) {
 	}
 }
 
-func evaluateNetworkState(parent context.Context, options Options, state NetworkState) error {
+func evaluateNetworkState(parent context.Context, options Options, state NetworkState, networkChanged bool) error {
 	if options.NetworkEvaluate == nil {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(parent, networkEvaluateTimeout)
 	defer cancel()
-	return options.NetworkEvaluate(ctx, state.NetworkType, state.SSID)
+	return options.NetworkEvaluate(ctx, state.NetworkType, state.SSID, networkChanged)
 }
 
 type activeNetworkReader func(context.Context) (string, error)
