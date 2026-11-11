@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloudSync
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Router
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -100,6 +101,7 @@ internal enum class AppDestination(
 ) {
     Dashboard(R.string.dashboard, Icons.Rounded.Dashboard),
     Nodes(R.string.nodes, Icons.Rounded.Router),
+    Policies(R.string.policies, Icons.Rounded.Tune),
     Subscriptions(R.string.subscriptions, Icons.Rounded.CloudSync),
     Settings(R.string.settings, Icons.Rounded.Settings),
 }

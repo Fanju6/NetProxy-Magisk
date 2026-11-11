@@ -42,6 +42,7 @@ internal fun NodeCard(
     selected: Boolean,
     enabled: Boolean,
     itemSize: Int,
+    outlined: Boolean = false,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null
 ) {
@@ -94,8 +95,8 @@ internal fun NodeCard(
                 clip = true
             }
             .border(
-                width = if (selected) 1.5.dp else 0.dp,
-                color = if (selected) colorScheme.primary else Color.Transparent,
+                width = if (selected) 1.5.dp else if (outlined) 1.dp else 0.dp,
+                color = if (selected) colorScheme.primary else colorScheme.outline.copy(alpha = 0.55f),
                 shape = shape
             ),
         cornerRadius = cornerRadius,

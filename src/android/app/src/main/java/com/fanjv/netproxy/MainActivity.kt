@@ -64,6 +64,7 @@ import com.fanjv.netproxy.feature.dashboard.presentation.CatalogDashboardScreen
 import com.fanjv.netproxy.feature.kernel.presentation.SingBoxJsonEditScreen
 import com.fanjv.netproxy.feature.kernel.presentation.SingBoxKernelSettingsScreen
 import com.fanjv.netproxy.feature.logs.presentation.LogsScreen
+import com.fanjv.netproxy.feature.policy.presentation.PolicyScreen
 import com.fanjv.netproxy.feature.inbound.presentation.InboundSettingsScreen
 import com.fanjv.netproxy.feature.settings.presentation.NetworkMatchingScreen
 import com.fanjv.netproxy.feature.routing.presentation.RoutingRulesScreen
@@ -407,6 +408,11 @@ private fun MainPager(
                         bottomPadding = bottomPadding,
                         isActive = mainPagerState.selectedPage == pageIndex,
                         viewModel = catalogNodesViewModel
+                    )
+
+                    AppDestination.Policies -> PolicyScreen(
+                        bottomPadding = bottomPadding,
+                        isActive = mainPagerState.selectedPage == pageIndex
                     )
 
                     AppDestination.Subscriptions -> SubscriptionsScreen(
