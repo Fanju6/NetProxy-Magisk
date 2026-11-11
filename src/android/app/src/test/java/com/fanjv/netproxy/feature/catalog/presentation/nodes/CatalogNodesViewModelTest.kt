@@ -140,6 +140,45 @@ class CatalogNodesViewModelTest {
         assertEquals(2, reads)
     }
 
+    @Test fun regionSelectionReadsConfirmedRegionAndAutoClearsIt() = runBlocking {
+        var region = ""
+        val transport = Transport { request ->
+            if (request.path == "/selection") {
+                region = if ("region" in request.body) request.text("region") else ""
+                assertEquals("default", request.text("group_id"))
+                assertEquals("", request.text("node_tag"))
+                "{}"
+            } else {
+                """{"selection":{"active_group_id":"default","selector_mode":"urltest","active_region":"$region","active_group_runtime_tag":"Local","runtime_selected":"Local/Tokyo"}}"""
+            }
+        }
+        val vm = model(this, transport)
+        vm.useRegion("default", "jp"); settle()
+        assertEquals("jp", vm.state.value.selection.region)
+        assertEquals("Local/Tokyo", vm.state.value.selection.runtimeSelected)
+        vm.useAuto("default"); settle()
+        assertEquals("", vm.state.value.selection.region)
+    }
+
+    @Test fun regionDelayPreservesDisambiguatedRuntimePrefix() = runBlocking {
+        val transport = Transport { request ->
+            if (request.path == "/nodes/delay") {
+                assertEquals("group-1", request.text("group_id"))
+                assertEquals("jp", request.text("region"))
+                """{"target":"Auto/Shared [group-1] [jp]","groups":[{"tag":"Auto/Shared [group-1] [jp]","items":[{"tag":"Shared [group-1]/Tokyo","url_test_delay":88}]}]}"""
+            } else {
+                """{"groups":[{"group":{"id":"group-1","name":"Shared","type":"local","runtime_tag":"Shared [group-1]"},"nodes":[{"tag":"Tokyo","region":"jp"},{"tag":"Seattle","region":"us"}]}]}"""
+            }
+        }
+        val vm = model(this, transport)
+        vm.refresh(); settle()
+        vm.testRegionDelay("group-1", "jp"); settle()
+        assertEquals("88", vm.state.value.latencies["group-1/Tokyo"])
+        assertEquals("88", vm.state.value.latencies["Auto/group-1 [jp]"])
+        assertFalse(vm.state.value.latencies.containsKey("group-1/Seattle"))
+        assertEquals(UiText.Empty, vm.state.value.error)
+    }
+
     @Test fun cancelledSelectionDoesNotPublishPageFailure() = runBlocking {
         val transport = Transport { throw CancellationException("page closed") }
         val vm = model(this, transport)
