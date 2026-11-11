@@ -22,6 +22,7 @@ jobs:
       - name: 拉取发布元数据
         uses: actions/checkout@v7
         with:
+          fetch-depth: 0
           sparse-checkout: |
             .github/scripts
             docs
