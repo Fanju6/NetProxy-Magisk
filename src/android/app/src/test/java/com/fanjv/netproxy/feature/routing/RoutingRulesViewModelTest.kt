@@ -32,6 +32,7 @@ class RoutingRulesViewModelTest {
         var content = """{"version":1,"rules":[{"domain_suffix":"example.com"},{"domain":"advanced.example","port":443}]}"""
         var revision = "read-revision"
         var applyError: ModuleApiException? = null
+        val applyErrors = mutableMapOf<String, ModuleApiException>()
         var readError: Exception? = null
         val contents = mutableMapOf<String, String>()
         val revisions = mutableMapOf<String, String>()
@@ -51,6 +52,7 @@ class RoutingRulesViewModelTest {
                 "PUT" -> {
                     gate?.let { entered.complete(Unit); check(it.await(5, TimeUnit.SECONDS)) }
                     applyError?.let { throw it }
+                    applyErrors[request.target]?.let { throw it }
                     val target = request.target
                     assertEquals(revisions[target] ?: revision, request.text("revision"))
                     contents[target] = request.text("content")
@@ -133,7 +135,7 @@ class RoutingRulesViewModelTest {
         assertFalse(transport.calls.any { it.path != "/config" })
     }
 
-    @Test fun editingAndDeletingUseFileIdentityAndCannotMoveExistingRules() = runBlocking {
+    @Test fun editingCanMoveExistingRulesBetweenTypesAndDeletingKeepsFileIdentity() = runBlocking {
         val transport = Transport()
         transport.contents[LocalRuleSet.Proxy.target] = """{"version":1,"rules":[{"domain":"proxy.example"}]}"""
         transport.revisions[LocalRuleSet.Direct.target] = "direct-revision"
@@ -145,20 +147,21 @@ class RoutingRulesViewModelTest {
         vm.edit(direct)
         assertEquals("example.com", vm.state.value.draft!!.text)
         vm.selectTarget(LocalRuleSet.Block)
-        assertEquals(LocalRuleSet.Direct, vm.state.value.draft!!.target)
+        assertEquals(LocalRuleSet.Block, vm.state.value.draft!!.target)
         vm.updateDraft(RuleField.Domain, "direct.example")
         vm.save()
         val saved = vm.saved()
-        assertEquals("direct.example", saved.file(LocalRuleSet.Direct).document!!.rules[0].simpleRule()!!.values.single())
-        assertEquals(advanced, saved.file(LocalRuleSet.Direct).document!!.rules[1])
-        assertEquals(Triple("PUT", LocalRuleSet.Direct.target, "direct-revision"), transport.calls.last().let { Triple(it.method, it.target, it.text("revision")) })
-        vm.requestDelete(direct)
-        assertEquals(direct, vm.state.value.deleting)
+        assertEquals(advanced, saved.file(LocalRuleSet.Direct).document!!.rules.single())
+        assertEquals("direct.example", saved.file(LocalRuleSet.Block).document!!.rules.last().simpleRule()!!.values.single())
+        assertEquals(listOf(LocalRuleSet.Block.target, LocalRuleSet.Direct.target), transport.calls.takeLast(2).map { it.target })
+        val moved = RuleIdentity(LocalRuleSet.Block, 2)
+        vm.requestDelete(moved)
+        assertEquals(moved, vm.state.value.deleting)
         vm.delete()
         val deleted = vm.saved()
         assertEquals(listOf(advanced), deleted.file(LocalRuleSet.Direct).document!!.rules.toList())
         assertEquals(loaded.file(LocalRuleSet.Proxy), deleted.file(LocalRuleSet.Proxy))
-        assertEquals(loaded.file(LocalRuleSet.Block), deleted.file(LocalRuleSet.Block))
+        assertEquals(loaded.file(LocalRuleSet.Block).document, deleted.file(LocalRuleSet.Block).document)
         assertEquals(advanced, LocalRuleDocument.parse(transport.contents.getValue(LocalRuleSet.Direct.target)).rules.single())
     }
 
@@ -197,6 +200,45 @@ class RoutingRulesViewModelTest {
             assertFalse(recovered.file(target).invalidDocument)
             assertFalse(recovered.file(target).requiresReload)
             assertEquals("", recovered.file(target).error)
+        }
+    }
+
+    @Test fun failedMoveRequiresReloadAndPreservesSourceRule() = runBlocking {
+        for (failedTarget in listOf(LocalRuleSet.Block, LocalRuleSet.Direct)) {
+            val transport = Transport()
+            val vm = model(this, transport)
+            vm.refresh()
+            val loaded = vm.loaded()
+            vm.edit(RuleIdentity(LocalRuleSet.Direct, 0))
+            vm.selectTarget(LocalRuleSet.Block)
+            vm.updateDraft(RuleField.Domain, "moved.example")
+            transport.applyErrors[failedTarget.target] = ModuleApiException("config.conflict", "changed")
+            vm.save()
+            val failed = vm.saved()
+            assertEquals(LocalRuleSet.Direct, failed.draft!!.sourceTarget)
+            assertEquals(LocalRuleSet.Block, failed.draft.target)
+            for (target in listOf(LocalRuleSet.Direct, LocalRuleSet.Block)) {
+                assertTrue(failed.file(target).requiresReload)
+                assertEquals(loaded.file(target).document, failed.file(target).document)
+                assertEquals(loaded.file(target).revision, failed.file(target).revision)
+            }
+            val writes = transport.calls.filter { it.method == "PUT" }
+            assertEquals(if (failedTarget == LocalRuleSet.Block) listOf(LocalRuleSet.Block.target)
+                else listOf(LocalRuleSet.Block.target, LocalRuleSet.Direct.target), writes.map { it.target })
+            assertFalse(transport.contents.containsKey(LocalRuleSet.Direct.target))
+            if (failedTarget == LocalRuleSet.Direct) {
+                assertEquals("moved.example", LocalRuleDocument.parse(transport.contents.getValue(LocalRuleSet.Block.target))
+                    .rules.last().simpleRule()!!.values.single())
+            }
+            vm.selectTarget(LocalRuleSet.Proxy)
+            vm.save()
+            assertEquals(writes.size, transport.calls.count { it.method == "PUT" })
+            transport.applyErrors.clear()
+            vm.refresh(discardDraft = true)
+            val refreshed = vm.loaded()
+            assertNull(refreshed.draft)
+            assertTrue(refreshed.editable(LocalRuleSet.Direct))
+            assertTrue(refreshed.editable(LocalRuleSet.Block))
         }
     }
 
@@ -473,7 +515,9 @@ class RoutingRulesViewModelTest {
         val identity = RuleIdentity(LocalRuleSet.Direct, 0)
         vm.edit(identity)
         vm.updateDraft(RuleField.DomainSuffix, "unsaved.example")
-        vm.requestDelete(identity)
+        vm.selectTarget(LocalRuleSet.Block)
+        val draft = vm.state.value.draft!!
+        vm.requestDelete(RuleIdentity(draft.sourceTarget, draft.index!!))
         assertNull(vm.state.value.draft)
         assertEquals(identity, vm.state.value.deleting)
         vm.dismiss()

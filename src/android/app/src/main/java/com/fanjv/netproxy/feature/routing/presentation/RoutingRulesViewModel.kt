@@ -24,6 +24,7 @@ internal data class RuleIdentity(val target: LocalRuleSet, val index: Int)
 
 internal data class RuleDraft(
     val target: LocalRuleSet,
+    val sourceTarget: LocalRuleSet = target,
     val index: Int? = null,
     val field: RuleField? = RuleField.DomainSuffix,
     val text: String = "",
@@ -72,7 +73,8 @@ internal class RoutingRulesViewModel(
     fun selectTarget(target: LocalRuleSet) {
         val current = state.value
         val draft = current.draft ?: return
-        if (draft.index != null || current.isLoading || current.isSaving) return
+        if (current.isLoading || current.isSaving || draft.field == null ||
+            current.files.getValue(draft.sourceTarget).requiresReload) return
         mutableState.update { it.copy(draft = draft.copy(target = target), inputError = null) }
     }
 
@@ -117,7 +119,7 @@ internal class RoutingRulesViewModel(
         if (!current.editable(identity.target) || current.draft != null || current.deleting != null) return
         val rule = current.files.getValue(identity.target).document!!.rules.getOrNull(identity.index) ?: return
         val simple = rule.simpleRule()
-        mutableState.update { it.copy(draft = RuleDraft(identity.target, identity.index, simple?.field,
+        mutableState.update { it.copy(draft = RuleDraft(identity.target, identity.target, identity.index, simple?.field,
             simple?.values?.joinToString("\n").orEmpty()), inputError = null)
             .withFile(identity.target, it.files.getValue(identity.target).copy(error = "")) }
     }
@@ -154,7 +156,12 @@ internal class RoutingRulesViewModel(
             mutableState.update { it.copy(inputError = error) }
             return
         }
-        apply(draft.target, current.files.getValue(draft.target).document!!.replace(draft.index, field.rule(draft.text)))
+        val rule = field.rule(draft.text)
+        if (draft.index != null && draft.sourceTarget != draft.target) {
+            move(draft, current, rule)
+        } else {
+            apply(draft.target, current.files.getValue(draft.target).document!!.replace(draft.index, rule))
+        }
     }
 
     fun delete() {
@@ -184,6 +191,47 @@ internal class RoutingRulesViewModel(
                 }
                 // 仅确认原 revision 未变化时允许修正草稿重试，不拿新 revision 覆盖旧快照。
                 mutableState.update { it.copy(isSaving = false).withFile(target, file.copy(requiresReload = !unchanged, error = error.userMessage())) }
+            }
+        }
+    }
+
+    private fun move(draft: RuleDraft, current: RoutingRulesState, replacement: kotlinx.serialization.json.JsonObject) {
+        val source = current.files.getValue(draft.sourceTarget)
+        val destination = current.files.getValue(draft.target)
+        val sourceDocument = source.document ?: return
+        val destinationDocument = destination.document ?: return
+        val sourceIndex = draft.index ?: return
+        if (sourceDocument.rules.getOrNull(sourceIndex) == null) return
+        mutableState.update { it.copy(isSaving = true)
+            .withFile(draft.sourceTarget, source.copy(error = ""))
+            .withFile(draft.target, destination.copy(error = "")) }
+        viewModelScope.launch {
+            try {
+                // Write the destination first so a failed source write leaves the rule usable.
+                val destinationContent = withContext(Dispatchers.Default) {
+                    destinationDocument.replace(null, replacement).content()
+                }
+                val destinationRevision = repository.apply(draft.target.target, destinationContent, destination.revision)
+                val sourceContent = withContext(Dispatchers.Default) {
+                    sourceDocument.remove(sourceIndex).content()
+                }
+                val sourceRevision = repository.apply(draft.sourceTarget.target, sourceContent, source.revision)
+                mutableState.update {
+                    it.copy(isSaving = false, draft = null, deleting = null, inputError = null)
+                        .withFile(draft.sourceTarget, RuleFileState(sourceDocument.remove(sourceIndex), sourceRevision))
+                        .withFile(draft.target, RuleFileState(destinationDocument.replace(null, replacement), destinationRevision))
+                }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                mutableState.update {
+                    it.copy(isSaving = false).withFile(
+                        draft.sourceTarget,
+                        it.files.getValue(draft.sourceTarget).copy(requiresReload = true, error = error.userMessage())
+                    ).withFile(
+                        draft.target,
+                        it.files.getValue(draft.target).copy(requiresReload = true, error = error.userMessage())
+                    )
+                }
             }
         }
     }
