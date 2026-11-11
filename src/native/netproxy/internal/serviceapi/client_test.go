@@ -179,6 +179,45 @@ func TestStartedAtWithoutGRPCStatusFrame(t *testing.T) {
 	}
 }
 
+func TestEmptyUnaryResponseForEmptyMessage(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		body      []byte
+		wantError string
+	}{
+		{"empty success", nil, ""},
+		{"error trailer", streamFrame(0x80, []byte("grpc-status: 14\r\n")), "gRPC status 14"},
+		{"partial header", []byte{0}, "unexpected EOF"},
+		{"missing payload", []byte{0, 0, 0, 0, 2}, "unexpected EOF"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				if request.URL.Path != methodSelectOutbound {
+					http.Error(writer, "unexpected method", http.StatusNotFound)
+					return
+				}
+				writer.WriteHeader(http.StatusOK)
+				_, _ = writer.Write(test.body)
+			}))
+			defer server.Close()
+
+			client, err := New(server.URL, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer client.Close()
+			err = client.Select(t.Context(), "Proxy", "Auto/fixture")
+			if test.wantError != "" {
+				if err == nil || !strings.Contains(err.Error(), test.wantError) {
+					t.Fatalf("空消息调用未拒绝错误响应: %v，预期 %q", err, test.wantError)
+				}
+			} else if err != nil {
+				t.Fatalf("空的 emptyMessage 响应应视为成功: %v", err)
+			}
+		})
+	}
+}
+
 func TestStatusOverGRPCWeb(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != methodSubscribeStatus {
