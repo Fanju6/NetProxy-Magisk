@@ -1,5 +1,5 @@
 name: 构建模块内容
-description: 验证并构建原生组件与 WebUI，生成等待追加管理器的 XZ 模块内容
+description: 验证并构建原生组件与 WebUI，生成等待追加管理器的 Deflate 模块内容
 
 inputs:
   posthog-project-token:
@@ -72,7 +72,7 @@ runs:
       shell: bash
       run: sh .github/scripts/build-metadata.sh >> "$GITHUB_OUTPUT"
 
-    - name: 压缩模块内容（ZIP + XZ 9）
+    - name: 压缩模块内容（ZIP + Deflate 9）
       shell: bash
       env:
         MODULE_NAME: ${{ steps.meta.outputs.module_name }}

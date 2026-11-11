@@ -34,7 +34,8 @@ assert_not_contains() {
 assert_contains "$BUILD_ACTION" 'sh .github/scripts/build-metadata.sh'
 assert_contains "$ANDROID_ACTION" 'sh .github/scripts/build-metadata.sh'
 assert_contains "$BUILD_ACTION" 'sh .github/scripts/package-module.sh'
-assert_contains "$ROOT/.github/scripts/package-module.sh" '7z a -tzip -mm=XZ -mx=9'
+assert_contains "$ROOT/.github/scripts/package-module.sh" '7z a -tzip -mm=Deflate -mx=9'
+assert_contains "$ROOT/.github/scripts/package-module.sh" "od -An -c"
 assert_contains "$BUILD_ACTION" 'sh tests/ci_verify.sh'
 assert_contains "$BUILD_ACTION" 'install -m 0755 "$NETPROXY_CI_BUILD_DIR/netproxyctl-android" src/module/bin/netproxyctl'
 assert_not_contains "$BUILD_ACTION" 'gradlew|setup-java|setup-gradle|keytool'
@@ -223,8 +224,8 @@ assert_contains "$TEMP/module.list" 'Path = runtime/.gitkeep'
 assert_contains "$TEMP/module.list" 'Path = NetProxy.apk'
 [ "$(find "$TEMP/output" -type f | wc -l)" -eq 1 ]
 7z l -slt "$TEMP/output/module.zip" bin/netproxyctl > "$TEMP/core.list"
-grep -Eiq '^Method = xz$' "$TEMP/core.list" || {
-  printf '%s\n' '模块核心未使用 XZ 压缩' >&2
+grep -Eiq '^Method = deflate' "$TEMP/core.list" || {
+  printf '%s\n' '模块核心未使用 Deflate 压缩' >&2
   exit 1
 }
 grep -E '^(Packed Size|CRC|Method) = ' "$TEMP/before.core" > "$TEMP/before.compression"
@@ -240,6 +241,13 @@ if sh "$ROOT/.github/scripts/package-module.sh" "$TEMP/module" "$TEMP/output" mo
   printf '%s\n' '打包程序不应复用已有输出归档' >&2
   exit 1
 fi
+mkdir -p "$TEMP/crlf-module"
+printf 'id=netproxy\r\nversion=test\r\n' > "$TEMP/crlf-module/module.prop"
+if sh "$ROOT/.github/scripts/package-module.sh" "$TEMP/crlf-module" "$TEMP/output" crlf.zip >/dev/null 2>&1; then
+  printf '%s\n' 'CRLF module.prop 不能进入模块包' >&2
+  exit 1
+fi
+[ ! -e "$TEMP/output/crlf.zip" ]
 if sh "$ROOT/.github/scripts/complete-module.sh" "$TEMP/output/missing.zip" "$TEMP/module/NetProxy.apk" "$TEMP/module/bin/android-platform.dex" >/dev/null 2>&1; then
   printf '%s\n' '不能从缺失的模块内容生成发行包' >&2
   exit 1
