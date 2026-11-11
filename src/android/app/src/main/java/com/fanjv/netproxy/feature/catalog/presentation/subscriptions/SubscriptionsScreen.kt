@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Edit
@@ -218,6 +220,7 @@ private fun CatalogGroupCard(
     val usage = group.usage
     val used = (usage?.upload ?: 0L) + (usage?.download ?: 0L)
     val total = usage?.total ?: 0L
+    val expire = usage?.expire ?: 0L
     val updatedAt = group.lastSuccessAt.ifBlank { group.updatedAt }
 
     Card(
@@ -229,130 +232,117 @@ private fun CatalogGroupCard(
         showIndication = true,
         onClick = onSelect
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = group.name,
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
                 modifier = Modifier.weight(1f),
-                fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = group.name,
+                    modifier = Modifier.weight(1f),
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (isSubscription && expire > 0L) {
+                    ExpiryBadge(expire)
+                }
+            }
             if (group.active) {
                 val activeColor = Color(0xFF32A852)
-                Text(
-                    text = stringResource(R.string.subscription_active),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight(750),
-                    color = activeColor,
+                Box(
                     modifier = Modifier
-                        .squircleBackground(activeColor.copy(alpha = 0.15f), 6.dp)
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                        .size(12.dp)
+                        .background(activeColor, CircleShape)
                 )
             }
         }
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
                 Text(
                     text = if (!isSubscription) {
                         stringResource(R.string.subscription_node_count, group.nodeCount)
                     } else if (total > 0) {
-                        stringResource(
-                            R.string.subscription_usage,
-                            formatBytes(used),
-                            formatBytes(total)
-                        )
+                        "${formatBytes(used)} / ${formatBytes(total)}"
                     } else {
                         stringResource(R.string.subscription_no_usage)
                     },
-                    modifier = Modifier.padding(top = 2.dp),
-                    fontSize = 12.sp,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
                     color = colorScheme.onSurfaceVariantSummary
                 )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    text = if (updatedAt.isNotBlank()) {
-                        stringResource(
-                            R.string.subscription_updated_at,
-                            stringResource(
-                                if (isSubscription) {
-                                    R.string.subscription_updated_label
-                                } else {
-                                    R.string.local_config_modified_label
-                                }
-                            ),
-                            formatDate(updatedAt)
-                        )
-                    } else {
-                        stringResource(
-                            if (isSubscription) {
-                                R.string.subscription_not_updated
-                            } else {
-                                R.string.local_config_modified_at
-                            }
-                        )
-                    },
-                    modifier = Modifier.padding(top = 2.dp),
-                    fontSize = 12.sp,
-                    color = colorScheme.onSurfaceVariantSummary
-                )
+                if (isSubscription) {
+                    Text(
+                        text = updatedAt.takeIf(String::isNotBlank)?.let(::formatDate) ?: "--",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = colorScheme.onSurfaceVariantSummary
+                    )
+                }
             }
 
-            Spacer(Modifier.weight(1f))
-
-            IconButton(
-                onClick = onEdit,
-                minHeight = 35.dp,
-                minWidth = 35.dp,
-                backgroundColor = colorScheme.secondaryContainer
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    modifier = Modifier.size(20.dp),
-                    imageVector = MiuixIcons.MoreCircle,
-                    contentDescription = stringResource(
-                        if (isSubscription) R.string.subscription_details
-                        else R.string.local_config_details
-                    ),
-                    tint = colorScheme.onSurfaceVariantSummary
-                )
-            }
-            if (isSubscription) {
-                Spacer(Modifier.width(8.dp))
+
                 IconButton(
-                    onClick = onUpdate,
-                    enabled = !busy,
+                    onClick = onEdit,
                     minHeight = 35.dp,
                     minWidth = 35.dp,
                     backgroundColor = colorScheme.secondaryContainer
                 ) {
                     Icon(
                         modifier = Modifier.size(20.dp),
-                        imageVector = MiuixIcons.Refresh,
-                        contentDescription = stringResource(R.string.common_update),
+                        imageVector = MiuixIcons.MoreCircle,
+                        contentDescription = stringResource(
+                            if (isSubscription) R.string.subscription_details
+                            else R.string.local_config_details
+                        ),
                         tint = colorScheme.onSurfaceVariantSummary
                     )
                 }
-                Spacer(Modifier.width(8.dp))
-                IconButton(
-                    onClick = { showDeleteDialog = true },
-                    enabled = !busy,
-                    minHeight = 35.dp,
-                    minWidth = 35.dp,
-                    backgroundColor = colorScheme.secondaryContainer
-                ) {
-                    Icon(
-                        modifier = Modifier.size(20.dp),
-                        imageVector = MiuixIcons.Delete,
-                        contentDescription = stringResource(R.string.common_delete),
-                        tint = colorScheme.onSurfaceVariantSummary
-                    )
+                if (isSubscription) {
+                    IconButton(
+                        onClick = onUpdate,
+                        enabled = !busy,
+                        minHeight = 35.dp,
+                        minWidth = 35.dp,
+                        backgroundColor = colorScheme.secondaryContainer
+                    ) {
+                        Icon(
+                            modifier = Modifier.size(20.dp),
+                            imageVector = MiuixIcons.Refresh,
+                            contentDescription = stringResource(R.string.common_update),
+                            tint = colorScheme.onSurfaceVariantSummary
+                        )
+                    }
+                    IconButton(
+                        onClick = { showDeleteDialog = true },
+                        enabled = !busy,
+                        minHeight = 35.dp,
+                        minWidth = 35.dp,
+                        backgroundColor = colorScheme.secondaryContainer
+                    ) {
+                        Icon(
+                            modifier = Modifier.size(20.dp),
+                            imageVector = MiuixIcons.Delete,
+                            contentDescription = stringResource(R.string.common_delete),
+                            tint = colorScheme.onSurfaceVariantSummary
+                        )
+                    }
                 }
             }
         }
@@ -939,6 +929,10 @@ private fun SubscriptionSummaryCard(
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f)
                 )
+                if (isSubscription) {
+                    val expire = subscription.usage?.expire ?: 0L
+                    if (expire > 0L) ExpiryBadge(expire)
+                }
                 StatusTag(
                     label = if (subscription.active) {
                         stringResource(R.string.subscription_active)
@@ -978,6 +972,21 @@ private fun SubscriptionSummaryCard(
             }
         }
     }
+}
+
+@Composable
+private fun ExpiryBadge(expire: Long) {
+    val expired = expire <= Instant.now().epochSecond
+    val tint = if (expired) colorScheme.error else colorScheme.primary
+    Text(
+        text = formatEpochDate(expire).substringBefore(' '),
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = tint,
+        modifier = Modifier
+            .squircleBackground(tint.copy(alpha = 0.14f), 10.dp)
+            .padding(horizontal = 9.dp, vertical = 4.dp)
+    )
 }
 
 @Composable
@@ -1085,6 +1094,12 @@ private fun formatDate(value: String): String = runCatching {
         .withZone(ZoneId.systemDefault())
         .format(Instant.parse(value))
 }.getOrDefault(value.ifBlank { "--" })
+
+private fun formatEpochDate(value: Long): String = runCatching {
+    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+        .withZone(ZoneId.systemDefault())
+        .format(Instant.ofEpochSecond(value))
+}.getOrDefault(value.toString())
 
 @Composable
 private fun formatDuration(seconds: Long): String = when {
