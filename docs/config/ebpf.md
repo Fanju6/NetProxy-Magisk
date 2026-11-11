@@ -14,7 +14,7 @@ eBPF 参数保存在 `config/inbound/inbound.json` 的 `ebpf` 对象。完整结
     "tc_priority": 1,
     "local": {
       "enabled": true,
-      "data_plane": "socket_assign",
+      "data_plane": "cgroup",
       "dns_mode": "respect_policy",
       "ipv6": true,
       "bypass_private_address": true,
@@ -40,12 +40,12 @@ eBPF 参数保存在 `config/inbound/inbound.json` 的 `ebpf` 对象。完整结
 
 `local.enabled` 与 `shared.enabled` 独立控制本机和共享网络，选择 eBPF 时至少开启一条。关闭的路径仍能保存全部偏好，但生成的 `runtime/inbound.json` 中该路径只包含 `{"enabled": false}`，不会把未启用的接口、DNS 或筛选参数交给核心。
 
-NetProxy 将两条路径省略或留空的 `data_plane` 均解析为 `socket_assign`，并在启用路径的运行时配置中显式输出；这不同于直接使用 sing-box 时的原生缺省值。已有显式 `cgroup` 或 `packet_rewrite` 不会被覆盖。管理器在本机和共享网络分组分别选择数据平面，不提供“内核默认”选项。
+NetProxy 将本机省略或留空的 `data_plane` 解析为 `cgroup`，共享网络省略或留空时解析为 `socket_assign`，并在启用路径的运行时配置中显式输出。已有显式数据平面不会被覆盖。管理器在本机和共享网络分组分别选择数据平面，不提供“内核默认”选项。
 
 本机 `local.data_plane` 支持：
 
-- `socket_assign`：推荐默认值，跟随当前默认出口接口，将本机 TCP/UDP 分配给透明监听器。
-- `cgroup`：兼容选项，在 socket 阶段接管本机 TCP/UDP，不依赖默认出口接口，需要 cgroup v2 和相应 socket hook。
+- `cgroup`：本机默认值，在 socket 阶段接管本机 TCP/UDP，不依赖默认出口接口，需要 cgroup v2 和相应 socket hook。
+- `socket_assign`：可选实验机制，跟随当前默认出口接口，将本机 TCP/UDP 分配给透明监听器。
 
 旧本机 `local.data_plane: "tc"` 已不支持，配置会被拒绝，不会自动转换；请明确选择上述受支持值。切换数据平面不会修改应用代理、Root 或 DNS 策略。
 
@@ -53,8 +53,10 @@ NetProxy 将两条路径省略或留空的 `data_plane` 均解析为 `socket_ass
 
 共享网络 `shared.data_plane` 支持：
 
-- `socket_assign`：推荐默认值，支持以太网及 raw-IP、PPP 或受支持的隧道接口。
+- `socket_assign`：NetProxy 共享网络默认值，属于实验机制，支持以太网及 raw-IP、PPP 或受支持的隧道接口，但需要更多内核能力。
 - `packet_rewrite`：兼容选项，需要以太网帧，适用于普通热点或 LAN 下游接口。
+
+共享网络默认值是 NetProxy 的显式选择；直接使用 sing-box 时，其共享网络原生默认值仍为 `packet_rewrite`。
 
 `socket_assign` 是实验性机制，比兼容选项需要更多内核能力，包括网络命名空间、veth、透明 socket 与策略路由；本机和共享网络可以独立选择。缺少所选能力时明确报错，不会自动切换机制。具体要求可参考 [alpha.13 上游说明](https://github.com/reF1nd/sing-box/blob/v1.15.0-alpha.13-reF1nd/docs/configuration/inbound/ebpf.md)。
 
