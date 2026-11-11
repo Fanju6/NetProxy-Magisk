@@ -189,6 +189,35 @@ func Check(ctx context.Context, options Options, allowEmpty bool) (PrepareResult
 
 // SelectNode 更新持久选择，并在服务运行时通过 Service API 同步选择器。
 func SelectNode(ctx context.Context, options Options, target, group string) (data map[string]string, err error) {
+	return selectNodeSelection(ctx, options, func(module moduleconfig.ModuleConfig) (moduleconfig.Selection, error) {
+		selection := moduleconfig.Selection{ActiveGroupID: group}
+		if target == "auto" {
+			if strings.TrimSpace(group) == "" {
+				selection.ActiveGroupID = module.ActiveGroupID
+			}
+		} else {
+			var err error
+			selection.ActiveGroupID, selection.SelectedNodeTag, err = splitReference(target)
+			if err != nil {
+				return moduleconfig.Selection{}, err
+			}
+		}
+		return selection, nil
+	})
+}
+
+// SelectRegion 保存当前订阅内的地区自动选择。
+func SelectRegion(ctx context.Context, options Options, group, region string) (data map[string]string, err error) {
+	return selectNodeSelection(ctx, options, func(module moduleconfig.ModuleConfig) (moduleconfig.Selection, error) {
+		activeGroup := group
+		if strings.TrimSpace(activeGroup) == "" {
+			activeGroup = module.ActiveGroupID
+		}
+		return moduleconfig.Selection{ActiveGroupID: activeGroup, Region: region}, nil
+	})
+}
+
+func selectNodeSelection(ctx context.Context, options Options, build func(moduleconfig.ModuleConfig) (moduleconfig.Selection, error)) (data map[string]string, err error) {
 	persisted := false
 	defer func() { logOperation(options, "node", "node.select", "节点选择", persisted, err) }()
 	if err := options.validate(); err != nil {
@@ -211,16 +240,9 @@ func SelectNode(ctx context.Context, options Options, target, group string) (dat
 	if err != nil {
 		return nil, err
 	}
-	selection := moduleconfig.Selection{ActiveGroupID: group}
-	if target == "auto" {
-		if strings.TrimSpace(group) == "" {
-			selection.ActiveGroupID = module.ActiveGroupID
-		}
-	} else {
-		selection.ActiveGroupID, selection.SelectedNodeTag, err = splitReference(target)
-		if err != nil {
-			return nil, err
-		}
+	selection, err := build(module)
+	if err != nil {
+		return nil, err
 	}
 	selection, runtimeTag, err := catalog.ResolveSelection(ctx, options.CatalogRoot, selection)
 	if err != nil {

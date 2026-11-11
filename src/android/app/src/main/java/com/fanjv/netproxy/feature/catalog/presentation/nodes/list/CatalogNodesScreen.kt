@@ -84,6 +84,7 @@ import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
+import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 
 /** Catalog 节点页：离线读取分组，运行时仅负责选择与测速。 */
@@ -132,6 +133,9 @@ internal fun CatalogNodesScreen(
     }
     var sortMode by remember {
         mutableIntStateOf(displayPreferences.getInt("sort", 0).coerceIn(0, 3))
+    }
+    var showRegionGroups by remember {
+        mutableStateOf(displayPreferences.getBoolean("show_region_groups", true))
     }
     var expandedGroups by remember {
         mutableStateOf(
@@ -282,6 +286,7 @@ internal fun CatalogNodesScreen(
                         CatalogNodeGrid(
                             group = selectedGroup,
                             activeGroupId = state.selection.activeGroupId,
+                            selectedRegion = state.selection.region,
                             selectedRef = state.selection.selected,
                             selectorMode = state.selection.selectorMode,
                             runtimeSelectedNode = selectedAutoNode,
@@ -290,7 +295,10 @@ internal fun CatalogNodesScreen(
                             columns = layoutDensity + 1,
                             itemSize = itemSize,
                             sortMode = sortMode,
+                            showRegionGroups = showRegionGroups,
                             onAuto = { viewModel.useAuto(selectedGroup.group.id) },
+                            onRegion = { viewModel.useRegion(selectedGroup.group.id, it) },
+                            onRegionTest = { viewModel.testRegionDelay(selectedGroup.group.id, it) },
                             onNode = { viewModel.useNode(selectedGroup.group.id, it.tag) },
                             onNodeAction = { actionNode = selectedGroup to it },
                             modifier = Modifier.fillMaxSize(),
@@ -301,6 +309,7 @@ internal fun CatalogNodesScreen(
                         CatalogGroupList(
                             groups = state.groups,
                             activeGroupId = state.selection.activeGroupId,
+                            selectedRegion = state.selection.region,
                             selectedRef = state.selection.selected,
                             selectorMode = state.selection.selectorMode,
                             runtimeSelectedNode = selectedAutoNode,
@@ -309,6 +318,7 @@ internal fun CatalogNodesScreen(
                             columns = layoutDensity + 1,
                             itemSize = itemSize,
                             sortMode = sortMode,
+                            showRegionGroups = showRegionGroups,
                             expandedGroups = expandedGroups,
                             onToggleGroup = { groupId ->
                                 expandedGroups = if (groupId in expandedGroups) {
@@ -321,6 +331,8 @@ internal fun CatalogNodesScreen(
                                 }
                             },
                             onAuto = viewModel::useAuto,
+                            onRegion = viewModel::useRegion,
+                            onRegionTest = viewModel::testRegionDelay,
                             onNode = { group, node -> viewModel.useNode(group.group.id, node.tag) },
                             onNodeAction = { group, node -> actionNode = group to node },
                             modifier = Modifier.fillMaxSize(),
@@ -340,6 +352,15 @@ internal fun CatalogNodesScreen(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Card {
+                SwitchPreference(
+                    title = stringResource(R.string.node_region_grouping),
+                    summary = stringResource(R.string.node_region_grouping_summary),
+                    checked = showRegionGroups,
+                    onCheckedChange = { enabled ->
+                        showRegionGroups = enabled
+                        displayPreferences.edit { putBoolean("show_region_groups", enabled) }
+                    }
+                )
                 OverlayDropdownPreference(
                     title = stringResource(R.string.node_layout_style),
                     items = listOf(

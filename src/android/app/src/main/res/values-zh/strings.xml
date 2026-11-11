@@ -645,4 +645,8 @@
     <string name="routing_error_package_name">请填写完整包名，例如 com.android.chrome，不要包含用户 ID、空格或网址。</string>
     <string name="routing_invalid_document">该规则集暂时无法使用表单编辑，请在 JSON 编辑器中检查 version 和 rules。</string>
     <string name="routing_reload_draft">丢弃草稿并重新加载</string>
+    <string name="node_region_grouping">按国家/地区分组</string>
+    <string name="node_region_grouping_summary">显示各国家或地区的自动选择卡片</string>
+    <string name="node_region_count">%1$d 个节点</string>
+    <string name="node_switched_region">已启用 %1$s 地区自动选择</string>
 </resources>

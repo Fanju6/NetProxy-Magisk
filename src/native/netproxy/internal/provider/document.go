@@ -43,6 +43,7 @@ type NodeSummary struct {
 	Protocol string `json:"protocol"`
 	Server   string `json:"server,omitempty"`
 	Port     uint16 `json:"port,omitzero"`
+	Region   string `json:"region,omitempty"`
 }
 
 func ParseDocument(ctx context.Context, content []byte) (Document, error) {

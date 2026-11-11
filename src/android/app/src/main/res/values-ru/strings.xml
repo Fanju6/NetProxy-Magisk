@@ -615,4 +615,8 @@
     <string name="routing_error_package_name">Введите полное имя пакета, например com.android.chrome, без ID пользователя, пробелов и URL.</string>
     <string name="routing_invalid_document">Этот набор нельзя изменить в форме. Проверьте version и rules в редакторе JSON.</string>
     <string name="routing_reload_draft">Отбросить черновик и перечитать</string>
+    <string name="node_region_grouping">Группы по регионам</string>
+    <string name="node_region_grouping_summary">Показывать карточки автоматического выбора по странам и регионам</string>
+    <string name="node_region_count">%1$d узлов</string>
+    <string name="node_switched_region">Автовыбор региона %1$s включён</string>
 </resources>

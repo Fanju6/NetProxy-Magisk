@@ -46,6 +46,7 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 internal fun CatalogNodeGrid(
     group: CatalogNodeGroup,
     activeGroupId: String,
+    selectedRegion: String,
     selectedRef: String,
     selectorMode: String,
     runtimeSelectedNode: String,
@@ -54,17 +55,27 @@ internal fun CatalogNodeGrid(
     columns: Int,
     itemSize: Int,
     sortMode: Int,
+    showRegionGroups: Boolean,
     onAuto: () -> Unit,
+    onRegion: (String) -> Unit,
+    onRegionTest: (String) -> Unit,
     onNode: (CatalogNode) -> Unit,
     onNodeAction: (CatalogNode) -> Unit,
     modifier: Modifier,
     contentPadding: PaddingValues,
     nestedScrollConnection: NestedScrollConnection
 ) {
-    val automaticSelected = selectorMode == "urltest" && activeGroupId == group.group.id
+    val automaticSelected = selectorMode == "urltest" && activeGroupId == group.group.id && selectedRegion.isBlank()
     val selectedAutoNode = runtimeSelectedNode.takeIf { automaticSelected && it.isNotBlank() }
     val sortedNodes = remember(group.nodes, sortMode, latencies) {
         sortCatalogNodes(group.nodes, sortMode, group.group.id, latencies)
+    }
+    val regions = remember(group.nodes, showRegionGroups) {
+        if (showRegionGroups) {
+            group.nodes.map { it.region }.filter(String::isNotBlank).distinct()
+        } else {
+            emptyList()
+        }
     }
     val spacing = if (columns == 3) 8.dp else 10.dp
     LazyVerticalGrid(
@@ -89,6 +100,23 @@ internal fun CatalogNodeGrid(
                     enabled = !busy,
                     itemSize = itemSize,
                     onClick = onAuto
+                )
+            }
+            items(regions, key = { "region:$it" }) { region ->
+                NodeCard(
+                    title = regionTitle(region),
+                    summary = stringResource(
+                        R.string.node_region_count,
+                        group.nodes.count { it.region == region }
+                    ),
+                    protocol = "AUTO",
+                    latency = latencies["Auto/${group.group.id} [$region]"],
+                    selected = selectorMode == "urltest" &&
+                        activeGroupId == group.group.id && selectedRegion == region,
+                    enabled = !busy,
+                    itemSize = itemSize,
+                    onClick = { onRegion(region) },
+                    onLongClick = { onRegionTest(region) }
                 )
             }
         }
@@ -124,6 +152,7 @@ internal fun CatalogNodeGrid(
 internal fun CatalogGroupList(
     groups: List<CatalogNodeGroup>,
     activeGroupId: String,
+    selectedRegion: String,
     selectedRef: String,
     selectorMode: String,
     runtimeSelectedNode: String,
@@ -132,9 +161,12 @@ internal fun CatalogGroupList(
     columns: Int,
     itemSize: Int,
     sortMode: Int,
+    showRegionGroups: Boolean,
     expandedGroups: Set<String>,
     onToggleGroup: (String) -> Unit,
     onAuto: (String) -> Unit,
+    onRegion: (String, String) -> Unit,
+    onRegionTest: (String, String) -> Unit,
     onNode: (CatalogNodeGroup, CatalogNode) -> Unit,
     onNodeAction: (CatalogNodeGroup, CatalogNode) -> Unit,
     modifier: Modifier,
@@ -170,46 +202,75 @@ internal fun CatalogGroupList(
                 }
             }
             if (expanded && group.nodes.isNotEmpty()) {
-                val entries = listOf<CatalogNode?>(null) + sortCatalogNodes(
-                    group.nodes, sortMode, groupId, latencies
-                )
+                val regions = if (showRegionGroups) {
+                    group.nodes.map { it.region }.filter(String::isNotBlank).distinct()
+                } else {
+                    emptyList()
+                }
+                val entries = listOf<NodeListEntry>(NodeListEntry.GlobalAuto) +
+                    regions.map { NodeListEntry.RegionAuto(it) } +
+                    sortCatalogNodes(group.nodes, sortMode, groupId, latencies).map(NodeListEntry::Node)
                 val rows = entries.chunked(columns)
                 rows.forEachIndexed { rowIndex, row ->
                     item(key = "row:$groupId:$rowIndex") {
                         Row(horizontalArrangement = Arrangement.spacedBy(spacing)) {
                             row.forEach { node ->
                                 Box(Modifier.weight(1f)) {
-                                    if (node == null) {
-                                        val automaticSelected = selectorMode == "urltest" && activeGroupId == groupId
-                                        val selectedAutoNode = runtimeSelectedNode.takeIf {
-                                            automaticSelected && it.isNotBlank()
+                                    when (node) {
+                                        NodeListEntry.GlobalAuto -> {
+                                            val automaticSelected = selectorMode == "urltest" &&
+                                                activeGroupId == groupId && selectedRegion.isBlank()
+                                            val selectedAutoNode = runtimeSelectedNode.takeIf {
+                                                automaticSelected && it.isNotBlank()
+                                            }
+                                            NodeCard(
+                                                title = stringResource(R.string.node_auto_fastest),
+                                                summary = if (selectedAutoNode == null) {
+                                                    stringResource(R.string.node_auto_test)
+                                                } else {
+                                                    ""
+                                                },
+                                                protocol = selectedAutoNode ?: "AUTO",
+                                                latency = latencies["Auto/$groupId"],
+                                                selected = automaticSelected,
+                                                enabled = !busy,
+                                                itemSize = itemSize,
+                                                onClick = { onAuto(groupId) }
+                                            )
                                         }
-                                        NodeCard(
-                                            title = stringResource(R.string.node_auto_fastest),
-                                            summary = if (selectedAutoNode == null) {
-                                                stringResource(R.string.node_auto_test)
-                                            } else {
-                                                ""
-                                            },
-                                            protocol = selectedAutoNode ?: "AUTO",
-                                            latency = latencies["Auto/$groupId"],
-                                            selected = automaticSelected,
-                                            enabled = !busy,
-                                            itemSize = itemSize,
-                                            onClick = { onAuto(groupId) }
-                                        )
-                                    } else {
-                                        NodeCard(
-                                            title = node.tag,
-                                            summary = node.serverWithPort(),
-                                            protocol = node.protocol.uppercase().ifBlank { "NODE" },
-                                            latency = latencies["$groupId/${node.tag}"],
-                                            selected = selectorMode == "manual" && selectedRef == "$groupId/${node.tag}",
-                                            enabled = !busy,
-                                            itemSize = itemSize,
-                                            onClick = { onNode(group, node) },
-                                            onLongClick = { onNodeAction(group, node) }
-                                        )
+                                        is NodeListEntry.RegionAuto -> {
+                                            val region = node.region
+                                            NodeCard(
+                                                title = regionTitle(region),
+                                                summary = stringResource(
+                                                    R.string.node_region_count,
+                                                    group.nodes.count { it.region == region }
+                                                ),
+                                                protocol = "AUTO",
+                                                latency = latencies["Auto/$groupId [$region]"],
+                                                selected = selectorMode == "urltest" &&
+                                                    activeGroupId == groupId && selectedRegion == region,
+                                                enabled = !busy,
+                                                itemSize = itemSize,
+                                                onClick = { onRegion(groupId, region) },
+                                                onLongClick = { onRegionTest(groupId, region) }
+                                            )
+                                        }
+                                        is NodeListEntry.Node -> {
+                                            val current = node.node
+                                            NodeCard(
+                                                title = current.tag,
+                                                summary = current.serverWithPort(),
+                                                protocol = current.protocol.uppercase().ifBlank { "NODE" },
+                                                latency = latencies["$groupId/${current.tag}"],
+                                                selected = selectorMode == "manual" &&
+                                                    selectedRef == "$groupId/${current.tag}",
+                                                enabled = !busy,
+                                                itemSize = itemSize,
+                                                onClick = { onNode(group, current) },
+                                                onLongClick = { onNodeAction(group, current) }
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -221,6 +282,32 @@ internal fun CatalogGroupList(
             }
         }
     }
+}
+
+private sealed interface NodeListEntry {
+    data object GlobalAuto : NodeListEntry
+    data class RegionAuto(val region: String) : NodeListEntry
+    data class Node(val node: CatalogNode) : NodeListEntry
+}
+
+private fun regionTitle(region: String): String = when (region) {
+    "hk" -> "🇭🇰 香港 · 自动"
+    "mo" -> "🇲🇴 澳门 · 自动"
+    "tw" -> "🇹🇼 台湾 · 自动"
+    "jp" -> "🇯🇵 日本 · 自动"
+    "kr" -> "🇰🇷 韩国 · 自动"
+    "sg" -> "🇸🇬 新加坡 · 自动"
+    "us" -> "🇺🇸 美国 · 自动"
+    "ca" -> "🇨🇦 加拿大 · 自动"
+    "gb" -> "🇬🇧 英国 · 自动"
+    "de" -> "🇩🇪 德国 · 自动"
+    "fr" -> "🇫🇷 法国 · 自动"
+    "nl" -> "🇳🇱 荷兰 · 自动"
+    "au" -> "🇦🇺 澳大利亚 · 自动"
+    "in" -> "🇮🇳 印度 · 自动"
+    "tr" -> "🇹🇷 土耳其 · 自动"
+    "ru" -> "🇷🇺 俄罗斯 · 自动"
+    else -> "$region · 自动"
 }
 
 @Composable
