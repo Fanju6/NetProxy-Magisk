@@ -21,6 +21,7 @@ internal data class ServiceStatusSnapshot(
     @SerialName("active_group_id") val activeGroupId: String = "",
     @SerialName("active_group_name") val activeGroupName: String = "",
     @SerialName("active_group_runtime_tag") val activeGroupRuntimeTag: String = "",
+    @SerialName("active_region") val activeRegion: String = "",
     @SerialName("active_group_node_count") val activeGroupNodeCount: Int = 0,
     @SerialName("selected_node_ref") val selectedNodeRef: String = "",
     @SerialName("runtime_selected") val runtimeSelected: String = "",

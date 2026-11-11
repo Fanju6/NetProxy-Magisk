@@ -171,7 +171,7 @@
   "route": {
     "default_domain_resolver": "dns-direct",
     "rule_set": [
-      { "type": "local", "tag": ["block", "direct", "proxy"], "format": "source", "path": "./rules/local/{tag}.json" },
+      { "type": "local", "tag": ["block", "direct", "proxy", "fcm"], "format": "source", "path": "./rules/local/{tag}.json" },
       {
         "type": "remote",
         "tag": "Ads_AWAvenue",
@@ -179,6 +179,19 @@
         "url": "https://raw.githubusercontent.com/TG-Twilight/AWAvenue-Ads-Rule/main/Filters/AWAvenue-Ads-Rule-Singbox.json",
         "update_interval": "24h",
         "path": "./rules/remote/Ads_AWAvenue.json"
+      },
+      {
+        "type": "remote",
+        "tag": [
+          "geosite/youtube",
+          "geosite/tiktok",
+          "geosite/netflix",
+          "geosite/github"
+        ],
+        "format": "binary",
+        "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/d9e3c4c09747d325d28e9bfe8829011135cfbbbf/geo/{tag}.srs",
+        "update_interval": "24h",
+        "path": "./rules/remote/{tag}.srs"
       },
       {
         "type": "remote",
@@ -204,6 +217,25 @@
       { "clash_mode": "Proxy", "action": "route", "outbound": "Proxy" },
       { "rule_set": "proxy", "action": "route", "outbound": "Proxy" },
       { "rule_set": "direct", "action": "route", "outbound": "direct" },
+      {
+        "type": "logical",
+        "mode": "or",
+        "rules": [
+          {
+            "rule_set": "fcm"
+          },
+          {
+            "network": "tcp",
+            "port": [
+              5228,
+              5229,
+              5230
+            ]
+          }
+        ],
+        "action": "route",
+        "outbound": "Proxy"
+      },
       {
         "type": "logical",
         "mode": "and",

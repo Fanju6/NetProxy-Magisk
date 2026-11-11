@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
 	"google.golang.org/protobuf/encoding/protowire"
 )
@@ -208,6 +210,55 @@ func TestDelaySupportsSingleNodeAutoGroupWithoutGroupsSnapshot(t *testing.T) {
 	}
 	if result.Target != "Auto/本地配置" || len(result.Groups[0].Items) != 1 || result.Groups[0].Items[0].URLTestDelay != 91 {
 		t.Fatalf("单节点 Auto 分组测速异常: %#v", result)
+	}
+}
+
+func TestDelayResolvesGroupIDToRuntimeTagForRegionAndNodeTargets(t *testing.T) {
+	temp := t.TempDir()
+	catalogRoot := filepath.Join(temp, "catalog")
+	groupDir := filepath.Join(catalogRoot, "group-1")
+	if err := os.MkdirAll(groupDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	metadata := catalog.NewMetadata("group-1", "日本节点", "local", "", time.Now())
+	metadata.NodeCount = 2
+	if err := catalog.SaveMetadataAtomic(t.Context(), filepath.Join(groupDir, "meta.json"), metadata); err != nil {
+		t.Fatal(err)
+	}
+	providerJSON := []byte(`{"outbounds":[{"type":"socks","tag":"🇯🇵日本A1","server":"example.com","server_port":1080},{"type":"socks","tag":"🇺🇸美国A1","server":"example.com","server_port":1081}]}`)
+	if err := provider.WriteAtomic(filepath.Join(groupDir, "provider.json"), providerJSON, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	moduleConfig := filepath.Join(temp, "module.json")
+	if err := os.WriteFile(moduleConfig, []byte(`{"selection":{"group_id":"group-1","node_tag":""}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state := &delayServerState{current: []serviceapi.GroupItem{
+		{Tag: "Auto/日本节点 [jp]", Type: "urltest", URLTestTime: 200},
+		{Tag: "日本节点/🇯🇵日本A1", Type: "socks", URLTestTime: 200, URLTestDelay: 88},
+		{Tag: "日本节点/🇺🇸美国A1", Type: "socks", URLTestTime: 200, URLTestDelay: 99},
+	}}
+	server := delayServer(t, state)
+	defer server.Close()
+	options := delayOptions(t, catalogRoot, moduleConfig, server.URL)
+
+	regionResult, err := Delay(t.Context(), options, "Auto/group-1 [jp]", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if regionResult.Target != "Auto/日本节点 [jp]" || len(regionResult.Groups) != 1 || len(regionResult.Groups[0].Items) != 1 {
+		t.Fatalf("地区测速目标映射错误: %#v", regionResult)
+	}
+	if regionResult.Groups[0].Items[0].Tag != "日本节点/🇯🇵日本A1" {
+		t.Fatalf("地区测速返回了其他地区节点: %#v", regionResult.Groups[0].Items)
+	}
+
+	nodeResult, err := Delay(t.Context(), options, "group-1/🇯🇵日本A1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nodeResult.Target != "日本节点/🇯🇵日本A1" || len(nodeResult.Groups) != 1 || len(nodeResult.Groups[0].Items) != 1 {
+		t.Fatalf("节点测速目标映射错误: %#v", nodeResult)
 	}
 }
 

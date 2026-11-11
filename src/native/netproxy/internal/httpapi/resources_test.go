@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	json "encoding/json/v2"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/policy"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -411,5 +412,151 @@ func TestResourcesSubscriptionDownloadBudgetIsBounded(t *testing.T) {
 		if got := resourceDownloadBudget(value.seconds); got != value.want {
 			t.Fatalf("预算 %d: %s != %s", value.seconds, got, value.want)
 		}
+	}
+}
+
+func TestResourcesPolicyListSaveAndValidation(t *testing.T) {
+	server := resourceFixture(t)
+	response, result := resourceRequest(t, server, "GET", "/api/v1/policies", "")
+	if response.Code != http.StatusOK || result.Code != "policy.list" || !strings.Contains(string(result.Data), `"schema":1`) {
+		t.Fatalf("策略列表契约不符: %s", response.Body.String())
+	}
+	if !strings.Contains(string(result.Data), `"id":"ai"`) || !strings.Contains(string(result.Data), `"group_id":"default"`) {
+		t.Fatalf("策略列表遗漏默认策略或可用组: %s", response.Body.String())
+	}
+	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/ai", `{"group_id":"default","node_tag":"节点 / 02","mode":"manual"}`, "policy.saved", nil)
+	stored, err := os.ReadFile(paths.New(server.options.ModuleDir).Policies())
+	if err != nil || !strings.Contains(string(stored), `"node_tag":"节点 / 02"`) || !strings.Contains(string(stored), `"mode":"manual"`) {
+		t.Fatalf("手动策略未持久化: %s, %v", stored, err)
+	}
+	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/ai", `{"group_id":"default","node_tag":"","mode":"auto"}`, "policy.saved", nil)
+	stored, err = os.ReadFile(paths.New(server.options.ModuleDir).Policies())
+	if err != nil || !strings.Contains(string(stored), `"mode":"auto"`) || !strings.Contains(string(stored), `"node_tag":""`) {
+		t.Fatalf("Auto 选择未持久化: %s, %v", stored, err)
+	}
+	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/ai", `{"group_id":"default","node_tag":"","mode":"auto","region":"other"}`, "policy.saved", nil)
+	stored, err = os.ReadFile(paths.New(server.options.ModuleDir).Policies())
+	if err != nil || !strings.Contains(string(stored), `"mode":"auto"`) || !strings.Contains(string(stored), `"region":"other"`) || !strings.Contains(string(stored), `"node_tag":""`) {
+		t.Fatalf("地区自动选择未持久化为地区而非节点: %s, %v", stored, err)
+	}
+	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/ai", `{"group_id":"default","node_tag":"","mode":"direct"}`, "policy.saved", nil)
+	stored, err = os.ReadFile(paths.New(server.options.ModuleDir).Policies())
+	if err != nil || !strings.Contains(string(stored), `"mode":"direct"`) {
+		t.Fatalf("独立直连策略未持久化: %s, %v", stored, err)
+	}
+	response, result = resourceRequest(t, server, "PUT", "/api/v1/policies/missing", `{"group_id":"default","node_tag":"","mode":"auto"}`)
+	if response.Code != http.StatusNotFound || result.Code != "policy.not_found" {
+		t.Fatalf("未知策略错误契约不符: %s", response.Body.String())
+	}
+	response, result = resourceRequest(t, server, "PUT", "/api/v1/policies/ai", `{"group_id":"default","node_tag":"","mode":"selective"}`)
+	if response.Code != http.StatusBadRequest || result.Code != "usage.invalid" {
+		t.Fatalf("非法策略模式未被拒绝: %s", response.Body.String())
+	}
+	response, result = resourceRequest(t, server, "PUT", "/api/v1/policies/ai", `{"group_id":"missing","node_tag":"","mode":"auto"}`)
+	if response.Code != http.StatusBadRequest || result.Code != "usage.invalid" {
+		t.Fatalf("不存在的策略分组未被拒绝: %s", response.Body.String())
+	}
+	response, result = resourceRequest(t, server, "PUT", "/api/v1/policies/ai", `{"group_id":"default","node_tag":"missing","mode":"manual"}`)
+	if response.Code != http.StatusBadRequest || result.Code != "usage.invalid" {
+		t.Fatalf("不存在的策略节点未被拒绝: %s", response.Body.String())
+	}
+	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/ai", `{"group_id":"default","node_tag":"","mode":"proxy"}`, "policy.saved", nil)
+	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/youtube", `{"disabled":true}`, "policy.saved", nil)
+	stored, err = os.ReadFile(paths.New(server.options.ModuleDir).Policies())
+	if err != nil || !strings.Contains(string(stored), `"id":"youtube"`) || !strings.Contains(string(stored), `"disabled":true`) {
+		t.Fatalf("内置策略停用状态未持久化: %s, %v", stored, err)
+	}
+	response, result = resourceRequest(t, server, "POST", "/api/v1/policies/ai/url-test", "")
+	if response.Code != http.StatusBadRequest || result.Code != "usage.invalid" || !strings.Contains(response.Body.String(), "Proxy 模式") {
+		t.Fatalf("Proxy 策略测速未明确拒绝: %s", response.Body.String())
+	}
+}
+
+func TestResourcesCustomPolicyCrud(t *testing.T) {
+	server := resourceFixture(t)
+	var created struct {
+		Policy struct {
+			ID string `json:"id"`
+		} `json:"policy"`
+	}
+	resourceAssertSuccess(t, server, "POST", "/api/v1/policies", `{"name":"Work app","package_names":["com.example.work"],"domain_suffixes":["example.com"],"ports":[]}`, "policy.created", &created)
+	if !strings.HasPrefix(created.Policy.ID, "custom-") {
+		t.Fatalf("unexpected custom policy id: %#v", created)
+	}
+	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/"+created.Policy.ID, `{"group_id":"default","node_tag":"节点 / 02","mode":"manual"}`, "policy.saved", nil)
+	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/"+created.Policy.ID, `{"name":"Work app 2"}`, "policy.saved", nil)
+	stored, err := os.ReadFile(paths.New(server.options.ModuleDir).Policies())
+	if err != nil || !strings.Contains(string(stored), `"node_tag":"节点 / 02"`) || !strings.Contains(string(stored), `"mode":"manual"`) {
+		t.Fatalf("仅修改自定义策略定义时不应清除出口选择: %s, %v", stored, err)
+	}
+	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/"+created.Policy.ID, `{"name":"Work app 2","package_names":["com.example.work"],"domain_suffixes":["work.example.com"],"ports":[],"group_id":"default","node_tag":"","mode":"auto","region":""}`, "policy.saved", nil)
+	resourceAssertSuccess(t, server, "DELETE", "/api/v1/policies/"+created.Policy.ID, "", "policy.deleted", nil)
+	response, result := resourceRequest(t, server, "DELETE", "/api/v1/policies/ai", "")
+	if response.Code != http.StatusBadRequest || result.Code != "usage.invalid" {
+		t.Fatalf("built-in policy deletion should be rejected: %s", response.Body.String())
+	}
+}
+
+func TestResourcesCreatePackageOnlyPolicyWithEmptyLocalGroup(t *testing.T) {
+	server := resourceFixture(t)
+	resourceWriteFile(t, filepath.Join(server.options.CatalogRoot, "default", "provider.json"), `{"outbounds":[]}`)
+	body := `{"name":"hills","package_names":["com.mountains.hills"],"domain_suffixes":[],"ports":[]}`
+
+	var created struct {
+		Policy        policy.Policy `json:"policy"`
+		Persisted     bool          `json:"persisted"`
+		RuntimeSynced bool          `json:"runtime_synced"`
+	}
+	resourceAssertSuccess(t, server, "POST", "/api/v1/policies", body, "policy.created", &created)
+	if !created.Persisted || created.RuntimeSynced || created.Policy.Mode != "proxy" || created.Policy.Name != "hills" {
+		t.Fatalf("package-only policy creation failed: %+v", created)
+	}
+	stored, err := policy.Load(t.Context(), server.policyPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, found := policy.Find(stored, created.Policy.ID)
+	if !found || len(item.PackageNames) != 1 || item.PackageNames[0] != "com.mountains.hills" {
+		t.Fatalf("package-only policy was not persisted: %+v", stored)
+	}
+	var listed struct {
+		Policies []policyView `json:"policies"`
+	}
+	resourceAssertSuccess(t, server, "GET", "/api/v1/policies", "", "policy.list", &listed)
+	for _, item := range listed.Policies {
+		if item.ID == created.Policy.ID && item.Name == "hills" && item.Persisted {
+			return
+		}
+	}
+	t.Fatalf("new policy disappeared from the policy list: %+v", listed)
+}
+
+func TestResourcesCreateExplicitAutoPolicyStillRequiresNodes(t *testing.T) {
+	server := resourceFixture(t)
+	resourceWriteFile(t, filepath.Join(server.options.CatalogRoot, "default", "provider.json"), `{"outbounds":[]}`)
+	response, _ := resourceRequest(t, server, "POST", "/api/v1/policies", `{"name":"hills","package_names":["com.mountains.hills"],"mode":"auto","group_id":"default"}`)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "策略分组没有可用节点") {
+		t.Fatalf("explicit empty auto target must be rejected: %s", response.Body.String())
+	}
+	if _, err := os.Stat(server.policyPath()); !os.IsNotExist(err) {
+		t.Fatalf("rejected policy must not be written: %v", err)
+	}
+}
+
+func TestResourcesDisableBuiltinWithEmptyLocalGroup(t *testing.T) {
+	server := resourceFixture(t)
+	resourceWriteFile(t, filepath.Join(server.options.CatalogRoot, "default", "provider.json"), `{"outbounds":[]}`)
+	resourceAssertSuccess(t, server, "PUT", "/api/v1/policies/youtube", `{"disabled":true}`, "policy.saved", nil)
+	items, err := policy.Load(t.Context(), server.policyPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, found := policy.Find(items, "youtube")
+	if !found || !item.Disabled {
+		t.Fatalf("disabled built-in was not persisted: %+v", item)
+	}
+	response, _ := resourceRequest(t, server, "PUT", "/api/v1/policies/youtube", `{"disabled":false}`)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "策略分组没有可用节点") {
+		t.Fatalf("enabling an empty automatic target must fail: %s", response.Body.String())
 	}
 }

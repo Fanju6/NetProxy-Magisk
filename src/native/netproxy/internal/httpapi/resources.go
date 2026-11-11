@@ -4,6 +4,10 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"errors"
+	"fmt"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/policy"
+	"github.com/gofrs/uuid/v5"
 	"net/http"
 	"net/url"
 	"os"
@@ -51,6 +55,11 @@ func (s *Server) registerResources() {
 	s.route("DELETE /api/v1/nodes", resourceWriteTimeout, true, s.removeNode)
 	s.route("POST /api/v1/nodes/import", resourceWriteTimeout, true, s.importNodes)
 	s.route("POST /api/v1/nodes/delay", resourceWriteTimeout, true, s.delayNodes)
+	s.route("GET /api/v1/policies", resourceReadTimeout, false, s.readPolicies)
+	s.route("POST /api/v1/policies", resourceWriteTimeout, true, s.addPolicy)
+	s.route("PUT /api/v1/policies/{id}", resourceWriteTimeout, true, s.savePolicy)
+	s.route("DELETE /api/v1/policies/{id}", resourceWriteTimeout, true, s.deletePolicy)
+	s.route("POST /api/v1/policies/{id}/url-test", resourceWriteTimeout, true, s.testPolicy)
 	s.route("GET /api/v1/selection", resourceReadTimeout, false, s.readSelection)
 	s.route("PUT /api/v1/selection", resourceWriteTimeout, false, s.saveSelection)
 	s.route("GET /api/v1/mode", resourceReadTimeout, false, s.readMode)
@@ -74,6 +83,338 @@ func (s *Server) registerResources() {
 	s.route("POST /api/v1/diagnostics/ebpf", resourceWriteTimeout, true, s.probeEBPF)
 	s.route("GET /api/v1/logs", resourceReadTimeout, false, s.readLogs)
 	s.route("DELETE /api/v1/logs", resourceReadTimeout, false, s.clearLogs)
+}
+
+type policyView struct {
+	policy.Policy
+	Groups        []catalog.GroupSnapshot `json:"groups"`
+	Persisted     bool                    `json:"persisted"`
+	RuntimeSynced bool                    `json:"runtime_synced"`
+}
+
+func (s *Server) policyPath() string {
+	return paths.New(s.options.ModuleDir).Policies()
+}
+
+func (s *Server) readPolicies(ctx context.Context, r *http.Request) (contract.Result, error) {
+	if _, err := resourceQuery(r); err != nil {
+		return contract.Result{}, err
+	}
+	items, err := policy.Load(ctx, s.policyPath())
+	if err != nil {
+		return contract.Result{}, err
+	}
+	groups, err := catalog.Scan(ctx, catalog.ScanOptions{Root: s.options.CatalogRoot, Type: "all", ProgressDir: s.options.ProgressDir, WithNodes: true})
+	if err != nil {
+		return contract.Result{}, err
+	}
+	result := make([]policyView, 0, len(items))
+	runtimeSynced := s.policyRuntimeSynced()
+	for _, item := range items {
+		result = append(result, policyView{Policy: item, Groups: groups, Persisted: true, RuntimeSynced: runtimeSynced})
+	}
+	return contract.Success("policy.list", "策略列表", map[string]any{"policies": result, "schema": 1}), nil
+}
+
+type policyDefinitionInput struct {
+	Name           string   `json:"name"`
+	PackageNames   []string `json:"package_names"`
+	DomainSuffixes []string `json:"domain_suffixes"`
+	Ports          []int    `json:"ports"`
+	GroupID        string   `json:"group_id"`
+	NodeTag        string   `json:"node_tag"`
+	Mode           string   `json:"mode"`
+	Region         string   `json:"region"`
+}
+
+func (s *Server) addPolicy(ctx context.Context, r *http.Request) (contract.Result, error) {
+	var input policyDefinitionInput
+	if err := resourceDecode(r, &input); err != nil {
+		return contract.Result{}, err
+	}
+	name := strings.TrimSpace(input.Name)
+	if name == "" {
+		return contract.Result{}, invalid("策略名称不能为空")
+	}
+	id, err := uuid.NewV4()
+	if err != nil {
+		return contract.Result{}, err
+	}
+	item := policy.Policy{
+		ID:             "custom-" + id.String(),
+		Name:           name,
+		Icon:           "custom",
+		Type:           "custom",
+		PackageNames:   input.PackageNames,
+		DomainSuffixes: input.DomainSuffixes,
+		Ports:          input.Ports,
+		GroupID:        input.GroupID,
+		NodeTag:        input.NodeTag,
+		Mode:           input.Mode,
+		Region:         input.Region,
+		RuntimeTag:     "Proxy",
+	}
+	if item.Mode == "" {
+		item.Mode = "proxy"
+	}
+	if item.GroupID == "" {
+		item.GroupID = "default"
+	}
+	if err := validatePolicyDefinition(ctx, s, item); err != nil {
+		return contract.Result{}, invalid(err.Error())
+	}
+	items, err := policy.Load(ctx, s.policyPath())
+	if err != nil {
+		return contract.Result{}, err
+	}
+	items = append(items, item)
+	if err := policy.Save(ctx, s.policyPath(), items); err != nil {
+		return contract.Result{}, err
+	}
+	runtimeSynced, err := s.syncPolicyRuntime(ctx)
+	if err != nil {
+		return contract.Result{}, err
+	}
+	return contract.Success("policy.created", "策略已创建", map[string]any{"policy": item, "persisted": true, "runtime_synced": runtimeSynced}), nil
+}
+
+func (s *Server) savePolicy(ctx context.Context, r *http.Request) (contract.Result, error) {
+	var input struct {
+		GroupID        *string   `json:"group_id"`
+		NodeTag        *string   `json:"node_tag"`
+		Mode           *string   `json:"mode"`
+		Region         *string   `json:"region"`
+		Name           *string   `json:"name"`
+		PackageNames   *[]string `json:"package_names"`
+		DomainSuffixes *[]string `json:"domain_suffixes"`
+		Ports          *[]int    `json:"ports"`
+		Disabled       *bool     `json:"disabled"`
+	}
+	if err := resourceDecode(r, &input); err != nil {
+		return contract.Result{}, err
+	}
+	items, err := policy.Load(ctx, s.policyPath())
+	if err != nil {
+		return contract.Result{}, err
+	}
+	id := r.PathValue("id")
+	current, found := policy.Find(items, id)
+	if !found {
+		return contract.Result{}, &contract.Error{Code: "policy.not_found", Message: "策略不存在", HTTPStatus: http.StatusNotFound}
+	}
+	if policy.IsBuiltin(id) && (input.Name != nil || input.PackageNames != nil || input.DomainSuffixes != nil || input.Ports != nil) {
+		return contract.Result{}, invalid("内置策略不能修改定义")
+	}
+	if input.Name != nil {
+		current.Name = strings.TrimSpace(*input.Name)
+	}
+	if input.PackageNames != nil {
+		current.PackageNames = *input.PackageNames
+	}
+	if input.DomainSuffixes != nil {
+		current.DomainSuffixes = *input.DomainSuffixes
+	}
+	if input.Ports != nil {
+		current.Ports = *input.Ports
+	}
+	if input.Disabled != nil {
+		current.Disabled = *input.Disabled
+	}
+	if input.GroupID != nil && *input.GroupID != "" {
+		current.GroupID = *input.GroupID
+	}
+	if input.NodeTag != nil {
+		current.NodeTag = *input.NodeTag
+	}
+	if input.Region != nil {
+		current.Region = *input.Region
+	}
+	if input.Mode != nil && *input.Mode != "" {
+		current.Mode = *input.Mode
+		switch current.Mode {
+		case "auto":
+			current.NodeTag = ""
+		case "manual":
+			current.Region = ""
+		case "direct", "proxy":
+			current.NodeTag = ""
+			current.Region = ""
+		}
+	} else if input.NodeTag != nil {
+		if current.NodeTag == "" {
+			current.Mode = "auto"
+		} else {
+			current.Mode = "manual"
+		}
+	}
+	if !current.Disabled && (current.Mode == "auto" || current.Mode == "manual") {
+		if err := resourceGroupID(current.GroupID, false); err != nil {
+			return contract.Result{}, err
+		}
+	}
+	if err := policy.Validate(current); err != nil {
+		return contract.Result{}, invalid(err.Error())
+	}
+	if !current.Disabled {
+		if err := validatePolicyTarget(ctx, s.options.CatalogRoot, current); err != nil {
+			return contract.Result{}, invalid(err.Error())
+		}
+	}
+	for index := range items {
+		if items[index].ID == id {
+			items[index] = current
+		}
+	}
+	if err := policy.Save(ctx, s.policyPath(), items); err != nil {
+		return contract.Result{}, err
+	}
+	runtimeSynced, err := s.syncPolicyRuntime(ctx)
+	if err != nil {
+		return contract.Result{}, err
+	}
+	return contract.Success("policy.saved", "策略已保存", map[string]any{"policy": current, "persisted": true, "runtime_synced": runtimeSynced}), nil
+}
+
+func (s *Server) deletePolicy(ctx context.Context, r *http.Request) (contract.Result, error) {
+	if _, err := resourceQuery(r); err != nil {
+		return contract.Result{}, err
+	}
+	id := r.PathValue("id")
+	if policy.IsBuiltin(id) {
+		return contract.Result{}, invalid("内置策略不能删除，请停用不需要的策略")
+	}
+	items, err := policy.Load(ctx, s.policyPath())
+	if err != nil {
+		return contract.Result{}, err
+	}
+	if _, found := policy.Find(items, id); !found {
+		return contract.Result{}, &contract.Error{Code: "policy.not_found", Message: "策略不存在", HTTPStatus: http.StatusNotFound}
+	}
+	filtered := make([]policy.Policy, 0, len(items)-1)
+	for _, item := range items {
+		if item.ID != id {
+			filtered = append(filtered, item)
+		}
+	}
+	if err := policy.Save(ctx, s.policyPath(), filtered); err != nil {
+		return contract.Result{}, err
+	}
+	runtimeSynced, err := s.syncPolicyRuntime(ctx)
+	if err != nil {
+		return contract.Result{}, err
+	}
+	return contract.Success("policy.deleted", "策略已删除", map[string]any{"id": id, "persisted": true, "runtime_synced": runtimeSynced}), nil
+}
+
+func (s *Server) syncPolicyRuntime(ctx context.Context) (bool, error) {
+	marker := s.policyRuntimeMarker()
+	_ = os.Remove(marker)
+	synced, err := module.ReloadPolicyRuntime(ctx, s.options)
+	if err != nil {
+		return false, &service.Error{Code: "policy.runtime_sync_failed", Message: fmt.Sprintf("策略已保存，但运行时同步失败: %v", err), Data: map[string]any{"persisted": true, "runtime_synced": false}}
+	}
+	if !synced {
+		return false, nil
+	}
+	if err := os.WriteFile(marker, []byte("synced\n"), 0o600); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *Server) policyRuntimeMarker() string {
+	return filepath.Join(filepath.Dir(s.options.StateFile), "policy-runtime.synced")
+}
+
+func (s *Server) policyRuntimeSynced() bool {
+	if !service.ProcessRunning(s.options.SingBoxPath) {
+		return false
+	}
+	_, err := os.Stat(s.policyRuntimeMarker())
+	return err == nil
+}
+
+func validatePolicyDefinition(ctx context.Context, s *Server, item policy.Policy) error {
+	if err := policy.Validate(item); err != nil {
+		return err
+	}
+	if item.Mode == "auto" || item.Mode == "manual" {
+		if err := resourceGroupID(item.GroupID, false); err != nil {
+			return err
+		}
+		return validatePolicyTarget(ctx, s.options.CatalogRoot, item)
+	}
+	return nil
+}
+
+func validatePolicyTarget(ctx context.Context, root string, item policy.Policy) error {
+	if item.Mode != "auto" && item.Mode != "manual" {
+		return nil
+	}
+	groups, err := catalog.Scan(ctx, catalog.ScanOptions{Root: root, Type: "all", WithNodes: true})
+	if err != nil {
+		return fmt.Errorf("读取策略分组失败: %w", err)
+	}
+	for _, group := range groups {
+		if group.Group.ID != item.GroupID {
+			continue
+		}
+		if len(group.Nodes) == 0 {
+			return errors.New("策略分组没有可用节点")
+		}
+		if item.Mode == "auto" && item.Region != "" {
+			for _, node := range group.Nodes {
+				if catalog.RegionKey(node.Tag) == item.Region {
+					return nil
+				}
+			}
+			return fmt.Errorf("策略地区没有可用节点: %s", item.Region)
+		}
+		if item.Mode != "manual" {
+			return nil
+		}
+		for _, node := range group.Nodes {
+			if node.Tag == item.NodeTag {
+				return nil
+			}
+		}
+		return errors.New("策略节点不存在或已失效")
+	}
+	return errors.New("策略分组不存在或已失效")
+}
+
+func (s *Server) testPolicy(ctx context.Context, r *http.Request) (contract.Result, error) {
+	if err := resourceEmptyRequest(r); err != nil {
+		return contract.Result{}, err
+	}
+	items, err := policy.Load(ctx, s.policyPath())
+	if err != nil {
+		return contract.Result{}, err
+	}
+	item, found := policy.Find(items, r.PathValue("id"))
+	if !found {
+		return contract.Result{}, &contract.Error{Code: "policy.not_found", Message: "策略不存在", HTTPStatus: http.StatusNotFound}
+	}
+	if item.Mode == "proxy" {
+		return contract.Result{}, invalid("Proxy 模式没有独立测速目标，请先选择地区自动或具体节点")
+	}
+	target := "auto"
+	if item.Mode == "auto" || item.Mode == "manual" {
+		runtimeTag, err := catalog.RuntimeTag(ctx, s.options.CatalogRoot, item.GroupID)
+		if err != nil {
+			return contract.Result{}, err
+		}
+		switch {
+		case item.Mode == "auto" && item.Region != "":
+			target = catalog.RegionAutoTag(runtimeTag, item.Region)
+		case item.Mode == "manual" && item.NodeTag != "":
+			target = runtimeTag + "/" + item.NodeTag
+		default:
+			target = "Auto/" + runtimeTag
+		}
+	}
+	data, err := service.Delay(ctx, s.controlOptions(), target, item.GroupID)
+	return contract.Success("policy.url_test", "策略节点测速完成", data), err
 }
 
 func (s *Server) readService(ctx context.Context, r *http.Request) (contract.Result, error) {
@@ -230,6 +571,7 @@ func (s *Server) delayNodes(ctx context.Context, r *http.Request) (contract.Resu
 	var input struct {
 		GroupID string `json:"group_id"`
 		NodeTag string `json:"node_tag"`
+		Region  string `json:"region"`
 	}
 	if err := resourceDecode(r, &input); err != nil {
 		return contract.Result{}, err
@@ -239,7 +581,17 @@ func (s *Server) delayNodes(ctx context.Context, r *http.Request) (contract.Resu
 	}
 	target := "auto"
 	if input.NodeTag != "" {
-		target = input.GroupID + "/" + input.NodeTag
+		runtimeTag, err := catalog.RuntimeTag(ctx, s.options.CatalogRoot, input.GroupID)
+		if err != nil {
+			return contract.Result{}, err
+		}
+		target = runtimeTag + "/" + input.NodeTag
+	} else if input.Region != "" {
+		runtimeTag, err := catalog.RuntimeTag(ctx, s.options.CatalogRoot, input.GroupID)
+		if err != nil {
+			return contract.Result{}, err
+		}
+		target = catalog.RegionAutoTag(runtimeTag, input.Region)
 	}
 	data, err := service.Delay(ctx, s.controlOptions(), target, input.GroupID)
 	return contract.Success("node.delay", "节点测速完成", data), err
@@ -257,6 +609,7 @@ func (s *Server) saveSelection(ctx context.Context, r *http.Request) (contract.R
 	var input struct {
 		GroupID string `json:"group_id"`
 		NodeTag string `json:"node_tag"`
+		Region  string `json:"region"`
 	}
 	if err := resourceDecode(r, &input); err != nil {
 		return contract.Result{}, err
@@ -264,11 +617,15 @@ func (s *Server) saveSelection(ctx context.Context, r *http.Request) (contract.R
 	if err := resourceGroupID(input.GroupID, false); err != nil {
 		return contract.Result{}, err
 	}
-	target := "auto"
+	var data map[string]string
+	var err error
 	if input.NodeTag != "" {
-		target = input.GroupID + "/" + input.NodeTag
+		data, err = module.SelectNode(ctx, s.options, input.GroupID+"/"+input.NodeTag, input.GroupID)
+	} else if input.Region != "" {
+		data, err = module.SelectRegion(ctx, s.options, input.GroupID, input.Region)
+	} else {
+		data, err = module.SelectNode(ctx, s.options, "auto", input.GroupID)
 	}
-	data, err := module.SelectNode(ctx, s.options, target, input.GroupID)
 	return contract.Success("node.selected", "节点选择已更新", data), err
 }
 

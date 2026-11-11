@@ -123,6 +123,9 @@ func Scan(ctx context.Context, options ScanOptions) ([]GroupSnapshot, error) {
 			if err != nil {
 				return nil, fmt.Errorf("读取分组 %s Provider: %w", group.ID, err)
 			}
+			for index := range nodes {
+				nodes[index].Region = RegionKey(nodes[index].Tag)
+			}
 			group.Nodes = nodes
 		}
 		summary := summaryFor(group, options.ActiveGroup, options.ProgressDir)
@@ -262,6 +265,17 @@ func ResolveSelection(ctx context.Context, root string, selection moduleconfig.S
 	if !present {
 		return selection, "", fmt.Errorf("目标分组没有可用节点或未找到手动节点: %s", selection.Ref())
 	}
+	if selection.SelectedNodeTag != "" {
+		selection.Region = ""
+	} else if selection.Region != "" {
+		available, err := groupHasRegion(ctx, groups[index], selection.Region)
+		if err != nil {
+			return selection, "", err
+		}
+		if !available {
+			return selection, "", fmt.Errorf("目标分组没有可用的 %s 地区节点", selection.Region)
+		}
+	}
 	assignRuntimeTags(groups)
 	return selection, groups[index].RuntimeTag, nil
 }
@@ -308,6 +322,17 @@ func normalizeSelection(ctx context.Context, groups []*loadedGroup, selection mo
 				selection.SelectedNodeTag = ""
 			}
 		}
+		if selection.SelectedNodeTag != "" {
+			selection.Region = ""
+		} else if selection.Region != "" {
+			available, err := groupHasRegion(ctx, group, selection.Region)
+			if err != nil {
+				return selection, "", err
+			}
+			if !available {
+				selection.Region = ""
+			}
+		}
 		assignRuntimeTags(groups)
 		return selection, group.RuntimeTag, nil
 	}
@@ -316,6 +341,19 @@ func normalizeSelection(ctx context.Context, groups []*loadedGroup, selection mo
 		selection.ActiveGroupID = "default"
 	}
 	return selection, "", nil
+}
+
+func groupHasRegion(ctx context.Context, group *loadedGroup, region string) (bool, error) {
+	nodes, err := provider.InspectFile(ctx, group.ProviderPath)
+	if err != nil {
+		return false, err
+	}
+	for _, node := range nodes {
+		if RegionKey(node.Tag) == region {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func GroupIDs(ctx context.Context, root, groupType string) ([]string, error) {
@@ -395,6 +433,19 @@ func BuildRuntime(ctx context.Context, options RuntimeOptions) (RuntimeResult, e
 			return RuntimeResult{}, err
 		}
 		return RuntimeResult{SelectorMode: "urltest"}, nil
+	}
+	for _, group := range groups {
+		group.Nodes, err = provider.InspectFile(ctx, group.ProviderPath)
+		if err != nil {
+			// Runtime generation already preserves the provider path. A malformed
+			// secondary group must not prevent the active selection from being built;
+			// sing-box check will report it at the existing validation boundary.
+			group.Nodes = nil
+			continue
+		}
+		for index := range group.Nodes {
+			group.Nodes[index].Region = RegionKey(group.Nodes[index].Tag)
+		}
 	}
 
 	selection, runtimeTag, err := normalizeSelection(ctx, groups, options.Selection, "")
@@ -558,6 +609,29 @@ func writeRuntimeOutbounds(path string, groups []*loadedGroup, defaultTag string
 			},
 		)
 		options = append(options, autoTag, selectTag)
+		regions := make(map[string][]string)
+		for _, node := range group.Nodes {
+			regions[node.Region] = append(regions[node.Region], node.Tag)
+		}
+		for region, tags := range regions {
+			if region == "" || len(tags) == 0 {
+				continue
+			}
+			regionTag := RegionAutoTag(group.RuntimeTag, region)
+			outbounds = append(outbounds, option.Outbound{
+				Type: C.TypeURLTest,
+				Tag:  regionTag,
+				Options: &option.URLTestOutboundOptions{
+					Providers:                 []string{group.RuntimeTag},
+					Include:                   regexpToBadOption(RegionIncludeRegex(group.RuntimeTag, tags)),
+					URL:                       "https://www.gstatic.com/generate_204",
+					Interval:                  badoption.Duration(3 * time.Minute),
+					Tolerance:                 50,
+					InterruptExistConnections: true,
+				},
+			})
+			options = append(options, regionTag)
+		}
 	}
 	outbounds = append(outbounds, option.Outbound{
 		Type: C.TypeSelector,

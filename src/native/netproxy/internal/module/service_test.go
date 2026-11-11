@@ -49,6 +49,25 @@ func TestServiceStartFailureReportsCheckError(t *testing.T) {
 	// module.Check 本身只负责生成配置并调用 sing-box check，不持有服务状态。
 }
 
+func TestPolicyReloadWaitsForLifecycleAndHonorsCancellation(t *testing.T) {
+	options := newTestOptions(t.TempDir())
+	holder, err := acquireLifecycleLock(options.StateFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 40*time.Millisecond)
+	defer cancel()
+	_, err = ReloadPolicyRuntime(ctx, options)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("policy reload must wait with request context: %v", err)
+	}
+	holder.release()
+	synced, err := ReloadPolicyRuntime(t.Context(), options)
+	if err != nil || synced {
+		t.Fatalf("stopped core must remain stopped after waiting: synced=%v err=%v", synced, err)
+	}
+}
+
 func TestCheckServiceRejectsMissingBinary(t *testing.T) {
 	root := t.TempDir()
 	options := newTestOptions(root)

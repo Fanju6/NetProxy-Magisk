@@ -260,6 +260,22 @@ func StopService(_ context.Context, options Options) error {
 	return nil
 }
 
+// ReloadPolicyRuntime 等待已有生命周期操作结束后应用已保存策略。
+func ReloadPolicyRuntime(ctx context.Context, options Options) (bool, error) {
+	lock, err := waitLifecycleLock(ctx, options.StateFile)
+	if err != nil {
+		return false, err
+	}
+	defer lock.release()
+	if !service.ProcessRunning(options.SingBoxPath) {
+		return false, nil
+	}
+	if err := ReloadService(ctx, options); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // ReloadService 原位重载已运行实例，并等待 Service API 报告新的启动时间。
 func ReloadService(ctx context.Context, options Options) error {
 	if err := validateLifecycleOptions(options); err != nil {
@@ -513,8 +529,14 @@ func newSingBoxCommand(options Options, prepared PrepareResult) (*exec.Cmd, *os.
 	if err != nil {
 		return nil, nil, err
 	}
-	command := exec.Command(options.SingBoxPath, "run", "--disable-color", "-c", paths.SingBoxConfig(options.SingBoxDir),
-		"-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.Inbound)
+	args := []string{"run", "--disable-color"}
+	if prepared.Policy != "" {
+		if _, err := os.Stat(prepared.Policy); err == nil {
+			args = append(args, "-c", prepared.Policy)
+		}
+	}
+	args = append(args, "-c", paths.SingBoxConfig(options.SingBoxDir), "-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.Inbound)
+	command := exec.Command(options.SingBoxPath, args...)
 	command.Dir = options.SingBoxDir
 	command.Stdout = logFile
 	command.Stderr = logFile
@@ -523,8 +545,14 @@ func newSingBoxCommand(options Options, prepared PrepareResult) (*exec.Cmd, *os.
 }
 
 func checkPreparedConfiguration(ctx context.Context, options Options, prepared PrepareResult) error {
-	command := exec.CommandContext(ctx, options.SingBoxPath, "check", "--disable-color", "-c", paths.SingBoxConfig(options.SingBoxDir),
-		"-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.Inbound)
+	args := []string{"check", "--disable-color"}
+	if prepared.Policy != "" {
+		if _, err := os.Stat(prepared.Policy); err == nil {
+			args = append(args, "-c", prepared.Policy)
+		}
+	}
+	args = append(args, "-c", paths.SingBoxConfig(options.SingBoxDir), "-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.Inbound)
+	command := exec.CommandContext(ctx, options.SingBoxPath, args...)
 	command.Dir = options.SingBoxDir
 	command.Stdout = os.Stderr
 	command.Stderr = os.Stderr
@@ -648,6 +676,7 @@ func cleanupRuntimeFiles(options Options) {
 	for _, name := range []string{"providers.json", "outbounds.json", "inbound.json"} {
 		_ = os.Remove(filepath.Join(options.RuntimeDir, name))
 	}
+	_ = os.Remove(filepath.Join(options.SingBoxDir, "00-policies.json"))
 }
 
 func logService(options Options, level, event, result, format string, args ...any) {

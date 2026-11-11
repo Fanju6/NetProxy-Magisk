@@ -479,3 +479,52 @@ func updateNodeCount(t *testing.T, path string, nodeCount int) {
 		t.Fatal(err)
 	}
 }
+
+func TestBuildRuntimeRegionAutoIsAvailableToProxySelector(t *testing.T) {
+	root := t.TempDir()
+	writeGroup(t, root, "default", "主订阅", "subscription", "🇭🇰香港A1")
+	providerDocument := `{"outbounds":[` +
+		`{"type":"socks","tag":"🇭🇰香港A1","server":"hk.example.com","server_port":1080},` +
+		`{"type":"socks","tag":"🇺🇸美国A1","server":"us.example.com","server_port":1080}` +
+		`]}`
+	if err := os.WriteFile(filepath.Join(root, "default", "provider.json"), []byte(providerDocument), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	updateNodeCount(t, filepath.Join(root, "default", "meta.json"), 2)
+
+	runtimeDir := t.TempDir()
+	if _, err := BuildRuntime(t.Context(), RuntimeOptions{
+		Root: root, ProvidersOutput: filepath.Join(runtimeDir, "providers.json"),
+		OutboundsOutput: filepath.Join(runtimeDir, "outbounds.json"),
+		Selection:       moduleconfig.Selection{ActiveGroupID: "default", Region: "hk"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var document struct {
+		Outbounds []struct {
+			Tag       string   `json:"tag"`
+			Outbounds []string `json:"outbounds"`
+			Default   string   `json:"default"`
+		} `json:"outbounds"`
+	}
+	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(runtimeDir, "outbounds.json"))), &document); err != nil {
+		t.Fatal(err)
+	}
+	regionTag := RegionAutoTag("主订阅", "hk")
+	for _, outbound := range document.Outbounds {
+		if outbound.Tag != "Proxy" {
+			continue
+		}
+		if outbound.Default != regionTag {
+			t.Fatalf("Proxy default = %q, want %q", outbound.Default, regionTag)
+		}
+		for _, candidate := range outbound.Outbounds {
+			if candidate == regionTag {
+				return
+			}
+		}
+		t.Fatalf("Proxy candidates do not contain %q: %#v", regionTag, outbound.Outbounds)
+	}
+	t.Fatal("runtime outbounds did not contain Proxy selector")
+}
