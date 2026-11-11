@@ -281,7 +281,7 @@ func failureStatus(code string, err error) int {
 		return http.StatusGatewayTimeout
 	case "command.canceled", "subscription.cancelled":
 		return http.StatusRequestTimeout
-	case "node.runtime_sync_failed", "mode.runtime_sync_failed", "subscription.runtime_sync_failed", "node.delay_api_failed":
+	case "node.runtime_sync_failed", "mode.runtime_sync_failed", "subscription.runtime_sync_failed", "policy.runtime_sync_failed", "node.delay_api_failed":
 		return http.StatusBadGateway
 	case "subscription.invalid_target", "subscription.invalid_group", "subscription.read_only", "subscription.interval_too_short",
 		"subscription.edit_invalid", "subscription.proxy_mode_invalid", "subscription.timeout_invalid", "subscription.text_invalid", "mode.invalid", "mode.unavailable",
@@ -381,7 +381,7 @@ func (s *Server) info(context.Context, *http.Request) (contract.Result, error) {
 		"memory": map[string]uint64{"heap_alloc_bytes": memory[0].Value.Uint64(), "heap_inuse_bytes": memory[0].Value.Uint64() + memory[1].Value.Uint64(),
 			"heap_released_bytes": memory[2].Value.Uint64(), "stack_inuse_bytes": memory[3].Value.Uint64()},
 		"version_code": s.versionCode, "instance_id": s.instance, "pid": os.Getpid(), "platform": runtime.GOOS,
-		"capabilities": []string{"module", "catalog", "subscriptions", "offline_delay", "events"}}), nil
+		"capabilities": []string{"module", "catalog", "subscriptions", "policies", "offline_delay", "events"}}), nil
 }
 
 func readModuleVersion(path string) (string, string) {

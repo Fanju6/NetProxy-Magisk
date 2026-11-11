@@ -54,6 +54,9 @@ func (l Layout) Data() string { return filepath.Join(l.moduleRoot, "data") }
 // Catalog 返回 Catalog 持久化目录。
 func (l Layout) Catalog() string { return filepath.Join(l.Data(), "catalog") }
 
+// Policies 返回分应用策略的持久化文件路径。
+func (l Layout) Policies() string { return filepath.Join(l.Data(), "policies.json") }
+
 // ModuleConfig 返回模块配置文件路径。
 func (l Layout) ModuleConfig() string { return filepath.Join(l.Config(), "module.json") }
 

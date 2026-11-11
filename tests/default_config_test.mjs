@@ -37,6 +37,19 @@ test('默认配置仅保留部署、运行时生成、模式命名与原生 DNS 
   for (const rule of expected.route.rule_set) {
     rule.path = rule.path.replace('./source/rule_set/', './rules/remote/').replace('./source/', './rules/local/')
   }
+  expected.route.rule_set.find(rule => rule.type === 'local' && list(rule.tag).includes('proxy')).tag.push('fcm')
+  expected.route.rule_set.splice(2, 0, {
+    type: 'remote', tag: ['geosite/youtube', 'geosite/tiktok', 'geosite/netflix', 'geosite/github'],
+    format: 'binary',
+    url: 'https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/d9e3c4c09747d325d28e9bfe8829011135cfbbbf/geo/{tag}.srs',
+    update_interval: '24h', path: './rules/remote/{tag}.srs',
+  })
+  const localDirectIndex = expected.route.rules.findIndex(rule => rule.rule_set === 'direct')
+  expected.route.rules.splice(localDirectIndex + 1, 0, {
+    type: 'logical', mode: 'or',
+    rules: [{ rule_set: 'fcm' }, { network: 'tcp', port: [5228, 5229, 5230] }],
+    action: 'route', outbound: 'Proxy',
+  })
   const renameModes = rules => {
     for (const rule of rules) {
       if (rule.clash_mode === 'Global') rule.clash_mode = 'Proxy'

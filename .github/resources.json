@@ -98,6 +98,50 @@
       "metadataPath": "geo/geoip/telegram.json",
       "currentCommit": "0b3efbf6fc8076742c2dd36eddb8791c8121aa71",
       "currentSha256": "c5ae208004b0752baee307348ef820b9fe9e8aa3a14556f54af68791b6d4030b"
+    },
+    {
+      "name": "geosite/youtube",
+      "path": "src/module/config/singbox/rules/remote/geosite/youtube.srs",
+      "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/d9e3c4c09747d325d28e9bfe8829011135cfbbbf/geo/geosite/youtube.srs",
+      "repo": "MetaCubeX/meta-rules-dat",
+      "ref": "d9e3c4c09747d325d28e9bfe8829011135cfbbbf",
+      "sourcePath": "geo/geosite/youtube.srs",
+      "metadataPath": "geo/geosite/youtube.json",
+      "currentCommit": "d9e3c4c09747d325d28e9bfe8829011135cfbbbf",
+      "currentSha256": "ae9a576c046627c01bc1488f526775dfe919f1152c3ce6f75b678fce92498b3f"
+    },
+    {
+      "name": "geosite/tiktok",
+      "path": "src/module/config/singbox/rules/remote/geosite/tiktok.srs",
+      "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/d9e3c4c09747d325d28e9bfe8829011135cfbbbf/geo/geosite/tiktok.srs",
+      "repo": "MetaCubeX/meta-rules-dat",
+      "ref": "d9e3c4c09747d325d28e9bfe8829011135cfbbbf",
+      "sourcePath": "geo/geosite/tiktok.srs",
+      "metadataPath": "geo/geosite/tiktok.json",
+      "currentCommit": "d9e3c4c09747d325d28e9bfe8829011135cfbbbf",
+      "currentSha256": "74098a535fa12ebcb35afec90f058118072b3488d8068d7ef48cfd0f7b70b095"
+    },
+    {
+      "name": "geosite/netflix",
+      "path": "src/module/config/singbox/rules/remote/geosite/netflix.srs",
+      "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/d9e3c4c09747d325d28e9bfe8829011135cfbbbf/geo/geosite/netflix.srs",
+      "repo": "MetaCubeX/meta-rules-dat",
+      "ref": "d9e3c4c09747d325d28e9bfe8829011135cfbbbf",
+      "sourcePath": "geo/geosite/netflix.srs",
+      "metadataPath": "geo/geosite/netflix.json",
+      "currentCommit": "d9e3c4c09747d325d28e9bfe8829011135cfbbbf",
+      "currentSha256": "40c5f50c80ceaba2a5e0b5c5760c9c5fce0b08498501397d8264dcae2aeeda53"
+    },
+    {
+      "name": "geosite/github",
+      "path": "src/module/config/singbox/rules/remote/geosite/github.srs",
+      "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/d9e3c4c09747d325d28e9bfe8829011135cfbbbf/geo/geosite/github.srs",
+      "repo": "MetaCubeX/meta-rules-dat",
+      "ref": "d9e3c4c09747d325d28e9bfe8829011135cfbbbf",
+      "sourcePath": "geo/geosite/github.srs",
+      "metadataPath": "geo/geosite/github.json",
+      "currentCommit": "d9e3c4c09747d325d28e9bfe8829011135cfbbbf",
+      "currentSha256": "60417c90ba40fcc051e4c8625d83c326d8b31236e40cc59f490fc48a56065fea"
     }
   ],
   "singBox": {
