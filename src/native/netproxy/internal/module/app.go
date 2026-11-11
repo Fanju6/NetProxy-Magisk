@@ -822,8 +822,8 @@ func workerOptions(options Options) worker.Options {
 			return SyncCatalog(ctx, options, groupID, structureChanged)
 		},
 		Now: time.Now,
-		NetworkEvaluate: func(ctx context.Context, networkType, ssid string) error {
-			_, err := EvaluateNetwork(ctx, options, networkType, ssid)
+		NetworkEvaluate: func(ctx context.Context, networkType, ssid string, networkChanged bool) error {
+			_, err := EvaluateNetwork(ctx, options, networkType, ssid, networkChanged)
 			return err
 		},
 	}

@@ -28,6 +28,7 @@ func (c *cli) network(ctx context.Context, args []string) error {
 	flags := newFlagSet("network")
 	networkType := flags.String("type", "not_wifi", "网络类型")
 	ssid := flags.String("ssid", "", "当前 WiFi SSID")
+	changed := flags.Bool("changed", false, "本次评估来自真实网络切换")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -37,7 +38,7 @@ func (c *cli) network(ctx context.Context, args []string) error {
 	if args[0] != "evaluate" {
 		return fmt.Errorf("未知 network 操作 %q", args[0])
 	}
-	data, err := moduleapp.EvaluateNetwork(ctx, c.options, *networkType, *ssid)
+	data, err := moduleapp.EvaluateNetwork(ctx, c.options, *networkType, *ssid, *changed)
 	if err != nil {
 		return err
 	}

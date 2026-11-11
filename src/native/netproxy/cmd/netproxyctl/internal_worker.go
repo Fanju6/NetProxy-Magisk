@@ -266,8 +266,8 @@ func configureWorkerCallbacks(options *worker.Options, moduleDir, catalogRoot, m
 	options.SyncCatalog = func(ctx context.Context, groupID string, structureChanged bool) (string, bool, error) {
 		return moduleapp.SyncCatalog(ctx, moduleOptions, groupID, structureChanged)
 	}
-	options.NetworkEvaluate = func(ctx context.Context, networkType, ssid string) error {
-		_, err := moduleapp.EvaluateNetwork(ctx, moduleOptions, networkType, ssid)
+	options.NetworkEvaluate = func(ctx context.Context, networkType, ssid string, networkChanged bool) error {
+		_, err := moduleapp.EvaluateNetwork(ctx, moduleOptions, networkType, ssid, networkChanged)
 		return err
 	}
 	return moduleOptions

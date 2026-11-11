@@ -32,13 +32,14 @@ type NetworkEvaluation struct {
 }
 
 // EvaluateNetwork 在配置和生命周期锁内应用一次真实网络事件，不修改默认模式。
-func EvaluateNetwork(ctx context.Context, options Options, networkType, ssid string) (result NetworkEvaluation, err error) {
+// networkChanged 表示本次评估来自一次真实的网络切换，而非 Worker 首次基线评估。
+func EvaluateNetwork(ctx context.Context, options Options, networkType, ssid string, networkChanged bool) (result NetworkEvaluation, err error) {
 	options, release, err := lockModeConfig(ctx, options)
 	if err != nil {
 		return result, err
 	}
 	defer release()
-	return evaluateNetwork(ctx, options, networkType, ssid, service.ProcessRunning(options.SingBoxPath))
+	return evaluateNetwork(ctx, options, networkType, ssid, networkChanged, service.ProcessRunning(options.SingBoxPath))
 }
 
 // 调用方已持有生命周期与配置锁，启动、重载和手动模式保存显式复用该路径。
@@ -93,7 +94,7 @@ func configuredNetwork(ctx context.Context, options Options) (NetworkEvaluation,
 	return networkPolicy(module, modes.Mode, state.NetworkType, state.SSID), nil
 }
 
-func evaluateNetwork(ctx context.Context, options Options, networkType, ssid string, running bool) (result NetworkEvaluation, err error) {
+func evaluateNetwork(ctx context.Context, options Options, networkType, ssid string, networkChanged, running bool) (result NetworkEvaluation, err error) {
 	defer func() {
 		if err != nil || result.Changed {
 			message := fmt.Sprintf("网络策略应用 (network_type=%s, target=%s, mode=%s)", result.NetworkType, result.Target, result.DesiredMode)
@@ -114,9 +115,26 @@ func evaluateNetwork(ctx context.Context, options Options, networkType, ssid str
 	}
 	result = networkPolicy(module, modes.Mode, networkType, ssid)
 	if result.Target == "" {
+		if networkChanged && running {
+			recoverNetworkSessions(ctx, options)
+		}
 		return result, nil
 	}
-	return applyNetworkPolicy(ctx, options, modes, result, running, reloadNetworkConfig)
+	result, err = applyNetworkPolicy(ctx, options, modes, result, running, reloadNetworkConfig)
+	if err == nil && networkChanged && running && !result.Changed {
+		// 网络切换后旧出站会话可能已被黑洞（DNS 走代理时表现为全部新解析超时），
+		// 模式未变化时没有其他路径会中断它们，这里等价于手动切换节点时的连接中断。
+		recoverNetworkSessions(ctx, options)
+	}
+	return result, err
+}
+
+func recoverNetworkSessions(ctx context.Context, options Options) {
+	if err := service.CloseAllConnections(ctx, networkControlOptions(options)); err != nil {
+		logService(options, "WARN", "network.recover", "failed", "网络切换后中断旧连接失败: %v", err)
+		return
+	}
+	logService(options, "INFO", "network.recover", "success", "网络切换，已中断旧连接")
 }
 
 func networkPolicy(module moduleconfig.ModuleConfig, base, networkType, ssid string) NetworkEvaluation {

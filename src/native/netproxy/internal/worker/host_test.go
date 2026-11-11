@@ -80,7 +80,7 @@ func TestBrokenModuleSuspendsTasksButKeepsHost(t *testing.T) {
 		t.Fatal(err)
 	}
 	options.NetworkWatchEnabled = true
-	options.NetworkEvaluate = func(context.Context, string, string) error { return nil }
+	options.NetworkEvaluate = func(context.Context, string, string, bool) error { return nil }
 	delays := make(chan time.Duration, 2)
 	options.NewTimer = func(delay time.Duration) Timer {
 		delays <- delay

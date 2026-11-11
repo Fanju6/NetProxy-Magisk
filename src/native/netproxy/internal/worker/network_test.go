@@ -128,7 +128,11 @@ func TestNetworkWatcherDebouncesStateChanges(t *testing.T) {
 			return final, nil
 		}
 	}
-	evaluated := make(chan string, 4)
+	type evaluation struct {
+		ssid    string
+		changed bool
+	}
+	evaluated := make(chan evaluation, 4)
 	events := make(chan struct{}, 4)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -137,8 +141,8 @@ func TestNetworkWatcherDebouncesStateChanges(t *testing.T) {
 			NetworkStateReader:      read,
 			NetworkEventSource:      channelNetworkEventSource(events),
 			NetworkDebounceInterval: 20 * time.Millisecond,
-			NetworkEvaluate: func(_ context.Context, _, ssid string) error {
-				evaluated <- ssid
+			NetworkEvaluate: func(_ context.Context, _, ssid string, networkChanged bool) error {
+				evaluated <- evaluation{ssid: ssid, changed: networkChanged}
 				return nil
 			},
 		}, log.New(io.Discard, "", 0))
@@ -147,8 +151,8 @@ func TestNetworkWatcherDebouncesStateChanges(t *testing.T) {
 
 	select {
 	case got := <-evaluated:
-		if got != "A" {
-			t.Fatalf("初始评估 SSID=%q", got)
+		if got.ssid != "A" || got.changed {
+			t.Fatalf("初始评估 SSID=%q changed=%v", got.ssid, got.changed)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("初始网络评估未执行")
@@ -164,15 +168,15 @@ func TestNetworkWatcherDebouncesStateChanges(t *testing.T) {
 	events <- struct{}{}
 	select {
 	case got := <-evaluated:
-		if got != "C" {
-			t.Fatalf("debounce 后评估 SSID=%q, 中间状态不应提交", got)
+		if got.ssid != "C" || !got.changed {
+			t.Fatalf("debounce 后评估 SSID=%q changed=%v, 切换必须标记 networkChanged", got.ssid, got.changed)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("debounce 后评估未执行")
 	}
 	select {
 	case got := <-evaluated:
-		t.Fatalf("重复评估了稳定状态 %q", got)
+		t.Fatalf("重复评估了稳定状态 %q", got.ssid)
 	case <-time.After(30 * time.Millisecond):
 	}
 	mu.Lock()
@@ -199,7 +203,7 @@ func TestNetworkWatcherDoesNotReadStateWithoutEvents(t *testing.T) {
 				reads++
 				return NetworkState{NetworkType: "not_wifi"}, nil
 			},
-			NetworkEvaluate: func(context.Context, string, string) error { return nil },
+			NetworkEvaluate: func(context.Context, string, string, bool) error { return nil },
 		}, log.New(io.Discard, "", 0))
 		close(done)
 	}()
@@ -236,7 +240,7 @@ func TestNetworkWatcherQueuesLatestWithoutCancellingApply(t *testing.T) {
 				reads++
 				return state, nil
 			},
-			NetworkEvaluate: func(ctx context.Context, _, ssid string) error {
+			NetworkEvaluate: func(ctx context.Context, _, ssid string, _ bool) error {
 				if ssid == "A" {
 					close(firstStarted)
 					select {
@@ -290,7 +294,7 @@ func TestNetworkWatcherSkipsEvaluationWhenStateReadFails(t *testing.T) {
 			NetworkStateReader: func(context.Context) (NetworkState, error) {
 				return NetworkState{}, errors.New("unavailable")
 			},
-			NetworkEvaluate: func(context.Context, string, string) error {
+			NetworkEvaluate: func(context.Context, string, string, bool) error {
 				evaluated <- struct{}{}
 				return nil
 			},
