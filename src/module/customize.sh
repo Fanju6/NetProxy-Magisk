@@ -99,6 +99,18 @@ has_existing_user_data() {
   [ -f "$LIVE_DIR/config/module.json" ] || [ -d "$LIVE_DIR/data/catalog" ]
 }
 
+# 参数: 无；使用已解出的包元信息与当前 live 模块元信息。
+# 返回: 0=首次安装、同构建号或升级，1=降级；必须在 APK 与配置修改前调用。
+check_install_version() {
+  [ -f "$LIVE_DIR/module.prop" ] || return 0
+  local installed_code package_code
+  installed_code="$(grep_prop versionCode "$LIVE_DIR/module.prop")"
+  package_code="$(grep_prop versionCode "$INSTALL_TMP/module.prop")"
+  [ "$package_code" -ge "$installed_code" ] && return 0
+  print_error "[module/version] 不支持降级：当前构建 $installed_code，安装包构建 $package_code；请使用相同或更新的安装包"
+  return 1
+}
+
 #######################################
 # 参数: $1 初始等待秒数，$2... 按顺序排列的选项，首项为默认。
 # 返回: 0=已确认或未操作时采用默认，1=读取失败或操作后超时；写入 VOLUME_CHOICE。
@@ -156,7 +168,7 @@ choose_install_mode() {
   print_title "选择安装方式"
   local timeout=10
   while :; do
-    choose_volume_option "$timeout" "保留现有数据" "仅保留节点与订阅（配置恢复默认）" \
+    choose_volume_option "$timeout" "保留现有数据" "仅保留节点、订阅与策略（配置恢复默认）" \
       "全新安装（不保留现有数据）" || return 1
     case "$VOLUME_CHOICE" in
       1) INSTALL_MODE=preserve ;;
@@ -182,7 +194,7 @@ choose_install_mode() {
     local entry
     for entry in $CONFIG_ENTRIES; do
       [ -e "$LIVE_DIR/$entry" ] || {
-        print_error "当前用户配置不完整：$entry；请选择仅保留节点与订阅或全新安装"
+        print_error "当前用户配置不完整：$entry；请选择仅保留节点、订阅与策略或全新安装"
         return 1
       }
     done
@@ -242,7 +254,7 @@ stop_proxy_if_running() {
   # Worker 可能独立运行；即使核心已停止，也必须确认调度进程已退出。
   SERVICE_STOPPED=true
   "$LIVE_DIR/bin/netproxyctl" __internal worker stop --module-dir "$LIVE_DIR" >/dev/null 2>&1 \
-    && "$LIVE_DIR/netproxyctl" service stop >/dev/null 2>&1
+    && NETPROXY_MODULE_DIR="$LIVE_DIR" "$LIVE_DIR/netproxyctl" service stop >/dev/null 2>&1
 }
 
 # 参数: 无。
@@ -252,7 +264,7 @@ restore_live_service() {
   local result=0
   su -c "\"$LIVE_DIR/bin/netproxyctl\" __internal worker start --module-dir \"$LIVE_DIR\"" >/dev/null 2>&1 || result=1
   if [ "$PROXY_WAS_RUNNING" = true ]; then
-    su -c "\"$LIVE_DIR/netproxyctl\" service start" >/dev/null 2>&1 || result=1
+    su -c "NETPROXY_MODULE_DIR=\"$LIVE_DIR\" \"$LIVE_DIR/netproxyctl\" service start" >/dev/null 2>&1 || result=1
   fi
   return "$result"
 }
@@ -279,8 +291,8 @@ copy_catalog_state() {
 # 返回: 0=输出保留清单，1=安装模式无效。
 persistent_entries() {
   case "$INSTALL_MODE" in
-    preserve) printf '%s\n' config data/catalog logs ;;
-    nodes) printf '%s\n' data/catalog logs ;;
+    preserve) printf '%s\n' config data/catalog data/policies.json logs ;;
+    nodes) printf '%s\n' data/catalog data/policies.json logs ;;
     fresh) ;;
     *) return 1 ;;
   esac
@@ -412,7 +424,7 @@ with_user_data_locks() (
 # 参数: 无。
 # 返回: 0=当前事务已恢复且快照完成，1=失败。
 synchronize_user_data() {
-  [ "$INSTALL_MODE" = fresh ] || "$LIVE_DIR/netproxyctl" catalog list >/dev/null 2>&1 || return 1
+  [ "$INSTALL_MODE" = fresh ] || NETPROXY_MODULE_DIR="$LIVE_DIR" "$MODPATH/bin/netproxyctl" catalog list >/dev/null 2>&1 || return 1
   with_user_data_locks copy_user_data_locked
 }
 
@@ -479,7 +491,7 @@ apply_hot_update() {
   sleep 3
   validate_stage && [ -f "$LIVE_DIR/update" ] || return 1
   stop_proxy_if_running || return 1
-  [ "$INSTALL_MODE" = fresh ] || "$LIVE_DIR/netproxyctl" catalog list >/dev/null 2>&1 || return 1
+  [ "$INSTALL_MODE" = fresh ] || NETPROXY_MODULE_DIR="$LIVE_DIR" "$MODPATH/bin/netproxyctl" catalog list >/dev/null 2>&1 || return 1
   with_user_data_locks commit_hot_update || return 1
   write_log INFO success - "后台热更新已完成，无需重启设备"
   SERVICE_STOPPED=true
@@ -538,6 +550,9 @@ if [ "$BACKGROUND" = true ]; then
   exit 0
 fi
 
+# SukiSU/KernelSU 命令行安装环境可能不导出 TMPDIR；只读根目录会让 mktemp 直接失败。
+TMPDIR="${TMPDIR:-/data/local/tmp}"
+export TMPDIR
 INSTALL_TMP="$(mktemp -d "$TMPDIR/netproxy-install.XXXXXX")" || exit 1
 trap finish_install EXIT
 trap 'exit 1' HUP INT TERM
@@ -549,6 +564,7 @@ if [ "$(cd "$MODPATH" && pwd -P)" = "$LIVE_DIR" ]; then
 fi
 unzip -o "$ZIPFILE" module.prop -d "$INSTALL_TMP" >/dev/null 2>&1 || exit 1
 grep -qx "id=$MODULE_ID" "$INSTALL_TMP/module.prop" || exit 1
+check_install_version || exit 1
 print_title "NetProxy - sing-box 透明代理"
 ui_print "  版本: $(grep_prop version "$INSTALL_TMP/module.prop")"
 choose_install_mode || exit 1

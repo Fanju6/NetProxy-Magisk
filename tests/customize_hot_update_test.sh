@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # 文件: tests/customize_hot_update_test.sh
 # 功能: 验证安装选择、当前数据快照、热切换互斥和失败恢复。
-# 用法: sh tests/customize_hot_update_test.sh [netproxyctl 测试程序]
+# 用法: sh tests/customize_hot_update_test.sh [netproxyctl 测试程序] [单个测试函数]
 # 依赖: POSIX sh、awk、sed、mktemp；Linux 锁测试需要 flock。
 
 set -eu
@@ -15,7 +15,8 @@ LIVE_DIR="$LIVE"
 STAGE="$WORKDIR/modules_update/netproxy"
 FUNCTIONS="$WORKDIR/functions.sh"
 CALL_LOG="$WORKDIR/calls"
-export CALL_LOG
+TEST_LIVE_DIR="$LIVE"
+export CALL_LOG TEST_LIVE_DIR
 
 # 只替换测试状态目录；所有被测函数直接取自生产脚本。
 awk '
@@ -49,7 +50,7 @@ write_module() {
   mkdir -p "$target/bin" "$target/config/inbound" "$target/config/singbox/rules/local" \
     "$target/config/singbox/rules/remote" "$target/config/singbox/custom-state" \
     "$target/data/catalog/default" "$target/runtime" "$target/logs"
-  printf 'id=netproxy\nversion=%s\n' "$label" > "$target/module.prop"
+  printf 'id=netproxy\nversion=%s\nversionCode=100\n' "$label" > "$target/module.prop"
   module_fixture "$label" > "$target/config/module.json"
   inbound_fixture "$label" > "$target/config/inbound/inbound.json"
   printf '%s\n' "$label-config" > "$target/config/singbox/config.json"
@@ -64,13 +65,18 @@ write_module() {
   printf '%s\n' "$label-runtime" > "$target/runtime/providers.json"
   printf '%s\n' '#!/bin/sh' \
     'printf "%s\n" "$*" >> "$CALL_LOG"' \
+    '[ "$1" != catalog ] || [ "${NETPROXY_MODULE_DIR:-}" = "$TEST_LIVE_DIR" ] || exit 98' \
     'case "$1:$2:$3" in' \
     '  __internal:worker:stop) exit "${TEST_WORKER_STOP:-0}" ;;' \
     '  service:stop:) exit "${TEST_SERVICE_STOP:-0}" ;;' \
     '  config:check:) exit "${TEST_CONFIG_CHECK:-0}" ;;' \
     '  api:init:) exit "${TEST_API_INIT:-0}" ;;' \
     'esac' > "$target/bin/netproxyctl"
-  cp "$target/bin/netproxyctl" "$target/netproxyctl"
+  {
+    printf '%s\n' '#!/bin/sh' \
+      '[ "$NETPROXY_MODULE_DIR" = "$(dirname "$0")" ] || { printf "[module/live-wrapper] NETPROXY_MODULE_DIR=%s command=%s\n" "$NETPROXY_MODULE_DIR" "$*" >&2; exit 97; }'
+    sed '1d' "$target/bin/netproxyctl"
+  } > "$target/netproxyctl"
   printf '%s\n' 'core fixture' > "$target/bin/sing-box"
   printf '%s\n' 'anonymous dex fixture' > "$target/bin/android-platform.dex"
   for file in service.sh action.sh uninstall.sh; do
@@ -89,6 +95,7 @@ reset_modules() {
   printf '%s\n' 'temporary' > "$LIVE/data/catalog/staging/download.tmp"
   printf '%s\n' 'subscription-meta' > "$LIVE/data/catalog/subscription/meta.json"
   printf '%s\n' 'subscription-provider' > "$LIVE/data/catalog/subscription/provider.json"
+  printf '%s\n' 'current-policies' > "$LIVE/data/policies.json"
   : > "$LIVE/update"
   : > "$CALL_LOG"
   MODPATH="$STAGE"
@@ -213,10 +220,12 @@ test_snapshot_modes() (
     if [ "$mode" = fresh ]; then
       assert_value "$STAGE/data/catalog/default/provider.json" package-provider
       assert_value "$STAGE/logs/service.log" package-log
+      [ ! -e "$STAGE/data/policies.json" ]
     else
       assert_value "$STAGE/data/catalog/default/provider.json" current-provider
       assert_value "$STAGE/data/catalog/subscription/provider.json" subscription-provider
       assert_value "$STAGE/data/catalog/default/history.jsonl" current-history
+      assert_value "$STAGE/data/policies.json" current-policies
       assert_value "$STAGE/logs/service.log" current-log
     fi
     if [ "$mode" = preserve ]; then
@@ -240,6 +249,37 @@ test_snapshot_modes() (
     [ ! -e "$STAGE/data/catalog/staging/download.tmp" ]
     [ -z "$(find "$STAGE" -name '.install-state.*' -print)" ]
   done
+)
+
+test_policy_preservation() (
+  for mode in preserve nodes; do
+    reset_modules
+    INSTALL_MODE="$mode"
+    copy_user_data_locked
+    assert_value "$STAGE/data/policies.json" current-policies
+    reset_modules
+    rm "$LIVE/data/policies.json"
+    INSTALL_MODE="$mode"
+    copy_user_data_locked
+    [ ! -e "$STAGE/data/policies.json" ]
+  done
+)
+
+test_live_wrapper_module_dir() (
+  reset_modules
+  NETPROXY_MODULE_DIR="$STAGE"
+  export NETPROXY_MODULE_DIR
+  # The installed binary may be too old to recover a newer Catalog transaction.
+  sed -i '2i [ "$1" != catalog ] || exit 96' "$LIVE/bin/netproxyctl"
+  with_user_data_locks() { "$@"; }
+  synchronize_user_data
+  TEST_RUNNING=true
+  stop_proxy_if_running
+  restore_live_service
+  assert_value "$CALL_LOG" 'catalog list'
+  assert_value "$CALL_LOG" 'service stop'
+  assert_value "$CALL_LOG" 'service start'
+  # The background Catalog call is also exercised by test_hot_update.
 )
 
 test_snapshot_failure() (
@@ -283,7 +323,7 @@ test_missing_inbound() (
   wait_volume_key() { VOLUME_KEY=timeout; }
   if choose_install_mode > "$WORKDIR/menu"; then exit 1; fi
   grep -Fq 'config/inbound/inbound.json' "$WORKDIR/menu"
-  grep -Fq '请选择仅保留节点与订阅或全新安装' "$WORKDIR/menu"
+  grep -Fq '请选择仅保留节点、订阅与策略或全新安装' "$WORKDIR/menu"
   if copy_user_data_locked; then exit 1; fi
   assert_inbound "$STAGE/config/inbound/inbound.json" package
   for mode in nodes fresh; do
@@ -316,7 +356,7 @@ test_missing_module() (
   wait_volume_key() { VOLUME_KEY=timeout; }
   if choose_install_mode > "$WORKDIR/menu"; then exit 1; fi
   grep -Fq 'config/module.json' "$WORKDIR/menu"
-  grep -Fq '请选择仅保留节点与订阅或全新安装' "$WORKDIR/menu"
+  grep -Fq '请选择仅保留节点、订阅与策略或全新安装' "$WORKDIR/menu"
   if copy_user_data_locked; then exit 1; fi
   assert_module "$STAGE/config/module.json" package
   for mode in nodes fresh; do
@@ -581,10 +621,9 @@ test_native_catalog_lock() (
   grep -Fq '"ok":true' "$WORKDIR/lock-result"
 )
 
-test_installer_entrypoints() (
+prepare_installer_fixture() {
   ASH_STANDALONE=0
   export ASH_STANDALONE
-  command -v flock >/dev/null 2>&1 || exit 0
   mocks="$WORKDIR/mocks"
   mkdir -p "$mocks"
   for name in chown chcon getevent sleep; do
@@ -592,6 +631,7 @@ test_installer_entrypoints() (
   done
   printf '#!/bin/sh\nexit "${TEST_PIDOF:-1}"\n' > "$mocks/pidof"
   printf '%s\n' '#!/bin/sh' '[ -p /proc/self/fd/1 ] || exit 2' \
+    'printf "%s\n" "$*" >> "$PM_LOG"' \
     '[ "$#" -eq 3 ] && [ "$1" = install ] && [ "$2" = -r ] && [ -s "$3" ]' > "$mocks/pm"
   printf '%s\n' '#!/bin/sh' '[ "$1" = -c ] || exit 1' \
     'case "$2" in */system/bin/sh*) exit 0 ;; esac' 'exec sh -c "$2"' > "$mocks/su"
@@ -601,7 +641,8 @@ test_installer_entrypoints() (
   script="$WORKDIR/customize.sh"
   sed "s@^LIVE_DIR=/data/adb/modules/netproxy@LIVE_DIR=$LIVE@;s@/dev/netproxy@$WORKDIR/state@g" "$CUSTOMIZE" > "$script"
   SCRIPT="$script"
-  export SCRIPT
+  PM_LOG="$WORKDIR/pm-calls"
+  export SCRIPT PM_LOG
 
   run_foreground() {
     TMPDIR="$WORKDIR" MODPATH="$STAGE" ZIPFILE=fixture \
@@ -622,8 +663,95 @@ test_installer_entrypoints() (
   reset_modules
   FIXTURE="$WORKDIR/package"
   export FIXTURE
-  cp -a "$STAGE" "$FIXTURE"
+  mkdir -p "$FIXTURE"
+  cp -a "$STAGE/." "$FIXTURE/"
   printf 'manager fixture\n' > "$FIXTURE/NetProxy.apk"
+}
+
+test_tmpdir_defaults() (
+  mktemp() {
+    printf '%s\n' "$*" > "$WORKDIR/mktemp-args"
+    printf '%s\n' "$WORKDIR"
+  }
+  for value in unset empty custom; do
+    case "$value" in
+      unset) unset TMPDIR ;;
+      empty) TMPDIR= ;;
+      custom) TMPDIR="$WORKDIR" ;;
+    esac
+    eval "$(awk '/^TMPDIR=|^export TMPDIR|^INSTALL_TMP=/ { print }' "$CUSTOMIZE")"
+    expected=/data/local/tmp
+    [ "$value" != custom ] || expected="$WORKDIR"
+    [ "$(cat "$WORKDIR/mktemp-args")" = "-d $expected/netproxy-install.XXXXXX" ]
+    [ "$(sh -c 'printf %s "$TMPDIR"')" = "$expected" ]
+  done
+)
+
+test_install_version_matrix() (
+  prepare_installer_fixture
+  # Isolate version ordering from live-wrapper environment coverage.
+  NETPROXY_MODULE_DIR="$LIVE"
+  export NETPROXY_MODULE_DIR
+  # Foreground ordering does not assert real lock ownership; test_linux_locks does.
+  printf '#!/bin/sh\nexit 0\n' > "$mocks/flock"
+  chmod +x "$mocks/flock"
+  printf 'id=netproxy\nversion=v8.6.3\nversionCode=100\n' > "$FIXTURE/module.prop"
+  # BOOTMODE is the actual customize.sh branch. Framework names do not select separate paths here.
+  for boot in false true; do
+    for scenario in first same upgrade downgrade; do
+      reset_modules
+      BOOTMODE="$boot"
+      export BOOTMODE
+      : > "$PM_LOG"
+      case "$scenario" in
+        first) rm -rf "$LIVE" ;;
+        same) printf 'id=netproxy\nversion=v8.6.3\nversionCode=100\n' > "$LIVE/module.prop" ;;
+        upgrade) printf 'id=netproxy\nversion=v8.6.2\nversionCode=99\n' > "$LIVE/module.prop" ;;
+        downgrade) printf 'id=netproxy\nversion=v8.6.4\nversionCode=101\n' > "$LIVE/module.prop" ;;
+      esac
+      if [ "$scenario" = downgrade ]; then
+        if run_foreground; then
+          printf '[module/matrix] test_install_version_matrix: downgrade accepted (101 -> 100), BOOTMODE=%s\n' "$boot" >&2
+          exit 1
+        fi
+        grep -Fq '不支持降级' "$WORKDIR/install-output"
+        [ ! -s "$PM_LOG" ] && [ ! -s "$CALL_LOG" ]
+        assert_value "$LIVE/module.prop" versionCode=101
+        assert_value "$LIVE/data/catalog/default/provider.json" current-provider
+        printf '[module/matrix] PASS downgrade rejected before APK/config, BOOTMODE=%s\n' "$boot"
+        continue
+      fi
+      run_foreground
+      assert_value "$STAGE/module.prop" version=v8.6.3
+      assert_value "$STAGE/module.prop" versionCode=100
+      if [ "$scenario" = first ]; then
+        [ ! -e "$LIVE" ]
+        assert_value "$STAGE/data/catalog/default/provider.json" package-provider
+        assert_inbound "$STAGE/config/inbound/inbound.json" package
+      else
+        assert_value "$LIVE/module.prop" "versionCode=$(if [ "$scenario" = upgrade ]; then printf 99; else printf 100; fi)"
+        assert_value "$STAGE/data/catalog/default/provider.json" current-provider
+        assert_value "$STAGE/data/catalog/subscription/provider.json" subscription-provider
+        assert_inbound "$STAGE/config/inbound/inbound.json" current
+      fi
+      if [ "$boot" = true ]; then
+        assert_value "$CALL_LOG" 'config check'
+        grep -Fq '正在后台应用新版本' "$WORKDIR/install-output"
+      else
+        ! grep -q '^config check$' "$CALL_LOG"
+        grep -Fq '请重启设备应用新版本' "$WORKDIR/install-output"
+      fi
+      printf '[module/matrix] PASS %s, BOOTMODE=%s\n' "$scenario" "$boot"
+    done
+  done
+)
+
+test_installer_entrypoints() (
+  command -v flock >/dev/null 2>&1 || {
+    printf '%s\n' '未覆盖完整后台入口：当前平台无 flock；前台版本矩阵单独执行，真实锁与目录切换需 Linux 验证'
+    exit 0
+  }
+  prepare_installer_fixture
   rm -rf "$LIVE" "$STAGE"
   mkdir -p "$STAGE"
   BOOTMODE=false
@@ -693,11 +821,19 @@ test_installer_entrypoints() (
   ! grep -q '^service start$' "$CALL_LOG"
 )
 
+if [ "$#" -gt 1 ]; then
+  "$2"
+  printf 'customize test passed: %s\n' "$2"
+  exit 0
+fi
+
 test_title_spacing
 test_install_choices
 test_key_events
 test_key_output_descriptor
 test_snapshot_modes
+test_policy_preservation
+test_live_wrapper_module_dir
 test_snapshot_failure
 test_snapshot_rename_failure
 test_missing_current_data
@@ -712,5 +848,7 @@ test_hot_update_latest_data
 test_hot_rename_failure
 test_linux_locks
 test_native_catalog_lock
+test_tmpdir_defaults
+test_install_version_matrix
 test_installer_entrypoints
 printf '%s\n' 'customize hot update test passed'

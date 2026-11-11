@@ -116,7 +116,7 @@ check_install_choices() {
   grep -q 'choose_install_mode' "$MODULE_DIR/customize.sh"
   grep -q '保留现有数据' "$MODULE_DIR/customize.sh"
   grep -q '全新安装' "$MODULE_DIR/customize.sh"
-  grep -q '仅保留节点与订阅' "$MODULE_DIR/customize.sh"
+  grep -q '仅保留节点、订阅与策略' "$MODULE_DIR/customize.sh"
   grep -q 'install_bundled_manager' "$MODULE_DIR/customize.sh"
   grep -q 'print_title "安装 NetProxy 管理器"' "$MODULE_DIR/customize.sh"
   grep -q '\[ -s "\$MODPATH/NetProxy.apk" \]' "$MODULE_DIR/customize.sh"
