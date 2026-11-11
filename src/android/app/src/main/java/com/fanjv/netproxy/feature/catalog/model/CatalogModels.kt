@@ -46,7 +46,8 @@ internal data class CatalogNode(
     val tag: String,
     val protocol: String = "",
     val server: String = "",
-    val port: Int = 0
+    val port: Int = 0,
+    val region: String = ""
 )
 
 @Serializable
@@ -61,6 +62,7 @@ internal data class CurrentNodeSelection(
     @SerialName("selector_mode") val selectorMode: String = "urltest",
     val selected: String = "",
     @SerialName("active_group_runtime_tag") val activeGroupRuntimeTag: String = "",
+    @SerialName("active_region") val region: String = "",
     @SerialName("runtime_selected") val runtimeSelected: String = ""
 )
 

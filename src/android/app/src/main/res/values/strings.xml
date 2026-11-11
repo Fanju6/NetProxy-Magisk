@@ -615,4 +615,8 @@
     <string name="routing_error_package_name">Enter a full package name, such as com.android.chrome, without a user ID, spaces or a URL.</string>
     <string name="routing_invalid_document">This rule set cannot be edited as a form. Check its version and rules in the JSON editor.</string>
     <string name="routing_reload_draft">Discard draft and reload</string>
+    <string name="node_region_grouping">Show region groups</string>
+    <string name="node_region_grouping_summary">Show automatic selection cards for each country or region</string>
+    <string name="node_region_count">%1$d nodes</string>
+    <string name="node_switched_region">Automatic selection enabled for %1$s</string>
 </resources>

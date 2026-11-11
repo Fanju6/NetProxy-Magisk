@@ -27,6 +27,7 @@ type ModuleConfig struct {
 type Selection struct {
 	ActiveGroupID   string `json:"group_id"`
 	SelectedNodeTag string `json:"node_tag"`
+	Region          string `json:"region,omitempty"`
 }
 
 type WiFiPolicy struct {
@@ -59,6 +60,9 @@ func (selection Selection) Ref() string {
 
 func (selection Selection) RuntimeTargets(runtimeTag string) (group, node string) {
 	if selection.SelectedNodeTag == "" {
+		if selection.Region != "" {
+			return "Auto/" + runtimeTag + " [" + selection.Region + "]", ""
+		}
 		return "Auto/" + runtimeTag, ""
 	}
 	return "Select/" + runtimeTag, runtimeTag + "/" + selection.SelectedNodeTag

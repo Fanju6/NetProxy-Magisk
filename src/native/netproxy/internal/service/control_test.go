@@ -179,6 +179,61 @@ func TestReadStatusUsesActualServiceAPIMode(t *testing.T) {
 	}
 }
 
+func TestReadStatusUsesSelectedRegionGroup(t *testing.T) {
+	temp := t.TempDir()
+	catalogRoot := filepath.Join(temp, "catalog")
+	moduleConfig := filepath.Join(temp, "module.json")
+	stateFile := filepath.Join(temp, "service.json")
+	writeCatalogFixture(t, catalogRoot)
+	writeReadyServiceState(t, stateFile, 123)
+	withServiceProcess(t, 123)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var payload []byte
+		if request.URL.Path == "/daemon.StartedService/SubscribeGroups" {
+			for _, pair := range [][2]string{
+				{"Auto/本地配置", "本地配置/香港 01"},
+				{"Auto/本地配置 [us]", "本地配置/美国 02"},
+				{"Auto/本地配置 [jp]", "本地配置/日本 03"},
+				{"Select/本地配置", "本地配置/NODE"},
+			} {
+				var group []byte
+				group = protowire.AppendTag(group, 1, protowire.BytesType)
+				group = protowire.AppendString(group, pair[0])
+				group = protowire.AppendTag(group, 4, protowire.BytesType)
+				group = protowire.AppendString(group, pair[1])
+				payload = protowire.AppendTag(payload, 1, protowire.BytesType)
+				payload = protowire.AppendBytes(payload, group)
+			}
+		}
+		writeServiceAPIFrame(t, writer, payload)
+	}))
+	defer server.Close()
+	for _, test := range []struct{ name, region, node, expected string }{
+		{"us", "us", "", "本地配置/美国 02"},
+		{"jp", "jp", "", "本地配置/日本 03"},
+		{"all", "", "", "本地配置/香港 01"},
+		{"manual", "", "NODE", "本地配置/NODE"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			content := fmt.Sprintf(`{"selection":{"group_id":"default","region":%q,"node_tag":%q}}`, test.region, test.node)
+			if err := os.WriteFile(moduleConfig, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			status, err := ReadStatus(context.Background(), Options{
+				SingBoxConfig: modeConfigFixture(t, temp, "Rule"), CatalogRoot: catalogRoot,
+				ModuleConfig: moduleConfig, StateFile: stateFile,
+				ServiceAddress: server.URL, RequestTimeout: time.Second,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if status.RuntimeSelected != test.expected {
+				t.Fatalf("dashboard read the wrong group: got %q, want %q", status.RuntimeSelected, test.expected)
+			}
+		})
+	}
+}
+
 func TestReadStatusFetchesIndependentServiceAPISnapshotsConcurrently(t *testing.T) {
 	temp := t.TempDir()
 	catalogRoot := filepath.Join(temp, "catalog")

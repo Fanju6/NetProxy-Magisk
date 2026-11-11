@@ -137,6 +137,17 @@ internal class CatalogNodesViewModel(
         UiText.Resource(R.string.node_switched_auto)
     }
 
+    fun useRegion(groupId: String, region: String) = runOperation("select", refreshAfter = false) {
+        repository.selectRegion(groupId, region)
+        val snapshot = repository.snapshot()
+        currentCoroutineContext().ensureActive()
+        _state.update {
+            it.withSnapshot(snapshot).copy(selectedGroupId = groupId)
+        }
+        loaded = true
+        UiText.Resource(R.string.node_switched_region, listOf(region))
+    }
+
     fun useNode(groupId: String, tag: String) = runOperation("select", refreshAfter = false) {
         repository.select("$groupId/$tag")
         val snapshot = repository.snapshot()
@@ -248,6 +259,21 @@ internal class CatalogNodesViewModel(
         )
     }
 
+    fun testRegionDelay(groupId: String, region: String) {
+        val targets = _state.value.groups
+            .firstOrNull { it.group.id == groupId }
+            ?.nodes
+            .orEmpty()
+            .filter { it.region == region }
+            .map { "$groupId/${it.tag}" }
+        if (targets.isEmpty()) return
+        testDelays(
+            requestTarget = "region:$region",
+            requestGroupId = groupId,
+            targets = targets + "Auto/$groupId [$region]"
+        )
+    }
+
     fun importFile(uri: Uri) = runOperation(
         name = "import",
         action = {
@@ -307,6 +333,7 @@ internal class CatalogNodesViewModel(
                     val runtimeGroupTag = result.target
                         .removePrefix("Auto/")
                         .removePrefix("Select/")
+                        .removeSuffix(if (requestTarget.startsWith("region:")) " [${requestTarget.removePrefix("region:")}]" else "")
                         .substringBefore('/')
                     val measured = result.groups
                         .asSequence()

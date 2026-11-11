@@ -313,6 +313,8 @@ internal fun dashboardNodeName(service: ServiceStatusSnapshot): String {
     val groupName = service.activeGroupName.ifBlank { service.activeGroupId }
     val automatic = service.selectorMode == "urltest"
     if (automatic) {
+        val autoLabel = service.activeRegion.takeIf { it.isNotBlank() }
+            ?.let { "${it.uppercase(java.util.Locale.ROOT)} · Auto" } ?: "Auto-Fastest"
         val selected = if (service.state == "ready") {
             runtimeSelectedNodeTag(
                 service.activeGroupRuntimeTag,
@@ -321,8 +323,8 @@ internal fun dashboardNodeName(service: ServiceStatusSnapshot): String {
         } else {
             ""
         }
-        if (selected.isNotBlank()) return "$selected · Auto-Fastest"
-        return "$groupName/Auto-Fastest"
+        if (selected.isNotBlank()) return "$selected · $autoLabel"
+        return "$groupName/$autoLabel"
     }
     val nodeName = service.selectedNodeRef
         .substringAfter('/', service.selectedNodeRef)

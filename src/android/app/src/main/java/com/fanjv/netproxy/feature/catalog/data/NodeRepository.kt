@@ -43,8 +43,21 @@ internal class NodeRepository(private val client: ModuleApiClient) {
     suspend fun selectAuto(groupId: String) {
         client.put("/selection", buildJsonObject { put("group_id", groupId); put("node_tag", "") })
     }
+    suspend fun selectRegion(groupId: String, region: String) {
+        client.put("/selection", buildJsonObject {
+            put("group_id", groupId)
+            put("node_tag", "")
+            put("region", region)
+        })
+    }
     suspend fun testDelay(target: String = "", groupId: String = ""): NodeDelayResult {
-        val node = if (target.isBlank() || target == "auto") mapOf("group_id" to groupId, "node_tag" to "") else nodeTarget(target)
+        val node = if (target.isBlank() || target == "auto") {
+            mapOf("group_id" to groupId, "node_tag" to "")
+        } else if (target.startsWith("region:")) {
+            mapOf("group_id" to groupId, "node_tag" to "", "region" to target.removePrefix("region:"))
+        } else {
+            nodeTarget(target)
+        }
         return client.json.decodeFromJsonElement(client.post("/nodes/delay", buildJsonObject {
             node.forEach { (key, value) -> put(key, value) }
         }).data)

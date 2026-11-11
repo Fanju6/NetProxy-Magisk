@@ -98,6 +98,7 @@ type Selection struct {
 	ActiveGroupName       string `json:"active_group_name"`
 	ActiveGroupRuntimeTag string `json:"active_group_runtime_tag"`
 	ActiveGroupNodeCount  int    `json:"active_group_node_count"`
+	ActiveRegion          string `json:"active_region,omitempty"`
 	SelectorMode          string `json:"selector_mode"`
 	SelectedNodeRef       string `json:"selected_node_ref"`
 	Selected              string `json:"selected"`
@@ -211,7 +212,7 @@ func ReadStatus(ctx context.Context, options Options) (Status, error) {
 	}
 
 	if status.State == "ready" {
-		mergeRuntimeStatus(ctx, options, &status, active, state)
+		mergeRuntimeStatus(ctx, options, &status, active, state, module.Selection)
 	} else if status.State == "stopped" {
 		// 服务未运行时没有核心实时模式，展示持久化配置作为下一次启动模式。
 		status.OutboundMode = status.ConfiguredOutboundMode
@@ -240,7 +241,6 @@ func ReadGroups(ctx context.Context, options Options) ([]serviceapi.Group, error
 	return client.Groups(requestContext)
 }
 
-// ReadNodes 读取 Catalog 节点组，不依赖 sing-box 是否运行。
 func ReadNodes(ctx context.Context, options Options, groupID string) ([]catalog.GroupSnapshot, error) {
 	options = normalizeOptions(options)
 	module := readModuleConfig(options.ModuleConfig)
@@ -364,15 +364,52 @@ func Delay(ctx context.Context, options Options, target, group string) (DelayRes
 	cancel()
 	_ = client.Close()
 	if requestErr == nil {
-		return result, nil
+		return filterDelayRegion(ctx, options, request, result)
 	}
 	if errors.Is(requestErr, context.DeadlineExceeded) || errors.Is(requestErr, context.Canceled) {
 		return DelayResult{}, mapDelayRequestError(request.Target, requestErr)
 	}
 	if serviceAPIUnavailable(requestErr) && offlineDelayAllowed(options) {
-		return offlineDelayRunner(ctx, options, request)
+		result, err := offlineDelayRunner(ctx, options, request)
+		if err != nil {
+			return DelayResult{}, err
+		}
+		return filterDelayRegion(ctx, options, request, result)
 	}
 	return DelayResult{}, mapDelayRequestError(request.Target, requestErr)
+}
+
+func filterDelayRegion(ctx context.Context, options Options, request delayRequest, result DelayResult) (DelayResult, error) {
+	if request.Region == "" {
+		return result, nil
+	}
+	groups, err := catalog.Scan(ctx, catalog.ScanOptions{Root: options.CatalogRoot, GroupID: request.GroupID, WithNodes: true})
+	if err != nil {
+		return DelayResult{}, err
+	}
+	if len(groups) != 1 {
+		return DelayResult{}, delayTargetError(request.Target)
+	}
+	runtimeTag := groups[0].Group.RuntimeTag
+	allowed := make(map[string]struct{})
+	for _, node := range groups[0].Nodes {
+		if catalog.RegionKey(node.Tag) == request.Region {
+			allowed[runtimeTag+"/"+node.Tag] = struct{}{}
+		}
+	}
+	for index := range result.Groups {
+		items := result.Groups[index].Items[:0]
+		for _, item := range result.Groups[index].Items {
+			if _, ok := allowed[item.Tag]; ok {
+				items = append(items, item)
+			}
+		}
+		result.Groups[index].Items = items
+	}
+	if len(allowed) == 0 || len(result.Groups) == 0 || len(result.Groups[0].Items) == 0 {
+		return DelayResult{}, delayTargetError(request.Target)
+	}
+	return result, nil
 }
 
 func delayWithClient(ctx context.Context, client *serviceapi.Client, target string, waitForResults bool) (DelayResult, error) {
@@ -402,6 +439,9 @@ func delayWithClient(ctx context.Context, client *serviceapi.Client, target stri
 			groupType = "selector"
 		}
 		runtimeTag := strings.TrimPrefix(strings.TrimPrefix(target, "Auto/"), "Select/")
+		if index := strings.LastIndex(runtimeTag, " ["); index > 0 && strings.HasSuffix(runtimeTag, "]") {
+			runtimeTag = runtimeTag[:index]
+		}
 		prefix := runtimeTag + "/"
 		items := make([]serviceapi.GroupItem, 0)
 		groupFound := false
@@ -482,7 +522,11 @@ func waitDelayResults(ctx context.Context, client *serviceapi.Client, target str
 
 func delayResultProgress(target string, outbounds []serviceapi.GroupItem) (expected int, completed int) {
 	groupTarget := strings.HasPrefix(target, "Auto/") || strings.HasPrefix(target, "Select/")
-	prefix := strings.TrimPrefix(strings.TrimPrefix(target, "Auto/"), "Select/") + "/"
+	runtimeTag := strings.TrimPrefix(strings.TrimPrefix(target, "Auto/"), "Select/")
+	if index := strings.LastIndex(runtimeTag, " ["); index > 0 && strings.HasSuffix(runtimeTag, "]") {
+		runtimeTag = runtimeTag[:index]
+	}
+	prefix := runtimeTag + "/"
 	for _, item := range outbounds {
 		if (!groupTarget && item.Tag == target) || (groupTarget && strings.HasPrefix(item.Tag, prefix)) {
 			expected++
@@ -609,6 +653,7 @@ func SelectionFromRuntimeGroups(module moduleconfig.ModuleConfig, groups []catal
 		ActiveGroupID:   module.ActiveGroupID,
 		SelectorMode:    module.Mode(),
 		SelectedNodeRef: module.Ref(),
+		ActiveRegion:    module.Region,
 	}
 	for _, group := range groups {
 		if group.Group.ID != module.ActiveGroupID {
@@ -684,7 +729,7 @@ func readActiveGroup(ctx context.Context, options Options, activeID string) (*ca
 	return &catalog.GroupSnapshot{Group: summary}, nil
 }
 
-func mergeRuntimeStatus(ctx context.Context, options Options, status *Status, active *catalog.GroupSnapshot, state stateFile) {
+func mergeRuntimeStatus(ctx context.Context, options Options, status *Status, active *catalog.GroupSnapshot, state stateFile, selection moduleconfig.Selection) {
 	status.OutboundMode = unknownOutboundMode
 	client, requestContext, cancel, err := newClient(ctx, options)
 	if err != nil {
@@ -745,10 +790,7 @@ func mergeRuntimeStatus(ctx context.Context, options Options, status *Status, ac
 	if runtimeTag == "" {
 		return
 	}
-	runtimeGroup := "Auto/" + runtimeTag
-	if status.SelectorMode == "manual" {
-		runtimeGroup = "Select/" + runtimeTag
-	}
+	runtimeGroup, _ := selection.RuntimeTargets(runtimeTag)
 	if groupsErr != nil {
 		return
 	}
@@ -768,6 +810,7 @@ type delayRequest struct {
 	Target  string
 	GroupID string
 	NodeTag string
+	Region  string
 }
 
 func resolveDelayRequest(ctx context.Context, options Options, target, group string) (delayRequest, error) {
@@ -776,7 +819,7 @@ func resolveDelayRequest(ctx context.Context, options Options, target, group str
 	if target == "" {
 		group = activeID
 		if module.SelectedNodeTag != "" {
-			return runtimeNodeDelayRequest(ctx, options.CatalogRoot, module.Ref())
+			return runtimeNodeDelayRequest(ctx, options, module.Ref())
 		}
 		target = "auto"
 	}
@@ -798,6 +841,13 @@ func resolveDelayRequest(ctx context.Context, options Options, target, group str
 		if groupRef == "" {
 			return delayRequest{}, errors.New("测速分组引用格式应为 Auto/<group> 或 Select/<group>")
 		}
+		region := ""
+		if prefix == "Auto" {
+			if index := strings.LastIndex(groupRef, " ["); index > 0 && strings.HasSuffix(groupRef, "]") {
+				region = strings.TrimSuffix(groupRef[index+2:], "]")
+				groupRef = groupRef[:index]
+			}
+		}
 		resolvedGroup, err := resolveDelayGroup(ctx, options, groupRef)
 		if err != nil {
 			return delayRequest{}, err
@@ -806,9 +856,13 @@ func resolveDelayRequest(ctx context.Context, options Options, target, group str
 		if err != nil {
 			return delayRequest{}, err
 		}
-		return delayRequest{Target: prefix + "/" + runtimeTag, GroupID: resolvedGroup}, nil
+		resolvedTarget := prefix + "/" + runtimeTag
+		if region != "" {
+			resolvedTarget = catalog.RegionAutoTag(runtimeTag, region)
+		}
+		return delayRequest{Target: resolvedTarget, GroupID: resolvedGroup, Region: region}, nil
 	}
-	return runtimeNodeDelayRequest(ctx, options.CatalogRoot, target)
+	return runtimeNodeDelayRequest(ctx, options, target)
 }
 
 func resolveDelayGroup(ctx context.Context, options Options, query string) (string, error) {
@@ -830,23 +884,27 @@ func resolveDelayGroup(ctx context.Context, options Options, query string) (stri
 	return "", err
 }
 
-func runtimeNodeDelayRequest(ctx context.Context, root, reference string) (delayRequest, error) {
+func runtimeNodeDelayRequest(ctx context.Context, options Options, reference string) (delayRequest, error) {
 	groupID, tag, found := strings.Cut(reference, "/")
 	if !found || groupID == "" || tag == "" {
 		return delayRequest{}, errors.New("节点引用格式应为 <group-id>/<tag>")
 	}
-	runtimeTag, err := catalog.RuntimeTag(ctx, root, groupID)
+	resolvedGroup, err := resolveDelayGroup(ctx, options, groupID)
 	if err != nil {
 		return delayRequest{}, err
 	}
-	present, err := catalog.GroupContainsTag(ctx, root, groupID, tag)
+	runtimeTag, err := catalog.RuntimeTag(ctx, options.CatalogRoot, resolvedGroup)
+	if err != nil {
+		return delayRequest{}, err
+	}
+	present, err := catalog.GroupContainsTag(ctx, options.CatalogRoot, resolvedGroup, tag)
 	if err != nil {
 		return delayRequest{}, err
 	}
 	if !present {
 		return delayRequest{}, fmt.Errorf("未找到节点: %s", reference)
 	}
-	return delayRequest{Target: runtimeTag + "/" + tag, GroupID: groupID, NodeTag: tag}, nil
+	return delayRequest{Target: runtimeTag + "/" + tag, GroupID: resolvedGroup, NodeTag: tag}, nil
 }
 
 func readWorkerStatus(ctx context.Context, options Options) (worker.Status, error) {
