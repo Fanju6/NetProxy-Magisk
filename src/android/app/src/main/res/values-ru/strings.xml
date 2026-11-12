@@ -26,7 +26,6 @@
     <string name="policy_group_selected_count">Выбрано: %1$d</string>
     <string name="policy_group_no_choices">Нет доступных вариантов</string>
     <string name="policy_empty">Группы не настроены</string>
-    <string name="resource_copy_provider_tag">Копировать тег провайдера</string>
     <string name="policy_configured">Группы из конфигурации · служба остановлена</string>
     <string name="policy_providers_unavailable">Провайдеры недоступны офлайн: %1$s</string>
     <string name="inbound_read_failed">Не удалось прочитать настройки входящего подключения</string>
@@ -139,7 +138,6 @@
     <string name="subscription_no_usage">Нет данных о трафике</string>
     <string name="subscription_updated_at">%1$s: %2$s</string>
     <string name="subscription_updated_label">Обновлено</string>
-    <string name="subscription_last_success">Последнее успешное обновление: %1$s</string>
     <string name="local_config_modified_label">Изменено</string>
     <string name="subscription_not_updated">Ещё не обновлялась</string>
     <string name="local_config_modified_at">Нет времени изменения</string>

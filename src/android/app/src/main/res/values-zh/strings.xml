@@ -26,7 +26,6 @@
     <string name="policy_group_selected_count">已选择 %1$d 项</string>
     <string name="policy_group_no_choices">没有可选项</string>
     <string name="policy_empty">尚未配置策略组</string>
-    <string name="resource_copy_provider_tag">复制 Provider 标签</string>
     <string name="policy_configured">配置中的策略组 · 服务未运行</string>
     <string name="policy_providers_unavailable">离线不可用的 Provider：%1$s</string>
     <string name="inbound_read_failed">无法读取入站配置</string>
@@ -149,7 +148,6 @@
     <string name="subscription_no_usage">暂无流量信息</string>
     <string name="subscription_updated_at">%1$s于 %2$s</string>
     <string name="subscription_updated_label">更新</string>
-    <string name="subscription_last_success">上次成功更新：%1$s</string>
     <string name="local_config_modified_label">修改</string>
     <string name="subscription_not_updated">尚未更新</string>
     <string name="local_config_modified_at">暂无修改时间</string>
