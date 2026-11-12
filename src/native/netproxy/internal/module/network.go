@@ -185,7 +185,7 @@ func applyNetworkPolicy(ctx context.Context, options Options, modes moduleconfig
 		if err != nil {
 			return result, err
 		}
-		content, err := os.ReadFile(filepath.Join(options.RuntimeDir, "inbound.json"))
+		content, err := os.ReadFile(paths.RuntimeConfig(options.RuntimeDir))
 		if err != nil {
 			return result, err
 		}
@@ -254,9 +254,6 @@ func validateDirectRouting(options Options) error {
 		_ = json.Unmarshal(rule["action"], &action)
 		_ = json.Unmarshal(rule["outbound"], &outbound)
 		if len(rule) == 3 && mode == "Direct" && action == "route" {
-			if outbound == "direct" {
-				return nil
-			}
 			for _, entry := range document.Outbounds {
 				if entry.Type == "direct" && entry.Tag == outbound {
 					return nil

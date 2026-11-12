@@ -40,7 +40,7 @@
 ```sh
 su -c '/data/adb/modules/netproxy/netproxyctl node import /sdcard/Download/nodes.json'
 su -c '/data/adb/modules/netproxy/netproxyctl node list'
-su -c '/data/adb/modules/netproxy/netproxyctl node use default/my-socks'
+su -c '/data/adb/modules/netproxy/netproxyctl policy groups'
 ```
 
 为节点使用清晰、独特的 `tag`，避免与 `direct`、`block`、`Proxy` 等运行时标签重名。导入时重名节点会生成后缀，请按实际名称选择。不要直接修改 Catalog 中的 `provider.json`，应通过管理器或 CLI 编辑节点。
@@ -59,22 +59,21 @@ su -c '/data/adb/modules/netproxy/netproxyctl node use default/my-socks'
 
 名称留空时，依次尝试响应中的 `Profile-Title`、下载文件名、URL 主机名，最后使用“订阅”。支持的响应信息还包括流量用量和到期时间。
 
-订阅更新不依赖正式服务运行。下载、转换或校验失败时，上一版有效节点会继续保留；服务运行时会继续确认新 Provider 是否已在核心中生效，并在失败时记录待同步状态。
+订阅更新不依赖正式服务运行。下载、转换或校验失败时，上一版有效节点会继续保留；服务运行时会继续确认新 Provider 是否已在核心中生效，并在失败时记录待同步状态。手动编辑订阅节点只影响当前版本，下次成功更新订阅时会被远端内容覆盖。
 
 ## 自动与手动选择
 
-每个非空分组提供：
+默认 `Proxy` 是原生 Selector。空资源时核心仍可启动，但需要代理的流量会被阻断，直到在「代理」页选择节点；需要直连请显式切到直连模式。自动测速组可在同一份原生配置中按需定义。
 
-- `Auto/<分组>`：由 URLTest 自动选择。
-- `Select/<分组>`：手动选择具体节点。
+在原生配置的 `providers` 引用列表中使用 `np/<分组 ID>`，例如 `np/default`。成员的完整标签为 `np/<分组 ID>/<节点标签>`。可从资源详情复制 Provider 标签；重命名资源不改变标签，不重载核心。旧配置中按名称引用的 Provider 需要改为稳定标签。
 
-界面中选中 `Auto` 时，只标记 Auto，不会同时把其内部当前节点标成手动选择。手动节点在订阅更新后消失时会回到同组 Auto，不会静默切到直连。
+从依赖旧活动分组的版本升级时，建议先备份，安装时选择「仅保留节点与订阅」。旧 `module.json` 中的 `selection` 已不再接受；原先由 Go 生成的出站也不会被补齐。需要恢复自定义规则时，请先把原生出站与策略组补到新 `config.json` 中，再用配置检查确认。
 
-需要在全部订阅节点之上再建立地区或业务选择器时，请参阅[策略分组配置教程](/config/policy-groups)。自定义策略组属于 sing-box 出站配置，不会改变节点页中的 Catalog 分组。
+需要在全部订阅节点之上再建立地区或业务选择器时，请参阅[策略分组配置教程](/config/policy-groups)。自定义策略组属于 sing-box 出站配置，不会改变资源页中的 Catalog 分组。
 
 ## 测速
 
-服务运行时，测速使用当前核心的 Service API。服务停止时，模块会启动不含透明代理入站的临时 sing-box 会话完成测速，结束后清理临时进程和文件，不改变正式服务状态与当前选择。
+代理页和 `policy delay` 只在服务运行时请求核心测速；停止时只能查看配置成员。
 
 ## CLI 示例
 
@@ -83,8 +82,9 @@ su -c '/data/adb/modules/netproxy/netproxyctl node add "vless://..."'
 su -c '/data/adb/modules/netproxy/netproxyctl node import /sdcard/Download/nodes.json'
 su -c '/data/adb/modules/netproxy/netproxyctl sub add https://example.com/sub'
 su -c '/data/adb/modules/netproxy/netproxyctl sub update <分组 ID>'
-su -c '/data/adb/modules/netproxy/netproxyctl node use auto <分组 ID>'
-su -c '/data/adb/modules/netproxy/netproxyctl node delay auto <分组 ID>'
+su -c '/data/adb/modules/netproxy/netproxyctl policy groups'
+su -c '/data/adb/modules/netproxy/netproxyctl policy select "<策略组标签>" "<成员标签>"'
+su -c '/data/adb/modules/netproxy/netproxyctl policy delay "<策略组标签>"'
 ```
 
 订阅 URL、Header 和节点凭据属于敏感信息。脚本化配置自定义请求头时应使用 `--headers-file`，不要直接放进命令行。

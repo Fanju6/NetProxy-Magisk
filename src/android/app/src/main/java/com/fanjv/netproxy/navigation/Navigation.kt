@@ -37,6 +37,10 @@ sealed interface Route : NavKey, Parcelable {
 
     @Parcelize
     @Serializable
+    data class PolicyGroupEdit(val tag: String? = null) : Route
+
+    @Parcelize
+    @Serializable
     data object InboundSettings : Route
 
     @Parcelize

@@ -217,7 +217,7 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 	if err := os.WriteFile(inboundConfig, []byte(`{"app":{"proxy_apps":["0:secret.app.one","10:secret.app.two"],"bypass_apps":["0:secret.app.three"]}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(runtimeDir, "inbound.json"), []byte(`{"type":"ebpf","tag":"runtime"}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(runtimeDir, "config.json"), []byte(`{"type":"ebpf","tag":"runtime"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	stateFile := filepath.Join(root, "dev", "netproxy", "service.json")
@@ -279,7 +279,6 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 	}
 	defer compressed.Close()
 	reader := tar.NewReader(compressed)
-	seenRuntime := false
 	seenModule := false
 	seenState := false
 	seenReadme := false
@@ -296,8 +295,8 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(header.Name, "runtime/inbound.json") {
-			seenRuntime = true
+		if header.Name == "runtime/config.json" {
+			t.Fatal("诊断包不应重复导出包含原始配置的运行时文件")
 		}
 		if header.Name == "state/service.json" {
 			seenState = true
@@ -338,9 +337,6 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 		if strings.Contains(header.Name, "telemetry") {
 			t.Fatal("诊断包不应包含设备统计状态")
 		}
-	}
-	if !seenRuntime {
-		t.Fatal("诊断包未包含运行时配置")
 	}
 	if !seenModule {
 		t.Fatal("诊断包未包含 module.json")

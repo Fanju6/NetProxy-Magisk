@@ -452,7 +452,7 @@ func TestHTTPStatusIsExplicitAndDoesNotChangeCLIExitStatus(t *testing.T) {
 		{"subscription.read_only", 422}, {"subscription.interval_too_short", 422},
 		{"subscription.invalid_target", 422}, {"subscription.busy", 409}, {"subscription.cancelled", 408},
 		{"node.runtime_sync_failed", 502}, {"node.persisted_effect_failed", 500},
-		{"node.delay_busy", 409}, {"node.delay_timeout", 504},
+		{"catalog.provider_in_use", 409}, {"command.timeout", 504},
 		{"unregistered.invalid", 500}, {"unregistered.not_found", 500},
 	} {
 		err := &subscription.Error{Code: test.code, Message: "匿名错误"}
@@ -568,7 +568,7 @@ func TestEventsSendSnapshotAndCloseWithServer(t *testing.T) {
 			if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &result); err != nil {
 				t.Fatal(err)
 			}
-			if err := json.Unmarshal(result.Data, &groups); err != nil || len(groups) != 1 || groups[0].ID != "default" || !groups[0].Active {
+			if err := json.Unmarshal(result.Data, &groups); err != nil || len(groups) != 1 || groups[0].ID != "default" {
 				t.Fatalf("订阅事件遗漏本地分组: %+v %v", groups, err)
 			}
 			found = true

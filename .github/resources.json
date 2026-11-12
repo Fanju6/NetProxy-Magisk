@@ -98,6 +98,72 @@
       "metadataPath": "geo/geoip/telegram.json",
       "currentCommit": "0b3efbf6fc8076742c2dd36eddb8791c8121aa71",
       "currentSha256": "c5ae208004b0752baee307348ef820b9fe9e8aa3a14556f54af68791b6d4030b"
+    },
+    {
+      "name": "geosite/github",
+      "path": "src/module/config/singbox/rules/remote/geosite/github.srs",
+      "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/github.srs",
+      "repo": "MetaCubeX/meta-rules-dat",
+      "ref": "sing",
+      "sourcePath": "geo/geosite/github.srs",
+      "metadataPath": "geo/geosite/github.json",
+      "currentCommit": "4f83910b104d340a485949cab5c606bf56fd8e00",
+      "currentSha256": "d63d6c10f29bc6f5003079397d334a11ee5913c58180c461faa243021a741e6b"
+    },
+    {
+      "name": "geosite/youtube",
+      "path": "src/module/config/singbox/rules/remote/geosite/youtube.srs",
+      "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/youtube.srs",
+      "repo": "MetaCubeX/meta-rules-dat",
+      "ref": "sing",
+      "sourcePath": "geo/geosite/youtube.srs",
+      "metadataPath": "geo/geosite/youtube.json",
+      "currentCommit": "4f83910b104d340a485949cab5c606bf56fd8e00",
+      "currentSha256": "ae9a576c046627c01bc1488f526775dfe919f1152c3ce6f75b678fce92498b3f"
+    },
+    {
+      "name": "geosite/telegram",
+      "path": "src/module/config/singbox/rules/remote/geosite/telegram.srs",
+      "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/telegram.srs",
+      "repo": "MetaCubeX/meta-rules-dat",
+      "ref": "sing",
+      "sourcePath": "geo/geosite/telegram.srs",
+      "metadataPath": "geo/geosite/telegram.json",
+      "currentCommit": "4f83910b104d340a485949cab5c606bf56fd8e00",
+      "currentSha256": "30cd392b1d79b0569af077874b36c6892bf13a94dce0d8e4410c3b1976d62ea2"
+    },
+    {
+      "name": "geosite/spotify",
+      "path": "src/module/config/singbox/rules/remote/geosite/spotify.srs",
+      "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/spotify.srs",
+      "repo": "MetaCubeX/meta-rules-dat",
+      "ref": "sing",
+      "sourcePath": "geo/geosite/spotify.srs",
+      "metadataPath": "geo/geosite/spotify.json",
+      "currentCommit": "4f83910b104d340a485949cab5c606bf56fd8e00",
+      "currentSha256": "586ead22ab0325cc85cb8ac0397734945891c787b23614365e331f64083e0fdd"
+    },
+    {
+      "name": "geosite/bilibili",
+      "path": "src/module/config/singbox/rules/remote/geosite/bilibili.srs",
+      "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/bilibili.srs",
+      "repo": "MetaCubeX/meta-rules-dat",
+      "ref": "sing",
+      "sourcePath": "geo/geosite/bilibili.srs",
+      "metadataPath": "geo/geosite/bilibili.json",
+      "currentCommit": "4f83910b104d340a485949cab5c606bf56fd8e00",
+      "currentSha256": "217555916f18df6f399b8e335465369678732a1efaf34e6c737430c54b39e028"
+    },
+    {
+      "name": "geosite/netflix",
+      "path": "src/module/config/singbox/rules/remote/geosite/netflix.srs",
+      "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/geosite/netflix.srs",
+      "repo": "MetaCubeX/meta-rules-dat",
+      "ref": "sing",
+      "sourcePath": "geo/geosite/netflix.srs",
+      "metadataPath": "geo/geosite/netflix.json",
+      "currentCommit": "4f83910b104d340a485949cab5c606bf56fd8e00",
+      "currentSha256": "e0691de1344e2715ffc323412b820b7d877fd493cec929fb18cf1256cf9479b7"
     }
   ],
   "singBox": {

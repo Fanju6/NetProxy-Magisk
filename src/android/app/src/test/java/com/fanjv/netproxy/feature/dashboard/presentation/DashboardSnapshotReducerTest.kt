@@ -100,7 +100,6 @@ class DashboardSnapshotReducerTest {
         systemCpuTicks = systemTicks,
         cpuCount = 2,
         memoryBytes = memory,
-        activeGroupNodeCount = 1,
         outboundMode = outboundMode,
         configuredOutboundMode = configuredOutboundMode
     )

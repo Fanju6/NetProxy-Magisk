@@ -110,7 +110,7 @@ func assertInboundJournalAbsent(t *testing.T, options Options) {
 
 func assertInboundRuntimeBackend(t *testing.T, options Options, backend string) {
 	t.Helper()
-	content, err := os.ReadFile(filepath.Join(options.RuntimeDir, "inbound.json"))
+	content, err := os.ReadFile(filepath.Join(options.RuntimeDir, "config.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,8 +123,14 @@ func assertInboundRuntimeBackend(t *testing.T, options Options, backend string) 
 	if err := json.Unmarshal(content, &runtime); err != nil {
 		t.Fatal(err)
 	}
-	if len(runtime.Inbounds) != 1 || runtime.Inbounds[0].Type != backend || runtime.Inbounds[0].Tag != inbound.Tag {
-		t.Fatalf("实际 runtime 后端不匹配: %s", content)
+	count := 0
+	for _, entry := range runtime.Inbounds {
+		if entry.Tag == inbound.Tag && entry.Type == backend {
+			count++
+		}
+	}
+	if count != 1 || len(runtime.Inbounds) != 2 || runtime.Inbounds[0].Tag != "user-mixed" {
+		t.Fatalf("实际 runtime 后端不匹配或用户入站丢失: %s", content)
 	}
 }
 
@@ -134,7 +140,7 @@ func TestInboundConfigTargetsAndPartitionRevisions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, target := range []string{"inbound", "inbound/backend", "inbound/root_policy", "inbound/app", "inbound/ebpf", "inbound/tun", "runtime/inbound.json"} {
+	for _, target := range []string{"inbound", "inbound/backend", "inbound/root_policy", "inbound/app", "inbound/ebpf", "inbound/tun", "runtime/config.json"} {
 		index := slices.IndexFunc(documents, func(document ConfigDocument) bool { return document.ID == target })
 		if index < 0 || documents[index].Editable == strings.HasPrefix(target, "runtime/") {
 			t.Fatalf("配置目标缺失或权限错误: %s", target)
@@ -183,7 +189,7 @@ func TestInboundConfigTargetsAndPartitionRevisions(t *testing.T) {
 	if _, err := ApplyConfig(t.Context(), options, "inbound", writeSectionSource(t, string(original)), false, full["revision"]); !errors.Is(err, ErrConfigConflict) {
 		t.Fatal("整份旧 revision 未拒绝", err)
 	}
-	if _, err := ApplyConfig(t.Context(), options, "runtime/inbound.json", tunSource, false, ""); err == nil {
+	if _, err := ApplyConfig(t.Context(), options, "runtime/config.json", tunSource, false, ""); err == nil {
 		t.Fatal("允许修改 runtime")
 	}
 	for _, fragment := range []string{`{}`, `{"tun":null}`, `{"tun":{},"ebpf":{}}`} {
@@ -406,7 +412,7 @@ func TestInboundBackendSwitchRunningAndStopped(t *testing.T) {
 					if journal.Phase != "reload_started" || journal.Backend != oldBackend {
 						t.Fatal(journal)
 					}
-					prepared, err := Prepare(ctx, locked, true)
+					prepared, err := Prepare(ctx, locked)
 					if err != nil || prepared.Backend != newBackend {
 						t.Fatal(prepared, err)
 					}
@@ -474,7 +480,7 @@ func TestInboundRecordedBackendMismatchCannotStopWithoutStart(t *testing.T) {
 			}
 			configStart = func(ctx context.Context, locked Options) error {
 				events = append(events, "start")
-				if _, err := Prepare(ctx, locked, true); err != nil {
+				if _, err := Prepare(ctx, locked); err != nil {
 					t.Fatal(err)
 				}
 				*alive = true
@@ -548,7 +554,7 @@ func TestInboundSwitchFailureRestoresDiskRuntimeAndInstance(t *testing.T) {
 				}
 				configStart = func(ctx context.Context, locked Options) error {
 					events = append(events, "start")
-					prepared, err := Prepare(ctx, locked, true)
+					prepared, err := Prepare(ctx, locked)
 					if err != nil || prepared.Backend != newBackend {
 						t.Fatal(prepared, err)
 					}
@@ -680,7 +686,7 @@ func TestInboundCandidateForcedCleanupKeepsRecoverySnapshots(t *testing.T) {
 			}
 			configStart = func(ctx context.Context, locked Options) error {
 				starts++
-				if _, err := Prepare(ctx, locked, true); err != nil {
+				if _, err := Prepare(ctx, locked); err != nil {
 					t.Fatal(err)
 				}
 				*alive = true

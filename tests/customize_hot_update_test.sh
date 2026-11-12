@@ -38,10 +38,10 @@ inbound_fixture() {
   printf '{"backend":"ebpf","root_policy":"default","app":{"enabled":true,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]},"ebpf":{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true},"shared":{"enabled":false}},"tun":{"type":"tun","tag":"netproxy-in","interface_name":"%s","address":["172.19.0.1/30","fdfe:dcba:9876::1/126"],"auto_route":true,"auto_redirect":true,"dns_mode":"hijack"}}\n' "$1"
 }
 
-# 参数: $1 节点 tag，用于区分快照来源。
+# 参数: $1 测试 Wi-Fi 名称，用于区分快照来源。
 # 返回: 0=输出不含真实凭据的当前模块 JSON。
 module_fixture() {
-  printf '{"auto_start":false,"selection":{"group_id":"default","node_tag":"%s"},"wifi":{"enabled":false,"mode":"blacklist","blacklist":[],"whitelist":[],"proxy_on_non_wifi":true}}\n' "$1"
+  printf '{"auto_start":false,"wifi":{"enabled":false,"mode":"blacklist","blacklist":["%s"],"whitelist":[],"proxy_on_non_wifi":true}}\n' "$1"
 }
 
 write_module() {
@@ -61,7 +61,7 @@ write_module() {
   printf '%s\n' "$label-provider" > "$target/data/catalog/default/provider.json"
   printf '%s\n' "$label-history" > "$target/data/catalog/default/history.jsonl"
   printf '%s\n' "$label-log" > "$target/logs/service.log"
-  printf '%s\n' "$label-runtime" > "$target/runtime/providers.json"
+  printf '%s\n' "$label-runtime" > "$target/runtime/config.json"
   printf '%s\n' '#!/bin/sh' \
     'printf "%s\n" "$*" >> "$CALL_LOG"' \
     'case "$1:$2:$3" in' \
@@ -236,7 +236,7 @@ test_snapshot_modes() (
       [ ! -e "$STAGE/config/telemetry/state.json" ]
     fi
     assert_value "$STAGE/config/singbox/rules/remote/test.srs" package-remote
-    assert_value "$STAGE/runtime/providers.json" package-runtime
+    assert_value "$STAGE/runtime/config.json" package-runtime
     [ ! -e "$STAGE/data/catalog/staging/download.tmp" ]
     [ -z "$(find "$STAGE" -name '.install-state.*' -print)" ]
   done

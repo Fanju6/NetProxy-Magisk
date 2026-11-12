@@ -24,7 +24,6 @@ import (
 
 const resourceTestModule = `{
   "auto_start": false,
-  "selection": {"group_id": "default", "node_tag": ""},
   "wifi": {"enabled": false, "mode": "blacklist", "blacklist": [], "whitelist": [], "proxy_on_non_wifi": true}
 }`
 
@@ -143,8 +142,6 @@ func TestResourcesReadWhileCoreStopped(t *testing.T) {
 	for _, request := range []struct{ path, code string }{
 		{"/api/v1/catalog", "catalog.groups"},
 		{"/api/v1/nodes?group_id=default", "node.list"},
-		{"/api/v1/nodes/snapshot?group_id=default", "node.snapshot"},
-		{"/api/v1/selection", "node.current"},
 		{"/api/v1/mode", "mode.current"},
 		{"/api/v1/subscriptions", "subscription.list"},
 		{"/api/v1/configs", "config.list"},
@@ -163,12 +160,12 @@ func TestResourcesReadWhileCoreStopped(t *testing.T) {
 	}
 	var summaries []catalog.GroupSummary
 	resourceAssertSuccess(t, server, "GET", "/api/v1/subscriptions", "", "subscription.list", &summaries)
-	if len(summaries) != 1 || summaries[0].ID != "default" || summaries[0].Type != "local" || !summaries[0].Active {
+	if len(summaries) != 1 || summaries[0].ID != "default" || summaries[0].Type != "local" {
 		t.Fatalf("订阅页遗漏活动本地分组: %+v", summaries)
 	}
 	var local catalog.GroupSnapshot
 	resourceAssertSuccess(t, server, "GET", "/api/v1/subscriptions/default", "", "subscription.show", &local)
-	if local.Group.ID != "default" || !local.Group.Active || len(local.Nodes) != 1 {
+	if local.Group.ID != "default" || len(local.Nodes) != 1 {
 		t.Fatalf("本地分组详情不可读: %+v", local)
 	}
 	for _, path := range []string{server.options.StateFile, server.options.WorkerPIDFile, server.options.RuntimeDir} {
@@ -183,28 +180,26 @@ func TestResourcesNodeTagsPreserveSlashes(t *testing.T) {
 	query := url.Values{"group_id": {"default"}, "node_tag": {"节点 / 02"}}.Encode()
 	resourceAssertSuccess(t, server, "GET", "/api/v1/nodes/get?"+query, "", "node.loaded", nil)
 	resourceAssertSuccess(t, server, "GET", "/api/v1/nodes/export?"+query, "", "node.exported", nil)
-	body := resourceJSON(t, map[string]string{"group_id": "default", "node_tag": "节点 / 02"})
-	resourceAssertSuccess(t, server, "PUT", "/api/v1/selection", body, "node.selected", nil)
-	config, err := moduleconfig.LoadModule(server.options.ModuleConfig)
-	if err != nil || config.SelectedNodeTag != "节点 / 02" {
-		t.Fatalf("标签未完整保存: %+v %v", config, err)
-	}
-	var selection service.Selection
-	resourceAssertSuccess(t, server, "GET", "/api/v1/selection", "", "node.current", &selection)
-	if selection.SelectedNodeRef != "default/节点 / 02" {
-		t.Fatalf("读取丢失标签: %+v", selection)
-	}
 	edit := resourceJSON(t, map[string]string{"group_id": "default", "node_tag": "节点 / 02", "content": "socks://127.0.0.1:1081#" + url.PathEscape("节点 / 03")})
 	resourceAssertSuccess(t, server, "PUT", "/api/v1/nodes", edit, "node.edited", nil)
 	query = url.Values{"group_id": {"default"}, "node_tag": {"节点 / 03"}}.Encode()
 	resourceAssertSuccess(t, server, "DELETE", "/api/v1/nodes?"+query, "", "node.removed", nil)
-	config, err = moduleconfig.LoadModule(server.options.ModuleConfig)
-	if err != nil || config.SelectedNodeTag != "" {
-		t.Fatalf("删除后未回退 Auto: %+v %v", config, err)
-	}
 	response, _ := resourceRequest(t, server, "GET", "/api/v1/nodes/default/node/extra", "")
 	if response.Code != http.StatusNotFound {
 		t.Fatal("接受了多级路径节点标签")
+	}
+}
+
+func TestRetiredNodeControlRoutesAreNotExposed(t *testing.T) {
+	server := resourceFixture(t)
+	for _, route := range []struct{ method, path string }{
+		{"GET", "/api/v1/selection"}, {"PUT", "/api/v1/selection"},
+		{"GET", "/api/v1/nodes/snapshot"}, {"POST", "/api/v1/nodes/delay"},
+	} {
+		response, _ := resourceRequest(t, server, route.method, route.path, "")
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("legacy route %s %s returned %d", route.method, route.path, response.Code)
+		}
 	}
 }
 
@@ -264,11 +259,11 @@ func TestResourcesConfigRevisionAndValidation(t *testing.T) {
 		t.Fatalf("校验未检测冲突: %s", response.Body.String())
 	}
 	config, err := moduleconfig.LoadModule(server.options.ModuleConfig)
-	if err != nil || !config.AutoStart || config.ActiveGroupID != "default" || config.SelectedNodeTag != "" {
+	if err != nil || !config.AutoStart {
 		t.Fatalf("分区保存改变了选择: %+v %v", config, err)
 	}
 	for _, path := range []string{server.options.StateFile, server.options.WorkerPIDFile,
-		filepath.Join(server.options.RuntimeDir, "inbound.json"), filepath.Join(server.options.RuntimeDir, "providers.json"), filepath.Join(server.options.RuntimeDir, "outbounds.json")} {
+		filepath.Join(server.options.RuntimeDir, "config.json")} {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("保存启动了停止的服务或 Worker: %s %v", path, err)
 		}
@@ -294,10 +289,10 @@ func TestResourcesConfigRequiresRevisionAndRejectsPaths(t *testing.T) {
 			t.Fatalf("配置路径未拒绝 %s: %s", target, response.Body.String())
 		}
 	}
-	resourceWriteFile(t, filepath.Join(server.options.RuntimeDir, "inbound.json"), "{}")
+	resourceWriteFile(t, filepath.Join(server.options.RuntimeDir, "config.json"), "{}")
 	var snapshot map[string]string
-	resourceAssertSuccess(t, server, "GET", "/api/v1/config?target=runtime/inbound.json", "", "config.read", &snapshot)
-	response, _ := resourceRequest(t, server, "PUT", "/api/v1/config?target=runtime/inbound.json", resourceJSON(t, map[string]string{"revision": snapshot["revision"], "content": "{}"}))
+	resourceAssertSuccess(t, server, "GET", "/api/v1/config?target=runtime/config.json", "", "config.read", &snapshot)
+	response, _ := resourceRequest(t, server, "PUT", "/api/v1/config?target=runtime/config.json", resourceJSON(t, map[string]string{"revision": snapshot["revision"], "content": "{}"}))
 	if response.Code == http.StatusOK {
 		t.Fatal("运行时配置可写")
 	}
@@ -361,7 +356,7 @@ func TestResourcesRejectMalformedBodiesAndQueryTargets(t *testing.T) {
 		`{"group_id":5,"node_tag":""}`,
 		"{\"group_id\":\"default\",\"node_tag\":\"\xff\"}",
 	} {
-		response, result := resourceRequest(t, server, "PUT", "/api/v1/selection", body)
+		response, result := resourceRequest(t, server, "POST", "/api/v1/nodes", body)
 		if response.Code != http.StatusBadRequest || result.Code != "usage.invalid" {
 			t.Fatalf("接受非法 JSON: %s", response.Body.String())
 		}
@@ -382,11 +377,11 @@ func TestResourcesAcceptedWriteSurvivesRequestCancellation(t *testing.T) {
 	server := resourceFixture(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	server.route("PUT /api/v1/resource-test-cancel", time.Second, false, func(ctx context.Context, r *http.Request) (result contract.Result, err error) {
+	server.route("POST /api/v1/resource-test-cancel", time.Second, false, func(ctx context.Context, r *http.Request) (result contract.Result, err error) {
 		cancel()
-		return server.saveSelection(ctx, r)
+		return server.addNode(ctx, r)
 	})
-	request := httptest.NewRequest("PUT", "/api/v1/resource-test-cancel", strings.NewReader(`{"group_id":"default","node_tag":"节点 / 02"}`)).WithContext(ctx)
+	request := httptest.NewRequest("POST", "/api/v1/resource-test-cancel", strings.NewReader(`{"group_id":"default","content":"socks://127.0.0.1:1083#cancel-test"}`)).WithContext(ctx)
 	request.Host = server.config.Listen
 	request.Header.Set("Authorization", "Bearer "+server.config.Secret)
 	request.Header.Set("Content-Type", "application/json")
@@ -395,9 +390,9 @@ func TestResourcesAcceptedWriteSurvivesRequestCancellation(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("浏览器取消中断已接受写入: %s", response.Body.String())
 	}
-	config, err := moduleconfig.LoadModule(server.options.ModuleConfig)
-	if err != nil || config.SelectedNodeTag != "节点 / 02" {
-		t.Fatalf("写入未完成: %+v %v", config, err)
+	present, err := catalog.GroupContainsTag(t.Context(), server.options.CatalogRoot, "default", "cancel-test")
+	if err != nil || !present {
+		t.Fatalf("写入未完成: %v", err)
 	}
 }
 

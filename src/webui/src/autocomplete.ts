@@ -4,7 +4,7 @@ import { parseCommandTokens, quoteCommandToken } from './command.ts'
 import { COMMANDS, HELP_TOPICS, ROOT_COMPLETIONS, VALUE_COMPLETIONS, type CommandName } from './commands.ts'
 
 const NODE_OPS = ['list', 'show', 'get', 'export', 'edit', 'remove']
-const SUB_OPS = ['activate', 'update', 'show', 'edit', 'remove', 'history', 'cancel']
+const SUB_OPS = ['update', 'show', 'edit', 'remove', 'history', 'cancel']
 
 export function replaceCompletion(input: string, candidate: string): string {
   const tokens = parseCommandTokens(input)
@@ -35,10 +35,7 @@ export function complete(input: string, knownGroups: string[] = [], knownSubs: s
     cands = (toks[0] === 'help' ? HELP_TOPICS : toks[0] === 'mode' ? knownModes : COMMANDS[toks[0] as CommandName]?.actions || []).filter(c => c.startsWith(cur))
   } else if (n >= 2) {
     const [cmd, sub] = toks
-    if (cmd === 'node' && (sub === 'use' || sub === 'delay')) {
-      if (n === 2) cands = cur !== 'auto' ? ['auto', ...knownGroups].filter(c => c.startsWith(cur)) : knownGroups.filter(c => c.startsWith(cur))
-      else if (n === 3 && toks[2] === 'auto') cands = knownGroups.filter(c => c.startsWith(cur))
-    } else if (cmd === 'sub' && SUB_OPS.includes(sub) && n === 2) {
+    if (cmd === 'sub' && SUB_OPS.includes(sub) && n === 2) {
       cands = knownSubs.filter(c => c.startsWith(cur))
     } else if (cmd === 'catalog' && sub === 'show' && n === 2) {
       cands = knownGroups.filter(c => c.startsWith(cur))

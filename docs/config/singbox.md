@@ -120,13 +120,11 @@ su -c '/data/adb/modules/netproxy/netproxyctl config apply --revision <读到的
 
 每个分组通常包含 `meta.json`、`provider.json` 和订阅组的 `history.jsonl`。服务停止时仍可通过 `netproxyctl` 读取 Catalog，不需要读取运行时文件。
 
-启动或配置检查时，NetProxy 生成：
+NetProxy 将主配置与 Catalog 投影、当前受管入站装配成一份 sing-box 生效配置。启动与重载只读取 `runtime/config.json`；配置检查在隔离目录装配并检查候选配置。
 
-- `runtime/providers.json`
-- `runtime/outbounds.json`
-- `runtime/inbound.json`
+生效配置可通过只读目标 `runtime/config.json` 查看。它会随 Catalog、选择状态和入站设置重新生成，不应直接编辑或在安装时保留。可编辑的核心配置仍是 `config/singbox/config.json`。
 
-这些文件可以帮助排障，但会随 Catalog、选择状态和入站设置重新生成，不应直接编辑或在安装时保留。入站文件始终只包含当前所选的一个受管入站。
+切换到单文件运行时需要通过模块安装流程停止旧实例，再由新版本启动。不能在旧实例还使用分片启动参数时只替换控制器并发送重载信号。
 
 ## 临时运行状态
 

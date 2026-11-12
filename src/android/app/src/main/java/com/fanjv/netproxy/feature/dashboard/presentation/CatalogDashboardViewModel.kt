@@ -38,8 +38,6 @@ internal data class CatalogDashboardUiState(
     val uptimeSeconds: Long = 0,
     val outboundMode: String = "unknown",
     val availableOutboundModes: List<String> = emptyList(),
-    val activeGroupId: String = "",
-    val currentNode: String = "",
     val downloadBytesPerSecond: Long = 0,
     val uploadBytesPerSecond: Long = 0,
     val downloadTotal: Long = 0,
@@ -305,35 +303,3 @@ internal fun shouldApplyDashboardSnapshot(
     currentRevision: Long,
     operation: String
 ): Boolean = requestRevision == currentRevision && operation.isEmpty()
-
-/** 将持久选择状态转换为适合仪表盘展示的节点名称。 */
-internal fun dashboardNodeName(service: ServiceStatusSnapshot): String {
-    if (service.activeGroupNodeCount <= 0) return ""
-
-    val groupName = service.activeGroupName.ifBlank { service.activeGroupId }
-    val automatic = service.selectorMode == "urltest"
-    if (automatic) {
-        val selected = if (service.state == "ready") {
-            runtimeSelectedNodeTag(
-                service.activeGroupRuntimeTag,
-                service.runtimeSelected
-            )
-        } else {
-            ""
-        }
-        if (selected.isNotBlank()) return "$selected · Auto-Fastest"
-        return "$groupName/Auto-Fastest"
-    }
-    val nodeName = service.selectedNodeRef
-        .substringAfter('/', service.selectedNodeRef)
-        .ifBlank { service.runtimeSelected.substringAfter('/', service.runtimeSelected) }
-    return listOf(groupName, nodeName).filter(String::isNotBlank).joinToString("/")
-}
-
-internal fun runtimeSelectedNodeTag(runtimeTag: String, selected: String): String {
-    if (runtimeTag.isBlank()) return ""
-    val prefix = "$runtimeTag/"
-    return selected.removePrefix(prefix)
-        .takeIf { selected.startsWith(prefix) && it.isNotBlank() }
-        .orEmpty()
-}

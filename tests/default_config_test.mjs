@@ -10,17 +10,26 @@ const managed = readJSON('src/module/config/inbound/inbound.json')
 const upstream = readJSON('tests/fixtures/singbox-upstream.json')
 const resources = readJSON('.github/resources.json').raw
 const list = value => value === undefined ? [] : Array.isArray(value) ? value : [value]
+const serviceRules = [
+  ['geosite/bilibili', 'Bilibili', 'direct'],
+  ['geosite/category-ai-!cn', 'AI', 'Proxy'],
+  ['geosite/github', 'GitHub', 'Proxy'],
+  ['geosite/youtube', 'YouTube', 'Proxy'],
+  ['geosite/google', 'Google', 'Proxy'],
+  ['geosite/telegram', 'Telegram', 'Proxy'],
+  ['geosite/netflix', 'Netflix', 'Proxy'],
+  ['geosite/spotify', 'Spotify', 'Proxy'],
+]
 
 test('模块设置只有 module.json 默认文件，字段使用 JSON 原生类型', () => {
   assert.equal(existsSync(new URL('src/module/config/module.conf', root)), false)
   assert.deepEqual(readJSON('src/module/config/module.json'), {
     auto_start: false,
-    selection: { group_id: 'default', node_tag: '' },
     wifi: { enabled: false, mode: 'blacklist', blacklist: [], whitelist: [], proxy_on_non_wifi: true },
   })
 })
 
-test('默认配置仅保留部署、运行时生成、模式命名与原生 DNS 响应匹配差异', () => {
+test('默认配置保留上游模式和 DNS 语义，并增加内置应用分流', () => {
   const expected = structuredClone(upstream)
   expected.log.output = 'stderr'
   expected.experimental.cache_file.path = '/data/adb/modules/netproxy/config/singbox/cache.db'
@@ -32,7 +41,14 @@ test('默认配置仅保留部署、运行时生成、模式命名与原生 DNS 
   expected.services[0].dashboard.path = '/data/adb/modules/netproxy/webroot/sing-box-dashboard'
   expected.inbounds = expected.inbounds.filter(inbound => inbound.type !== 'ebpf')
   expected.inbounds[0].listen = '127.0.0.1'
-  delete expected.outbounds
+  expected.outbounds = [
+    { type: 'selector', tag: 'Proxy', outbounds: ['block', 'direct'], use_all_providers: true, default: 'block', interrupt_exist_connections: true },
+    ...['AI', 'GitHub', 'YouTube', 'Google', 'Telegram', 'Netflix', 'Spotify', 'Bilibili'].map(tag => ({
+      type: 'selector', tag, outbounds: ['Proxy', 'direct', 'block'], use_all_providers: true, default: tag === 'Bilibili' ? 'direct' : 'Proxy',
+    })),
+    { type: 'direct', tag: 'direct' },
+    { type: 'block', tag: 'block' },
+  ]
   delete expected.providers
   for (const rule of expected.route.rule_set) {
     rule.path = rule.path.replace('./source/rule_set/', './rules/remote/').replace('./source/', './rules/local/')
@@ -57,7 +73,29 @@ test('默认配置仅保留部署、运行时生成、模式命名与原生 DNS 
   expected.route.rules.push({ clash_mode: 'Rule', action: 'route', outbound: expected.route.final })
   const directIndex = expected.route.rules.findIndex(rule => rule.clash_mode === 'Direct')
   expected.route.rules.unshift(...expected.route.rules.splice(directIndex, 1))
+  expected.route.rule_set.find(rule => list(rule.tag).includes('geosite/google')).tag.push(
+    'geosite/github', 'geosite/youtube', 'geosite/telegram', 'geosite/spotify', 'geosite/bilibili', 'geosite/netflix',
+  )
+  const serviceIndex = expected.route.rules.findIndex(rule => list(rule.rule_set).includes('geosite/category-ai-!cn'))
+  assert.ok(serviceIndex >= 0)
+  expected.route.rules.splice(serviceIndex, 1,
+    ...serviceRules.map(([rule_set, outbound]) => ({ rule_set, action: 'route', outbound })),
+  )
+  expected.route.rules.find(rule => list(rule.rule_set).includes('geoip/telegram')).outbound = 'Telegram'
   assert.deepEqual(config, expected)
+})
+
+test('应用规则先于地域兜底，且每个应用组都有无需 Provider 的默认成员', () => {
+  const region = config.route.rules.findIndex(rule => list(rule.rule_set).includes('geosite/cn'))
+  const blockedAds = config.route.rules.findIndex(rule => rule.action === 'reject')
+  for (const [ruleSet, tag, fallback] of serviceRules) {
+    const ruleIndex = config.route.rules.findIndex(rule => rule.rule_set === ruleSet && rule.outbound === tag)
+    assert.ok(blockedAds < ruleIndex && ruleIndex < region, ruleSet)
+    const group = config.outbounds.find(group => group.tag === tag)
+    assert.equal(group.default, fallback)
+    assert.ok(group.outbounds.includes(fallback))
+    assert.ok(group.outbounds.includes('block'), `${tag} has no independent block option`)
+  }
 })
 
 test('默认规则显式提供 Rule，保存其他默认模式后仍可切回', () => {

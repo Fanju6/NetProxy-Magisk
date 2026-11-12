@@ -13,10 +13,6 @@
 ```json
 {
   "auto_start": false,
-  "selection": {
-    "group_id": "default",
-    "node_tag": ""
-  },
   "wifi": {
     "enabled": false,
     "mode": "blacklist",
@@ -35,9 +31,7 @@
 
 ### 节点选择
 
-- `selection.group_id` 保存当前活动分组，例如 `default`。
-- `selection.node_tag` 留空使用 `Auto/<group>` 自动测速；填写该分组的节点 tag 则手动选择，例如 `"香港 01"`。
-- 自动测速选出的当前节点由核心报告，不会写回 `selection.node_tag`。
+- 策略组在原生 `config/singbox/config.json` 中定义，选择由核心缓存持久化。
 - 订阅更新后手动节点消失时回退到同组 Auto，不会回退到 `direct`。
 
 管理器和 CLI 在服务停止时也可保存选择，启动后自动应用。服务运行时通过 API 切换；若切换失败，已保存选择仍保留，命令会明确报告运行时未同步，不会自动重载核心。
@@ -55,9 +49,9 @@ Wi-Fi 自动策略只改变运行时实际模式和 DNS 接管参数，不覆盖
 
 ## 修改与检查
 
-`config read/apply/validate module` 读取或替换整份 JSON。只修改 Wi-Fi 或开机自启时，使用 `module/wifi` 或 `module/auto_start`，候选内容分别为 `{"wifi": {...}}` 与 `{"auto_start": true}`。分区必需，不能用 `{}` 删除或携带其他顶层字段；没有 `module/selection` 目标，选节点使用 `node use`。
+`config read/apply/validate module` 读取或替换整份 JSON。只修改 Wi-Fi 或开机自启时，使用 `module/wifi` 或 `module/auto_start`，候选内容分别为 `{"wifi": {...}}` 与 `{"auto_start": true}`。分区必需，不能用 `{}` 删除或携带其他顶层字段。没有 `module/selection` 目标；原生策略组的运行时选择使用 `policy select`。
 
-`config read` 返回 `content` 和 `revision`。两个模块分区各自使用独立 revision；保存时在同一个 `module.json.lock` 内合并最新文件，保留 `selection` 和其他字段，不会用旧快照覆盖并发节点选择。同分区冲突返回 `config.conflict`，需要重新读取，不能借用新 revision 重试旧草稿。
+`config read` 返回 `content` 和 `revision`。两个模块分区各自使用独立 revision；保存时在同一个 `module.json.lock` 内合并最新文件，保留其他分区。同分区冲突返回 `config.conflict`，需要重新读取，不能借用新 revision 重试旧草稿。
 
 ```sh
 su -c '/data/adb/modules/netproxy/netproxyctl config read module'

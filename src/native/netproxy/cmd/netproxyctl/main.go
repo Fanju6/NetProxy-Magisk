@@ -69,6 +69,8 @@ func (c *cli) run(ctx context.Context, args []string) int {
 		handler = c.catalog
 	case "node":
 		handler = c.node
+	case "policy":
+		handler = c.policy
 	case "sub":
 		handler = c.subscription
 	case "mode":

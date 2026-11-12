@@ -14,6 +14,7 @@ import com.fanjv.netproxy.feature.catalog.data.NodeImportStore
 import com.fanjv.netproxy.feature.catalog.data.NodeRepository
 import com.fanjv.netproxy.feature.catalog.data.SubscriptionRepository
 import com.fanjv.netproxy.feature.logs.data.LogRepository
+import com.fanjv.netproxy.feature.proxy.data.PolicyRepository
 import com.fanjv.netproxy.feature.inbound.data.InboundRepository
 import com.fanjv.netproxy.feature.settings.data.ConfigRepository
 import com.fanjv.netproxy.feature.theme.presentation.ThemeManager
@@ -29,6 +30,7 @@ internal class AppContainer(context: Context) {
     val subscriptionRepository = SubscriptionRepository(apiClient)
     val configRepository = ConfigRepository(apiClient,
         awaitPendingWrites = configurationWrites::await)
+    val policyRepository = PolicyRepository(apiClient, configRepository)
     val appPolicyRepository = AppPolicyRepository(configRepository)
     val inboundRepository = InboundRepository(configRepository, serviceRepository)
     val logRepository = LogRepository(apiClient, appContext)

@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/contract"
 	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
@@ -88,22 +87,19 @@ func eventProcessMatches(executable string, pid int64) bool {
 }
 
 type coreFeed struct {
-	h             *eventHub
-	messages      chan coreEvent
-	cancel        context.CancelFunc
-	done          chan struct{}
-	identity      int64
-	generation    uint64
-	saved         moduleapp.ServiceState
-	groups        []serviceapi.Group
-	groupsReady   bool
-	snapshot      service.Snapshot
-	snapshotReady bool
-	module        moduleconfig.ModuleConfig
-	status        service.Status
-	statusReady   bool
-	groupTimer    *time.Timer
-	groupFlush    <-chan time.Time
+	h           *eventHub
+	messages    chan coreEvent
+	cancel      context.CancelFunc
+	done        chan struct{}
+	identity    int64
+	generation  uint64
+	saved       moduleapp.ServiceState
+	groups      []serviceapi.Group
+	groupsReady bool
+	status      service.Status
+	statusReady bool
+	groupTimer  *time.Timer
+	groupFlush  <-chan time.Time
 }
 
 func newCoreFeed(h *eventHub) *coreFeed {
@@ -135,7 +131,7 @@ func (f *coreFeed) reset(state moduleapp.ServiceState) {
 	f.clearGroupWindow()
 	f.generation++
 	f.identity, f.groups, f.groupsReady = 0, nil, false
-	f.snapshotReady, f.statusReady = false, false
+	f.statusReady = false
 	f.saved = state
 	f.h.epoch.Add(1)
 	f.h.native.Store(&state)
@@ -279,7 +275,6 @@ func (f *coreFeed) refresh(topics int) {
 				// 领域快照可读到尚未校准的 API，不能把旧实例的实时字段带入新身份。
 				f.status.ActiveBackend = nil
 				f.status.CoreStartedAtMillis = 0
-				f.status.RuntimeSelected = ""
 				f.status.MemoryBytes, f.status.ConnectionsIn, f.status.ConnectionsOut = 0, 0, 0
 				f.status.UploadTotal, f.status.DownloadTotal = 0, 0
 				if f.status.State != "stopped" {
@@ -289,22 +284,17 @@ func (f *coreFeed) refresh(topics int) {
 			f.h.emitAt(topicStatus, "status", contract.Success("service.status", "服务状态", f.status), epoch)
 		}
 	}
-	// status-only 消费者同样需要 Catalog 与 module，供 groups 流派生实际选择。
-	if topics&(topicStatus|topicGroups) != 0 {
-		groups, err := service.ReadNodes(ctx, f.h.server.controlOptions(), "")
-		module, moduleErr := moduleconfig.LoadModule(f.h.server.options.ModuleConfig)
-		if err == nil {
-			err = moduleErr
-		}
-		f.snapshotReady = err == nil
-		if err != nil {
-			if topics&topicGroups != 0 {
+	if topics&topicGroups != 0 {
+		if f.identity > 0 {
+			f.publishGroups(epoch)
+		} else {
+			snapshot, err := service.ReadConfiguredPolicyGroups(ctx, f.h.server.controlOptions())
+			if err != nil {
 				response, _ := contract.Failure(ctx, err)
 				f.h.emitAt(topicGroups, "groups", response, epoch)
+			} else {
+				f.h.emitAt(topicGroups, "groups", contract.Success("policy.groups", "策略组快照", snapshot), epoch)
 			}
-		} else {
-			f.module, f.snapshot = module, service.Snapshot{Groups: groups}
-			f.publishGroups(epoch)
 		}
 	}
 	if topics&topicSubscriptions != 0 {
@@ -319,29 +309,15 @@ func (f *coreFeed) refresh(topics int) {
 }
 
 func (f *coreFeed) publishGroups(epoch uint64) {
-	if !f.snapshotReady {
+	if !f.groupsReady || f.identity == 0 || f.h.interests()&topicGroups == 0 {
 		return
 	}
-	f.snapshot.RuntimeGroups = nil
-	if f.identity > 0 && f.groupsReady {
-		f.snapshot.RuntimeGroups = f.groups
+	groups := f.groups
+	if groups == nil {
+		groups = []serviceapi.Group{}
 	}
-	f.snapshot.Selection = service.SelectionFromRuntimeGroups(f.module, f.snapshot.Groups, f.snapshot.RuntimeGroups)
-	topics := f.h.interests()
-	if topics&topicGroups != 0 {
-		f.h.emitAt(topicGroups, "groups", contract.Success("node.snapshot", "节点快照", f.snapshot), epoch)
-	}
-	if topics&topicStatus != 0 && f.statusReady && f.groupsReady {
-		selection := f.snapshot.Selection
-		f.status.SelectorMode = selection.SelectorMode
-		f.status.ActiveGroupID = selection.ActiveGroupID
-		f.status.ActiveGroupName = selection.ActiveGroupName
-		f.status.ActiveGroupRuntimeTag = selection.ActiveGroupRuntimeTag
-		f.status.ActiveGroupNodeCount = selection.ActiveGroupNodeCount
-		f.status.SelectedNodeRef = selection.SelectedNodeRef
-		f.status.RuntimeSelected = selection.RuntimeSelected
-		f.h.emitAt(topicStatus, "status", contract.Success("service.status", "服务状态", f.status), epoch)
-	}
+	snapshot := service.PolicySnapshot{Groups: groups, Live: true, CoreStartedAtMillis: f.identity}
+	f.h.emitAt(topicGroups, "groups", contract.Success("policy.groups", "策略组快照", snapshot), epoch)
 }
 
 func (f *coreFeed) flushGroups() {

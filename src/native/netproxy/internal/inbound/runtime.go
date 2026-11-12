@@ -79,16 +79,28 @@ func RuntimeDNSState(content []byte) (string, error) {
 	if err := json.Unmarshal(content, &runtime); err != nil {
 		return "", err
 	}
-	if len(runtime.Inbounds) != 1 {
-		return "", fmt.Errorf("受管运行时必须只有一个入站")
+	var managed jsontext.Value
+	var backend string
+	for _, entry := range runtime.Inbounds {
+		var identity struct {
+			Type string `json:"type"`
+			Tag  string `json:"tag"`
+		}
+		if err := json.Unmarshal(entry, &identity); err != nil {
+			return "", err
+		}
+		if identity.Tag != Tag {
+			continue
+		}
+		if managed != nil || (identity.Type != "ebpf" && identity.Type != "tun") {
+			return "", fmt.Errorf("受管运行时入站无效")
+		}
+		managed, backend = entry, identity.Type
 	}
-	var identity struct {
-		Type string `json:"type"`
+	if managed == nil {
+		return "", fmt.Errorf("运行时配置缺少受管入站")
 	}
-	if err := json.Unmarshal(runtime.Inbounds[0], &identity); err != nil {
-		return "", err
-	}
-	c := Config{Backend: identity.Type, EBPF: runtime.Inbounds[0], TUN: runtime.Inbounds[0]}
+	c := Config{Backend: backend, EBPF: managed, TUN: managed}
 	return c.DNSState()
 }
 

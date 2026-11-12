@@ -113,14 +113,15 @@ func (l Layout) WorkerPID() string { return filepath.Join(l.DevRoot(), "worker.p
 // ProgressDir 返回订阅进度目录。
 func (l Layout) ProgressDir() string { return filepath.Join(l.DevRoot(), "subscriptions") }
 
-// DelayDir 返回离线节点测速的临时会话目录。
-func (l Layout) DelayDir() string { return filepath.Join(l.DevRoot(), "delay") }
-
 // WiFiState 返回 Wi-Fi 自动策略状态文件路径。
 func (l Layout) WiFiState() string { return filepath.Join(l.DevRoot(), "wifi_state") }
 
 // SingBoxConfig 返回给定 sing-box 配置根目录下的静态主配置。
 func SingBoxConfig(singBoxDir string) string { return filepath.Join(singBoxDir, "config.json") }
+
+const RuntimeConfigName = "config.json"
+
+func RuntimeConfig(runtimeDir string) string { return filepath.Join(runtimeDir, RuntimeConfigName) }
 
 // SingBoxRulesDir 返回给定 sing-box 配置根目录下的规则资源目录。
 func SingBoxRulesDir(singBoxDir string) string { return filepath.Join(singBoxDir, "rules") }

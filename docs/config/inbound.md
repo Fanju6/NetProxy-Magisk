@@ -57,11 +57,11 @@ DNS 遵循所选入站的原生设置：eBPF `respect_policy` 遵循 UID 策略�
 | `inbound/app` | `{"app":{...}}` | 可编辑 |
 | `inbound/ebpf` | `{"ebpf":{...}}` | 可编辑 |
 | `inbound/tun` | `{"tun":{...}}` | 可编辑 |
-| `runtime/inbound.json` | 只有当前选中受管入站的 sing-box 文档 | 只读 |
+| `runtime/config.json` | 包含当前选中受管入站的完整生效配置 | 只读 |
 
 入站分区必需，不能用 `{}` 删除。分区保存只替换自己拥有的字段，保留其他分区和数组顺序。整份保存校验两套参数；启动只校验当前选中分区，不探测未选后端。整份 JSON 损坏会失败，不会回退默认值。
 
-`config list` 将以上六个可编辑目标归为 `category: "inbound"`；只读生成物仍属 `runtime`。运行时准备结果 `Prepare` 的路径字段是 `providers`、`outbounds`、`inbound`，另有选中 `backend`。
+`config list` 将以上六个可编辑目标归为 `category: "inbound"`；只读生成物仍属 `runtime`。运行时准备结果 `Prepare` 返回 `config` 路径和选中的 `backend`。
 
 ```sh
 su -c '/data/adb/modules/netproxy/netproxyctl config read inbound'
@@ -81,6 +81,6 @@ su -c '/data/adb/modules/netproxy/netproxyctl config apply --revision <读到的
 
 `service status` 中 `configured_backend` 是保存选择的字符串；`active_backend` 可为空，仅在状态为 `ready`、实际 PID 与启动记录匹配、Service API 毫秒级启动身份一致时非空。其他情况均为 `null`，不能从当前模板猜测。服务仍使用原有六态，只有 Service API 和选中入站就绪后才写入 `ready_at`。
 
-`runtime/inbound.json` 可重建，不应编辑或作为安装保留数据。`runtime/providers.json` 与 `runtime/outbounds.json` 继续独立生成。主配置允许 mixed、HTTP 等其他入站，但不得额外定义受管 eBPF/TUN 或占用 `netproxy-in`。
+`runtime/config.json` 可重建，不应编辑或作为安装保留数据。主配置允许 mixed、HTTP 等其他入站，但不得额外定义受管 eBPF/TUN 或占用 `netproxy-in`。
 
 安装器不检测或转换旧版本。保留全数据要求当前 `config/module.json`、`inbound.json`、主配置与 Catalog 完整；缺少当前模块 JSON 或入站文件会明确失败。旧格式用户只能选择“仅保留节点与订阅”或“全新安装”，不会静默补默认。

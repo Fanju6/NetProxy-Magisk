@@ -49,9 +49,6 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Link
-import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
@@ -64,7 +61,6 @@ import kotlin.math.roundToInt
 internal fun CatalogDashboardScreen(
     bottomPadding: androidx.compose.ui.unit.Dp = 0.dp,
     isActive: Boolean = true,
-    onNavigateToNodes: () -> Unit = {},
     onReconnect: () -> Unit = {},
     viewModel: CatalogDashboardViewModel = netProxyViewModel()
 ) {
@@ -216,21 +212,6 @@ internal fun CatalogDashboardScreen(
                                 val actualIndex = if (selectedModeIndex >= 0) index else index - 1
                                 modeValues.getOrNull(actualIndex)?.let(viewModel::setMode)
                             }
-                        )
-                        ArrowPreference(
-                            title = stringResource(R.string.dashboard_current_node),
-                            enabled = availability?.available == true,
-                            summary = state.currentNode.ifBlank {
-                                stringResource(R.string.dashboard_not_selected)
-                            },
-                            startAction = {
-                                Icon(
-                                    imageVector = MiuixIcons.Link,
-                                    contentDescription = null,
-                                    tint = colorScheme.primary
-                                )
-                            },
-                            onClick = onNavigateToNodes
                         )
                     }
                 }

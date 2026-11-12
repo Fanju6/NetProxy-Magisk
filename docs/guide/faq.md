@@ -11,7 +11,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl logs show service 100'
 su -c '/data/adb/modules/netproxy/netproxyctl logs show core 100'
 ```
 
-确认已有可用节点、活动分组有效，并查看错误来自静态配置、Provider、所选入站能力还是核心启动。eBPF 可补充执行 `su -c '/data/adb/modules/netproxy/netproxyctl ebpf status configured'`；TUN 没有独立 status 命令，配置 check 通过不代表实际设备能力足够。失败不会自动换后端。
+查看错误来自原生配置、Provider 引用、入站能力还是核心启动。默认配置没有代理节点也可以启动，但在「代理」页选择节点前，需要代理的流量会被阻断。eBPF 可补充执行 `su -c '/data/adb/modules/netproxy/netproxyctl ebpf status configured'`；TUN 没有独立 status 命令，配置 check 通过不代表实际设备能力足够。失败不会自动换后端。
 
 ## 订阅更新失败会清空节点吗
 

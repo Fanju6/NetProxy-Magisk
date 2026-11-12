@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
-	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
@@ -74,50 +73,6 @@ func TestRetryScheduleDoesNotBypassBackoff(t *testing.T) {
 		if err != nil || len(schedule.Due) != 0 || schedule.Nearest != deadline || retries["fixture"].attempt != 1 {
 			t.Fatalf("重新计算调度提前重试或重置退避: %+v %v", schedule, err)
 		}
-	}
-}
-
-func TestSyncEditedGroupCancellationReconcilesPersistedState(t *testing.T) {
-	for _, running := range []bool{false, true} {
-		t.Run(fmt.Sprint(running), func(t *testing.T) {
-			now := time.Now()
-			root, moduleConf := prepareWorkerFixture(t, "https://fixture.invalid", now)
-			path := filepath.Join(root, "fixture", "meta.json")
-			metadata, err := catalog.LoadMetadata(t.Context(), path, "fixture")
-			if err != nil {
-				t.Fatal(err)
-			}
-			metadata.Name, metadata.NodeCount, metadata.RuntimeSyncState = "Renamed", 3, subscription.RuntimeSyncApplied
-			if err := catalog.SaveMetadataAtomic(t.Context(), path, metadata); err != nil {
-				t.Fatal(err)
-			}
-			options := newTestOptions(root)
-			options.ModuleConfig = moduleConf
-			installRuntimeHooks(t, nil, running, nil)
-			options.SyncCatalog = func(ctx context.Context, _ string, changed bool) (string, bool, error) {
-				if !changed {
-					t.Error("名称变化未要求更新运行时结构")
-				}
-				if running {
-					return subscription.RuntimeSyncFailed, true, ctx.Err()
-				}
-				return subscription.RuntimeSyncNotRunning, false, nil
-			}
-			ctx, cancel := context.WithCancel(t.Context())
-			cancel()
-			result, syncErr := SyncEditedGroup(ctx, options, "fixture", now, nil)
-			after, err := catalog.LoadMetadata(t.Context(), path, "fixture")
-			if err != nil || !result.Persisted || result.NodeCount != 3 {
-				t.Fatalf("取消后丢失持久化结果: %+v %v", result, err)
-			}
-			if running {
-				if syncErr == nil || !after.RuntimeSyncPending || after.RuntimeSyncState != subscription.RuntimeSyncFailed || after.LastError == "" {
-					t.Fatalf("取消后未保留同步失败: %+v %v", after, syncErr)
-				}
-			} else if syncErr != nil || after.RuntimeSyncState != subscription.RuntimeSyncNotRunning {
-				t.Fatalf("停止状态未整理: %+v %v", after, syncErr)
-			}
-		})
 	}
 }
 
@@ -210,7 +165,7 @@ func prepareWorkerFixture(t *testing.T, serverURL string, now time.Time) (string
 		t.Fatal(err)
 	}
 	moduleConf := filepath.Join(root, "module.json")
-	content := "{\"selection\":{\"group_id\":\"default\"}}"
+	content := "{}"
 	if err := os.WriteFile(moduleConf, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -261,16 +216,11 @@ func installRuntimeHooks(t *testing.T, options *Options, running bool, reload fu
 	if options != nil {
 		syncCatalog := options.SyncCatalog
 		options.SyncCatalog = func(ctx context.Context, groupID string, structureChanged bool) (string, bool, error) {
-			before, err := moduleconfig.LoadModule(options.ModuleConfig)
-			if err != nil {
-				return currentRuntimeSyncState(*options), false, err
-			}
 			state, attempted, err := syncCatalog(ctx, groupID, structureChanged)
 			if err != nil || !running {
 				return state, attempted, err
 			}
-			after, err := moduleconfig.LoadModule(options.ModuleConfig)
-			if err == nil && reload != nil && (structureChanged || before.ActiveGroupID != after.ActiveGroupID) {
+			if reload != nil && structureChanged {
 				err = reload(ctx, *options)
 			}
 			return subscription.RuntimeSyncApplied, true, err
@@ -327,70 +277,6 @@ func TestUpdateGroupWhenServiceStoppedReportsPersistedNotRunning(t *testing.T) {
 	}
 	if _, err := provider.Load(context.Background(), filepath.Join(root, "fixture", "provider.json")); err != nil {
 		t.Fatalf("持久化 Provider 不可读: %v", err)
-	}
-}
-
-func TestSyncEditedGroupReloadsAfterNameChange(t *testing.T) {
-	now := time.Unix(1_700_407_000, 0)
-	root, moduleConf := prepareWorkerFixture(t, "https://unused.invalid/sub", now)
-	groupDir := filepath.Join(root, "fixture")
-	if err := provider.WriteAtomic(filepath.Join(groupDir, "provider.json"), []byte(`{"outbounds":[{"type":"socks","tag":"edited-node","server":"127.0.0.1","server_port":1080}]}`+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	metadata, err := catalog.LoadMetadata(context.Background(), filepath.Join(groupDir, "meta.json"), "fixture")
-	if err != nil {
-		t.Fatal(err)
-	}
-	metadata.Name = "新的运行时名称"
-	if err := catalog.SaveMetadataAtomic(context.Background(), filepath.Join(groupDir, "meta.json"), metadata); err != nil {
-		t.Fatal(err)
-	}
-	options := newTestOptions(root)
-	options.ModuleConfig = moduleConf
-	options.SingBoxPath = filepath.Join(root, "sing-box")
-	reloadCalls := 0
-	installRuntimeHooks(t, &options, true, func(context.Context, Options) error {
-		reloadCalls++
-		return nil
-	})
-
-	result, err := SyncEditedGroup(context.Background(), options, "fixture", now, nil)
-	if err != nil {
-		t.Fatalf("名称变更运行时同步失败: %v", err)
-	}
-	if !result.Persisted || !result.RuntimeSynced || result.RuntimeSyncState != subscription.RuntimeSyncApplied {
-		t.Fatalf("名称变更运行时结果异常: %+v", result)
-	}
-	if reloadCalls != 1 {
-		t.Fatalf("名称变更应触发一次 reload，实际 %d 次", reloadCalls)
-	}
-}
-
-func TestSyncEditedGroupWhenServiceStoppedDoesNotReload(t *testing.T) {
-	now := time.Unix(1_700_408_000, 0)
-	root, moduleConf := prepareWorkerFixture(t, "https://unused.invalid/sub", now)
-	groupDir := filepath.Join(root, "fixture")
-	if err := provider.WriteAtomic(filepath.Join(groupDir, "provider.json"), []byte(`{"outbounds":[{"type":"socks","tag":"stopped-edit","server":"127.0.0.1","server_port":1080}]}`+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	options := newTestOptions(root)
-	options.ModuleConfig = moduleConf
-	options.SingBoxPath = filepath.Join(root, "sing-box")
-	reloadCalls := 0
-	installRuntimeHooks(t, &options, false, func(context.Context, Options) error {
-		reloadCalls++
-		return nil
-	})
-
-	result, err := SyncEditedGroup(context.Background(), options, "fixture", now, nil)
-	if err != nil {
-		t.Fatalf("服务停止时编辑同步失败: %v", err)
-	}
-	if !result.Persisted || result.RuntimeSynced || result.RuntimeSyncState != subscription.RuntimeSyncNotRunning {
-		t.Fatalf("服务停止时编辑结果异常: %+v", result)
-	}
-	if reloadCalls != 0 {
-		t.Fatalf("服务停止时编辑不应 reload，实际 %d 次", reloadCalls)
 	}
 }
 
@@ -549,7 +435,7 @@ func TestUpdateGroupWhenServiceRunningUsesProviderWatch(t *testing.T) {
 	options := newTestOptions(root)
 	options.ModuleConfig = moduleConf
 	options.SingBoxPath = filepath.Join(root, "sing-box")
-	if err := os.WriteFile(moduleConf, []byte("{\"selection\":{\"group_id\":\"fixture\"}}"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConf, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := provider.WriteAtomic(filepath.Join(root, "fixture", "provider.json"), []byte(`{"outbounds":[{"type":"socks","tag":"old-node","server":"127.0.0.1","server_port":1080}]}`+"\n"), 0o600); err != nil {
@@ -584,7 +470,7 @@ func TestUpdateGroupProviderWatchFailureDoesNotReload(t *testing.T) {
 	options := newTestOptions(root)
 	options.ModuleConfig = moduleConf
 	options.SingBoxPath = filepath.Join(root, "sing-box")
-	if err := os.WriteFile(moduleConf, []byte("{\"selection\":{\"group_id\":\"fixture\"}}"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConf, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := provider.WriteAtomic(filepath.Join(root, "fixture", "provider.json"), []byte(`{"outbounds":[{"type":"socks","tag":"old-node","server":"127.0.0.1","server_port":1080}]}`+"\n"), 0o600); err != nil {
@@ -683,15 +569,7 @@ func TestUpdateGroupRuntimeSyncFailureReturnsStructuredErrorAndKeepsProvider(t *
 		t.Fatalf("运行时失败后 Provider 不可读: %v", err)
 	}
 
-	runtimeDir := filepath.Join(t.TempDir(), "runtime-after-failure")
-	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	runtime, err := catalog.BuildRuntime(context.Background(), catalog.RuntimeOptions{
-		Root: root, ModuleConfig: moduleConf,
-		ProvidersOutput: filepath.Join(runtimeDir, "providers.json"),
-		OutboundsOutput: filepath.Join(runtimeDir, "outbounds.json"),
-	})
+	runtime, err := catalog.BuildRuntime(context.Background(), root)
 	if err != nil {
 		t.Fatalf("重启准备阶段无法读取最新 Provider: %v", err)
 	}
@@ -952,7 +830,7 @@ func TestNextUpdateUsesNearestEnabledSubscription(t *testing.T) {
 func TestRunExitsWhenNoAutomaticSubscription(t *testing.T) {
 	root := t.TempDir()
 	moduleConf := filepath.Join(root, "module.json")
-	if err := os.WriteFile(moduleConf, []byte("{\"selection\":{\"group_id\":\"default\"}}"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConf, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	options := newTestOptions(root)
@@ -1068,7 +946,7 @@ func TestNetworkWatchFollowsPolicyWithoutStoppingOtherTasks(t *testing.T) {
 func TestTelemetrySharesWorkerLifecycleWithoutSubscriptions(t *testing.T) {
 	options := newTestOptions(t.TempDir())
 	options.ModuleConfig = filepath.Join(t.TempDir(), "module.json")
-	if err := os.WriteFile(options.ModuleConfig, []byte("{\"selection\":{\"group_id\":\"default\"}}"), 0o600); err != nil {
+	if err := os.WriteFile(options.ModuleConfig, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	task := &testTelemetryTask{make(chan struct{}), make(chan struct{}, 1), make(chan struct{})}
@@ -1273,7 +1151,7 @@ func TestRunDueContinuesAfterOneSubscriptionFails(t *testing.T) {
 
 	root := t.TempDir()
 	moduleConf := filepath.Join(root, "module.json")
-	if err := os.WriteFile(moduleConf, []byte("{\"selection\":{\"group_id\":\"good\"}}"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConf, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	for _, item := range []struct {

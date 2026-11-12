@@ -4,7 +4,9 @@ description: 在 NetProxy 中创建地区与业务策略分组，配置规则集
 
 # 策略分组配置教程
 
-NetProxy 默认按节点来源生成 `Auto/<分组>` 和 `Select/<分组>`。如果希望进一步按地区整理节点，并为 AI、流媒体或社交应用单独选择出口，可以在 sing-box 配置中增加策略分组。
+默认 `Proxy` 是原生 Selector，提供阻断、直连和 Catalog 节点。默认仍选阻断，直连需要手动选择。默认配置还为 AI、GitHub、YouTube、Google、Telegram、Netflix、Spotify 和哔哩哔哩提供独立分流。每个业务组可单独选择阻断，不必修改全局 `Proxy` 的选择。哔哩哔哩默认直连，其余业务默认跟随 `Proxy`。保留现有配置升级时，不会自动加入或覆盖这些默认组。
+
+Catalog 只提供节点资源，不生成策略组。Android「代理」页可从右上角菜单进入独立页面，创建 Selector 或 URLTest；选中已有组后，也可从该菜单编辑成员、Provider 及支持的参数。已创建的标签和类型保留不变，避免破坏其他组或路由的引用。表单只更新同一份原生配置的 `outbounds` 分区；把新组用于分流时，仍需在原生路由中引用它。
 
 本教程从零建立一套最小配置，再说明如何继续扩展。节点按以下关系组织：
 
@@ -20,7 +22,7 @@ Catalog Provider
 
 实际流量由路由规则送入业务分组，再按分组的选择使用代理节点或直连。
 
-策略分组只引用 NetProxy 已有的 Provider，不会复制节点，也不会创建新的 Catalog 分组。
+策略分组只引用 NetProxy 已有的 Provider，不会复制节点，也不会创建新的 Catalog 分组。显式引用使用稳定标签 `np/<分组 ID>`，可以从资源详情复制；资源改名不会改变引用。
 
 ## 先理解三个概念
 
@@ -37,13 +39,13 @@ Catalog Provider
 }
 ```
 
-- `use_all_providers`：读取 NetProxy 生成的全部 Provider。
+- `use_all_providers`：使用核心加载的全部 Provider。
 - `include`：只收入名称匹配该正则的节点。
 - `tag`：分组名称，也是其他配置引用它时使用的唯一标识。
 
 ### 业务分组
 
-业务分组不直接匹配节点，而是让用户从 `Proxy`、地区分组、全部节点或 `direct` 中选择。例如：
+业务分组由路由规则匹配流量，再由用户决定走 `Proxy`、地区分组、节点还是 `direct`。例如，可以把已有的 `Netflix` 组改成以下成员；不要再添加一个同名组：
 
 ```json
 {
@@ -174,7 +176,7 @@ Catalog Provider
 }
 ```
 
-这里没有建立跨全部 Provider 的 `urltest`。`All Proxies` 只是手动选择器，不会额外对全部节点执行周期测速；NetProxy 原有的 `Auto/<分组>` 仍照常工作。
+这里没有建立跨全部 Provider 的 `urltest`。`All Proxies` 只是手动选择器，不会额外对全部节点执行周期测速。
 
 将文件保存到手机：
 

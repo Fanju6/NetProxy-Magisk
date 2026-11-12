@@ -132,7 +132,7 @@ func configApplyOptions(t *testing.T) (Options, string, string, map[string]strin
 		t.Fatal(err)
 	}
 	runtimeContent := map[string]string{}
-	for _, name := range []string{"providers.json", "outbounds.json", "inbound.json"} {
+	for _, name := range []string{"config.json"} {
 		content := "old-" + name + "\n"
 		runtimeContent[name] = content
 		if err := os.MkdirAll(options.RuntimeDir, 0o700); err != nil {
@@ -218,7 +218,7 @@ func TestLogOutputValidationDoesNotMigrateOrReplaceConfig(t *testing.T) {
 			if err := os.WriteFile(destination, []byte(candidate), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := Prepare(t.Context(), options, true); err == nil || !strings.Contains(err.Error(), "log.output") {
+			if _, err := Prepare(t.Context(), options); err == nil || !strings.Contains(err.Error(), "log.output") {
 				t.Fatalf("启动准备接受了其他日志输出: %v", err)
 			}
 			if content, err := os.ReadFile(destination); err != nil || string(content) != candidate {
@@ -444,25 +444,6 @@ func TestApplyConfigCommitFailureReportsRollbackErrors(t *testing.T) {
 	}
 }
 
-func TestApplyConfigReturnsRevisionAfterSelectionNormalization(t *testing.T) {
-	options, _, source, _ := configApplyOptions(t)
-	isolateConfigApplyHooks(t, true)
-	if err := os.WriteFile(source, []byte("{\"selection\":{\"group_id\":\"missing\"}}"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	configReload = func(ctx context.Context, locked Options) error {
-		return locked.updateSelection(ctx, moduleconfig.Selection{ActiveGroupID: "default"})
-	}
-	revision, err := ApplyConfig(t.Context(), options, "module", source, false, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	content, err := os.ReadFile(options.ModuleConfig)
-	if err != nil || revision != configRevision(content) {
-		t.Fatalf("返回的 revision 与最终配置不同: %s / %s, %v", revision, configRevision(content), err)
-	}
-}
-
 func TestRecoverConfigApplyBeforeAndAfterRename(t *testing.T) {
 	for _, phase := range []string{"prepared", "reload_started"} {
 		t.Run(phase, func(t *testing.T) {
@@ -534,7 +515,7 @@ func TestConfigRollbackFailureKeepsSnapshotsForRetry(t *testing.T) {
 	}
 	failure := errors.New("模拟恢复中断")
 	configSnapshotRestore = func(snapshot configFileSnapshot) error {
-		if filepath.Base(snapshot.Path) == "inbound.json" {
+		if snapshot.Path == filepath.Join(options.RuntimeDir, "config.json") {
 			return failure
 		}
 		return restoreConfigSnapshot(snapshot)
@@ -598,10 +579,10 @@ func TestAutoStartSaveDoesNotReloadRunningService(t *testing.T) {
 	}
 }
 
-func TestModulePartitionsPreserveConcurrentSelectionAndIndependentRevisions(t *testing.T) {
+func TestModulePartitionsPreserveIndependentRevisions(t *testing.T) {
 	options, _, _, _ := configApplyOptions(t)
 	isolateConfigApplyHooks(t, false)
-	if err := os.WriteFile(options.ModuleConfig, []byte(`{"auto_start":true,"selection":{"group_id":"default"},"wifi":{"whitelist":["Office"],"mode":"whitelist"}}`), 0600); err != nil {
+	if err := os.WriteFile(options.ModuleConfig, []byte(`{"auto_start":true,"wifi":{"whitelist":["Office"],"mode":"whitelist"}}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	wifi, err := ReadConfig(options, "module/wifi")
@@ -610,9 +591,6 @@ func TestModulePartitionsPreserveConcurrentSelectionAndIndependentRevisions(t *t
 	}
 	autoStart, err := ReadConfig(options, "module/auto_start")
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err := options.updateSelection(t.Context(), moduleconfig.Selection{ActiveGroupID: "latest", SelectedNodeTag: "NODE"}); err != nil {
 		t.Fatal(err)
 	}
 	afterSelection, _ := ReadConfig(options, "module/wifi")
@@ -632,7 +610,7 @@ func TestModulePartitionsPreserveConcurrentSelectionAndIndependentRevisions(t *t
 		t.Fatal(err)
 	}
 	module, err := moduleconfig.LoadModule(options.ModuleConfig)
-	if err != nil || module.ActiveGroupID != "latest" || module.SelectedNodeTag != "NODE" || module.AutoStart || module.WiFi.ProxyOnNonWiFi || !module.WiFi.Equal(moduleconfig.WiFiPolicy{Mode: "blacklist", Blacklist: []string{"Home"}, Whitelist: []string{"Office"}}) {
+	if err != nil || module.AutoStart || module.WiFi.ProxyOnNonWiFi || !module.WiFi.Equal(moduleconfig.WiFiPolicy{Mode: "blacklist", Blacklist: []string{"Home"}, Whitelist: []string{"Office"}}) {
 		t.Fatalf("分区写入覆盖了其他设置: %+v %v", module, err)
 	}
 	if _, err := ApplyConfig(t.Context(), options, "module/wifi", source, false, wifi["revision"]); !errors.Is(err, ErrConfigConflict) {
@@ -659,36 +637,6 @@ func TestModulePartitionsRejectDeletionAndInvalidValues(t *testing.T) {
 		if !bytes.Equal(before, after) {
 			t.Fatal("无效分区修改了原文件")
 		}
-	}
-}
-
-func TestConfigApplyHoldsWriterLockAndReloadBorrowsIt(t *testing.T) {
-	options, _, source, _ := configApplyOptions(t)
-	isolateConfigApplyHooks(t, true)
-	configReload = func(ctx context.Context, locked Options) error {
-		waitContext, cancel := context.WithTimeout(ctx, 40*time.Millisecond)
-		defer cancel()
-		if editor, err := moduleconfig.Lock(waitContext, options.ModuleConfig); !errors.Is(err, context.DeadlineExceeded) {
-			if editor != nil {
-				editor.Release()
-			}
-			return fmt.Errorf("reload 期间其他写入未被阻止: %v", err)
-		}
-		return locked.updateSelection(ctx, moduleconfig.Selection{ActiveGroupID: "default", SelectedNodeTag: "BORROWED"})
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	withFakeSingBoxResult(t, false, func() {
-		if _, err := ApplyConfig(ctx, options, "singbox/config.json", source, false, ""); err != nil {
-			t.Fatal(err)
-		}
-	})
-	if err := moduleconfig.UpdateSelection(context.Background(), options.ModuleConfig, moduleconfig.Selection{ActiveGroupID: "default", SelectedNodeTag: "LATEST"}); err != nil {
-		t.Fatal(err)
-	}
-	config, err := moduleconfig.LoadModule(options.ModuleConfig)
-	if err != nil || config.SelectedNodeTag != "LATEST" || !config.WiFi.ProxyOnNonWiFi || config.AutoStart {
-		t.Fatalf("配置变更丢失: %+v %v", config, err)
 	}
 }
 
@@ -719,28 +667,6 @@ func TestConcurrentAppAddsKeepEveryPackage(t *testing.T) {
 	}
 	if len(strings.Split(policy.BypassApps, ",")) != count {
 		t.Fatalf("并发写入丢失名单: %s", policy.BypassApps)
-	}
-}
-
-func TestConfigApplyRejectsRevisionAfterInternalWrite(t *testing.T) {
-	options, _, source, _ := configApplyOptions(t)
-	isolateConfigApplyHooks(t, false)
-	original, err := os.ReadFile(options.ModuleConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(source, []byte("{\"auto_start\":false}"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := moduleconfig.UpdateSelection(context.Background(), options.ModuleConfig, moduleconfig.Selection{ActiveGroupID: "default", SelectedNodeTag: "LATEST"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ApplyConfig(context.Background(), options, "module", source, false, configRevision(original)); err == nil {
-		t.Fatal("过期配置覆盖成功")
-	}
-	config, err := moduleconfig.LoadModule(options.ModuleConfig)
-	if err != nil || config.SelectedNodeTag != "LATEST" {
-		t.Fatalf("内部写入丢失: %+v %v", config, err)
 	}
 }
 

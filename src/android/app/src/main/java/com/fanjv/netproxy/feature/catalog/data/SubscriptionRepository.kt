@@ -23,9 +23,6 @@ internal class SubscriptionRepository(private val client: ModuleApiClient) {
 
     suspend fun update(id: String) { client.post("/subscriptions/$id/update") }
     suspend fun updateAll() { client.post("/subscriptions/update-all") }
-    suspend fun activate(id: String) {
-        client.put("/selection", buildJsonObject { put("group_id", id); put("node_tag", "") })
-    }
     suspend fun remove(id: String, replacementGroupId: String = "") {
         client.delete("/subscriptions/$id", if (replacementGroupId.isBlank()) emptyMap() else mapOf("replacement_group_id" to replacementGroupId))
     }

@@ -7,20 +7,6 @@ export interface ServiceBackendStatus {
   active_backend: InboundBackend | null
 }
 
-export interface PrepareResult {
-  active_group_id: string
-  active_group_tag: string
-  selector_mode: string
-  selected_node_ref: string
-  outbound_mode?: string
-  group_count: number
-  node_count: number
-  providers: string
-  outbounds: string
-  inbound: string
-  backend: InboundBackend
-}
-
 export function decodeCtlResult<T>(r: ExecResult): CtlResult<T> {
   const payload = r.out.trim()
 

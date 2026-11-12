@@ -1,35 +1,15 @@
 package service
 
 import (
-	"bytes"
 	"context"
-	json "encoding/json/v2"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 )
-
-func writeStatusModule(t *testing.T, path, activeID, selector, selected string) {
-	t.Helper()
-	if selector == "manual" {
-		selected = strings.TrimPrefix(selected, activeID+"/")
-	} else {
-		selected = ""
-	}
-	content, err := json.Marshal(map[string]any{"selection": map[string]string{"group_id": activeID, "node_tag": selected}}, json.Deterministic(true))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, content, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	modeConfigFixture(t, filepath.Dir(path), "Rule")
-}
 
 func writeStatusGroup(t *testing.T, root, groupID, name string, nodeCount int, providerContent []byte) {
 	t.Helper()
@@ -51,40 +31,7 @@ func statusFixtureProvider(tag string) []byte {
 	return []byte(`{"outbounds":[{"type":"socks","tag":"` + tag + `","server":"example.com","server_port":1080}]}`)
 }
 
-func statusOptions(root, moduleConfig string) Options {
-	return Options{
-		CatalogRoot:   root,
-		ModuleConfig:  moduleConfig,
-		SingBoxConfig: filepath.Join(filepath.Dir(moduleConfig), "config.json"),
-		SingBoxPath:   filepath.Join(root, "missing-sing-box"),
-	}
-}
-
-func TestReadStatusFastPathSkipsInactiveProvider(t *testing.T) {
-	temp := t.TempDir()
-	catalogRoot := filepath.Join(temp, "catalog")
-	moduleConfig := filepath.Join(temp, "module.json")
-	if err := os.MkdirAll(catalogRoot, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	writeStatusGroup(t, catalogRoot, "default", "本地配置", 2, statusFixtureProvider("ACTIVE"))
-	writeStatusGroup(t, catalogRoot, "remote", "远程订阅", 9000, bytes.Repeat([]byte("x"), 1<<20))
-	writeStatusModule(t, moduleConfig, "default", "manual", "default/ACTIVE")
-
-	status, err := ReadStatus(context.Background(), statusOptions(catalogRoot, moduleConfig))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if status.ActiveGroupName != "本地配置" || status.ActiveGroupRuntimeTag != "本地配置" ||
-		status.ActiveGroupNodeCount != 2 || status.SelectedNodeRef != "default/ACTIVE" {
-		t.Fatalf("活动分组摘要错误: %#v", status)
-	}
-	if strings.Contains(status.Error, "remote") {
-		t.Fatalf("非活动分组 Provider 不应影响 status: %#v", status)
-	}
-}
-
-func TestReadGroupSummaryKeepsRuntimeTagDisambiguation(t *testing.T) {
+func TestReadGroupSummaryUsesStableRuntimeTag(t *testing.T) {
 	temp := t.TempDir()
 	catalogRoot := filepath.Join(temp, "catalog")
 	if err := os.MkdirAll(catalogRoot, 0o700); err != nil {
@@ -97,114 +44,12 @@ func TestReadGroupSummaryKeepsRuntimeTagDisambiguation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if summary.RuntimeTag != "同名分组 [default]" || summary.NodeCount != 1 {
+	if summary.RuntimeTag != "np/default" || summary.NodeCount != 1 {
 		t.Fatalf("RuntimeTag 或摘要节点数错误: %#v", summary)
 	}
 }
 
-func TestReadStatusStoppedReadsCatalogSummary(t *testing.T) {
-	temp := t.TempDir()
-	catalogRoot := filepath.Join(temp, "catalog")
-	moduleConfig := filepath.Join(temp, "module.json")
-	if err := os.MkdirAll(catalogRoot, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	writeStatusGroup(t, catalogRoot, "default", "本地配置", 1, statusFixtureProvider("NODE"))
-	writeStatusModule(t, moduleConfig, "default", "urltest", "")
-
-	status, err := ReadStatus(context.Background(), statusOptions(catalogRoot, moduleConfig))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if status.State != "stopped" || status.ActiveGroupID != "default" ||
-		status.ActiveGroupName != "本地配置" || status.ActiveGroupNodeCount != 1 {
-		t.Fatalf("服务停止时未读取 Catalog 摘要: %#v", status)
-	}
-}
-
-func TestReadStatusEmptyCatalogDegradesClearly(t *testing.T) {
-	temp := t.TempDir()
-	catalogRoot := filepath.Join(temp, "catalog")
-	moduleConfig := filepath.Join(temp, "module.json")
-	if err := os.MkdirAll(catalogRoot, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	writeStatusModule(t, moduleConfig, "default", "urltest", "")
-
-	status, err := ReadStatus(context.Background(), statusOptions(catalogRoot, moduleConfig))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if status.ActiveGroupName != "default" || status.ActiveGroupNodeCount != 0 ||
-		!strings.Contains(status.Error, "活动分组不存在") {
-		t.Fatalf("空 Catalog 未返回明确降级结果: %#v", status)
-	}
-}
-
-func TestReadStatusMissingActiveGroupDoesNotShowOtherGroup(t *testing.T) {
-	temp := t.TempDir()
-	catalogRoot := filepath.Join(temp, "catalog")
-	moduleConfig := filepath.Join(temp, "module.json")
-	if err := os.MkdirAll(catalogRoot, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	writeStatusGroup(t, catalogRoot, "remote", "远程订阅", 4, statusFixtureProvider("REMOTE"))
-	writeStatusModule(t, moduleConfig, "default", "urltest", "")
-
-	status, err := ReadStatus(context.Background(), statusOptions(catalogRoot, moduleConfig))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if status.ActiveGroupName != "default" || status.ActiveGroupNodeCount != 0 ||
-		!strings.Contains(status.Error, "活动分组不存在") {
-		t.Fatalf("活动分组缺失时错误显示其他分组: %#v", status)
-	}
-}
-
-func TestReadStatusUsesMetadataWithoutParsingActiveProvider(t *testing.T) {
-	temp := t.TempDir()
-	catalogRoot := filepath.Join(temp, "catalog")
-	moduleConfig := filepath.Join(temp, "module.json")
-	if err := os.MkdirAll(catalogRoot, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	writeStatusGroup(t, catalogRoot, "default", "本地配置", 3, []byte(`{"outbounds":[`))
-	writeStatusModule(t, moduleConfig, "default", "urltest", "")
-
-	status, err := ReadStatus(context.Background(), statusOptions(catalogRoot, moduleConfig))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if status.ActiveGroupName != "本地配置" || status.ActiveGroupNodeCount != 3 || status.Error != "" {
-		t.Fatalf("状态轮询不应解析活动 Provider: %#v", status)
-	}
-}
-
-func TestReadStatusActiveGroupSwitchIsVisibleImmediately(t *testing.T) {
-	temp := t.TempDir()
-	catalogRoot := filepath.Join(temp, "catalog")
-	moduleConfig := filepath.Join(temp, "module.json")
-	if err := os.MkdirAll(catalogRoot, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	writeStatusGroup(t, catalogRoot, "default", "本地配置", 1, statusFixtureProvider("LOCAL"))
-	writeStatusGroup(t, catalogRoot, "remote", "远程订阅", 5, statusFixtureProvider("REMOTE"))
-	writeStatusModule(t, moduleConfig, "default", "urltest", "")
-	options := statusOptions(catalogRoot, moduleConfig)
-
-	status, err := ReadStatus(context.Background(), options)
-	if err != nil || status.ActiveGroupName != "本地配置" || status.ActiveGroupNodeCount != 1 {
-		t.Fatalf("初始活动分组错误: %#v, err=%v", status, err)
-	}
-	writeStatusModule(t, moduleConfig, "remote", "manual", "remote/REMOTE")
-	status, err = ReadStatus(context.Background(), options)
-	if err != nil || status.ActiveGroupName != "远程订阅" || status.ActiveGroupNodeCount != 5 ||
-		status.SelectorMode != "manual" || status.SelectedNodeRef != "remote/REMOTE" {
-		t.Fatalf("活动分组切换未立即可见: %#v, err=%v", status, err)
-	}
-}
-
-func TestSnapshotIgnoresUnrequestedProvider(t *testing.T) {
+func TestReadNodesIgnoresUnrequestedProvider(t *testing.T) {
 	root := t.TempDir()
 	for _, id := range []string{"wanted", "unrelated"} {
 		dir := filepath.Join(root, id)
@@ -227,23 +72,14 @@ func TestSnapshotIgnoresUnrequestedProvider(t *testing.T) {
 	if _, err := catalog.Scan(t.Context(), catalog.ScanOptions{Root: root, WithNodes: true, GroupID: "wanted"}); err != nil {
 		t.Fatalf("targeted catalog scan failed: %v", err)
 	}
-	module := filepath.Join(t.TempDir(), "module.json")
-	options := Options{CatalogRoot: root, ModuleConfig: module, SingBoxPath: filepath.Join(t.TempDir(), "not-running-singbox")}
-	for _, active := range []string{"wanted", "unrelated"} {
-		if err := os.WriteFile(module, []byte(`{"selection":{"group_id":"`+active+`"}}`), 0600); err != nil {
-			t.Fatal(err)
-		}
-		for _, query := range []string{"wanted", "Group wanted"} {
-			snapshot, err := ReadSnapshot(t.Context(), options, query)
-			if err != nil || len(snapshot.Groups) != 1 || snapshot.Groups[0].Group.ID != "wanted" || len(snapshot.Groups[0].Nodes) != 1 {
-				t.Fatalf("目标分组读取错误: %+v %v", snapshot, err)
-			}
-			if snapshot.Selection.ActiveGroupID != active || snapshot.Selection.ActiveGroupName != "Group "+active || snapshot.Selection.ActiveGroupNodeCount != 1 {
-				t.Fatalf("读取目标分组影响了活动选择: %+v", snapshot.Selection)
-			}
+	options := Options{CatalogRoot: root}
+	for _, query := range []string{"wanted", "Group wanted"} {
+		groups, err := ReadNodes(t.Context(), options, query)
+		if err != nil || len(groups) != 1 || groups[0].Group.ID != "wanted" || len(groups[0].Nodes) != 1 {
+			t.Fatalf("目标分组读取错误: %+v %v", groups, err)
 		}
 	}
-	if _, err := ReadSnapshot(t.Context(), options, "unrelated"); err == nil {
+	if _, err := ReadNodes(t.Context(), options, "unrelated"); err == nil {
 		t.Fatal("目标 Provider 损坏未被发现")
 	}
 }

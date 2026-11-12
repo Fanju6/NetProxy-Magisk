@@ -16,6 +16,8 @@ import com.fanjv.netproxy.feature.catalog.presentation.subscriptions.Subscriptio
 import com.fanjv.netproxy.feature.dashboard.presentation.CatalogDashboardViewModel
 import com.fanjv.netproxy.feature.kernel.presentation.SingBoxConfigViewModel
 import com.fanjv.netproxy.feature.logs.presentation.LogsViewModel
+import com.fanjv.netproxy.feature.proxy.presentation.PolicyGroupEditorViewModel
+import com.fanjv.netproxy.feature.proxy.presentation.PolicyViewModel
 import com.fanjv.netproxy.feature.inbound.presentation.InboundViewModel
 import com.fanjv.netproxy.feature.settings.presentation.SettingsViewModel
 import com.fanjv.netproxy.feature.routing.presentation.RoutingRulesViewModel
@@ -38,6 +40,9 @@ internal class NetProxyViewModelFactory(
                 container.nodeRepository,
                 container.nodeImportStore
             )
+
+            PolicyViewModel::class.java -> PolicyViewModel(container.policyRepository)
+            PolicyGroupEditorViewModel::class.java -> PolicyGroupEditorViewModel(container.policyRepository)
 
             SubscriptionsViewModel::class.java ->
                 SubscriptionsViewModel(container.subscriptionRepository)

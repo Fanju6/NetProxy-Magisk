@@ -72,7 +72,6 @@ func TestLayoutIsolatesAllTransientState(t *testing.T) {
 		{layout.ServiceState(), "service.json"},
 		{layout.WorkerPID(), "worker.pid"},
 		{layout.ProgressDir(), "subscriptions"},
-		{layout.DelayDir(), "delay"},
 		{layout.WiFiState(), "wifi_state"},
 		{layout.TelemetryLock(), "telemetry.lock.flock"},
 	} {

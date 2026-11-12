@@ -192,7 +192,7 @@ stopped -> preparing -> starting -> ready -> stopping -> stopped
 | 启动前准备 | `initialize_runtime_context` + `scan_runtime_nodes` + `write_runtime_outbounds` | `netproxyctl service start` 内部的 Go `module.Prepare` | 启动服务前生成运行时配置 |
 | 节点页加载 | `scripts/cli node list` | `netproxyctl catalog list` | 打开节点页并读取分组摘要 |
 | 仪表盘状态 | `scripts/cli service status` | `netproxyctl service status` | 首页轮询服务和当前配置状态 |
-| 停止服务时切换节点 | `scripts/core/switch.sh config` | `netproxyctl node use` | 选择节点并持久化选择状态 |
+| 查看或切换节点 | `scripts/core/switch.sh config` | `netproxyctl policy groups` / `policy select` | 停止时查看配置；运行时由核心确认选择 |
 
 平均耗时如下，单位为毫秒；1、100、1000 节点规模各运行 10 次，5000 节点规模除准备操作运行 1 次外，其余运行 5 次：
 

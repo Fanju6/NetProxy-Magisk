@@ -77,6 +77,7 @@ type Options struct {
 	PersistedBeforeUpdate   bool
 	NetworkWatchEnabled     bool
 	SyncCatalog             func(context.Context, string, bool) (string, bool, error)
+	GuardProviderCommit     func(string, provider.Document) (func(), error)
 	NetworkEvaluate         func(context.Context, string, string) error
 	NetworkEventSource      NetworkEventSource
 	NetworkStateReader      NetworkStateReader
@@ -416,6 +417,7 @@ func UpdateGroup(ctx context.Context, options Options, groupID string, now time.
 		TransferContext: options.TransferContext,
 		ProxyURL:        options.ProxyURL, FallbackDirect: options.FallbackDirect,
 		UseConfiguredProxy: true, RuntimeSyncPending: runtimeRunning,
+		GuardProviderCommit:   options.GuardProviderCommit,
 		PersistedBeforeUpdate: options.PersistedBeforeUpdate, Now: now,
 	})
 	if err != nil {
@@ -428,7 +430,7 @@ func UpdateGroup(ctx context.Context, options Options, groupID string, now time.
 		if result.Persisted {
 			// Provider 与 metadata 已提交时，历史写入失败不能阻止运行中的核心应用新 Provider。
 			// 原始历史错误仍作为主错误返回，避免客户端把持久化副作用误报为未保存。
-			synced, syncErr := applyRuntimeSync(ctx, options, result, groupID, logger, false, now)
+			synced, syncErr := applyRuntimeSync(ctx, options, result, groupID, logger, now)
 			if syncErr != nil {
 				return synced, errors.Join(err, syncErr)
 			}
@@ -436,33 +438,11 @@ func UpdateGroup(ctx context.Context, options Options, groupID string, now time.
 		}
 		return result, err
 	}
-	return applyRuntimeSync(ctx, options, result, groupID, logger, false, now)
+	return applyRuntimeSync(ctx, options, result, groupID, logger, now)
 }
 
-// SyncEditedGroup 将已持久化的订阅编辑通过统一运行时流程应用到 sing-box。
-func SyncEditedGroup(ctx context.Context, options Options, groupID string, now time.Time, logger *log.Logger) (subscription.Result, error) {
-	result := subscription.Result{GroupID: groupID, Persisted: true}
-	localContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
-	metadata, err := catalog.LoadMetadata(localContext, filepath.Join(options.Root, groupID, "meta.json"), groupID)
-	if err != nil {
-		return result, persistedEffectFailure(result, err)
-	}
-	result.NodeCount = metadata.NodeCount
-	result.Revision = metadata.Revision
-	result.RuntimeSyncState = metadata.RuntimeSyncState
-	result.RuntimeSyncPending = metadata.RuntimeSyncPending
-	if workerProcessRunning(options.SingBoxPath) {
-		result.RuntimeSyncPending = true
-	}
-	if now.IsZero() {
-		now = time.Now()
-	}
-	return applyRuntimeSync(ctx, options, result, groupID, logger, true, now)
-}
-
-func applyRuntimeSync(ctx context.Context, options Options, result subscription.Result, groupID string, logger *log.Logger, forceReload bool, now time.Time) (subscription.Result, error) {
-	runtimeState, runtimeAttempted, effectErr := applyUpdateEffects(ctx, options, result, groupID, forceReload)
+func applyRuntimeSync(ctx context.Context, options Options, result subscription.Result, groupID string, logger *log.Logger, now time.Time) (subscription.Result, error) {
+	runtimeState, runtimeAttempted, effectErr := applyUpdateEffects(ctx, options, result, groupID)
 	// 已提交的同步状态必须落盘，取消只阻止运行时操作。
 	localContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
@@ -520,11 +500,11 @@ func nextUpdate(ctx context.Context, root string, now int64) (int64, error) {
 	return schedule.Nearest, nil
 }
 
-func applyUpdateEffects(ctx context.Context, options Options, result subscription.Result, groupID string, forceReload bool) (string, bool, error) {
+func applyUpdateEffects(ctx context.Context, options Options, result subscription.Result, groupID string) (string, bool, error) {
 	if options.SyncCatalog == nil {
 		return currentRuntimeSyncState(options), false, errors.New("未配置 Catalog 同步回调")
 	}
-	state, attempted, err := options.SyncCatalog(ctx, groupID, forceReload || result.StructureChanged)
+	state, attempted, err := options.SyncCatalog(ctx, groupID, result.StructureChanged)
 	if err != nil {
 		if attempted {
 			return subscription.RuntimeSyncFailed, true, err

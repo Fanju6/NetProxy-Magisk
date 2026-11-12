@@ -99,7 +99,7 @@ internal enum class AppDestination(
     val icon: ImageVector,
 ) {
     Dashboard(R.string.dashboard, Icons.Rounded.Dashboard),
-    Nodes(R.string.nodes, Icons.Rounded.Router),
-    Subscriptions(R.string.subscriptions, Icons.Rounded.CloudSync),
+    Nodes(R.string.proxies, Icons.Rounded.Router),
+    Subscriptions(R.string.resources, Icons.Rounded.CloudSync),
     Settings(R.string.settings, Icons.Rounded.Settings),
 }

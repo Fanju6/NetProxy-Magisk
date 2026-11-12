@@ -46,7 +46,6 @@ test('补全使用当前 Catalog，候选替换保留空格、引号与反斜杠
       assert.deepEqual(parseCommandLine(replaceCompletion(source, group)), ['catalog', 'show', group])
     }
   }
-  assert.equal(complete('node use auto def', groups).completed, 'node use auto default ')
 })
 
 test('格式化只改变 JSON 排版，文本、错误和危险字符保持原样', () => {
@@ -80,8 +79,29 @@ test('终端只在命令结果内横向滚动，标题和状态不随输出移�
   assert.match(main, /append\(resultOutput, 'e', resultText\)/)
 })
 
-test('节点选择运行时失败保留持久化状态与原始错误', () => {
-  const response = { schema: 1, ok: false, code: 'node.runtime_sync_failed', message: '节点选择已保存，但运行时切换失败', data: { persisted: true, runtime_synced: false, group_id: 'default', mode: 'manual', selected: '本地配置/NODE' } }
+test('原生策略组补全与预览区分配置快照和运行时操作', () => {
+  const page = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
+  assert.match(page, /data-command="policy groups"/)
+  assert.doesNotMatch(page, /data-command="node current"/)
+  assert.deepEqual(complete('policy ').candidates, ['groups', 'select', 'delay'])
+  assert.deepEqual(complete('node use ').candidates, [])
+  assert.deepEqual(complete('sub act').candidates, [])
+  const run = (...args) => decodeCtlResult(mockCtl(args))
+  run('service', 'stop')
+  const result = run('policy', 'groups')
+  assert.equal(result.code, 'policy.groups')
+  assert.equal(result.data.live, false)
+  assert.equal(result.data.groups[0].configured_default, 'block')
+  assert.equal(result.data.groups[0].selected, undefined)
+  assert.equal(run('policy', 'select', 'Proxy', 'block').code, 'policy.preview_unavailable')
+  assert.equal(run('policy', 'delay', 'Proxy').code, 'policy.preview_unavailable')
+  assert.equal(run('policy', 'select', 'Proxy').code, 'usage.invalid')
+  assert.equal(run('node', 'use', 'auto').code, 'usage.invalid')
+  assert.equal(run('sub', 'activate', 'default').code, 'usage.invalid')
+})
+
+test('策略组选择结果未知时保留核心错误，不伪造确认', () => {
+  const response = { schema: 1, ok: false, code: 'policy.outcome_unknown', message: '无法确认节点选择结果，请刷新后核对' }
   const output = { out: JSON.stringify(response), err: '', code: 1 }
   assert.deepEqual(decodeCtlResult(output), response)
   assert.deepEqual(JSON.parse(formatCtlOutput(output.out)), response)
@@ -110,7 +130,7 @@ test('入站帮助与补全只使用公共配置目标，诊断仍保留 ebpf st
     assert.ok(!complete(`config ${action} `).candidates.includes('ebpf'))
     assert.deepEqual(complete(`config ${action} ebpf`).candidates, [])
   }
-  assert.deepEqual(complete('config read runtime/in').candidates, ['runtime/inbound.json'])
+  assert.deepEqual(complete('config read runtime/co').candidates, ['runtime/config.json'])
   assert.deepEqual(complete('config apply runtime/').candidates, [])
   assert.deepEqual(complete('ebpf ').candidates, ['status'])
   assert.deepEqual(complete('tun ').candidates, [])
@@ -128,7 +148,7 @@ test('模块 JSON 帮助、补全和 mock 使用完整目标与独立分区', ()
   }
   assert.match(COMMANDS.config.help, /module\.json/)
   assert.match(COMMANDS.config.help, /module\/wifi、module\/auto_start/)
-  assert.match(COMMANDS.config.help, /revision 独立.*selection/)
+  assert.match(COMMANDS.config.help, /revision 独立.*保留其他分区/)
   const full = run('config', 'read', 'module').data
   assert.deepEqual(JSON.parse(full.content), defaults)
   const revisions = [full.revision]
@@ -161,20 +181,20 @@ test('mock 同步单文件模板、分区与真实后端状态边界', () => {
   assert.equal(run('config', 'read', 'runtime/ebpf.json').ok, false)
   assert.equal(run('tun', 'status').ok, false)
   assert.equal(run('ebpf', 'status').ok, true)
-  assert.equal(run('config', 'read', 'runtime/inbound.json').ok, false)
+  assert.equal(run('config', 'read', 'runtime/config.json').ok, false)
   run('service', 'start')
   assert.equal(run('service', 'status').data.active_backend, 'ebpf')
   assert.equal(run('service', 'status').data.pid, 4242)
-  const runtime = JSON.parse(run('config', 'read', 'runtime/inbound.json').data.content)
+  const runtime = JSON.parse(run('config', 'read', 'runtime/config.json').data.content)
   assert.equal(runtime.inbounds.length, 1)
   assert.equal(runtime.inbounds[0].tag, 'netproxy-in')
   assert.deepEqual(runtime.inbounds[0].shared, { enabled: false })
   assert.deepEqual(run('config', 'list').data.filter(item => item.category === 'runtime').map(item => [item.id, item.editable]), [
-    ['runtime/inbound.json', false], ['runtime/providers.json', false], ['runtime/outbounds.json', false],
+    ['runtime/config.json', false],
   ])
   run('service', 'stop')
   assert.equal(run('service', 'status').data.active_backend, null)
-  assert.equal(run('config', 'read', 'runtime/inbound.json').ok, true)
+  assert.equal(run('config', 'read', 'runtime/config.json').ok, true)
 })
 
 test('eBPF mock 区分可读预检与显式原始报告', () => {

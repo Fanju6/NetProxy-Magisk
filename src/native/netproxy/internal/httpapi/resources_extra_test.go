@@ -5,13 +5,13 @@ import (
 	json "encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
@@ -26,6 +26,39 @@ func resourceSubscriptionFixture(t *testing.T, server *Server, id, source string
 		CustomHeaders: map[string]string{"X-Test-Private": "private-header-value"}, AutoUpdate: false, Timeout: 7, UpdateViaProxy: "never",
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestResourcesSubscriptionNodeSupportsStructuredEdit(t *testing.T) {
+	server := resourceFixture(t)
+	const group, tag = "subscription-test", "Node / 01"
+	resourceSubscriptionFixture(t, server, group, "https://example.test/sub")
+	if _, err := catalog.AppendNode(t.Context(), catalog.MutationOptions{
+		GroupDir: filepath.Join(server.options.CatalogRoot, group), GroupID: group, Type: "subscription",
+		Input: "socks://127.0.0.1:1080#" + url.PathEscape(tag),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	query := url.Values{"group_id": {group}, "node_tag": {tag}}.Encode()
+	path := "/api/v1/nodes/get?" + query
+	var editable struct {
+		Outbounds []struct {
+			Tag        string `json:"tag"`
+			ServerPort int    `json:"server_port"`
+		} `json:"outbounds"`
+	}
+	resourceAssertSuccess(t, server, http.MethodGet, path, "", "node.loaded", &editable)
+	if len(editable.Outbounds) != 1 || editable.Outbounds[0].Tag != tag || editable.Outbounds[0].ServerPort != 1080 {
+		t.Fatalf("incorrect original subscription node: %+v", editable)
+	}
+	edit := resourceJSON(t, map[string]string{
+		"group_id": group, "node_tag": tag,
+		"content": `{"outbounds":[{"type":"socks","tag":"Node / 01","server":"127.0.0.1","server_port":1081}]}`,
+	})
+	resourceAssertSuccess(t, server, http.MethodPut, "/api/v1/nodes", edit, "node.edited", nil)
+	resourceAssertSuccess(t, server, http.MethodGet, path, "", "node.loaded", &editable)
+	if len(editable.Outbounds) != 1 || editable.Outbounds[0].ServerPort != 1081 {
+		t.Fatalf("subscription node edit did not persist: %+v", editable)
 	}
 }
 
@@ -283,26 +316,5 @@ func TestResourcesReadAndStopDoNotWaitForExpensiveSlots(t *testing.T) {
 	resourceAssertSuccess(t, server, "GET", "/api/v1/service", "", "service.status", nil)
 	if _, err := os.Stat(server.options.WorkerPIDFile); !os.IsNotExist(err) {
 		t.Fatalf("停服启动了 Worker: %v", err)
-	}
-}
-
-func TestResourcesDelayKeepsSlashedTagAndOfflineDomainError(t *testing.T) {
-	server := resourceFixture(t)
-	server.options.RequestTimeout = time.Second
-	response, result := resourceRequest(t, server, "POST", "/api/v1/nodes/delay", `{"group_id":"default","node_tag":"节点 / 02"}`)
-	if response.Code == http.StatusOK || result.Code != "node.delay_offline_failed" {
-		t.Fatalf("停止时没有进入领域离线测速: %s", response.Body.String())
-	}
-	var data map[string]any
-	if err := json.Unmarshal(result.Data, &data); err != nil {
-		t.Fatal(err)
-	}
-	if data["target"] != "本地配置/节点 / 02" {
-		t.Fatalf("测速引用丢失标签: %s", result.Data)
-	}
-	for _, path := range []string{server.options.StateFile, server.options.WorkerPIDFile} {
-		if _, err := os.Stat(path); !os.IsNotExist(err) {
-			t.Fatalf("离线测速改写了正式服务状态: %s %v", path, err)
-		}
 	}
 }

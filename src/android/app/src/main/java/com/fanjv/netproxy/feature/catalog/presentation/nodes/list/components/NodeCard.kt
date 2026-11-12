@@ -36,7 +36,6 @@ import top.yukonga.miuix.kmp.utils.PressFeedbackType
 @Composable
 internal fun NodeCard(
     title: String,
-    summary: String,
     protocol: String,
     latency: String? = null,
     selected: Boolean,
@@ -147,17 +146,6 @@ internal fun NodeCard(
                         modifier = Modifier.padding(start = 8.dp),
                         color = latencyColor(latency),
                         style = valueStyle.copy(fontWeight = FontWeight.Medium),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                } else if (summary.isNotBlank()) {
-                    Text(
-                        text = summary,
-                        modifier = Modifier
-                            .padding(start = 8.dp)
-                            .weight(1f),
-                        color = colorScheme.onSurfaceVariantSummary,
-                        style = valueStyle,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )

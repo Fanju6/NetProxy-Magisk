@@ -30,9 +30,6 @@ internal data class SubscriptionDetailsUiState(
     val error: UiText = UiText.Empty,
     val notice: UiText = UiText.Empty,
     val noticeId: Long = 0,
-    val latencies: Map<String, String> = emptyMap(),
-    val editingNodeRef: String = "",
-    val editingNodeLink: String = "",
     val exportedNodeLink: String = "",
     val exportedNodeLinkId: Long = 0
 )
@@ -87,66 +84,11 @@ internal class SubscriptionDetailsViewModel(
         UiText.Resource(R.string.subscription_updated)
     }
 
-    fun activate(id: String) = runOperation("activate", id) {
-        repository.activate(id)
-        UiText.Resource(R.string.subscription_activated)
-    }
-
     fun remove(id: String, onRemoved: () -> Unit) = runOperation("remove", id) {
         repository.remove(id)
         currentCoroutineContext().ensureActive()
         onRemoved()
         UiText.Resource(R.string.subscription_deleted)
-    }
-
-    fun testNode(groupId: String, tag: String) {
-        val nodeRef = "$groupId/$tag"
-        runOperation("delay", groupId, refresh = false) {
-            _state.update { it.copy(latencies = it.latencies + (nodeRef to "testing")) }
-            try {
-                val result = nodeRepository.testDelay(nodeRef)
-                currentCoroutineContext().ensureActive()
-                val delay = result.groups.asSequence()
-                    .flatMap { it.items.asSequence() }
-                    .mapNotNull { it.urlTestDelay?.takeIf { value -> value > 0 } }
-                    .firstOrNull()
-                _state.update { it.copy(latencies = it.latencies + (nodeRef to (delay?.toString() ?: "timeout"))) }
-                if (delay != null) UiText.Resource(R.string.node_delay, listOf(delay))
-                else UiText.Resource(R.string.node_delay_timeout)
-            } finally {
-                _state.update {
-                    if (it.latencies[nodeRef] == "testing") it.copy(latencies = it.latencies - nodeRef) else it
-                }
-            }
-        }
-    }
-
-    fun editNode(groupId: String, tag: String) = runOperation("export", groupId, refresh = false) {
-        val nodeRef = "$groupId/$tag"
-        val exported = nodeRepository.export(nodeRef)
-        currentCoroutineContext().ensureActive()
-        _state.update { it.copy(editingNodeRef = nodeRef, editingNodeLink = exported.link) }
-        UiText.Empty
-    }
-
-    fun saveEditedNode(link: String) {
-        val nodeRef = _state.value.editingNodeRef
-        if (nodeRef.isBlank()) return
-        if (link.isBlank()) {
-            publishError(UiText.Resource(R.string.node_link_empty))
-            return
-        }
-        runOperation("edit", nodeRef.substringBefore('/')) {
-            nodeRepository.edit(nodeRef, link.trim())
-            currentCoroutineContext().ensureActive()
-            _state.update { it.copy(editingNodeRef = "", editingNodeLink = "") }
-            UiText.Resource(R.string.node_updated)
-        }
-    }
-
-    fun dismissNodeEditor() {
-        if (_state.value.operation == "edit") return
-        _state.update { it.copy(editingNodeRef = "", editingNodeLink = "") }
     }
 
     fun exportNode(groupId: String, tag: String) = runOperation("export", groupId, refresh = false) {

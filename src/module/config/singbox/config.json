@@ -168,6 +168,19 @@
       "listen_port": 7080
     }
   ],
+  "outbounds": [
+    { "type": "selector", "tag": "Proxy", "outbounds": ["block", "direct"], "use_all_providers": true, "default": "block", "interrupt_exist_connections": true },
+    { "type": "selector", "tag": "AI", "outbounds": ["Proxy", "direct", "block"], "use_all_providers": true, "default": "Proxy" },
+    { "type": "selector", "tag": "GitHub", "outbounds": ["Proxy", "direct", "block"], "use_all_providers": true, "default": "Proxy" },
+    { "type": "selector", "tag": "YouTube", "outbounds": ["Proxy", "direct", "block"], "use_all_providers": true, "default": "Proxy" },
+    { "type": "selector", "tag": "Google", "outbounds": ["Proxy", "direct", "block"], "use_all_providers": true, "default": "Proxy" },
+    { "type": "selector", "tag": "Telegram", "outbounds": ["Proxy", "direct", "block"], "use_all_providers": true, "default": "Proxy" },
+    { "type": "selector", "tag": "Netflix", "outbounds": ["Proxy", "direct", "block"], "use_all_providers": true, "default": "Proxy" },
+    { "type": "selector", "tag": "Spotify", "outbounds": ["Proxy", "direct", "block"], "use_all_providers": true, "default": "Proxy" },
+    { "type": "selector", "tag": "Bilibili", "outbounds": ["Proxy", "direct", "block"], "use_all_providers": true, "default": "direct" },
+    { "type": "direct", "tag": "direct" },
+    { "type": "block", "tag": "block" }
+  ],
   "route": {
     "default_domain_resolver": "dns-direct",
     "rule_set": [
@@ -182,7 +195,7 @@
       },
       {
         "type": "remote",
-        "tag": ["geosite/category-ads-all", "geosite/apple-cn", "geosite/category-ai-!cn", "geosite/google", "geosite/geolocation-!cn", "geosite/cn", "geoip/cn", "geoip/telegram"],
+        "tag": ["geosite/category-ads-all", "geosite/apple-cn", "geosite/category-ai-!cn", "geosite/google", "geosite/geolocation-!cn", "geosite/cn", "geoip/cn", "geoip/telegram", "geosite/github", "geosite/youtube", "geosite/telegram", "geosite/spotify", "geosite/bilibili", "geosite/netflix"],
         "format": "binary",
         "url": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/sing/geo/{tag}.srs",
         "update_interval": "24h",
@@ -213,14 +226,14 @@
         ],
         "action": "reject"
       },
-      {
-        "rule_set": [
-          "geosite/category-ai-!cn",
-          "geosite/google"
-        ],
-        "action": "route",
-        "outbound": "Proxy"
-      },
+      { "rule_set": "geosite/bilibili", "action": "route", "outbound": "Bilibili" },
+      { "rule_set": "geosite/category-ai-!cn", "action": "route", "outbound": "AI" },
+      { "rule_set": "geosite/github", "action": "route", "outbound": "GitHub" },
+      { "rule_set": "geosite/youtube", "action": "route", "outbound": "YouTube" },
+      { "rule_set": "geosite/google", "action": "route", "outbound": "Google" },
+      { "rule_set": "geosite/telegram", "action": "route", "outbound": "Telegram" },
+      { "rule_set": "geosite/netflix", "action": "route", "outbound": "Netflix" },
+      { "rule_set": "geosite/spotify", "action": "route", "outbound": "Spotify" },
       {
         "rule_set": [
           "geosite/apple-cn",
@@ -250,7 +263,7 @@
           "geoip/telegram"
         ],
         "action": "route",
-        "outbound": "Proxy"
+        "outbound": "Telegram"
       },
       {
         "ip_is_private": true,

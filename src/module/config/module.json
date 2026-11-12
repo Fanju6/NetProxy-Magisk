@@ -1,9 +1,5 @@
 {
   "auto_start": false,
-  "selection": {
-    "group_id": "default",
-    "node_tag": ""
-  },
   "wifi": {
     "enabled": false,
     "mode": "blacklist",

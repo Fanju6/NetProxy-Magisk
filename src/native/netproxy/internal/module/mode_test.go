@@ -34,7 +34,7 @@ func writeModeConfig(t *testing.T, options Options, mode string) {
 		t.Fatal(err)
 	}
 	name, _ := json.Marshal(mode)
-	content := `{"experimental":{"clash_api":{"default_mode":` + string(name) + `,"secret":"fixture"},"cache_file":{"enabled":true}},"route":{"rules":[{"clash_mode":"Direct","action":"route","outbound":"direct"},{"clash_mode":"Office"},{"domain":"example.test","outbound":"Proxy"}]},"custom":{"keep":true}}`
+	content := `{"experimental":{"clash_api":{"default_mode":` + string(name) + `,"secret":"fixture"},"cache_file":{"enabled":true}},"outbounds":[{"type":"direct","tag":"direct"}],"route":{"rules":[{"clash_mode":"Direct","action":"route","outbound":"direct"},{"clash_mode":"Office"},{"domain":"example.test","outbound":"Proxy"}]},"custom":{"keep":true}}`
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}

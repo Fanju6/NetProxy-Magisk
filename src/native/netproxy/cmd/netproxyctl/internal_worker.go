@@ -256,6 +256,7 @@ func configureWorkerCallbacks(options *worker.Options, moduleDir, catalogRoot, m
 	moduleOptions.ProgressDir = progressDir
 	moduleOptions.WorkerPIDFile = pidFile
 	options.NetworkWatchEnabled = true
+	options.GuardProviderCommit = moduleapp.ProviderCommitGuard(moduleOptions)
 	if moduleOptions.Telemetry != nil {
 		options.Telemetry = moduleOptions.Telemetry
 		options.CoreRunning = func() bool {

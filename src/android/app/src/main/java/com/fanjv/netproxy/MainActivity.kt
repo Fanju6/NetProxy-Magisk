@@ -56,7 +56,8 @@ import com.fanjv.netproxy.feature.about.presentation.AboutScreen
 import com.fanjv.netproxy.feature.apps.presentation.AppsScreen
 import com.fanjv.netproxy.feature.catalog.presentation.nodes.CatalogNodesViewModel
 import com.fanjv.netproxy.feature.catalog.presentation.nodes.edit.SingBoxNodeEditScreen
-import com.fanjv.netproxy.feature.catalog.presentation.nodes.list.CatalogNodesScreen
+import com.fanjv.netproxy.feature.proxy.presentation.PolicyGroupEditorScreen
+import com.fanjv.netproxy.feature.proxy.presentation.PolicyScreen
 import com.fanjv.netproxy.feature.catalog.presentation.subscriptions.SubscriptionDetailsScreen
 import com.fanjv.netproxy.feature.catalog.presentation.subscriptions.SubscriptionEditorScreen
 import com.fanjv.netproxy.feature.catalog.presentation.subscriptions.SubscriptionsScreen
@@ -81,6 +82,7 @@ import com.fanjv.netproxy.navigation.Route.KernelSettings
 import com.fanjv.netproxy.navigation.Route.Logs
 import com.fanjv.netproxy.navigation.Route.Main
 import com.fanjv.netproxy.navigation.Route.NodeEdit
+import com.fanjv.netproxy.navigation.Route.PolicyGroupEdit
 import com.fanjv.netproxy.navigation.Route.InboundSettings
 import com.fanjv.netproxy.navigation.Route.NetworkMatching
 import com.fanjv.netproxy.navigation.Route.RoutingRules
@@ -217,6 +219,12 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
                             nodeRef = it.nodeRef,
                             onBack = { navigator.pop() }
                         )
+                    }
+                }
+                entry<PolicyGroupEdit> { route ->
+                    val title = if (route.tag == null) R.string.policy_add_group else R.string.policy_edit_group
+                    ModulePage(title, R.string.nodes_read_failed, { navigator.pop() }) {
+                        PolicyGroupEditorScreen(tag = route.tag, onBack = { navigator.pop() })
                     }
                 }
                 entry<InboundSettings> {
@@ -395,23 +403,17 @@ private fun MainPager(
                         bottomPadding = bottomPadding,
                         isActive = mainPagerState.selectedPage == pageIndex,
                         onReconnect = onReconnect,
-                        onNavigateToNodes = {
-                            val nodesIndex = destinations.indexOf(AppDestination.Nodes)
-                            if (nodesIndex != -1) {
-                                mainPagerState.animateToPage(nodesIndex)
-                            }
-                        }
                     )
 
-                    AppDestination.Nodes -> CatalogNodesScreen(
+                    AppDestination.Nodes -> PolicyScreen(
                         bottomPadding = bottomPadding,
-                        isActive = mainPagerState.selectedPage == pageIndex,
-                        viewModel = catalogNodesViewModel
+                        isActive = mainPagerState.selectedPage == pageIndex
                     )
 
                     AppDestination.Subscriptions -> SubscriptionsScreen(
                         bottomPadding = bottomPadding,
-                        isActive = mainPagerState.selectedPage == pageIndex
+                        isActive = mainPagerState.selectedPage == pageIndex,
+                        nodes = catalogNodesViewModel,
                     )
 
                     AppDestination.Settings -> SettingsScreen(

@@ -35,7 +35,7 @@ func testReporter(t testing.TB) *Reporter {
 }
 
 func TestStartFailureStages(t *testing.T) {
-	for _, stage := range []string{"launch", "cgroup", "state", "ready", "selection", "mode"} {
+	for _, stage := range []string{"launch", "cgroup", "state", "ready", "mode"} {
 		t.Run(stage, func(t *testing.T) {
 			r := testReporter(t)
 			if err := r.RecordStart(time.Now(), time.Second, stage, false); err != nil {

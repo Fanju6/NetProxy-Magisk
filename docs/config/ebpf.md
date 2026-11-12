@@ -38,7 +38,7 @@ eBPF 参数保存在 `config/inbound/inbound.json` 的 `ebpf` 对象。完整结
 
 ## 数据路径
 
-`local.enabled` 与 `shared.enabled` 独立控制本机和共享网络，选择 eBPF 时至少开启一条。关闭的路径仍能保存全部偏好，但生成的 `runtime/inbound.json` 中该路径只包含 `{"enabled": false}`，不会把未启用的接口、DNS 或筛选参数交给核心。
+`local.enabled` 与 `shared.enabled` 独立控制本机和共享网络，选择 eBPF 时至少开启一条。关闭的路径仍能保存全部偏好，但生成的 `runtime/config.json` 中该路径只包含 `{"enabled": false}`，不会把未启用的接口、DNS 或筛选参数交给核心。
 
 NetProxy 将两条路径省略或留空的 `data_plane` 均解析为 `socket_assign`，并在启用路径的运行时配置中显式输出；这不同于直接使用 sing-box 时的原生缺省值。已有显式 `cgroup` 或 `packet_rewrite` 不会被覆盖。管理器在本机和共享网络分组分别选择数据平面，不提供“内核默认”选项。
 

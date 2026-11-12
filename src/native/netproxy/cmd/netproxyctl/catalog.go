@@ -2,13 +2,11 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
-	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 )
 
 func (c *cli) catalog(ctx context.Context, args []string) error {
@@ -30,16 +28,8 @@ func (c *cli) catalog(ctx context.Context, args []string) error {
 
 func (c *cli) catalogSnapshot(ctx context.Context, group string, withNodes bool) error {
 	options := c.options
-	active := ""
-	module, err := moduleconfig.LoadModule(options.ModuleConfig)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	if err == nil {
-		active = module.ActiveGroupID
-	}
 	groups, err := catalog.Scan(ctx, catalog.ScanOptions{
-		Root: options.CatalogRoot, ActiveGroup: active, ProgressDir: options.ProgressDir,
+		Root: options.CatalogRoot, ProgressDir: options.ProgressDir,
 		Type: "all", WithNodes: withNodes, GroupID: group,
 	})
 	if err != nil {

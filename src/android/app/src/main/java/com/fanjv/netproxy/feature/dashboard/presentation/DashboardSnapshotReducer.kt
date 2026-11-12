@@ -50,8 +50,6 @@ internal class DashboardSnapshotReducer(
             uptimeSeconds = displayedUptime,
             outboundMode = service.outboundMode,
             availableOutboundModes = service.availableOutboundModes.toList(),
-            activeGroupId = service.activeGroupId,
-            currentNode = dashboardNodeName(service),
             downloadTotal = traffic.first,
             uploadTotal = traffic.second,
             cpuUsage = cpuUsage,

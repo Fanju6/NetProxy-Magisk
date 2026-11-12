@@ -67,11 +67,16 @@ async function request(path, method = 'GET', body) {
   return result.data
 }
 
-const service = await request('/service')
-await request('/selection', 'PUT', { group_id: 'default', node_tag: '' })
+const snapshot = await request('/policy-groups')
+if (snapshot.live) {
+  await request('/policy-groups/select', 'POST', {
+    core_started_at_millis: snapshot.core_started_at_millis,
+    group_tag: 'Proxy', member_tag: 'np/default/Example'
+  })
+}
 ```
 
-空 `node_tag` 使用同组 Auto。手动选择传原始节点标签，不把节点标签拼到 URL 路径中。
+选择使用策略组快照中的完整成员标签，不把标签拼到 URL 路径中。
 
 ## 配置保存
 
@@ -98,19 +103,20 @@ HTTP 保存必须提供读取时的 revision。发生 `config.conflict` 时重�
 | 方法与路径 | 用途 |
 | --- | --- |
 | `GET /info` | 模块版本、API 版本、后台实例身份与 Go 堆/栈内存字节数 |
-| `GET /service` | 服务状态、实际后端、模式与当前节点 |
+| `GET /service` | 服务状态、实际后端与模式 |
 | `POST /service/start`、`stop`、`restart`、`reload`、`check` | 对应服务操作，无正文或传空对象 |
 | `GET /catalog` | 持久分组摘要 |
 | `GET /nodes?group_id=...` | 分组节点 |
-| `GET /nodes/snapshot?group_id=...` | 持久节点与运行时快照 |
 | `GET /nodes/get?group_id=...&node_tag=...` | 节点原生配置 |
 | `GET /nodes/export?group_id=...&node_tag=...` | 节点分享内容 |
 | `POST /nodes` | 添加节点，正文含 `group_id/content/allow_insecure` |
 | `PUT /nodes` | 编辑节点，另含原节点 `node_tag` |
 | `DELETE /nodes?group_id=...&node_tag=...` | 删除节点 |
 | `POST /nodes/import` | 导入文本，正文含 `content/allow_insecure` |
-| `POST /nodes/delay` | 测速，正文含 `group_id/node_tag`；空 tag 测整个分组 |
-| `GET/PUT /selection` | 查询或保存节点选择 |
+| `GET /policy-groups` | 读取原生 sing-box 策略组快照 |
+| `GET /policy-groups?source=config` | 只从本地 sing-box 配置与 Catalog 读取组和成员；不访问核心控制接口，不返回实时选中状态 |
+| `POST /policy-groups/select` | 切换指定 Selector 的成员并回读确认 |
+| `POST /policy-groups/delay` | 请求核心异步对指定策略组测速 |
 | `GET/PUT /mode` | 查询或保存内核原生模式；正文为 `{"mode":"Rule"}` 等 |
 | `GET/POST /subscriptions` | 本地与订阅分组列表，或添加 URL 订阅 |
 | `GET/PUT/DELETE /subscriptions/{id}` | 查询分组详情，或编辑、删除 URL 订阅；`?private=true` 仅读取 URL 订阅私有设置 |
@@ -133,7 +139,9 @@ HTTP 保存必须提供读取时的 revision。发生 `config.conflict` 时重�
 
 订阅添加与编辑支持 `name/url/user_agent/hwid/custom_headers/auto_update/update_interval/update_via_proxy/include/exclude/allow_insecure/download_timeout`。`update_interval` 与 `download_timeout` 使用秒；下载方式为 `auto/always/never`，分别对应自动、代理、直连。编辑时省略字段保留原值，清空请求头使用空对象，而不是 null。
 
-`subscriptions` 事件与列表接口返回同一组摘要，包含“本地配置”和活动分组状态；更新订阅操作只处理 URL 订阅。
+`subscriptions` 事件与列表接口返回同一组摘要，包含本地资源与 URL 订阅；更新订阅操作只处理 URL 订阅。
+
+策略组快照中，`live=true` 表示分组、成员和 `selected` 来自当前核心。停止态读取主配置定义的组、显式成员、引用的持久化 Catalog 成员和 `configured_default`。无法离线展开的 Provider 列在 `unavailable_providers`；不返回运行时选择或延迟，也不访问外部 Provider。选择与测速均须传快照的 `core_started_at_millis` 和原始 `group_tag`；选择还须传 `member_tag`。`policy.delay_requested` 仅代表核心接受测速，不表示结果已更新。核心变更返回 `409`；如果返回 `policy.outcome_unknown`，请重新读取快照核对，不自动重发写入。
 
 接口不接受手机的输入或输出文件路径。节点导入传文件内容；诊断导出直接下载，不能指定设备写入位置。
 
@@ -149,7 +157,7 @@ HTTP 保存必须提供读取时的 revision。发生 `config.conflict` 时重�
 
 - `status`：模块服务状态。
 - `traffic`：核心实时状态及 CPU 计数，属于 `status` 主题；`available=false` 表示核心不可用。
-- `groups`：节点快照与实际选择。
+- `groups`：原生策略组快照，运行态携带核心实例标识。
 - `subscriptions`：订阅状态与更新进度。
 
 连接后先发快照，再发送变化。核心重载后重新订阅新实例；关闭核心不关闭模块事件入口。断线重新获取完整快照，不依赖历史事件回放。

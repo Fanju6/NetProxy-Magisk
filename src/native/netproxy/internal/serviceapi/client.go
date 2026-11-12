@@ -84,12 +84,14 @@ type GroupItem struct {
 }
 
 type Group struct {
-	Tag        string      `json:"tag"`
-	Type       string      `json:"type"`
-	Selectable bool        `json:"selectable"`
-	Selected   string      `json:"selected,omitempty"`
-	Expanded   bool        `json:"expanded"`
-	Items      []GroupItem `json:"items"`
+	Tag                  string      `json:"tag"`
+	Type                 string      `json:"type"`
+	Selectable           bool        `json:"selectable"`
+	Selected             string      `json:"selected,omitempty"`
+	Expanded             bool        `json:"expanded"`
+	Items                []GroupItem `json:"items"`
+	ConfiguredDefault    string      `json:"configured_default,omitempty"`
+	UnavailableProviders []string    `json:"unavailable_providers,omitempty"`
 }
 
 type emptyMessage struct{}
@@ -262,15 +264,6 @@ func (c *Client) SetMode(ctx context.Context, mode string) error {
 
 func (c *Client) Select(ctx context.Context, group string, outbound string) error {
 	return c.invoke(ctx, methodSelectOutbound, &selectOutboundRequest{Group: group, Outbound: outbound}, &emptyMessage{})
-}
-
-func (c *Client) SelectGroup(ctx context.Context, group, node string) error {
-	if node != "" {
-		if err := c.Select(ctx, group, node); err != nil {
-			return err
-		}
-	}
-	return c.Select(ctx, "Proxy", group)
 }
 
 func (c *Client) URLTest(ctx context.Context, outbound string) error {

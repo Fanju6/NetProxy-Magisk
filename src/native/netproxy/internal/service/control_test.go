@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -51,7 +50,7 @@ func writeCatalogFixture(t *testing.T, root string) {
 func TestReadStatusWithoutService(t *testing.T) {
 	temp := t.TempDir()
 	moduleConfig := filepath.Join(temp, "module.json")
-	if err := os.WriteFile(moduleConfig, []byte("{\"selection\":{\"group_id\":\"default\",\"node_tag\":\"\"}}"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConfig, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	status, err := ReadStatus(context.Background(), Options{SingBoxConfig: modeConfigFixture(t, temp, "Proxy"),
@@ -63,7 +62,7 @@ func TestReadStatusWithoutService(t *testing.T) {
 		t.Fatal(err)
 	}
 	if status.State != "stopped" || status.OutboundMode != "Proxy" ||
-		status.ConfiguredOutboundMode != "Proxy" || status.ActiveGroupID != "default" {
+		status.ConfiguredOutboundMode != "Proxy" {
 		t.Fatalf("停止服务时应回退到配置模式: %#v", status)
 	}
 	if status.PID != nil || status.WorkerState != "stopped" {
@@ -84,10 +83,10 @@ func TestReadStatusWithoutService(t *testing.T) {
 	}
 }
 
-func TestReadStatusPropagatesCatalogLockDeadline(t *testing.T) {
+func TestReadStatusDoesNotWaitForCatalogLock(t *testing.T) {
 	temp := t.TempDir()
 	moduleConfig := filepath.Join(temp, "module.json")
-	if err := os.WriteFile(moduleConfig, []byte("{\"selection\":{\"group_id\":\"default\"}}"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConfig, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	root := filepath.Join(temp, "catalog")
@@ -104,8 +103,8 @@ func TestReadStatusPropagatesCatalogLockDeadline(t *testing.T) {
 		ProgressDir:   filepath.Join(temp, "subscriptions"),
 		WorkerPIDFile: filepath.Join(temp, "worker.pid"),
 	})
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("等锁超时不能转换成成功的服务状态: %v", err)
+	if err != nil {
+		t.Fatalf("读取状态不应等待 Catalog 锁: %v", err)
 	}
 }
 
@@ -185,7 +184,7 @@ func TestReadStatusFetchesIndependentServiceAPISnapshotsConcurrently(t *testing.
 	moduleConfig := filepath.Join(temp, "module.json")
 	stateFile := filepath.Join(temp, "service.json")
 	writeCatalogFixture(t, catalogRoot)
-	if err := os.WriteFile(moduleConfig, []byte("{\"selection\":{\"group_id\":\"default\"}}"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConfig, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	writeReadyServiceState(t, stateFile, 123)
@@ -314,48 +313,6 @@ func TestProcessMatchingDoesNotMatchControlCommand(t *testing.T) {
 	}
 }
 
-func TestReadGroupsUnavailable(t *testing.T) {
-	_, err := ReadGroups(context.Background(), Options{
-		ServiceAddress: "127.0.0.1:1",
-		RequestTimeout: 10,
-	})
-	if err == nil {
-		t.Fatal("expected an unavailable Service API error")
-	}
-}
-
-func TestReadSelectionAndSnapshotWithoutService(t *testing.T) {
-	temp := t.TempDir()
-	catalogRoot := filepath.Join(temp, "catalog")
-	moduleConfig := filepath.Join(temp, "module.json")
-	writeCatalogFixture(t, catalogRoot)
-	if err := os.WriteFile(moduleConfig, []byte("{\"selection\":{\"group_id\":\"default\",\"node_tag\":\"\"}}"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	options := Options{CatalogRoot: catalogRoot, ModuleConfig: moduleConfig}
-	selection, err := ReadSelection(context.Background(), options)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if selection.Selected != "Auto/本地配置" || selection.ActiveGroupName != "本地配置" || selection.ActiveGroupNodeCount != 1 {
-		t.Fatalf("unexpected automatic selection: %#v", selection)
-	}
-	if err := os.WriteFile(moduleConfig, []byte("{\"selection\":{\"group_id\":\"default\",\"node_tag\":\"NODE\"}}"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	selection, err = ReadSelection(context.Background(), options)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if selection.Selected != "default/NODE" || selection.SelectedNodeRef != "default/NODE" {
-		t.Fatalf("unexpected manual selection: %#v", selection)
-	}
-	snapshot, err := ReadSnapshot(context.Background(), options, "本地配置")
-	if err != nil || len(snapshot.Groups) != 1 || snapshot.Selection.Selected != "default/NODE" {
-		t.Fatalf("unexpected snapshot: %#v, err=%v", snapshot, err)
-	}
-}
-
 func TestReadModeWithoutService(t *testing.T) {
 	temp := t.TempDir()
 	moduleConfig := filepath.Join(temp, "module.json")
@@ -368,34 +325,12 @@ func TestReadModeWithoutService(t *testing.T) {
 	}
 }
 
-func TestDelayTargetResolution(t *testing.T) {
+func TestCloseAllConnectionsUnavailable(t *testing.T) {
 	temp := t.TempDir()
 	catalogRoot := filepath.Join(temp, "catalog")
 	moduleConfig := filepath.Join(temp, "module.json")
 	writeCatalogFixture(t, catalogRoot)
-	if err := os.WriteFile(moduleConfig, []byte("{\"selection\":{\"group_id\":\"default\",\"node_tag\":\"\"}}"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	options := Options{CatalogRoot: catalogRoot, ModuleConfig: moduleConfig}
-	request, err := resolveDelayRequest(context.Background(), options, "auto", "本地配置")
-	if err != nil || request.Target != "Auto/本地配置" {
-		t.Fatalf("automatic target = %q, err=%v", request.Target, err)
-	}
-	if err := os.WriteFile(moduleConfig, []byte("{\"selection\":{\"group_id\":\"default\",\"node_tag\":\"NODE\"}}"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	request, err = resolveDelayRequest(context.Background(), options, "", "")
-	if err != nil || request.Target != "本地配置/NODE" {
-		t.Fatalf("manual target = %q, err=%v", request.Target, err)
-	}
-}
-
-func TestDelayAndCloseAllConnectionsUnavailable(t *testing.T) {
-	temp := t.TempDir()
-	catalogRoot := filepath.Join(temp, "catalog")
-	moduleConfig := filepath.Join(temp, "module.json")
-	writeCatalogFixture(t, catalogRoot)
-	if err := os.WriteFile(moduleConfig, []byte("{\"selection\":{\"group_id\":\"default\",\"node_tag\":\"\"}}"), 0o600); err != nil {
+	if err := os.WriteFile(moduleConfig, []byte("{}"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	options := Options{
@@ -403,9 +338,6 @@ func TestDelayAndCloseAllConnectionsUnavailable(t *testing.T) {
 		ModuleConfig:   moduleConfig,
 		ServiceAddress: "127.0.0.1:1",
 		RequestTimeout: 10 * time.Millisecond,
-	}
-	if _, err := Delay(context.Background(), options, "auto", "default"); err == nil {
-		t.Fatal("expected URLTest to fail when Service API is unavailable")
 	}
 	if err := CloseAllConnections(context.Background(), options); err == nil {
 		t.Fatal("expected close-all to fail when Service API is unavailable")

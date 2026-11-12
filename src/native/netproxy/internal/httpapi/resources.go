@@ -3,10 +3,8 @@ package httpapi
 import (
 	"context"
 	"encoding/json/jsontext"
-	"errors"
 	"net/http"
 	"net/url"
-	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -14,7 +12,6 @@ import (
 	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
-	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/contract"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
@@ -42,17 +39,16 @@ func (s *Server) registerResources() {
 		})
 	}
 	s.route("GET /api/v1/catalog", resourceReadTimeout, false, s.readCatalog)
+	s.route("GET /api/v1/policy-groups", resourceReadTimeout, false, s.readPolicyGroups)
+	s.route("POST /api/v1/policy-groups/select", resourceWriteTimeout, false, s.selectPolicyGroup)
+	s.route("POST /api/v1/policy-groups/delay", resourceWriteTimeout, true, s.requestPolicyDelay)
 	s.route("GET /api/v1/nodes", resourceReadTimeout, false, s.readNodes)
-	s.route("GET /api/v1/nodes/snapshot", resourceReadTimeout, false, s.readNodeSnapshot)
 	s.route("GET /api/v1/nodes/get", resourceReadTimeout, false, s.readNode)
 	s.route("GET /api/v1/nodes/export", resourceReadTimeout, false, s.exportNode)
 	s.route("POST /api/v1/nodes", resourceWriteTimeout, true, s.addNode)
 	s.route("PUT /api/v1/nodes", resourceWriteTimeout, true, s.editNode)
 	s.route("DELETE /api/v1/nodes", resourceWriteTimeout, true, s.removeNode)
 	s.route("POST /api/v1/nodes/import", resourceWriteTimeout, true, s.importNodes)
-	s.route("POST /api/v1/nodes/delay", resourceWriteTimeout, true, s.delayNodes)
-	s.route("GET /api/v1/selection", resourceReadTimeout, false, s.readSelection)
-	s.route("PUT /api/v1/selection", resourceWriteTimeout, false, s.saveSelection)
 	s.route("GET /api/v1/mode", resourceReadTimeout, false, s.readMode)
 	s.route("PUT /api/v1/mode", resourceWriteTimeout, true, s.saveMode)
 	s.route("GET /api/v1/subscriptions", resourceReadTimeout, false, s.listSubscriptions)
@@ -85,16 +81,8 @@ func (s *Server) readService(ctx context.Context, r *http.Request) (contract.Res
 }
 
 func (s *Server) catalogSummaries(ctx context.Context) ([]catalog.GroupSummary, error) {
-	active := ""
-	config, err := moduleconfig.LoadModule(s.options.ModuleConfig)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, err
-	}
-	if err == nil {
-		active = config.ActiveGroupID
-	}
 	groups, err := catalog.Scan(ctx, catalog.ScanOptions{
-		Root: s.options.CatalogRoot, Type: "all", ActiveGroup: active, ProgressDir: s.options.ProgressDir,
+		Root: s.options.CatalogRoot, Type: "all", ProgressDir: s.options.ProgressDir,
 	})
 	if err != nil {
 		return nil, err
@@ -121,15 +109,6 @@ func (s *Server) readNodes(ctx context.Context, r *http.Request) (contract.Resul
 	}
 	data, err := service.ReadNodes(ctx, s.controlOptions(), group)
 	return contract.Success("node.list", "节点列表", data), err
-}
-
-func (s *Server) readNodeSnapshot(ctx context.Context, r *http.Request) (contract.Result, error) {
-	group, err := resourceGroupQuery(r)
-	if err != nil {
-		return contract.Result{}, err
-	}
-	data, err := service.ReadSnapshot(ctx, s.controlOptions(), group)
-	return contract.Success("node.snapshot", "节点快照", data), err
 }
 
 func (s *Server) readNode(ctx context.Context, r *http.Request) (contract.Result, error) {
@@ -224,52 +203,6 @@ func (s *Server) importNodes(ctx context.Context, r *http.Request) (contract.Res
 	}
 	data, err := module.NodeImportContent(ctx, s.options, []byte(input.Content), input.AllowInsecure)
 	return contract.Success("node.imported", "文件节点已加入本地配置", data), err
-}
-
-func (s *Server) delayNodes(ctx context.Context, r *http.Request) (contract.Result, error) {
-	var input struct {
-		GroupID string `json:"group_id"`
-		NodeTag string `json:"node_tag"`
-	}
-	if err := resourceDecode(r, &input); err != nil {
-		return contract.Result{}, err
-	}
-	if err := resourceGroupID(input.GroupID, false); err != nil {
-		return contract.Result{}, err
-	}
-	target := "auto"
-	if input.NodeTag != "" {
-		target = input.GroupID + "/" + input.NodeTag
-	}
-	data, err := service.Delay(ctx, s.controlOptions(), target, input.GroupID)
-	return contract.Success("node.delay", "节点测速完成", data), err
-}
-
-func (s *Server) readSelection(ctx context.Context, r *http.Request) (contract.Result, error) {
-	if _, err := resourceQuery(r); err != nil {
-		return contract.Result{}, err
-	}
-	data, err := service.ReadSelection(ctx, s.controlOptions())
-	return contract.Success("node.current", "当前节点选择", data), err
-}
-
-func (s *Server) saveSelection(ctx context.Context, r *http.Request) (contract.Result, error) {
-	var input struct {
-		GroupID string `json:"group_id"`
-		NodeTag string `json:"node_tag"`
-	}
-	if err := resourceDecode(r, &input); err != nil {
-		return contract.Result{}, err
-	}
-	if err := resourceGroupID(input.GroupID, false); err != nil {
-		return contract.Result{}, err
-	}
-	target := "auto"
-	if input.NodeTag != "" {
-		target = input.GroupID + "/" + input.NodeTag
-	}
-	data, err := module.SelectNode(ctx, s.options, target, input.GroupID)
-	return contract.Success("node.selected", "节点选择已更新", data), err
 }
 
 func (s *Server) readMode(ctx context.Context, r *http.Request) (contract.Result, error) {
@@ -406,11 +339,7 @@ func (s *Server) showSubscription(ctx context.Context, r *http.Request) (contrac
 	if err := resourceGroupID(id, false); err != nil {
 		return contract.Result{}, err
 	}
-	settings, err := moduleconfig.LoadModule(s.options.ModuleConfig)
-	if err != nil {
-		return contract.Result{}, err
-	}
-	groups, err := catalog.Scan(ctx, catalog.ScanOptions{Root: s.options.CatalogRoot, GroupID: id, ActiveGroup: settings.ActiveGroupID, ProgressDir: s.options.ProgressDir, WithNodes: true})
+	groups, err := catalog.Scan(ctx, catalog.ScanOptions{Root: s.options.CatalogRoot, GroupID: id, ProgressDir: s.options.ProgressDir, WithNodes: true})
 	if err != nil {
 		return contract.Result{}, err
 	}
@@ -447,18 +376,14 @@ func (s *Server) removeSubscription(ctx context.Context, r *http.Request) (contr
 	if err := resourceEmptyBody(r); err != nil {
 		return contract.Result{}, err
 	}
-	query, err := resourceQuery(r, "replacement_group_id")
-	if err != nil {
-		return contract.Result{}, err
-	}
-	if err := resourceGroupID(query.Get("replacement_group_id"), true); err != nil {
+	if _, err := resourceQuery(r); err != nil {
 		return contract.Result{}, err
 	}
 	metadata, err := s.subscriptionMetadata(ctx, r)
 	if err != nil {
 		return contract.Result{}, err
 	}
-	err = module.RemoveSubscription(ctx, s.options, metadata.ID, query.Get("replacement_group_id"))
+	err = module.RemoveSubscription(ctx, s.options, metadata.ID)
 	return contract.Success("subscription.removed", "订阅已删除", map[string]string{"id": metadata.ID}), err
 }
 

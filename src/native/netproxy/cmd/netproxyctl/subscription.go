@@ -40,7 +40,7 @@ func (c *cli) subscription(ctx context.Context, args []string) error {
 	options := c.options
 	positionals := flags.Args()
 	if action == "list" {
-		groups, err := catalog.Scan(ctx, catalog.ScanOptions{Root: options.CatalogRoot, Type: "subscription", ActiveGroup: readActiveGroup(options), ProgressDir: options.ProgressDir, WithNodes: false})
+		groups, err := catalog.Scan(ctx, catalog.ScanOptions{Root: options.CatalogRoot, Type: "subscription", ProgressDir: options.ProgressDir, WithNodes: false})
 		if err != nil {
 			return err
 		}
@@ -169,26 +169,14 @@ func (c *cli) subscription(ctx context.Context, args []string) error {
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "subscription.updated_all", Message: "全部订阅更新完成", Data: summary})
 		return nil
 	}
-	if action == "activate" {
-		if len(positionals) == 0 {
-			return errors.New("sub activate 需要订阅")
-		}
-		data, err := moduleapp.SelectNode(ctx, options, "auto", positionals[0])
-		if err != nil {
-			return err
-		}
-		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "subscription.activated", Message: "活动订阅已切换", Data: data})
-		return nil
-	}
 	if action == "remove" {
 		if len(positionals) == 0 {
 			return errors.New("sub remove 需要订阅")
 		}
-		replacement := ""
-		if len(positionals) > 1 {
-			replacement = positionals[1]
+		if len(positionals) != 1 {
+			return usageError("sub remove <资源 ID>")
 		}
-		if err := moduleapp.RemoveSubscription(ctx, options, positionals[0], replacement); err != nil {
+		if err := moduleapp.RemoveSubscription(ctx, options, positionals[0]); err != nil {
 			return err
 		}
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "subscription.removed", Message: "订阅已删除", Data: map[string]string{"id": positionals[0]}})
@@ -242,7 +230,7 @@ func (c *cli) subscription(ctx context.Context, args []string) error {
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "subscription.show", Message: "订阅详情", Data: groups[0]})
 		return nil
 	}
-	return fmt.Errorf("未知 sub 操作 %q", action)
+	return usageError(fmt.Sprintf("未知 sub 操作 %q", action))
 }
 
 func flagWasSet(flags *flag.FlagSet, name string) bool {

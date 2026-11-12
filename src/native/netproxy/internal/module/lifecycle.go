@@ -161,15 +161,12 @@ func StartService(ctx context.Context, options Options) (err error) {
 	if err := writeServiceState(options.StateFile, "preparing", 0, 0, 0, ""); err != nil {
 		return err
 	}
-	prepared, err := Prepare(ctx, options, false)
+	prepared, err := Prepare(ctx, options)
 	if err != nil {
 		return failServiceStart(options, 0, 0, "运行时配置生成失败", err)
 	}
 	if err := checkPreparedConfiguration(ctx, options, prepared); err != nil {
 		return failServiceStart(options, 0, 0, "sing-box 配置检查失败", err)
-	}
-	if err := options.updateSelection(ctx, prepared.Selection); err != nil {
-		return failServiceStart(options, 0, 0, "运行时选择状态同步失败", err)
 	}
 	return startPreparedService(ctx, options, prepared)
 }
@@ -215,10 +212,6 @@ func startPreparedService(ctx context.Context, options Options, prepared Prepare
 		return failServiceStart(options, pid, startedAt, "核心或控制接口未在限定时间内就绪", err)
 	}
 	startedAt = actualStartedAt / 1000
-	stage = "selection"
-	if err := syncSelection(ctx, options); err != nil {
-		return failServiceStart(options, pid, startedAt, "运行时节点选择同步失败", err)
-	}
 	stage = "mode"
 	if _, err := syncConfiguredMode(ctx, options); err != nil {
 		return failServiceStart(options, pid, startedAt, "运行时出站模式同步失败", err)
@@ -292,36 +285,33 @@ func ReloadService(ctx context.Context, options Options) error {
 		return &inbound.ValidationError{Diagnostics: []inbound.Diagnostic{{Level: "error", Code: "inbound.restart_required", Message: "运行后端与配置不同，请通过入站设置切换或重启服务"}}}
 	}
 	logService(options, "INFO", "service.reload", "started", "重新加载 sing-box 配置")
-	prepared, err := Prepare(ctx, options, false)
+	prepared, err := Prepare(ctx, options)
 	if err != nil {
 		return fmt.Errorf("重新加载配置生成失败: %w", err)
 	}
 	if err := checkPreparedConfiguration(ctx, options, prepared); err != nil {
 		return err
 	}
-	return reloadPreparedService(ctx, options, prepared, true)
+	return reloadPreparedService(ctx, options, prepared)
 }
 
 func reloadAppliedConfig(ctx context.Context, options Options) error {
-	prepared, err := Prepare(ctx, options, false)
+	prepared, err := Prepare(ctx, options)
 	if err != nil {
 		return fmt.Errorf("重新加载配置生成失败: %w", err)
 	}
 	if err := checkPreparedConfiguration(ctx, options, prepared); err != nil {
 		return err
 	}
-	return reloadPreparedService(ctx, options, prepared, true)
+	return reloadPreparedService(ctx, options, prepared)
 }
 
 func startAppliedConfig(ctx context.Context, options Options) error {
-	prepared, err := Prepare(ctx, options, false)
+	prepared, err := Prepare(ctx, options)
 	if err != nil {
 		return err
 	}
 	if err := checkPreparedConfiguration(ctx, options, prepared); err != nil {
-		return err
-	}
-	if err := options.updateSelection(ctx, prepared.Selection); err != nil {
 		return err
 	}
 	return startPreparedService(ctx, options, prepared)
@@ -329,25 +319,16 @@ func startAppliedConfig(ctx context.Context, options Options) error {
 
 func reloadConfigSnapshot(ctx context.Context, options Options, journal configApplyJournal) error {
 	prepared := prepareFromConfigJournal(options, journal)
-	for name, path := range map[string]string{
-		"providers": prepared.Providers,
-		"outbounds": prepared.Outbounds,
-		"inbound":   prepared.Inbound,
-	} {
-		if path == "" {
-			return fmt.Errorf("旧运行时快照缺少 %s", name)
-		}
-		if _, err := os.Stat(path); err != nil {
-			return fmt.Errorf("旧运行时快照 %s 不可用: %w", name, err)
-		}
+	if _, err := os.Stat(prepared.Config); err != nil {
+		return fmt.Errorf("旧运行时配置快照不可用: %w", err)
 	}
 	if !service.ProcessRunning(options.SingBoxPath) {
 		return startPreparedService(ctx, options, prepared)
 	}
-	return reloadPreparedService(ctx, options, prepared, false)
+	return reloadPreparedService(ctx, options, prepared)
 }
 
-func reloadPreparedService(ctx context.Context, options Options, prepared PrepareResult, synchronizeSelection bool) error {
+func reloadPreparedService(ctx context.Context, options Options, prepared PrepareResult) error {
 	options.networkEvaluation = prepared.Network
 	state, _ := ReadServiceState(options.StateFile)
 	pid := service.FindProcess(options.SingBoxPath, int(state.PID))
@@ -368,14 +349,6 @@ func reloadPreparedService(ctx context.Context, options Options, prepared Prepar
 	startedAt, err := waitForServiceReady(ctx, options, pid, serviceReadyTimeout, oldStartedAtMillis)
 	if err != nil {
 		return restoreReloadState(ctx, options, pid, oldStartedAt, state.ReadyAt, err)
-	}
-	if synchronizeSelection {
-		if err := options.updateSelection(ctx, prepared.Selection); err != nil {
-			return restoreReloadState(ctx, options, pid, startedAt/1000, state.ReadyAt, err)
-		}
-		if err := syncSelection(ctx, options); err != nil {
-			return restoreReloadState(ctx, options, pid, startedAt/1000, state.ReadyAt, err)
-		}
 	}
 	if _, err := syncConfiguredMode(ctx, options); err != nil {
 		return restoreReloadState(ctx, options, pid, startedAt/1000, state.ReadyAt, err)
@@ -412,7 +385,7 @@ func CheckService(ctx context.Context, options Options) error {
 	defer os.RemoveAll(temporary)
 	checkOptions := options
 	checkOptions.RuntimeDir = temporary
-	prepared, err := Prepare(ctx, checkOptions, true)
+	prepared, err := Prepare(ctx, checkOptions)
 	if err != nil {
 		return err
 	}
@@ -513,8 +486,7 @@ func newSingBoxCommand(options Options, prepared PrepareResult) (*exec.Cmd, *os.
 	if err != nil {
 		return nil, nil, err
 	}
-	command := exec.Command(options.SingBoxPath, "run", "--disable-color", "-c", paths.SingBoxConfig(options.SingBoxDir),
-		"-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.Inbound)
+	command := exec.Command(options.SingBoxPath, "run", "--disable-color", "-c", prepared.Config)
 	command.Dir = options.SingBoxDir
 	command.Stdout = logFile
 	command.Stderr = logFile
@@ -523,8 +495,7 @@ func newSingBoxCommand(options Options, prepared PrepareResult) (*exec.Cmd, *os.
 }
 
 func checkPreparedConfiguration(ctx context.Context, options Options, prepared PrepareResult) error {
-	command := exec.CommandContext(ctx, options.SingBoxPath, "check", "--disable-color", "-c", paths.SingBoxConfig(options.SingBoxDir),
-		"-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.Inbound)
+	command := exec.CommandContext(ctx, options.SingBoxPath, "check", "--disable-color", "-c", prepared.Config)
 	command.Dir = options.SingBoxDir
 	command.Stdout = os.Stderr
 	command.Stderr = os.Stderr
@@ -645,9 +616,7 @@ func restoreReloadState(_ context.Context, options Options, pid int, startedAt, 
 }
 
 func cleanupRuntimeFiles(options Options) {
-	for _, name := range []string{"providers.json", "outbounds.json", "inbound.json"} {
-		_ = os.Remove(filepath.Join(options.RuntimeDir, name))
-	}
+	_ = os.Remove(paths.RuntimeConfig(options.RuntimeDir))
 }
 
 func logService(options Options, level, event, result, format string, args ...any) {

@@ -10,8 +10,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 )
 
 func TestBootCompletedWaitCommandWaitsForPropertyToLeaveZero(t *testing.T) {
@@ -51,13 +49,13 @@ func TestCoreLogCommandCapturesOutputAfterParentHandleCloses(t *testing.T) {
 	if err := os.WriteFile(path, []byte("previous core\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	prepared := PrepareResult{Providers: "providers.json", Outbounds: "outbounds.json", Inbound: "inbound.json"}
+	prepared := PrepareResult{Config: "config.json"}
 	command, file, err := newSingBoxCommand(options, prepared)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer file.Close()
-	want := []string{os.Args[0], "run", "--disable-color", "-c", paths.SingBoxConfig(options.SingBoxDir), "-c", prepared.Providers, "-c", prepared.Outbounds, "-c", prepared.Inbound}
+	want := []string{os.Args[0], "run", "--disable-color", "-c", prepared.Config}
 	if !slices.Equal(command.Args, want) || command.Stdout != file || command.Stderr != file {
 		t.Fatalf("核心参数或继承句柄异常: %v", command.Args)
 	}

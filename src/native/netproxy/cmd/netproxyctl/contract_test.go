@@ -167,9 +167,9 @@ func TestPublicCommandsKeepSingleJSONContract(t *testing.T) {
 	options.WorkerPIDFile = filepath.Join(root, "state", "worker.pid")
 	options.WiFiStateFile = filepath.Join(root, "state", "wifi_state")
 	for path, content := range map[string]string{
-		options.ModuleConfig:                             "{\"selection\":{\"group_id\":\"default\"}}",
+		options.ModuleConfig:                             "{}",
 		options.InboundConfig:                            `{"backend":"ebpf","root_policy":"default","app":{"enabled":false,"mode":"blacklist","proxy_apps":[],"bypass_apps":[]},"ebpf":{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true},"shared":{"enabled":false}},"tun":{"type":"tun","tag":"netproxy-in","interface_name":"netproxy","address":["172.19.0.1/30"],"auto_route":true,"auto_redirect":true}}`,
-		filepath.Join(options.SingBoxDir, "config.json"): `{"experimental":{"clash_api":{"default_mode":"Rule"}},"route":{"rules":[{"clash_mode":["Rule","Proxy","Direct","RuleAllowAds"]}]}}`,
+		filepath.Join(options.SingBoxDir, "config.json"): `{"outbounds":[{"type":"direct","tag":"direct"},{"type":"selector","tag":"Work","outbounds":["direct"],"default":"direct"}],"experimental":{"clash_api":{"default_mode":"Rule"}},"route":{"rules":[{"clash_mode":["Rule","Proxy","Direct","RuleAllowAds"]}]}}`,
 	} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatal(err)
@@ -194,9 +194,16 @@ func TestPublicCommandsKeepSingleJSONContract(t *testing.T) {
 		{"catalog list", "catalog.groups", 0},
 		{"catalog show default", "catalog.show", 0},
 		{"node list", "node.list", 0},
-		{"node current", "node.current", 0},
-		{"node use auto default", "node.selected", 0},
-		{"node use default/NODE", "node.selected", 0},
+		{"policy groups", "policy.groups", 0},
+		{"policy select Work direct", "policy.core_changed", 1},
+		{"policy delay Work", "policy.core_changed", 1},
+		{"policy select Work", "usage.invalid", 2},
+		{"policy groups extra", "usage.invalid", 2},
+		{"node current", "usage.invalid", 2},
+		{"node snapshot", "usage.invalid", 2},
+		{"node use default/NODE", "usage.invalid", 2},
+		{"node delay auto default", "usage.invalid", 2},
+		{"sub activate default", "usage.invalid", 2},
 		{"sub list", "subscription.list", 0},
 		{"mode", "mode.current", 0},
 		{"mode Proxy", "mode.changed", 0},
@@ -245,6 +252,14 @@ func TestPublicCommandsKeepSingleJSONContract(t *testing.T) {
 			}
 			if status != test.status || response.Schema != 1 || response.OK != (status == 0) || response.Code != test.code {
 				t.Fatalf("契约不匹配: exit=%d, %s", status, payload)
+			}
+			if test.code == "policy.groups" {
+				var snapshot service.PolicySnapshot
+				if err := json.Unmarshal(response.Data, &snapshot); err != nil || snapshot.Live || snapshot.CoreStartedAtMillis != 0 ||
+					len(snapshot.Groups) != 1 || snapshot.Groups[0].Tag != "Work" || snapshot.Groups[0].ConfiguredDefault != "direct" ||
+					snapshot.Groups[0].Selected != "" || snapshot.Groups[0].Selectable {
+					t.Fatalf("停止态策略组快照不正确: %s: %v", response.Data, err)
+				}
 			}
 			if test.args == "service status" {
 				var data map[string]jsontext.Value

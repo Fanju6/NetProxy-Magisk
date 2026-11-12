@@ -34,6 +34,7 @@ type MutationOptions struct {
 	Tag           string
 	AllowInsecure bool
 	Now           time.Time
+	Validate      func(provider.Document, bool) error
 }
 
 // GroupOptions 描述一个 Catalog 分组的初始化配置。
@@ -254,7 +255,7 @@ func appendNode(ctx context.Context, options MutationOptions, parse func() (prov
 		return MutationResult{}, err
 	}
 	result := mutationResult(options, metadata, document, oldNodeCount == 0)
-	return commitMutation(ctx, options.GroupDir, document, metadata, result, options.Now)
+	return validateAndCommitMutation(ctx, options, document, metadata, result)
 }
 
 // RemoveNode 从 Catalog 分组中删除指定标签。
@@ -282,7 +283,7 @@ func RemoveNode(ctx context.Context, options MutationOptions) (MutationResult, e
 		return MutationResult{}, err
 	}
 	result := mutationResult(options, metadata, document, len(document.Outbounds)+len(document.Endpoints) == 0)
-	return commitMutation(ctx, options.GroupDir, document, metadata, result, options.Now)
+	return validateAndCommitMutation(ctx, options, document, metadata, result)
 }
 
 // EditNode 原子替换 Catalog 分组中的一个节点。
@@ -328,6 +329,15 @@ func editNode(ctx context.Context, options MutationOptions, parse func() (provid
 		return MutationResult{}, err
 	}
 	result := mutationResult(options, metadata, document, false)
+	return validateAndCommitMutation(ctx, options, document, metadata, result)
+}
+
+func validateAndCommitMutation(ctx context.Context, options MutationOptions, document provider.Document, metadata Metadata, result MutationResult) (MutationResult, error) {
+	if options.Validate != nil {
+		if err := options.Validate(document, result.StructureChanged); err != nil {
+			return MutationResult{}, err
+		}
+	}
 	return commitMutation(ctx, options.GroupDir, document, metadata, result, options.Now)
 }
 

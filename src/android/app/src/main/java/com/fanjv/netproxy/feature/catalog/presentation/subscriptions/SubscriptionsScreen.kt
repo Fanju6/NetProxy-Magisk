@@ -2,6 +2,8 @@ package com.fanjv.netproxy.feature.catalog.presentation.subscriptions
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,6 +12,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.add
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.only
@@ -21,8 +27,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.NetworkPing
+import androidx.compose.material.icons.rounded.FileOpen
+import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.RssFeed
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -57,6 +67,7 @@ import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import com.fanjv.netproxy.feature.catalog.model.CatalogGroupSummary
 import com.fanjv.netproxy.feature.catalog.model.CatalogNode
 import com.fanjv.netproxy.feature.catalog.model.SubscriptionHistoryEntry
+import com.fanjv.netproxy.feature.catalog.presentation.nodes.CatalogNodesViewModel
 import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.Route
 import top.yukonga.miuix.kmp.basic.BasicComponent
@@ -83,7 +94,6 @@ import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
-import top.yukonga.miuix.kmp.squircle.squircleBackground
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.PressFeedbackType
 import top.yukonga.miuix.kmp.utils.overScrollVertical
@@ -93,19 +103,27 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 
-/** 订阅页：URL 订阅管理、流量状态与更新计划。 */
+/** 资源页：本地节点与 URL 订阅。 */
 @Composable
 internal fun SubscriptionsScreen(
     bottomPadding: androidx.compose.ui.unit.Dp = 0.dp,
     isActive: Boolean = true,
+    nodes: CatalogNodesViewModel,
     viewModel: SubscriptionsViewModel = netProxyViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val nodeState by nodes.state.collectAsStateWithLifecycle()
     val navigator = LocalNavigator.current
     val snackbarHostState = rememberAppSnackbarHostState()
     val scrollBehavior = MiuixScrollBehavior()
     val backdrop = rememberBlurBackdrop()
     val barColor = if (backdrop != null) Color.Transparent else colorScheme.surface
+    var showAddActions by remember { mutableStateOf(false) }
+    var addNode by remember { mutableStateOf(false) }
+    var link by remember { mutableStateOf("") }
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let(nodes::importFile)
+    }
 
     LifecycleResumeEffect(isActive) {
         viewModel.setVisible(isActive)
@@ -120,6 +138,17 @@ internal fun SubscriptionsScreen(
         hostState = snackbarHostState,
         onConsumed = viewModel::clearNotice
     )
+    val nodeNotice = if (nodeState.error !is UiText.Empty) nodeState.error else nodeState.notice
+    SnackbarNoticeEffect(
+        eventId = nodeState.noticeId,
+        message = nodeNotice.resolve(),
+        isError = nodeState.error !is UiText.Empty,
+        hostState = snackbarHostState,
+        onConsumed = nodes::clearNotice
+    )
+    LaunchedEffect(nodeState.noticeId) {
+        if (nodeState.noticeId > 0) viewModel.refresh(silent = true)
+    }
 
     Scaffold(
         snackbarHost = {
@@ -129,7 +158,7 @@ internal fun SubscriptionsScreen(
             BlurredBar(backdrop) {
                 TopAppBar(
                     color = barColor,
-                    title = stringResource(R.string.subscriptions),
+                    title = stringResource(R.string.resources),
                     scrollBehavior = scrollBehavior,
                     actions = {
                         if (state.groups.any { it.type == "subscription" }) {
@@ -144,21 +173,16 @@ internal fun SubscriptionsScreen(
                                 )
                             }
                         }
-                        IconButton(
-                            onClick = { navigator.push(Route.SubscriptionEdit("")) }
-                        ) {
-                            Icon(
-                                imageVector = MiuixIcons.Add,
-                                contentDescription = stringResource(R.string.subscription_add_url),
-                                tint = colorScheme.onSurface
-                            )
+                        IconButton(onClick = { showAddActions = true }) {
+                            Icon(MiuixIcons.Add, stringResource(R.string.common_add))
                         }
                     }
                 )
             }
         },
-        contentWindowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Horizontal)
+        contentWindowInsets = WindowInsets.systemBars.add(WindowInsets.displayCutout).only(WindowInsetsSides.Horizontal)
     ) { innerPadding ->
+        val direction = LocalLayoutDirection.current
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -179,9 +203,9 @@ internal fun SubscriptionsScreen(
                         .overScrollVertical()
                         .nestedScroll(scrollBehavior.nestedScrollConnection),
                     contentPadding = PaddingValues(
-                        start = 12.dp,
+                        start = innerPadding.calculateStartPadding(direction) + 12.dp,
                         top = innerPadding.calculateTopPadding() + 12.dp,
-                        end = 12.dp,
+                        end = innerPadding.calculateEndPadding(direction) + 12.dp,
                         bottom = innerPadding.calculateBottomPadding() + bottomPadding + 84.dp
                     ),
                     overscrollEffect = null
@@ -190,10 +214,9 @@ internal fun SubscriptionsScreen(
                         CatalogGroupCard(
                             group = group,
                             busy = state.operation.isNotEmpty(),
-                            onSelect = { viewModel.activate(group.id) },
                             onUpdate = { viewModel.updateSubscription(group.id) },
                             onDelete = { viewModel.remove(group.id) },
-                            onEdit = { navigator.push(Route.SubscriptionDetails(group.id)) }
+                            onEdit = { navigator.push(Route.SubscriptionDetails(group.id)) },
                         )
                     }
                 }
@@ -202,13 +225,72 @@ internal fun SubscriptionsScreen(
     }
 
     SubscriptionUpdateSheet(state.operation)
+    OverlayBottomSheet(
+        show = showAddActions,
+        title = stringResource(R.string.common_add),
+        onDismissRequest = { showAddActions = false },
+    ) {
+        Card(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+            BasicComponent(
+                title = stringResource(R.string.subscription_add_url),
+                startAction = { DetailActionIcon(Icons.Rounded.RssFeed) },
+                onClick = {
+                    showAddActions = false
+                    navigator.push(Route.SubscriptionEdit(""))
+                },
+            )
+            BasicComponent(
+                title = stringResource(R.string.node_single_link),
+                summary = stringResource(R.string.node_single_link_summary),
+                startAction = { DetailActionIcon(Icons.Rounded.Link) },
+                enabled = nodeState.operation.isEmpty(),
+                onClick = { showAddActions = false; addNode = true },
+            )
+            BasicComponent(
+                title = stringResource(R.string.node_local_file),
+                summary = stringResource(R.string.node_local_file_summary),
+                startAction = { DetailActionIcon(Icons.Rounded.FileOpen) },
+                enabled = nodeState.operation.isEmpty(),
+                onClick = { showAddActions = false; filePicker.launch(arrayOf("*/*")) },
+            )
+        }
+    }
+    OverlayDialog(
+        show = addNode,
+        title = stringResource(R.string.node_add_single),
+        onDismissRequest = { addNode = false; link = "" },
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            TextField(
+                value = link,
+                onValueChange = { link = it },
+                label = stringResource(R.string.node_link_label),
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3,
+                maxLines = 6,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                TextButton(
+                    text = stringResource(R.string.common_cancel),
+                    onClick = { addNode = false; link = "" },
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    text = stringResource(R.string.common_add),
+                    enabled = link.isNotBlank() && nodeState.operation.isEmpty(),
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                    onClick = { nodes.addNode(link); addNode = false; link = "" },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
 }
 
 @Composable
 private fun CatalogGroupCard(
     group: CatalogGroupSummary,
     busy: Boolean,
-    onSelect: () -> Unit,
     onUpdate: () -> Unit,
     onDelete: () -> Unit,
     onEdit: () -> Unit
@@ -227,7 +309,7 @@ private fun CatalogGroupCard(
         insideMargin = PaddingValues(16.dp),
         pressFeedbackType = PressFeedbackType.Sink,
         showIndication = true,
-        onClick = onSelect
+        onClick = onEdit
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -242,24 +324,13 @@ private fun CatalogGroupCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            if (group.active) {
-                val activeColor = Color(0xFF32A852)
-                Text(
-                    text = stringResource(R.string.subscription_active),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight(750),
-                    color = activeColor,
-                    modifier = Modifier
-                        .squircleBackground(activeColor.copy(alpha = 0.15f), 6.dp)
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                )
-            }
+
         }
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Column {
+            Column(Modifier.weight(1f)) {
                 Text(
                     text = if (!isSubscription) {
                         stringResource(R.string.subscription_node_count, group.nodeCount)
@@ -276,7 +347,6 @@ private fun CatalogGroupCard(
                     fontSize = 12.sp,
                     color = colorScheme.onSurfaceVariantSummary
                 )
-                Spacer(Modifier.weight(1f))
                 Text(
                     text = if (updatedAt.isNotBlank()) {
                         stringResource(
@@ -305,7 +375,7 @@ private fun CatalogGroupCard(
                 )
             }
 
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.width(8.dp))
 
             IconButton(
                 onClick = onEdit,
@@ -401,11 +471,10 @@ internal fun SubscriptionDetailsScreen(
     val barColor = if (backdrop != null) Color.Transparent else colorScheme.surface
     var showDelete by remember { mutableStateOf(false) }
     var actionNode by remember { mutableStateOf<CatalogNode?>(null) }
-    var editedNodeLink by remember { mutableStateOf("") }
 
-    LaunchedEffect(id) { viewModel.load(id) }
-    LaunchedEffect(state.editingNodeRef, state.editingNodeLink) {
-        if (state.editingNodeRef.isNotBlank()) editedNodeLink = state.editingNodeLink
+    LifecycleResumeEffect(id) {
+        viewModel.load(id)
+        onPauseOrDispose { }
     }
     LaunchedEffect(state.exportedNodeLinkId) {
         val link = state.exportedNodeLink
@@ -488,8 +557,9 @@ internal fun SubscriptionDetailsScreen(
                 overscrollEffect = null
             ) {
                 item {
-                    SubscriptionSummaryCard(details.group) {
-                        viewModel.activate(id)
+                    SubscriptionSummaryCard(details.group) { providerTag ->
+                        context.getSystemService(ClipboardManager::class.java)
+                            ?.setPrimaryClip(ClipData.newPlainText("Provider tag", providerTag))
                     }
                 }
                 item {
@@ -499,13 +569,7 @@ internal fun SubscriptionDetailsScreen(
                     Card(modifier = Modifier.fillMaxWidth()) {
                         BasicComponent(
                             title = node.tag,
-                            summary = buildString {
-                                append("${node.protocol.uppercase()} · ${node.server}:${node.port}")
-                                state.latencies["${details.group.id}/${node.tag}"]?.let { latency ->
-                                    append(" · ")
-                                    append(if (latency.all(Char::isDigit)) "$latency ms" else latency)
-                                }
-                            },
+                            summary = "${node.protocol.uppercase()} · ${node.server}:${node.port}",
                             onClick = { actionNode = node }
                         )
                     }
@@ -575,19 +639,13 @@ internal fun SubscriptionDetailsScreen(
                     .padding(bottom = 8.dp)
             ) {
                 BasicComponent(
-                    title = stringResource(R.string.node_test_delay),
-                    startAction = { DetailActionIcon(Icons.Rounded.NetworkPing) },
-                    onClick = {
-                        viewModel.testNode(id, selectedNode.tag)
-                        actionNode = null
-                    }
-                )
-                BasicComponent(
                     title = stringResource(R.string.node_edit),
                     startAction = { DetailActionIcon(Icons.Rounded.Edit) },
                     onClick = {
-                        viewModel.editNode(id, selectedNode.tag)
                         actionNode = null
+                        navigator.push(Route.NodeEdit(
+                            nodeRef = "$id/${selectedNode.tag}",
+                        ))
                     }
                 )
                 BasicComponent(
@@ -605,47 +663,6 @@ internal fun SubscriptionDetailsScreen(
                         viewModel.removeNode(id, selectedNode.tag)
                         actionNode = null
                     }
-                )
-            }
-        }
-    }
-
-    OverlayDialog(
-        show = state.editingNodeRef.isNotBlank(),
-        title = stringResource(R.string.node_edit),
-        onDismissRequest = viewModel::dismissNodeEditor
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            TextField(
-                value = editedNodeLink,
-                onValueChange = { editedNodeLink = it },
-                label = stringResource(R.string.node_link_label),
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 3,
-                maxLines = 8
-            )
-            Text(
-                text = if (state.details?.group?.type == "subscription") {
-                    stringResource(R.string.subscription_edit_remote_note)
-                } else {
-                    stringResource(R.string.subscription_edit_local_note)
-                },
-                color = colorScheme.onSurfaceVariantSummary,
-                fontSize = 13.sp
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                TextButton(
-                    text = stringResource(R.string.common_cancel),
-                    modifier = Modifier.weight(1f),
-                    enabled = state.operation != "edit",
-                    onClick = viewModel::dismissNodeEditor
-                )
-                TextButton(
-                    text = stringResource(R.string.save_text),
-                    modifier = Modifier.weight(1f),
-                    enabled = editedNodeLink.isNotBlank() && state.operation != "edit",
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
-                    onClick = { viewModel.saveEditedNode(editedNodeLink) }
                 )
             }
         }
@@ -922,10 +939,7 @@ internal fun SubscriptionEditorScreen(
 }
 
 @Composable
-private fun SubscriptionSummaryCard(
-    subscription: CatalogGroupSummary,
-    onActivate: () -> Unit
-) {
+private fun SubscriptionSummaryCard(subscription: CatalogGroupSummary, onCopyProviderTag: (String) -> Unit) {
     val isSubscription = subscription.type == "subscription"
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -939,12 +953,8 @@ private fun SubscriptionSummaryCard(
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f)
                 )
-                StatusTag(
-                    label = if (subscription.active) {
-                        stringResource(R.string.subscription_active)
-                    } else {
-                        subscriptionStatus(subscription).label
-                    },
+                if (isSubscription) StatusTag(
+                    label = subscriptionStatus(subscription).label,
                     backgroundColor = colorScheme.primaryContainer,
                     contentColor = colorScheme.onPrimaryContainer
                 )
@@ -965,16 +975,33 @@ private fun SubscriptionSummaryCard(
             subscription.profileTitle.takeIf(String::isNotBlank)?.let {
                 Text(it, color = colorScheme.onSurfaceVariantSummary, fontSize = 13.sp)
             }
-            if (!subscription.active) {
-                TextButton(
-                    text = stringResource(
-                        if (isSubscription) R.string.subscription_set_active
-                        else R.string.local_config_set_active
-                    ),
-                    onClick = onActivate,
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
-                    modifier = Modifier.fillMaxWidth()
-                )
+            val providerTag = subscription.runtimeTag
+            if (subscription.nodeCount > 0 && providerTag.isNotBlank()) {
+                HorizontalDivider()
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = stringResource(R.string.resource_provider_tag),
+                            color = colorScheme.onSurfaceVariantSummary,
+                            fontSize = 12.sp,
+                        )
+                        Text(
+                            text = providerTag,
+                            color = colorScheme.onSurface,
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    IconButton(onClick = { onCopyProviderTag(providerTag) }) {
+                        Icon(
+                            Icons.Rounded.ContentCopy,
+                            contentDescription = stringResource(R.string.resource_copy_provider_tag),
+                            modifier = Modifier.size(18.dp),
+                            tint = colorScheme.onSurfaceVariantActions,
+                        )
+                    }
+                }
             }
         }
     }

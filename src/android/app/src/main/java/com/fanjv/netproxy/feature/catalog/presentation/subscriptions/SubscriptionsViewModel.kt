@@ -111,11 +111,6 @@ internal class SubscriptionsViewModel(
         UiText.Resource(R.string.subscription_update_all_success)
     }
 
-    fun activate(id: String) = runOperation("activate", id) {
-        repository.activate(id)
-        UiText.Resource(R.string.subscription_activated)
-    }
-
     fun remove(id: String, replacement: String = "") = runOperation("remove", id) {
         repository.remove(id, replacement)
         UiText.Resource(R.string.subscription_deleted)

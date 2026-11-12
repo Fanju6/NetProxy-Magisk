@@ -31,6 +31,10 @@ const targetCoreStaticConfig = `{
   "experimental": {"clash_api": {"external_controller": "127.0.0.1:9999", "secret": "singbox"}},
   "services": [{"type": "api", "listen": "127.0.0.1", "listen_port": 9090, "secret": "singbox"}],
   "inbounds": [{"type": "mixed", "tag": "user-mixed", "listen": "127.0.0.1", "listen_port": 1080}],
+  "outbounds": [
+    {"type": "selector", "tag": "Proxy", "outbounds": ["direct"], "use_all_providers": true, "default": "direct"},
+    {"type": "direct", "tag": "direct"}
+  ],
   "route": {
     "auto_detect_interface": true,
     "default_domain_resolver": "dns-local",
@@ -131,14 +135,12 @@ func TestTargetCoreStderrLogCapturesStartupReloadAndFailure(t *testing.T) {
 	core := targetCoreBinary(t)
 	options := NewOptions(t.TempDir())
 	options.SingBoxPath = core
-	prepared := PrepareResult{
-		Providers: filepath.Join(options.RuntimeDir, "providers.json"),
-		Outbounds: filepath.Join(options.RuntimeDir, "outbounds.json"),
-		Inbound:   filepath.Join(options.RuntimeDir, "inbound.json"),
+	prepared := PrepareResult{Config: paths.RuntimeConfig(options.RuntimeDir)}
+	if err := os.MkdirAll(options.SingBoxDir, 0o700); err != nil {
+		t.Fatal(err)
 	}
 	files := map[string]string{
-		paths.SingBoxConfig(options.SingBoxDir): `{"log":{"output":"stderr","level":"info","timestamp":true},"outbounds":[{"type":"direct","tag":"direct"}]}`,
-		prepared.Providers:                      "{}", prepared.Outbounds: "{}", prepared.Inbound: "{}",
+		prepared.Config: `{"log":{"output":"stderr","level":"info","timestamp":true},"outbounds":[{"type":"direct","tag":"direct"}]}`,
 	}
 	for path, content := range files {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -198,7 +200,7 @@ func TestTargetCoreStderrLogCapturesStartupReloadAndFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-done
-	targetCoreWrite(t, paths.SingBoxConfig(options.SingBoxDir), []byte(`{"log":{"output":"stderr"},"inbounds":[{"type":"netproxy-invalid-inbound"}]}`))
+	targetCoreWrite(t, prepared.Config, []byte(`{"log":{"output":"stderr"},"inbounds":[{"type":"netproxy-invalid-inbound"}]}`))
 	command, file, err = newSingBoxCommand(options, prepared)
 	if err != nil {
 		t.Fatal(err)
@@ -251,7 +253,7 @@ func targetCoreFixture(t *testing.T, core string, content []byte) (Options, map[
 	options.WiFiStateFile = filepath.Join(root, "state", "wifi_state")
 	options.Telemetry = nil
 	files := map[string][]byte{
-		options.ModuleConfig:                    []byte("{\"selection\":{\"group_id\":\"default\",\"node_tag\":\"\"}}"),
+		options.ModuleConfig:                    []byte("{}"),
 		options.InboundConfig:                   content,
 		paths.SingBoxConfig(options.SingBoxDir): []byte(targetCoreStaticConfig),
 	}
@@ -323,7 +325,8 @@ func targetCoreCheckCatalogNodes(t *testing.T, options Options, prepared Prepare
 	var document struct {
 		Providers []map[string]jsontext.Value `json:"providers"`
 	}
-	if err := json.Unmarshal(targetCoreRead(t, prepared.Providers), &document); err != nil {
+	raw := targetCoreRead(t, prepared.Config)
+	if err := json.Unmarshal(raw, &document); err != nil {
 		t.Fatal(err)
 	}
 	for _, entry := range document.Providers {
@@ -341,12 +344,20 @@ func targetCoreCheckCatalogNodes(t *testing.T, options Options, prepared Prepare
 			entry[key] = value
 		}
 	}
-	content, err := json.Marshal(document, json.Deterministic(true))
+	config, err := configObject(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	prepared.Providers = filepath.Join(options.RuntimeDir, "check-providers-inline.json")
-	targetCoreWrite(t, prepared.Providers, content)
+	config["providers"], err = json.Marshal(document.Providers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := json.Marshal(config, json.Deterministic(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared.Config = filepath.Join(t.TempDir(), "check-providers-inline.json")
+	targetCoreWrite(t, prepared.Config, content)
 	// Local Provider 的节点在 Start 才加载；inline 投影令真实 check 也构造同一批匿名节点。
 	if output, err := targetCoreRunCheck(t, options, prepared); err != nil {
 		t.Fatalf("Catalog 节点的真实核心构造失败: %v\n%s", err, output)
@@ -357,9 +368,7 @@ func targetCoreRunCheck(t *testing.T, options Options, prepared PrepareResult) (
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, options.SingBoxPath, "check",
-		"-c", paths.SingBoxConfig(options.SingBoxDir), "-c", prepared.Providers,
-		"-c", prepared.Outbounds, "-c", prepared.Inbound)
+	command := exec.CommandContext(ctx, options.SingBoxPath, "check", "-c", prepared.Config)
 	command.Dir = options.SingBoxDir
 	output, err := command.CombinedOutput()
 	if ctx.Err() != nil {
@@ -371,7 +380,7 @@ func targetCoreRunCheck(t *testing.T, options Options, prepared PrepareResult) (
 func assertTargetCoreRuntime(t *testing.T, options Options, prepared PrepareResult, backend string) {
 	t.Helper()
 	if prepared.Backend != backend || prepared.GroupCount != 2 || prepared.NodeCount != 2 ||
-		prepared.ActiveGroup != "default" || prepared.ActiveGroupTag != "Core Check 1" || prepared.SelectorMode != "urltest" {
+		len(prepared.Providers) != 2 {
 		t.Fatalf("没有生成非空活动 Catalog: %+v", prepared)
 	}
 	var providers struct {
@@ -381,7 +390,7 @@ func assertTargetCoreRuntime(t *testing.T, options Options, prepared PrepareResu
 			Path string `json:"path"`
 		} `json:"providers"`
 	}
-	if err := json.Unmarshal(targetCoreRead(t, prepared.Providers), &providers); err != nil {
+	if err := json.Unmarshal(targetCoreRead(t, prepared.Config), &providers); err != nil {
 		t.Fatal(err)
 	}
 	if len(providers.Providers) != 2 {
@@ -389,7 +398,7 @@ func assertTargetCoreRuntime(t *testing.T, options Options, prepared PrepareResu
 	}
 	for index, id := range []string{"default", "secondary"} {
 		entry := providers.Providers[index]
-		if entry.Type != "local" || entry.Tag != fmt.Sprintf("Core Check %d", index+1) ||
+		if entry.Type != "local" || entry.Tag != "np/"+id ||
 			entry.Path != filepath.Join(options.CatalogRoot, id, "provider.json") {
 			t.Fatalf("Provider 没有引用真实 Catalog 文件: %+v", entry)
 		}
@@ -421,46 +430,19 @@ func assertTargetCoreRuntime(t *testing.T, options Options, prepared PrepareResu
 			}
 		}
 	}
-	var outbounds struct {
-		Outbounds []struct {
-			Type      string   `json:"type"`
-			Tag       string   `json:"tag"`
-			Default   string   `json:"default"`
-			Providers []string `json:"providers"`
-			Outbounds []string `json:"outbounds"`
-		} `json:"outbounds"`
-	}
-	if err := json.Unmarshal(targetCoreRead(t, prepared.Outbounds), &outbounds); err != nil {
-		t.Fatal(err)
-	}
-	if len(outbounds.Outbounds) != 7 {
-		t.Fatalf("出站图未完整生成: %+v", outbounds)
-	}
-	for index := range 2 {
-		name := fmt.Sprintf("Core Check %d", index+1)
-		auto, manual := outbounds.Outbounds[2+index*2], outbounds.Outbounds[3+index*2]
-		if auto.Type != "urltest" || auto.Tag != "Auto/"+name || !slices.Equal(auto.Providers, []string{name}) ||
-			manual.Type != "selector" || manual.Tag != "Select/"+name || !slices.Equal(manual.Providers, []string{name}) {
-			t.Fatalf("分组出站没有引用 Provider: auto=%+v manual=%+v", auto, manual)
-		}
-	}
-	proxy := outbounds.Outbounds[6]
-	if proxy.Type != "selector" || proxy.Tag != "Proxy" || proxy.Default != "Auto/Core Check 1" ||
-		!slices.Equal(proxy.Outbounds, []string{"Auto/Core Check 1", "Select/Core Check 1", "Auto/Core Check 2", "Select/Core Check 2"}) {
-		t.Fatalf("Proxy 静默退回 direct 或未连接完整出站图: %+v", proxy)
-	}
 	var runtime inbound.Runtime
-	if err := json.Unmarshal(targetCoreRead(t, prepared.Inbound), &runtime); err != nil {
+	if err := json.Unmarshal(targetCoreRead(t, prepared.Config), &runtime); err != nil {
 		t.Fatal(err)
 	}
-	if len(runtime.Inbounds) != 1 {
-		t.Fatalf("应只生成当前选中的一个受管入站: %+v", runtime)
+	if len(runtime.Inbounds) != 2 || !bytes.Contains(runtime.Inbounds[0], []byte("user-mixed")) {
+		t.Fatalf("应保留用户入站并追加一个受管入站: %+v", runtime)
 	}
+	managed := runtime.Inbounds[1]
 	var identity struct {
 		Type string `json:"type"`
 		Tag  string `json:"tag"`
 	}
-	if err := json.Unmarshal(runtime.Inbounds[0], &identity); err != nil {
+	if err := json.Unmarshal(managed, &identity); err != nil {
 		t.Fatal(err)
 	}
 	if identity.Type != backend || identity.Tag != inbound.Tag {
@@ -475,7 +457,7 @@ func assertTargetCoreRuntime(t *testing.T, options Options, prepared PrepareResu
 		if err != nil {
 			t.Fatal(err)
 		}
-		config.TUN = runtime.Inbounds[0]
+		config.TUN = managed
 		generated, err := config.TUNOptions()
 		if err != nil {
 			t.Fatal(err)
@@ -511,7 +493,7 @@ func TestInboundTargetCoreCheck(t *testing.T) {
 			options, originals := targetCoreFixture(t, core, content)
 			ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 			defer cancel()
-			prepared, err := Check(ctx, options, false)
+			prepared, err := Check(ctx, options)
 			if err != nil {
 				t.Fatalf("完整配置的真实目标核心 check 失败: %v", err)
 			}
@@ -519,21 +501,28 @@ func TestInboundTargetCoreCheck(t *testing.T) {
 			targetCoreCheckCatalogNodes(t, options, prepared)
 			if !strings.HasSuffix(fixture.name, "-default") {
 				want := targetCoreRead(t, filepath.Join("..", "inbound", "testdata", fixture.name+".golden.json"))
-				got := targetCoreRead(t, prepared.Inbound)
+				var config inbound.Runtime
+				if err := json.Unmarshal(targetCoreRead(t, prepared.Config), &config); err != nil {
+					t.Fatal(err)
+				}
+				got, err := json.Marshal(inbound.Runtime{Inbounds: config.Inbounds[1:]})
+				if err != nil {
+					t.Fatal(err)
+				}
 				if !targetCoreJSONEqual(t, got, want) {
 					t.Fatalf("生成物与匿名原生契约不符:\ngot %s\nwant %s", got, want)
 				}
 			}
-			// 逐份破坏并恢复，保证真实 check 读取全部四份配置，而非只返回成功。
+			// Reject invalid entries in each part of the assembled document.
 			for _, fragment := range []struct {
 				name string
 				path string
 				bad  string
 			}{
-				{"static", paths.SingBoxConfig(options.SingBoxDir), `{"services":[{"type":"netproxy-invalid-service"}]}`},
-				{"providers", prepared.Providers, `{"providers":[{"type":"netproxy-invalid-provider","tag":"invalid-provider"}]}`},
-				{"outbounds", prepared.Outbounds, `{"outbounds":[{"type":"netproxy-invalid-outbound","tag":"invalid-outbound"}]}`},
-				{"inbound", prepared.Inbound, `{"inbounds":[{"type":"netproxy-invalid-inbound","tag":"netproxy-in"}]}`},
+				{"static", prepared.Config, `{"services":[{"type":"netproxy-invalid-service"}]}`},
+				{"providers", prepared.Config, `{"providers":[{"type":"netproxy-invalid-provider","tag":"invalid-provider"}]}`},
+				{"outbounds", prepared.Config, `{"outbounds":[{"type":"netproxy-invalid-outbound","tag":"invalid-outbound"}]}`},
+				{"inbound", prepared.Config, `{"inbounds":[{"type":"netproxy-invalid-inbound","tag":"netproxy-in"}]}`},
 			} {
 				t.Run("reject-"+fragment.name, func(t *testing.T) {
 					original := targetCoreRead(t, fragment.path)
@@ -579,7 +568,7 @@ func TestRootPolicyTargetCoreCheck(t *testing.T) {
 					t.Fatal(err)
 				}
 				options, originals := targetCoreFixture(t, core, content)
-				prepared, err := Check(t.Context(), options, false)
+				prepared, err := Check(t.Context(), options)
 				if err != nil {
 					t.Fatalf("Root 策略真实核心 check 失败: %v", err)
 				}
@@ -673,25 +662,25 @@ func targetCoreRoutingMarkCases(t *testing.T, core string) {
 					options, originals := targetCoreFixture(t, core, content)
 					ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 					defer cancel()
-					prepared, err := Prepare(ctx, options, false)
+					prepared, err := Prepare(ctx, options)
 					if err != nil {
 						t.Fatal(err)
 					}
 					previousRuntime := map[string][]byte{}
-					for _, path := range []string{prepared.Providers, prepared.Outbounds, prepared.Inbound} {
+					for _, path := range []string{prepared.Config} {
 						// 有效 JSON 尾部空白可发现失败路径重新生成了语义相同的旧 runtime。
 						previousRuntime[path] = append(targetCoreRead(t, path), '\n', ' ', '\n')
 						targetCoreWrite(t, path, previousRuntime[path])
 					}
 					path, field := targetCoreSetRoutingMark(t, options, source, mark.value)
 					originals[path] = targetCoreRead(t, path)
-					result, err := Prepare(ctx, options, false)
+					result, err := Prepare(ctx, options)
 					if backend == "tun" && mark.nonzero {
 						assertTargetCoreRoutingMarkConflict(t, err, field)
-						if result != (PrepareResult{}) {
+						if result.Config != "" || len(result.Providers) != 0 {
 							t.Fatalf("拒绝组合时泄漏成功的 Prepare 结果: %+v", result)
 						}
-						if _, err := Check(ctx, options, false); err == nil {
+						if _, err := Check(ctx, options); err == nil {
 							t.Fatal("NetProxy Check 绕过了 Prepare 的 TUN mark 校验")
 						} else {
 							assertTargetCoreRoutingMarkConflict(t, err, field)
@@ -715,13 +704,13 @@ func targetCoreRoutingMarkCases(t *testing.T, core string) {
 						if result.Backend != backend || result.GroupCount != 2 || result.NodeCount != 2 {
 							t.Fatalf("接受组合时没有生成完整 Catalog/入站: %+v", result)
 						}
-						for _, path := range []string{result.Providers, result.Outbounds, result.Inbound} {
+						for _, path := range []string{result.Config} {
 							if !jsontext.Value(targetCoreRead(t, path)).IsValid() {
 								t.Fatalf("接受组合时 runtime 无效: %s", path)
 							}
 						}
 						if core != "" {
-							checked, err := Check(ctx, options, false)
+							checked, err := Check(ctx, options)
 							if err != nil {
 								t.Fatalf("eBPF mark 或 TUN 零值 mark 的真实组合 check 失败: %v", err)
 							}

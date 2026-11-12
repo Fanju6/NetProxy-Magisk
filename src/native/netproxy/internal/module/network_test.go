@@ -125,7 +125,7 @@ func TestNetworkTargetCoreDNSCheck(t *testing.T) {
 					t.Fatal(err)
 				}
 				targetCoreWrite(t, paths.SingBoxConfig(options.SingBoxDir), content)
-				prepared, err := Check(t.Context(), options, false)
+				prepared, err := Check(t.Context(), options)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -137,7 +137,7 @@ func TestNetworkTargetCoreDNSCheck(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				got, err := inbound.RuntimeDNSState(targetCoreRead(t, prepared.Inbound))
+				got, err := inbound.RuntimeDNSState(targetCoreRead(t, prepared.Config))
 				if err != nil || got != wanted {
 					t.Fatalf("运行时 DNS 不符: %+v %+v %v", got, wanted, err)
 				}
@@ -166,7 +166,7 @@ func TestNetworkDNSReloadOnlyForParameterChanges(t *testing.T) {
 			targetCoreWrite(t, options.InboundConfig, saved)
 			writeRuntime := func(c inbound.Config) {
 				t.Helper()
-				if _, err := inbound.WriteAtomic(t.Context(), filepath.Join(options.RuntimeDir, "inbound.json"), c); err != nil {
+				if _, err := inbound.WriteAtomic(t.Context(), filepath.Join(options.RuntimeDir, "config.json"), c); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -270,7 +270,7 @@ func TestEvaluateNetworkPreservesDefaultAndPersistsPolicyState(t *testing.T) {
 	root := t.TempDir()
 	modulePath := filepath.Join(root, "module.json")
 	statePath := filepath.Join(root, "wifi_state")
-	content := "{\"auto_start\":true,\"selection\":{\"group_id\":\"default\",\"node_tag\":\"\"},\"wifi\":{\"blacklist\":[\"办公 WiFi\",\"家庭 WiFi\"],\"enabled\":true,\"mode\":\"blacklist\",\"proxy_on_non_wifi\":true}}"
+	content := "{\"auto_start\":true,\"wifi\":{\"blacklist\":[\"办公 WiFi\",\"家庭 WiFi\"],\"enabled\":true,\"mode\":\"blacklist\",\"proxy_on_non_wifi\":true}}"
 	if err := os.WriteFile(modulePath, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -319,7 +319,7 @@ func TestEvaluateNetworkClearsDisabledOverride(t *testing.T) {
 	root := t.TempDir()
 	modulePath := filepath.Join(root, "module.json")
 	statePath := filepath.Join(root, "wifi_state")
-	content := "{\"auto_start\":true,\"selection\":{\"group_id\":\"default\",\"node_tag\":\"\"},\"wifi\":{\"enabled\":false,\"mode\":\"whitelist\",\"proxy_on_non_wifi\":true}}"
+	content := "{\"auto_start\":true,\"wifi\":{\"enabled\":false,\"mode\":\"whitelist\",\"proxy_on_non_wifi\":true}}"
 	if err := os.WriteFile(modulePath, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
