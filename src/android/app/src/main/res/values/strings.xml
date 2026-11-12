@@ -27,7 +27,6 @@
     <string name="policy_group_no_choices">No options available</string>
     <string name="policy_empty">No policy groups configured</string>
     <string name="resource_copy_provider_tag">Copy Provider tag</string>
-    <string name="resource_provider_tag">Provider tag</string>
     <string name="policy_configured">Configured groups · service is not running</string>
     <string name="policy_providers_unavailable">Providers unavailable offline: %1$s</string>
     <string name="inbound_read_failed">Cannot read inbound configuration</string>

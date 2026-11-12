@@ -958,6 +958,17 @@ private fun SubscriptionSummaryCard(subscription: CatalogGroupSummary, onCopyPro
                     backgroundColor = colorScheme.primaryContainer,
                     contentColor = colorScheme.onPrimaryContainer
                 )
+                val providerTag = subscription.runtimeTag
+                if (subscription.nodeCount > 0 && providerTag.isNotBlank()) {
+                    IconButton(onClick = { onCopyProviderTag(providerTag) }) {
+                        Icon(
+                            Icons.Rounded.ContentCopy,
+                            contentDescription = stringResource(R.string.resource_copy_provider_tag),
+                            modifier = Modifier.size(18.dp),
+                            tint = colorScheme.onSurfaceVariantActions,
+                        )
+                    }
+                }
             }
             Text(
                 text = if (isSubscription) {
@@ -974,34 +985,6 @@ private fun SubscriptionSummaryCard(subscription: CatalogGroupSummary, onCopyPro
             )
             subscription.profileTitle.takeIf(String::isNotBlank)?.let {
                 Text(it, color = colorScheme.onSurfaceVariantSummary, fontSize = 13.sp)
-            }
-            val providerTag = subscription.runtimeTag
-            if (subscription.nodeCount > 0 && providerTag.isNotBlank()) {
-                HorizontalDivider()
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.resource_provider_tag),
-                            color = colorScheme.onSurfaceVariantSummary,
-                            fontSize = 12.sp,
-                        )
-                        Text(
-                            text = providerTag,
-                            color = colorScheme.onSurface,
-                            fontSize = 14.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    IconButton(onClick = { onCopyProviderTag(providerTag) }) {
-                        Icon(
-                            Icons.Rounded.ContentCopy,
-                            contentDescription = stringResource(R.string.resource_copy_provider_tag),
-                            modifier = Modifier.size(18.dp),
-                            tint = colorScheme.onSurfaceVariantActions,
-                        )
-                    }
-                }
             }
         }
     }
