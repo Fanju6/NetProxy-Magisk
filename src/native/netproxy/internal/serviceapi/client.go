@@ -79,6 +79,7 @@ type Mode struct {
 type GroupItem struct {
 	Tag          string `json:"tag"`
 	Type         string `json:"type"`
+	DisplayName  string `json:"display_name,omitempty"`
 	URLTestTime  int64  `json:"url_test_time,omitzero"`
 	URLTestDelay int32  `json:"url_test_delay,omitzero"`
 }

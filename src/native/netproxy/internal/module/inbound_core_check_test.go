@@ -398,7 +398,7 @@ func assertTargetCoreRuntime(t *testing.T, options Options, prepared PrepareResu
 	}
 	for index, id := range []string{"default", "secondary"} {
 		entry := providers.Providers[index]
-		if entry.Type != "local" || entry.Tag != "np/"+id ||
+		if entry.Type != "local" || entry.Tag != fmt.Sprintf("Core Check %d", index+1) ||
 			entry.Path != filepath.Join(options.CatalogRoot, id, "provider.json") {
 			t.Fatalf("Provider 没有引用真实 Catalog 文件: %+v", entry)
 		}

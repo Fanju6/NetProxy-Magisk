@@ -19,9 +19,6 @@ func writeEffectiveConfig(ctx context.Context, singBoxDir, destination string, i
 	if err != nil {
 		return err
 	}
-	if err := validateManagedProviderTags(document); err != nil {
-		return err
-	}
 	if err := validateConfiguredCatalogProviders(document, providers); err != nil {
 		return err
 	}

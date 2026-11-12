@@ -320,11 +320,4 @@ func TestCatalogGroupInitialization(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("ensure existing group: %v", err)
 	}
-	if err := SetGroupName(context.Background(), root, "subscription-test", "更新后的订阅", now); err != nil {
-		t.Fatalf("set group name: %v", err)
-	}
-	metadata, err = LoadMetadata(context.Background(), filepath.Join(groupDir, "meta.json"), "subscription-test")
-	if err != nil || metadata.Name != "更新后的订阅" {
-		t.Fatalf("unexpected renamed metadata: %v, %+v", err, metadata)
-	}
 }

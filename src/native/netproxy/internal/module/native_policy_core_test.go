@@ -27,7 +27,7 @@ func TestNativePolicyTargetCoreSelectionPersistsByGroup(t *testing.T) {
 	options := newTestOptions(dir)
 	for _, id := range []string{"a", "b"} {
 		if err := catalog.EnsureGroup(t.Context(), catalog.GroupOptions{
-			Root: options.CatalogRoot, GroupID: id, Name: "Same name", Type: "subscription",
+			Root: options.CatalogRoot, GroupID: id, Name: "同名订阅", Type: "subscription",
 			URL: "https://invalid.invalid/never", UpdateInterval: 3600, UpdateViaProxy: "never", Timeout: 60,
 		}); err != nil {
 			t.Fatal(err)
@@ -51,7 +51,7 @@ func TestNativePolicyTargetCoreSelectionPersistsByGroup(t *testing.T) {
 		"services":[{"type":"api","listen":"127.0.0.1","listen_port":%d,"secret":"fixture"}],
 		"outbounds":[
 			{"type":"selector","tag":"Main","outbounds":["direct","Work"],"use_all_providers":true,"default":"direct"},
-			{"type":"selector","tag":"Work","outbounds":["direct"],"providers":["np/b"],"default":"direct"},
+			{"type":"selector","tag":"Work","outbounds":["direct"],"providers":["同名订阅 (2)"],"default":"direct"},
 			{"type":"direct","tag":"direct"}
 		],
 		"route":{"final":"Main"}
@@ -132,8 +132,8 @@ func TestNativePolicyTargetCoreSelectionPersistsByGroup(t *testing.T) {
 			tag, selected string
 			members       []string
 		}{
-			{"Main", main, []string{"direct", "Work", "np/a/shared", "np/b/shared"}},
-			{"Work", work, []string{"direct", "np/b/shared"}},
+			{"Main", main, []string{"direct", "Work", "同名订阅/shared", "同名订阅 (2)/shared"}},
+			{"Work", work, []string{"direct", "同名订阅 (2)/shared"}},
 		} {
 			index := slices.IndexFunc(groups, func(group serviceapi.Group) bool { return group.Tag == expected.tag })
 			if index < 0 {
@@ -156,21 +156,22 @@ func TestNativePolicyTargetCoreSelectionPersistsByGroup(t *testing.T) {
 		previousIdentity = identity
 		checkGroups(identity, "direct", "direct")
 		work := service.PolicyTarget{CoreStartedAtMillis: identity, GroupTag: "Work"}
-		if _, err := SelectPolicyGroup(ctx, options, work, "np/b/shared"); err != nil {
+		if _, err := SelectPolicyGroup(ctx, options, work, "同名订阅 (2)/shared"); err != nil {
 			t.Fatal(err)
 		}
-		checkGroups(identity, "direct", "np/b/shared")
+		checkGroups(identity, "direct", "同名订阅 (2)/shared")
 		main := service.PolicyTarget{CoreStartedAtMillis: identity, GroupTag: "Main"}
-		if _, err := SelectPolicyGroup(ctx, options, main, "np/a/shared"); err != nil {
+		if _, err := SelectPolicyGroup(ctx, options, main, "同名订阅/shared"); err != nil {
 			t.Fatal(err)
 		}
-		checkGroups(identity, "np/a/shared", "np/b/shared")
+		checkGroups(identity, "同名订阅/shared", "同名订阅 (2)/shared")
 		name := "Renamed subscription"
-		edited, err := EditSubscription(ctx, options, "a", subscription.EditOptions{Name: &name})
-		if err != nil || !edited.NameChanged || !edited.Persisted || edited.RequiresUpdate {
-			t.Fatalf("rename must be metadata-only: %+v: %v", edited, err)
+		edited, err := EditSubscription(ctx, options, "b", subscription.EditOptions{Name: &name})
+		var problem *service.Error
+		if !errors.As(err, &problem) || problem.Code != "catalog.provider_in_use" || edited.Persisted {
+			t.Fatalf("explicit Provider reference must block rename: %+v: %v", edited, err)
 		}
-		checkGroups(identity, "np/a/shared", "np/b/shared")
+		checkGroups(identity, "同名订阅/shared", "同名订阅 (2)/shared")
 		if _, err := NodeAppend(ctx, options, "a", "socks://127.0.0.1:1081#added", false); err != nil {
 			t.Fatal(err)
 		}
@@ -185,8 +186,8 @@ func TestNativePolicyTargetCoreSelectionPersistsByGroup(t *testing.T) {
 				t.Fatal("content-only Provider edit replaced the core")
 			}
 			if slices.ContainsFunc(snapshot.Groups, func(group serviceapi.Group) bool {
-				return group.Tag == "Main" && group.Selected == "np/a/shared" &&
-					slices.ContainsFunc(group.Items, func(item serviceapi.GroupItem) bool { return item.Tag == "np/a/added" })
+				return group.Tag == "Main" && group.Selected == "同名订阅/shared" &&
+					slices.ContainsFunc(group.Items, func(item serviceapi.GroupItem) bool { return item.Tag == "同名订阅/added" })
 			}) {
 				break
 			}
@@ -207,10 +208,10 @@ func TestNativePolicyTargetCoreSelectionPersistsByGroup(t *testing.T) {
 		if !errors.As(err, &rejected) || rejected.Code != "policy.core_changed" {
 			t.Fatalf("stale selection was not rejected: %v", err)
 		}
-		checkGroups(identity, "np/a/shared", "np/b/shared")
+		checkGroups(identity, "同名订阅/shared", "同名订阅 (2)/shared")
 	})
 	emptyConfig := strings.NewReplacer(
-		`"providers":["np/b"]`, `"use_all_providers":true`,
+		`"providers":["同名订阅 (2)"]`, `"use_all_providers":true`,
 		`"default":"direct"`, `"default":"block"`,
 		`"outbounds":["direct"`, `"outbounds":["block"`,
 		`{"type":"direct","tag":"direct"}`, `{"type":"direct","tag":"direct"},{"type":"block","tag":"block"}`,
@@ -228,7 +229,7 @@ func TestNativePolicyTargetCoreSelectionPersistsByGroup(t *testing.T) {
 		}
 		for _, group := range snapshot.Groups {
 			if group.Selected != "block" || slices.ContainsFunc(group.Items, func(item serviceapi.GroupItem) bool {
-				return strings.HasPrefix(item.Tag, "np/")
+				return strings.Contains(item.Tag, "/")
 			}) {
 				t.Fatalf("empty Catalog did not fall back to configured member: %+v", group)
 			}
@@ -316,13 +317,13 @@ func TestNativePolicyTargetCoreSelectionPersistsByGroup(t *testing.T) {
 		if err := client.URLTest(ctx, "Auto"); err != nil {
 			t.Fatal(err)
 		}
-		waitAuto("np/auto-test/healthy", "")
+		waitAuto("Auto test/healthy", "")
 		probe.Close()
 		if err := client.URLTest(ctx, "Auto"); err != nil {
 			t.Fatal(err)
 		}
 		// Alpha.13 clears a failed result but retains the previous selection.
-		waitAuto("np/auto-test/healthy", "np/auto-test/healthy")
+		waitAuto("Auto test/healthy", "Auto test/healthy")
 	})
 	if err := catalog.DeleteGroup(ctx, options.CatalogRoot, "auto-test"); err != nil {
 		t.Fatal(err)

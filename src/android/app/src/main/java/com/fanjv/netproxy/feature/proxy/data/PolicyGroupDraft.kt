@@ -45,14 +45,12 @@ internal data class PolicyGroupDraft(
     }
 }
 
-internal data class PolicyChoice(val tag: String, val label: String = tag)
-
 internal data class PolicyGroupDocument(
     val outbounds: List<JsonObject>,
     val revision: String,
     val originalTag: String?,
     val memberTags: List<String>,
-    val providerChoices: List<PolicyChoice>,
+    val providerChoices: List<String>,
 ) {
     private val index = originalTag?.let { tag ->
         outbounds.indexOfFirst { it.text("tag") == tag }.also { require(it >= 0) }

@@ -176,7 +176,7 @@
     <string name="subscription_editor_add_title">Add URL subscription</string>
     <string name="subscription_editor_edit_title">Edit subscription</string>
     <string name="subscription_editor_basic_section">Basic information</string>
-    <string name="subscription_editor_name_auto">Name (leave blank to detect automatically)</string>
+    <string name="subscription_editor_name_auto">Name (leave blank to use the domain)</string>
     <string name="subscription_editor_name">Subscription name</string>
     <string name="subscription_editor_url">Subscription URL</string>
     <string name="subscription_editor_update_interval">Update interval</string>
@@ -197,6 +197,7 @@
     <string name="subscription_editor_timeout">Download timeout (seconds)</string>
     <string name="subscription_editor_validating_save">Validating and saving…</string>
     <string name="subscription_name_empty">Subscription name cannot be empty</string>
+    <string name="subscription_name_invalid">Subscription names cannot contain slashes or control characters</string>
     <string name="subscription_url_empty">Subscription URL cannot be empty</string>
     <string name="subscription_interval_invalid">Update interval must be at least 15 minutes</string>
     <string name="subscription_timeout_invalid">Download timeout must be greater than 0 seconds</string>

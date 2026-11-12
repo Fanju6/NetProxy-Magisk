@@ -81,6 +81,7 @@ func ReadConfiguredPolicyGroups(ctx context.Context, options Options) (PolicySna
 		nativeProviders = append(nativeProviders, item.Tag)
 	}
 	var available []catalog.GroupSnapshot
+	var providersByName map[string]*catalog.GroupSnapshot
 	var catalogLoaded bool
 	loadCatalog := func() error {
 		if catalogLoaded || options.CatalogRoot == "" {
@@ -91,6 +92,19 @@ func ReadConfiguredPolicyGroups(ctx context.Context, options Options) (PolicySna
 		available, err = catalog.Scan(ctx, catalog.ScanOptions{Root: options.CatalogRoot, WithNodes: true})
 		if err != nil && !os.IsNotExist(err) {
 			return policyError("config_invalid", "无法读取 Catalog 策略组成员")
+		}
+		providersByName = make(map[string]*catalog.GroupSnapshot, len(available))
+		for i := range available {
+			entry := &available[i]
+			if len(entry.Nodes) == 0 {
+				continue
+			}
+			name := entry.Group.RuntimeTag
+			if _, duplicate := providersByName[name]; duplicate {
+				providersByName[name] = nil
+			} else {
+				providersByName[name] = entry
+			}
 		}
 		return nil
 	}
@@ -119,14 +133,28 @@ func ReadConfiguredPolicyGroups(ctx context.Context, options Options) (PolicySna
 			group.ConfiguredDefault = config.Default
 		}
 		seen := make(map[string]bool)
-		add := func(tag, protocol string) {
+		add := func(tag, protocol, displayName string) {
 			if !seen[tag] {
-				group.Items = append(group.Items, serviceapi.GroupItem{Tag: tag, Type: protocol})
+				group.Items = append(group.Items, serviceapi.GroupItem{Tag: tag, Type: protocol, DisplayName: displayName})
 				seen[tag] = true
 			}
 		}
 		for _, member := range config.Outbounds {
-			add(member, types[member])
+			protocol, name := types[member], ""
+			if providerTag, nodeTag, qualified := strings.Cut(member, "/"); qualified && protocol == "" {
+				if err := loadCatalog(); err != nil {
+					return result, err
+				}
+				if entry := providersByName[providerTag]; entry != nil && !slices.Contains(nativeProviders, providerTag) {
+					for _, node := range entry.Nodes {
+						if node.Tag == nodeTag {
+							protocol, name = node.Protocol, node.Tag
+							break
+						}
+					}
+				}
+			}
+			add(member, protocol, name)
 		}
 		if config.UseAll || len(config.Providers) != 0 {
 			if err := loadCatalog(); err != nil {
@@ -153,19 +181,17 @@ func ReadConfiguredPolicyGroups(ctx context.Context, options Options) (PolicySna
 				continue
 			}
 			seenProviders[reference] = true
-			index := slices.IndexFunc(available, func(entry catalog.GroupSnapshot) bool {
-				return entry.Group.RuntimeTag == reference && len(entry.Nodes) != 0
-			})
-			if index < 0 || slices.Contains(nativeProviders, reference) {
+			entry := providersByName[reference]
+			if entry == nil || slices.Contains(nativeProviders, reference) {
 				group.UnavailableProviders = append(group.UnavailableProviders, reference)
 				continue
 			}
-			for _, node := range available[index].Nodes {
+			for _, node := range entry.Nodes {
 				tag := reference + "/" + node.Tag
 				if (config.Include != "" && !include.MatchString(tag)) || (config.Exclude != "" && exclude.MatchString(tag)) {
 					continue
 				}
-				add(tag, node.Protocol)
+				add(tag, node.Protocol, node.Tag)
 			}
 		}
 		result.Groups = append(result.Groups, group)

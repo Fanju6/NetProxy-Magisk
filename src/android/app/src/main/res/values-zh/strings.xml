@@ -186,7 +186,7 @@
     <string name="subscription_editor_add_title">添加 URL 订阅</string>
     <string name="subscription_editor_edit_title">编辑订阅</string>
     <string name="subscription_editor_basic_section">基础信息</string>
-    <string name="subscription_editor_name_auto">订阅名称（留空自动获取）</string>
+    <string name="subscription_editor_name_auto">订阅名称（留空使用域名）</string>
     <string name="subscription_editor_name">订阅名称</string>
     <string name="subscription_editor_url">订阅链接</string>
     <string name="subscription_editor_update_interval">自动更新周期</string>
@@ -207,6 +207,7 @@
     <string name="subscription_editor_timeout">下载超时（秒）</string>
     <string name="subscription_editor_validating_save">正在验证并保存…</string>
     <string name="subscription_name_empty">订阅名称不能为空</string>
+    <string name="subscription_name_invalid">订阅名称不能包含斜线或控制字符</string>
     <string name="subscription_url_empty">订阅链接不能为空</string>
     <string name="subscription_interval_invalid">更新周期不能少于 15 分钟</string>
     <string name="subscription_timeout_invalid">下载超时必须大于 0 秒</string>

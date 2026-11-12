@@ -30,7 +30,7 @@
 - 策略组定义只存放在 sing-box 原生 `config.json`；实际选择由核心与原生缓存持有。
 - 原生 `/policy-groups` 接口以核心为运行态事实源，写入须校验快照的核心实例标识。选择只调用一次核心写入并回读，不保存到 `module.json`，也不在结果未知时重试；测速响应只确认请求已被接受。停止态配置默认值不能当作运行时选中。
 - 本地资源写入在生命周期锁内恢复配置事务；运行中变更 Provider 结构时，同一事务保存原 Catalog 与生效配置。订阅提交在 Catalog 锁内短暂尝试生命周期锁，冲突返回忙。已有 Provider 的内容更新由核心监听，Worker 核对成员。
-- Catalog Provider 使用稳定的 `np/<group-id>` 标签，显示名称不影响引用。
+- Catalog Provider 标签等于唯一资源名称，内部 ID 仅用于目录与业务定位。创建和改名在 Catalog 锁内处理重名；订阅更新不得根据响应头改名。改名会变更节点完整标签，显式引用存在时拒绝改名，运行中改名复用配置事务重载。
 - 默认 Proxy 无代理节点时使用 block，不能静默直连。自动测速组仅由原生配置定义。
 - eBPF 与 TUN 都是 sing-box 的入站实现，不是独立代理核心。服务、模式和节点切换文案继续使用“服务”或“sing-box”，不要泛化为“eBPF 服务”或“TUN 服务”。
 - `config/inbound/inbound.json` 是 backend、独立 Root 策略、共用 app 策略与两套原生入站参数的唯一事实源，不在 module.json 或客户端偏好中双写。外层固定为 `backend/root_policy/app/ebpf/tun`，两个原生对象的 type 匹配分区、tag 均固定为 `netproxy-in`；主配置不得重复定义受管 eBPF/TUN 或占用该标签。
@@ -286,7 +286,7 @@ data/catalog/
 - `history.jsonl` 只记录脱敏后的更新结果，默认保留最近 20 条。
 - `staging/` 用于锁、下载、转换和校验的临时事务。进程崩溃后可清理，业务代码不得依赖其中内容恢复节点状态。
 
-订阅名称留空时按 `Profile-Title`、`Content-Disposition` 文件名、URL 主机名、默认名「订阅」的顺序自动取名，在首次取得响应头后回填。
+订阅名称留空时创建前使用 URL 主机名，没有主机名时使用「订阅」。响应头中的标题和文件名只作为元数据保存，不改资源名称。
 
 ## 选择状态
 

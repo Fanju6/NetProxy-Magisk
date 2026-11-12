@@ -663,6 +663,19 @@ func runningWatcherHub(t *testing.T) (*eventHub, *fsnotify.Watcher, *eventSubscr
 	return h, watcher, client
 }
 
+func renameWatcherFixture(t *testing.T, root, name string) {
+	t.Helper()
+	path := filepath.Join(root, "subscription-test", "meta.json")
+	metadata, err := catalog.LoadMetadata(t.Context(), path, "subscription-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata.Name = name
+	if err := catalog.SaveMetadataAtomic(t.Context(), path, metadata); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestWatcherOverflowRebuildsWatchesAndSnapshots(t *testing.T) {
 	h, watcher, client := runningWatcherHub(t)
 	for _, directory := range watcher.WatchList() {
@@ -670,9 +683,7 @@ func TestWatcherOverflowRebuildsWatchesAndSnapshots(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := catalog.SetGroupName(t.Context(), h.server.options.CatalogRoot, "subscription-test", "OVERFLOW_RECOVERED", time.Now()); err != nil {
-		t.Fatal(err)
-	}
+	renameWatcherFixture(t, h.server.options.CatalogRoot, "OVERFLOW_RECOVERED")
 	select {
 	case watcher.Errors <- fsnotify.ErrEventOverflow:
 	case <-time.After(5 * time.Second):
@@ -680,9 +691,7 @@ func TestWatcherOverflowRebuildsWatchesAndSnapshots(t *testing.T) {
 	}
 	for _, name := range []string{"OVERFLOW_RECOVERED", "WATCH_RESTORED"} {
 		if name == "WATCH_RESTORED" {
-			if err := catalog.SetGroupName(t.Context(), h.server.options.CatalogRoot, "subscription-test", name, time.Now()); err != nil {
-				t.Fatal(err)
-			}
+			renameWatcherFixture(t, h.server.options.CatalogRoot, name)
 		}
 		select {
 		case event := <-client.messages:
@@ -716,9 +725,7 @@ func TestFileEventBatchHasFixedRefreshDeadline(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := catalog.SetGroupName(t.Context(), h.server.options.CatalogRoot, "subscription-test", "BATCHED", time.Now()); err != nil {
-		t.Fatal(err)
-	}
+	renameWatcherFixture(t, h.server.options.CatalogRoot, "BATCHED")
 	event := fsnotify.Event{Name: filepath.Join(h.server.options.CatalogRoot, "subscription-test", "meta.json"), Op: fsnotify.Write}
 	select {
 	case watcher.Events <- event:

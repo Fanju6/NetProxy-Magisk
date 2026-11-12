@@ -24,7 +24,7 @@ func projectionJSON(t *testing.T, value any) string {
 func TestScanAndBuildRuntime(t *testing.T) {
 	root := t.TempDir()
 	writeGroup(t, root, "default", "同名分组", "local", "本地节点")
-	writeGroup(t, root, "remote", "同名分组", "subscription", "订阅节点")
+	writeGroup(t, root, "remote", "同名分组 (2)", "subscription", "订阅节点")
 	progressDir := filepath.Join(t.TempDir(), "progress")
 	if err := os.MkdirAll(progressDir, 0o700); err != nil {
 		t.Fatal(err)
@@ -42,7 +42,7 @@ func TestScanAndBuildRuntime(t *testing.T) {
 	if len(groups) != 2 || len(groups[0].Nodes) != 1 {
 		t.Fatalf("unexpected groups: %#v", groups)
 	}
-	if groups[0].Group.RuntimeTag != "np/default" || groups[1].Group.RuntimeTag != "np/remote" {
+	if groups[0].Group.RuntimeTag != "同名分组" || groups[1].Group.RuntimeTag != "同名分组 (2)" {
 		t.Fatalf("unexpected runtime tags: %#v", groups)
 	}
 	if string(groups[1].Group.Progress) != `{"stage":"convert","current":1}` {
@@ -57,9 +57,47 @@ func TestScanAndBuildRuntime(t *testing.T) {
 		t.Fatalf("unexpected runtime result: %#v", result)
 	}
 	providers := projectionJSON(t, result.Providers)
-	for _, expected := range []string{`"tag": "np/default"`, `"tag": "np/remote"`} {
+	for _, expected := range []string{`"tag": "同名分组"`, `"tag": "同名分组 (2)"`} {
 		if !strings.Contains(providers, expected) {
 			t.Fatalf("providers missing %s: %s", expected, providers)
+		}
+	}
+}
+
+func TestConcurrentCreationAllocatesNamesAcrossResourceTypes(t *testing.T) {
+	root := t.TempDir()
+	const name = "我的机场"
+	outcomes := make(chan error, 2)
+	for id, kind := range map[string]string{"a": "local", "b": "subscription"} {
+		go func() {
+			outcomes <- InitializeGroup(t.Context(), GroupOptions{
+				Root: root, GroupID: id, Name: " " + name + " ", Type: kind,
+				ReservedNames: []string{name + "/existing-outbound"},
+			})
+		}()
+	}
+	for range 2 {
+		if err := <-outcomes; err != nil {
+			t.Fatal(err)
+		}
+	}
+	groups, err := Scan(t.Context(), ScanOptions{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, group := range groups {
+		if group.Group.RuntimeTag != group.Group.Name {
+			t.Fatalf("name and Provider tag disagree: %+v", group.Group)
+		}
+		got[group.Group.Name] = true
+	}
+	if len(got) != 2 || !got[name+" (2)"] || !got[name+" (3)"] {
+		t.Fatalf("duplicate or reserved Provider name was allocated: %v", got)
+	}
+	for _, bad := range []string{"a/b", "a\\b", "a\nb"} {
+		if err := InitializeGroup(t.Context(), GroupOptions{Root: root, GroupID: "invalid", Name: bad, Type: "local"}); err == nil {
+			t.Fatalf("accepted invalid resource name %q", bad)
 		}
 	}
 }
@@ -67,7 +105,7 @@ func TestScanAndBuildRuntime(t *testing.T) {
 func TestScanSummaryUsesMetadataWithoutParsingProvider(t *testing.T) {
 	root := t.TempDir()
 	writeGroup(t, root, "first", "同名分组", "local", "节点一")
-	writeGroup(t, root, "second", "同名分组", "subscription", "节点二")
+	writeGroup(t, root, "second", "同名分组 (2)", "subscription", "节点二")
 	updateNodeCount(t, filepath.Join(root, "first", "meta.json"), 7)
 	updateNodeCount(t, filepath.Join(root, "second", "meta.json"), 9)
 	if err := os.WriteFile(filepath.Join(root, "second", "provider.json"), []byte("invalid"), 0o600); err != nil {
@@ -81,18 +119,18 @@ func TestScanSummaryUsesMetadataWithoutParsingProvider(t *testing.T) {
 	if len(groups) != 2 || groups[0].Group.NodeCount != 7 || groups[1].Group.NodeCount != 9 {
 		t.Fatalf("摘要未使用 metadata 节点数: %#v", groups)
 	}
-	if groups[0].Group.RuntimeTag != "np/first" || groups[1].Group.RuntimeTag != "np/second" {
-		t.Fatalf("摘要扫描丢失稳定标签: %#v", groups)
+	if groups[0].Group.RuntimeTag != "同名分组" || groups[1].Group.RuntimeTag != "同名分组 (2)" {
+		t.Fatalf("摘要扫描丢失名称标签: %#v", groups)
 	}
 	if _, err := Scan(context.Background(), ScanOptions{Root: root, WithNodes: true}); err == nil {
 		t.Fatal("节点详情扫描应拒绝损坏的 Provider")
 	}
 }
 
-func TestRuntimeTagSurvivesRenameAndDuplicateGroupGainingNodes(t *testing.T) {
+func TestRuntimeTagFollowsRenameAndEmptyGroupIsNotProjected(t *testing.T) {
 	root := t.TempDir()
 	writeGroup(t, root, "ready", "同名分组", "subscription", "可用节点")
-	writeGroup(t, root, "empty", "同名分组", "subscription", "待更新节点")
+	writeGroup(t, root, "empty", "同名分组 (2)", "subscription", "待更新节点")
 	if err := os.WriteFile(filepath.Join(root, "empty", "provider.json"), []byte(`{"outbounds":[]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -103,12 +141,12 @@ func TestRuntimeTagSurvivesRenameAndDuplicateGroupGainingNodes(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, group := range groups {
-		if group.Group.RuntimeTag != "np/"+group.Group.ID {
+		if group.Group.RuntimeTag != group.Group.Name {
 			t.Fatalf("empty duplicate changed summary RuntimeTag: %#v", groups)
 		}
 	}
 	runtimeTag, err := RuntimeTag(context.Background(), root, "ready")
-	if err != nil || runtimeTag != "np/ready" {
+	if err != nil || runtimeTag != "同名分组" {
 		t.Fatalf("RuntimeTag = %q, err=%v", runtimeTag, err)
 	}
 
@@ -120,7 +158,7 @@ func TestRuntimeTagSurvivesRenameAndDuplicateGroupGainingNodes(t *testing.T) {
 		t.Fatalf("runtime result and lookup disagree: result=%+v tag=%q", result, runtimeTag)
 	}
 	providers := projectionJSON(t, result.Providers)
-	if !strings.Contains(providers, `"tag": "np/ready"`) || strings.Contains(providers, `"tag": "np/empty"`) {
+	if !strings.Contains(providers, `"tag": "同名分组"`) || strings.Contains(providers, `"tag": "同名分组 (2)"`) {
 		t.Fatalf("runtime providers used a different tag: %s", providers)
 	}
 
@@ -138,8 +176,8 @@ func TestRuntimeTagSurvivesRenameAndDuplicateGroupGainingNodes(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtimeTag, err = RuntimeTag(context.Background(), root, "ready")
-	if err != nil || runtimeTag != "np/ready" {
-		t.Fatalf("RuntimeTag changed after metadata edit: %q, err=%v", runtimeTag, err)
+	if err != nil || runtimeTag != "新名称" {
+		t.Fatalf("RuntimeTag did not follow name edit: %q, err=%v", runtimeTag, err)
 	}
 	result, err = BuildRuntime(context.Background(), root)
 	if err != nil {

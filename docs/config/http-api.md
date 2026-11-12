@@ -71,7 +71,7 @@ const snapshot = await request('/policy-groups')
 if (snapshot.live) {
   await request('/policy-groups/select', 'POST', {
     core_started_at_millis: snapshot.core_started_at_millis,
-    group_tag: 'Proxy', member_tag: 'np/default/Example'
+    group_tag: 'Proxy', member_tag: '本地配置/Example'
   })
 }
 ```

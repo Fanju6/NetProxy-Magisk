@@ -42,6 +42,7 @@ type GroupOptions struct {
 	Root           string
 	GroupID        string
 	Name           string
+	ReservedNames  []string
 	Type           string
 	URL            string
 	UserAgent      string
@@ -110,44 +111,16 @@ func EnsureGroup(ctx context.Context, options GroupOptions) error {
 			return err
 		}
 	}
-	metadata, err := buildGroupMetadata(options)
+	var metadata Metadata
 	if metadataExists {
 		metadata, err = LoadMetadataLocked(metadataPath, options.GroupID)
+	} else {
+		metadata, err = buildGroupMetadata(options)
 	}
 	if err != nil {
 		return err
 	}
 	return commitPair(ctx, groupDir, document, metadata)
-}
-
-// SetGroupName 更新 Catalog 分组的显示名称并保留其余元数据。
-func SetGroupName(ctx context.Context, root, groupID, name string, now time.Time) error {
-	if strings.TrimSpace(root) == "" {
-		return errors.New("Catalog 根目录不能为空")
-	}
-	if !isValidGroupID(groupID) {
-		return fmt.Errorf("非法分组 ID: %s", groupID)
-	}
-	release, err := acquireCatalogMutation(ctx, root, groupID)
-	if err != nil {
-		return err
-	}
-	defer release()
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return errors.New("分组名称不能为空")
-	}
-	if now.IsZero() {
-		now = time.Now()
-	}
-	metadataPath := filepath.Join(root, groupID, "meta.json")
-	metadata, err := LoadMetadataLocked(metadataPath, groupID)
-	if err != nil {
-		return err
-	}
-	metadata.Name = name
-	metadata.UpdatedAt = FormatEpochUTC(now.Unix())
-	return SaveMetadataAtomicLocked(metadataPath, metadata)
 }
 
 func validateGroupOptions(options GroupOptions) error {
@@ -169,7 +142,18 @@ func validateGroupOptions(options GroupOptions) error {
 }
 
 func buildGroupMetadata(options GroupOptions) (Metadata, error) {
-	metadata := NewMetadata(options.GroupID, options.Name, options.Type, options.URL, options.Now)
+	name := options.Name
+	if strings.TrimSpace(name) == "" {
+		name = "订阅"
+		if options.Type == "local" {
+			name = options.GroupID
+		}
+	}
+	name, err := AllocateNameLocked(options.Root, options.GroupID, name, options.ReservedNames)
+	if err != nil {
+		return Metadata{}, err
+	}
+	metadata := NewMetadata(options.GroupID, name, options.Type, options.URL, options.Now)
 	if options.Type != "subscription" {
 		// 本地分组只保存节点，不应因为 group-ensure 的默认参数进入订阅调度。
 		options.AutoUpdate = false
@@ -373,7 +357,15 @@ func loadMutationMetadata(options MutationOptions) (Metadata, error) {
 	path := filepath.Join(options.GroupDir, "meta.json")
 	metadata, err := LoadMetadataLocked(path, options.GroupID)
 	if os.IsNotExist(err) {
-		metadata = NewMetadata(options.GroupID, options.Name, options.Type, "", options.Now)
+		name := options.Name
+		if strings.TrimSpace(name) == "" {
+			name = options.GroupID
+		}
+		name, err := AllocateNameLocked(filepath.Dir(options.GroupDir), options.GroupID, name, nil)
+		if err != nil {
+			return Metadata{}, err
+		}
+		metadata = NewMetadata(options.GroupID, name, options.Type, "", options.Now)
 	}
 	if err != nil && !os.IsNotExist(err) {
 		return Metadata{}, err

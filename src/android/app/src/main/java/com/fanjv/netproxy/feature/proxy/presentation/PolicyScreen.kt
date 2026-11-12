@@ -380,7 +380,7 @@ private fun PolicyGroupHeader(name: String, count: Int, expanded: Boolean, onCli
 }
 
 internal val PolicyMember.displayName: String
-    get() = if (tag.startsWith("np/")) tag.substringAfter('/', "").substringAfter('/', tag) else tag
+    get() = name.ifEmpty { tag }
 
 internal fun PolicyGroup.displayMembers(sort: Int, live: Boolean): List<PolicyMember> = when (sort) {
     1 -> items.sortedBy { it.displayName.lowercase() }

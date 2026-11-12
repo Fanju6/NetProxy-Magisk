@@ -37,9 +37,9 @@ NETPROXY_MODULE_DIR="$TEST_MODULE" SUB_RUNTIME_DIR="$TMP_ROOT/subscriptions" \
   "$NETPROXYCTL_BIN" --json catalog list > "$CATALOG_LIST_OUTPUT"
 grep -q '"code":"catalog.groups"' "$CATALOG_LIST_OUTPUT"
 grep -q '"id":"default"' "$CATALOG_LIST_OUTPUT"
-grep -q '"runtime_tag":"np/default"' "$CATALOG_LIST_OUTPUT"
+grep -q '"runtime_tag":"本地配置"' "$CATALOG_LIST_OUTPUT"
 grep -q '"id":"secondary"' "$CATALOG_LIST_OUTPUT"
-grep -q '"runtime_tag":"np/secondary"' "$CATALOG_LIST_OUTPUT"
+grep -q '"runtime_tag":"备用配置"' "$CATALOG_LIST_OUTPUT"
 
 NETPROXY_MODULE_DIR="$TEST_MODULE" SUB_RUNTIME_DIR="$TMP_ROOT/subscriptions" \
   "$NETPROXYCTL_BIN" --json catalog show default > "$CATALOG_SHOW_OUTPUT"

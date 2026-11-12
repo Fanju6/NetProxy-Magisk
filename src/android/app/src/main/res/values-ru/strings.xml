@@ -176,7 +176,7 @@
     <string name="subscription_editor_add_title">Добавить подписку по URL</string>
     <string name="subscription_editor_edit_title">Изменить подписку</string>
     <string name="subscription_editor_basic_section">Основные сведения</string>
-    <string name="subscription_editor_name_auto">Название (пустое — определить автоматически)</string>
+    <string name="subscription_editor_name_auto">Название (если пусто, используется домен)</string>
     <string name="subscription_editor_name">Название подписки</string>
     <string name="subscription_editor_url">URL подписки</string>
     <string name="subscription_editor_update_interval">Интервал обновления</string>
@@ -197,6 +197,7 @@
     <string name="subscription_editor_timeout">Тайм-аут загрузки (секунды)</string>
     <string name="subscription_editor_validating_save">Проверка и сохранение…</string>
     <string name="subscription_name_empty">Название подписки не может быть пустым</string>
+    <string name="subscription_name_invalid">В названии подписки нельзя использовать косые черты и управляющие символы</string>
     <string name="subscription_url_empty">URL подписки не может быть пустым</string>
     <string name="subscription_interval_invalid">Интервал обновления должен быть не менее 15 минут</string>
     <string name="subscription_timeout_invalid">Тайм-аут загрузки должен быть больше 0 секунд</string>

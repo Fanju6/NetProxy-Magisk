@@ -17,8 +17,8 @@ const GROUP_DEFAULTS = {
 }
 
 const GROUPS = [
-  { ...GROUP_DEFAULTS, id: 'default', name: '本地配置', runtime_tag: 'np/default', type: 'local' as const, node_count: 1, revision: 1 },
-  { ...GROUP_DEFAULTS, id: 'demo-sub', name: '示例订阅', runtime_tag: 'np/demo-sub', type: 'subscription' as const, node_count: 2, revision: 3, auto_update: true, update_interval: 86400 },
+  { ...GROUP_DEFAULTS, id: 'default', name: '本地配置', runtime_tag: '本地配置', type: 'local' as const, node_count: 1, revision: 1 },
+  { ...GROUP_DEFAULTS, id: 'demo-sub', name: '示例订阅', runtime_tag: '示例订阅', type: 'subscription' as const, node_count: 2, revision: 3, auto_update: true, update_interval: 86400 },
 ]
 
 const NODE = { tag: 'demo-node', protocol: 'socks', server: 'example.test', port: 1080 }
@@ -137,7 +137,7 @@ function policySnapshot() {
     groups: [{
       tag: 'Proxy', type: 'selector', selectable: live,
       ...(live ? { selected: 'block' } : { configured_default: 'block' }),
-      items: [{ tag: 'block', type: 'block' }, { tag: 'np/default/demo-node', type: 'socks' }],
+      items: [{ tag: 'block', type: 'block' }, { tag: '本地配置/demo-node', type: 'socks' }],
     }],
   }
 }

@@ -31,7 +31,7 @@ func statusFixtureProvider(tag string) []byte {
 	return []byte(`{"outbounds":[{"type":"socks","tag":"` + tag + `","server":"example.com","server_port":1080}]}`)
 }
 
-func TestReadGroupSummaryUsesStableRuntimeTag(t *testing.T) {
+func TestReadGroupSummaryUsesNameAsRuntimeTag(t *testing.T) {
 	temp := t.TempDir()
 	catalogRoot := filepath.Join(temp, "catalog")
 	if err := os.MkdirAll(catalogRoot, 0o700); err != nil {
@@ -44,7 +44,7 @@ func TestReadGroupSummaryUsesStableRuntimeTag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if summary.RuntimeTag != "np/default" || summary.NodeCount != 1 {
+	if summary.RuntimeTag != "同名分组" || summary.NodeCount != 1 {
 		t.Fatalf("RuntimeTag 或摘要节点数错误: %#v", summary)
 	}
 }

@@ -89,9 +89,6 @@ func LoadMetadataLocked(path, fallbackID string) (Metadata, error) {
 	if metadata.ID == "" {
 		metadata.ID = fallbackID
 	}
-	if metadata.Name == "" {
-		metadata.Name = metadata.ID
-	}
 	return NormalizeMetadata(metadata), nil
 }
 

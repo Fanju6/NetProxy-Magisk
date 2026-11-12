@@ -33,7 +33,7 @@ func ReadGroupSummary(ctx context.Context, root, groupID, progressDir string) (G
 	if err != nil {
 		return GroupSummary{}, fmt.Errorf("读取分组 %s 元数据失败: %w", groupID, err)
 	}
-	summary := summaryForMetadata(metadata, ProviderTag(groupID), progressDir, metadata.NodeCount)
+	summary := summaryForMetadata(metadata, progressDir, metadata.NodeCount)
 
 	providerPath := filepath.Join(root, groupID, "provider.json")
 	if info, err := os.Stat(providerPath); err != nil || !info.Mode().IsRegular() {
@@ -46,7 +46,7 @@ func ReadGroupSummary(ctx context.Context, root, groupID, progressDir string) (G
 	return summary, nil
 }
 
-func summaryForMetadata(metadata Metadata, runtimeTag, progressDir string, nodeCount int) GroupSummary {
+func summaryForMetadata(metadata Metadata, progressDir string, nodeCount int) GroupSummary {
 	progress := jsontext.Value("null")
 	if progressDir != "" {
 		if content, err := os.ReadFile(filepath.Join(progressDir, metadata.ID+".progress.json")); err == nil {
@@ -62,7 +62,7 @@ func summaryForMetadata(metadata Metadata, runtimeTag, progressDir string, nodeC
 		}
 	}
 	return GroupSummary{
-		ID: metadata.ID, Name: metadata.Name, RuntimeTag: runtimeTag, Type: metadata.Type,
+		ID: metadata.ID, Name: metadata.Name, RuntimeTag: metadata.Name, Type: metadata.Type,
 		NodeCount: nodeCount, Revision: metadata.Revision,
 		AutoUpdate: metadata.AutoUpdate, UpdateInterval: metadata.UpdateInterval,
 		UpdateViaProxy: metadata.UpdateViaProxy, Usage: metadata.Usage,

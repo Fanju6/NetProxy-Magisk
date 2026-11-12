@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -378,7 +377,6 @@ func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 		return updateFailure(ctx, options, metadata, groupDir, started, response, "subscription.convert_failed", "订阅下载或转换失败", fetchErr)
 	}
 	metadata = applyResponseMetadata(metadata, response.Metadata)
-	metadata.Name = resolveName(metadata)
 
 	if response.Metadata.NotModified {
 		return commitNotModified(ctx, options, groupDir, metaPath, initialSnapshot, response, usedProxy)
@@ -560,7 +558,6 @@ func commitNotModified(ctx context.Context, options UpdateOptions, groupDir, met
 	if response.Metadata.LastModified != "" {
 		metadata.LastModified = response.Metadata.LastModified
 	}
-	metadata.Name = resolveName(metadata)
 	preserveRuntimeError := metadata.RuntimeSyncPending && isRuntimeSyncError(metadata.LastError)
 	metadata.LastAttemptAt = formatTime(options.Now)
 	metadata.LastSuccessAt = metadata.LastAttemptAt
@@ -762,27 +759,6 @@ func applyResponseMetadata(metadata catalog.Metadata, response fetch.Metadata) c
 		metadata.IntervalSource = "profile"
 	}
 	return metadata
-}
-
-func resolveName(metadata catalog.Metadata) string {
-	if strings.TrimSpace(metadata.Name) != "" && metadata.Name != metadata.ID {
-		return strings.TrimSpace(metadata.Name)
-	}
-	for _, candidate := range []string{metadata.ProfileTitle, metadata.FileName, hostName(metadata.URL), metadata.ID, "订阅"} {
-		candidate = strings.TrimSpace(candidate)
-		if candidate != "" && !strings.ContainsAny(candidate, "\r\n\t") {
-			return candidate
-		}
-	}
-	return "订阅"
-}
-
-func hostName(rawURL string) string {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return ""
-	}
-	return u.Hostname()
 }
 
 func scheduleMetadata(metadata *catalog.Metadata, now time.Time) {

@@ -72,7 +72,7 @@ class PolicyViewModelTest {
                 apiSuccess(snapshot(live = false))
             } else {
                 finish.await()
-                apiSuccess(snapshot(selected = "np/one/日本", live = false))
+                apiSuccess(snapshot(selected = "Example/日本", live = false))
             }
         }
         val vm = PolicyViewModel(PolicyRepository(ModuleApiClient(transport, scope)), scope)
@@ -88,7 +88,7 @@ class PolicyViewModelTest {
             finish.complete(Unit)
             val updated = withTimeout(5_000) { vm.state.first { !it.loading } }
             assertFalse(updated.refreshing)
-            assertEquals("np/one/日本", updated.snapshot?.groups?.first()?.configuredDefault)
+            assertEquals("Example/日本", updated.snapshot?.groups?.first()?.configuredDefault)
         } finally {
             scope.cancel()
         }
@@ -96,7 +96,7 @@ class PolicyViewModelTest {
 
     @Test fun runtimeMetadataCannotAddRemoveOrReorderConfiguredCards() {
         val direct = PolicyMember("direct", "direct")
-        val local = PolicyMember("np/local/node", "vless")
+        val local = PolicyMember("Local/node", "vless")
         val extra = PolicyMember("runtime-only", "socks", 11)
         val configured = PolicyGroup("Work", "selector", false, listOf(direct, local), configuredDefault = "direct")
         val runtime = configured.copy(type = "Selector", selectable = true, items = listOf(extra, direct.copy(delay = 32)),
@@ -113,8 +113,8 @@ class PolicyViewModelTest {
     }
 
     @Test fun displayNamesDoNotMergeMembersFromDifferentProviders() {
-        val first = PolicyMember("np/first/日本/01", "vless")
-        val second = PolicyMember("np/second/日本/01", "trojan")
+        val first = PolicyMember("First/日本/01", "vless", name = "日本/01")
+        val second = PolicyMember("Second/日本/01", "trojan", name = "日本/01")
         val native = PolicyMember("Work / 组", "selector")
         val group = PolicyGroup("Proxy", "selector", true, listOf(first, second, native))
 
@@ -147,10 +147,10 @@ class PolicyViewModelTest {
                     assertTrue(request.mutation)
                     assertEquals("1234", request.text("core_started_at_millis"))
                     assertEquals("Work / 组", request.text("group_tag"))
-                    assertEquals("np/one/日本", request.text("member_tag"))
+                    assertEquals("Example/日本", request.text("member_tag"))
                     written.complete(Unit)
                     confirm.await()
-                    apiSuccess(snapshot(selected = "np/one/日本"))
+                    apiSuccess(snapshot(selected = "Example/日本"))
                 }
                 else -> error("Unexpected request ${request.path}")
             }
@@ -159,21 +159,21 @@ class PolicyViewModelTest {
         try {
             vm.setVisible(true)
             withTimeout(5_000) { vm.state.first { it.live } }
-            vm.select("Auto", "np/one/日本")
+            vm.select("Auto", "Example/日本")
             vm.select("Work / 组", "missing")
-            vm.select("Work / 组", "np/one/日本")
+            vm.select("Work / 组", "Example/日本")
             withTimeout(5_000) { written.await() }
-            vm.select("Work / 组", "np/one/日本")
+            vm.select("Work / 组", "Example/日本")
             assertEquals("direct", vm.state.value.snapshot?.groups?.first()?.selected)
             confirm.complete(Unit)
             withTimeout(5_000) {
-                vm.state.first { it.pendingGroup == null && it.snapshot?.groups?.first()?.selected == "np/one/日本" }
+                vm.state.first { it.pendingGroup == null && it.snapshot?.groups?.first()?.selected == "Example/日本" }
             }
             assertEquals(1, calls.count { it.mutation })
             vm.setVisible(false)
             assertFalse(vm.state.value.stale)
             assertFalse(vm.state.value.live)
-            assertEquals(listOf("direct", "np/one/日本"), vm.state.value.snapshot?.groups?.first()?.items?.map { it.tag })
+            assertEquals(listOf("direct", "Example/日本"), vm.state.value.snapshot?.groups?.first()?.items?.map { it.tag })
             vm.setVisible(true)
             assertFalse(vm.state.value.stale)
             assertEquals(2, vm.state.value.snapshot?.groups?.size)
@@ -211,14 +211,14 @@ class PolicyViewModelTest {
                 listening.await()
                 vm.state.first { it.live }
             }
-            vm.select("Work / 组", "np/one/日本")
+            vm.select("Work / 组", "Example/日本")
             withTimeout(5_000) { vm.state.first { it.pendingGroup == null && it.error != UiText.Empty } }
             disconnect.complete(Unit)
             withTimeout(5_000) { vm.state.first { !it.live } }
             assertFalse(vm.state.value.stale)
             assertEquals(2, vm.state.value.snapshot?.groups?.size)
             assertFalse(vm.state.value.live)
-            vm.select("Work / 组", "np/one/日本")
+            vm.select("Work / 组", "Example/日本")
             vm.delay("Auto")
             assertEquals(1, calls.count { it.mutation })
         } finally {
@@ -248,7 +248,7 @@ class PolicyViewModelTest {
             withTimeout(5_000) { vm.state.first { !it.loading } }
             assertFalse(vm.state.value.live)
             assertEquals("direct", vm.state.value.snapshot?.groups?.first()?.configuredDefault)
-            vm.select("Work / 组", "np/one/日本")
+            vm.select("Work / 组", "Example/日本")
             vm.delay("Auto")
             assertTrue(calls.none { it.mutation })
             coreStarted.complete(Unit)
@@ -283,8 +283,8 @@ class PolicyViewModelTest {
         {"live":$live,"core_started_at_millis":${if (live) 1234 else 0},"groups":[
           {"tag":"Work / 组","type":"selector","selectable":$live,
            ${if (live) "\"selected\":\"$selected\"" else "\"configured_default\":\"$selected\""},
-           "items":[{"tag":"direct","type":"direct"},{"tag":"np/one/日本","type":"vless"}]},
-          {"tag":"Auto","type":"urltest","selectable":false,"items":[{"tag":"np/one/日本","type":"vless"}]}
+           "items":[{"tag":"direct","type":"direct"},{"tag":"Example/日本","type":"vless"}]},
+          {"tag":"Auto","type":"urltest","selectable":false,"items":[{"tag":"Example/日本","type":"vless"}]}
         ]}
     """.trimIndent()
 }

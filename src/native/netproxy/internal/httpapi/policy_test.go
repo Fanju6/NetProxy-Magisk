@@ -65,7 +65,7 @@ func TestConfiguredPolicyRouteIgnoresUnavailableReadyCore(t *testing.T) {
 	server := resourceFixture(t)
 	resourceWriteFile(t, paths.SingBoxConfig(server.options.SingBoxDir), `{
 		"outbounds": [
-			{"type":"selector","tag":"Disk","outbounds":["direct"],"providers":["np/default"]},
+			{"type":"selector","tag":"Disk","outbounds":["direct"],"providers":["本地配置"]},
 			{"type":"direct","tag":"direct"}
 		]
 	}`)
@@ -122,7 +122,8 @@ func TestConfiguredPolicyExpandsOnlyReferencedCatalogProviders(t *testing.T) {
 		t.Fatal(err)
 	}
 	if work.Selectable || work.Selected != "" || work.ConfiguredDefault != "direct" ||
-		len(work.Items) != 3 || work.Items[1].Tag != "Auto" || work.Items[2].Tag != defaultTag+"/节点 / 02" {
+		len(work.Items) != 3 || work.Items[1].Tag != "Auto" || work.Items[2].Tag != defaultTag+"/节点 / 02" ||
+		work.Items[2].DisplayName != "节点 / 02" {
 		t.Fatalf("wrong configured selector: %+v", work)
 	}
 	if auto.Selected != "" || len(auto.Items) != 1 || auto.Items[0].Tag != otherTag+"/Same" ||

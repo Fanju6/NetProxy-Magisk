@@ -45,7 +45,6 @@ import com.fanjv.netproxy.core.ui.component.CardItem
 import com.fanjv.netproxy.core.ui.component.groupedCardSection
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import com.fanjv.netproxy.core.ui.resolve
-import com.fanjv.netproxy.feature.proxy.data.PolicyChoice
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Icon
@@ -277,7 +276,7 @@ internal fun PolicyGroupEditorScreen(
             kind = kind,
             selected = if (members) draft.outbounds else draft.providers,
             choices = if (members) {
-                document.memberTags.filter { it != (tag ?: draft.tag.trim()) }.map(::PolicyChoice)
+                document.memberTags.filter { it != (tag ?: draft.tag.trim()) }
             } else document.providerChoices,
             onDismiss = { picker = null },
             onApply = { next ->
@@ -322,25 +321,25 @@ private fun PolicyPickerPreference(kind: PolicyPicker, count: Int, enabled: Bool
 private fun PolicyChoicesDialog(
     kind: PolicyPicker,
     selected: List<String>,
-    choices: List<PolicyChoice>,
+    choices: List<String>,
     onDismiss: () -> Unit,
     onApply: (List<String>) -> Unit,
 ) {
     var checked by rememberSaveable(kind, selected) { mutableStateOf(ArrayList(selected)) }
-    val entries = (choices + selected.map(::PolicyChoice)).distinctBy { it.tag }
+    val entries = (choices + selected).distinct()
     OverlayDialog(show = true, title = stringResource(kind.title), onDismissRequest = onDismiss) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (entries.isEmpty()) {
                 Text(stringResource(R.string.policy_group_no_choices), color = colorScheme.onSurfaceVariantSummary)
             } else {
                 LazyColumn(Modifier.heightIn(max = 360.dp).weight(1f, fill = false), overscrollEffect = null) {
-                    items(entries, key = { it.tag }) { choice ->
+                    items(entries, key = { it }) { choice ->
                         CheckboxPreference(
-                            title = choice.label,
-                            checked = choice.tag in checked,
+                            title = choice,
+                            checked = choice in checked,
                             insideMargin = PaddingValues(vertical = 12.dp),
                             onCheckedChange = { value ->
-                                checked = ArrayList(if (value) checked + choice.tag else checked - choice.tag)
+                                checked = ArrayList(if (value) checked + choice else checked - choice)
                             },
                         )
                     }

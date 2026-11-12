@@ -18,7 +18,8 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 )
 
-func validateManagedProviderTags(config map[string]jsontext.Value) error {
+func nativeResourceTags(config map[string]jsontext.Value) ([]string, error) {
+	tags := []string{"Compatible"}
 	for _, key := range []string{"providers", "outbounds", "endpoints"} {
 		raw, exists := config[key]
 		if !exists {
@@ -28,15 +29,33 @@ func validateManagedProviderTags(config map[string]jsontext.Value) error {
 			Tag string `json:"tag"`
 		}
 		if err := json.Unmarshal(raw, &entries); err != nil {
-			return fmt.Errorf("invalid %s: %w", key, err)
+			return nil, fmt.Errorf("invalid %s: %w", key, err)
 		}
 		for _, entry := range entries {
-			if strings.HasPrefix(entry.Tag, "np/") {
-				return &service.Error{Code: "catalog.provider_conflict", Message: "np/ 为 Catalog 保留的标签前缀: " + entry.Tag}
-			}
+			tags = append(tags, entry.Tag)
+		}
+	}
+	return tags, nil
+}
+
+func validateProviderNamespace(tag string, nativeTags []string) error {
+	if !catalog.ValidProviderName(tag) {
+		return &service.Error{Code: "catalog.provider_conflict", Message: "资源名称无效，请修改资源名称: " + tag}
+	}
+	for _, native := range nativeTags {
+		if native == tag || strings.HasPrefix(native, tag+"/") {
+			return &service.Error{Code: "catalog.provider_conflict", Message: "资源 Provider 与原生配置标签冲突: " + native}
 		}
 	}
 	return nil
+}
+
+func readCatalogConfig(options Options) (map[string]jsontext.Value, error) {
+	content, err := os.ReadFile(paths.SingBoxConfig(options.SingBoxDir))
+	if err != nil {
+		return nil, err
+	}
+	return configObject(content)
 }
 
 type policyReferences struct {
@@ -79,6 +98,10 @@ func validateConfiguredCatalogProviders(config map[string]jsontext.Value, provid
 		return &service.Error{Code: "catalog.provider_missing", Message: "策略组需要至少一个出站或可用 Provider"}
 	}
 	available := make(map[string]bool, len(providers))
+	nativeTags, err := nativeResourceTags(config)
+	if err != nil {
+		return err
+	}
 	for _, raw := range providers {
 		var item struct {
 			Tag string `json:"tag"`
@@ -86,22 +109,36 @@ func validateConfiguredCatalogProviders(config map[string]jsontext.Value, provid
 		if err := json.Unmarshal(raw, &item); err != nil {
 			return err
 		}
+		if err := validateProviderNamespace(item.Tag, nativeTags); err != nil {
+			return err
+		}
 		available[item.Tag] = true
+	}
+	var nativeProviders []struct {
+		Tag string `json:"tag"`
+	}
+	if raw, ok := config["providers"]; ok {
+		if err := json.Unmarshal(raw, &nativeProviders); err != nil {
+			return err
+		}
+		for _, item := range nativeProviders {
+			available[item.Tag] = true
+		}
 	}
 	for _, group := range groups {
 		if !group.isGroup() || group.UseAll {
 			continue
 		}
 		for _, tag := range group.Providers {
-			if strings.HasPrefix(tag, "np/") && !available[tag] {
-				return &service.Error{Code: "catalog.provider_missing", Message: "引用的 Catalog Provider 不存在或没有节点: " + tag}
+			if !available[tag] {
+				return &service.Error{Code: "catalog.provider_missing", Message: "引用的 Provider 不存在或没有节点: " + tag}
 			}
 		}
 	}
 	return nil
 }
 
-func runtimeHasProvider(options Options, groupID string) bool {
+func runtimeHasProvider(ctx context.Context, options Options, groupID string) bool {
 	content, err := os.ReadFile(paths.RuntimeConfig(options.RuntimeDir))
 	if err != nil {
 		return false
@@ -114,7 +151,10 @@ func runtimeHasProvider(options Options, groupID string) bool {
 	if json.Unmarshal(content, &config) != nil {
 		return false
 	}
-	tag := catalog.ProviderTag(groupID)
+	tag, err := catalog.RuntimeTag(ctx, options.CatalogRoot, groupID)
+	if err != nil {
+		return false
+	}
 	for _, item := range config.Providers {
 		if item.Tag == tag {
 			return true
@@ -148,36 +188,56 @@ func ProviderCommitGuard(options Options) func(string, provider.Document) (func(
 
 // Candidate validation is called while the Catalog mutation lock is held.
 func validateResourceCandidate(options Options, id string, document provider.Document) error {
-	content, err := os.ReadFile(paths.SingBoxConfig(options.SingBoxDir))
+	config, err := readCatalogConfig(options)
 	if err != nil {
 		return err
 	}
-	config, err := configObject(content)
+	metadata, err := catalog.LoadMetadataLocked(filepath.Join(options.CatalogRoot, id, "meta.json"), id)
 	if err != nil {
 		return err
 	}
-	if err := validateManagedProviderTags(config); err != nil {
+	tags, err := nativeResourceTags(config)
+	if err != nil {
 		return err
 	}
-	tag := catalog.ProviderTag(id)
 	members := make(map[string]bool)
 	for _, node := range provider.Inspect(document) {
 		members[node.Tag] = true
+	}
+	if len(members) > 0 {
+		if err := validateProviderNamespace(metadata.Name, tags); err != nil {
+			return err
+		}
+		name, err := catalog.AllocateNameLocked(options.CatalogRoot, id, metadata.Name, tags)
+		if err != nil {
+			return err
+		}
+		if name != metadata.Name {
+			return &service.Error{Code: "catalog.provider_conflict", Message: "资源 Provider 名称重复，请修改资源名称: " + metadata.Name}
+		}
 	}
 	outbounds, err := readPolicyReferences(config)
 	if err != nil {
 		return err
 	}
-	blocked := &service.Error{Code: "catalog.provider_in_use", Message: "原生配置仍引用 " + tag + " 或其中将被移除的节点"}
 	if len(members) == 0 && !hasNativeProviders(config) && slices.ContainsFunc(outbounds, policyReferences.needsAnyProvider) {
 		other, err := catalog.HasOtherProviderLocked(options.CatalogRoot, id)
 		if err != nil {
 			return err
 		}
 		if !other {
-			return blocked
+			return providerInUse(metadata.Name)
 		}
 	}
+	return validateProviderReferences(config, outbounds, metadata.Name, members)
+}
+
+func providerInUse(tag string) error {
+	return &service.Error{Code: "catalog.provider_in_use", Message: "原生配置仍引用 " + tag + " 或其中的节点，请先修改引用"}
+}
+
+func validateProviderReferences(config map[string]jsontext.Value, outbounds []policyReferences, tag string, members map[string]bool) error {
+	blocked := providerInUse(tag)
 	missing := func(value string) bool {
 		member, ok := strings.CutPrefix(value, tag+"/")
 		return ok && !members[member]
@@ -232,7 +292,14 @@ func (c *resourceChange) validate(document provider.Document, structureChanged b
 	if err := validateResourceCandidate(c.options, c.id, document); err != nil {
 		return err
 	}
-	if !structureChanged || !configProcessRunning(c.options.SingBoxPath) {
+	if !structureChanged {
+		return nil
+	}
+	return c.begin()
+}
+
+func (c *resourceChange) begin() error {
+	if !configProcessRunning(c.options.SingBoxPath) {
 		return nil
 	}
 	transaction, err := beginConfigApply(c.options, "")

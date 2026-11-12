@@ -76,7 +76,7 @@ func TestUpdateAndNotModified(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.Name != "Fixture Subscription" || updated.ETag != `"fixture-v1"` || updated.NodeCount != 1 {
+	if updated.Name != groupID || updated.ProfileTitle != "Fixture Subscription" || updated.ETag != `"fixture-v1"` || updated.NodeCount != 1 {
 		t.Fatalf("响应头元数据没有正确保存: %+v", updated)
 	}
 	if updated.IntervalSource != "profile" || updated.UpdateInterval != int64(time.Hour/time.Second) {

@@ -149,10 +149,12 @@ internal class SubscriptionEditorViewModel(
         headersText: String,
         isNew: Boolean,
     ): SubscriptionDraft {
-        // 新增订阅允许留空名称，由模块按 Profile-Title、文件名、主机名顺序自动取名；
-        // 编辑既有订阅时清空名称属于误操作，仍需拒绝
-        if (!isNew && draft.name.isBlank()) {
+        val name = draft.name.trim()
+        if (!isNew && name.isBlank()) {
             throw UiTextException(UiText.Resource(R.string.subscription_name_empty))
+        }
+        if (name.any { it == '/' || it == '\\' || Character.isISOControl(it) }) {
+            throw UiTextException(UiText.Resource(R.string.subscription_name_invalid))
         }
         if (draft.url.isBlank()) {
             throw UiTextException(UiText.Resource(R.string.subscription_url_empty))
@@ -164,7 +166,7 @@ internal class SubscriptionEditorViewModel(
             throw UiTextException(UiText.Resource(R.string.subscription_timeout_invalid))
         }
         return draft.copy(
-            name = draft.name.trim(),
+            name = name,
             url = draft.url.trim(),
             customHeaders = parseHeaders(headersText)
         )

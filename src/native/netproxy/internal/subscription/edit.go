@@ -22,6 +22,8 @@ type EditOptions struct {
 	ProxyURL       string
 	FallbackDirect bool
 	Name           *string
+	ReservedNames  []string
+	BeforeRename   func(old catalog.Metadata) error
 	URL            *string
 	UserAgent      *string
 	HWID           *string
@@ -117,8 +119,14 @@ func Edit(ctx context.Context, options EditOptions) (EditResult, error) {
 		if strings.TrimSpace(*options.Name) == "" {
 			return EditResult{}, &Error{Code: "subscription.edit_invalid", Message: "订阅名称不能为空"}
 		}
-		nameChanged = metadata.Name != *options.Name
-		metadata.Name = *options.Name
+		if strings.TrimSpace(*options.Name) != metadata.Name {
+			name, err := catalog.AllocateNameLocked(options.Root, options.GroupID, *options.Name, options.ReservedNames)
+			if err != nil {
+				return EditResult{}, &Error{Code: "subscription.edit_invalid", Message: err.Error()}
+			}
+			nameChanged = metadata.Name != name
+			metadata.Name = name
+		}
 	}
 	if options.URL != nil {
 		if err := validateEditText(*options.URL); err != nil {
@@ -223,6 +231,11 @@ func Edit(ctx context.Context, options EditOptions) (EditResult, error) {
 		}
 	}
 	metadata.UpdatedAt = formatTime(options.Now)
+	if nameChanged && options.BeforeRename != nil {
+		if err := options.BeforeRename(oldMetadata); err != nil {
+			return EditResult{}, err
+		}
+	}
 	if err := catalog.SaveMetadataAtomicLocked(metaPath, metadata); err != nil {
 		return EditResult{}, &Error{Code: "subscription.edit_failed", Message: "保存订阅设置失败", Data: err.Error()}
 	}

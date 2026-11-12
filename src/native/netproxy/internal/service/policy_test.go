@@ -25,7 +25,7 @@ func TestPolicyOperationsDoNotReplayUnconfirmedWrites(t *testing.T) {
 	appendField := func(data []byte, field protowire.Number, value string) []byte {
 		return protowire.AppendString(protowire.AppendTag(data, field, protowire.BytesType), value)
 	}
-	member := appendField(nil, 1, "np/example/node")
+	member := appendField(nil, 1, "Example/node")
 	group := appendField(nil, 1, "Custom")
 	group = appendField(group, 2, "selector")
 	group = protowire.AppendVarint(protowire.AppendTag(group, 3, protowire.VarintType), 1)
@@ -62,7 +62,7 @@ func TestPolicyOperationsDoNotReplayUnconfirmedWrites(t *testing.T) {
 	if _, err := SelectPolicyGroup(t.Context(), options, target, "not-a-member"); err == nil || selects.Load() != 0 {
 		t.Fatalf("invalid member reached write: %v, calls %d", err, selects.Load())
 	}
-	_, err := SelectPolicyGroup(t.Context(), options, target, "np/example/node")
+	_, err := SelectPolicyGroup(t.Context(), options, target, "Example/node")
 	var operation *Error
 	if !errors.As(err, &operation) || operation.Code != "policy.outcome_unknown" || strings.Contains(err.Error(), "private fixture") || selects.Load() != 1 {
 		t.Fatalf("unconfirmed selection was retried, leaked, or reported as confirmed: %v, calls %d", err, selects.Load())

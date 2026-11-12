@@ -312,6 +312,7 @@ func TestAddSubscriptionCancellationReportsPersistedGroup(t *testing.T) {
 
 	root := t.TempDir()
 	options := newTestOptions(root)
+	writeCatalogNativeConfig(t, options)
 	ctx, cancel := context.WithCancel(context.Background())
 	type outcome struct {
 		result subscription.Result

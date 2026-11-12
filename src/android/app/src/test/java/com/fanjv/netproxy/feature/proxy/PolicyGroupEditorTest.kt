@@ -48,7 +48,7 @@ class PolicyGroupEditorTest {
         val original = parsePolicySection(source, "outbounds")
         val document = PolicyGroupDocument(original, "r1", "Proxy", listOf("Proxy", "direct"), emptyList())
         val result = parsePolicySection(
-            document.updated(document.initial.copy(providers = listOf("np/default"), include = "JP")),
+            document.updated(document.initial.copy(providers = listOf("Local"), include = "JP")),
             "outbounds",
         )
 
@@ -78,7 +78,7 @@ class PolicyGroupEditorTest {
                     else -> error("Unexpected target")
                 }
                 "/subscriptions" -> apiSuccess(
-                    """[{"id":"default","name":"Local","type":"local","node_count":2,"runtime_tag":"np/default"}]"""
+                    """[{"id":"default","name":"Local","type":"local","node_count":2,"runtime_tag":"Local"}]"""
                 )
                 else -> error("Unexpected request")
             }
@@ -86,7 +86,7 @@ class PolicyGroupEditorTest {
         val repository = PolicyRepository(client)
         val document = repository.openEditor(null)
         assertEquals(listOf("direct", "Proxy", "block", "WireGuard"), document.memberTags)
-        assertEquals(listOf("native", "np/default"), document.providerChoices.map { it.tag })
+        assertEquals(listOf("native", "Local"), document.providerChoices)
         repository.saveGroup(document, document.initial.copy(tag = "Auto", type = "urltest",
             outbounds = listOf("direct"), testInterval = "3m"))
         assertEquals(1, writes)

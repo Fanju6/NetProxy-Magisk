@@ -421,7 +421,7 @@ func SyncCatalog(ctx context.Context, options Options, groupID string, structure
 	if !service.ProcessRunning(options.SingBoxPath) {
 		return subscription.RuntimeSyncNotRunning, false, nil
 	}
-	if !structureChanged && runtimeHasProvider(options, groupID) {
+	if !structureChanged && runtimeHasProvider(local, options, groupID) {
 		return subscription.RuntimeSyncApplied, true, nil
 	}
 	transaction, err := beginConfigApply(options, "")
@@ -438,7 +438,15 @@ func ensureDefaultGroup(ctx context.Context, options Options) error {
 	if err := os.MkdirAll(options.CatalogRoot, 0o700); err != nil {
 		return err
 	}
-	return catalog.EnsureGroup(ctx, catalog.GroupOptions{Root: options.CatalogRoot, GroupID: "default", Name: "本地配置", Type: "local"})
+	config, err := readCatalogConfig(options)
+	if err != nil {
+		return err
+	}
+	names, err := nativeResourceTags(config)
+	if err != nil {
+		return err
+	}
+	return catalog.EnsureGroup(ctx, catalog.GroupOptions{Root: options.CatalogRoot, GroupID: "default", Name: "本地配置", Type: "local", ReservedNames: names})
 }
 
 func splitReference(reference string) (string, string, error) {
@@ -501,29 +509,43 @@ func AddSubscription(ctx context.Context, options SubscriptionOptions) (result s
 	if err := subscription.ValidateSettings(options.UpdateInterval, options.UpdateViaProxy, options.Timeout); err != nil {
 		return subscription.Result{}, err
 	}
-	if err := ensureDefaultGroup(ctx, options.Options); err != nil {
-		return subscription.Result{}, err
-	}
-	groupID, err := catalog.NewSubscriptionGroupID(ctx, options.CatalogRoot)
+	groupID, err := initializeSubscription(ctx, options)
 	if err != nil {
-		return subscription.Result{}, err
-	}
-	if err := catalog.InitializeGroup(ctx, catalog.GroupOptions{Root: options.CatalogRoot, GroupID: groupID, Name: options.Name, Type: "subscription", URL: options.URL, UserAgent: options.UserAgent, HWID: options.HWID, CustomHeaders: options.Headers, AutoUpdate: options.AutoUpdate, UpdateInterval: options.UpdateInterval, IntervalSource: options.IntervalSource, UpdateViaProxy: options.UpdateViaProxy, Include: options.Include, Exclude: options.Exclude, AllowInsecure: options.AllowInsecure, Timeout: options.Timeout}); err != nil {
 		return subscription.Result{}, err
 	}
 	workerOptions := workerOptions(options.Options)
 	// 分组初始化已经提交；首次下载失败时也必须向客户端报告设置已持久化。
 	workerOptions.PersistedBeforeUpdate = true
-	updated, err := worker.UpdateGroup(ctx, workerOptions, groupID, time.Now(), nil)
+	return worker.UpdateGroup(ctx, workerOptions, groupID, time.Now(), nil)
+}
+
+func initializeSubscription(ctx context.Context, options SubscriptionOptions) (string, error) {
+	base, release, err := lockCatalogChange(ctx, options.Options)
 	if err != nil {
-		if options.Name == "" {
-			if fallback := hostName(options.URL); fallback != "" {
-				_ = catalog.SetGroupName(ctx, options.CatalogRoot, groupID, fallback, time.Now())
-			}
-		}
-		return updated, err
+		return "", err
 	}
-	return updated, nil
+	defer release()
+	if err := ensureDefaultGroup(ctx, base); err != nil {
+		return "", err
+	}
+	config, err := readCatalogConfig(base)
+	if err != nil {
+		return "", err
+	}
+	names, err := nativeResourceTags(config)
+	if err != nil {
+		return "", err
+	}
+	groupID, err := catalog.NewSubscriptionGroupID(ctx, base.CatalogRoot)
+	if err != nil {
+		return "", err
+	}
+	name := strings.TrimSpace(options.Name)
+	if name == "" {
+		name = hostName(options.URL)
+	}
+	err = catalog.InitializeGroup(ctx, catalog.GroupOptions{Root: base.CatalogRoot, GroupID: groupID, Name: name, ReservedNames: names, Type: "subscription", URL: options.URL, UserAgent: options.UserAgent, HWID: options.HWID, CustomHeaders: options.Headers, AutoUpdate: options.AutoUpdate, UpdateInterval: options.UpdateInterval, IntervalSource: options.IntervalSource, UpdateViaProxy: options.UpdateViaProxy, Include: options.Include, Exclude: options.Exclude, AllowInsecure: options.AllowInsecure, Timeout: options.Timeout})
+	return groupID, err
 }
 
 // UpdateSubscription 执行指定订阅更新并处理更新后的运行时副作用。
@@ -554,12 +576,12 @@ func EditSubscription(ctx context.Context, options Options, query string, edit s
 	if edit.Now.IsZero() {
 		edit.Now = time.Now()
 	}
-	edited, err := subscription.Edit(ctx, edit)
+	edited, err := editSubscriptionSettings(ctx, options, edit)
 	if err != nil {
 		return edited, err
 	}
 	if !edited.RequiresUpdate {
-		if !service.ProcessRunning(options.SingBoxPath) {
+		if !configProcessRunning(options.SingBoxPath) {
 			if err := subscription.RecordRuntimeSyncNotRunning(ctx, options.CatalogRoot, groupID, edit.Now); err != nil {
 				return edited, err
 			}
@@ -601,6 +623,52 @@ func EditSubscription(ctx context.Context, options Options, query string, edit s
 	edited.RuntimeSyncState = updated.RuntimeSyncState
 	edited.RuntimeSyncPending = updated.RuntimeSyncPending
 	return edited, err
+}
+
+func editSubscriptionSettings(ctx context.Context, options Options, edit subscription.EditOptions) (subscription.EditResult, error) {
+	if edit.Name == nil {
+		return subscription.Edit(ctx, edit)
+	}
+	options, release, err := lockCatalogChange(ctx, options)
+	if err != nil {
+		return subscription.EditResult{}, err
+	}
+	defer release()
+	config, err := readCatalogConfig(options)
+	if err != nil {
+		return subscription.EditResult{}, err
+	}
+	edit.ReservedNames, err = nativeResourceTags(config)
+	if err != nil {
+		return subscription.EditResult{}, err
+	}
+	groups, err := readPolicyReferences(config)
+	if err != nil {
+		return subscription.EditResult{}, err
+	}
+	change := resourceChange{options: options, id: edit.GroupID}
+	edit.BeforeRename = func(old catalog.Metadata) error {
+		if err := validateProviderReferences(config, groups, old.Name, nil); err != nil {
+			return err
+		}
+		if old.NodeCount == 0 {
+			return nil
+		}
+		return change.begin()
+	}
+	result, editErr := subscription.Edit(ctx, edit)
+	_, err = change.finish(ctx, "subscription", catalog.MutationResult{}, editErr)
+	if change.transaction != nil {
+		if err != nil && change.transaction.journal.Phase == "rolled_back" {
+			return subscription.EditResult{}, err
+		}
+		if err == nil {
+			result.RuntimeSynced = true
+			result.RuntimeSyncState = subscription.RuntimeSyncApplied
+			result.RuntimeSyncPending = false
+		}
+	}
+	return result, err
 }
 
 // UpdateAllSubscriptions 按 Catalog 顺序更新全部订阅。

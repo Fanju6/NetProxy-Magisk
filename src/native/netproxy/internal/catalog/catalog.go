@@ -163,13 +163,12 @@ func RuntimeTag(ctx context.Context, root, groupID string) (string, error) {
 		return "", err
 	}
 	defer release()
-	if _, err := loadMetadata(filepath.Join(root, groupID, "meta.json"), groupID); err != nil {
+	metadata, err := loadMetadata(filepath.Join(root, groupID, "meta.json"), groupID)
+	if err != nil {
 		return "", fmt.Errorf("读取分组 %s 元数据: %w", groupID, err)
 	}
-	return ProviderTag(groupID), nil
+	return metadata.Name, nil
 }
-
-func ProviderTag(groupID string) string { return "np/" + groupID }
 
 func GroupIDs(ctx context.Context, root, groupType string) ([]string, error) {
 	release, err := acquireCatalogRootAndRecover(ctx, root)
@@ -234,7 +233,13 @@ func BuildRuntime(ctx context.Context, root string) (RuntimeResult, error) {
 		return RuntimeResult{}, err
 	}
 	result := RuntimeResult{GroupCount: len(groups)}
+	names := make(map[string]bool, len(groups))
 	for _, group := range groups {
+		name := group.Metadata.Name
+		if !ValidProviderName(name) || names[name] {
+			return RuntimeResult{}, fmt.Errorf("资源 Provider 名称 %q 无效或重复，请修改资源名称", name)
+		}
+		names[name] = true
 		result.NodeCount += group.Metadata.NodeCount
 	}
 	content, err := SJSON.MarshalContext(provider.RuntimeContext(ctx), runtimeProviders(groups))
@@ -310,7 +315,7 @@ func summaryFor(group *loadedGroup, progressDir string) GroupSummary {
 	if group.Nodes != nil {
 		nodeCount = len(group.Nodes)
 	}
-	return summaryForMetadata(group.Metadata, ProviderTag(group.ID), progressDir, nodeCount)
+	return summaryForMetadata(group.Metadata, progressDir, nodeCount)
 }
 
 func runtimeProviders(groups []*loadedGroup) []option.Provider {
@@ -318,7 +323,7 @@ func runtimeProviders(groups []*loadedGroup) []option.Provider {
 	for _, group := range groups {
 		items = append(items, option.Provider{
 			Type: C.ProviderTypeLocal,
-			Tag:  ProviderTag(group.ID),
+			Tag:  group.Metadata.Name,
 			Options: &option.ProviderLocalOptions{
 				Path: group.ProviderPath,
 				HealthCheck: option.ProviderHealthCheckOptions{

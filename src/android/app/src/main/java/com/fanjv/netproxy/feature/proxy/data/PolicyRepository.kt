@@ -35,6 +35,7 @@ internal data class PolicyMember(
     @SerialName("url_test_delay") val delay: Int = 0,
     @SerialName("url_test_time") val delayTime: Long = 0,
     @Transient val runtimeAvailable: Boolean = false,
+    @SerialName("display_name") val name: String = "",
 )
 
 internal fun PolicySnapshot.withRuntime(
@@ -74,14 +75,14 @@ internal class PolicyRepository(
         val outbounds = parsePolicySection(snapshot.content, "outbounds")
         val endpoints = parsePolicySection(config.read("singbox/endpoints"), "endpoints")
         val nativeProviders = parsePolicySection(config.read("singbox/providers"), "providers")
-            .map { PolicyChoice(it.text("tag")) }
+            .map { it.text("tag") }
         val resources = client.read<List<CatalogGroupSummary>>("/subscriptions")
             .filter { it.nodeCount > 0 }
-            .map { PolicyChoice(it.runtimeTag, "${it.name} · ${it.runtimeTag}") }
+            .map { it.runtimeTag }
         return PolicyGroupDocument(
             outbounds, snapshot.revision, tag,
             (outbounds + endpoints).map { it.text("tag") }.filter(String::isNotBlank).distinct(),
-            (nativeProviders + resources).filter { it.tag.isNotBlank() }.distinctBy { it.tag },
+            (nativeProviders + resources).filter(String::isNotBlank).distinct(),
         )
     }
 

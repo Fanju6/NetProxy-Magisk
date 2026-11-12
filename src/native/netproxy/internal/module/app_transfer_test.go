@@ -30,6 +30,7 @@ func TestSubscriptionPathsPassTransferContext(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
 			options := newTestOptions(t.TempDir())
+			writeCatalogNativeConfig(t, options)
 			options.TransferContext = transferContext
 			if workerOptions(options).TransferContext != transferContext {
 				t.Fatal("Worker 构造丢失 TransferContext")
