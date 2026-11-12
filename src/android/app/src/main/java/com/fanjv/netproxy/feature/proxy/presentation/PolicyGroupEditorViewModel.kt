@@ -87,6 +87,7 @@ internal data class PolicyEditorState(
         val tag = originalTag ?: value.tag.trim()
         return !loading && !saving && !conflict && !saved && value != base.initial &&
             tag.isNotEmpty() && value.hasMembers && tag !in value.outbounds &&
+            (!value.addAuto || base.canAddAuto) &&
             (originalTag != null || tag !in base.memberTags)
     }
 }

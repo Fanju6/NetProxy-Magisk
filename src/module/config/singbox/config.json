@@ -169,7 +169,8 @@
     }
   ],
   "outbounds": [
-    { "type": "selector", "tag": "Proxy", "outbounds": ["block", "direct"], "use_all_providers": true, "default": "block", "interrupt_exist_connections": true },
+    { "type": "selector", "tag": "Proxy", "outbounds": ["Auto", "block", "direct"], "use_all_providers": true, "default": "block", "interrupt_exist_connections": true },
+    { "type": "urltest", "tag": "Auto", "outbounds": ["block"], "use_all_providers": true },
     { "type": "selector", "tag": "AI", "outbounds": ["Proxy", "direct", "block"], "use_all_providers": true, "default": "Proxy" },
     { "type": "selector", "tag": "GitHub", "outbounds": ["Proxy", "direct", "block"], "use_all_providers": true, "default": "Proxy" },
     { "type": "selector", "tag": "YouTube", "outbounds": ["Proxy", "direct", "block"], "use_all_providers": true, "default": "Proxy" },

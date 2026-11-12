@@ -180,6 +180,15 @@ internal fun PolicyGroupEditorScreen(
                 }, titleTopPadding = 12.dp)
 
                 groupedCardSection("sources", { stringResource(R.string.policy_group_sources) }, buildList {
+                    if (document.canAddAuto) add(CardItem("add_auto") {
+                        SwitchPreference(
+                            title = stringResource(R.string.policy_add_auto),
+                            summary = stringResource(R.string.policy_add_auto_summary),
+                            checked = draft.addAuto,
+                            enabled = enabled,
+                            onCheckedChange = { value -> change { it.copy(addAuto = value) } },
+                        )
+                    })
                     add(CardItem("members") {
                         PolicyPickerPreference(PolicyPicker.Members, draft.outbounds.size, enabled) {
                             focus.clearFocus()

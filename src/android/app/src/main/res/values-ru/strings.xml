@@ -6,6 +6,9 @@
     <string name="policy_edit_group">Изменить группу</string>
     <string name="policy_group_name">Название группы</string>
     <string name="policy_group_type">Тип группы</string>
+    <string name="policy_auto_select">Автовыбор</string>
+    <string name="policy_add_auto">Добавить автовыбор</string>
+    <string name="policy_add_auto_summary">Выбор узла по задержке без переключения на прямое подключение</string>
     <string name="policy_group_duplicate">Это имя уже используется.</string>
     <string name="policy_group_members">Участники группы</string>
     <string name="policy_group_all_providers">Использовать все провайдеры</string>

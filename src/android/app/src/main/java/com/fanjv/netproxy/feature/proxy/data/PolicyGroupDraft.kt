@@ -12,6 +12,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 
 internal val editablePolicyTypes = setOf("selector", "urltest", "loadbalance")
+internal const val AUTO_POLICY_TAG = "Auto"
 
 internal data class PolicyGroupDraft(
     val tag: String = "",
@@ -24,8 +25,9 @@ internal data class PolicyGroupDraft(
     val exclude: String = "",
     val testUrl: String = "",
     val testInterval: String = "",
+    val addAuto: Boolean = false,
 ) {
-    val hasMembers: Boolean get() = outbounds.isNotEmpty() || providers.isNotEmpty() || useAll
+    val hasMembers: Boolean get() = outbounds.isNotEmpty() || providers.isNotEmpty() || useAll || addAuto
 
     companion object {
         fun from(group: JsonObject) = PolicyGroupDraft(
@@ -57,6 +59,10 @@ internal data class PolicyGroupDocument(
     }
     private val original = index?.let(outbounds::get)
     val initial = original?.let(PolicyGroupDraft::from) ?: PolicyGroupDraft()
+    val canAddAuto: Boolean get() = originalTag == "Proxy" && initial.type == "selector" &&
+        (initial.outbounds.isNotEmpty() || initial.defaultMember.isNotBlank()) &&
+        AUTO_POLICY_TAG !in memberTags && AUTO_POLICY_TAG !in initial.outbounds &&
+        outbounds.any { it.text("tag") == "block" && it.text("type") == "block" }
 
     fun updated(draft: PolicyGroupDraft): String {
         val tag = originalTag ?: draft.tag.trim()
@@ -64,6 +70,7 @@ internal data class PolicyGroupDocument(
         require(draft.type in editablePolicyTypes)
         require(originalTag == null || (draft.tag == originalTag && draft.type == initial.type))
         require(index != null || tag !in memberTags)
+        require(!draft.addAuto || canAddAuto)
         val fields = original.orEmpty().toMutableMap()
         fields["tag"] = JsonPrimitive(tag)
         fields["type"] = JsonPrimitive(draft.type)
@@ -77,7 +84,8 @@ internal data class PolicyGroupDocument(
                 if (value.isEmpty()) fields.remove(key) else fields[key] = JsonArray(value.map(::JsonPrimitive))
             }
         }
-        updateNames("outbounds", draft.outbounds, initial.outbounds)
+        val members = if (draft.addAuto) (draft.outbounds + AUTO_POLICY_TAG).distinct() else draft.outbounds
+        updateNames("outbounds", members, initial.outbounds)
         updateNames("providers", draft.providers, initial.providers)
         if (draft.useAll != initial.useAll) {
             if (draft.useAll) fields["use_all_providers"] = JsonPrimitive(true) else fields.remove("use_all_providers")
@@ -91,6 +99,12 @@ internal data class PolicyGroupDocument(
         updateText("exclude", draft.exclude, initial.exclude)
         val updated = outbounds.toMutableList()
         if (index == null) updated.add(JsonObject(fields)) else updated[index] = JsonObject(fields)
+        if (draft.addAuto) updated.add(JsonObject(mapOf(
+            "type" to JsonPrimitive("urltest"),
+            "tag" to JsonPrimitive(AUTO_POLICY_TAG),
+            "outbounds" to JsonArray(listOf(JsonPrimitive("block"))),
+            "use_all_providers" to JsonPrimitive(true),
+        )))
         return JsonObject(mapOf("outbounds" to JsonArray(updated))).toString()
     }
 }

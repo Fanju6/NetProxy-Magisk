@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -60,7 +62,7 @@ func TestNativePolicyTargetCoreSelectionPersistsByGroup(t *testing.T) {
 	options.SingBoxPath = core
 	options.ServiceAddress = address.String()
 	options.ServiceSecret = "fixture"
-	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	client, err := serviceapi.New(address.String(), "fixture")
 	if err != nil {
@@ -231,5 +233,102 @@ func TestNativePolicyTargetCoreSelectionPersistsByGroup(t *testing.T) {
 				t.Fatalf("empty Catalog did not fall back to configured member: %+v", group)
 			}
 		}
+	})
+
+	probe := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(5 * time.Millisecond)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer probe.Close()
+	socks, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	socksPort := socks.Addr().(*net.TCPAddr).Port
+	_ = socks.Close()
+	targetCoreWrite(t, filepath.Join(dir, "config.json"), []byte(fmt.Sprintf(`{
+		"log":{"disabled":true},
+		"inbounds":[{"type":"socks","tag":"fixture-socks","listen":"127.0.0.1","listen_port":%d}],
+		"services":[{"type":"api","listen":"127.0.0.1","listen_port":%d,"secret":"fixture"}],
+		"outbounds":[
+			{"type":"selector","tag":"Proxy","outbounds":["Auto","block","direct"],"use_all_providers":true,"default":"block"},
+			{"type":"urltest","tag":"Auto","outbounds":["block"],"use_all_providers":true,"url":%q},
+			{"type":"block","tag":"block"},
+			{"type":"direct","tag":"direct"}
+		],
+		"route":{"rules":[{"inbound":["fixture-socks"],"action":"route","outbound":"direct"}],"final":"Proxy"}
+	}`, socksPort, address.Port, probe.URL)))
+	waitAuto := func(expected string, failedMember string) {
+		t.Helper()
+		watch, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		var last []serviceapi.Group
+		for {
+			groups, err := client.Groups(watch)
+			if err == nil {
+				last = groups
+				if slices.ContainsFunc(groups, func(group serviceapi.Group) bool {
+					if group.Tag != "Auto" || group.Selectable || group.Selected != expected {
+						return false
+					}
+					if failedMember != "" {
+						return slices.ContainsFunc(group.Items, func(item serviceapi.GroupItem) bool {
+							return item.Tag == failedMember && item.URLTestTime == 0 && item.URLTestDelay == 0
+						})
+					}
+					return true
+				}) {
+					return
+				}
+			}
+			select {
+			case <-watch.Done():
+				t.Fatalf("Auto did not select %q: %+v (%v)", expected, last, err)
+			case <-time.After(50 * time.Millisecond):
+			}
+		}
+	}
+	selectAuto := func(identity int64) {
+		t.Helper()
+		if _, err := SelectPolicyGroup(ctx, options, service.PolicyTarget{
+			CoreStartedAtMillis: identity, GroupTag: "Proxy",
+		}, "Auto"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run(func(identity int64) {
+		selectAuto(identity)
+		waitAuto("block", "")
+	})
+	if err := catalog.InitializeGroup(ctx, catalog.GroupOptions{
+		Root: options.CatalogRoot, GroupID: "auto-test", Name: "Auto test", Type: "local",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := catalog.AppendNode(ctx, catalog.MutationOptions{
+		GroupDir: filepath.Join(options.CatalogRoot, "auto-test"), GroupID: "auto-test", Type: "local",
+		Input: fmt.Sprintf("socks://127.0.0.1:%d#healthy", socksPort),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	run(func(identity int64) {
+		selectAuto(identity)
+		if err := client.URLTest(ctx, "Auto"); err != nil {
+			t.Fatal(err)
+		}
+		waitAuto("np/auto-test/healthy", "")
+		probe.Close()
+		if err := client.URLTest(ctx, "Auto"); err != nil {
+			t.Fatal(err)
+		}
+		// Alpha.13 clears a failed result but retains the previous selection.
+		waitAuto("np/auto-test/healthy", "np/auto-test/healthy")
+	})
+	if err := catalog.DeleteGroup(ctx, options.CatalogRoot, "auto-test"); err != nil {
+		t.Fatal(err)
+	}
+	run(func(identity int64) {
+		selectAuto(identity)
+		waitAuto("block", "")
 	})
 }

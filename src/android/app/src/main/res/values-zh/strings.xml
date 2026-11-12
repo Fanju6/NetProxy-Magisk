@@ -6,6 +6,9 @@
     <string name="policy_edit_group">编辑策略组</string>
     <string name="policy_group_name">组名</string>
     <string name="policy_group_type">策略组类型</string>
+    <string name="policy_auto_select">自动选择</string>
+    <string name="policy_add_auto">添加自动选择</string>
+    <string name="policy_add_auto_summary">按测速结果选择节点，不自动切换到直连</string>
     <string name="policy_group_duplicate">组名已被占用。</string>
     <string name="policy_group_members">出站成员</string>
     <string name="policy_group_all_providers">使用全部 Provider</string>

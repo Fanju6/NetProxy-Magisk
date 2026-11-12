@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -22,6 +23,27 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PolicyGroupEditorTest {
+    @Test fun addingAutoPreservesExistingDefaultsAndOtherOutbounds() {
+        val original = parsePolicySection(source, "outbounds")
+        val tags = listOf("direct", "Proxy", "block")
+        val document = PolicyGroupDocument(original, "r1", "Proxy", tags, emptyList())
+        assertTrue(document.canAddAuto)
+
+        val updated = parsePolicySection(document.updated(document.initial.copy(addAuto = true)), "outbounds")
+        assertEquals(original[0], updated[0])
+        assertEquals(original[2], updated[2])
+        assertEquals(original[1]["default"], updated[1]["default"])
+        assertEquals(original[1]["interrupt_exist_connections"], updated[1]["interrupt_exist_connections"])
+        assertEquals(JsonArray(listOf(JsonPrimitive("direct"), JsonPrimitive("Auto"))), updated[1]["outbounds"])
+        assertEquals(parsePolicySection(
+            """{"outbounds":[{"type":"urltest","tag":"Auto","outbounds":["block"],"use_all_providers":true}]}""",
+            "outbounds",
+        ).single(), updated.last())
+        assertFalse(PolicyGroupDocument(updated, "r2", "Proxy", tags + "Auto", emptyList()).canAddAuto)
+        assertFalse(PolicyGroupDocument(original, "r1", "Proxy", tags + "Auto", emptyList()).canAddAuto)
+        assertFalse(PolicyGroupDocument(original.take(2), "r1", "Proxy", tags.take(2), emptyList()).canAddAuto)
+    }
+
     @Test fun updatesOnlyTheTargetGroupAndPreservesNativeFields() {
         val original = parsePolicySection(source, "outbounds")
         val document = PolicyGroupDocument(original, "r1", "Proxy", listOf("Proxy", "direct"), emptyList())
@@ -63,7 +85,7 @@ class PolicyGroupEditorTest {
         })
         val repository = PolicyRepository(client)
         val document = repository.openEditor(null)
-        assertEquals(listOf("direct", "Proxy", "WireGuard"), document.memberTags)
+        assertEquals(listOf("direct", "Proxy", "block", "WireGuard"), document.memberTags)
         assertEquals(listOf("native", "np/default"), document.providerChoices.map { it.tag })
         repository.saveGroup(document, document.initial.copy(tag = "Auto", type = "urltest",
             outbounds = listOf("direct"), testInterval = "3m"))
@@ -78,6 +100,9 @@ class PolicyGroupEditorTest {
                 request.mutation -> {
                     writes++
                     request.assertConfig("PUT", "singbox/outbounds", "r1")
+                    val groups = parsePolicySection(request.text("content"), "outbounds")
+                    assertEquals(JsonArray(listOf(JsonPrimitive("direct"), JsonPrimitive("Auto"))), groups[1]["outbounds"])
+                    assertEquals(JsonPrimitive("Auto"), groups.last()["tag"])
                     ModuleHttpResponse(409, """{"schema":1,"ok":false,"code":"config.conflict","message":"Reload","data":null}""")
                 }
                 request.path == "/subscriptions" -> apiSuccess("[]")
@@ -89,10 +114,10 @@ class PolicyGroupEditorTest {
         try {
             vm.openEditor("Proxy")
             withTimeout(5_000) { vm.editor.first { it?.loading == false } }
-            vm.changeGroupDraft { it.copy(include = "JP") }
+            vm.changeGroupDraft { it.copy(addAuto = true) }
             vm.saveEditor()
             val state = withTimeout(5_000) { vm.editor.first { it?.conflict == true } }!!
-            assertEquals("JP", state.draft?.include)
+            assertTrue(state.draft?.addAuto == true)
             assertFalse(state.canSave)
             vm.saveEditor()
             assertTrue(writes == 1)
@@ -106,6 +131,7 @@ class PolicyGroupEditorTest {
 
     private val source = """
         {"outbounds":[{"type":"direct","tag":"direct"},
-          {"type":"selector","tag":"Proxy","outbounds":["direct"],"default":"direct","interrupt_exist_connections":true}]}
+          {"type":"selector","tag":"Proxy","outbounds":["direct"],"default":"direct","interrupt_exist_connections":true},
+          {"type":"block","tag":"block"}]}
     """.trimIndent()
 }

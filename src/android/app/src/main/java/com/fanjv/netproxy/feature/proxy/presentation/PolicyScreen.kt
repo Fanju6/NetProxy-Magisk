@@ -62,6 +62,7 @@ import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import com.fanjv.netproxy.core.ui.resolve
 import com.fanjv.netproxy.feature.catalog.presentation.nodes.list.components.NodeCard
+import com.fanjv.netproxy.feature.proxy.data.AUTO_POLICY_TAG
 import com.fanjv.netproxy.feature.proxy.data.PolicyGroup
 import com.fanjv.netproxy.feature.proxy.data.PolicyMember
 import com.fanjv.netproxy.feature.proxy.data.editablePolicyTypes
@@ -175,7 +176,7 @@ internal fun PolicyScreen(
                                 modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 6.dp)
                                     .deferredTopPadding { 12.dp * (1f - scroll.state.collapsedFraction) },
                             ) {
-                                val names = groups.map(PolicyGroup::tag)
+                                val names = groups.map { policyLabel(it.tag, it.type) }
                                 val measurer = rememberTextMeasurer()
                                 val density = LocalDensity.current
                                 val textStyle = MiuixTheme.textStyles.body1.copy(fontWeight = FontWeight.Bold)
@@ -248,7 +249,7 @@ internal fun PolicyScreen(
                         val open = tabbed || group.tag in openTags
                         if (!tabbed) {
                             item(key = "group:${group.tag}", span = { GridItemSpan(maxLineSpan) }) {
-                                PolicyGroupHeader(group.tag, group.items.size, open) {
+                                PolicyGroupHeader(policyLabel(group.tag, group.type), group.items.size, open) {
                                     selectedTag = group.tag
                                     expanded = if (open) openTags - group.tag else openTags + group.tag
                                 }
@@ -276,7 +277,7 @@ internal fun PolicyScreen(
                                     title = when {
                                         member.tag == "direct" && member.type == "direct" -> stringResource(R.string.routing_direct)
                                         member.tag == "block" && member.type == "block" -> stringResource(R.string.routing_block)
-                                        else -> member.displayName
+                                        else -> policyLabel(member.tag, member.type, member.displayName)
                                     },
                                     protocol = member.type.uppercase(),
                                     latency = member.delay.takeIf { state.live && it > 0 }?.toString(),
@@ -337,6 +338,12 @@ internal fun PolicyScreen(
         }
     }
 }
+
+@Composable
+private fun policyLabel(tag: String, type: String, fallback: String = tag): String =
+    if (tag == AUTO_POLICY_TAG && type.equals("urltest", ignoreCase = true)) {
+        stringResource(R.string.policy_auto_select)
+    } else fallback
 
 @Composable
 private fun PolicyGroupHeader(name: String, count: Int, expanded: Boolean, onClick: () -> Unit) {

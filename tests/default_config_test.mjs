@@ -42,7 +42,8 @@ test('默认配置保留上游模式和 DNS 语义，并增加内置应用分流
   expected.inbounds = expected.inbounds.filter(inbound => inbound.type !== 'ebpf')
   expected.inbounds[0].listen = '127.0.0.1'
   expected.outbounds = [
-    { type: 'selector', tag: 'Proxy', outbounds: ['block', 'direct'], use_all_providers: true, default: 'block', interrupt_exist_connections: true },
+    { type: 'selector', tag: 'Proxy', outbounds: ['Auto', 'block', 'direct'], use_all_providers: true, default: 'block', interrupt_exist_connections: true },
+    { type: 'urltest', tag: 'Auto', outbounds: ['block'], use_all_providers: true },
     ...['AI', 'GitHub', 'YouTube', 'Google', 'Telegram', 'Netflix', 'Spotify', 'Bilibili'].map(tag => ({
       type: 'selector', tag, outbounds: ['Proxy', 'direct', 'block'], use_all_providers: true, default: tag === 'Bilibili' ? 'direct' : 'Proxy',
     })),
