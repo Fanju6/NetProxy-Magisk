@@ -149,6 +149,7 @@
     <string name="subscription_no_usage">暂无流量信息</string>
     <string name="subscription_updated_at">%1$s于 %2$s</string>
     <string name="subscription_updated_label">更新</string>
+    <string name="subscription_last_success">上次成功更新：%1$s</string>
     <string name="local_config_modified_label">修改</string>
     <string name="subscription_not_updated">尚未更新</string>
     <string name="local_config_modified_at">暂无修改时间</string>
@@ -164,7 +165,6 @@
     <string name="subscription_update_failed">更新失败</string>
     <string name="subscription_expired">已过期</string>
     <string name="subscription_never_updated">从未更新</string>
-    <string name="subscription_normal">正常</string>
     <string name="subscription_set_active">设为活动订阅</string>
     <string name="local_config_set_active">设为活动配置</string>
     <string name="subscription_summary">%1$d 个节点 · 每 %2$s 更新</string>

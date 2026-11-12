@@ -407,7 +407,8 @@ private fun MainPager(
 
                     AppDestination.Nodes -> PolicyScreen(
                         bottomPadding = bottomPadding,
-                        isActive = mainPagerState.selectedPage == pageIndex
+                        // Keep the outgoing selection visible until the pager settles.
+                        isActive = mainPagerState.selectedPage == pageIndex || pagerState.settledPage == pageIndex,
                     )
 
                     AppDestination.Subscriptions -> SubscriptionsScreen(

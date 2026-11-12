@@ -139,6 +139,7 @@
     <string name="subscription_no_usage">No usage information</string>
     <string name="subscription_updated_at">%1$s at %2$s</string>
     <string name="subscription_updated_label">Updated</string>
+    <string name="subscription_last_success">Last successful update: %1$s</string>
     <string name="local_config_modified_label">Modified</string>
     <string name="subscription_not_updated">Not updated yet</string>
     <string name="local_config_modified_at">No modification time</string>
@@ -154,7 +155,6 @@
     <string name="subscription_update_failed">Update failed</string>
     <string name="subscription_expired">Expired</string>
     <string name="subscription_never_updated">Never updated</string>
-    <string name="subscription_normal">Normal</string>
     <string name="subscription_set_active">Set as active subscription</string>
     <string name="local_config_set_active">Set as active configuration</string>
     <string name="subscription_summary">%1$d nodes · Update every %2$s</string>

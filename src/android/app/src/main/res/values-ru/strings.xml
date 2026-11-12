@@ -139,6 +139,7 @@
     <string name="subscription_no_usage">Нет данных о трафике</string>
     <string name="subscription_updated_at">%1$s: %2$s</string>
     <string name="subscription_updated_label">Обновлено</string>
+    <string name="subscription_last_success">Последнее успешное обновление: %1$s</string>
     <string name="local_config_modified_label">Изменено</string>
     <string name="subscription_not_updated">Ещё не обновлялась</string>
     <string name="local_config_modified_at">Нет времени изменения</string>
@@ -154,7 +155,6 @@
     <string name="subscription_update_failed">Ошибка обновления</string>
     <string name="subscription_expired">Срок истёк</string>
     <string name="subscription_never_updated">Не обновлялась</string>
-    <string name="subscription_normal">В норме</string>
     <string name="subscription_set_active">Сделать активной подпиской</string>
     <string name="local_config_set_active">Сделать активной конфигурацией</string>
     <string name="subscription_summary">Узлов: %1$d · Обновление каждые %2$s</string>

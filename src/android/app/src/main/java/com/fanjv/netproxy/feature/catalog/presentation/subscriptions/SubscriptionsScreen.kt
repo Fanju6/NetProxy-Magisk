@@ -94,6 +94,7 @@ import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.PressFeedbackType
 import top.yukonga.miuix.kmp.utils.overScrollVertical
@@ -941,50 +942,74 @@ internal fun SubscriptionEditorScreen(
 @Composable
 private fun SubscriptionSummaryCard(subscription: CatalogGroupSummary, onCopyProviderTag: (String) -> Unit) {
     val isSubscription = subscription.type == "subscription"
+    val providerTag = subscription.runtimeTag
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = subscription.name,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f)
-                )
-                if (isSubscription) StatusTag(
-                    label = subscriptionStatus(subscription).label,
-                    backgroundColor = colorScheme.primaryContainer,
-                    contentColor = colorScheme.onPrimaryContainer
-                )
-                val providerTag = subscription.runtimeTag
-                if (subscription.nodeCount > 0 && providerTag.isNotBlank()) {
-                    IconButton(onClick = { onCopyProviderTag(providerTag) }) {
-                        Icon(
-                            Icons.Rounded.ContentCopy,
-                            contentDescription = stringResource(R.string.resource_copy_provider_tag),
-                            modifier = Modifier.size(18.dp),
-                            tint = colorScheme.onSurfaceVariantActions,
-                        )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = subscription.name,
+                        style = MiuixTheme.textStyles.title3.copy(fontWeight = FontWeight.SemiBold),
+                        modifier = Modifier.weight(1f, fill = false),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (subscription.nodeCount > 0 && providerTag.isNotBlank()) {
+                        IconButton(onClick = { onCopyProviderTag(providerTag) }) {
+                            Icon(
+                                Icons.Rounded.ContentCopy,
+                                contentDescription = stringResource(R.string.resource_copy_provider_tag),
+                                modifier = Modifier.size(18.dp),
+                                tint = colorScheme.onSurfaceVariantActions,
+                            )
+                        }
                     }
                 }
+                if (isSubscription) {
+                    val status = subscriptionStatus(subscription)
+                    val (background, foreground) = when (status) {
+                        SubscriptionUpdateStatus.Updating -> colorScheme.primaryContainer to colorScheme.onPrimaryContainer
+                        SubscriptionUpdateStatus.Failed, SubscriptionUpdateStatus.Expired ->
+                            colorScheme.errorContainer to colorScheme.onErrorContainer
+                        else -> colorScheme.secondaryContainer to colorScheme.onSecondaryContainer
+                    }
+                    StatusTag(stringResource(status.label), backgroundColor = background, contentColor = foreground)
+                }
             }
-            Text(
-                text = if (isSubscription) {
-                    stringResource(
-                        R.string.subscription_summary,
-                        subscription.nodeCount,
-                        formatDuration(subscription.updateInterval)
-                    )
-                } else {
-                    stringResource(R.string.local_config_summary, subscription.nodeCount)
-                },
-                color = colorScheme.onSurfaceVariantSummary,
-                fontSize = 13.sp
-            )
-            subscription.profileTitle.takeIf(String::isNotBlank)?.let {
-                Text(it, color = colorScheme.onSurfaceVariantSummary, fontSize = 13.sp)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(
+                    if (isSubscription) Icons.Rounded.RssFeed else Icons.Rounded.FileOpen,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = colorScheme.onSurfaceVariantActions,
+                )
+                Text(
+                    text = when {
+                        isSubscription && subscription.autoUpdate -> stringResource(
+                            R.string.subscription_summary, subscription.nodeCount, formatDuration(subscription.updateInterval),
+                        )
+                        isSubscription -> stringResource(R.string.subscription_node_count, subscription.nodeCount)
+                        else -> stringResource(R.string.local_config_summary, subscription.nodeCount)
+                    },
+                    style = MiuixTheme.textStyles.body2,
+                    color = colorScheme.onSurfaceVariantSummary,
+                )
+            }
+            if (isSubscription && subscription.lastSuccessAt.isNotBlank()) {
+                Text(
+                    text = stringResource(
+                        R.string.subscription_last_success,
+                        formatDate(subscription.lastSuccessAt),
+                    ),
+                    style = MiuixTheme.textStyles.footnote1,
+                    color = colorScheme.onSurfaceVariantSummary,
+                )
+            }
+            subscription.profileTitle.takeIf { it.isNotBlank() && it != subscription.name }?.let {
+                Text(it, style = MiuixTheme.textStyles.footnote1, color = colorScheme.onSurfaceVariantSummary)
             }
         }
     }
@@ -1058,35 +1083,27 @@ private fun SubscriptionUpdateSheet(operation: String) {
     }
 }
 
-private data class SubscriptionStatus(val label: String, val color: Color)
+internal enum class SubscriptionUpdateStatus(val label: Int) {
+    Updating(R.string.subscription_update_in_progress),
+    Failed(R.string.subscription_update_failed),
+    Expired(R.string.subscription_expired),
+    NeverUpdated(R.string.subscription_never_updated),
+    Updated(R.string.subscription_update_success),
+}
 
 private val activeProgressStages = setOf("download", "convert", "validate", "apply")
 
-@Composable
-private fun subscriptionStatus(subscription: CatalogGroupSummary): SubscriptionStatus {
+internal fun subscriptionStatus(
+    subscription: CatalogGroupSummary,
+    now: Long = Instant.now().epochSecond,
+): SubscriptionUpdateStatus {
     val expire = subscription.usage?.expire ?: 0L
     return when {
-        subscription.progress?.stage?.let(activeProgressStages::contains) == true ->
-            SubscriptionStatus(
-                stringResource(R.string.subscription_update_in_progress),
-                colorScheme.primary
-            )
-
-        subscription.lastError.isNotBlank() -> SubscriptionStatus(
-            stringResource(R.string.subscription_update_failed),
-            colorScheme.error
-        )
-        expire > 0 && expire <= Instant.now().epochSecond -> SubscriptionStatus(
-            stringResource(R.string.subscription_expired),
-            colorScheme.error
-        )
-
-        subscription.lastSuccessAt.isBlank() -> SubscriptionStatus(
-            stringResource(R.string.subscription_never_updated),
-            colorScheme.onSurfaceVariantSummary
-        )
-
-        else -> SubscriptionStatus(stringResource(R.string.subscription_normal), colorScheme.primary)
+        subscription.progress?.stage?.let(activeProgressStages::contains) == true -> SubscriptionUpdateStatus.Updating
+        subscription.lastError.isNotBlank() -> SubscriptionUpdateStatus.Failed
+        expire > 0 && expire <= now -> SubscriptionUpdateStatus.Expired
+        subscription.lastSuccessAt.isBlank() -> SubscriptionUpdateStatus.NeverUpdated
+        else -> SubscriptionUpdateStatus.Updated
     }
 }
 
