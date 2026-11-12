@@ -14,7 +14,7 @@
     "preview": "vitepress preview"
   },
   "devDependencies": {
-    "vitepress": "^2.0.0-alpha.20",
+    "vitepress": "^2.0.0-alpha.21",
     "vitest": "^3.2.7"
   }
 }
