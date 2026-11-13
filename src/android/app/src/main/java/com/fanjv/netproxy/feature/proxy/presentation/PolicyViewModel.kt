@@ -7,6 +7,7 @@ import com.fanjv.netproxy.core.ui.toUiText
 import com.fanjv.netproxy.feature.proxy.data.PolicyMember
 import com.fanjv.netproxy.feature.proxy.data.PolicyRepository
 import com.fanjv.netproxy.feature.proxy.data.PolicySnapshot
+import com.fanjv.netproxy.feature.proxy.data.editablePolicyTypes
 import com.fanjv.netproxy.feature.proxy.data.withRuntime
 import java.time.Instant
 import kotlinx.coroutines.CancellationException
@@ -117,6 +118,28 @@ internal class PolicyViewModel(
     fun delay(group: String) = operate(group, testDelay = true) { identity ->
         repository.delay(identity, group)
         null
+    }
+
+    fun deleteGroup(tag: String, type: String) {
+        val current = mutable.value
+        if (!visible || current.stale || current.pendingGroup != null || type !in editablePolicyTypes ||
+            current.configured?.groups?.none { it.tag == tag && it.type == type } != false
+        ) return
+        read?.cancel()
+        mutable.update { it.copy(pendingGroup = tag, error = UiText.Empty) }
+        viewModelScope.launch {
+            try {
+                repository.deleteGroup(tag, type)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                ensureActive()
+                mutable.update { it.copy(error = error.toUiText(), noticeId = it.noticeId + 1) }
+            } finally {
+                mutable.update { it.copy(pendingGroup = null) }
+                refresh()
+            }
+        }
     }
 
     private fun operate(group: String, testDelay: Boolean = false, action: suspend (Long) -> PolicySnapshot?) {

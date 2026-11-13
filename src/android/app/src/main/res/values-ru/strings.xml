@@ -3,6 +3,10 @@
     <string name="resources">Ресурсы</string>
     <string name="resource_local_groups">Локальные группы</string>
     <string name="policy_add_group">Добавить группу</string>
+    <string name="policy_manage_groups">Управление группами</string>
+    <string name="policy_edit_current_group">Изменить текущую группу</string>
+    <string name="policy_delete_current_group">Удалить текущую группу</string>
+    <string name="policy_delete_group_summary">Удалить «%1$s»? Узлы и подписки сохранятся. Сначала удалите ссылки на эту группу.</string>
     <string name="policy_edit_group">Изменить группу</string>
     <string name="policy_group_name">Название группы</string>
     <string name="policy_group_type">Тип группы</string>
@@ -83,7 +87,7 @@
     <string name="latency_failed">Ошибка проверки</string>
     <string name="latency_timeout">Тайм-аут</string>
     <string name="node_test_current_group">Проверить задержку группы</string>
-    <string name="node_display_settings">Отображение узлов</string>
+    <string name="node_display_settings">Настройки отображения</string>
     <string name="node_empty">Нет доступных узлов</string>
     <string name="node_layout_style">Вид списка</string>
     <string name="node_layout_tabs">Вкладки групп</string>

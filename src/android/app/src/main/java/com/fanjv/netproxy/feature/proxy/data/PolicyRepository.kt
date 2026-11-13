@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -88,6 +89,15 @@ internal class PolicyRepository(
 
     suspend fun saveGroup(document: PolicyGroupDocument, draft: PolicyGroupDraft) {
         config.apply("singbox/outbounds", document.updated(draft), document.revision)
+    }
+
+    suspend fun deleteGroup(tag: String, type: String) {
+        val snapshot = config.readSnapshot("singbox/outbounds")
+        val outbounds = parsePolicySection(snapshot.content, "outbounds")
+        val group = outbounds.singleOrNull { it.text("tag") == tag } ?: return
+        require(group.text("type") == type && type in editablePolicyTypes)
+        val content = buildJsonObject { put("outbounds", JsonArray(outbounds.filterNot { it === group })) }
+        config.apply("singbox/outbounds", content.toString(), snapshot.revision)
     }
 
     suspend fun snapshot(): PolicySnapshot = client.read<PolicySnapshot>("/policy-groups", mapOf("source" to "config"))

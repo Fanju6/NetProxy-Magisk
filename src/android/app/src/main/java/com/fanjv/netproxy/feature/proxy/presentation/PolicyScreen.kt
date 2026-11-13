@@ -55,8 +55,6 @@ import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.ContentStatus
 import com.fanjv.netproxy.core.ui.component.EmptyCatalog
 import com.fanjv.netproxy.core.ui.component.SnackbarNoticeEffect
-import com.fanjv.netproxy.core.ui.component.TopBarMenuAction
-import com.fanjv.netproxy.core.ui.component.TopBarMoreMenu
 import com.fanjv.netproxy.core.ui.component.deferredTopPadding
 import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
@@ -70,6 +68,8 @@ import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.Route
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.DropdownEntry
+import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.PullToRefresh
@@ -85,6 +85,8 @@ import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.ExpandLess
 import top.yukonga.miuix.kmp.icon.extended.ExpandMore
+import top.yukonga.miuix.kmp.icon.extended.MoreCircle
+import top.yukonga.miuix.kmp.menu.WindowIconCascadingDropdownMenu
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -120,8 +122,8 @@ internal fun PolicyScreen(
     var sort by remember { mutableIntStateOf(preferences.getInt("sort", 0).coerceIn(0, 3)) }
     var selectedTag by rememberSaveable { mutableStateOf("") }
     var expanded by rememberSaveable { mutableStateOf<List<String>?>(null) }
-    var showMenu by remember { mutableStateOf(false) }
     var showDisplay by rememberSaveable { mutableStateOf(false) }
+    var deleteTarget by remember { mutableStateOf<PolicyGroup?>(null) }
 
     val groups = state.snapshot?.groups.orEmpty()
     val selectedIndex = groups.indexOfFirst { it.tag == selectedTag }.coerceAtLeast(0)
@@ -130,6 +132,7 @@ internal fun PolicyScreen(
     val tabbed = layout == 0
     val shown = if (tabbed) listOfNotNull(current) else groups
     val canTest = state.live && state.pendingGroup == null
+    val canManageCurrent = !state.stale && state.pendingGroup == null && current?.type in editablePolicyTypes
 
     LifecycleResumeEffect(isActive) {
         if (isActive) viewModel.setVisible(true)
@@ -146,29 +149,41 @@ internal fun PolicyScreen(
                     color = barColor,
                     scrollBehavior = scroll,
                     actions = {
-                        TopBarMoreMenu(
-                            expanded = showMenu,
-                            onExpandedChange = { showMenu = it },
-                            actions = listOf(
-                                TopBarMenuAction(
-                                    text = stringResource(R.string.policy_add_group),
-                                    enabled = state.pendingGroup == null,
-                                    onClick = { navigator.push(Route.PolicyGroupEdit()) },
-                                ),
-                                TopBarMenuAction(
+                        WindowIconCascadingDropdownMenu(
+                            entry = DropdownEntry(items = listOf(
+                                DropdownItem(
                                     text = stringResource(R.string.node_test_current_group),
                                     enabled = canTest && current?.items?.any { it.runtimeAvailable } == true,
                                     onClick = { current?.let { viewModel.delay(it.tag) } },
                                 ),
-                                TopBarMenuAction(stringResource(R.string.node_display_settings)) { showDisplay = true },
-                                TopBarMenuAction(
-                                    text = stringResource(R.string.policy_edit_group),
-                                    enabled = current?.type in editablePolicyTypes && state.pendingGroup == null,
-                                    onClick = { current?.let { navigator.push(Route.PolicyGroupEdit(it.tag)) } },
+                                DropdownItem(
+                                    text = stringResource(R.string.node_display_settings),
+                                    onClick = { showDisplay = true },
                                 ),
-                            ),
-                            contentDescription = stringResource(R.string.more_actions)
-                        )
+                                DropdownItem(
+                                    text = stringResource(R.string.policy_manage_groups),
+                                    children = listOf(
+                                        DropdownItem(
+                                            text = stringResource(R.string.policy_add_group),
+                                            enabled = state.pendingGroup == null,
+                                            onClick = { navigator.push(Route.PolicyGroupEdit()) },
+                                        ),
+                                        DropdownItem(
+                                            text = stringResource(R.string.policy_edit_current_group),
+                                            enabled = canManageCurrent,
+                                            onClick = { current?.let { navigator.push(Route.PolicyGroupEdit(it.tag)) } },
+                                        ),
+                                        DropdownItem(
+                                            text = stringResource(R.string.policy_delete_current_group),
+                                            enabled = canManageCurrent,
+                                            onClick = { deleteTarget = current },
+                                        ),
+                                    ),
+                                ),
+                            )),
+                        ) {
+                            Icon(MiuixIcons.MoreCircle, stringResource(R.string.more_actions), tint = colorScheme.onSurface)
+                        }
                     },
                     bottomContent = {
                         if (tabbed && groups.isNotEmpty()) {
@@ -291,6 +306,32 @@ internal fun PolicyScreen(
                     }
                 }
             }
+        }
+    }
+
+    val target = deleteTarget
+    OverlayDialog(
+        show = target != null,
+        title = stringResource(R.string.policy_delete_current_group),
+        summary = target?.let { stringResource(R.string.policy_delete_group_summary, policyLabel(it.tag, it.type)) },
+        onDismissRequest = { deleteTarget = null },
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            TextButton(
+                text = stringResource(R.string.common_cancel),
+                onClick = { deleteTarget = null },
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(
+                text = stringResource(R.string.common_delete),
+                onClick = {
+                    deleteTarget = null
+                    target?.let { viewModel.deleteGroup(it.tag, it.type) }
+                },
+                enabled = target != null && !state.stale && state.pendingGroup == null,
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.textButtonColors(textColor = colorScheme.error),
+            )
         }
     }
 

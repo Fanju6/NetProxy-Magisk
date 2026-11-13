@@ -23,6 +23,34 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PolicyGroupEditorTest {
+    @Test fun deletesOnlyTheConfirmedGroupWithTheCurrentRevision() = runBlocking {
+        var writes = 0
+        val original = parsePolicySection(source, "outbounds")
+        val client = ModuleApiClient(TestApiTransport { request ->
+            if (request.mutation) {
+                writes++
+                request.assertConfig("PUT", "singbox/outbounds", "r1")
+                assertEquals(listOf(original[0], original[2]), parsePolicySection(request.text("content"), "outbounds"))
+                apiSuccess("""{"revision":"r2"}""")
+            } else {
+                request.assertConfig("GET", "singbox/outbounds")
+                configResponse(source)
+            }
+        })
+        PolicyRepository(client).deleteGroup("Proxy", "selector")
+        assertEquals(1, writes)
+    }
+
+    @Test fun refusesToDeleteAnOutboundThatNoLongerMatchesTheConfirmedType() = runBlocking {
+        val client = ModuleApiClient(TestApiTransport { request ->
+            check(!request.mutation)
+            configResponse(source)
+        })
+        val repository = PolicyRepository(client)
+        assertTrue(runCatching { repository.deleteGroup("Proxy", "urltest") }.exceptionOrNull() is IllegalArgumentException)
+        repository.deleteGroup("already removed", "selector")
+    }
+
     @Test fun addingAutoPreservesExistingDefaultsAndOtherOutbounds() {
         val original = parsePolicySection(source, "outbounds")
         val tags = listOf("direct", "Proxy", "block")

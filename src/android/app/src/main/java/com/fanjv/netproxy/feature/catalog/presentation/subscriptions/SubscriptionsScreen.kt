@@ -508,12 +508,6 @@ internal fun SubscriptionDetailsScreen(
                     navigationIcon = { BackIconButton(onClick = onBack) },
                     actions = {
                         if (state.details?.group?.type == "subscription") {
-                            IconButton(onClick = { navigator.push(Route.SubscriptionEdit(id)) }) {
-                                Icon(
-                                    Icons.Rounded.Edit,
-                                    contentDescription = stringResource(R.string.common_edit)
-                                )
-                            }
                             IconButton(
                                 enabled = state.operation.isEmpty(),
                                 onClick = { viewModel.update(id) }
@@ -521,6 +515,12 @@ internal fun SubscriptionDetailsScreen(
                                 Icon(
                                     MiuixIcons.Refresh,
                                     contentDescription = stringResource(R.string.common_update)
+                                )
+                            }
+                            IconButton(onClick = { navigator.push(Route.SubscriptionEdit(id)) }) {
+                                Icon(
+                                    Icons.Rounded.Edit,
+                                    contentDescription = stringResource(R.string.common_edit)
                                 )
                             }
                         }

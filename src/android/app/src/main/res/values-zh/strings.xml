@@ -3,6 +3,10 @@
     <string name="resources">资源</string>
     <string name="resource_local_groups">本地分组</string>
     <string name="policy_add_group">添加策略组</string>
+    <string name="policy_manage_groups">管理策略组</string>
+    <string name="policy_edit_current_group">编辑当前组</string>
+    <string name="policy_delete_current_group">删除当前组</string>
+    <string name="policy_delete_group_summary">删除「%1$s」？节点和订阅会保留。如果其他配置仍引用此组，请先移除引用。</string>
     <string name="policy_edit_group">编辑策略组</string>
     <string name="policy_group_name">组名</string>
     <string name="policy_group_type">策略组类型</string>
@@ -90,8 +94,8 @@
     <string name="latency_testing">测试中…</string>
     <string name="latency_failed">测试失败</string>
     <string name="latency_timeout">超时</string>
-    <string name="node_test_current_group">测试当前分组延迟</string>
-    <string name="node_display_settings">节点显示设置</string>
+    <string name="node_test_current_group">测试本组延迟</string>
+    <string name="node_display_settings">显示设置</string>
     <string name="node_empty">还没有可用节点</string>
     <string name="node_layout_style">布局样式</string>
     <string name="node_layout_tabs">分组标签页</string>
