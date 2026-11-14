@@ -23,9 +23,9 @@ import top.yukonga.miuix.kmp.basic.*
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Add
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import com.fanjv.netproxy.core.ui.component.AppDialog as OverlayDialog
 import top.yukonga.miuix.kmp.preference.CheckboxPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
+import com.fanjv.netproxy.core.ui.component.AppDropdown as OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
@@ -61,7 +61,7 @@ internal fun NetworkMatchingScreen(
                 scrollBehavior = scrollBehavior,
                 navigationIcon = { BackIconButton(onClick = leave) },
                 actions = {
-                    if (wifi.enabled && state.hasLoaded) IconButton(enabled = enabled, onClick = { openEditor() }) {
+                    if (wifi.enabled && state.hasLoaded) AppBarButton(enabled = enabled, onClick = { openEditor() }) {
                         Icon(MiuixIcons.Add, stringResource(R.string.wifi_add))
                     }
                 },
@@ -90,7 +90,7 @@ internal fun NetworkMatchingScreen(
                             )
                             SmallTitle(stringResource(R.string.wifi_policy_title),
                                 insideMargin = PaddingValues(start = 14.dp, top = 20.dp, end = 14.dp, bottom = 8.dp))
-                            Card {
+                            AppContentCard {
                                 val modes = listOf("off", "blacklist", "whitelist")
                                 OverlayDropdownPreference(
                                     title = stringResource(R.string.wifi_auto_switch),

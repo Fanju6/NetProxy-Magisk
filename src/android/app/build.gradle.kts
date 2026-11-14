@@ -28,8 +28,10 @@ val managerVersion = providers.gradleProperty("netproxyManagerVersion").orNull
     }
     ?: "8.2.0"
 val managerBuildId = providers.gradleProperty("netproxyManagerBuildId").orNull ?: "local"
+val glassPreview = providers.gradleProperty("netproxyMiuixSource").isPresent
 
 android {
+    sourceSets.getByName("main").kotlin.directories.add(if (glassPreview) "src/os4/kotlin" else "src/classic/kotlin")
     namespace = "com.fanjv.netproxy"
     compileSdk {
         version = release(37)
@@ -132,6 +134,9 @@ dependencies {
     implementation(libs.miuix.preference)
     implementation(libs.miuix.blur)
     implementation(libs.miuix.squircle)
+    if (glassPreview) {
+        implementation("top.yukonga.miuix.kmp:miuix-glass-android:${libs.versions.miuix.get()}")
+    }
     implementation(libs.scripta.editor)
     implementation(libs.androidx.navigationevent.compose)
     implementation(libs.kotlinx.serialization.json)

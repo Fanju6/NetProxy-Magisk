@@ -98,7 +98,10 @@ import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import com.fanjv.netproxy.core.ui.component.AppDialog as OverlayDialog
+import com.fanjv.netproxy.core.ui.component.LocalManagerBackdrop
+import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
+import com.fanjv.netproxy.core.ui.component.useGlassChrome
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
@@ -175,6 +178,7 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
     val moduleAccess: ModuleAccessViewModel = netProxyViewModel()
     val availability by moduleAccess.state.collectAsStateWithLifecycle()
     var reconnect by rememberSaveable { mutableStateOf(false) }
+    val overlayBackdrop = if (useGlassChrome) rememberBlurBackdrop() else null
 
     LifecycleResumeEffect(Unit) {
         moduleAccess.refresh()
@@ -184,9 +188,11 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
     CompositionLocalProvider(
         LocalNavigator provides navigator,
         LocalModuleAvailability provides availability,
+        LocalManagerBackdrop provides overlayBackdrop,
     ) {
         Scaffold {
             NavDisplay(
+                modifier = if (overlayBackdrop == null) Modifier else Modifier.layerBackdrop(overlayBackdrop),
                 backStack = navigator.backStack,
                 onBack = { navigator.pop() },
             ) {
@@ -268,8 +274,8 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
                     }
                 }
             }
+            ModuleConnectionDialog(reconnect, moduleAccess::reconnect) { reconnect = false }
         }
-        ModuleConnectionDialog(reconnect, moduleAccess::reconnect) { reconnect = false }
     }
 }
 

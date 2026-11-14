@@ -37,8 +37,12 @@ private fun CardSegment(
     insidePadding: PaddingValues = PaddingValues(0.dp),
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val topCornerRadius = if (isFirst) cornerRadius else 0.dp
-    val bottomCornerRadius = if (isLast) cornerRadius else 0.dp
+    val radius = if (useGlassChrome) cornerRadius + 4.dp else cornerRadius
+    val topCornerRadius = if (isFirst) radius else 0.dp
+    val bottomCornerRadius = if (isLast) radius else 0.dp
+    val rim = if (useGlassChrome) {
+        Modifier.contentCardSegmentRim(radius, isFirst, isLast, contentCardRim())
+    } else Modifier
     val background = if (topCornerRadius == 0.dp && bottomCornerRadius == 0.dp) {
         Modifier.background(color)
     } else {
@@ -61,6 +65,7 @@ private fun CardSegment(
                     top = outerTopPadding,
                     bottom = outerBottomPadding,
                 )
+                .then(rim)
                 .then(background)
                 .padding(insidePadding),
             content = content,

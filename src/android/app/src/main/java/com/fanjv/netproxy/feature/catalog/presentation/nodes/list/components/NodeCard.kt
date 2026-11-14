@@ -1,7 +1,6 @@
 package com.fanjv.netproxy.feature.catalog.presentation.nodes.list.components
 
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -9,14 +8,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
@@ -24,12 +23,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.fanjv.netproxy.R
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.CardDefaults
+import androidx.compose.ui.semantics.selected
+import com.fanjv.netproxy.core.ui.component.AppContentCard
+import com.fanjv.netproxy.core.ui.component.useGlassChrome
+import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Ok
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
-import top.yukonga.miuix.kmp.utils.PressFeedbackType
 
 /** 单个节点卡片，只负责展示和把点击事件交给列表容器。 */
 @OptIn(ExperimentalFoundationApi::class)
@@ -84,29 +86,13 @@ internal fun NodeCard(
     val density = LocalDensity.current
     val titleHeight = with(density) { titleStyle.lineHeight.toDp() }
     val detailHeight = with(density) { detailStyle.lineHeight.toDp() }
-    val shape = RoundedCornerShape(cornerRadius)
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .graphicsLayer {
-                this.shape = shape
-                clip = true
-            }
-            .border(
-                width = if (selected) 1.5.dp else 0.dp,
-                color = if (selected) colorScheme.primary else Color.Transparent,
-                shape = shape
-            ),
+    AppContentCard(
+        modifier = Modifier.fillMaxWidth().semantics { this.selected = selected },
         cornerRadius = cornerRadius,
         insideMargin = PaddingValues(0.dp),
-        colors = CardDefaults.defaultColors(
-            color = if (selected) colorScheme.primary.copy(alpha = 0.1f)
-            else colorScheme.surfaceContainer
-        ),
+        selected = selected,
         onClick = if (enabled) onClick else null,
         onLongPress = if (enabled) onLongClick else null,
-        pressFeedbackType = PressFeedbackType.Sink,
-        showIndication = true
     ) {
         Column(modifier = Modifier
             .fillMaxWidth()
@@ -124,6 +110,14 @@ internal fun NodeCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (selected && useGlassChrome) {
+                    Icon(
+                        imageVector = MiuixIcons.Ok,
+                        contentDescription = null,
+                        modifier = Modifier.padding(start = 6.dp).size(14.dp),
+                        tint = colorScheme.primary,
+                    )
+                }
             }
             Spacer(Modifier.height(if (itemSize == 0) 8.dp else if (itemSize == 1) 4.dp else 2.dp))
             Row(
@@ -134,7 +128,7 @@ internal fun NodeCard(
                     Text(
                         text = protocol,
                         modifier = Modifier.weight(1f),
-                        color = if (selected) colorScheme.primary else colorScheme.onSurfaceVariantActions,
+                        color = if (selected && !useGlassChrome) colorScheme.primary else colorScheme.onSurfaceVariantActions,
                         style = detailStyle,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis

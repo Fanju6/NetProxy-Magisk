@@ -52,8 +52,12 @@ import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BlurredBar
+import com.fanjv.netproxy.core.ui.component.AppContentCard
 import com.fanjv.netproxy.core.ui.component.ContentStatus
 import com.fanjv.netproxy.core.ui.component.EmptyCatalog
+import com.fanjv.netproxy.core.ui.component.ManagerMenu
+import com.fanjv.netproxy.core.ui.component.appBarOverscroll
+import com.fanjv.netproxy.core.ui.component.ManagerTabs
 import com.fanjv.netproxy.core.ui.component.SnackbarNoticeEffect
 import com.fanjv.netproxy.core.ui.component.deferredTopPadding
 import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
@@ -75,24 +79,18 @@ import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.PullToRefresh
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.TabRow
-import top.yukonga.miuix.kmp.basic.TabRowDefaults
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.basic.TopAppBar
+import com.fanjv.netproxy.core.ui.component.AppTopAppBar as TopAppBar
 import top.yukonga.miuix.kmp.basic.rememberPullToRefreshState
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.ExpandLess
 import top.yukonga.miuix.kmp.icon.extended.ExpandMore
-import top.yukonga.miuix.kmp.icon.extended.MoreCircle
-import top.yukonga.miuix.kmp.menu.WindowIconCascadingDropdownMenu
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
+import com.fanjv.netproxy.core.ui.component.AppDialog as OverlayDialog
+import com.fanjv.netproxy.core.ui.component.AppDropdown as OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
-import top.yukonga.miuix.kmp.utils.PressFeedbackType
-import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
 @Composable
@@ -140,17 +138,8 @@ internal fun PolicyScreen(
     }
     SnackbarNoticeEffect(state.noticeId, state.error.resolve(), true, snackbar, viewModel::clearNotice)
 
-    Scaffold(
-        snackbarHost = { AppSnackbarHost(snackbar, Modifier.padding(bottom = bottomPadding)) },
-        topBar = {
-            BlurredBar(backdrop) {
-                TopAppBar(
-                    title = stringResource(R.string.proxies),
-                    color = barColor,
-                    scrollBehavior = scroll,
-                    actions = {
-                        WindowIconCascadingDropdownMenu(
-                            entry = DropdownEntry(items = listOf(
+    ManagerMenu(
+        entries = listOf(DropdownEntry(items = listOf(
                                 DropdownItem(
                                     text = stringResource(R.string.node_test_current_group),
                                     enabled = canTest && current?.items?.any { it.runtimeAvailable } == true,
@@ -180,11 +169,18 @@ internal fun PolicyScreen(
                                         ),
                                     ),
                                 ),
-                            )),
-                        ) {
-                            Icon(MiuixIcons.MoreCircle, stringResource(R.string.more_actions), tint = colorScheme.onSurface)
-                        }
-                    },
+        ))),
+        description = stringResource(R.string.more_actions),
+    ) { moreButton ->
+    Scaffold(
+        snackbarHost = { AppSnackbarHost(snackbar, Modifier.padding(bottom = bottomPadding)) },
+        topBar = {
+            BlurredBar(backdrop) {
+                TopAppBar(
+                    title = stringResource(R.string.proxies),
+                    color = barColor,
+                    scrollBehavior = scroll,
+                    actions = { moreButton() },
                     bottomContent = {
                         if (tabbed && groups.isNotEmpty()) {
                             BoxWithConstraints(
@@ -200,14 +196,13 @@ internal fun PolicyScreen(
                                     (with(density) { widest.toDp() } + 28.dp)
                                         .coerceIn(minOf(96.dp, maxWidth), maxWidth)
                                 }
-                                TabRow(
+                                ManagerTabs(
                                     tabs = names,
-                                    selectedTabIndex = selectedIndex,
-                                    onTabSelected = { index -> groups.getOrNull(index)?.let { selectedTag = it.tag } },
+                                    selected = selectedIndex,
+                                    onSelect = { index -> groups.getOrNull(index)?.let { selectedTag = it.tag } },
                                     minWidth = width,
                                     maxWidth = maxOf(width, minOf(116.dp, maxWidth)),
-                                    height = 40.dp,
-                                    colors = TabRowDefaults.tabRowColors(backgroundColor = barColor)
+                                    color = barColor,
                                 )
                             }
                         }
@@ -243,7 +238,7 @@ internal fun PolicyScreen(
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(density + 1),
                     state = gridState,
-                    modifier = Modifier.fillMaxSize().scrollEndHaptic().overScrollVertical()
+                    modifier = Modifier.fillMaxSize().scrollEndHaptic().appBarOverscroll(scroll)
                         .nestedScroll(scroll.nestedScrollConnection),
                     contentPadding = PaddingValues(
                         start = padding.calculateStartPadding(direction) + 12.dp,
@@ -307,6 +302,8 @@ internal fun PolicyScreen(
                 }
             }
         }
+    }
+
     }
 
     val target = deleteTarget
@@ -388,12 +385,10 @@ private fun policyLabel(tag: String, type: String, fallback: String = tag): Stri
 
 @Composable
 private fun PolicyGroupHeader(name: String, count: Int, expanded: Boolean, onClick: () -> Unit) {
-    Card(
+    AppContentCard(
         modifier = Modifier.fillMaxWidth(),
         cornerRadius = 16.dp,
         insideMargin = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-        pressFeedbackType = PressFeedbackType.Sink,
-        showIndication = true,
         onClick = onClick,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

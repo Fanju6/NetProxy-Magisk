@@ -57,12 +57,14 @@ import com.fanjv.netproxy.core.ui.UiText
 import com.fanjv.netproxy.core.ui.resolve
 import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BackIconButton
+import com.fanjv.netproxy.core.ui.component.AppBarButton
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.ContentStatus
 import com.fanjv.netproxy.core.ui.component.SnackbarNoticeEffect
 import com.fanjv.netproxy.core.ui.component.StatusTag
 import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
+import com.fanjv.netproxy.core.ui.component.appBarOverscroll
 import com.fanjv.netproxy.feature.catalog.model.CatalogGroupSummary
 import com.fanjv.netproxy.feature.catalog.model.CatalogNode
 import com.fanjv.netproxy.feature.catalog.model.SubscriptionHistoryEntry
@@ -71,7 +73,7 @@ import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.Route
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
-import top.yukonga.miuix.kmp.basic.Card
+import com.fanjv.netproxy.core.ui.component.AppContentCard
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -82,19 +84,18 @@ import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
-import top.yukonga.miuix.kmp.basic.TopAppBar
+import com.fanjv.netproxy.core.ui.component.AppTopAppBar as TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.MoreCircle
 import top.yukonga.miuix.kmp.icon.extended.Refresh
-import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
+import com.fanjv.netproxy.core.ui.component.AppBottomSheet as OverlayBottomSheet
+import com.fanjv.netproxy.core.ui.component.AppDialog as OverlayDialog
+import com.fanjv.netproxy.core.ui.component.AppDropdown as OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
-import top.yukonga.miuix.kmp.utils.PressFeedbackType
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 import java.time.Instant
@@ -161,7 +162,7 @@ internal fun SubscriptionsScreen(
                     scrollBehavior = scrollBehavior,
                     actions = {
                         if (state.groups.any { it.type == "subscription" }) {
-                            IconButton(
+                            AppBarButton(
                                 enabled = state.operation.isEmpty(),
                                 onClick = viewModel::updateAll
                             ) {
@@ -172,7 +173,7 @@ internal fun SubscriptionsScreen(
                                 )
                             }
                         }
-                        IconButton(onClick = { showAddActions = true }) {
+                        AppBarButton(onClick = { showAddActions = true }) {
                             Icon(MiuixIcons.Add, stringResource(R.string.common_add))
                         }
                     }
@@ -199,7 +200,7 @@ internal fun SubscriptionsScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .scrollEndHaptic()
-                        .overScrollVertical()
+                        .appBarOverscroll(scrollBehavior)
                         .nestedScroll(scrollBehavior.nestedScrollConnection),
                     contentPadding = PaddingValues(
                         start = innerPadding.calculateStartPadding(direction) + 12.dp,
@@ -229,7 +230,7 @@ internal fun SubscriptionsScreen(
         title = stringResource(R.string.common_add),
         onDismissRequest = { showAddActions = false },
     ) {
-        Card(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+        AppContentCard(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
             BasicComponent(
                 title = stringResource(R.string.subscription_add_url),
                 startAction = { DetailActionIcon(Icons.Rounded.RssFeed) },
@@ -301,13 +302,11 @@ private fun CatalogGroupCard(
     val total = usage?.total ?: 0L
     val updatedAt = group.lastSuccessAt.ifBlank { group.updatedAt }
 
-    Card(
+    AppContentCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = 12.dp),
         insideMargin = PaddingValues(16.dp),
-        pressFeedbackType = PressFeedbackType.Sink,
-        showIndication = true,
         onClick = onEdit
     ) {
         Row(
@@ -508,7 +507,7 @@ internal fun SubscriptionDetailsScreen(
                     navigationIcon = { BackIconButton(onClick = onBack) },
                     actions = {
                         if (state.details?.group?.type == "subscription") {
-                            IconButton(
+                            AppBarButton(
                                 enabled = state.operation.isEmpty(),
                                 onClick = { viewModel.update(id) }
                             ) {
@@ -517,7 +516,7 @@ internal fun SubscriptionDetailsScreen(
                                     contentDescription = stringResource(R.string.common_update)
                                 )
                             }
-                            IconButton(onClick = { navigator.push(Route.SubscriptionEdit(id)) }) {
+                            AppBarButton(onClick = { navigator.push(Route.SubscriptionEdit(id)) }) {
                                 Icon(
                                     Icons.Rounded.Edit,
                                     contentDescription = stringResource(R.string.common_edit)
@@ -562,7 +561,7 @@ internal fun SubscriptionDetailsScreen(
                     SectionLabel(stringResource(R.string.subscription_nodes_section, details.nodes.size))
                 }
                 items(details.nodes, key = { it.tag }) { node ->
-                    Card(modifier = Modifier.fillMaxWidth()) {
+                    AppContentCard(modifier = Modifier.fillMaxWidth()) {
                         BasicComponent(
                             title = node.tag,
                             summary = "${node.protocol.uppercase()} · ${node.server}:${node.port}",
@@ -629,7 +628,7 @@ internal fun SubscriptionDetailsScreen(
         onDismissRequest = { actionNode = null }
     ) {
         if (selectedNode != null) {
-            Card(
+            AppContentCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 8.dp)
@@ -716,7 +715,7 @@ internal fun SubscriptionEditorScreen(
                     scrollBehavior = scrollBehavior,
                     navigationIcon = { BackIconButton(onClick = onBack) },
                     actions = {
-                        IconButton(
+                        AppBarButton(
                             enabled = !state.saving && !state.loading,
                             onClick = viewModel::save
                         ) {
@@ -787,7 +786,7 @@ internal fun SubscriptionEditorScreen(
                     )
                 }
                 item {
-                    Card(modifier = Modifier.fillMaxWidth()) {
+                    AppContentCard(modifier = Modifier.fillMaxWidth()) {
                         val intervals = subscriptionIntervalOptions(draft.updateIntervalSeconds)
                         val intervalLabels = listOf(
                             stringResource(R.string.subscription_duration_minutes, 15),
@@ -859,7 +858,7 @@ internal fun SubscriptionEditorScreen(
                     )
                 }
                 item {
-                    Card(modifier = Modifier.fillMaxWidth()) {
+                    AppContentCard(modifier = Modifier.fillMaxWidth()) {
                         SwitchPreference(
                             title = stringResource(R.string.subscription_editor_allow_insecure),
                             summary = stringResource(R.string.subscription_editor_allow_insecure_summary),
@@ -938,7 +937,7 @@ internal fun SubscriptionEditorScreen(
 private fun SubscriptionSummaryCard(subscription: CatalogGroupSummary) {
     val isSubscription = subscription.type == "subscription"
     val status = subscriptionBadge(subscription)
-    Card(modifier = Modifier.fillMaxWidth()) {
+    AppContentCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -988,7 +987,7 @@ private fun HistoryRow(entry: SubscriptionHistoryEntry) {
     val revision = entry.revision?.let {
         stringResource(R.string.subscription_revision, it)
     }
-    Card(modifier = Modifier.fillMaxWidth()) {
+    AppContentCard(modifier = Modifier.fillMaxWidth()) {
         BasicComponent(
             title = when {
                 !entry.ok -> stringResource(R.string.subscription_update_failed)

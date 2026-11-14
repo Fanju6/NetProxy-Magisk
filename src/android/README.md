@@ -88,3 +88,15 @@ cd src/android
 ## 许可证
 
 NetProxy 使用 [GNU General Public License v3.0](../../LICENSE)。第三方组件保留各自许可证，详见 [NOTICE](../../NOTICE)。
+
+## OS4 Glass 本地预览
+
+当前正式构建继续使用 Maven Central 上的 MIUIX 稳定版。Glass 尚未进入该稳定版，可以用上游源码预览，无需 GitHub Packages 令牌，也不改变管理器包名或 Android 最低版本。
+
+将 [MIUIX](https://github.com/compose-miuix-ui/miuix) 签出到提交 `19b5b831679a45d3d8a1484fce00ef12b9b494db`，在本目录执行：
+
+```powershell
+.\gradlew.bat "-PnetproxyMiuixSource=C:/path/to/miuix" :app:assembleDebug
+```
+
+请使用 Git checkout，不要直接使用下载的源码 ZIP：上游构建使用 Git 提交信息生成预览版本号。去掉该参数即恢复普通构建。Android 13 及以上、且已开启模糊时才采样折射背景；其他情况下使用上游组件的不透明材质。

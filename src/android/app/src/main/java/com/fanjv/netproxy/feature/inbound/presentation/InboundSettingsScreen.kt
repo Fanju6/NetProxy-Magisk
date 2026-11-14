@@ -37,11 +37,11 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.*
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import com.fanjv.netproxy.core.ui.component.AppDialog as OverlayDialog
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.CheckboxLocation
 import top.yukonga.miuix.kmp.preference.CheckboxPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
+import com.fanjv.netproxy.core.ui.component.AppDropdown as OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
@@ -101,6 +101,15 @@ internal fun InboundSettingsScreen(
         onPauseOrDispose {}
     }
 
+    TopBarMoreMenu(
+        contentDescription = stringResource(R.string.more_actions),
+        actions = listOf(
+            TopBarMenuAction(stringResource(R.string.restart_core), enabled = state.editable, onClick = viewModel::restart),
+            TopBarMenuAction(stringResource(R.string.ebpf_diagnostics), enabled = state.hasConfiguration && !state.isDiagnosing, onClick = viewModel::diagnose),
+            TopBarMenuAction(stringResource(R.string.inbound_full_json), enabled = state.editable,
+                onClick = { commitAction { navigator.push(Route.JsonEdit("inbound")) } })
+        ),
+    ) { moreButton ->
     Scaffold(
         topBar = {
             BlurredBar(backdrop) {
@@ -110,21 +119,10 @@ internal fun InboundSettingsScreen(
                     scrollBehavior = scrollBehavior,
                     navigationIcon = { BackIconButton(onClick = leave) },
                     actions = {
-                        var more by remember { mutableStateOf(false) }
                         if (applyingField == "restart") {
                             CircularProgressIndicator(Modifier.padding(end = 8.dp), size = 20.dp, strokeWidth = 2.dp)
                         }
-                        TopBarMoreMenu(
-                            expanded = more,
-                            onExpandedChange = { more = it },
-                            contentDescription = stringResource(R.string.more_actions),
-                            actions = listOf(
-                                TopBarMenuAction(stringResource(R.string.restart_core), enabled = state.editable, onClick = viewModel::restart),
-                                TopBarMenuAction(stringResource(R.string.ebpf_diagnostics), enabled = state.hasConfiguration && !state.isDiagnosing, onClick = viewModel::diagnose),
-                                TopBarMenuAction(stringResource(R.string.inbound_full_json), enabled = state.editable,
-                                    onClick = { commitAction { navigator.push(Route.JsonEdit("inbound")) } })
-                            )
-                        )
+                        moreButton()
                     }
                 )
             }
@@ -217,6 +215,7 @@ internal fun InboundSettingsScreen(
                 item { Spacer(Modifier.height(80.dp + bottomPadding)) }
             }
         }
+    }
     }
     editing?.let { field ->
         FieldDialog(field, state, show = showField, canSave = state.editable,

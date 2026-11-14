@@ -35,5 +35,16 @@ file("local.properties").takeIf(File::isFile)?.copyTo(
 )
 
 includeBuild(scriptaDirectory)
+
+// Glass is not published to Maven Central yet. Use a local upstream checkout for previews.
+providers.gradleProperty("netproxyMiuixSource").orNull?.let { path ->
+    includeBuild(file(path)) {
+        dependencySubstitution {
+            listOf("ui", "icons", "nav", "preference", "blur", "squircle", "material", "glass").forEach { name ->
+                substitute(module("top.yukonga.miuix.kmp:miuix-$name-android")).using(project(":miuix-$name"))
+            }
+        }
+    }
+}
 include(":app")
 include(":platform")

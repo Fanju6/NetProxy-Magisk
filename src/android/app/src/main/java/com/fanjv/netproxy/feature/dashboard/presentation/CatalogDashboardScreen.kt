@@ -1,5 +1,9 @@
 package com.fanjv.netproxy.feature.dashboard.presentation
 
+import android.icu.text.MeasureFormat
+import android.icu.util.Measure
+import android.icu.util.MeasureUnit
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -14,19 +18,14 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.AltRoute
-import androidx.compose.material.icons.rounded.DataUsage
-import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.Memory
-import androidx.compose.material.icons.rounded.Router
-import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -34,6 +33,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.core.module.ModuleConnectionState
+import com.fanjv.netproxy.core.ui.component.AppContentCard
 import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.LocalModuleAvailability
@@ -41,18 +41,16 @@ import com.fanjv.netproxy.core.ui.component.SnackbarNoticeEffect
 import com.fanjv.netproxy.core.ui.component.WarningCard
 import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
+import com.fanjv.netproxy.core.ui.component.appBarOverscroll
 import com.fanjv.netproxy.core.ui.resolve
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TopAppBar
+import com.fanjv.netproxy.core.ui.component.AppTopAppBar as TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
+import com.fanjv.netproxy.core.ui.component.AppDropdown as OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
-import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 import kotlin.math.roundToInt
 
@@ -108,7 +106,7 @@ internal fun CatalogDashboardScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .scrollEndHaptic()
-                    .overScrollVertical()
+                    .appBarOverscroll(scrollBehavior)
                     .nestedScroll(scrollBehavior.nestedScrollConnection)
                     .padding(horizontal = 12.dp),
                 contentPadding = innerPadding,
@@ -130,7 +128,8 @@ internal fun CatalogDashboardScreen(
                             R.string.dashboard_service_up,
                             formatUptime(state.uptimeSeconds)
                         )
-                        else -> stringResource(R.string.service_stopped)
+                        state.serviceState == "failed" -> stringResource(R.string.dashboard_service_failed)
+                        else -> stringResource(R.string.dashboard_service_stopped)
                     }
                     SpeedChartCard(
                         downloadSpeed = formatRate(state.downloadBytesPerSecond),
@@ -156,11 +155,11 @@ internal fun CatalogDashboardScreen(
 
                 item { Spacer(Modifier.height(12.dp)) }
                 item {
-                    Card(modifier = Modifier.fillMaxWidth()) {
+                    AppContentCard(modifier = Modifier.fillMaxWidth()) {
                         InfoRow(
                             title = stringResource(R.string.dashboard_lan_ip),
-                            content = state.internalIp,
-                            icon = Icons.Rounded.Router
+                            content = state.internalIp.takeUnless { it.isBlank() || it == "--" }
+                                ?: stringResource(R.string.dashboard_lan_ip_unavailable),
                         )
                         InfoRow(
                             title = stringResource(R.string.dashboard_total_traffic),
@@ -169,14 +168,13 @@ internal fun CatalogDashboardScreen(
                                 formatBytes(state.uploadTotal),
                                 formatBytes(state.downloadTotal)
                             ),
-                            icon = Icons.Rounded.DataUsage
                         )
                     }
                 }
 
                 item { Spacer(Modifier.height(12.dp)) }
                 item {
-                    Card(modifier = Modifier.fillMaxWidth()) {
+                    AppContentCard(modifier = Modifier.fillMaxWidth()) {
                         val modeValues = state.availableOutboundModes
                         val modeLabels = modeValues.map { mode ->
                             when (mode) {
@@ -201,13 +199,6 @@ internal fun CatalogDashboardScreen(
                             enabled = availability?.available == true && !state.loading,
                             items = modeItems,
                             selectedIndex = if (selectedModeIndex >= 0) selectedModeIndex else 0,
-                            startAction = {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Rounded.AltRoute,
-                                    contentDescription = null,
-                                    tint = colorScheme.primary
-                                )
-                            },
                             onSelectedIndexChange = { index ->
                                 val actualIndex = if (selectedModeIndex >= 0) index else index - 1
                                 modeValues.getOrNull(actualIndex)?.let(viewModel::setMode)
@@ -231,13 +222,11 @@ private fun SystemStatsSection(cpuUsage: Float, memoryUsage: Float) {
             modifier = Modifier.weight(1f),
             title = stringResource(R.string.cpu_usage),
             value = "%.1f%%".format(cpuUsage),
-            icon = Icons.Rounded.Memory
         )
         ResourceUsageCard(
             modifier = Modifier.weight(1f),
             title = stringResource(R.string.mem_usage),
             value = "%.1f%%".format(memoryUsage),
-            icon = Icons.Rounded.Storage
         )
     }
 }
@@ -247,29 +236,21 @@ private fun ResourceUsageCard(
     modifier: Modifier,
     title: String,
     value: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector
 ) {
-    Card(
+    AppContentCard(
         modifier = modifier,
         insideMargin = PaddingValues(16.dp)
     ) {
-        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = colorScheme.primary
-            )
-            Text(
-                text = title,
-                modifier = Modifier.weight(1f).padding(start = 8.dp),
-                style = MiuixTheme.textStyles.body2,
-                color = colorScheme.onSurfaceVariantSummary
-            )
-        }
+        Text(
+            text = title,
+            style = MiuixTheme.textStyles.body2,
+            color = colorScheme.onSurface,
+        )
         Text(
             text = value,
             modifier = Modifier.padding(top = 8.dp),
-            style = MiuixTheme.textStyles.headline1
+            style = MiuixTheme.textStyles.headline1,
+            color = colorScheme.onSurfaceVariantSummary,
         )
     }
 }
@@ -282,26 +263,27 @@ private fun DashboardWarning(message: String, onClick: (() -> Unit)? = null) {
         modifier = Modifier
             .padding(top = 12.dp)
             .fillMaxWidth(),
-        action = {
-            Icon(
-                Icons.Rounded.ErrorOutline,
-                contentDescription = null,
-                modifier = Modifier.padding(start = 16.dp),
-                tint = if (MiuixTheme.isDynamicColor) {
-                    colorScheme.onErrorContainer
-                } else {
-                    Color(0xFFF72727)
-                }
-            )
-        }
     )
 }
 
+@Composable
 private fun formatUptime(seconds: Long): String {
+    val locale = LocalConfiguration.current.locales[0]
+    val formatter = remember(locale) { MeasureFormat.getInstance(locale, MeasureFormat.FormatWidth.WIDE) }
     val hours = seconds / 3600
     val minutes = seconds % 3600 / 60
-    val remaining = seconds % 60
-    return "%02d:%02d:%02d".format(hours, minutes, remaining)
+    return when {
+        hours >= 24 && hours % 24 != 0L -> formatter.formatMeasures(
+            Measure(hours / 24, MeasureUnit.DAY), Measure(hours % 24, MeasureUnit.HOUR),
+        )
+        hours >= 24 -> formatter.formatMeasures(Measure(hours / 24, MeasureUnit.DAY))
+        hours > 0 && minutes > 0 -> formatter.formatMeasures(
+            Measure(hours, MeasureUnit.HOUR), Measure(minutes, MeasureUnit.MINUTE),
+        )
+        hours > 0 -> formatter.formatMeasures(Measure(hours, MeasureUnit.HOUR))
+        minutes > 0 -> formatter.formatMeasures(Measure(minutes, MeasureUnit.MINUTE))
+        else -> formatter.formatMeasures(Measure(seconds.coerceAtLeast(0), MeasureUnit.SECOND))
+    }
 }
 
 private fun formatRate(bytes: Long): String = "${formatBytes(bytes)}/s"

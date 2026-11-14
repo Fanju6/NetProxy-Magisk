@@ -13,16 +13,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Upload
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,16 +32,21 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.fanjv.netproxy.R
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.Icon
+import com.fanjv.netproxy.core.ui.component.AppContentCard
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
+
+private val DownloadColor = Color(0xFF2196F3)
+private val UploadColor = Color(0xFF4CAF50)
 
 /** 服务状态、实时速率与最近流量趋势。 */
 @Composable
@@ -61,12 +60,13 @@ internal fun SpeedChartCard(
     modifier: Modifier = Modifier,
     onToggleService: () -> Unit = {}
 ) {
-    Card(modifier = modifier.fillMaxWidth()) {
+    AppContentCard(modifier = modifier.fillMaxWidth()) {
         Column {
             SwitchPreference(
                 title = stringResource(R.string.service_status),
                 summary = statusSummary,
                 checked = isRunning,
+                enabled = serviceControlEnabled,
                 onCheckedChange = { if (serviceControlEnabled) onToggleService() }
             )
             AnimatedVisibility(
@@ -80,10 +80,10 @@ internal fun SpeedChartCard(
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp)
                             .padding(bottom = 7.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        SpeedLabel(Icons.Rounded.Download, downloadSpeed, Color(0xFF2196F3))
-                        SpeedLabel(Icons.Rounded.Upload, uploadSpeed, Color(0xFF4CAF50))
+                        SpeedLabel(stringResource(R.string.dashboard_download), downloadSpeed, DownloadColor, Modifier.weight(1f))
+                        SpeedLabel(stringResource(R.string.dashboard_upload), uploadSpeed, UploadColor, Modifier.weight(1f), TextAlign.End)
                     }
                     Box(
                         modifier = Modifier
@@ -105,16 +105,18 @@ internal fun SpeedChartCard(
 }
 
 @Composable
-private fun SpeedLabel(icon: ImageVector, value: String, color: Color) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, modifier = Modifier.size(14.dp), tint = color)
-        Spacer(Modifier.width(4.dp))
-        Text(
-            text = value,
-            style = MiuixTheme.textStyles.body2,
-            color = colorScheme.onSurfaceVariantActions
-        )
-    }
+private fun SpeedLabel(label: String, value: String, color: Color, modifier: Modifier, align: TextAlign = TextAlign.Start) {
+    Text(
+        text = buildAnnotatedString {
+            withStyle(SpanStyle(color = color)) { append(label) }
+            append("  ")
+            append(value)
+        },
+        modifier = modifier,
+        style = MiuixTheme.textStyles.body2,
+        color = colorScheme.onSurfaceVariantActions,
+        textAlign = align,
+    )
 }
 
 /** 将最近一段流量采样绘制为双折线。 */
@@ -123,8 +125,6 @@ private fun SpeedChart(
     trafficSamples: List<TrafficSample>,
     modifier: Modifier = Modifier
 ) {
-    val downloadColor = Color(0xFF2196F3)
-    val uploadColor = Color(0xFF4CAF50)
     val geometry = remember(trafficSamples) { trafficChartGeometry(trafficSamples) }
     var fromGeometry by remember { mutableStateOf(geometry) }
     var targetGeometry by remember { mutableStateOf(geometry) }
@@ -197,28 +197,26 @@ private fun SpeedChart(
                 )
             )
         }
-        drawSeries(animatedGeometry.download, downloadColor, 0.25f)
-        drawSeries(animatedGeometry.upload, uploadColor, 0.15f)
+        drawSeries(animatedGeometry.download, DownloadColor, 0.25f)
+        drawSeries(animatedGeometry.upload, UploadColor, 0.15f)
     }
 }
 
 /** 仪表盘中的单行摘要。 */
 @Composable
-internal fun InfoRow(title: String, content: String, icon: ImageVector) {
+internal fun InfoRow(title: String, content: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, modifier = Modifier.size(20.dp), tint = colorScheme.primary)
-            Spacer(Modifier.width(12.dp))
-            Text(title, style = MiuixTheme.textStyles.body1)
-        }
+        Text(title, modifier = Modifier.weight(1f), style = MiuixTheme.textStyles.body1)
         Text(
             content,
+            modifier = Modifier.weight(1.4f),
+            textAlign = TextAlign.End,
             style = MiuixTheme.textStyles.body2,
             color = colorScheme.onSurfaceVariantActions
         )

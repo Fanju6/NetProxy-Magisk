@@ -1,8 +1,9 @@
 package com.fanjv.netproxy.feature.about.presentation.effect
 
 import android.annotation.SuppressLint
-import top.yukonga.miuix.kmp.blur.asBrush
-import top.yukonga.miuix.kmp.shader.RuntimeShader
+import android.graphics.RuntimeShader
+import android.os.Build
+import androidx.compose.ui.graphics.ShaderBrush
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -11,7 +12,7 @@ internal class AboutBackgroundPainter {
     private val runtimeShader by lazy {
         RuntimeShader(ABOUT_BACKGROUND_SHADER).also(::initializeShader)
     }
-    val brush get() = runtimeShader.asBrush()
+    val brush by lazy { ShaderBrush(runtimeShader) }
 
     private val resolution = FloatArray(2)
     private val bound = FloatArray(4)
@@ -124,3 +125,5 @@ internal class AboutBackgroundPainter {
         cachedDarkTheme = darkTheme
     }
 }
+
+internal fun isRuntimeShaderSupported(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
