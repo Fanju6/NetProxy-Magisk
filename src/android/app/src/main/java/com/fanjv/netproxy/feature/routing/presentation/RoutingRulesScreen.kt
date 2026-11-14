@@ -195,7 +195,7 @@ internal fun RoutingRulesScreen(
             Column(Modifier.heightIn(max = 500.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (draft.index == null) OverlayDropdownPreference(title = stringResource(R.string.routing_type),
+                    if (draft.field != null) OverlayDropdownPreference(title = stringResource(R.string.routing_type),
                         items = LocalRuleSet.entries.map { stringResource(it.title()) }, selectedIndex = draft.target.ordinal,
                         enabled = !state.isSaving,
                         insideMargin = PaddingValues(vertical = 12.dp),
@@ -233,8 +233,8 @@ internal fun RoutingRulesScreen(
                     enabled = state.editable(draft.target),
                     confirmLabel = stringResource(if (draft.field != null) R.string.save_text else R.string.routing_raw))
                 draft.index?.let { index ->
-                    TextButton(stringResource(R.string.common_delete), { viewModel.requestDelete(RuleIdentity(draft.target, index)) },
-                        Modifier.fillMaxWidth(), enabled = state.editable(draft.target),
+                    TextButton(stringResource(R.string.common_delete), { viewModel.requestDelete(RuleIdentity(draft.sourceTarget, index)) },
+                        Modifier.fillMaxWidth(), enabled = state.editable(draft.sourceTarget),
                         colors = ButtonDefaults.textButtonColors(textColor = MiuixTheme.colorScheme.error))
                 }
             }
