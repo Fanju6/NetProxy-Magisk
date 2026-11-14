@@ -151,7 +151,11 @@ func (c *Client) invoke(ctx context.Context, method string, request any, respons
 	if err != nil {
 		return err
 	}
-	content, err := c.doRequest(ctx, method, payload, false)
+	allowEmptyResponse := false
+	if _, ok := response.(*emptyMessage); ok {
+		allowEmptyResponse = true
+	}
+	content, err := c.doRequest(ctx, method, payload, false, allowEmptyResponse)
 	if err != nil {
 		return err
 	}
@@ -202,7 +206,7 @@ func (c *Client) Status(ctx context.Context) (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
-	content, err := c.doRequest(ctx, methodSubscribeStatus, payload, true)
+	content, err := c.doRequest(ctx, methodSubscribeStatus, payload, true, false)
 	if err != nil {
 		return Status{}, err
 	}
@@ -280,7 +284,7 @@ func (c *Client) Groups(ctx context.Context) ([]Group, error) {
 	if err != nil {
 		return nil, err
 	}
-	content, err := c.doRequest(ctx, methodSubscribeGroups, payload, true)
+	content, err := c.doRequest(ctx, methodSubscribeGroups, payload, true, false)
 	if err != nil {
 		return nil, err
 	}
@@ -311,7 +315,7 @@ func (c *Client) Outbounds(ctx context.Context) ([]GroupItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	content, err := c.doRequest(ctx, methodSubscribeOutbounds, payload, true)
+	content, err := c.doRequest(ctx, methodSubscribeOutbounds, payload, true, false)
 	if err != nil {
 		return nil, err
 	}
@@ -324,9 +328,9 @@ func (c *Client) Outbounds(ctx context.Context) ([]GroupItem, error) {
 
 const maxFrameSize = 32 << 20
 
-func (c *Client) doRequest(ctx context.Context, method string, payload []byte, firstDataFrameOnly bool) ([]byte, error) {
+func (c *Client) doRequest(ctx context.Context, method string, payload []byte, firstDataFrameOnly, allowEmptyResponse bool) ([]byte, error) {
 	var firstData []byte
-	err := c.readResponse(ctx, method, payload, func(content []byte) (bool, error) {
+	err := c.readResponse(ctx, method, payload, allowEmptyResponse, func(content []byte) (bool, error) {
 		if firstData == nil {
 			firstData = content
 		}
@@ -343,12 +347,12 @@ func (c *Client) subscribe(ctx context.Context, method string, request any, cons
 	if err != nil {
 		return err
 	}
-	return c.readResponse(ctx, method, payload, func(content []byte) (bool, error) {
+	return c.readResponse(ctx, method, payload, false, func(content []byte) (bool, error) {
 		return false, consume(content)
 	})
 }
 
-func (c *Client) readResponse(ctx context.Context, method string, payload []byte, consume func([]byte) (bool, error)) error {
+func (c *Client) readResponse(ctx context.Context, method string, payload []byte, allowEmptyResponse bool, consume func([]byte) (bool, error)) error {
 	var requestBody bytes.Buffer
 	requestBody.WriteByte(0)
 	if err := binary.Write(&requestBody, binary.BigEndian, uint32(len(payload))); err != nil {
@@ -396,6 +400,9 @@ func (c *Client) readResponse(ctx context.Context, method string, payload []byte
 		}
 		if readErr != nil {
 			if errors.Is(readErr, io.EOF) {
+				if allowEmptyResponse && !receivedData {
+					return nil
+				}
 				// reF1nd 的无 trailer 兼容只接受帧边界 EOF，不能接受截断的后续帧。
 				if receivedData {
 					return nil
