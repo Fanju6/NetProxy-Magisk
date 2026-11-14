@@ -481,7 +481,7 @@ func TestEBPFDataPlanesMatchRuntimeAndPreflight(t *testing.T) {
 				}
 				wantLocal, wantShared := localPlane, sharedPlane
 				if wantLocal == "" {
-					wantLocal = "socket_assign"
+					wantLocal = "cgroup"
 				}
 				if wantShared == "" {
 					wantShared = "socket_assign"

@@ -9,12 +9,14 @@ class InboundJsonTest {
     @Test fun ebpfMissingAndEmptyDataPlanesUseModuleDefaultWithoutWritingIt() {
         for (content in listOf("{}", """{"data_plane":""}""")) {
             val original = inboundJson.parseToJsonElement(content).jsonObject
-            assertEquals("socket_assign", original.ebpfDataPlane())
+            assertEquals("cgroup", original.ebpfDataPlane(isLocal = true))
+            assertEquals("socket_assign", original.ebpfDataPlane(isLocal = false))
             assertEquals(content, original.toString())
         }
         for (plane in listOf("socket_assign", "cgroup", "packet_rewrite", "tc", " ")) {
             val original = inboundJson.parseToJsonElement("""{"data_plane":"$plane"}""").jsonObject
-            assertEquals(plane, original.ebpfDataPlane())
+            assertEquals(plane, original.ebpfDataPlane(isLocal = true))
+            assertEquals(plane, original.ebpfDataPlane(isLocal = false))
         }
     }
 
@@ -27,7 +29,7 @@ class InboundJsonTest {
         for ((path, planes) in listOf("local" to LOCAL_EBPF_DATA_PLANES, "shared" to SHARED_EBPF_DATA_PLANES)) {
             for (plane in planes) {
                 val changed = original.withEbpfDataPlane(path, plane)
-                assertEquals(plane, changed.objectAt(path).ebpfDataPlane())
+                assertEquals(plane, changed.objectAt(path).ebpfDataPlane(isLocal = path == "local"))
                 val expected = original.withPath(listOf(path, "data_plane"), JsonPrimitive(plane)).let {
                     if (path == "local" && plane == "socket_assign") it.withPath(listOf("local", "cgroup_path"), null) else it
                 }
@@ -45,8 +47,8 @@ class InboundJsonTest {
         for ((path, plane) in listOf("local" to "tc", "local" to "packet_rewrite", "shared" to "cgroup", "shared" to "tc", "other" to "socket_assign")) {
             assertThrows(IllegalArgumentException::class.java) { original.withEbpfDataPlane(path, plane) }
         }
-        assertEquals("tc", original.objectAt("local").ebpfDataPlane())
-        assertEquals("tc", original.withPath(listOf("shared", "default_interface"), JsonPrimitive(true)).objectAt("local").ebpfDataPlane())
+        assertEquals("tc", original.objectAt("local").ebpfDataPlane(isLocal = true))
+        assertEquals("tc", original.withPath(listOf("shared", "default_interface"), JsonPrimitive(true)).objectAt("local").ebpfDataPlane(isLocal = true))
     }
 
     @Test fun ebpfDefaultInterfaceIsOptInAndDoesNotChangeInterfacesOrEnablePaths() {

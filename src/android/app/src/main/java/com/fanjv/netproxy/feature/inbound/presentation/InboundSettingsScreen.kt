@@ -312,7 +312,7 @@ private fun LazyListScope.ebpfForm(
         val isLocal = path == "local"
         val items = mutableListOf(
             CardItem("$path.data_plane") {
-                NativeDropdown(R.string.ebpf_data_plane, part.ebpfDataPlane(),
+                NativeDropdown(R.string.ebpf_data_plane, part.ebpfDataPlane(isLocal),
                     if (isLocal) LOCAL_EBPF_DATA_PLANES else SHARED_EBPF_DATA_PLANES,
                     listOf(R.string.ebpf_data_plane_socket_assign,
                         if (isLocal) R.string.ebpf_data_plane_cgroup else R.string.ebpf_data_plane_packet_rewrite), enabled) {
