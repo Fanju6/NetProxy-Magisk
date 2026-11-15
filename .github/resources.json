@@ -8,8 +8,8 @@
       "ref": "main",
       "sourcePath": "Filters/AWAvenue-Ads-Rule-Singbox.json",
       "metadataPath": "Filters/AWAvenue-Ads-Rule-Singbox.json",
-      "currentCommit": "59f1a351a6474d2debf7b8965c396cf24a2bf287",
-      "currentSha256": "611395752861ad8eca5cb44e53ad85db21ccad7ab2d1aaa41bf8400808e8f4d3"
+      "currentCommit": "edf9322698ed041addf9305bc409223b56e14881",
+      "currentSha256": "a2d3e90c984a397e139992629d85db63a8a513a109ca9c6206cd74e70eb00f51"
     },
     {
       "name": "geosite/category-ads-all",
@@ -63,8 +63,8 @@
       "ref": "sing",
       "sourcePath": "geo/geosite/geolocation-!cn.srs",
       "metadataPath": "geo/geosite/geolocation-!cn.json",
-      "currentCommit": "4f83910b104d340a485949cab5c606bf56fd8e00",
-      "currentSha256": "595426e9446af61b17e9ddb453fa78a5e22aef9e59af35a24ac5df572d1b52c0"
+      "currentCommit": "886dcb9991dc64e05d4caf6706956e0590b47aea",
+      "currentSha256": "3cf1be212f24e98b925b6900374fb9bc02551476adbcf78cd666e150c8aaaa8f"
     },
     {
       "name": "geosite/cn",
@@ -85,8 +85,8 @@
       "ref": "sing",
       "sourcePath": "geo/geoip/cn.srs",
       "metadataPath": "geo/geoip/cn.json",
-      "currentCommit": "4f83910b104d340a485949cab5c606bf56fd8e00",
-      "currentSha256": "745855556173193245ea6f895f57b39b17d0f35a327a2676e0842193ba35de5a"
+      "currentCommit": "886dcb9991dc64e05d4caf6706956e0590b47aea",
+      "currentSha256": "351555dcb484bd0a9b7a53de9bd3688109fb83495ab215460fc01b8dd3d7de89"
     },
     {
       "name": "geoip/telegram",
