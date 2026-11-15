@@ -10,4 +10,6 @@ The NetProxy snapshot adds the mobile completion popup, symbol toolbar improveme
 
 Local NetProxy changes adapt the Desktop IME request to the current Compose text, selection, and composing-region APIs. Android Host and Desktop editor tests are included in local and CI Android verification.
 
+The editor accepts an optional top content inset and scroll callback for NetProxy's Glass toolbar. The first line starts below the toolbar, and fixed controls (the side symbol bar, find and go-to) stay below it.
+
 When updating this copy, import a complete reviewed source snapshot, preserve the upstream license, record the new base revision here, and run the Android editor and application tests.

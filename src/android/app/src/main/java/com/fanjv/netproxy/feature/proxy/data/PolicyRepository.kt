@@ -103,6 +103,8 @@ internal class PolicyRepository(
     suspend fun snapshot(): PolicySnapshot = client.read<PolicySnapshot>("/policy-groups", mapOf("source" to "config"))
         .also { check(!it.live && it.coreIdentity == 0L) }
 
+    suspend fun runtimeSnapshot(): PolicySnapshot = client.read("/policy-groups")
+
     // Runtime frames supply status only; persisted config owns the displayed membership.
     fun changes() = client.observe(setOf("groups")).map { result ->
         result.mapCatching { it.getValue("groups").decode<PolicySnapshot>() }

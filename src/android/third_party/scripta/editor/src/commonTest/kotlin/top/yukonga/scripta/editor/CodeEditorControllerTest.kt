@@ -2,8 +2,20 @@ package top.yukonga.scripta.editor
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import top.yukonga.scripta.editor.text.TextPosition
 
 class CodeEditorControllerTest {
+    @Test
+    fun customSymbolShortcutPairsAndSkipsClosingBracket() {
+        val controller = CodeEditorController()
+        controller.typeSymbol(EditorSymbol("{"))
+        assertEquals("{}", controller.getText())
+        assertEquals(TextPosition(0, 1), controller.caret)
+        controller.typeSymbol(EditorSymbol("}"))
+        assertEquals("{}", controller.getText())
+        assertEquals(TextPosition(0, 2), controller.caret)
+    }
+
     @Test
     fun getTextRoundTripsSetDocument() {
         val c = CodeEditorController()

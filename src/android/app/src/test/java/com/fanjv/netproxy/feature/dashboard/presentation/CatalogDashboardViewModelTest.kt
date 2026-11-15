@@ -12,6 +12,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.first
@@ -34,6 +37,36 @@ class CatalogDashboardViewModelTest {
         }
     }
 
+    @Test fun backgroundAndFailedReadKeepRunningCardWithoutEnablingControl() = runBlocking {
+        val scope = CoroutineScope(coroutineContext + SupervisorJob(coroutineContext.job))
+        val replies = Channel<CompletableDeferred<String>>(Channel.UNLIMITED)
+        val vm = model(scope, Transport {
+            val reply = CompletableDeferred<String>()
+            replies.send(reply)
+            reply.await()
+        })
+        try {
+            vm.setVisible(true)
+            withTimeout(5_000) { replies.receive() }.complete(snapshot("Rule", "ready"))
+            withTimeout(5_000) { vm.state.first { it.canToggleService } }
+            vm.setVisible(false)
+            vm.setVisible(true)
+            val resume = withTimeout(5_000) { replies.receive() }
+            assertTrue(vm.state.value.showRunningCard)
+            assertFalse(vm.state.value.canToggleService)
+            resume.completeExceptionally(IllegalStateException("status unavailable"))
+            val unavailable = withTimeout(5_000) { vm.state.first { it.serviceError.isNotBlank() } }
+            assertTrue(unavailable.showRunningCard)
+            assertFalse(unavailable.canToggleService)
+            vm.refresh()
+            withTimeout(5_000) { replies.receive() }.complete(snapshot("Rule", "stopped"))
+            val stopped = withTimeout(5_000) { vm.state.first { it.serviceStatusKnown && it.serviceState == "stopped" } }
+            assertFalse(stopped.showRunningCard)
+        } finally {
+            scope.cancel()
+        }
+    }
+
     private fun snapshot(mode: String, state: String = "stopped", total: Long = 0) =
         """{"state":"$state","outbound_mode":"$mode","available_outbound_modes":["Rule","Direct"],"download_total":$total}"""
 
@@ -49,6 +82,72 @@ class CatalogDashboardViewModelTest {
     private suspend fun settle() {
         val jobs = currentCoroutineContext().job.children.toList()
         withTimeout(5_000) { jobs.forEach { it.join() } }
+    }
+
+    @Test fun mainPageSessionKeepsServiceStateCurrentWithoutADashboardCollector() = runBlocking {
+        val scope = CoroutineScope(coroutineContext + SupervisorJob(coroutineContext.job))
+        val events = Channel<ModuleEvent>(Channel.UNLIMITED)
+        val transport = object : TestApiTransport() {
+            override suspend fun respond(request: ApiTestRequest): ModuleHttpResponse =
+                apiSuccess(snapshot("Rule", "ready"))
+
+            override suspend fun watch(topics: Set<String>, consume: suspend (ModuleEvent) -> Unit) {
+                for (event in events) consume(event)
+            }
+        }
+        val vm = CatalogDashboardViewModel(ServiceRepository(ModuleApiClient(transport, scope)), 1_000L, scope)
+        try {
+            vm.setAvailability(ModuleAvailability(ModuleConnectionState.READY))
+            vm.setVisible(true)
+            withTimeout(5_000) { vm.state.first { it.isReady && it.serviceStatusKnown } }
+            assertTrue(vm.state.value.canToggleService)
+
+            events.send(ModuleEvent("status", apiSuccess(snapshot("Rule", "stopped")).content))
+            events.send(ModuleEvent("traffic", apiSuccess("""{"available":false}""").content))
+            val stopped = withTimeout(5_000) { vm.state.first { it.serviceStatusKnown && it.serviceState == "stopped" } }
+            assertFalse(stopped.isReady)
+
+            vm.setVisible(false)
+            assertFalse(vm.state.value.serviceStatusKnown)
+            assertFalse(vm.state.value.canToggleService)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test fun powerControlWaitsForKnownServiceStatusAndIgnoresClicksDuringTransitions() = runBlocking {
+        var reported = "starting"
+        var failRead = false
+        val transport = Transport { request ->
+            when (request.path) {
+                "/service" -> if (failRead) error("status unavailable") else snapshot("Rule", reported)
+                "/service/stop" -> {
+                    reported = "stopped"
+                    "{}"
+                }
+                else -> error("unexpected request: ${request.path}")
+            }
+        }
+        val vm = model(this, transport)
+        vm.toggleService()
+        vm.refresh()
+        withTimeout(5_000) { vm.state.first { it.isStarting } }
+        vm.toggleService()
+        assertFalse(transport.calls.any { it.mutation })
+
+        failRead = true
+        vm.refresh()
+        withTimeout(5_000) { vm.state.first { it.serviceError.isNotBlank() } }
+        vm.toggleService()
+        assertFalse(transport.calls.any { it.mutation })
+
+        failRead = false
+        reported = "ready"
+        vm.refresh()
+        withTimeout(5_000) { vm.state.first { it.isReady && it.canToggleService } }
+        vm.toggleService()
+        settle()
+        assertEquals(listOf("/service/stop"), transport.calls.filter { it.mutation }.map { it.path })
     }
 
     @Test fun availabilityLossBlocksNewReadsButDoesNotCancelStartedControl() = runBlocking {

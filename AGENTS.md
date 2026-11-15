@@ -420,6 +420,7 @@ Go 生命周期控制器只将 `runtime/config.json` 传给核心。该只读文
 - KernelSU 仅从公开 `Fanju6/NetProxy-Releases` 分发不可变正式版本，源码和可变 nightly 留在主仓库；不镜像源码、全部标签或历史 Release。根目录 `module.yaml` 与 `.github/kernelsu/` 是展示元数据，不是设备上的 `config/module.json`。正式发布先经过官方 Action 预检，主仓库发布后分发同一 ZIP；分发资源按官方规则命名 `netproxy-<构建号>-<版本>.zip`，摘要必须一致。
 - `publish-kernelsu.yml` 重试只下载既有主仓库正式 Release，不重新构建。已发布的分发版本只能验证不可变状态和摘要，不能覆盖、删除或移动 tag；分发失败不能冒充主仓库发布失败。`DIST_REPO_TOKEN` 仅有分发仓库 Contents 读写和 Administration 只读权限，资源更新使用仅限主仓库的 `RESOURCE_UPDATE_TOKEN`，两者不能互用。
 - Android 受影响时，CI 在管理器构建任务中使用同一次 Gradle 调用执行单元测试、Lint 与 Release 构建；仅需模块打包时仍构建当前管理器，不额外执行 Android 验证。资源维护复用纯验证模式，不构建 APK，也不需要签名密钥。固定签名由 `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` 四个 GitHub Secrets 注入；缺失时构建失败，不生成替代密钥。CI 版本名保留提交短哈希，仅用于区分构建。
+- 本地、开发 CI 与正式发布使用同一套 MIUIX OS4 Glass 管理器源码。正式依赖可用前，Gradle 统一锁定上游源码提交；平台不支持实时折射时在同一个 APK 内回退，不维护双版本。
 - Release 只能从与 `src/module/module.prop` 的 `version=` 和 `docs/changelog.md` 对应章节完全一致的 `v<版本号>` tag 启动；预检失败时不得开始签名构建或创建 Release。
 - `update-resources.yml` 统一维护内核、规则、Web 资源、Go/npm/Gradle/Android 依赖；规则与 Web 资源属于内容更新，sing-box 属于核心更新，工具链大版本进入报告。GitHub Actions 更新只报告、不由定时任务静默改写。
 - Composite Action 的仓库 Variables 由调用工作流通过 inputs 显式传入；在 Action 清单中直接读取 `vars` 会导致 Runner 加载失败，尚未开始构建就退出。

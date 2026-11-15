@@ -132,6 +132,9 @@ class CodeEditorController internal constructor(initialText: String = "") {
     /** 便捷：跳到 [line] 行行首（0 基，越界钳制）并滚动露出。 */
     fun jumpToLine(line: Int) = jumpTo(TextPosition(line, 0))
 
+    /** Types a shortcut symbol with the same pairing behavior as the built-in symbol bar. */
+    fun typeSymbol(symbol: EditorSymbol) = engine.typeCharacter(symbol.value)
+
     /** 在光标处插入 [text]（有选区则替换选区），入撤销历史。已有 IME 预编辑会先原样定格上屏
      *  （不丢失、自成撤销单元）再插入——宿主文本决不顶替用户未提交的拼音。不经 readOnly 门：
      *  那是 UI 交互约束，宿主的编程修改由宿主负责。 */

@@ -17,9 +17,9 @@ import androidx.compose.foundation.layout.add
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -28,12 +28,15 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -48,18 +51,19 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.R
+import com.fanjv.netproxy.core.ui.component.AppDialogButton
+import com.fanjv.netproxy.core.ui.component.DialogActionRole
 import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BackIconButton
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.JsonSyntaxHighlighter
 import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
-import com.fanjv.netproxy.core.ui.theme.LocalEnableBlur
 import com.fanjv.netproxy.core.ui.theme.isInDarkTheme
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -67,24 +71,22 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.jsonObject
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
+import com.fanjv.netproxy.core.ui.component.AppBarButton as IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.SmallTopAppBar
+import com.fanjv.netproxy.core.ui.component.AppSmallTopAppBar as SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import com.fanjv.netproxy.core.ui.component.chromeIcon
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Ok
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import com.fanjv.netproxy.core.ui.component.AppDialog as OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.scripta.editor.CodeEditor
 import top.yukonga.scripta.editor.EditorColors
 import top.yukonga.scripta.editor.EditorLanguage
 import top.yukonga.scripta.editor.EditorSymbol
-import top.yukonga.scripta.editor.SymbolBarPosition
 import top.yukonga.scripta.editor.rememberSaveableCodeEditorController
 import top.yukonga.scripta.editor.text.TextPosition
 
@@ -143,7 +145,6 @@ internal fun SingBoxJsonEditScreen(
     var saveErrorText by remember(documentId) { mutableStateOf("") }
     var softWrap by rememberSaveable { mutableStateOf(false) }
     var isExiting by remember { mutableStateOf(false) }
-    var contextHelp by remember(documentId) { mutableStateOf<SingBoxSchemaContextHelp?>(null) }
 
     val document = configState.documents.firstOrNull { it.id == documentId }
     val displayFilename = document?.let { documentTitle(it) } ?: documentId.substringAfterLast('/')
@@ -178,18 +179,6 @@ internal fun SingBoxJsonEditScreen(
             !controller.isComposing && !isSaving && !showBackendConfirmation
 
     val documentVersion = controller.documentVersion
-    val caret = controller.caret
-    LaunchedEffect(documentVersion, caret, usesRootSchema, hasLoaded, completionProvider) {
-        if (!hasLoaded || !usesRootSchema) {
-            contextHelp = null
-            return@LaunchedEffect
-        }
-        delay(CONTEXT_HELP_DEBOUNCE_MS)
-        val text = controller.getText()
-        val help = completionProvider.contextHelp(text, caret)
-        ensureActive()
-        if (controller.documentVersion == documentVersion && controller.caret == caret) contextHelp = help
-    }
     LaunchedEffect(documentVersion) {
         formatJob?.cancel()
         saveErrorText = ""
@@ -372,10 +361,20 @@ internal fun SingBoxJsonEditScreen(
         onBack = ::requestBack,
     )
 
-    val enableBlur = LocalEnableBlur.current
-    val backdrop = rememberBlurBackdrop(enableBlur)
+    val backdrop = rememberBlurBackdrop()
     val barColor = if (backdrop != null) Color.Transparent else MiuixTheme.colorScheme.surface
+    val editorScroll = remember(documentId) { mutableFloatStateOf(0f) }
+    val editorContentOffset = remember(editorScroll) { { -editorScroll.floatValue } }
+    val editorPalette = if (isInDarkTheme()) EditorColors.Default else EditorColors.Light
+    // The line-number gutter masks horizontal scroll, but must not stripe the title's backdrop.
+    val editorColors = remember(editorPalette) { editorPalette.copy(gutterBackground = editorPalette.background) }
     val layoutDirection = LocalLayoutDirection.current
+    val validationMessage = when {
+        saveErrorText.isNotBlank() -> saveErrorText
+        validationState == EditorValidationState.Invalid ||
+            validationState == EditorValidationState.Unavailable -> errorText
+        else -> ""
+    }
 
     Scaffold(
         snackbarHost = { AppSnackbarHost(snackbarHostState) },
@@ -383,15 +382,26 @@ internal fun SingBoxJsonEditScreen(
             BlurredBar(backdrop) {
                 SmallTopAppBar(
                     title = displayFilename,
+                    modifier = Modifier.pointerInput(Unit) { detectTapGestures { } },
+                    contentOffset = editorContentOffset,
+                    subtitle = if (hasLoaded && !isEditable) stringResource(R.string.json_editor_read_only) else "",
                     color = barColor,
                     navigationIcon = { BackIconButton(onClick = ::requestBack) },
                     actions = {
+                        if (validationMessage.isNotBlank()) {
+                            IconButton(onClick = {
+                                if (saveFailureDetail.isNotBlank()) showSaveFailureDialog = true
+                                else showSchemaIssuesDialog = true
+                            }) {
+                                Icon(chromeIcon(Icons.Rounded.ErrorOutline), validationMessage, tint = MiuixTheme.colorScheme.error)
+                            }
+                        }
                         IconButton(enabled = canSave, onClick = ::saveDocument) {
                             if (isSaving) {
                                 CircularProgressIndicator(size = 20.dp, strokeWidth = 2.dp)
                             } else {
                                 Icon(
-                                    imageVector = MiuixIcons.Ok,
+                                    imageVector = chromeIcon(MiuixIcons.Ok),
                                     contentDescription = stringResource(R.string.save_text),
                                     tint = if (canSave) MiuixTheme.colorScheme.onSurface
                                     else MiuixTheme.colorScheme.disabledOnSecondaryVariant,
@@ -411,80 +421,9 @@ internal fun SingBoxJsonEditScreen(
                 .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)
                 .padding(
                     start = innerPadding.calculateStartPadding(layoutDirection),
-                    top = innerPadding.calculateTopPadding(),
                     end = innerPadding.calculateEndPadding(layoutDirection),
                 ),
         ) {
-            val statusText = when {
-                configState.documentLoadError -> stringResource(R.string.json_load_failed)
-                !hasLoaded -> stringResource(R.string.collecting_data)
-                saveErrorText.isNotEmpty() -> saveErrorText
-                validationState == EditorValidationState.Checking ->
-                    stringResource(R.string.json_checking)
-
-                validationState == EditorValidationState.Valid && !isEditable ->
-                    stringResource(R.string.json_valid_read_only)
-
-                validationState == EditorValidationState.Valid ->
-                    stringResource(R.string.json_valid)
-
-                else -> errorText
-            }
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp)
-                    .padding(bottom = 8.dp),
-            ) {
-                val statusColor = if (validationState == EditorValidationState.Invalid ||
-                    validationState == EditorValidationState.Unavailable ||
-                    saveErrorText.isNotEmpty() ||
-                    configState.documentLoadError
-                ) {
-                    MiuixTheme.colorScheme.error
-                } else {
-                    MiuixTheme.colorScheme.onSurfaceVariantSummary
-                }
-                val contextPath = contextHelp?.path
-                    ?.takeIf { schemaIssues.isEmpty() && it.isNotBlank() }
-                val summaryText = if (contextPath == null) {
-                    statusText
-                } else {
-                    "$statusText · $contextPath"
-                }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .then(
-                            if (schemaIssues.isNotEmpty()) {
-                                Modifier.clickable { showSchemaIssuesDialog = true }
-                            } else {
-                                Modifier
-                            },
-                        )
-                        .height(32.dp)
-                        .padding(horizontal = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = summaryText,
-                        color = statusColor,
-                        fontSize = 13.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                    if (schemaIssues.isNotEmpty()) {
-                        Text(
-                            text = stringResource(R.string.json_view_issues),
-                            color = statusColor,
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(start = 12.dp),
-                        )
-                    }
-                }
-            }
-
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -494,11 +433,10 @@ internal fun SingBoxJsonEditScreen(
                     CodeEditor(
                         controller = controller,
                         language = EditorLanguage.PlainText,
-                        colors = if (isInDarkTheme()) EditorColors.Default else EditorColors.Light,
+                        colors = editorColors,
                         readOnly = !isEditable || !hasLoaded || isSaving || showBackendConfirmation,
                         softWrap = softWrap,
-                        symbols = JsonEditorSymbols,
-                        symbolBarPosition = SymbolBarPosition.End,
+                        symbols = emptyList(),
                         bottomBar = { colors ->
                             val toolbarEnabled = hasLoaded && !isSaving && !showBackendConfirmation
                             EditorActionBar(
@@ -545,18 +483,33 @@ internal fun SingBoxJsonEditScreen(
                                         selected = softWrap,
                                         onClick = { softWrap = !softWrap },
                                     ),
-                                ),
+                                ) + if (isEditable) JsonEditorSymbols.map { symbol ->
+                                    EditorAction(
+                                        label = symbol.label,
+                                        enabled = toolbarEnabled,
+                                        symbol = true,
+                                        onClick = { controller.typeSymbol(symbol) },
+                                    )
+                                } else emptyList(),
                             )
                         },
                         completionProvider = completionProvider.takeIf {
                             usesRootSchema && !isExiting
                         },
                         highlighter = highlighter,
+                        topContentInset = innerPadding.calculateTopPadding(),
+                        onTopContentScroll = { editorScroll.floatValue = it },
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
 
-                if (!hasLoaded) {
+                if (configState.documentLoadError) {
+                    Text(
+                        stringResource(R.string.json_load_failed),
+                        color = MiuixTheme.colorScheme.error,
+                        modifier = Modifier.align(Alignment.Center).padding(16.dp),
+                    )
+                } else if (!hasLoaded) {
                     CircularProgressIndicator(
                         modifier = Modifier
                             .align(Alignment.Center)
@@ -575,12 +528,12 @@ internal fun SingBoxJsonEditScreen(
         onDismissRequest = { showBackendConfirmation = false },
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            TextButton(
+            AppDialogButton(
                 text = stringResource(android.R.string.cancel),
                 onClick = { showBackendConfirmation = false },
                 modifier = Modifier.weight(1f),
             )
-            TextButton(
+            AppDialogButton(
                 text = stringResource(R.string.save_text),
                 onClick = {
                     showBackendConfirmation = false
@@ -588,7 +541,7 @@ internal fun SingBoxJsonEditScreen(
                     saveDocument()
                 },
                 modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.textButtonColorsPrimary(),
+                role = DialogActionRole.Primary,
             )
         }
     }
@@ -603,27 +556,30 @@ internal fun SingBoxJsonEditScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            TextButton(
+            AppDialogButton(
                 text = stringResource(R.string.json_continue_editing),
                 onClick = { showSaveFailureDialog = false },
                 modifier = Modifier.weight(1f),
+                role = DialogActionRole.Primary,
             )
-            TextButton(
+            AppDialogButton(
                 text = stringResource(R.string.json_discard_and_exit),
+                role = DialogActionRole.Destructive,
                 onClick = {
                     showSaveFailureDialog = false
                     exitEditor()
                 },
                 modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.textButtonColorsPrimary(),
             )
         }
     }
 
     OverlayDialog(
         show = showSchemaIssuesDialog,
-        title = stringResource(R.string.json_schema_issues_title, schemaIssues.size),
-        summary = stringResource(R.string.json_schema_issues_summary),
+        title = if (schemaIssues.isEmpty()) stringResource(R.string.json_schema_problem)
+            else stringResource(R.string.json_schema_issues_title, schemaIssues.size),
+        summary = if (schemaIssues.isEmpty()) validationMessage
+            else stringResource(R.string.json_schema_issues_summary),
         onDismissRequest = { showSchemaIssuesDialog = false },
     ) {
         Column(
@@ -672,19 +628,20 @@ internal fun SingBoxJsonEditScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            TextButton(
+            AppDialogButton(
                 text = stringResource(R.string.json_continue_editing),
                 onClick = { showDiscardDialog = false },
                 modifier = Modifier.weight(1f),
+                role = DialogActionRole.Primary,
             )
-            TextButton(
+            AppDialogButton(
                 text = stringResource(R.string.json_discard_changes),
+                role = DialogActionRole.Destructive,
                 onClick = {
                     showDiscardDialog = false
                     exitEditor()
                 },
                 modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.textButtonColorsPrimary(),
             )
         }
     }
@@ -694,6 +651,7 @@ private data class EditorAction(
     val label: String,
     val enabled: Boolean,
     val selected: Boolean = false,
+    val symbol: Boolean = false,
     val onClick: () -> Unit,
 )
 
@@ -749,6 +707,7 @@ private fun EditorActionKey(
                 },
             )
             .heightIn(min = 32.dp)
+            .then(if (action.symbol) Modifier.defaultMinSize(minWidth = 32.dp) else Modifier)
             .padding(horizontal = 8.dp, vertical = 2.dp),
         contentAlignment = Alignment.Center,
     ) {
@@ -756,6 +715,7 @@ private fun EditorActionKey(
             text = action.label,
             color = colors.symbolBarForeground.copy(alpha = if (action.enabled) 1f else 0.38f),
             fontSize = 13.sp,
+            fontFamily = if (action.symbol) FontFamily.Monospace else null,
             maxLines = 1,
         )
     }
@@ -769,7 +729,6 @@ private enum class EditorValidationState {
 }
 
 private const val VALIDATION_DEBOUNCE_MS = 500L
-private const val CONTEXT_HELP_DEBOUNCE_MS = 80L
 
 private val JsonEditorSymbols = listOf(
     EditorSymbol("⇥", "    "),

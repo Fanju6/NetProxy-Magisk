@@ -57,6 +57,11 @@ internal data class PolicyGroupDocument(
     }
     private val original = index?.let(outbounds::get)
     val initial = original?.let(PolicyGroupDraft::from) ?: PolicyGroupDraft()
+    val typeChoices = when (initial.type) {
+        "selector", "urltest" -> listOf("selector", "urltest")
+        "loadbalance" -> listOf("selector", "urltest", "loadbalance")
+        else -> emptyList()
+    }
     val canAddAuto: Boolean get() = originalTag == "Proxy" && initial.type == "selector" &&
         (initial.outbounds.isNotEmpty() || initial.defaultMember.isNotBlank()) &&
         AUTO_POLICY_TAG !in memberTags && AUTO_POLICY_TAG !in initial.outbounds &&
@@ -65,13 +70,21 @@ internal data class PolicyGroupDocument(
     fun updated(draft: PolicyGroupDraft): String {
         val tag = originalTag ?: draft.tag.trim()
         require(tag.isNotBlank() && draft.hasMembers && tag !in draft.outbounds)
-        require(draft.type in editablePolicyTypes)
-        require(originalTag == null || (draft.tag == originalTag && draft.type == initial.type))
+        require(draft.type in typeChoices)
+        require(originalTag == null || draft.tag == originalTag)
         require(index != null || tag !in memberTags)
-        require(!draft.addAuto || canAddAuto)
+        require(!draft.addAuto || (draft.type == "selector" && canAddAuto))
         val fields = original.orEmpty().toMutableMap()
         fields["tag"] = JsonPrimitive(tag)
         fields["type"] = JsonPrimitive(draft.type)
+        if (draft.type != initial.type) {
+            // Remove only options known to be incompatible with the target core type.
+            when (draft.type) {
+                "selector" -> listOf("url", "interval", "idle_timeout", "tolerance", "fallback", "ttl", "strategy")
+                "urltest" -> listOf("default", "ttl", "strategy")
+                else -> emptyList()
+            }.forEach(fields::remove)
+        }
         fun updateText(key: String, value: String, previous: String) {
             if (value != previous) {
                 if (value.isBlank()) fields.remove(key) else fields[key] = JsonPrimitive(value)

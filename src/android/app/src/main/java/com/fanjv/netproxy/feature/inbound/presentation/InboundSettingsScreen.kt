@@ -27,6 +27,9 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.di.netProxyViewModel
+import com.fanjv.netproxy.core.ui.component.AppDialogButton
+import com.fanjv.netproxy.core.ui.component.DialogActionRole
+import com.fanjv.netproxy.core.ui.component.dialogTextFieldColors
 import com.fanjv.netproxy.core.ui.component.*
 import com.fanjv.netproxy.feature.inbound.data.*
 import com.fanjv.netproxy.navigation.LocalNavigator
@@ -37,11 +40,11 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.*
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import com.fanjv.netproxy.core.ui.component.AppDialog as OverlayDialog
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.CheckboxLocation
 import top.yukonga.miuix.kmp.preference.CheckboxPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
+import com.fanjv.netproxy.core.ui.component.AppDropdown as OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
@@ -101,6 +104,15 @@ internal fun InboundSettingsScreen(
         onPauseOrDispose {}
     }
 
+    TopBarMoreMenu(
+        contentDescription = stringResource(R.string.more_actions),
+        actions = listOf(
+            TopBarMenuAction(stringResource(R.string.restart_core), enabled = state.editable, onClick = viewModel::restart),
+            TopBarMenuAction(stringResource(R.string.ebpf_diagnostics), enabled = state.hasConfiguration && !state.isDiagnosing, onClick = viewModel::diagnose),
+            TopBarMenuAction(stringResource(R.string.inbound_full_json), enabled = state.editable,
+                onClick = { commitAction { navigator.push(Route.JsonEdit("inbound")) } })
+        ),
+    ) { moreButton ->
     Scaffold(
         topBar = {
             BlurredBar(backdrop) {
@@ -110,21 +122,10 @@ internal fun InboundSettingsScreen(
                     scrollBehavior = scrollBehavior,
                     navigationIcon = { BackIconButton(onClick = leave) },
                     actions = {
-                        var more by remember { mutableStateOf(false) }
                         if (applyingField == "restart") {
                             CircularProgressIndicator(Modifier.padding(end = 8.dp), size = 20.dp, strokeWidth = 2.dp)
                         }
-                        TopBarMoreMenu(
-                            expanded = more,
-                            onExpandedChange = { more = it },
-                            contentDescription = stringResource(R.string.more_actions),
-                            actions = listOf(
-                                TopBarMenuAction(stringResource(R.string.restart_core), enabled = state.editable, onClick = viewModel::restart),
-                                TopBarMenuAction(stringResource(R.string.ebpf_diagnostics), enabled = state.hasConfiguration && !state.isDiagnosing, onClick = viewModel::diagnose),
-                                TopBarMenuAction(stringResource(R.string.inbound_full_json), enabled = state.editable,
-                                    onClick = { commitAction { navigator.push(Route.JsonEdit("inbound")) } })
-                            )
-                        )
+                        moreButton()
                     }
                 )
             }
@@ -218,6 +219,7 @@ internal fun InboundSettingsScreen(
             }
         }
     }
+    }
     editing?.let { field ->
         FieldDialog(field, state, show = showField, canSave = state.editable,
             onDismiss = { showField = false }, onDismissFinished = { editing = null }, onSave = { value, entries, mode ->
@@ -246,16 +248,16 @@ internal fun InboundSettingsScreen(
                 SelectionContainer {
                     Text(draft.snapshot.content, Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState()))
                 }
-                TextButton(stringResource(android.R.string.copy), onClick = {
+                AppDialogButton(stringResource(android.R.string.copy), onClick = {
                     context.getSystemService(ClipboardManager::class.java)
                         ?.setPrimaryClip(ClipData.newPlainText(title, draft.snapshot.content))
                 })
-                TextButton(stringResource(R.string.json_discard_changes), onClick = {
+                AppDialogButton(stringResource(R.string.json_discard_changes), role = DialogActionRole.Destructive, onClick = {
                     viewModel.discardDraft()
                     showDraft = false
                 })
-                TextButton(stringResource(android.R.string.ok), modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.textButtonColorsPrimary(), onClick = { showDraft = false })
+                AppDialogButton(stringResource(android.R.string.ok), modifier = Modifier.fillMaxWidth(),
+                    role = DialogActionRole.Primary, onClick = { showDraft = false })
             }
         }
     }
@@ -273,8 +275,8 @@ internal fun InboundSettingsScreen(
                 Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()).padding(vertical = 16.dp),
                 style = MiuixTheme.textStyles.body2
             )
-            TextButton(stringResource(android.R.string.ok), modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.textButtonColorsPrimary(), onClick = viewModel::dismissDiagnostic)
+            AppDialogButton(stringResource(android.R.string.ok), modifier = Modifier.fillMaxWidth(),
+                role = DialogActionRole.Primary, onClick = viewModel::dismissDiagnostic)
         }
     }
 }
@@ -492,7 +494,7 @@ private fun FieldDialog(field: FieldEdit, state: InboundUiState, show: Boolean, 
                         onSelectedIndexChange = { mode = listOf("all", "include", "exclude")[it] }
                     )
                 }
-                TextField(value = if (isList) listInput.text else value, onValueChange = {
+                TextField(colors = dialogTextFieldColors(invalid), value = if (isList) listInput.text else value, onValueChange = {
                     if (isList) listInput = listInput.withText(it) else value = it
                     invalid = false
                 },
@@ -543,9 +545,9 @@ private fun FieldDialog(field: FieldEdit, state: InboundUiState, show: Boolean, 
 @Composable
 private fun DialogButtons(cancel: () -> Unit, enabled: Boolean = true, modifier: Modifier = Modifier,
     confirmLabel: String, confirm: () -> Unit) {
-    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-        TextButton(stringResource(android.R.string.cancel), onClick = cancel, modifier = Modifier.weight(1f))
-        TextButton(confirmLabel, onClick = confirm, modifier = Modifier.weight(1f),
-            enabled = enabled, colors = ButtonDefaults.textButtonColorsPrimary())
+    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        AppDialogButton(stringResource(android.R.string.cancel), onClick = cancel, modifier = Modifier.weight(1f))
+        AppDialogButton(confirmLabel, onClick = confirm, modifier = Modifier.weight(1f),
+            enabled = enabled, role = DialogActionRole.Primary)
     }
 }

@@ -73,10 +73,10 @@ import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import com.fanjv.netproxy.core.ui.component.rememberCommitOnLeave
 import com.fanjv.netproxy.feature.apps.data.AppIconCache
 import top.yukonga.miuix.kmp.basic.BasicComponent
-import top.yukonga.miuix.kmp.basic.Card
+import com.fanjv.netproxy.core.ui.component.AppContentCard
 import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
+import com.fanjv.netproxy.core.ui.component.AppBarButton as IconButton
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.ListPopupColumn
 import top.yukonga.miuix.kmp.basic.ListPopupDefaults
@@ -86,16 +86,17 @@ import top.yukonga.miuix.kmp.basic.PullToRefresh
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.basic.TopAppBar
+import com.fanjv.netproxy.core.ui.component.AppTopAppBar as TopAppBar
 import top.yukonga.miuix.kmp.basic.rememberPullToRefreshState
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import com.fanjv.netproxy.core.ui.component.chromeIcon
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.MoreCircle
 import top.yukonga.miuix.kmp.overlay.OverlayListPopup
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
+import com.fanjv.netproxy.core.ui.component.AppDropdown as OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.MiuixPopupUtils.Companion.MiuixPopupHost
-import top.yukonga.miuix.kmp.utils.overScrollVertical
+import com.fanjv.netproxy.core.ui.component.appBarOverscroll
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
 
@@ -259,7 +260,7 @@ internal fun AppsScreen(
                                         holdDownState = showTopPopup.value
                                     ) {
                                         Icon(
-                                            imageVector = MiuixIcons.MoreCircle,
+                                            imageVector = chromeIcon(MiuixIcons.MoreCircle),
                                             contentDescription = null,
                                             tint = colorScheme.onSurface
                                         )
@@ -306,10 +307,10 @@ internal fun AppsScreen(
             popupHost = {
                 if (apps.hasLoadedApps) {
                     val searchResults = remember(
-                        apps.searchResults, apps.proxiedApps, apps.appSelectedFirst, apps.appReverseSort
+                        apps.searchResults, apps.proxiedApps, apps.appSelectedFirst, apps.appReverseSort, apps.appProxyEnabled
                     ) { apps.orderedApps(apps.searchResults) }
                     searchStatus.SearchPager(
-                        empty = apps.appProxyEnabled && !apps.isFilteringApps &&
+                        empty = !apps.isFilteringApps &&
                             apps.appSearchQuery.isNotBlank() && apps.searchResults.isEmpty(),
                         listState = searchListState,
                         searchBarTopPadding = dynamicTopPadding,
@@ -320,11 +321,11 @@ internal fun AppsScreen(
                                 onClick = viewModel::discardPolicyAndReload)
                         }
                         items(
-                            items = if (apps.appProxyEnabled) searchResults else emptyList(),
+                            items = searchResults,
                             key = AppInfoModel::id,
                             contentType = { "app_item" },
                         ) { app ->
-                            AppItem(app, apps.appShowPackageName, app.id in apps.proxiedApps, spacing) {
+                            AppItem(app, apps.appShowPackageName, app.id in apps.proxiedApps, spacing, enabled = apps.appProxyEnabled) {
                                 if (apps.appSelectedFirst) {
                                     // 重排时保持视口位置，不跟随已选条目的 key 上移。
                                     searchListState.requestScrollToItem(
@@ -369,7 +370,7 @@ internal fun AppsScreen(
                         stringResource(R.string.refresh_complete),
                     )
                     val allApps = remember(
-                        apps.allApps, apps.proxiedApps, apps.appSelectedFirst, apps.appReverseSort
+                        apps.allApps, apps.proxiedApps, apps.appSelectedFirst, apps.appReverseSort, apps.appProxyEnabled
                     ) { apps.orderedApps() }
 
                     PullToRefresh(
@@ -389,7 +390,7 @@ internal fun AppsScreen(
                                 modifier = Modifier
                                     .fillMaxHeight()
                                     .scrollEndHaptic()
-                                    .overScrollVertical()
+                                    .appBarOverscroll(scrollBehavior)
                                     .nestedScroll(scrollBehavior.nestedScrollConnection),
                                 contentPadding = PaddingValues(
                                     top = innerPadding.calculateTopPadding(),
@@ -405,21 +406,19 @@ internal fun AppsScreen(
                                     TextButton(stringResource(R.string.routing_reload_draft),
                                         onClick = viewModel::discardPolicyAndReload)
                                 }
-                                if (apps.appProxyEnabled) {
-                                    items(
-                                        items = allApps,
-                                        key = AppInfoModel::id,
-                                        contentType = { "app_item" },
-                                    ) { app ->
-                                        AppItem(
-                                            app,
-                                            apps.appShowPackageName,
-                                            app.id in apps.proxiedApps,
-                                            spacing,
-                                        ) { viewModel.toggle(app.id) }
-                                    }
+                                items(
+                                    items = allApps,
+                                    key = AppInfoModel::id,
+                                    contentType = { "app_item" },
+                                ) { app ->
+                                    AppItem(
+                                        app,
+                                        apps.appShowPackageName,
+                                        app.id in apps.proxiedApps,
+                                        spacing,
+                                        enabled = apps.appProxyEnabled,
+                                    ) { viewModel.toggle(app.id) }
                                 }
-
                                 item {
                                     Spacer(Modifier.height(bottomPadding + 80.dp))
                                 }
@@ -434,7 +433,7 @@ internal fun AppsScreen(
 
 @Composable
 private fun AppProxyMode(apps: AppsUiState, onChange: (Boolean, String?) -> Unit) {
-    Card(Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
+    AppContentCard(Modifier.padding(horizontal = 12.dp).padding(bottom = 12.dp).fillMaxWidth()) {
         OverlayDropdownPreference(
             title = stringResource(R.string.app_proxy_mode),
             items = listOf(
@@ -461,16 +460,18 @@ private fun AppItem(
     showPackageName: Boolean,
     isProxied: Boolean,
     spacing: androidx.compose.ui.unit.Dp,
+    enabled: Boolean,
     onClick: () -> Unit
 ) {
-    Card(
+    AppContentCard(
         modifier = Modifier
             .padding(horizontal = 12.dp)
             .padding(bottom = spacing)
             .fillMaxWidth()
     ) {
         BasicComponent(
-            onClick = onClick,
+            enabled = enabled,
+            onClick = onClick.takeIf { enabled },
             startAction = {
                 Box(
                     modifier = Modifier
@@ -497,8 +498,9 @@ private fun AppItem(
                 }
                 top.yukonga.miuix.kmp.basic.Checkbox(
                     modifier = Modifier.padding(end = 12.dp),
-                    state = androidx.compose.ui.state.ToggleableState(isProxied),
-                    onClick = onClick
+                    state = androidx.compose.ui.state.ToggleableState(enabled && isProxied),
+                    enabled = enabled,
+                    onClick = onClick.takeIf { enabled }
                 )
             }
         ) {

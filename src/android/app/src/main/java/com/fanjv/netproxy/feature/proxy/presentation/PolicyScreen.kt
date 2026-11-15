@@ -46,14 +46,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.R
-import com.fanjv.netproxy.core.di.netProxyViewModel
+import com.fanjv.netproxy.core.ui.component.AppDialogButton
+import com.fanjv.netproxy.core.ui.component.DialogActionRole
 import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BlurredBar
+import com.fanjv.netproxy.core.ui.component.AppContentCard
+import com.fanjv.netproxy.core.ui.component.AppOverlayList
+import com.fanjv.netproxy.core.ui.component.AppOverlayListDivider
 import com.fanjv.netproxy.core.ui.component.ContentStatus
 import com.fanjv.netproxy.core.ui.component.EmptyCatalog
+import com.fanjv.netproxy.core.ui.component.ManagerMenu
+import com.fanjv.netproxy.core.ui.component.appBarOverscroll
+import com.fanjv.netproxy.core.ui.component.ManagerTabs
 import com.fanjv.netproxy.core.ui.component.SnackbarNoticeEffect
 import com.fanjv.netproxy.core.ui.component.deferredTopPadding
 import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
@@ -66,8 +72,6 @@ import com.fanjv.netproxy.feature.proxy.data.PolicyMember
 import com.fanjv.netproxy.feature.proxy.data.editablePolicyTypes
 import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.Route
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
-import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.DropdownEntry
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Icon
@@ -75,31 +79,24 @@ import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.PullToRefresh
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
-import top.yukonga.miuix.kmp.basic.TabRow
-import top.yukonga.miuix.kmp.basic.TabRowDefaults
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.basic.TopAppBar
+import com.fanjv.netproxy.core.ui.component.AppTopAppBar as TopAppBar
 import top.yukonga.miuix.kmp.basic.rememberPullToRefreshState
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.ExpandLess
 import top.yukonga.miuix.kmp.icon.extended.ExpandMore
-import top.yukonga.miuix.kmp.icon.extended.MoreCircle
-import top.yukonga.miuix.kmp.menu.WindowIconCascadingDropdownMenu
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
+import com.fanjv.netproxy.core.ui.component.AppDialog as OverlayDialog
+import com.fanjv.netproxy.core.ui.component.AppDropdown as OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
-import top.yukonga.miuix.kmp.utils.PressFeedbackType
-import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
 @Composable
 internal fun PolicyScreen(
     bottomPadding: Dp,
     isActive: Boolean,
-    viewModel: PolicyViewModel = netProxyViewModel(),
+    viewModel: PolicyViewModel,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val navigator = LocalNavigator.current
@@ -134,23 +131,10 @@ internal fun PolicyScreen(
     val canTest = state.live && state.pendingGroup == null
     val canManageCurrent = !state.stale && state.pendingGroup == null && current?.type in editablePolicyTypes
 
-    LifecycleResumeEffect(isActive) {
-        if (isActive) viewModel.setVisible(true)
-        onPauseOrDispose { if (isActive) viewModel.setVisible(false) }
-    }
     SnackbarNoticeEffect(state.noticeId, state.error.resolve(), true, snackbar, viewModel::clearNotice)
 
-    Scaffold(
-        snackbarHost = { AppSnackbarHost(snackbar, Modifier.padding(bottom = bottomPadding)) },
-        topBar = {
-            BlurredBar(backdrop) {
-                TopAppBar(
-                    title = stringResource(R.string.proxies),
-                    color = barColor,
-                    scrollBehavior = scroll,
-                    actions = {
-                        WindowIconCascadingDropdownMenu(
-                            entry = DropdownEntry(items = listOf(
+    ManagerMenu(
+        entries = listOf(DropdownEntry(items = listOf(
                                 DropdownItem(
                                     text = stringResource(R.string.node_test_current_group),
                                     enabled = canTest && current?.items?.any { it.runtimeAvailable } == true,
@@ -180,11 +164,18 @@ internal fun PolicyScreen(
                                         ),
                                     ),
                                 ),
-                            )),
-                        ) {
-                            Icon(MiuixIcons.MoreCircle, stringResource(R.string.more_actions), tint = colorScheme.onSurface)
-                        }
-                    },
+        ))),
+        description = stringResource(R.string.more_actions),
+    ) { moreButton ->
+    Scaffold(
+        snackbarHost = { AppSnackbarHost(snackbar, Modifier.padding(bottom = bottomPadding)) },
+        topBar = {
+            BlurredBar(backdrop) {
+                TopAppBar(
+                    title = stringResource(R.string.proxies),
+                    color = barColor,
+                    scrollBehavior = scroll,
+                    actions = { moreButton() },
                     bottomContent = {
                         if (tabbed && groups.isNotEmpty()) {
                             BoxWithConstraints(
@@ -200,14 +191,13 @@ internal fun PolicyScreen(
                                     (with(density) { widest.toDp() } + 28.dp)
                                         .coerceIn(minOf(96.dp, maxWidth), maxWidth)
                                 }
-                                TabRow(
+                                ManagerTabs(
                                     tabs = names,
-                                    selectedTabIndex = selectedIndex,
-                                    onTabSelected = { index -> groups.getOrNull(index)?.let { selectedTag = it.tag } },
+                                    selected = selectedIndex,
+                                    onSelect = { index -> groups.getOrNull(index)?.let { selectedTag = it.tag } },
                                     minWidth = width,
                                     maxWidth = maxOf(width, minOf(116.dp, maxWidth)),
-                                    height = 40.dp,
-                                    colors = TabRowDefaults.tabRowColors(backgroundColor = barColor)
+                                    color = barColor,
                                 )
                             }
                         }
@@ -243,7 +233,7 @@ internal fun PolicyScreen(
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(density + 1),
                     state = gridState,
-                    modifier = Modifier.fillMaxSize().scrollEndHaptic().overScrollVertical()
+                    modifier = Modifier.fillMaxSize().scrollEndHaptic().appBarOverscroll(scroll)
                         .nestedScroll(scroll.nestedScrollConnection),
                     contentPadding = PaddingValues(
                         start = padding.calculateStartPadding(direction) + 12.dp,
@@ -255,9 +245,14 @@ internal fun PolicyScreen(
                     verticalArrangement = Arrangement.spacedBy(spacing),
                     overscrollEffect = null
                 ) {
-                    if (groups.isNotEmpty() && (state.stale || state.runtime?.live == false)) {
+                    if (groups.isNotEmpty() && (state.stale || state.runtimeUnavailable ||
+                                (state.runtimeConfirmed && state.runtime?.live == false))) {
                         item(key = "status", span = { GridItemSpan(maxLineSpan) }) {
-                            SmallTitle(stringResource(if (state.stale) R.string.nodes_read_failed else R.string.policy_configured))
+                            SmallTitle(stringResource(when {
+                                state.stale -> R.string.nodes_read_failed
+                                state.runtimeUnavailable -> R.string.policy_runtime_unavailable
+                                else -> R.string.policy_configured
+                            }))
                         }
                     }
                     shown.forEach { group ->
@@ -296,8 +291,8 @@ internal fun PolicyScreen(
                                     },
                                     protocol = member.type.uppercase(),
                                     latency = member.delay.takeIf { state.live && it > 0 }?.toString(),
-                                    selected = state.live && group.selected == member.tag,
-                                    enabled = group.selectable && member.runtimeAvailable && state.pendingGroup == null,
+                                    selected = !state.stale && group.selected == member.tag,
+                                    enabled = state.live && group.selectable && member.runtimeAvailable && state.pendingGroup == null,
                                     itemSize = cardSize,
                                     onClick = { viewModel.select(group.tag, member.tag) },
                                 )
@@ -309,6 +304,8 @@ internal fun PolicyScreen(
         }
     }
 
+    }
+
     val target = deleteTarget
     OverlayDialog(
         show = target != null,
@@ -317,12 +314,12 @@ internal fun PolicyScreen(
         onDismissRequest = { deleteTarget = null },
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            TextButton(
+            AppDialogButton(
                 text = stringResource(R.string.common_cancel),
                 onClick = { deleteTarget = null },
                 modifier = Modifier.weight(1f),
             )
-            TextButton(
+            AppDialogButton(
                 text = stringResource(R.string.common_delete),
                 onClick = {
                     deleteTarget = null
@@ -330,7 +327,7 @@ internal fun PolicyScreen(
                 },
                 enabled = target != null && !state.stale && state.pendingGroup == null,
                 modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.textButtonColors(textColor = colorScheme.error),
+                role = DialogActionRole.Destructive,
             )
         }
     }
@@ -341,13 +338,14 @@ internal fun PolicyScreen(
         onDismissRequest = { showDisplay = false },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Card {
+            AppOverlayList(Modifier.fillMaxWidth()) {
                 OverlayDropdownPreference(
                     title = stringResource(R.string.node_layout_style),
                     items = listOf(stringResource(R.string.node_layout_tabs), stringResource(R.string.node_layout_list)),
                     selectedIndex = layout,
                     onSelectedIndexChange = { layout = it; preferences.edit { putInt("layout_style", it) } },
                 )
+                AppOverlayListDivider()
                 OverlayDropdownPreference(
                     title = stringResource(R.string.node_sort),
                     items = listOf(R.string.node_sort_default, R.string.node_sort_name, R.string.node_sort_protocol,
@@ -355,6 +353,7 @@ internal fun PolicyScreen(
                     selectedIndex = sort,
                     onSelectedIndexChange = { sort = it; preferences.edit { putInt("sort", it) } },
                 )
+                AppOverlayListDivider()
                 OverlayDropdownPreference(
                     title = stringResource(R.string.node_density),
                     items = listOf(R.string.node_density_spacious, R.string.node_density_standard,
@@ -362,6 +361,7 @@ internal fun PolicyScreen(
                     selectedIndex = density,
                     onSelectedIndexChange = { density = it; preferences.edit { putInt("density", it) } },
                 )
+                AppOverlayListDivider()
                 OverlayDropdownPreference(
                     title = stringResource(R.string.node_card_size),
                     items = listOf(R.string.node_card_size_standard, R.string.node_card_size_compact,
@@ -370,10 +370,10 @@ internal fun PolicyScreen(
                     onSelectedIndexChange = { cardSize = it; preferences.edit { putInt("item_size", it) } },
                 )
             }
-            TextButton(
+            AppDialogButton(
                 text = stringResource(R.string.common_done),
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.textButtonColorsPrimary(),
+                role = DialogActionRole.Primary,
                 onClick = { showDisplay = false },
             )
         }
@@ -388,12 +388,10 @@ private fun policyLabel(tag: String, type: String, fallback: String = tag): Stri
 
 @Composable
 private fun PolicyGroupHeader(name: String, count: Int, expanded: Boolean, onClick: () -> Unit) {
-    Card(
+    AppContentCard(
         modifier = Modifier.fillMaxWidth(),
         cornerRadius = 16.dp,
         insideMargin = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-        pressFeedbackType = PressFeedbackType.Sink,
-        showIndication = true,
         onClick = onClick,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

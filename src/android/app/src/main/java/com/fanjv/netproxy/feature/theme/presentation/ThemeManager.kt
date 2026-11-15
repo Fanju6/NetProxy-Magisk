@@ -22,28 +22,19 @@ class ThemeManager(prefs: SharedPreferences) {
         val p = store.read()
         _state = MutableStateFlow(
             ThemeUiState(
-                colorMode = p.colorMode,
                 miuixMonet = p.miuixMonet,
                 keyColor = p.keyColor,
                 colorStyle = p.colorStyle,
                 colorSpec = p.colorSpec,
-                enableBlur = p.enableBlur,
-                enablePredictiveBack = p.enablePredictiveBack,
-                enableSmoothCorner = p.enableSmoothCorner,
                 pageScale = p.pageScale,
             )
         )
         state = _state.asStateFlow()
     }
 
-    fun setThemeMode(mode: Int) {
-        val effective = store.setThemeMode(mode, _state.value.miuixMonet)
-        _state.update { it.copy(colorMode = effective) }
-    }
-
     fun setMiuixMonet(enabled: Boolean) {
-        val newMode = store.setMiuixMonet(enabled, _state.value.colorMode)
-        _state.update { it.copy(miuixMonet = enabled, colorMode = newMode) }
+        store.setMiuixMonet(enabled)
+        _state.update { it.copy(miuixMonet = enabled) }
     }
 
     fun setKeyColor(color: Int) {
@@ -59,21 +50,6 @@ class ThemeManager(prefs: SharedPreferences) {
     fun setColorSpec(spec: String) {
         store.setColorSpec(spec)
         _state.update { it.copy(colorSpec = spec) }
-    }
-
-    fun setEnableBlur(enabled: Boolean) {
-        store.setEnableBlur(enabled)
-        _state.update { it.copy(enableBlur = enabled) }
-    }
-
-    fun setEnablePredictiveBack(enabled: Boolean) {
-        store.setEnablePredictiveBack(enabled)
-        _state.update { it.copy(enablePredictiveBack = enabled) }
-    }
-
-    fun setEnableSmoothCorner(enabled: Boolean) {
-        store.setEnableSmoothCorner(enabled)
-        _state.update { it.copy(enableSmoothCorner = enabled) }
     }
 
     fun setPageScale(scale: Float) {

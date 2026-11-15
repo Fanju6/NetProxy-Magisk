@@ -2,7 +2,6 @@ package com.fanjv.netproxy.feature.theme.presentation
 
 import android.content.SharedPreferences
 import com.fanjv.netproxy.core.ui.theme.AppThemeDefaults
-import com.fanjv.netproxy.core.ui.theme.ColorMode
 import com.fanjv.netproxy.core.ui.theme.keyColorOptions
 import java.lang.reflect.Proxy
 import org.junit.Assert.assertEquals
@@ -17,7 +16,6 @@ class ThemePreferenceStoreTest {
     fun emptyPreferencesEnableCyanMonetWithSystemAppearance() {
         val settings = ThemePreferenceStore(preferences()).read()
 
-        assertEquals(ColorMode.MONET_SYSTEM.value, settings.colorMode)
         assertTrue(settings.miuixMonet)
         assertEquals(0xFF00BCD4.toInt(), settings.keyColor)
         assertTrue(settings.keyColor in keyColorOptions)
@@ -30,7 +28,6 @@ class ThemePreferenceStoreTest {
         val settings = ThemePreferenceStore(preferences()).read()
         val state = ThemeUiState()
 
-        assertEquals(settings.colorMode, state.colorMode)
         assertEquals(settings.miuixMonet, state.miuixMonet)
         assertEquals(settings.keyColor, state.keyColor)
         assertEquals(settings.colorStyle, state.colorStyle)
@@ -38,33 +35,39 @@ class ThemePreferenceStoreTest {
     }
 
     @Test
-    fun savedThemeChoicesRemainUnchanged() {
+    fun savedColorsAndScaleRemainUnchanged() {
         val settings = ThemePreferenceStore(
             preferences(
-                "color_mode" to ColorMode.DARK.value,
+                "color_mode" to 2,
                 "miuix_monet" to false,
                 "key_color" to 0,
                 "color_style" to ThemePaletteStyle.Neutral.name,
                 "color_spec" to ThemeColorSpec.Spec2021.name,
+                "page_scale" to 0.9f,
             )
         ).read()
 
-        assertEquals(ColorMode.DARK.value, settings.colorMode)
         assertFalse(settings.miuixMonet)
         assertEquals(0, settings.keyColor)
         assertEquals(ThemePaletteStyle.Neutral.name, settings.colorStyle)
         assertEquals(ThemeColorSpec.Spec2021.name, settings.colorSpec)
+        assertEquals(0.9f, settings.pageScale)
     }
 
     @Test
     fun disabledMonetDoesNotReenableWhenOtherPreferencesAreMissing() {
         val settings = ThemeManager(
-            preferences("color_mode" to ColorMode.LIGHT.value, "miuix_monet" to false)
+            preferences("color_mode" to 1, "miuix_monet" to false)
         ).state.value
 
         assertFalse(settings.miuixMonet)
-        assertEquals(ColorMode.LIGHT.value, settings.colorMode)
         assertEquals(AppThemeDefaults.keyColor, settings.keyColor)
+    }
+
+    @Test
+    fun legacyColorModeOnlySuppliesTheDynamicColorPreference() {
+        assertTrue(ThemePreferenceStore(preferences("color_mode" to 5)).read().miuixMonet)
+        assertFalse(ThemePreferenceStore(preferences("color_mode" to 2)).read().miuixMonet)
     }
 
     private fun preferences(vararg values: Pair<String, Any>): SharedPreferences {

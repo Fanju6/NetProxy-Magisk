@@ -41,7 +41,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -54,15 +53,12 @@ import androidx.core.graphics.createBitmap
 import com.fanjv.netproxy.core.ui.component.BackIconButton
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
-import com.fanjv.netproxy.core.ui.theme.LocalEnableBlur
 import com.fanjv.netproxy.core.ui.theme.isInDarkTheme
 import com.fanjv.netproxy.feature.about.presentation.effect.AboutBackground
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
-import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.ScrollBehavior
-import top.yukonga.miuix.kmp.basic.SmallTopAppBar
+import com.fanjv.netproxy.core.ui.component.AppSmallTopAppBar as SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
 import top.yukonga.miuix.kmp.blur.BlurBlendMode
@@ -71,7 +67,7 @@ import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.blur.textureBlur
 import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.shader.isRuntimeShaderSupported
+import com.fanjv.netproxy.feature.about.presentation.effect.isRuntimeShaderSupported
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
@@ -81,8 +77,14 @@ internal fun AboutScreenMiuix(
     state: AboutUiState,
     actions: AboutScreenActions,
 ) {
-    val topAppBarScrollBehavior = MiuixScrollBehavior()
     val lazyListState = rememberLazyListState()
+    val maxBlurOffset = with(LocalDensity.current) { 64.dp.toPx() }
+    val barContentOffset: () -> Float = remember(lazyListState, maxBlurOffset) {
+        {
+            if (lazyListState.firstVisibleItemIndex > 0) -maxBlurOffset
+            else -lazyListState.firstVisibleItemScrollOffset.toFloat()
+        }
+    }
     val scrollProgress = remember(lazyListState) {
         {
             if (lazyListState.firstVisibleItemIndex > 0) {
@@ -116,10 +118,10 @@ internal fun AboutScreenMiuix(
                 collapsed -> colorScheme.surface
                 else -> Color.Transparent
             }
-            BlurredBar(backdrop = barBlurBackdrop.takeIf { blurActive }) {
+            BlurredBar(backdrop = barBlurBackdrop) {
                 SmallTopAppBar(
                     title = state.title,
-                    scrollBehavior = topAppBarScrollBehavior,
+                    contentOffset = barContentOffset,
                     color = barColor,
                     titleColor = colorScheme.onSurface.copy(
                         alpha = ((progress - 0.35f) / 0.65f).coerceIn(0f, 1f),
@@ -144,7 +146,6 @@ internal fun AboutScreenMiuix(
                 state = state,
                 actions = actions,
                 innerPadding = innerPadding,
-                topAppBarScrollBehavior = topAppBarScrollBehavior,
                 lazyListState = lazyListState,
                 scrollProgress = scrollProgress,
             )
@@ -167,7 +168,6 @@ private fun AboutContent(
     state: AboutUiState,
     actions: AboutScreenActions,
     innerPadding: PaddingValues,
-    topAppBarScrollBehavior: ScrollBehavior,
     lazyListState: LazyListState,
     scrollProgress: () -> Float,
 ) {
@@ -179,11 +179,8 @@ private fun AboutContent(
     }
     val backdrop = rememberLayerBackdrop()
     val darkTheme = isInDarkTheme()
-    val enableBlur = LocalEnableBlur.current
-    val backgroundActive = remember(enableBlur) {
-        enableBlur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM &&
-                isRuntimeShaderSupported()
-    }
+    val effectSupported = remember { isRuntimeShaderSupported() }
+    val backgroundActive = effectSupported && Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM
     val cardBlendColors = remember(darkTheme) { aboutCardBlendColors(darkTheme) }
     val logoBlendColors = remember(darkTheme) { aboutLogoBlendColors(darkTheme) }
     var logoHeight by remember { mutableStateOf(300.dp) }
@@ -247,7 +244,7 @@ private fun AboutContent(
                         scaleY = 1f - progress * 0.05f
                     }
                     .then(
-                        if (enableBlur) {
+                        if (effectSupported) {
                             Modifier.textureBlur(
                                 backdrop = backdrop,
                                 shape = RoundedCornerShape(0.dp),
@@ -286,8 +283,7 @@ private fun AboutContent(
             modifier = Modifier
                 .fillMaxSize()
                 .scrollEndHaptic()
-                .overScrollVertical()
-                .nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
+                .overScrollVertical(),
             contentPadding = scrollPadding,
             overscrollEffect = null,
         ) {
@@ -311,7 +307,7 @@ private fun AboutContent(
                         modifier = Modifier
                             .padding(horizontal = 12.dp)
                             .then(
-                                if (enableBlur) {
+                                if (effectSupported) {
                                     Modifier.textureBlur(
                                         backdrop = backdrop,
                                         shape = RoundedCornerShape(16.dp),
@@ -324,7 +320,7 @@ private fun AboutContent(
                                 },
                             ),
                         colors = CardDefaults.defaultColors(
-                            if (enableBlur) Color.Transparent else colorScheme.surfaceContainer,
+                            if (effectSupported) Color.Transparent else colorScheme.surfaceContainer,
                             Color.Transparent,
                         ),
                     ) {

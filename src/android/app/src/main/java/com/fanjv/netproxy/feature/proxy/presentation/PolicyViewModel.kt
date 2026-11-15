@@ -24,6 +24,8 @@ import kotlinx.coroutines.launch
 internal data class PolicyState(
     val configured: PolicySnapshot? = null,
     val runtime: PolicySnapshot? = null,
+    val runtimeConfirmed: Boolean = runtime != null,
+    val runtimeUnavailable: Boolean = false,
     val refreshing: Boolean = false,
     val stale: Boolean = false,
     val pendingGroup: String? = null,
@@ -32,11 +34,11 @@ internal data class PolicyState(
     val manualTests: Map<String, ManualPolicyTest> = emptyMap(),
 ) {
     val loading: Boolean get() = refreshing || (configured == null && !stale)
-    val live: Boolean get() = !stale && configured != null && runtime?.let { it.live && it.coreIdentity > 0 } == true
+    val live: Boolean get() = !stale && runtimeConfirmed && snapshot?.live == true
     val snapshot: PolicySnapshot? by lazy {
-        configured?.withRuntime(runtime.takeIf { live }) { tag, member ->
+        configured?.withRuntime(runtime.takeUnless { runtimeUnavailable }) { tag, member ->
             val test = manualTests[tag]
-            test != null && test.coreIdentity == runtime?.coreIdentity && test.isNew(member)
+            runtimeConfirmed && test != null && test.coreIdentity == runtime?.coreIdentity && test.isNew(member)
         }
     }
 }
@@ -62,8 +64,10 @@ internal class PolicyViewModel(
     val state = mutable.asStateFlow()
     private var changes: Job? = null
     private var read: Job? = null
+    private var runtimeRead: Job? = null
     private var visible = false
     private var visibilityGeneration = 0L
+    private var runtimeRevision = 0L
 
     fun setVisible(value: Boolean) {
         if (visible == value) return
@@ -72,16 +76,21 @@ internal class PolicyViewModel(
         if (!value) {
             changes?.cancel()
             read?.cancel()
-            mutable.update { it.copy(runtime = null, refreshing = false, manualTests = emptyMap()) }
+            runtimeRead?.cancel()
+            mutable.update { it.copy(runtimeConfirmed = false, refreshing = false, manualTests = emptyMap()) }
             return
         }
         refresh()
+        refreshRuntime()
         changes = viewModelScope.launch {
             repository.changes().collect { result ->
-                val runtime = result.getOrNull()
-                mutable.update {
-                    it.copy(runtime = runtime, manualTests = if (runtime == null) it.manualTests
-                        else it.manualTests.filterValues { test -> test.coreIdentity == runtime.coreIdentity })
+                val snapshot = result.getOrNull()
+                if (snapshot != null && (snapshot.live || mutable.value.runtime?.live != true)) {
+                    runtimeRevision++
+                    applyRuntime(snapshot)
+                } else {
+                    mutable.update { it.copy(runtimeConfirmed = false) }
+                    refreshRuntime()
                 }
                 // This topic also announces changes to persisted config and Catalog.
                 refresh()
@@ -91,6 +100,7 @@ internal class PolicyViewModel(
 
     fun refresh(showProgress: Boolean = false) {
         if (!visible || mutable.value.pendingGroup != null) return
+        if (showProgress) refreshRuntime()
         read?.cancel()
         if (showProgress) mutable.update { it.copy(refreshing = true) }
         read = viewModelScope.launch {
@@ -105,6 +115,39 @@ internal class PolicyViewModel(
                 mutable.update { it.copy(stale = true, refreshing = false) }
             }
         }
+    }
+
+    private fun refreshRuntime() {
+        if (!visible || mutable.value.pendingGroup != null) return
+        runtimeRead?.cancel()
+        val revision = runtimeRevision
+        runtimeRead = viewModelScope.launch {
+            try {
+                val snapshot = repository.runtimeSnapshot()
+                ensureActive()
+                if (revision == runtimeRevision) applyRuntime(snapshot)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                ensureActive()
+                if (revision == runtimeRevision && !mutable.value.runtimeConfirmed) markRuntimeUnavailable()
+            }
+        }
+    }
+
+    private fun applyRuntime(snapshot: PolicySnapshot) {
+        mutable.update {
+            it.copy(
+                runtime = snapshot,
+                runtimeConfirmed = true,
+                runtimeUnavailable = false,
+                manualTests = it.manualTests.filterValues { test -> test.coreIdentity == snapshot.coreIdentity },
+            )
+        }
+    }
+
+    private fun markRuntimeUnavailable() = mutable.update {
+        it.copy(runtimeConfirmed = false, runtimeUnavailable = true, manualTests = emptyMap())
     }
 
     fun select(group: String, member: String) {
@@ -155,6 +198,7 @@ internal class PolicyViewModel(
             current.runtime?.groups?.firstOrNull { it.tag == group }?.items.orEmpty().associateBy { it.tag },
         ) else null
         read?.cancel()
+        runtimeRead?.cancel()
         mutable.update { it.copy(pendingGroup = group, error = UiText.Empty) }
         viewModelScope.launch {
             try {
@@ -167,10 +211,11 @@ internal class PolicyViewModel(
                         } else it
                     }
                 }
-                if (visible && confirmed?.coreIdentity == snapshot.coreIdentity) {
-                    mutable.update {
-                        if (it.runtime?.coreIdentity == confirmed.coreIdentity) it.copy(runtime = confirmed) else it
-                    }
+                if (visible && generation == visibilityGeneration && confirmed?.coreIdentity == snapshot.coreIdentity &&
+                    mutable.value.runtime?.coreIdentity == confirmed.coreIdentity && mutable.value.runtimeConfirmed
+                ) {
+                    runtimeRevision++
+                    applyRuntime(confirmed)
                 }
             } catch (error: CancellationException) {
                 throw error
@@ -180,6 +225,7 @@ internal class PolicyViewModel(
             } finally {
                 mutable.update { it.copy(pendingGroup = null) }
                 refresh()
+                if (!mutable.value.runtimeConfirmed) refreshRuntime()
             }
         }
     }

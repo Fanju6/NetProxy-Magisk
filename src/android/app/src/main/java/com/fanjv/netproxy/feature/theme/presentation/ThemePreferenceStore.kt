@@ -3,75 +3,39 @@ package com.fanjv.netproxy.feature.theme.presentation
 import android.content.SharedPreferences
 import androidx.core.content.edit
 import com.fanjv.netproxy.core.ui.theme.AppThemeDefaults
-import com.fanjv.netproxy.core.ui.theme.ColorMode
 
 /** 主题偏好的 SharedPreferences 读写适配器。 */
 internal class ThemePreferenceStore(
     private val prefs: SharedPreferences
 ) {
     fun read(): ThemePreferencesSnapshot {
-        val colorMode = prefs.getInt("color_mode", AppThemeDefaults.colorMode.value)
         val miuixMonet = if (prefs.contains("miuix_monet")) {
             prefs.getBoolean("miuix_monet", AppThemeDefaults.miuixMonet)
         } else {
-            colorMode in ColorMode.MONET_SYSTEM.value..ColorMode.MONET_DARK.value
+            prefs.getInt("color_mode", 3) in 3..5
         }
         return ThemePreferencesSnapshot(
-            colorMode = colorMode,
             miuixMonet = miuixMonet,
             keyColor = prefs.getInt("key_color", AppThemeDefaults.keyColor),
             colorStyle = prefs.getString("color_style", AppThemeDefaults.paletteStyle.name)
                 ?: AppThemeDefaults.paletteStyle.name,
             colorSpec = prefs.getString("color_spec", AppThemeDefaults.colorSpec.name)
                 ?: AppThemeDefaults.colorSpec.name,
-            enableBlur = prefs.getBoolean("enable_blur", true),
-            enablePredictiveBack = prefs.getBoolean("enable_predictive_back", false),
-            enableSmoothCorner = prefs.getBoolean("enable_smooth_corner", true),
             pageScale = prefs.getFloat("page_scale", 1.0f)
         )
     }
 
-    fun setThemeMode(mode: Int, miuixMonet: Boolean): Int {
-        val effectiveMode = if (miuixMonet) mode + 3 else mode
-        prefs.edit { putInt("color_mode", effectiveMode) }
-        return effectiveMode
-    }
-
-    fun setMiuixMonet(enabled: Boolean, colorMode: Int): Int {
-        val currentColorMode = ColorMode.fromValue(colorMode)
-        val newThemeMode = if (enabled) {
-            if (!currentColorMode.isMonet) currentColorMode.toMonetMode() else currentColorMode.value
-        } else {
-            if (currentColorMode.isMonet) currentColorMode.toNonMonetMode() else currentColorMode.value
-        }
-        prefs.edit {
-            putBoolean("miuix_monet", enabled)
-            putInt("color_mode", newThemeMode)
-        }
-        return newThemeMode
-    }
-
+    fun setMiuixMonet(enabled: Boolean) = prefs.edit { putBoolean("miuix_monet", enabled) }
     fun setKeyColor(color: Int) = prefs.edit { putInt("key_color", color) }
     fun setColorStyle(style: String) = prefs.edit { putString("color_style", style) }
     fun setColorSpec(spec: String) = prefs.edit { putString("color_spec", spec) }
-    fun setEnableBlur(enabled: Boolean) = prefs.edit { putBoolean("enable_blur", enabled) }
-    fun setEnablePredictiveBack(enabled: Boolean) =
-        prefs.edit { putBoolean("enable_predictive_back", enabled) }
-
-    fun setEnableSmoothCorner(enabled: Boolean) =
-        prefs.edit { putBoolean("enable_smooth_corner", enabled) }
-
     fun setPageScale(scale: Float) = prefs.edit { putFloat("page_scale", scale) }
 }
 
 internal data class ThemePreferencesSnapshot(
-    val colorMode: Int,
     val miuixMonet: Boolean,
     val keyColor: Int,
     val colorStyle: String,
     val colorSpec: String,
-    val enableBlur: Boolean,
-    val enablePredictiveBack: Boolean,
-    val enableSmoothCorner: Boolean,
     val pageScale: Float,
 )

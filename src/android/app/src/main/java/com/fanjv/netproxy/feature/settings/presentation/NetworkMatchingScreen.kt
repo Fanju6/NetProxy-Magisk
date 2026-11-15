@@ -17,15 +17,19 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.di.netProxyViewModel
+import com.fanjv.netproxy.core.ui.component.AppDialogButton
+import com.fanjv.netproxy.core.ui.component.DialogActionRole
+import com.fanjv.netproxy.core.ui.component.dialogTextFieldColors
 import com.fanjv.netproxy.core.ui.component.*
 import kotlinx.coroutines.CancellationException
 import top.yukonga.miuix.kmp.basic.*
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import com.fanjv.netproxy.core.ui.component.chromeIcon
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Add
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import com.fanjv.netproxy.core.ui.component.AppDialog as OverlayDialog
 import top.yukonga.miuix.kmp.preference.CheckboxPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
+import com.fanjv.netproxy.core.ui.component.AppDropdown as OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
@@ -61,8 +65,8 @@ internal fun NetworkMatchingScreen(
                 scrollBehavior = scrollBehavior,
                 navigationIcon = { BackIconButton(onClick = leave) },
                 actions = {
-                    if (wifi.enabled && state.hasLoaded) IconButton(enabled = enabled, onClick = { openEditor() }) {
-                        Icon(MiuixIcons.Add, stringResource(R.string.wifi_add))
+                    if (wifi.enabled && state.hasLoaded) AppBarButton(enabled = enabled, onClick = { openEditor() }) {
+                        Icon(chromeIcon(MiuixIcons.Add), stringResource(R.string.wifi_add))
                     }
                 },
             )
@@ -90,7 +94,7 @@ internal fun NetworkMatchingScreen(
                             )
                             SmallTitle(stringResource(R.string.wifi_policy_title),
                                 insideMargin = PaddingValues(start = 14.dp, top = 20.dp, end = 14.dp, bottom = 8.dp))
-                            Card {
+                            AppContentCard {
                                 val modes = listOf("off", "blacklist", "whitelist")
                                 OverlayDropdownPreference(
                                     title = stringResource(R.string.wifi_auto_switch),
@@ -157,7 +161,7 @@ private fun WiFiNameDialog(
     ) {
         BoxWithConstraints(Modifier.fillMaxWidth().heightIn(max = 520.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(if (maxHeight < 360.dp) 8.dp else 12.dp)) {
-                TextField(value = input, onValueChange = { input = it; invalid = false },
+                TextField(colors = dialogTextFieldColors(invalid), value = input, onValueChange = { input = it; invalid = false },
                     label = stringResource(R.string.wifi_name), maxLines = 1,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp))
                 if (invalid) Text(stringResource(R.string.wifi_invalid_name), Modifier.padding(horizontal = 24.dp),
@@ -180,15 +184,16 @@ private fun WiFiNameDialog(
                         }
                     }
                 } else {
-                    TextButton(stringResource(R.string.common_delete),
+                    AppDialogButton(stringResource(R.string.common_delete),
+                        role = DialogActionRole.Destructive,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp), enabled = enabled,
                         onClick = { onSave(current - original) })
                 }
-                Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                    TextButton(stringResource(android.R.string.cancel), modifier = Modifier.weight(1f), onClick = onDismiss)
-                    TextButton(stringResource(if (original == null) R.string.common_add else R.string.save_text),
+                Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    AppDialogButton(stringResource(android.R.string.cancel), modifier = Modifier.weight(1f), onClick = onDismiss)
+                    AppDialogButton(stringResource(if (original == null) R.string.common_add else R.string.save_text),
                         modifier = Modifier.weight(1f), enabled = enabled && (input.isNotEmpty() || selected.isNotEmpty()),
-                        colors = ButtonDefaults.textButtonColorsPrimary(), onClick = {
+                        role = DialogActionRole.Primary, onClick = {
                             if (input.isNotEmpty() && (input.toByteArray(Charsets.UTF_8).size > 32 || input.any { it.isISOControl() })) {
                                 invalid = true
                             } else {

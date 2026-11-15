@@ -55,14 +55,19 @@ import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.ui.UiText
 import com.fanjv.netproxy.core.ui.resolve
+import com.fanjv.netproxy.core.ui.component.AppDialogButton
+import com.fanjv.netproxy.core.ui.component.DialogActionRole
+import com.fanjv.netproxy.core.ui.component.dialogTextFieldColors
 import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BackIconButton
+import com.fanjv.netproxy.core.ui.component.AppBarButton
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.ContentStatus
 import com.fanjv.netproxy.core.ui.component.SnackbarNoticeEffect
 import com.fanjv.netproxy.core.ui.component.StatusTag
 import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
+import com.fanjv.netproxy.core.ui.component.appBarOverscroll
 import com.fanjv.netproxy.feature.catalog.model.CatalogGroupSummary
 import com.fanjv.netproxy.feature.catalog.model.CatalogNode
 import com.fanjv.netproxy.feature.catalog.model.SubscriptionHistoryEntry
@@ -70,8 +75,9 @@ import com.fanjv.netproxy.feature.catalog.presentation.nodes.CatalogNodesViewMod
 import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.Route
 import top.yukonga.miuix.kmp.basic.BasicComponent
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
-import top.yukonga.miuix.kmp.basic.Card
+import com.fanjv.netproxy.core.ui.component.AppContentCard
+import com.fanjv.netproxy.core.ui.component.AppOverlayList
+import com.fanjv.netproxy.core.ui.component.AppOverlayListDivider
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
@@ -82,19 +88,19 @@ import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
-import top.yukonga.miuix.kmp.basic.TopAppBar
+import com.fanjv.netproxy.core.ui.component.AppTopAppBar as TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import com.fanjv.netproxy.core.ui.component.chromeIcon
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.MoreCircle
 import top.yukonga.miuix.kmp.icon.extended.Refresh
-import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
+import com.fanjv.netproxy.core.ui.component.AppBottomSheet as OverlayBottomSheet
+import com.fanjv.netproxy.core.ui.component.AppDialog as OverlayDialog
+import com.fanjv.netproxy.core.ui.component.AppDropdown as OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
-import top.yukonga.miuix.kmp.utils.PressFeedbackType
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 import java.time.Instant
@@ -161,19 +167,19 @@ internal fun SubscriptionsScreen(
                     scrollBehavior = scrollBehavior,
                     actions = {
                         if (state.groups.any { it.type == "subscription" }) {
-                            IconButton(
+                            AppBarButton(
                                 enabled = state.operation.isEmpty(),
                                 onClick = viewModel::updateAll
                             ) {
                                 Icon(
-                                    imageVector = MiuixIcons.Refresh,
+                                    imageVector = chromeIcon(MiuixIcons.Refresh),
                                     contentDescription = stringResource(R.string.subscription_update_all),
                                     tint = colorScheme.onSurface
                                 )
                             }
                         }
-                        IconButton(onClick = { showAddActions = true }) {
-                            Icon(MiuixIcons.Add, stringResource(R.string.common_add))
+                        AppBarButton(onClick = { showAddActions = true }) {
+                            Icon(chromeIcon(MiuixIcons.Add), stringResource(R.string.common_add))
                         }
                     }
                 )
@@ -199,7 +205,7 @@ internal fun SubscriptionsScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .scrollEndHaptic()
-                        .overScrollVertical()
+                        .appBarOverscroll(scrollBehavior)
                         .nestedScroll(scrollBehavior.nestedScrollConnection),
                     contentPadding = PaddingValues(
                         start = innerPadding.calculateStartPadding(direction) + 12.dp,
@@ -229,26 +235,28 @@ internal fun SubscriptionsScreen(
         title = stringResource(R.string.common_add),
         onDismissRequest = { showAddActions = false },
     ) {
-        Card(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+        AppOverlayList(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
             BasicComponent(
                 title = stringResource(R.string.subscription_add_url),
-                startAction = { DetailActionIcon(Icons.Rounded.RssFeed) },
+                startAction = { OverlayActionIcon(Icons.Rounded.RssFeed) },
                 onClick = {
                     showAddActions = false
                     navigator.push(Route.SubscriptionEdit(""))
                 },
             )
+            AppOverlayListDivider()
             BasicComponent(
                 title = stringResource(R.string.node_single_link),
                 summary = stringResource(R.string.node_single_link_summary),
-                startAction = { DetailActionIcon(Icons.Rounded.Link) },
+                startAction = { OverlayActionIcon(Icons.Rounded.Link) },
                 enabled = nodeState.operation.isEmpty(),
                 onClick = { showAddActions = false; addNode = true },
             )
+            AppOverlayListDivider()
             BasicComponent(
                 title = stringResource(R.string.node_local_file),
                 summary = stringResource(R.string.node_local_file_summary),
-                startAction = { DetailActionIcon(Icons.Rounded.FileOpen) },
+                startAction = { OverlayActionIcon(Icons.Rounded.FileOpen) },
                 enabled = nodeState.operation.isEmpty(),
                 onClick = { showAddActions = false; filePicker.launch(arrayOf("*/*")) },
             )
@@ -261,6 +269,7 @@ internal fun SubscriptionsScreen(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             TextField(
+                colors = dialogTextFieldColors(),
                 value = link,
                 onValueChange = { link = it },
                 label = stringResource(R.string.node_link_label),
@@ -269,15 +278,15 @@ internal fun SubscriptionsScreen(
                 maxLines = 6,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                TextButton(
+                AppDialogButton(
                     text = stringResource(R.string.common_cancel),
                     onClick = { addNode = false; link = "" },
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(
+                AppDialogButton(
                     text = stringResource(R.string.common_add),
                     enabled = link.isNotBlank() && nodeState.operation.isEmpty(),
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                    role = DialogActionRole.Primary,
                     onClick = { nodes.addNode(link); addNode = false; link = "" },
                     modifier = Modifier.weight(1f),
                 )
@@ -301,13 +310,11 @@ private fun CatalogGroupCard(
     val total = usage?.total ?: 0L
     val updatedAt = group.lastSuccessAt.ifBlank { group.updatedAt }
 
-    Card(
+    AppContentCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = 12.dp),
         insideMargin = PaddingValues(16.dp),
-        pressFeedbackType = PressFeedbackType.Sink,
-        showIndication = true,
         onClick = onEdit
     ) {
         Row(
@@ -435,15 +442,15 @@ private fun CatalogGroupCard(
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(stringResource(R.string.subscription_delete_message, group.name))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(
+                AppDialogButton(
                     text = stringResource(R.string.common_cancel),
                     modifier = Modifier.weight(1f),
                     onClick = { showDeleteDialog = false }
                 )
-                TextButton(
+                AppDialogButton(
                     text = stringResource(R.string.common_confirm),
                     modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                    role = DialogActionRole.Destructive,
                     onClick = {
                         showDeleteDialog = false
                         onDelete()
@@ -508,18 +515,18 @@ internal fun SubscriptionDetailsScreen(
                     navigationIcon = { BackIconButton(onClick = onBack) },
                     actions = {
                         if (state.details?.group?.type == "subscription") {
-                            IconButton(
+                            AppBarButton(
                                 enabled = state.operation.isEmpty(),
                                 onClick = { viewModel.update(id) }
                             ) {
                                 Icon(
-                                    MiuixIcons.Refresh,
+                                    chromeIcon(MiuixIcons.Refresh),
                                     contentDescription = stringResource(R.string.common_update)
                                 )
                             }
-                            IconButton(onClick = { navigator.push(Route.SubscriptionEdit(id)) }) {
+                            AppBarButton(onClick = { navigator.push(Route.SubscriptionEdit(id)) }) {
                                 Icon(
-                                    Icons.Rounded.Edit,
+                                    chromeIcon(Icons.Rounded.Edit),
                                     contentDescription = stringResource(R.string.common_edit)
                                 )
                             }
@@ -562,7 +569,7 @@ internal fun SubscriptionDetailsScreen(
                     SectionLabel(stringResource(R.string.subscription_nodes_section, details.nodes.size))
                 }
                 items(details.nodes, key = { it.tag }) { node ->
-                    Card(modifier = Modifier.fillMaxWidth()) {
+                    AppContentCard(modifier = Modifier.fillMaxWidth()) {
                         BasicComponent(
                             title = node.tag,
                             summary = "${node.protocol.uppercase()} · ${node.server}:${node.port}",
@@ -605,13 +612,14 @@ internal fun SubscriptionDetailsScreen(
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(stringResource(R.string.subscription_delete_details_message))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                TextButton(
+                AppDialogButton(
                     text = stringResource(R.string.common_cancel),
                     onClick = { showDelete = false },
                     modifier = Modifier.weight(1f)
                 )
-                TextButton(
+                AppDialogButton(
                     text = stringResource(R.string.common_delete),
+                    role = DialogActionRole.Destructive,
                     onClick = {
                         showDelete = false
                         viewModel.remove(id, onBack)
@@ -629,14 +637,14 @@ internal fun SubscriptionDetailsScreen(
         onDismissRequest = { actionNode = null }
     ) {
         if (selectedNode != null) {
-            Card(
+            AppOverlayList(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 8.dp)
             ) {
                 BasicComponent(
                     title = stringResource(R.string.node_edit),
-                    startAction = { DetailActionIcon(Icons.Rounded.Edit) },
+                    startAction = { OverlayActionIcon(Icons.Rounded.Edit) },
                     onClick = {
                         actionNode = null
                         navigator.push(Route.NodeEdit(
@@ -644,17 +652,19 @@ internal fun SubscriptionDetailsScreen(
                         ))
                     }
                 )
+                AppOverlayListDivider()
                 BasicComponent(
                     title = stringResource(R.string.node_export),
-                    startAction = { DetailActionIcon(Icons.Rounded.Share) },
+                    startAction = { OverlayActionIcon(Icons.Rounded.Share) },
                     onClick = {
                         viewModel.exportNode(id, selectedNode.tag)
                         actionNode = null
                     }
                 )
+                AppOverlayListDivider()
                 BasicComponent(
                     title = stringResource(R.string.node_delete),
-                    startAction = { DetailActionIcon(MiuixIcons.Delete) },
+                    startAction = { OverlayActionIcon(MiuixIcons.Delete, destructive = true) },
                     onClick = {
                         viewModel.removeNode(id, selectedNode.tag)
                         actionNode = null
@@ -668,11 +678,11 @@ internal fun SubscriptionDetailsScreen(
 }
 
 @Composable
-private fun DetailActionIcon(imageVector: androidx.compose.ui.graphics.vector.ImageVector) {
+private fun OverlayActionIcon(imageVector: androidx.compose.ui.graphics.vector.ImageVector, destructive: Boolean = false) {
     Icon(
-        imageVector = imageVector,
+        imageVector = chromeIcon(imageVector),
         modifier = Modifier.size(22.dp),
-        tint = colorScheme.onSurfaceVariantSummary,
+        tint = if (destructive) colorScheme.error else colorScheme.onSurfaceVariantSummary,
         contentDescription = null
     )
 }
@@ -716,7 +726,7 @@ internal fun SubscriptionEditorScreen(
                     scrollBehavior = scrollBehavior,
                     navigationIcon = { BackIconButton(onClick = onBack) },
                     actions = {
-                        IconButton(
+                        AppBarButton(
                             enabled = !state.saving && !state.loading,
                             onClick = viewModel::save
                         ) {
@@ -724,7 +734,7 @@ internal fun SubscriptionEditorScreen(
                                 InfiniteProgressIndicator(modifier = Modifier.size(20.dp))
                             } else {
                                 Icon(
-                                    Icons.Rounded.Check,
+                                    chromeIcon(Icons.Rounded.Check),
                                     contentDescription = stringResource(R.string.save_text)
                                 )
                             }
@@ -787,7 +797,7 @@ internal fun SubscriptionEditorScreen(
                     )
                 }
                 item {
-                    Card(modifier = Modifier.fillMaxWidth()) {
+                    AppContentCard(modifier = Modifier.fillMaxWidth()) {
                         val intervals = subscriptionIntervalOptions(draft.updateIntervalSeconds)
                         val intervalLabels = listOf(
                             stringResource(R.string.subscription_duration_minutes, 15),
@@ -859,7 +869,7 @@ internal fun SubscriptionEditorScreen(
                     )
                 }
                 item {
-                    Card(modifier = Modifier.fillMaxWidth()) {
+                    AppContentCard(modifier = Modifier.fillMaxWidth()) {
                         SwitchPreference(
                             title = stringResource(R.string.subscription_editor_allow_insecure),
                             summary = stringResource(R.string.subscription_editor_allow_insecure_summary),
@@ -916,19 +926,6 @@ internal fun SubscriptionEditorScreen(
                         singleLine = true
                     )
                 }
-                item {
-                    TextButton(
-                        text = if (state.saving) {
-                            stringResource(R.string.subscription_editor_validating_save)
-                        } else {
-                            stringResource(R.string.save_text)
-                        },
-                        enabled = !state.saving,
-                        colors = ButtonDefaults.textButtonColorsPrimary(),
-                        onClick = viewModel::save,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
             }
         }
     }
@@ -938,7 +935,7 @@ internal fun SubscriptionEditorScreen(
 private fun SubscriptionSummaryCard(subscription: CatalogGroupSummary) {
     val isSubscription = subscription.type == "subscription"
     val status = subscriptionBadge(subscription)
-    Card(modifier = Modifier.fillMaxWidth()) {
+    AppContentCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -988,7 +985,7 @@ private fun HistoryRow(entry: SubscriptionHistoryEntry) {
     val revision = entry.revision?.let {
         stringResource(R.string.subscription_revision, it)
     }
-    Card(modifier = Modifier.fillMaxWidth()) {
+    AppContentCard(modifier = Modifier.fillMaxWidth()) {
         BasicComponent(
             title = when {
                 !entry.ok -> stringResource(R.string.subscription_update_failed)

@@ -120,6 +120,64 @@ class PolicyGroupEditorTest {
         assertEquals(1, writes)
     }
 
+    @Test fun convertsAnExistingSelectorWithTheSameTagAndRevision() = runBlocking {
+        val scope = CoroutineScope(coroutineContext + SupervisorJob(coroutineContext.job))
+        val original = parsePolicySection(source, "outbounds")
+        var writes = 0
+        val client = ModuleApiClient(TestApiTransport { request ->
+            when {
+                request.mutation -> {
+                    writes++
+                    request.assertConfig("PUT", "singbox/outbounds", "r1")
+                    val groups = parsePolicySection(request.text("content"), "outbounds")
+                    assertEquals(original.first(), groups.first())
+                    assertEquals(original.last(), groups.last())
+                    assertEquals(original[1]["tag"], groups[1]["tag"])
+                    assertEquals(original[1]["outbounds"], groups[1]["outbounds"])
+                    assertEquals(original[1]["interrupt_exist_connections"], groups[1]["interrupt_exist_connections"])
+                    assertEquals(JsonPrimitive("urltest"), groups[1]["type"])
+                    assertEquals(JsonPrimitive("3m"), groups[1]["interval"])
+                    assertFalse(groups[1].containsKey("default"))
+                    apiSuccess("""{"revision":"r2"}""")
+                }
+                request.path == "/subscriptions" -> apiSuccess("[]")
+                request.target == "singbox/outbounds" -> configResponse(source)
+                else -> configResponse("{}")
+            }
+        }, scope)
+        val vm = PolicyGroupEditorViewModel(PolicyRepository(client), scope)
+        try {
+            vm.openEditor("Proxy")
+            withTimeout(5_000) { vm.editor.first { it?.loading == false } }
+            vm.changeGroupDraft { it.copy(type = "urltest", testInterval = "3m") }
+            assertTrue(vm.editor.value?.canSave == true)
+            vm.saveEditor()
+            withTimeout(5_000) { vm.editor.first { it?.saved == true } }
+            assertEquals(1, writes)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test fun dropsOnlyIncompatibleOptionsWhenSwitchingType() {
+        val original = parsePolicySection("""
+            {"outbounds":[{"type":"urltest","tag":"Work","outbounds":["direct"],"providers":["Local"],
+                "include":"JP","url":"https://example.invalid","interval":"3m","tolerance":50,
+                "idle_timeout":"10m","fallback":{"enabled":true},"interrupt_exist_connections":true}]}
+        """.trimIndent(), "outbounds")
+        val doc = PolicyGroupDocument(original, "r1", "Work", listOf("direct", "Work"), listOf("Local"))
+        assertEquals(original, parsePolicySection(doc.updated(doc.initial), "outbounds"))
+        val next = parsePolicySection(
+            doc.updated(doc.initial.copy(type = "selector", defaultMember = "direct")), "outbounds",
+        ).single()
+        assertEquals(JsonPrimitive("selector"), next["type"])
+        assertEquals(JsonPrimitive("direct"), next["default"])
+        for (field in listOf("tag", "outbounds", "providers", "include", "interrupt_exist_connections")) {
+            assertEquals(original.single()[field], next[field])
+        }
+        assertTrue(listOf("url", "interval", "tolerance", "idle_timeout", "fallback").none(next::containsKey))
+    }
+
     @Test fun aRevisionConflictKeepsTheDraftAndDoesNotReplayTheWrite() = runBlocking {
         val scope = CoroutineScope(coroutineContext + SupervisorJob(coroutineContext.job))
         var writes = 0

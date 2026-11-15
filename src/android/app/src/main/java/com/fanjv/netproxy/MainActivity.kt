@@ -4,7 +4,6 @@ import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,11 +45,12 @@ import com.fanjv.netproxy.core.ui.userMessage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import com.fanjv.netproxy.core.ui.component.AppDialogButton
+import com.fanjv.netproxy.core.ui.component.DialogActionRole
+import com.fanjv.netproxy.core.ui.component.dialogTextFieldColors
 import com.fanjv.netproxy.core.ui.component.LocalModuleAvailability
 import com.fanjv.netproxy.core.ui.component.ModulePage
 import com.fanjv.netproxy.core.ui.theme.AppThemeDefaults
-import com.fanjv.netproxy.core.ui.theme.AppThemeSettings
-import com.fanjv.netproxy.core.ui.theme.ColorMode
 import com.fanjv.netproxy.core.ui.theme.NetProxyTheme
 import com.fanjv.netproxy.feature.about.presentation.AboutScreen
 import com.fanjv.netproxy.feature.apps.presentation.AppsScreen
@@ -58,10 +58,12 @@ import com.fanjv.netproxy.feature.catalog.presentation.nodes.CatalogNodesViewMod
 import com.fanjv.netproxy.feature.catalog.presentation.nodes.edit.SingBoxNodeEditScreen
 import com.fanjv.netproxy.feature.proxy.presentation.PolicyGroupEditorScreen
 import com.fanjv.netproxy.feature.proxy.presentation.PolicyScreen
+import com.fanjv.netproxy.feature.proxy.presentation.PolicyViewModel
 import com.fanjv.netproxy.feature.catalog.presentation.subscriptions.SubscriptionDetailsScreen
 import com.fanjv.netproxy.feature.catalog.presentation.subscriptions.SubscriptionEditorScreen
 import com.fanjv.netproxy.feature.catalog.presentation.subscriptions.SubscriptionsScreen
 import com.fanjv.netproxy.feature.dashboard.presentation.CatalogDashboardScreen
+import com.fanjv.netproxy.feature.dashboard.presentation.CatalogDashboardViewModel
 import com.fanjv.netproxy.feature.kernel.presentation.SingBoxJsonEditScreen
 import com.fanjv.netproxy.feature.kernel.presentation.SingBoxKernelSettingsScreen
 import com.fanjv.netproxy.feature.logs.presentation.LogsScreen
@@ -94,11 +96,11 @@ import com.fanjv.netproxy.navigation.rememberNavigator
 import com.fanjv.netproxy.navigation.mainDestinations
 import com.fanjv.netproxy.navigation.availableIn
 import top.yukonga.miuix.kmp.basic.NavigationItem
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
-import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import com.fanjv.netproxy.core.ui.component.AppDialog as OverlayDialog
+import com.fanjv.netproxy.core.ui.component.LocalManagerBackdrop
+import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.nav.core.NavDisplay
@@ -136,18 +138,7 @@ class MainActivity : ComponentActivity() {
             val density = remember(systemDensity, themeState.pageScale) {
                 Density(systemDensity.density * themeState.pageScale, systemDensity.fontScale)
             }
-            val appThemeSettings = AppThemeSettings(
-                colorMode = ColorMode.fromValue(themeState.colorMode),
-                miuixMonet = themeState.miuixMonet,
-                keyColor = themeState.keyColor,
-                paletteStyle = paletteStyle,
-                colorSpec = colorSpec,
-                enableSmoothCorner = themeState.enableSmoothCorner,
-                enableBlur = themeState.enableBlur,
-                enablePredictiveBack = themeState.enablePredictiveBack,
-            )
-            val darkMode = appThemeSettings.colorMode.isDark ||
-                    (appThemeSettings.colorMode.isSystem && androidx.compose.foundation.isSystemInDarkTheme())
+            val darkMode = androidx.compose.foundation.isSystemInDarkTheme()
 
             SideEffect {
                 WindowInsetsControllerCompat(window, window.decorView).apply {
@@ -160,7 +151,12 @@ class MainActivity : ComponentActivity() {
             }
 
             CompositionLocalProvider(LocalDensity provides density) {
-                NetProxyTheme(appThemeSettings = appThemeSettings) {
+                NetProxyTheme(
+                    miuixMonet = themeState.miuixMonet,
+                    keyColor = themeState.keyColor,
+                    paletteStyle = paletteStyle,
+                    colorSpec = colorSpec,
+                ) {
                     NetProxyApp(themeViewModel)
                 }
             }
@@ -175,6 +171,7 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
     val moduleAccess: ModuleAccessViewModel = netProxyViewModel()
     val availability by moduleAccess.state.collectAsStateWithLifecycle()
     var reconnect by rememberSaveable { mutableStateOf(false) }
+    val overlayBackdrop = rememberBlurBackdrop()
 
     LifecycleResumeEffect(Unit) {
         moduleAccess.refresh()
@@ -184,13 +181,15 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
     CompositionLocalProvider(
         LocalNavigator provides navigator,
         LocalModuleAvailability provides availability,
+        LocalManagerBackdrop provides overlayBackdrop,
     ) {
         Scaffold {
             NavDisplay(
+                modifier = if (overlayBackdrop == null) Modifier else Modifier.layerBackdrop(overlayBackdrop),
                 backStack = navigator.backStack,
                 onBack = { navigator.pop() },
             ) {
-                entry<Main> { MainScreen(themeViewModel, catalogNodesViewModel, onReconnect = { reconnect = true }) }
+                entry<Main> { MainScreen(catalogNodesViewModel, onReconnect = { reconnect = true }) }
                 entry<Apps> {
                     ModulePage(R.string.proxy_apps, R.string.apps_read_failed, { navigator.pop() }) {
                         AppsScreen(onBack = { navigator.pop() })
@@ -268,8 +267,8 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
                     }
                 }
             }
+            ModuleConnectionDialog(reconnect, moduleAccess::reconnect) { reconnect = false }
         }
-        ModuleConnectionDialog(reconnect, moduleAccess::reconnect) { reconnect = false }
     }
 }
 
@@ -285,16 +284,16 @@ private fun ModuleConnectionDialog(show: Boolean, connect: suspend (String) -> U
     OverlayDialog(show = show, title = stringResource(R.string.module_reconnect),
         onDismissRequest = dismiss, insideMargin = DpSize(0.dp, 24.dp)) {
         Column(Modifier.padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            TextField(value = address, onValueChange = { address = it; error = "" },
+            TextField(colors = dialogTextFieldColors(error.isNotBlank()), value = address, onValueChange = { address = it; error = "" },
                 label = stringResource(R.string.module_address), maxLines = 1, enabled = !connecting,
                 modifier = Modifier.fillMaxWidth())
             if (error.isNotEmpty()) Text(error, style = top.yukonga.miuix.kmp.theme.MiuixTheme.textStyles.footnote1,
                 color = top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme.error)
-            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                TextButton(stringResource(android.R.string.cancel), modifier = Modifier.weight(1f), onClick = dismiss)
-                TextButton(stringResource(if (connecting) R.string.module_connecting else R.string.module_reconnect),
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                AppDialogButton(stringResource(android.R.string.cancel), modifier = Modifier.weight(1f), onClick = dismiss)
+                AppDialogButton(stringResource(if (connecting) R.string.module_connecting else R.string.module_reconnect),
                     modifier = Modifier.weight(1f), enabled = !connecting && address.isNotBlank(),
-                    colors = ButtonDefaults.textButtonColorsPrimary(), onClick = {
+                    role = DialogActionRole.Primary, onClick = {
                         connecting = true
                         error = ""
                         request = scope.launch {
@@ -314,20 +313,25 @@ private fun ModuleConnectionDialog(show: Boolean, connect: suspend (String) -> U
 
 @Composable
 internal fun MainScreen(
-    themeViewModel: ThemeViewModel,
     catalogNodesViewModel: CatalogNodesViewModel,
     onReconnect: () -> Unit = {},
 ) {
     val availability = LocalModuleAvailability.current
+    val dashboard: CatalogDashboardViewModel = netProxyViewModel()
+    LaunchedEffect(dashboard, availability) { dashboard.setAvailability(availability) }
+    LifecycleResumeEffect(dashboard) {
+        dashboard.setVisible(true)
+        onPauseOrDispose { dashboard.setVisible(false) }
+    }
     var destination by rememberSaveable { mutableStateOf(AppDestination.Dashboard) }
     if (availability == null) {
-        CatalogDashboardScreen(onReconnect = onReconnect)
+        CatalogDashboardScreen(onReconnect = onReconnect, viewModel = dashboard)
         return
     }
     val destinations = mainDestinations(availability.available)
     // 权限改变会改变页码；保存目的地身份，避免“设置”被映射为“节点”。
     key(destinations) {
-        MainPager(themeViewModel, catalogNodesViewModel, destinations,
+        MainPager(catalogNodesViewModel, dashboard, destinations,
             initialDestination = destination.availableIn(destinations),
             onDestinationChanged = { destination = it }, onReconnect = onReconnect)
     }
@@ -335,17 +339,25 @@ internal fun MainScreen(
 
 @Composable
 private fun MainPager(
-    themeViewModel: ThemeViewModel,
     catalogNodesViewModel: CatalogNodesViewModel,
+    dashboard: CatalogDashboardViewModel,
     destinations: List<AppDestination>,
     initialDestination: AppDestination,
     onDestinationChanged: (AppDestination) -> Unit,
     onReconnect: () -> Unit,
 ) {
-    val themeState by themeViewModel.state.collectAsStateWithLifecycle()
     val pagerState = rememberPagerState(initialPage = destinations.indexOf(initialDestination),
         pageCount = { destinations.size })
     val mainPagerState = rememberMainPagerState(pagerState)
+    val policyViewModel = if (AppDestination.Nodes in destinations) {
+        val viewModel: PolicyViewModel = netProxyViewModel()
+        // Keep the confirmed selection current even when the pager disposes the proxy tab.
+        LifecycleResumeEffect(viewModel) {
+            viewModel.setVisible(true)
+            onPauseOrDispose { viewModel.setVisible(false) }
+        }
+        viewModel
+    } else null
 
     // 非动画态（如滑动）时与 pager 同步；
     // 导航动画结束后也重跑一次，否则点击导航可能跳过目的地页的首次按需加载。
@@ -366,7 +378,6 @@ private fun MainPager(
     MainScreenBackHandler(
         mainState = mainPagerState,
         navigator = navigator,
-        enablePredictiveBack = themeState.enablePredictiveBack,
     )
 
     val blurBackdrop = com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop()
@@ -401,14 +412,14 @@ private fun MainPager(
                 when (destinations[pageIndex]) {
                     AppDestination.Dashboard -> CatalogDashboardScreen(
                         bottomPadding = bottomPadding,
-                        isActive = mainPagerState.selectedPage == pageIndex,
                         onReconnect = onReconnect,
+                        viewModel = dashboard,
                     )
 
                     AppDestination.Nodes -> PolicyScreen(
                         bottomPadding = bottomPadding,
-                        // Keep the outgoing selection visible until the pager settles.
-                        isActive = mainPagerState.selectedPage == pageIndex || pagerState.settledPage == pageIndex,
+                        isActive = mainPagerState.selectedPage == pageIndex,
+                        viewModel = checkNotNull(policyViewModel),
                     )
 
                     AppDestination.Subscriptions -> SubscriptionsScreen(
@@ -431,7 +442,6 @@ private fun MainPager(
 private fun MainScreenBackHandler(
     mainState: MainPagerState,
     navigator: com.fanjv.netproxy.navigation.Navigator,
-    enablePredictiveBack: Boolean,
 ) {
     val isPagerBackHandlerEnabled by remember {
         derivedStateOf {
@@ -441,18 +451,10 @@ private fun MainScreenBackHandler(
         }
     }
 
-    if (enablePredictiveBack) {
-        val navEventState = rememberNavigationEventState(NavigationEventInfo.None)
-        NavigationBackHandler(
-            state = navEventState,
-            isBackEnabled = isPagerBackHandlerEnabled,
-            onBackCompleted = {
-                mainState.animateToPage(0)
-            }
-        )
-    } else {
-        BackHandler(enabled = isPagerBackHandlerEnabled) {
-            mainState.animateToPage(0)
-        }
-    }
+    val navEventState = rememberNavigationEventState(NavigationEventInfo.None)
+    NavigationBackHandler(
+        state = navEventState,
+        isBackEnabled = isPagerBackHandlerEnabled,
+        onBackCompleted = { mainState.animateToPage(0) },
+    )
 }

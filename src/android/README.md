@@ -88,3 +88,15 @@ cd src/android
 ## 许可证
 
 NetProxy 使用 [GNU General Public License v3.0](../../LICENSE)。第三方组件保留各自许可证，详见 [NOTICE](../../NOTICE)。
+
+## OS4 Glass 构建
+
+本地、开发 CI 和正式发布统一使用 OS4 Glass。MIUIX 正式版发布前，Gradle 从 [MIUIX 官方仓库](https://github.com/compose-miuix-ui/miuix) 获取 `settings.gradle.kts` 锁定的源码到 `.gradle/miuix/`，首次构建需要 Git 和网络，不需要 GitHub Packages 令牌。在本目录执行：
+
+```powershell
+.\gradlew.bat :app:assembleDebug
+```
+
+已有对应提交的 Git checkout 可通过 `-PnetproxyMiuixSource=C:/path/to/miuix` 复用，仍构建同一套界面。Glass 在平台支持时自动采样折射背景；其他情况下使用同一组件的静态材质，不需要另一个 APK。
+
+应用明暗跟随系统。「设置 → 外观」保留配色、界面缩放和仪表盘预览；预测性返回、平滑圆角与页面模糊不再提供独立开关。

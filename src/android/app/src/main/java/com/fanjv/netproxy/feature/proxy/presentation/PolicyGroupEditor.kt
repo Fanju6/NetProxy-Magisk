@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.di.netProxyViewModel
+import com.fanjv.netproxy.core.ui.component.AppDialogButton
+import com.fanjv.netproxy.core.ui.component.DialogActionRole
 import com.fanjv.netproxy.core.ui.component.AdaptiveTopAppBar
 import com.fanjv.netproxy.core.ui.component.BackIconButton
 import com.fanjv.netproxy.core.ui.component.BlurredBar
@@ -46,24 +48,23 @@ import com.fanjv.netproxy.core.ui.component.groupedCardSection
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import com.fanjv.netproxy.core.ui.resolve
 import top.yukonga.miuix.kmp.basic.BasicComponent
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
+import com.fanjv.netproxy.core.ui.component.AppBarButton as IconButton
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import com.fanjv.netproxy.core.ui.component.chromeIcon
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.ExpandLess
 import top.yukonga.miuix.kmp.icon.extended.ExpandMore
 import top.yukonga.miuix.kmp.icon.extended.Ok
-import top.yukonga.miuix.kmp.overlay.OverlayDialog
+import com.fanjv.netproxy.core.ui.component.AppDialog as OverlayDialog
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.CheckboxPreference
-import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
+import com.fanjv.netproxy.core.ui.component.AppDropdown as OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
@@ -116,7 +117,7 @@ internal fun PolicyGroupEditorScreen(
                             },
                         ) {
                             if (saving) InfiniteProgressIndicator(Modifier.size(20.dp))
-                            else Icon(MiuixIcons.Ok, stringResource(R.string.save_text), tint = colorScheme.onSurface)
+                            else Icon(chromeIcon(MiuixIcons.Ok), stringResource(R.string.save_text), tint = colorScheme.onSurface)
                         }
                     },
                 )
@@ -149,7 +150,7 @@ internal fun PolicyGroupEditorScreen(
                 groupedCardSection("basics", { stringResource(R.string.basic_settings) }, buildList {
                     if (editing) {
                         add(CardItem("name") {
-                            BasicComponent(title = draft.tag, summary = policyTypeLabel(draft.type))
+                            BasicComponent(title = stringResource(R.string.policy_group_name), summary = draft.tag)
                         })
                     } else {
                         add(CardItem("name") {
@@ -165,21 +166,24 @@ internal fun PolicyGroupEditorScreen(
                                 )
                             }
                         })
-                        add(CardItem("type") {
-                            val types = listOf("selector", "urltest")
-                            OverlayDropdownPreference(
-                                title = stringResource(R.string.policy_group_type),
-                                items = types.map(::policyTypeLabel),
-                                selectedIndex = types.indexOf(draft.type).coerceAtLeast(0),
-                                enabled = enabled,
-                                onSelectedIndexChange = { index -> change { it.copy(type = types[index]) } },
-                            )
-                        })
                     }
+                    add(CardItem("type") {
+                        val types = document.typeChoices
+                        OverlayDropdownPreference(
+                            title = stringResource(R.string.policy_group_type),
+                            items = types.map(::policyTypeLabel),
+                            selectedIndex = types.indexOf(draft.type).coerceAtLeast(0),
+                            enabled = enabled,
+                            onSelectedIndexChange = { index ->
+                                val type = types[index]
+                                change { it.copy(type = type, addAuto = it.addAuto && type == "selector") }
+                            },
+                        )
+                    })
                 }, titleTopPadding = 12.dp)
 
                 groupedCardSection("sources", { stringResource(R.string.policy_group_sources) }, buildList {
-                    if (document.canAddAuto) add(CardItem("add_auto") {
+                    if (draft.type == "selector" && document.canAddAuto) add(CardItem("add_auto") {
                         SwitchPreference(
                             title = stringResource(R.string.policy_add_auto),
                             summary = stringResource(R.string.policy_add_auto_summary),
@@ -346,10 +350,10 @@ private fun PolicyChoicesDialog(
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                TextButton(stringResource(R.string.common_cancel), modifier = Modifier.weight(1f), onClick = onDismiss)
-                TextButton(
+                AppDialogButton(stringResource(R.string.common_cancel), modifier = Modifier.weight(1f), onClick = onDismiss)
+                AppDialogButton(
                     stringResource(R.string.common_done), modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.textButtonColorsPrimary(), onClick = { onApply(checked) },
+                    role = DialogActionRole.Primary, onClick = { onApply(checked) },
                 )
             }
         }

@@ -44,6 +44,7 @@ internal class DashboardSnapshotReducer(
 
         return current.copy(
             loading = false,
+            serviceStatusKnown = true,
             serviceState = service.state,
             serviceError = service.error,
             readyAt = displayedReadyAt,

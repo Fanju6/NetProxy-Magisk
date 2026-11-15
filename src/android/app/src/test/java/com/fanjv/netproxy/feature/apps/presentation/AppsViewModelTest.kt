@@ -332,9 +332,10 @@ class AppsViewModelTest {
         assertEquals(2, transport.writes)
         assertFalse(transport.config.enabled)
         vm.toggle("0:alpha.example")
-        yield()
+        assertTrue(vm.flushPolicy())
         assertEquals(2, transport.writes)
-        assertTrue(vm.state.value.hasPendingPolicy)
+        assertFalse(vm.state.value.hasPendingPolicy)
+        assertEquals(setOf("0:alpha.example", "0:beta.example"), transport.config.proxyApps.toSet())
     }
 
     @Test fun revertingDuringWriteDoesNotRestoreAnOldCheckmarkOrSkipPendingRemoval() = runBlocking {
@@ -505,13 +506,16 @@ class AppsViewModelTest {
     @Test fun selectedFirstUsesSameOrderingForNormalAndSearchLists() {
         val alpha = AppInfoModel("alpha.example", "Alpha")
         val beta = AppInfoModel("beta.example", "Beta")
-        val state = AppsUiState(allApps = listOf(alpha, beta), searchResults = listOf(alpha, beta),
+        val state = AppsUiState(appProxyEnabled = true, allApps = listOf(alpha, beta), searchResults = listOf(alpha, beta),
             proxiedApps = setOf(beta.id))
         assertEquals(listOf(beta, alpha), state.orderedApps())
         assertEquals(state.orderedApps(), state.orderedApps(state.searchResults))
         assertEquals(listOf(alpha, beta), state.searchResults)
         assertSame(state.allApps, state.copy(appSelectedFirst = false).orderedApps())
         assertSame(state.searchResults, state.copy(appSelectedFirst = false).orderedApps(state.searchResults))
+        val disabled = state.copy(appProxyEnabled = false)
+        assertSame(state.allApps, disabled.orderedApps())
+        assertSame(state.searchResults, disabled.orderedApps(state.searchResults))
         val reversed = state.copy(allApps = listOf(beta, alpha), searchResults = listOf(beta, alpha), appReverseSort = true)
         assertEquals(listOf(alpha, beta), reversed.orderedApps())
         assertEquals(reversed.orderedApps(), reversed.orderedApps(reversed.searchResults))
@@ -523,7 +527,7 @@ class AppsViewModelTest {
         val work = owner.copy(userId = "10")
         val play = AppInfoModel("google.play", "Google Play")
         val search = listOf(owner, work, play)
-        val state = AppsUiState(allApps = listOf(alpha) + search, searchResults = search,
+        val state = AppsUiState(appProxyEnabled = true, allApps = listOf(alpha) + search, searchResults = search,
             proxiedApps = setOf(alpha.id, work.id, play.id))
         assertEquals(listOf(work, play, owner), state.orderedApps(search))
         assertEquals(listOf(owner, work, play), state.copy(proxiedApps = emptySet()).orderedApps(search))
@@ -531,6 +535,21 @@ class AppsViewModelTest {
         assertEquals(listOf(owner, work, play), state.copy(appSelectedFirst = false).orderedApps(search))
         assertEquals(listOf(owner, work, play), search)
         assertTrue(state.orderedApps(emptyList()).isEmpty())
+    }
+
+    @Test fun disabledProxyKeepsSavedListsAndIgnoresToggle() = runBlocking {
+        val saved = AppProxyConfig(enabled = false, mode = "blacklist",
+            proxyApps = listOf("0:alpha.example"), bypassApps = listOf("0:beta.example"))
+        val transport = Transport().apply { config = saved }
+        val vm = model(this, transport)
+        vm.load()
+        vm.loaded()
+        assertFalse(vm.state.value.appProxyEnabled)
+        assertEquals(2, vm.state.value.allApps.size)
+        vm.toggle("0:alpha.example")
+        assertFalse(vm.state.value.hasPendingPolicy)
+        assertEquals(0, transport.writes)
+        assertEquals(saved, transport.config)
     }
 
     @Test fun continuousSearchSelectionAndDeselectionUsesLatestPolicyWithoutRefiltering() = runBlocking {

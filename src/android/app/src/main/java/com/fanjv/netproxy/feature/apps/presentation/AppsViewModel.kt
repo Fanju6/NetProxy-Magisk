@@ -124,6 +124,7 @@ internal class AppsViewModel(
     }
 
     fun toggle(appId: String) {
+        if (!_state.value.appProxyEnabled) return
         editPolicy { config ->
             val items = activeItems(config)
             val updated = (if (appId in items) items - appId else items + appId).toList()

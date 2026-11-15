@@ -23,6 +23,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
@@ -33,6 +34,78 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PolicyViewModelTest {
+    @Test fun mainSessionKeepsSelectionCurrentWithoutProxyScreenCollector() = runBlocking {
+        val scope = CoroutineScope(coroutineContext + SupervisorJob(coroutineContext.job))
+        val updates = Channel<ModuleEvent>(Channel.UNLIMITED)
+        val transport = object : TestApiTransport() {
+            override suspend fun respond(request: ApiTestRequest) = apiSuccess(snapshot(live = false))
+
+            override suspend fun watch(topics: Set<String>, consume: suspend (ModuleEvent) -> Unit) {
+                for (event in updates) consume(event)
+            }
+        }
+        val vm = PolicyViewModel(PolicyRepository(ModuleApiClient(transport, scope)), scope)
+        fun PolicyState.selected() = snapshot?.groups?.first()?.selected.orEmpty()
+        try {
+            vm.setVisible(true)
+            updates.send(groupsEvent())
+            withTimeout(5_000) { vm.state.first { it.selected() == "direct" } }
+
+            // With no screen collecting, the main session must still accept a core update.
+            updates.send(ModuleEvent("groups", apiSuccess(snapshot(selected = "Example/日本")).content))
+            withTimeout(5_000) { vm.state.first { it.selected() == "Example/日本" } }
+            assertEquals("Example/日本", vm.state.first().selected())
+
+            updates.send(ModuleEvent("groups", apiSuccess(snapshot(live = false)).content))
+            val stopped = withTimeout(5_000) { vm.state.first { it.runtimeConfirmed && it.runtime?.live == false } }
+            assertEquals("", stopped.selected())
+            assertEquals(2, stopped.snapshot?.groups?.size)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test fun resumeConfirmsSelectionWithoutEventsAndKeepsCardsUntilReadback() = runBlocking {
+        val scope = CoroutineScope(coroutineContext + SupervisorJob(coroutineContext.job))
+        val reads = Channel<CompletableDeferred<ModuleHttpResponse>>(Channel.UNLIMITED)
+        val calls = CopyOnWriteArrayList<ApiTestRequest>()
+        val transport = object : TestApiTransport() {
+            override suspend fun respond(request: ApiTestRequest): ModuleHttpResponse {
+                calls += request
+                if (request.query["source"] == "config") return apiSuccess(snapshot(live = false))
+                val result = CompletableDeferred<ModuleHttpResponse>()
+                reads.send(result)
+                return result.await()
+            }
+
+            override suspend fun watch(topics: Set<String>, consume: suspend (ModuleEvent) -> Unit) = awaitCancellation()
+        }
+        val vm = PolicyViewModel(PolicyRepository(ModuleApiClient(transport, scope)), scope)
+        fun PolicyState.selected() = snapshot?.groups?.first()?.selected.orEmpty()
+        try {
+            vm.setVisible(true)
+            withTimeout(5_000) { reads.receive() }.complete(apiSuccess(snapshot()))
+            withTimeout(5_000) { vm.state.first { it.live && it.selected() == "direct" } }
+            vm.setVisible(false)
+            vm.setVisible(true)
+            val resume = withTimeout(5_000) { reads.receive() }
+            assertEquals("direct", vm.state.value.selected())
+            assertFalse(vm.state.value.live)
+            vm.select("Work / 组", "Example/日本")
+            assertTrue(calls.none { it.mutation })
+            resume.complete(apiSuccess(snapshot(selected = "Example/日本")))
+            withTimeout(5_000) { vm.state.first { it.live && it.selected() == "Example/日本" } }
+
+            vm.refresh(showProgress = true)
+            withTimeout(5_000) { reads.receive() }.complete(apiSuccess(snapshot(live = false)))
+            val stopped = withTimeout(5_000) { vm.state.first { it.runtimeConfirmed && it.runtime?.live == false } }
+            assertEquals("", stopped.selected())
+            assertFalse(stopped.live)
+        } finally {
+            scope.cancel()
+        }
+    }
+
     @Test fun latencyIsHiddenUntilTheSameGroupAndCoreHaveANewerManualResult() {
         val node = PolicyMember("fixture", "socks")
         val group = PolicyGroup("Work", "selector", false, listOf(node))

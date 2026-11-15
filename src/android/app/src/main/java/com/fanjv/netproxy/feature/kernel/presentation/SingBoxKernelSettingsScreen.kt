@@ -74,21 +74,8 @@ internal fun SingBoxKernelSettingsScreen(
     val checkSuccess = stringResource(R.string.singbox_check_success)
     val checkFailed = stringResource(R.string.singbox_check_failed)
 
-    Scaffold(
-        snackbarHost = { AppSnackbarHost(snackbarHostState) },
-        topBar = {
-            BlurredBar(backdrop) {
-                AdaptiveTopAppBar(
-                    color = barColor,
-                    title = stringResource(R.string.kernel_settings),
-                    navigationIcon = { BackIconButton(onClick = onBack) },
-                    scrollBehavior = scrollBehavior,
-                    actions = {
-                        var showMoreMenu by remember { mutableStateOf(false) }
-                        TopBarMoreMenu(
-                            expanded = showMoreMenu,
-                            onExpandedChange = { showMoreMenu = it },
-                            actions = listOf(
+    TopBarMoreMenu(
+        actions = listOf(
                                 TopBarMenuAction(
                                     text = stringResource(R.string.restart_core),
                                     enabled = state.documents.isNotEmpty(),
@@ -113,10 +100,19 @@ internal fun SingBoxKernelSettingsScreen(
                                         }
                                     },
                                 ),
-                            ),
-                            contentDescription = stringResource(R.string.more_actions),
-                        )
-                    },
+        ),
+        contentDescription = stringResource(R.string.more_actions),
+    ) { moreButton ->
+    Scaffold(
+        snackbarHost = { AppSnackbarHost(snackbarHostState) },
+        topBar = {
+            BlurredBar(backdrop) {
+                AdaptiveTopAppBar(
+                    color = barColor,
+                    title = stringResource(R.string.kernel_settings),
+                    navigationIcon = { BackIconButton(onClick = onBack) },
+                    scrollBehavior = scrollBehavior,
+                    actions = { moreButton() },
                 )
             }
         },
@@ -169,6 +165,7 @@ internal fun SingBoxKernelSettingsScreen(
                 }
             }
         }
+    }
     }
 }
 

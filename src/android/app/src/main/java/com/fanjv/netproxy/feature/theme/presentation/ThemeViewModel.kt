@@ -10,14 +10,10 @@ internal class ThemeViewModel(
 
     val state: StateFlow<ThemeUiState> = manager.state
 
-    fun setThemeMode(mode: Int) = manager.setThemeMode(mode)
     fun setMiuixMonet(enabled: Boolean) = manager.setMiuixMonet(enabled)
     fun setKeyColor(color: Int) = manager.setKeyColor(color)
     fun setColorStyle(style: String) = manager.setColorStyle(style)
     fun setColorSpec(spec: String) = manager.setColorSpec(spec)
-    fun setEnableBlur(enabled: Boolean) = manager.setEnableBlur(enabled)
-    fun setEnablePredictiveBack(enabled: Boolean) = manager.setEnablePredictiveBack(enabled)
-    fun setEnableSmoothCorner(enabled: Boolean) = manager.setEnableSmoothCorner(enabled)
     fun setPageScale(scale: Float) = manager.setPageScale(scale)
 }
 

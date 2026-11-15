@@ -38,7 +38,7 @@ data class AppsUiState(
 )
 
 internal fun AppsUiState.orderedApps(items: List<AppInfoModel> = allApps): List<AppInfoModel> {
-    if (!appSelectedFirst) return items
+    if (!appProxyEnabled || !appSelectedFirst) return items
     val (selected, other) = items.partition { it.id in proxiedApps }
     return if (appReverseSort) other + selected else selected + other
 }

@@ -31,6 +31,7 @@
     <string name="policy_group_no_choices">没有可选项</string>
     <string name="policy_empty">尚未配置策略组</string>
     <string name="policy_configured">配置中的策略组 · 服务未运行</string>
+    <string name="policy_runtime_unavailable">暂时无法确认当前选择，请下拉刷新</string>
     <string name="policy_providers_unavailable">离线不可用的 Provider：%1$s</string>
     <string name="inbound_read_failed">无法读取入站配置</string>
     <string name="network_read_failed">无法读取网络匹配配置</string>
@@ -70,12 +71,15 @@
     <string name="service_stopped">服务未开启</string>
     <string name="service_starting">正在启动服务…</string>
     <string name="service_stopping">正在停止服务…</string>
-    <string name="cpu_usage">CPU 占用</string>
-    <string name="mem_usage">内存占用</string>
+    <string name="cpu_usage">处理器</string>
+    <string name="mem_usage">内存</string>
     <string name="collecting_data">正在收集数据…</string>
     <string name="dashboard_lan_ip">内网 IP</string>
+    <string name="dashboard_lan_ip_unavailable">暂不可用</string>
     <string name="dashboard_total_traffic">累计流量</string>
-    <string name="dashboard_traffic">↑ %1$s   ↓ %2$s</string>
+    <string name="dashboard_download">下载</string>
+    <string name="dashboard_upload">上传</string>
+    <string name="dashboard_traffic">上传 %1$s · 下载 %2$s</string>
     <string name="dashboard_outbound_mode">出站模式</string>
     <string name="dashboard_mode_rule">规则</string>
     <string name="dashboard_mode_proxy">代理</string>
@@ -84,9 +88,11 @@
     <string name="dashboard_mode_unknown">实际模式未知</string>
     <string name="dashboard_current_node">当前节点</string>
     <string name="dashboard_not_selected">未选择</string>
-    <string name="dashboard_service_up">UP: %1$s</string>
+    <string name="dashboard_service_up">已运行 %1$s</string>
+    <string name="dashboard_service_failed">服务异常</string>
     <string name="dashboard_service_started">服务已启动</string>
     <string name="dashboard_service_stopped">服务已停止</string>
+    <string name="dashboard_service_status_unavailable">服务状态暂不可用</string>
     <string name="dashboard_mode_changed">出站模式已切换</string>
 
     <!-- Catalog: Nodes -->
@@ -206,7 +212,6 @@
     <string name="subscription_editor_hwid">HWID（可选）</string>
     <string name="subscription_editor_headers">自定义请求头，每行 名称: 值</string>
     <string name="subscription_editor_timeout">下载超时（秒）</string>
-    <string name="subscription_editor_validating_save">正在验证并保存…</string>
     <string name="subscription_name_empty">订阅名称不能为空</string>
     <string name="subscription_name_invalid">订阅名称不能包含斜线或控制字符</string>
     <string name="subscription_url_empty">订阅链接不能为空</string>
@@ -230,6 +235,8 @@
     <string name="kernel_logs">内核日志</string>
     <string name="raw_view">原始视图</string>
     <string name="card_view">卡片视图</string>
+    <string name="log_jump">跳转</string>
+    <string name="log_export">导出日志</string>
     <string name="scroll_to_top">滚动到顶部</string>
     <string name="scroll_to_bottom">滚动到底部</string>
     <string name="clear_logs_now">立即清空日志</string>
@@ -274,11 +281,9 @@
     <string name="about_source_code">在 %1$s 查看源码&lt;br/&gt;加入我们的 %2$s 频道</string>
 
     <!-- Theme & UI -->
-    <string name="settings_theme">主题设置</string>
-    <string name="settings_theme_summary">自定义更多主题选项</string>
-    <string name="settings_theme_mode_system">跟随系统</string>
-    <string name="settings_theme_mode_light">浅色</string>
-    <string name="settings_theme_mode_dark">深色</string>
+    <string name="settings_theme">外观</string>
+    <string name="settings_theme_summary">配色与界面缩放</string>
+    <string name="dashboard_preview">仪表盘预览</string>
     <string name="settings_key_color">强调色</string>
     <string name="settings_key_color_default">系统配色</string>
     <string name="color_blue">蓝色</string>
@@ -299,12 +304,6 @@
     <string name="settings_monet">Monet 配色</string>
     <string name="settings_color_style">调色风格</string>
     <string name="settings_color_spec">配色规格</string>
-    <string name="settings_enable_blur">启用页面模糊</string>
-    <string name="settings_enable_blur_summary">控制顶部模糊和页面毛玻璃效果</string>
-    <string name="settings_smooth_corner">平滑圆角</string>
-    <string name="settings_smooth_corner_summary">为界面启用 Miuix 平滑圆角效果</string>
-    <string name="settings_enable_predictive_back">预测性返回手势</string>
-    <string name="settings_enable_predictive_back_summary">启用 Android 14 及以上的预测性返回动画</string>
     <string name="settings_page_scale">界面缩放</string>
     <string name="settings_page_scale_summary">调整整个应用的界面缩放比例</string>
     <string name="refresh_pulling">下拉可以刷新</string>
@@ -363,14 +362,12 @@
     <string name="json_save_rolled_back">完整配置检查未通过，配置文件未保存，当前编辑内容已保留。</string>
     <string name="json_discard_and_exit">放弃并退出</string>
     <string name="json_saved">配置已保存</string>
-    <string name="json_checking">正在检查配置…</string>
-    <string name="json_valid">配置有效</string>
-    <string name="json_valid_read_only">配置有效 · 只读</string>
+    <string name="json_editor_read_only">只读</string>
+    <string name="json_schema_problem">配置问题</string>
     <string name="json_load_failed">配置读取失败</string>
     <string name="json_schema_invalid">sing-box 配置校验失败，共 %1$d 项</string>
     <string name="json_schema_unavailable">内置 sing-box Schema 加载失败：%1$s</string>
     <string name="json_schema_error_position">第 %1$d 行，第 %2$d 列</string>
-    <string name="json_view_issues">查看</string>
     <string name="json_schema_issues_title">配置问题（%1$d）</string>
     <string name="json_schema_issues_summary">点击问题可跳转到对应位置</string>
     <string name="json_undo">撤销</string>

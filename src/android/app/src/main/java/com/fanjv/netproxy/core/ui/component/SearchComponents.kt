@@ -1,6 +1,5 @@
 package com.fanjv.netproxy.core.ui.component
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -62,7 +61,6 @@ import androidx.compose.ui.zIndex
 import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
-import com.fanjv.netproxy.core.ui.theme.LocalEnablePredictiveBack
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.InputField
 import top.yukonga.miuix.kmp.basic.Text
@@ -247,24 +245,15 @@ fun SearchStatus.SearchPager(
                             searchStatus.current = SearchStatus.Status.COLLAPSING
                         }
                 )
-                run {
-                    if (LocalEnablePredictiveBack.current) {
-                        val navEventState = rememberNavigationEventState(NavigationEventInfo.None)
-                        NavigationBackHandler(
-                            state = navEventState,
-                            isBackEnabled = true,
-                            onBackCompleted = {
-                                searchStatus.searchText = ""
-                                searchStatus.current = SearchStatus.Status.COLLAPSING
-                            }
-                        )
-                    } else {
-                        BackHandler(enabled = true) {
-                            searchStatus.searchText = ""
-                            searchStatus.current = SearchStatus.Status.COLLAPSING
-                        }
-                    }
-                }
+                val navEventState = rememberNavigationEventState(NavigationEventInfo.None)
+                NavigationBackHandler(
+                    state = navEventState,
+                    isBackEnabled = true,
+                    onBackCompleted = {
+                        searchStatus.searchText = ""
+                        searchStatus.current = SearchStatus.Status.COLLAPSING
+                    },
+                )
             }
         }
         AnimatedVisibility(
