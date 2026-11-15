@@ -5,6 +5,7 @@ import com.fanjv.netproxy.core.api.*
 import com.fanjv.netproxy.feature.routing.model.LocalRuleDocument
 import com.fanjv.netproxy.feature.routing.model.LocalRuleSet
 import com.fanjv.netproxy.feature.routing.model.RuleField
+import com.fanjv.netproxy.feature.routing.model.policyRule
 import com.fanjv.netproxy.feature.routing.model.simpleRule
 import com.fanjv.netproxy.feature.routing.presentation.RuleIdentity
 import com.fanjv.netproxy.feature.routing.presentation.RoutingRulesState
@@ -45,7 +46,12 @@ class RoutingRulesViewModelTest {
             val data = when (request.method) {
                 "GET" -> {
                     (readErrors[request.target] ?: readError)?.let { throw it }
-                    JsonObject(mapOf("content" to JsonPrimitive(contents[request.target] ?: content),
+                    val saved = contents[request.target] ?: when (request.target) {
+                        LocalRuleSet.Policy.target -> defaultRoute
+                        "singbox/outbounds" -> """{"outbounds":[{"type":"selector","tag":"AI"},{"type":"urltest","tag":"Auto"},{"type":"direct","tag":"direct"}]}"""
+                        else -> content
+                    }
+                    JsonObject(mapOf("content" to JsonPrimitive(saved),
                         "revision" to JsonPrimitive(revisions[request.target] ?: revision)))
                 }
                 "PUT" -> {
@@ -78,19 +84,19 @@ class RoutingRulesViewModelTest {
 
     @Test fun initialLoadMergesAllGroupsWithDistinctFileAndIndexIdentities() = runBlocking {
         val transport = Transport()
-        LocalRuleSet.entries.forEach { target ->
+        LocalRuleSet.shortcuts.forEach { target ->
             transport.contents[target.target] = """{"version":1,"rules":[{"domain":"${target.tag}.example"}]}"""
             transport.revisions[target.target] = "${target.tag}-revision"
         }
         val vm = model(this, transport)
         vm.refresh()
         val loaded = vm.loaded()
-        assertEquals(LocalRuleSet.entries.map { it.target }, transport.calls.map { it.target })
-        assertEquals(LocalRuleSet.entries.map { RuleIdentity(it, 0) }, loaded.rules)
+        assertEquals(LocalRuleSet.entries.map { it.target } + "singbox/outbounds", transport.calls.map { it.target })
+        assertEquals(LocalRuleSet.shortcuts.map { RuleIdentity(it, 0) }, loaded.rules)
         assertEquals(3, loaded.rules.distinct().size)
         assertTrue(loaded.hasDocuments)
         assertFalse(loaded.isEmpty)
-        LocalRuleSet.entries.forEach { target ->
+        LocalRuleSet.shortcuts.forEach { target ->
             assertTrue(loaded.editable(target))
             assertEquals("${target.tag}-revision", loaded.file(target).revision)
             assertEquals(LocalRuleDocument.parse(transport.contents.getValue(target.target)), loaded.file(target).document)
@@ -98,7 +104,7 @@ class RoutingRulesViewModelTest {
         vm.add()
         LocalRuleSet.entries.forEach(vm::selectTarget)
         vm.dismiss()
-        assertEquals(3, transport.calls.size)
+        assertEquals(5, transport.calls.size)
     }
 
     @Test fun newDraftSelectsAnyTargetWithoutReadingAndSavesOnlyThatFile() = runBlocking {
@@ -106,7 +112,7 @@ class RoutingRulesViewModelTest {
         val vm = model(this, transport)
         vm.refresh()
         vm.loaded()
-        LocalRuleSet.entries.forEach { target ->
+        LocalRuleSet.shortcuts.forEach { target ->
             val before = vm.state.value.files
             vm.add()
             vm.updateDraft(RuleField.Port, "443\n8443")
@@ -256,7 +262,40 @@ class RoutingRulesViewModelTest {
         val loaded = vm.loaded()
         assertEquals("external-revision", loaded.file(LocalRuleSet.Block).revision)
         assertEquals(LocalRuleDocument.parse(external), loaded.file(LocalRuleSet.Block).document)
-        assertEquals(6, transport.calls.size)
+        assertEquals(10, transport.calls.size)
+    }
+
+    @Test fun groupRuleUsesNativeRouteRevisionAndCanBeEditedAndDeleted() = runBlocking {
+        val transport = Transport()
+        transport.revisions[LocalRuleSet.Policy.target] = "route-revision"
+        val vm = model(this, transport)
+        vm.refresh()
+        assertEquals(listOf("AI", "Auto"), vm.loaded().policyTargets.map { it.tag })
+
+        vm.add()
+        vm.selectTarget(LocalRuleSet.Policy)
+        vm.updateDraft(RuleField.DomainSuffix, "example.com")
+        vm.selectPolicy("direct")
+        vm.save()
+        assertTrue(transport.calls.none { it.method == "PUT" })
+        vm.selectPolicy("AI")
+        vm.save()
+        val identity = vm.saved().rules.single { it.target == LocalRuleSet.Policy }
+        assertEquals("route-revision", transport.calls.last().text("revision"))
+        assertEquals("AI", LocalRuleDocument.parse(transport.contents.getValue("singbox/route"), nativeRoute = true)
+            .rules[identity.index].policyRule()?.first)
+
+        vm.edit(identity)
+        assertEquals("AI", vm.state.value.draft!!.policyTag)
+        vm.selectPolicy("Auto")
+        vm.save()
+        assertEquals("Auto", vm.saved().file(LocalRuleSet.Policy).document!!.rules[identity.index].policyRule()?.first)
+        vm.requestDelete(identity)
+        vm.delete()
+        assertTrue(vm.saved().rules.none { it.target == LocalRuleSet.Policy })
+        assertEquals(LocalRuleDocument.parse(defaultRoute, nativeRoute = true),
+            LocalRuleDocument.parse(transport.contents.getValue("singbox/route"), nativeRoute = true))
+        assertTrue(transport.calls.filter { it.method == "PUT" }.all { it.target == "singbox/route" })
     }
 
     @Test fun conflictRetainsTargetDraftAndOriginalRevisionUntilExplicitReload() = runBlocking {
@@ -390,7 +429,7 @@ class RoutingRulesViewModelTest {
             assertEquals(LocalRuleSet.Direct, vm.state.value.draft!!.target)
             assertEquals("new.example", vm.state.value.draft!!.text)
             assertEquals(1, transport.calls.count { it.method == "PUT" })
-            assertEquals(3, transport.calls.count { it.method == "GET" })
+            assertEquals(5, transport.calls.count { it.method == "GET" })
         } finally {
             transport.gate!!.countDown()
         }

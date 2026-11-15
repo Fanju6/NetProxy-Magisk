@@ -309,6 +309,11 @@ func applyConfigLocked(ctx context.Context, options Options, target, destination
 	if err != nil {
 		return "", err
 	}
+	if target == "singbox/outbounds" {
+		if err := validateRemovedRouteGroups(current, content); err != nil {
+			return "", err
+		}
+	}
 	candidate, err := os.CreateTemp(filepath.Dir(destination), ".config-candidate-")
 	if err != nil {
 		return "", err

@@ -59,6 +59,7 @@ func readCatalogConfig(options Options) (map[string]jsontext.Value, error) {
 }
 
 type policyReferences struct {
+	Tag       string   `json:"tag"`
 	Type      string   `json:"type"`
 	UseAll    bool     `json:"use_all_providers"`
 	Providers []string `json:"providers"`

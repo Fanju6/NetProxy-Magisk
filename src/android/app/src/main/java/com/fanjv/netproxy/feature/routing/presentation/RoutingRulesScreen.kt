@@ -54,9 +54,11 @@ import com.fanjv.netproxy.core.ui.component.ContentStatus
 import com.fanjv.netproxy.core.ui.component.appBarOverscroll
 import com.fanjv.netproxy.core.ui.component.groupedCardSection
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
+import com.fanjv.netproxy.feature.proxy.data.AUTO_POLICY_TAG
 import com.fanjv.netproxy.feature.routing.model.LocalRuleSet
 import com.fanjv.netproxy.feature.routing.model.RuleField
 import com.fanjv.netproxy.feature.routing.model.RuleInputError
+import com.fanjv.netproxy.feature.routing.model.policyRule
 import com.fanjv.netproxy.feature.routing.model.simpleRule
 import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.Route
@@ -164,10 +166,14 @@ internal fun RoutingRulesScreen(
                 { stringResource(R.string.routing_matches) },
                 rules.map { identity -> CardItem("${identity.target.tag}:${identity.index}") {
                     val rule = state.files.getValue(identity.target).document!!.rules[identity.index]
-                    val simple = remember(rule) { rule.simpleRule() }
+                    val policy = remember(rule) { rule.policyRule() }
+                    val simple = remember(rule) { policy?.second ?: rule.simpleRule() }
+                    val destination = policy?.let { (tag, _) ->
+                        state.policyTargets.firstOrNull { it.tag == tag }?.label() ?: tag
+                    } ?: stringResource(identity.target.title())
                     ArrowPreference(
                         title = simple?.values?.first()?.take(100) ?: stringResource(R.string.routing_advanced),
-                        summary = stringResource(identity.target.title()) + " · " + (simple?.let {
+                        summary = destination + " · " + (simple?.let {
                             stringResource(it.field.title()) + if (it.values.size > 1) " · " + stringResource(R.string.routing_values_count, it.values.size) else ""
                         } ?: stringResource(R.string.routing_advanced_hint)),
                         onClick = { viewModel.edit(identity) },
@@ -204,6 +210,32 @@ internal fun RoutingRulesScreen(
                         onSelectedIndexChange = { viewModel.selectTarget(LocalRuleSet.entries[it]) })
                     else Text(stringResource(R.string.routing_type) + ": " + stringResource(draft.target.title()),
                         style = MiuixTheme.textStyles.body2)
+                    if (draft.target == LocalRuleSet.Policy) {
+                        when {
+                            file.document != null && file.document.policyStart == null -> {
+                                Text(stringResource(R.string.routing_policy_order_unsupported),
+                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                                AppDialogButton(stringResource(R.string.routing_raw), { rawEdit(draft.target) },
+                                    Modifier.fillMaxWidth(), enabled = !state.isLoading && !state.isSaving)
+                            }
+                            state.policyTargets.isEmpty() -> Text(stringResource(R.string.routing_policy_no_groups),
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                            else -> {
+                                val targets = state.policyTargets
+                                val selected = targets.indexOfFirst { it.tag == draft.policyTag }
+                                OverlayDropdownPreference(
+                                    title = stringResource(R.string.routing_policy_group),
+                                    items = listOf(draft.policyTag?.takeIf { selected < 0 }
+                                        ?: stringResource(R.string.routing_policy_choose)) +
+                                        targets.map { it.label() },
+                                    selectedIndex = selected + 1,
+                                    enabled = state.editable(draft.target),
+                                    insideMargin = PaddingValues(vertical = 12.dp),
+                                    onSelectedIndexChange = { index -> targets.getOrNull(index - 1)?.let { viewModel.selectPolicy(it.tag) } },
+                                )
+                            }
+                        }
+                    }
                     val field = draft.field
                     if (field != null) {
                         OverlayDropdownPreference(title = stringResource(R.string.routing_match),
@@ -232,7 +264,7 @@ internal fun RoutingRulesScreen(
                         viewModel.updateDraft(draft.field, textState.text.toString())
                         viewModel.save()
                     } else { rawEdit(draft.target) } },
-                    enabled = state.editable(draft.target),
+                    enabled = if (draft.field != null) state.canSave(draft) else state.editable(draft.target),
                     confirmLabel = stringResource(if (draft.field != null) R.string.save_text else R.string.routing_raw))
                 draft.index?.let { index ->
                     AppDialogButton(stringResource(R.string.common_delete), { viewModel.requestDelete(RuleIdentity(draft.target, index)) },
@@ -297,7 +329,12 @@ private fun LocalRuleSet.title(): Int = when (this) {
     LocalRuleSet.Proxy -> R.string.routing_proxy
     LocalRuleSet.Direct -> R.string.routing_direct
     LocalRuleSet.Block -> R.string.routing_block
+    LocalRuleSet.Policy -> R.string.routing_policy_target
 }
+
+@Composable
+private fun RoutingPolicyTarget.label(): String =
+    if (tag == AUTO_POLICY_TAG && type == "urltest") stringResource(R.string.policy_auto_select) else tag
 
 private fun RuleField.title(): Int = when (this) {
     RuleField.DomainSuffix -> R.string.routing_domain_suffix

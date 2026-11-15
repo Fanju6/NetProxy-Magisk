@@ -5,6 +5,7 @@ import com.fanjv.netproxy.feature.routing.model.LocalRuleSet
 import com.fanjv.netproxy.feature.routing.model.RuleField
 import com.fanjv.netproxy.feature.routing.model.RuleInputError
 import com.fanjv.netproxy.feature.routing.model.SimpleRule
+import com.fanjv.netproxy.feature.routing.model.policyRule
 import com.fanjv.netproxy.feature.routing.model.simpleRule
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -15,7 +16,36 @@ import org.junit.Test
 class LocalRuleSetTest {
     @Test fun targetsAreOnlyTheThreeExistingLocalFiles() {
         assertEquals(listOf("singbox/rules/local/proxy.json", "singbox/rules/local/direct.json", "singbox/rules/local/block.json"),
-            LocalRuleSet.entries.map { it.target })
+            LocalRuleSet.shortcuts.map { it.target })
+        assertEquals("singbox/route", LocalRuleSet.Policy.target)
+    }
+
+    @Test fun groupRulesKeepNativeGuardsShortcutsAndBuiltInPriority() {
+        val original = LocalRuleDocument.parse(defaultRoute, nativeRoute = true)
+        val first = RuleField.DomainSuffix.policyRule("example.com", "AI")
+        val second = RuleField.Port.policyRule("8443", "Auto")
+        val edited = original.replace(null, first).replace(null, second)
+        assertEquals(listOf(5, 6), edited.editableIndices)
+        assertEquals(original.rules.take(5), edited.rules.take(5))
+        assertEquals(original.rules.drop(5), edited.rules.drop(7))
+        assertEquals("AI", edited.rules[5].policyRule()?.first)
+        assertEquals(edited, LocalRuleDocument.parse(edited.content(), nativeRoute = true))
+        assertEquals(original, edited.remove(6).remove(5))
+    }
+
+    @Test fun customRouteWithoutSafeInsertionPointIsNotModified() {
+        val document = LocalRuleDocument.parse(
+            """{"route":{"rules":[{"ip_is_private":true,"outbound":"direct"}]}}""", nativeRoute = true,
+        )
+        assertNull(document.policyStart)
+        assertThrows(IllegalArgumentException::class.java) {
+            document.replace(null, RuleField.Domain.policyRule("example.com", "AI"))
+        }
+        val lateMode = defaultRoute.replace(
+            """{"clash_mode":"Rule","action":"route","outbound":"Proxy"}""",
+            """{"clash_mode":["Proxy","Direct"],"action":"route","outbound":"Proxy"}""",
+        )
+        assertNull(LocalRuleDocument.parse(lateMode, nativeRoute = true).policyStart)
     }
 
     @Test fun simpleRulesAcceptScalarAndArrayWithoutFlatteningAdvancedConditions() {
@@ -93,3 +123,16 @@ class LocalRuleSetTest {
         }
     }
 }
+
+internal val defaultRoute = """
+    {"route":{"final":"Proxy","find_process":true,"rules":[
+      {"clash_mode":"Direct","action":"route","outbound":"direct"},
+      {"action":"sniff"},
+      {"type":"logical","mode":"or","rules":[{"port":53},{"protocol":"dns"}],"action":"hijack-dns"},
+      {"clash_mode":"Proxy","action":"route","outbound":"Proxy"},
+      {"type":"logical","mode":"and","rules":[{"clash_mode":"RuleAllowAds","invert":true},
+         {"rule_set":["block","Ads_AWAvenue","geosite/category-ads-all"]}],"action":"reject"},
+      {"rule_set":"geosite/category-ai-!cn","action":"route","outbound":"AI"},
+      {"clash_mode":"Rule","action":"route","outbound":"Proxy"}
+    ]}}
+""".trimIndent()

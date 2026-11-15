@@ -618,7 +618,12 @@
     <string name="routing_advanced">Сложное правило</string>
     <string name="routing_advanced_hint">Изменение составных условий в JSON</string>
     <string name="routing_match">Условие совпадения</string>
-    <string name="routing_type">Тип правила</string>
+    <string name="routing_type">Маршрутизация через</string>
+    <string name="routing_policy_target">Выбрать группу</string>
+    <string name="routing_policy_group">Группа политик</string>
+    <string name="routing_policy_choose">Выберите группу</string>
+    <string name="routing_policy_no_groups">Группы политик не настроены.</string>
+    <string name="routing_policy_order_unsupported">Порядок правил нельзя изменить здесь. Используйте редактор JSON маршрутизации.</string>
     <string name="routing_values">Одно значение на строку</string>
     <string name="routing_domain_suffix">Домен и поддомены</string>
     <string name="routing_domain">Точный домен</string>
