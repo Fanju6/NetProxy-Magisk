@@ -17,6 +17,7 @@ Android 管理器是 NetProxy 的日常图形化入口，随每个 Release 与 C
 | 资源 | 管理本地节点、导入导出和订阅，查看流量与更新历史 |
 | 入站设置 | 选择 eBPF 或 TUN，配置 DNS、IPv6、接口、绕过与分应用策略 |
 | 网络匹配 | Wi-Fi 名称黑白名单匹配与非 Wi-Fi 网络代理策略 |
+| 路由规则 | 管理代理、直连和拦截规则，也可指定策略组 |
 | 内核配置 | 编辑并校验 sing-box 静态配置，查看只读运行时配置 |
 | 日志 | 查看结构化模块日志和核心日志，导出脱敏诊断包 |
 
@@ -35,7 +36,7 @@ Android 管理器是 NetProxy 的日常图形化入口，随每个 Release 与 C
 
 ## 本地构建
 
-仓库开发者可使用 JDK 25 和 Android SDK 37 构建：
+仓库开发者可使用 JDK 25、Android SDK 37.2 和 Build Tools 37.0.0 构建：
 
 ```bash
 cd src/android
