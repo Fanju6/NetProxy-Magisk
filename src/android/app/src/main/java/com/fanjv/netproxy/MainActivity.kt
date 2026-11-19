@@ -97,7 +97,7 @@ import com.fanjv.netproxy.navigation.mainDestinations
 import com.fanjv.netproxy.navigation.availableIn
 import top.yukonga.miuix.kmp.basic.NavigationItem
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextField
+import top.yukonga.miuix.kmp.glass.GlassTextField as TextField
 import com.fanjv.netproxy.core.ui.component.AppDialog as OverlayDialog
 import com.fanjv.netproxy.core.ui.component.LocalManagerBackdrop
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop

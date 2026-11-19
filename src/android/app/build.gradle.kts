@@ -32,7 +32,9 @@ val managerBuildId = providers.gradleProperty("netproxyManagerBuildId").orNull ?
 android {
     namespace = "com.fanjv.netproxy"
     compileSdk {
-        version = release(37)
+        version = release(37) {
+            minorApiLevel = 2
+        }
     }
 
     compileOptions {

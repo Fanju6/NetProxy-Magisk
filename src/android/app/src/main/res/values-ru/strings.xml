@@ -1,4 +1,6 @@
 <resources>
+    <string name="search">Поиск приложений</string>
+    <string name="search_no_results">Нет подходящих приложений</string>
     <string name="proxies">Прокси</string>
     <string name="resources">Ресурсы</string>
     <string name="resource_local_groups">Локальные группы</string>

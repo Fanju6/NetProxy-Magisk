@@ -51,10 +51,10 @@ runs:
     - name: 确认 Android SDK 组件
       shell: bash
       run: |
-        if [ ! -f "$ANDROID_HOME/platforms/android-37.0/android.jar" ] ||
+        if [ ! -f "$ANDROID_HOME/platforms/android-37.2/android.jar" ] ||
            [ ! -x "$ANDROID_HOME/build-tools/37.0.0/aapt2" ]; then
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-            'platforms;android-37.0' 'build-tools;37.0.0' --channel=1
+            'platforms;android-37.2' 'build-tools;37.0.0' --channel=1
         fi
 
     - name: 构建管理器并执行所需验证

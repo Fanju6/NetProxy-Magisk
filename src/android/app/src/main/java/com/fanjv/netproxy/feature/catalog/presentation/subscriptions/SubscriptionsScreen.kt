@@ -58,6 +58,7 @@ import com.fanjv.netproxy.core.ui.resolve
 import com.fanjv.netproxy.core.ui.component.AppDialogButton
 import com.fanjv.netproxy.core.ui.component.DialogActionRole
 import com.fanjv.netproxy.core.ui.component.dialogTextFieldColors
+import top.yukonga.miuix.kmp.glass.GlassTextField
 import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BackIconButton
 import com.fanjv.netproxy.core.ui.component.AppBarButton
@@ -268,7 +269,7 @@ internal fun SubscriptionsScreen(
         onDismissRequest = { addNode = false; link = "" },
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            TextField(
+            GlassTextField(
                 colors = dialogTextFieldColors(),
                 value = link,
                 onValueChange = { link = it },

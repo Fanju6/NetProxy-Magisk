@@ -2,7 +2,6 @@ package com.fanjv.netproxy.feature.apps.presentation
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.basicMarquee
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -40,17 +39,12 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.CancellationException
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -64,24 +58,30 @@ import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.core.ui.component.BackIconButton
 import com.fanjv.netproxy.core.ui.component.BlurredBar
-import com.fanjv.netproxy.core.ui.component.SearchBarFake
-import com.fanjv.netproxy.core.ui.component.SearchBox
-import com.fanjv.netproxy.core.ui.component.SearchPager
-import com.fanjv.netproxy.core.ui.component.SearchStatus
+import com.fanjv.netproxy.core.ui.component.ManagerMenu
+import top.yukonga.miuix.kmp.glass.GlassSearchOverlay
+import top.yukonga.miuix.kmp.glass.GlassSearchOverlayDefaults
+import top.yukonga.miuix.kmp.glass.glassSearchBarTransition
+import top.yukonga.miuix.kmp.glass.rememberGlassSearchBarAlpha
+import top.yukonga.miuix.kmp.icon.glass.Search
+import top.yukonga.miuix.kmp.icon.glass.Close
+import top.yukonga.miuix.kmp.basic.DropdownEntry
+import top.yukonga.miuix.kmp.basic.DropdownItem
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.ui.graphics.graphicsLayer
 import com.fanjv.netproxy.core.ui.component.StatusTag
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import com.fanjv.netproxy.core.ui.component.rememberCommitOnLeave
+import com.fanjv.netproxy.core.ui.component.deferredTopPadding
 import com.fanjv.netproxy.feature.apps.data.AppIconCache
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import com.fanjv.netproxy.core.ui.component.AppContentCard
-import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.Icon
 import com.fanjv.netproxy.core.ui.component.AppBarButton as IconButton
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
-import top.yukonga.miuix.kmp.basic.ListPopupColumn
-import top.yukonga.miuix.kmp.basic.ListPopupDefaults
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
-import top.yukonga.miuix.kmp.basic.PopupPositionProvider
 import top.yukonga.miuix.kmp.basic.PullToRefresh
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
@@ -89,13 +89,9 @@ import top.yukonga.miuix.kmp.basic.TextButton
 import com.fanjv.netproxy.core.ui.component.AppTopAppBar as TopAppBar
 import top.yukonga.miuix.kmp.basic.rememberPullToRefreshState
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import com.fanjv.netproxy.core.ui.component.chromeIcon
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.MoreCircle
-import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import com.fanjv.netproxy.core.ui.component.AppDropdown as OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
-import top.yukonga.miuix.kmp.utils.MiuixPopupUtils.Companion.MiuixPopupHost
 import com.fanjv.netproxy.core.ui.component.appBarOverscroll
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
@@ -138,26 +134,22 @@ fun AppIcon(
     }
 }
 
-/** 应用页：分应用代理的开关与应用选择。 */
+/** App policy stays on the page; the official overlay owns search interaction. */
 @Composable
 internal fun AppsScreen(
     bottomPadding: androidx.compose.ui.unit.Dp = 0.dp,
     viewModel: AppsViewModel = netProxyViewModel(),
-    onBack: (() -> Unit)? = null
+    onBack: (() -> Unit)? = null,
 ) {
     val apps by viewModel.state.collectAsStateWithLifecycle()
-    val spacing = 10.dp
-    val showAppControls = apps.hasLoadedApps && apps.appProxyEnabled
-
-    val searchStatus = rememberSaveable(saver = SearchStatus.Saver) { SearchStatus("") }
+    var searching by rememberSaveable { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val searchListState = rememberLazyListState()
-
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     for (currentList in listOf(listState, searchListState)) {
         LaunchedEffect(currentList, apps.masterAppList, lifecycle) {
             snapshotFlow {
-                val active = (currentList === listState) == searchStatus.isCollapsed()
+                val active = (currentList === listState) != searching
                 (if (active) currentList.layoutInfo.visibleItemsInfo.mapNotNull { it.key as? String } else emptyList()) to AppIconCache.generation
             }.flowWithLifecycle(lifecycle, Lifecycle.State.RESUMED)
                 .distinctUntilChanged().collectLatest { (visible, _) ->
@@ -167,262 +159,131 @@ internal fun AppsScreen(
                 }
         }
     }
-
     val resources = LocalConfiguration.current
-    LaunchedEffect(resources.locales.toLanguageTags()) {
-        viewModel.load(force = apps.hasLoadedApps)
-    }
+    LaunchedEffect(resources.locales.toLanguageTags()) { viewModel.load(force = apps.hasLoadedApps) }
+    LaunchedEffect(searching) { if (!searching) viewModel.updateSearch("") }
     val commitOnLeave = rememberCommitOnLeave(viewModel::requestPolicyFlush)
     val leave: () -> Unit = { commitOnLeave { onBack?.invoke() } }
-    BackHandler(enabled = onBack != null && searchStatus.isCollapsed() &&
+    BackHandler(enabled = onBack != null && !searching &&
         (apps.hasPendingPolicy || apps.requiresPolicyReload)) { leave() }
-
-    val scrollBehavior = MiuixScrollBehavior()
-    val dynamicTopPadding =
-        remember(scrollBehavior) { { 12.dp * (1f - scrollBehavior.state.collapsedFraction) } }
-    val density = LocalDensity.current
+    val scroll = MiuixScrollBehavior()
     val backdrop = rememberBlurBackdrop()
-    val blurActive = backdrop != null
-    val barColor = if (blurActive) Color.Transparent else colorScheme.surface
-
-    LaunchedEffect(searchStatus.searchText) {
-        viewModel.updateSearch(searchStatus.searchText)
-    }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        Scaffold(
-            topBar = {
-                BlurredBar(backdrop) {
-                    searchStatus.TopAppBarAnim(backgroundColor = barColor) {
+    val pageAlpha by rememberGlassSearchBarAlpha(searching)
+    val allApps = remember(apps.allApps, apps.proxiedApps, apps.appSelectedFirst,
+        apps.appReverseSort, apps.appProxyEnabled) { apps.orderedApps() }
+    val results = remember(apps.searchResults, apps.proxiedApps, apps.appSelectedFirst,
+        apps.appReverseSort, apps.appProxyEnabled) { apps.orderedApps(apps.searchResults) }
+    val entries = listOf(DropdownEntry(items = listOf(
+        DropdownItem(text = stringResource(R.string.show_system_apps), selected = apps.showSystemApps,
+            onClick = { viewModel.setShowSystemApps(!apps.showSystemApps) }),
+        DropdownItem(text = stringResource(R.string.app_selected_first), selected = apps.appSelectedFirst,
+            onClick = { viewModel.setSelectedFirst(!apps.appSelectedFirst) }),
+        DropdownItem(text = stringResource(R.string.app_reverse_sort), selected = apps.appReverseSort,
+            onClick = { viewModel.setReverseSort(!apps.appReverseSort) }),
+        DropdownItem(text = stringResource(R.string.app_show_package_name), selected = apps.appShowPackageName,
+            onClick = { viewModel.setShowPackageName(!apps.appShowPackageName) }),
+    )))
+    ManagerMenu(entries, stringResource(R.string.more_actions)) { moreButton ->
+        Box(Modifier.fillMaxSize()) {
+            Scaffold(
+                topBar = {
+                    BlurredBar(backdrop) {
                         TopAppBar(
-                            color = barColor,
                             title = stringResource(R.string.proxy_apps),
-                            scrollBehavior = scrollBehavior,
-                            navigationIcon = {
-                                onBack?.let { BackIconButton(onClick = leave) }
-                            },
+                            color = Color.Transparent,
+                            modifier = Modifier.glassSearchBarTransition(searching) { pageAlpha },
+                            scrollBehavior = scroll,
+                            navigationIcon = { onBack?.let { BackIconButton(onClick = leave) } },
                             actions = {
-                                if (showAppControls) {
-                                    val showTopPopup = remember { mutableStateOf(false) }
-                                    OverlayListPopup(
-                                        show = showTopPopup.value,
-                                        popupPositionProvider = ListPopupDefaults.ContextMenuPositionProvider,
-                                        alignment = PopupPositionProvider.Align.TopEnd,
-                                        onDismissRequest = {
-                                            showTopPopup.value = false
-                                        }
-                                    ) {
-                                        ListPopupColumn {
-                                            DropdownImpl(
-                                                text = stringResource(R.string.show_system_apps),
-                                                isSelected = apps.showSystemApps,
-                                                onSelectedIndexChange = {
-                                                    viewModel.setShowSystemApps(!apps.showSystemApps)
-                                                    showTopPopup.value = false
-                                                },
-                                                optionSize = 4,
-                                                index = 0
-                                            )
-                                            DropdownImpl(
-                                                text = stringResource(R.string.app_selected_first),
-                                                isSelected = apps.appSelectedFirst,
-                                                onSelectedIndexChange = {
-                                                    viewModel.setSelectedFirst(!apps.appSelectedFirst)
-                                                    showTopPopup.value = false
-                                                },
-                                                optionSize = 4,
-                                                index = 1
-                                            )
-                                            DropdownImpl(
-                                                text = stringResource(R.string.app_reverse_sort),
-                                                isSelected = apps.appReverseSort,
-                                                onSelectedIndexChange = {
-                                                    viewModel.setReverseSort(!apps.appReverseSort)
-                                                    showTopPopup.value = false
-                                                },
-                                                optionSize = 4,
-                                                index = 2
-                                            )
-                                            DropdownImpl(
-                                                text = stringResource(R.string.app_show_package_name),
-                                                isSelected = apps.appShowPackageName,
-                                                onSelectedIndexChange = {
-                                                    viewModel.setShowPackageName(!apps.appShowPackageName)
-                                                    showTopPopup.value = false
-                                                },
-                                                optionSize = 4,
-                                                index = 3
-                                            )
-                                        }
-                                    }
-                                    IconButton(
-                                        onClick = { showTopPopup.value = true },
-                                        holdDownState = showTopPopup.value
-                                    ) {
-                                        Icon(
-                                            imageVector = chromeIcon(MiuixIcons.MoreCircle),
-                                            contentDescription = null,
-                                            tint = colorScheme.onSurface
-                                        )
-                                    }
+                                IconButton(onClick = { searching = true }, enabled = apps.hasLoadedApps) {
+                                    Icon(MiuixIcons.Glass.Search, stringResource(R.string.search), tint = colorScheme.onSurface)
                                 }
+                                if (apps.hasLoadedApps && apps.appProxyEnabled) moreButton()
                             },
                             bottomContent = {
-                                Column {
-                                    if (apps.hasLoadedApps) {
-                                        Box(
-                                            modifier = Modifier
-                                                .alpha(if (searchStatus.isCollapsed()) 1f else 0f)
-                                                .onGloballyPositioned { coordinates ->
-                                                    with(density) {
-                                                        searchStatus.offsetY =
-                                                            coordinates.positionInWindow().y.toDp()
-                                                    }
-                                                }
-                                                .then(
-                                                    if (searchStatus.isCollapsed()) {
-                                                        Modifier.pointerInput(Unit) {
-                                                            detectTapGestures {
-                                                                searchStatus.current =
-                                                                    SearchStatus.Status.EXPANDING
-                                                            }
-                                                        }
-                                                    } else {
-                                                        Modifier
-                                                    }
-                                                )
-                                        ) {
-                                            SearchBarFake(searchStatus.label, dynamicTopPadding)
-                                        }
-                                    }
-                                    if (apps.hasLoadedApps) {
+                                if (apps.hasLoadedApps) {
+                                    Box(Modifier.deferredTopPadding {
+                                        8.dp + 4.dp * (1f - scroll.state.collapsedFraction)
+                                    }) {
                                         AppProxyMode(apps, viewModel::setProxySettings)
                                     }
                                 }
-                            }
+                            },
                         )
                     }
-                }
-            },
-            popupHost = {
-                if (apps.hasLoadedApps) {
-                    val searchResults = remember(
-                        apps.searchResults, apps.proxiedApps, apps.appSelectedFirst, apps.appReverseSort, apps.appProxyEnabled
-                    ) { apps.orderedApps(apps.searchResults) }
-                    searchStatus.SearchPager(
-                        empty = !apps.isFilteringApps &&
-                            apps.appSearchQuery.isNotBlank() && apps.searchResults.isEmpty(),
-                        listState = searchListState,
-                        searchBarTopPadding = dynamicTopPadding,
-                    ) {
-                        if (apps.error.isNotBlank() || apps.requiresPolicyReload) item("error") {
-                            if (apps.error.isNotBlank()) Text(apps.error, Modifier.padding(14.dp), color = colorScheme.error)
-                            if (apps.requiresPolicyReload) TextButton(stringResource(R.string.routing_reload_draft),
-                                onClick = viewModel::discardPolicyAndReload)
+                },
+                contentWindowInsets = WindowInsets.systemBars.add(WindowInsets.displayCutout).only(WindowInsetsSides.Horizontal),
+            ) { padding ->
+                val direction = LocalLayoutDirection.current
+                Box(Modifier.fillMaxSize().graphicsLayer { alpha = pageAlpha }
+                    .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)) {
+                    if (!apps.hasLoadedApps) {
+                        Box(Modifier.fillMaxSize().padding(padding), contentAlignment = androidx.compose.ui.Alignment.Center) {
+                            InfiniteProgressIndicator()
                         }
-                        items(
-                            items = searchResults,
-                            key = AppInfoModel::id,
-                            contentType = { "app_item" },
-                        ) { app ->
-                            AppItem(app, apps.appShowPackageName, app.id in apps.proxiedApps, spacing, enabled = apps.appProxyEnabled) {
-                                if (apps.appSelectedFirst) {
-                                    // 重排时保持视口位置，不跟随已选条目的 key 上移。
-                                    searchListState.requestScrollToItem(
-                                        searchListState.firstVisibleItemIndex,
-                                        searchListState.firstVisibleItemScrollOffset
-                                    )
-                                }
-                                viewModel.toggle(app.id)
-                            }
-                        }
-                    }
-                }
-                MiuixPopupHost()
-            },
-            contentWindowInsets = WindowInsets.systemBars.add(WindowInsets.displayCutout)
-                .only(WindowInsetsSides.Horizontal)
-        ) { innerPadding ->
-            val layoutDirection = LocalLayoutDirection.current
-            searchStatus.SearchBox {
-                if (!apps.hasLoadedApps || (apps.isLoadingApps && apps.allApps.isEmpty())) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(
-                                top = innerPadding.calculateTopPadding(),
-                                start = innerPadding.calculateStartPadding(layoutDirection),
-                                end = innerPadding.calculateEndPadding(layoutDirection),
-                                bottom = bottomPadding
-                            )
-                            .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier),
-                        contentAlignment = androidx.compose.ui.Alignment.Center
-                    ) {
-                        InfiniteProgressIndicator()
-                    }
-                } else {
-                    val pullToRefreshState = rememberPullToRefreshState()
-
-                    val refreshTexts = listOf(
-                        stringResource(R.string.refresh_pulling),
-                        stringResource(R.string.refresh_release),
-                        stringResource(R.string.refresh_refresh),
-                        stringResource(R.string.refresh_complete),
-                    )
-                    val allApps = remember(
-                        apps.allApps, apps.proxiedApps, apps.appSelectedFirst, apps.appReverseSort, apps.appProxyEnabled
-                    ) { apps.orderedApps() }
-
-                    PullToRefresh(
-                        isRefreshing = apps.isLoadingApps,
-                        onRefresh = { viewModel.load(force = true) },
-                        pullToRefreshState = pullToRefreshState,
-                        refreshTexts = refreshTexts,
-                        contentPadding = PaddingValues(
-                            top = innerPadding.calculateTopPadding(),
-                            start = innerPadding.calculateStartPadding(layoutDirection),
-                            end = innerPadding.calculateEndPadding(layoutDirection)
-                        )
-                    ) {
-                        Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
-                            LazyColumn(
-                                state = listState,
-                                modifier = Modifier
-                                    .fillMaxHeight()
-                                    .scrollEndHaptic()
-                                    .appBarOverscroll(scrollBehavior)
-                                    .nestedScroll(scrollBehavior.nestedScrollConnection),
-                                contentPadding = PaddingValues(
-                                    top = innerPadding.calculateTopPadding(),
-                                    start = innerPadding.calculateStartPadding(layoutDirection),
-                                    end = innerPadding.calculateEndPadding(layoutDirection)
-                                ),
-                                overscrollEffect = null,
-                            ) {
+                    } else {
+                        PullToRefresh(
+                            isRefreshing = apps.isLoadingApps,
+                            onRefresh = { viewModel.load(force = true) },
+                            pullToRefreshState = rememberPullToRefreshState(),
+                            refreshTexts = listOf(stringResource(R.string.refresh_pulling), stringResource(R.string.refresh_release),
+                                stringResource(R.string.refresh_refresh), stringResource(R.string.refresh_complete)),
+                            contentPadding = padding,
+                        ) {
+                            LazyColumn(state = listState, modifier = Modifier.fillMaxSize().scrollEndHaptic()
+                                .appBarOverscroll(scroll).nestedScroll(scroll.nestedScrollConnection),
+                                contentPadding = PaddingValues(top = padding.calculateTopPadding(),
+                                    start = padding.calculateStartPadding(direction), end = padding.calculateEndPadding(direction),
+                                    bottom = bottomPadding + 80.dp), overscrollEffect = null) {
                                 if (apps.error.isNotBlank()) item("error") {
                                     Text(apps.error, Modifier.padding(14.dp), color = colorScheme.error)
                                 }
                                 if (apps.requiresPolicyReload) item("reload") {
-                                    TextButton(stringResource(R.string.routing_reload_draft),
-                                        onClick = viewModel::discardPolicyAndReload)
+                                    TextButton(stringResource(R.string.routing_reload_draft), viewModel::discardPolicyAndReload)
                                 }
-                                items(
-                                    items = allApps,
-                                    key = AppInfoModel::id,
-                                    contentType = { "app_item" },
-                                ) { app ->
-                                    AppItem(
-                                        app,
-                                        apps.appShowPackageName,
-                                        app.id in apps.proxiedApps,
-                                        spacing,
-                                        enabled = apps.appProxyEnabled,
-                                    ) { viewModel.toggle(app.id) }
-                                }
-                                item {
-                                    Spacer(Modifier.height(bottomPadding + 80.dp))
+                                items(allApps, key = AppInfoModel::id, contentType = { "app_item" }) { app ->
+                                    AppItem(app, apps.appShowPackageName, app.id in apps.proxiedApps, 10.dp,
+                                        enabled = apps.appProxyEnabled) { viewModel.toggle(app.id) }
                                 }
                             }
+                        }
+                    }
+                }
+            }
+            GlassSearchOverlay(
+                expanded = searching,
+                onDismissRequest = { searching = false },
+                label = stringResource(R.string.search),
+                horizontalInsetsModifier = Modifier.windowInsetsPadding(
+                    WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)),
+                searchIcon = MiuixIcons.Glass.Search,
+                closeIcon = MiuixIcons.Glass.Close,
+                scrollOffset = { if (searchListState.firstVisibleItemIndex > 0) Float.MAX_VALUE
+                    else searchListState.firstVisibleItemScrollOffset.toFloat() },
+            ) { query ->
+                LaunchedEffect(query) { viewModel.updateSearch(query); searchListState.scrollToItem(0) }
+                val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() +
+                    GlassSearchOverlayDefaults.BarHeight + GlassSearchOverlayDefaults.VerticalPadding * 2 + 12.dp
+                LazyColumn(state = searchListState, modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(top = top, bottom = bottomPadding + 12.dp),
+                    overscrollEffect = null) {
+                    if (apps.error.isNotBlank()) item("error") {
+                        Text(apps.error, Modifier.padding(14.dp), color = colorScheme.error)
+                    }
+                    if (apps.requiresPolicyReload) item("reload") {
+                        TextButton(stringResource(R.string.routing_reload_draft), viewModel::discardPolicyAndReload)
+                    }
+                    if (apps.appSearchQuery == query && !apps.isFilteringApps &&
+                        query.isNotBlank() && results.isEmpty()) item("empty") {
+                        Text(stringResource(R.string.search_no_results), Modifier.padding(24.dp))
+                    }
+                    items(if (apps.appSearchQuery == query && !apps.isFilteringApps) results else emptyList(),
+                        key = AppInfoModel::id, contentType = { "app_item" }) { app ->
+                        AppItem(app, apps.appShowPackageName, app.id in apps.proxiedApps, 10.dp,
+                            enabled = apps.appProxyEnabled) {
+                            if (apps.appSelectedFirst) searchListState.requestScrollToItem(
+                                searchListState.firstVisibleItemIndex, searchListState.firstVisibleItemScrollOffset)
+                            viewModel.toggle(app.id)
                         }
                     }
                 }

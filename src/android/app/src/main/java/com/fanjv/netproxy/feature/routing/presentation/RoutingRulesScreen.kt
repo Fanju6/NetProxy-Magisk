@@ -69,7 +69,7 @@ import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.basic.TextField
+import top.yukonga.miuix.kmp.glass.GlassTextField as TextField
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import com.fanjv.netproxy.core.ui.component.chromeIcon
 import top.yukonga.miuix.kmp.icon.MiuixIcons

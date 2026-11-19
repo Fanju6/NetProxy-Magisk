@@ -20,6 +20,7 @@ import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.core.ui.component.AppDialogButton
 import com.fanjv.netproxy.core.ui.component.DialogActionRole
 import com.fanjv.netproxy.core.ui.component.dialogTextFieldColors
+import top.yukonga.miuix.kmp.glass.GlassTextField
 import com.fanjv.netproxy.core.ui.component.*
 import kotlinx.coroutines.CancellationException
 import top.yukonga.miuix.kmp.basic.*
@@ -161,7 +162,7 @@ private fun WiFiNameDialog(
     ) {
         BoxWithConstraints(Modifier.fillMaxWidth().heightIn(max = 520.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(if (maxHeight < 360.dp) 8.dp else 12.dp)) {
-                TextField(colors = dialogTextFieldColors(invalid), value = input, onValueChange = { input = it; invalid = false },
+                GlassTextField(colors = dialogTextFieldColors(invalid), value = input, onValueChange = { input = it; invalid = false },
                     label = stringResource(R.string.wifi_name), maxLines = 1,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp))
                 if (invalid) Text(stringResource(R.string.wifi_invalid_name), Modifier.padding(horizontal = 24.dp),

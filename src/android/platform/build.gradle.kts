@@ -7,7 +7,7 @@ val local = Properties().apply {
 }
 val sdk = providers.environmentVariable("ANDROID_HOME").orNull ?: local.getProperty("sdk.dir")
     ?: error("缺少 Android SDK 路径")
-val androidJar = file("$sdk/platforms/android-37.0/android.jar")
+val androidJar = file("$sdk/platforms/android-37.2/android.jar")
 dependencies {
     compileOnly(files(androidJar))
     testImplementation(files(androidJar))

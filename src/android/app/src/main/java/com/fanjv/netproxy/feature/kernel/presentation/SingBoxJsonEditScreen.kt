@@ -13,11 +13,20 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.captionBar
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import top.yukonga.miuix.kmp.glass.GlassFloatingToolbar
 import androidx.compose.foundation.layout.add
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.displayCutout
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -26,7 +35,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ErrorOutline
@@ -37,23 +45,23 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.ui.component.AppDialogButton
@@ -87,6 +95,7 @@ import top.yukonga.scripta.editor.CodeEditor
 import top.yukonga.scripta.editor.EditorColors
 import top.yukonga.scripta.editor.EditorLanguage
 import top.yukonga.scripta.editor.EditorSymbol
+import top.yukonga.scripta.editor.LocalEditorBottomContentInset
 import top.yukonga.scripta.editor.rememberSaveableCodeEditorController
 import top.yukonga.scripta.editor.text.TextPosition
 
@@ -376,8 +385,12 @@ internal fun SingBoxJsonEditScreen(
         else -> ""
     }
 
+    val bottomInsets = WindowInsets.navigationBars.union(WindowInsets.captionBar)
+        .union(WindowInsets.ime).only(WindowInsetsSides.Bottom)
+    var toolbarHeight by remember { mutableIntStateOf(0) }
+    val toolbarInset = with(LocalDensity.current) { toolbarHeight.toDp() }
+
     Scaffold(
-        snackbarHost = { AppSnackbarHost(snackbarHostState) },
         topBar = {
             BlurredBar(backdrop) {
                 SmallTopAppBar(
@@ -415,21 +428,23 @@ internal fun SingBoxJsonEditScreen(
         contentWindowInsets = WindowInsets.systemBars.add(WindowInsets.displayCutout)
             .only(WindowInsetsSides.Horizontal),
     ) { innerPadding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)
+                .background(editorColors.background)
+                .consumeWindowInsets(innerPadding)
                 .padding(
                     start = innerPadding.calculateStartPadding(layoutDirection),
                     end = innerPadding.calculateEndPadding(layoutDirection),
-                ),
+                )
+                .windowInsetsPadding(bottomInsets),
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-            ) {
-                CompositionLocalProvider(LocalOverscrollFactory provides null) {
+            // Capture the editor only, never the toolbar that samples it.
+            Box(Modifier.matchParentSize().then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)) {
+                CompositionLocalProvider(
+                    LocalOverscrollFactory provides null,
+                    LocalEditorBottomContentInset provides toolbarInset,
+                ) {
                     CodeEditor(
                         controller = controller,
                         language = EditorLanguage.PlainText,
@@ -437,62 +452,6 @@ internal fun SingBoxJsonEditScreen(
                         readOnly = !isEditable || !hasLoaded || isSaving || showBackendConfirmation,
                         softWrap = softWrap,
                         symbols = emptyList(),
-                        bottomBar = { colors ->
-                            val toolbarEnabled = hasLoaded && !isSaving && !showBackendConfirmation
-                            EditorActionBar(
-                                colors = colors,
-                                actions = listOf(
-                                    EditorAction(
-                                        label = stringResource(R.string.json_undo),
-                                        enabled = toolbarEnabled && isEditable && controller.canUndo,
-                                        onClick = controller::undo,
-                                    ),
-                                    EditorAction(
-                                        label = stringResource(R.string.json_redo),
-                                        enabled = toolbarEnabled && isEditable && controller.canRedo,
-                                        onClick = controller::redo,
-                                    ),
-                                    EditorAction(
-                                        label = stringResource(R.string.json_find),
-                                        enabled = toolbarEnabled,
-                                        onClick = controller::openFind,
-                                    ),
-                                    EditorAction(
-                                        label = stringResource(R.string.json_replace_short),
-                                        enabled = toolbarEnabled && isEditable,
-                                        onClick = controller::openReplace,
-                                    ),
-                                    EditorAction(
-                                        label = stringResource(R.string.json_goto_line_short),
-                                        enabled = toolbarEnabled,
-                                        onClick = controller::openGotoLine,
-                                    ),
-                                    EditorAction(
-                                        label = stringResource(R.string.json_completion_short),
-                                        enabled = toolbarEnabled && isEditable && usesRootSchema,
-                                        onClick = controller::openCompletion,
-                                    ),
-                                    EditorAction(
-                                        label = stringResource(R.string.json_format_short),
-                                        enabled = toolbarEnabled && isEditable,
-                                        onClick = ::formatDocument,
-                                    ),
-                                    EditorAction(
-                                        label = stringResource(R.string.json_soft_wrap_short),
-                                        enabled = toolbarEnabled,
-                                        selected = softWrap,
-                                        onClick = { softWrap = !softWrap },
-                                    ),
-                                ) + if (isEditable) JsonEditorSymbols.map { symbol ->
-                                    EditorAction(
-                                        label = symbol.label,
-                                        enabled = toolbarEnabled,
-                                        symbol = true,
-                                        onClick = { controller.typeSymbol(symbol) },
-                                    )
-                                } else emptyList(),
-                            )
-                        },
                         completionProvider = completionProvider.takeIf {
                             usesRootSchema && !isExiting
                         },
@@ -511,13 +470,71 @@ internal fun SingBoxJsonEditScreen(
                     )
                 } else if (!hasLoaded) {
                     CircularProgressIndicator(
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .size(28.dp),
+                        modifier = Modifier.align(Alignment.Center).size(28.dp),
                         strokeWidth = 3.dp,
                     )
                 }
             }
+
+            val toolbarEnabled = hasLoaded && !isSaving && !showBackendConfirmation
+            EditorActionBar(
+                backdrop = backdrop,
+                modifier = Modifier.align(Alignment.BottomCenter)
+                    .onSizeChanged { toolbarHeight = it.height },
+                actions = listOf(
+                    EditorAction(
+                        label = stringResource(R.string.json_undo),
+                        enabled = toolbarEnabled && isEditable && controller.canUndo,
+                        onClick = controller::undo,
+                    ),
+                    EditorAction(
+                        label = stringResource(R.string.json_redo),
+                        enabled = toolbarEnabled && isEditable && controller.canRedo,
+                        onClick = controller::redo,
+                    ),
+                    EditorAction(
+                        label = stringResource(R.string.json_find),
+                        enabled = toolbarEnabled,
+                        onClick = controller::openFind,
+                    ),
+                    EditorAction(
+                        label = stringResource(R.string.json_replace_short),
+                        enabled = toolbarEnabled && isEditable,
+                        onClick = controller::openReplace,
+                    ),
+                    EditorAction(
+                        label = stringResource(R.string.json_goto_line_short),
+                        enabled = toolbarEnabled,
+                        onClick = controller::openGotoLine,
+                    ),
+                    EditorAction(
+                        label = stringResource(R.string.json_completion_short),
+                        enabled = toolbarEnabled && isEditable && usesRootSchema,
+                        onClick = controller::openCompletion,
+                    ),
+                    EditorAction(
+                        label = stringResource(R.string.json_format_short),
+                        enabled = toolbarEnabled && isEditable,
+                        onClick = ::formatDocument,
+                    ),
+                    EditorAction(
+                        label = stringResource(R.string.json_soft_wrap_short),
+                        enabled = toolbarEnabled,
+                        selected = softWrap,
+                        onClick = { softWrap = !softWrap },
+                    ),
+                ) + if (isEditable) JsonEditorSymbols.map { symbol ->
+                    EditorAction(
+                        label = symbol.label,
+                        enabled = toolbarEnabled,
+                        onClick = { controller.typeSymbol(symbol) },
+                    )
+                } else emptyList(),
+            )
+            AppSnackbarHost(
+                snackbarHostState,
+                Modifier.align(Alignment.BottomCenter).padding(bottom = toolbarInset + 8.dp),
+            )
         }
     }
 
@@ -651,73 +668,36 @@ private data class EditorAction(
     val label: String,
     val enabled: Boolean,
     val selected: Boolean = false,
-    val symbol: Boolean = false,
     val onClick: () -> Unit,
 )
 
 @Composable
 private fun EditorActionBar(
-    colors: EditorColors,
+    backdrop: top.yukonga.miuix.kmp.blur.LayerBackdrop?,
     actions: List<EditorAction>,
+    modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 2.dp, vertical = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(1.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        actions.forEach { action ->
-            EditorActionKey(action = action, colors = colors)
+    GlassFloatingToolbar(modifier = modifier.fillMaxWidth(), backdrop = backdrop) {
+        Row(Modifier.horizontalScroll(rememberScrollState()).padding(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            actions.forEach { action ->
+                top.yukonga.miuix.kmp.basic.IconButton(
+                    onClick = action.onClick,
+                    enabled = action.enabled,
+                    modifier = Modifier.focusProperties { canFocus = false }
+                        .semantics { selected = action.selected },
+                ) {
+                    Text(action.label, modifier = Modifier.padding(horizontal = 8.dp),
+                        style = MiuixTheme.textStyles.body2,
+                        color = when {
+                            !action.enabled -> MiuixTheme.colorScheme.disabledOnSurface
+                            action.selected -> MiuixTheme.colorScheme.primary
+                            else -> MiuixTheme.colorScheme.onSurface
+                        }, maxLines = 1)
+                }
+            }
         }
-    }
-}
-
-@Composable
-private fun EditorActionKey(
-    action: EditorAction,
-    colors: EditorColors,
-) {
-    var pressed by remember { mutableStateOf(false) }
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(4.dp))
-            .background(
-                when {
-                    pressed -> colors.symbolBarPressed
-                    action.selected -> colors.symbolBarPressed.copy(alpha = 0.72f)
-                    else -> Color.Transparent
-                },
-            )
-            .then(
-                if (action.enabled) {
-                    Modifier.pointerInput(action.onClick) {
-                        detectTapGestures(
-                            onPress = {
-                                pressed = true
-                                tryAwaitRelease()
-                                pressed = false
-                            },
-                            onTap = { action.onClick() },
-                        )
-                    }
-                } else {
-                    Modifier
-                },
-            )
-            .heightIn(min = 32.dp)
-            .then(if (action.symbol) Modifier.defaultMinSize(minWidth = 32.dp) else Modifier)
-            .padding(horizontal = 8.dp, vertical = 2.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = action.label,
-            color = colors.symbolBarForeground.copy(alpha = if (action.enabled) 1f else 0.38f),
-            fontSize = 13.sp,
-            fontFamily = if (action.symbol) FontFamily.Monospace else null,
-            maxLines = 1,
-        )
     }
 }
 

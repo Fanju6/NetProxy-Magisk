@@ -504,6 +504,9 @@ fun CodeEditor(
     var scrollX by remember { mutableFloatStateOf(0f) }
     var viewportWidth by remember { mutableFloatStateOf(0f) }
     var viewportHeight by remember { mutableFloatStateOf(0f) }
+    val revealedHeight = (viewportHeight - with(density) { LocalEditorBottomContentInset.current.toPx() }.coerceAtLeast(0f))
+        .coerceAtLeast(minOf(viewportHeight, lineHeightPx))
+    val liveRevealedHeight by rememberUpdatedState(revealedHeight)
     // 编辑器内容区顶边在窗口中的 y（放大镜 Popup 用它把胶囊上浮到工具栏/状态栏空间、不越出窗口顶）。IME/旋转会变，实时更新。
     var contentTopInWindow by remember { mutableFloatStateOf(0f) }
 
@@ -591,7 +594,7 @@ fun CodeEditor(
     }
 
     // 翻页行数：约一屏可见行减 1 行重叠（至少 1）。viewportHeight/lineHeightPx 为实时几何。
-    fun pageLines(): Int = ((viewportHeight / lineHeightPx).toInt() - 1).coerceAtLeast(1)
+    fun pageLines(): Int = ((revealedHeight / lineHeightPx).toInt() - 1).coerceAtLeast(1)
 
     // 量化滚动：组合只订阅「首个可见行」，跨行才重组；同一行内的滚动仅由 EditorCanvas 在 draw 阶段读
     // 像素级 scrollY/scrollX 平滑重绘，不再每滚 1px 全量重组。derivedStateOf 仅在整数结果变化时通知读者。
@@ -636,8 +639,8 @@ fun CodeEditor(
     // （收键盘/转屏变高）夹回贴底、不残留留白。留白用连续式 `(内容高−视口+留白).coerceAtLeast(0)`（非「溢出才加」的分段）：
     // 临界字号平滑、焦点滚动量落钳制内不被夹回。缩放预览的纵向上界同样含留白（与提交 re-clamp 同式 ⇒ 松手不跳、起手不 snap）。
     val bottomScrollPadPx = viewportHeight * BOTTOM_SCROLL_PAD_FRACTION
-    val maxScrollY = (contentHeight - viewportHeight + bottomScrollPadPx).coerceAtLeast(0f)
-    val maxScrollYSettle = (contentHeight - viewportHeight).coerceAtLeast(0f)
+    val maxScrollY = (contentHeight - revealedHeight + bottomScrollPadPx).coerceAtLeast(0f)
+    val maxScrollYSettle = (contentHeight - revealedHeight).coerceAtLeast(0f)
     val maxScrollX = if (softWrap) 0f else {
         (gutterWidthPx + padXPx * 2 + widestSeen[0] + viewportWidth * RIGHT_SCROLL_PAD_FRACTION - viewportWidth)
             .coerceAtLeast(0f)
@@ -882,7 +885,7 @@ fun CodeEditor(
         val caretBottom = caretTop + lineHeightPx
         val coveredHeight = with(density) { topContentInset.toPx() }.takeUnless { dockedPanelVisible } ?: 0f
         if (caretTop < scrollY + coveredHeight) scrollY = (caretTop - coveredHeight).coerceAtLeast(0f)
-        else if (caretBottom > scrollY + viewportHeight) scrollY = caretBottom - viewportHeight
+        else if (caretBottom > scrollY + revealedHeight) scrollY = caretBottom - revealedHeight
         // 横向随动：不换行时若光标越出可见带则滚动露出（clip-gate：可见即不动、留 margin 前瞻）。纯纵向导航（目标列生效）
         // 时跳过——否则目标列在短/长行间夹变会让视口横向来回 snap，很突兀。
         if (!softWrap && viewportWidth > 0f && !engine.hasGoalColumn) {
@@ -901,10 +904,10 @@ fun CodeEditor(
         var first = true
         var lastSel = engine.selection
         var lastTick = engine.revealTick
-        var lastVh = viewportHeight
+        var lastVh = liveRevealedHeight
         var lastVw = viewportWidth
         snapshotFlow {
-            listOf(engine.revealTick, engine.selection, viewportHeight, viewportWidth, selectionDragActive || caretDragActive)
+            listOf(engine.revealTick, engine.selection, liveRevealedHeight, viewportWidth, selectionDragActive || caretDragActive)
         }.collect {
             if (viewportHeight <= 0f) return@collect // 尺寸未定不消费 first：等真实尺寸那次再算首发
             if (selectionDragActive || caretDragActive) return@collect // 选区/光标手柄拖拽时由边缘自动滚动接管
@@ -916,11 +919,11 @@ fun CodeEditor(
             val sel = engine.selection
             val tick = engine.revealTick
             val explicit = first || sel != lastSel || tick != lastTick
-            val shrank = viewportHeight < lastVh || viewportWidth < lastVw
+            val shrank = liveRevealedHeight < lastVh || viewportWidth < lastVw
             first = false
             lastSel = sel
             lastTick = tick
-            lastVh = viewportHeight
+            lastVh = liveRevealedHeight
             lastVw = viewportWidth
             if (!explicit) {
                 if (!shrank) return@collect

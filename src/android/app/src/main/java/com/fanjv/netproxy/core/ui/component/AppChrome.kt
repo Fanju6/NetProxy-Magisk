@@ -6,12 +6,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.DpSize
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.BasicComponentDefaults
-import top.yukonga.miuix.kmp.basic.TextFieldDefaults
 import top.yukonga.miuix.kmp.basic.TextFieldColors
+import top.yukonga.miuix.kmp.glass.GlassTextFieldDefaults
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 
@@ -22,10 +21,7 @@ internal enum class DialogActionRole { Normal, Primary, Destructive }
 
 @Composable
 internal fun dialogTextFieldColors(isError: Boolean = false): TextFieldColors {
-    val tint = if (colorScheme.background.luminance() < 0.5f) 0.14f else 0.06f
-    return TextFieldDefaults.textFieldColors(
-        backgroundColor = colorScheme.onBackground.copy(alpha = tint),
-        labelColor = colorScheme.onSurfaceVariantSummary,
+    return GlassTextFieldDefaults.textFieldColors(
         borderColor = if (isError) colorScheme.error else colorScheme.primary,
     )
 }

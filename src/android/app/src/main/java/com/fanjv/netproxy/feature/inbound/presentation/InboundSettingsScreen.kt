@@ -30,6 +30,7 @@ import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.core.ui.component.AppDialogButton
 import com.fanjv.netproxy.core.ui.component.DialogActionRole
 import com.fanjv.netproxy.core.ui.component.dialogTextFieldColors
+import top.yukonga.miuix.kmp.glass.GlassTextField
 import com.fanjv.netproxy.core.ui.component.*
 import com.fanjv.netproxy.feature.inbound.data.*
 import com.fanjv.netproxy.navigation.LocalNavigator
@@ -494,7 +495,7 @@ private fun FieldDialog(field: FieldEdit, state: InboundUiState, show: Boolean, 
                         onSelectedIndexChange = { mode = listOf("all", "include", "exclude")[it] }
                     )
                 }
-                TextField(colors = dialogTextFieldColors(invalid), value = if (isList) listInput.text else value, onValueChange = {
+                GlassTextField(colors = dialogTextFieldColors(invalid), value = if (isList) listInput.text else value, onValueChange = {
                     if (isList) listInput = listInput.withText(it) else value = it
                     invalid = false
                 },

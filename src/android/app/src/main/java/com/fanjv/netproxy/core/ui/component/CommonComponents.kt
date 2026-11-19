@@ -17,7 +17,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
@@ -34,11 +33,8 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.blur.BlendColorEntry
-import top.yukonga.miuix.kmp.blur.BlurColors
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
-import top.yukonga.miuix.kmp.blur.textureBlur
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -116,32 +112,6 @@ fun BlurredBar(
     content: @Composable () -> Unit,
 ) {
     CompositionLocalProvider(LocalBarBackdrop provides backdrop) {
-        content()
-    }
-}
-
-@Composable
-internal fun ClassicBlurredBar(
-    backdrop: LayerBackdrop?,
-    content: @Composable () -> Unit,
-) {
-    val surfaceColor = colorScheme.surface
-    Box(
-        modifier = if (backdrop != null) {
-            Modifier.textureBlur(
-                backdrop = backdrop,
-                shape = RectangleShape,
-                blurRadius = 25f,
-                colors = BlurColors(
-                    blendColors = listOf(
-                        BlendColorEntry(color = surfaceColor.copy(alpha = 0.8f)),
-                    ),
-                ),
-            )
-        } else {
-            Modifier
-        }
-    ) {
         content()
     }
 }

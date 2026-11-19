@@ -3,7 +3,6 @@ package com.fanjv.netproxy.feature.proxy.presentation
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -37,11 +36,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -59,7 +56,6 @@ import com.fanjv.netproxy.core.ui.component.ContentStatus
 import com.fanjv.netproxy.core.ui.component.EmptyCatalog
 import com.fanjv.netproxy.core.ui.component.ManagerMenu
 import com.fanjv.netproxy.core.ui.component.appBarOverscroll
-import com.fanjv.netproxy.core.ui.component.ManagerTabs
 import com.fanjv.netproxy.core.ui.component.SnackbarNoticeEffect
 import com.fanjv.netproxy.core.ui.component.deferredTopPadding
 import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
@@ -178,28 +174,14 @@ internal fun PolicyScreen(
                     actions = { moreButton() },
                     bottomContent = {
                         if (tabbed && groups.isNotEmpty()) {
-                            BoxWithConstraints(
+                            PolicyGroupTabs(
+                                labels = groups.map { policyLabel(it.tag, it.type) },
+                                selectedIndex = selectedIndex,
+                                onSelect = { index -> groups.getOrNull(index)?.let { selectedTag = it.tag } },
+                                backdrop = backdrop,
                                 modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 6.dp)
                                     .deferredTopPadding { 12.dp * (1f - scroll.state.collapsedFraction) },
-                            ) {
-                                val names = groups.map { policyLabel(it.tag, it.type) }
-                                val measurer = rememberTextMeasurer()
-                                val density = LocalDensity.current
-                                val textStyle = MiuixTheme.textStyles.body1.copy(fontWeight = FontWeight.Bold)
-                                val width = remember(names, measurer, density, textStyle, maxWidth) {
-                                    val widest = names.maxOf { measurer.measure(it, style = textStyle, maxLines = 1).size.width }
-                                    (with(density) { widest.toDp() } + 28.dp)
-                                        .coerceIn(minOf(96.dp, maxWidth), maxWidth)
-                                }
-                                ManagerTabs(
-                                    tabs = names,
-                                    selected = selectedIndex,
-                                    onSelect = { index -> groups.getOrNull(index)?.let { selectedTag = it.tag } },
-                                    minWidth = width,
-                                    maxWidth = maxOf(width, minOf(116.dp, maxWidth)),
-                                    color = barColor,
-                                )
-                            }
+                            )
                         }
                     },
                 )
