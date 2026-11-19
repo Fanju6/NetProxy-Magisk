@@ -64,8 +64,8 @@ func ResolveProbeOptions(config option.EBPFInboundOptions, requestedMode string)
 	return ProbeOptions{
 		RequestedMode:   requested,
 		CoreMode:        coreMode,
-		LocalDataPlane:  dataPlane(config.Local.DataPlane),
-		SharedDataPlane: dataPlane(config.Shared.DataPlane),
+		LocalDataPlane:  localDataPlane(config.Local.DataPlane),
+		SharedDataPlane: sharedDataPlane(config.Shared.DataPlane),
 		Network:         network,
 		IPv6:            ipv6,
 		Interface:       interfaceName,

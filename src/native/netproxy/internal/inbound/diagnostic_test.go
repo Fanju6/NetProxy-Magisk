@@ -25,7 +25,7 @@ func TestResolveProbeOptionsUsesConfiguredScope(t *testing.T) {
 	if options.CoreMode != "all" {
 		t.Fatalf("expected all mode, got %q", options.CoreMode)
 	}
-	want := []string{"tools", "ebpf", "status", "--mode", "all", "--local-data-plane", "socket_assign", "--shared-data-plane", "socket_assign", "--network", "tcp,udp", "--interface", "wlan2", "--json"}
+	want := []string{"tools", "ebpf", "status", "--mode", "all", "--local-data-plane", "cgroup", "--shared-data-plane", "socket_assign", "--network", "tcp,udp", "--interface", "wlan2", "--json"}
 	if !reflect.DeepEqual(options.Args(), want) {
 		t.Fatalf("unexpected probe args: %#v", options.Args())
 	}
@@ -33,7 +33,7 @@ func TestResolveProbeOptionsUsesConfiguredScope(t *testing.T) {
 
 func TestProbeNativeDefaultsAndInvalidScopes(t *testing.T) {
 	defaults, err := ResolveProbeOptions(option.EBPFInboundOptions{}, "")
-	if err != nil || defaults.CoreMode != "local" || defaults.LocalDataPlane != "socket_assign" || defaults.SharedDataPlane != "socket_assign" || !defaults.IPv6 || !reflect.DeepEqual(defaults.Network, []string{"tcp", "udp"}) {
+	if err != nil || defaults.CoreMode != "local" || defaults.LocalDataPlane != "cgroup" || defaults.SharedDataPlane != "socket_assign" || !defaults.IPv6 || !reflect.DeepEqual(defaults.Network, []string{"tcp", "udp"}) {
 		t.Fatal(defaults, err)
 	}
 	config := fixture(t, "ebpf", `{"type":"ebpf","tag":"netproxy-in","local":{"enabled":false,"ipv6":false},"shared":{"enabled":true,"interface":"wlan2","ipv6":false}}`, "")

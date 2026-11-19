@@ -12,12 +12,12 @@ NetProxy 支持 sing-box 的 eBPF 与 TUN 入站。两种入站共用同一个�
 
 | 数据路径 | 默认实现 | 作用 |
 |---|---|---|
-| 本机 | `socket_assign` | 在当前默认出口接口接管本机 TCP/UDP |
+| 本机 | `cgroup` | 在 Socket 阶段接管本机 TCP/UDP，兼容性优先 |
 | 共享网络 | `socket_assign` | 将指定下游接口的 TCP/UDP 分配给透明监听器 |
 
-两条路径由独立开关控制，可以只开启其中一条，也可以同时开启。管理器分别提供数据平面选择：本机 `cgroup`、共享网络 `packet_rewrite` 为兼容选项；`socket_assign` 为推荐默认值，需具备相应网络命名空间、veth 与透明 socket 等能力。缺少能力时不会自动回退。两条路径可以分别控制 DNS、IPv6、私网绕过、目标端口和筛选条件。
+两条路径由独立开关控制，可以只开启其中一条，也可以同时开启。管理器分别提供数据平面选择：本机默认使用 `cgroup`，共享网络默认使用 `socket_assign`；`socket_assign` 仍可手动选择，但需要相应网络命名空间、veth 与透明 socket 等能力。缺少能力时不会自动回退。两条路径可以分别控制 DNS、IPv6、私网绕过、目标端口和筛选条件。
 
-省略或留空 `data_plane` 时，NetProxy 同样使用 `socket_assign`；已有显式兼容选项保持不变。旧本机 `tc` 不再支持，会明确拒绝，不自动转换。详见 [eBPF 原生参数](/config/ebpf)。
+省略或留空本机 `data_plane` 时，NetProxy 使用 `cgroup`；共享网络仍使用 `socket_assign`。已有显式兼容选项保持不变。旧本机 `tc` 不再支持，会明确拒绝，不自动转换。详见 [eBPF 原生参数](/config/ebpf)。
 
 ## TUN
 

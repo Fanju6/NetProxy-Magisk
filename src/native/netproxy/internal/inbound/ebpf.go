@@ -21,7 +21,7 @@ func validateEBPF(native option.EBPFInboundOptions) error {
 		return validationError("ebpf.fakeip_icmp_invalid", "ebpf.fakeip_icmp", "FakeIP ICMP 模式只能是 off 或 reply")
 	}
 	{
-		plane := dataPlane(native.Local.DataPlane)
+		plane := localDataPlane(native.Local.DataPlane)
 		if plane != "cgroup" && plane != "socket_assign" {
 			return validationError("ebpf.local_data_plane_invalid", "ebpf.local.data_plane", "本机数据平面只能是 socket_assign 或 cgroup")
 		}
@@ -39,7 +39,7 @@ func validateEBPF(native option.EBPFInboundOptions) error {
 		}
 	}
 	{
-		plane := dataPlane(native.Shared.DataPlane)
+		plane := sharedDataPlane(native.Shared.DataPlane)
 		if plane != "packet_rewrite" && plane != "socket_assign" {
 			return validationError("ebpf.shared_data_plane_invalid", "ebpf.shared.data_plane", "共享网络数据平面只能是 packet_rewrite 或 socket_assign")
 		}
@@ -93,7 +93,14 @@ func validateEBPFDNS(mode, field string) error {
 	return nil
 }
 
-func dataPlane(value string) string {
+func localDataPlane(value string) string {
+	if value == "" {
+		return "cgroup"
+	}
+	return value
+}
+
+func sharedDataPlane(value string) string {
 	if value == "" {
 		return "socket_assign"
 	}
@@ -106,7 +113,7 @@ func normalizeEBPF(native option.EBPFInboundOptions) (option.EBPFInboundOptions,
 	local, shared := native.EffectiveEnablement()
 	if local {
 		native.Local.Enabled = new(true)
-		native.Local.DataPlane = dataPlane(native.Local.DataPlane)
+		native.Local.DataPlane = localDataPlane(native.Local.DataPlane)
 		var err error
 		native.Local.IncludeUID, native.Local.IncludeUIDRange, err = normalizeUIDFilters(native.Local.IncludeUID, native.Local.IncludeUIDRange)
 		if err != nil {
@@ -121,7 +128,7 @@ func normalizeEBPF(native option.EBPFInboundOptions) (option.EBPFInboundOptions,
 	}
 	if shared {
 		native.Shared.Enabled = new(true)
-		native.Shared.DataPlane = dataPlane(native.Shared.DataPlane)
+		native.Shared.DataPlane = sharedDataPlane(native.Shared.DataPlane)
 	} else {
 		native.Shared = option.EBPFSharedOptions{Enabled: new(false)}
 	}
