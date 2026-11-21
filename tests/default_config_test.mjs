@@ -10,15 +10,9 @@ const managed = readJSON('src/module/config/inbound/inbound.json')
 const upstream = readJSON('tests/fixtures/singbox-upstream.json')
 const resources = readJSON('.github/resources.json').raw
 const list = value => value === undefined ? [] : Array.isArray(value) ? value : [value]
-const serviceRules = [
-  ['geosite/bilibili', 'Bilibili', 'direct'],
-  ['geosite/category-ai-!cn', 'AI', 'Proxy'],
-  ['geosite/github', 'GitHub', 'Proxy'],
-  ['geosite/youtube', 'YouTube', 'Proxy'],
-  ['geosite/google', 'Google', 'Proxy'],
-  ['geosite/telegram', 'Telegram', 'Proxy'],
-  ['geosite/netflix', 'Netflix', 'Proxy'],
-  ['geosite/spotify', 'Spotify', 'Proxy'],
+const proxyServices = [
+  'geosite/category-ai-!cn', 'geosite/github', 'geosite/youtube', 'geosite/google',
+  'geosite/telegram', 'geosite/netflix', 'geosite/spotify',
 ]
 
 test('模块设置只有 module.json 默认文件，字段使用 JSON 原生类型', () => {
@@ -29,7 +23,7 @@ test('模块设置只有 module.json 默认文件，字段使用 JSON 原生类�
   })
 })
 
-test('默认配置保留上游模式和 DNS 语义，并增加内置应用分流', () => {
+test('默认配置只提供 Proxy 和 Auto 策略组，并保留模式与 DNS 语义', () => {
   const expected = structuredClone(upstream)
   expected.log.output = 'stderr'
   expected.experimental.cache_file.path = '/data/adb/modules/netproxy/config/singbox/cache.db'
@@ -44,9 +38,6 @@ test('默认配置保留上游模式和 DNS 语义，并增加内置应用分流
   expected.outbounds = [
     { type: 'selector', tag: 'Proxy', outbounds: ['Auto', 'block', 'direct'], use_all_providers: true, default: 'block', interrupt_exist_connections: true },
     { type: 'urltest', tag: 'Auto', outbounds: ['block'], use_all_providers: true },
-    ...['AI', 'GitHub', 'YouTube', 'Google', 'Telegram', 'Netflix', 'Spotify', 'Bilibili'].map(tag => ({
-      type: 'selector', tag, outbounds: ['Proxy', 'direct', 'block'], use_all_providers: true, default: tag === 'Bilibili' ? 'direct' : 'Proxy',
-    })),
     { type: 'direct', tag: 'direct' },
     { type: 'block', tag: 'block' },
   ]
@@ -80,22 +71,23 @@ test('默认配置保留上游模式和 DNS 语义，并增加内置应用分流
   const serviceIndex = expected.route.rules.findIndex(rule => list(rule.rule_set).includes('geosite/category-ai-!cn'))
   assert.ok(serviceIndex >= 0)
   expected.route.rules.splice(serviceIndex, 1,
-    ...serviceRules.map(([rule_set, outbound]) => ({ rule_set, action: 'route', outbound })),
+    { rule_set: 'geosite/bilibili', action: 'route', outbound: 'direct' },
+    { rule_set: proxyServices, action: 'route', outbound: 'Proxy' },
   )
-  expected.route.rules.find(rule => list(rule.rule_set).includes('geoip/telegram')).outbound = 'Telegram'
   assert.deepEqual(config, expected)
 })
 
-test('应用规则先于地域兜底，且每个应用组都有无需 Provider 的默认成员', () => {
+test('应用规则优先于地域兜底，且所有路由目标都是已定义的原生出站', () => {
   const region = config.route.rules.findIndex(rule => list(rule.rule_set).includes('geosite/cn'))
   const blockedAds = config.route.rules.findIndex(rule => rule.action === 'reject')
-  for (const [ruleSet, tag, fallback] of serviceRules) {
-    const ruleIndex = config.route.rules.findIndex(rule => rule.rule_set === ruleSet && rule.outbound === tag)
+  for (const ruleSet of ['geosite/bilibili', ...proxyServices]) {
+    const target = ruleSet === 'geosite/bilibili' ? 'direct' : 'Proxy'
+    const ruleIndex = config.route.rules.findIndex(rule => list(rule.rule_set).includes(ruleSet) && rule.outbound === target)
     assert.ok(blockedAds < ruleIndex && ruleIndex < region, ruleSet)
-    const group = config.outbounds.find(group => group.tag === tag)
-    assert.equal(group.default, fallback)
-    assert.ok(group.outbounds.includes(fallback))
-    assert.ok(group.outbounds.includes('block'), `${tag} has no independent block option`)
+  }
+  const tags = new Set(config.outbounds.map(outbound => outbound.tag))
+  for (const tag of [config.route.final, ...config.route.rules.flatMap(rule => list(rule.outbound))]) {
+    assert.ok(tags.has(tag), tag)
   }
 })
 
