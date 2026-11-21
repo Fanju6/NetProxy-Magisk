@@ -12,7 +12,10 @@
     <string name="policy_edit_group">Изменить группу</string>
     <string name="policy_group_name">Название группы</string>
     <string name="policy_group_type">Тип группы</string>
-    <string name="policy_auto_select">Автовыбор</string>
+    <string name="policy_create_subscription_groups">Создать из подписок</string>
+    <string name="policy_subscription_group_suffix">Подписка</string>
+    <string name="policy_subscription_groups_created">Создано групп: %1$d</string>
+    <string name="policy_subscription_groups_none">Нет новых групп подписок для создания</string>
     <string name="policy_add_auto">Добавить автовыбор</string>
     <string name="policy_add_auto_summary">Выбор узла по задержке без переключения на прямое подключение</string>
     <string name="policy_group_duplicate">Это имя уже используется.</string>
@@ -32,7 +35,6 @@
     <string name="policy_group_selected_count">Выбрано: %1$d</string>
     <string name="policy_group_no_choices">Нет доступных вариантов</string>
     <string name="policy_empty">Группы не настроены</string>
-    <string name="policy_configured">Группы из конфигурации · служба остановлена</string>
     <string name="policy_runtime_unavailable">Текущий выбор недоступен. Потяните вниз для обновления.</string>
     <string name="policy_providers_unavailable">Провайдеры недоступны офлайн: %1$s</string>
     <string name="inbound_read_failed">Не удалось прочитать настройки входящего подключения</string>

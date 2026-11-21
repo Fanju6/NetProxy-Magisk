@@ -8,6 +8,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -71,19 +73,21 @@ internal class PolicyRepository(
     private val client: ModuleApiClient,
     private val config: ConfigRepository = ConfigRepository(client),
 ) {
-    suspend fun openEditor(tag: String?): PolicyGroupDocument {
+    suspend fun openEditor(tag: String?): PolicyGroupDocument = groupDocument(tag, catalogGroups())
+
+    private suspend fun catalogGroups() = client.read<List<CatalogGroupSummary>>("/subscriptions")
+
+    private suspend fun groupDocument(tag: String?, resources: List<CatalogGroupSummary>): PolicyGroupDocument {
         val snapshot = config.readSnapshot("singbox/outbounds")
         val outbounds = parsePolicySection(snapshot.content, "outbounds")
         val endpoints = parsePolicySection(config.read("singbox/endpoints"), "endpoints")
         val nativeProviders = parsePolicySection(config.read("singbox/providers"), "providers")
             .map { it.text("tag") }
-        val resources = client.read<List<CatalogGroupSummary>>("/subscriptions")
-            .filter { it.nodeCount > 0 }
-            .map { it.runtimeTag }
         return PolicyGroupDocument(
             outbounds, snapshot.revision, tag,
             (outbounds + endpoints).map { it.text("tag") }.filter(String::isNotBlank).distinct(),
-            (nativeProviders + resources).filter(String::isNotBlank).distinct(),
+            (nativeProviders + resources.filter { it.nodeCount > 0 }.map { it.runtimeTag })
+                .filter(String::isNotBlank).distinct(),
         )
     }
 
@@ -91,15 +95,46 @@ internal class PolicyRepository(
         config.apply("singbox/outbounds", document.updated(draft), document.revision)
     }
 
+    suspend fun createSubscriptionGroups(suffix: String): Int {
+        val resources = catalogGroups()
+        val providers = resources.filter { it.type == "subscription" && it.nodeCount > 0 }
+            .map { it.runtimeTag }.filter(String::isNotBlank).distinct()
+        if (providers.isEmpty()) return 0
+
+        val document = groupDocument(null, resources)
+        val dedicatedProviders = document.outbounds.map(PolicyGroupDraft::from).mapNotNull {
+            if (it.type == "selector" && !it.useAll && it.outbounds.isEmpty()) it.providers.singleOrNull() else null
+        }.toSet()
+        val providerTags = (document.providerChoices + resources.map { it.runtimeTag }).filter(String::isNotBlank).toSet()
+        val reserved = (document.memberTags + providerTags + "Compatible").toMutableSet()
+        val additions = providers.filterNot(dedicatedProviders::contains).map { provider ->
+            val base = "$provider ($suffix)"
+            var tag = base
+            var number = 2
+            while (tag in reserved) tag = "$base (${number++})"
+            reserved.add(tag)
+            buildJsonObject {
+                put("type", "selector")
+                put("tag", tag)
+                put("providers", JsonArray(listOf(JsonPrimitive(provider))))
+            }
+        }
+        if (additions.isNotEmpty()) writeOutbounds(document.outbounds + additions, document.revision)
+        return additions.size
+    }
+
     suspend fun deleteGroup(tag: String, type: String) {
         val snapshot = config.readSnapshot("singbox/outbounds")
         val outbounds = parsePolicySection(snapshot.content, "outbounds")
         val group = outbounds.singleOrNull { it.text("tag") == tag } ?: return
         require(group.text("type") == type && type in editablePolicyTypes)
-        val content = buildJsonObject { put("outbounds", JsonArray(outbounds.filterNot { it === group })) }
-        config.apply("singbox/outbounds", content.toString(), snapshot.revision)
+        writeOutbounds(outbounds.filterNot { it === group }, snapshot.revision)
     }
 
+    private suspend fun writeOutbounds(outbounds: List<JsonObject>, revision: String) {
+        val content = buildJsonObject { put("outbounds", JsonArray(outbounds)) }
+        config.apply("singbox/outbounds", content.toString(), revision)
+    }
     suspend fun snapshot(): PolicySnapshot = client.read<PolicySnapshot>("/policy-groups", mapOf("source" to "config"))
         .also { check(!it.live && it.coreIdentity == 0L) }
 

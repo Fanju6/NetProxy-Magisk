@@ -12,7 +12,10 @@
     <string name="policy_edit_group">编辑策略组</string>
     <string name="policy_group_name">组名</string>
     <string name="policy_group_type">策略组类型</string>
-    <string name="policy_auto_select">自动选择</string>
+    <string name="policy_create_subscription_groups">按订阅创建</string>
+    <string name="policy_subscription_group_suffix">订阅</string>
+    <string name="policy_subscription_groups_created">已创建 %1$d 个策略组</string>
+    <string name="policy_subscription_groups_none">没有可新建的订阅策略组</string>
     <string name="policy_add_auto">添加自动选择</string>
     <string name="policy_add_auto_summary">按测速结果选择节点，不自动切换到直连</string>
     <string name="policy_group_duplicate">组名已被占用。</string>
@@ -32,7 +35,6 @@
     <string name="policy_group_selected_count">已选择 %1$d 项</string>
     <string name="policy_group_no_choices">没有可选项</string>
     <string name="policy_empty">尚未配置策略组</string>
-    <string name="policy_configured">配置中的策略组 · 服务未运行</string>
     <string name="policy_runtime_unavailable">暂时无法确认当前选择，请下拉刷新</string>
     <string name="policy_providers_unavailable">离线不可用的 Provider：%1$s</string>
     <string name="inbound_read_failed">无法读取入站配置</string>

@@ -34,8 +34,6 @@ internal data class RuleDraft(
     val policyTag: String? = null,
 )
 
-internal data class RoutingPolicyTarget(val tag: String, val type: String)
-
 internal data class RuleFileState(
     val document: LocalRuleDocument? = null,
     val revision: String = "",
@@ -51,7 +49,7 @@ internal data class RoutingRulesState(
     val draft: RuleDraft? = null,
     val deleting: RuleIdentity? = null,
     val inputError: RuleInputError? = null,
-    val policyTargets: List<RoutingPolicyTarget> = emptyList(),
+    val policyTargets: List<String> = emptyList(),
 ) {
     val rules: List<RuleIdentity> get() = LocalRuleSet.entries.flatMap { target ->
         files.getValue(target).document?.editableIndices?.map { RuleIdentity(target, it) }.orEmpty()
@@ -64,7 +62,7 @@ internal data class RoutingRulesState(
         (policyTargets.isNotEmpty() && files.getValue(target).document?.policyStart != null))
 
     fun canSave(draft: RuleDraft): Boolean = editable(draft.target) && (draft.target != LocalRuleSet.Policy ||
-        (policyTargets.any { it.tag == draft.policyTag } &&
+        (draft.policyTag in policyTargets &&
             (draft.index != null || files.getValue(draft.target).document?.policyStart != null)))
 
     fun showPageError(target: LocalRuleSet): Boolean = target != draft?.target && target != deleting?.target &&
@@ -96,7 +94,7 @@ internal class RoutingRulesViewModel(
     fun selectPolicy(tag: String) {
         val current = state.value
         val draft = current.draft ?: return
-        if (draft.target != LocalRuleSet.Policy || current.isSaving || current.policyTargets.none { it.tag == tag }) return
+        if (draft.target != LocalRuleSet.Policy || current.isSaving || tag !in current.policyTargets) return
         mutableState.update { it.copy(draft = draft.copy(policyTag = tag)) }
     }
 
@@ -126,8 +124,8 @@ internal class RoutingRulesViewModel(
                         .mapNotNull {
                             val type = it.text("type")
                             val tag = it.text("tag")
-                            if (tag.isNotBlank() && type in editablePolicyTypes) RoutingPolicyTarget(tag, type) else null
-                        }.distinctBy { it.tag }
+                            tag.takeIf { it.isNotBlank() && type in editablePolicyTypes }
+                        }.distinct()
                 } catch (error: Exception) {
                     if (error is CancellationException) throw error
                     emptyList()

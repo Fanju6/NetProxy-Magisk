@@ -240,7 +240,7 @@ class PolicyViewModelTest {
             assertEquals("direct", vm.state.value.snapshot?.groups?.first()?.selected)
             confirm.complete(Unit)
             withTimeout(5_000) {
-                vm.state.first { it.pendingGroup == null && it.snapshot?.groups?.first()?.selected == "Example/日本" }
+                vm.state.first { !it.operating && it.snapshot?.groups?.first()?.selected == "Example/日本" }
             }
             assertEquals(1, calls.count { it.mutation })
             vm.setVisible(false)
@@ -285,7 +285,7 @@ class PolicyViewModelTest {
                 vm.state.first { it.live }
             }
             vm.select("Work / 组", "Example/日本")
-            withTimeout(5_000) { vm.state.first { it.pendingGroup == null && it.error != UiText.Empty } }
+            withTimeout(5_000) { vm.state.first { !it.operating && it.noticeIsError && it.notice != UiText.Empty } }
             disconnect.complete(Unit)
             withTimeout(5_000) { vm.state.first { !it.live } }
             assertFalse(vm.state.value.stale)
@@ -327,7 +327,7 @@ class PolicyViewModelTest {
             coreStarted.complete(Unit)
             withTimeout(5_000) { vm.state.first { it.live } }
             vm.delay("Auto")
-            withTimeout(5_000) { vm.state.first { it.pendingGroup == null } }
+            withTimeout(5_000) { vm.state.first { !it.operating } }
             assertEquals(1, calls.count { it.mutation })
             assertEquals(setOf("Auto"), vm.state.value.manualTests.keys)
             assertEquals(0, vm.state.value.snapshot?.groups?.last()?.items?.single()?.delay)

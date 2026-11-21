@@ -40,6 +40,8 @@ internal fun PolicyGroupTabs(
     backdrop: LayerBackdrop?,
     modifier: Modifier = Modifier,
 ) {
+    if (labels.isEmpty()) return
+
     val defaults = GlassSegmentedTabRowDefaults
     val shape = defaults.shape()
     val colors = MiuixTheme.colorScheme
@@ -59,6 +61,8 @@ internal fun PolicyGroupTabs(
             .background(colors.surfaceContainer).then(material).padding(defaults.TrackPadding),
     ) {
         val viewportWidth = maxWidth
+        val equalShare = (viewportWidth - defaults.TabGap * (labels.size - 1)) / labels.size
+        val minTabWidth = maxOf(72.dp, equalShare).coerceAtMost(viewportWidth)
         val tabShape = defaults.shape(defaults.Height - defaults.TrackPadding * 2)
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).selectableGroup(),
@@ -72,7 +76,7 @@ internal fun PolicyGroupTabs(
                 }
                 Box(
                     modifier = Modifier
-                        .widthIn(min = minOf(72.dp, viewportWidth), max = viewportWidth)
+                        .widthIn(min = minTabWidth, max = viewportWidth)
                         .fillMaxHeight()
                         .bringIntoViewRequester(requester)
                         .clip(tabShape)

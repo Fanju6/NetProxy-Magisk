@@ -2,6 +2,7 @@ package com.fanjv.netproxy.feature.proxy.presentation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.ui.UiText
 import com.fanjv.netproxy.core.ui.toUiText
 import com.fanjv.netproxy.feature.proxy.data.PolicyMember
@@ -28,9 +29,10 @@ internal data class PolicyState(
     val runtimeUnavailable: Boolean = false,
     val refreshing: Boolean = false,
     val stale: Boolean = false,
-    val pendingGroup: String? = null,
-    val error: UiText = UiText.Empty,
+    val operating: Boolean = false,
+    val notice: UiText = UiText.Empty,
     val noticeId: Long = 0,
+    val noticeIsError: Boolean = false,
     val manualTests: Map<String, ManualPolicyTest> = emptyMap(),
 ) {
     val loading: Boolean get() = refreshing || (configured == null && !stale)
@@ -99,7 +101,7 @@ internal class PolicyViewModel(
     }
 
     fun refresh(showProgress: Boolean = false) {
-        if (!visible || mutable.value.pendingGroup != null) return
+        if (!visible || mutable.value.operating) return
         if (showProgress) refreshRuntime()
         read?.cancel()
         if (showProgress) mutable.update { it.copy(refreshing = true) }
@@ -118,7 +120,7 @@ internal class PolicyViewModel(
     }
 
     private fun refreshRuntime() {
-        if (!visible || mutable.value.pendingGroup != null) return
+        if (!visible || mutable.value.operating) return
         runtimeRead?.cancel()
         val revision = runtimeRevision
         runtimeRead = viewModelScope.launch {
@@ -165,21 +167,37 @@ internal class PolicyViewModel(
 
     fun deleteGroup(tag: String, type: String) {
         val current = mutable.value
-        if (!visible || current.stale || current.pendingGroup != null || type !in editablePolicyTypes ||
+        if (type !in editablePolicyTypes ||
             current.configured?.groups?.none { it.tag == tag && it.type == type } != false
         ) return
+        updateGroups {
+            repository.deleteGroup(tag, type)
+            UiText.Empty
+        }
+    }
+
+    fun createSubscriptionGroups(suffix: String) = updateGroups {
+        val count = repository.createSubscriptionGroups(suffix)
+        if (count == 0) UiText.Resource(R.string.policy_subscription_groups_none)
+        else UiText.Resource(R.string.policy_subscription_groups_created, listOf(count))
+    }
+
+    private fun updateGroups(change: suspend () -> UiText) {
+        if (!visible || mutable.value.stale || mutable.value.operating) return
         read?.cancel()
-        mutable.update { it.copy(pendingGroup = tag, error = UiText.Empty) }
+        mutable.update { it.copy(operating = true, notice = UiText.Empty) }
         viewModelScope.launch {
             try {
-                repository.deleteGroup(tag, type)
+                val message = change()
+                ensureActive()
+                if (message != UiText.Empty) postNotice(message)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
                 ensureActive()
-                mutable.update { it.copy(error = error.toUiText(), noticeId = it.noticeId + 1) }
+                postNotice(error.toUiText(), isError = true)
             } finally {
-                mutable.update { it.copy(pendingGroup = null) }
+                mutable.update { it.copy(operating = false) }
                 refresh()
             }
         }
@@ -188,7 +206,7 @@ internal class PolicyViewModel(
     private fun operate(group: String, testDelay: Boolean = false, action: suspend (Long) -> PolicySnapshot?) {
         val current = mutable.value
         val snapshot = current.snapshot ?: return
-        if (!visible || !current.live || current.pendingGroup != null ||
+        if (!visible || !current.live || current.operating ||
             snapshot.groups.none { it.tag == group && it.items.any { member -> member.runtimeAvailable } }
         ) return
         val generation = visibilityGeneration
@@ -199,7 +217,7 @@ internal class PolicyViewModel(
         ) else null
         read?.cancel()
         runtimeRead?.cancel()
-        mutable.update { it.copy(pendingGroup = group, error = UiText.Empty) }
+        mutable.update { it.copy(operating = true, notice = UiText.Empty) }
         viewModelScope.launch {
             try {
                 val confirmed = action(snapshot.coreIdentity)
@@ -221,14 +239,17 @@ internal class PolicyViewModel(
                 throw error
             } catch (error: Exception) {
                 ensureActive()
-                mutable.update { it.copy(error = error.toUiText(), noticeId = it.noticeId + 1) }
+                postNotice(error.toUiText(), isError = true)
             } finally {
-                mutable.update { it.copy(pendingGroup = null) }
+                mutable.update { it.copy(operating = false) }
                 refresh()
                 if (!mutable.value.runtimeConfirmed) refreshRuntime()
             }
         }
     }
 
-    fun clearNotice() = mutable.update { it.copy(error = UiText.Empty) }
+    private fun postNotice(message: UiText, isError: Boolean = false) =
+        mutable.update { it.copy(notice = message, noticeId = it.noticeId + 1, noticeIsError = isError) }
+
+    fun clearNotice() = mutable.update { it.copy(notice = UiText.Empty) }
 }

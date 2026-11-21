@@ -4,11 +4,13 @@ description: 在 NetProxy 中创建地区与业务策略分组，配置规则集
 
 # 策略分组配置教程
 
-默认 `Proxy` 是原生 Selector，提供自动选择、阻断、直连和 Catalog 节点。选择「自动选择」后，共享的 `Auto`（URLTest）按测速结果选择节点。没有资源节点时使用阻断；已有节点全部测速失败时，内核可能保留上次选中的节点，但不会自动改走直连。默认仍选阻断，需要手动选中「自动选择」或其他成员。
+默认只有 `Proxy` 和 `Auto` 两个策略组。`Proxy` 是原生 Selector，可选 `Auto`、`block`、`direct` 和 Catalog 节点。`Auto`（URLTest）按测速结果选择节点。没有资源节点时使用 `block`；已有节点全部测速失败时，内核可能保留上次选中的节点，但不会自动改走直连。初次使用需在 `Proxy` 中选中 `Auto` 或其他节点。
 
-默认配置还为 AI、GitHub、YouTube、Google、Telegram、Netflix、Spotify 和哔哩哔哩提供独立分流。每个业务组可单独选择阻断，不必修改全局 `Proxy` 的选择。哔哩哔哩默认直连，其余业务默认跟随 `Proxy`。保留现有配置升级时，不会自动加入或覆盖这些默认组；如需补上 `Auto`，可在 Android 管理器编辑 `Proxy`，开启「添加自动选择」后保存。若已自建 `Auto`，请通过成员列表手动引用。
+默认规则仍将哔哩哔哩发往 `direct`，AI、GitHub、YouTube、Google、Telegram、Netflix 和 Spotify 走 `Proxy`，不再各建一组。选择保留原配置升级不会自动删除现有策略组。如需补上 `Auto`，可在 Android 管理器编辑 `Proxy`，开启「添加自动选择」后保存。若已自建 `Auto`，请通过成员列表手动引用。
 
 Catalog 只提供节点资源，不生成策略组。Android「代理」页可从右上角「管理策略组」菜单创建 Selector 或 URLTest，也可在选中现有组后编辑成员、Provider 及支持的参数。图形化编辑保留已有标签，在配置兼容时允许切换类型。表单更新同一份原生配置的 `outbounds` 分区；把新组用于分流时，可在「设置 → 路由规则」中选择「指定策略组」，也可直接编辑原生路由。
+
+「管理策略组 → 按订阅创建」为每个有节点且尚无专属 Selector 的订阅追加一个组，只引用该订阅，不复制节点。订阅组名带订阅后缀以避免与 Provider 同名。创建后不会自动接入路由；可将它加入 `Proxy` 或指定分流规则。删除或改名被这些组引用的订阅前，需要先解除引用。
 
 本教程从零建立一套最小配置，再说明如何继续扩展。节点按以下关系组织：
 
@@ -47,7 +49,7 @@ Catalog Provider
 
 ### 业务分组
 
-业务分组由路由规则匹配流量，再由用户决定走 `Proxy`、地区分组、节点还是 `direct`。例如，可以把已有的 `Netflix` 组改成以下成员；不要再添加一个同名组：
+业务分组由路由规则匹配流量，再由用户决定走 `Proxy`、地区分组、节点还是 `direct`。例如，可以创建以下 `Netflix` 组，并将 Netflix 对应的默认路由改指该组；已有同名组时直接编辑：
 
 ```json
 {
@@ -286,8 +288,8 @@ su -c '/data/adb/modules/netproxy/netproxyctl service restart'
 
 例如将 Netflix 切换为 United States，只会改变命中 Netflix 规则的连接。`interrupt_exist_connections` 会在切换后关闭该组已有连接，使新选择尽快生效。
 
-::: info Android 管理器中的节点页
-节点页展示的是 Catalog 分组和节点，不是任意 sing-box selector。自定义地区组与业务组应在 Service API Dashboard 中管理，这是两类不同的数据。
+::: info Android 管理器中的代理和资源
+「代理」页显示原生策略组；「资源」页管理 Catalog 订阅和节点。创建策略组不会在资源页新建分组。
 :::
 
 ## 继续增加地区

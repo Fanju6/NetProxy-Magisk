@@ -54,7 +54,6 @@ import com.fanjv.netproxy.core.ui.component.ContentStatus
 import com.fanjv.netproxy.core.ui.component.appBarOverscroll
 import com.fanjv.netproxy.core.ui.component.groupedCardSection
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
-import com.fanjv.netproxy.feature.proxy.data.AUTO_POLICY_TAG
 import com.fanjv.netproxy.feature.routing.model.LocalRuleSet
 import com.fanjv.netproxy.feature.routing.model.RuleField
 import com.fanjv.netproxy.feature.routing.model.RuleInputError
@@ -168,9 +167,7 @@ internal fun RoutingRulesScreen(
                     val rule = state.files.getValue(identity.target).document!!.rules[identity.index]
                     val policy = remember(rule) { rule.policyRule() }
                     val simple = remember(rule) { policy?.second ?: rule.simpleRule() }
-                    val destination = policy?.let { (tag, _) ->
-                        state.policyTargets.firstOrNull { it.tag == tag }?.label() ?: tag
-                    } ?: stringResource(identity.target.title())
+                    val destination = policy?.first ?: stringResource(identity.target.title())
                     ArrowPreference(
                         title = simple?.values?.first()?.take(100) ?: stringResource(R.string.routing_advanced),
                         summary = destination + " · " + (simple?.let {
@@ -222,16 +219,16 @@ internal fun RoutingRulesScreen(
                                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
                             else -> {
                                 val targets = state.policyTargets
-                                val selected = targets.indexOfFirst { it.tag == draft.policyTag }
+                                val selected = targets.indexOf(draft.policyTag)
                                 OverlayDropdownPreference(
                                     title = stringResource(R.string.routing_policy_group),
                                     items = listOf(draft.policyTag?.takeIf { selected < 0 }
                                         ?: stringResource(R.string.routing_policy_choose)) +
-                                        targets.map { it.label() },
+                                        targets,
                                     selectedIndex = selected + 1,
                                     enabled = state.editable(draft.target),
                                     insideMargin = PaddingValues(vertical = 12.dp),
-                                    onSelectedIndexChange = { index -> targets.getOrNull(index - 1)?.let { viewModel.selectPolicy(it.tag) } },
+                                    onSelectedIndexChange = { index -> targets.getOrNull(index - 1)?.let(viewModel::selectPolicy) },
                                 )
                             }
                         }
@@ -331,10 +328,6 @@ private fun LocalRuleSet.title(): Int = when (this) {
     LocalRuleSet.Block -> R.string.routing_block
     LocalRuleSet.Policy -> R.string.routing_policy_target
 }
-
-@Composable
-private fun RoutingPolicyTarget.label(): String =
-    if (tag == AUTO_POLICY_TAG && type == "urltest") stringResource(R.string.policy_auto_select) else tag
 
 private fun RuleField.title(): Int = when (this) {
     RuleField.DomainSuffix -> R.string.routing_domain_suffix

@@ -12,7 +12,10 @@
     <string name="policy_edit_group">Editar grupo de políticas</string>
     <string name="policy_group_name">Nome do grupo</string>
     <string name="policy_group_type">Tipo do grupo</string>
-    <string name="policy_auto_select">Seleção automática</string>
+    <string name="policy_create_subscription_groups">Criar a partir de assinaturas</string>
+    <string name="policy_subscription_group_suffix">Assinatura</string>
+    <string name="policy_subscription_groups_created">Grupos criados: %1$d</string>
+    <string name="policy_subscription_groups_none">Nenhum novo grupo de assinatura para criar</string>
     <string name="policy_add_auto">Adicionar seleção automática</string>
     <string name="policy_add_auto_summary">Seleciona nós com base na latência, sem recorrer ao modo direto</string>
     <string name="policy_group_duplicate">Este nome já está em uso.</string>
@@ -32,7 +35,6 @@
     <string name="policy_group_selected_count">Selecionados: %1$d</string>
     <string name="policy_group_no_choices">Nenhuma opção disponível</string>
     <string name="policy_empty">Nenhum grupo de políticas configurado</string>
-    <string name="policy_configured">Grupos configurados · o serviço não está em execução</string>
     <string name="policy_runtime_unavailable">Seleção atual indisponível. Puxe para baixo para atualizar.</string>
     <string name="policy_providers_unavailable">Provedores indisponíveis offline: %1$s</string>
     <string name="inbound_read_failed">Não é possível ler a configuração de entrada</string>

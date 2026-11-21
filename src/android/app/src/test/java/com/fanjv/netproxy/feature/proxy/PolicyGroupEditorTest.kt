@@ -1,12 +1,14 @@
 package com.fanjv.netproxy.feature.proxy
 
 import com.fanjv.netproxy.core.api.ModuleApiClient
+import com.fanjv.netproxy.core.api.ModuleApiException
 import com.fanjv.netproxy.core.api.ModuleHttpResponse
 import com.fanjv.netproxy.core.api.TestApiTransport
 import com.fanjv.netproxy.core.api.apiSuccess
 import com.fanjv.netproxy.feature.proxy.data.PolicyGroupDocument
 import com.fanjv.netproxy.feature.proxy.data.PolicyRepository
 import com.fanjv.netproxy.feature.proxy.data.parsePolicySection
+import com.fanjv.netproxy.feature.proxy.data.text
 import com.fanjv.netproxy.feature.proxy.presentation.PolicyGroupEditorViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -117,6 +119,76 @@ class PolicyGroupEditorTest {
         assertEquals(listOf("native", "Local"), document.providerChoices)
         repository.saveGroup(document, document.initial.copy(tag = "Auto", type = "urltest",
             outbounds = listOf("direct"), testInterval = "3m"))
+        assertEquals(1, writes)
+    }
+
+    @Test fun createsOneSelectorPerEligibleSubscriptionInASingleWrite() = runBlocking {
+        val original = parsePolicySection(source, "outbounds")
+        val existing = original + parsePolicySection("""
+            {"outbounds":[{"tag":"Existing","type":"selector","providers":"Work"},
+              {"tag":"Office (Subscription) (2)","type":"direct"}]}
+        """.trimIndent(), "outbounds")
+        var content = """{"outbounds":${JsonArray(existing)}}"""
+        var writes = 0
+        val client = ModuleApiClient(TestApiTransport { request ->
+            if (request.mutation) {
+                writes++
+                request.assertConfig("PUT", "singbox/outbounds", "r1")
+                content = request.text("content")
+                val groups = parsePolicySection(content, "outbounds")
+                assertEquals(existing, groups.take(existing.size))
+                val added = groups.drop(existing.size)
+                assertEquals(listOf("Office (Subscription) (3)", "Office (2) (Subscription) (2)"), added.map { it.text("tag") })
+                assertEquals(listOf("Office", "Office (2)"), added.map {
+                    assertEquals(setOf("tag", "type", "providers"), it.keys)
+                    assertEquals("selector", it.text("type"))
+                    ((it.getValue("providers") as JsonArray).single() as JsonPrimitive).content
+                })
+                apiSuccess("""{"revision":"r2"}""")
+            } else when (request.path) {
+                "/config" -> when (request.target) {
+                    "singbox/outbounds" -> configResponse(content)
+                    "singbox/endpoints" -> configResponse("""{"endpoints":[{"tag":"Office (Subscription)"}]}""")
+                    "singbox/providers" -> configResponse("{}")
+                    else -> error("Unexpected target")
+                }
+                "/subscriptions" -> apiSuccess("""
+                    [
+                      {"id":"s1","name":"Office","type":"subscription","node_count":2,"runtime_tag":"Office"},
+                      {"id":"s2","name":"Office (2)","type":"subscription","node_count":1,"runtime_tag":"Office (2)"},
+                      {"id":"s3","name":"Work","type":"subscription","node_count":1,"runtime_tag":"Work"},
+                      {"id":"s4","name":"Empty","type":"subscription","node_count":0,"runtime_tag":"Empty"},
+                      {"id":"local","name":"Office (2) (Subscription)","type":"local","node_count":0,"runtime_tag":"Office (2) (Subscription)"},
+                      {"id":"local2","name":"Local","type":"local","node_count":3,"runtime_tag":"Local"}
+                    ]
+                """.trimIndent())
+                else -> error("Unexpected request")
+            }
+        })
+        val repository = PolicyRepository(client)
+        assertEquals(2, repository.createSubscriptionGroups("Subscription"))
+        assertEquals(0, repository.createSubscriptionGroups("Another locale"))
+        assertEquals(1, writes)
+    }
+
+    @Test fun doesNotReplaySubscriptionGroupCreationOnRevisionConflict() = runBlocking {
+        var writes = 0
+        val client = ModuleApiClient(TestApiTransport { request ->
+            when {
+                request.mutation -> {
+                    writes++
+                    request.assertConfig("PUT", "singbox/outbounds", "r1")
+                    ModuleHttpResponse(409, """{"schema":1,"ok":false,"code":"config.conflict","message":"Reload","data":null}""")
+                }
+                request.path == "/subscriptions" -> apiSuccess(
+                    """[{"id":"s1","name":"Work","type":"subscription","node_count":1,"runtime_tag":"Work"}]"""
+                )
+                request.target == "singbox/outbounds" -> configResponse(source)
+                else -> configResponse("{}")
+            }
+        })
+        val error = runCatching { PolicyRepository(client).createSubscriptionGroups("Subscription") }.exceptionOrNull()
+        assertEquals("config.conflict", (error as? ModuleApiException)?.resultCode)
         assertEquals(1, writes)
     }
 

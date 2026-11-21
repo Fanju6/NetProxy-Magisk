@@ -62,7 +62,6 @@ import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import com.fanjv.netproxy.core.ui.resolve
 import com.fanjv.netproxy.feature.catalog.presentation.nodes.list.components.NodeCard
-import com.fanjv.netproxy.feature.proxy.data.AUTO_POLICY_TAG
 import com.fanjv.netproxy.feature.proxy.data.PolicyGroup
 import com.fanjv.netproxy.feature.proxy.data.PolicyMember
 import com.fanjv.netproxy.feature.proxy.data.editablePolicyTypes
@@ -124,10 +123,11 @@ internal fun PolicyScreen(
     val openTags = expanded ?: listOfNotNull(current?.tag)
     val tabbed = layout == 0
     val shown = if (tabbed) listOfNotNull(current) else groups
-    val canTest = state.live && state.pendingGroup == null
-    val canManageCurrent = !state.stale && state.pendingGroup == null && current?.type in editablePolicyTypes
+    val canTest = state.live && !state.operating
+    val canManageCurrent = !state.stale && !state.operating && current?.type in editablePolicyTypes
+    val subscriptionSuffix = stringResource(R.string.policy_subscription_group_suffix)
 
-    SnackbarNoticeEffect(state.noticeId, state.error.resolve(), true, snackbar, viewModel::clearNotice)
+    SnackbarNoticeEffect(state.noticeId, state.notice.resolve(), state.noticeIsError, snackbar, viewModel::clearNotice)
 
     ManagerMenu(
         entries = listOf(DropdownEntry(items = listOf(
@@ -145,8 +145,13 @@ internal fun PolicyScreen(
                                     children = listOf(
                                         DropdownItem(
                                             text = stringResource(R.string.policy_add_group),
-                                            enabled = state.pendingGroup == null,
+                                            enabled = !state.operating,
                                             onClick = { navigator.push(Route.PolicyGroupEdit()) },
+                                        ),
+                                        DropdownItem(
+                                            text = stringResource(R.string.policy_create_subscription_groups),
+                                            enabled = !state.stale && !state.operating,
+                                            onClick = { viewModel.createSubscriptionGroups(subscriptionSuffix) },
                                         ),
                                         DropdownItem(
                                             text = stringResource(R.string.policy_edit_current_group),
@@ -175,7 +180,7 @@ internal fun PolicyScreen(
                     bottomContent = {
                         if (tabbed && groups.isNotEmpty()) {
                             PolicyGroupTabs(
-                                labels = groups.map { policyLabel(it.tag, it.type) },
+                                labels = groups.map { it.tag },
                                 selectedIndex = selectedIndex,
                                 onSelect = { index -> groups.getOrNull(index)?.let { selectedTag = it.tag } },
                                 backdrop = backdrop,
@@ -227,21 +232,18 @@ internal fun PolicyScreen(
                     verticalArrangement = Arrangement.spacedBy(spacing),
                     overscrollEffect = null
                 ) {
-                    if (groups.isNotEmpty() && (state.stale || state.runtimeUnavailable ||
-                                (state.runtimeConfirmed && state.runtime?.live == false))) {
+                    if (groups.isNotEmpty() && (state.stale || state.runtimeUnavailable)) {
                         item(key = "status", span = { GridItemSpan(maxLineSpan) }) {
-                            SmallTitle(stringResource(when {
-                                state.stale -> R.string.nodes_read_failed
-                                state.runtimeUnavailable -> R.string.policy_runtime_unavailable
-                                else -> R.string.policy_configured
-                            }))
+                            SmallTitle(stringResource(
+                                if (state.stale) R.string.nodes_read_failed else R.string.policy_runtime_unavailable
+                            ))
                         }
                     }
                     shown.forEach { group ->
                         val open = tabbed || group.tag in openTags
                         if (!tabbed) {
                             item(key = "group:${group.tag}", span = { GridItemSpan(maxLineSpan) }) {
-                                PolicyGroupHeader(policyLabel(group.tag, group.type), group.items.size, open) {
+                                PolicyGroupHeader(group.tag, group.items.size, open) {
                                     selectedTag = group.tag
                                     expanded = if (open) openTags - group.tag else openTags + group.tag
                                 }
@@ -266,15 +268,11 @@ internal fun PolicyScreen(
                                 "member:${group.tag.length}:${group.tag}${member.tag}"
                             }) { member ->
                                 NodeCard(
-                                    title = when {
-                                        member.tag == "direct" && member.type == "direct" -> stringResource(R.string.routing_direct)
-                                        member.tag == "block" && member.type == "block" -> stringResource(R.string.routing_block)
-                                        else -> policyLabel(member.tag, member.type, member.displayName)
-                                    },
+                                    title = member.displayName,
                                     protocol = member.type.uppercase(),
                                     latency = member.delay.takeIf { state.live && it > 0 }?.toString(),
                                     selected = !state.stale && group.selected == member.tag,
-                                    enabled = state.live && group.selectable && member.runtimeAvailable && state.pendingGroup == null,
+                                    enabled = state.live && group.selectable && member.runtimeAvailable && !state.operating,
                                     itemSize = cardSize,
                                     onClick = { viewModel.select(group.tag, member.tag) },
                                 )
@@ -292,7 +290,7 @@ internal fun PolicyScreen(
     OverlayDialog(
         show = target != null,
         title = stringResource(R.string.policy_delete_current_group),
-        summary = target?.let { stringResource(R.string.policy_delete_group_summary, policyLabel(it.tag, it.type)) },
+        summary = target?.let { stringResource(R.string.policy_delete_group_summary, it.tag) },
         onDismissRequest = { deleteTarget = null },
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -307,7 +305,7 @@ internal fun PolicyScreen(
                     deleteTarget = null
                     target?.let { viewModel.deleteGroup(it.tag, it.type) }
                 },
-                enabled = target != null && !state.stale && state.pendingGroup == null,
+                enabled = target != null && !state.stale && !state.operating,
                 modifier = Modifier.weight(1f),
                 role = DialogActionRole.Destructive,
             )
@@ -361,12 +359,6 @@ internal fun PolicyScreen(
         }
     }
 }
-
-@Composable
-private fun policyLabel(tag: String, type: String, fallback: String = tag): String =
-    if (tag == AUTO_POLICY_TAG && type.equals("urltest", ignoreCase = true)) {
-        stringResource(R.string.policy_auto_select)
-    } else fallback
 
 @Composable
 private fun PolicyGroupHeader(name: String, count: Int, expanded: Boolean, onClick: () -> Unit) {

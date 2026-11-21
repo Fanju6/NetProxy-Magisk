@@ -270,7 +270,7 @@ class RoutingRulesViewModelTest {
         transport.revisions[LocalRuleSet.Policy.target] = "route-revision"
         val vm = model(this, transport)
         vm.refresh()
-        assertEquals(listOf("AI", "Auto"), vm.loaded().policyTargets.map { it.tag })
+        assertEquals(listOf("AI", "Auto"), vm.loaded().policyTargets)
 
         vm.add()
         vm.selectTarget(LocalRuleSet.Policy)
