@@ -1,6 +1,6 @@
 [versions]
 # Android & Kotlin
-agp = "9.5.1"
+agp = "9.5.2"
 kotlin = "2.4.21"
 kotlinxSerialization = "1.13.0"
 
@@ -14,7 +14,7 @@ navigationevent = "1.2.0"
 composeBom = "2026.09.00"
 
 # Third-party
-miuix = "0.9.5-beta01"
+miuix = "0.9.5-beta03"
 junit = "4.13.2"
 coroutinesTest = "1.9.0"
 okhttp = "5.5.1"

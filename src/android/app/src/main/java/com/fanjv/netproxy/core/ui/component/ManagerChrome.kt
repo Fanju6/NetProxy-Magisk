@@ -122,9 +122,6 @@ internal fun ManagerAppBar(
         backdrop = glassBackdrop(backdrop),
         largeTitle = if (compact) "" else title,
         subtitle = subtitle, scrollBehavior = scrollBehavior, titleAlpha = { titleColor.alpha },
-        visualContentOffset = contentOffset ?: state?.let { state ->
-            { minOf(state.contentOffset, state.heightOffset) + state.overscrollOffset }
-        },
         progressiveBlur = backdrop != null && Build.VERSION.SDK_INT >= 33,
         navigationIcon = navigationIcon,
         actions = {

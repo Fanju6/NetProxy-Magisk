@@ -250,9 +250,11 @@ internal fun AppsScreen(
                     }
                 }
             }
+            val searchResultTopPadding = 12.dp
             GlassSearchOverlay(
                 expanded = searching,
                 onDismissRequest = { searching = false },
+                scrollMaterialThreshold = GlassSearchOverlayDefaults.VerticalPadding + searchResultTopPadding,
                 label = stringResource(R.string.search),
                 horizontalInsetsModifier = Modifier.windowInsetsPadding(
                     WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)),
@@ -263,7 +265,8 @@ internal fun AppsScreen(
             ) { query ->
                 LaunchedEffect(query) { viewModel.updateSearch(query); searchListState.scrollToItem(0) }
                 val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() +
-                    GlassSearchOverlayDefaults.BarHeight + GlassSearchOverlayDefaults.VerticalPadding * 2 + 12.dp
+                    GlassSearchOverlayDefaults.BarHeight + GlassSearchOverlayDefaults.VerticalPadding * 2 +
+                    searchResultTopPadding
                 LazyColumn(state = searchListState, modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(top = top, bottom = bottomPadding + 12.dp),
                     overscrollEffect = null) {
