@@ -9,13 +9,13 @@ plugins {
 fun gitCommitCount(): Int {
     val repositoryRoot = rootProject.rootDir.parentFile.parentFile
     return runCatching {
-        val process = ProcessBuilder("git", "rev-list", "--count", "HEAD")
-            .directory(repositoryRoot)
-            .redirectErrorStream(true)
-            .start()
-        val output = process.inputStream.bufferedReader().use { it.readText().trim() }
-        val exitCode = process.waitFor()
-        output.toIntOrNull()?.takeIf { exitCode == 0 && it > 0 } ?: 1
+        val result = providers.exec {
+            workingDir(repositoryRoot)
+            commandLine("git", "rev-list", "--count", "HEAD")
+            isIgnoreExitValue = true
+        }
+        result.standardOutput.asText.get().trim().toIntOrNull()
+            ?.takeIf { result.result.get().exitValue == 0 && it > 0 } ?: 1
     }.getOrDefault(1)
 }
 
