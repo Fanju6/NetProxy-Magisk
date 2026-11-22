@@ -36,7 +36,7 @@ test('默认配置只提供 Proxy 和 Auto 策略组，并保留模式与 DNS �
   expected.inbounds = expected.inbounds.filter(inbound => inbound.type !== 'ebpf')
   expected.inbounds[0].listen = '127.0.0.1'
   expected.outbounds = [
-    { type: 'selector', tag: 'Proxy', outbounds: ['Auto', 'block', 'direct'], use_all_providers: true, default: 'block', interrupt_exist_connections: true },
+    { type: 'selector', tag: 'Proxy', outbounds: ['Auto', 'block', 'direct'], use_all_providers: true, default: 'Auto', interrupt_exist_connections: true },
     { type: 'urltest', tag: 'Auto', outbounds: ['block'], use_all_providers: true },
     { type: 'direct', tag: 'direct' },
     { type: 'block', tag: 'block' },
