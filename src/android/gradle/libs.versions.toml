@@ -7,11 +7,11 @@ kotlinxSerialization = "1.13.0"
 # AndroidX Core & Activity
 activityCompose = "1.13.0"
 coreKtx = "1.19.1"
-lifecycleRuntimeKtx = "2.11.0"
+lifecycleRuntimeKtx = "2.11.1"
 navigationevent = "1.2.0"
 
 # Compose
-composeBom = "2026.09.00"
+composeBom = "2026.11.01"
 
 # Third-party
 miuix = "0.9.5-beta03"
