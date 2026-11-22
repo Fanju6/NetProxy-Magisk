@@ -43,7 +43,7 @@ internal data class PolicyMember(
 
 internal fun PolicySnapshot.withRuntime(
     runtime: PolicySnapshot?,
-    showDelay: (String, PolicyMember) -> Boolean = { _, _ -> true },
+    displayDelay: (String, PolicyMember) -> Int = { _, member -> member.delay.coerceAtLeast(0) },
 ): PolicySnapshot {
     if (runtime == null || !runtime.live || runtime.coreIdentity <= 0) return this
     val liveGroups = runtime.groups.associateBy { it.tag }
@@ -60,7 +60,7 @@ internal fun PolicySnapshot.withRuntime(
                 items = configured.items.map { member ->
                     val active = members[member.tag]
                     member.copy(
-                        delay = active?.takeIf { it.delay > 0 && showDelay(configured.tag, it) }?.delay ?: 0,
+                        delay = active?.let { displayDelay(configured.tag, it) } ?: 0,
                         runtimeAvailable = active != null,
                     )
                 },

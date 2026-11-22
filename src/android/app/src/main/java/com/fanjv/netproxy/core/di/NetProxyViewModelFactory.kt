@@ -41,7 +41,7 @@ internal class NetProxyViewModelFactory(
                 container.nodeImportStore
             )
 
-            PolicyViewModel::class.java -> PolicyViewModel(container.policyRepository)
+            PolicyViewModel::class.java -> PolicyViewModel(container.policyRepository, delayStore = container.policyDelayStore)
             PolicyGroupEditorViewModel::class.java -> PolicyGroupEditorViewModel(container.policyRepository)
 
             SubscriptionsViewModel::class.java ->

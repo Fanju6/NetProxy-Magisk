@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.ui.UiText
 import com.fanjv.netproxy.core.ui.toUiText
+import com.fanjv.netproxy.feature.proxy.data.PolicyDelayStore
+import com.fanjv.netproxy.feature.proxy.data.PolicyDelays
 import com.fanjv.netproxy.feature.proxy.data.PolicyMember
 import com.fanjv.netproxy.feature.proxy.data.PolicyRepository
 import com.fanjv.netproxy.feature.proxy.data.PolicySnapshot
@@ -33,14 +35,16 @@ internal data class PolicyState(
     val notice: UiText = UiText.Empty,
     val noticeId: Long = 0,
     val noticeIsError: Boolean = false,
+    val delays: PolicyDelays = PolicyDelays(),
     val manualTests: Map<String, ManualPolicyTest> = emptyMap(),
 ) {
     val loading: Boolean get() = refreshing || (configured == null && !stale)
     val live: Boolean get() = !stale && runtimeConfirmed && snapshot?.live == true
     val snapshot: PolicySnapshot? by lazy {
         configured?.withRuntime(runtime.takeUnless { runtimeUnavailable }) { tag, member ->
-            val test = manualTests[tag]
-            runtimeConfirmed && test != null && test.coreIdentity == runtime?.coreIdentity && test.isNew(member)
+            if (runtimeConfirmed && delays.coreIdentity == runtime?.coreIdentity) {
+                delays.groups[tag]?.get(member.tag) ?: 0
+            } else 0
         }
     }
 }
@@ -51,8 +55,8 @@ internal data class ManualPolicyTest(
     val previous: Map<String, PolicyMember>,
 ) {
     fun isNew(member: PolicyMember): Boolean {
-        if (member.delayTime < requestedAtSeconds) return false
-        val old = previous[member.tag] ?: return true
+        if (member.delay <= 0 || member.delayTime < requestedAtSeconds) return false
+        val old = previous[member.tag] ?: return false
         // The core exposes whole seconds, so a changed result can also arrive in the same second.
         return member.delayTime > old.delayTime || (member.delayTime == old.delayTime && member.delay != old.delay)
     }
@@ -61,8 +65,9 @@ internal data class ManualPolicyTest(
 internal class PolicyViewModel(
     private val repository: PolicyRepository,
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+    private val delayStore: PolicyDelayStore? = null,
 ) : ViewModel(scope) {
-    private val mutable = MutableStateFlow(PolicyState())
+    private val mutable = MutableStateFlow(PolicyState(delays = delayStore?.load() ?: PolicyDelays()))
     val state = mutable.asStateFlow()
     private var changes: Job? = null
     private var read: Job? = null
@@ -137,15 +142,37 @@ internal class PolicyViewModel(
         }
     }
 
-    private fun applyRuntime(snapshot: PolicySnapshot) {
-        mutable.update {
-            it.copy(
-                runtime = snapshot,
-                runtimeConfirmed = true,
-                runtimeUnavailable = false,
-                manualTests = it.manualTests.filterValues { test -> test.coreIdentity == snapshot.coreIdentity },
-            )
+    private fun applyRuntime(snapshot: PolicySnapshot, newTest: Pair<String, ManualPolicyTest>? = null) {
+        val current = mutable.value
+        var delays = current.delays
+        val tests = current.manualTests.filterValues { snapshot.live && it.coreIdentity == snapshot.coreIdentity }
+            .toMutableMap()
+        if (snapshot.live && snapshot.coreIdentity > 0) {
+            if (delays.coreIdentity != snapshot.coreIdentity) delays = PolicyDelays(snapshot.coreIdentity)
+            if (newTest != null) {
+                tests[newTest.first] = newTest.second
+                delays = delays.copy(groups = delays.groups - newTest.first)
+            }
+            for (group in snapshot.groups) {
+                val test = tests[group.tag] ?: continue
+                val fresh = group.items.filter(test::isNew).associate { it.tag to it.delay }
+                if (fresh.isEmpty()) continue
+                val results = delays.groups[group.tag].orEmpty() + fresh
+                delays = delays.copy(groups = delays.groups + (group.tag to results))
+                // Later history updates must not overwrite an already captured manual result.
+                val remaining = test.previous - fresh.keys
+                if (remaining.isEmpty()) tests.remove(group.tag)
+                else tests[group.tag] = test.copy(previous = remaining)
+            }
         }
+        if (delays != current.delays) delayStore?.save(delays)
+        mutable.value = current.copy(
+            runtime = snapshot,
+            runtimeConfirmed = true,
+            runtimeUnavailable = false,
+            delays = delays,
+            manualTests = tests,
+        )
     }
 
     private fun markRuntimeUnavailable() = mutable.update {
@@ -223,10 +250,11 @@ internal class PolicyViewModel(
                 val confirmed = action(snapshot.coreIdentity)
                 ensureActive()
                 if (test != null && generation == visibilityGeneration) {
-                    mutable.update {
-                        if (it.runtime == null || it.runtime.coreIdentity == test.coreIdentity) {
-                            it.copy(manualTests = it.manualTests + (group to test))
-                        } else it
+                    val latest = mutable.value
+                    val runtime = latest.runtime
+                    if (runtime != null && latest.runtimeConfirmed && runtime.coreIdentity == test.coreIdentity) {
+                        // An event may have delivered results before the request was acknowledged.
+                        applyRuntime(runtime, group to test)
                     }
                 }
                 if (visible && generation == visibilityGeneration && confirmed?.coreIdentity == snapshot.coreIdentity &&

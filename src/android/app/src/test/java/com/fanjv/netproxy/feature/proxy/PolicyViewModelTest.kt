@@ -7,6 +7,8 @@ import com.fanjv.netproxy.core.api.ModuleHttpResponse
 import com.fanjv.netproxy.core.api.TestApiTransport
 import com.fanjv.netproxy.core.api.apiSuccess
 import com.fanjv.netproxy.core.ui.UiText
+import com.fanjv.netproxy.feature.proxy.data.PolicyDelayStore
+import com.fanjv.netproxy.feature.proxy.data.PolicyDelays
 import com.fanjv.netproxy.feature.proxy.data.PolicyGroup
 import com.fanjv.netproxy.feature.proxy.data.PolicyMember
 import com.fanjv.netproxy.feature.proxy.data.PolicyRepository
@@ -17,6 +19,7 @@ import com.fanjv.netproxy.feature.proxy.presentation.PolicyState
 import com.fanjv.netproxy.feature.proxy.presentation.PolicyViewModel
 import com.fanjv.netproxy.feature.proxy.presentation.displayMembers
 import com.fanjv.netproxy.feature.proxy.presentation.displayName
+import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -106,29 +109,87 @@ class PolicyViewModelTest {
         }
     }
 
-    @Test fun latencyIsHiddenUntilTheSameGroupAndCoreHaveANewerManualResult() {
-        val node = PolicyMember("fixture", "socks")
-        val group = PolicyGroup("Work", "selector", false, listOf(node))
-        val other = group.copy(tag = "Other")
-        val previous = node.copy(delay = 80, delayTime = 200)
-        val configured = PolicySnapshot(listOf(group, other), live = false, coreIdentity = 0)
-        val initial = PolicySnapshot(
-            listOf(group.copy(items = listOf(previous)), other.copy(items = listOf(previous))),
-            live = true,
-            coreIdentity = 1234,
-        )
-        val page = PolicyState(configured = configured, runtime = initial)
-        fun delays(state: PolicyState) = state.snapshot!!.groups.map { it.items.single().delay }
+    @Test fun manualResultMustBeFreshAndBelongToARequestedMember() {
+        val previous = PolicyMember("fixture", "socks", delay = 80, delayTime = 200)
+        val test = ManualPolicyTest(1234, 200, mapOf(previous.tag to previous))
+        assertFalse(test.isNew(previous))
+        assertFalse(test.isNew(previous.copy(delayTime = 199, delay = 81)))
+        assertFalse(test.isNew(previous.copy(delayTime = 0)))
+        assertFalse(test.isNew(previous.copy(delayTime = 201, delay = 0)))
+        assertFalse(test.isNew(previous.copy(delayTime = 201, tag = "other")))
+        assertTrue(test.isNew(previous.copy(delayTime = 201)))
+        assertTrue(test.isNew(previous.copy(delay = 81)))
+    }
 
-        assertEquals(listOf(0, 0), delays(page))
-        val test = ManualPolicyTest(1234, 200, mapOf(node.tag to previous))
-        val testing = page.copy(manualTests = mapOf(group.tag to test))
-        assertEquals(listOf(0, 0), delays(testing))
-        val updated = initial.copy(groups = initial.groups.map { it.copy(items = listOf(previous.copy(delayTime = 201))) })
-        assertEquals(listOf(80, 0), delays(testing.copy(runtime = updated)))
-        assertEquals(listOf(0, 0), delays(testing.copy(runtime = updated.copy(coreIdentity = 1235))))
-        val untimed = initial.copy(groups = initial.groups.map { it.copy(items = listOf(previous.copy(delayTime = 0))) })
-        assertEquals(listOf(0, 0), delays(testing.copy(runtime = untimed)))
+    @Test fun manualDelaysSurviveReopeningAndAreNotReusedForAnotherCore() = runBlocking {
+        var stored: String? = null
+        val timestamp = Instant.now().epochSecond
+        var live = snapshot(delay = 90, delayTime = timestamp - 1)
+        var requests = 0
+        val requested = CompletableDeferred<Unit>()
+        val acknowledge = CompletableDeferred<Unit>()
+        val events = Channel<ModuleEvent>(Channel.UNLIMITED)
+        val scope = CoroutineScope(coroutineContext + SupervisorJob(coroutineContext.job))
+        val transport = object : TestApiTransport() {
+            override suspend fun respond(request: ApiTestRequest): ModuleHttpResponse = when {
+                request.path == "/policy-groups/delay" -> {
+                    requests++
+                    requested.complete(Unit)
+                    acknowledge.await()
+                    apiSuccess("{}", "policy.delay_requested")
+                }
+                request.query["source"] == "config" -> apiSuccess(snapshot(live = false))
+                else -> apiSuccess(live)
+            }
+
+            override suspend fun watch(topics: Set<String>, consume: suspend (ModuleEvent) -> Unit) {
+                for (event in events) consume(event)
+            }
+        }
+        fun open() = PolicyViewModel(
+            PolicyRepository(ModuleApiClient(transport, scope)), scope, PolicyDelayStore({ stored }, { stored = it }),
+        ).also { it.setVisible(true) }
+        fun PolicyState.delaysByGroup() = snapshot?.groups?.map { group -> group.items.map { it.delay } }
+        suspend fun publish(snapshot: String) {
+            live = snapshot
+            events.send(ModuleEvent("groups", apiSuccess(live).content))
+        }
+        suspend fun PolicyViewModel.awaitLive() = withTimeout(5_000) { state.first { it.live } }
+
+        try {
+            val first = open()
+            assertEquals(listOf(listOf(0, 0), listOf(0)), first.awaitLive().delaysByGroup())
+            first.delay("Work / 组")
+            withTimeout(5_000) { requested.await() }
+            publish(snapshot(selected = "Example/日本", delay = 41, delayTime = timestamp + 5))
+            withTimeout(5_000) { first.state.first { it.runtime?.groups?.first()?.selected == "Example/日本" } }
+            acknowledge.complete(Unit)
+            withTimeout(5_000) { first.state.first { !it.operating } }
+            assertEquals(listOf(listOf(0, 41), listOf(0)), first.state.value.delaysByGroup())
+
+            // A later frame delivers the second result without overwriting the first one.
+            publish(snapshot(delay = 42, delayTime = timestamp + 6, directDelay = 20))
+            val measured = listOf(listOf(20, 41), listOf(0))
+            withTimeout(5_000) { first.state.first { it.delaysByGroup() == measured } }
+            first.setVisible(false)
+            first.setVisible(true)
+            assertEquals(measured, first.awaitLive().delaysByGroup())
+            first.setVisible(false)
+
+            // The replacement ViewModel only sees serialized preferences and a fresh API response.
+            val reopened = open()
+            assertEquals(measured, reopened.awaitLive().delaysByGroup())
+            live = snapshot(delay = 23, delayTime = timestamp + 7, identity = 1235)
+            reopened.refresh(showProgress = true)
+            val restarted = withTimeout(5_000) {
+                reopened.state.first { it.live && it.snapshot?.coreIdentity == 1235L }
+            }
+            assertEquals(listOf(listOf(0, 0), listOf(0)), restarted.delaysByGroup())
+            assertEquals(PolicyDelays(1235), PolicyDelayStore({ stored }, {}).load())
+            assertEquals(1, requests)
+        } finally {
+            scope.cancel()
+        }
     }
 
     @Test fun onlyManualRefreshShowsRefreshIndicatorAndKeepsExistingCards() = runBlocking {
@@ -352,12 +413,21 @@ class PolicyViewModelTest {
         }
     }
 
-    private fun snapshot(selected: String = "direct", live: Boolean = true) = """
-        {"live":$live,"core_started_at_millis":${if (live) 1234 else 0},"groups":[
+    private fun snapshot(
+        selected: String = "direct",
+        live: Boolean = true,
+        delay: Int = 0,
+        delayTime: Long = 0,
+        directDelay: Int = 0,
+        identity: Long = 1234,
+    ) = """
+        {"live":$live,"core_started_at_millis":${if (live) identity else 0},"groups":[
           {"tag":"Work / 组","type":"selector","selectable":$live,
            ${if (live) "\"selected\":\"$selected\"" else "\"configured_default\":\"$selected\""},
-           "items":[{"tag":"direct","type":"direct"},{"tag":"Example/日本","type":"vless"}]},
-          {"tag":"Auto","type":"urltest","selectable":false,"items":[{"tag":"Example/日本","type":"vless"}]}
+           "items":[{"tag":"direct","type":"direct","url_test_delay":$directDelay,"url_test_time":$delayTime},
+                    {"tag":"Example/日本","type":"vless","url_test_delay":$delay,"url_test_time":$delayTime}]},
+          {"tag":"Auto","type":"urltest","selectable":false,
+           "items":[{"tag":"Example/日本","type":"vless","url_test_delay":$delay,"url_test_time":$delayTime}]}
         ]}
     """.trimIndent()
 }
