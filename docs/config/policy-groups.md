@@ -4,7 +4,7 @@ description: 在 NetProxy 中创建地区与业务策略分组，配置规则集
 
 # 策略分组配置教程
 
-默认只有 `Proxy` 和 `Auto` 两个策略组。`Proxy` 是原生 Selector，可选 `Auto`、`block`、`direct` 和 Catalog 节点。`Auto`（URLTest）按测速结果选择节点。没有资源节点时使用 `block`；已有节点全部测速失败时，内核可能保留上次选中的节点，但不会自动改走直连。初次使用需在 `Proxy` 中选中 `Auto` 或其他节点。
+默认只有 `Proxy` 和 `Auto` 两个策略组。`Proxy` 是原生 Selector，默认选择 `Auto`（URLTest），按测速结果选择节点。也可手动选择 `block`、`direct` 或 Catalog 节点。没有资源节点时使用 `block`；已有节点全部测速失败时，内核可能保留上次选中的节点，但不会自动改走直连。
 
 默认规则仍将哔哩哔哩发往 `direct`，AI、GitHub、YouTube、Google、Telegram、Netflix 和 Spotify 走 `Proxy`，不再各建一组。选择保留原配置升级不会自动删除现有策略组。如需补上 `Auto`，可在 Android 管理器编辑 `Proxy`，开启「添加自动选择」后保存。若已自建 `Auto`，请通过成员列表手动引用。
 
