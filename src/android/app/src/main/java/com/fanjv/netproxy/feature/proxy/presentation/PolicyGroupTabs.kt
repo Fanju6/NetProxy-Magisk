@@ -2,24 +2,22 @@ package com.fanjv.netproxy.feature.proxy.presentation
 
 import android.os.Build
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,6 +39,24 @@ internal fun PolicyGroupTabs(
     modifier: Modifier = Modifier,
 ) {
     if (labels.isEmpty()) return
+
+    val selectedTab = selectedIndex.coerceIn(labels.indices)
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = selectedTab)
+    LaunchedEffect(listState, selectedTab, labels[selectedTab]) {
+        // A bring-into-view request here also moves the main pager when it precomposes this page.
+        val layout = listState.layoutInfo
+        val tab = layout.visibleItemsInfo.firstOrNull { it.index == selectedTab }
+        if (tab == null) {
+            listState.animateScrollToItem(selectedTab)
+        } else {
+            val delta = when {
+                tab.offset < layout.viewportStartOffset -> tab.offset - layout.viewportStartOffset
+                tab.offset + tab.size > layout.viewportEndOffset -> tab.offset + tab.size - layout.viewportEndOffset
+                else -> 0
+            }
+            if (delta != 0) listState.animateScrollBy(delta.toFloat())
+        }
+    }
 
     val defaults = GlassSegmentedTabRowDefaults
     val shape = defaults.shape()
@@ -64,21 +80,17 @@ internal fun PolicyGroupTabs(
         val equalShare = (viewportWidth - defaults.TabGap * (labels.size - 1)) / labels.size
         val minTabWidth = maxOf(72.dp, equalShare).coerceAtMost(viewportWidth)
         val tabShape = defaults.shape(defaults.Height - defaults.TrackPadding * 2)
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).selectableGroup(),
+        LazyRow(
+            modifier = Modifier.fillMaxWidth().selectableGroup(),
+            state = listState,
             horizontalArrangement = Arrangement.spacedBy(defaults.TabGap, Alignment.CenterHorizontally),
         ) {
-            labels.forEachIndexed { index, label ->
-                val active = index == selectedIndex
-                val requester = remember { BringIntoViewRequester() }
-                LaunchedEffect(active, label) {
-                    if (active) requester.bringIntoView()
-                }
+            itemsIndexed(labels) { index, label ->
+                val active = index == selectedTab
                 Box(
                     modifier = Modifier
                         .widthIn(min = minTabWidth, max = viewportWidth)
                         .fillMaxHeight()
-                        .bringIntoViewRequester(requester)
                         .clip(tabShape)
                         .then(if (active) Modifier.background(colors.primaryContainer) else Modifier)
                         .selectable(selected = active, role = Role.Tab, onClick = { onSelect(index) })
