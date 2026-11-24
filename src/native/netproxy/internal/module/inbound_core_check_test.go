@@ -463,6 +463,7 @@ func assertTargetCoreRuntime(t *testing.T, options Options, prepared PrepareResu
 			t.Fatal(err)
 		}
 		if !generated.AutoRoute || !generated.AutoRedirect || generated.AutoRedirectDisableMarkMode != template.AutoRedirectDisableMarkMode ||
+			!slices.Equal(generated.IncludeInterface, template.IncludeInterface) ||
 			generated.AutoRedirectInputMark != template.AutoRedirectInputMark || generated.AutoRedirectOutputMark != template.AutoRedirectOutputMark ||
 			generated.AutoRedirectResetMark != template.AutoRedirectResetMark || generated.AutoRedirectTProxyMark != template.AutoRedirectTProxyMark ||
 			generated.AutoRedirectNFQueue != template.AutoRedirectNFQueue || generated.AutoRedirectFallbackRuleIndex != template.AutoRedirectFallbackRuleIndex ||
@@ -486,8 +487,13 @@ func TestInboundTargetCoreCheck(t *testing.T) {
 		{"tun", "tun"},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
-			content := []byte(strings.Replace(testInboundConfig, `"backend": "ebpf"`, `"backend": "`+fixture.backend+`"`, 1))
-			if !strings.HasSuffix(fixture.name, "-default") {
+			var content []byte
+			switch fixture.name {
+			case "ebpf-default":
+				content = []byte(testInboundConfig)
+			case "tun-default":
+				content = targetCoreRead(t, filepath.Join("..", "..", "..", "..", "module", "config", "inbound", "inbound.json"))
+			default:
 				content = targetCoreRead(t, filepath.Join("..", "inbound", "testdata", fixture.name+".json"))
 			}
 			options, originals := targetCoreFixture(t, core, content)

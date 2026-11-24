@@ -12,7 +12,7 @@ NetProxy 是面向 Android Root 设备的 sing-box 透明代理模块。它支�
 - Magisk、KernelSU 或 APatch
 - 满足所选入站要求的内核与网络能力
 
-默认使用 eBPF，也可在入站设置中切换为 [TUN + auto_redirect](/config/tun)。eBPF 按数据平面需要 BPF、cgroup/TC、透明 socket、veth 与策略路由等能力，可通过 [eBPF 能力探测](/config/ebpf#能力探测)检查。TUN 需要设备支持相应路由、iptables/ip6tables 与 NFQUEUE 能力。各入站的要求与切换行为见[入站配置](/config/inbound)。
+全新安装默认使用 [TUN + auto_redirect](/config/tun) 接管本机流量，也可在入站设置中切换为 eBPF。TUN 需要设备支持相应路由、iptables/ip6tables 与 NFQUEUE 能力。eBPF 的要求因数据平面而异，可通过 [eBPF 能力探测](/config/ebpf#能力探测)检查。各入站的要求与切换行为见[入站配置](/config/inbound)。
 
 ## 能做什么
 

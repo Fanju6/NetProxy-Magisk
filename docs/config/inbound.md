@@ -6,7 +6,7 @@
 /data/adb/modules/netproxy/config/inbound/inbound.json
 ```
 
-外层包含 `backend`、`root_policy`、`app`、`ebpf`、`tun`。`backend` 初始为 `ebpf`，可选 `tun`；两套原生参数分别保存，切换不会转换、清空或同步另一套参数。一次只运行一个受管入站，不自动回退另一后端。
+外层包含 `backend`、`root_policy`、`app`、`ebpf`、`tun`。全新安装或恢复出厂配置时，`backend` 为 `tun`，默认仅接管本机；也可选 `ebpf`。保留现有数据升级时沿用已选后端和参数。两套原生参数分别保存，切换不会转换、清空或同步另一套参数。一次只运行一个受管入站，不自动回退另一后端。
 
 `ebpf` 和 `tun` 对象都包含原生 `type` 与固定 `tag: "netproxy-in"`，类型必须匹配分区。参数分别见 [eBPF](/config/ebpf) 和 [TUN](/config/tun)。本文件带 NetProxy 包装，不是 sing-box 根配置，不能直接作为 `sing-box -c` 输入。
 

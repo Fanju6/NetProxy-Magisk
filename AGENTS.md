@@ -39,6 +39,7 @@
 - 分应用策略持久化严格的 `<user-id>:<package>` 引用，Android 每个用户独立展示；Go 通过 Android package service 查询 UID，运行时生成 `include_uid` / `exclude_uid`。
 - eBPF 数据路径由 `ebpf.local.enabled` 与 `ebpf.shared.enabled` 独立启用，选择 eBPF 时至少开启一条；本机 `data_plane` 只允许 `socket_assign/cgroup`，共享网络只允许 `socket_assign/packet_rewrite`。模块两路径缺省均显式投影为 `socket_assign`，不依赖核心的不同默认值；`cgroup` 和 `packet_rewrite` 为手动兼容选择，不接受旧 `tc` 别名或静默回退。禁用路径可保存全部偏好，但运行时只输出 `enabled: false`；`shared.default_interface` 默认关闭，仅按用户配置允许同一上游接口接管。
 - 受管 TUN 固定 `auto_route=true` 与 `auto_redirect=true`，地址必须有效；不额外固定 MTU、stack、strict_route、marks 或 NFQUEUE 默认值。端口 bypass 使用主配置 route 的原生 pre-match 规则，不伪装成 TUN 字段或自动注入第四个 runtime。
+- 出厂入站默认选择 TUN，用 `include_interface: ["lo"]` 仅接管本机，不扩大到热点或 USB 转发。保留数据升级不覆盖已选后端或两套原生参数；只保留节点与订阅时恢复出厂入站。
 - Service API 与 Clash API 的固定监听和密钥位于 `config/singbox/config.json` 的 `services` 与 `experimental.clash_api`。不要重新引入运行时随机 bootstrap，现有 WebUI 依赖固定入口。
 - 服务状态只允许 `stopped/preparing/starting/ready/stopping/failed`。`ready_at` 只能在 sing-box API 与所选入站均就绪后写入。
 - `service status` 的 `configured_backend` 是入站持久选择字符串；`active_backend` 仅在 ready、实际 PID 与启动记录匹配、API 毫秒级启动身份一致时非空，否则必须为 null。不从当前模板猜测旧核心后端，也不增加后端 PID/锁/状态文件。
@@ -343,7 +344,7 @@ eBPF 与 TUN 只负责透明代理入站。停止服务由 sing-box 关闭并清
 
 app 关闭时保留原生 UID 筛选；开启时合并去重同向 UID/range，保留反向 UID/range 并由内核按排除优先处理，非空原生 package/user 筛选仍拒绝混用。白名单解析后与原生 include UID/range 均为空时，仅在运行时设置 `exclude_uid_range=["0:4294967294"]` 排除全部有效 UID；不能生成空 include 后静默变为全量接管，也不能注入占位 UID。仅启用 eBPF 共享网络时不查询应用 UID，不把本机应用名单当成热点客户端过滤器；eBPF DNS 保持原生 hijack/respect_policy/off 语义，不因应用名单覆盖 DNS 模式。
 
-eBPF 本机与热点下游接管分别由 `local.enabled`、`shared.enabled` 控制。本机默认使用 cgroup socket hook 与 `respect_policy` DNS，也可选择跟随默认接口的 TC；共享网络默认关闭，保存以太网 `packet_rewrite`、`hijack` DNS 与 `wlan2` 接口偏好，raw-IP、PPP 或隧道接口可选择 `socket_assign`。启用共享网络时必须配置至少一个下游接口。
+eBPF 本机与热点下游接管分别由 `local.enabled`、`shared.enabled` 控制。模板的两条路径都选 `socket_assign`；本机启用并使用 `respect_policy` DNS，共享路径关闭并保存 `hijack` DNS 与 `wlan2` 接口偏好。启用共享网络时必须配置至少一个下游接口。
 
 TUN 使用原生 `include_interface/exclude_interface`、CIDR、规则集与 MAC 筛选，不建立 local/shared/hybrid 映射。默认接口 `netproxy`、地址 `172.19.0.1/30` 与 `fdfe:dcba:9876::1/126`、DNS `hijack`；不输出 stack 或额外默认 MTU/strict_route/marks。目标 sing-box check 不等于设备能力证明，TUN、NFQUEUE、IPv6 TPROXY 与清理仍需真机确认。eBPF 能力探测继续使用 `ebpf status`，不新增 `tun status`。
 

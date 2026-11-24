@@ -57,7 +57,7 @@ NetProxy 是面向已 Root Android 设备的系统级透明代理模块，支持
 
 运行环境为 `arm64-v8a` Android 设备与 Magisk、KernelSU 或 APatch，使用 Root 权限接管流量。
 
-默认使用 eBPF，可在“设置 → 入站设置”中选择 TUN。设备能力要求与安装选项见[安装与升级](https://www.netproxy.store/guide/installation)。
+全新安装默认使用 TUN 接管本机流量，可在“设置 → 入站设置”中切换至 eBPF。保留数据升级沿用所选后端。设备能力要求与安装选项见[安装与升级](https://www.netproxy.store/guide/installation)。
 
 1. 从 [Releases](https://github.com/Fanju6/NetProxy-Magisk/releases) 下载 `NetProxy_<版本>_<构建号>.zip`，内含模块和 Android 管理器。
 2. 在 Root 管理器中刷入，按提示选择数据保留方式及是否安装管理器；等待安装完成。

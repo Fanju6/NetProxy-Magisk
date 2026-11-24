@@ -128,10 +128,10 @@ test('eBPF 默认绕过引用与上游和静态规则一致', () => {
   for (const tag of [...localBypass, ...sharedBypass]) assert.ok(tags.includes(tag), `${tag} 未在静态配置声明`)
 })
 
-test('单一入站默认保留 eBPF 原生语义和禁用共享路径偏好', () => {
+test('受管入站默认选择 TUN，保留备用 eBPF 参数及关闭共享偏好', () => {
   assert.deepEqual(Object.keys(managed), ['backend', 'root_policy', 'app', 'ebpf', 'tun'])
   assert.equal(managed.root_policy, 'include')
-  assert.equal(managed.backend, 'ebpf')
+  assert.equal(managed.backend, 'tun')
   assert.deepEqual(managed.app, { enabled: false, mode: 'blacklist', proxy_apps: [], bypass_apps: [] })
   assert.deepEqual(managed.ebpf, {
     type: 'ebpf', tag: 'netproxy-in', network: ['tcp', 'udp'], udp_timeout: '5m', tc_priority: 1,
@@ -146,11 +146,11 @@ test('单一入站默认保留 eBPF 原生语义和禁用共享路径偏好', ()
   })
 })
 
-test('TUN 默认只固定必需接管参数，不覆盖上游可选默认', () => {
+test('默认 TUN 只接管本机，不固定上游路由和性能参数', () => {
   assert.deepEqual(managed.tun, {
     type: 'tun', tag: 'netproxy-in', interface_name: 'netproxy',
     address: ['172.19.0.1/30', 'fdfe:dcba:9876::1/126'],
-    auto_route: true, auto_redirect: true, dns_mode: 'hijack',
+    auto_route: true, auto_redirect: true, include_interface: ['lo'], dns_mode: 'hijack',
   })
   assert.equal(config.route.auto_detect_interface, true)
   assert.ok(config.inbounds.every(inbound => !['ebpf', 'tun'].includes(inbound.type) && inbound.tag !== 'netproxy-in'))

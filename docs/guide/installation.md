@@ -10,7 +10,7 @@ description: NetProxy 的设备要求、模块安装、数据保留方式、管�
 - Magisk、KernelSU 或 APatch，以及可用的 Root 权限
 - 满足所选 eBPF 或 TUN 入站要求的内核与网络能力
 
-默认使用 eBPF，需要 BPF、cgroup/TC 等相应数据平面能力。TUN 使用 `auto_route` 与 `auto_redirect`，需要目标设备具备相应 TUN、路由、iptables/ip6tables 和 NFQUEUE 能力。要求与验证边界见[入站配置](/config/inbound)。
+全新安装或选择「仅保留节点与订阅」时，默认使用 TUN 接管本机流量，不接管热点或 USB 共享。TUN 使用 `auto_route` 与 `auto_redirect`，需要设备具备相应 TUN、路由、iptables/ip6tables 和 NFQUEUE 能力。保留现有数据升级时沿用已选后端；也可在入站设置手动切换到 eBPF。要求与验证边界见[入站配置](/config/inbound)。
 
 ## 安装包
 

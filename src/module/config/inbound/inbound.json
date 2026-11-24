@@ -1,5 +1,5 @@
 {
-  "backend": "ebpf",
+  "backend": "tun",
   "root_policy": "include",
   "app": {
     "enabled": false,
@@ -38,6 +38,7 @@
     "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
     "auto_route": true,
     "auto_redirect": true,
+    "include_interface": ["lo"],
     "dns_mode": "hijack"
   }
 }

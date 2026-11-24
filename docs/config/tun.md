@@ -17,6 +17,7 @@ TUN 是 sing-box 的透明代理入站，在 NetProxy 中通过 Root 权限运�
     "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
     "auto_route": true,
     "auto_redirect": true,
+    "include_interface": ["lo"],
     "dns_mode": "hijack"
   }
 }
@@ -41,7 +42,7 @@ TUN 是 sing-box 的透明代理入站，在 NetProxy 中通过 Root 权限运�
 
 共用应用策略按用户解析 UID 后合并到 TUN 原生 UID 字段，不承诺用本机 UID 筛选热点客户端。CIDR、规则集、UID/range、MAC、NAT 等参数都使用当前核心的原生字段，不使用 `TUN_*` 别名。
 
-`"include_interface": ["lo"]` 仅接管手机本机流量，不接管 USB 或热点转发；`lo` 不是只代理 loopback 目标。`include_interface` 未设置或为空时，接管范围也包括 USB 和热点，仍受其他原生筛选条件约束。电脑已有代理时，可改用 `"exclude_interface": ["rndis0"]` 排除 USB 共享，避免代理套娃；接口名以设备实际名称为准。电脑使用手机共享 DNS 时，手机代发的 DNS 查询仍属于本机流量。默认模板保持不限制接口。
+默认的 `"include_interface": ["lo"]` 仅接管手机本机流量，不接管 USB 或热点转发；`lo` 不是只代理 loopback 目标。需要同时接管本机和共享网络时，可保留 `lo` 并加入实际下游接口，或移除此限制以纳入全部接口。电脑已有代理时，可用 `"exclude_interface": ["rndis0"]` 排除对应 USB 共享接口；接口名以设备实际名称为准。电脑使用手机共享 DNS 时，手机代发的 DNS 查询仍属于本机流量。
 
 端口绕过在主配置 `route` 中使用 `action: "bypass"` 与 pre-match，规则必须放在会终止 pre-match 的 sniff 等规则之前；它不是 TUN inbound 字段，不会自动注入隐藏规则或生成第四份运行时配置。
 

@@ -7,6 +7,7 @@
 set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 CUSTOMIZE="$ROOT/src/module/customize.sh"
+BUNDLED_INBOUND="$ROOT/src/module/config/inbound/inbound.json"
 NATIVE_CTL="${1:-}"
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT HUP INT TERM
@@ -51,7 +52,11 @@ write_module() {
     "$target/data/catalog/default" "$target/runtime" "$target/logs"
   printf 'id=netproxy\nversion=%s\n' "$label" > "$target/module.prop"
   module_fixture "$label" > "$target/config/module.json"
-  inbound_fixture "$label" > "$target/config/inbound/inbound.json"
+  if [ "$label" = package ]; then
+    cp "$BUNDLED_INBOUND" "$target/config/inbound/inbound.json"
+  else
+    inbound_fixture "$label" > "$target/config/inbound/inbound.json"
+  fi
   printf '%s\n' "$label-config" > "$target/config/singbox/config.json"
   printf '%s\n' "$label-local" > "$target/config/singbox/rules/local/custom.json"
   printf '%s\n' "$label-remote" > "$target/config/singbox/rules/remote/test.srs"
@@ -103,7 +108,13 @@ reset_modules() {
 assert_value() { grep -Fxq "$2" "$1"; }
 # 参数: $1 入站文件，$2 快照来源接口名。
 # 返回: 0=JSON 快照匹配，1=内容不一致或文件不可读。
-assert_inbound() { assert_value "$1" "$(inbound_fixture "$2")"; }
+assert_inbound() {
+  if [ "$2" = package ]; then
+    cmp -s "$1" "$BUNDLED_INBOUND"
+  else
+    assert_value "$1" "$(inbound_fixture "$2")"
+  fi
+}
 # 参数: $1 模块文件，$2 快照来源节点 tag。
 # 返回: 0=JSON 快照匹配，1=内容不一致或文件不可读。
 assert_module() { assert_value "$1" "$(module_fixture "$2")"; }
