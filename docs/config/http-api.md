@@ -134,7 +134,7 @@ HTTP 保存必须提供读取时的 revision。发生 `config.conflict` 时重�
 | `POST /diagnostics/ebpf` | 能力预检，正文含 `mode/raw` |
 | `GET /logs?kind=service&lines=200` | 脱敏日志，类型为 `service/core`，最多 2000 行 |
 | `DELETE /logs?kind=service` | 清空日志 |
-| `GET /diagnostics/export` | 下载完整脱敏诊断包 |
+| `GET /diagnostics/export` | 下载脱敏诊断包 |
 | `GET /events?topics=status,groups,subscriptions` | 实时事件流 |
 
 订阅添加与编辑支持 `name/url/user_agent/hwid/custom_headers/auto_update/update_interval/update_via_proxy/include/exclude/allow_insecure/download_timeout`。`update_interval` 与 `download_timeout` 使用秒；下载方式为 `auto/always/never`，分别对应自动、代理、直连。编辑时省略字段保留原值，清空请求头使用空对象，而不是 null。
@@ -188,6 +188,6 @@ JSON 响应使用与 CLI 一致的 `schema=1`、`ok/code/message/data`。同时�
 
 官方管理器仅对普通只读 GET 在响应前的连接故障最多恢复一次，并沿用原调用总时限。取消、超时、TLS 验证失败和正文读取错误不重试，写操作不自动重发。重新连接失败会保留原本可用的连接资料，不覆盖新收到的可信交付。
 
-JSON 正文统一最大 4 MiB，包含节点导入；按序拆分较大导入文件后分别提交。同时最多 8 个事件客户端。耗时操作有独立时限和并发限制，不阻塞普通状态读取。下载诊断包时检查传输是否完整，不把中断的文件当作有效包。
+JSON 正文统一最大 4 MiB，包含节点导入；按序拆分较大导入文件后分别提交。同时最多 8 个事件客户端。耗时操作有独立时限和并发限制，不阻塞普通状态读取。诊断包压缩后最大 64 MiB，生成时也限制每个非日志文件和源文件总量；因大小省略文件时会在归档的 README 中标明。下载中断或超限不会留下有效包。
 
 `config/api.json` 仅允许 loopback IP，文件权限为 `0600`，secret 为随机 32 字节的十六进制编码。凭据不进入日志、诊断包或遥测；不要粘贴到聊天、网址、公开脚本或 Git 仓库。

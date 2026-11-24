@@ -140,7 +140,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl logs show core 100'
 su -c '/data/adb/modules/netproxy/netproxyctl logs export /sdcard/Download/netproxy-diagnostics.tar.gz'
 ```
 
-`ebpf status` 默认返回整理后的 eBPF 能力诊断，`--raw` 返回 sing-box 原始输出；不代表实际 backend，没有 `tun status` 命令。诊断包不会导出 Catalog 节点内容。
+`ebpf status` 默认返回整理后的 eBPF 能力诊断，`--raw` 返回 sing-box 原始输出；不代表实际 backend，没有 `tun status` 命令。诊断包可能包含脱敏后的 Catalog，分享前请检查内容。
 
 `network wifi-list` 仅查询已保存的 Wi-Fi 名称，不扫描附近网络；JSON 的 `data.ssids` 为字符串数组。`network evaluate` 按提供的真实网络状态应用策略，类型为 `wifi` 或 `not_wifi`。
 

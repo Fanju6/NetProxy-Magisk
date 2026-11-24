@@ -540,6 +540,10 @@ class LocalHttpTransportTest {
             server.enqueue(MockResponse.Builder().addHeader("Content-Type", "application/gzip").body("archive").build())
             transport.download("/logs/export", emptyMap(), destination)
             assertEquals("archive", destination.readText())
+            server.enqueue(MockResponse.Builder().addHeader("Content-Type", "application/gzip")
+                .body("oversized").setHeader("Content-Length", "67108865").build())
+            assertTrue(runCatching { transport.download("/logs/export", emptyMap(), destination) }.isFailure)
+            assertFalse(destination.exists())
             server.enqueue(MockResponse.Builder().addHeader("Content-Type", "application/gzip").body("x".repeat(100))
                 .throttleBody(1, 100, TimeUnit.MILLISECONDS).build())
             val downloading = launch(Dispatchers.IO) { transport.download("/logs/export", emptyMap(), destination) }

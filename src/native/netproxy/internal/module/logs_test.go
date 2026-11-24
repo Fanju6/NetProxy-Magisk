@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"io"
@@ -227,7 +228,22 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 	if err := os.WriteFile(stateFile, []byte(`{"state":"ready"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(singboxDir, "config.json"), []byte(`{"secret":"secret-config"}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(singboxDir, "config.json"), []byte(`{
+		"key":"ordinary-key","secret":"secret-config",
+		"inbounds":[{"tls":{"key":["secret-tls-server"],"ech":{"key":"secret-tls-ech"}}}],
+		"outbounds":[{"tls":{"client_key":["secret-tls-client"]}}],
+		"custom":"-----BEGIN PRIVATE KEY-----\nsecret-pem-json\n-----END PRIVATE KEY-----"
+	}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(logDir, "sing-box.log"), []byte("before\n-----BEGIN EC PRIVATE KEY-----\nsecret-pem-log\n-----END EC PRIVATE KEY-----\nafter\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	large := filepath.Join(catalogRoot, "large-fixture.json")
+	if err := os.WriteFile(large, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Truncate(large, maxDiagnosticFileBytes+1); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(catalogRoot, "meta.json"), []byte(`{"url":"https://example.test/sub?token=secret-token","hwid":"secret-hwid","custom_headers":{"Authorization":"Bearer secret-bearer"}}`), 0o600); err != nil {
@@ -310,6 +326,12 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 		if header.Name == "config/module.json" {
 			seenModule = true
 		}
+		if header.Name == "config/singbox/config.json" && (!strings.Contains(string(content), "ordinary-key") || !jsontext.Value(content).IsValid()) {
+			t.Fatal("脱敏破坏了普通字段或 JSON")
+		}
+		if strings.HasSuffix(header.Name, "large-fixture.json") {
+			t.Fatal("不应导出超过单文件上限的内容")
+		}
 		if header.Name == "README.txt" {
 			seenReadme = true
 			readme := string(content)
@@ -318,6 +340,7 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 				"管理器版本号: 29",
 				"模块版本: v8.0.0-test",
 				"模块版本号: 5",
+				"已省略 1 个条目",
 			} {
 				if !strings.Contains(readme, version) {
 					t.Fatalf("README.txt 缺少版本信息 %q: %s", version, readme)
@@ -329,6 +352,7 @@ func TestExportLogsIncludesRuntimeConfigAndRedactsSecrets(t *testing.T) {
 			"secret-log-uuid", "secret-log-auth", "secret-hysteria-auth", "secret-private-key",
 			"secret-wireguard-psk", "secret-office", "secret-home", "secret-trusted", "secret.app.one",
 			"secret.app.two", "secret.app.three", "private-telemetry-event",
+			"secret-tls-server", "secret-tls-ech", "secret-tls-client", "secret-pem-json", "secret-pem-log",
 		} {
 			if strings.Contains(string(content), secret) {
 				t.Fatalf("诊断包泄露敏感值 %q，文件 %s，内容 %s", secret, header.Name, content)

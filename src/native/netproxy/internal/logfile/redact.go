@@ -17,6 +17,9 @@ var (
 	lineSecretPattern    = regexp.MustCompile(`(?i)((?:["']?(?:x-hwid|hwid|uuid|token|password|secret|auth(?:[_-]?(?:str|key))?|p(?:re)?[_-]?shared[_-]?key|psk|private[_-]?key|public[_-]?key|short[_-]?id|custom[_-]?headers)["']?\s*[:=]\s*["']?))[^"'\r\n\s,;}，；。]+`)
 	httpURLPattern       = regexp.MustCompile(`(?i)\bhttps?://[^\s\p{Cc}<>"'，；。]+`)
 	otherURLPattern      = regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.-]*://[^\s\p{Cc}<>"'，；。]+`)
+	pemPrivateKeyStart   = regexp.MustCompile(`(?i)-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----`)
+	pemPrivateKeyEnd     = regexp.MustCompile(`(?i)-----END (?:[A-Z0-9]+ )*PRIVATE KEY-----`)
+	pemPrivateKeyPattern = regexp.MustCompile(`(?s)` + pemPrivateKeyStart.String() + `.*?(?:` + pemPrivateKeyEnd.String() + `|\z)`)
 	sensitiveJSONKeys    = map[string]struct{}{
 		"access_token": {}, "api_key": {}, "auth": {}, "auth_key": {}, "auth_str": {},
 		"authorization": {}, "client_secret": {}, "custom_headers": {}, "headers": {},
@@ -34,12 +37,13 @@ func RedactText(value string) string {
 	if json.Unmarshal([]byte(value), &document) == nil {
 		switch document.(type) {
 		case map[string]any, []any:
-			redactJSON(document)
+			redactJSON(document, "")
 			if encoded, err := json.Marshal(document, json.Deterministic(true), jsontext.WithIndent("  ")); err == nil {
 				value = string(encoded) + "\n"
 			}
 		}
 	}
+	value = redactPEM(value)
 	value = urlCredentialPattern.ReplaceAllString(value, `$1***@`)
 	value = querySecretPattern.ReplaceAllString(value, `${1}***`)
 	value = authorizationPattern.ReplaceAllString(value, `${1}***`)
@@ -59,7 +63,7 @@ func RedactMessage(value string) string {
 	return string(runes[:maxMessageRunes]) + "…"
 }
 
-func redactJSON(value any) {
+func redactJSON(value any, context string) any {
 	switch item := value.(type) {
 	case map[string]any:
 		for key, child := range item {
@@ -73,15 +77,34 @@ func redactJSON(value any) {
 					}
 				}
 			}
-			if _, sensitive := sensitiveJSONKeys[normalized]; sensitive {
+			_, sensitive := sensitiveJSONKeys[normalized]
+			if sensitive || ((context == "tls" || context == "ech") &&
+				(normalized == "key" || normalized == "key_path" || normalized == "client_key" || normalized == "client_key_path")) {
 				item[key] = "***"
 				continue
 			}
-			redactJSON(child)
+			item[key] = redactJSON(child, normalized)
 		}
 	case []any:
-		for _, child := range item {
-			redactJSON(child)
+		for index, child := range item {
+			item[index] = redactJSON(child, context)
+		}
+	case string:
+		return redactPEM(item)
+	}
+	return value
+}
+
+func redactPEM(value string) string {
+	if !strings.Contains(value, "-----") {
+		return value
+	}
+	const hidden = "[私钥已隐藏]"
+	// A bounded log read may start inside a key, with only its closing delimiter visible.
+	if end := pemPrivateKeyEnd.FindStringIndex(value); end != nil {
+		if start := pemPrivateKeyStart.FindStringIndex(value[:end[0]]); start == nil {
+			value = hidden + value[end[1]:]
 		}
 	}
+	return pemPrivateKeyPattern.ReplaceAllString(value, hidden)
 }

@@ -25,6 +25,28 @@ type archiveFile struct {
 	tail   int64
 }
 
+const (
+	maxDiagnosticFileBytes    = 16 << 20
+	maxDiagnosticInputBytes   = 128 << 20
+	maxDiagnosticArchiveBytes = 64 << 20
+)
+
+var errDiagnosticTooLarge = errors.New("诊断包超出大小限制")
+
+type diagnosticWriter struct {
+	output    io.Writer
+	remaining int64
+}
+
+func (w *diagnosticWriter) Write(content []byte) (int, error) {
+	if int64(len(content)) > w.remaining {
+		return 0, errDiagnosticTooLarge
+	}
+	n, err := w.output.Write(content)
+	w.remaining -= int64(n)
+	return n, err
+}
+
 type exportTarget struct {
 	info fs.FileInfo
 }
@@ -118,7 +140,7 @@ func inspectExportTarget(destination string) (exportTarget, error) {
 
 // ExportDiagnostics 输出完整脱敏诊断包；调用方负责 output 的同步、关闭和完整传输。
 func ExportDiagnostics(options Options, output io.Writer) (err error) {
-	archive := gzip.NewWriter(output)
+	archive := gzip.NewWriter(&diagnosticWriter{output: output, remaining: maxDiagnosticArchiveBytes})
 	tarWriter := tar.NewWriter(archive)
 	defer func() { err = errors.Join(err, tarWriter.Close(), archive.Close()) }()
 	files := make([]archiveFile, 0)
@@ -149,13 +171,23 @@ func ExportDiagnostics(options Options, output io.Writer) (err error) {
 		files = append(files, archiveFile{source: options.StateFile, name: "state/service.json", redact: true})
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].name < files[j].name })
+	remaining := int64(maxDiagnosticInputBytes)
+	omitted := 0
 	for _, item := range files {
 		var content []byte
 		var err error
-		if item.tail > 0 {
-			content, err = logfile.ReadSuffix(item.source, item.tail)
-		} else {
-			content, err = os.ReadFile(item.source)
+		switch {
+		case remaining <= 0:
+			omitted++
+			continue
+		case item.tail > 0:
+			content, err = logfile.ReadSuffix(item.source, min(item.tail, remaining))
+		default:
+			content, err = readDiagnosticFile(item.source, min(maxDiagnosticFileBytes, remaining))
+		}
+		if errors.Is(err, errDiagnosticTooLarge) {
+			omitted++
+			continue
 		}
 		if os.IsNotExist(err) {
 			continue
@@ -163,6 +195,7 @@ func ExportDiagnostics(options Options, output io.Writer) (err error) {
 		if err != nil {
 			return err
 		}
+		remaining -= int64(len(content))
 		if item.redact {
 			// 损坏的 JSON 无法按字段脱敏，不能把残留的名单或凭据作为诊断原文导出。
 			if filepath.Ext(item.name) == ".json" && !jsontext.Value(content).IsValid() {
@@ -178,7 +211,30 @@ func ExportDiagnostics(options Options, output io.Writer) (err error) {
 	readme := fmt.Sprintf("NetProxy 诊断包\n管理器版本: %s\n管理器版本号: %s\n模块版本: %s\n模块版本号: %s\n生成时间: %s\n敏感信息已脱敏。\n",
 		versionOrUnknown(options.ManagerVersion), versionOrUnknown(options.ManagerVersionCode),
 		moduleVersionName, moduleVersionCode, logfile.LocalNow().Format(time.RFC3339))
+	if omitted != 0 {
+		readme += fmt.Sprintf("为限制诊断包大小，已省略 %d 个条目。\n", omitted)
+	}
 	return writeTarFile(tarWriter, "README.txt", []byte(readme))
+}
+
+func readDiagnosticFile(path string, limit int64) ([]byte, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() > limit {
+		return nil, errDiagnosticTooLarge
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	content, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if err == nil && int64(len(content)) > limit {
+		return nil, errDiagnosticTooLarge
+	}
+	return content, err
 }
 
 func versionOrUnknown(value string) string {
@@ -219,7 +275,7 @@ func writeTarFile(writer *tar.Writer, name string, content []byte) error {
 
 func appendDirectoryFiles(files *[]archiveFile, root, archiveRoot string, redact, skipStaging bool) {
 	_ = filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
-		if walkErr != nil || info == nil || info.IsDir() {
+		if walkErr != nil || info == nil || !info.Mode().IsRegular() {
 			if skipStaging && info != nil && info.IsDir() && info.Name() == "staging" {
 				return filepath.SkipDir
 			}

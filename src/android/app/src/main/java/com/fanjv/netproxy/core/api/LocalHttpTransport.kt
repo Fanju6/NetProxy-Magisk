@@ -135,8 +135,11 @@ internal class LocalHttpTransport internal constructor(
                 if (!response.isSuccessful) fail(response, "api.download_failed", "诊断包下载失败")
                 require(response.body.contentType()?.toString() == "application/gzip")
                 try {
-                    val count = destination.outputStream().use { output -> response.body.byteStream().copyTo(output) }
                     val length = response.body.contentLength()
+                    require(length <= DIAGNOSTIC_LIMIT)
+                    val count = destination.outputStream().use { output ->
+                        LimitedInputStream(response.body.byteStream(), DIAGNOSTIC_LIMIT).use { it.copyTo(output) }
+                    }
                     require(count > 0 && (length < 0 || count == length))
                 } catch (error: Throwable) {
                     // 取消可能先唤醒调用方，正文线程须在关闭文件后再次清理部分下载。
@@ -318,6 +321,7 @@ internal class LocalHttpTransport internal constructor(
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
         const val RESPONSE_LIMIT = 8 * 1024 * 1024
         val EVENT_NAMES = setOf("status", "traffic", "groups", "subscriptions")
+        const val DIAGNOSTIC_LIMIT = 64 * 1024 * 1024
     }
 
     private data class RequestPolicy(val readTimeout: Int, val retryRead: Boolean)
