@@ -85,7 +85,18 @@ func ManageService(ctx context.Context, options Options, action string) (Service
 	case "start":
 		err = StartService(ctx, options)
 	case "stop":
+		transaction, markErr := markConfigApplyStopped(options)
 		err = StopService(ctx, options)
+		if transaction != nil && errors.Is(err, ErrForcedTermination) {
+			err = errors.Join(err, transaction.markCleanupFailed())
+		}
+		if markErr != nil || err != nil {
+			err = errors.Join(markErr, err)
+		} else {
+			recovery, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+			err = recoverConfigApply(recovery, options)
+			cancel()
+		}
 	case "restart":
 		if err = StopService(ctx, options); err == nil {
 			err = StartService(ctx, options)

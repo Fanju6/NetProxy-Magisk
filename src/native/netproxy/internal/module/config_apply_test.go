@@ -479,6 +479,84 @@ func TestRecoverConfigApplyBeforeAndAfterRename(t *testing.T) {
 	}
 }
 
+func TestExplicitStopDiscardsInterruptedRuntimeIntent(t *testing.T) {
+	for _, scenario := range []string{"reload_started", "switch_started", "cleanup_failed", "restore_retry"} {
+		t.Run(scenario, func(t *testing.T) {
+			options, destination, _, _ := configApplyOptions(t)
+			options.SingBoxPath = filepath.Join(t.TempDir(), "must-not-launch")
+			isolateConfigApplyHooks(t, true)
+			transaction, err := beginConfigApply(options, destination)
+			if err != nil {
+				t.Fatal(err)
+			}
+			phase := scenario
+			if scenario == "restore_retry" {
+				phase = "reload_started"
+			}
+			if phase == "switch_started" {
+				transaction.journal.Action = "switch"
+			}
+			if err := transaction.setPhase(phase); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(destination, []byte(`{"candidate":true}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			configProcessRunning = func(string) bool { return false }
+			restoreErr := errors.New("模拟磁盘恢复失败")
+			if scenario == "restore_retry" {
+				configSnapshotRestore = func(configFileSnapshot) error { return restoreErr }
+			}
+			_, err = ManageService(t.Context(), options, "stop")
+			if scenario == "restore_retry" {
+				if !errors.Is(err, restoreErr) {
+					t.Fatalf("应返回磁盘恢复错误: %v", err)
+				}
+				saved, err := readConfigApply(options)
+				if err != nil || !saved.journal.KeepStopped {
+					t.Fatalf("磁盘恢复失败时停服意图没有保留: %v", err)
+				}
+				configSnapshotRestore = restoreConfigSnapshot
+			} else if phase == "cleanup_failed" {
+				if !errors.Is(err, ErrForcedTermination) {
+					t.Fatalf("同 boot 保护未生效: %v", err)
+				}
+				saved, err := readConfigApply(options)
+				if err != nil || !saved.journal.KeepStopped {
+					t.Fatalf("停服意图没有保留: %v", err)
+				}
+				if currentBootID() == "" {
+					return
+				}
+				saved.journal.BootID = "previous-test-boot"
+				if err := saved.writeJournal(); err != nil {
+					t.Fatal(err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				if _, err := ApplyConfigContent(t.Context(), options, "module/auto_start", []byte(`{"auto_start":false}`), false, ""); err != nil {
+					t.Fatal(err)
+				}
+			}
+			state, err := ReadServiceState(options.StateFile)
+			if err != nil || state.State != "stopped" {
+				t.Fatalf("停止意图未保留: %+v %v", state, err)
+			}
+			content, err := os.ReadFile(destination)
+			if err != nil || bytes.Contains(content, []byte("candidate")) {
+				t.Fatalf("候选配置没有回滚: %v", err)
+			}
+			for _, path := range []string{transaction.directory, filepath.Join(options.RuntimeDir, "config.json")} {
+				if _, err := os.Stat(path); !os.IsNotExist(err) {
+					t.Fatalf("停止后不应保留 %s: %v", path, err)
+				}
+			}
+		})
+	}
+}
+
 func TestRecoverConfigApplyAfterRollbackCleanupWasInterrupted(t *testing.T) {
 	options, destination, _, content := configApplyOptions(t)
 	isolateConfigApplyHooks(t, false)
