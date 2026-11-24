@@ -1,7 +1,5 @@
 package com.fanjv.netproxy.feature.catalog.presentation.subscriptions
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -26,12 +24,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FileOpen
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.RssFeed
-import androidx.compose.material.icons.rounded.Share
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,7 +37,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -51,63 +45,49 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.R
+import com.fanjv.netproxy.core.di.netProxyViewModel
 import com.fanjv.netproxy.core.ui.UiText
-import com.fanjv.netproxy.core.ui.resolve
-import com.fanjv.netproxy.core.ui.component.AppDialogButton
-import com.fanjv.netproxy.core.ui.component.DialogActionRole
-import com.fanjv.netproxy.core.ui.component.dialogTextFieldColors
-import top.yukonga.miuix.kmp.glass.GlassTextField
-import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
-import com.fanjv.netproxy.core.ui.component.BackIconButton
 import com.fanjv.netproxy.core.ui.component.AppBarButton
+import com.fanjv.netproxy.core.ui.component.AppBottomSheet as OverlayBottomSheet
+import com.fanjv.netproxy.core.ui.component.AppContentCard
+import com.fanjv.netproxy.core.ui.component.AppDialog as OverlayDialog
+import com.fanjv.netproxy.core.ui.component.AppDialogButton
+import com.fanjv.netproxy.core.ui.component.AppOverlayList
+import com.fanjv.netproxy.core.ui.component.AppOverlayListDivider
+import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
+import com.fanjv.netproxy.core.ui.component.AppTopAppBar as TopAppBar
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.ContentStatus
+import com.fanjv.netproxy.core.ui.component.DialogActionRole
 import com.fanjv.netproxy.core.ui.component.SnackbarNoticeEffect
-import com.fanjv.netproxy.core.ui.component.StatusTag
+import com.fanjv.netproxy.core.ui.component.appBarOverscroll
+import com.fanjv.netproxy.core.ui.component.chromeIcon
+import com.fanjv.netproxy.core.ui.component.dialogTextFieldColors
 import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
-import com.fanjv.netproxy.core.ui.component.appBarOverscroll
+import com.fanjv.netproxy.core.ui.formatBytes
+import com.fanjv.netproxy.core.ui.resolve
 import com.fanjv.netproxy.feature.catalog.model.CatalogGroupSummary
-import com.fanjv.netproxy.feature.catalog.model.CatalogNode
-import com.fanjv.netproxy.feature.catalog.model.SubscriptionHistoryEntry
 import com.fanjv.netproxy.feature.catalog.presentation.nodes.CatalogNodesViewModel
 import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.Route
 import top.yukonga.miuix.kmp.basic.BasicComponent
-import com.fanjv.netproxy.core.ui.component.AppContentCard
-import com.fanjv.netproxy.core.ui.component.AppOverlayList
-import com.fanjv.netproxy.core.ui.component.AppOverlayListDivider
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
-import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.basic.TextField
-import com.fanjv.netproxy.core.ui.component.AppTopAppBar as TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import com.fanjv.netproxy.core.ui.component.chromeIcon
+import top.yukonga.miuix.kmp.glass.GlassTextField
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.MoreCircle
 import top.yukonga.miuix.kmp.icon.extended.Refresh
-import com.fanjv.netproxy.core.ui.component.AppBottomSheet as OverlayBottomSheet
-import com.fanjv.netproxy.core.ui.component.AppDialog as OverlayDialog
-import com.fanjv.netproxy.core.ui.component.AppDropdown as OverlayDropdownPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
-import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
-import java.time.Instant
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import kotlin.math.roundToInt
 
 /** 资源页：本地节点与 URL 订阅。 */
 @Composable
@@ -460,642 +440,4 @@ private fun CatalogGroupCard(
             }
         }
     }
-}
-
-/** 订阅详情：展示节点摘要和最近更新历史。 */
-@Composable
-internal fun SubscriptionDetailsScreen(
-    id: String,
-    onBack: () -> Unit,
-    viewModel: SubscriptionDetailsViewModel = netProxyViewModel()
-) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
-    val navigator = LocalNavigator.current
-    val context = LocalContext.current
-    val snackbarHostState = rememberAppSnackbarHostState()
-    val backdrop = rememberBlurBackdrop()
-    val scrollBehavior = MiuixScrollBehavior()
-    val barColor = if (backdrop != null) Color.Transparent else colorScheme.surface
-    var showDelete by remember { mutableStateOf(false) }
-    var actionNode by remember { mutableStateOf<CatalogNode?>(null) }
-
-    LifecycleResumeEffect(id) {
-        viewModel.load(id)
-        onPauseOrDispose { }
-    }
-    LaunchedEffect(state.exportedNodeLinkId) {
-        val link = state.exportedNodeLink
-        if (link.isBlank()) return@LaunchedEffect
-        context.getSystemService(ClipboardManager::class.java)
-            ?.setPrimaryClip(ClipData.newPlainText("NetProxy node", link))
-        viewModel.nodeLinkCopied()
-    }
-    val noticeText = if (state.error !is UiText.Empty) state.error else state.notice
-    SnackbarNoticeEffect(
-        eventId = state.noticeId,
-        message = noticeText.resolve(),
-        isError = state.error !is UiText.Empty,
-        hostState = snackbarHostState,
-        onConsumed = viewModel::clearNotice
-    )
-
-    Scaffold(
-        snackbarHost = { AppSnackbarHost(snackbarHostState) },
-        topBar = {
-            BlurredBar(backdrop) {
-                TopAppBar(
-                    color = barColor,
-                    title = stringResource(
-                        if (state.details?.group?.type == "local") {
-                            R.string.local_config_details
-                        } else {
-                            R.string.subscription_details
-                        }
-                    ),
-                    scrollBehavior = scrollBehavior,
-                    navigationIcon = { BackIconButton(onClick = onBack) },
-                    actions = {
-                        if (state.details?.group?.type == "subscription") {
-                            AppBarButton(
-                                enabled = state.operation.isEmpty(),
-                                onClick = { viewModel.update(id) }
-                            ) {
-                                Icon(
-                                    chromeIcon(MiuixIcons.Refresh),
-                                    contentDescription = stringResource(R.string.common_update)
-                                )
-                            }
-                            AppBarButton(onClick = { navigator.push(Route.SubscriptionEdit(id)) }) {
-                                Icon(
-                                    chromeIcon(Icons.Rounded.Edit),
-                                    contentDescription = stringResource(R.string.common_edit)
-                                )
-                            }
-                        }
-                    }
-                )
-            }
-        },
-        contentWindowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Horizontal)
-    ) { innerPadding ->
-        val details = state.details
-        if (state.loading && details == null) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding), contentAlignment = Alignment.Center
-            ) {
-                InfiniteProgressIndicator()
-            }
-        } else if (details != null) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)
-                    .nestedScroll(scrollBehavior.nestedScrollConnection)
-                    .scrollEndHaptic()
-                    .overScrollVertical()
-                    .padding(horizontal = 12.dp),
-                contentPadding = PaddingValues(
-                    top = innerPadding.calculateTopPadding() + 12.dp,
-                    bottom = innerPadding.calculateBottomPadding() + 24.dp
-                ),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                overscrollEffect = null
-            ) {
-                item {
-                    SubscriptionSummaryCard(details.group)
-                }
-                item {
-                    SectionLabel(stringResource(R.string.subscription_nodes_section, details.nodes.size))
-                }
-                items(details.nodes, key = { it.tag }) { node ->
-                    AppContentCard(modifier = Modifier.fillMaxWidth()) {
-                        BasicComponent(
-                            title = node.tag,
-                            summary = "${node.protocol.uppercase()} · ${node.server}:${node.port}",
-                            onClick = { actionNode = node }
-                        )
-                    }
-                }
-                if (details.group.type == "subscription") {
-                    item { SectionLabel(stringResource(R.string.subscription_history_section)) }
-                    if (state.history.isEmpty()) {
-                        item {
-                            Text(
-                                text = stringResource(R.string.subscription_history_empty),
-                                color = colorScheme.onSurfaceVariantSummary,
-                                modifier = Modifier.padding(12.dp)
-                            )
-                        }
-                    } else {
-                        items(state.history.takeLast(20).reversed()) { history ->
-                            HistoryRow(history)
-                        }
-                    }
-                    item {
-                        TextButton(
-                            text = stringResource(R.string.common_delete),
-                            onClick = { showDelete = true },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    OverlayDialog(
-        show = showDelete,
-        title = stringResource(R.string.subscription_delete_title),
-        onDismissRequest = { showDelete = false }
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(stringResource(R.string.subscription_delete_details_message))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                AppDialogButton(
-                    text = stringResource(R.string.common_cancel),
-                    onClick = { showDelete = false },
-                    modifier = Modifier.weight(1f)
-                )
-                AppDialogButton(
-                    text = stringResource(R.string.common_delete),
-                    role = DialogActionRole.Destructive,
-                    onClick = {
-                        showDelete = false
-                        viewModel.remove(id, onBack)
-                    },
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-    }
-
-    val selectedNode = actionNode
-    OverlayBottomSheet(
-        show = selectedNode != null,
-        title = selectedNode?.tag.orEmpty(),
-        onDismissRequest = { actionNode = null }
-    ) {
-        if (selectedNode != null) {
-            AppOverlayList(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 8.dp)
-            ) {
-                BasicComponent(
-                    title = stringResource(R.string.node_edit),
-                    startAction = { OverlayActionIcon(Icons.Rounded.Edit) },
-                    onClick = {
-                        actionNode = null
-                        navigator.push(Route.NodeEdit(
-                            nodeRef = "$id/${selectedNode.tag}",
-                        ))
-                    }
-                )
-                AppOverlayListDivider()
-                BasicComponent(
-                    title = stringResource(R.string.node_export),
-                    startAction = { OverlayActionIcon(Icons.Rounded.Share) },
-                    onClick = {
-                        viewModel.exportNode(id, selectedNode.tag)
-                        actionNode = null
-                    }
-                )
-                AppOverlayListDivider()
-                BasicComponent(
-                    title = stringResource(R.string.node_delete),
-                    startAction = { OverlayActionIcon(MiuixIcons.Delete, destructive = true) },
-                    onClick = {
-                        viewModel.removeNode(id, selectedNode.tag)
-                        actionNode = null
-                    }
-                )
-            }
-        }
-    }
-
-    SubscriptionUpdateSheet(state.operation)
-}
-
-@Composable
-private fun OverlayActionIcon(imageVector: androidx.compose.ui.graphics.vector.ImageVector, destructive: Boolean = false) {
-    Icon(
-        imageVector = chromeIcon(imageVector),
-        modifier = Modifier.size(22.dp),
-        tint = if (destructive) colorScheme.error else colorScheme.onSurfaceVariantSummary,
-        contentDescription = null
-    )
-}
-
-/** 新增/编辑 URL 订阅。敏感字段只通过 root CLI 的私有契约读取。 */
-@Composable
-internal fun SubscriptionEditorScreen(
-    id: String,
-    onBack: () -> Unit,
-    viewModel: SubscriptionEditorViewModel = netProxyViewModel()
-) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
-    val draft = state.draft
-    val snackbarHostState = rememberAppSnackbarHostState()
-    val backdrop = rememberBlurBackdrop()
-    val scrollBehavior = MiuixScrollBehavior()
-    val barColor = if (backdrop != null) Color.Transparent else colorScheme.surface
-
-    LaunchedEffect(id) { viewModel.load(id) }
-    LaunchedEffect(state.saved) {
-        if (state.saved) onBack()
-    }
-    SnackbarNoticeEffect(
-        eventId = state.noticeId,
-        message = state.error.resolve(),
-        isError = state.error !is UiText.Empty,
-        hostState = snackbarHostState,
-        onConsumed = viewModel::clearError
-    )
-
-    Scaffold(
-        snackbarHost = { AppSnackbarHost(snackbarHostState) },
-        topBar = {
-            BlurredBar(backdrop) {
-                TopAppBar(
-                    color = barColor,
-                    title = stringResource(
-                        if (state.id.isBlank()) R.string.subscription_editor_add_title
-                        else R.string.subscription_editor_edit_title
-                    ),
-                    scrollBehavior = scrollBehavior,
-                    navigationIcon = { BackIconButton(onClick = onBack) },
-                    actions = {
-                        AppBarButton(
-                            enabled = !state.saving && !state.loading,
-                            onClick = viewModel::save
-                        ) {
-                            if (state.saving) {
-                                InfiniteProgressIndicator(modifier = Modifier.size(20.dp))
-                            } else {
-                                Icon(
-                                    chromeIcon(Icons.Rounded.Check),
-                                    contentDescription = stringResource(R.string.save_text)
-                                )
-                            }
-                        }
-                    }
-                )
-            }
-        },
-        contentWindowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Horizontal)
-    ) { innerPadding ->
-        if (state.loading) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding), contentAlignment = Alignment.Center
-            ) {
-                InfiniteProgressIndicator()
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)
-                    .nestedScroll(scrollBehavior.nestedScrollConnection)
-                    .scrollEndHaptic()
-                    .overScrollVertical()
-                    .padding(horizontal = 12.dp),
-                contentPadding = PaddingValues(
-                    top = innerPadding.calculateTopPadding() + 12.dp,
-                    bottom = innerPadding.calculateBottomPadding() + 24.dp
-                ),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                overscrollEffect = null
-            ) {
-                item { SectionLabel(stringResource(R.string.subscription_editor_basic_section)) }
-                item {
-                    TextField(
-                        value = draft.name,
-                        onValueChange = { value ->
-                            viewModel.update { it.copy(name = value) }
-                        },
-                        label = stringResource(
-                            if (state.id.isBlank()) R.string.subscription_editor_name_auto
-                            else R.string.subscription_editor_name
-                        ),
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-                }
-                item {
-                    TextField(
-                        value = draft.url,
-                        onValueChange = { value ->
-                            viewModel.update { it.copy(url = value) }
-                        },
-                        label = stringResource(R.string.subscription_editor_url),
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 2,
-                        maxLines = 4
-                    )
-                }
-                item {
-                    AppContentCard(modifier = Modifier.fillMaxWidth()) {
-                        val intervals = subscriptionIntervalOptions(draft.updateIntervalSeconds)
-                        val intervalLabels = listOf(
-                            stringResource(R.string.subscription_duration_minutes, 15),
-                            stringResource(R.string.subscription_duration_hours, 1),
-                            stringResource(R.string.subscription_duration_hours, 6),
-                            stringResource(R.string.subscription_duration_hours, 12),
-                            stringResource(R.string.subscription_duration_hours, 24),
-                            stringResource(R.string.subscription_duration_days, 3),
-                            stringResource(R.string.subscription_duration_days, 7)
-                        ) + if (intervals.size > 7) {
-                            listOf(stringResource(R.string.subscription_interval_custom_seconds, draft.updateIntervalSeconds))
-                        } else emptyList()
-                        OverlayDropdownPreference(
-                            title = stringResource(R.string.subscription_editor_update_interval),
-                            items = intervalLabels,
-                            selectedIndex = intervals.indexOf(draft.updateIntervalSeconds),
-                            onSelectedIndexChange = { index ->
-                                viewModel.update {
-                                    it.copy(updateIntervalSeconds = intervals[index])
-                                }
-                            }
-                        )
-                        SwitchPreference(
-                            title = stringResource(R.string.subscription_editor_auto_update),
-                            checked = draft.autoUpdate,
-                            onCheckedChange = { enabled ->
-                                viewModel.update { it.copy(autoUpdate = enabled) }
-                            }
-                        )
-                        val viaValues = listOf("auto", "always", "never")
-                        OverlayDropdownPreference(
-                            title = stringResource(R.string.subscription_editor_update_network),
-                            items = listOf(
-                                stringResource(R.string.subscription_editor_network_auto),
-                                stringResource(R.string.subscription_editor_network_proxy),
-                                stringResource(R.string.subscription_editor_network_direct)
-                            ),
-                            selectedIndex = viaValues.indexOf(draft.updateViaProxy)
-                                .coerceAtLeast(0),
-                            onSelectedIndexChange = { index ->
-                                viewModel.update {
-                                    it.copy(updateViaProxy = viaValues[index])
-                                }
-                            }
-                        )
-                    }
-                }
-                item { SectionLabel(stringResource(R.string.subscription_editor_filter_section)) }
-                item {
-                    TextField(
-                        value = draft.include,
-                        onValueChange = { value ->
-                            viewModel.update { it.copy(include = value) }
-                        },
-                        label = stringResource(R.string.subscription_editor_include),
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-                }
-                item {
-                    TextField(
-                        value = draft.exclude,
-                        onValueChange = { value ->
-                            viewModel.update { it.copy(exclude = value) }
-                        },
-                        label = stringResource(R.string.subscription_editor_exclude),
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-                }
-                item {
-                    AppContentCard(modifier = Modifier.fillMaxWidth()) {
-                        SwitchPreference(
-                            title = stringResource(R.string.subscription_editor_allow_insecure),
-                            summary = stringResource(R.string.subscription_editor_allow_insecure_summary),
-                            checked = draft.allowInsecure,
-                            onCheckedChange = { enabled ->
-                                viewModel.update { it.copy(allowInsecure = enabled) }
-                            }
-                        )
-                    }
-                }
-                item { SectionLabel(stringResource(R.string.subscription_editor_advanced_section)) }
-                item {
-                    TextField(
-                        value = draft.userAgent,
-                        onValueChange = { value ->
-                            viewModel.update { it.copy(userAgent = value) }
-                        },
-                        label = stringResource(R.string.subscription_editor_user_agent),
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-                }
-                item {
-                    TextField(
-                        value = draft.hwid,
-                        onValueChange = { value ->
-                            viewModel.update { it.copy(hwid = value) }
-                        },
-                        label = stringResource(R.string.subscription_editor_hwid),
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-                }
-                item {
-                    TextField(
-                        value = state.headersText,
-                        onValueChange = viewModel::updateHeaders,
-                        label = stringResource(R.string.subscription_editor_headers),
-                        modifier = Modifier.fillMaxWidth(),
-                        minLines = 3,
-                        maxLines = 8
-                    )
-                }
-                item {
-                    TextField(
-                        value = draft.timeoutSeconds.toString(),
-                        onValueChange = { value ->
-                            value.toIntOrNull()?.let { seconds ->
-                                viewModel.update { it.copy(timeoutSeconds = seconds) }
-                            }
-                        },
-                        label = stringResource(R.string.subscription_editor_timeout),
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SubscriptionSummaryCard(subscription: CatalogGroupSummary) {
-    val isSubscription = subscription.type == "subscription"
-    val status = subscriptionBadge(subscription)
-    AppContentCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = subscription.name,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (status != null) {
-                    val (background, foreground) = when (status) {
-                        SubscriptionUpdateStatus.Updating -> colorScheme.primaryContainer to colorScheme.onPrimaryContainer
-                        SubscriptionUpdateStatus.Failed, SubscriptionUpdateStatus.Expired ->
-                            colorScheme.errorContainer to colorScheme.onErrorContainer
-                        SubscriptionUpdateStatus.NeverUpdated -> colorScheme.secondaryContainer to colorScheme.onSecondaryContainer
-                    }
-                    StatusTag(stringResource(status.label), backgroundColor = background, contentColor = foreground)
-                }
-            }
-            Text(
-                text = when {
-                    isSubscription && subscription.autoUpdate -> stringResource(
-                        R.string.subscription_summary, subscription.nodeCount, formatDuration(subscription.updateInterval),
-                    )
-                    isSubscription -> stringResource(R.string.subscription_node_count, subscription.nodeCount)
-                    else -> stringResource(R.string.local_config_summary, subscription.nodeCount)
-                },
-                color = colorScheme.onSurfaceVariantSummary,
-                fontSize = 13.sp,
-            )
-            subscription.profileTitle.takeIf { it.isNotBlank() && it != subscription.name }?.let {
-                Text(it, color = colorScheme.onSurfaceVariantSummary, fontSize = 13.sp)
-            }
-        }
-    }
-}
-
-@Composable
-private fun HistoryRow(entry: SubscriptionHistoryEntry) {
-    val nodeCount = entry.nodeCount?.let {
-        stringResource(R.string.subscription_node_count, it)
-    }
-    val revision = entry.revision?.let {
-        stringResource(R.string.subscription_revision, it)
-    }
-    AppContentCard(modifier = Modifier.fillMaxWidth()) {
-        BasicComponent(
-            title = when {
-                !entry.ok -> stringResource(R.string.subscription_update_failed)
-                entry.code == "subscription.not_modified" ->
-                    stringResource(R.string.subscription_not_modified)
-                else -> stringResource(R.string.subscription_update_success)
-            },
-            summary = buildString {
-                append(formatDate(entry.time))
-                nodeCount?.let { append(" · ").append(it) }
-                revision?.let { append(" · ").append(it) }
-                if (!entry.ok) {
-                    entry.message.takeIf(String::isNotBlank)?.let {
-                        append(" · ").append(it)
-                    }
-                }
-            }
-        )
-    }
-}
-
-@Composable
-private fun SectionLabel(text: String) {
-    SmallTitle(
-        text = text,
-        insideMargin = PaddingValues(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 0.dp)
-    )
-}
-
-@Composable
-private fun SubscriptionUpdateSheet(operation: String) {
-    val updateAll = operation == "update-all"
-    OverlayBottomSheet(
-        show = operation == "update" || updateAll,
-        title = stringResource(
-            if (updateAll) R.string.subscription_update_all else R.string.common_update
-        ),
-        onDismissRequest = {}
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            InfiniteProgressIndicator(modifier = Modifier.size(28.dp))
-            Spacer(Modifier.width(16.dp))
-            Text(
-                text = if (updateAll) {
-                    stringResource(R.string.subscription_update_sheet_all)
-                } else {
-                    stringResource(R.string.subscription_update_sheet_single)
-                },
-                color = colorScheme.onSurface
-            )
-        }
-    }
-}
-
-internal enum class SubscriptionUpdateStatus(val label: Int) {
-    Updating(R.string.subscription_update_in_progress),
-    Failed(R.string.subscription_update_failed),
-    Expired(R.string.subscription_expired),
-    NeverUpdated(R.string.subscription_never_updated),
-}
-
-private val activeProgressStages = setOf("download", "convert", "validate", "apply")
-
-internal fun subscriptionBadge(
-    subscription: CatalogGroupSummary,
-    now: Long = Instant.now().epochSecond,
-): SubscriptionUpdateStatus? {
-    if (subscription.type != "subscription") return null
-    val expire = subscription.usage?.expire ?: 0L
-    return when {
-        subscription.progress?.stage?.let(activeProgressStages::contains) == true -> SubscriptionUpdateStatus.Updating
-        subscription.lastError.isNotBlank() -> SubscriptionUpdateStatus.Failed
-        expire > 0 && expire <= now -> SubscriptionUpdateStatus.Expired
-        subscription.lastSuccessAt.isBlank() -> SubscriptionUpdateStatus.NeverUpdated
-        else -> null
-    }
-}
-
-private fun formatDate(value: String): String = runCatching {
-    DateTimeFormatter.ofPattern("MM-dd HH:mm")
-        .withZone(ZoneId.systemDefault())
-        .format(Instant.parse(value))
-}.getOrDefault(value.ifBlank { "--" })
-
-@Composable
-private fun formatDuration(seconds: Long): String = when {
-    seconds % 86400L == 0L ->
-        stringResource(R.string.subscription_duration_days, seconds / 86400L)
-
-    seconds % 3600L == 0L ->
-        stringResource(R.string.subscription_duration_hours, seconds / 3600L)
-
-    else -> stringResource(R.string.subscription_duration_minutes, seconds / 60L)
-}
-
-private fun formatBytes(bytes: Long): String {
-    if (bytes < 1024L) return "$bytes B"
-    val units = arrayOf("KB", "MB", "GB", "TB")
-    var value = bytes.toDouble()
-    var index = -1
-    do {
-        value /= 1024.0
-        index++
-    } while (value >= 1024.0 && index < units.lastIndex)
-    return if (value >= 100) "${value.roundToInt()} ${units[index]}"
-    else "%.1f %s".format(value, units[index])
 }

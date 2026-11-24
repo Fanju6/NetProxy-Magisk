@@ -49,7 +49,7 @@ import com.fanjv.netproxy.core.ui.component.AppDropdown as OverlayDropdownPrefer
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
-import kotlin.math.roundToInt
+import com.fanjv.netproxy.core.ui.formatBytes
 
 /** 新仪表盘：完整就绪时间以模块状态机为准，运行数据来自本机控制接口。 */
 @Composable
@@ -277,16 +277,3 @@ private fun formatUptime(seconds: Long): String {
 }
 
 private fun formatRate(bytes: Long): String = "${formatBytes(bytes)}/s"
-
-private fun formatBytes(bytes: Long): String {
-    if (bytes < 1024) return "$bytes B"
-    val units = arrayOf("KB", "MB", "GB", "TB")
-    var value = bytes.toDouble()
-    var index = -1
-    do {
-        value /= 1024.0
-        index++
-    } while (value >= 1024.0 && index < units.lastIndex)
-    return if (value >= 100) "${value.roundToInt()} ${units[index]}"
-    else "%.1f %s".format(value, units[index])
-}
