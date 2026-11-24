@@ -41,7 +41,7 @@ func ResolveGroup(ctx context.Context, root, query string) (string, error) {
 		if !isGroupDir(entry) {
 			continue
 		}
-		metadata, err := loadMetadata(filepath.Join(root, entry.Name(), "meta.json"), entry.Name())
+		metadata, err := LoadMetadataLocked(filepath.Join(root, entry.Name(), "meta.json"), entry.Name())
 		if err != nil {
 			return "", fmt.Errorf("读取分组 %s 元数据: %w", entry.Name(), err)
 		}
@@ -172,19 +172,4 @@ func loadGroupProvider(ctx context.Context, root, groupID string) (provider.Docu
 		return provider.Document{}, errors.New("Catalog 分组参数无效")
 	}
 	return provider.LoadAllowEmpty(ctx, filepath.Join(root, groupID, "provider.json"))
-}
-
-// ProviderContainsTagDocument 判断已加载 Provider 是否包含标签。
-func ProviderContainsTagDocument(document provider.Document, tag string) bool {
-	for _, outbound := range document.Outbounds {
-		if outbound.Tag == tag {
-			return true
-		}
-	}
-	for _, endpoint := range document.Endpoints {
-		if endpoint.Tag == tag {
-			return true
-		}
-	}
-	return false
 }

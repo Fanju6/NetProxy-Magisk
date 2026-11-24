@@ -75,6 +75,8 @@ internal class PolicyViewModel(
     private var visible = false
     private var visibilityGeneration = 0L
     private var runtimeRevision = 0L
+    private var configuredEventRevision = ""
+    private var configuredRefreshPending = false
 
     fun setVisible(value: Boolean) {
         if (visible == value) return
@@ -92,6 +94,12 @@ internal class PolicyViewModel(
         changes = viewModelScope.launch {
             repository.changes().collect { result ->
                 val snapshot = result.getOrNull()
+                val revision = snapshot?.configRevision.orEmpty()
+                if (revision.isEmpty() || revision != configuredEventRevision || mutable.value.stale) {
+                    configuredEventRevision = revision
+                    configuredRefreshPending = true
+                    refresh()
+                }
                 if (snapshot != null && (snapshot.live || mutable.value.runtime?.live != true)) {
                     runtimeRevision++
                     applyRuntime(snapshot)
@@ -99,14 +107,13 @@ internal class PolicyViewModel(
                     mutable.update { it.copy(runtimeConfirmed = false) }
                     refreshRuntime()
                 }
-                // This topic also announces changes to persisted config and Catalog.
-                refresh()
             }
         }
     }
 
     fun refresh(showProgress: Boolean = false) {
         if (!visible || mutable.value.operating) return
+        configuredRefreshPending = false
         if (showProgress) refreshRuntime()
         read?.cancel()
         if (showProgress) mutable.update { it.copy(refreshing = true) }
@@ -270,7 +277,7 @@ internal class PolicyViewModel(
                 postNotice(error.toUiText(), isError = true)
             } finally {
                 mutable.update { it.copy(operating = false) }
-                refresh()
+                if (configuredRefreshPending || mutable.value.configured == null) refresh()
                 if (!mutable.value.runtimeConfirmed) refreshRuntime()
             }
         }

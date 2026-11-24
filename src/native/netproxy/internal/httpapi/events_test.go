@@ -258,6 +258,28 @@ func fixtureCoreFeed(t *testing.T, topics int) (*coreFeed, *eventSubscriber) {
 	return f, client
 }
 
+func TestConfiguredChangePublishesEvenWhenCoreMembersAreUnchanged(t *testing.T) {
+	f, client := fixtureCoreFeed(t, topicGroups)
+	f.groups = []serviceapi.Group{{Tag: "Proxy", Selected: "direct"}}
+	f.groupsReady = true
+	f.refresh(topicGroups)
+	first := <-client.messages
+	f.refresh(topicGroups)
+	if len(client.messages) != 0 {
+		t.Fatal("相同配置和核心数据重复发布")
+	}
+	f.invalidateConfiguredGroups()
+	f.refresh(topicGroups)
+	select {
+	case event := <-client.messages:
+		if !strings.Contains(string(event.content), f.configRevision) || strings.Contains(string(first.content), f.configRevision) {
+			t.Fatal("配置变更未产生新的事件标识")
+		}
+	default:
+		t.Fatal("未发布配置变更")
+	}
+}
+
 func TestCoreGroupsFixedWindowPublishesLatestWithoutRPC(t *testing.T) {
 	for _, topics := range []int{topicStatus, topicGroups, topicStatus | topicGroups} {
 		t.Run(fmt.Sprint(topics), func(t *testing.T) {

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/contract"
 	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
@@ -87,23 +88,30 @@ func eventProcessMatches(executable string, pid int64) bool {
 }
 
 type coreFeed struct {
-	h           *eventHub
-	messages    chan coreEvent
-	cancel      context.CancelFunc
-	done        chan struct{}
-	identity    int64
-	generation  uint64
-	saved       moduleapp.ServiceState
-	groups      []serviceapi.Group
-	groupsReady bool
-	status      service.Status
-	statusReady bool
-	groupTimer  *time.Timer
-	groupFlush  <-chan time.Time
+	h              *eventHub
+	messages       chan coreEvent
+	cancel         context.CancelFunc
+	done           chan struct{}
+	identity       int64
+	generation     uint64
+	saved          moduleapp.ServiceState
+	groups         []serviceapi.Group
+	groupsReady    bool
+	configRevision string
+	status         service.Status
+	statusReady    bool
+	groupTimer     *time.Timer
+	groupFlush     <-chan time.Time
 }
 
 func newCoreFeed(h *eventHub) *coreFeed {
-	return &coreFeed{h: h, messages: make(chan coreEvent, 8)}
+	f := &coreFeed{h: h, messages: make(chan coreEvent, 8)}
+	f.invalidateConfiguredGroups()
+	return f
+}
+
+func (f *coreFeed) invalidateConfiguredGroups() {
+	f.configRevision = uuid.NewV4().String()
 }
 
 func (f *coreFeed) stopStream() {
@@ -293,6 +301,7 @@ func (f *coreFeed) refresh(topics int) {
 				response, _ := contract.Failure(ctx, err)
 				f.h.emitAt(topicGroups, "groups", response, epoch)
 			} else {
+				snapshot.ConfigRevision = f.configRevision
 				f.h.emitAt(topicGroups, "groups", contract.Success("policy.groups", "策略组快照", snapshot), epoch)
 			}
 		}
@@ -316,7 +325,7 @@ func (f *coreFeed) publishGroups(epoch uint64) {
 	if groups == nil {
 		groups = []serviceapi.Group{}
 	}
-	snapshot := service.PolicySnapshot{Groups: groups, Live: true, CoreStartedAtMillis: f.identity}
+	snapshot := service.PolicySnapshot{Groups: groups, Live: true, CoreStartedAtMillis: f.identity, ConfigRevision: f.configRevision}
 	f.h.emitAt(topicGroups, "groups", contract.Success("policy.groups", "策略组快照", snapshot), epoch)
 }
 

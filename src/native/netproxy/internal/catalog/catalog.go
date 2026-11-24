@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 	"uuid"
@@ -68,6 +67,8 @@ type ScanOptions struct {
 	Type        string
 	WithNodes   bool
 	GroupID     string
+	// ProviderTags limits node reads by resource name; nil preserves the full scan.
+	ProviderTags map[string]bool
 }
 
 type RuntimeResult struct {
@@ -98,6 +99,9 @@ func Scan(ctx context.Context, options ScanOptions) ([]GroupSnapshot, error) {
 			continue
 		}
 		if options.GroupID != "" && group.ID != options.GroupID {
+			continue
+		}
+		if options.ProviderTags != nil && !options.ProviderTags[group.Metadata.Name] {
 			continue
 		}
 		if options.WithNodes {
@@ -132,7 +136,7 @@ func Schedule(ctx context.Context, root string, now int64) (ScheduleResult, erro
 		if !isGroupDir(entry) {
 			continue
 		}
-		metadata, err := loadMetadata(filepath.Join(root, entry.Name(), "meta.json"), entry.Name())
+		metadata, err := LoadMetadataLocked(filepath.Join(root, entry.Name(), "meta.json"), entry.Name())
 		if err != nil {
 			return ScheduleResult{}, fmt.Errorf("读取分组 %s 元数据: %w", entry.Name(), err)
 		}
@@ -163,7 +167,7 @@ func RuntimeTag(ctx context.Context, root, groupID string) (string, error) {
 		return "", err
 	}
 	defer release()
-	metadata, err := loadMetadata(filepath.Join(root, groupID, "meta.json"), groupID)
+	metadata, err := LoadMetadataLocked(filepath.Join(root, groupID, "meta.json"), groupID)
 	if err != nil {
 		return "", fmt.Errorf("读取分组 %s 元数据: %w", groupID, err)
 	}
@@ -185,7 +189,7 @@ func GroupIDs(ctx context.Context, root, groupType string) ([]string, error) {
 		if !isGroupDir(entry) {
 			continue
 		}
-		metadata, err := loadMetadata(filepath.Join(root, entry.Name(), "meta.json"), entry.Name())
+		metadata, err := LoadMetadataLocked(filepath.Join(root, entry.Name(), "meta.json"), entry.Name())
 		if err != nil {
 			return nil, fmt.Errorf("读取分组 %s 元数据: %w", entry.Name(), err)
 		}
@@ -272,7 +276,6 @@ type loadedGroup struct {
 	Metadata     Metadata
 	ProviderPath string
 	Nodes        []provider.NodeSummary
-	hasNodes     bool
 }
 
 func loadGroups(ctx context.Context, root string, includeEmpty bool) ([]*loadedGroup, error) {
@@ -289,7 +292,7 @@ func loadGroups(ctx context.Context, root string, includeEmpty bool) ([]*loadedG
 			continue
 		}
 		groupDir := filepath.Join(root, entry.Name())
-		metadata, err := loadMetadata(filepath.Join(groupDir, "meta.json"), entry.Name())
+		metadata, err := LoadMetadataLocked(filepath.Join(groupDir, "meta.json"), entry.Name())
 		if err != nil {
 			return nil, fmt.Errorf("读取分组 %s 元数据: %w", entry.Name(), err)
 		}
@@ -299,15 +302,9 @@ func loadGroups(ctx context.Context, root string, includeEmpty bool) ([]*loadedG
 		}
 		groups = append(groups, &loadedGroup{
 			ID: entry.Name(), Metadata: metadata, ProviderPath: providerPath,
-			hasNodes: metadata.NodeCount > 0,
 		})
 	}
-	sort.Slice(groups, func(i, j int) bool { return groups[i].ID < groups[j].ID })
 	return groups, nil
-}
-
-func loadMetadata(path, fallbackID string) (Metadata, error) {
-	return LoadMetadataLocked(path, fallbackID)
 }
 
 func summaryFor(group *loadedGroup, progressDir string) GroupSummary {

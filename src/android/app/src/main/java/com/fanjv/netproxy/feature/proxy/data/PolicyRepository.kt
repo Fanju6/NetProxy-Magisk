@@ -17,7 +17,8 @@ import kotlinx.serialization.json.put
 internal data class PolicySnapshot(
     val groups: List<PolicyGroup>,
     val live: Boolean,
-    @SerialName("core_started_at_millis") val coreIdentity: Long
+    @SerialName("core_started_at_millis") val coreIdentity: Long,
+    @SerialName("config_revision") val configRevision: String = "",
 )
 
 @Serializable

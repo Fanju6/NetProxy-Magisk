@@ -17,6 +17,7 @@ type PolicySnapshot struct {
 	Groups              []serviceapi.Group `json:"groups"`
 	Live                bool               `json:"live"`
 	CoreStartedAtMillis int64              `json:"core_started_at_millis"`
+	ConfigRevision      string             `json:"config_revision,omitzero"`
 }
 
 type PolicyTarget struct {
@@ -83,20 +84,47 @@ func ReadConfiguredPolicyGroups(ctx context.Context, options Options) (PolicySna
 	for _, item := range document.Providers {
 		nativeProviders = append(nativeProviders, item.Tag)
 	}
+	type definitionMembers struct {
+		Outbounds []string `json:"outbounds"`
+		Providers []string `json:"providers"`
+		UseAll    bool     `json:"use_all_providers"`
+		Default   string   `json:"default"`
+		Include   string   `json:"include"`
+		Exclude   string   `json:"exclude"`
+	}
+	groupConfigs := make([]definitionMembers, len(identities))
+	wanted := make(map[string]bool)
+	useAll := false
+	for index, item := range identities {
+		switch item.Type {
+		case "selector", "urltest", "loadbalance":
+		default:
+			continue
+		}
+		group := &groupConfigs[index]
+		if err := json.Unmarshal(document.Outbounds[index], group); err != nil {
+			return result, policyError("config_invalid", "无法读取原生策略组成员")
+		}
+		useAll = useAll || group.UseAll
+		for _, tag := range group.Providers {
+			wanted[tag] = true
+		}
+		for _, member := range group.Outbounds {
+			if tag, _, qualified := strings.Cut(member, "/"); qualified && types[member] == "" {
+				wanted[tag] = true
+			}
+		}
+	}
 	var available []catalog.GroupSnapshot
-	var providersByName map[string]*catalog.GroupSnapshot
-	var catalogLoaded bool
-	loadCatalog := func() error {
-		if catalogLoaded || options.CatalogRoot == "" {
-			return nil
+	providersByName := make(map[string]*catalog.GroupSnapshot)
+	if options.CatalogRoot != "" && (useAll || len(wanted) != 0) {
+		if useAll {
+			wanted = nil
 		}
-		catalogLoaded = true
-		var err error
-		available, err = catalog.Scan(ctx, catalog.ScanOptions{Root: options.CatalogRoot, WithNodes: true})
+		available, err = catalog.Scan(ctx, catalog.ScanOptions{Root: options.CatalogRoot, WithNodes: true, ProviderTags: wanted})
 		if err != nil && !os.IsNotExist(err) {
-			return policyError("config_invalid", "无法读取 Catalog 策略组成员")
+			return result, policyError("config_invalid", "无法读取 Catalog 策略组成员")
 		}
-		providersByName = make(map[string]*catalog.GroupSnapshot, len(available))
 		for i := range available {
 			entry := &available[i]
 			if len(entry.Nodes) == 0 {
@@ -109,7 +137,6 @@ func ReadConfiguredPolicyGroups(ctx context.Context, options Options) (PolicySna
 				providersByName[name] = entry
 			}
 		}
-		return nil
 	}
 	for index, item := range identities {
 		switch item.Type {
@@ -120,17 +147,7 @@ func ReadConfiguredPolicyGroups(ctx context.Context, options Options) (PolicySna
 		if item.Tag == "" {
 			return result, policyError("config_invalid", "策略组缺少标签")
 		}
-		var config struct {
-			Outbounds []string `json:"outbounds"`
-			Providers []string `json:"providers"`
-			UseAll    bool     `json:"use_all_providers"`
-			Default   string   `json:"default"`
-			Include   string   `json:"include"`
-			Exclude   string   `json:"exclude"`
-		}
-		if err := json.Unmarshal(document.Outbounds[index], &config); err != nil {
-			return result, policyError("config_invalid", "无法读取原生策略组成员")
-		}
+		config := groupConfigs[index]
 		group := serviceapi.Group{Tag: item.Tag, Type: item.Type, Items: []serviceapi.GroupItem{}}
 		if item.Type == "selector" {
 			group.ConfiguredDefault = config.Default
@@ -145,9 +162,6 @@ func ReadConfiguredPolicyGroups(ctx context.Context, options Options) (PolicySna
 		for _, member := range config.Outbounds {
 			protocol, name := types[member], ""
 			if providerTag, nodeTag, qualified := strings.Cut(member, "/"); qualified && protocol == "" {
-				if err := loadCatalog(); err != nil {
-					return result, err
-				}
 				if entry := providersByName[providerTag]; entry != nil && !slices.Contains(nativeProviders, providerTag) {
 					for _, node := range entry.Nodes {
 						if node.Tag == nodeTag {
@@ -158,11 +172,6 @@ func ReadConfiguredPolicyGroups(ctx context.Context, options Options) (PolicySna
 				}
 			}
 			add(member, protocol, name)
-		}
-		if config.UseAll || len(config.Providers) != 0 {
-			if err := loadCatalog(); err != nil {
-				return result, err
-			}
 		}
 		references := config.Providers
 		if config.UseAll {

@@ -236,6 +236,14 @@ func BenchmarkScanSummary(b *testing.B) {
 			}
 		}
 	})
+	b.Run("one-provider", func(b *testing.B) {
+		options := ScanOptions{Root: root, WithNodes: true, ProviderTags: map[string]bool{"group-00": true}}
+		for range b.N {
+			if _, err := Scan(context.Background(), options); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
 
 func TestTargetedScanDoesNotParseOtherProviders(t *testing.T) {
@@ -246,12 +254,17 @@ func TestTargetedScanDoesNotParseOtherProviders(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	groups, err := Scan(context.Background(), ScanOptions{Root: root, GroupID: "default", WithNodes: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(groups) != 1 || len(groups[0].Nodes) != 1 || groups[0].Nodes[0].Tag != "LOCAL" {
-		t.Fatalf("unexpected targeted scan: %#v", groups)
+	for _, options := range []ScanOptions{
+		{Root: root, GroupID: "default", WithNodes: true},
+		{Root: root, ProviderTags: map[string]bool{"本地配置": true}, WithNodes: true},
+	} {
+		groups, err := Scan(context.Background(), options)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(groups) != 1 || len(groups[0].Nodes) != 1 || groups[0].Nodes[0].Tag != "LOCAL" {
+			t.Fatalf("unexpected targeted scan: %#v", groups)
+		}
 	}
 }
 

@@ -355,6 +355,9 @@ func (h *eventHub) runEvents(watcher *fsnotify.Watcher) error {
 			}
 			topics := dirty
 			dirty, flush = 0, nil
+			if topics&topicGroups != 0 {
+				feed.invalidateConfiguredGroups()
+			}
 			if feed.sync() {
 				topics |= topicStatus | topicGroups
 			}

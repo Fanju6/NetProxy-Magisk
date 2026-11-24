@@ -21,6 +21,7 @@ import com.fanjv.netproxy.feature.proxy.presentation.displayMembers
 import com.fanjv.netproxy.feature.proxy.presentation.displayName
 import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -37,6 +38,49 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PolicyViewModelTest {
+    @Test fun runtimeChangesOnlyReadConfigurationWhenRevisionChanges() = runBlocking {
+        val scope = CoroutineScope(coroutineContext + SupervisorJob(coroutineContext.job))
+        val updates = Channel<ModuleEvent>(Channel.UNLIMITED)
+        val reads = Channel<Unit>(Channel.UNLIMITED)
+        val currentConfig = AtomicReference(snapshot(live = false))
+        val transport = object : TestApiTransport() {
+            override suspend fun respond(request: ApiTestRequest): ModuleHttpResponse {
+                if (request.query["source"] != "config") return apiSuccess(snapshot())
+                val config = currentConfig.get()
+                reads.send(Unit)
+                return apiSuccess(config)
+            }
+
+            override suspend fun watch(topics: Set<String>, consume: suspend (ModuleEvent) -> Unit) {
+                for (event in updates) consume(event)
+            }
+        }
+        val vm = PolicyViewModel(PolicyRepository(ModuleApiClient(transport, scope)), scope)
+        suspend fun publish(revision: String, selected: String) {
+            val payload = snapshot(selected = selected).replaceFirst("{", "{\"config_revision\":\"$revision\",")
+            updates.send(ModuleEvent("groups", apiSuccess(payload).content))
+        }
+        try {
+            vm.setVisible(true)
+            withTimeout(5_000) { reads.receive() }
+            publish("config-a", "direct")
+            withTimeout(5_000) { reads.receive() }
+            publish("config-a", "Example/日本")
+            withTimeout(5_000) { vm.state.first { it.snapshot?.groups?.first()?.selected == "Example/日本" } }
+            assertTrue(reads.tryReceive().isFailure)
+
+            currentConfig.set(snapshot(live = false, selected = "Example/日本"))
+            publish("config-b", "Example/日本")
+            withTimeout(5_000) {
+                reads.receive()
+                val updated = vm.state.first { it.configured?.groups?.first()?.configuredDefault == "Example/日本" }
+                assertEquals("Example/日本", updated.configured?.groups?.first()?.configuredDefault)
+            }
+        } finally {
+            scope.cancel()
+        }
+    }
+
     @Test fun mainSessionKeepsSelectionCurrentWithoutProxyScreenCollector() = runBlocking {
         val scope = CoroutineScope(coroutineContext + SupervisorJob(coroutineContext.job))
         val updates = Channel<ModuleEvent>(Channel.UNLIMITED)
