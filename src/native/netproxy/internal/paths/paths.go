@@ -59,6 +59,8 @@ func (l Layout) ModuleConfig() string { return filepath.Join(l.Config(), "module
 
 func (l Layout) APIConfig() string { return filepath.Join(l.Config(), "api.json") }
 
+func (l Layout) TrafficRules() string { return filepath.Join(l.Config(), "traffic-rules.json") }
+
 func (l Layout) APITempDir() string { return filepath.Join(l.DevRoot(), "http") }
 
 func (l Layout) AndroidPlatformDEX() string { return filepath.Join(l.Bin(), "android-platform.dex") }

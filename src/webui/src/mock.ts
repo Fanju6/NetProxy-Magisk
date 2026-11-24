@@ -146,11 +146,17 @@ function execute(args: string[]): CtlResult<unknown> {
   const action = clean[1]
 
   if (command === 'api') {
+    if (action === 'traffic') {
+      if (clean[2] === 'status') return response('traffic.status', '抓包状态', { running: false, count: 0 })
+      if (clean[2] === 'list') return response('traffic.list', '抓包记录', [])
+      if (clean[2] === 'rules') return response('traffic.rules', '重写规则', { rules: [] })
+      return failure('traffic.preview_unavailable', '开发预览不会启动抓包代理或修改规则')
+    }
     if (action === 'access') return failure('api.preview_unavailable', '开发预览不提供真实连接凭据')
     if (action === 'init') return response('api.initialized', '管理接口凭据已初始化', { listen: '127.0.0.1:9091' })
     if (action === 'start') return failure('api.preview_unavailable', '开发预览不会启动 HTTP 管理服务')
     if (action === 'status') return response('api.status', '模块管理接口状态', { state: 'unavailable', listen: '127.0.0.1:9091' })
-    return failure('usage.invalid', '用法: api init|start|status|access')
+    return failure('usage.invalid', '用法: api init|start|status|access|traffic')
   }
 
   if (command === 'service') {

@@ -50,6 +50,8 @@ su -c '/data/adb/modules/netproxy/netproxyctl api access'
 
 接口、鉴权与请求格式见 [HTTP API](/config/http-api)。
 
+`api traffic` 在同一 Worker 内管理本机调试代理和 JavaScript 重写规则，参见[抓包与脚本重写](/guide/traffic-debugging)。
+
 ## 服务与模式
 
 ```sh

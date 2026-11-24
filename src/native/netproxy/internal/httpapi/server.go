@@ -30,6 +30,7 @@ import (
 	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/traffic"
 )
 
 const (
@@ -58,6 +59,7 @@ type Server struct {
 	provisionMu      sync.Mutex
 	provisionAfter   time.Time
 	provisionBackoff time.Duration
+	traffic          *traffic.Controller
 }
 
 func New(options moduleapp.Options, config apiconfig.Config) (*Server, error) {
@@ -73,10 +75,13 @@ func New(options moduleapp.Options, config apiconfig.Config) (*Server, error) {
 		platform: androidplatform.Client{DEX: paths.New(options.ModuleDir).AndroidPlatformDEX()}, appSlots: make(chan struct{}, 1)}
 	s.lifetime, s.stopEvents = context.WithCancel(context.Background())
 	s.options.TransferContext = s.lifetime
-	s.version, s.versionCode = readModuleVersion(paths.New(options.ModuleDir).ModuleProp())
+	layout := paths.New(options.ModuleDir)
+	s.version, s.versionCode = readModuleVersion(layout.ModuleProp())
+	s.traffic = traffic.New(layout.TrafficRules())
 	s.route("GET /api/v1/info", 5*time.Second, false, s.info)
 	s.registerResources()
 	s.registerAndroid()
+	s.registerTraffic()
 	s.mux.HandleFunc("GET /api/v1/events", s.streamEvents)
 	s.mux.HandleFunc("GET /api/v1/diagnostics/export", s.exportDiagnostics)
 	s.mux.HandleFunc("/", s.unmatched)
@@ -141,6 +146,7 @@ func (s *Server) serveListener(ctx context.Context, listener net.Listener) error
 		serveErr = <-done
 	}
 	s.inFlight.Wait()
+	s.traffic.Stop()
 	s.eventMu.Lock()
 	hub := s.events
 	s.eventMu.Unlock()

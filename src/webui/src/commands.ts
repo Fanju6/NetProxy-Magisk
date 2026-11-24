@@ -7,13 +7,21 @@ interface CommandSpec {
 export const COMMANDS = {
   api: {
     overview: 'api <命令>      模块 HTTP 管理接口',
-    actions: ['init', 'start', 'status', 'access'],
+    actions: ['init', 'start', 'status', 'access', 'traffic'],
     help: `api - 模块 HTTP 管理接口
 
   api init      初始化独立随机凭据，不覆盖已有配置
   api start     启动或恢复后台管理接口
   api status    查看实际接口就绪状态
   api access    读取地址与凭据，仅供 Root 客户端连接
+
+  api traffic start | stop                 启停本机抓包代理
+  api traffic status | list | clear         查看状态、查看或清空抓包记录
+  api traffic access                        查看本次代理的专用凭据
+  api traffic rules                         查看 JavaScript 重写规则
+  api traffic set-rules <文件>               应用设备上的 JSON 规则文件
+
+仅记录显式连接到抓包代理的流量。HTTPS 只记录 CONNECT，不解密、不重写。
 
 接口默认仅监听 127.0.0.1:9091，关闭 sing-box 不关闭管理接口。
 凭据不可分享或粘贴到公共聊天中。
@@ -192,6 +200,7 @@ const CONFIG_TARGETS = [
 ]
 
 export const VALUE_COMPLETIONS: Record<string, string[]> = {
+  'api traffic': ['status', 'start', 'stop', 'access', 'list', 'clear', 'rules', 'set-rules'],
   'app mode': ['blacklist', 'whitelist'],
   'ebpf status': ['configured', 'all', 'local', 'shared', '--raw'],
   'logs show': ['service', 'core'],
