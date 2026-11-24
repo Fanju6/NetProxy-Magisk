@@ -14,7 +14,7 @@ navigationevent = "1.2.0"
 composeBom = "2026.09.00"
 
 # Third-party
-miuix = "0.9.5-beta03"
+miuix = "0.9.5-beta04"
 junit = "4.13.2"
 coroutinesTest = "1.9.0"
 okhttp = "5.5.1"

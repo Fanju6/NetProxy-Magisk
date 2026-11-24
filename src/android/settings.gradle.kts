@@ -37,7 +37,7 @@ file("local.properties").takeIf(File::isFile)?.copyTo(
 includeBuild(scriptaDirectory)
 
 // Use the same pinned upstream source for local, CI and release Glass builds.
-val miuixRevision = "3526cfe2ca0779c5a2eab99af8737a96c9a8a885"
+val miuixRevision = "03d15786e685f4921fd5638ac56a0802cd27bb5c"
 val miuixOverride = providers.gradleProperty("netproxyMiuixSource").orNull
 val miuixDirectory = file(miuixOverride ?: ".gradle/miuix/$miuixRevision")
 fun miuixGit(vararg args: String) = providers.exec {
