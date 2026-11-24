@@ -14,6 +14,25 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 )
 
+func TestInvalidRecordedStateIsNotReportedAsStopped(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	options := Options{StateFile: path, SingBoxConfig: modeConfigFixture(t, t.TempDir(), "Rule")}
+	if state, err := ReadStatus(t.Context(), options); err != nil || state.State != "stopped" {
+		t.Fatalf("missing state: %+v %v", state, err)
+	}
+	for _, content := range []string{"{", `{"state":"unknown"}`, `{"state":"ready","pid":-1}`} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ReadStatus(t.Context(), options); err == nil {
+			t.Fatal("invalid state returned a status")
+		}
+		if _, err := ReadPolicyGroups(t.Context(), options); err == nil {
+			t.Fatal("invalid state returned a runtime or offline snapshot")
+		}
+	}
+}
+
 func TestPolicyOperationsDoNotReplayUnconfirmedWrites(t *testing.T) {
 	const identity = 1700000000123
 	path := filepath.Join(t.TempDir(), "state.json")

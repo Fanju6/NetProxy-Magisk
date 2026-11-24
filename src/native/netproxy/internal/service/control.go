@@ -11,8 +11,6 @@ import (
 	"sync"
 	"time"
 
-	json "encoding/json/v2"
-
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	moduleconfig "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/config"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/inbound"
@@ -84,20 +82,13 @@ type ModeState struct {
 	Available   []string `json:"available"`
 }
 
-type stateFile struct {
-	State               string `json:"state"`
-	PID                 int    `json:"pid"`
-	StartedAt           int64  `json:"started_at"`
-	ReadyAt             int64  `json:"ready_at"`
-	Error               string `json:"error"`
-	ActiveBackend       string `json:"active_backend"`
-	CoreStartedAtMillis int64  `json:"core_started_at_millis"`
-}
-
 // ReadStatus 读取模块状态并在服务就绪时合并 Service API 快照。
 func ReadStatus(ctx context.Context, options Options) (Status, error) {
 	options = normalizeOptions(options)
-	state := readState(options.StateFile)
+	state, err := ReadRecordedState(options.StateFile)
+	if err != nil {
+		return Status{}, err
+	}
 	modes, err := moduleconfig.LoadModes(options.SingBoxConfig)
 	if err != nil {
 		return Status{}, err
@@ -121,7 +112,7 @@ func ReadStatus(ctx context.Context, options Options) (Status, error) {
 		status.ConfiguredBackend = config.Backend
 	}
 
-	pid := serviceFindProcess(options.SingBoxPath, state.PID)
+	pid := serviceFindProcess(options.SingBoxPath, int(state.PID))
 	if pid <= 0 {
 		status.PID = nil
 		if (state.State == "preparing" && state.PID > 0) || state.State == "starting" || state.State == "ready" || state.State == "stopping" {
@@ -132,7 +123,7 @@ func ReadStatus(ctx context.Context, options Options) (Status, error) {
 		}
 	} else {
 		status.PID = &pid
-		if status.State == "stopped" || state.PID != pid {
+		if status.State == "stopped" || state.PID != int64(pid) {
 			status.State = "starting"
 		}
 	}
@@ -275,21 +266,6 @@ func newClient(ctx context.Context, options Options) (*serviceapi.Client, contex
 	return client, requestContext, cancel, nil
 }
 
-func readState(path string) stateFile {
-	state := stateFile{State: "stopped"}
-	if path == "" {
-		return state
-	}
-	content, err := os.ReadFile(path)
-	if err != nil || json.Unmarshal(content, &state) != nil {
-		return stateFile{State: "stopped"}
-	}
-	if state.State == "" {
-		state.State = "stopped"
-	}
-	return state
-}
-
 func readRuntimeMode(ctx context.Context, options Options) (string, error) {
 	options.RequestTimeout = 500 * time.Millisecond
 	client, requestContext, cancel, err := newClient(ctx, options)
@@ -308,7 +284,7 @@ func readRuntimeMode(ctx context.Context, options Options) (string, error) {
 	return mode.Current, nil
 }
 
-func mergeRuntimeStatus(ctx context.Context, options Options, status *Status, state stateFile) {
+func mergeRuntimeStatus(ctx context.Context, options Options, status *Status, state RecordedState) {
 	status.OutboundMode = unknownOutboundMode
 	client, requestContext, cancel, err := newClient(ctx, options)
 	if err != nil {
@@ -325,7 +301,7 @@ func mergeRuntimeStatus(ctx context.Context, options Options, status *Status, st
 		started     serviceapi.StartedAt
 		identityErr error
 	)
-	confirmedIdentity := status.PID != nil && state.PID == *status.PID && state.CoreStartedAtMillis > 0 && (state.ActiveBackend == "ebpf" || state.ActiveBackend == "tun")
+	confirmedIdentity := status.PID != nil && state.PID == int64(*status.PID) && state.CoreStartedAtMillis > 0 && (state.ActiveBackend == "ebpf" || state.ActiveBackend == "tun")
 	if confirmedIdentity {
 		waitGroup.Go(func() { started, identityErr = client.StartedAt(requestContext) })
 	}

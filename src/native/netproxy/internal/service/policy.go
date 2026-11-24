@@ -26,7 +26,10 @@ type PolicyTarget struct {
 
 func ReadPolicyGroups(ctx context.Context, options Options) (PolicySnapshot, error) {
 	options = normalizeOptions(options)
-	state := readState(options.StateFile)
+	state, err := ReadRecordedState(options.StateFile)
+	if err != nil {
+		return PolicySnapshot{}, err
+	}
 	if state.State != "ready" {
 		return ReadConfiguredPolicyGroups(ctx, options)
 	}
@@ -217,11 +220,14 @@ func operatePolicyGroup(ctx context.Context, options Options, target PolicyTarge
 		return PolicySnapshot{}, policyError("invalid", "必须提供策略组标签及核心实例标识")
 	}
 	options = normalizeOptions(options)
-	state := readState(options.StateFile)
+	state, err := ReadRecordedState(options.StateFile)
+	if err != nil {
+		return PolicySnapshot{}, err
+	}
 	if state.State != "ready" || state.CoreStartedAtMillis != target.CoreStartedAtMillis {
 		return PolicySnapshot{}, policyError("core_changed", "核心尚未就绪或已变化，请刷新后再试")
 	}
-	return withPolicyCore(ctx, options, state, func(ctx context.Context, options Options, state stateFile, client *serviceapi.Client) (PolicySnapshot, error) {
+	return withPolicyCore(ctx, options, state, func(ctx context.Context, options Options, state RecordedState, client *serviceapi.Client) (PolicySnapshot, error) {
 		current, err := readLivePolicy(ctx, options, state, client)
 		if err != nil {
 			return PolicySnapshot{}, err
@@ -263,7 +269,7 @@ func operatePolicyGroup(ctx context.Context, options Options, target PolicyTarge
 	})
 }
 
-func withPolicyCore(ctx context.Context, options Options, state stateFile, operation func(context.Context, Options, stateFile, *serviceapi.Client) (PolicySnapshot, error)) (PolicySnapshot, error) {
+func withPolicyCore(ctx context.Context, options Options, state RecordedState, operation func(context.Context, Options, RecordedState, *serviceapi.Client) (PolicySnapshot, error)) (PolicySnapshot, error) {
 	client, ctx, cancel, err := newClient(ctx, options)
 	if err != nil {
 		return PolicySnapshot{}, policyError("api_failed", "核心策略组接口不可用")
@@ -276,7 +282,7 @@ func withPolicyCore(ctx context.Context, options Options, state stateFile, opera
 	return operation(ctx, options, state, client)
 }
 
-func readLivePolicy(ctx context.Context, options Options, state stateFile, client *serviceapi.Client) (PolicySnapshot, error) {
+func readLivePolicy(ctx context.Context, options Options, state RecordedState, client *serviceapi.Client) (PolicySnapshot, error) {
 	groups, err := client.Groups(ctx)
 	if err != nil {
 		return PolicySnapshot{}, policyError("api_failed", "无法读取核心策略组快照")
@@ -295,12 +301,12 @@ func readLivePolicy(ctx context.Context, options Options, state stateFile, clien
 	return PolicySnapshot{Groups: groups, Live: true, CoreStartedAtMillis: state.CoreStartedAtMillis}, nil
 }
 
-func confirmPolicyCore(ctx context.Context, options Options, state stateFile, client *serviceapi.Client) error {
+func confirmPolicyCore(ctx context.Context, options Options, state RecordedState, client *serviceapi.Client) error {
 	current := func() bool {
-		value := readState(options.StateFile)
-		return value.State == "ready" && value.PID == state.PID && value.CoreStartedAtMillis == state.CoreStartedAtMillis
+		value, err := ReadRecordedState(options.StateFile)
+		return err == nil && value.State == "ready" && value.PID == state.PID && value.CoreStartedAtMillis == state.CoreStartedAtMillis
 	}
-	if state.PID <= 0 || state.CoreStartedAtMillis <= 0 || !current() || serviceFindProcess(options.SingBoxPath, state.PID) != state.PID {
+	if state.PID <= 0 || state.CoreStartedAtMillis <= 0 || !current() || serviceFindProcess(options.SingBoxPath, int(state.PID)) != int(state.PID) {
 		return policyError("core_changed", "核心尚未就绪或已变化，请刷新后再试")
 	}
 	started, err := client.StartedAt(ctx)
