@@ -165,7 +165,7 @@ test('mock 同步单文件模板、分区与真实后端状态边界', () => {
   const run = (...args) => decodeCtlResult(mockCtl(args))
   const defaults = JSON.parse(readFileSync(new URL('../../module/config/inbound/inbound.json', import.meta.url)))
   run('service', 'stop')
-  assert.equal(run('service', 'status').data.configured_backend, 'ebpf')
+  assert.equal(run('service', 'status').data.configured_backend, defaults.backend)
   assert.equal(run('service', 'status').data.active_backend, null)
   assert.deepEqual(JSON.parse(run('config', 'read', 'inbound').data.content), defaults)
   assert.deepEqual(run('config', 'list').data.filter(item => item.category === 'inbound').map(item => item.id), [
@@ -183,12 +183,16 @@ test('mock 同步单文件模板、分区与真实后端状态边界', () => {
   assert.equal(run('ebpf', 'status').ok, true)
   assert.equal(run('config', 'read', 'runtime/config.json').ok, false)
   run('service', 'start')
-  assert.equal(run('service', 'status').data.active_backend, 'ebpf')
+  assert.equal(run('service', 'status').data.active_backend, defaults.backend)
   assert.equal(run('service', 'status').data.pid, 4242)
   const runtime = JSON.parse(run('config', 'read', 'runtime/config.json').data.content)
   assert.equal(runtime.inbounds.length, 1)
   assert.equal(runtime.inbounds[0].tag, 'netproxy-in')
-  assert.deepEqual(runtime.inbounds[0].shared, { enabled: false })
+  assert.deepEqual(runtime.inbounds[0], defaults.backend === 'tun' ? defaults.tun : {
+    ...defaults.ebpf,
+    local: defaults.ebpf.local.enabled ? defaults.ebpf.local : { enabled: false },
+    shared: defaults.ebpf.shared.enabled ? defaults.ebpf.shared : { enabled: false },
+  })
   assert.deepEqual(run('config', 'list').data.filter(item => item.category === 'runtime').map(item => [item.id, item.editable]), [
     ['runtime/config.json', false],
   ])

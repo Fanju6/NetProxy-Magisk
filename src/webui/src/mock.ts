@@ -1,5 +1,6 @@
 import { CONTRACT_SCHEMA, type CtlResult, type ExecResult, type InboundBackend, type ServiceBackendStatus } from './contract.ts'
 import { COMMANDS } from './commands.ts'
+import inboundDefaults from '../../module/config/inbound/inbound.json' with { type: 'json' }
 
 const GROUP_DEFAULTS = {
   auto_update: false,
@@ -32,27 +33,7 @@ const MODULE_CONFIG = {
   wifi: { enabled: false, mode: 'blacklist', blacklist: [] as string[], whitelist: [] as string[], proxy_on_non_wifi: true },
 }
 
-const INBOUND_CONFIG = {
-  backend: 'ebpf' as InboundBackend,
-  root_policy: 'include',
-  app: { enabled: false, mode: 'blacklist', proxy_apps: [] as string[], bypass_apps: [] as string[] },
-  ebpf: {
-    type: 'ebpf', tag: 'netproxy-in', network: ['tcp', 'udp'], udp_timeout: '5m', tc_priority: 1,
-    local: {
-      enabled: true, data_plane: 'socket_assign', dns_mode: 'respect_policy', ipv6: true,
-      bypass_private_address: true, bypass_rule_set: ['geoip/cn'],
-    },
-    shared: {
-      enabled: false, data_plane: 'socket_assign', dns_mode: 'hijack', interface: ['wlan2'],
-      ipv6: true, bypass_private_address: true, bypass_rule_set: ['geoip/cn'],
-    },
-  },
-  tun: {
-    type: 'tun', tag: 'netproxy-in', interface_name: 'netproxy',
-    address: ['172.19.0.1/30', 'fdfe:dcba:9876::1/126'],
-    auto_route: true, auto_redirect: true, dns_mode: 'hijack',
-  },
-}
+const INBOUND_CONFIG = { ...inboundDefaults, backend: inboundDefaults.backend as InboundBackend }
 
 const STATIC_CONFIG: Record<string, unknown> = {
   log: { level: 'info' },
@@ -278,7 +259,14 @@ function execute(args: string[]): CtlResult<unknown> {
     else if (document.category === 'module') content = { [document.filename]: MODULE_CONFIG[document.filename as keyof typeof MODULE_CONFIG] }
     else if (document.id === 'inbound') content = INBOUND_CONFIG
     else if (document.category === 'inbound') content = { [document.filename]: INBOUND_CONFIG[document.filename as keyof typeof INBOUND_CONFIG] }
-    else if (document.id === 'runtime/config.json') content = { ...STATIC_CONFIG, inbounds: [{ ...INBOUND_CONFIG.ebpf, shared: { enabled: false } }] }
+    else if (document.id === 'runtime/config.json') content = {
+      ...STATIC_CONFIG,
+      inbounds: [INBOUND_CONFIG.backend === 'tun' ? INBOUND_CONFIG.tun : {
+        ...INBOUND_CONFIG.ebpf,
+        local: INBOUND_CONFIG.ebpf.local.enabled ? INBOUND_CONFIG.ebpf.local : { enabled: false },
+        shared: INBOUND_CONFIG.ebpf.shared.enabled ? INBOUND_CONFIG.ebpf.shared : { enabled: false },
+      }],
+    }
     else if (document.id === 'singbox/config.json') content = STATIC_CONFIG
     else if (Object.prototype.hasOwnProperty.call(STATIC_CONFIG, document.filename)) content = { [document.filename]: STATIC_CONFIG[document.filename] }
     return response('config.read', '配置内容', {
