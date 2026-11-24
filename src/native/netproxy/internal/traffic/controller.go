@@ -2,6 +2,7 @@ package traffic
 
 import (
 	"context"
+	"crypto/x509"
 	json "encoding/json/v2"
 	"errors"
 	"io"
@@ -24,6 +25,7 @@ type Entry struct {
 	Outbound   string    `json:"outbound"`
 	Status     int       `json:"status"`
 	Rewrite    string    `json:"rewrite,omitempty"`
+	TLS        string    `json:"tls,omitempty"`
 	DurationMS int64     `json:"duration_ms"`
 }
 
@@ -33,13 +35,15 @@ type Status struct {
 }
 
 type Controller struct {
-	mu      sync.Mutex
-	layout  paths.Layout
-	rules   []compiledRule
-	session *session
-	entries [maxEntries]Entry
-	count   int
-	next    int
+	mu            sync.Mutex
+	layout        paths.Layout
+	rules         []compiledRule
+	session       *session
+	entries       [maxEntries]Entry
+	count         int
+	next          int
+	mitm          *mitmState
+	upstreamRoots *x509.CertPool
 }
 
 func New(layout paths.Layout) *Controller {
@@ -146,6 +150,17 @@ func (c *Controller) Start() error {
 	if err := c.loadRules(); err != nil {
 		return err
 	}
+	policy, err := loadPolicy(c.layout)
+	if err != nil {
+		return err
+	}
+	var ca *authority
+	if policy.Enabled {
+		ca, err = loadCA(c.layout.TrafficCA())
+		if err != nil {
+			return errors.New("无法加载 HTTPS 抓包 CA")
+		}
+	}
 	path := c.layout.TrafficSocket()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
@@ -172,6 +187,7 @@ func (c *Controller) Start() error {
 		slots: make(chan struct{}, 32), scriptSlots: make(chan struct{}, 4),
 	}
 	c.clearLocked()
+	c.replaceMITM(ca, policy)
 	c.session = s
 	go func() {
 		s.serve()
@@ -179,6 +195,7 @@ func (c *Controller) Start() error {
 		c.mu.Lock()
 		if c.session == s {
 			c.session = nil
+			c.replaceMITM(nil, MITMPolicy{})
 		}
 		c.mu.Unlock()
 	}()
@@ -189,6 +206,7 @@ func (c *Controller) Stop() {
 	c.mu.Lock()
 	s := c.session
 	c.session = nil
+	c.replaceMITM(nil, MITMPolicy{})
 	if s != nil {
 		s.close()
 	}

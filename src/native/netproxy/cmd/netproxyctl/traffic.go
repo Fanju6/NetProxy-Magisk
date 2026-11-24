@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	json "encoding/json/v2"
+	"encoding/pem"
 	"io"
 	"net/http"
 	"os"
@@ -16,37 +17,57 @@ import (
 func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 	const maxRequest = traffic.MaxRulesBytes + 1024
 	usage := func() error {
-		return usageError("用法: netproxyctl api traffic status|start|stop|toggle|list|clear|rules|set-rules <文件>")
+		return usageError("用法: netproxyctl api traffic status|start|stop|toggle|list|clear|rules|set-rules|mitm|set-mitm|ca|ca-init|ca-export")
 	}
-	if len(args) == 0 || (args[0] == "set-rules" && len(args) != 2) || (args[0] != "set-rules" && len(args) != 1) {
+	if len(args) == 0 {
 		return usage()
+	}
+	action := args[0]
+	withPath := action == "set-rules" || action == "set-mitm" || action == "ca-export"
+	if (withPath && len(args) != 2) || (!withPath && len(args) != 1) {
+		return usage()
+	}
+	layout := paths.New(c.options.ModuleDir)
+	if action == "trust-remove" {
+		if err := traffic.RemoveSystemTrust(ctx, layout); err != nil {
+			return err
+		}
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "traffic.trust_removed", Message: "系统抓包 CA 已卸载"})
+		return nil
 	}
 	var method string
 	var body io.Reader
-	action := args[0]
 	switch action {
-	case "status", "list", "rules":
+	case "status", "list", "rules", "mitm", "ca":
 		method = http.MethodGet
-	case "start", "stop", "toggle":
+	case "start", "stop", "toggle", "ca-init":
 		method = http.MethodPost
 	case "clear":
 		method, action = http.MethodDelete, "list"
-	case "set-rules":
-		method, action = http.MethodPut, "rules"
+	case "ca-export":
+		method, action = http.MethodGet, "ca"
+	case "set-rules", "set-mitm":
+		method = http.MethodPut
+		limit := int64(maxRequest)
+		if action == "set-mitm" {
+			action, limit = "mitm", traffic.MaxMITMBytes
+		} else {
+			action = "rules"
+		}
 		file, err := os.Open(args[1])
 		if err != nil {
-			return usageError("无法打开重写规则文件")
+			return usageError("无法打开配置文件")
 		}
 		defer file.Close()
-		content, err := io.ReadAll(io.LimitReader(file, maxRequest+1))
-		if err != nil || len(content) > maxRequest {
-			return usageError("无法读取重写规则文件或文件超出大小限制")
+		content, err := io.ReadAll(io.LimitReader(file, limit+1))
+		if err != nil || int64(len(content)) > limit {
+			return usageError("无法读取配置文件或文件超出大小限制")
 		}
 		body = bytes.NewReader(content)
 	default:
 		return usage()
 	}
-	config, err := apiconfig.Load(paths.New(c.options.ModuleDir).APIConfig())
+	config, err := apiconfig.Load(layout.APIConfig())
 	if err != nil {
 		return err
 	}
@@ -78,6 +99,31 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 	if !envelope.OK {
 		return &resultError{Code: envelope.Code, Message: envelope.Message, Data: envelope.Data}
 	}
+	if args[0] == "ca-export" {
+		return exportTrafficCA(args[1], envelope.Data)
+	}
 	writeJSON(os.Stdout, envelope)
+	return nil
+}
+
+func exportTrafficCA(path string, data any) error {
+	fields, _ := data.(map[string]any)
+	value, _ := fields["pem"].(string)
+	block, rest := pem.Decode([]byte(value))
+	if block == nil || block.Type != "CERTIFICATE" || len(bytes.TrimSpace(rest)) != 0 {
+		return &resultError{Code: "traffic.ca_unavailable", Message: "管理接口没有返回公开 CA 证书"}
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return usageError("无法新建 CA 导出文件；不会覆盖已有文件")
+	}
+	_, writeErr := f.Write(pem.EncodeToMemory(block))
+	closeErr := f.Close()
+	if writeErr != nil || closeErr != nil {
+		_ = os.Remove(path)
+		return usageError("无法写入 CA 导出文件")
+	}
+	writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "traffic.ca_exported", Message: "公开抓包 CA 已导出",
+		Data: map[string]any{"filename": fields["filename"], "sha256": fields["sha256"]}})
 	return nil
 }

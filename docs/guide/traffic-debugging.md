@@ -19,7 +19,32 @@ api traffic stop
 2. `list` 查看最近 200 条记录：时间、方法、目标、选定出站、状态和重写结果。不会记录路径、查询参数、请求头或正文，也不会写入日志、诊断包或磁盘。
 3. `stop` 保留列表以便查看；`clear` 可清空记录，再次开启也会清空。Worker 不可用或抓包连接达到上限时，新流量按原有路由透传。
 
-**HTTPS 默认只记录 TCP 元数据**；该分支不解密 TLS。只重写 HTTP/1.x，每个被重写的连接处理一个请求，客户端可正常重连。该功能不是 PCAP 导出，不采集未被受管入站接管的流量、UDP 或 QUIC。
+**HTTPS 默认只记录 TCP 元数据**。只重写 HTTP/1.x，每个被重写的连接处理一个请求，客户端可正常重连。该功能不是 PCAP 导出，不采集未被受管入站接管的流量、UDP 或 QUIC。
+
+## 按主机启用 HTTPS 解密
+
+**仅调试你有权检查的流量。** 解密后的请求和响应在内存中处理，重写脚本也可访问其内容。系统级信任会扩大该 CA 的信任范围；优先只在测试客户端信任它。不要复制或分享模块的 CA 私钥。
+
+1. 在 WebUI 中运行 `api traffic ca-init` 初始化每次安装独立的 CA（不覆盖已有 CA）。`api traffic ca` 查看公开 PEM、SHA-256 指纹和 Android 的 `<hash>.0` 文件名；`api traffic ca-export /data/local/tmp/netproxy-debug.pem` 导出公开证书。这些命令都不导出私钥。
+2. 把下面的 JSON 保存到设备上，例如 `/data/local/tmp/netproxy-mitm.json`，用 `api traffic set-mitm /data/local/tmp/netproxy-mitm.json` 应用，用 `api traffic mitm` 查看配置。启用解密也会初始化 CA。全局抓包开关仍须开启。
+
+```json
+{
+  "enabled": true,
+  "hosts": ["example.org", "*.test.example.org"],
+  "system_trust": false
+}
+```
+
+支持精确主机名、IP、`*.域名`（仅子域名）和 `*`（不建议）。优先匹配 TLS 握手中的服务器名，无服务器名时匹配原目标地址。空列表不解密；不匹配的流量原样透传。匹配的 HTTPS 请求以 `https://` 完整 URL 匹配重写规则，`list` 显示 `decrypted` 请求元数据，不保存正文、请求头或查询参数。上游 TLS 仍校验证书。
+
+如果客户端因证书钉扎等原因拒绝调试证书，当前连接无法恢复，记录为 `handshake_failed`，同一主机的新 TCP 连接在约 10 分钟内透传（`bypass`）。停止抓包、修改解密配置或重启 Worker 会清除临时绕行状态。HTTP/2-only 流量透传；不支持对双向 TLS 或 HTTPS 协议升级进行解密。
+
+### 可选：Android 系统信任
+
+如果测试客户端无法单独配置 CA，可将 `system_trust` 改为 `true`，保存并重启。模块开机时保留已有证书并绑定 `/system/etc/security/cacerts` 以及设备上存在的 `/apex/com.android.conscrypt/cacerts`（Android 14+）。某些系统或挂载隔离配置可能禁止挂载；请查看服务日志，已运行的测试应用也可能需要重启。系统信任不绕过应用证书钉扎。
+
+调试后保存 `{"enabled":false,"hosts":[],"system_trust":false}`，停止抓包并在测试客户端删除手工信任的证书。关闭系统信任或卸载模块时会尝试卸载模块的证书目录；如未完成，重启设备。停止抓包本身不会删除系统信任。
 
 ## 编写规则
 

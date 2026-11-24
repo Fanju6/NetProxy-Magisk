@@ -65,6 +65,12 @@ func (l Layout) TrafficSocket() string { return filepath.Join(l.Runtime(), "capt
 
 func (l Layout) TrafficEnabled() string { return filepath.Join(l.Config(), "traffic-enabled.json") }
 
+func (l Layout) TrafficCA() string { return filepath.Join(l.Config(), "traffic-ca.pem") }
+
+func (l Layout) TrafficMITM() string { return filepath.Join(l.Config(), "traffic-mitm.json") }
+
+func (l Layout) TrafficTrust() string { return filepath.Join(l.DevRoot(), "traffic-trust") }
+
 func (l Layout) APITempDir() string { return filepath.Join(l.DevRoot(), "http") }
 
 func (l Layout) AndroidPlatformDEX() string { return filepath.Join(l.Bin(), "android-platform.dex") }

@@ -41,3 +41,23 @@ func TestTrafficManagementRequiresAuthAndValidatesRules(t *testing.T) {
 	}
 	resourceAssertSuccess(t, s, http.MethodDelete, trafficRoute+"list", "", "traffic.clear", nil)
 }
+
+func TestTrafficMITMManagementNeverExposesPrivateKey(t *testing.T) {
+	s := resourceFixture(t)
+	var policy struct {
+		Enabled bool `json:"enabled"`
+	}
+	resourceAssertSuccess(t, s, http.MethodGet, trafficRoute+"mitm", "", "traffic.mitm", &policy)
+	if policy.Enabled {
+		t.Fatal("HTTPS 解密默认开启")
+	}
+	w, _ := resourceRequest(t, s, http.MethodPost, trafficRoute+"ca-init", "")
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "BEGIN CERTIFICATE") || strings.Contains(w.Body.String(), "PRIVATE KEY") {
+		t.Fatalf("CA 初始化响应无效: %d", w.Code)
+	}
+	resourceAssertSuccess(t, s, http.MethodGet, trafficRoute+"ca", "", "traffic.ca", nil)
+	resourceAssertSuccess(t, s, http.MethodPut, trafficRoute+"mitm", `{"enabled":true,"hosts":["*.example.org"],"system_trust":false}`, "traffic.mitm_saved", &policy)
+	if !policy.Enabled {
+		t.Fatal("HTTPS 解密未按显式请求开启")
+	}
+}

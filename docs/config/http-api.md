@@ -137,6 +137,8 @@ HTTP 保存必须提供读取时的 revision。发生 `config.conflict` 时重�
 | `GET /traffic/status`、`list` | 全局抓包状态和内存记录 |
 | `POST /traffic/toggle`、`start`、`stop`；`DELETE /traffic/list` | 切换全局抓包、显式启停或清空记录 |
 | `GET/PUT /traffic/rules` | 读取或替换重写规则，正文为 `{"rules":[...]}`，见[规则格式](/guide/traffic-debugging) |
+| `GET/PUT /traffic/mitm` | 读取或替换 `{"enabled":false,"hosts":[],"system_trust":false}`；仅对显式配置的主机开启 HTTPS 解密。系统信任开启后下次开机安装，关闭时尝试卸载 |
+| `POST /traffic/ca-init`；`GET /traffic/ca` | 显式初始化或读取公开 CA；返回 `pem`、`filename`、`sha256`，不返回任何私钥 |
 | `GET /diagnostics/export` | 下载脱敏诊断包 |
 | `GET /events?topics=status,groups,subscriptions` | 实时事件流 |
 

@@ -15,7 +15,7 @@ import (
 	"golang.org/x/net/http/httpguts"
 )
 
-func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Time, transport *http.Transport, outbound string) {
+func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Time, transport *http.Transport, metadata flow) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
 	target := r.URL.String()
@@ -24,7 +24,10 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 	if len(method) > 16 {
 		method = "OTHER"
 	}
-	entry := Entry{Time: now, Method: method, Host: r.URL.Host, Outbound: outbound}
+	entry := Entry{Time: now, Method: method, Host: r.URL.Host, Outbound: metadata.Outbound}
+	if r.URL.Scheme == "https" {
+		entry.TLS = "decrypted"
+	}
 	defer func() {
 		entry.DurationMS = time.Since(now).Milliseconds()
 		s.controller.record(s, entry)

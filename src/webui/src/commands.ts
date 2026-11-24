@@ -19,9 +19,12 @@ export const COMMANDS = {
   api traffic status | list | clear         查看状态、查看或清空抓包记录
   api traffic rules                         查看 JavaScript 重写规则
   api traffic set-rules <文件>               应用设备上的 JSON 规则文件
+  api traffic mitm | set-mitm <文件>        查看或保存 HTTPS 解密配置
+  api traffic ca-init | ca                  初始化或查看公开调试 CA
+  api traffic ca-export <文件>              导出公开 CA，不覆盖已有文件
 
 记录 TUN/eBPF 受管透明入站的 TCP 流量；不需要设置代理端口或凭据。
-HTTPS 默认仅记录连接元数据，不解密、不重写。
+HTTPS 解密默认关闭，开启后仅解密所选主机。优先仅在测试客户端信任此 CA。
 
 接口默认仅监听 127.0.0.1:9091，关闭 sing-box 不关闭管理接口。
 凭据不可分享或粘贴到公共聊天中。
@@ -200,7 +203,7 @@ const CONFIG_TARGETS = [
 ]
 
 export const VALUE_COMPLETIONS: Record<string, string[]> = {
-  'api traffic': ['status', 'toggle', 'start', 'stop', 'list', 'clear', 'rules', 'set-rules'],
+  'api traffic': ['status', 'toggle', 'start', 'stop', 'list', 'clear', 'rules', 'set-rules', 'mitm', 'set-mitm', 'ca', 'ca-init', 'ca-export'],
   'app mode': ['blacklist', 'whitelist'],
   'ebpf status': ['configured', 'all', 'local', 'shared', '--raw'],
   'logs show': ['service', 'core'],

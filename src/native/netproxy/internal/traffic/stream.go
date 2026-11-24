@@ -3,6 +3,7 @@ package traffic
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"errors"
 	"io"
 	"net"
@@ -72,12 +73,24 @@ func (s *session) serveBridge(bridge *net.UnixConn) {
 	now := time.Now()
 	_ = client.SetReadDeadline(now.Add(250 * time.Millisecond))
 	isHTTP := sniffHTTP(client.reader)
+	policy := s.controller.currentMITM()
+	host := ""
+	if !isHTTP && policy != nil {
+		host = sniffTLS(s.ctx, client, metadata)
+	}
 	_ = client.SetReadDeadline(time.Time{})
 	if isHTTP {
-		s.serveHTTPStream(client, client.done, upstream, metadata, "http")
+		s.serveHTTPStream(client, client.done, upstream, metadata, "http", nil)
 		return
 	}
-	s.controller.record(s, Entry{Time: now, Method: "TCP", Host: metadata.Destination, Outbound: metadata.Outbound})
+	entry := Entry{Time: now, Method: "TCP", Host: metadata.Destination, Outbound: metadata.Outbound}
+	if host != "" && policy.matches(host) {
+		if !policy.bypass(host, now) && s.intercept(client, upstream, metadata, host, policy, now) {
+			return
+		}
+		entry.TLS = "bypass"
+	}
+	s.controller.record(s, entry)
 	relayStreams(client, upstream)
 }
 
@@ -100,7 +113,7 @@ func sniffHTTP(reader *bufio.Reader) bool {
 	return false
 }
 
-func (s *session) serveHTTPStream(client net.Conn, done <-chan struct{}, upstream net.Conn, metadata flow, scheme string) {
+func (s *session) serveHTTPStream(client net.Conn, done <-chan struct{}, upstream net.Conn, metadata flow, scheme string, upstreamTLS *tls.Config) {
 	var dialed atomic.Bool
 	transport := &http.Transport{
 		DialContext: func(context.Context, string, string) (net.Conn, error) {
@@ -109,7 +122,7 @@ func (s *session) serveHTTPStream(client net.Conn, done <-chan struct{}, upstrea
 			}
 			return upstream, nil
 		},
-		TLSHandshakeTimeout: 10 * time.Second, DisableKeepAlives: true,
+		TLSClientConfig: upstreamTLS, TLSHandshakeTimeout: 10 * time.Second, DisableKeepAlives: true,
 		ResponseHeaderTimeout: 30 * time.Second, MaxResponseHeaderBytes: 64 << 10,
 	}
 	defer transport.CloseIdleConnections()
@@ -123,6 +136,10 @@ func (s *session) serveHTTPStream(client net.Conn, done <-chan struct{}, upstrea
 				return
 			}
 			if r.Header.Get("Upgrade") != "" {
+				if upstreamTLS != nil {
+					http.Error(w, "HTTPS protocol upgrade is not supported", http.StatusNotImplemented)
+					return
+				}
 				if conn, rw, err := http.NewResponseController(w).Hijack(); err == nil {
 					defer conn.Close()
 					if err := r.Write(upstream); err == nil {
@@ -136,8 +153,12 @@ func (s *session) serveHTTPStream(client net.Conn, done <-chan struct{}, upstrea
 				http.Error(w, "Invalid origin request", http.StatusBadRequest)
 				return
 			}
+			if upstreamTLS != nil && canonicalHost(r.URL.Hostname()) != upstreamTLS.ServerName {
+				http.Error(w, "Request does not match TLS host", http.StatusMisdirectedRequest)
+				return
+			}
 			w.Header().Set("Connection", "close")
-			s.proxyHTTP(w, r, time.Now(), transport, metadata.Outbound)
+			s.proxyHTTP(w, r, time.Now(), transport, metadata)
 		}),
 	}
 	server.SetKeepAlivesEnabled(false)

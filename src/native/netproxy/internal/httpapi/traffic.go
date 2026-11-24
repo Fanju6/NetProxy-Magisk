@@ -57,6 +57,45 @@ func (s *Server) registerTraffic() {
 		}
 		return contract.Success("traffic.rules_saved", "重写规则已保存", len(input.Rules)), nil
 	})
+	s.trafficRoute("GET", "ca", "公开抓包 CA", func(context.Context) (any, error) {
+		cert, err := s.traffic.Certificate(false)
+		return cert, mitmAPIError("traffic.ca_unavailable", err)
+	})
+	s.trafficRoute("POST", "ca-init", "抓包 CA 已初始化", func(context.Context) (any, error) {
+		cert, err := s.traffic.Certificate(true)
+		return cert, mitmAPIError("traffic.ca_init_failed", err)
+	})
+	s.trafficRoute("GET", "mitm", "HTTPS 抓包配置", func(context.Context) (any, error) {
+		policy, err := s.traffic.MITMPolicy()
+		return policy, mitmAPIError("traffic.mitm_unavailable", err)
+	})
+	s.route("PUT "+trafficRoute+"mitm", 25*time.Second, false, func(ctx context.Context, r *http.Request) (contract.Result, error) {
+		if _, err := resourceQuery(r); err != nil {
+			return contract.Result{}, err
+		}
+		var input traffic.MITMPolicy
+		if err := decodeRequestLimit(r, &input, traffic.MaxMITMBytes); err != nil {
+			return contract.Result{}, err
+		}
+		policy, err := s.traffic.SetMITMPolicy(input)
+		if err != nil {
+			return contract.Result{}, mitmAPIError("traffic.mitm_failed", err)
+		}
+		if !policy.SystemTrust {
+			if err := traffic.RemoveDisabledSystemTrust(ctx, paths.New(s.options.ModuleDir)); err != nil {
+				return contract.Result{}, &contract.Error{Code: "traffic.trust_remove_incomplete", HTTPStatus: http.StatusConflict,
+					Message: "配置已保存，但系统 CA 卸载未完成；请重启设备", Data: policy}
+			}
+		}
+		return contract.Success("traffic.mitm_saved", "HTTPS 抓包配置已保存", policy), nil
+	})
+}
+
+func mitmAPIError(code string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &contract.Error{Code: code, Message: err.Error(), HTTPStatus: http.StatusUnprocessableEntity}
 }
 
 type trafficRules struct {

@@ -32,6 +32,7 @@ stop_worker_processes() {
 
 # SIGTERM 关闭核心，由 eBPF 入站生命周期负责清理内核资源。
 if [ -x "$MODDIR/netproxyctl" ]; then
+  "$MODDIR/netproxyctl" api traffic trust-remove > /dev/null 2>&1 || true
   "$MODDIR/netproxyctl" service stop > /dev/null 2>&1 || true
 fi
 
