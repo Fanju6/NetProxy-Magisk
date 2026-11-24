@@ -60,14 +60,58 @@ func TestPatchedCoreKeepsOriginalInboundRoute(t *testing.T) {
 
 func startCaptureTestCore(t *testing.T, core string, layout paths.Layout) func(context.Context, string, string) (net.Conn, error) {
 	t.Helper()
-	reservation, err := net.ListenTCP("tcp4", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	return startCaptureTestCoreWithVLESS(t, core, layout, false)
+}
+
+func TestPatchedCorePreservesServerFirstHandshake(t *testing.T) {
+	core := os.Getenv("NETPROXY_TEST_CAPTURE_CORE")
+	if core == "" {
+		t.Skip("set NETPROXY_TEST_CAPTURE_CORE to the patched Linux sing-box")
+	}
+	layout := paths.New(t.TempDir())
+	controller := New(layout)
+	if err := controller.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(controller.Stop)
+	origin, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	address := reservation.Addr().String()
-	port := reservation.Addr().(*net.TCPAddr).Port
-	reservation.Close()
-	config := fmt.Sprintf(`{"inbounds":[{"type":"mixed","tag":"netproxy-in","listen":"127.0.0.1","listen_port":%d}],"outbounds":[{"type":"direct","tag":"match-original-inbound"},{"type":"block","tag":"block"}],"route":{"netproxy_capture_socket":%q,"final":"block","rules":[{"inbound":"netproxy-in","action":"route","outbound":"match-original-inbound"}]}}`, port, layout.TrafficSocket())
+	t.Cleanup(func() { _ = origin.Close() })
+	go func() {
+		if conn, err := origin.Accept(); err == nil {
+			defer conn.Close()
+			_, _ = io.WriteString(conn, "server-first")
+		}
+	}()
+	dial := startCaptureTestCoreWithVLESS(t, core, layout, true)
+	conn, err := dial(t.Context(), "tcp", origin.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	data, err := io.ReadAll(conn)
+	if err != nil || string(data) != "server-first" {
+		t.Fatalf("server-first data = %q, %v", data, err)
+	}
+	if entries := controller.Entries(); len(entries) != 1 || entries[0].Outbound != "match-original-inbound" {
+		t.Fatalf("unexpected capture: %+v", entries)
+	}
+}
+
+func startCaptureTestCoreWithVLESS(t *testing.T, core string, layout paths.Layout, vless bool) func(context.Context, string, string) (net.Conn, error) {
+	t.Helper()
+	address, port := reserveCaptureTestPort(t)
+	upstreamInbound, upstreamOutbound := "", `{"type":"direct","tag":"match-original-inbound"}`
+	if vless {
+		_, relayPort := reserveCaptureTestPort(t)
+		const uuid = "50ddddd4-e3a9-4f33-af4c-e989629769d3"
+		upstreamInbound = fmt.Sprintf(`,{"type":"vless","tag":"test-relay","listen":"127.0.0.1","listen_port":%d,"users":[{"uuid":%q}]}`, relayPort, uuid)
+		upstreamOutbound = fmt.Sprintf(`{"type":"vless","tag":"match-original-inbound","server":"127.0.0.1","server_port":%d,"uuid":%q}`, relayPort, uuid)
+	}
+	config := fmt.Sprintf(`{"inbounds":[{"type":"mixed","tag":"netproxy-in","listen":"127.0.0.1","listen_port":%d}%s],"outbounds":[%s,{"type":"direct","tag":"direct"},{"type":"block","tag":"block"}],"route":{"netproxy_capture_socket":%q,"final":"block","rules":[{"inbound":"netproxy-in","action":"route","outbound":"match-original-inbound"},{"inbound":"test-relay","action":"route","outbound":"direct"}]}}`, port, upstreamInbound, upstreamOutbound, layout.TrafficSocket())
 	configPath := filepath.Join(layout.Root(), "test-core.json")
 	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
 		t.Fatal(err)
@@ -108,4 +152,14 @@ func startCaptureTestCore(t *testing.T, core string, layout paths.Layout) func(c
 		t.Fatal(err)
 	}
 	return dialer.(proxy.ContextDialer).DialContext
+}
+
+func reserveCaptureTestPort(t *testing.T) (string, int) {
+	t.Helper()
+	reservation, err := net.ListenTCP("tcp4", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reservation.Close()
+	return reservation.Addr().String(), reservation.Addr().(*net.TCPAddr).Port
 }

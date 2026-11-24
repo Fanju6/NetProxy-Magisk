@@ -51,7 +51,7 @@
  		}
  		remoteConn = spoofConn
 +	}
-+	if capture && netProxyCapture(ctx, m.NetProxyCaptureSocket, conn, remoteConn, metadata, onClose) {
++	if capture && m.netProxyCapture(ctx, conn, remoteConn, metadata, onClose) {
 +		return
 +	}
 +	if capture && !metadata.TLSFragment && !metadata.TLSRecordFragment && metadata.TLSSpoof == "" {
@@ -70,7 +70,7 @@
  	var done atomic.Bool
 --- /dev/null
 +++ b/route/netproxy_capture_linux.go
-@@ -0,0 +1,83 @@
+@@ -0,0 +1,93 @@
 +package route
 +
 +import (
@@ -80,6 +80,7 @@
 +	"net"
 +	"os"
 +	"sync"
++	"sync/atomic"
 +	"time"
 +
 +	"github.com/sagernet/sing-box/adapter"
@@ -87,10 +88,10 @@
 +	"golang.org/x/sys/unix"
 +)
 +
-+func netProxyCapture(ctx context.Context, path string, client, upstream net.Conn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) bool {
++func (m *ConnectionManager) netProxyCapture(ctx context.Context, client, upstream net.Conn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) bool {
 +	deadline := time.Now().Add(250 * time.Millisecond)
 +	dialer := net.Dialer{Deadline: deadline}
-+	conn, err := dialer.DialContext(ctx, "unix", path)
++	conn, err := dialer.DialContext(ctx, "unix", m.NetProxyCaptureSocket)
 +	if err != nil {
 +		return false
 +	}
@@ -129,7 +130,16 @@
 +		return false
 +	}
 +	_ = bridge.SetDeadline(time.Time{})
-+	go netProxyCaptureRelay(client, bridge, upstream, remoteBridge, onClose)
++	go func() {
++		var done atomic.Bool
++		if m.kickWriteHandshake(ctx, client, upstream, true, false, &done, onClose) ||
++			m.kickWriteHandshake(ctx, upstream, client, true, true, &done, onClose) {
++			_ = bridge.Close()
++			_ = remoteBridge.Close()
++			return
++		}
++		netProxyCaptureRelay(client, bridge, upstream, remoteBridge, onClose)
++	}()
 +	return true
 +}
 +
@@ -169,6 +179,6 @@
 +	N "github.com/sagernet/sing/common/network"
 +)
 +
-+func netProxyCapture(context.Context, string, net.Conn, net.Conn, adapter.InboundContext, N.CloseHandlerFunc) bool {
++func (*ConnectionManager) netProxyCapture(context.Context, net.Conn, net.Conn, adapter.InboundContext, N.CloseHandlerFunc) bool {
 +	return false
 +}
