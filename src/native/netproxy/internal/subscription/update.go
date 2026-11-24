@@ -340,16 +340,8 @@ func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 		return Result{}, &Error{Code: "subscription.recovery_failed", Message: "清理订阅进度状态失败", Data: err.Error()}
 	}
 
-	stageDir, err := os.MkdirTemp(stagingDir, options.GroupID+".")
-	if err != nil {
-		return Result{}, &Error{Code: "subscription.stage_failed", Message: "创建订阅临时目录失败", Data: err.Error()}
-	}
-	defer os.RemoveAll(stageDir)
 	if err := os.WriteFile(filepath.Join(lockDir, "pid"), []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o600); err != nil {
 		return Result{}, &Error{Code: "subscription.stage_failed", Message: "订阅状态写入失败", Data: err.Error()}
-	}
-	if err := os.WriteFile(filepath.Join(lockDir, "stage"), []byte(stageDir+"\n"), 0o600); err != nil {
-		return Result{}, &Error{Code: "subscription.stage_failed", Message: "订阅事务状态写入失败", Data: err.Error()}
 	}
 	updateContext, stopWatching := watchCancellation(ctx, options.ProgressDir, options.GroupID)
 	defer stopWatching()
@@ -404,8 +396,8 @@ func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 	if err := writeProgress(options.ProgressDir, options.GroupID, "validate", "正在校验节点配置"); err != nil {
 		return updateFailure(ctx, options, metadata, groupDir, started, response, "subscription.progress_write_failed", "订阅状态写入失败", err)
 	}
-	stageProvider := filepath.Join(stageDir, "provider.json")
-	if err := provider.SaveAtomic(ctx, stageProvider, filtered); err != nil {
+	providerContent, err := provider.Marshal(ctx, filtered)
+	if err != nil {
 		return updateFailure(ctx, options, metadata, groupDir, started, response, "provider.invalid", "节点配置校验失败", err)
 	}
 	if cancelled(ctx, options.ProgressDir, options.GroupID) {
@@ -432,17 +424,8 @@ func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 	metadata.RuntimeSyncPending = metadata.RuntimeSyncPending || options.RuntimeSyncPending
 	scheduleMetadata(&metadata, options.Now)
 	metadata.UpdatedAt = metadata.LastAttemptAt
-	metadataPath := filepath.Join(stageDir, "meta.json")
-	if err := catalog.SaveMetadataAtomicLocked(metadataPath, metadata); err != nil {
-		return updateFailure(ctx, options, metadata, groupDir, started, response, "metadata.write_failed", "订阅元数据写入失败", err)
-	}
-
 	if err := writeProgress(options.ProgressDir, options.GroupID, "apply", "正在应用订阅更新"); err != nil {
 		return updateFailure(ctx, options, metadata, groupDir, started, response, "subscription.progress_write_failed", "订阅状态写入失败", err)
-	}
-	providerContent, err := os.ReadFile(stageProvider)
-	if err != nil {
-		return updateFailure(ctx, options, metadata, groupDir, started, response, "provider.read_failed", "读取临时节点配置失败", err)
 	}
 	var commitReleaseRoot func()
 	commitReleaseRoot, err = catalog.AcquireRoot(ctx, options.Root)
@@ -473,14 +456,10 @@ func Update(ctx context.Context, options UpdateOptions) (Result, error) {
 		metadata.LastError = current.LastError
 	}
 	metadata.RuntimeSyncPending = metadata.RuntimeSyncPending || current.RuntimeSyncPending || options.RuntimeSyncPending
-	if err := catalog.SaveMetadataAtomicLocked(metadataPath, metadata); err != nil {
-		commitReleaseRoot()
-		return updateFailure(ctx, options, metadata, groupDir, started, response, "metadata.write_failed", "订阅元数据写入失败", err)
-	}
-	metadataContent, err := os.ReadFile(metadataPath)
+	metadataContent, err := catalog.MarshalMetadata(metadata)
 	if err != nil {
 		commitReleaseRoot()
-		return updateFailure(ctx, options, metadata, groupDir, started, response, "metadata.read_failed", "读取临时元数据失败", err)
+		return updateFailure(ctx, options, metadata, groupDir, started, response, "metadata.write_failed", "订阅元数据编码失败", err)
 	}
 	releaseGuard := func() {}
 	if options.GuardProviderCommit != nil {

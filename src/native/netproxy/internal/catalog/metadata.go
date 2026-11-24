@@ -108,13 +108,20 @@ func SaveMetadataAtomic(ctx context.Context, path string, metadata Metadata) err
 
 // SaveMetadataAtomicLocked 在调用方已持有 Catalog 根锁时原子保存元数据。
 func SaveMetadataAtomicLocked(path string, metadata Metadata) error {
-	metadata = NormalizeMetadata(metadata)
-	content, err := json.Marshal(metadata, json.Deterministic(true), jsontext.WithIndent("  "))
+	content, err := MarshalMetadata(metadata)
 	if err != nil {
 		return err
 	}
-	content = append(content, '\n')
 	return provider.WriteAtomic(path, content, 0o600)
+}
+
+// MarshalMetadata 使用与原子保存相同的持久格式编码事务候选。
+func MarshalMetadata(metadata Metadata) ([]byte, error) {
+	content, err := json.Marshal(NormalizeMetadata(metadata), json.Deterministic(true), jsontext.WithIndent("  "))
+	if err != nil {
+		return nil, err
+	}
+	return append(content, '\n'), nil
 }
 
 func catalogRootForPath(path string) (string, error) {

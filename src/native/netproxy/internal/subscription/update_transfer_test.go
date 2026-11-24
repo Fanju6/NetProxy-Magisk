@@ -3,6 +3,7 @@ package subscription
 import (
 	"bytes"
 	"context"
+	json "encoding/json/v2"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -205,18 +206,11 @@ func TestTransferCancellationAfterDownloadDoesNotCancelCommit(t *testing.T) {
 			close(releaseBody)
 			deadline := time.Now().Add(5 * time.Second)
 			for {
-				ready := false
-				entries, err := os.ReadDir(filepath.Join(options.Root, "staging"))
-				if err != nil {
-					t.Fatal(err)
+				content, err := os.ReadFile(filepath.Join(options.ProgressDir, options.GroupID+".progress.json"))
+				var progress struct {
+					Stage string `json:"stage"`
 				}
-				for _, entry := range entries {
-					if entry.IsDir() && strings.HasPrefix(entry.Name(), options.GroupID+".") {
-						_, err := os.Stat(filepath.Join(options.Root, "staging", entry.Name(), "meta.json"))
-						ready = err == nil
-					}
-				}
-				if ready {
+				if err == nil && json.Unmarshal(content, &progress) == nil && progress.Stage == "apply" {
 					break
 				}
 				if time.Now().After(deadline) {
