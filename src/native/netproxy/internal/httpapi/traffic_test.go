@@ -33,13 +33,11 @@ func TestTrafficManagementRequiresAuthAndValidatesRules(t *testing.T) {
 	if err != nil || !strings.Contains(string(saved), "example") {
 		t.Fatalf("无效规则覆盖已有配置: %q %v", saved, err)
 	}
-	w, result = resourceRequest(t, s, http.MethodPost, trafficRoute+"start", "")
-	if w.Code != http.StatusConflict || result.Code != "traffic.upstream_unavailable" {
-		t.Fatalf("未启动核心时允许抓包: %d %+v", w.Code, result)
-	}
+	resourceAssertSuccess(t, s, http.MethodPost, trafficRoute+"toggle", "", "traffic.toggle", nil)
+	resourceAssertSuccess(t, s, http.MethodPost, trafficRoute+"toggle", "", "traffic.toggle", nil)
 	w, result = resourceRequest(t, s, http.MethodGet, trafficRoute+"access", "")
-	if w.Code != http.StatusConflict || result.Code != "traffic.not_running" {
-		t.Fatalf("空会话返回凭据: %d %+v", w.Code, result)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("仍保留抓包凭据端点: %d %+v", w.Code, result)
 	}
 	resourceAssertSuccess(t, s, http.MethodDelete, trafficRoute+"list", "", "traffic.clear", nil)
 }

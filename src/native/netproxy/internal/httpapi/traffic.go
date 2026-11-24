@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/contract"
+	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/traffic"
@@ -17,35 +18,15 @@ func (s *Server) registerTraffic() {
 	s.trafficRoute("GET", "status", "抓包状态", func(context.Context) (any, error) {
 		return s.traffic.Status(), nil
 	})
-	s.trafficRoute("POST", "start", "抓包代理已启动", func(ctx context.Context) (any, error) {
-		if current := s.traffic.Status(); current.Running {
-			return current, nil
-		}
-		status, err := service.ReadStatus(ctx, s.controlOptions())
-		if err != nil || status.State != "ready" || status.ActiveBackend == nil {
-			return nil, upstreamUnavailable()
-		}
-		layout := paths.New(s.options.ModuleDir)
-		upstream, err := traffic.CoreUpstream(paths.RuntimeConfig(layout.Runtime()))
-		if err != nil {
-			return nil, upstreamUnavailable()
-		}
-		if err := s.traffic.Start(upstream); err != nil {
-			return nil, &contract.Error{Code: "traffic.start_failed", Message: err.Error()}
-		}
-		return s.traffic.Status(), nil
-	})
-	s.trafficRoute("POST", "stop", "抓包代理已停止", func(context.Context) (any, error) {
-		s.traffic.Stop()
-		return s.traffic.Status(), nil
-	})
-	s.trafficRoute("GET", "access", "抓包代理凭据，仅供本机客户端使用", func(context.Context) (any, error) {
-		data, err := s.traffic.Access()
-		if err != nil {
-			err = &contract.Error{Code: "traffic.not_running", Message: err.Error(), HTTPStatus: http.StatusConflict}
-		}
-		return data, err
-	})
+	for _, action := range []string{"start", "stop", "toggle"} {
+		s.route("POST "+trafficRoute+action, 60*time.Second, false, func(ctx context.Context, r *http.Request) (contract.Result, error) {
+			if err := resourceEmptyRequest(r); err != nil {
+				return contract.Result{}, err
+			}
+			status, err := s.setTraffic(ctx, action)
+			return contract.Success("traffic."+action, "全局抓包设置已更新", status), err
+		})
+	}
 	s.trafficRoute("GET", "list", "抓包记录", func(context.Context) (any, error) {
 		return s.traffic.Entries(), nil
 	})
@@ -96,6 +77,43 @@ func (s *Server) trafficRoute(method, action, message string, handle func(contex
 	})
 }
 
-func upstreamUnavailable() error {
-	return &contract.Error{Code: "traffic.upstream_unavailable", Message: traffic.ErrNoUpstream.Error(), HTTPStatus: http.StatusConflict}
+func (s *Server) setTraffic(ctx context.Context, action string) (traffic.Status, error) {
+	s.trafficMu.Lock()
+	defer s.trafficMu.Unlock()
+	layout := paths.New(s.options.ModuleDir)
+	previous := traffic.Enabled(layout)
+	enable := action == "start" || action == "toggle" && !previous
+	failure := func(code, message string) (traffic.Status, error) {
+		return s.traffic.Status(), &contract.Error{Code: code, Message: message, HTTPStatus: http.StatusConflict}
+	}
+	status, err := service.ReadStatus(ctx, s.controlOptions())
+	if err != nil || status.State != "ready" && status.State != "stopped" && status.State != "failed" {
+		return failure("traffic.service_busy", "代理服务正在切换，暂不能修改抓包设置")
+	}
+	if enable {
+		if err := s.traffic.Start(); err != nil {
+			return failure("traffic.start_failed", err.Error())
+		}
+	}
+	if err := traffic.SaveEnabled(layout, enable); err != nil {
+		if !previous {
+			s.traffic.Stop()
+		}
+		return failure("traffic.save_failed", "无法保存全局抓包设置")
+	}
+	if previous != enable && status.State == "ready" {
+		if _, err := moduleapp.ManageService(ctx, s.options, "reload"); err != nil {
+			if err := traffic.SaveEnabled(layout, previous); err != nil {
+				return failure("traffic.reload_failed", "核心重载失败且无法还原抓包设置")
+			}
+			if !previous {
+				s.traffic.Stop()
+			}
+			return failure("traffic.reload_failed", "核心重载失败，已还原抓包设置")
+		}
+	}
+	if !enable {
+		s.traffic.Stop()
+	}
+	return s.traffic.Status(), nil
 }

@@ -3,11 +3,8 @@ package traffic
 import (
 	"bytes"
 	"context"
-	"crypto/subtle"
-	"encoding/base64"
 	"io"
 	"mime"
-	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -18,47 +15,7 @@ import (
 	"golang.org/x/net/http/httpguts"
 )
 
-type session struct {
-	controller  *Controller
-	access      Access
-	cancel      context.CancelFunc
-	server      *http.Server
-	transport   *http.Transport
-	slots       chan struct{}
-	scriptSlots chan struct{}
-	dial        func(context.Context, string, string) (net.Conn, error)
-}
-
-func (s *session) close() {
-	s.cancel()
-	_ = s.server.Close()
-	s.transport.CloseIdleConnections()
-}
-
-func (s *session) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	expected := "Basic " + base64.StdEncoding.EncodeToString([]byte(s.access.Username+":"+s.access.Password))
-	authorization := r.Header.Values("Proxy-Authorization")
-	if len(authorization) != 1 || subtle.ConstantTimeCompare([]byte(authorization[0]), []byte(expected)) != 1 {
-		w.Header().Set("Proxy-Authenticate", `Basic realm="NetProxy"`)
-		http.Error(w, "Proxy Authentication Required", http.StatusProxyAuthRequired)
-		return
-	}
-	select {
-	case s.slots <- struct{}{}:
-		defer func() { <-s.slots }()
-	default:
-		http.Error(w, "Proxy Busy", http.StatusServiceUnavailable)
-		return
-	}
-	now := time.Now()
-	if r.Method == http.MethodConnect {
-		s.tunnel(w, r, now)
-		return
-	}
-	if r.URL.Scheme != "http" || !validTarget(r.URL) || r.Header.Get("Upgrade") != "" {
-		http.Error(w, "Use an HTTP proxy URL or CONNECT", http.StatusBadRequest)
-		return
-	}
+func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Time, transport *http.Transport, outbound string) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
 	target := r.URL.String()
@@ -67,7 +24,7 @@ func (s *session) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if len(method) > 16 {
 		method = "OTHER"
 	}
-	entry := Entry{Time: now, Method: method, Host: r.URL.Host}
+	entry := Entry{Time: now, Method: method, Host: r.URL.Host, Outbound: outbound}
 	defer func() {
 		entry.DurationMS = time.Since(now).Milliseconds()
 		s.controller.record(s, entry)
@@ -104,7 +61,7 @@ func (s *session) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if rule != nil && request.Header.Get("Range") == "" {
 		request.Header.Del("Accept-Encoding")
 	}
-	response, err := s.transport.RoundTrip(request)
+	response, err := transport.RoundTrip(request)
 	if err != nil {
 		entry.Status = http.StatusBadGateway
 		http.Error(w, "sing-box upstream unavailable", entry.Status)
@@ -173,55 +130,6 @@ func accessibleBody(input scriptInput, response *http.Response) bool {
 		response.StatusCode != http.StatusNotModified && response.StatusCode != http.StatusPartialContent &&
 		response.ContentLength <= maxBody && response.Header.Get("Content-Encoding") == "" &&
 		(strings.HasPrefix(kind, "text/") || kind == "application/json" || strings.HasSuffix(kind, "+json"))
-}
-
-func (s *session) tunnel(w http.ResponseWriter, r *http.Request, now time.Time) {
-	host, port, err := net.SplitHostPort(r.URL.Host)
-	portNumber, portErr := strconv.ParseUint(port, 10, 16)
-	if err != nil || portErr != nil || portNumber == 0 || host == "" || len(r.URL.Host) > 259 ||
-		!httpguts.ValidHostHeader(r.URL.Host) || r.URL.User != nil || r.URL.Path != "" ||
-		r.URL.RawQuery != "" || r.ContentLength != 0 {
-		http.Error(w, "Invalid CONNECT target", http.StatusBadRequest)
-		return
-	}
-	dialCtx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-	upstream, err := s.dial(dialCtx, "tcp", r.URL.Host)
-	cancel()
-	entry := Entry{Time: now, Method: http.MethodConnect, Host: r.URL.Host, DurationMS: time.Since(now).Milliseconds()}
-	if err != nil {
-		entry.Status = http.StatusBadGateway
-		s.controller.record(s, entry)
-		http.Error(w, "sing-box upstream unavailable", entry.Status)
-		return
-	}
-	defer upstream.Close()
-	client, buffered, err := http.NewResponseController(w).Hijack()
-	if err != nil {
-		http.Error(w, "Tunnel unavailable", http.StatusBadGateway)
-		return
-	}
-	defer client.Close()
-	defer context.AfterFunc(r.Context(), func() {
-		_ = client.Close()
-		_ = upstream.Close()
-	})()
-	deadline := now.Add(10 * time.Minute)
-	_ = client.SetDeadline(deadline)
-	_ = upstream.SetDeadline(deadline)
-	if _, err := buffered.WriteString("HTTP/1.1 200 Connection Established\r\n\r\n"); err != nil || buffered.Flush() != nil {
-		return
-	}
-	entry.Status = http.StatusOK
-	s.controller.record(s, entry)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		_, _ = io.Copy(upstream, buffered)
-		_ = upstream.Close()
-	}()
-	_, _ = io.Copy(client, upstream)
-	_ = client.Close()
-	<-done
 }
 
 func validTarget(target *url.URL) bool {

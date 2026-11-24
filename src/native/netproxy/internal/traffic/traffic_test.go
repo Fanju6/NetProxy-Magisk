@@ -1,21 +1,25 @@
+//go:build linux
+
 package traffic
 
 import (
 	"context"
-	"encoding/binary"
+	json "encoding/json/v2"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
-	"path/filepath"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
+	"golang.org/x/sys/unix"
 )
 
-func TestCaptureAndRewritingThroughMixedInbound(t *testing.T) {
+func TestCaptureAndRewritingThroughCoreBridge(t *testing.T) {
 	const body = "original"
 	origin := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Proxy-Authorization") != "" || (r.TLS == nil && r.Header.Get("X-Hop") != "") {
@@ -30,8 +34,8 @@ func TestCaptureAndRewritingThroughMixedInbound(t *testing.T) {
 	defer plain.Close()
 	encrypted := httptest.NewTLSServer(origin)
 	defer encrypted.Close()
-	path := filepath.Join(t.TempDir(), "traffic-rules.json")
-	config := New(path)
+	layout := paths.New(t.TempDir())
+	config := New(layout)
 	rules := []Rule{
 		{"/blocked", "request", "return {reject: true}"},
 		{"/redirect", "request", `return {redirect: "https://example.org/new"}`},
@@ -45,21 +49,20 @@ func TestCaptureAndRewritingThroughMixedInbound(t *testing.T) {
 	if err := config.ReplaceRules([]Rule{{"[", "request", "return {}"}}); err == nil {
 		t.Fatal("接受了无效正则")
 	}
-	controller := New(path)
+	controller := New(layout)
 	if loaded, err := controller.Rules(); err != nil || len(loaded) != len(rules) {
 		t.Fatalf("规则未保留: %v, %v", loaded, err)
 	}
-	if err := controller.Start(socksFixture(t)); err != nil {
+	if err := controller.Start(); err != nil {
 		t.Fatal(err)
 	}
 	defer controller.Stop()
-	access, err := controller.Access()
-	if err != nil {
-		t.Fatal(err)
+	if info, err := os.Stat(layout.TrafficSocket()); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("socket is not private: %v", err)
 	}
-	proxyURL := &url.URL{Scheme: "http", Host: access.Listen}
 	transport := encrypted.Client().Transport.(*http.Transport).Clone()
-	transport.Proxy = http.ProxyURL(proxyURL)
+	transport.Proxy = nil
+	transport.DialContext = bridgeFixture(layout)
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
@@ -83,8 +86,6 @@ func TestCaptureAndRewritingThroughMixedInbound(t *testing.T) {
 		}
 		return response.Header
 	}
-	do(plain.URL+"/rewrite", http.StatusProxyAuthRequired, "Proxy Authentication Required\n")
-	proxyURL.User = url.UserPassword(access.Username, access.Password)
 	headers := do(plain.URL+"/rewrite/private?token=synthetic", http.StatusOK, "ORIGINAL")
 	if headers.Get("X-Request") != "yes" || headers.Get("X-Rewritten") != "yes" || headers.Get("ETag") != "" {
 		t.Fatalf("unexpected headers: %v", headers)
@@ -94,15 +95,16 @@ func TestCaptureAndRewritingThroughMixedInbound(t *testing.T) {
 		t.Fatalf("unexpected redirect: %v", headers)
 	}
 	do(plain.URL+"/timeout", http.StatusOK, body)
-	// TLS 保持端到端；代理只能看到 CONNECT。
+	// TLS 保持端到端；抓包只记录 TCP 元数据。
 	do(encrypted.URL+"/rewrite", http.StatusOK, body)
 	entries := controller.Entries()
-	if len(entries) != 5 || entries[0].Method != http.MethodConnect || entries[1].Rewrite != "response_skipped" ||
+	if len(entries) != 5 || entries[0].Method != "TCP" || entries[1].Rewrite != "response_skipped" ||
+		entries[4].Outbound != "selected-by-inbound" ||
 		entries[4].Rewrite != "request+response" || strings.Contains(entries[4].Host, "synthetic") {
 		t.Fatalf("unexpected capture: %+v", entries)
 	}
 	controller.Stop()
-	if status := controller.Status(); status.Running || status.Listen != "" || status.Count != 5 {
+	if status := controller.Status(); status.Running || status.Count != 5 {
 		t.Fatalf("unexpected stopped state: %+v", status)
 	}
 	controller.Clear()
@@ -112,7 +114,7 @@ func TestCaptureAndRewritingThroughMixedInbound(t *testing.T) {
 }
 
 func TestCaptureRetainsNewestEntries(t *testing.T) {
-	c := New("")
+	c := New(paths.New(t.TempDir()))
 	current := &session{}
 	c.session = current
 	for i := range maxEntries + 7 {
@@ -125,50 +127,56 @@ func TestCaptureRetainsNewestEntries(t *testing.T) {
 	}
 }
 
-func socksFixture(t *testing.T) string {
-	t.Helper()
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = listener.Close() })
-	go func() {
-		for {
-			conn, err := listener.Accept()
-			if err != nil {
-				return
-			}
-			go serveSOCKSFixture(conn)
+func bridgeFixture(layout paths.Layout) func(context.Context, string, string) (net.Conn, error) {
+	return func(ctx context.Context, network, address string) (net.Conn, error) {
+		dialer := net.Dialer{Timeout: time.Second}
+		origin, err := dialer.DialContext(ctx, network, address)
+		if err != nil {
+			return nil, err
 		}
-	}()
-	return listener.Addr().String()
-}
-
-func serveSOCKSFixture(client net.Conn) {
-	defer client.Close()
-	_ = client.SetDeadline(time.Now().Add(10 * time.Second))
-	var greeting [3]byte
-	if _, err := io.ReadFull(client, greeting[:]); err != nil || greeting != [3]byte{5, 1, 0} {
-		return
+		conn, err := dialer.DialContext(ctx, "unix", layout.TrafficSocket())
+		if err != nil {
+			origin.Close()
+			return nil, err
+		}
+		bridge := conn.(*net.UnixConn)
+		defer func() {
+			if err != nil {
+				origin.Close()
+				bridge.Close()
+			}
+		}()
+		var fds [2]int
+		fds, err = unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
+		if err != nil {
+			return nil, err
+		}
+		core, peer := os.NewFile(uintptr(fds[0]), "core"), os.NewFile(uintptr(fds[1]), "worker")
+		defer core.Close()
+		defer peer.Close()
+		var relay net.Conn
+		relay, err = net.FileConn(core)
+		if err != nil {
+			return nil, err
+		}
+		metadata, _ := json.Marshal(flow{Destination: address, Outbound: "selected-by-inbound"})
+		_ = bridge.SetDeadline(time.Now().Add(time.Second))
+		_, _, err = bridge.WriteMsgUnix(append(metadata, '\n'), unix.UnixRights(int(peer.Fd())), nil)
+		var ready [1]byte
+		if err == nil {
+			_, err = io.ReadFull(bridge, ready[:])
+		}
+		if err != nil || ready != [1]byte{1} {
+			relay.Close()
+			err = errBridge
+			return nil, err
+		}
+		_ = bridge.SetDeadline(time.Time{})
+		go func() {
+			defer relay.Close()
+			defer origin.Close()
+			relayStreams(relay, origin)
+		}()
+		return bridge, nil
 	}
-	_, _ = client.Write([]byte{5, 0})
-	var request [10]byte
-	if _, err := io.ReadFull(client, request[:]); err != nil || request[0] != 5 || request[1] != 1 ||
-		request[3] != 1 || request[4] != 127 {
-		return
-	}
-	address := net.JoinHostPort(net.IP(request[4:8]).String(), strconv.Itoa(int(binary.BigEndian.Uint16(request[8:]))))
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	upstream, err := (&net.Dialer{}).DialContext(ctx, "tcp4", address)
-	if err != nil {
-		return
-	}
-	defer upstream.Close()
-	_, _ = client.Write([]byte{5, 0, 0, 1, 127, 0, 0, 1, 0, 0})
-	done := make(chan struct{})
-	go func() { defer close(done); _, _ = io.Copy(upstream, client); _ = upstream.Close() }()
-	_, _ = io.Copy(client, upstream)
-	_ = client.Close()
-	<-done
 }

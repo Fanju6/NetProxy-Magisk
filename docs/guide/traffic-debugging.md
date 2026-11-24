@@ -1,28 +1,25 @@
 # 抓包与脚本重写
 
-抓包代理用于调试你有权检查的流量。默认关闭；只接收显式配置了代理地址和凭据的本机客户端，不会改变 eBPF、TUN 或全局代理设置。转发仍经过 sing-box 的路由策略。
+全局透明抓包用于调试你有权检查的流量，默认关闭。开启后处理进入受管 TUN 或 eBPF 入站的 TCP 流量；无需配置客户端代理、端口或凭据。sing-box 使用原连接的入站、应用/UID、来源 IP 等元数据匹配既有规则并选择出站，不重新路由。
 
 ## 启停与查看
 
-先启动 sing-box。抓包代理需要生效配置中标签为 `mixed-in` 的本机免认证 `mixed` 入站（出厂配置为 `127.0.0.1:7080`）。
-
-在终端式模块 WebUI 输入：
+在模块 WebUI 点击工具栏的 **全局抓包** 按钮，或在终端输入：
 
 ```text
-api traffic start
-api traffic access
+api traffic toggle
+api traffic status
 api traffic list
 api traffic stop
 ```
 
-在设备 Shell 中，为同样的命令添加前缀，例如 `su -c '/data/adb/modules/netproxy/netproxyctl api traffic start'`。
+在设备 Shell 中，为同样的命令添加前缀，例如 `su -c '/data/adb/modules/netproxy/netproxyctl api traffic toggle'`。
 
-1. `start` 分配一个本机端口；`access` 显示地址、用户名和本次会话的随机密码。凭据只用于抓包代理，不是模块管理 API 凭据。
-2. 在同一设备上，为支持代理鉴权的调试客户端设置 HTTP 代理。在 curl 中可使用 `--proxy http://127.0.0.1:端口 --proxy-user netproxy`，在提示时输入密码。
-3. `list` 查看最近 200 条记录：时间、方法、目标主机、状态、耗时和重写结果。不会记录路径、查询参数、请求头或正文，也不会写入日志、诊断包或磁盘。
-4. `stop` 关闭监听和代理连接，保留本次列表以便查看；`clear` 可清空记录，下一次启动也会清空。Worker 重启后需要重新启动抓包。不要分享代理凭据。
+1. `toggle` 切换开关，`start` 和 `stop` 分别显式开启和关闭。设置会保存；运行中的核心重载一次，可能中断已有连接。尚未启动核心时，设置在下一次启动时生效。
+2. `list` 查看最近 200 条记录：时间、方法、目标、选定出站、状态和重写结果。不会记录路径、查询参数、请求头或正文，也不会写入日志、诊断包或磁盘。
+3. `stop` 保留列表以便查看；`clear` 可清空记录，再次开启也会清空。Worker 不可用或抓包连接达到上限时，新流量按原有路由透传。
 
-**HTTPS 只记录 CONNECT 的目标和隧道状态**；TLS 仍由客户端与目标直接建立，不安装 CA、不解密，也不能重写 HTTPS 内容。该功能不是 PCAP 导出，不采集其他应用的透明流量、UDP、QUIC 或 WebSocket。
+**HTTPS 默认只记录 TCP 元数据**；该分支不解密 TLS。只重写 HTTP/1.x，每个被重写的连接处理一个请求，客户端可正常重连。该功能不是 PCAP 导出，不采集未被受管入站接管的流量、UDP 或 QUIC。
 
 ## 编写规则
 

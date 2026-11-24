@@ -21,6 +21,7 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/telemetry"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/traffic"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/worker"
 	"github.com/sagernet/sing-box/option"
 )
@@ -154,7 +155,12 @@ func Prepare(ctx context.Context, options Options) (PrepareResult, error) {
 		return PrepareResult{}, err
 	}
 	configPath := paths.RuntimeConfig(options.RuntimeDir)
-	if err := writeEffectiveConfig(ctx, options.SingBoxDir, configPath, built.Runtime.Inbounds, runtime.Providers); err != nil {
+	layout := paths.New(options.ModuleDir)
+	var captureSocket string
+	if traffic.Enabled(layout) {
+		captureSocket = layout.TrafficSocket()
+	}
+	if err := writeEffectiveConfig(ctx, options.SingBoxDir, configPath, built.Runtime.Inbounds, runtime.Providers, captureSocket); err != nil {
 		return PrepareResult{}, err
 	}
 	for _, ref := range built.MissingPackages {

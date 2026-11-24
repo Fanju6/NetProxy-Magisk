@@ -1,0 +1,174 @@
+--- a/box.go
++++ b/box.go
+@@ -244,6 +244,7 @@
+ 	service.MustRegister[adapter.DNSRouter](ctx, dnsRouter)
+ 	service.MustRegister[adapter.DNSRuleSetUpdateValidator](ctx, dnsRouter)
+ 	connectionManager := route.NewConnectionManager(ctx, logFactory.NewLogger("connection"))
++	connectionManager.NetProxyCaptureSocket = routeOptions.NetProxyCaptureSocket
+ 	service.MustRegister[adapter.ConnectionManager](ctx, connectionManager)
+ 	networkManager, err := route.NewNetworkManager(ctx, logFactory.NewLogger("network"), routeOptions, dnsOptions)
+ 	if err != nil {
+--- a/option/route.go
++++ b/option/route.go
+@@ -8,6 +8,7 @@
+ )
+ 
+ type RouteOptions struct {
++	NetProxyCaptureSocket      string                            `json:"netproxy_capture_socket,omitempty" schema:"omit"`
+ 	GeoIP                      *GeoIPOptions                     `json:"geoip,omitempty" schema:"omit"`
+ 	Geosite                    *GeositeOptions                   `json:"geosite,omitempty" schema:"omit"`
+ 	Rules                      []Rule                            `json:"rules,omitempty"`
+--- a/route/conn.go
++++ b/route/conn.go
+@@ -38,10 +38,11 @@
+ var _ adapter.ConnectionManager = (*ConnectionManager)(nil)
+ 
+ type ConnectionManager struct {
+-	logger         logger.ContextLogger
+-	urlTestHistory *urltest.HistoryStorage
+-	access         sync.Mutex
+-	connections    list.List[io.Closer]
++	NetProxyCaptureSocket string
++	logger                logger.ContextLogger
++	urlTestHistory        *urltest.HistoryStorage
++	access                sync.Mutex
++	connections           list.List[io.Closer]
+ }
+ 
+ func NewConnectionManager(ctx context.Context, logger logger.ContextLogger) *ConnectionManager {
+@@ -152,7 +153,8 @@
+ 		m.logger.ErrorContext(ctx, err)
+ 		return
+ 	}
+-	if !metadata.TLSFragment && !metadata.TLSRecordFragment && metadata.TLSSpoof == "" {
++	capture := m.NetProxyCaptureSocket != "" && metadata.Inbound == "netproxy-in"
++	if !capture && !metadata.TLSFragment && !metadata.TLSRecordFragment && metadata.TLSSpoof == "" {
+ 		var spliced bool
+ 		spliced, err = m.spliceConnection(ctx, conn, remoteConn, onClose)
+ 		if err != nil {
+@@ -178,6 +180,21 @@
+ 			return
+ 		}
+ 		remoteConn = spoofConn
++	}
++	if capture && netProxyCapture(ctx, m.NetProxyCaptureSocket, conn, remoteConn, metadata, onClose) {
++		return
++	}
++	if capture && !metadata.TLSFragment && !metadata.TLSRecordFragment && metadata.TLSSpoof == "" {
++		spliced, spliceErr := m.spliceConnection(ctx, conn, remoteConn, onClose)
++		if spliceErr != nil {
++			N.CloseOnHandshakeFailure(conn, onClose, spliceErr)
++			remoteConn.Close()
++			m.logger.ErrorContext(ctx, spliceErr)
++			return
++		}
++		if spliced {
++			return
++		}
+ 	}
+ 	serverFirst := sniff.Skip(&metadata)
+ 	var done atomic.Bool
+--- /dev/null
++++ b/route/netproxy_capture_linux.go
+@@ -0,0 +1,83 @@
++package route
++
++import (
++	"context"
++	"encoding/json"
++	"io"
++	"net"
++	"os"
++	"sync"
++	"time"
++
++	"github.com/sagernet/sing-box/adapter"
++	N "github.com/sagernet/sing/common/network"
++	"golang.org/x/sys/unix"
++)
++
++func netProxyCapture(ctx context.Context, path string, client, upstream net.Conn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) bool {
++	deadline := time.Now().Add(250 * time.Millisecond)
++	dialer := net.Dialer{Deadline: deadline}
++	conn, err := dialer.DialContext(ctx, "unix", path)
++	if err != nil {
++		return false
++	}
++	bridge := conn.(*net.UnixConn)
++	_ = bridge.SetDeadline(deadline)
++	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
++	if err != nil {
++		bridge.Close()
++		return false
++	}
++	local := os.NewFile(uintptr(fds[0]), "netproxy-core")
++	peer := os.NewFile(uintptr(fds[1]), "netproxy-worker")
++	defer local.Close()
++	defer peer.Close()
++	remoteBridge, err := net.FileConn(local)
++	if err != nil {
++		bridge.Close()
++		return false
++	}
++	info, _ := json.Marshal(struct {
++		Destination string `json:"destination"`
++		Host        string `json:"host,omitempty"`
++		Outbound    string `json:"outbound"`
++	}{metadata.Destination.String(), metadata.SniffHost, metadata.RouteOutbound})
++	info = append(info, '\n')
++	n, _, err := bridge.WriteMsgUnix(info, unix.UnixRights(int(peer.Fd())), nil)
++	if err != nil || n != len(info) {
++		bridge.Close()
++		remoteBridge.Close()
++		return false
++	}
++	var ready [1]byte
++	if _, err := io.ReadFull(bridge, ready[:]); err != nil || ready[0] != 1 {
++		bridge.Close()
++		remoteBridge.Close()
++		return false
++	}
++	_ = bridge.SetDeadline(time.Time{})
++	go netProxyCaptureRelay(client, bridge, upstream, remoteBridge, onClose)
++	return true
++}
++
++func netProxyCaptureRelay(client, bridge, upstream, remoteBridge net.Conn, onClose N.CloseHandlerFunc) {
++	var wait sync.WaitGroup
++	for _, pair := range [][2]net.Conn{{client, bridge}, {bridge, client}, {upstream, remoteBridge}, {remoteBridge, upstream}} {
++		wait.Go(func() {
++			_, _ = io.Copy(pair[1], pair[0])
++			if closer, ok := pair[1].(interface{ CloseWrite() error }); ok {
++				_ = closer.CloseWrite()
++			} else {
++				_ = pair[1].Close()
++			}
++		})
++	}
++	wait.Wait()
++	client.Close()
++	bridge.Close()
++	upstream.Close()
++	remoteBridge.Close()
++	if onClose != nil {
++		onClose(nil)
++	}
++}
+--- /dev/null
++++ b/route/netproxy_capture_other.go
+@@ -0,0 +1,15 @@
++//go:build !linux
++
++package route
++
++import (
++	"context"
++	"net"
++
++	"github.com/sagernet/sing-box/adapter"
++	N "github.com/sagernet/sing/common/network"
++)
++
++func netProxyCapture(context.Context, string, net.Conn, net.Conn, adapter.InboundContext, N.CloseHandlerFunc) bool {
++	return false
++}

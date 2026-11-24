@@ -16,7 +16,7 @@ import (
 func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 	const maxRequest = traffic.MaxRulesBytes + 1024
 	usage := func() error {
-		return usageError("用法: netproxyctl api traffic status|start|stop|access|list|clear|rules|set-rules <文件>")
+		return usageError("用法: netproxyctl api traffic status|start|stop|toggle|list|clear|rules|set-rules <文件>")
 	}
 	if len(args) == 0 || (args[0] == "set-rules" && len(args) != 2) || (args[0] != "set-rules" && len(args) != 1) {
 		return usage()
@@ -25,9 +25,9 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 	var body io.Reader
 	action := args[0]
 	switch action {
-	case "status", "access", "list", "rules":
+	case "status", "list", "rules":
 		method = http.MethodGet
-	case "start", "stop":
+	case "start", "stop", "toggle":
 		method = http.MethodPost
 	case "clear":
 		method, action = http.MethodDelete, "list"

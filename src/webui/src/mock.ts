@@ -150,7 +150,7 @@ function execute(args: string[]): CtlResult<unknown> {
       if (clean[2] === 'status') return response('traffic.status', '抓包状态', { running: false, count: 0 })
       if (clean[2] === 'list') return response('traffic.list', '抓包记录', [])
       if (clean[2] === 'rules') return response('traffic.rules', '重写规则', { rules: [] })
-      return failure('traffic.preview_unavailable', '开发预览不会启动抓包代理或修改规则')
+      return failure('traffic.preview_unavailable', '开发预览不会启用透明抓包或修改规则')
     }
     if (action === 'access') return failure('api.preview_unavailable', '开发预览不提供真实连接凭据')
     if (action === 'init') return response('api.initialized', '管理接口凭据已初始化', { listen: '127.0.0.1:9091' })

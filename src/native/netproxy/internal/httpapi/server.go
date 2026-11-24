@@ -60,6 +60,7 @@ type Server struct {
 	provisionAfter   time.Time
 	provisionBackoff time.Duration
 	traffic          *traffic.Controller
+	trafficMu        sync.Mutex
 }
 
 func New(options moduleapp.Options, config apiconfig.Config) (*Server, error) {
@@ -77,7 +78,7 @@ func New(options moduleapp.Options, config apiconfig.Config) (*Server, error) {
 	s.options.TransferContext = s.lifetime
 	layout := paths.New(options.ModuleDir)
 	s.version, s.versionCode = readModuleVersion(layout.ModuleProp())
-	s.traffic = traffic.New(layout.TrafficRules())
+	s.traffic = traffic.New(layout)
 	s.route("GET /api/v1/info", 5*time.Second, false, s.info)
 	s.registerResources()
 	s.registerAndroid()
@@ -121,6 +122,9 @@ func (s *Server) serveListener(ctx context.Context, listener net.Listener) error
 		return err
 	}
 	listener = tls.NewListener(listener, tlsConfig)
+	if traffic.Enabled(paths.New(s.options.ModuleDir)) {
+		_ = s.traffic.Start()
+	}
 	server := &http.Server{Handler: s, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, IdleTimeout: time.Minute, MaxHeaderBytes: 16 << 10}
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
