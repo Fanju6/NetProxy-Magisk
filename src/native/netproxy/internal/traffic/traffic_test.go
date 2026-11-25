@@ -3,6 +3,7 @@
 package traffic
 
 import (
+	"bufio"
 	"context"
 	json "encoding/json/v2"
 	"io"
@@ -18,6 +19,65 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"golang.org/x/sys/unix"
 )
+
+func TestCaptureRawUpgradeWithRequestBodyAndBufferedPayload(t *testing.T) {
+	layout := paths.New(t.TempDir())
+	c := New(layout)
+	if err := c.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Stop()
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil || string(body) != "body" {
+			t.Errorf("origin request body = %q, %v", body, err)
+			return
+		}
+		conn, rw, err := http.NewResponseController(w).Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer conn.Close()
+		_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
+		_, _ = rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: fixture\r\n\r\n")
+		if err := rw.Flush(); err != nil {
+			t.Error(err)
+			return
+		}
+		payload := make([]byte, len("earlylate"))
+		if _, err := io.ReadFull(rw, payload); err != nil {
+			t.Error(err)
+			return
+		}
+		_, _ = conn.Write(payload)
+	}))
+	defer origin.Close()
+	conn, err := bridgeFixture(layout)(t.Context(), "tcp", strings.TrimPrefix(origin.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
+	if _, err := io.WriteString(conn, "POST / HTTP/1.1\r\nHost: fixture.test\r\nConnection: Upgrade\r\nUpgrade: fixture\r\nContent-Length: 4\r\n\r\nbodyearly"); err != nil {
+		t.Fatal(err)
+	}
+	reader := bufio.NewReader(conn)
+	response, err := http.ReadResponse(reader, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("unexpected upgrade status: %d", response.StatusCode)
+	}
+	if _, err := io.WriteString(conn, "late"); err != nil {
+		t.Fatal(err)
+	}
+	payload := make([]byte, len("earlylate"))
+	if _, err := io.ReadFull(reader, payload); err != nil || string(payload) != "earlylate" {
+		t.Fatalf("relayed payload = %q, %v", payload, err)
+	}
+}
 
 func TestCaptureAndRewritingThroughCoreBridge(t *testing.T) {
 	const body = "original"

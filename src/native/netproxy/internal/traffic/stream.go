@@ -2,6 +2,7 @@ package traffic
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -202,11 +203,14 @@ func (s *session) serveHTTPStream(client net.Conn, done <-chan struct{}, upstrea
 					http.Error(w, "HTTPS protocol upgrade is not supported", http.StatusNotImplemented)
 					return
 				}
-				if conn, rw, err := http.NewResponseController(w).Hijack(); err == nil {
+				if err := r.Write(upstream); err != nil {
+					http.Error(w, "Failed to forward protocol upgrade", http.StatusBadGateway)
+					return
+				}
+				conn, reader, err := hijackStream(w)
+				if err == nil {
 					defer conn.Close()
-					if err := r.Write(upstream); err == nil {
-						s.relayStreams(&bufferedStream{Conn: conn, reader: rw.Reader, done: make(chan struct{})}, upstream)
-					}
+					s.relayStreams(&bufferedStream{Conn: conn, reader: reader, done: make(chan struct{})}, upstream)
 				}
 				return
 			}
@@ -225,6 +229,15 @@ func (s *session) serveHTTPStream(client net.Conn, done <-chan struct{}, upstrea
 	}
 	server.SetKeepAlivesEnabled(false)
 	_ = server.Serve(&flowListener{conn: client, done: done})
+}
+
+func hijackStream(w http.ResponseWriter) (net.Conn, *bufio.Reader, error) {
+	conn, rw, err := http.NewResponseController(w).Hijack()
+	if err != nil {
+		return nil, nil, err
+	}
+	pending, _ := rw.Reader.Peek(rw.Reader.Buffered())
+	return conn, bufio.NewReader(io.MultiReader(bytes.NewReader(bytes.Clone(pending)), conn)), nil
 }
 
 type bufferedStream struct {

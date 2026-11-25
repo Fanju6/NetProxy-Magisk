@@ -3,7 +3,6 @@ package traffic
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -18,6 +17,10 @@ import (
 
 func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Time, transport *http.Transport, metadata flow) {
 	isWebSocket := webSocketUpgrade(r.Header)
+	if isWebSocket && r.Body != nil && r.Body != http.NoBody {
+		http.Error(w, "WebSocket upgrade must not include a request body", http.StatusBadRequest)
+		return
+	}
 	var ctx context.Context
 	var cancel context.CancelFunc
 	if isWebSocket {
@@ -156,21 +159,21 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 }
 
 func (s *session) captureWebSocket(w http.ResponseWriter, response *http.Response, upstream io.ReadWriteCloser, detail *HTTPDetail) {
-	conn, rw, err := http.NewResponseController(w).Hijack()
+	conn, client, err := hijackStream(w)
 	if err != nil {
 		return
 	}
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Time{})
-	if _, err := fmt.Fprint(rw, "HTTP/1.1 101 Switching Protocols\r\n"); err != nil {
-		return
-	}
+	var handshake bytes.Buffer
+	handshake.WriteString("HTTP/1.1 101 Switching Protocols\r\n")
 	headers := cleanHeaders(response.Header.Clone())
 	setWebSocketUpgrade(headers)
-	if headers.Write(rw) != nil {
+	if headers.Write(&handshake) != nil {
 		return
 	}
-	if _, err := rw.WriteString("\r\n"); err != nil || rw.Flush() != nil {
+	handshake.WriteString("\r\n")
+	if _, err := handshake.WriteTo(conn); err != nil {
 		return
 	}
 	detail.Response = captureMessage(headers)
@@ -180,7 +183,7 @@ func (s *session) captureWebSocket(w http.ResponseWriter, response *http.Respons
 		defer close(done)
 		defer upstream.Close()
 		defer conn.Close()
-		frames.relay(upstream, rw.Reader, "send")
+		frames.relay(upstream, client, "send")
 	}()
 	frames.relay(conn, upstream, "receive")
 	_ = conn.Close()
