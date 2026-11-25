@@ -153,6 +153,9 @@ func (c Config) BuildWithResolver(resolve PackageUIDResolver) (BuildResult, erro
 			}
 		}
 		if local {
+			if !c.IPv6Enabled() {
+				native.Local.IPv6 = new(false)
+			}
 			if err := c.applyRootPolicy(&native.Local.IncludeUID, native.Local.IncludeUIDRange, &native.Local.ExcludeUID, &native.Local.ExcludeUIDRange,
 				len(native.Local.IncludePackage) > 0); err != nil {
 				return BuildResult{}, err

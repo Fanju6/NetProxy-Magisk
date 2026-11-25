@@ -8,6 +8,337 @@
  	service.MustRegister[adapter.ConnectionManager](ctx, connectionManager)
  	networkManager, err := route.NewNetworkManager(ctx, logFactory.NewLogger("network"), routeOptions, dnsOptions)
  	if err != nil {
+--- a/protocol/ebpf/inbound.go
++++ b/protocol/ebpf/inbound.go
+@@ -158,6 +158,8 @@
+ 	localDNSMode              string
+ 	sharedDNSMode             string
+ 	localIPv6                 bool
++	rejectLocalIPv6           bool
++	localIPv6RejectLinks      []func() error
+ 	localPolicy               localUIDPolicy
+ 	compiledPolicy            commonEBPF.CompiledPolicy
+ 	androidUIDOptions         *androidUIDOptions
+@@ -305,6 +307,7 @@
+ 			return nil, E.New("eBPF self-bypass sockets were not prepared")
+ 		}
+ 	}
++	localIPv6, rejectLocalIPv6 := localIPv6Policy(localEnabled, tag, options.Local.IPv6)
+ 	inbound := &Inbound{
+ 		Adapter:        inbound.NewAdapter(C.TypeEBPF, tag),
+ 		ctx:            ctx,
+@@ -326,7 +329,8 @@
+ 		enableUDP:           enableUDP,
+ 		localDNSMode:        localDNSMode,
+ 		sharedDNSMode:       sharedDNSMode,
+-		localIPv6:           localEnabled && enabledByDefault(options.Local.IPv6),
++		localIPv6:           localIPv6,
++		rejectLocalIPv6:     rejectLocalIPv6,
+ 		sharedOptions:       sharedOptions,
+ 		sharedEnabled:       sharedEnabled,
+ 		sharedDataPlane:     sharedDataPlane,
+--- a/protocol/ebpf/ipv6.go
++++ b/protocol/ebpf/ipv6.go
+@@ -2,6 +2,8 @@
+ 
+ package ebpf
+ 
++import "net/netip"
++
+ func (i *Inbound) cgroupIPv6Enabled() bool {
+ 	return i.localCgroupEnabled() && i.localIPv6 && i.redirectIPv6Prefix.IsValid()
+ }
+@@ -13,3 +15,12 @@
+ func (i *Inbound) sharedRewriteIPv6Enabled() bool {
+ 	return i.sharedRewriteEnabled() && i.sharedIPv6 && i.redirectIPv6Prefix.IsValid()
+ }
++
++func (i *Inbound) rejectsLocalIPv6(destination netip.Addr, local bool) bool {
++	return i.rejectLocalIPv6 && local && destination.Unmap().Is6()
++}
++
++func localIPv6Policy(enabled bool, tag string, ipv6 *bool) (intercept, reject bool) {
++	reject = enabled && tag == "netproxy-in" && !enabledByDefault(ipv6)
++	return enabled && (enabledByDefault(ipv6) || reject), reject
++}
+--- /dev/null
++++ b/protocol/ebpf/netproxy_ipv6_test.go
+@@ -0,0 +1,55 @@
++//go:build with_ebpf && (linux || android)
++
++package ebpf
++
++import (
++	"net/netip"
++	"slices"
++	"testing"
++
++	"github.com/sagernet/sing/common"
++)
++
++func TestNetProxyLocalIPv6Policy(t *testing.T) {
++	for _, tt := range []struct {
++		name              string
++		local             bool
++		tag               string
++		ipv6              *bool
++		intercept, reject bool
++	}{
++		{"managed disabled", true, "netproxy-in", common.Ptr(false), true, true},
++		{"managed enabled", true, "netproxy-in", common.Ptr(true), true, false},
++		{"managed default", true, "netproxy-in", nil, true, false},
++		{"shared only", false, "netproxy-in", nil, false, false},
++		{"other inbound disabled", true, "custom", common.Ptr(false), false, false},
++	} {
++		t.Run(tt.name, func(t *testing.T) {
++			intercept, reject := localIPv6Policy(tt.local, tt.tag, tt.ipv6)
++			if intercept != tt.intercept || reject != tt.reject {
++				t.Fatalf("intercept=%v reject=%v", intercept, reject)
++			}
++			i := Inbound{rejectLocalIPv6: reject}
++			v6 := netip.MustParseAddr("2001:db8::1")
++			if i.rejectsLocalIPv6(v6, true) != tt.reject || i.rejectsLocalIPv6(v6, false) ||
++				i.rejectsLocalIPv6(netip.MustParseAddr("::ffff:192.0.2.1"), true) {
++				t.Fatal("IPv6 rejection did not respect traffic scope or address family")
++			}
++		})
++	}
++}
++
++func TestNetProxyIPv6RejectUIDRanges(t *testing.T) {
++	for _, tt := range []struct {
++		start, end uint32
++		want       []rejectUIDPrefix
++	}{
++		{0, ^uint32(0), []rejectUIDPrefix{{Bits: 0}}},
++		{10418, 10418, []rejectUIDPrefix{{32, [4]byte{0, 0, 40, 178}}}},
++		{100000, 100003, []rejectUIDPrefix{{30, [4]byte{0, 1, 134, 160}}}},
++	} {
++		if got := rejectUIDPrefixes(tt.start, tt.end); !slices.Equal(got, tt.want) {
++			t.Fatalf("range %d..%d: got %+v, want %+v", tt.start, tt.end, got, tt.want)
++		}
++	}
++}
+--- a/protocol/ebpf/inbound_connection.go
++++ b/protocol/ebpf/inbound_connection.go
+@@ -80,6 +80,10 @@
+ 			_ = conn.Close()
+ 			return
+ 		}
++		if i.rejectsLocalIPv6(original.Destination.Addr(), true) {
++			N.CloseOnHandshakeFailure(conn, onClose, unix.ECONNREFUSED)
++			return
++		}
+ 		metadata.Inbound = i.Tag()
+ 		metadata.InboundType = i.Type()
+ 		metadata.Source = M.SocksaddrFromNet(conn.RemoteAddr())
+@@ -180,6 +184,11 @@
+ 		Destination: destination,
+ 	}
+ 	key, keyLoaded := udpSessionKeyFromContext(ctx)
++	if keyLoaded && i.rejectsLocalIPv6(destination.Addr,
++		key.Scope == udpSessionScopeLocalCgroup || key.Scope == udpSessionScopeLocalTC) {
++		N.CloseOnHandshakeFailure(conn, onClose, unix.ECONNREFUSED)
++		return
++	}
+ 	if clientState, loaded := i.udpClientTable.load(key); keyLoaded && loaded {
+ 		metadata.SourceMACAddress = clientState.sourceMACAddress()
+ 		metadata.ProcessInfo = i.lookupProcessInfo(clientState.processSocketCookie())
+--- a/protocol/ebpf/tc_connection.go
++++ b/protocol/ebpf/tc_connection.go
+@@ -48,6 +48,10 @@
+ 		return
+ 	}
+ 	onClose = N.AppendClose(onClose, N.OnceClose(func(error) { returnHandle.Release() }))
++	if i.rejectsLocalIPv6(destination.Addr(), assignment.Path == commonEBPF.TCPathDelivery) {
++		N.CloseOnHandshakeFailure(conn, onClose, unix.ECONNREFUSED)
++		return
++	}
+ 	metadata.Inbound = i.Tag()
+ 	metadata.InboundType = i.Type()
+ 	metadata.Source = M.SocksaddrFromNetIP(source)
+--- /dev/null
++++ b/protocol/ebpf/netproxy_ipv6_reject.go
+@@ -0,0 +1,154 @@
++//go:build with_ebpf && (linux || android)
++
++package ebpf
++
++import (
++	"errors"
++	"math/bits"
++	"os"
++
++	commonEBPF "github.com/CHIZI-0618/sing-ebpf"
++	bpf "github.com/cilium/ebpf"
++	"github.com/cilium/ebpf/asm"
++	"github.com/cilium/ebpf/link"
++	"golang.org/x/sys/unix"
++)
++
++type rejectUIDPrefix struct {
++	Bits uint32
++	UID  [4]byte
++}
++
++func rejectUIDPrefixes(start, end uint32) []rejectUIDPrefix {
++	var prefixes []rejectUIDPrefix
++	for first, last := uint64(start), uint64(end); first <= last; {
++		width := min(bits.TrailingZeros64(first), bits.Len64(last-first+1)-1)
++		prefixes = append(prefixes, rejectUIDPrefix{32 - uint32(width),
++			[4]byte{byte(first >> 24), byte(first >> 16), byte(first >> 8), byte(first)},
++		})
++		first += uint64(1) << width
++	}
++	return prefixes
++}
++
++func (i *Inbound) startLocalIPv6Rejection() error {
++	if !i.rejectLocalIPv6 {
++		return nil
++	}
++	path := i.cgroupPath
++	if path == "" {
++		var err error
++		path, err = commonEBPF.DetectCgroup2Root()
++		if err != nil {
++			return err
++		}
++	}
++	group, err := os.Open(path)
++	if err != nil {
++		return err
++	}
++	defer group.Close()
++
++	decisions, defaultAction := i.compileProcessUIDPolicy()
++	entries := make(map[rejectUIDPrefix]uint32)
++	for _, decision := range decisions {
++		for _, prefix := range rejectUIDPrefixes(decision.Start, decision.End) {
++			if decision.Action == commonEBPF.DecisionPass {
++				entries[prefix] = 1
++			} else {
++				entries[prefix] = 0
++			}
++		}
++	}
++	policy, err := bpf.NewMap(&bpf.MapSpec{
++		Type: bpf.LPMTrie, KeySize: 8, ValueSize: 4,
++		MaxEntries: uint32(max(1, len(entries))), Flags: unix.BPF_F_NO_PREALLOC,
++	})
++	if err != nil {
++		return err
++	}
++	defer policy.Close()
++	for prefix, action := range entries {
++		if err := policy.Put(prefix, action); err != nil {
++			return err
++		}
++	}
++
++	defaultResult := int32(0)
++	if defaultAction == commonEBPF.DecisionPass {
++		defaultResult = 1
++	}
++	attachments := []bpf.AttachType{bpf.AttachCGroupInet6Connect}
++	if i.enableUDP {
++		attachments = append(attachments, bpf.AttachCGroupUDP6Sendmsg)
++	}
++	for _, attach := range attachments {
++		program, err := bpf.NewProgram(&bpf.ProgramSpec{
++			Name: "np_ipv6_reject", Type: bpf.CGroupSockAddr, AttachType: attach,
++			License: "GPL", Instructions: rejectIPv6Instructions(policy.FD(), os.Getpid(), defaultResult, i.enableTCP, i.enableUDP),
++		})
++		if err != nil {
++			return err
++		}
++		attached, err := link.AttachRawLink(link.RawLinkOptions{Target: int(group.Fd()), Program: program, Attach: attach})
++		program.Close()
++		if err != nil {
++			return err
++		}
++		i.localIPv6RejectLinks = append(i.localIPv6RejectLinks, attached.Close)
++	}
++	return nil
++}
++
++func (i *Inbound) closeLocalIPv6Rejection() error {
++	var err error
++	for _, closeLink := range i.localIPv6RejectLinks {
++		err = errors.Join(err, closeLink())
++	}
++	i.localIPv6RejectLinks = nil
++	return err
++}
++
++func rejectIPv6Instructions(policyFD, selfPID int, defaultResult int32, tcp, udp bool) asm.Instructions {
++	// bpf_sock_addr：IPv6 地址占字节 8–23，协议位于字节 36–39。
++	instructions := asm.Instructions{asm.LoadMem(asm.R2, asm.R1, 36, asm.Word)}
++	if !tcp {
++		instructions = append(instructions, asm.JEq.Imm(asm.R2, unix.IPPROTO_TCP, "pass"))
++	}
++	if !udp {
++		instructions = append(instructions, asm.JEq.Imm(asm.R2, unix.IPPROTO_UDP, "pass"))
++	}
++	return append(instructions,
++		asm.LoadMem(asm.R2, asm.R1, 8, asm.Word),
++		asm.JNE.Imm(asm.R2, 0, "self"),
++		asm.LoadMem(asm.R2, asm.R1, 12, asm.Word),
++		asm.JNE.Imm(asm.R2, 0, "self"),
++		asm.LoadMem(asm.R2, asm.R1, 16, asm.Word),
++		asm.HostTo(asm.BE, asm.R2, asm.Word),
++		asm.JEq.Imm(asm.R2, 0xffff, "pass"),
++		asm.JNE.Imm(asm.R2, 0, "self"),
++		asm.LoadMem(asm.R2, asm.R1, 20, asm.Word),
++		asm.HostTo(asm.BE, asm.R2, asm.Word),
++		asm.JLE.Imm(asm.R2, 1, "pass"),
++		// 核心可能和受管 Root 进程同为 UID 0，出站不能按 UID 一并拒绝。
++		asm.FnGetCurrentPidTgid.Call().WithSymbol("self"),
++		asm.RSh.Imm(asm.R0, 32),
++		asm.JEq.Imm(asm.R0, int32(selfPID), "pass"),
++		asm.FnGetCurrentUidGid.Call(),
++		asm.HostTo(asm.BE, asm.R0, asm.Word),
++		asm.StoreImm(asm.RFP, -8, 32, asm.Word),
++		asm.StoreMem(asm.RFP, -4, asm.R0, asm.Word),
++		asm.LoadMapPtr(asm.R1, policyFD),
++		asm.Mov.Reg(asm.R2, asm.RFP),
++		asm.Add.Imm(asm.R2, -8),
++		asm.FnMapLookupElem.Call(),
++		asm.JEq.Imm(asm.R0, 0, "default"),
++		asm.LoadMem(asm.R0, asm.R0, 0, asm.Word),
++		asm.And.Imm(asm.R0, 1),
++		asm.Return(),
++		asm.Mov.Imm(asm.R0, defaultResult).WithSymbol("default"),
++		asm.Return(),
++		asm.Mov.Imm(asm.R0, 1).WithSymbol("pass"),
++		asm.Return(),
++	)
++}
+--- a/protocol/ebpf/lifecycle_start.go
++++ b/protocol/ebpf/lifecycle_start.go
+@@ -234,6 +234,9 @@
+ 	if i.enableUDP && (i.localSocketAssignEnabled() || i.sharedSocketAssignEnabled()) {
+ 		i.udpReplySockets.startSweeper(i.ctx)
+ 	}
++	if err := i.startLocalIPv6Rejection(); err != nil {
++		return E.Cause(err, "start managed IPv6 socket rejection")
++	}
+ 	i.logStartupSummaryLocked()
+ 	return nil
+ }
+--- a/protocol/ebpf/lifecycle_close.go
++++ b/protocol/ebpf/lifecycle_close.go
+@@ -27,6 +27,10 @@
+ func (i *Inbound) closeResources() error {
++	return E.Errors(i.closeLocalIPv6Rejection(), i.closeDataPlaneResources())
++}
++
++func (i *Inbound) closeDataPlaneResources() error {
+ 	monitorErr := i.stopInboundWorkers()
+ 	sharedRewriteErr := i.closeSharedRewriteOwner()
+ 	dataPlane := i.takeTCDataPlane()
+ 	disableErr := error(nil)
+ 	if dataPlane != nil {
 --- a/option/route.go
 +++ b/option/route.go
 @@ -8,6 +8,7 @@
