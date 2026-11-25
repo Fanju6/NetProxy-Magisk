@@ -183,6 +183,11 @@ func (s *Server) setTraffic(ctx context.Context, action string) (traffic.Status,
 	}
 	if !enable {
 		s.traffic.Stop()
+	} else {
+		policy, err := s.traffic.MITMPolicy()
+		if err == nil && policy.SystemTrust {
+			traffic.RestoreSystemTrust(ctx, layout, "capture-start")
+		}
 	}
 	return s.traffic.Status(), nil
 }

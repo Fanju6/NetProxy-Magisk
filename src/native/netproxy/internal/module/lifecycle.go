@@ -437,7 +437,7 @@ func Boot(ctx context.Context, options Options) error {
 	var compatibility sync.WaitGroup
 	compatibility.Go(func() { RepairGoogleConnectivity(ctx, options, time.Minute) })
 	defer compatibility.Wait()
-	RestoreTrafficSystemTrust(ctx, options)
+	traffic.RestoreSystemTrust(ctx, paths.New(options.ModuleDir), "boot")
 	if err := EnsureWorker(ctx, options); err != nil {
 		logService(options, "WARN", "worker.start", "failed", "后台 Worker 启动失败，可稍后手动重试: %v", err)
 	}
@@ -458,13 +458,6 @@ func Boot(ctx context.Context, options Options) error {
 
 func newBootCompletedWaitCommand(ctx context.Context) *exec.Cmd {
 	return exec.CommandContext(ctx, "resetprop", "-w", "sys.boot_completed", "0")
-}
-
-// RestoreTrafficSystemTrust 按当前模块配置恢复系统 CA，不阻断服务启动。
-func RestoreTrafficSystemTrust(ctx context.Context, options Options) {
-	if err := traffic.RestoreSystemTrust(ctx, paths.New(options.ModuleDir)); err != nil {
-		logService(options, "WARN", "traffic.trust", "failed", "抓包 CA 未完成系统挂载: %v", err)
-	}
 }
 
 func EnsureWorker(ctx context.Context, options Options) error {

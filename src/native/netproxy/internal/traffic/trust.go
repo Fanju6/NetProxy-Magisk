@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/logfile"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/processlock"
 )
@@ -40,8 +41,22 @@ const (
 	trustUninstall
 )
 
-func RestoreSystemTrust(ctx context.Context, layout paths.Layout) error {
-	return reconcileSystemTrust(ctx, layout, trustBoot)
+func RestoreSystemTrust(ctx context.Context, layout paths.Layout, trigger string) {
+	if runtime.GOOS != "android" || !layout.IsLive() {
+		return
+	}
+	log := func(level, result, message string) {
+		_ = logfile.AppendEntry(layout.ServiceLog(), logfile.Entry{
+			Level: level, Component: "service", Event: "traffic.trust", Result: result,
+			Message: trigger + ": " + message,
+		})
+	}
+	log("INFO", "started", "检查并恢复抓包 CA 系统信任")
+	if err := reconcileSystemTrust(ctx, layout, trustBoot); err != nil {
+		log("WARN", "failed", "抓包 CA 未完成系统挂载: "+err.Error())
+		return
+	}
+	log("INFO", "success", "系统 CA 挂载状态已与抓包配置同步")
 }
 
 func RemoveDisabledSystemTrust(ctx context.Context, layout paths.Layout) error {
@@ -92,6 +107,9 @@ func installStores(ctx context.Context, layout paths.Layout, cert Certificate) e
 	if err != nil {
 		return err
 	}
+	if err := detachStores(ctx, layout); err != nil {
+		return err
+	}
 	for _, store := range systemStores {
 		base := procRoot(1, store.target)
 		if _, err := os.Stat(base); errors.Is(err, os.ErrNotExist) && store.name == "conscrypt" {
@@ -100,18 +118,11 @@ func installStores(ctx context.Context, layout paths.Layout, cert Certificate) e
 			return fmt.Errorf("读取 init 的 CA 存储 %s: %w", store.target, err)
 		}
 		stage := filepath.Join(layout.TrafficTrust(), store.name)
-		source := procRoot(1, stage)
-		if _, err := os.Stat(source); errors.Is(err, os.ErrNotExist) {
-			if err := prepareStore(ctx, base, stage, cert); err != nil {
-				return err
-			}
-		} else if err != nil {
-			return fmt.Errorf("读取 CA 候选目录 %s: %w", store.name, err)
-		} else if content, err := readStockCA(filepath.Join(source, cert.Filename)); err != nil || string(content) != cert.PEM {
-			return errors.New("已挂载的抓包 CA 与当前证书不符")
+		if err := prepareStore(ctx, base, stage, caMountSource(store), cert); err != nil {
+			return err
 		}
 		for _, target := range targets {
-			if err := changeStoreMount(ctx, target, stage, store.target, true); err != nil {
+			if err := installStoreMount(ctx, target, stage, store.target, cert); err != nil {
 				return err
 			}
 		}
@@ -119,7 +130,9 @@ func installStores(ctx context.Context, layout paths.Layout, cert Certificate) e
 	return nil
 }
 
-func prepareStore(ctx context.Context, base, stage string, cert Certificate) error {
+func caMountSource(store trustStore) string { return "netproxy-traffic-ca-" + store.name }
+
+func prepareStore(ctx context.Context, base, stage, name string, cert Certificate) error {
 	source := procRoot(1, stage)
 	if err := os.MkdirAll(filepath.Dir(source), 0o700); err != nil {
 		return fmt.Errorf("创建系统 CA 挂载目录: %w", err)
@@ -131,7 +144,7 @@ func prepareStore(ctx context.Context, base, stage string, cert Certificate) err
 	if err != nil {
 		return err
 	}
-	if err := namespaceCommand(ctx, init, "/system/bin/mount", "-t", "tmpfs", "-o", "mode=0700,nodev,nosuid,noexec", "tmpfs", stage); err != nil {
+	if err := namespaceCommand(ctx, init, "/system/bin/mount", "-t", "tmpfs", "-o", "mode=0700,nodev,nosuid,noexec", name, stage); err != nil {
 		return err
 	}
 	if err := populateStore(base, source, cert); err != nil {
@@ -214,9 +227,6 @@ func writePublicCA(path string, content []byte) error {
 }
 
 func detachStores(ctx context.Context, layout paths.Layout) error {
-	if _, err := os.Stat(procRoot(1, layout.TrafficTrust())); errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
 	targets, err := mountTargets()
 	if err != nil {
 		return err
@@ -224,9 +234,19 @@ func detachStores(ctx context.Context, layout paths.Layout) error {
 	var failures error
 	for _, store := range systemStores {
 		stage := filepath.Join(layout.TrafficTrust(), store.name)
+		info, err := readMountInfo(targets[0])
+		if err != nil {
+			return errors.Join(failures, err)
+		}
+		legacy := make(map[string]bool)
+		for _, mount := range mountsAt(info, stage) {
+			if mount.filesystem == "tmpfs" {
+				legacy[mount.device] = true
+			}
+		}
 		var detachErr error
 		for _, target := range targets {
-			if err := changeStoreMount(ctx, target, stage, store.target, false); err != nil {
+			if err := detachStoreLayers(ctx, target, store, stage, legacy); err != nil {
 				detachErr = errors.Join(detachErr, err)
 			}
 		}
@@ -255,14 +275,93 @@ func removeStage(ctx context.Context, init mountTarget, stage string) error {
 }
 
 func listedMount(info, path string) bool {
+	return len(mountsAt(info, path)) != 0
+}
+
+type caMount struct {
+	id, parent, device, root, filesystem, source string
+}
+
+func mountsAt(info, path string) []caMount {
 	escaped := strings.NewReplacer("\\", "\\134", " ", "\\040", "\t", "\\011", "\n", "\\012").Replace(path)
+	var result []caMount
 	for line := range strings.SplitSeq(info, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) > 4 && fields[4] == escaped {
-			return true
+		before, after, ok := strings.Cut(line, " - ")
+		if !ok {
+			continue
+		}
+		fields, fs := strings.Fields(before), strings.Fields(after)
+		if len(fields) > 4 && len(fs) >= 2 && fields[4] == escaped {
+			result = append(result, caMount{fields[0], fields[1], fields[2], fields[3], fs[0], fs[1]})
 		}
 	}
-	return false
+	return result
+}
+
+func ownedMountTop(info string, store trustStore, stage string, legacy map[string]bool) (caMount, bool, error) {
+	mounts := mountsAt(info, store.target)
+	parents := make(map[string]bool, len(mounts))
+	owned := false
+	for _, mount := range mounts {
+		parents[mount.parent] = true
+		owned = owned || ownsStoreMount(mount, store, stage, legacy)
+	}
+	if !owned {
+		return caMount{}, false, nil
+	}
+	var top caMount
+	for _, mount := range mounts {
+		if !parents[mount.id] {
+			if top.id != "" {
+				return caMount{}, false, fmt.Errorf("无法确定 CA 挂载顶层 %s", store.target)
+			}
+			top = mount
+		}
+	}
+	if !ownsStoreMount(top, store, stage, legacy) {
+		return caMount{}, false, fmt.Errorf("另一个挂载遮住了 NetProxy CA 层 %s", store.target)
+	}
+	return top, true, nil
+}
+
+func ownsStoreMount(mount caMount, store trustStore, stage string, legacy map[string]bool) bool {
+	legacyRoot, underDev := strings.CutPrefix(stage, "/dev/")
+	return mount.filesystem == "tmpfs" &&
+		(mount.root == "/" && (mount.source == caMountSource(store) || legacy[mount.device]) ||
+			underDev && mount.root == "/"+legacyRoot)
+}
+
+func readMountInfo(target mountTarget) (string, error) {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/mountinfo", target.pid))
+	if err != nil {
+		return "", fmt.Errorf("读取挂载表 (PID %d, %s): %w", target.pid, target.namespace, err)
+	}
+	return string(data), nil
+}
+
+func detachStoreLayers(ctx context.Context, target mountTarget, store trustStore, stage string, legacy map[string]bool) error {
+	seen := make(map[string]bool)
+	for target.active() {
+		info, err := readMountInfo(target)
+		if err != nil || ctx.Err() != nil {
+			if !target.active() {
+				return nil
+			}
+			return errors.Join(err, ctx.Err())
+		}
+		top, owned, err := ownedMountTop(info, store, stage, legacy)
+		if err != nil || !owned {
+			return err
+		}
+		if seen[top.id] {
+			return fmt.Errorf("未能卸载 CA 层 %s (PID %d, %s, mount %s)", store.target, target.pid, target.namespace, top.id)
+		}
+		seen[top.id] = true
+		if err := namespaceCommand(ctx, target, "/system/bin/umount", "-l", store.target); err != nil && target.active() {
+			return err
+		}
+	}
+	return nil
 }
 
 type mountTarget struct {
@@ -324,7 +423,7 @@ func sameMount(stage, target string) bool {
 	return srcErr == nil && dstErr == nil && os.SameFile(source, mounted)
 }
 
-func changeStoreMount(ctx context.Context, target mountTarget, stage, path string, install bool) error {
+func installStoreMount(ctx context.Context, target mountTarget, stage, path string, cert Certificate) error {
 	source := procRoot(1, stage)
 	dest := procRoot(target.pid, path)
 	if !target.active() {
@@ -332,29 +431,26 @@ func changeStoreMount(ctx context.Context, target mountTarget, stage, path strin
 	}
 	if _, err := os.Stat(dest); errors.Is(err, os.ErrNotExist) && target.pid != 1 {
 		return nil
-	} else if err != nil && install {
+	} else if err != nil {
 		return fmt.Errorf("读取 CA 存储 %s (PID %d, %s): %w", path, target.pid, target.namespace, err)
 	}
-	if sameMount(source, dest) == install {
-		return nil
-	}
-	var err error
-	if install {
+	if !sameMount(source, dest) {
 		if !sameMount(source, procRoot(target.pid, stage)) {
 			return fmt.Errorf("CA 候选挂载 %s 在 PID %d (%s) 不可见", stage, target.pid, target.namespace)
 		}
-		err = namespaceCommand(ctx, target, "/system/bin/mount", "-o", "bind", stage, path)
-	} else {
-		err = namespaceCommand(ctx, target, "/system/bin/umount", "-l", path)
+		if err := namespaceCommand(ctx, target, "/system/bin/mount", "-o", "bind", stage, path); err != nil && target.active() {
+			return err
+		}
 	}
 	if !target.active() {
 		return nil
 	}
-	if err != nil {
-		return err
-	}
-	if sameMount(source, dest) != install {
+	if !sameMount(source, dest) {
 		return fmt.Errorf("CA 挂载状态验证失败 %s (PID %d, %s)", path, target.pid, target.namespace)
+	}
+	content, err := readStockCA(filepath.Join(dest, cert.Filename))
+	if err != nil || string(content) != cert.PEM {
+		return fmt.Errorf("CA 挂载缺少匹配证书 %s/%s (PID %d, %s)", path, cert.Filename, target.pid, target.namespace)
 	}
 	return nil
 }

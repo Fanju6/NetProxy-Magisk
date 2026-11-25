@@ -14,6 +14,7 @@ import (
 	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/traffic"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/worker"
 )
 
@@ -97,7 +98,7 @@ func runWorker(ctx context.Context, args []string) error {
 		return worker.RunProcess(ctx, options, logger)
 	case "start":
 		if *restoreTrust {
-			moduleapp.RestoreTrafficSystemTrust(ctx, moduleOptions)
+			traffic.RestoreSystemTrust(ctx, layout, "hot-update")
 		}
 		status, err := worker.Start(ctx, options, os.Args[0])
 		if err != nil {
