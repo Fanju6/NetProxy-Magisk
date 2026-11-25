@@ -97,6 +97,8 @@ test('原生策略组补全与预览区分配置快照和运行时操作', () =>
   assert.equal(run('policy', 'groups').data.groups[0].configured_default, '本地配置/demo-node')
   assert.equal(run('policy', 'select', 'Proxy', 'block').code, 'policy.selected')
   assert.equal(run('policy', 'delay', 'Proxy').code, 'policy.preview_unavailable')
+  assert.deepEqual(complete('node lat').candidates, ['latency'])
+  assert.equal(run('node', 'latency', 'Fixture').code, 'policy.preview_unavailable')
   assert.equal(run('policy', 'select', 'Proxy').code, 'usage.invalid')
   assert.equal(run('node', 'use', 'auto').code, 'usage.invalid')
   assert.equal(run('sub', 'activate', 'default').code, 'usage.invalid')

@@ -684,4 +684,12 @@
     <string name="routing_error_package_name">请填写完整包名，例如 com.android.chrome，不要包含用户 ID、空格或网址。</string>
     <string name="routing_invalid_document">该规则集暂时无法使用表单编辑，请在 JSON 编辑器中检查 version 和 rules。</string>
     <string name="routing_reload_draft">丢弃草稿并重新加载</string>
+    <string name="policy_node_add_to_groups">加入策略组…</string>
+    <string name="policy_node_added">节点已加入所选策略组</string>
+    <string name="policy_node_already_added">节点已在所选策略组中</string>
+    <string name="policy_group_provider_nodes">订阅源节点</string>
+    <string name="policy_provider_entire">整个订阅源（自动纳入新节点）</string>
+    <string name="policy_provider_selected">仅选中的节点</string>
+    <string name="policy_provider_nodes_unavailable">无法列出此订阅源的节点</string>
+    <string name="policy_provider_regex_conflict">现有包含或排除规则无法安全地自动修改，请检查高级筛选。</string>
 </resources>

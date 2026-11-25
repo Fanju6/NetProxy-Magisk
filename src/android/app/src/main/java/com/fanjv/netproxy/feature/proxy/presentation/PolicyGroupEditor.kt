@@ -47,6 +47,7 @@ import com.fanjv.netproxy.core.ui.component.CardItem
 import com.fanjv.netproxy.core.ui.component.groupedCardSection
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import com.fanjv.netproxy.core.ui.resolve
+import com.fanjv.netproxy.feature.proxy.data.ProviderPolicyFilter
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Icon
 import com.fanjv.netproxy.core.ui.component.AppBarButton as IconButton
@@ -98,6 +99,7 @@ internal fun PolicyGroupEditorScreen(
     val focus = LocalFocusManager.current
     var picker by rememberSaveable { mutableStateOf<PolicyPicker?>(null) }
     var advanced by rememberSaveable { mutableStateOf(false) }
+    var expandedProvider by rememberSaveable { mutableStateOf<String?>(null) }
     BackHandler(saving) { }
 
     Scaffold(
@@ -214,6 +216,65 @@ internal fun PolicyGroupEditorScreen(
                     })
                 })
 
+                val filter = ProviderPolicyFilter.decode(draft.include, draft.providers)
+                if (!draft.useAll && draft.providers.isNotEmpty()) {
+                    groupedCardSection("provider_members", { stringResource(R.string.policy_group_provider_nodes) }, buildList {
+                        draft.providers.forEach { provider ->
+                            val nodes = document.providerNodes[provider]
+                            val picked = filter?.members?.get(provider)
+                            val open = expandedProvider == provider
+                            val editable = filter != null && nodes != null && draft.providers.none { '/' in it }
+                            add(CardItem("provider/$provider") {
+                                BasicComponent(
+                                    title = provider,
+                                    summary = when {
+                                        nodes == null -> stringResource(R.string.policy_provider_nodes_unavailable)
+                                        !editable -> stringResource(R.string.policy_provider_regex_conflict)
+                                        picked == null -> stringResource(R.string.policy_provider_entire)
+                                        else -> stringResource(R.string.policy_group_selected_count, picked.size)
+                                    },
+                                    endActions = {
+                                        Icon(if (open) MiuixIcons.ExpandLess else MiuixIcons.ExpandMore, contentDescription = null)
+                                    },
+                                    onClick = {
+                                        if (editable) expandedProvider = if (open) null else provider
+                                        else advanced = true
+                                    },
+                                )
+                            })
+                            if (open && editable && filter != null && nodes != null) {
+                                add(CardItem("provider_mode/$provider") {
+                                    SwitchPreference(
+                                        title = stringResource(R.string.policy_provider_selected),
+                                        summary = stringResource(R.string.policy_provider_entire),
+                                        checked = picked != null,
+                                        enabled = enabled,
+                                        onCheckedChange = { onlySelected ->
+                                            change { current ->
+                                                current.copy(include = filter.select(provider, if (onlySelected) nodes.toSet() else null)
+                                                    .encode(current.providers))
+                                            }
+                                        },
+                                    )
+                                })
+                                if (picked != null) (nodes + picked).distinct().forEach { fullLabel ->
+                                    add(CardItem("provider_node/$fullLabel") {
+                                        CheckboxPreference(
+                                            title = fullLabel.removePrefix("$provider/"),
+                                            checked = fullLabel in picked,
+                                            enabled = enabled,
+                                            onCheckedChange = { selected ->
+                                                val next = if (selected) picked + fullLabel else picked - fullLabel
+                                                change { current -> current.copy(include = filter.select(provider, next).encode(current.providers)) }
+                                            },
+                                        )
+                                    })
+                                }
+                            }
+                        }
+                    })
+                }
+
                 if (draft.type == "selector") {
                     groupedCardSection("behavior", { stringResource(R.string.policy_group_behavior) }, listOf(CardItem("default") {
                         val defaults = (listOf("") + draft.outbounds + draft.defaultMember).distinct()
@@ -255,7 +316,7 @@ internal fun PolicyGroupEditorScreen(
                                 onClick = { advanced = !advanced },
                             )
                         })
-                        if (advanced) {
+                    if (advanced || (draft.include.isNotEmpty() && (filter == null || draft.useAll)) || draft.exclude.isNotEmpty()) {
                             add(CardItem("include") {
                                 PolicyField(R.string.policy_group_include, draft.include, enabled) { value ->
                                     change { it.copy(include = value) }
@@ -289,7 +350,10 @@ internal fun PolicyGroupEditorScreen(
                         outbounds = next,
                         defaultMember = current.defaultMember.takeUnless { it in current.outbounds && it !in next }.orEmpty(),
                     )
-                } else change { it.copy(providers = next) }
+                } else change {
+                    val filter = ProviderPolicyFilter.decode(it.include, it.providers)
+                    it.copy(providers = next, include = if (next.any { tag -> '/' in tag }) it.include else filter?.encode(next) ?: it.include)
+                }
                 picker = null
             },
         )

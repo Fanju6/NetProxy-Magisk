@@ -654,4 +654,12 @@
     <string name="routing_error_package_name">Введите полное имя пакета, например com.android.chrome, без ID пользователя, пробелов и URL.</string>
     <string name="routing_invalid_document">Этот набор нельзя изменить в форме. Проверьте version и rules в редакторе JSON.</string>
     <string name="routing_reload_draft">Отбросить черновик и перечитать</string>
+    <string name="policy_node_add_to_groups">Добавить в группы политик…</string>
+    <string name="policy_node_added">Узел добавлен в выбранные группы</string>
+    <string name="policy_node_already_added">Узел уже входит в выбранные группы</string>
+    <string name="policy_group_provider_nodes">Узлы поставщика</string>
+    <string name="policy_provider_entire">Весь поставщик (включая новые узлы)</string>
+    <string name="policy_provider_selected">Только выбранные узлы</string>
+    <string name="policy_provider_nodes_unavailable">Список узлов этого поставщика недоступен</string>
+    <string name="policy_provider_regex_conflict">Текущие правила включения и исключения нельзя безопасно изменить автоматически. Проверьте расширенные фильтры.</string>
 </resources>

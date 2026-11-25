@@ -91,7 +91,7 @@ internal fun NodeCard(
         insideMargin = PaddingValues(0.dp),
         selected = selected,
         onClick = if (enabled) onClick else null,
-        onLongPress = if (enabled) onLongClick else null,
+        onLongPress = onLongClick,
     ) {
         Column(modifier = Modifier
             .fillMaxWidth()
