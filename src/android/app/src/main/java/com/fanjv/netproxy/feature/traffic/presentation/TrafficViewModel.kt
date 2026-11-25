@@ -271,6 +271,8 @@ internal class TrafficViewModel(
             _state.update { it.copy(policy = TrafficContent(saved)) }
         }
 
+    fun removeUserCertificate() = mutate { repository.removeUserCertificate() }
+
     fun prepareCertificate(launchExport: (String) -> Unit) = mutate {
         val cert = repository.certificate()
         pendingCertificate = cert

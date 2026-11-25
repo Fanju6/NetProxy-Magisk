@@ -73,6 +73,8 @@ func (l Layout) TrafficPinned() string { return filepath.Join(l.Config(), "traff
 
 func (l Layout) TrafficTrust() string { return filepath.Join(l.DevRoot(), "traffic-trust") }
 
+func (l Layout) TrafficUserTrust() string { return filepath.Join(l.Config(), "traffic-user-trust") }
+
 func (l Layout) APITempDir() string { return filepath.Join(l.DevRoot(), "http") }
 
 func (l Layout) AndroidPlatformDEX() string { return filepath.Join(l.Bin(), "android-platform.dex") }

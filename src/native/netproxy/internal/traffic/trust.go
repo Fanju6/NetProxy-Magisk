@@ -70,7 +70,7 @@ func RemoveDisabledSystemTrust(ctx context.Context, layout paths.Layout) error {
 }
 
 func RemoveSystemTrust(ctx context.Context, layout paths.Layout) error {
-	return errors.Join(reconcileUserTrust(ctx, layout, true), reconcileSystemTrust(ctx, layout, trustUninstall))
+	return errors.Join(RemoveUserTrust(ctx, layout), reconcileSystemTrust(ctx, layout, trustUninstall))
 }
 
 func reconcileSystemTrust(ctx context.Context, layout paths.Layout, action trustAction) error {

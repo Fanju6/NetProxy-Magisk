@@ -18,7 +18,7 @@ import (
 func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 	const maxRequest = traffic.MaxRulesBytes + 1024
 	usage := func() error {
-		return usageError("用法: netproxyctl api traffic status|start|stop|toggle|list|detail <ID>|clear|apps|set-apps <文件>|rules|set-rules|mitm|set-mitm|pinned|clear-pinned|ca|ca-init|ca-export")
+		return usageError("用法: netproxyctl api traffic status|start|stop|toggle|list|detail <ID>|clear|apps|set-apps <文件>|rules|set-rules|mitm|set-mitm|pinned|clear-pinned|ca|ca-init|ca-export|ca-remove")
 	}
 	if len(args) == 0 {
 		return usage()
@@ -52,6 +52,8 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 		method, action = http.MethodDelete, "list"
 	case "clear-pinned":
 		method, action = http.MethodDelete, "pinned"
+	case "ca-remove":
+		method, action = http.MethodDelete, "ca/trust"
 	case "ca-export":
 		method, action = http.MethodGet, "ca"
 	case "set-rules", "set-mitm", "set-apps":

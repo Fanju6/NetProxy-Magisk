@@ -811,5 +811,7 @@
     <string name="traffic_skip_timeout">Tempo limite na detecção do protocolo</string>
     <string name="traffic_skip_alpn">Protocolo de aplicação TLS não suportado</string>
     <string name="traffic_skip_unidentified">Não foi possível identificar TLS ou o host</string>
-    <string name="traffic_user_ca_hint">Ativar a descriptografia também instala a CA de depuração pública para os usuários atuais do Android. Desativá-la remove apenas as cópias instaladas pelo NetProxy.</string>
+    <string name="traffic_user_ca_hint">Ativar a descriptografia instala a CA pública de depuração para usuários do Android que ainda não a têm. Desativar a descriptografia mantém a CA.</string>
+    <string name="traffic_user_ca_remove">Remover CA pessoal de depuração</string>
+    <string name="traffic_user_ca_remove_prompt">Remove apenas as cópias instaladas pelo NetProxy para usuários do Android. Não altera a confiança do sistema ou certificados instalados manualmente. Desative a descriptografia primeiro.</string>
 </resources>

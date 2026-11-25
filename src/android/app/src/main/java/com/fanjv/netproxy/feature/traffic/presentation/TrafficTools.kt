@@ -162,6 +162,7 @@ internal fun TrafficHttpsScreen(viewModel: TrafficViewModel) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var confirmTrust by rememberSaveable { mutableStateOf(false) }
+    var confirmRemoveUserCA by rememberSaveable { mutableStateOf(false) }
     var confirmClearPinned by rememberSaveable { mutableStateOf(false) }
     var addHost by rememberSaveable { mutableStateOf(false) }
     var newHost by rememberSaveable { mutableStateOf("") }
@@ -290,6 +291,10 @@ internal fun TrafficHttpsScreen(viewModel: TrafficViewModel) {
                         summary = stringResource(R.string.traffic_trust_hint), enabled = editable, insideMargin = TrafficRowInsets,
                         onCheckedChange = { if (it) confirmTrust = true else viewModel.setSystemTrust(false) })
                 },
+                CardItem("removeUserCA") {
+                    ArrowPreference(title = stringResource(R.string.traffic_user_ca_remove),
+                        enabled = editable, onClick = { confirmRemoveUserCA = true }, insideMargin = TrafficRowInsets)
+                },
             ))
         }
     }
@@ -301,6 +306,8 @@ internal fun TrafficHttpsScreen(viewModel: TrafficViewModel) {
         })
     TrafficConfirmation(confirmTrust, R.string.traffic_trust, R.string.traffic_trust_warning,
         { confirmTrust = false }, { confirmTrust = false; viewModel.setSystemTrust(true) })
+    TrafficConfirmation(confirmRemoveUserCA, R.string.traffic_user_ca_remove, R.string.traffic_user_ca_remove_prompt,
+        { confirmRemoveUserCA = false }, { confirmRemoveUserCA = false; viewModel.removeUserCertificate() })
     TrafficConfirmation(confirmClearPinned, R.string.traffic_pinned_clear, R.string.traffic_pinned_clear_prompt,
         { confirmClearPinned = false }, { confirmClearPinned = false; viewModel.clearPinned() })
 }

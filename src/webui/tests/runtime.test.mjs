@@ -28,6 +28,7 @@ test('透明抓包帮助、补全与预览只提供只读状态', () => {
   assert.deepEqual(decodeCtlResult(mockCtl(['api', 'traffic', 'apps'])).data, { apps: [], disable_quic: true })
   assert.deepEqual(decodeCtlResult(mockCtl(['api', 'traffic', 'pinned'])).data, [])
   assert.deepEqual(complete('api traffic clear-p').candidates, ['clear-pinned'])
+  assert.deepEqual(complete('api traffic ca-rem').candidates, ['ca-remove'])
   assert.equal(decodeCtlResult(mockCtl(['api', 'traffic', 'set-apps', 'apps.json'])).ok, false)
   assert.match(COMMANDS.api.help, /受管透明入站/)
   assert.deepEqual(decodeCtlResult(mockCtl(['api', 'traffic', 'list'])).data, [])

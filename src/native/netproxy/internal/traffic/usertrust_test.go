@@ -7,7 +7,37 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 )
+
+func TestUserTrustRemainsDesiredAfterDisablingMITM(t *testing.T) {
+	layout := paths.New(t.TempDir())
+	controller := New(layout)
+	if ca, err := desiredUserCA(layout); err != nil || ca != nil {
+		t.Fatalf("never enabled: CA=%t, err=%v", ca != nil, err)
+	}
+	if _, err := controller.SetMITMPolicy(MITMPolicy{Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	first, err := desiredUserCA(layout)
+	if first == nil || err != nil {
+		t.Fatalf("first enable: CA=%t, err=%v", first != nil, err)
+	}
+	if _, err := controller.SetMITMPolicy(MITMPolicy{}); err != nil {
+		t.Fatal(err)
+	}
+	retained, err := desiredUserCA(layout)
+	if err != nil || retained == nil || retained.public.SHA256 != first.public.SHA256 {
+		t.Fatalf("trust must remain desired at boot: CA=%t, err=%v", retained != nil, err)
+	}
+	if err := os.Remove(layout.TrafficUserTrust()); err != nil {
+		t.Fatal(err)
+	}
+	if ca, err := desiredUserCA(layout); err != nil || ca != nil {
+		t.Fatalf("explicitly removed: CA=%t, err=%v", ca != nil, err)
+	}
+}
 
 func TestUserCARemovalPreservesOtherCertificatesAndUsers(t *testing.T) {
 	ca, err := createCA(filepath.Join(t.TempDir(), "debug-ca.pem"))

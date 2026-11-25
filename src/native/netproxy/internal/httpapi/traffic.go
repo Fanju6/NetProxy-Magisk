@@ -96,6 +96,23 @@ func (s *Server) registerTraffic() {
 		cert, err := s.traffic.Certificate(true)
 		return cert, mitmAPIError("traffic.ca_init_failed", err)
 	})
+	s.route("DELETE "+trafficRoute+"ca/trust", 20*time.Second, false, func(ctx context.Context, r *http.Request) (contract.Result, error) {
+		if err := resourceEmptyRequest(r); err != nil {
+			return contract.Result{}, err
+		}
+		s.trafficMu.Lock()
+		defer s.trafficMu.Unlock()
+		policy, err := s.traffic.MITMPolicy()
+		if err != nil {
+			return contract.Result{}, mitmAPIError("traffic.mitm_unavailable", err)
+		}
+		if policy.Enabled {
+			return contract.Result{}, &contract.Error{Code: "traffic.user_trust_in_use", HTTPStatus: http.StatusConflict,
+				Message: "请先关闭 HTTPS 解密，再移除个人抓包 CA"}
+		}
+		err = traffic.RemoveUserTrust(ctx, paths.New(s.options.ModuleDir))
+		return contract.Success("traffic.user_trust_removed", "已移除模块安装的个人抓包 CA", nil), mitmAPIError("traffic.user_trust_incomplete", err)
+	})
 	s.trafficRoute("GET", "mitm", "HTTPS 抓包配置", func(context.Context) (any, error) {
 		policy, err := s.traffic.MITMPolicy()
 		return policy, mitmAPIError("traffic.mitm_unavailable", err)
@@ -119,12 +136,17 @@ func (s *Server) registerTraffic() {
 		if err := decodeRequestLimit(r, &input, traffic.MaxMITMBytes); err != nil {
 			return contract.Result{}, err
 		}
+		s.trafficMu.Lock()
+		defer s.trafficMu.Unlock()
 		policy, err := s.traffic.SetMITMPolicy(input)
 		if err != nil {
 			return contract.Result{}, mitmAPIError("traffic.mitm_failed", err)
 		}
 		layout := paths.New(s.options.ModuleDir)
-		userTrustErr := traffic.ReconcileUserTrust(ctx, layout)
+		var userTrustErr error
+		if policy.Enabled {
+			userTrustErr = traffic.ReconcileUserTrust(ctx, layout)
+		}
 		if !policy.SystemTrust {
 			if err := traffic.RemoveDisabledSystemTrust(ctx, layout); err != nil {
 				if userTrustErr != nil {

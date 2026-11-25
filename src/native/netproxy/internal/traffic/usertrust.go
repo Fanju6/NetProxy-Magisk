@@ -20,6 +20,7 @@ import (
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/processlock"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 )
 
 const (
@@ -39,7 +40,35 @@ func ReconcileUserTrust(ctx context.Context, layout paths.Layout) error {
 	return reconcileUserTrust(ctx, layout, false)
 }
 
-func reconcileUserTrust(ctx context.Context, layout paths.Layout, uninstall bool) error {
+func RemoveUserTrust(ctx context.Context, layout paths.Layout) error {
+	return reconcileUserTrust(ctx, layout, true)
+}
+
+func desiredUserCA(layout paths.Layout) (*authority, error) {
+	policy, err := loadPolicy(layout)
+	if err != nil {
+		return nil, err
+	}
+	_, markerErr := os.Stat(layout.TrafficUserTrust())
+	if !policy.Enabled && errors.Is(markerErr, os.ErrNotExist) {
+		return nil, nil
+	}
+	if markerErr != nil && !errors.Is(markerErr, os.ErrNotExist) {
+		return nil, errors.New("无法读取个人 CA 安装状态")
+	}
+	ca, err := loadCA(layout.TrafficCA())
+	if err != nil {
+		return nil, errors.New("无法读取待安装的公开抓包 CA")
+	}
+	if errors.Is(markerErr, os.ErrNotExist) {
+		if err := provider.WriteAtomic(layout.TrafficUserTrust(), nil, 0o600); err != nil {
+			return nil, errors.New("无法保存个人 CA 安装状态")
+		}
+	}
+	return ca, nil
+}
+
+func reconcileUserTrust(ctx context.Context, layout paths.Layout, remove bool) error {
 	if runtime.GOOS != "android" || !layout.IsLive() {
 		return nil
 	}
@@ -52,16 +81,17 @@ func reconcileUserTrust(ctx context.Context, layout paths.Layout, uninstall bool
 	defer lock.Release()
 
 	var ca *authority
-	if !uninstall {
-		policy, err := loadPolicy(layout)
+	if remove {
+		if err := os.Remove(layout.TrafficUserTrust()); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return errors.New("无法清除个人 CA 安装状态")
+		}
+	} else {
+		ca, err = desiredUserCA(layout)
 		if err != nil {
 			return err
 		}
-		if policy.Enabled {
-			ca, err = loadCA(layout.TrafficCA())
-			if err != nil {
-				return errors.New("无法读取待安装的公开抓包 CA")
-			}
+		if ca == nil {
+			return nil
 		}
 	}
 

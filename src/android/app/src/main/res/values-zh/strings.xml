@@ -841,5 +841,7 @@
     <string name="traffic_skip_timeout">协议识别超时</string>
     <string name="traffic_skip_alpn">不支持的 TLS 应用协议</string>
     <string name="traffic_skip_unidentified">无法识别 TLS 或主机</string>
-    <string name="traffic_user_ca_hint">开启解密也会为当前 Android 用户安装公开调试 CA。关闭解密仅移除 NetProxy 安装的副本。</string>
+    <string name="traffic_user_ca_hint">开启解密时为尚未安装公开调试 CA 的 Android 用户安装证书。关闭解密不会移除证书。</string>
+    <string name="traffic_user_ca_remove">移除个人调试 CA</string>
+    <string name="traffic_user_ca_remove_prompt">仅移除 NetProxy 为 Android 用户安装的副本，不影响系统信任或手动安装的证书。请先关闭解密。</string>
 </resources>

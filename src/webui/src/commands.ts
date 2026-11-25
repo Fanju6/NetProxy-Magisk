@@ -24,6 +24,7 @@ export const COMMANDS = {
   api traffic mitm | set-mitm <文件>        查看或保存 HTTPS 解密配置
   api traffic pinned | clear-pinned        查看或清除证书固定跳过列表
   api traffic ca-init | ca                  初始化或查看公开调试 CA
+  api traffic ca-remove                     移除模块安装的个人调试 CA（先关闭解密）
   api traffic ca-export <文件>              导出公开 CA，不覆盖已有文件
 
 记录 TUN/eBPF 受管透明入站的 TCP 流量；不需要设置代理端口或凭据。
@@ -206,7 +207,7 @@ const CONFIG_TARGETS = [
 ]
 
 export const VALUE_COMPLETIONS: Record<string, string[]> = {
-  'api traffic': ['status', 'toggle', 'start', 'stop', 'list', 'detail', 'clear', 'rules', 'set-rules', 'mitm', 'set-mitm', 'apps', 'set-apps', 'pinned', 'clear-pinned', 'ca', 'ca-init', 'ca-export'],
+  'api traffic': ['status', 'toggle', 'start', 'stop', 'list', 'detail', 'clear', 'rules', 'set-rules', 'mitm', 'set-mitm', 'apps', 'set-apps', 'pinned', 'clear-pinned', 'ca', 'ca-init', 'ca-export', 'ca-remove'],
   'app mode': ['blacklist', 'whitelist'],
   'ebpf status': ['configured', 'all', 'local', 'shared', '--raw'],
   'logs show': ['service', 'core'],

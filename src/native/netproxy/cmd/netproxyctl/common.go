@@ -57,7 +57,7 @@ func (c *cli) help() {
   netproxyctl [--json] [--timeout <秒|时长>] logs show|clear|export
   netproxyctl [--json] [--timeout <秒|时长>] api init|start|status|access
   netproxyctl [--json] [--timeout <秒|时长>] api traffic status|start|stop|toggle|list|detail <ID>|clear|rules|set-rules <文件>
-  netproxyctl [--json] [--timeout <秒|时长>] api traffic mitm|set-mitm <文件>|ca-init|ca|ca-export <文件>
+  netproxyctl [--json] [--timeout <秒|时长>] api traffic mitm|set-mitm <文件>|ca-init|ca|ca-export <文件>|ca-remove
   netproxyctl [--json] [--timeout <秒|时长>] api traffic pinned|clear-pinned
   netproxyctl [--json] [--timeout <秒|时长>] api traffic apps|set-apps <文件>
     抓包应用配置支持 disable_quic，默认 true（仅抓包时生效）。

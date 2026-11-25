@@ -95,6 +95,17 @@ func TestTrafficMITMManagementNeverExposesPrivateKey(t *testing.T) {
 	if !policy.Enabled {
 		t.Fatal("HTTPS 解密未按显式请求开启")
 	}
+	w, result := resourceRequest(t, s, http.MethodDelete, trafficRoute+"ca/trust", "")
+	if w.Code != http.StatusConflict || result.Code != "traffic.user_trust_in_use" {
+		t.Fatalf("解密开启时应拒绝移除个人 CA: %d %+v", w.Code, result)
+	}
+	resourceAssertSuccess(t, s, http.MethodPut, trafficRoute+"mitm", `{"enabled":false,"system_trust":true}`, "traffic.mitm_saved", nil)
+	resourceAssertSuccess(t, s, http.MethodDelete, trafficRoute+"ca/trust", "", "traffic.user_trust_removed", nil)
+	var saved traffic.MITMPolicy
+	resourceAssertSuccess(t, s, http.MethodGet, trafficRoute+"mitm", "", "traffic.mitm", &saved)
+	if saved.Enabled || !saved.SystemTrust {
+		t.Fatalf("解密关闭和显式移除个人 CA 不应关闭系统信任: %+v", saved)
+	}
 }
 
 func TestTrafficPinnedListAndClear(t *testing.T) {

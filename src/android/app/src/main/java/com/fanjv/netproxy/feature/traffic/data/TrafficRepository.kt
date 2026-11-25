@@ -180,6 +180,10 @@ internal class TrafficRepository(private val api: ModuleApiClient) {
         return runCatching { api.json.decodeFromJsonElement<MitmPolicy>(error.data) }.getOrNull()
     }
 
+    suspend fun removeUserCertificate() {
+        api.delete("/traffic/ca/trust")
+    }
+
     suspend fun certificate(initialize: Boolean = true): CaptureCertificate {
         val cert = if (initialize) api.json.decodeFromJsonElement<CaptureCertificate>(api.post("/traffic/ca-init").data)
             else api.read<CaptureCertificate>("/traffic/ca")
