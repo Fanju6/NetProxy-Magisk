@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/contract"
@@ -34,7 +35,7 @@ func (s *Server) registerTraffic() {
 		policy, err := s.traffic.AppsPolicy()
 		return policy, mitmAPIError("traffic.apps_unavailable", err)
 	})
-	s.route("PUT "+trafficRoute+"apps", 10*time.Second, false, func(_ context.Context, r *http.Request) (contract.Result, error) {
+	s.route("PUT "+trafficRoute+"apps", 60*time.Second, false, func(ctx context.Context, r *http.Request) (contract.Result, error) {
 		if _, err := resourceQuery(r); err != nil {
 			return contract.Result{}, err
 		}
@@ -42,8 +43,8 @@ func (s *Server) registerTraffic() {
 		if err := decodeRequestLimit(r, &input, traffic.MaxAppsBytes); err != nil {
 			return contract.Result{}, err
 		}
-		policy, err := s.traffic.SetAppsPolicy(input)
-		return contract.Success("traffic.apps_saved", "抓包应用配置已保存", policy), mitmAPIError("traffic.apps_failed", err)
+		policy, err := s.setTrafficApps(ctx, input)
+		return contract.Success("traffic.apps_saved", "抓包应用配置已保存", policy), err
 	})
 	s.route("GET "+trafficRoute+"detail", 10*time.Second, false, func(_ context.Context, r *http.Request) (contract.Result, error) {
 		query, err := resourceQuery(r, "id")
@@ -119,6 +120,37 @@ func (s *Server) registerTraffic() {
 		}
 		return contract.Success("traffic.mitm_saved", "HTTPS 抓包配置已保存", policy), nil
 	})
+}
+
+func (s *Server) setTrafficApps(ctx context.Context, input traffic.AppsPolicy) (traffic.AppsPolicy, error) {
+	s.trafficMu.Lock()
+	defer s.trafficMu.Unlock()
+	previous, err := s.traffic.AppsPolicy()
+	if err != nil {
+		return previous, mitmAPIError("traffic.apps_failed", err)
+	}
+	reload := false
+	if traffic.Enabled(paths.New(s.options.ModuleDir)) {
+		status, err := service.ReadStatus(ctx, s.controlOptions())
+		if err != nil || status.State != "ready" && status.State != "stopped" && status.State != "failed" {
+			return previous, &contract.Error{Code: "traffic.service_busy", Message: "代理服务正在切换，暂不能修改抓包设置", HTTPStatus: http.StatusConflict}
+		}
+		reload = status.State == "ready"
+	}
+	policy, err := s.traffic.SetAppsPolicy(input)
+	if err != nil {
+		return policy, mitmAPIError("traffic.apps_failed", err)
+	}
+	if reload && (*previous.DisableQUIC != *policy.DisableQUIC || *policy.DisableQUIC && !slices.Equal(previous.Apps, policy.Apps)) {
+		if _, err := moduleapp.ManageService(ctx, s.options, "reload"); err != nil {
+			message := "核心重载失败，已还原抓包应用配置"
+			if _, restoreErr := s.traffic.SetAppsPolicy(previous); restoreErr != nil {
+				message = "核心重载失败且无法还原抓包应用配置"
+			}
+			return previous, &contract.Error{Code: "traffic.reload_failed", Message: message, HTTPStatus: http.StatusConflict}
+		}
+	}
+	return policy, nil
 }
 
 func mitmAPIError(code string, err error) error {

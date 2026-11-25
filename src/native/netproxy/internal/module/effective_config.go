@@ -10,7 +10,7 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 )
 
-func writeEffectiveConfig(ctx context.Context, singBoxDir, destination string, inbounds []jsontext.Value, providers []jsontext.Value, captureSocket string, disableIPv6, sniffDestination bool) error {
+func writeEffectiveConfig(ctx context.Context, singBoxDir, destination string, inbounds []jsontext.Value, providers []jsontext.Value, captureSocket string, disableIPv6, sniffDestination bool, captureQUICRule jsontext.Value) error {
 	content, err := os.ReadFile(paths.SingBoxConfig(singBoxDir))
 	if err != nil {
 		return err
@@ -42,6 +42,20 @@ func writeEffectiveConfig(ctx context.Context, singBoxDir, destination string, i
 			route["netproxy_capture_socket"], err = json.Marshal(captureSocket)
 			if err != nil {
 				return err
+			}
+			if captureQUICRule != nil {
+				rules := []jsontext.Value{captureQUICRule}
+				if raw, ok := route["rules"]; ok {
+					var existing []jsontext.Value
+					if err := json.Unmarshal(raw, &existing); err != nil {
+						return err
+					}
+					rules = append(rules, existing...)
+				}
+				route["rules"], err = json.Marshal(rules)
+				if err != nil {
+					return err
+				}
 			}
 		}
 		if sniffDestination {

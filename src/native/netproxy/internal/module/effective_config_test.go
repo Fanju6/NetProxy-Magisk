@@ -22,7 +22,7 @@ func TestEffectiveConfigPreservesNativeFieldsAndOrdering(t *testing.T) {
 	projection := []jsontext.Value{jsontext.Value(`{"tag":"managed-provider"}`)}
 	dest := filepath.Join(dir, "runtime", "config.json")
 	inbounds := []jsontext.Value{jsontext.Value(`{"tag":"netproxy-in"}`)}
-	if err := writeEffectiveConfig(t.Context(), dir, dest, inbounds, projection, "", false, false); err != nil {
+	if err := writeEffectiveConfig(t.Context(), dir, dest, inbounds, projection, "", false, false, nil); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(dest)
@@ -47,11 +47,46 @@ func TestEffectiveConfigPreservesNativeFieldsAndOrdering(t *testing.T) {
 		t.Fatal(err)
 	}
 	var invalid *json.SemanticError
-	if err := writeEffectiveConfig(t.Context(), dir, dest, inbounds, projection, "", false, false); !errors.As(err, &invalid) {
+	if err := writeEffectiveConfig(t.Context(), dir, dest, inbounds, projection, "", false, false, nil); !errors.As(err, &invalid) {
 		t.Fatalf("invalid provider array not rejected: %v", err)
 	}
 	if current, err := os.ReadFile(dest); err != nil || !bytes.Equal(current, raw) {
 		t.Fatalf("failed assembly replaced the previous configuration: %v", err)
+	}
+}
+
+func TestEffectiveConfigCaptureQUICRule(t *testing.T) {
+	dir := t.TempDir()
+	source := paths.SingBoxConfig(dir)
+	original := []byte(`{"route":{"rules":[{"outbound":"direct"}]}}`)
+	if err := os.WriteFile(source, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(dir, "runtime", "config.json")
+	rule := jsontext.Value(`{"inbound":"netproxy-in","network":"udp","port":443,"action":"reject","no_drop":true,"user_id":[10149,1110149]}`)
+	for i, socket := range []string{"/capture.sock", ""} {
+		if err := writeEffectiveConfig(t.Context(), dir, dest, nil, nil, socket, false, false, rule); err != nil {
+			t.Fatal(err)
+		}
+		var config struct {
+			Route struct {
+				Rules []jsontext.Value `json:"rules"`
+			} `json:"route"`
+		}
+		output, err := os.ReadFile(dest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(output, &config); err != nil {
+			t.Fatal(err)
+		}
+		rules := config.Route.Rules
+		if len(rules) != 2-i || !bytes.Contains(rules[len(rules)-1], []byte(`"direct"`)) || socket != "" && !bytes.Contains(rules[0], []byte(`1110149`)) {
+			t.Fatalf("capture socket %q projected %s", socket, output)
+		}
+	}
+	if current, err := os.ReadFile(source); err != nil || !bytes.Equal(current, original) {
+		t.Fatalf("original changed: %s, %v", current, err)
 	}
 }
 
@@ -65,7 +100,7 @@ func TestIPv4OnlyRuntimeKeepsUserDNSAndRouteOnDisk(t *testing.T) {
 		t.Fatal(err)
 	}
 	dest := filepath.Join(dir, "runtime", "config.json")
-	if err := writeEffectiveConfig(t.Context(), dir, dest, nil, nil, "/capture.sock", true, true); err != nil {
+	if err := writeEffectiveConfig(t.Context(), dir, dest, nil, nil, "/capture.sock", true, true, nil); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(dest)
@@ -125,7 +160,7 @@ func TestSniffDestinationSwitchProjectsOnlyIntoRuntime(t *testing.T) {
 	}
 	dest := filepath.Join(dir, "runtime", "config.json")
 	for _, enabled := range []bool{false, true} {
-		if err := writeEffectiveConfig(t.Context(), dir, dest, nil, nil, "", false, enabled); err != nil {
+		if err := writeEffectiveConfig(t.Context(), dir, dest, nil, nil, "", false, enabled, nil); err != nil {
 			t.Fatal(err)
 		}
 		content, err := os.ReadFile(dest)

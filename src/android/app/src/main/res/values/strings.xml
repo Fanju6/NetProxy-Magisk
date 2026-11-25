@@ -787,4 +787,6 @@
     <string name="traffic_app_user">Android user</string>
     <string name="inbound_ipv6">IPv6</string>
     <string name="inbound_ipv6_hint">Turn off to use IPv4 only for managed traffic.</string>
+    <string name="traffic_disable_quic">Disable QUIC during capture</string>
+    <string name="traffic_disable_quic_summary">Rejects UDP port 443 for captured apps so they can fall back to TCP.</string>
 </resources>

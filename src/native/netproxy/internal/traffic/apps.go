@@ -2,16 +2,19 @@ package traffic
 
 import (
 	"context"
+	"encoding/json/jsontext"
 	json "encoding/json/v2"
 	"errors"
 	"io"
 	"os"
 	"runtime"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/inbound"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 )
 
@@ -25,14 +28,15 @@ type SourceApp struct {
 }
 
 type AppsPolicy struct {
-	Apps []string `json:"apps"`
+	Apps        []string `json:"apps"`
+	DisableQUIC *bool    `json:"disable_quic,omitempty"`
 }
 
 func normalizeApps(policy AppsPolicy) (AppsPolicy, map[string]struct{}, error) {
 	if policy.Apps == nil || len(policy.Apps) > 1000 {
 		return AppsPolicy{}, nil, errors.New("apps 必须是数组，最多允许选择 1000 个应用")
 	}
-	result := AppsPolicy{Apps: make([]string, 0, len(policy.Apps))}
+	result := AppsPolicy{Apps: make([]string, 0, len(policy.Apps)), DisableQUIC: policy.DisableQUIC}
 	set := make(map[string]struct{}, len(policy.Apps))
 	for _, value := range policy.Apps {
 		ref, err := inbound.ParsePackageRef(value)
@@ -51,13 +55,13 @@ func normalizeApps(policy AppsPolicy) (AppsPolicy, map[string]struct{}, error) {
 func (c *Controller) AppsPolicy() (AppsPolicy, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.readApps()
+	return readApps(c.layout)
 }
 
-func (c *Controller) readApps() (AppsPolicy, error) {
-	file, err := os.Open(c.layout.TrafficApps())
+func readApps(layout paths.Layout) (AppsPolicy, error) {
+	file, err := os.Open(layout.TrafficApps())
 	if errors.Is(err, os.ErrNotExist) {
-		return AppsPolicy{Apps: []string{}}, nil
+		return AppsPolicy{Apps: []string{}, DisableQUIC: new(true)}, nil
 	}
 	if err != nil {
 		return AppsPolicy{}, errors.New("无法读取抓包应用配置")
@@ -69,11 +73,14 @@ func (c *Controller) readApps() (AppsPolicy, error) {
 		return AppsPolicy{}, errors.New("抓包应用配置无效")
 	}
 	normalized, _, err := normalizeApps(policy)
+	if normalized.DisableQUIC == nil {
+		normalized.DisableQUIC = new(true)
+	}
 	return normalized, err
 }
 
 func (c *Controller) loadApps() error {
-	policy, err := c.readApps()
+	policy, err := readApps(c.layout)
 	if err != nil {
 		return err
 	}
@@ -86,17 +93,69 @@ func (c *Controller) SetAppsPolicy(policy AppsPolicy) (AppsPolicy, error) {
 	if err != nil {
 		return AppsPolicy{}, err
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if normalized.DisableQUIC == nil {
+		previous, err := readApps(c.layout)
+		if err != nil {
+			return AppsPolicy{}, err
+		}
+		normalized.DisableQUIC = previous.DisableQUIC
+	}
 	content, err := json.Marshal(normalized)
 	if err != nil || len(content) > MaxAppsBytes {
 		return AppsPolicy{}, errors.New("抓包应用配置超出大小限制")
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	if err := provider.WriteAtomic(c.layout.TrafficApps(), content, 0o600); err != nil {
 		return AppsPolicy{}, errors.New("无法保存抓包应用配置")
 	}
 	c.apps = set
 	return normalized, nil
+}
+
+func CaptureQUICRule(ctx context.Context, layout paths.Layout) (jsontext.Value, error) {
+	policy, err := readApps(layout)
+	if err != nil {
+		return nil, err
+	}
+	return captureQUICRule(policy, func(user uint32, packages ...string) (map[uint32]bool, error) {
+		return inbound.ResolveExclusivePackageUIDs(ctx, user, packages...)
+	})
+}
+
+func captureQUICRule(policy AppsPolicy, resolve func(uint32, ...string) (map[uint32]bool, error)) (jsontext.Value, error) {
+	if policy.DisableQUIC != nil && !*policy.DisableQUIC {
+		return nil, nil
+	}
+	rule := map[string]any{
+		"inbound": "netproxy-in", "network": "udp", "port": 443, "action": "reject", "no_drop": true,
+	}
+	if len(policy.Apps) != 0 {
+		byUser := make(map[uint32][]string)
+		for _, value := range policy.Apps {
+			ref, err := inbound.ParsePackageRef(value)
+			if err != nil {
+				return nil, err
+			}
+			byUser[ref.UserID] = append(byUser[ref.UserID], ref.Package)
+		}
+		var uids []uint32
+		for user, packages := range byUser {
+			resolved, err := resolve(user, packages...)
+			if err != nil {
+				return nil, err
+			}
+			for uid := range resolved {
+				uids = append(uids, uid)
+			}
+		}
+		if len(uids) == 0 {
+			return nil, nil
+		}
+		slices.Sort(uids)
+		rule["user_id"] = uids
+	}
+	return json.Marshal(rule, json.Deterministic(true))
 }
 
 func (c *Controller) capturesApp(app *SourceApp) bool {

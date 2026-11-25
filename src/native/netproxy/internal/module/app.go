@@ -3,6 +3,7 @@ package module
 
 import (
 	"context"
+	"encoding/json/jsontext"
 	json "encoding/json/v2"
 	"errors"
 	"fmt"
@@ -157,10 +158,15 @@ func Prepare(ctx context.Context, options Options) (PrepareResult, error) {
 	configPath := paths.RuntimeConfig(options.RuntimeDir)
 	layout := paths.New(options.ModuleDir)
 	var captureSocket string
+	var captureQUICRule jsontext.Value
 	if traffic.Enabled(layout) {
 		captureSocket = layout.TrafficSocket()
+		captureQUICRule, err = traffic.CaptureQUICRule(ctx, layout)
+		if err != nil {
+			logService(options, "WARN", "traffic.quic", "skipped", "未能按抓包应用限制 QUIC，已保留 UDP：%v", err)
+		}
 	}
-	if err := writeEffectiveConfig(ctx, options.SingBoxDir, configPath, built.Runtime.Inbounds, runtime.Providers, captureSocket, !config.IPv6Enabled(), config.SniffDestinationEnabled()); err != nil {
+	if err := writeEffectiveConfig(ctx, options.SingBoxDir, configPath, built.Runtime.Inbounds, runtime.Providers, captureSocket, !config.IPv6Enabled(), config.SniffDestinationEnabled(), captureQUICRule); err != nil {
 		return PrepareResult{}, err
 	}
 	for _, ref := range built.MissingPackages {

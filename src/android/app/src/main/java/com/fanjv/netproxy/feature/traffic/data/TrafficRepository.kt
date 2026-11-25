@@ -36,7 +36,7 @@ internal data class CaptureSourceApp(
 )
 
 @Serializable
-internal data class CaptureApps(val apps: List<String>)
+internal data class CaptureApps(val apps: List<String>, @SerialName("disable_quic") val disableQuic: Boolean? = null)
 
 @Serializable
 internal data class CaptureExit(
@@ -145,8 +145,8 @@ internal class TrafficRepository(private val api: ModuleApiClient) {
     suspend fun rules(): List<RewriteRule> = api.read<RewriteRules>("/traffic/rules").rules
     suspend fun policy(): MitmPolicy = api.read("/traffic/mitm")
     suspend fun apps(): CaptureApps = api.captureApps()
-    suspend fun saveApps(apps: List<String>): CaptureApps =
-        api.json.decodeFromJsonElement(api.saveCaptureApps(api.json.encodeToJsonElement(CaptureApps(apps)).jsonObject).data)
+    suspend fun saveApps(apps: List<String>, disableQuic: Boolean? = null): CaptureApps =
+        api.json.decodeFromJsonElement(api.saveCaptureApps(api.json.encodeToJsonElement(CaptureApps(apps, disableQuic)).jsonObject).data)
 
     suspend fun setCapture(enabled: Boolean): CaptureStatus =
         api.json.decodeFromJsonElement(api.post(if (enabled) "/traffic/start" else "/traffic/stop").data)

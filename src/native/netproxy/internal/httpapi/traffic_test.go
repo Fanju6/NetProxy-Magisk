@@ -27,6 +27,10 @@ func TestTrafficAppsContract(t *testing.T) {
 	if policy.Apps == nil || len(policy.Apps) != 0 {
 		t.Fatalf("默认名单不为空: %+v", policy)
 	}
+	if policy.DisableQUIC == nil || !*policy.DisableQUIC {
+		t.Fatalf("默认未禁用 QUIC: %+v", policy)
+	}
+	resourceAssertSuccess(t, s, http.MethodPut, target, `{"apps":[],"disable_quic":false}`, "traffic.apps_saved", &policy)
 	resourceAssertSuccess(t, s, http.MethodPut, target, `{"apps":["10:app.example"]}`, "traffic.apps_saved", &policy)
 	invalid, result := resourceRequest(t, s, http.MethodPut, target, `{"apps":["app.invalid"]}`)
 	if invalid.Code != http.StatusUnprocessableEntity || result.Code != "traffic.apps_failed" {
@@ -35,6 +39,9 @@ func TestTrafficAppsContract(t *testing.T) {
 	resourceAssertSuccess(t, s, http.MethodGet, target, "", "traffic.apps", &policy)
 	if len(policy.Apps) != 1 || policy.Apps[0] != "10:app.example" {
 		t.Fatalf("未保留原始名单: %+v", policy)
+	}
+	if policy.DisableQUIC == nil || *policy.DisableQUIC {
+		t.Fatalf("保存名单覆盖了 QUIC 偏好: %+v", policy)
 	}
 }
 

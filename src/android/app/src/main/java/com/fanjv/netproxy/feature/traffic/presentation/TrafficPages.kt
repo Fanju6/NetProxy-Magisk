@@ -133,6 +133,13 @@ internal fun TrafficScreen(viewModel: TrafficViewModel) {
                         checked = status?.running == true, enabled = status != null && !state.busy,
                         onCheckedChange = viewModel::setCapture, insideMargin = TrafficRowInsets,
                     )
+                    SwitchPreference(
+                        title = stringResource(R.string.traffic_disable_quic),
+                        summary = stringResource(R.string.traffic_disable_quic_summary),
+                        checked = state.captureAppPolicy?.disableQuic == true,
+                        enabled = state.captureAppPolicy?.disableQuic != null && !state.busy,
+                        onCheckedChange = viewModel::setCaptureDisableQuic, insideMargin = TrafficRowInsets,
+                    )
                     Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 10.dp),
                         horizontalArrangement = Arrangement.SpaceBetween) {
                         StatusBadge(status?.count?.let { stringResource(R.string.traffic_record_count, it) } ?: "—")

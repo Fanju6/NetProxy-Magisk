@@ -21,6 +21,8 @@ api traffic stop
 
 终端使用 `api traffic apps` 查看名单，使用 `api traffic set-apps <文件>` 保存 JSON，例如 `{"apps":["0:com.example.app"]}`。条目使用 `<Android 用户 ID>:<包名>`，`{"apps":[]}` 恢复抓取全部。列表与详情在可用时返回 `source_app`（UID、Android 用户 ID 和包名）。
 
+「抓包时禁用 QUIC」默认开启。它仅在抓包开启时拒绝所选应用经受管入站发送的 UDP 443 流量，让支持回退的应用改用 TCP。无需修改原生路由。可在设置中关闭，或用 `api traffic set-apps <文件>` 保存当前名单和 `"disable_quic":false`；省略该字段保留原值。
+
 1. `toggle` 切换开关，`start` 和 `stop` 分别显式开启和关闭。设置会保存；运行中的核心重载一次，可能中断已有连接。尚未启动核心时，设置在下一次启动时生效。
 2. `list` 查看至多 200 条摘要：ID、时间、方法、目标、选定出站、状态和重写结果。终端 WebUI 输入 `api traffic detail <ID>` 查看详情，或执行 `su -c '/data/adb/modules/netproxy/netproxyctl api traffic detail <ID>'`（将 `<ID>` 替换为实际 ID）。普通 HTTP 与解密后的 HTTPS 记录完整 URL（含路径和查询）、原始请求头及转发时读取的请求正文、重写后发送的响应头和正文；未解密的 TLS 仍只有连接信息。
 3. `stop` 保留列表以便查看；`clear` 可清空记录，再次开启也会清空。Worker 不可用或抓包连接达到上限时，新流量按原有路由透传。

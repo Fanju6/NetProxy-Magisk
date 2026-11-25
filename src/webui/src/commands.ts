@@ -18,7 +18,7 @@ export const COMMANDS = {
   api traffic toggle | start | stop        切换或启停全局透明抓包
   api traffic status | list | clear         查看状态、查看或清空抓包记录
   api traffic detail <ID>                   查看出口、重写记录、请求和响应详情
-  api traffic apps | set-apps <文件>        查看或保存抓包应用名单
+  api traffic apps | set-apps <文件>        查看或保存抓包应用名单和 disable_quic
   api traffic rules                         查看按 domains 分组的 JavaScript 重写规则
   api traffic set-rules <文件>               应用设备上的 JSON 规则文件
   api traffic mitm | set-mitm <文件>        查看或保存 HTTPS 解密配置

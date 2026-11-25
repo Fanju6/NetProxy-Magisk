@@ -7,6 +7,7 @@ import com.fanjv.netproxy.feature.apps.data.AndroidApp
 import com.fanjv.netproxy.feature.apps.data.AppIconCache
 import com.fanjv.netproxy.feature.apps.data.AppPackageRepository
 import com.fanjv.netproxy.feature.apps.presentation.AppInfoModel
+import com.fanjv.netproxy.feature.traffic.data.CaptureApps
 import com.fanjv.netproxy.feature.traffic.data.CaptureCertificate
 import com.fanjv.netproxy.feature.traffic.data.CaptureDetail
 import com.fanjv.netproxy.feature.traffic.data.CaptureRecord
@@ -59,6 +60,7 @@ internal data class TrafficState(
     val selectedRecord: RecordDetailState? = null,
     val fingerprint: String? = null,
     val captureApps: List<String>? = null,
+    val captureAppPolicy: CaptureApps? = null,
     val appCatalog: Map<String, AppInfoModel> = emptyMap(),
     val appDraft: Set<String>? = null,
 ) {
@@ -122,15 +124,18 @@ internal class TrafficViewModel(
                 val records = async { attempt { repository.records() } }
                 val rules = async { attempt { repository.rules() } }
                 val policy = async { attempt { repository.policy() } }
+                val apps = async { attempt { repository.apps() } }
                 val nextStatus = status.await()
                 val nextRecords = records.await()
                 val nextRules = rules.await()
                 val nextPolicy = policy.await()
+                val nextApps = apps.await()
                 _state.update { current -> current.copy(
                     status = current.status.refreshed(nextStatus),
                     records = current.records.refreshed(nextRecords),
                     rules = current.rules.refreshed(nextRules),
                     policy = current.policy.refreshed(nextPolicy),
+                    captureAppPolicy = nextApps.getOrNull(),
                     loading = false,
                 ) }
             }
@@ -141,6 +146,13 @@ internal class TrafficViewModel(
         val status = repository.setCapture(enabled)
         val records = attempt { repository.records() }
         _state.update { it.copy(status = TrafficContent(status), records = it.records.refreshed(records)) }
+    }
+
+    fun setCaptureDisableQuic(disabled: Boolean) = mutate {
+        val current = state.value.captureAppPolicy ?: return@mutate
+        if (repository.apps() != current) throw TrafficChangedException()
+        val saved = repository.saveApps(current.apps, disabled)
+        _state.update { it.copy(captureAppPolicy = saved) }
     }
 
     fun clear() = mutate {
@@ -169,9 +181,10 @@ internal class TrafficViewModel(
         }.associateBy { it.id }
 
     fun openAppPicker() = mutate {
-        val apps = repository.apps().apps
+        val policy = repository.apps()
+        val apps = policy.apps
         val catalog = readAppCatalog()
-        _state.update { it.copy(captureApps = apps, appCatalog = catalog, appDraft = apps.toSet()) }
+        _state.update { it.copy(captureApps = apps, captureAppPolicy = policy, appCatalog = catalog, appDraft = apps.toSet()) }
     }
 
     fun editCaptureApps(apps: Set<String>?) {
@@ -181,8 +194,8 @@ internal class TrafficViewModel(
     fun saveCaptureApps() = mutate {
         val draft = state.value.appDraft ?: return@mutate
         if (repository.apps().apps != state.value.captureApps) throw TrafficChangedException()
-        val saved = repository.saveApps(draft.sorted()).apps
-        _state.update { it.copy(captureApps = saved, appDraft = null) }
+        val saved = repository.saveApps(draft.sorted())
+        _state.update { it.copy(captureApps = saved.apps, captureAppPolicy = saved, appDraft = null) }
     }
 
     fun editRule(index: Int? = null) {

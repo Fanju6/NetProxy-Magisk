@@ -787,4 +787,6 @@
     <string name="traffic_app_user">Пользователь Android</string>
     <string name="inbound_ipv6">IPv6</string>
     <string name="inbound_ipv6_hint">Отключите, чтобы управляемый трафик использовал только IPv4.</string>
+    <string name="traffic_disable_quic">Отключать QUIC при перехвате</string>
+    <string name="traffic_disable_quic_summary">Отклоняет UDP на порту 443, чтобы приложения могли переключиться на TCP.</string>
 </resources>
