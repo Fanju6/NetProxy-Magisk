@@ -288,7 +288,7 @@ func (c Config) EffectiveContent() ([]byte, error) {
 			app.BypassApps = values
 		}
 	}
-	return json.Marshal(map[string]any{"backend": c.Backend, "app": app, c.Backend: jsontext.Value(content)}, json.Deterministic(true))
+	return json.Marshal(map[string]any{"backend": c.Backend, "app": app, "ipv6": c.IPv6Enabled(), c.Backend: jsontext.Value(content)}, json.Deterministic(true))
 }
 
 func WriteAtomic(ctx context.Context, path string, config Config) ([]PackageRef, error) {

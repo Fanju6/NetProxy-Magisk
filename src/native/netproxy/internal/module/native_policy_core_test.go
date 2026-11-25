@@ -75,7 +75,7 @@ func TestNativePolicyTargetCoreSelectionPersistsByGroup(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := writeEffectiveConfig(ctx, dir, configPath, nil, projection.Providers); err != nil {
+		if err := writeEffectiveConfig(ctx, dir, configPath, nil, projection.Providers, false); err != nil {
 			t.Fatal(err)
 		}
 		command := exec.CommandContext(ctx, core, "run", "-c", configPath)

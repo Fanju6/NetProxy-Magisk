@@ -654,4 +654,6 @@
     <string name="routing_error_package_name">Введите полное имя пакета, например com.android.chrome, без ID пользователя, пробелов и URL.</string>
     <string name="routing_invalid_document">Этот набор нельзя изменить в форме. Проверьте version и rules в редакторе JSON.</string>
     <string name="routing_reload_draft">Отбросить черновик и перечитать</string>
+    <string name="inbound_ipv6">IPv6</string>
+    <string name="inbound_ipv6_hint">Отключите, чтобы управляемый трафик использовал только IPv4.</string>
 </resources>

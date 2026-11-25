@@ -6,7 +6,7 @@
 /data/adb/modules/netproxy/config/inbound/inbound.json
 ```
 
-外层包含 `backend`、`root_policy`、`app`、`ebpf`、`tun`。全新安装或恢复出厂配置时，`backend` 为 `tun`，默认仅接管本机；也可选 `ebpf`。保留现有数据升级时沿用已选后端和参数。两套原生参数分别保存，切换不会转换、清空或同步另一套参数。一次只运行一个受管入站，不自动回退另一后端。
+外层包含 `backend`、`root_policy`、`ipv6`、`app`、`ebpf`、`tun`。全新安装或恢复出厂配置时，`backend` 为 `tun`，默认仅接管本机；也可选 `ebpf`。保留现有数据升级时沿用已选后端和参数。两套原生参数分别保存，切换不会转换、清空或同步另一套参数。一次只运行一个受管入站，不自动回退另一后端。
 
 `ebpf` 和 `tun` 对象都包含原生 `type` 与固定 `tag: "netproxy-in"`，类型必须匹配分区。参数分别见 [eBPF](/config/ebpf) 和 [TUN](/config/tun)。本文件带 NetProxy 包装，不是 sing-box 根配置，不能直接作为 `sing-box -c` 输入。
 
@@ -31,6 +31,12 @@
 
 DNS 遵循所选入站的原生设置：eBPF `respect_policy` 遵循 UID 策略，`hijack` 优先拦截 DNS，`off` 不拦截 53 端口。系统代发 DNS 按实际执行进程或 socket 的 UID 判断，不按发起查询的应用名称判断。
 
+## IPv6
+
+管理器 → 设置 → 入站设置 → 通用设置 → IPv6。默认开启；旧版本配置缺少 `ipv6` 时也视为开启。关闭后，只在运行时将核心 DNS 限制为 IPv4，并在代理模式下拒绝已进入受管入站的 IPv6 连接。Direct（含 Wi-Fi 策略选中的 Direct）仍按原有设置绕过 DNS 劫持和代理分流。这不会关闭系统 IPv6，也不会影响绕过受管入站的应用、流量或 DNS。
+
+该选项在 TUN 和 eBPF 间共用，和各后端的原生 IPv6 接管设置不同。开启只撤销这项运行时限制，不覆盖用户保存的 DNS 策略、路由规则、TUN 地址或 eBPF 参数。保存沿用入站配置事务；服务运行时重新加载，停止时只保存。
+
 ## Root 进程
 
 管理器 → 设置 → 入站设置 → 通用设置 → Root 进程。
@@ -51,9 +57,10 @@ DNS 遵循所选入站的原生设置：eBPF `respect_policy` 遵循 UID 策略�
 
 | 目标 | 内容 | 权限 |
 |---|---|---|
-| `inbound` | 完整五字段包装 | 可编辑 |
+| `inbound` | 完整入站包装 | 可编辑 |
 | `inbound/backend` | `{"backend":"tun"}` 或 `{"backend":"ebpf"}` | 可编辑 |
 | `inbound/root_policy` | `{"root_policy":"default"}`、`include` 或 `exclude` | 可编辑 |
+| `inbound/ipv6` | `{"ipv6":true}` 或 `{"ipv6":false}` | 可编辑 |
 | `inbound/app` | `{"app":{...}}` | 可编辑 |
 | `inbound/ebpf` | `{"ebpf":{...}}` | 可编辑 |
 | `inbound/tun` | `{"tun":{...}}` | 可编辑 |
@@ -61,11 +68,12 @@ DNS 遵循所选入站的原生设置：eBPF `respect_policy` 遵循 UID 策略�
 
 入站分区必需，不能用 `{}` 删除。分区保存只替换自己拥有的字段，保留其他分区和数组顺序。整份保存校验两套参数；启动只校验当前选中分区，不探测未选后端。整份 JSON 损坏会失败，不会回退默认值。
 
-`config list` 将以上六个可编辑目标归为 `category: "inbound"`；只读生成物仍属 `runtime`。运行时准备结果 `Prepare` 返回 `config` 路径和选中的 `backend`。
+`config list` 将以上七个可编辑目标归为 `category: "inbound"`；只读生成物仍属 `runtime`。运行时准备结果 `Prepare` 返回 `config` 路径和选中的 `backend`。
 
 ```sh
 su -c '/data/adb/modules/netproxy/netproxyctl config read inbound'
 su -c '/data/adb/modules/netproxy/netproxyctl config read inbound/backend'
+su -c '/data/adb/modules/netproxy/netproxyctl config read inbound/ipv6'
 su -c '/data/adb/modules/netproxy/netproxyctl config read inbound/tun'
 su -c '/data/adb/modules/netproxy/netproxyctl config validate --revision <读到的revision> inbound/backend /sdcard/candidate.json'
 su -c '/data/adb/modules/netproxy/netproxyctl config apply --revision <读到的revision> inbound/backend /sdcard/candidate.json'

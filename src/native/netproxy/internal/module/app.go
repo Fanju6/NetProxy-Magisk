@@ -154,7 +154,7 @@ func Prepare(ctx context.Context, options Options) (PrepareResult, error) {
 		return PrepareResult{}, err
 	}
 	configPath := paths.RuntimeConfig(options.RuntimeDir)
-	if err := writeEffectiveConfig(ctx, options.SingBoxDir, configPath, built.Runtime.Inbounds, runtime.Providers); err != nil {
+	if err := writeEffectiveConfig(ctx, options.SingBoxDir, configPath, built.Runtime.Inbounds, runtime.Providers, !config.IPv6Enabled()); err != nil {
 		return PrepareResult{}, err
 	}
 	for _, ref := range built.MissingPackages {

@@ -654,4 +654,6 @@
     <string name="routing_error_package_name">Insira um nome de pacote completo, como com.android.chrome, sem ID de usuário, espaços ou URL.</string>
     <string name="routing_invalid_document">Este conjunto de regras não pode ser editado como formulário. Verifique sua versão e regras no editor JSON.</string>
     <string name="routing_reload_draft">Descartar rascunho e recarregar</string>
+    <string name="inbound_ipv6">IPv6</string>
+    <string name="inbound_ipv6_hint">Desative para que o tráfego gerenciado use apenas IPv4.</string>
 </resources>
