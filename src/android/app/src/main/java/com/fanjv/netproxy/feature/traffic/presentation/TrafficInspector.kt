@@ -51,8 +51,8 @@ import com.fanjv.netproxy.feature.traffic.data.RewriteMatch
 import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.Route
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
+import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.glass.GlassTabRow
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
@@ -108,10 +108,11 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
                 return@TrafficFrame
             }
             Column(Modifier.fillMaxSize().padding(padding)) {
-                GlassTabRow(tabs = listOf(stringResource(R.string.traffic_overview), stringResource(R.string.traffic_request_detail),
+                TabRow(tabs = listOf(stringResource(R.string.traffic_overview), stringResource(R.string.traffic_request_detail),
                     stringResource(R.string.traffic_response_detail), stringResource(R.string.traffic_rewrite_tab)),
-                    selectedIndex = tab, onSelect = { tab = it },
-                    backdrop = null, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp))
+                    selectedTabIndex = tab, onTabSelected = { tab = it },
+                    minWidth = 102.dp, maxWidth = 112.dp, itemSpacing = 4.dp,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp))
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     if (tab == 0) {
