@@ -37,16 +37,16 @@ func TestCaptureAndRewritingThroughCoreBridge(t *testing.T) {
 	layout := paths.New(t.TempDir())
 	config := New(layout)
 	rules := []Rule{
-		{"/blocked", "request", "return {reject: true}"},
-		{"/redirect", "request", `return {redirect: "https://example.org/new"}`},
-		{"/rewrite", "request", `return {set_headers: {"X-Edited": "yes"}}`},
-		{"/rewrite", "response", `return {body: input.body.toUpperCase(), set_headers: {"X-Rewritten": "yes"}}`},
-		{"/timeout", "response", `while (true) {}`},
+		{"/blocked", "request", "return {reject: true}", []string{"127.0.0.1"}},
+		{"/redirect", "request", `return {redirect: "https://example.org/new"}`, []string{"127.0.0.1"}},
+		{"/rewrite", "request", `return {set_headers: {"X-Edited": "yes"}}`, []string{"127.0.0.1"}},
+		{"/rewrite", "response", `return {body: input.body.toUpperCase(), set_headers: {"X-Rewritten": "yes"}}`, []string{"127.0.0.1"}},
+		{"/timeout", "response", `while (true) {}`, []string{"127.0.0.1"}},
 	}
 	if err := config.ReplaceRules(rules); err != nil {
 		t.Fatal(err)
 	}
-	if err := config.ReplaceRules([]Rule{{"[", "request", "return {}"}}); err == nil {
+	if err := config.ReplaceRules([]Rule{{"[", "request", "return {}", []string{"127.0.0.1"}}}); err == nil {
 		t.Fatal("接受了无效正则")
 	}
 	controller := New(layout)

@@ -35,7 +35,7 @@ internal val CaptureRecord.appKey: String?
 
 internal fun List<RewriteRule>.indexOfCapture(match: RewriteMatch): Int? {
     fun RewriteRule.matches(): Boolean {
-        val bytes = "$phase\u0000$pattern\u0000$script".encodeToByteArray()
+        val bytes = "$phase\u0000$pattern\u0000$script\u0000${domains.joinToString("\u0000")}".encodeToByteArray()
         val id = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
         return id == match.id
     }

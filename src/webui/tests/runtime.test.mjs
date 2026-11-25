@@ -34,7 +34,7 @@ test('透明抓包帮助、补全与预览只提供只读状态', () => {
   assert.deepEqual(decodeCtlResult(mockCtl(['api', 'traffic', 'rules'])).data, { rules: [] })
   assert.deepEqual(complete('api traffic to').candidates, ['toggle'])
   assert.equal(decodeCtlResult(mockCtl(['api', 'traffic', 'toggle'])).ok, false)
-  assert.deepEqual(decodeCtlResult(mockCtl(['api', 'traffic', 'mitm'])).data, { enabled: false, hosts: [], system_trust: false })
+  assert.deepEqual(decodeCtlResult(mockCtl(['api', 'traffic', 'mitm'])).data, { enabled: false, hosts: ['*'], system_trust: false, bypass_hosts: [] })
   assert.equal(decodeCtlResult(mockCtl(['api', 'traffic', 'ca-init'])).ok, false)
 })
 

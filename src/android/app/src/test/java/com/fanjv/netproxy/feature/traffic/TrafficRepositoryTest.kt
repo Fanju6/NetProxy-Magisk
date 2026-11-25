@@ -65,17 +65,17 @@ class TrafficRepositoryTest {
     }
 
     @Test fun replaceRulesDoesNotOverwriteAChangedListAndReportsValidation() = runBlocking {
-        val existing = RewriteRule("example", "request", "return {};")
+        val existing = RewriteRule("example", "request", "return {};", listOf("example.org"))
         val invalid = existing.copy(pattern = "[")
         var writes = 0
         val repository = TrafficRepository(ModuleApiClient(TestApiTransport { request ->
             assertEquals("/traffic/rules", request.path)
             if (request.method == "GET") {
-                apiSuccess("""{"rules":[{"pattern":"example","phase":"request","script":"return {};"}]}""")
+                apiSuccess("""{"rules":[{"pattern":"example","phase":"request","script":"return {};","domains":["example.org"]}]}""")
             } else {
                 assertEquals("PUT", request.method)
                 assertTrue(request.mutation)
-                assertEquals("""{"rules":[{"pattern":"[","phase":"request","script":"return {};"}]}""", request.body.toString())
+                assertEquals("""{"rules":[{"pattern":"[","phase":"request","script":"return {};","domains":["example.org"]}]}""", request.body.toString())
                 writes++
                 ModuleHttpResponse(422, """{"schema":1,"ok":false,"code":"traffic.rules_failed","message":"Invalid URL expression"}""")
             }

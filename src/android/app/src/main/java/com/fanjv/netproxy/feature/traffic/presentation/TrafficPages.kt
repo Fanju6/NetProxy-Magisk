@@ -34,6 +34,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
@@ -49,11 +50,13 @@ import com.fanjv.netproxy.core.api.ModuleApiException
 import com.fanjv.netproxy.core.ui.component.AdaptiveTopAppBar
 import com.fanjv.netproxy.core.ui.component.AppBarButton
 import com.fanjv.netproxy.core.ui.component.BackIconButton
+import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.CardItem
 import com.fanjv.netproxy.core.ui.component.ContentStatus
 import com.fanjv.netproxy.core.ui.component.TopBarMenuAction
 import com.fanjv.netproxy.core.ui.component.TopBarMoreMenu
 import com.fanjv.netproxy.core.ui.component.groupedCardSection
+import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
 import com.fanjv.netproxy.feature.apps.presentation.AppInfoModel
 import com.fanjv.netproxy.feature.apps.presentation.AppIcon
 import com.fanjv.netproxy.feature.traffic.data.CaptureRecord
@@ -61,11 +64,13 @@ import com.fanjv.netproxy.feature.traffic.data.TrafficChangedException
 import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.Route
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.DropdownDefaults
 import top.yukonga.miuix.kmp.basic.DropdownEntry
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.glass.GlassTextField
 import top.yukonga.miuix.kmp.popup.WindowDropdownPopup
 import top.yukonga.miuix.kmp.preference.ArrowPreference
@@ -84,10 +89,25 @@ internal fun TrafficFrame(
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val navigator = LocalNavigator.current
+    val scrollBehavior = MiuixScrollBehavior()
+    val backdrop = rememberBlurBackdrop()
     Scaffold(topBar = {
-        AdaptiveTopAppBar(title = stringResource(title), subtitle = subtitle,
-            navigationIcon = { BackIconButton(onClick = navigator::pop) }, actions = actions)
-    }, floatingActionButton = floatingActionButton, content = content)
+        BlurredBar(backdrop) {
+            AdaptiveTopAppBar(
+                title = stringResource(title),
+                subtitle = subtitle,
+                color = if (backdrop != null) Color.Transparent else MiuixTheme.colorScheme.surface,
+                scrollBehavior = scrollBehavior,
+                navigationIcon = { BackIconButton(onClick = navigator::pop) },
+                actions = actions,
+            )
+        }
+    }, floatingActionButton = floatingActionButton) { padding ->
+        Box(Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection)
+            .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)) {
+            content(padding)
+        }
+    }
 }
 
 @Composable

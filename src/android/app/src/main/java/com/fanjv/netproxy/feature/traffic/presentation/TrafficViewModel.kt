@@ -215,7 +215,12 @@ internal class TrafficViewModel(
 
     fun setHosts(hosts: List<String>) {
         val policy = state.value.policy.value ?: return
-        savePolicy(policy, policy.copy(hosts = hosts))
+        savePolicy(policy, policy.copy(hosts = hosts.ifEmpty { listOf("*") }))
+    }
+
+    fun setBypassHosts(hosts: List<String>) {
+        val policy = state.value.policy.value ?: return
+        savePolicy(policy, policy.copy(bypassHosts = hosts))
     }
 
     fun setMitmEnabled(enabled: Boolean) {

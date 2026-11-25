@@ -3,6 +3,7 @@ package traffic
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -16,10 +17,24 @@ import (
 )
 
 func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Time, transport *http.Transport, metadata flow) {
-	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	isWebSocket := webSocketUpgrade(r.Header)
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if isWebSocket {
+		ctx, cancel = context.WithCancel(r.Context())
+	} else {
+		ctx, cancel = context.WithTimeout(r.Context(), 2*time.Minute)
+	}
 	defer cancel()
-	target := r.URL.String()
-	rules := s.controller.snapshotRules()
+	url := *r.URL
+	if isWebSocket {
+		url.Scheme = "ws"
+		if r.URL.Scheme == "https" {
+			url.Scheme = "wss"
+		}
+	}
+	target := url.String()
+	rules, candidates := s.controller.snapshotRules(r.URL.Hostname())
 	method := r.Method
 	if len(method) > 16 {
 		method = "OTHER"
@@ -39,7 +54,7 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 		URL: strings.Clone(validPrefix(target, captureURLLimit)), URLTruncated: len(target) > captureURLLimit,
 		Request: captureMessage(requestHeaders),
 	}
-	matches, requestMatch, responseMatch := matchingRules(rules, target)
+	matches, requestMatch, responseMatch := matchingRules(rules, candidates, target)
 	detail.Rewrites = matches
 	var capturedRequest *captureReader
 	if r.Body != nil && r.Body != http.NoBody {
@@ -62,6 +77,9 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 	request.RequestURI = ""
 	request.Host = request.URL.Host
 	request.Header = cleanHeaders(request.Header)
+	if isWebSocket {
+		setWebSocketUpgrade(request.Header)
+	}
 	request.Trailer = nil
 	if request.ContentLength == 0 {
 		request.Body = nil
@@ -106,6 +124,16 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 		return
 	}
 	defer response.Body.Close()
+	if isWebSocket && response.StatusCode == http.StatusSwitchingProtocols && webSocketUpgrade(response.Header) {
+		entry.Status = response.StatusCode
+		if upstream, ok := response.Body.(io.ReadWriteCloser); ok {
+			s.captureWebSocket(capturedResponse.ResponseWriter, response, upstream, detail)
+		} else {
+			entry.Status = http.StatusBadGateway
+			http.Error(w, "Invalid upstream WebSocket", entry.Status)
+		}
+		return
+	}
 	response.Header = cleanHeaders(response.Header)
 	entry.Status = response.StatusCode
 	if responseMatch >= 0 {
@@ -125,6 +153,40 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 	w.WriteHeader(response.StatusCode)
 	_, err = io.Copy(w, response.Body)
 	capturedResponse.failed = capturedResponse.failed || err != nil
+}
+
+func (s *session) captureWebSocket(w http.ResponseWriter, response *http.Response, upstream io.ReadWriteCloser, detail *HTTPDetail) {
+	conn, rw, err := http.NewResponseController(w).Hijack()
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Time{})
+	if _, err := fmt.Fprint(rw, "HTTP/1.1 101 Switching Protocols\r\n"); err != nil {
+		return
+	}
+	headers := cleanHeaders(response.Header.Clone())
+	setWebSocketUpgrade(headers)
+	if headers.Write(rw) != nil {
+		return
+	}
+	if _, err := rw.WriteString("\r\n"); err != nil || rw.Flush() != nil {
+		return
+	}
+	detail.Response = captureMessage(headers)
+	frames := &webSocketCapture{}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer upstream.Close()
+		defer conn.Close()
+		frames.relay(upstream, rw.Reader, "send")
+	}()
+	frames.relay(conn, upstream, "receive")
+	_ = conn.Close()
+	_ = upstream.Close()
+	<-done
+	detail.WebSocket = &frames.detail
 }
 
 func (s *session) runScript(ctx context.Context, rule *compiledRule, input scriptInput, match *RewriteMatch) (result rewrite) {

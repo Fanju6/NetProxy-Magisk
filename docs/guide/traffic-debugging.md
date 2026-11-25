@@ -45,14 +45,17 @@ api traffic stop
 ```json
 {
   "enabled": true,
-  "hosts": ["example.org", "*.test.example.org"],
+  "hosts": ["*"],
+  "bypass_hosts": ["*.test.example.org"],
   "system_trust": false
 }
 ```
 
-支持精确主机名、IP、`*.域名`（仅子域名）和 `*`（不建议）。优先匹配 TLS 握手中的服务器名，无服务器名时匹配原目标地址。空列表不解密；不匹配的流量原样透传。匹配的 HTTPS 请求以 `https://` 完整 URL 匹配重写规则，`list` 显示 `decrypted` 请求元数据，不保存正文、请求头或查询参数。上游 TLS 仍校验证书。
+启用解密后，默认匹配全部 HTTPS 和 WSS 主机；仍须信任调试 CA。用 `hosts` 限制解密范围，或用 `bypass_hosts` 排除主机，排除优先。支持精确主机名、IP、`*.域名`（仅子域名）和 `*`。已有非空名单保留原有范围；空名单使用新默认值。优先匹配 TLS 握手中的服务器名，无服务器名时匹配原目标地址。上游 TLS 仍校验证书。
 
-如果客户端因证书钉扎等原因拒绝调试证书，当前连接无法恢复，记录为 `handshake_failed`，同一主机的新 TCP 连接在约 10 分钟内透传（`bypass`）。停止抓包、修改解密配置或重启 Worker 会清除临时绕行状态。HTTP/2-only 流量透传；不支持对双向 TLS 或 HTTPS 协议升级进行解密。
+如果客户端因证书钉扎等原因拒绝调试证书，当前连接无法恢复，记录为 `handshake_failed`，同一主机的新 TCP 连接在约 10 分钟内透传（`bypass`）。停止抓包、修改解密配置或重启 Worker 会清除临时绕行状态。HTTP/2-only 流量透传；不支持双向 TLS 和非 WebSocket 的 HTTPS 协议升级。
+
+HTTP/1.1 WebSocket（WS、WSS）连接结束后，在详情中显示握手和前 64 帧的方向、操作码及负载大小；未压缩文本帧最多预览 256 字节。不会修改 WebSocket 帧。
 
 ### 可选：Android 系统信任
 
@@ -69,11 +72,13 @@ api traffic stop
   "rules": [
     {
       "phase": "request",
+      "domains": ["example.org"],
       "pattern": "^http://example[.]org/",
       "script": "return {set_headers: {'X-Debug': 'NetProxy'}};"
     },
     {
       "phase": "response",
+      "domains": ["example.org"],
       "pattern": "^http://example[.]org/",
       "script": "if (typeof input.body === 'string') return {body: input.body.replace('Example Domain', 'Debug Domain')};"
     }
@@ -81,7 +86,7 @@ api traffic stop
 }
 ```
 
-- 按规则顺序，每个阶段仅执行第一条匹配完整 URL 的 Go 正则规则。脚本是函数体，不需要声明函数。
+- 每条规则先配置 `domains`（精确域名或 IP，无端口、无通配符）。只有目标主机在名单内才运行完整 URL（含 `ws://` 或 `wss://` 握手 URL）的 Go 正则匹配；各阶段仍按顺序执行第一条命中规则。旧规则从锚定的字面主机前缀推导域名；无法推导的保留供编辑，但添加域名之前不执行。脚本是函数体，不需要声明函数。
 - `input.url`、`input.method` 两个阶段均可用；响应阶段额外提供 `input.status`。在正文可读取时还提供 `input.body`：最大 256 KiB 的 UTF-8 文本或 JSON；不可读取时不提供该字段。
 - 两个阶段均可返回 `set_headers` 对象和 `remove_headers` 数组。连接级头、代理认证头和正文长度等由代理管理。
 - 请求阶段还可返回 `{redirect: "https://example.org/new"}`（给客户端返回 302）或 `{reject: true}`（403）。响应阶段可返回 `{body: "..."}` 替换可读取的正文。返回空值表示不改写。

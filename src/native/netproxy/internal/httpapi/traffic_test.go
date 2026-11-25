@@ -50,7 +50,7 @@ func TestTrafficManagementRequiresAuthAndValidatesRules(t *testing.T) {
 		t.Fatalf("未认证请求获得 %d", w.Code)
 	}
 	resourceAssertSuccess(t, s, http.MethodGet, target, "", "traffic.rules", nil)
-	body := `{"rules":[{"phase":"request","pattern":"^http://example[.]org/","script":"return {reject: true}"}]}`
+	body := `{"rules":[{"domains":["example.org"],"phase":"request","pattern":"^http://example[.]org/","script":"return {reject: true}"}]}`
 	resourceAssertSuccess(t, s, http.MethodPut, target, body, "traffic.rules_saved", nil)
 	w, result := resourceRequest(t, s, http.MethodPut, target, `{"rules":[{"phase":"bad","pattern":".","script":"return {}"}]}`)
 	if w.Code != http.StatusUnprocessableEntity || result.Code != "traffic.rules_failed" {

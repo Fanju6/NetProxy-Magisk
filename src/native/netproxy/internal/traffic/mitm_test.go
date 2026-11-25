@@ -103,10 +103,10 @@ func testTransparentHTTPS(t *testing.T, core string) {
 	c := New(layout)
 	originRoots := origin.Client().Transport.(*http.Transport).TLSClientConfig.RootCAs
 	c.upstreamRoots = originRoots
-	if err := c.ReplaceRules([]Rule{{"^https://127[.]0[.]0[.]1:", "response", `return {body: input.body.toUpperCase()};`}}); err != nil {
+	if err := c.ReplaceRules([]Rule{{"^https://127[.]0[.]0[.]1:", "response", `return {body: input.body.toUpperCase()};`, []string{"127.0.0.1"}}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.SetMITMPolicy(MITMPolicy{Enabled: true, Hosts: []string{"127.0.0.1"}}); err != nil {
+	if _, err := c.SetMITMPolicy(MITMPolicy{Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.Start(); err != nil {
@@ -236,6 +236,19 @@ func TestMITMHostScope(t *testing.T) {
 		if scope.matches(host) {
 			t.Errorf("错误匹配 %s", host)
 		}
+	}
+}
+
+func TestMITMDefaultsToAllHostsExceptBypass(t *testing.T) {
+	policy, err := normalizePolicy(MITMPolicy{Enabled: true, Hosts: []string{}, BypassHosts: []string{"*.internal.example", "example.org"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := newMITM(policy, nil)
+	defer scope.cancel()
+	if !scope.matches("other.example") || !scope.matches("internal.example") ||
+		scope.matches("sub.internal.example") || scope.matches("example.org") {
+		t.Fatal("默认范围或排除名单未生效")
 	}
 }
 

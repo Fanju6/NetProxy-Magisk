@@ -61,7 +61,14 @@ internal data class CapturedHttp(
     val request: CapturedMessage,
     val response: CapturedMessage,
     val rewrites: List<RewriteMatch> = emptyList(),
+    val websocket: WebSocketDetail? = null,
 )
+
+@Serializable
+internal data class WebSocketDetail(val frames: List<WebSocketFrame>, val truncated: Boolean)
+
+@Serializable
+internal data class WebSocketFrame(val direction: String, val opcode: Int, val size: Long, val text: String? = null, val truncated: Boolean)
 
 @Serializable
 internal data class RewriteMatch(
@@ -109,7 +116,7 @@ internal data class CapturedBody(
 )
 
 @Serializable
-internal data class RewriteRule(val pattern: String, val phase: String, val script: String)
+internal data class RewriteRule(val pattern: String, val phase: String, val script: String, val domains: List<String> = emptyList())
 
 @Serializable
 private data class RewriteRules(val rules: List<RewriteRule>)
@@ -119,6 +126,7 @@ internal data class MitmPolicy(
     val enabled: Boolean,
     val hosts: List<String>,
     @SerialName("system_trust") val systemTrust: Boolean,
+    @SerialName("bypass_hosts") val bypassHosts: List<String> = emptyList(),
 )
 
 @Serializable
@@ -148,7 +156,7 @@ internal class TrafficRepository(private val api: ModuleApiClient) {
     suspend fun saveRules(expected: List<RewriteRule>, updated: List<RewriteRule>): List<RewriteRule> {
         if (rules() != expected) throw TrafficChangedException()
         api.put("/traffic/rules", api.json.encodeToJsonElement(RewriteRules(updated)).jsonObject)
-        return updated
+        return rules()
     }
 
     suspend fun savePolicy(expected: MitmPolicy, updated: MitmPolicy): MitmPolicy {

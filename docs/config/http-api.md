@@ -134,11 +134,11 @@ HTTP 保存必须提供读取时的 revision。发生 `config.conflict` 时重�
 | `POST /diagnostics/ebpf` | 能力预检，正文含 `mode/raw` |
 | `GET /logs?kind=service&lines=200` | 脱敏日志，类型为 `service/core`，最多 2000 行 |
 | `DELETE /logs?kind=service` | 清空日志 |
-| `GET /traffic/status`、`list` | 全局抓包状态和内存记录 |
+| `GET /traffic/status`、`list`、`detail?id=…` | 全局抓包状态、内存记录和详情；WS/WSS 详情含有界的 `http.websocket.frames` |
 | `GET /traffic/apps`、`PUT /traffic/apps` | 读取或替换抓包应用名单：`{"apps":["0:com.example.app"]}`；空数组抓取全部 |
 | `POST /traffic/toggle`、`start`、`stop`；`DELETE /traffic/list` | 切换全局抓包、显式启停或清空记录 |
-| `GET/PUT /traffic/rules` | 读取或替换重写规则，正文为 `{"rules":[...]}`，见[规则格式](/guide/traffic-debugging) |
-| `GET/PUT /traffic/mitm` | 读取或替换 `{"enabled":false,"hosts":[],"system_trust":false}`；仅对显式配置的主机开启 HTTPS 解密。系统信任开启后下次开机安装，关闭时尝试卸载 |
+| `GET/PUT /traffic/rules` | 读取或替换重写规则，正文为 `{"rules":[...]}`，新增和修改的规则需要 `domains`，见[规则格式](/guide/traffic-debugging) |
+| `GET/PUT /traffic/mitm` | 读取或替换 `{"enabled":false,"hosts":["*"],"bypass_hosts":[],"system_trust":false}`；启用后默认解密全部 HTTPS/WSS，排除名单优先。系统信任开启后下次开机安装，关闭时尝试卸载 |
 | `POST /traffic/ca-init`；`GET /traffic/ca` | 显式初始化或读取公开 CA；返回 `pem`、`filename`、`sha256`，不返回任何私钥 |
 | `GET /diagnostics/export` | 下载脱敏诊断包 |
 | `GET /events?topics=status,groups,subscriptions` | 实时事件流 |

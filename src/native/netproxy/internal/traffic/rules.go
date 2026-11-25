@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"regexp/syntax"
 	"strings"
 	"time"
 
@@ -22,9 +23,10 @@ const (
 )
 
 type Rule struct {
-	Pattern string `json:"pattern"`
-	Phase   string `json:"phase"`
-	Script  string `json:"script"`
+	Pattern string   `json:"pattern"`
+	Phase   string   `json:"phase"`
+	Script  string   `json:"script"`
+	Domains []string `json:"domains"`
 }
 
 type compiledRule struct {
@@ -49,7 +51,7 @@ type rewrite struct {
 	Reject        bool              `json:"reject"`
 }
 
-func compileRules(rules []Rule) ([]compiledRule, error) {
+func compileRules(rules []Rule, legacy bool) ([]compiledRule, error) {
 	if len(rules) > 32 {
 		return nil, fmt.Errorf("最多允许 32 条重写规则")
 	}
@@ -63,14 +65,66 @@ func compileRules(rules []Rule) ([]compiledRule, error) {
 		if err != nil {
 			return nil, fmt.Errorf("第 %d 条重写规则的 URL 正则表达式无效", i+1)
 		}
+		if legacy && rule.Domains == nil {
+			rule.Domains = legacyDomains(rule.Pattern)
+		}
+		if (!legacy && len(rule.Domains) == 0) || len(rule.Domains) > 32 {
+			return nil, fmt.Errorf("第 %d 条重写规则需要 1–32 个域名", i+1)
+		}
+		domains := make([]string, 0, len(rule.Domains))
+		seen := make(map[string]bool)
+		for _, value := range rule.Domains {
+			host := canonicalHost(strings.TrimSpace(value))
+			if !validMITMHost(host) {
+				return nil, fmt.Errorf("第 %d 条重写规则的域名无效", i+1)
+			}
+			if !seen[host] {
+				seen[host] = true
+				domains = append(domains, host)
+			}
+		}
+		rule.Domains = domains
 		program, err := goja.Compile("rewrite.js", "(function (input) {\n"+rule.Script+"\n})", true)
 		if err != nil {
 			return nil, fmt.Errorf("第 %d 条重写规则的 JavaScript 语法无效", i+1)
 		}
-		sum := sha256.Sum256([]byte(rule.Phase + "\x00" + rule.Pattern + "\x00" + rule.Script))
+		sum := sha256.Sum256([]byte(rule.Phase + "\x00" + rule.Pattern + "\x00" + rule.Script + "\x00" + strings.Join(domains, "\x00")))
 		compiled = append(compiled, compiledRule{rule, hex.EncodeToString(sum[:]), pattern, program})
 	}
 	return compiled, nil
+}
+
+func legacyDomains(pattern string) []string {
+	expression, err := syntax.Parse(pattern, syntax.Perl)
+	if err != nil || expression.Op != syntax.OpConcat || len(expression.Sub) < 2 ||
+		expression.Sub[0].Op != syntax.OpBeginText || expression.Sub[1].Op != syntax.OpLiteral {
+		return nil
+	}
+	prefix := string(expression.Sub[1].Rune)
+	_, address, ok := strings.Cut(prefix, "://")
+	if !ok || !(strings.HasPrefix(prefix, "http://") || strings.HasPrefix(prefix, "https://") ||
+		strings.HasPrefix(prefix, "ws://") || strings.HasPrefix(prefix, "wss://")) {
+		return nil
+	}
+	end := strings.IndexAny(address, ":/?")
+	if end < 0 {
+		return nil
+	}
+	host := canonicalHost(address[:end])
+	if !validMITMHost(host) {
+		return nil
+	}
+	return []string{host}
+}
+
+func indexRules(rules []compiledRule) map[string][]int {
+	index := make(map[string][]int)
+	for i, rule := range rules {
+		for _, domain := range rule.Domains {
+			index[domain] = append(index[domain], i)
+		}
+	}
+	return index
 }
 
 func (rule *compiledRule) run(ctx context.Context, input scriptInput) (rewrite, string) {

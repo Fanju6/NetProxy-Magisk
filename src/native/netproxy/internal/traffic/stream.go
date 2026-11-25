@@ -197,7 +197,7 @@ func (s *session) serveHTTPStream(client net.Conn, done <-chan struct{}, upstrea
 				http.Error(w, "Invalid origin request", http.StatusBadRequest)
 				return
 			}
-			if r.Header.Get("Upgrade") != "" {
+			if r.Header.Get("Upgrade") != "" && !webSocketUpgrade(r.Header) {
 				if upstreamTLS != nil {
 					http.Error(w, "HTTPS protocol upgrade is not supported", http.StatusNotImplemented)
 					return

@@ -95,7 +95,7 @@ public final class Main {
         return new String(output.toByteArray(), StandardCharsets.UTF_8);
     }
 
-    private static JSONObject apps(Context context, File cache) throws Exception {
+    private static void initializeIconFonts() throws ReflectiveOperationException {
         // 延迟字体的原始句柄可为 0，由框架 setDefault 解析并注册实际字体。
         Field fontMap = Typeface.class.getDeclaredField("sSystemFontMap");
         fontMap.setAccessible(true);
@@ -110,6 +110,15 @@ public final class Main {
         Method setDefault = Typeface.class.getDeclaredMethod("setDefault", Typeface.class);
         setDefault.setAccessible(true);
         setDefault.invoke(null, font);
+    }
+
+    private static JSONObject apps(Context context, File cache) throws Exception {
+        try {
+            initializeIconFonts();
+        } catch (ReflectiveOperationException | RuntimeException unavailable) {
+            // 厂商的字体实现可能不同；仍返回应用清单，由管理器显示占位图。
+            cache = null;
+        }
         UserManager manager = context.getSystemService(UserManager.class);
         List<?> users = (List<?>) UserManager.class.getMethod("getUsers").invoke(manager);
         JSONArray result = new JSONArray();
@@ -129,7 +138,7 @@ public final class Main {
             workers.shutdownNow();
         }
         // 全部用户查询成功后才清理，共用目录不能按单个用户的清单删除。
-        File[] files = cache.listFiles();
+        File[] files = cache == null ? null : cache.listFiles();
         if (files != null) for (File file : files) {
             String name = file.getName();
             if ((name.matches("[a-f0-9]{64}\\.png") && !retained.contains(name)) || name.matches("[a-f0-9]{64}\\.png\\..+\\.tmp")) file.delete();
@@ -161,7 +170,13 @@ public final class Main {
         String resources, File cache, Set<String> retained) throws Exception {
         ApplicationInfo info = installed.applicationInfo;
         long version = Build.VERSION.SDK_INT >= 28 ? installed.getLongVersionCode() : installed.versionCode;
-        String label = manager.getApplicationLabel(info).toString();
+        String label = info.packageName;
+        try {
+            CharSequence value = manager.getApplicationLabel(info);
+            if (value != null) label = value.toString();
+        } catch (RuntimeException unavailable) {
+            // 单个应用的标签资源加载失败不应阻止应用选择。
+        }
         String iconKey = "";
         // 缺失图标由管理器显示占位图，系统默认图标仍可能触发厂商原生崩溃。
         if (cache != null && info.icon != 0) {

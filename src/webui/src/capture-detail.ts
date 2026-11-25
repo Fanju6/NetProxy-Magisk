@@ -36,7 +36,10 @@ export interface CaptureDetail {
   duration_ms: number
   source_app?: { uid: number, user_id: number, package?: string }
   exit?: { inbound?: string, chain?: { tag: string, type: string }[], remote?: string, package?: string, uid?: number, process?: string }
-  http?: { url: string, url_truncated: boolean, request: CaptureMessage, response: CaptureMessage, rewrites?: RewriteMatch[] }
+  http?: {
+    url: string, url_truncated: boolean, request: CaptureMessage, response: CaptureMessage, rewrites?: RewriteMatch[]
+    websocket?: { frames: { direction: string, opcode: number, size: number, text?: string, truncated: boolean }[], truncated: boolean }
+  }
 }
 
 const states: Record<string, string> = {
@@ -178,5 +181,15 @@ export function renderCaptureDetail(data: CaptureDetail): HTMLElement {
     rewrites.append(row)
   }
   article.append(rewrites, message('请求', data.http.request), message('响应', data.http.response))
+  if (data.http.websocket) {
+    const socket = section('WebSocket 帧', true)
+    for (const frame of data.http.websocket.frames) {
+      line(socket, frame.direction === 'send' ? '发送' : '接收', `0x${frame.opcode.toString(16)} · ${frame.size} 字节`)
+      if (frame.text) socket.append(element('pre', frame.text))
+      if (frame.truncated) socket.append(element('p', '文本预览已截断。'))
+    }
+    if (data.http.websocket.truncated) socket.append(element('p', '仅显示前 64 帧。'))
+    article.append(socket)
+  }
   return article
 }

@@ -137,6 +137,23 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (tab == 0) {
+                        detail?.websocket?.let { websocket ->
+                            item {
+                                InspectCard {
+                                    Text(stringResource(R.string.traffic_ws_frames), style = MiuixTheme.textStyles.subtitle)
+                                    if (websocket.truncated) TruncatedNotice()
+                                }
+                            }
+                            items(websocket.frames.size) { index ->
+                                val frame = websocket.frames[index]
+                                InspectCard {
+                                    val direction = stringResource(if (frame.direction == "send") R.string.traffic_ws_sent else R.string.traffic_ws_received)
+                                    InspectRow(direction, "0x${frame.opcode.toString(16)} · ${frame.size} B")
+                                    frame.text?.let { CodeText(it) }
+                                    if (frame.truncated) TruncatedNotice()
+                                }
+                            }
+                        }
                         detail?.let { item {
                             InspectCard {
                                 Text(stringResource(R.string.traffic_full_url), style = MiuixTheme.textStyles.subtitle)

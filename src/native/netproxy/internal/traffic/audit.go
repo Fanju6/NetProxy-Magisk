@@ -34,9 +34,9 @@ type BodyChange struct {
 	After  int `json:"after"`
 }
 
-func matchingRules(rules []compiledRule, target string) (matches []RewriteMatch, request, response int) {
+func matchingRules(rules []compiledRule, candidates []int, target string) (matches []RewriteMatch, request, response int) {
 	request, response = -1, -1
-	for i := range rules {
+	for _, i := range candidates {
 		rule := &rules[i]
 		if !rule.pattern.MatchString(target) {
 			continue

@@ -95,7 +95,7 @@ internal fun TrafficRulesScreen(viewModel: TrafficViewModel) {
             groupedCardSection("rules", { stringResource(R.string.traffic_rules) }, rules.mapIndexed { index, rule ->
                 CardItem(index.toString()) {
                     ArrowPreference(title = rule.pattern,
-                        summary = "${phaseLabel(rule.phase)} · ${stringResource(R.string.traffic_rule_enabled)}",
+                        summary = "${phaseLabel(rule.phase)} · ${rule.domains.joinToString().ifEmpty { stringResource(R.string.traffic_rule_domains) }}",
                         enabled = editable, onClick = { edit(index) }, insideMargin = TrafficRowInsets)
                 }
             })
@@ -112,13 +112,14 @@ internal fun TrafficRuleEditorScreen(viewModel: TrafficViewModel) {
     LaunchedEffect(draft == null) { if (draft == null) navigator.pop() }
     if (draft == null) return
     val rule = draft.rule
+    var domains by rememberSaveable(draft.index) { mutableStateOf(rule.domains.joinToString(", ")) }
     TopBarMoreMenu(listOf(
         TopBarMenuAction(stringResource(R.string.common_delete), draft.index != null && !state.saving) { confirmDelete = true },
     ), stringResource(R.string.more_options)) { menu ->
         TrafficFrame(if (draft.index == null) R.string.traffic_rule_add else R.string.traffic_rule_edit,
             actions = {
                 if (draft.index != null) menu()
-                AppBarButton({ viewModel.saveRule() }, !state.saving && rule.pattern.isNotBlank() && rule.script.isNotBlank()) {
+                AppBarButton({ viewModel.saveRule() }, !state.saving && rule.domains.isNotEmpty() && rule.pattern.isNotBlank() && rule.script.isNotBlank()) {
                     if (state.saving) InfiniteProgressIndicator(modifier = Modifier.size(20.dp))
                     else Icon(chromeIcon(Icons.Rounded.Check), stringResource(R.string.save_text))
                 }
@@ -130,8 +131,13 @@ internal fun TrafficRuleEditorScreen(viewModel: TrafficViewModel) {
                     selectedIndex = if (rule.phase == "request") 0 else 1, enabled = !state.saving,
                     insideMargin = TrafficRowInsets,
                     onSelectedIndexChange = { viewModel.updateRule(rule.copy(phase = if (it == 0) "request" else "response")) })
+                GlassTextField(value = domains, onValueChange = {
+                    domains = it
+                    viewModel.updateRule(rule.copy(domains = hostList(it)))
+                }, modifier = Modifier.fillMaxWidth(), singleLine = true, enabled = !state.saving,
+                    label = stringResource(R.string.traffic_rule_domains))
                 GlassTextField(value = rule.pattern, onValueChange = { viewModel.updateRule(rule.copy(pattern = it)) },
-                    modifier = Modifier.fillMaxWidth(), singleLine = true, enabled = !state.saving,
+                    modifier = Modifier.fillMaxWidth(), singleLine = true, enabled = !state.saving && rule.domains.isNotEmpty(),
                     label = stringResource(R.string.traffic_rule_pattern), colors = dialogTextFieldColors(state.draftError != null))
                 GlassTextField(value = rule.script, onValueChange = { viewModel.updateRule(rule.copy(script = it)) },
                     modifier = Modifier.fillMaxWidth(), minLines = 8, maxLines = 16, enabled = !state.saving,
@@ -145,6 +151,8 @@ internal fun TrafficRuleEditorScreen(viewModel: TrafficViewModel) {
     TrafficConfirmation(confirmDelete, R.string.common_delete, R.string.traffic_rule_delete,
         { confirmDelete = false }, { confirmDelete = false; viewModel.saveRule(delete = true) })
 }
+
+private fun hostList(value: String) = value.split(',', '\n').map(String::trim).filter(String::isNotEmpty)
 
 @Composable
 internal fun TrafficHttpsScreen(viewModel: TrafficViewModel) {
@@ -220,13 +228,13 @@ internal fun TrafficHttpsScreen(viewModel: TrafficViewModel) {
                         }
                         AppBarButton({
                             addHost = false
-                            viewModel.setHosts(policy.hosts + newHost.trim())
+                            viewModel.setHosts(policy.hosts.filterNot { it == "*" } + newHost.trim())
                         }, newHost.isNotBlank() && editable) {
                             Icon(chromeIcon(Icons.Rounded.Check), stringResource(R.string.common_confirm))
                         }
                     }
                 })
-                if (addHost || policy.hosts.isEmpty()) add(CardItem("hint") {
+                if (addHost || policy.hosts == listOf("*") || policy.hosts.isEmpty()) add(CardItem("hint") {
                     Text(stringResource(R.string.traffic_hosts_hint), Modifier.padding(TrafficRowInsets),
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary, style = MiuixTheme.textStyles.footnote1)
                 })
@@ -235,6 +243,16 @@ internal fun TrafficHttpsScreen(viewModel: TrafficViewModel) {
                         enabled = editable, onClick = { removeHost = host }, insideMargin = TrafficRowInsets)
                 }) }
             })
+            item("bypass") {
+                var bypass by rememberSaveable(policy.bypassHosts) { mutableStateOf(policy.bypassHosts.joinToString(", ")) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    GlassTextField(value = bypass, onValueChange = { bypass = it }, modifier = Modifier.weight(1f),
+                        singleLine = true, enabled = editable, label = stringResource(R.string.traffic_bypass_hosts))
+                    AppBarButton({ viewModel.setBypassHosts(hostList(bypass)) }, editable && hostList(bypass) != policy.bypassHosts) {
+                        Icon(chromeIcon(Icons.Rounded.Check), stringResource(R.string.save_text))
+                    }
+                }
+            }
             groupedCardSection("ca", { stringResource(R.string.traffic_ca_section) }, listOf(
                 CardItem("fingerprint") {
                     Column(Modifier.padding(TrafficRowInsets), verticalArrangement = Arrangement.spacedBy(2.dp)) {

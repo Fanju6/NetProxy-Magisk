@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	json "encoding/json/v2"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -45,6 +46,7 @@ type Controller struct {
 	mu            sync.Mutex
 	layout        paths.Layout
 	rules         []compiledRule
+	rulesByHost   map[string][]int
 	session       *session
 	entries       [maxEntries]Record
 	detailBytes   int
@@ -137,20 +139,49 @@ func (c *Controller) Rules() ([]Rule, error) {
 }
 
 func (c *Controller) ReplaceRules(rules []Rule) error {
-	compiled, err := compileRules(rules)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	existing := make(map[[3]string]int)
+	for _, rule := range rules {
+		if len(rule.Domains) != 0 {
+			continue
+		}
+		if err := c.loadRules(); err != nil {
+			return err
+		}
+		for _, current := range c.rules {
+			if len(current.Domains) == 0 {
+				existing[[3]string{current.Pattern, current.Phase, current.Script}]++
+			}
+		}
+		break
+	}
+	for i, rule := range rules {
+		if len(rule.Domains) == 0 {
+			key := [3]string{rule.Pattern, rule.Phase, rule.Script}
+			if existing[key] == 0 {
+				return fmt.Errorf("第 %d 条重写规则需要 1–32 个域名", i+1)
+			}
+			existing[key]--
+		}
+	}
+	compiled, err := compileRules(rules, true)
 	if err != nil {
 		return err
 	}
-	content, err := json.Marshal(rules)
+	normalized := make([]Rule, len(compiled))
+	for i, rule := range compiled {
+		normalized[i] = rule.Rule
+	}
+	content, err := json.Marshal(normalized)
 	if err != nil || len(content) > MaxRulesBytes {
 		return errors.New("重写规则超过大小限制")
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	if err := provider.WriteAtomic(c.layout.TrafficRules(), content, 0o600); err != nil {
 		return errors.New("无法保存重写规则")
 	}
 	c.rules = compiled
+	c.rulesByHost = indexRules(compiled)
 	return nil
 }
 
@@ -172,14 +203,15 @@ func (c *Controller) loadRules() error {
 	if err != nil || len(content) > MaxRulesBytes || json.Unmarshal(content, &rules, json.RejectUnknownMembers(true)) != nil || rules == nil {
 		return errors.New("无法读取重写规则")
 	}
-	c.rules, err = compileRules(rules)
+	c.rules, err = compileRules(rules, true)
+	c.rulesByHost = indexRules(c.rules)
 	return err
 }
 
-func (c *Controller) snapshotRules() []compiledRule {
+func (c *Controller) snapshotRules(host string) ([]compiledRule, []int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.rules
+	return c.rules, c.rulesByHost[canonicalHost(host)]
 }
 
 func (c *Controller) Start() error {
