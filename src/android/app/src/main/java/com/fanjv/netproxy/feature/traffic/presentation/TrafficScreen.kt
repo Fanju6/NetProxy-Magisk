@@ -36,7 +36,6 @@ import com.fanjv.netproxy.core.ui.component.ContentStatus
 import com.fanjv.netproxy.core.ui.component.appBarOverscroll
 import com.fanjv.netproxy.core.ui.component.groupedCardSection
 import com.fanjv.netproxy.core.ui.component.rememberBlurBackdrop
-import com.fanjv.netproxy.feature.traffic.data.CaptureRecord
 import com.fanjv.netproxy.feature.traffic.data.TrafficChangedException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -58,7 +57,6 @@ internal fun TrafficScreen(onBack: () -> Unit, viewModel: TrafficViewModel = net
     val scope = rememberCoroutineScope()
     val backdrop = rememberBlurBackdrop()
     val scroll = MiuixScrollBehavior()
-    var detail by remember { mutableStateOf<CaptureRecord?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
     var confirmTrust by remember { mutableStateOf(false) }
     val certificatePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/x-pem-file")) { uri ->
@@ -171,11 +169,11 @@ internal fun TrafficScreen(onBack: () -> Unit, viewModel: TrafficViewModel = net
 
                 val records = state.records.value
                 groupedCardSection("records", { stringResource(R.string.traffic_records) }, records.orEmpty().mapIndexed { index, record ->
-                    CardItem("record:$index:${record.time}") {
+                    CardItem("record:${record.id ?: "$index:${record.time}"}") {
                         ArrowPreference(
                             title = "${record.method} ${record.host}",
                             summary = stringResource(R.string.traffic_record_summary, record.status.takeIf { it > 0 }?.toString() ?: "—", record.outbound, record.time),
-                            onClick = { detail = record },
+                            onClick = { viewModel.openRecord(record) },
                         )
                     }
                 }, outerBottomPadding = 16.dp)
@@ -189,7 +187,7 @@ internal fun TrafficScreen(onBack: () -> Unit, viewModel: TrafficViewModel = net
         }
     }
 
-    detail?.let { RecordDetails(it) { detail = null } }
+    state.selectedRecord?.let { RecordDetails(it, viewModel::closeRecord) }
     state.ruleDraft?.let { RewriteRuleDialog(it, state.saving, state.draftError, viewModel) }
     state.hostsDraft?.let { MitmHostsDialog(it, state.saving, state.draftError, viewModel) }
     TrafficConfirmation(confirmClear, R.string.traffic_clear, R.string.traffic_clear_prompt,
@@ -209,6 +207,7 @@ private fun trafficError(error: Throwable, fallback: Int): String = when (error)
     is TrafficChangedException -> stringResource(R.string.traffic_changed)
     is ModuleApiException -> when (error.resultCode) {
         "traffic.ca_invalid" -> stringResource(R.string.traffic_ca_failed)
+        "traffic.record_not_found" -> stringResource(R.string.traffic_detail_expired)
         "traffic.trust_remove_incomplete" -> stringResource(R.string.traffic_trust_remove_incomplete)
         else -> stringResource(R.string.traffic_api_error, stringResource(fallback), error.resultCode, error.message)
     }

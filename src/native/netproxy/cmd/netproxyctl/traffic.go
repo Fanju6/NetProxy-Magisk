@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/apiconfig"
@@ -17,14 +18,14 @@ import (
 func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 	const maxRequest = traffic.MaxRulesBytes + 1024
 	usage := func() error {
-		return usageError("用法: netproxyctl api traffic status|start|stop|toggle|list|clear|rules|set-rules|mitm|set-mitm|ca|ca-init|ca-export")
+		return usageError("用法: netproxyctl api traffic status|start|stop|toggle|list|detail <ID>|clear|rules|set-rules|mitm|set-mitm|ca|ca-init|ca-export")
 	}
 	if len(args) == 0 {
 		return usage()
 	}
 	action := args[0]
-	withPath := action == "set-rules" || action == "set-mitm" || action == "ca-export"
-	if (withPath && len(args) != 2) || (!withPath && len(args) != 1) {
+	withArgument := action == "set-rules" || action == "set-mitm" || action == "ca-export" || action == "detail"
+	if (withArgument && len(args) != 2) || (!withArgument && len(args) != 1) {
 		return usage()
 	}
 	layout := paths.New(c.options.ModuleDir)
@@ -40,6 +41,11 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 	switch action {
 	case "status", "list", "rules", "mitm", "ca":
 		method = http.MethodGet
+	case "detail":
+		if !traffic.ValidRecordID(args[1]) {
+			return usageError("抓包记录 ID 无效")
+		}
+		method, action = http.MethodGet, "detail?id="+url.QueryEscape(args[1])
 	case "start", "stop", "toggle", "ca-init":
 		method = http.MethodPost
 	case "clear":
@@ -89,7 +95,7 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 		return &resultError{Code: "traffic.api_unavailable", Message: "无法连接本机管理接口，请检查 api status"}
 	}
 	defer response.Body.Close()
-	const maxResponse = 512 << 10
+	const maxResponse = 1 << 20
 	content, err := io.ReadAll(io.LimitReader(response.Body, maxResponse+1))
 	var envelope result
 	if err != nil || len(content) > maxResponse || json.Unmarshal(content, &envelope) != nil ||

@@ -26,12 +26,73 @@ func TestHTTPSRewriteAndNextConnectionBypass(t *testing.T) {
 	}
 }
 
+func TestPatchedCoreCaptureDetailWithCurl(t *testing.T) {
+	core := os.Getenv("NETPROXY_TEST_CAPTURE_CORE")
+	if core == "" {
+		t.Skip("set NETPROXY_TEST_CAPTURE_CORE to the patched Linux sing-box")
+	}
+	curl, err := exec.LookPath("curl")
+	if err != nil {
+		t.Skip("curl unavailable")
+	}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Capture-Response", "synthetic")
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = io.Copy(w, r.Body)
+	})
+	plain := httptest.NewServer(handler)
+	defer plain.Close()
+	encrypted := httptest.NewTLSServer(handler)
+	defer encrypted.Close()
+	layout := paths.New(t.TempDir())
+	controller := New(layout)
+	controller.upstreamRoots = encrypted.Client().Transport.(*http.Transport).TLSClientConfig.RootCAs
+	if _, err := controller.SetMITMPolicy(MITMPolicy{Enabled: true, Hosts: []string{"127.0.0.1"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := controller.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer controller.Stop()
+	cert, err := controller.Certificate(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caPath := filepath.Join(layout.Root(), "ca-test.pem")
+	if err := os.WriteFile(caPath, []byte(cert.PEM), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	proxyURL := "socks5h://" + startCaptureTestSOCKS(t, core, layout, false)
+	for _, origin := range []string{plain.URL, encrypted.URL} {
+		url := origin + "/sample/form?value=fixture"
+		out, err := exec.CommandContext(t.Context(), curl, "--silent", "--show-error", "--fail", "--max-time", "5",
+			"--noproxy", "", "--proxy", proxyURL, "--cacert", caPath,
+			"-H", "X-Capture-Request: synthetic", "-H", "Content-Type: text/plain", "--data-binary", "echo-body", url).CombinedOutput()
+		if err != nil || string(out) != "echo-body" {
+			t.Fatalf("curl capture fixture failed: %q %v", out, err)
+		}
+		entries := controller.Entries()
+		if len(entries) == 0 {
+			t.Fatal("no capture entry")
+		}
+		record, found := controller.Record(entries[0].ID)
+		if !found || record.HTTP == nil || record.HTTP.URL != url ||
+			record.HTTP.Request.Headers.Get("X-Capture-Request") != "synthetic" ||
+			record.HTTP.Response.Headers.Get("X-Capture-Response") != "synthetic" ||
+			record.HTTP.Request.Body.Data != "echo-body" || record.HTTP.Response.Body.Data != "echo-body" ||
+			(strings.HasPrefix(origin, "https:") && record.TLS != "decrypted") {
+			t.Fatal("missing URL, headers or bodies in curl capture detail")
+		}
+	}
+}
+
 func testTransparentHTTPS(t *testing.T, core string) {
 	origin := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Proxy-Authorization") != "" {
 			t.Error("抓包代理凭据到达 HTTPS 上游")
 		}
 		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set("X-Capture-Response", "https")
 		_, _ = io.WriteString(w, "upstream")
 	}))
 	defer origin.Close()
@@ -66,13 +127,15 @@ func testTransparentHTTPS(t *testing.T, core string) {
 		transport := &http.Transport{DialContext: dial, TLSClientConfig: &tls.Config{RootCAs: trust}}
 		defer transport.CloseIdleConnections()
 		client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
-		request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, origin.URL+"/debug?token=synthetic", nil)
+		request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, origin.URL+"/debug?token=synthetic", strings.NewReader("request-body"))
 		if err != nil {
 			return "", err
 		}
 		if trust == roots {
 			request.Header.Set("Proxy-Authorization", "synthetic")
 		}
+		request.Header.Set("X-Capture-Request", "https")
+		request.Header.Set("Content-Type", "text/plain")
 		res, err := client.Do(request)
 		if err != nil {
 			return "", err
@@ -100,6 +163,17 @@ func testTransparentHTTPS(t *testing.T, core string) {
 	if len(entries) != 3 || entries[0].TLS != "bypass" || entries[1].TLS != "handshake_failed" ||
 		entries[2].TLS != "decrypted" || entries[2].Rewrite != "response" || strings.Contains(entries[2].Host, "synthetic") {
 		t.Fatalf("意外抓包记录: %+v", entries)
+	}
+	record, ok := c.Record(entries[2].ID)
+	if !ok || record.HTTP == nil || record.HTTP.URL != origin.URL+"/debug?token=synthetic" ||
+		record.HTTP.Request.Headers.Get("X-Capture-Request") != "https" || record.HTTP.Request.Body.Data != "request-body" ||
+		record.HTTP.Response.Headers.Get("X-Capture-Response") != "https" || record.HTTP.Response.Body.Data != "UPSTREAM" {
+		t.Fatalf("HTTPS capture detail mismatch: %+v", record.HTTP)
+	}
+	for _, entry := range entries[:2] {
+		if record, ok := c.Record(entry.ID); !ok || record.HTTP != nil {
+			t.Fatal("TLS fallback exposed HTTP detail")
+		}
 	}
 	if _, err := c.SetMITMPolicy(MITMPolicy{}); err != nil || c.currentMITM() != nil || state.ctx.Err() == nil {
 		t.Fatalf("未撤销当前 HTTPS 抓包策略: %v", err)

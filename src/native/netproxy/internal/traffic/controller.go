@@ -2,6 +2,7 @@ package traffic
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/x509"
 	json "encoding/json/v2"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,6 +21,7 @@ import (
 const maxEntries = 200
 
 type Entry struct {
+	ID         string    `json:"id"`
 	Time       time.Time `json:"time"`
 	Method     string    `json:"method"`
 	Host       string    `json:"host"`
@@ -39,7 +42,8 @@ type Controller struct {
 	layout        paths.Layout
 	rules         []compiledRule
 	session       *session
-	entries       [maxEntries]Entry
+	entries       [maxEntries]Record
+	detailBytes   int
 	count         int
 	next          int
 	mitm          *mitmState
@@ -61,9 +65,27 @@ func (c *Controller) Entries() []Entry {
 	defer c.mu.Unlock()
 	entries := make([]Entry, c.count)
 	for i := range entries {
-		entries[i] = c.entries[(c.next+maxEntries-1-i)%maxEntries]
+		entries[i] = c.entries[(c.next+maxEntries-1-i)%maxEntries].Entry
 	}
 	return entries
+}
+
+func ValidRecordID(id string) bool {
+	return len(id) == 26 && strings.IndexFunc(id, func(r rune) bool {
+		return !(r >= 'A' && r <= 'Z' || r >= '2' && r <= '7')
+	}) < 0
+}
+
+func (c *Controller) Record(id string) (Record, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for i := 0; i < c.count; i++ {
+		record := c.entries[(c.next+maxEntries-1-i)%maxEntries]
+		if record.ID == id {
+			return record, true
+		}
+	}
+	return Record{}, false
 }
 
 func (c *Controller) Clear() {
@@ -73,12 +95,25 @@ func (c *Controller) Clear() {
 }
 
 func (c *Controller) record(owner *session, entry Entry) {
+	c.recordDetail(owner, entry, nil)
+}
+
+func (c *Controller) recordDetail(owner *session, entry Entry, detail *HTTPDetail) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.session == owner {
-		c.entries[c.next] = entry
+		size := detail.size()
+		for c.count == maxEntries || c.detailBytes+size > captureDetailBudget {
+			oldest := (c.next + maxEntries - c.count) % maxEntries
+			c.detailBytes -= c.entries[oldest].HTTP.size()
+			c.entries[oldest] = Record{}
+			c.count--
+		}
+		entry.ID = rand.Text()
+		c.entries[c.next] = Record{Entry: entry, HTTP: detail}
 		c.next = (c.next + 1) % maxEntries
-		c.count = min(c.count+1, maxEntries)
+		c.count++
+		c.detailBytes += size
 	}
 }
 
@@ -214,5 +249,5 @@ func (c *Controller) Stop() {
 }
 
 func (c *Controller) clearLocked() {
-	c.entries, c.count, c.next = [maxEntries]Entry{}, 0, 0
+	c.entries, c.count, c.next, c.detailBytes = [maxEntries]Record{}, 0, 0, 0
 }

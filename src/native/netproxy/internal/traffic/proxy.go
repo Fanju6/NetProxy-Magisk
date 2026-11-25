@@ -28,11 +28,34 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 	if r.URL.Scheme == "https" {
 		entry.TLS = "decrypted"
 	}
-	defer func() {
-		entry.DurationMS = time.Since(now).Milliseconds()
-		s.controller.record(s, entry)
-	}()
 	request := r.Clone(ctx)
+	requestHeaders := r.Header.Clone()
+	requestHeaders.Set("Host", r.Host)
+	if len(r.TransferEncoding) != 0 {
+		requestHeaders["Transfer-Encoding"] = r.TransferEncoding
+	}
+	detail := &HTTPDetail{
+		URL: strings.Clone(validPrefix(target, captureURLLimit)), URLTruncated: len(target) > captureURLLimit,
+		Request: captureMessage(requestHeaders),
+	}
+	var capturedRequest *captureReader
+	if r.Body != nil && r.Body != http.NoBody {
+		capturedRequest = &captureReader{ReadCloser: r.Body}
+		request.Body = capturedRequest
+	}
+	capturedResponse := &captureWriter{ResponseWriter: w, message: &detail.Response, head: r.Method == http.MethodHead}
+	w = capturedResponse
+	defer func() {
+		if capturedRequest != nil {
+			detail.Request.setBody(capturedRequest.body.body(requestHeaders, r.ContentLength,
+				r.ContentLength < 0 && !capturedRequest.eof.Load()))
+		} else {
+			detail.Request.setBody((&bodyCapture{}).body(requestHeaders, 0, false))
+		}
+		detail.Response.setBody(capturedResponse.body.body(w.Header(), 0, capturedResponse.failed))
+		entry.DurationMS = time.Since(now).Milliseconds()
+		s.controller.recordDetail(s, entry, detail)
+	}()
 	request.RequestURI = ""
 	request.Host = request.URL.Host
 	request.Header = cleanHeaders(request.Header)
@@ -85,7 +108,8 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 		w.Header()[name] = values
 	}
 	w.WriteHeader(response.StatusCode)
-	_, _ = io.Copy(w, response.Body)
+	_, err = io.Copy(w, response.Body)
+	capturedResponse.failed = capturedResponse.failed || err != nil
 }
 
 func (s *session) runScript(ctx context.Context, rule *compiledRule, input scriptInput) (rewrite, bool) {

@@ -30,6 +30,21 @@ func (s *Server) registerTraffic() {
 	s.trafficRoute("GET", "list", "抓包记录", func(context.Context) (any, error) {
 		return s.traffic.Entries(), nil
 	})
+	s.route("GET "+trafficRoute+"detail", 10*time.Second, false, func(_ context.Context, r *http.Request) (contract.Result, error) {
+		query, err := resourceQuery(r, "id")
+		if err != nil {
+			return contract.Result{}, err
+		}
+		id := query.Get("id")
+		if !traffic.ValidRecordID(id) {
+			return contract.Result{}, invalid("抓包记录 ID 无效")
+		}
+		record, ok := s.traffic.Record(id)
+		if !ok {
+			return contract.Result{}, &contract.Error{Code: "traffic.record_not_found", Message: "抓包记录已清除或过期", HTTPStatus: http.StatusNotFound}
+		}
+		return contract.Success("traffic.detail", "抓包详情", record), nil
+	})
 	s.trafficRoute("DELETE", "list", "已清空抓包记录", func(context.Context) (any, error) {
 		s.traffic.Clear()
 		return s.traffic.Status(), nil

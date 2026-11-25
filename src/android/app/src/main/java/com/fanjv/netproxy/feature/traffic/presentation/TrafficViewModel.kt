@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fanjv.netproxy.core.api.ModuleApiException
 import com.fanjv.netproxy.feature.traffic.data.CaptureCertificate
+import com.fanjv.netproxy.feature.traffic.data.CaptureDetail
 import com.fanjv.netproxy.feature.traffic.data.CaptureRecord
 import com.fanjv.netproxy.feature.traffic.data.CaptureStatus
 import com.fanjv.netproxy.feature.traffic.data.MitmPolicy
@@ -12,6 +13,7 @@ import com.fanjv.netproxy.feature.traffic.data.TrafficRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -33,6 +35,13 @@ internal data class RuleDraft(
 
 internal data class HostsDraft(val original: MitmPolicy, val text: String)
 
+internal data class RecordDetailState(
+    val record: CaptureRecord,
+    val loading: Boolean = false,
+    val detail: CaptureDetail? = null,
+    val error: Throwable? = null,
+)
+
 internal data class TrafficState(
     val status: TrafficContent<CaptureStatus> = TrafficContent(),
     val records: TrafficContent<List<CaptureRecord>> = TrafficContent(),
@@ -44,6 +53,7 @@ internal data class TrafficState(
     val draftError: Throwable? = null,
     val ruleDraft: RuleDraft? = null,
     val hostsDraft: HostsDraft? = null,
+    val selectedRecord: RecordDetailState? = null,
 ) {
     val busy: Boolean get() = loading || saving
 }
@@ -56,6 +66,26 @@ internal class TrafficViewModel(
     val state = _state.asStateFlow()
     private var started = false
     private var pendingCertificate: CaptureCertificate? = null
+    private var detailJob: Job? = null
+
+    fun openRecord(record: CaptureRecord) {
+        detailJob?.cancel()
+        val id = record.id
+        _state.update { it.copy(selectedRecord = RecordDetailState(record, loading = id != null)) }
+        if (id == null) return
+        detailJob = viewModelScope.launch {
+            val result = attempt { repository.detail(id) }
+            _state.update {
+                it.copy(selectedRecord = RecordDetailState(record,
+                    detail = result.getOrNull(), error = result.exceptionOrNull()))
+            }
+        }
+    }
+
+    fun closeRecord() {
+        detailJob?.cancel()
+        _state.update { it.copy(selectedRecord = null) }
+    }
 
     fun refresh() {
         if (started && state.value.busy) return

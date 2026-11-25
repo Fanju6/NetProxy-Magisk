@@ -61,3 +61,23 @@ func TestTrafficMITMManagementNeverExposesPrivateKey(t *testing.T) {
 		t.Fatal("HTTPS 解密未按显式请求开启")
 	}
 }
+
+func TestTrafficDetailRequiresAuthenticationAndValidID(t *testing.T) {
+	s := resourceFixture(t)
+	target := trafficRoute + "detail"
+	r := httptest.NewRequest(http.MethodGet, target, nil)
+	r.Host = s.config.Listen
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated detail request: %d", w.Code)
+	}
+	w, _ = resourceRequest(t, s, http.MethodGet, target+"?id=bad", "")
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("invalid detail request: %d", w.Code)
+	}
+	w, result := resourceRequest(t, s, http.MethodGet, target+"?id="+strings.Repeat("A", 26), "")
+	if w.Code != http.StatusNotFound || result.Code != "traffic.record_not_found" {
+		t.Fatalf("missing record: %d %s", w.Code, result.Code)
+	}
+}

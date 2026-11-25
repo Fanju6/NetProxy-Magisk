@@ -40,6 +40,30 @@ class TrafficRepositoryTest {
         assertEquals(0, repository.clear().count)
     }
 
+    @Test fun detailReadsHeadersAndEncodedBodiesOnDemand() = runBlocking {
+        val id = "AAAAAAAAAAAAAAAAAAAAAAAAAA"
+        val repository = TrafficRepository(ModuleApiClient(TestApiTransport { request ->
+            assertEquals("GET", request.method)
+            assertEquals("/traffic/detail", request.path)
+            assertEquals(mapOf("id" to id), request.query)
+            apiSuccess("""
+                {"id":"$id","http":{"url":"https://example.test/form?q=1","url_truncated":false,
+                "request":{"headers":{"Content-Type":["text/plain"]},"headers_truncated":false,
+                "body":{"data":"hello","format":"text","truncated":false}},
+                "response":{"headers":{"Set-Cookie":["a=1","b=2"]},"headers_truncated":true,
+                "body":{"data":"Cg==","format":"base64","content_type":"application/octet-stream","content_encoding":"br","truncated":true}}}}
+            """.trimIndent())
+        }))
+        val detail = requireNotNull(repository.detail(id).http)
+        assertEquals("https://example.test/form?q=1", detail.url)
+        assertEquals("hello", detail.request.body.data)
+        assertEquals(listOf("a=1", "b=2"), detail.response.headers["Set-Cookie"])
+        assertTrue(detail.response.headersTruncated)
+        assertTrue(detail.response.body.truncated)
+        assertEquals("base64", detail.response.body.format)
+        assertEquals("br", detail.response.body.contentEncoding)
+    }
+
     @Test fun replaceRulesDoesNotOverwriteAChangedListAndReportsValidation() = runBlocking {
         val existing = RewriteRule("example", "request", "return {};")
         val invalid = existing.copy(pattern = "[")

@@ -21,6 +21,34 @@ internal data class CaptureRecord(
     val rewrite: String? = null,
     val tls: String? = null,
     @SerialName("duration_ms") val durationMs: Long,
+    val id: String? = null,
+)
+
+@Serializable
+internal data class CaptureDetail(val http: CapturedHttp? = null)
+
+@Serializable
+internal data class CapturedHttp(
+    val url: String,
+    @SerialName("url_truncated") val urlTruncated: Boolean,
+    val request: CapturedMessage,
+    val response: CapturedMessage,
+)
+
+@Serializable
+internal data class CapturedMessage(
+    val headers: Map<String, List<String>>,
+    @SerialName("headers_truncated") val headersTruncated: Boolean,
+    val body: CapturedBody,
+)
+
+@Serializable
+internal data class CapturedBody(
+    val data: String,
+    val format: String,
+    @SerialName("content_type") val contentType: String? = null,
+    @SerialName("content_encoding") val contentEncoding: String? = null,
+    val truncated: Boolean,
 )
 
 @Serializable
@@ -48,6 +76,7 @@ internal data class CaptureCertificate(val pem: String, val filename: String, va
 internal class TrafficRepository(private val api: ModuleApiClient) {
     suspend fun status(): CaptureStatus = api.read("/traffic/status")
     suspend fun records(): List<CaptureRecord> = api.read("/traffic/list")
+    suspend fun detail(id: String): CaptureDetail = api.read("/traffic/detail", mapOf("id" to id))
     suspend fun rules(): List<RewriteRule> = api.read<RewriteRules>("/traffic/rules").rules
     suspend fun policy(): MitmPolicy = api.read("/traffic/mitm")
 

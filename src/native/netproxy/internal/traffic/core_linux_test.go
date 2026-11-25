@@ -34,6 +34,7 @@ func TestPatchedCoreKeepsOriginalInboundRoute(t *testing.T) {
 	t.Cleanup(controller.Stop)
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set("X-Capture-Response", "http")
 		_, _ = io.WriteString(w, "selected")
 	}))
 	t.Cleanup(origin.Close)
@@ -41,7 +42,13 @@ func TestPatchedCoreKeepsOriginalInboundRoute(t *testing.T) {
 	client := &http.Client{Transport: &http.Transport{DialContext: dial, DisableKeepAlives: true}, Timeout: 5 * time.Second}
 	request := func(want string) {
 		t.Helper()
-		res, err := client.Get(origin.URL)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, origin.URL+"/path?q=fixture", strings.NewReader("hello"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "text/plain")
+		req.Header.Set("X-Capture-Request", "http")
+		res, err := client.Do(req)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -51,8 +58,15 @@ func TestPatchedCoreKeepsOriginalInboundRoute(t *testing.T) {
 		}
 	}
 	request("SELECTED")
-	if got := controller.Entries(); len(got) != 1 || got[0].Outbound != "match-original-inbound" || got[0].Rewrite != "response" {
+	got := controller.Entries()
+	if len(got) != 1 || got[0].Outbound != "match-original-inbound" || got[0].Rewrite != "response" {
 		t.Fatalf("unexpected capture: %+v", got)
+	}
+	record, ok := controller.Record(got[0].ID)
+	if !ok || record.HTTP == nil || record.HTTP.URL != origin.URL+"/path?q=fixture" ||
+		record.HTTP.Request.Headers.Get("X-Capture-Request") != "http" || record.HTTP.Request.Body.Data != "hello" ||
+		record.HTTP.Response.Headers.Get("X-Capture-Response") != "http" || record.HTTP.Response.Body.Data != "SELECTED" {
+		t.Fatalf("HTTP capture detail mismatch: %+v", record.HTTP)
 	}
 	controller.Stop()
 	request("selected")
@@ -103,6 +117,16 @@ func TestPatchedCorePreservesServerFirstHandshake(t *testing.T) {
 
 func startCaptureTestCoreWithVLESS(t *testing.T, core string, layout paths.Layout, vless bool) func(context.Context, string, string) (net.Conn, error) {
 	t.Helper()
+	address := startCaptureTestSOCKS(t, core, layout, vless)
+	dialer, err := proxy.SOCKS5("tcp", address, nil, &net.Dialer{Timeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dialer.(proxy.ContextDialer).DialContext
+}
+
+func startCaptureTestSOCKS(t *testing.T, core string, layout paths.Layout, vless bool) string {
+	t.Helper()
 	address, port := reserveCaptureTestPort(t)
 	upstreamInbound, upstreamOutbound := "", `{"type":"direct","tag":"match-original-inbound"}`
 	if vless {
@@ -147,11 +171,7 @@ func startCaptureTestCoreWithVLESS(t *testing.T, core string, layout paths.Layou
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	dialer, err := proxy.SOCKS5("tcp", address, nil, &net.Dialer{Timeout: time.Second})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return dialer.(proxy.ContextDialer).DialContext
+	return address
 }
 
 func reserveCaptureTestPort(t *testing.T) (string, int) {
