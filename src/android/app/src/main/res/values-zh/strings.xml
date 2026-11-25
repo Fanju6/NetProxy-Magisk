@@ -531,7 +531,9 @@
     <string name="log_result_failed">失败</string>
     <string name="log_result_persisted">已保存</string>
     <string name="log_result_fallback">已回退</string>
-    <string name="log_result_started">进行中</string>
+    <string name="log_result_started">已开始</string>
+    <string name="log_result_partial">部分成功</string>
+    <string name="log_event_config_rollback">恢复配置</string>
     <string name="log_result_running">已运行</string>
     <string name="log_result_skipped">已跳过</string>
     <string name="schema_type_string">字符串</string>

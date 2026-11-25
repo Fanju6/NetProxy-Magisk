@@ -551,7 +551,19 @@ func initializeSubscription(ctx context.Context, options SubscriptionOptions) (s
 // UpdateSubscription 执行指定订阅更新并处理更新后的运行时副作用。
 func UpdateSubscription(ctx context.Context, options Options, query string) (result subscription.Result, err error) {
 	defer func() {
-		logOperation(options, "subscription", "subscription.update", "订阅更新", result.Persisted, err)
+		message := "订阅更新"
+		switch {
+		case result.NotModified:
+			message = "订阅内容未变化"
+		case result.Persisted:
+			message = fmt.Sprintf("订阅更新：已保存 %d 个节点", result.NodeCount)
+		}
+		if err == nil && result.RuntimeSynced {
+			message += "，已应用到内核"
+		} else if err == nil && !result.NotModified && result.RuntimeSyncState == subscription.RuntimeSyncNotRunning {
+			message += "，服务未运行"
+		}
+		logOperation(options, "subscription", "subscription.update", message, result.Persisted, err)
 	}()
 	groupID, err := catalog.ResolveGroup(ctx, options.CatalogRoot, query)
 	if err != nil {
@@ -674,7 +686,21 @@ func editSubscriptionSettings(ctx context.Context, options Options, edit subscri
 // UpdateAllSubscriptions 按 Catalog 顺序更新全部订阅。
 func UpdateAllSubscriptions(ctx context.Context, options Options) (result worker.Summary, err error) {
 	defer func() {
-		logOperation(options, "subscription", "subscription.update-all", "全部订阅更新", false, err)
+		if len(result.Updated)+len(result.Failed) == 0 {
+			logOperation(options, "subscription", "subscription.update-all", "全部订阅更新", false, err)
+			return
+		}
+		message := fmt.Sprintf("已完成 %d 个，失败 %d 个", len(result.Updated), len(result.Failed))
+		if err == nil {
+			logEvent(options, "INFO", "subscription", "subscription.update-all", "success", "%s", message)
+		} else {
+			level, outcome := "ERROR", "failed"
+			if len(result.Updated) > 0 {
+				level, outcome = "WARN", "partial"
+			}
+			code, reason := operationFailure(err)
+			logEventWithCode(options, level, "subscription", "subscription.update-all", outcome, code, "%s；首个错误：%s", message, reason)
+		}
 	}()
 	ids, err := catalog.GroupIDs(ctx, options.CatalogRoot, "subscription")
 	if err != nil {

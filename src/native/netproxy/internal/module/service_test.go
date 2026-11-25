@@ -201,7 +201,7 @@ func TestFailedServiceStartPreservesStateWriteError(t *testing.T) {
 
 	options := newTestOptions(t.TempDir())
 	cause := errors.New("configuration check failed")
-	err := failServiceStart(options, 0, 0, "service start failed", cause)
+	err := failServiceStart(options, 0, 0, "service.config_invalid", "service start failed", cause)
 	if !errors.Is(err, cause) {
 		t.Fatalf("start cause was lost: %v", err)
 	}

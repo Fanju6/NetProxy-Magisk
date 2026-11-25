@@ -42,6 +42,21 @@ type Client struct {
 
 type retryableError struct{ error }
 
+func (e *retryableError) Unwrap() error { return e.error }
+
+// HTTPError exposes the status without requiring callers to log the response body.
+type HTTPError struct {
+	Status int
+	body   string
+}
+
+func (e *HTTPError) Error() string { return fmt.Sprintf("Service API HTTP %d: %s", e.Status, e.body) }
+
+var (
+	ErrIncompatibleVersion = errors.New("Service API 版本过旧")
+	ErrNoActiveInstance    = errors.New("Service API has no active sing-box instance")
+)
+
 // IsRetryable 只识别临时通信和服务错误，不重试鉴权、选择目标或协议错误。
 func IsRetryable(err error) bool {
 	_, apiError := errors.AsType[*retryableError](err)
@@ -166,7 +181,8 @@ func (c *Client) Ready(ctx context.Context) (StartedAt, error) {
 	}
 	if version.APIVersion < minimumAPIVersion {
 		return StartedAt{}, fmt.Errorf(
-			"Service API 版本过旧: 核心=%d, NetProxy 最低要求=%d",
+			"%w: 核心=%d, NetProxy 最低要求=%d",
+			ErrIncompatibleVersion,
 			version.APIVersion,
 			minimumAPIVersion,
 		)
@@ -176,7 +192,7 @@ func (c *Client) Ready(ctx context.Context) (StartedAt, error) {
 		return StartedAt{}, err
 	}
 	if startedAt.UnixMilli <= 0 {
-		return StartedAt{}, errors.New("Service API has no active sing-box instance")
+		return StartedAt{}, ErrNoActiveInstance
 	}
 	return startedAt, nil
 }
@@ -376,7 +392,7 @@ func (c *Client) readResponse(ctx context.Context, method string, payload []byte
 	defer stopClose()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
-		err := fmt.Errorf("Service API HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
+		err := &HTTPError{Status: response.StatusCode, body: strings.TrimSpace(string(body))}
 		switch response.StatusCode {
 		case http.StatusRequestTimeout, http.StatusTooManyRequests, http.StatusInternalServerError,
 			http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:

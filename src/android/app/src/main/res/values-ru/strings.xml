@@ -501,7 +501,9 @@
     <string name="log_result_failed">Ошибка</string>
     <string name="log_result_persisted">Сохранено</string>
     <string name="log_result_fallback">Откат</string>
-    <string name="log_result_started">Выполняется</string>
+    <string name="log_result_started">Начато</string>
+    <string name="log_result_partial">Частично успешно</string>
+    <string name="log_event_config_rollback">Восстановление конфигурации</string>
     <string name="log_result_running">Работает</string>
     <string name="log_result_skipped">Пропущено</string>
     <string name="schema_type_string">Строка</string>

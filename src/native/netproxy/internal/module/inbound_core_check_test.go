@@ -201,13 +201,20 @@ func TestTargetCoreStderrLogCapturesStartupReloadAndFailure(t *testing.T) {
 	}
 	<-done
 	targetCoreWrite(t, prepared.Config, []byte(`{"log":{"output":"stderr"},"inbounds":[{"type":"netproxy-invalid-inbound"}]}`))
+	checkErr := checkPreparedConfiguration(t.Context(), options, prepared)
+	if checkErr == nil || !strings.Contains(checkErr.Error(), "netproxy-invalid-inbound") {
+		t.Fatalf("真实配置检查没有返回根因: %v", checkErr)
+	}
 	command, file, err = newSingBoxCommand(options, prepared)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer file.Close()
+	checkpoint := checkpointCoreLog(path)
 	if err := command.Run(); err == nil {
 		t.Fatal("无效核心配置未返回错误")
+	} else if report := checkpoint.failure(path, err); !strings.Contains(report.Error(), "netproxy-invalid-inbound") {
+		t.Fatalf("真实进程启动错误没有提取根因: %v", report)
 	}
 	content := targetCoreRead(t, path)
 	if !bytes.Contains(content, []byte("sing-box started")) || !bytes.Contains(content, []byte("FATAL")) || !bytes.Contains(content, []byte("netproxy-invalid-inbound")) || bytes.Contains(content, []byte("\x1b")) {

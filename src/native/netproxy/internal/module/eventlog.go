@@ -43,6 +43,9 @@ func logOperation(options Options, component, event, message string, persisted b
 }
 
 func operationFailure(err error) (string, string) {
+	if failure, ok := errors.AsType[*lifecycleFailure](err); ok {
+		return failure.code, err.Error()
+	}
 	if subscriptionError, ok := errors.AsType[*subscription.Error](err); ok {
 		return subscriptionError.Code, structuredFailureReason(subscriptionError.Message, subscriptionError.Data)
 	}
@@ -54,7 +57,10 @@ func operationFailure(err error) (string, string) {
 
 func structuredFailureReason(message string, data any) string {
 	cause := ""
-	if fields, ok := data.(map[string]any); ok {
+	switch fields := data.(type) {
+	case string:
+		cause = fields
+	case map[string]any:
 		cause, _ = fields["cause"].(string)
 	}
 	message = strings.TrimSpace(message)

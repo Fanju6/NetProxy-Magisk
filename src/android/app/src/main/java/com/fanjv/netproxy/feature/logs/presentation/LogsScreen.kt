@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.R
+import com.fanjv.netproxy.core.ui.component.AppContentCard
 import com.fanjv.netproxy.core.ui.component.AppDialog
 import com.fanjv.netproxy.core.ui.component.AppDialogButton
 import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
@@ -60,6 +61,7 @@ import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.CardItem
 import com.fanjv.netproxy.core.ui.component.DialogActionRole
 import com.fanjv.netproxy.core.ui.component.ManagerMenu
+import com.fanjv.netproxy.core.ui.component.appBarOverscroll
 import com.fanjv.netproxy.core.ui.component.deferredTopPadding
 import com.fanjv.netproxy.core.ui.component.groupedCardItems
 import com.fanjv.netproxy.core.ui.component.rememberAppSnackbarHostState
@@ -73,7 +75,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.DropdownEntry
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Icon
@@ -86,7 +87,6 @@ import top.yukonga.miuix.kmp.basic.Text
 import com.fanjv.netproxy.core.ui.component.AppTopAppBar as TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
 /** 日志页：查看并导出服务与内核日志。 */
@@ -302,38 +302,41 @@ internal fun LogsScreen(
             },
         ) { innerPadding ->
             val layoutDirection = LocalLayoutDirection.current
-            Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier)
+                    .scrollEndHaptic()
+                    .appBarOverscroll(scrollBehavior)
+                    .nestedScroll(scrollBehavior.nestedScrollConnection),
+                contentPadding = PaddingValues(
+                    top = innerPadding.calculateTopPadding() + 6.dp,
+                    start = innerPadding.calculateStartPadding(layoutDirection) + 12.dp,
+                    end = innerPadding.calculateEndPadding(layoutDirection) + 12.dp,
+                    bottom = innerPadding.calculateBottomPadding()
+                ),
+                overscrollEffect = null
+            ) {
                 if (logs.isEmpty()) {
-                    ContentStatus(innerPadding,
-                        stringResource(if (content.error.isNotEmpty()) R.string.logs_read_failed else R.string.no_logs),
-                        loading = content.loading)
+                    item {
+                        ContentStatus(
+                            padding = PaddingValues(0.dp),
+                            text = stringResource(if (content.error.isNotEmpty()) R.string.logs_read_failed else R.string.no_logs),
+                            loading = content.loading,
+                            modifier = Modifier.fillParentMaxSize(),
+                        )
+                    }
                 } else {
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .scrollEndHaptic()
-                            .overScrollVertical()
-                            .nestedScroll(scrollBehavior.nestedScrollConnection),
-                        contentPadding = PaddingValues(
-                            top = innerPadding.calculateTopPadding() + 6.dp,
-                            start = innerPadding.calculateStartPadding(layoutDirection) + 12.dp,
-                            end = innerPadding.calculateEndPadding(layoutDirection) + 12.dp,
-                            bottom = innerPadding.calculateBottomPadding()
-                        ),
-                        overscrollEffect = null
-                    ) {
-                        if (isCardView) {
-                            items(logs) { item ->
-                                LogItemCard(item = item, type = currentType)
-                            }
-                        } else {
-                            rawLogItems(logs = logs)
+                    if (isCardView) {
+                        items(logs) { item ->
+                            LogItemCard(item = item, type = currentType)
                         }
-
-                        item {
-                            Spacer(modifier = Modifier.height(16.dp))
-                        }
+                    } else {
+                        rawLogItems(logs = logs)
+                    }
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
                     }
                 }
             }
@@ -374,7 +377,8 @@ internal fun LogsScreen(
 
 @Composable
 fun LogItemCard(item: LogItem, type: LogType) {
-    Card(
+    val service = type == LogType.SERVICE
+    AppContentCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = 12.dp),
@@ -388,24 +392,33 @@ fun LogItemCard(item: LogItem, type: LogType) {
             ) {
                 Row(
                     modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    LogLevelBadge(level = item.level)
-                    if (item.tag.isNotEmpty()) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        if (type == LogType.SERVICE) {
-                            NativeComponentBadge(component = item.tag)
-                        } else {
-                            Text(
-                                text = item.tag,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false)
-                            )
+                    if (service && item.result.isNotEmpty()) {
+                        NativeResultBadge(item.result)
+                    } else {
+                        LogLevelBadge(level = item.level)
+                    }
+                    if (service) {
+                        val component = nativeComponentLabel(item.tag)
+                        val event = nativeEventLabel(item.event)
+                        if (component.isNotEmpty()) {
+                            LogBadge(component, LogBadgeTone.NEUTRAL, Modifier.weight(1f, fill = false))
                         }
+                        if (event.isNotEmpty() && event != component) {
+                            LogBadge(event, LogBadgeTone.NEUTRAL, Modifier.weight(2f, fill = false))
+                        }
+                    } else if (item.tag.isNotEmpty()) {
+                        Text(
+                            text = item.tag,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
                     }
                 }
                 if (item.timestamp.isNotEmpty()) {
@@ -417,26 +430,6 @@ fun LogItemCard(item: LogItem, type: LogType) {
                         maxLines = 1
                     )
                 }
-            }
-
-            if (type == LogType.SERVICE && (item.event.isNotEmpty() || item.result.isNotEmpty())) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    if (item.event.isNotEmpty()) {
-                        NativeEventBadge(event = item.event)
-                    }
-                    if (item.result.isNotEmpty()) {
-                        NativeResultBadge(result = item.result)
-                    }
-                }
-            }
-
-            if (type == LogType.SERVICE && item.errorCode.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(6.dp))
-                NativeErrorCodeBadge(errorCode = item.errorCode)
             }
 
             if (item.connectionId != null) {
@@ -454,7 +447,7 @@ fun LogItemCard(item: LogItem, type: LogType) {
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            if (type == LogType.KERNEL && item.outboundFlow != null) {
+            if (!service && item.outboundFlow != null) {
                 OutboundFlowView(flow = item.outboundFlow)
             } else {
                 Text(
@@ -464,13 +457,21 @@ fun LogItemCard(item: LogItem, type: LogType) {
                     lineHeight = 18.sp
                 )
             }
+            if (service && item.errorCode.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = item.errorCode,
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                )
+            }
         }
     }
 }
 
 @Composable
-fun NativeComponentBadge(component: String) {
-    val label = when (component) {
+private fun nativeComponentLabel(component: String): String =
+    when (component) {
         "service" -> stringResource(R.string.log_component_service)
         "worker" -> stringResource(R.string.log_component_worker)
         "subscription" -> stringResource(R.string.subscriptions)
@@ -482,12 +483,10 @@ fun NativeComponentBadge(component: String) {
         "module" -> stringResource(R.string.log_component_module)
         else -> component
     }
-    LogBadge(text = label, tone = LogBadgeTone.COMPONENT)
-}
 
 @Composable
-fun NativeEventBadge(event: String) {
-    val label = when (event) {
+private fun nativeEventLabel(event: String): String =
+    when (event) {
         "service.start" -> stringResource(R.string.log_event_start)
         "service.stop" -> stringResource(R.string.log_event_stop)
         "service.reload" -> stringResource(R.string.log_event_reload)
@@ -511,22 +510,22 @@ fun NativeEventBadge(event: String) {
         "mode.apply" -> stringResource(R.string.log_event_mode_apply)
         "app-policy.update" -> stringResource(R.string.log_event_app_policy)
         "config.apply" -> stringResource(R.string.log_event_config_apply)
+        "config.rollback" -> stringResource(R.string.log_event_config_rollback)
         "config.validate" -> stringResource(R.string.log_event_config_validate)
         "module.boot" -> stringResource(R.string.log_event_boot)
         "module.update" -> stringResource(R.string.log_event_module_update)
         else -> event
     }
-    LogBadge(text = label, tone = LogBadgeTone.NEUTRAL)
-}
 
 @Composable
-fun NativeResultBadge(result: String) {
+private fun NativeResultBadge(result: String) {
     val (label, tone) = when (result) {
         "success", "recovered" -> stringResource(R.string.log_result_success) to LogBadgeTone.SUCCESS
         "failed", "forced" -> stringResource(R.string.log_result_failed) to LogBadgeTone.ERROR
         "persisted" -> stringResource(R.string.log_result_persisted) to LogBadgeTone.WARNING
         "fallback" -> stringResource(R.string.log_result_fallback) to LogBadgeTone.WARNING
-        "started" -> stringResource(R.string.log_result_started) to LogBadgeTone.INFO
+        "partial" -> stringResource(R.string.log_result_partial) to LogBadgeTone.WARNING
+        "started" -> stringResource(R.string.log_result_started) to LogBadgeTone.NEUTRAL
         "already-running" -> stringResource(R.string.log_result_running) to LogBadgeTone.INFO
         "stopped" -> stringResource(R.string.log_result_stopped) to LogBadgeTone.NEUTRAL
         "skipped" -> stringResource(R.string.log_result_skipped) to LogBadgeTone.NEUTRAL
@@ -536,7 +535,7 @@ fun NativeResultBadge(result: String) {
 }
 
 private enum class LogBadgeTone {
-    INFO, SUCCESS, WARNING, ERROR, NEUTRAL, COMPONENT, CONNECTION, PRIMARY
+    INFO, SUCCESS, WARNING, ERROR, NEUTRAL, CONNECTION, PRIMARY
 }
 
 @Composable
@@ -563,15 +562,8 @@ private fun logBadgeColors(tone: LogBadgeTone): Pair<Color, Color> {
         } else {
             Color(0xFFFFEBEE) to Color(0xFFC62828)
         }
-        LogBadgeTone.NEUTRAL -> if (isDark) {
-            Color(0xFF37474F).copy(alpha = 0.3f) to Color(0xFFB0BEC5)
-        } else {
-            Color(0xFFF5F5F5) to Color(0xFF616161)
-        }
-        LogBadgeTone.COMPONENT -> if (isDark) {
-            Color(0xFF283593).copy(alpha = 0.3f) to Color(0xFF9FA8DA)
-        } else {
-            Color(0xFFE8EAF6) to Color(0xFF3949AB)
+        LogBadgeTone.NEUTRAL -> MiuixTheme.colorScheme.run {
+            onSurface.copy(alpha = 0.08f) to onSurfaceVariantSummary
         }
         LogBadgeTone.CONNECTION -> if (isDark) {
             Color(0xFF4A148C).copy(alpha = 0.3f) to Color(0xFFBA68C8)
@@ -585,10 +577,10 @@ private fun logBadgeColors(tone: LogBadgeTone): Pair<Color, Color> {
 }
 
 @Composable
-private fun LogBadge(text: String, tone: LogBadgeTone) {
+private fun LogBadge(text: String, tone: LogBadgeTone, modifier: Modifier = Modifier) {
     val (backgroundColor, textColor) = logBadgeColors(tone)
     Box(
-        modifier = Modifier
+        modifier = modifier
             .background(backgroundColor, RoundedCornerShape(4.dp))
             .padding(horizontal = 6.dp, vertical = 2.dp)
     ) {
@@ -601,11 +593,6 @@ private fun LogBadge(text: String, tone: LogBadgeTone) {
             overflow = TextOverflow.Ellipsis
         )
     }
-}
-
-@Composable
-private fun NativeErrorCodeBadge(errorCode: String) {
-    LogBadge(text = errorCode, tone = LogBadgeTone.ERROR)
 }
 
 @Composable

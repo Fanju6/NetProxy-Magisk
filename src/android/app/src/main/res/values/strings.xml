@@ -501,7 +501,9 @@
     <string name="log_result_failed">Failed</string>
     <string name="log_result_persisted">Saved</string>
     <string name="log_result_fallback">Fallback</string>
-    <string name="log_result_started">In progress</string>
+    <string name="log_result_partial">Partial success</string>
+    <string name="log_event_config_rollback">Restore configuration</string>
+    <string name="log_result_started">Started</string>
     <string name="log_result_running">Running</string>
     <string name="log_result_skipped">Skipped</string>
     <string name="schema_type_string">String</string>

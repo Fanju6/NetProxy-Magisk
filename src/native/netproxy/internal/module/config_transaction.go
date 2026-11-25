@@ -340,9 +340,22 @@ func rollbackConfigApply(options Options, transaction *configApplyTransaction, c
 	defer cancel()
 	if errors.Is(cause, ErrForcedTermination) {
 		journalErr := transaction.markCleanupFailed()
-		return errors.Join(cause, journalErr, transaction.restore())
+		restoreErr := transaction.restore()
+		if err := errors.Join(journalErr, restoreErr); err != nil {
+			logEventWithCode(options, "ERROR", "config", "config.rollback", "failed", "config.rollback_failed",
+				"内核被强制终止，自动恢复运行已暂停，旧配置或恢复记录处理失败: %v", err)
+		} else {
+			logEventWithCode(options, "WARN", "config", "config.rollback", "partial", "config.unsafe_recovery",
+				"旧配置已恢复；内核被强制终止，自动恢复运行已暂停，请重启设备后重试")
+		}
+		return errors.Join(cause, journalErr, restoreErr)
 	}
-	return errors.Join(cause, restoreConfigApply(ctx, options, transaction, configRestoreReload))
+	if err := restoreConfigApply(ctx, options, transaction, configRestoreReload); err != nil {
+		logEventWithCode(options, "ERROR", "config", "config.rollback", "failed", "config.rollback_failed", "恢复旧配置失败: %v", err)
+		return errors.Join(cause, err)
+	}
+	logEvent(options, "INFO", "config", "config.rollback", "recovered", "已恢复旧配置并完成事务清理")
+	return cause
 }
 
 func restoreConfigApply(ctx context.Context, options Options, transaction *configApplyTransaction, restoreRuntime func(context.Context, Options, configApplyJournal) error) error {

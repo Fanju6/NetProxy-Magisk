@@ -536,12 +536,7 @@ func validateConfig(ctx context.Context, options Options, target, candidate stri
 		// 独立 check 只加载候选规则，不启动入站、不加载用户其他配置，也不下载远程规则。
 		command := exec.CommandContext(ctx, options.SingBoxPath, "check", "--disable-color", "-c", "stdin")
 		command.Stdin = bytes.NewReader(check)
-		if output, err := command.CombinedOutput(); err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			return fmt.Errorf("规则集检查失败: %w: %s", err, strings.TrimSpace(string(output)))
-		}
+		return runCoreCheck(ctx, command, "规则集检查失败")
 	}
 	return nil
 }

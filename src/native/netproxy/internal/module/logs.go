@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -144,13 +143,20 @@ func ExportDiagnostics(options Options, output io.Writer) (err error) {
 	tarWriter := tar.NewWriter(archive)
 	defer func() { err = errors.Join(err, tarWriter.Close(), archive.Close()) }()
 	files := make([]archiveFile, 0)
+	if options.StateFile != "" {
+		files = append(files, archiveFile{source: options.StateFile, name: "state/service.json", redact: true})
+	}
+	// Keep current logs ahead of backups and large resource files in the input budget.
 	for _, kind := range []string{"service", "core"} {
 		path, _ := LogFile(options, kind)
-		for index := logfile.BackupCount; index >= 1; index-- {
+		files = append(files, archiveFile{source: path, name: "logs/" + filepath.Base(path), redact: true, tail: logfile.MaxFileBytes})
+	}
+	for _, kind := range []string{"service", "core"} {
+		path, _ := LogFile(options, kind)
+		for index := 1; index <= logfile.BackupCount; index++ {
 			backup := fmt.Sprintf("%s.%d", path, index)
 			files = append(files, archiveFile{source: backup, name: "logs/" + filepath.Base(backup), redact: true, tail: logfile.MaxFileBytes})
 		}
-		files = append(files, archiveFile{source: path, name: "logs/" + filepath.Base(path), redact: true, tail: logfile.MaxFileBytes})
 	}
 	files = append(files,
 		archiveFile{source: options.ModuleConfig, name: "config/module.json", redact: true},
@@ -167,10 +173,6 @@ func ExportDiagnostics(options Options, output io.Writer) (err error) {
 		"config/singbox/rules/remote", false, false,
 	)
 	appendDirectoryFiles(&files, options.CatalogRoot, "data/catalog", true, true)
-	if options.StateFile != "" {
-		files = append(files, archiveFile{source: options.StateFile, name: "state/service.json", redact: true})
-	}
-	sort.Slice(files, func(i, j int) bool { return files[i].name < files[j].name })
 	remaining := int64(maxDiagnosticInputBytes)
 	omitted := 0
 	for _, item := range files {
