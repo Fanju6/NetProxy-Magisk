@@ -1,4 +1,23 @@
 <resources>
+    <string name="traffic_workspace">Área de trabalho</string>
+    <string name="traffic_sessions_summary">Pesquisar e inspecionar solicitações capturadas</string>
+    <string name="traffic_rules_summary">Gerenciar scripts de solicitação e resposta</string>
+    <string name="traffic_https_active">Descriptografia HTTPS ativada</string>
+    <string name="traffic_https_inactive">Descriptografia HTTPS desativada</string>
+    <string name="traffic_search">Pesquisar host ou URL</string>
+    <string name="traffic_no_matches">Nenhuma sessão corresponde aos filtros</string>
+    <string name="traffic_filter_all">Todos</string>
+    <string name="traffic_overview">Visão geral</string>
+    <string name="traffic_copy_curl">Copiar como cURL</string>
+    <string name="traffic_rules_empty">Nenhuma regra de reescrita. Toque em + para criar.</string>
+    <string name="traffic_rule_enabled">Ativada</string>
+    <string name="traffic_host_add">Adicionar host</string>
+    <string name="traffic_host_remove">Remover host</string>
+    <string name="traffic_host_remove_prompt">Remover este host da lista de descriptografia HTTPS?</string>
+    <string name="traffic_ca_section">Certificado de depuração</string>
+    <string name="traffic_ca_fingerprint">Impressão digital da CA · SHA-256</string>
+    <string name="traffic_ca_not_ready">Ainda não há certificado disponível.</string>
+    <string name="traffic_ca_share">Compartilhar certificado público da CA</string>
     <string name="traffic_record_count">Registros capturados: %1$d</string>
     <string name="traffic_title">Captura e reescrita</string>
     <string name="traffic_settings_summary">Inspecione o tráfego transparente e gerencie regras de reescrita</string>
@@ -15,6 +34,7 @@
     <string name="traffic_detail_field">%1$s: %2$s</string>
     <string name="traffic_method">Método</string>
     <string name="traffic_host">Host ou destino</string>
+    <string name="traffic_inbound">Entrada</string>
     <string name="traffic_outbound">Saída selecionada</string>
     <string name="traffic_http_status">Status HTTP</string>
     <string name="traffic_time">Horário</string>

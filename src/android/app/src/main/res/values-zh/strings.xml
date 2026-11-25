@@ -1,4 +1,23 @@
 <resources>
+    <string name="traffic_workspace">工作区</string>
+    <string name="traffic_sessions_summary">搜索并检查抓包记录</string>
+    <string name="traffic_rules_summary">管理请求与响应脚本</string>
+    <string name="traffic_https_active">HTTPS 解密已开启</string>
+    <string name="traffic_https_inactive">HTTPS 解密已关闭</string>
+    <string name="traffic_search">搜索主机或 URL</string>
+    <string name="traffic_no_matches">没有符合筛选条件的会话</string>
+    <string name="traffic_filter_all">全部</string>
+    <string name="traffic_overview">概览</string>
+    <string name="traffic_copy_curl">复制为 cURL</string>
+    <string name="traffic_rules_empty">暂无重写规则。点击 + 新建。</string>
+    <string name="traffic_rule_enabled">已启用</string>
+    <string name="traffic_host_add">添加主机</string>
+    <string name="traffic_host_remove">移除主机</string>
+    <string name="traffic_host_remove_prompt">从 HTTPS 解密名单中移除此主机？</string>
+    <string name="traffic_ca_section">调试证书</string>
+    <string name="traffic_ca_fingerprint">CA 指纹 · SHA-256</string>
+    <string name="traffic_ca_not_ready">暂无可用证书。</string>
+    <string name="traffic_ca_share">分享公开 CA</string>
     <string name="traffic_record_count">已抓包：%1$d 条</string>
     <string name="traffic_title">抓包与重写</string>
     <string name="traffic_settings_summary">查看透明代理流量并管理重写规则</string>
@@ -15,6 +34,7 @@
     <string name="traffic_detail_field">%1$s：%2$s</string>
     <string name="traffic_method">方法</string>
     <string name="traffic_host">主机或目标地址</string>
+    <string name="traffic_inbound">入站</string>
     <string name="traffic_outbound">匹配的出站</string>
     <string name="traffic_http_status">HTTP 状态</string>
     <string name="traffic_time">时间</string>

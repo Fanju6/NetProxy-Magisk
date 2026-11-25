@@ -1,4 +1,23 @@
 <resources>
+    <string name="traffic_workspace">Рабочая область</string>
+    <string name="traffic_sessions_summary">Поиск и просмотр перехваченных запросов</string>
+    <string name="traffic_rules_summary">Управление скриптами запросов и ответов</string>
+    <string name="traffic_https_active">Расшифровка HTTPS включена</string>
+    <string name="traffic_https_inactive">Расшифровка HTTPS выключена</string>
+    <string name="traffic_search">Поиск по хосту или URL</string>
+    <string name="traffic_no_matches">Нет сеансов, подходящих под фильтры</string>
+    <string name="traffic_filter_all">Все</string>
+    <string name="traffic_overview">Обзор</string>
+    <string name="traffic_copy_curl">Копировать как cURL</string>
+    <string name="traffic_rules_empty">Правил подмены нет. Нажмите +, чтобы добавить.</string>
+    <string name="traffic_rule_enabled">Включено</string>
+    <string name="traffic_host_add">Добавить хост</string>
+    <string name="traffic_host_remove">Удалить хост</string>
+    <string name="traffic_host_remove_prompt">Удалить этот хост из списка расшифровки HTTPS?</string>
+    <string name="traffic_ca_section">Отладочный сертификат</string>
+    <string name="traffic_ca_fingerprint">Отпечаток УЦ · SHA-256</string>
+    <string name="traffic_ca_not_ready">Сертификат пока недоступен.</string>
+    <string name="traffic_ca_share">Поделиться сертификатом УЦ</string>
     <string name="traffic_record_count">Перехвачено записей: %1$d</string>
     <string name="traffic_title">Перехват и подмена</string>
     <string name="traffic_settings_summary">Просмотр прозрачного трафика и управление правилами подмены</string>
@@ -15,6 +34,7 @@
     <string name="traffic_detail_field">%1$s: %2$s</string>
     <string name="traffic_method">Метод</string>
     <string name="traffic_host">Хост или адрес назначения</string>
+    <string name="traffic_inbound">Входящий маршрут</string>
     <string name="traffic_outbound">Выбранный исходящий маршрут</string>
     <string name="traffic_http_status">Статус HTTP</string>
     <string name="traffic_time">Время</string>

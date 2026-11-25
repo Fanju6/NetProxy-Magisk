@@ -25,6 +25,7 @@ type Entry struct {
 	Time       time.Time `json:"time"`
 	Method     string    `json:"method"`
 	Host       string    `json:"host"`
+	Target     string    `json:"target,omitempty"`
 	Outbound   string    `json:"outbound"`
 	Status     int       `json:"status"`
 	Rewrite    string    `json:"rewrite,omitempty"`

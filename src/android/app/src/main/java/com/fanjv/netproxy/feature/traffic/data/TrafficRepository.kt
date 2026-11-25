@@ -22,6 +22,7 @@ internal data class CaptureRecord(
     val tls: String? = null,
     @SerialName("duration_ms") val durationMs: Long,
     val id: String? = null,
+    val target: String? = null,
 )
 
 @Serializable
@@ -101,8 +102,9 @@ internal class TrafficRepository(private val api: ModuleApiClient) {
         return runCatching { api.json.decodeFromJsonElement<MitmPolicy>(error.data) }.getOrNull()
     }
 
-    suspend fun certificate(): CaptureCertificate {
-        val cert = api.json.decodeFromJsonElement<CaptureCertificate>(api.post("/traffic/ca-init").data)
+    suspend fun certificate(initialize: Boolean = true): CaptureCertificate {
+        val cert = if (initialize) api.json.decodeFromJsonElement<CaptureCertificate>(api.post("/traffic/ca-init").data)
+            else api.read<CaptureCertificate>("/traffic/ca")
         if (!cert.isPublicCertificate()) throw ModuleApiException("traffic.ca_invalid", "")
         return cert
     }

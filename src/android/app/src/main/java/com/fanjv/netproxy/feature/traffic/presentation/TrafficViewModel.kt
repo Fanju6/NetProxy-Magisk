@@ -33,8 +33,6 @@ internal data class RuleDraft(
     val rule: RewriteRule,
 )
 
-internal data class HostsDraft(val original: MitmPolicy, val text: String)
-
 internal data class RecordDetailState(
     val record: CaptureRecord,
     val loading: Boolean = false,
@@ -52,8 +50,8 @@ internal data class TrafficState(
     val failure: Throwable? = null,
     val draftError: Throwable? = null,
     val ruleDraft: RuleDraft? = null,
-    val hostsDraft: HostsDraft? = null,
     val selectedRecord: RecordDetailState? = null,
+    val fingerprint: String? = null,
 ) {
     val busy: Boolean get() = loading || saving
 }
@@ -151,21 +149,9 @@ internal class TrafficViewModel(
         }
     }
 
-    fun editHosts() {
-        if (state.value.busy) return
+    fun setHosts(hosts: List<String>) {
         val policy = state.value.policy.value ?: return
-        _state.update { it.copy(hostsDraft = HostsDraft(policy, policy.hosts.joinToString("\n")), draftError = null) }
-    }
-
-    fun updateHosts(text: String) {
-        if (state.value.saving) return
-        _state.update { it.copy(hostsDraft = it.hostsDraft?.copy(text = text), draftError = null) }
-    }
-
-    fun saveHosts() {
-        val draft = state.value.hostsDraft ?: return
-        val hosts = draft.text.lineSequence().map(String::trim).filter(String::isNotEmpty).toList()
-        savePolicy(draft.original, draft.original.copy(hosts = hosts), inDraft = true)
+        savePolicy(policy, policy.copy(hosts = hosts))
     }
 
     fun setMitmEnabled(enabled: Boolean) {
@@ -178,8 +164,8 @@ internal class TrafficViewModel(
         savePolicy(policy, policy.copy(systemTrust = enabled))
     }
 
-    private fun savePolicy(original: MitmPolicy, policy: MitmPolicy, inDraft: Boolean = false) =
-        mutate(inDraft) {
+    private fun savePolicy(original: MitmPolicy, policy: MitmPolicy) =
+        mutate {
             val saved = try {
                 repository.savePolicy(original, policy)
             } catch (error: ModuleApiException) {
@@ -188,17 +174,21 @@ internal class TrafficViewModel(
                 }
                 throw error
             }
-            _state.update { it.copy(policy = TrafficContent(saved), hostsDraft = null) }
+            _state.update { it.copy(policy = TrafficContent(saved)) }
         }
-
-    fun dismissDraft() {
-        if (!state.value.saving) _state.update { it.copy(ruleDraft = null, hostsDraft = null, draftError = null) }
-    }
 
     fun prepareCertificate(launchExport: (String) -> Unit) = mutate {
         val cert = repository.certificate()
         pendingCertificate = cert
+        _state.update { it.copy(fingerprint = cert.sha256) }
         launchExport(cert.filename)
+    }
+
+    fun readCertificateStatus() {
+        viewModelScope.launch {
+            val cert = attempt { repository.certificate(initialize = false) }.getOrNull()
+            if (cert != null) _state.update { it.copy(fingerprint = cert.sha256) }
+        }
     }
 
     fun takeCertificate(): CaptureCertificate? = pendingCertificate.also { pendingCertificate = null }

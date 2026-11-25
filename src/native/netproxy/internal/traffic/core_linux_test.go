@@ -59,7 +59,7 @@ func TestPatchedCoreKeepsOriginalInboundRoute(t *testing.T) {
 	}
 	request("SELECTED")
 	got := controller.Entries()
-	if len(got) != 1 || got[0].Outbound != "match-original-inbound" || got[0].Rewrite != "response" {
+	if len(got) != 1 || got[0].Outbound != "match-original-inbound" || got[0].Rewrite != "response" || got[0].Target != "/path?q=fixture" {
 		t.Fatalf("unexpected capture: %+v", got)
 	}
 	record, ok := controller.Record(got[0].ID)

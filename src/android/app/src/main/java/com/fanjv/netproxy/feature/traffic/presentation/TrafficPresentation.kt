@@ -1,0 +1,43 @@
+package com.fanjv.netproxy.feature.traffic.presentation
+
+import com.fanjv.netproxy.feature.traffic.data.CaptureRecord
+import com.fanjv.netproxy.feature.traffic.data.CapturedHttp
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+
+internal fun CaptureRecord.matchesSession(query: String, method: String?, statusClass: Int?, tls: String?): Boolean =
+    (method == null || this.method == method) &&
+        (statusClass == null || status / 100 == statusClass) &&
+        (tls == null || tls == "decrypted" && this.tls == "decrypted" ||
+            tls == "tunnel" && this.tls != "decrypted" && (this.tls != null || this.method == "TCP")) &&
+        (query.isBlank() || "$host${target.orEmpty()}".contains(query.trim(), ignoreCase = true) ||
+            "${if (this.tls == "decrypted") "https" else "http"}://$host${target.orEmpty()}".contains(query.trim(), ignoreCase = true))
+
+private val prettyJson = Json { prettyPrint = true }
+
+internal fun displayBody(data: String, type: String?): String {
+    val mime = type?.substringBefore(';')?.trim()
+    if (mime != "application/json" && mime?.endsWith("+json") != true) return data
+    return runCatching { prettyJson.encodeToString(JsonElement.serializer(), Json.parseToJsonElement(data)) }.getOrDefault(data)
+}
+
+internal fun asCurl(method: String, detail: CapturedHttp): String {
+    fun quote(value: String) = "'" + value.replace("'", "'\"'\"'") + "'"
+    val request = detail.request
+    val body = request.body
+    val args = buildList {
+        add("curl --request ${quote(method)}")
+        request.headers.forEach { (name, values) ->
+            if (!name.equals("Content-Length", true) && !name.equals("Transfer-Encoding", true) &&
+                !name.equals("Proxy-Authorization", true)) {
+                values.forEach { add("--header ${quote("$name: $it")}") }
+            }
+        }
+        if (body.data.isNotEmpty()) add(if (body.format == "base64") "--data-binary @-" else "--data-binary ${quote(body.data)}")
+        add("-- ${quote(detail.url)}")
+    }.joinToString(" ")
+    val command = if (body.format == "base64" && body.data.isNotEmpty()) {
+        "printf %s ${quote(body.data)} | base64 -d | $args"
+    } else args
+    return if (detail.urlTruncated || request.headersTruncated || body.truncated) "# Capture incomplete; replay may differ\n$command" else command
+}

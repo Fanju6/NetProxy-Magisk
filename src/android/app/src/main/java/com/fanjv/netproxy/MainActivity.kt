@@ -68,6 +68,12 @@ import com.fanjv.netproxy.feature.kernel.presentation.SingBoxJsonEditScreen
 import com.fanjv.netproxy.feature.kernel.presentation.SingBoxKernelSettingsScreen
 import com.fanjv.netproxy.feature.logs.presentation.LogsScreen
 import com.fanjv.netproxy.feature.traffic.presentation.TrafficScreen
+import com.fanjv.netproxy.feature.traffic.presentation.TrafficSessionsScreen
+import com.fanjv.netproxy.feature.traffic.presentation.TrafficInspectorScreen
+import com.fanjv.netproxy.feature.traffic.presentation.TrafficRulesScreen
+import com.fanjv.netproxy.feature.traffic.presentation.TrafficRuleEditorScreen
+import com.fanjv.netproxy.feature.traffic.presentation.TrafficHttpsScreen
+import com.fanjv.netproxy.feature.traffic.presentation.TrafficViewModel
 import com.fanjv.netproxy.feature.inbound.presentation.InboundSettingsScreen
 import com.fanjv.netproxy.feature.settings.presentation.NetworkMatchingScreen
 import com.fanjv.netproxy.feature.routing.presentation.RoutingRulesScreen
@@ -79,6 +85,7 @@ import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.MainBottomBar
 import com.fanjv.netproxy.navigation.MainPagerState
 import com.fanjv.netproxy.navigation.Route.About
+import com.fanjv.netproxy.navigation.Route
 import com.fanjv.netproxy.navigation.Route.Apps
 import com.fanjv.netproxy.navigation.Route.JsonEdit
 import com.fanjv.netproxy.navigation.Route.KernelSettings
@@ -171,6 +178,7 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
     val navigator = rememberNavigator(Main)
     val catalogNodesViewModel: CatalogNodesViewModel = netProxyViewModel()
     val moduleAccess: ModuleAccessViewModel = netProxyViewModel()
+    val traffic: TrafficViewModel = netProxyViewModel()
     val availability by moduleAccess.state.collectAsStateWithLifecycle()
     var reconnect by rememberSaveable { mutableStateOf(false) }
     val overlayBackdrop = rememberBlurBackdrop()
@@ -270,7 +278,32 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
                 }
                 entry<Traffic> {
                     ModulePage(R.string.traffic_title, R.string.traffic_read_failed, { navigator.pop() }) {
-                        TrafficScreen(onBack = { navigator.pop() })
+                        TrafficScreen(traffic)
+                    }
+                }
+                entry<Route.TrafficSessions> {
+                    ModulePage(R.string.traffic_records, R.string.traffic_read_failed, navigator::pop) {
+                        TrafficSessionsScreen(traffic)
+                    }
+                }
+                entry<Route.TrafficInspector> { route ->
+                    ModulePage(R.string.traffic_record_detail, R.string.traffic_read_failed, navigator::pop) {
+                        TrafficInspectorScreen(route.id, traffic)
+                    }
+                }
+                entry<Route.TrafficRules> {
+                    ModulePage(R.string.traffic_rules, R.string.traffic_read_failed, navigator::pop) {
+                        TrafficRulesScreen(traffic)
+                    }
+                }
+                entry<Route.TrafficRuleEditor> {
+                    ModulePage(R.string.traffic_rule_edit, R.string.traffic_read_failed, navigator::pop) {
+                        TrafficRuleEditorScreen(traffic)
+                    }
+                }
+                entry<Route.TrafficHttps> {
+                    ModulePage(R.string.traffic_https, R.string.traffic_read_failed, navigator::pop) {
+                        TrafficHttpsScreen(traffic)
                     }
                 }
             }

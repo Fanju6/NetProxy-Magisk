@@ -1,4 +1,23 @@
 <resources>
+    <string name="traffic_workspace">Workspace</string>
+    <string name="traffic_sessions_summary">Search and inspect captured requests</string>
+    <string name="traffic_rules_summary">Manage request and response scripts</string>
+    <string name="traffic_https_active">HTTPS decryption on</string>
+    <string name="traffic_https_inactive">HTTPS decryption off</string>
+    <string name="traffic_search">Search host or URL</string>
+    <string name="traffic_no_matches">No sessions match these filters</string>
+    <string name="traffic_filter_all">All</string>
+    <string name="traffic_overview">Overview</string>
+    <string name="traffic_copy_curl">Copy as cURL</string>
+    <string name="traffic_rules_empty">No rewrite rules. Tap + to create one.</string>
+    <string name="traffic_rule_enabled">Enabled</string>
+    <string name="traffic_host_add">Add host</string>
+    <string name="traffic_host_remove">Remove host</string>
+    <string name="traffic_host_remove_prompt">Remove this host from HTTPS decryption?</string>
+    <string name="traffic_ca_section">Debug certificate</string>
+    <string name="traffic_ca_fingerprint">CA fingerprint · SHA-256</string>
+    <string name="traffic_ca_not_ready">No certificate is available yet.</string>
+    <string name="traffic_ca_share">Share public CA</string>
     <string name="traffic_record_count">Captured records: %1$d</string>
     <string name="traffic_title">Capture and rewrite</string>
     <string name="traffic_settings_summary">Inspect transparent traffic and manage rewrite rules</string>
@@ -15,6 +34,7 @@
     <string name="traffic_detail_field">%1$s: %2$s</string>
     <string name="traffic_method">Method</string>
     <string name="traffic_host">Host or destination</string>
+    <string name="traffic_inbound">Inbound</string>
     <string name="traffic_outbound">Matched outbound</string>
     <string name="traffic_http_status">HTTP status</string>
     <string name="traffic_time">Time</string>

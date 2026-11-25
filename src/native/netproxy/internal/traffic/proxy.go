@@ -25,6 +25,7 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 		method = "OTHER"
 	}
 	entry := Entry{Time: now, Method: method, Host: r.URL.Host, Outbound: metadata.Outbound}
+	entry.Target = strings.Clone(validPrefix(r.URL.RequestURI(), 1024))
 	if r.URL.Scheme == "https" {
 		entry.TLS = "decrypted"
 	}
