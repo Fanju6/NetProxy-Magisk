@@ -307,6 +307,7 @@ internal class TrafficViewModel(
         }.associateBy { it.id }
 
     fun openAppPicker() = mutate {
+        if (state.value.appDraft != null) return@mutate
         val policy = repository.apps()
         val apps = policy.apps
         val catalog = readAppCatalog()
@@ -317,11 +318,12 @@ internal class TrafficViewModel(
         if (!state.value.saving) _state.update { it.copy(appDraft = apps) }
     }
 
-    fun saveCaptureApps() = mutate {
+    fun saveCaptureApps(onSaved: () -> Unit) = mutate {
         val draft = state.value.appDraft ?: return@mutate
         if (repository.apps().apps != state.value.captureApps) throw TrafficChangedException()
         val saved = repository.saveApps(draft.sorted())
         _state.update { it.copy(captureApps = saved.apps, captureAppPolicy = saved, appDraft = null) }
+        onSaved()
     }
 
     fun editRule(index: Int? = null) {

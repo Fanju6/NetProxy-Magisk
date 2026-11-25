@@ -73,6 +73,10 @@ sealed interface Route : NavKey, Parcelable {
 
     @Parcelize
     @Serializable
+    data object TrafficApps : Route
+
+    @Parcelize
+    @Serializable
     data class TrafficInspector(val id: String) : Route
 
     @Parcelize

@@ -1,5 +1,6 @@
 package com.fanjv.netproxy.feature.traffic
 
+import com.fanjv.netproxy.feature.apps.presentation.AppInfoModel
 import com.fanjv.netproxy.feature.traffic.data.CaptureRecord
 import com.fanjv.netproxy.feature.traffic.data.CaptureSourceApp
 import com.fanjv.netproxy.feature.traffic.data.CaptureExit
@@ -10,6 +11,7 @@ import com.fanjv.netproxy.feature.traffic.data.CapturedMessage
 import com.fanjv.netproxy.feature.traffic.presentation.SessionGrouping
 import com.fanjv.netproxy.feature.traffic.presentation.asCurl
 import com.fanjv.netproxy.feature.traffic.presentation.bodyChunks
+import com.fanjv.netproxy.feature.traffic.presentation.captureAppGroups
 import com.fanjv.netproxy.feature.traffic.presentation.displayBody
 import com.fanjv.netproxy.feature.traffic.presentation.groupSessions
 import com.fanjv.netproxy.feature.traffic.presentation.matchesSession
@@ -19,6 +21,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TrafficPresentationTest {
+    @Test fun capturePickerGroupsProfilesAndKeepsSelectedAppsVisible() {
+        val app = AppInfoModel("example.app", "Example")
+        val clone = app.copy(userId = "11")
+        val system = AppInfoModel("system.app", "System", isSystem = true)
+        val catalog = listOf(app, clone, system).associateBy { it.id }
+        val hidden = captureAppGroups(catalog, emptySet(), showSystem = false)
+        assertEquals(mapOf("0" to listOf(app), "11" to listOf(clone)), hidden)
+        assertEquals(listOf(app, system), captureAppGroups(catalog, emptySet(), showSystem = true)["0"])
+        val selected = captureAppGroups(catalog, setOf(system.id, "11:missing.app"), showSystem = false)
+        assertEquals(listOf(app, system), selected["0"])
+        assertEquals(listOf("11:example.app", "11:missing.app"), selected["11"]?.map { it.id })
+    }
     @Test fun groupsByAndroidProfileHostAndActualOutboundChain() {
         val first = CaptureRecord("now", "GET", "EXAMPLE.test.:443", "Proxy", 200, durationMs = 1,
             sourceApp = CaptureSourceApp(10123, 0, "com.example.app"),

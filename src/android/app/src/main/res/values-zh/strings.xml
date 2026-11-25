@@ -848,4 +848,6 @@
     <string name="traffic_user_ca_hint">开启解密时为尚未安装公开调试 CA 的 Android 用户安装证书。关闭解密不会移除证书。</string>
     <string name="traffic_user_ca_remove">移除个人调试 CA</string>
     <string name="traffic_user_ca_remove_prompt">仅移除 NetProxy 为 Android 用户安装的副本，不影响系统信任或手动安装的证书。请先关闭解密。</string>
+    <string name="traffic_apps_select_all">全选显示的应用</string>
+    <string name="traffic_apps_clear_selection">清空选择</string>
 </resources>

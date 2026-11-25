@@ -818,4 +818,6 @@
     <string name="traffic_user_ca_hint">Ativar a descriptografia instala a CA pública de depuração para usuários do Android que ainda não a têm. Desativar a descriptografia mantém a CA.</string>
     <string name="traffic_user_ca_remove">Remover CA pessoal de depuração</string>
     <string name="traffic_user_ca_remove_prompt">Remove apenas as cópias instaladas pelo NetProxy para usuários do Android. Não altera a confiança do sistema ou certificados instalados manualmente. Desative a descriptografia primeiro.</string>
+    <string name="traffic_apps_select_all">Selecionar todos os apps exibidos</string>
+    <string name="traffic_apps_clear_selection">Limpar seleção</string>
 </resources>

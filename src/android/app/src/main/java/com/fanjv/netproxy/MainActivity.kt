@@ -69,6 +69,7 @@ import com.fanjv.netproxy.feature.kernel.presentation.SingBoxKernelSettingsScree
 import com.fanjv.netproxy.feature.logs.presentation.LogsScreen
 import com.fanjv.netproxy.feature.traffic.presentation.TrafficScreen
 import com.fanjv.netproxy.feature.traffic.presentation.TrafficSessionsScreen
+import com.fanjv.netproxy.feature.traffic.presentation.TrafficAppsScreen
 import com.fanjv.netproxy.feature.traffic.presentation.TrafficInspectorScreen
 import com.fanjv.netproxy.feature.traffic.presentation.TrafficRulesScreen
 import com.fanjv.netproxy.feature.traffic.presentation.TrafficRuleEditorScreen
@@ -284,6 +285,11 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
                 entry<Route.TrafficSessions> {
                     ModulePage(R.string.traffic_records, R.string.traffic_read_failed, navigator::pop) {
                         TrafficSessionsScreen(traffic)
+                    }
+                }
+                entry<Route.TrafficApps> {
+                    ModulePage(R.string.traffic_capture_apps, R.string.traffic_read_failed, navigator::pop) {
+                        TrafficAppsScreen(traffic)
                     }
                 }
                 entry<Route.TrafficInspector> { route ->

@@ -818,4 +818,6 @@
     <string name="traffic_user_ca_hint">При включении расшифровки открытый отладочный УЦ устанавливается для пользователей Android, у которых его ещё нет. Выключение расшифровки не удаляет УЦ.</string>
     <string name="traffic_user_ca_remove">Удалить пользовательский отладочный УЦ</string>
     <string name="traffic_user_ca_remove_prompt">Удаляет только копии, установленные NetProxy для пользователей Android. Системное доверие и установленные вручную сертификаты не изменяются. Сначала отключите расшифровку.</string>
+    <string name="traffic_apps_select_all">Выбрать все показанные приложения</string>
+    <string name="traffic_apps_clear_selection">Очистить выбор</string>
 </resources>

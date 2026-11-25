@@ -818,4 +818,6 @@
     <string name="traffic_user_ca_hint">Enabling decryption installs the public debug CA for Android users who don’t have it. Turning decryption off keeps the CA.</string>
     <string name="traffic_user_ca_remove">Remove personal debug CA</string>
     <string name="traffic_user_ca_remove_prompt">This removes copies installed by NetProxy for Android users, not system trust or certificates you installed yourself. Turn decryption off first.</string>
+    <string name="traffic_apps_select_all">Select all shown apps</string>
+    <string name="traffic_apps_clear_selection">Clear selection</string>
 </resources>

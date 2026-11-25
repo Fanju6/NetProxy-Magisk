@@ -93,6 +93,8 @@ internal fun TrafficFrame(
     subtitle: String = "",
     actions: @Composable RowScope.() -> Unit = {},
     floatingActionButton: @Composable () -> Unit = {},
+    onBack: (() -> Unit)? = null,
+    topBarModifier: Modifier = Modifier,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val navigator = LocalNavigator.current
@@ -102,10 +104,11 @@ internal fun TrafficFrame(
         BlurredBar(backdrop) {
             AdaptiveTopAppBar(
                 title = stringResource(title),
+                modifier = topBarModifier,
                 subtitle = subtitle,
                 color = if (backdrop != null) Color.Transparent else MiuixTheme.colorScheme.surface,
                 scrollBehavior = scrollBehavior,
-                navigationIcon = { BackIconButton(onClick = navigator::pop) },
+                navigationIcon = { BackIconButton(onClick = onBack ?: navigator::pop) },
                 actions = actions,
             )
         }
@@ -168,7 +171,7 @@ internal fun TrafficScreen(viewModel: TrafficViewModel) {
                 CardItem("apps") {
                     ArrowPreference(title = stringResource(R.string.traffic_capture_apps),
                         summary = stringResource(R.string.traffic_capture_apps_summary),
-                        onClick = { viewModel.openAppPicker() }, enabled = !state.busy,
+                        onClick = { navigator.push(Route.TrafficApps) }, enabled = !state.busy,
                         insideMargin = TrafficRowInsets,
                         startAction = {
                             Icon(Icons.Rounded.Android, null, Modifier.padding(end = 12.dp),
@@ -188,8 +191,6 @@ internal fun TrafficScreen(viewModel: TrafficViewModel) {
             ))
         }
     }
-    state.appDraft?.let { TrafficAppPicker(it, state.appCatalog, state.saving, state.failure,
-        viewModel::loadAppIcon, viewModel::editCaptureApps, viewModel::saveCaptureApps) }
 }
 
 @Composable
