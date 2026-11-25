@@ -56,7 +56,7 @@ api traffic stop
 
 ### 可选：Android 系统信任
 
-如果测试客户端无法单独配置 CA，可将 `system_trust` 改为 `true`，保存并重启。模块开机时保留已有证书并绑定 `/system/etc/security/cacerts` 以及设备上存在的 `/apex/com.android.conscrypt/cacerts`（Android 14+）。某些系统或挂载隔离配置可能禁止挂载；请查看服务日志，已运行的测试应用也可能需要重启。系统信任不绕过应用证书钉扎。
+如果测试客户端无法单独配置 CA，可启用 `system_trust`，由模块在开机时应用。模块将各存储原有的证书和公开调试 CA 放入临时内存文件系统，并在 init、zygote 和已有应用的挂载命名空间中绑定到 `/system/etc/security/cacerts` 以及设备上存在的 `/apex/com.android.conscrypt/cacerts`（Android 14+）。已完成挂载的命名空间不需要额外重启 zygote；如果应用缓存了信任状态，关闭后重新打开该应用。若设备限制挂载，请查看服务日志中的失败步骤和命名空间。系统信任不绕过应用证书钉扎。
 
 调试后保存 `{"enabled":false,"hosts":[],"system_trust":false}`，停止抓包并在测试客户端删除手工信任的证书。关闭系统信任或卸载模块时会尝试卸载模块的证书目录；如未完成，重启设备。停止抓包本身不会删除系统信任。
 
