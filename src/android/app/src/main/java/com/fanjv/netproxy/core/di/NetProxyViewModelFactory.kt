@@ -22,6 +22,7 @@ import com.fanjv.netproxy.feature.inbound.presentation.InboundViewModel
 import com.fanjv.netproxy.feature.settings.presentation.SettingsViewModel
 import com.fanjv.netproxy.feature.routing.presentation.RoutingRulesViewModel
 import com.fanjv.netproxy.feature.theme.presentation.ThemeViewModel
+import com.fanjv.netproxy.feature.traffic.presentation.TrafficViewModel
 
 /** 在应用组合根集中创建 ViewModel，业务类不再依赖 Application 或服务定位器。 */
 internal class NetProxyViewModelFactory(
@@ -79,6 +80,7 @@ internal class NetProxyViewModelFactory(
             )
 
             LogsViewModel::class.java -> LogsViewModel(container.logRepository)
+            TrafficViewModel::class.java -> TrafficViewModel(container.trafficRepository)
             ThemeViewModel::class.java -> ThemeViewModel(container.themeManager)
             else -> error("不支持的 ViewModel: ${modelClass.name}")
         } as T

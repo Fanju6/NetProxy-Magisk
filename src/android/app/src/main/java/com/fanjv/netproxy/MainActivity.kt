@@ -67,6 +67,7 @@ import com.fanjv.netproxy.feature.dashboard.presentation.CatalogDashboardViewMod
 import com.fanjv.netproxy.feature.kernel.presentation.SingBoxJsonEditScreen
 import com.fanjv.netproxy.feature.kernel.presentation.SingBoxKernelSettingsScreen
 import com.fanjv.netproxy.feature.logs.presentation.LogsScreen
+import com.fanjv.netproxy.feature.traffic.presentation.TrafficScreen
 import com.fanjv.netproxy.feature.inbound.presentation.InboundSettingsScreen
 import com.fanjv.netproxy.feature.settings.presentation.NetworkMatchingScreen
 import com.fanjv.netproxy.feature.routing.presentation.RoutingRulesScreen
@@ -91,6 +92,7 @@ import com.fanjv.netproxy.navigation.Route.RoutingRules
 import com.fanjv.netproxy.navigation.Route.SubscriptionDetails
 import com.fanjv.netproxy.navigation.Route.SubscriptionEdit
 import com.fanjv.netproxy.navigation.Route.ThemeSettings
+import com.fanjv.netproxy.navigation.Route.Traffic
 import com.fanjv.netproxy.navigation.rememberMainPagerState
 import com.fanjv.netproxy.navigation.rememberNavigator
 import com.fanjv.netproxy.navigation.mainDestinations
@@ -264,6 +266,11 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
                 entry<Logs> {
                     ModulePage(R.string.logs, R.string.logs_read_failed, { navigator.pop() }) {
                         LogsScreen(onBack = { navigator.pop() })
+                    }
+                }
+                entry<Traffic> {
+                    ModulePage(R.string.traffic_title, R.string.traffic_read_failed, { navigator.pop() }) {
+                        TrafficScreen(onBack = { navigator.pop() })
                     }
                 }
             }
