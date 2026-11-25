@@ -91,6 +91,20 @@ DNS 编辑器只显示 `{"dns": {...}}`。保存时 Go 只替换 `dns`，其他�
 
 保存会检查读取时的版本。同一分区已被其他客户端修改时，会提示重新加载，防止覆盖他人的修改；其他分区更新不会阻止当前分区保存。
 
+### 排查 IPv6 出口不可用
+
+默认 `dns.strategy` 为 `prefer_ipv4`，仍会回答 AAAA 查询。节点服务器本身用 IPv4 连接，不代表它不能转发 IPv6；应比较同一 IPv6 目的地址在停用服务、直连和使用该节点时的结果。
+
+若已确认当前出口不能访问 IPv6，可先在“设置 → 内核配置 → 主配置 → DNS”中，将已有 `dns` 对象的 `strategy` 改为 `ipv4_only`，保留服务器和规则。这样由 sing-box 处理的普通 AAAA 查询返回空结果，A 查询照常。CLI 和 WebUI 也可用现有的 `config read singbox/dns` 和 `config apply --revision <revision> singbox/dns <候选文件>` 编辑同一分区；设备 CLI 需使用 `su -c /data/adb/modules/netproxy/netproxyctl`。这个设置不关闭系统 IPv6，也不影响绕过核心的解析（如应用自行发出的加密 DNS）、已有缓存或 IPv6 字面地址。
+
+如果还需要让代理模式下已被接管的 IPv6 连接尽快失败，可在“主配置 → 路由”的 `route.rules` 中，把以下规则放在 DNS 劫持规则之后、代理分流规则之前。保留原有 Direct 规则的位置；该规则不改变 Direct 模式或绕过入站的流量：
+
+```json
+{ "inbound": "netproxy-in", "ip_version": 6, "action": "reject", "no_drop": true }
+```
+
+恢复时把 DNS 策略改回原值（出厂为 `prefer_ipv4`），并删除上述可选规则。无需改 TUN 地址、eBPF 的 IPv6 设置或系统网络设置。
+
 ### 更换整份配置
 
 先备份 `config.json`，再通过“完整配置”或 CLI 提交候选文件。校验时会一起加载 Catalog 与当前选中入站运行时，失败不替换当前配置。
