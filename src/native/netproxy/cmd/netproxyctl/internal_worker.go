@@ -33,6 +33,10 @@ func runWorker(ctx context.Context, args []string) error {
 	singBox := flags.String("sing-box", "", "sing-box 二进制路径")
 	serviceAddress := flags.String("service-address", "127.0.0.1:9090", "Service API 地址")
 	serviceSecret := flags.String("service-secret", "singbox", "Service API 密钥")
+	var restoreTrust *bool
+	if action == "start" {
+		restoreTrust = flags.Bool("restore-system-trust", false, "按当前模块配置恢复系统 CA")
+	}
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -92,6 +96,9 @@ func runWorker(ctx context.Context, args []string) error {
 		}
 		return worker.RunProcess(ctx, options, logger)
 	case "start":
+		if *restoreTrust {
+			moduleapp.RestoreTrafficSystemTrust(ctx, moduleOptions)
+		}
 		status, err := worker.Start(ctx, options, os.Args[0])
 		if err != nil {
 			return err

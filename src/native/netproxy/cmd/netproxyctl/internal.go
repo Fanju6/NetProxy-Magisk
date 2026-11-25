@@ -68,5 +68,6 @@ func internalUsageText() string {
   netproxyctl __internal boot --module-dir <模块目录>
   netproxyctl __internal google-firewall --module-dir <模块目录>
   netproxyctl __internal worker <start|stop|run> --module-dir <模块目录>
+  netproxyctl __internal worker start --module-dir <模块目录> --restore-system-trust
 `
 }

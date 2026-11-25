@@ -367,6 +367,7 @@ test_service_failures() (
   [ "$(wc -l < "$CALL_LOG")" -eq 2 ]
   restore_live_service
   grep -q '^service start$' "$CALL_LOG"
+  ! grep -q 'restore-system-trust' "$CALL_LOG"
   reset_modules
   TEST_SERVICE_STOP=1
   export TEST_SERVICE_STOP
@@ -460,6 +461,7 @@ test_hot_update() (
     INSTALL_MODE="$mode"
     INSTALLER_PID=99999999
     if [ "$mode" = preserve ]; then TEST_RUNNING=true; fi
+    printf '%s\n' true > "$LIVE/config/traffic-enabled.json"
     if [ "$mode" = nodes ]; then export TEST_GOOGLE_FIREWALL=1; fi
     sleep() { :; }
     with_user_data_locks() {
@@ -474,13 +476,16 @@ test_hot_update() (
     assert_value "$LIVE/module.prop" version=package
     grep -Fq '后台热更新已完成' "$LIVE/logs/service.log"
     grep -q '^__internal worker start' "$CALL_LOG"
+    grep -Fxq "__internal worker start --module-dir $LIVE --restore-system-trust" "$CALL_LOG"
     grep -Fxq 'api init' "$CALL_LOG"
     [ "$(grep -Fxc "__internal google-firewall --module-dir $LIVE" "$CALL_LOG")" -eq 1 ]
     [ "$(tail -n 1 "$CALL_LOG")" = "__internal google-firewall --module-dir $LIVE" ]
     if [ "$mode" = preserve ]; then
       grep -Fxq 'service start' "$CALL_LOG"
+      assert_value "$LIVE/config/traffic-enabled.json" true
     else
       ! grep -Fxq 'service start' "$CALL_LOG"
+      [ ! -e "$LIVE/config/traffic-enabled.json" ]
     fi
     if [ "$mode" = nodes ]; then
       grep -Fq 'google_firewall.launch_failed' "$LIVE/logs/service.log"

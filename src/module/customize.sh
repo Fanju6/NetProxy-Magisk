@@ -253,12 +253,12 @@ stop_proxy_if_running() {
     && "$LIVE_DIR/netproxyctl" service stop >/dev/null 2>&1
 }
 
-# 参数: 无。
+# 参数: 可选 Worker 启动参数；仅已提交更新时传递。
 # 返回: 0=成功或无需恢复，1=恢复失败。
 restore_live_service() {
   [ "$SERVICE_STOPPED" = true ] || return 0
   local result=0
-  "$LIVE_DIR/bin/netproxyctl" __internal worker start --module-dir "$LIVE_DIR" >/dev/null 2>&1 || result=1
+  "$LIVE_DIR/bin/netproxyctl" __internal worker start --module-dir "$LIVE_DIR" "$@" >/dev/null 2>&1 || result=1
   if [ "$PROXY_WAS_RUNNING" = true ]; then
     "$LIVE_DIR/netproxyctl" service start >/dev/null 2>&1 || result=1
   fi
@@ -490,7 +490,7 @@ apply_hot_update() {
   [ "$INSTALL_MODE" = fresh ] || "$LIVE_DIR/netproxyctl" catalog list >/dev/null 2>&1 || return 1
   with_user_data_locks commit_hot_update || return 1
   SERVICE_STOPPED=true
-  if restore_live_service; then
+  if restore_live_service --restore-system-trust; then
     write_log INFO success - "后台热更新已完成，无需重启设备"
   else
     write_log WARN failed service.restore_failed "新版已应用，后台 Worker 或服务恢复失败，请在管理器中检查"
