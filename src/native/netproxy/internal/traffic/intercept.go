@@ -79,8 +79,9 @@ func (s *session) intercept(client *bufferedStream, upstream net.Conn, metadata 
 	if err != nil {
 		if policy.ctx.Err() == nil && s.ctx.Err() == nil {
 			policy.rememberFailure(host, time.Now())
-			s.controller.record(s, Entry{Time: now, Method: "TLS", Host: host, Outbound: metadata.Outbound,
-				TLS: "handshake_failed", Status: http.StatusBadGateway, DurationMS: time.Since(now).Milliseconds()})
+			entry := metadata.entry(now, "TLS", host)
+			entry.TLS, entry.Status, entry.DurationMS = "handshake_failed", http.StatusBadGateway, time.Since(now).Milliseconds()
+			s.controller.record(s, entry)
 		}
 		return true
 	}

@@ -140,6 +140,20 @@ function normalizeArgs(args: string[]): string[] {
   return result
 }
 
+const capturePreviewId = 'ABCDEFGHIJKLMNOPQRSTUVWXY2'
+const capturePreview = {
+  id: capturePreviewId, time: '2026-01-01T12:00:00Z', method: 'POST', host: 'example.test',
+  target: '/orders?preview=true', status: 201, duration_ms: 38, outbound: 'Proxy', rewritten: true,
+  exit: { inbound: 'netproxy-in', remote: '192.0.2.1:443', package: 'com.example.client', uid: 10123,
+    chain: [{ tag: 'Proxy', type: 'selector' }, { tag: 'Auto', type: 'urltest' }, { tag: 'node-x', type: 'direct' }] },
+}
+
+const capturePreviewMessage = {
+  headers: { 'Content-Type': ['application/json'], 'X-Debug': ['preview'] },
+  headers_truncated: false,
+  body: { data: '{"order":"NP-2048"}', format: 'text', size: 19, content_type: 'application/json', truncated: false },
+}
+
 function execute(args: string[]): CtlResult<unknown> {
   const clean = normalizeArgs(args)
   const command = clean[0]
@@ -149,6 +163,14 @@ function execute(args: string[]): CtlResult<unknown> {
     if (action === 'traffic') {
       if (clean[2] === 'status') return response('traffic.status', '抓包状态', { running: false, count: 0 })
       if (clean[2] === 'list') return response('traffic.list', '抓包记录', [])
+      if (clean[2] === 'detail' && clean[3] === capturePreviewId) {
+        return response('traffic.detail', '抓包详情', { ...capturePreview, http: {
+          url: 'https://example.test/orders?preview=true', url_truncated: false,
+          request: capturePreviewMessage, response: capturePreviewMessage,
+          rewrites: [{ rule_index: 0, phase: 'request', pattern: '^https://example[.]test/orders', state: 'applied',
+            duration_us: 51, actions: ['headers'], headers: [{ name: 'X-Debug', before: ['dev'], after: ['preview'], truncated: false }] }],
+        } })
+      }
       if (clean[2] === 'detail') return failure('traffic.record_not_found', '抓包记录已清除或过期')
       if (clean[2] === 'rules') return response('traffic.rules', '重写规则', { rules: [] })
       if (clean[2] === 'mitm') return response('traffic.mitm', 'HTTPS 解密配置', { enabled: false, hosts: [], system_trust: false })

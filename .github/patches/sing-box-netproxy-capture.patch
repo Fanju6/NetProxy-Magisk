@@ -70,7 +70,7 @@
  	var done atomic.Bool
 --- /dev/null
 +++ b/route/netproxy_capture_linux.go
-@@ -0,0 +1,93 @@
+@@ -0,0 +1,138 @@
 +package route
 +
 +import (
@@ -111,11 +111,13 @@
 +		bridge.Close()
 +		return false
 +	}
++	exit := netProxyExit(metadata, upstream)
 +	info, _ := json.Marshal(struct {
 +		Destination string `json:"destination"`
 +		Host        string `json:"host,omitempty"`
 +		Outbound    string `json:"outbound"`
-+	}{metadata.Destination.String(), metadata.SniffHost, metadata.RouteOutbound})
++		Exit        any    `json:"exit"`
++	}{metadata.Destination.String(), metadata.SniffHost, netProxyLabel(metadata.RouteOutbound, 128), exit})
 +	info = append(info, '\n')
 +	n, _, err := bridge.WriteMsgUnix(info, unix.UnixRights(int(peer.Fd())), nil)
 +	if err != nil || n != len(info) {
@@ -141,6 +143,49 @@
 +		netProxyCaptureRelay(client, bridge, upstream, remoteBridge, onClose)
 +	}()
 +	return true
++}
++
++func netProxyLabel(value string, limit int) string {
++	if len(value) > limit {
++		return value[:limit]
++	}
++	return value
++}
++
++func netProxyExit(metadata adapter.InboundContext, upstream net.Conn) any {
++	type hop struct {
++		Tag  string `json:"tag"`
++		Type string `json:"type"`
++	}
++	exit := struct {
++		Inbound string `json:"inbound"`
++		Chain   []hop  `json:"chain,omitempty"`
++		Remote  string `json:"remote,omitempty"`
++		Package string `json:"package,omitempty"`
++		UID     *int32 `json:"uid,omitempty"`
++		Process string `json:"process,omitempty"`
++	}{Inbound: metadata.Inbound}
++	for i, outbound := range metadata.OutboundChain {
++		if i >= 8 && i != len(metadata.OutboundChain)-1 {
++			continue
++		}
++		exit.Chain = append(exit.Chain, hop{netProxyLabel(outbound.Tag(), 128), netProxyLabel(outbound.Type(), 32)})
++	}
++	if remote := upstream.RemoteAddr(); remote != nil {
++		exit.Remote = netProxyLabel(remote.String(), 256)
++	}
++	if owner := metadata.ProcessInfo; owner != nil {
++		if owner.UserId >= 0 {
++			exit.UID = &owner.UserId
++		}
++		if len(owner.PackageNames) == 1 {
++			exit.Package = netProxyLabel(owner.PackageNames[0], 256)
++		}
++		if len(owner.ProcessPaths) == 1 {
++			exit.Process = netProxyLabel(owner.ProcessPaths[0], 256)
++		}
++	}
++	return exit
 +}
 +
 +func netProxyCaptureRelay(client, bridge, upstream, remoteBridge net.Conn, onClose N.CloseHandlerFunc) {

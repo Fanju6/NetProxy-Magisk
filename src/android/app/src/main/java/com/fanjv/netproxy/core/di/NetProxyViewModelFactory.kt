@@ -80,7 +80,7 @@ internal class NetProxyViewModelFactory(
             )
 
             LogsViewModel::class.java -> LogsViewModel(container.logRepository)
-            TrafficViewModel::class.java -> TrafficViewModel(container.trafficRepository)
+            TrafficViewModel::class.java -> TrafficViewModel(container.trafficRepository, packages = container.appPackageRepository)
             ThemeViewModel::class.java -> ThemeViewModel(container.themeManager)
             else -> error("不支持的 ViewModel: ${modelClass.name}")
         } as T

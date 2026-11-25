@@ -23,7 +23,22 @@ internal data class CaptureRecord(
     @SerialName("duration_ms") val durationMs: Long,
     val id: String? = null,
     val target: String? = null,
+    val rewritten: Boolean = false,
+    val exit: CaptureExit? = null,
 )
+
+@Serializable
+internal data class CaptureExit(
+    val inbound: String? = null,
+    val chain: List<CaptureHop> = emptyList(),
+    val remote: String? = null,
+    @SerialName("package") val packageName: String? = null,
+    val uid: Int? = null,
+    val process: String? = null,
+)
+
+@Serializable
+internal data class CaptureHop(val tag: String, val type: String)
 
 @Serializable
 internal data class CaptureDetail(val http: CapturedHttp? = null)
@@ -34,7 +49,35 @@ internal data class CapturedHttp(
     @SerialName("url_truncated") val urlTruncated: Boolean,
     val request: CapturedMessage,
     val response: CapturedMessage,
+    val rewrites: List<RewriteMatch> = emptyList(),
 )
+
+@Serializable
+internal data class RewriteMatch(
+    val id: String,
+    @SerialName("rule_index") val ruleIndex: Int,
+    val pattern: String,
+    val phase: String,
+    val state: String,
+    val actions: List<String> = emptyList(),
+    val redirect: String? = null,
+    @SerialName("original_status") val originalStatus: Int? = null,
+    val headers: List<HeaderChange> = emptyList(),
+    val body: RewriteBodyChange? = null,
+    val error: String? = null,
+    @SerialName("duration_us") val durationUs: Long = 0,
+)
+
+@Serializable
+internal data class HeaderChange(
+    val name: String,
+    val before: List<String> = emptyList(),
+    val after: List<String> = emptyList(),
+    val truncated: Boolean,
+)
+
+@Serializable
+internal data class RewriteBodyChange(val before: Int, val after: Int)
 
 @Serializable
 internal data class CapturedMessage(
@@ -50,6 +93,8 @@ internal data class CapturedBody(
     @SerialName("content_type") val contentType: String? = null,
     @SerialName("content_encoding") val contentEncoding: String? = null,
     val truncated: Boolean,
+    val size: Long? = null,
+    @SerialName("captured_size") val capturedSize: Int? = null,
 )
 
 @Serializable

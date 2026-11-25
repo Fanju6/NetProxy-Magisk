@@ -148,11 +148,14 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
     var method by rememberSaveable { mutableStateOf<String?>(null) }
     var statusClass by rememberSaveable { mutableStateOf<Int?>(null) }
     var tls by rememberSaveable { mutableStateOf<String?>(null) }
+    var rewrittenOnly by rememberSaveable { mutableStateOf(false) }
+    var app by rememberSaveable { mutableStateOf<String?>(null) }
+    var outbound by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmClear by rememberSaveable { mutableStateOf(false) }
     var filter by rememberSaveable { mutableStateOf<String?>(null) }
     val records = state.records.value.orEmpty()
-    val visible = remember(records, query, method, statusClass, tls) {
-        records.filter { it.matchesSession(query, method, statusClass, tls) }
+    val visible = remember(records, query, method, statusClass, tls, rewrittenOnly, app, outbound) {
+        records.filter { it.matchesSession(query, method, statusClass, tls, rewrittenOnly, app, outbound) }
     }
     RefreshOnResume(viewModel)
     TopBarMoreMenu(listOf(TopBarMenuAction(stringResource(R.string.traffic_clear), records.isNotEmpty() && !state.busy) {
@@ -172,6 +175,9 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
                     FilterPill(statusClass?.let { "${it}xx" } ?: stringResource(R.string.traffic_http_status), statusClass != null) { filter = "status" }
                     FilterPill(tls?.let { stringResource(if (it == "decrypted") R.string.traffic_tls_decrypted else R.string.traffic_tls_bypass) }
                         ?: stringResource(R.string.traffic_tls), tls != null) { filter = "tls" }
+                    FilterPill(stringResource(R.string.traffic_rewritten), rewrittenOnly) { rewrittenOnly = !rewrittenOnly }
+                    FilterPill(app ?: stringResource(R.string.traffic_app), app != null) { filter = "app" }
+                    FilterPill(outbound ?: stringResource(R.string.traffic_outbound), outbound != null) { filter = "outbound" }
                 }
                 val issue = state.records.error ?: state.failure
                 if (visible.isEmpty()) ContentStatus(PaddingValues(0.dp), when {
@@ -197,18 +203,25 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
         val title = when (kind) {
             "method" -> R.string.traffic_method
             "status" -> R.string.traffic_http_status
+            "app" -> R.string.traffic_app
+            "outbound" -> R.string.traffic_outbound
             else -> R.string.traffic_tls
         }
         val methods = (listOf("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD") + records.map { it.method }).distinct()
         val values = when (kind) {
             "method" -> methods
             "status" -> listOf("1xx", "2xx", "3xx", "4xx", "5xx")
+            "app" -> records.mapNotNull { it.exit?.appKey }.distinct().sorted()
+            "outbound" -> records.flatMap { listOf(it.outbound) + it.exit?.chain.orEmpty().map { hop -> hop.tag } }
+                .filter { it.isNotBlank() }.distinct().sorted()
             else -> listOf(stringResource(R.string.traffic_tls_decrypted), stringResource(R.string.traffic_tls_bypass))
         }
         TrafficOptionDialog(title, listOf(all) + values, { filter = null }) { index ->
             when (kind) {
                 "method" -> method = methods.getOrNull(index - 1)
                 "status" -> statusClass = index.takeIf { it > 0 }
+                "app" -> app = values.getOrNull(index - 1)
+                "outbound" -> outbound = values.getOrNull(index - 1)
                 else -> tls = listOf("decrypted", "tunnel").getOrNull(index - 1)
             }
             filter = null
@@ -236,6 +249,7 @@ private fun SessionRow(record: CaptureRecord, onClick: () -> Unit) {
                 maxLines = 1, overflow = TextOverflow.Ellipsis, color = MiuixTheme.colorScheme.onSurfaceVariantSummary) }
             Text("${shortTime(record.time)} · ${stringResource(R.string.traffic_milliseconds, record.durationMs)}",
                 style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+            if (record.rewritten) StatusBadge(stringResource(R.string.traffic_rewritten))
         }
         val tls = record.tls
         if (tls != null) Icon(Icons.Rounded.Lock, tlsLabel(tls), Modifier.padding(end = 2.dp),

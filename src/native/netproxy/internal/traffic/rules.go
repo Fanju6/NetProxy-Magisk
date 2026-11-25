@@ -2,6 +2,8 @@ package traffic
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	json "encoding/json/v2"
 	"fmt"
 	"net/http"
@@ -27,6 +29,7 @@ type Rule struct {
 
 type compiledRule struct {
 	Rule
+	id      string
 	pattern *regexp.Regexp
 	program *goja.Program
 }
@@ -64,21 +67,13 @@ func compileRules(rules []Rule) ([]compiledRule, error) {
 		if err != nil {
 			return nil, fmt.Errorf("第 %d 条重写规则的 JavaScript 语法无效", i+1)
 		}
-		compiled = append(compiled, compiledRule{rule, pattern, program})
+		sum := sha256.Sum256([]byte(rule.Phase + "\x00" + rule.Pattern + "\x00" + rule.Script))
+		compiled = append(compiled, compiledRule{rule, hex.EncodeToString(sum[:]), pattern, program})
 	}
 	return compiled, nil
 }
 
-func findRule(rules []compiledRule, phase, target string) *compiledRule {
-	for i := range rules {
-		if rules[i].Phase == phase && rules[i].pattern.MatchString(target) {
-			return &rules[i]
-		}
-	}
-	return nil
-}
-
-func (rule *compiledRule) run(ctx context.Context, input scriptInput) (rewrite, bool) {
+func (rule *compiledRule) run(ctx context.Context, input scriptInput) (rewrite, string) {
 	vm := goja.New()
 	vm.SetMaxCallStackSize(256)
 	ctx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
@@ -86,41 +81,47 @@ func (rule *compiledRule) run(ctx context.Context, input scriptInput) (rewrite, 
 	defer context.AfterFunc(ctx, func() { vm.Interrupt("rewrite deadline") })()
 	raw, err := json.Marshal(input)
 	if err != nil {
-		return rewrite{}, false
+		return rewrite{}, "script_error"
 	}
 	jsonObject := vm.Get("JSON").ToObject(vm)
 	parse, _ := goja.AssertFunction(jsonObject.Get("parse"))
 	stringify, _ := goja.AssertFunction(jsonObject.Get("stringify"))
 	arg, err := parse(jsonObject, vm.ToValue(string(raw)))
 	if err != nil {
-		return rewrite{}, false
+		return rewrite{}, "script_error"
 	}
 	fn, err := vm.RunProgram(rule.program)
 	if err != nil {
-		return rewrite{}, false
+		return rewrite{}, "script_error"
 	}
 	call, ok := goja.AssertFunction(fn)
 	if !ok {
-		return rewrite{}, false
+		return rewrite{}, "script_error"
 	}
 	value, err := call(goja.Undefined(), arg)
 	if err != nil {
-		return rewrite{}, false
+		if ctx.Err() != nil {
+			return rewrite{}, "deadline"
+		}
+		return rewrite{}, "script_error"
 	}
 	if goja.IsUndefined(value) || goja.IsNull(value) {
-		return rewrite{}, true
+		return rewrite{}, ""
 	}
 	encoded, err := stringify(jsonObject, value)
 	if err != nil || goja.IsUndefined(encoded) {
-		return rewrite{}, false
+		if ctx.Err() != nil {
+			return rewrite{}, "deadline"
+		}
+		return rewrite{}, "invalid_result"
 	}
 	text := encoded.String()
 	var result *rewrite
 	if len(text) > 2*maxBody || json.Unmarshal([]byte(text), &result, json.RejectUnknownMembers(true)) != nil ||
 		result == nil || !result.valid(rule.Phase) {
-		return rewrite{}, false
+		return rewrite{}, "invalid_result"
 	}
-	return *result, true
+	return *result, ""
 }
 
 func (result rewrite) valid(phase string) bool {

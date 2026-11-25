@@ -91,6 +91,9 @@ func testTransparentHTTPS(t *testing.T, core string) {
 		if r.Header.Get("Proxy-Authorization") != "" {
 			t.Error("抓包代理凭据到达 HTTPS 上游")
 		}
+		if body, err := io.ReadAll(r.Body); err != nil || string(body) != "request-body" {
+			t.Errorf("unexpected upstream request body: %q, %v", body, err)
+		}
 		w.Header().Set("Content-Type", "text/plain")
 		w.Header().Set("X-Capture-Response", "https")
 		_, _ = io.WriteString(w, "upstream")

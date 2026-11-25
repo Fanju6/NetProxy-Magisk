@@ -20,6 +20,25 @@ type flow struct {
 	Destination string `json:"destination"`
 	Host        string `json:"host"`
 	Outbound    string `json:"outbound"`
+	Exit        *Exit  `json:"exit,omitempty"`
+}
+
+type Exit struct {
+	Inbound string    `json:"inbound,omitempty"`
+	Chain   []ExitHop `json:"chain,omitempty"`
+	Remote  string    `json:"remote,omitempty"`
+	Package string    `json:"package,omitempty"`
+	UID     *uint32   `json:"uid,omitempty"`
+	Process string    `json:"process,omitempty"`
+}
+
+type ExitHop struct {
+	Tag  string `json:"tag"`
+	Type string `json:"type"`
+}
+
+func (f flow) entry(now time.Time, method, host string) Entry {
+	return Entry{Time: now, Method: method, Host: host, Outbound: f.Outbound, Exit: f.Exit}
 }
 
 type session struct {
@@ -83,7 +102,7 @@ func (s *session) serveBridge(bridge *net.UnixConn) {
 		s.serveHTTPStream(client, client.done, upstream, metadata, "http", nil)
 		return
 	}
-	entry := Entry{Time: now, Method: "TCP", Host: metadata.Destination, Outbound: metadata.Outbound}
+	entry := metadata.entry(now, "TCP", metadata.Destination)
 	if host != "" && policy.matches(host) {
 		if !policy.bypass(host, now) && s.intercept(client, upstream, metadata, host, policy, now) {
 			return

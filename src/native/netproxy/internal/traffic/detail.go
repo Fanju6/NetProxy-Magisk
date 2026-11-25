@@ -29,6 +29,7 @@ type HTTPDetail struct {
 	URLTruncated bool            `json:"url_truncated"`
 	Request      CapturedMessage `json:"request"`
 	Response     CapturedMessage `json:"response"`
+	Rewrites     []RewriteMatch  `json:"rewrites,omitempty"`
 }
 
 type CapturedMessage struct {
@@ -44,19 +45,26 @@ type CapturedBody struct {
 	ContentType     string `json:"content_type,omitempty"`
 	ContentEncoding string `json:"content_encoding,omitempty"`
 	Truncated       bool   `json:"truncated"`
+	Size            int64  `json:"size"`
+	CapturedSize    int    `json:"captured_size"`
 }
 
 func (d *HTTPDetail) size() int {
 	if d == nil {
 		return 0
 	}
-	return 256 + len(d.URL) + d.Request.size + d.Response.size
+	size := 256 + len(d.URL) + d.Request.size + d.Response.size
+	for _, m := range d.Rewrites {
+		size += m.size()
+	}
+	return size
 }
 
 type bodyCapture struct {
 	mu        sync.Mutex
 	data      []byte
 	truncated bool
+	total     int64
 }
 
 func (c *bodyCapture) Write(p []byte) (int, error) {
@@ -67,6 +75,7 @@ func (c *bodyCapture) Write(p []byte) (int, error) {
 		c.data = append(c.data, p[:n]...)
 	}
 	c.truncated = c.truncated || n < len(p)
+	c.total += int64(len(p))
 	return len(p), nil
 }
 
@@ -76,7 +85,8 @@ func (c *bodyCapture) body(headers http.Header, length int64, incomplete bool) C
 	kind := strings.Clone(validPrefix(headers.Get("Content-Type"), 512))
 	encoding := strings.Clone(validPrefix(strings.Join(headers.Values("Content-Encoding"), ", "), 256))
 	b := CapturedBody{Format: "text", ContentType: kind, ContentEncoding: encoding,
-		Truncated: c.truncated || incomplete || length > int64(len(c.data))}
+		Truncated: c.truncated || incomplete || length > int64(len(c.data)),
+		Size:      max(length, c.total), CapturedSize: len(c.data)}
 	if len(c.data) == 0 {
 		return b
 	}

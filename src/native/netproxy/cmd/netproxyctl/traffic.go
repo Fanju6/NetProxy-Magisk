@@ -95,7 +95,7 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 		return &resultError{Code: "traffic.api_unavailable", Message: "无法连接本机管理接口，请检查 api status"}
 	}
 	defer response.Body.Close()
-	const maxResponse = 1 << 20
+	const maxResponse = 4 << 20
 	content, err := io.ReadAll(io.LimitReader(response.Body, maxResponse+1))
 	var envelope result
 	if err != nil || len(content) > maxResponse || json.Unmarshal(content, &envelope) != nil ||

@@ -29,6 +29,8 @@ type Entry struct {
 	Outbound   string    `json:"outbound"`
 	Status     int       `json:"status"`
 	Rewrite    string    `json:"rewrite,omitempty"`
+	Rewritten  bool      `json:"rewritten,omitzero"`
+	Exit       *Exit     `json:"exit,omitempty"`
 	TLS        string    `json:"tls,omitempty"`
 	DurationMS int64     `json:"duration_ms"`
 }

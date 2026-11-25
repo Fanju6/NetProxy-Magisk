@@ -2,11 +2,20 @@ package com.fanjv.netproxy.feature.traffic.presentation
 
 import com.fanjv.netproxy.feature.traffic.data.CaptureRecord
 import com.fanjv.netproxy.feature.traffic.data.CapturedHttp
+import com.fanjv.netproxy.feature.traffic.data.RewriteMatch
+import com.fanjv.netproxy.feature.traffic.data.RewriteRule
+import java.security.MessageDigest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 
-internal fun CaptureRecord.matchesSession(query: String, method: String?, statusClass: Int?, tls: String?): Boolean =
+internal fun CaptureRecord.matchesSession(
+    query: String, method: String?, statusClass: Int?, tls: String?,
+    rewrittenOnly: Boolean = false, app: String? = null, outbound: String? = null,
+): Boolean =
     (method == null || this.method == method) &&
+        (!rewrittenOnly || rewritten) &&
+        (app == null || exit?.appKey == app) &&
+        (outbound == null || this.outbound == outbound || exit?.chain?.any { it.tag == outbound } == true) &&
         (statusClass == null || status / 100 == statusClass) &&
         (tls == null || tls == "decrypted" && this.tls == "decrypted" ||
             tls == "tunnel" && this.tls != "decrypted" && (this.tls != null || this.method == "TCP")) &&
@@ -15,10 +24,42 @@ internal fun CaptureRecord.matchesSession(query: String, method: String?, status
 
 private val prettyJson = Json { prettyPrint = true }
 
+internal val com.fanjv.netproxy.feature.traffic.data.CaptureExit.appKey: String?
+    get() = packageName ?: uid?.let { "UID $it" } ?: process
+
+internal fun List<RewriteRule>.indexOfCapture(match: RewriteMatch): Int? {
+    fun RewriteRule.matches(): Boolean {
+        val bytes = "$phase\u0000$pattern\u0000$script".encodeToByteArray()
+        val id = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        return id == match.id
+    }
+    if (getOrNull(match.ruleIndex)?.matches() == true) return match.ruleIndex
+    return indices.filter { this[it].matches() }.singleOrNull()
+}
+
+internal fun isJsonBody(type: String?): Boolean {
+    val mime = type?.substringBefore(';')?.trim()?.lowercase()
+    return mime == "application/json" || mime?.endsWith("+json") == true
+}
+
 internal fun displayBody(data: String, type: String?): String {
-    val mime = type?.substringBefore(';')?.trim()
-    if (mime != "application/json" && mime?.endsWith("+json") != true) return data
+    if (!isJsonBody(type)) return data
     return runCatching { prettyJson.encodeToString(JsonElement.serializer(), Json.parseToJsonElement(data)) }.getOrDefault(data)
+}
+
+internal fun bodyChunks(text: String): List<String> = buildList {
+    var start = 0
+    while (start < text.length) {
+        val limit = minOf(start + 2048, text.length)
+        var end = limit
+        if (limit < text.length) {
+            val newline = text.lastIndexOf('\n', limit - 1)
+            if (newline >= start) end = newline + 1
+            else if (text[limit].isLowSurrogate()) end--
+        }
+        add(text.substring(start, end))
+        start = end
+    }
 }
 
 internal fun asCurl(method: String, detail: CapturedHttp): String {

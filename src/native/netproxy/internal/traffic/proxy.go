@@ -24,7 +24,7 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 	if len(method) > 16 {
 		method = "OTHER"
 	}
-	entry := Entry{Time: now, Method: method, Host: r.URL.Host, Outbound: metadata.Outbound}
+	entry := metadata.entry(now, method, r.URL.Host)
 	entry.Target = strings.Clone(validPrefix(r.URL.RequestURI(), 1024))
 	if r.URL.Scheme == "https" {
 		entry.TLS = "decrypted"
@@ -39,6 +39,8 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 		URL: strings.Clone(validPrefix(target, captureURLLimit)), URLTruncated: len(target) > captureURLLimit,
 		Request: captureMessage(requestHeaders),
 	}
+	matches, requestMatch, responseMatch := matchingRules(rules, target)
+	detail.Rewrites = matches
 	var capturedRequest *captureReader
 	if r.Body != nil && r.Body != http.NoBody {
 		capturedRequest = &captureReader{ReadCloser: r.Body}
@@ -64,28 +66,37 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 	if request.ContentLength == 0 {
 		request.Body = nil
 	}
-	if rule := findRule(rules, "request", target); rule != nil {
-		result, ok := s.runScript(ctx, rule, scriptInput{URL: target, Method: r.Method})
-		if !ok {
+	if requestMatch >= 0 {
+		match := &matches[requestMatch]
+		result := s.runScript(ctx, &rules[match.RuleIndex], scriptInput{URL: target, Method: r.Method}, match)
+		if match.Error != "" {
 			entry.Rewrite = "request_skipped"
+			match.finish()
 		} else {
 			entry.Rewrite = "request"
 			if result.Reject {
+				match.Actions = append(match.Actions, "reject")
+				entry.Rewritten = match.finish()
 				entry.Status = http.StatusForbidden
 				http.Error(w, "Rejected by rewrite rule", entry.Status)
 				return
 			}
 			if result.Redirect != "" {
+				match.Actions = append(match.Actions, "redirect")
+				match.Redirect = result.Redirect
+				entry.Rewritten = match.finish()
 				entry.Status = http.StatusFound
 				w.Header().Set("Location", result.Redirect)
 				w.WriteHeader(entry.Status)
 				return
 			}
+			track := match.trackHeaders(request.Header, result)
 			applyHeaders(request.Header, result)
+			track()
+			entry.Rewritten = match.finish()
 		}
 	}
-	rule := findRule(rules, "response", target)
-	if rule != nil && request.Header.Get("Range") == "" {
+	if responseMatch >= 0 && request.Header.Get("Range") == "" {
 		request.Header.Del("Accept-Encoding")
 	}
 	response, err := transport.RoundTrip(request)
@@ -97,8 +108,11 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 	defer response.Body.Close()
 	response.Header = cleanHeaders(response.Header)
 	entry.Status = response.StatusCode
-	if rule != nil {
-		state := s.rewriteResponse(ctx, rule, scriptInput{URL: target, Method: r.Method, Status: entry.Status}, response)
+	if responseMatch >= 0 {
+		match := &matches[responseMatch]
+		match.OriginalStatus = response.StatusCode
+		state := s.rewriteResponse(ctx, &rules[match.RuleIndex], scriptInput{URL: target, Method: r.Method, Status: entry.Status}, response, match)
+		entry.Rewritten = match.finish() || entry.Rewritten
 		if entry.Rewrite == "" {
 			entry.Rewrite = state
 		} else {
@@ -113,17 +127,24 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 	capturedResponse.failed = capturedResponse.failed || err != nil
 }
 
-func (s *session) runScript(ctx context.Context, rule *compiledRule, input scriptInput) (rewrite, bool) {
+func (s *session) runScript(ctx context.Context, rule *compiledRule, input scriptInput, match *RewriteMatch) rewrite {
+	start := time.Now()
+	defer func() { match.DurationUS = time.Since(start).Microseconds() }()
 	select {
 	case s.scriptSlots <- struct{}{}:
 		defer func() { <-s.scriptSlots }()
-		return rule.run(ctx, input)
+		result, code := rule.run(ctx, input)
+		match.Error = code
+		return result
 	default:
-		return rewrite{}, false
+		match.Error = "busy"
+		return rewrite{}
 	}
 }
 
-func (s *session) rewriteResponse(ctx context.Context, rule *compiledRule, input scriptInput, response *http.Response) string {
+var bodyValidators = []string{"ETag", "Last-Modified", "Content-MD5", "Digest", "Content-Digest", "Repr-Digest", "Accept-Ranges"}
+
+func (s *session) rewriteResponse(ctx context.Context, rule *compiledRule, input scriptInput, response *http.Response, match *RewriteMatch) string {
 	body := response.Body
 	if accessibleBody(input, response) {
 		content, err := io.ReadAll(io.LimitReader(body, maxBody+1))
@@ -136,18 +157,25 @@ func (s *session) rewriteResponse(ctx context.Context, rule *compiledRule, input
 			input.Body = &text
 		}
 	}
-	result, ok := s.runScript(ctx, rule, input)
-	if !ok || (result.Body != nil && input.Body == nil) {
+	result := s.runScript(ctx, rule, input, match)
+	if result.Body != nil && input.Body == nil {
+		match.Error = "body_unavailable"
+	}
+	if match.Error != "" {
 		return "response_skipped"
 	}
+	track := match.trackHeaders(response.Header, result)
 	applyHeaders(response.Header, result)
 	if result.Body != nil {
+		match.Body = &BodyChange{Before: len(*input.Body), After: len(*result.Body)}
+		match.Actions = append(match.Actions, "body")
 		response.Body = io.NopCloser(strings.NewReader(*result.Body))
 		response.Header.Set("Content-Length", strconv.Itoa(len(*result.Body)))
-		for _, header := range []string{"ETag", "Last-Modified", "Content-MD5", "Digest", "Content-Digest", "Repr-Digest", "Accept-Ranges"} {
+		for _, header := range bodyValidators {
 			response.Header.Del(header)
 		}
 	}
+	track()
 	return "response"
 }
 

@@ -25,7 +25,11 @@ func TestPatchedCoreKeepsOriginalInboundRoute(t *testing.T) {
 	}
 	layout := paths.New(t.TempDir())
 	controller := New(layout)
-	if err := controller.ReplaceRules([]Rule{{"^http://", "response", `return {body: input.body.toUpperCase()};`}}); err != nil {
+	if err := controller.ReplaceRules([]Rule{
+		{"^http://", "request", `return {set_headers: {"X-Capture-Request":"changed"}};`},
+		{"^http://", "request", `return {reject: true};`},
+		{"^http://", "response", `return {body: input.body.toUpperCase()};`},
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := controller.Start(); err != nil {
@@ -33,6 +37,9 @@ func TestPatchedCoreKeepsOriginalInboundRoute(t *testing.T) {
 	}
 	t.Cleanup(controller.Stop)
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if body, err := io.ReadAll(r.Body); err != nil || string(body) != "hello" {
+			t.Errorf("unexpected upstream request body: %q, %v", body, err)
+		}
 		w.Header().Set("Content-Type", "text/plain")
 		w.Header().Set("X-Capture-Response", "http")
 		_, _ = io.WriteString(w, "selected")
@@ -59,7 +66,7 @@ func TestPatchedCoreKeepsOriginalInboundRoute(t *testing.T) {
 	}
 	request("SELECTED")
 	got := controller.Entries()
-	if len(got) != 1 || got[0].Outbound != "match-original-inbound" || got[0].Rewrite != "response" || got[0].Target != "/path?q=fixture" {
+	if len(got) != 1 || got[0].Outbound != "match-original-inbound" || got[0].Rewrite != "request+response" || !got[0].Rewritten || got[0].Target != "/path?q=fixture" {
 		t.Fatalf("unexpected capture: %+v", got)
 	}
 	record, ok := controller.Record(got[0].ID)
@@ -67,6 +74,19 @@ func TestPatchedCoreKeepsOriginalInboundRoute(t *testing.T) {
 		record.HTTP.Request.Headers.Get("X-Capture-Request") != "http" || record.HTTP.Request.Body.Data != "hello" ||
 		record.HTTP.Response.Headers.Get("X-Capture-Response") != "http" || record.HTTP.Response.Body.Data != "SELECTED" {
 		t.Fatalf("HTTP capture detail mismatch: %+v", record.HTTP)
+	}
+	exit := record.Exit
+	if exit == nil || exit.Inbound != "netproxy-in" || exit.Remote != strings.TrimPrefix(origin.URL, "http://") ||
+		len(exit.Chain) != 2 || exit.Chain[0] != (ExitHop{"match-original-inbound", "selector"}) ||
+		exit.Chain[1] != (ExitHop{"capture-node", "direct"}) {
+		t.Fatalf("unexpected capture exit: %+v", exit)
+	}
+	audit := record.HTTP.Rewrites
+	if len(audit) != 3 || audit[0].State != "applied" || len(audit[0].Headers) != 1 ||
+		strings.Join(audit[0].Headers[0].Before, ",") != "http" || strings.Join(audit[0].Headers[0].After, ",") != "changed" ||
+		audit[1].State != "shadowed" || audit[2].State != "applied" ||
+		audit[2].Body == nil || *audit[2].Body != (BodyChange{8, 8}) || audit[2].OriginalStatus != http.StatusOK {
+		t.Fatalf("unexpected rewrite audit: %+v", audit)
 	}
 	controller.Stop()
 	request("selected")
@@ -128,14 +148,14 @@ func startCaptureTestCoreWithVLESS(t *testing.T, core string, layout paths.Layou
 func startCaptureTestSOCKS(t *testing.T, core string, layout paths.Layout, vless bool) string {
 	t.Helper()
 	address, port := reserveCaptureTestPort(t)
-	upstreamInbound, upstreamOutbound := "", `{"type":"direct","tag":"match-original-inbound"}`
+	upstreamInbound, upstreamOutbound := "", `{"type":"direct","tag":"capture-node"}`
 	if vless {
 		_, relayPort := reserveCaptureTestPort(t)
 		const uuid = "50ddddd4-e3a9-4f33-af4c-e989629769d3"
 		upstreamInbound = fmt.Sprintf(`,{"type":"vless","tag":"test-relay","listen":"127.0.0.1","listen_port":%d,"users":[{"uuid":%q}]}`, relayPort, uuid)
-		upstreamOutbound = fmt.Sprintf(`{"type":"vless","tag":"match-original-inbound","server":"127.0.0.1","server_port":%d,"uuid":%q}`, relayPort, uuid)
+		upstreamOutbound = fmt.Sprintf(`{"type":"vless","tag":"capture-node","server":"127.0.0.1","server_port":%d,"uuid":%q}`, relayPort, uuid)
 	}
-	config := fmt.Sprintf(`{"inbounds":[{"type":"mixed","tag":"netproxy-in","listen":"127.0.0.1","listen_port":%d}%s],"outbounds":[%s,{"type":"direct","tag":"direct"},{"type":"block","tag":"block"}],"route":{"netproxy_capture_socket":%q,"final":"block","rules":[{"inbound":"netproxy-in","action":"route","outbound":"match-original-inbound"},{"inbound":"test-relay","action":"route","outbound":"direct"}]}}`, port, upstreamInbound, upstreamOutbound, layout.TrafficSocket())
+	config := fmt.Sprintf(`{"inbounds":[{"type":"mixed","tag":"netproxy-in","listen":"127.0.0.1","listen_port":%d}%s],"outbounds":[%s,{"type":"selector","tag":"match-original-inbound","outbounds":["capture-node"]},{"type":"direct","tag":"direct"},{"type":"block","tag":"block"}],"route":{"netproxy_capture_socket":%q,"final":"block","rules":[{"inbound":"netproxy-in","action":"route","outbound":"match-original-inbound"},{"inbound":"test-relay","action":"route","outbound":"direct"}]}}`, port, upstreamInbound, upstreamOutbound, layout.TrafficSocket())
 	configPath := filepath.Join(layout.Root(), "test-core.json")
 	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
 		t.Fatal(err)

@@ -1,10 +1,13 @@
 package com.fanjv.netproxy.feature.traffic
 
 import com.fanjv.netproxy.feature.traffic.data.CaptureRecord
+import com.fanjv.netproxy.feature.traffic.data.CaptureExit
+import com.fanjv.netproxy.feature.traffic.data.CaptureHop
 import com.fanjv.netproxy.feature.traffic.data.CapturedBody
 import com.fanjv.netproxy.feature.traffic.data.CapturedHttp
 import com.fanjv.netproxy.feature.traffic.data.CapturedMessage
 import com.fanjv.netproxy.feature.traffic.presentation.asCurl
+import com.fanjv.netproxy.feature.traffic.presentation.bodyChunks
 import com.fanjv.netproxy.feature.traffic.presentation.displayBody
 import com.fanjv.netproxy.feature.traffic.presentation.matchesSession
 import org.junit.Assert.assertEquals
@@ -13,6 +16,23 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TrafficPresentationTest {
+    @Test fun filtersByActualRewriteAppAndSelectedNode() {
+        val record = CaptureRecord("now", "GET", "example.test", "Proxy", 200, durationMs = 1,
+            rewritten = true, exit = CaptureExit(chain = listOf(CaptureHop("Auto", "urltest"),
+                CaptureHop("node-x", "direct")), packageName = "com.example.app"))
+        assertTrue(record.matchesSession("", null, null, null, true, "com.example.app", "node-x"))
+        assertFalse(record.copy(rewritten = false).matchesSession("", null, null, null, rewrittenOnly = true))
+        assertFalse(record.matchesSession("", null, null, null, outbound = "node-y"))
+        assertFalse(record.matchesSession("", null, null, null, app = "com.example.other"))
+    }
+
+    @Test fun bodyChunksPreserveLineBreaksAndUnicode() {
+        val data = "prefix\n" + "x".repeat(2047) + "🚀\nend"
+        val chunks = bodyChunks(data)
+        assertEquals(data, chunks.joinToString(""))
+        assertTrue(chunks.all { it.length <= 2048 && !it.last().isHighSurrogate() })
+    }
+
     @Test fun sessionSearchMatchesPathAndCombinesFilters() {
         val record = CaptureRecord("2026-01-01T00:00:00Z", "POST", "example.test", "direct", 201,
             tls = "decrypted", durationMs = 2, target = "/orders?q=new")

@@ -9,6 +9,7 @@ import { createPoller } from '../src/polling.ts'
 import { complete, replaceCompletion } from '../src/autocomplete.ts'
 import { parseCommandLine } from '../src/command.ts'
 import { formatCtlOutput } from '../src/format.ts'
+import { formatCaptureBody } from '../src/capture-detail.ts'
 import { mockCtl } from '../src/mock.ts'
 import { COMMANDS } from '../src/commands.ts'
 
@@ -114,6 +115,13 @@ test('原生策略组补全与预览区分配置快照和运行时操作', () =>
   assert.equal(run('policy', 'select', 'Proxy').code, 'usage.invalid')
   assert.equal(run('node', 'use', 'auto').code, 'usage.invalid')
   assert.equal(run('sub', 'activate', 'default').code, 'usage.invalid')
+})
+
+test('抓包正文仅格式化有效 JSON，保留原始文本与截断内容', () => {
+  const body = '{"order":"NP-2048"}'
+  assert.equal(formatCaptureBody(body, 'Application/Problem+JSON; charset=UTF-8'), '{\n  "order": "NP-2048"\n}')
+  assert.equal(formatCaptureBody(body, 'text/plain'), body)
+  assert.equal(formatCaptureBody('{broken', 'application/json'), '{broken')
 })
 
 test('策略组选择结果未知时保留核心错误，不伪造确认', () => {

@@ -3,6 +3,9 @@ package com.fanjv.netproxy.feature.traffic.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fanjv.netproxy.core.api.ModuleApiException
+import com.fanjv.netproxy.feature.apps.data.AndroidApp
+import com.fanjv.netproxy.feature.apps.data.AppIconCache
+import com.fanjv.netproxy.feature.apps.data.AppPackageRepository
 import com.fanjv.netproxy.feature.traffic.data.CaptureCertificate
 import com.fanjv.netproxy.feature.traffic.data.CaptureDetail
 import com.fanjv.netproxy.feature.traffic.data.CaptureRecord
@@ -38,6 +41,7 @@ internal data class RecordDetailState(
     val loading: Boolean = false,
     val detail: CaptureDetail? = null,
     val error: Throwable? = null,
+    val app: AndroidApp? = null,
 )
 
 internal data class TrafficState(
@@ -59,6 +63,7 @@ internal data class TrafficState(
 internal class TrafficViewModel(
     private val repository: TrafficRepository,
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+    private val packages: AppPackageRepository? = null,
 ) : ViewModel(scope) {
     private val _state = MutableStateFlow(TrafficState())
     val state = _state.asStateFlow()
@@ -72,10 +77,30 @@ internal class TrafficViewModel(
         _state.update { it.copy(selectedRecord = RecordDetailState(record, loading = id != null)) }
         if (id == null) return
         detailJob = viewModelScope.launch {
-            val result = attempt { repository.detail(id) }
-            _state.update {
-                it.copy(selectedRecord = RecordDetailState(record,
-                    detail = result.getOrNull(), error = result.exceptionOrNull()))
+            launch {
+                val result = attempt { repository.detail(id) }
+                _state.update {
+                    it.copy(selectedRecord = it.selectedRecord?.copy(loading = false,
+                        detail = result.getOrNull(), error = result.exceptionOrNull()))
+                }
+            }
+            val exit = record.exit
+            val catalog = packages
+            val name = exit?.packageName
+            if (catalog != null && name != null) {
+                val app = attempt {
+                    val matches = catalog.snapshot().users.asSequence().flatMap { it.apps.asSequence() }
+                        .filter { it.packageName == name && (exit.uid == null || it.uid == exit.uid) }
+                    matches.firstOrNull()
+                }.getOrNull()
+                if (app != null) {
+                    _state.update { it.copy(selectedRecord = it.selectedRecord?.copy(app = app)) }
+                    val key = app.iconKey
+                    if (key.isNotEmpty() && AppIconCache.cachedIcon(key) == null) {
+                        val generation = AppIconCache.generation
+                        attempt { AppIconCache.putIcon(key, catalog.icon(key), generation) }
+                    }
+                }
             }
         }
     }
