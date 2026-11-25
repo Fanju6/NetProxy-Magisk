@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxSize
@@ -54,6 +55,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -200,25 +202,21 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
 
 @Composable
 private fun InspectSourceApp(record: CaptureRecord, app: AndroidApp?) {
-    val packageName = record.sourceApp?.packageName ?: record.exit?.packageName
-    val uid = record.sourceApp?.uid ?: record.exit?.uid
-    val user = record.sourceApp?.userId
-    if (packageName == null && uid == null && user == null) return
-
-    val bitmap = app?.let {
-        remember(it.iconKey, AppIconCache.revision) { AppIconCache.cachedIcon(it.iconKey) }
-    }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            packageName?.let {
-                val appText = if (app == null || app.label == it) it else "${app.label}\n$it"
-                InspectRow(stringResource(R.string.traffic_app), appText)
-            }
-            uid?.let { InspectRow("UID", it.toString()) }
-            user?.let { InspectRow(stringResource(R.string.traffic_app_user), it.toString()) }
+    (record.sourceApp?.packageName ?: record.exit?.packageName)?.let { packageName ->
+        val bitmap = app?.let {
+            remember(it.iconKey, AppIconCache.revision) { AppIconCache.cachedIcon(it.iconKey) }
         }
-        bitmap?.let { Image(it, null, Modifier.size(36.dp).clip(RoundedCornerShape(9.dp))) }
+        val appText = if (app == null || app.label == packageName) packageName else "${app.label}\n$packageName"
+        InspectRow(stringResource(R.string.traffic_app), appText) {
+            bitmap?.let {
+                Image(it, null, Modifier.align(Alignment.CenterVertically).padding(start = 6.dp)
+                    .size(36.dp).clip(RoundedCornerShape(9.dp)))
+            }
+        }
+    }
+    (record.sourceApp?.uid ?: record.exit?.uid)?.let { InspectRow("UID", it.toString()) }
+    record.sourceApp?.userId?.let {
+        InspectRow(stringResource(R.string.traffic_app_user), it.toString())
     }
 }
 
@@ -385,11 +383,19 @@ private fun InspectCard(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun InspectRow(key: String, value: String, modifier: Modifier = Modifier, monospace: Boolean = false) {
+private fun InspectRow(
+    key: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    monospace: Boolean = false,
+    trailing: @Composable RowScope.() -> Unit = {},
+) {
     val style = MiuixTheme.textStyles.footnote1.copy(lineHeight = 16.sp)
-    Row(modifier.fillMaxWidth().padding(vertical = 1.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(key, Modifier.weight(0.40f), style = style, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
-        Text(value, Modifier.weight(0.60f), style = if (monospace) style.copy(fontFamily = FontFamily.Monospace) else style)
+    Row(modifier.fillMaxWidth().padding(vertical = 1.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(key, Modifier.fillMaxWidth(0.40f), style = style, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+        Text(value, Modifier.weight(1f), textAlign = TextAlign.Start,
+            style = if (monospace) style.copy(fontFamily = FontFamily.Monospace) else style)
+        trailing()
     }
 }
 
