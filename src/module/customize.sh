@@ -484,6 +484,8 @@ apply_hot_update() {
   write_log INFO success - "后台热更新已完成，无需重启设备"
   SERVICE_STOPPED=true
   restore_live_service || write_log WARN failed service.restore_failed "新版已应用，后台 Worker 或服务恢复失败，请在管理器中检查"
+  "$LIVE_DIR/bin/netproxyctl" __internal google-firewall --module-dir "$LIVE_DIR" </dev/null >/dev/null 2>&1 \
+    || write_log WARN failed google_firewall.launch_failed "新版已应用，未能执行 Google 联网修复"
 }
 
 # 参数: 无。

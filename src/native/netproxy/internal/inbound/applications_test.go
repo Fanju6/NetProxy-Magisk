@@ -13,6 +13,19 @@ import (
 	"time"
 )
 
+func TestExclusivePackageUIDsSkipsSharedAndSystemUIDs(t *testing.T) {
+	packages := map[string]uint32{
+		"com.google.android.gms": 10123,
+		"com.android.vending":    10456,
+		"com.example.unrelated":  10456,
+		"com.example.system":     1000,
+	}
+	got := exclusivePackageUIDs(packages, []string{"com.google.android.gms", "com.android.vending", "com.example.system", "com.example.missing"})
+	if !reflect.DeepEqual(got, map[uint32]bool{10123: true}) {
+		t.Fatalf("unexpected UIDs: %v", got)
+	}
+}
+
 func TestPackageQueryPreservesCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()

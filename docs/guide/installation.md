@@ -49,6 +49,17 @@ Release 与 CI 统一提供 `NetProxy_<版本>_<构建号>.zip`，包含模块�
 
 下一步见[快速开始](/guide/quick-start)。
 
+### Google 联网兼容
+
+模块启用时，Android 启动完成约一分钟后自动检查一次。安装或升级成功热激活时也会立即在后台检查一次，无需重启；若新版本仍在暂存，等下次开机。无需安装管理器，也不受代理启停或自启设置影响：
+
+- 红魔、努比亚和中兴：只移除厂商专用 `zte_fw_gms` 链中明确匹配主用户 Google Play 服务或商店的单应用拦截规则。
+- 使用已识别厂商 BPF 程序的 ColorOS 16（一加、OPPO，arm64）：检测到系统自动限制、且没有手动设置标记时，只移除主用户 Google Play 服务、商店和 Google 配置更新器对应的拦截记录。保留共享防火墙规则、DNS 规则和其他应用记录。
+
+不识别的固件或规则保持原样。如果切网时 ROM 重新施加拦截，模块不会持续移除。
+
+参考：[ColorOS-Google-Firewall-Fixer](https://github.com/CHIZI-0618/ColorOS-Google-Firewall-Fixer) · [红魔实机规则记录](https://zhuangzhuang.io/2026/07/23/1784773676389)
+
 ## 升级注意事项
 
 - 不要从旧安装包手工复制二进制、运行时文件或临时状态目录。

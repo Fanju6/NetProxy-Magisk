@@ -120,6 +120,8 @@ func (c *cli) runInternal(ctx context.Context, args []string) int {
 	switch args[0] {
 	case "boot":
 		handler = runModuleBoot
+	case "google-firewall":
+		handler = runGoogleFirewallRepair
 	case "worker":
 		handler = runWorker
 	default:

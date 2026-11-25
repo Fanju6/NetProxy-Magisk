@@ -22,6 +22,7 @@
 
 - `netproxyctl` 是仓库唯一 Go 可执行文件；CLI 与模块 HTTP API 直接复用同一领域函数，Android 仅通过模块 HTTPS API 调用业务，当前终端 WebUI 仍调用 CLI。模块生命周期使用同一二进制的隐藏 `__internal` 入口。
 - `__internal` 只允许 `boot` 与 `worker start|stop|run` 这类进程生命周期入口。Catalog、节点、订阅、配置、eBPF、Service API 和服务操作必须由公共命令直接调用 Go 领域处理器，不得重新建立内部命令转发层。
+- Google 联网兼容在冷启动或成功热激活后执行一次，不依赖代理自启或管理器。热激活只在新目录切换并释放安装锁后从后台调用，失败不影响安装，不在回滚、代理启停或重载时执行。红魔等只按完整规格删除 `zte_fw_gms` 精确 UID 规则；ColorOS 16 只处理已确认的厂商 BPF 程序绑定表、系统标记的自动限制和目标应用独占 UID。保留手动策略、不清空链表、不改共享规则或 DNS。
 - 机器接口固定使用 `schema=1` JSON。stdout 只能包含结果 JSON，日志与诊断写 stderr；字段、错误码或状态语义变化必须同步检查 Shell、Go、Android、WebUI 和测试。
 - Native 运行日志固定为 `[timestamp] [LEVEL] [component] [event] [result] [error_code] message`，成功或无错误码时写 `-`；消息必须在落盘前统一脱敏和限长。`logs show service` 的 `entries` 是 Android 展示事实源，不得回退到旧文本猜测。`logs show core` 保持 sing-box 文本，由客户端使用独立解析逻辑。
 - 核心日志使用原生 `log.output=stderr`（省略时同样使用内核默认 stderr），Go 将 stdout/stderr 绑定同一个 `0600` 追加文件句柄并禁用颜色；不得让内核另开日志文件或使用随 CLI 退出的管道采集。核心退出后才允许在下次启动前轮转，清空必须截断当前 inode 并删除备份，不能重命名运行中的日志，否则继承句柄会继续写入不可见文件。

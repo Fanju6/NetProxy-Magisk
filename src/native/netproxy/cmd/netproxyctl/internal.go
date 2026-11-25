@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"io"
 	"os"
@@ -41,6 +42,19 @@ func runModuleBoot(ctx context.Context, args []string) error {
 	return nil
 }
 
+func runGoogleFirewallRepair(ctx context.Context, args []string) error {
+	flags := newFlagSet("google-firewall")
+	root := flags.String("module-dir", defaultModuleDir(), "模块根目录")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return errors.New("google-firewall 不接受位置参数")
+	}
+	moduleapp.RepairGoogleConnectivity(ctx, moduleapp.NewOptions(*root), 0)
+	return nil
+}
+
 func newFlagSet(name string) *flag.FlagSet {
 	flags := flag.NewFlagSet(name, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -52,6 +66,7 @@ func internalUsageText() string {
 
 用法：
   netproxyctl __internal boot --module-dir <模块目录>
+  netproxyctl __internal google-firewall --module-dir <模块目录>
   netproxyctl __internal worker <start|stop|run> --module-dir <模块目录>
 `
 }

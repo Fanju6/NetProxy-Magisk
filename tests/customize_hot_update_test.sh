@@ -71,6 +71,7 @@ write_module() {
     'printf "%s\n" "$*" >> "$CALL_LOG"' \
     'case "$1:$2:$3" in' \
     '  __internal:worker:stop) exit "${TEST_WORKER_STOP:-0}" ;;' \
+    '  __internal:google-firewall:--module-dir) exit "${TEST_GOOGLE_FIREWALL:-0}" ;;' \
     '  service:stop:) exit "${TEST_SERVICE_STOP:-0}" ;;' \
     '  config:check:) exit "${TEST_CONFIG_CHECK:-0}" ;;' \
     '  api:init:) exit "${TEST_API_INIT:-0}" ;;' \
@@ -102,7 +103,7 @@ reset_modules() {
   SERVICE_STOPPED=false
   KEY_PID=""
   TEST_RUNNING=false
-  unset TEST_WORKER_STOP TEST_SERVICE_STOP TEST_CONFIG_CHECK TEST_PIDOF TEST_API_INIT
+  unset TEST_WORKER_STOP TEST_SERVICE_STOP TEST_CONFIG_CHECK TEST_PIDOF TEST_API_INIT TEST_GOOGLE_FIREWALL
 }
 
 assert_value() { grep -Fxq "$2" "$1"; }
@@ -450,6 +451,8 @@ test_hot_update() (
     [ ! -e "$STAGE/NetProxy.apk" ]
     INSTALL_MODE="$mode"
     INSTALLER_PID=99999999
+    if [ "$mode" = preserve ]; then TEST_RUNNING=true; fi
+    if [ "$mode" = nodes ]; then export TEST_GOOGLE_FIREWALL=1; fi
     sleep() { :; }
     with_user_data_locks() {
       CATALOG_LOCK=data/.catalog.netproxy-test.lock
@@ -464,6 +467,16 @@ test_hot_update() (
     grep -Fq '后台热更新已完成' "$LIVE/logs/service.log"
     grep -q '^__internal worker start' "$CALL_LOG"
     grep -Fxq 'api init' "$CALL_LOG"
+    [ "$(grep -Fxc "__internal google-firewall --module-dir $LIVE" "$CALL_LOG")" -eq 1 ]
+    [ "$(tail -n 1 "$CALL_LOG")" = "__internal google-firewall --module-dir $LIVE" ]
+    if [ "$mode" = preserve ]; then
+      grep -Fxq 'service start' "$CALL_LOG"
+    else
+      ! grep -Fxq 'service start' "$CALL_LOG"
+    fi
+    if [ "$mode" = nodes ]; then
+      grep -Fq 'google_firewall.launch_failed' "$LIVE/logs/service.log"
+    fi
     [ -z "$(find "$WORKDIR/modules" -name '.netproxy.install-backup.*' -print)" ]
   done
 )
@@ -522,6 +535,7 @@ test_hot_update_latest_data() (
   [ -d "$STAGE" ] && [ -f "$LIVE/update" ]
   assert_value "$LIVE/data/catalog/default/provider.json" latest-provider
   grep -q '^__internal worker start' "$CALL_LOG"
+  ! grep -q '^__internal google-firewall' "$CALL_LOG"
 )
 
 test_hot_rename_failure() (
@@ -702,6 +716,7 @@ test_installer_entrypoints() (
   assert_inbound "$LIVE/config/inbound/inbound.json" current
   grep -q '^__internal worker start' "$CALL_LOG"
   ! grep -q '^service start$' "$CALL_LOG"
+  grep -Fxq "__internal google-firewall --module-dir $LIVE" "$CALL_LOG"
 )
 
 test_title_spacing

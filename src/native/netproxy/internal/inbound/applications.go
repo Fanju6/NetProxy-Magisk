@@ -86,6 +86,30 @@ func ResolvePackageUIDs(ctx context.Context, refs []PackageRef) (PackageUIDResol
 	return resolvePackageUIDs(refs, func(user uint32) (map[string]uint32, error) { return listPackageUIDs(ctx, user) })
 }
 
+// ResolveExclusivePackageUIDs excludes UIDs shared with packages outside the requested set.
+func ResolveExclusivePackageUIDs(ctx context.Context, user uint32, names ...string) (map[uint32]bool, error) {
+	packages, err := listPackageUIDs(ctx, user)
+	if err != nil {
+		return nil, err
+	}
+	return exclusivePackageUIDs(packages, names), nil
+}
+
+func exclusivePackageUIDs(packages map[string]uint32, names []string) map[uint32]bool {
+	uids := make(map[uint32]bool, len(names))
+	for _, name := range names {
+		if uid, ok := packages[name]; ok && uid >= 10000 {
+			uids[uid] = true
+		}
+	}
+	for name, uid := range packages {
+		if uids[uid] && !slices.Contains(names, name) {
+			delete(uids, uid)
+		}
+	}
+	return uids
+}
+
 func resolvePackageUIDs(refs []PackageRef, list func(uint32) (map[string]uint32, error)) (PackageUIDResolution, error) {
 	if len(refs) == 0 {
 		return PackageUIDResolution{UIDs: []uint32{}}, nil

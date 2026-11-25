@@ -102,7 +102,7 @@ func TestDefaultTimeoutDoesNotPreemptSubscriptionMutation(t *testing.T) {
 
 func TestInternalUsageOnlyListsProcessEntrypoints(t *testing.T) {
 	usage := internalUsageText()
-	for _, expected := range []string{"__internal boot", "__internal worker <start|stop|run>"} {
+	for _, expected := range []string{"__internal boot", "__internal google-firewall", "__internal worker <start|stop|run>"} {
 		if !strings.Contains(usage, expected) {
 			t.Fatalf("usage missing process entry %q: %s", expected, usage)
 		}
