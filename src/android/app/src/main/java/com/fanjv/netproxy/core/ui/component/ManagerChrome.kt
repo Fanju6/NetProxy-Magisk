@@ -6,6 +6,12 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.tappableElement
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -141,8 +147,18 @@ internal fun ManagerDialog(show: Boolean, title: String?, summary: String?, onDi
 
 @Composable
 internal fun ManagerSheet(show: Boolean, title: String?, onDismissRequest: () -> Unit, content: @Composable () -> Unit) {
-    GlassBottomSheet(onDismissRequest = onDismissRequest, show = show,
-        backdrop = glassBackdrop(LocalManagerBackdrop.current), title = title, content = content)
+    GlassBottomSheet(
+        onDismissRequest = onDismissRequest,
+        show = show,
+        backdrop = glassBackdrop(LocalManagerBackdrop.current),
+        title = title,
+        modifier = Modifier.windowInsetsPadding(
+            WindowInsets.tappableElement.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
+        ),
+    ) {
+        // Keep the glass behind the gesture bar, but keep the sheet's controls above it.
+        Box(Modifier.navigationBarsPadding()) { content() }
+    }
 }
 
 @Composable
