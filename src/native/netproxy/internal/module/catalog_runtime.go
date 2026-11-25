@@ -244,9 +244,12 @@ func validateProviderReferences(config map[string]jsontext.Value, outbounds []po
 		return ok && !members[member]
 	}
 	for _, group := range outbounds {
+		// A still-referenced Provider can change its members; core warns and
+		// falls back when the configured default vanishes from that Provider.
+		canFallback := len(members) > 0 && (group.UseAll || slices.Contains(group.Providers, tag))
 		if group.isGroup() && (!group.UseAll && len(members) == 0 && slices.Contains(group.Providers, tag) ||
 			slices.ContainsFunc(group.Outbounds, missing) ||
-			group.Type == "selector" && missing(group.Default)) {
+			group.Type == "selector" && missing(group.Default) && !canFallback) {
 			return blocked
 		}
 	}

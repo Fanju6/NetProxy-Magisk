@@ -60,7 +60,8 @@ jobs:
           fi
 
           changed=false
-          if [ "$latest" != "$current" ]; then
+          # A -next snapshot can be newer than the last upstream release tag.
+          if [ "$latest" != "${current%-next.*}" ]; then
             changed=true
           fi
 
@@ -157,7 +158,8 @@ jobs:
           release_url="$(jq -r '.html_url // empty' <<< "$release_json")"
           release_notes="$(jq -r '.body // empty' <<< "$release_json")"
           published_at="$(jq -r '.published_at // empty' <<< "$release_json")"
-          compare_url="https://github.com/${{ steps.singbox_check.outputs.repo }}/compare/${CURRENT_VERSION}...${LATEST_VERSION}"
+          current_ref="${CURRENT_VERSION##*-next.}"
+          compare_url="https://github.com/${{ steps.singbox_check.outputs.repo }}/compare/${current_ref}...${LATEST_VERSION}"
           build_tags="$(jq -c '.singBox.buildTags' .github/resources.json)"
 
           jq -n \

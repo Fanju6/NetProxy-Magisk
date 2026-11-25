@@ -47,11 +47,11 @@ func TestNativePolicyTargetCoreSelectionPersistsByGroup(t *testing.T) {
 	_ = listener.Close()
 	config := []byte(fmt.Sprintf(`{
 		"log":{"disabled":true},
-		"experimental":{"cache_file":{"enabled":true,"path":"cache.db"}},
+		"experimental":{"cache_file":{"enabled":true,"path":"cache.db","cache_id":"fixture"}},
 		"services":[{"type":"api","listen":"127.0.0.1","listen_port":%d,"secret":"fixture"}],
 		"outbounds":[
 			{"type":"selector","tag":"Main","outbounds":["direct","Work"],"use_all_providers":true,"default":"direct"},
-			{"type":"selector","tag":"Work","outbounds":["direct"],"providers":["同名订阅 (2)"],"default":"direct"},
+			{"type":"selector","tag":"Work","outbounds":["direct"],"providers":["同名订阅 (2)"],"default":"同名订阅 (2)/shared"},
 			{"type":"direct","tag":"direct"}
 		],
 		"route":{"final":"Main"}
@@ -154,24 +154,24 @@ func TestNativePolicyTargetCoreSelectionPersistsByGroup(t *testing.T) {
 	var previousIdentity int64
 	run(func(identity int64) {
 		previousIdentity = identity
-		checkGroups(identity, "direct", "direct")
+		checkGroups(identity, "direct", "同名订阅 (2)/shared")
 		work := service.PolicyTarget{CoreStartedAtMillis: identity, GroupTag: "Work"}
-		if _, err := SelectPolicyGroup(ctx, options, work, "同名订阅 (2)/shared"); err != nil {
+		if _, err := SelectPolicyGroup(ctx, options, work, "direct"); err != nil {
 			t.Fatal(err)
 		}
-		checkGroups(identity, "direct", "同名订阅 (2)/shared")
+		checkGroups(identity, "direct", "direct")
 		main := service.PolicyTarget{CoreStartedAtMillis: identity, GroupTag: "Main"}
 		if _, err := SelectPolicyGroup(ctx, options, main, "同名订阅/shared"); err != nil {
 			t.Fatal(err)
 		}
-		checkGroups(identity, "同名订阅/shared", "同名订阅 (2)/shared")
+		checkGroups(identity, "同名订阅/shared", "direct")
 		name := "Renamed subscription"
 		edited, err := EditSubscription(ctx, options, "b", subscription.EditOptions{Name: &name})
 		var problem *service.Error
 		if !errors.As(err, &problem) || problem.Code != "catalog.provider_in_use" || edited.Persisted {
 			t.Fatalf("explicit Provider reference must block rename: %+v: %v", edited, err)
 		}
-		checkGroups(identity, "同名订阅/shared", "同名订阅 (2)/shared")
+		checkGroups(identity, "同名订阅/shared", "direct")
 		if _, err := NodeAppend(ctx, options, "a", "socks://127.0.0.1:1081#added", false); err != nil {
 			t.Fatal(err)
 		}
@@ -208,11 +208,28 @@ func TestNativePolicyTargetCoreSelectionPersistsByGroup(t *testing.T) {
 		if !errors.As(err, &rejected) || rejected.Code != "policy.core_changed" {
 			t.Fatalf("stale selection was not rejected: %v", err)
 		}
-		checkGroups(identity, "同名订阅/shared", "同名订阅 (2)/shared")
+		checkGroups(identity, "同名订阅/shared", "direct")
 	})
+	if err := WriteServiceState(options.StateFile, "stopped", 0, 0, 0, ""); err != nil {
+		t.Fatal(err)
+	}
+	target := service.PolicyTarget{GroupTag: "Main"}
+	stopped, err := SelectPolicyGroup(ctx, options, target, "同名订阅 (2)/shared")
+	if err != nil || stopped.Live || stopped.Groups[0].ConfiguredDefault != "同名订阅 (2)/shared" {
+		t.Fatalf("offline selection was not persisted: %+v: %v", stopped, err)
+	}
+	run(func(identity int64) {
+		checkGroups(identity, "同名订阅 (2)/shared", "direct")
+	})
+	persisted := string(targetCoreRead(t, filepath.Join(dir, "config.json")))
+	if !strings.Contains(persisted, `"default": "同名订阅 (2)/shared"`) ||
+		!strings.Contains(persisted, `"default": "direct"`) {
+		t.Fatal("live and offline selections did not both persist native defaults")
+	}
 	emptyConfig := strings.NewReplacer(
 		`"providers":["同名订阅 (2)"]`, `"use_all_providers":true`,
 		`"default":"direct"`, `"default":"block"`,
+		`"default":"同名订阅 (2)/shared"`, `"default":"block"`,
 		`"outbounds":["direct"`, `"outbounds":["block"`,
 		`{"type":"direct","tag":"direct"}`, `{"type":"direct","tag":"direct"},{"type":"block","tag":"block"}`,
 	).Replace(string(config))

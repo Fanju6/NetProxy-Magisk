@@ -34,6 +34,7 @@ const MODULE_CONFIG = {
 }
 
 const INBOUND_CONFIG = { ...inboundDefaults, backend: inboundDefaults.backend as InboundBackend }
+const policySelector = { type: 'selector', tag: 'Proxy', outbounds: ['block'], use_all_providers: true, default: 'block', interrupt_exist_connections: true }
 
 const STATIC_CONFIG: Record<string, unknown> = {
   log: { level: 'info' },
@@ -41,7 +42,7 @@ const STATIC_CONFIG: Record<string, unknown> = {
   inbounds: [],
   route: { final: 'Proxy' },
   outbounds: [
-    { type: 'selector', tag: 'Proxy', outbounds: ['block'], use_all_providers: true, default: 'block', interrupt_exist_connections: true },
+    policySelector,
     { type: 'direct', tag: 'direct' },
     { type: 'block', tag: 'block' },
   ],
@@ -117,7 +118,8 @@ function policySnapshot() {
     core_started_at_millis: live ? 1_700_000_005_000 : 0,
     groups: [{
       tag: 'Proxy', type: 'selector', selectable: live,
-      ...(live ? { selected: 'block' } : { configured_default: 'block' }),
+      configured_default: policySelector.default,
+      ...(live ? { selected: 'block' } : {}),
       items: [{ tag: 'block', type: 'block' }, { tag: '本地配置/demo-node', type: 'socks' }],
     }],
   }
@@ -181,6 +183,12 @@ function execute(args: string[]): CtlResult<unknown> {
 
   if (command === 'policy') {
     if ((!action || action === 'groups') && clean.length <= 2) return response('policy.groups', '策略组快照（预览）', policySnapshot())
+    if (action === 'select' && clean.length === 4 && serviceState === 'stopped') {
+      if (clean[2] !== policySelector.tag) return failure('policy.group_not_found', '没有这个策略组')
+      if (!policySnapshot().groups[0].items.some(item => item.tag === clean[3])) return failure('policy.member_not_found', '没有这个成员')
+      policySelector.default = clean[3]
+      return response('policy.selected', '默认节点已保存（预览）', policySnapshot())
+    }
     if (action === 'select' && clean.length === 4 || action === 'delay' && clean.length === 3) {
       return failure('policy.preview_unavailable', '开发预览不连接 sing-box 核心')
     }

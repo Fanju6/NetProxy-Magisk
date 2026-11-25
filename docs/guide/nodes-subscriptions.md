@@ -75,7 +75,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl policy groups'
 
 ## 测速
 
-代理页和 `policy delay` 只在服务运行时请求核心测速；停止时只能查看配置成员。
+代理页和 `policy delay` 只在服务运行时请求核心测速。服务停止时，Selector 会高亮配置的默认节点，也可以换一个作为下次启动的默认节点。
 
 ## CLI 示例
 

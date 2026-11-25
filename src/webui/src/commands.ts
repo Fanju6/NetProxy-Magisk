@@ -66,7 +66,7 @@ configured_backend 是保存的入站；active_backend 仅在 ready 且 PID/API 
     help: `policy - sing-box 原生策略组
 
   policy groups                  查看策略组、成员与当前选择
-  policy select <组标签> <成员标签>  切换运行中的 Selector 成员
+  policy select <组标签> <成员标签>  选择 Selector 成员并保存默认节点
   policy delay <组标签>            请求测速；随后用 policy groups 查看结果
 
 使用 policy groups 返回的原始标签，含空格时请加引号。停止时仅能查看配置。

@@ -195,7 +195,7 @@ func TestPublicCommandsKeepSingleJSONContract(t *testing.T) {
 		{"catalog show default", "catalog.show", 0},
 		{"node list", "node.list", 0},
 		{"policy groups", "policy.groups", 0},
-		{"policy select Work direct", "policy.core_changed", 1},
+		{"policy select Work direct", "policy.selected", 0},
 		{"policy delay Work", "policy.core_changed", 1},
 		{"policy select Work", "usage.invalid", 2},
 		{"policy groups extra", "usage.invalid", 2},

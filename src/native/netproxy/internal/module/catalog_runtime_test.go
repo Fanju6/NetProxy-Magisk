@@ -238,7 +238,8 @@ func TestSubscriptionCandidateCannotRemoveConfiguredMember(t *testing.T) {
 	}
 	path := filepath.Join(dir, "provider.json")
 	before := targetCoreRead(t, path)
-	targetCoreWrite(t, paths.SingBoxConfig(options.SingBoxDir), []byte(`{"outbounds":[{"type":"selector","tag":"Work","providers":["fixture"],"default":"fixture/OLD"}]}`))
+	config := paths.SingBoxConfig(options.SingBoxDir)
+	targetCoreWrite(t, config, []byte(`{"outbounds":[{"type":"selector","tag":"Work","providers":["fixture"],"outbounds":["fixture/OLD"],"default":"fixture/OLD"}]}`))
 	_, err = UpdateSubscription(t.Context(), options, id)
 	var problem *subscription.Error
 	if !errors.As(err, &problem) || problem.Code != "catalog.provider_in_use" {
@@ -247,5 +248,13 @@ func TestSubscriptionCandidateCannotRemoveConfiguredMember(t *testing.T) {
 	metadata, err := catalog.LoadMetadata(t.Context(), filepath.Join(dir, "meta.json"), id)
 	if err != nil || metadata.Revision != old.Revision || !bytes.Equal(targetCoreRead(t, path), before) {
 		t.Fatalf("rejected candidate changed the persisted provider: %v", err)
+	}
+	defaultOnly := []byte(`{"outbounds":[{"type":"selector","tag":"Work","providers":["fixture"],"default":"fixture/OLD"}]}`)
+	targetCoreWrite(t, config, defaultOnly)
+	if result, err := UpdateSubscription(t.Context(), options, id); err != nil || !result.Persisted {
+		t.Fatalf("subscription update should allow the core to fall back: %+v: %v", result, err)
+	}
+	if !bytes.Equal(targetCoreRead(t, config), defaultOnly) {
+		t.Fatal("subscription update silently changed the user's default")
 	}
 }

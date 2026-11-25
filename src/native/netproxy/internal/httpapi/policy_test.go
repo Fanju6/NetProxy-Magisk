@@ -17,8 +17,9 @@ func TestPolicyRoutesWhileCoreStopped(t *testing.T) {
 	server := resourceFixture(t)
 	resourceWriteFile(t, paths.SingBoxConfig(server.options.SingBoxDir), `{
 		"outbounds": [
-			{"type":"selector","tag":"Work","outbounds":["direct"],"providers":["external"],"default":"direct"},
-			{"type":"direct","tag":"direct"}
+			{"type":"selector","tag":"Work","outbounds":["direct","block"],"providers":["external"],"default":"direct"},
+			{"type":"direct","tag":"direct"},
+			{"type":"block","tag":"block"}
 		]
 	}`)
 	var snapshot service.PolicySnapshot
@@ -29,9 +30,14 @@ func TestPolicyRoutesWhileCoreStopped(t *testing.T) {
 	}
 	group := snapshot.Groups[0]
 	if group.Tag != "Work" || group.Type != "selector" || group.Selectable || group.Selected != "" || group.ConfiguredDefault != "direct" ||
-		len(group.Items) != 1 || group.Items[0].Tag != "direct" || group.Items[0].Type != "direct" ||
+		len(group.Items) != 2 || group.Items[0].Tag != "direct" || group.Items[0].Type != "direct" ||
 		len(group.UnavailableProviders) != 1 || group.UnavailableProviders[0] != "external" {
 		t.Fatalf("unexpected configured group: %+v", group)
+	}
+	resourceAssertSuccess(t, server, http.MethodPost, route+"/select", `{"group_tag":"Work","member_tag":"block","core_started_at_millis":0}`, "policy.selected", &snapshot)
+	resourceAssertSuccess(t, server, http.MethodGet, route, "", "policy.groups", &snapshot)
+	if snapshot.Live || snapshot.Groups[0].ConfiguredDefault != "block" || snapshot.Groups[0].Selected != "" {
+		t.Fatalf("offline selection did not remain a saved default: %+v", snapshot)
 	}
 
 	for _, test := range []struct {
@@ -43,6 +49,7 @@ func TestPolicyRoutesWhileCoreStopped(t *testing.T) {
 		{http.MethodGet, "?source=live", "", http.StatusBadRequest, "usage.invalid"},
 		{http.MethodGet, "?source=config&source=config", "", http.StatusBadRequest, "api.query_invalid"},
 		{http.MethodPost, "/select", `{"group_tag":"Work","member_tag":"direct"}`, http.StatusBadRequest, "policy.invalid"},
+		{http.MethodPost, "/select", `{"group_tag":"Work","member_tag":"missing","core_started_at_millis":0}`, http.StatusNotFound, "policy.member_not_found"},
 		{http.MethodPost, "/select", `{"group_tag":"Work","member_tag":"direct","core_started_at_millis":1}`, http.StatusConflict, "policy.core_changed"},
 		{http.MethodPost, "/delay", `{"group_tag":"Work","core_started_at_millis":1}`, http.StatusConflict, "policy.core_changed"},
 		{http.MethodPost, "/delay", `{"group_tag":"Work","core_started_at_millis":1,"member_tag":"direct"}`, http.StatusBadRequest, "usage.invalid"},

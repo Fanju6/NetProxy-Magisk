@@ -148,7 +148,7 @@ su -c '/data/adb/modules/netproxy/netproxyctl logs export /sdcard/Download/netpr
 
 模块设置的唯一文件是 `config/module.json`，`module` 目标读取或替换整份 JSON。`module/wifi` 与 `module/auto_start` 分别使用 `{"wifi": {...}}`、`{"auto_start": true}`，拥有独立 revision；在同一个 `module.json.lock` 内合并最新其他字段。分区不能用 `{}` 删除或携带其他顶层字段。没有 `module/selection` 目标。单独保存 `auto_start` 只影响下次开机。
 
-`policy groups` 返回核心或持久配置中的策略组。`policy select` 使用原始策略组和成员标签，仅支持运行中的可选组，并在核心回读确认后返回成功。`policy delay` 只请求测速，需再通过 `policy groups` 查看结果。两种操作都不自动重试。
+`policy groups` 返回核心或持久配置中的策略组。`policy select` 使用原始策略组和成员标签，只支持 Selector。停服时保存配置默认节点；运行时先由核心回读确认，再保存 `default`，无需重载。`policy delay` 仅在运行时请求测速，需再通过 `policy groups` 查看结果。两种操作都不自动重试。
 
 受管入站使用 `inbound` 完整目标与 `inbound/backend`、`inbound/root_policy`、`inbound/app`、`inbound/ebpf`、`inbound/tun` 分区；分区保留对应顶层字段，例如 `{"backend":"tun"}`，不能用 `{}` 删除。Root 策略可用 `{"root_policy":"default"}`、`include`（接管）或 `exclude`（绕过），独立于应用名单。它们共用同一磁盘文件，没有 `config ebpf` 目标。包含实际入站的只读生效配置为 `runtime/config.json`。
 

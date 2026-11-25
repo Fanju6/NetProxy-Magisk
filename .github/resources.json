@@ -170,7 +170,7 @@
     "path": "src/module/bin/sing-box",
     "repo": "reF1nd/sing-box",
     "tagPattern": "^v[0-9].*-reF1nd$",
-    "currentVersion": "v1.15.0-alpha.13-reF1nd",
+    "currentVersion": "v1.15.0-alpha.13-reF1nd-next.77c0dbbe",
     "buildTags": [
       "with_quic",
       "with_utls",

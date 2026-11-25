@@ -28,13 +28,18 @@ func (s *Server) readPolicyGroups(ctx context.Context, r *http.Request) (contrac
 
 func (s *Server) selectPolicyGroup(ctx context.Context, r *http.Request) (contract.Result, error) {
 	var input struct {
-		service.PolicyTarget
-		MemberTag string `json:"member_tag"`
+		CoreStartedAtMillis *int64 `json:"core_started_at_millis"`
+		GroupTag            string `json:"group_tag"`
+		MemberTag           string `json:"member_tag"`
 	}
 	if err := resourceDecode(r, &input); err != nil {
 		return contract.Result{}, err
 	}
-	groups, err := module.SelectPolicyGroup(ctx, s.options, input.PolicyTarget, input.MemberTag)
+	if input.CoreStartedAtMillis == nil {
+		return contract.Result{}, &service.Error{Code: "policy.invalid", Message: "必须提供核心实例标识，停服时为 0"}
+	}
+	target := service.PolicyTarget{CoreStartedAtMillis: *input.CoreStartedAtMillis, GroupTag: input.GroupTag}
+	groups, err := module.SelectPolicyGroup(ctx, s.options, target, input.MemberTag)
 	return contract.Success("policy.selected", "策略组选择已确认", groups), err
 }
 

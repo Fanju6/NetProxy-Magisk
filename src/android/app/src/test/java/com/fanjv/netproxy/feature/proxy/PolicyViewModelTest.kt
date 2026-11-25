@@ -407,11 +407,19 @@ class PolicyViewModelTest {
     @Test fun offlineDefaultAndAsynchronousDelayUseDifferentContracts() = runBlocking {
         val calls = CopyOnWriteArrayList<ApiTestRequest>()
         val coreStarted = CompletableDeferred<Unit>()
+        val saved = AtomicReference("direct")
         val scope = CoroutineScope(coroutineContext + SupervisorJob(coroutineContext.job))
         val transport = policyTransport(beforeLive = { coreStarted.await() }) { request ->
             calls += request
             when (request.path) {
-                "/policy-groups" -> apiSuccess(snapshot(live = false))
+                "/policy-groups" -> apiSuccess(snapshot(live = false, selected = saved.get()))
+                "/policy-groups/select" -> {
+                    assertEquals("0", request.text("core_started_at_millis"))
+                    assertEquals("Work / 组", request.text("group_tag"))
+                    assertEquals("Example/日本", request.text("member_tag"))
+                    saved.set("Example/日本")
+                    apiSuccess(snapshot(live = false, selected = saved.get()))
+                }
                 "/policy-groups/delay" -> {
                     assertEquals("Auto", request.text("group_tag"))
                     assertEquals("1234", request.text("core_started_at_millis"))
@@ -423,17 +431,28 @@ class PolicyViewModelTest {
         val vm = PolicyViewModel(PolicyRepository(ModuleApiClient(transport, scope)), scope)
         try {
             vm.setVisible(true)
-            withTimeout(5_000) { vm.state.first { !it.loading } }
-            assertFalse(vm.state.value.live)
-            assertEquals("direct", vm.state.value.snapshot?.groups?.first()?.configuredDefault)
-            vm.select("Work / 组", "Example/日本")
+            val stopped = withTimeout(5_000) { vm.state.first { it.stopped && !it.loading } }
+            val groups = stopped.snapshot!!.groups
+            val selector = groups.first()
+            assertEquals("direct", stopped.selectedMember(selector))
+            assertTrue(stopped.canSelect(selector, selector.items.last()))
+            assertFalse(stopped.canSelect(groups.last(), groups.last().items.single()))
             vm.delay("Auto")
             assertTrue(calls.none { it.mutation })
+            vm.select(selector.tag, selector.items.last().tag)
+            val updated = withTimeout(5_000) {
+                vm.state.first { !it.operating && it.configured?.groups?.first()?.configuredDefault == "Example/日本" }
+            }
+            val selected = updated.snapshot!!.groups.first()
+            assertEquals("Example/日本", updated.selectedMember(selected))
+            assertEquals("", selected.selected)
+            assertFalse(updated.live)
+            assertEquals(1, calls.count { it.mutation })
             coreStarted.complete(Unit)
             withTimeout(5_000) { vm.state.first { it.live } }
             vm.delay("Auto")
             withTimeout(5_000) { vm.state.first { !it.operating } }
-            assertEquals(1, calls.count { it.mutation })
+            assertEquals(2, calls.count { it.mutation })
             assertEquals(setOf("Auto"), vm.state.value.manualTests.keys)
             assertEquals(0, vm.state.value.snapshot?.groups?.last()?.items?.single()?.delay)
             vm.setVisible(false)

@@ -6,16 +6,17 @@ require (
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/mdlayher/genetlink v1.4.0
 	github.com/mdlayher/wifi v0.9.0
-	github.com/sagernet/netlink v0.0.0-20260814022025-64455d367bbf
-	github.com/sagernet/sing v0.9.7-0.20261023115510-03a6cce64bf7
-	github.com/sagernet/sing-box v1.15.0-alpha.13-reF1nd
-	github.com/sagernet/sing-tun v0.9.7-0.20261023115453-611d83b7a57b
+	github.com/sagernet/bbolt v0.0.0-20260915102804-500ee1e84832
+	github.com/sagernet/netlink v0.0.0-20261116064630-4ea47d5d44b1
+	github.com/sagernet/sing v0.9.7-0.20261110095940-27b73774b240
+	github.com/sagernet/sing-box v1.14.5-0.20261124140525-77c0dbbeba88
+	github.com/sagernet/sing-tun v0.9.7-0.20261119022030-4486c14ba472
 	golang.org/x/sys v0.47.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-replace github.com/sagernet/sing-box => github.com/reF1nd/sing-box v1.15.0-alpha.13-reF1nd
+replace github.com/sagernet/sing-box => github.com/reF1nd/sing-box v1.14.5-0.20261124140525-77c0dbbeba88
 
 require (
 	github.com/florianl/go-nfqueue/v2 v2.1.0 // indirect
@@ -29,9 +30,9 @@ require (
 	github.com/miekg/dns v1.1.72 // indirect
 	github.com/sagernet/fswatch v0.1.2 // indirect
 	github.com/sagernet/gvisor v0.0.0-20260727.0-sing-box-mod.1 // indirect
-	github.com/sagernet/nftables v0.3.0-mod.4 // indirect
+	github.com/sagernet/nftables v0.3.0-mod.4.0.20261114074246-0b310c3e010b // indirect
 	github.com/sagernet/sing-usbip v0.0.0-20260817040617-28bd42667eca // indirect
-	github.com/sagernet/sing-vmess v0.2.9-0.20261019223527-a0c58542bd9d // indirect
+	github.com/sagernet/sing-vmess v0.2.9-0.20261116164733-ca746ebade33 // indirect
 	github.com/vishvananda/netns v0.0.5 // indirect
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba // indirect
 	golang.org/x/crypto v0.54.0 // indirect

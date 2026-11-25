@@ -44,16 +44,19 @@ func (c *cli) policy(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	if state.State != "ready" || state.CoreStartedAtMillis <= 0 {
+	if action == "delay" && (state.State != "ready" || state.CoreStartedAtMillis <= 0) {
 		return &service.Error{Code: "policy.core_changed", Message: "核心尚未就绪，请启动后再试"}
 	}
-	target := service.PolicyTarget{CoreStartedAtMillis: state.CoreStartedAtMillis, GroupTag: args[1]}
+	target := service.PolicyTarget{GroupTag: args[1]}
+	if state.State == "ready" {
+		target.CoreStartedAtMillis = state.CoreStartedAtMillis
+	}
 	if action == "select" {
 		confirmed, err := moduleapp.SelectPolicyGroup(ctx, c.options, target, args[2])
 		if err != nil {
 			return err
 		}
-		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "policy.selected", Message: "核心已确认选择", Data: confirmed})
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "policy.selected", Message: "默认节点已保存", Data: confirmed})
 		return nil
 	}
 	if err := moduleapp.RequestPolicyDelay(ctx, c.options, target); err != nil {

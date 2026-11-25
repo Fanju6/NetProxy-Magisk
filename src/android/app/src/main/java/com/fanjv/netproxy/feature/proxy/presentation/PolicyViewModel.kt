@@ -7,6 +7,7 @@ import com.fanjv.netproxy.core.ui.UiText
 import com.fanjv.netproxy.core.ui.toUiText
 import com.fanjv.netproxy.feature.proxy.data.PolicyDelayStore
 import com.fanjv.netproxy.feature.proxy.data.PolicyDelays
+import com.fanjv.netproxy.feature.proxy.data.PolicyGroup
 import com.fanjv.netproxy.feature.proxy.data.PolicyMember
 import com.fanjv.netproxy.feature.proxy.data.PolicyRepository
 import com.fanjv.netproxy.feature.proxy.data.PolicySnapshot
@@ -40,6 +41,15 @@ internal data class PolicyState(
 ) {
     val loading: Boolean get() = refreshing || (configured == null && !stale)
     val live: Boolean get() = !stale && runtimeConfirmed && snapshot?.live == true
+    val stopped: Boolean get() = !stale && runtimeConfirmed && runtime?.live == false
+
+    fun selectedMember(group: PolicyGroup): String =
+        if (stale) "" else if (stopped && group.type == "selector") group.configuredDefault else group.selected
+
+    fun canSelect(group: PolicyGroup, member: PolicyMember): Boolean = !operating &&
+        (live && group.selectable && member.runtimeAvailable ||
+            stopped && group.type == "selector" && member.type.isNotEmpty())
+
     val snapshot: PolicySnapshot? by lazy {
         configured?.withRuntime(runtime.takeUnless { runtimeUnavailable }) { tag, member ->
             if (runtimeConfirmed && delays.coreIdentity == runtime?.coreIdentity) {
@@ -187,9 +197,11 @@ internal class PolicyViewModel(
     }
 
     fun select(group: String, member: String) {
-        val current = mutable.value.snapshot?.groups?.firstOrNull { it.tag == group } ?: return
-        if (!current.selectable || current.selected == member ||
-            current.items.none { it.tag == member && it.runtimeAvailable }
+        val current = mutable.value
+        val target = current.snapshot?.groups?.firstOrNull { it.tag == group } ?: return
+        val item = target.items.firstOrNull { it.tag == member } ?: return
+        if (!current.canSelect(target, item) ||
+            (current.selectedMember(target) == member && target.configuredDefault == member)
         ) return
         operate(group) { identity -> repository.select(identity, group, member) }
     }
@@ -240,8 +252,8 @@ internal class PolicyViewModel(
     private fun operate(group: String, testDelay: Boolean = false, action: suspend (Long) -> PolicySnapshot?) {
         val current = mutable.value
         val snapshot = current.snapshot ?: return
-        if (!visible || !current.live || current.operating ||
-            snapshot.groups.none { it.tag == group && it.items.any { member -> member.runtimeAvailable } }
+        if (!visible || current.operating || (!current.live && (testDelay || !current.stopped)) ||
+            (testDelay && snapshot.groups.none { it.tag == group && it.items.any { member -> member.runtimeAvailable } })
         ) return
         val generation = visibilityGeneration
         val test = if (testDelay) ManualPolicyTest(
@@ -264,11 +276,16 @@ internal class PolicyViewModel(
                         applyRuntime(runtime, group to test)
                     }
                 }
-                if (visible && generation == visibilityGeneration && confirmed?.coreIdentity == snapshot.coreIdentity &&
-                    mutable.value.runtime?.coreIdentity == confirmed.coreIdentity && mutable.value.runtimeConfirmed
-                ) {
-                    runtimeRevision++
-                    applyRuntime(confirmed)
+                if (visible && generation == visibilityGeneration && confirmed != null) {
+                    val latest = mutable.value
+                    if (!confirmed.live && latest.stopped) {
+                        mutable.update { it.copy(configured = confirmed) }
+                    } else if (confirmed.live && confirmed.coreIdentity == snapshot.coreIdentity &&
+                        latest.runtime?.coreIdentity == confirmed.coreIdentity && latest.runtimeConfirmed
+                    ) {
+                        runtimeRevision++
+                        applyRuntime(confirmed)
+                    }
                 }
             } catch (error: CancellationException) {
                 throw error
@@ -277,7 +294,7 @@ internal class PolicyViewModel(
                 postNotice(error.toUiText(), isError = true)
             } finally {
                 mutable.update { it.copy(operating = false) }
-                if (configuredRefreshPending || mutable.value.configured == null) refresh()
+                if (!testDelay || configuredRefreshPending || mutable.value.configured == null) refresh()
                 if (!mutable.value.runtimeConfirmed) refreshRuntime()
             }
         }
