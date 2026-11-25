@@ -4,8 +4,10 @@ import (
 	"crypto/rand"
 	"errors"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 )
@@ -75,5 +77,40 @@ func TestCaptureHistoryEvictsWholeOldestBatch(t *testing.T) {
 	if len(batches) != 2 || batches[0].Count != 1 || batches[1].Count != 1 ||
 		batches[0].Size+batches[1].Size > c.history.byteLimit {
 		t.Fatalf("retained batches: %+v", batches)
+	}
+}
+
+func TestCaptureHistoryPagesBeyondMemoryRing(t *testing.T) {
+	layout := paths.New(t.TempDir())
+	h := openHistory(layout)
+	batch := &savedBatch{Batch: Batch{ID: rand.Text(), StartedAt: time.Now().UTC()}}
+	h.start(batch)
+	for i := 1; i <= maxEntries+13; i++ {
+		if err := h.append(batch, Record{Entry: Entry{ID: rand.Text(), Host: strconv.Itoa(i)}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.finish(batch)
+	h = openHistory(layout)
+	var before uint64
+	for remaining := maxEntries + 13; remaining > 0; {
+		page, found := h.page(PageRequest{Batch: batch.ID, Before: before, Limit: 50})
+		if !found || len(page.Entries) != min(50, remaining) || page.Oldest != "1" {
+			t.Fatalf("missing page after %d: %+v", before, page)
+		}
+		for _, entry := range page.Entries {
+			if entry.Host != strconv.Itoa(remaining) {
+				t.Fatalf("expected %d, found %s", remaining, entry.Host)
+			}
+			remaining--
+		}
+		before, _ = strconv.ParseUint(page.Before, 10, 64)
+		if (before == 0) != (remaining == 0) {
+			t.Fatalf("cursor %d with %d remaining", before, remaining)
+		}
+	}
+	page, ok := h.page(PageRequest{Since: maxEntries, Incremental: true, Limit: 5})
+	if !ok || page.Since != "205" || len(page.Entries) != 5 || page.Entries[4].Host != "201" || page.Entries[0].Host != "205" {
+		t.Fatalf("increment skipped records: %+v", page)
 	}
 }

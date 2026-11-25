@@ -18,6 +18,7 @@ export const COMMANDS = {
   api traffic toggle | start | stop        切换或启停全局透明抓包
   api traffic status | clear                查看状态或清空所有抓包批次
   api traffic batches | list [批次ID]        查看批次或批次记录（默认当前或最近批次）
+  api traffic page [批次ID [游标]]           分页读取已保存的记录
   api traffic delete-batch <批次ID>          删除已停止的批次
   api traffic detail <ID>                   查看出口、重写记录、请求和响应详情
   api traffic apps | set-apps <文件>        查看或保存抓包应用名单和 disable_quic
@@ -209,7 +210,7 @@ const CONFIG_TARGETS = [
 ]
 
 export const VALUE_COMPLETIONS: Record<string, string[]> = {
-  'api traffic': ['status', 'toggle', 'start', 'stop', 'batches', 'list', 'delete-batch', 'detail', 'clear', 'rules', 'set-rules', 'mitm', 'set-mitm', 'apps', 'set-apps', 'pinned', 'clear-pinned', 'ca', 'ca-init', 'ca-export', 'ca-remove'],
+  'api traffic': ['status', 'toggle', 'start', 'stop', 'batches', 'list', 'page', 'delete-batch', 'detail', 'clear', 'rules', 'set-rules', 'mitm', 'set-mitm', 'apps', 'set-apps', 'pinned', 'clear-pinned', 'ca', 'ca-init', 'ca-export', 'ca-remove'],
   'app mode': ['blacklist', 'whitelist'],
   'ebpf status': ['configured', 'all', 'local', 'shared', '--raw'],
   'logs show': ['service', 'core'],

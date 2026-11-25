@@ -1,5 +1,6 @@
 package com.fanjv.netproxy.feature.traffic.data
 
+import android.content.Context
 import com.fanjv.netproxy.core.api.ModuleApiClient
 import com.fanjv.netproxy.core.api.ModuleApiException
 import kotlinx.serialization.SerialName
@@ -7,6 +8,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
+import java.io.File
 
 @Serializable
 internal data class CaptureStatus(val running: Boolean, val count: Int)
@@ -17,6 +19,15 @@ internal data class CaptureBatch(
     @SerialName("started_at") val startedAt: String,
     val count: Int,
     val running: Boolean,
+)
+
+@Serializable
+internal data class CapturePage(
+    val entries: List<CaptureRecord>,
+    val batch: String? = null,
+    val before: String? = null,
+    val since: String? = null,
+    val oldest: String? = null,
 )
 
 @Serializable
@@ -155,12 +166,34 @@ internal data class CaptureCertificate(val pem: String, val filename: String, va
                 .matches(pem.trim())
 }
 
-internal class TrafficRepository(private val api: ModuleApiClient) {
+internal class TrafficRepository(private val api: ModuleApiClient, private val cache: CapturePageCache? = null) {
+    constructor(api: ModuleApiClient, context: Context) :
+        this(api, CapturePageCache(File(context.applicationContext.cacheDir, "traffic-pages"), api.json))
+
     suspend fun status(): CaptureStatus = api.read("/traffic/status")
     suspend fun records(batch: String? = null): List<CaptureRecord> =
         api.read("/traffic/list", if (batch == null) emptyMap() else mapOf("batch" to batch))
-    suspend fun batches(): List<CaptureBatch> = api.read("/traffic/batches")
-    suspend fun deleteBatch(id: String) { api.delete("/traffic/batches", mapOf("id" to id)) }
+    suspend fun page(batch: String? = null, before: String? = null, since: String? = null, oldest: String? = null): CapturePage {
+        if (batch != null && before != null && oldest != null) {
+            cache?.read(batch, oldest, before)?.let { return it }
+        }
+        val page = api.read<CapturePage>("/traffic/page", buildMap {
+            batch?.let { put("batch", it) }
+            before?.let { put("before", it) }
+            since?.let { put("since", it) }
+        })
+        if (batch != null && before != null && page.batch == batch && page.oldest != null) {
+            cache?.write(batch, page.oldest, before, page)
+        }
+        return page
+    }
+    suspend fun batches(): List<CaptureBatch> = api.read<List<CaptureBatch>>("/traffic/batches").also { batches ->
+        cache?.retain(batches.mapTo(mutableSetOf()) { it.id })
+    }
+    suspend fun deleteBatch(id: String) {
+        api.delete("/traffic/batches", mapOf("id" to id))
+        cache?.invalidate(id)
+    }
     suspend fun detail(id: String): CaptureDetail = api.read("/traffic/detail", mapOf("id" to id))
     suspend fun rules(): List<RewriteRule> = api.read<RewriteRules>("/traffic/rules").rules
     suspend fun policy(): MitmPolicy = api.read("/traffic/mitm")
@@ -173,7 +206,8 @@ internal class TrafficRepository(private val api: ModuleApiClient) {
     suspend fun setCapture(enabled: Boolean): CaptureStatus =
         api.json.decodeFromJsonElement(api.post(if (enabled) "/traffic/start" else "/traffic/stop").data)
 
-    suspend fun clear(): CaptureStatus = api.json.decodeFromJsonElement(api.delete("/traffic/list").data)
+    suspend fun clear(): CaptureStatus =
+        api.json.decodeFromJsonElement<CaptureStatus>(api.delete("/traffic/list").data).also { cache?.invalidate() }
 
     suspend fun saveRules(expected: List<RewriteRule>, updated: List<RewriteRule>): List<RewriteRule> {
         if (rules() != expected) throw TrafficChangedException()

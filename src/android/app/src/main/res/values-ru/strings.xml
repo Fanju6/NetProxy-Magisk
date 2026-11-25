@@ -28,6 +28,7 @@
     <string name="traffic_clear">Очистить записи</string>
     <string name="traffic_clear_prompt">Удалить все сохранённые записи захвата?</string>
     <string name="traffic_default_batch">Текущая или последняя сессия</string>
+    <string name="traffic_load_older">Загрузить более ранние записи</string>
     <string name="traffic_delete_batch">Удалить сессию</string>
     <string name="traffic_delete_batch_prompt">Удалить эту сохранённую сессию захвата?</string>
     <string name="traffic_records">Перехваченные записи</string>

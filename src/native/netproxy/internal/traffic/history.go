@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,6 +23,8 @@ const (
 	historyBatchLimit  = 32
 	historyByteLimit   = 64 << 20
 	historyRecordLimit = 2 << 20
+	historyCountLimit  = 8192
+	MaxHistoryPage     = 100
 )
 
 type Batch struct {
@@ -34,8 +37,10 @@ type Batch struct {
 }
 
 type savedRecord struct {
-	name string
-	size int64
+	name     string
+	id       string
+	size     int64
+	sequence uint64
 }
 
 type savedBatch struct {
@@ -93,7 +98,7 @@ func openHistory(layout paths.Layout) *historyStore {
 			if err != nil || info.Size() == 0 || info.Size() > historyRecordLimit {
 				continue
 			}
-			saved := savedRecord{file.Name(), info.Size()}
+			saved := savedRecord{name: file.Name(), id: id, size: info.Size(), sequence: seq}
 			if _, ok := h.readRecord(batch, saved); !ok {
 				_ = os.Remove(h.path(batch.ID, file.Name()))
 				continue
@@ -112,7 +117,7 @@ func openHistory(layout paths.Layout) *historyStore {
 		h.batches = append(h.batches, batch)
 	}
 	slices.SortFunc(h.batches, func(a, b *savedBatch) int { return a.StartedAt.Compare(b.StartedAt) })
-	if err := h.prune(nil, 0); err != nil {
+	if err := h.prune(nil, 0, 0); err != nil {
 		h.warn()
 	}
 	return h
@@ -164,7 +169,7 @@ func (h *historyStore) start(batch *savedBatch) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.batches = append(h.batches, batch)
-	if h.saveBatch(batch) != nil || h.prune(batch, 0) != nil {
+	if h.saveBatch(batch) != nil || h.prune(batch, 0, 0) != nil {
 		h.warn()
 	}
 }
@@ -213,10 +218,10 @@ func (h *historyStore) append(batch *savedBatch, record Record) error {
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if err := h.prune(batch, size); err != nil {
+	if err := h.prune(batch, size, 1); err != nil {
 		return err
 	}
-	for batch.Count >= maxEntries || batch.Size+size > h.byteLimit {
+	for batch.Count >= historyCountLimit || batch.Size+size > h.byteLimit {
 		if err := h.removeOldestRecord(batch); err != nil {
 			return err
 		}
@@ -231,7 +236,7 @@ func (h *historyStore) append(batch *savedBatch, record Record) error {
 	if err := provider.WriteAtomic(h.path(batch.ID, name), data, 0o600); err != nil {
 		return err
 	}
-	batch.records = append(batch.records, savedRecord{name, size})
+	batch.records = append(batch.records, savedRecord{name, record.ID, size, batch.sequence})
 	batch.Count++
 	batch.Size += size
 	return nil
@@ -248,12 +253,13 @@ func (h *historyStore) removeOldestRecord(batch *savedBatch) error {
 	return nil
 }
 
-func (h *historyStore) prune(active *savedBatch, incoming int64) error {
+func (h *historyStore) prune(active *savedBatch, incoming int64, count int) error {
 	total := incoming
 	for _, batch := range h.batches {
 		total += batch.Size
+		count += batch.Count
 	}
-	for i := 0; i < len(h.batches) && (len(h.batches) > historyBatchLimit || total > h.byteLimit); {
+	for i := 0; i < len(h.batches) && (len(h.batches) > historyBatchLimit || total > h.byteLimit || count > historyCountLimit); {
 		batch := h.batches[i]
 		if batch == active {
 			i++
@@ -263,6 +269,7 @@ func (h *historyStore) prune(active *savedBatch, incoming int64) error {
 			return err
 		}
 		total -= batch.Size
+		count -= batch.Count
 		h.batches = slices.Delete(h.batches, i, i+1)
 	}
 	return nil
@@ -287,10 +294,10 @@ func (h *historyStore) entries(id string) ([]Entry, bool) {
 		if id != "" && batch.ID != id {
 			continue
 		}
-		for i := len(batch.records) - 1; i >= 0; i-- {
+		for i := len(batch.records) - 1; i >= 0 && len(out) < maxEntries; i-- {
 			file := batch.records[i]
-			if record, ok := h.readRecord(batch, file); ok {
-				out = append(out, record.Entry)
+			if entry, ok := h.readEntry(batch, file); ok {
+				out = append(out, entry)
 			}
 		}
 		return out, true
@@ -300,9 +307,14 @@ func (h *historyStore) entries(id string) ([]Entry, bool) {
 
 func (h *historyStore) readRecord(batch *savedBatch, file savedRecord) (Record, bool) {
 	var record Record
-	_, id := historyRecordName(file.name)
 	ok := readHistoryJSON(h.path(batch.ID, file.name), historyRecordLimit, &record)
-	return record, ok && id != "" && record.ID == id
+	return record, ok && record.ID == file.id
+}
+
+func (h *historyStore) readEntry(batch *savedBatch, file savedRecord) (Entry, bool) {
+	var entry Entry
+	ok := readHistoryJSON(h.path(batch.ID, file.name), historyRecordLimit, &entry)
+	return entry, ok && entry.ID == file.id
 }
 
 func (h *historyStore) record(id string) (Record, bool) {
@@ -310,12 +322,89 @@ func (h *historyStore) record(id string) (Record, bool) {
 	defer h.mu.Unlock()
 	for _, batch := range h.batches {
 		for _, file := range batch.records {
-			if _, candidate := historyRecordName(file.name); candidate == id {
+			if file.id == id {
 				return h.readRecord(batch, file)
 			}
 		}
 	}
 	return Record{}, false
+}
+
+type HistoryPage struct {
+	Batch   string  `json:"batch,omitempty"`
+	Entries []Entry `json:"entries"`
+	Before  string  `json:"before,omitempty"`
+	Since   string  `json:"since,omitempty"`
+	Oldest  string  `json:"oldest,omitempty"`
+}
+
+type PageRequest struct {
+	Batch         string
+	Before, Since uint64
+	Incremental   bool
+	Limit         int
+}
+
+func (c *Controller) HistoryPage(request PageRequest) (HistoryPage, bool) {
+	if c.history == nil {
+		return HistoryPage{Entries: []Entry{}}, request.Batch == ""
+	}
+	return c.history.page(request)
+}
+
+func (h *historyStore) page(request PageRequest) (HistoryPage, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	page := HistoryPage{Entries: []Entry{}}
+	for i := len(h.batches) - 1; i >= 0; i-- {
+		batch := h.batches[i]
+		if request.Batch != "" && request.Batch != batch.ID {
+			continue
+		}
+		page.Batch = batch.ID
+		if len(batch.records) == 0 {
+			return page, true
+		}
+		limit := min(MaxHistoryPage, max(1, request.Limit))
+		low, high := 0, len(batch.records)
+		page.Oldest = strconv.FormatUint(batch.records[0].sequence, 10)
+		if request.Incremental {
+			low, _ = slices.BinarySearchFunc(batch.records, request.Since, compareSequence)
+			for low < high && batch.records[low].sequence <= request.Since {
+				low++
+			}
+			high = min(high, low+limit)
+		} else {
+			if request.Before != 0 {
+				high, _ = slices.BinarySearchFunc(batch.records, request.Before, compareSequence)
+			}
+			low = max(0, high-limit)
+			if low > 0 {
+				page.Before = strconv.FormatUint(batch.records[low].sequence, 10)
+			}
+		}
+		if high > 0 {
+			page.Since = strconv.FormatUint(batch.records[high-1].sequence, 10)
+		}
+		for i := high - 1; i >= low; i-- {
+			if entry, ok := h.readEntry(batch, batch.records[i]); ok {
+				page.Entries = append(page.Entries, entry)
+			}
+		}
+		return page, true
+	}
+	return page, request.Batch == ""
+}
+
+func compareSequence(record savedRecord, sequence uint64) int {
+	switch {
+	case record.sequence < sequence:
+		return -1
+	case record.sequence > sequence:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func (h *historyStore) remove(id string, active *savedBatch) (bool, error) {

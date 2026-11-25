@@ -28,6 +28,7 @@
     <string name="traffic_clear">清空抓包记录</string>
     <string name="traffic_clear_prompt">清空所有已保存的抓包记录？</string>
     <string name="traffic_default_batch">当前或最近批次</string>
+    <string name="traffic_load_older">加载更早的记录</string>
     <string name="traffic_delete_batch">删除批次</string>
     <string name="traffic_delete_batch_prompt">删除这个已保存的抓包批次？</string>
     <string name="traffic_records">抓包记录</string>

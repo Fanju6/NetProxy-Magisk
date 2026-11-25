@@ -34,6 +34,7 @@ test('透明抓包帮助、补全与预览只提供只读状态', () => {
   assert.match(COMMANDS.api.help, /受管透明入站/)
   assert.deepEqual(decodeCtlResult(mockCtl(['api', 'traffic', 'list'])).data, [])
   assert.deepEqual(decodeCtlResult(mockCtl(['api', 'traffic', 'batches'])).data, [])
+  assert.deepEqual(decodeCtlResult(mockCtl(['api', 'traffic', 'page'])).data, { entries: [] })
   assert.deepEqual(complete('api traffic de').candidates, ['delete-batch', 'detail'])
   assert.equal(decodeCtlResult(mockCtl(['api', 'traffic', 'detail', 'AAAAAAAAAAAAAAAAAAAAAAAAAA'])).code, 'traffic.record_not_found')
   assert.deepEqual(decodeCtlResult(mockCtl(['api', 'traffic', 'rules'])).data, { rules: [] })

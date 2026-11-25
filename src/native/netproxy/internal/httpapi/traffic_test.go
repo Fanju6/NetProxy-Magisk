@@ -89,7 +89,16 @@ func TestTrafficBatchContract(t *testing.T) {
 	id := batches[0].ID
 	target := trafficRoute + "batches?id=" + id
 	resourceAssertSuccess(t, s, http.MethodGet, trafficRoute+"list?batch="+id, "", "traffic.list", &entries)
-	w, result := resourceRequest(t, s, http.MethodDelete, target, "")
+	var page traffic.HistoryPage
+	resourceAssertSuccess(t, s, http.MethodGet, trafficRoute+"page?batch="+id+"&limit=20&since=1", "", "traffic.page", &page)
+	if page.Batch != id || page.Entries == nil {
+		t.Fatalf("invalid initial page: %+v", page)
+	}
+	w, result := resourceRequest(t, s, http.MethodGet, trafficRoute+"page?before=1&since=1", "")
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("mutually exclusive page cursors: %d, %s", w.Code, result.Code)
+	}
+	w, result = resourceRequest(t, s, http.MethodDelete, target, "")
 	if w.Code != http.StatusConflict || result.Code != "traffic.batch_running" {
 		t.Fatalf("delete running batch: %d, %s", w.Code, result.Code)
 	}

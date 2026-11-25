@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/contract"
@@ -46,6 +47,41 @@ func (s *Server) registerTraffic() {
 	})
 	s.trafficRoute("GET", "batches", "抓包批次", func(context.Context) (any, error) {
 		return s.traffic.Batches(), nil
+	})
+	s.route("GET "+trafficRoute+"page", 10*time.Second, false, func(_ context.Context, r *http.Request) (contract.Result, error) {
+		query, err := resourceQuery(r, "batch", "limit", "before", "after", "since")
+		if err != nil {
+			return contract.Result{}, err
+		}
+		request := traffic.PageRequest{Batch: query.Get("batch"), Limit: 50}
+		if query.Has("batch") && !traffic.ValidRecordID(request.Batch) {
+			return contract.Result{}, invalid("抓包批次 ID 无效")
+		}
+		if query.Has("limit") {
+			request.Limit, err = strconv.Atoi(query.Get("limit"))
+			if err != nil || request.Limit < 1 || request.Limit > traffic.MaxHistoryPage {
+				return contract.Result{}, invalid("抓包分页大小无效")
+			}
+		}
+		for _, key := range []string{"before", "after", "since"} {
+			if !query.Has(key) {
+				continue
+			}
+			cursor, err := strconv.ParseUint(query.Get(key), 10, 64)
+			if err != nil || cursor == 0 || request.Before != 0 || request.Incremental {
+				return contract.Result{}, invalid("抓包分页游标无效")
+			}
+			if key == "before" {
+				request.Before = cursor
+			} else {
+				request.Since, request.Incremental = cursor, true
+			}
+		}
+		page, ok := s.traffic.HistoryPage(request)
+		if !ok {
+			return contract.Result{}, captureBatchNotFound()
+		}
+		return contract.Success("traffic.page", "抓包记录分页", page), nil
 	})
 	s.route("DELETE "+trafficRoute+"batches", 10*time.Second, false, func(_ context.Context, r *http.Request) (contract.Result, error) {
 		query, err := resourceQuery(r, "id")

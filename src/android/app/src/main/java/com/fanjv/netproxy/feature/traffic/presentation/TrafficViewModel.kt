@@ -11,6 +11,7 @@ import com.fanjv.netproxy.feature.traffic.data.CaptureApps
 import com.fanjv.netproxy.feature.traffic.data.CaptureBatch
 import com.fanjv.netproxy.feature.traffic.data.CaptureCertificate
 import com.fanjv.netproxy.feature.traffic.data.CaptureDetail
+import com.fanjv.netproxy.feature.traffic.data.CapturePage
 import com.fanjv.netproxy.feature.traffic.data.CaptureRecord
 import com.fanjv.netproxy.feature.traffic.data.CaptureStatus
 import com.fanjv.netproxy.feature.traffic.data.MitmPolicy
@@ -54,6 +55,9 @@ internal data class TrafficState(
     val records: TrafficContent<List<CaptureRecord>> = TrafficContent(),
     val batches: TrafficContent<List<CaptureBatch>> = TrafficContent(),
     val selectedBatch: String? = null,
+    val page: CapturePage? = null,
+    val loadingOlder: Boolean = false,
+    val olderError: Throwable? = null,
     val rules: TrafficContent<List<RewriteRule>> = TrafficContent(),
     val policy: TrafficContent<MitmPolicy> = TrafficContent(),
     val pinned: TrafficContent<List<PinnedBypass>> = TrafficContent(),
@@ -82,6 +86,8 @@ internal class TrafficViewModel(
     private var started = false
     private var pendingCertificate: CaptureCertificate? = null
     private var detailJob: Job? = null
+    private var olderJob: Job? = null
+    private var pollJob: Job? = null
 
     fun openRecord(record: CaptureRecord) {
         detailJob?.cancel()
@@ -121,6 +127,7 @@ internal class TrafficViewModel(
 
     fun refresh() {
         if (started && state.value.busy) return
+        cancelPaging()
         started = true
         _state.update { it.copy(loading = true, failure = null) }
         viewModelScope.launch {
@@ -135,13 +142,12 @@ internal class TrafficViewModel(
                 val selected = state.value.selectedBatch?.takeUnless { id ->
                     nextBatches.getOrNull()?.none { it.id == id } == true
                 }
-                val nextRecords = attempt { repository.records(selected) }
+                val head = attempt { captureHead(selected) }
                 val nextRules = rules.await()
                 val nextPolicy = policy.await()
                 val nextApps = apps.await()
-                _state.update { current -> current.copy(
+                _state.update { current -> applyHead(current, head).copy(
                     status = current.status.refreshed(nextStatus),
-                    records = current.records.refreshed(nextRecords),
                     batches = current.batches.refreshed(nextBatches),
                     selectedBatch = selected,
                     rules = current.rules.refreshed(nextRules),
@@ -155,23 +161,104 @@ internal class TrafficViewModel(
 
     fun setCapture(enabled: Boolean) = mutate {
         val status = repository.setCapture(enabled)
-        val records = attempt { repository.records() }
+        val head = attempt { captureHead() }
         val batches = attempt { repository.batches() }
-        _state.update { it.copy(status = TrafficContent(status), records = it.records.refreshed(records),
+        _state.update { applyHead(it.copy(page = null), head).copy(status = TrafficContent(status),
             batches = it.batches.refreshed(batches), selectedBatch = null) }
     }
 
     fun selectBatch(id: String?) = mutate {
-        val records = repository.records(id)
-        _state.update { it.copy(selectedBatch = id, records = TrafficContent(records)) }
+        val head = captureHead(id)
+        _state.update { applyHead(it.copy(page = null), Result.success(head)).copy(selectedBatch = id) }
     }
 
     fun deleteBatch(id: String) = mutate {
         repository.deleteBatch(id)
         val batches = attempt { repository.batches() }
-        val records = attempt { repository.records() }
-        _state.update { it.copy(selectedBatch = null, records = TrafficContent<List<CaptureRecord>>().refreshed(records),
+        val head = attempt { captureHead() }
+        _state.update { applyHead(it.copy(page = null, records = TrafficContent()), head).copy(selectedBatch = null,
             batches = it.batches.refreshed(batches)) }
+    }
+
+    fun loadOlder() {
+        val current = state.value
+        val page = current.page ?: return
+        val before = page.before ?: return
+        if (current.busy || current.loadingOlder) return
+        _state.update { it.copy(loadingOlder = true, olderError = null) }
+        olderJob = viewModelScope.launch {
+            val result = attempt {
+                val older = repository.page(batch = page.batch, before = before, oldest = page.oldest)
+                if (older.oldest != page.oldest) captureHead(current.selectedBatch) to true else older to false
+            }
+            _state.update { latest ->
+                if (latest.page?.batch != page.batch || latest.page?.before != before) {
+                    latest.copy(loadingOlder = false)
+                } else result.fold(
+                    { (older, reset) ->
+                        if (reset) applyHead(latest, Result.success(older)).copy(loadingOlder = false)
+                        else latest.copy(
+                            page = latest.page?.copy(before = older.before),
+                            records = TrafficContent(mergeRecords(latest.records.value.orEmpty(), older.entries)),
+                            loadingOlder = false,
+                        )
+                    },
+                    { latest.copy(loadingOlder = false, olderError = it) },
+                )
+            }
+        }
+    }
+
+    fun pollRecords() {
+        val current = state.value
+        if (current.busy || current.loadingOlder || current.selectedBatch != null ||
+            current.status.value?.running != true || pollJob?.isActive == true) return
+        val previous = current.page ?: return
+        pollJob = viewModelScope.launch {
+            val update = attempt { repository.page(since = previous.since) }.getOrNull() ?: return@launch
+            val reset = previous.since == null || previous.batch != update.batch || previous.oldest != update.oldest
+            val head = if (reset && previous.since != null) attempt { captureHead() }.getOrNull() ?: return@launch else update
+            _state.update { latest ->
+                if (latest.page != previous || latest.selectedBatch != null) latest
+                else if (reset) applyHead(latest, Result.success(head))
+                else latest.copy(
+                    page = previous.copy(since = head.since),
+                    records = TrafficContent(mergeRecords(head.entries, latest.records.value.orEmpty())),
+                )
+            }
+        }
+    }
+
+    private suspend fun captureHead(id: String? = null): CapturePage = try {
+        repository.page(batch = id)
+    } catch (error: ModuleApiException) {
+        if (error.resultCode != "api.not_found") throw error
+        CapturePage(repository.records(id), batch = id)
+    }
+
+    private fun applyHead(state: TrafficState, result: Result<CapturePage>): TrafficState = result.fold(
+        { head ->
+            val prior = state.records.value.orEmpty()
+            val previous = state.page
+            val headIDs = head.entries.mapNotNullTo(mutableSetOf()) { it.id }
+            val retain = previous?.batch != null && previous.batch == head.batch && previous.oldest == head.oldest &&
+                prior.any { it.id in headIDs }
+            state.copy(
+                page = if (retain) head.copy(before = previous?.before) else head,
+                records = TrafficContent(if (retain) mergeRecords(head.entries, prior) else head.entries),
+                olderError = null,
+            )
+        },
+        { state.copy(records = state.records.copy(error = it)) },
+    )
+
+    private fun mergeRecords(newer: List<CaptureRecord>, older: List<CaptureRecord>): List<CaptureRecord> =
+        (newer + older).distinctBy { it.id }
+
+    private fun cancelPaging() {
+        olderJob?.cancel()
+        pollJob?.cancel()
+        _state.update { it.copy(loadingOlder = false, olderError = null) }
     }
 
     fun readPinned() = viewModelScope.launch {
@@ -194,8 +281,9 @@ internal class TrafficViewModel(
     fun clear() = mutate {
         val status = repository.clear()
         val batches = attempt { repository.batches() }
+        val head = attempt { captureHead() }
         _state.update { it.copy(status = TrafficContent(status), records = TrafficContent(emptyList()),
-            batches = it.batches.refreshed(batches), selectedBatch = null) }
+            batches = it.batches.refreshed(batches), selectedBatch = null, page = head.getOrNull()) }
     }
 
     fun loadAppCatalog() {
@@ -317,6 +405,7 @@ internal class TrafficViewModel(
 
     private fun mutate(inDraft: Boolean = false, action: suspend () -> Unit) {
         if (state.value.busy) return
+        cancelPaging()
         _state.update { it.copy(saving = true, failure = null, draftError = null) }
         viewModelScope.launch {
             try {

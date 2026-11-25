@@ -28,6 +28,7 @@
     <string name="traffic_clear">Clear captured records</string>
     <string name="traffic_clear_prompt">Remove all saved capture records?</string>
     <string name="traffic_default_batch">Current / latest batch</string>
+    <string name="traffic_load_older">Load earlier records</string>
     <string name="traffic_delete_batch">Delete batch</string>
     <string name="traffic_delete_batch_prompt">Delete this saved capture batch?</string>
     <string name="traffic_records">Captured records</string>

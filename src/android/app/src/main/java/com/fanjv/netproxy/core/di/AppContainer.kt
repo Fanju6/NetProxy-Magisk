@@ -37,7 +37,7 @@ internal class AppContainer(context: Context) {
     val appPolicyRepository = AppPolicyRepository(configRepository)
     val inboundRepository = InboundRepository(configRepository, serviceRepository)
     val logRepository = LogRepository(apiClient, appContext)
-    val trafficRepository = TrafficRepository(apiClient)
+    val trafficRepository = TrafficRepository(apiClient, appContext)
     val moduleEnvironment = AndroidModuleEnvironment(appContext, apiClient)
     val nodeImportStore = NodeImportStore(appContext)
     val appPackageRepository = AppPackageRepository(apiClient)

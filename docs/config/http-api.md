@@ -136,6 +136,7 @@ HTTP 保存必须提供读取时的 revision。发生 `config.conflict` 时重�
 | `DELETE /logs?kind=service` | 清空日志 |
 | `GET /traffic/status`、`list?batch=…`、`detail?id=…` | 全局抓包状态、指定批次的记录和详情；不传 `batch` 时使用当前或最近批次；WS/WSS 详情含有界的 `http.websocket.frames` |
 | `GET /traffic/batches`、`DELETE /traffic/batches?id=…` | 查看本地批次（ID、开始/停止时间、运行状态、已保存条数、字节数）或删除指定的已停止批次 |
+| `GET /traffic/page?batch=…&limit=50&before=…` | 按新到旧读取指定批次（默认当前或最近批次）；每页 1–100 条。响应的 `before` 用于继续向前翻页；用 `since`（或 `after`）代替 `before` 读取更新，使用返回的 `since` 继续拉取；`oldest` 表示当前保留范围起点 |
 | `GET /traffic/apps`、`PUT /traffic/apps` | 读取或替换抓包应用名单和 QUIC 设置：`{"apps":["0:com.example.app"],"disable_quic":true}`；空数组抓取全部；`disable_quic` 默认开启，写入时省略该字段则保留原值 |
 | `POST /traffic/toggle`、`start`、`stop`；`DELETE /traffic/list` | 切换全局抓包、显式启停或清空所有批次的记录 |
 | `GET/PUT /traffic/rules` | 读取或替换重写规则，正文为 `{"rules":[...]}`，新增和修改的规则需要 `domains`，见[规则格式](/guide/traffic-debugging) |

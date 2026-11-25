@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,6 +35,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -65,6 +67,8 @@ import com.fanjv.netproxy.feature.traffic.data.CaptureRecord
 import com.fanjv.netproxy.feature.traffic.data.TrafficChangedException
 import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.Route
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.DropdownDefaults
@@ -232,6 +236,25 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
         records.filter { it.matchesSession(query, method, statusClass, tls, rewrittenOnly, app, outbound) }
     }
     val groups = remember(visible, grouping) { visible.groupSessions(grouping) }
+    val listState = rememberLazyListState()
+    val before = state.page?.before
+    val running = state.status.value?.running == true
+    LaunchedEffect(listState, before, visible.isNotEmpty(), state.busy, state.loadingOlder, state.olderError) {
+        if (before != null && visible.isNotEmpty() && !state.busy && !state.loadingOlder && state.olderError == null) {
+            snapshotFlow {
+                val layout = listState.layoutInfo
+                val last = layout.visibleItemsInfo.lastOrNull()?.index ?: return@snapshotFlow false
+                last >= layout.totalItemsCount - 5
+            }.first { it }
+            viewModel.loadOlder()
+        }
+    }
+    LaunchedEffect(running, state.selectedBatch) {
+        if (running && state.selectedBatch == null) while (true) {
+            delay(2000)
+            viewModel.pollRecords()
+        }
+    }
     RefreshOnResume(viewModel)
     val groupingActions = SessionGrouping.entries.map { option ->
         val label = stringResource(when (option) {
@@ -277,14 +300,17 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
                     FilterDropdown(R.string.traffic_outbound, outbounds, outbound) { outbound = it }
                 }
                 val issue = state.records.error ?: state.failure
-                if (visible.isEmpty()) ContentStatus(PaddingValues(0.dp), when {
+                if (visible.isEmpty() && before == null) ContentStatus(PaddingValues(0.dp), when {
                     issue != null -> trafficError(issue, R.string.traffic_read_failed)
                     records.isNotEmpty() -> stringResource(R.string.traffic_no_matches)
                     else -> stringResource(R.string.traffic_empty)
                 }, loading = state.loading)
-                else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                else LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     issue?.let { item { TrafficErrorText(it) } }
+                    if (visible.isEmpty()) item {
+                        Text(stringResource(R.string.traffic_no_matches), Modifier.padding(vertical = 10.dp))
+                    }
                     for ((key, rows) in groups) {
                         val groupKey = "group:${grouping.name}:${key.orEmpty()}"
                         val expanded = groupKey !in collapsed
@@ -305,6 +331,11 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
                                 navigator.push(Route.TrafficInspector(record.id ?: ""))
                             }
                         }
+                    }
+                    if (before != null) item(key = "load-older") {
+                        state.olderError?.let { TrafficErrorText(it) }
+                        ArrowPreference(title = stringResource(R.string.traffic_load_older),
+                            enabled = !state.busy && !state.loadingOlder, onClick = viewModel::loadOlder)
                     }
                 }
             }

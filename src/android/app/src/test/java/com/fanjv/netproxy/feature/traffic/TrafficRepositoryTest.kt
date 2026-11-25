@@ -5,16 +5,21 @@ import com.fanjv.netproxy.core.api.ModuleApiException
 import com.fanjv.netproxy.core.api.ModuleHttpResponse
 import com.fanjv.netproxy.core.api.TestApiTransport
 import com.fanjv.netproxy.core.api.apiSuccess
+import com.fanjv.netproxy.feature.traffic.data.CapturePageCache
 import com.fanjv.netproxy.feature.traffic.data.MitmPolicy
 import com.fanjv.netproxy.feature.traffic.data.RewriteRule
 import com.fanjv.netproxy.feature.traffic.data.TrafficChangedException
 import com.fanjv.netproxy.feature.traffic.data.TrafficRepository
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.Rule
+import org.junit.rules.TemporaryFolder
 
 class TrafficRepositoryTest {
+    @get:Rule val cacheDir = TemporaryFolder()
     @Test fun captureUsesModulePathsAndDecodesRecordMetadata() = runBlocking {
         val repository = TrafficRepository(ModuleApiClient(TestApiTransport { request ->
             when (request.method to request.path) {
@@ -86,6 +91,30 @@ class TrafficRepositoryTest {
         assertEquals(id, repository.batches().single().id)
         assertTrue(repository.records(id).isEmpty())
         repository.deleteBatch(id)
+    }
+
+    @Test fun capturePagesReuseCacheOnlyForSameRetentionWindowAndInvalidateOnClear() = runBlocking {
+        val id = "AAAAAAAAAAAAAAAAAAAAAAAAAA"
+        val cache = CapturePageCache(cacheDir.root, Json)
+        var reads = 0
+        val repository = TrafficRepository(ModuleApiClient(TestApiTransport { request ->
+            when (request.method to request.path) {
+                "GET" to "/traffic/page" -> {
+                    assertEquals(mapOf("batch" to id, "before" to "20"), request.query)
+                    reads++
+                    apiSuccess("""{"batch":"$id","entries":[],"before":"10","oldest":"1"}""")
+                }
+                "DELETE" to "/traffic/list" -> apiSuccess("""{"running":false,"count":0}""")
+                else -> error("Unexpected request: ${request.method} ${request.path}")
+            }
+        }), cache)
+        assertEquals("10", repository.page(id, before = "20", oldest = "1").before)
+        assertEquals("10", repository.page(id, before = "20", oldest = "1").before)
+        assertEquals(1, reads)
+        assertEquals("1", repository.page(id, before = "20", oldest = "2").oldest)
+        assertEquals(2, reads)
+        repository.clear()
+        assertEquals(null, cache.read(id, "1", "20"))
     }
 
     @Test fun replaceRulesDoesNotOverwriteAChangedListAndReportsValidation() = runBlocking {

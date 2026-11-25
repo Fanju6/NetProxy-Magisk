@@ -165,6 +165,7 @@ function execute(args: string[]): CtlResult<unknown> {
       if (clean[2] === 'status') return response('traffic.status', '抓包状态', { running: false, count: 0 })
       if (clean[2] === 'list') return response('traffic.list', '抓包记录', [])
       if (clean[2] === 'batches') return response('traffic.batches', '抓包批次', [])
+      if (clean[2] === 'page') return response('traffic.page', '抓包记录分页', { entries: [] })
       if (clean[2] === 'apps') return response('traffic.apps', '抓包应用配置', { apps: [], disable_quic: true })
       if (clean[2] === 'detail' && clean[3] === capturePreviewId) {
         return response('traffic.detail', '抓包详情', { ...capturePreview, http: {
