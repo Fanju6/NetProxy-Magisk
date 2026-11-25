@@ -81,7 +81,9 @@ public final class Main {
             // 系统异常可能包含输入资料，禁止将堆栈或异常文本写到输出。
         }
         System.out.println(response.toString());
-        if (!success) System.exit(1);
+        System.out.flush();
+        System.err.flush();
+        Runtime.getRuntime().halt(success ? 0 : 1);
     }
 
     private static String readInput() throws Exception {

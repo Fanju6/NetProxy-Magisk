@@ -71,12 +71,12 @@ func New(options moduleapp.Options, config apiconfig.Config) (*Server, error) {
 	if _, err := rand.Read(identity[:]); err != nil {
 		return nil, err
 	}
+	layout := paths.New(options.ModuleDir)
 	s := &Server{options: options, config: config, mux: http.NewServeMux(),
 		instance: hex.EncodeToString(identity[:]), expensive: make(chan struct{}, 4), writeSlots: make(chan struct{}, 8),
-		platform: androidplatform.Client{DEX: paths.New(options.ModuleDir).AndroidPlatformDEX()}, appSlots: make(chan struct{}, 1)}
+		platform: androidplatform.Client{DEX: layout.AndroidPlatformDEX(), LogPath: layout.ServiceLog()}, appSlots: make(chan struct{}, 1)}
 	s.lifetime, s.stopEvents = context.WithCancel(context.Background())
 	s.options.TransferContext = s.lifetime
-	layout := paths.New(options.ModuleDir)
 	s.version, s.versionCode = readModuleVersion(layout.ModuleProp())
 	s.traffic = traffic.New(layout)
 	s.route("GET /api/v1/info", 5*time.Second, false, s.info)
