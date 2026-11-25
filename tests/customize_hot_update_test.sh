@@ -30,7 +30,6 @@ awk '
 ui_print() { printf '%s\n' "$*"; }
 chown() { :; }
 chcon() { :; }
-pidof() { [ "${TEST_RUNNING:-false}" = true ]; }
 su() { [ "$1" = -c ]; sh -c "$2"; }
 
 # 参数: $1 TUN 接口名，用于区分快照来源。
@@ -72,6 +71,7 @@ write_module() {
     'case "$1:$2:$3" in' \
     '  __internal:worker:stop) exit "${TEST_WORKER_STOP:-0}" ;;' \
     '  __internal:google-firewall:--module-dir) exit "${TEST_GOOGLE_FIREWALL:-0}" ;;' \
+    '  service:status:) [ "${TEST_STATUS_FAIL:-0}" = 0 ] || exit 1; if [ "${TEST_RUNNING:-false}" = true ]; then pid=123; else pid=null; fi; printf "{\"schema\":1,\"ok\":true,\"code\":\"service.status\",\"data\":{\"pid\":%s,\"worker_pid\":456}}\n" "$pid" ;;' \
     '  service:stop:) exit "${TEST_SERVICE_STOP:-0}" ;;' \
     '  config:check:) exit "${TEST_CONFIG_CHECK:-0}" ;;' \
     '  api:init:) exit "${TEST_API_INIT:-0}" ;;' \
@@ -103,7 +103,8 @@ reset_modules() {
   SERVICE_STOPPED=false
   KEY_PID=""
   TEST_RUNNING=false
-  unset TEST_WORKER_STOP TEST_SERVICE_STOP TEST_CONFIG_CHECK TEST_PIDOF TEST_API_INIT TEST_GOOGLE_FIREWALL
+  export TEST_RUNNING
+  unset TEST_WORKER_STOP TEST_SERVICE_STOP TEST_CONFIG_CHECK TEST_API_INIT TEST_GOOGLE_FIREWALL TEST_STATUS_FAIL
 }
 
 assert_value() { grep -Fxq "$2" "$1"; }
@@ -363,7 +364,7 @@ test_service_failures() (
   TEST_WORKER_STOP=1
   export TEST_WORKER_STOP
   if stop_proxy_if_running; then exit 1; fi
-  [ "$(wc -l < "$CALL_LOG")" -eq 1 ]
+  [ "$(wc -l < "$CALL_LOG")" -eq 2 ]
   restore_live_service
   grep -q '^service start$' "$CALL_LOG"
   reset_modules
@@ -373,6 +374,13 @@ test_service_failures() (
   restore_live_service
   grep -q '^__internal worker start' "$CALL_LOG"
   ! grep -q '^service start$' "$CALL_LOG"
+
+  reset_modules
+  TEST_STATUS_FAIL=1
+  export TEST_STATUS_FAIL
+  if stop_proxy_if_running; then exit 1; fi
+  restore_live_service
+  [ "$(cat "$CALL_LOG")" = 'service status' ]
 )
 
 test_manager_install() (
@@ -615,7 +623,6 @@ test_installer_entrypoints() (
   for name in chown chcon getevent sleep; do
     printf '#!/bin/sh\nexit 0\n' > "$mocks/$name"
   done
-  printf '#!/bin/sh\nexit "${TEST_PIDOF:-1}"\n' > "$mocks/pidof"
   printf '%s\n' '#!/bin/sh' '[ -p /proc/self/fd/1 ] || exit 2' \
     '[ "$#" -eq 3 ] && [ "$1" = install ] && [ "$2" = -r ] && [ -s "$3" ]' > "$mocks/pm"
   printf '%s\n' '#!/bin/sh' '[ "$1" = -c ] || exit 1' \
@@ -693,8 +700,8 @@ test_installer_entrypoints() (
   assert_value "$LIVE/module.prop" version=current
 
   reset_modules
-  BOOTMODE=true TEST_CONFIG_CHECK=1 TEST_PIDOF=0
-  export TEST_CONFIG_CHECK TEST_PIDOF
+  BOOTMODE=true TEST_CONFIG_CHECK=1
+  export TEST_CONFIG_CHECK
   if run_foreground; then exit 1; fi
   assert_value "$LIVE/module.prop" version=current
   [ -d "$STAGE" ]
