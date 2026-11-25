@@ -26,7 +26,10 @@
     <string name="traffic_off">已关闭</string>
     <string name="traffic_refresh">刷新抓包</string>
     <string name="traffic_clear">清空抓包记录</string>
-    <string name="traffic_clear_prompt">清空模块当前保存的所有抓包记录？</string>
+    <string name="traffic_clear_prompt">清空所有已保存的抓包记录？</string>
+    <string name="traffic_default_batch">当前或最近批次</string>
+    <string name="traffic_delete_batch">删除批次</string>
+    <string name="traffic_delete_batch_prompt">删除这个已保存的抓包批次？</string>
     <string name="traffic_records">抓包记录</string>
     <string name="traffic_empty">暂无抓包记录。启用抓包并产生流量后刷新。</string>
     <string name="traffic_record_summary">%1$s · %2$s · %3$s</string>

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"slices"
 	"time"
@@ -28,8 +29,44 @@ func (s *Server) registerTraffic() {
 			return contract.Success("traffic."+action, "全局抓包设置已更新", status), err
 		})
 	}
-	s.trafficRoute("GET", "list", "抓包记录", func(context.Context) (any, error) {
-		return s.traffic.Entries(), nil
+	s.route("GET "+trafficRoute+"list", 10*time.Second, false, func(_ context.Context, r *http.Request) (contract.Result, error) {
+		query, err := resourceQuery(r, "batch")
+		if err != nil {
+			return contract.Result{}, err
+		}
+		id := query.Get("batch")
+		if query.Has("batch") && !traffic.ValidRecordID(id) {
+			return contract.Result{}, invalid("抓包批次 ID 无效")
+		}
+		entries, ok := s.traffic.BatchEntries(id)
+		if !ok {
+			return contract.Result{}, captureBatchNotFound()
+		}
+		return contract.Success("traffic.list", "抓包记录", entries), nil
+	})
+	s.trafficRoute("GET", "batches", "抓包批次", func(context.Context) (any, error) {
+		return s.traffic.Batches(), nil
+	})
+	s.route("DELETE "+trafficRoute+"batches", 10*time.Second, false, func(_ context.Context, r *http.Request) (contract.Result, error) {
+		query, err := resourceQuery(r, "id")
+		if err != nil {
+			return contract.Result{}, err
+		}
+		id := query.Get("id")
+		if !traffic.ValidRecordID(id) {
+			return contract.Result{}, invalid("抓包批次 ID 无效")
+		}
+		found, err := s.traffic.DeleteBatch(id)
+		if errors.Is(err, traffic.ErrActiveBatch) {
+			return contract.Result{}, &contract.Error{Code: "traffic.batch_running", Message: err.Error(), HTTPStatus: http.StatusConflict}
+		}
+		if err != nil {
+			return contract.Result{}, captureHistoryError()
+		}
+		if !found {
+			return contract.Result{}, captureBatchNotFound()
+		}
+		return contract.Success("traffic.batch_deleted", "已删除抓包批次", nil), nil
 	})
 	s.trafficRoute("GET", "apps", "抓包应用配置", func(context.Context) (any, error) {
 		policy, err := s.traffic.AppsPolicy()
@@ -62,7 +99,9 @@ func (s *Server) registerTraffic() {
 		return contract.Success("traffic.detail", "抓包详情", record), nil
 	})
 	s.trafficRoute("DELETE", "list", "已清空抓包记录", func(context.Context) (any, error) {
-		s.traffic.Clear()
+		if err := s.traffic.Clear(); err != nil {
+			return nil, captureHistoryError()
+		}
 		return s.traffic.Status(), nil
 	})
 	s.trafficRoute("GET", "rules", "重写规则", func(context.Context) (any, error) {
@@ -163,6 +202,14 @@ func (s *Server) registerTraffic() {
 		}
 		return contract.Success("traffic.mitm_saved", "HTTPS 抓包配置已保存", policy), nil
 	})
+}
+
+func captureBatchNotFound() error {
+	return &contract.Error{Code: "traffic.batch_not_found", Message: "抓包批次已删除或过期", HTTPStatus: http.StatusNotFound}
+}
+
+func captureHistoryError() error {
+	return &contract.Error{Code: "traffic.history_failed", Message: "无法更新本地抓包记录", HTTPStatus: http.StatusInternalServerError}
 }
 
 func (s *Server) setTrafficApps(ctx context.Context, input traffic.AppsPolicy) (traffic.AppsPolicy, error) {

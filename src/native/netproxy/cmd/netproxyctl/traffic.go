@@ -18,13 +18,14 @@ import (
 func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 	const maxRequest = traffic.MaxRulesBytes + 1024
 	usage := func() error {
-		return usageError("用法: netproxyctl api traffic status|start|stop|toggle|list|detail <ID>|clear|apps|set-apps <文件>|rules|set-rules|mitm|set-mitm|pinned|clear-pinned|ca|ca-init|ca-export|ca-remove")
+		return usageError("用法: netproxyctl api traffic status|start|stop|toggle|list [批次ID]|batches|delete-batch <ID>|detail <ID>|clear|apps|set-apps <文件>|rules|set-rules|mitm|set-mitm|pinned|clear-pinned|ca|ca-init|ca-export|ca-remove")
 	}
 	if len(args) == 0 {
 		return usage()
 	}
 	action := args[0]
-	withArgument := action == "set-rules" || action == "set-mitm" || action == "set-apps" || action == "ca-export" || action == "detail"
+	withArgument := action == "set-rules" || action == "set-mitm" || action == "set-apps" || action == "ca-export" ||
+		action == "detail" || action == "delete-batch" || (action == "list" && len(args) > 1)
 	if (withArgument && len(args) != 2) || (!withArgument && len(args) != 1) {
 		return usage()
 	}
@@ -39,8 +40,20 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 	var method string
 	var body io.Reader
 	switch action {
-	case "status", "list", "apps", "rules", "mitm", "pinned", "ca":
+	case "status", "batches", "apps", "rules", "mitm", "pinned", "ca":
 		method = http.MethodGet
+	case "list", "delete-batch":
+		method = http.MethodGet
+		if withArgument {
+			if !traffic.ValidRecordID(args[1]) {
+				return usageError("抓包批次 ID 无效")
+			}
+			if action == "list" {
+				action = "list?batch=" + url.QueryEscape(args[1])
+			} else {
+				method, action = http.MethodDelete, "batches?id="+url.QueryEscape(args[1])
+			}
+		}
 	case "detail":
 		if !traffic.ValidRecordID(args[1]) {
 			return usageError("抓包记录 ID 无效")

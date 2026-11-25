@@ -287,7 +287,7 @@ copy_catalog_state() {
 # 返回: 0=输出保留清单，1=安装模式无效。
 persistent_entries() {
   case "$INSTALL_MODE" in
-    preserve) printf '%s\n' config data/catalog logs ;;
+    preserve) printf '%s\n' config data/catalog data/traffic-history logs ;;
     nodes) printf '%s\n' data/catalog logs ;;
     fresh) ;;
     *) return 1 ;;

@@ -8,6 +8,7 @@ import com.fanjv.netproxy.feature.apps.data.AppIconCache
 import com.fanjv.netproxy.feature.apps.data.AppPackageRepository
 import com.fanjv.netproxy.feature.apps.presentation.AppInfoModel
 import com.fanjv.netproxy.feature.traffic.data.CaptureApps
+import com.fanjv.netproxy.feature.traffic.data.CaptureBatch
 import com.fanjv.netproxy.feature.traffic.data.CaptureCertificate
 import com.fanjv.netproxy.feature.traffic.data.CaptureDetail
 import com.fanjv.netproxy.feature.traffic.data.CaptureRecord
@@ -51,6 +52,8 @@ internal data class RecordDetailState(
 internal data class TrafficState(
     val status: TrafficContent<CaptureStatus> = TrafficContent(),
     val records: TrafficContent<List<CaptureRecord>> = TrafficContent(),
+    val batches: TrafficContent<List<CaptureBatch>> = TrafficContent(),
+    val selectedBatch: String? = null,
     val rules: TrafficContent<List<RewriteRule>> = TrafficContent(),
     val policy: TrafficContent<MitmPolicy> = TrafficContent(),
     val pinned: TrafficContent<List<PinnedBypass>> = TrafficContent(),
@@ -123,18 +126,24 @@ internal class TrafficViewModel(
         viewModelScope.launch {
             coroutineScope {
                 val status = async { attempt { repository.status() } }
-                val records = async { attempt { repository.records() } }
+                val batches = async { attempt { repository.batches() } }
                 val rules = async { attempt { repository.rules() } }
                 val policy = async { attempt { repository.policy() } }
                 val apps = async { attempt { repository.apps() } }
                 val nextStatus = status.await()
-                val nextRecords = records.await()
+                val nextBatches = batches.await()
+                val selected = state.value.selectedBatch?.takeUnless { id ->
+                    nextBatches.getOrNull()?.none { it.id == id } == true
+                }
+                val nextRecords = attempt { repository.records(selected) }
                 val nextRules = rules.await()
                 val nextPolicy = policy.await()
                 val nextApps = apps.await()
                 _state.update { current -> current.copy(
                     status = current.status.refreshed(nextStatus),
                     records = current.records.refreshed(nextRecords),
+                    batches = current.batches.refreshed(nextBatches),
+                    selectedBatch = selected,
                     rules = current.rules.refreshed(nextRules),
                     policy = current.policy.refreshed(nextPolicy),
                     captureAppPolicy = nextApps.getOrNull(),
@@ -147,7 +156,22 @@ internal class TrafficViewModel(
     fun setCapture(enabled: Boolean) = mutate {
         val status = repository.setCapture(enabled)
         val records = attempt { repository.records() }
-        _state.update { it.copy(status = TrafficContent(status), records = it.records.refreshed(records)) }
+        val batches = attempt { repository.batches() }
+        _state.update { it.copy(status = TrafficContent(status), records = it.records.refreshed(records),
+            batches = it.batches.refreshed(batches), selectedBatch = null) }
+    }
+
+    fun selectBatch(id: String?) = mutate {
+        val records = repository.records(id)
+        _state.update { it.copy(selectedBatch = id, records = TrafficContent(records)) }
+    }
+
+    fun deleteBatch(id: String) = mutate {
+        repository.deleteBatch(id)
+        val batches = attempt { repository.batches() }
+        val records = attempt { repository.records() }
+        _state.update { it.copy(selectedBatch = null, records = TrafficContent<List<CaptureRecord>>().refreshed(records),
+            batches = it.batches.refreshed(batches)) }
     }
 
     fun readPinned() = viewModelScope.launch {
@@ -169,7 +193,9 @@ internal class TrafficViewModel(
 
     fun clear() = mutate {
         val status = repository.clear()
-        _state.update { it.copy(status = TrafficContent(status), records = TrafficContent(emptyList())) }
+        val batches = attempt { repository.batches() }
+        _state.update { it.copy(status = TrafficContent(status), records = TrafficContent(emptyList()),
+            batches = it.batches.refreshed(batches), selectedBatch = null) }
     }
 
     fun loadAppCatalog() {

@@ -26,7 +26,10 @@
     <string name="traffic_off">Desativada</string>
     <string name="traffic_refresh">Atualizar captura</string>
     <string name="traffic_clear">Limpar registros capturados</string>
-    <string name="traffic_clear_prompt">Remover todos os registros armazenados pelo módulo?</string>
+    <string name="traffic_clear_prompt">Remover todos os registros de captura salvos?</string>
+    <string name="traffic_default_batch">Sessão atual ou mais recente</string>
+    <string name="traffic_delete_batch">Excluir sessão</string>
+    <string name="traffic_delete_batch_prompt">Excluir esta sessão de captura salva?</string>
     <string name="traffic_records">Registros capturados</string>
     <string name="traffic_empty">Nenhum registro capturado. Ative a captura, gere tráfego e atualize.</string>
     <string name="traffic_record_summary">%1$s · %2$s · %3$s</string>

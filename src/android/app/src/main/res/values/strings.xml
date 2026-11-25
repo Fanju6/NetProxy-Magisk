@@ -26,7 +26,10 @@
     <string name="traffic_off">Off</string>
     <string name="traffic_refresh">Refresh capture</string>
     <string name="traffic_clear">Clear captured records</string>
-    <string name="traffic_clear_prompt">Remove all records currently held by the module?</string>
+    <string name="traffic_clear_prompt">Remove all saved capture records?</string>
+    <string name="traffic_default_batch">Current / latest batch</string>
+    <string name="traffic_delete_batch">Delete batch</string>
+    <string name="traffic_delete_batch_prompt">Delete this saved capture batch?</string>
     <string name="traffic_records">Captured records</string>
     <string name="traffic_empty">No captured records. Enable capture, generate traffic, then refresh.</string>
     <string name="traffic_record_summary">%1$s · %2$s · %3$s</string>

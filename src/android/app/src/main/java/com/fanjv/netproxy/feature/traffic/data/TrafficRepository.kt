@@ -12,6 +12,14 @@ import kotlinx.serialization.json.jsonObject
 internal data class CaptureStatus(val running: Boolean, val count: Int)
 
 @Serializable
+internal data class CaptureBatch(
+    val id: String,
+    @SerialName("started_at") val startedAt: String,
+    val count: Int,
+    val running: Boolean,
+)
+
+@Serializable
 internal data class PinnedBypass(
     val host: String,
     @SerialName("user_id") val userId: Int,
@@ -149,7 +157,10 @@ internal data class CaptureCertificate(val pem: String, val filename: String, va
 
 internal class TrafficRepository(private val api: ModuleApiClient) {
     suspend fun status(): CaptureStatus = api.read("/traffic/status")
-    suspend fun records(): List<CaptureRecord> = api.read("/traffic/list")
+    suspend fun records(batch: String? = null): List<CaptureRecord> =
+        api.read("/traffic/list", if (batch == null) emptyMap() else mapOf("batch" to batch))
+    suspend fun batches(): List<CaptureBatch> = api.read("/traffic/batches")
+    suspend fun deleteBatch(id: String) { api.delete("/traffic/batches", mapOf("id" to id)) }
     suspend fun detail(id: String): CaptureDetail = api.read("/traffic/detail", mapOf("id" to id))
     suspend fun rules(): List<RewriteRule> = api.read<RewriteRules>("/traffic/rules").rules
     suspend fun policy(): MitmPolicy = api.read("/traffic/mitm")

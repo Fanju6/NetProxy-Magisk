@@ -64,6 +64,30 @@ class TrafficRepositoryTest {
         assertEquals("br", detail.response.body.contentEncoding)
     }
 
+    @Test fun batchOperationsUseExplicitIDs() = runBlocking {
+        val id = "AAAAAAAAAAAAAAAAAAAAAAAAAA"
+        val repository = TrafficRepository(ModuleApiClient(TestApiTransport { request ->
+            when (request.method to request.path) {
+                "GET" to "/traffic/batches" -> apiSuccess(
+                    """[{"id":"$id","started_at":"2026-01-01T00:00:00Z","count":2,"running":false}]"""
+                )
+                "GET" to "/traffic/list" -> {
+                    assertEquals(mapOf("batch" to id), request.query)
+                    apiSuccess("[]")
+                }
+                "DELETE" to "/traffic/batches" -> {
+                    assertEquals(mapOf("id" to id), request.query)
+                    assertTrue(request.mutation)
+                    apiSuccess("null")
+                }
+                else -> error("Unexpected request: ${request.method} ${request.path}")
+            }
+        }))
+        assertEquals(id, repository.batches().single().id)
+        assertTrue(repository.records(id).isEmpty())
+        repository.deleteBatch(id)
+    }
+
     @Test fun replaceRulesDoesNotOverwriteAChangedListAndReportsValidation() = runBlocking {
         val existing = RewriteRule("example", "request", "return {};", listOf("example.org"))
         val invalid = existing.copy(pattern = "[")

@@ -222,6 +222,8 @@ test_snapshot_modes() (
     mode="$INSTALL_MODE"
     reset_modules
     INSTALL_MODE="$mode"
+    mkdir -p "$LIVE/data/traffic-history"
+    printf '%s\n' 'saved-batch' > "$LIVE/data/traffic-history/batch.json"
     copy_user_data_locked
     if [ "$mode" = fresh ]; then
       assert_value "$STAGE/data/catalog/default/provider.json" package-provider
@@ -233,6 +235,7 @@ test_snapshot_modes() (
       assert_value "$STAGE/logs/service.log" current-log
     fi
     if [ "$mode" = preserve ]; then
+      assert_value "$STAGE/data/traffic-history/batch.json" saved-batch
       assert_inbound "$STAGE/config/inbound/inbound.json" current
       assert_module "$STAGE/config/module.json" current
       assert_value "$STAGE/config/singbox/config.json" current-config
@@ -241,6 +244,7 @@ test_snapshot_modes() (
       assert_value "$STAGE/config/singbox/custom-state/state.json" current-state
       assert_value "$STAGE/config/telemetry/state.json" current-telemetry-queue
     else
+      [ ! -e "$STAGE/data/traffic-history" ]
       assert_inbound "$STAGE/config/inbound/inbound.json" package
       assert_module "$STAGE/config/module.json" package
       assert_value "$STAGE/config/singbox/rules/local/custom.json" package-local

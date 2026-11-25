@@ -77,6 +77,30 @@ func TestTrafficManagementRequiresAuthAndValidatesRules(t *testing.T) {
 	resourceAssertSuccess(t, s, http.MethodDelete, trafficRoute+"list", "", "traffic.clear", nil)
 }
 
+func TestTrafficBatchContract(t *testing.T) {
+	s := resourceFixture(t)
+	var batches []traffic.Batch
+	var entries []traffic.Entry
+	resourceAssertSuccess(t, s, http.MethodPost, trafficRoute+"start", "", "traffic.start", nil)
+	resourceAssertSuccess(t, s, http.MethodGet, trafficRoute+"batches", "", "traffic.batches", &batches)
+	if len(batches) != 1 || !batches[0].Running {
+		t.Fatalf("unexpected running batches: %+v", batches)
+	}
+	id := batches[0].ID
+	target := trafficRoute + "batches?id=" + id
+	resourceAssertSuccess(t, s, http.MethodGet, trafficRoute+"list?batch="+id, "", "traffic.list", &entries)
+	w, result := resourceRequest(t, s, http.MethodDelete, target, "")
+	if w.Code != http.StatusConflict || result.Code != "traffic.batch_running" {
+		t.Fatalf("delete running batch: %d, %s", w.Code, result.Code)
+	}
+	resourceAssertSuccess(t, s, http.MethodPost, trafficRoute+"stop", "", "traffic.stop", nil)
+	resourceAssertSuccess(t, s, http.MethodDelete, target, "", "traffic.batch_deleted", nil)
+	w, result = resourceRequest(t, s, http.MethodGet, trafficRoute+"list?batch="+id, "")
+	if w.Code != http.StatusNotFound || result.Code != "traffic.batch_not_found" {
+		t.Fatalf("read deleted batch: %d, %s", w.Code, result.Code)
+	}
+}
+
 func TestTrafficMITMManagementNeverExposesPrivateKey(t *testing.T) {
 	s := resourceFixture(t)
 	var policy struct {

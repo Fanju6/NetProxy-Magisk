@@ -63,6 +63,8 @@ func (l Layout) TrafficRules() string { return filepath.Join(l.Config(), "traffi
 
 func (l Layout) TrafficSocket() string { return filepath.Join(l.Runtime(), "capture.sock") }
 
+func (l Layout) TrafficHistory() string { return filepath.Join(l.Data(), "traffic-history") }
+
 func (l Layout) TrafficEnabled() string { return filepath.Join(l.Config(), "traffic-enabled.json") }
 func (l Layout) TrafficApps() string    { return filepath.Join(l.Config(), "traffic-apps.json") }
 

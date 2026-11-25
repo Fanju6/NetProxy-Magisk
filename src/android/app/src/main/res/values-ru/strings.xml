@@ -26,7 +26,10 @@
     <string name="traffic_off">Выключен</string>
     <string name="traffic_refresh">Обновить перехват</string>
     <string name="traffic_clear">Очистить записи</string>
-    <string name="traffic_clear_prompt">Удалить все записи, хранящиеся в модуле?</string>
+    <string name="traffic_clear_prompt">Удалить все сохранённые записи захвата?</string>
+    <string name="traffic_default_batch">Текущая или последняя сессия</string>
+    <string name="traffic_delete_batch">Удалить сессию</string>
+    <string name="traffic_delete_batch_prompt">Удалить эту сохранённую сессию захвата?</string>
     <string name="traffic_records">Перехваченные записи</string>
     <string name="traffic_empty">Записей пока нет. Включите перехват, создайте трафик и обновите список.</string>
     <string name="traffic_record_summary">%1$s · %2$s · %3$s</string>

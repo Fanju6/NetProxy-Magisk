@@ -209,9 +209,15 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
     var app by rememberSaveable { mutableStateOf<String?>(null) }
     var outbound by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmClear by rememberSaveable { mutableStateOf(false) }
+    var deleteBatch by rememberSaveable { mutableStateOf<String?>(null) }
     var grouping by rememberSaveable { mutableStateOf(SessionGrouping.None) }
     var collapsed by remember(grouping) { mutableStateOf(emptySet<String>()) }
     val records = state.records.value.orEmpty()
+    val historical = state.batches.value.orEmpty().filterNot { it.running }
+    val batchLabels = historical.map {
+        "${it.startedAt.substringBefore('.').substringBefore('Z').replace('T', ' ')} UTC · " +
+            stringResource(R.string.traffic_record_count, it.count)
+    }
     LaunchedEffect(viewModel) { viewModel.loadAppCatalog() }
     val methods = remember(records) {
         (listOf("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD") + records.map { it.method }).distinct()
@@ -236,15 +242,24 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
         })
         TopBarMenuAction(label, grouping != option) { grouping = option }
     }
-    TopBarMoreMenu(groupingActions + TopBarMenuAction(stringResource(R.string.traffic_clear), records.isNotEmpty() && !state.busy) {
-        confirmClear = true
-    }, stringResource(R.string.more_options)) { menu ->
+    val batchActions = listOf(
+        TopBarMenuAction(stringResource(R.string.traffic_delete_batch), state.selectedBatch != null && !state.busy) {
+            deleteBatch = state.selectedBatch
+        },
+        TopBarMenuAction(stringResource(R.string.traffic_clear),
+            (records.isNotEmpty() || historical.isNotEmpty()) && !state.busy) { confirmClear = true },
+    )
+    TopBarMoreMenu(groupingActions + batchActions, stringResource(R.string.more_options)) { menu ->
         TrafficFrame(R.string.traffic_records, stringResource(R.string.traffic_record_count, records.size),
             actions = {
                 AppBarButton(viewModel::refresh, !state.busy) { Icon(Icons.Rounded.Refresh, stringResource(R.string.traffic_refresh)) }
                 menu()
             }) { padding ->
             Column(Modifier.fillMaxSize().padding(padding)) {
+                if (historical.isNotEmpty()) Row(Modifier.padding(horizontal = 16.dp)) {
+                    FilterDropdown(R.string.traffic_default_batch, historical.map { it.id }, state.selectedBatch, batchLabels,
+                        defaultLabel = R.string.traffic_default_batch) { viewModel.selectBatch(it) }
+                }
                 GlassTextField(value = query, onValueChange = { query = it }, label = stringResource(R.string.traffic_search),
                     useLabelAsPlaceholder = true, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
                 Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 3.dp),
@@ -297,6 +312,8 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
     }
     TrafficConfirmation(confirmClear, R.string.traffic_clear, R.string.traffic_clear_prompt,
         { confirmClear = false }, { confirmClear = false; viewModel.clear() })
+    TrafficConfirmation(deleteBatch != null, R.string.traffic_delete_batch, R.string.traffic_delete_batch_prompt,
+        { deleteBatch = null }, { deleteBatch?.let(viewModel::deleteBatch); deleteBatch = null })
 }
 
 @Composable
@@ -369,10 +386,11 @@ internal fun StatusBadge(text: String, color: Color = MiuixTheme.colorScheme.pri
 }
 
 @Composable
-private fun FilterDropdown(title: Int, values: List<String>, selected: String?, labels: List<String> = values, choose: (String?) -> Unit) {
+private fun FilterDropdown(title: Int, values: List<String>, selected: String?, labels: List<String> = values,
+    defaultLabel: Int = R.string.traffic_filter_all, choose: (String?) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val label = labels.getOrNull(values.indexOf(selected)) ?: selected ?: stringResource(title)
-    val all = stringResource(R.string.traffic_filter_all)
+    val all = stringResource(defaultLabel)
     Box {
         FilterChip("$label ▾", selected != null, Modifier.clickable { open = true })
         WindowDropdownPopup(
