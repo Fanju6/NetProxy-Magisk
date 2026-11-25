@@ -33,6 +33,33 @@ internal val CaptureRecord.appRef: String?
 internal val CaptureRecord.appKey: String?
     get() = appRef ?: sourceApp?.let { "UID ${it.uid}" } ?: exit?.appKey
 
+internal enum class SessionGrouping { None, App, Domain, Outbound }
+
+internal fun List<CaptureRecord>.groupSessions(grouping: SessionGrouping): Map<String?, List<CaptureRecord>> =
+    groupBy { record ->
+        when (grouping) {
+            SessionGrouping.None -> null
+            SessionGrouping.App -> record.appKey
+            SessionGrouping.Domain -> record.host.sessionDomain()
+            SessionGrouping.Outbound -> buildList {
+                record.outbound.takeIf { it.isNotBlank() }?.let { add(it) }
+                for (hop in record.exit?.chain.orEmpty()) {
+                    if (hop.tag.isNotBlank() && lastOrNull() != hop.tag) add(hop.tag)
+                }
+            }.joinToString(" → ").ifBlank { null }
+        }
+    }
+
+private fun String.sessionDomain(): String? {
+    val value = trim()
+    val host = when {
+        value.startsWith('[') && ']' in value -> value.substringAfter('[').substringBefore(']')
+        value.count { it == ':' } == 1 && value.substringAfter(':').toIntOrNull() != null -> value.substringBefore(':')
+        else -> value
+    }
+    return host.trimEnd('.').lowercase().ifBlank { null }
+}
+
 internal fun List<RewriteRule>.indexOfCapture(match: RewriteMatch): Int? {
     fun RewriteRule.matches(): Boolean {
         val bytes = "$phase\u0000$pattern\u0000$script\u0000${domains.joinToString("\u0000")}".encodeToByteArray()

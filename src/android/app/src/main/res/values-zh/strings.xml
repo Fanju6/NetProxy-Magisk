@@ -819,4 +819,11 @@
     <string name="inbound_ipv6_hint">关闭后，受管流量仅使用 IPv4。</string>
     <string name="traffic_disable_quic">抓包时禁用 QUIC</string>
     <string name="traffic_disable_quic_summary">拒绝抓包应用的 UDP 443 连接，使应用可以回退到 TCP。</string>
+    <string name="traffic_group_none">不分组</string>
+    <string name="traffic_group_app">按应用分组</string>
+    <string name="traffic_group_domain">按域名分组</string>
+    <string name="traffic_group_outbound">按出站分组</string>
+    <string name="traffic_group_unknown">未知</string>
+    <string name="traffic_group_expand">展开分组</string>
+    <string name="traffic_group_collapse">折叠分组</string>
 </resources>

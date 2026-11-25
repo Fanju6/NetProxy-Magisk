@@ -7,9 +7,11 @@ import com.fanjv.netproxy.feature.traffic.data.CaptureHop
 import com.fanjv.netproxy.feature.traffic.data.CapturedBody
 import com.fanjv.netproxy.feature.traffic.data.CapturedHttp
 import com.fanjv.netproxy.feature.traffic.data.CapturedMessage
+import com.fanjv.netproxy.feature.traffic.presentation.SessionGrouping
 import com.fanjv.netproxy.feature.traffic.presentation.asCurl
 import com.fanjv.netproxy.feature.traffic.presentation.bodyChunks
 import com.fanjv.netproxy.feature.traffic.presentation.displayBody
+import com.fanjv.netproxy.feature.traffic.presentation.groupSessions
 import com.fanjv.netproxy.feature.traffic.presentation.matchesSession
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -17,6 +19,24 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TrafficPresentationTest {
+    @Test fun groupsByAndroidProfileHostAndActualOutboundChain() {
+        val first = CaptureRecord("now", "GET", "EXAMPLE.test.:443", "Proxy", 200, durationMs = 1,
+            sourceApp = CaptureSourceApp(10123, 0, "com.example.app"),
+            exit = CaptureExit(chain = listOf(CaptureHop("Proxy", "selector"), CaptureHop("node-x", "vless"))))
+        val second = first.copy(host = "example.test", sourceApp = CaptureSourceApp(1110123, 11, "com.example.app"),
+            exit = CaptureExit(chain = listOf(CaptureHop("node-y", "vless"))))
+        val third = first.copy(host = "[2001:db8::1]:443", outbound = "direct", sourceApp = null, exit = null)
+        val fourth = third.copy(outbound = "block")
+        val records = listOf(first, second, third, fourth)
+        assertEquals(mapOf(null to records), records.groupSessions(SessionGrouping.None))
+        assertEquals(mapOf("0:com.example.app" to listOf(first), "11:com.example.app" to listOf(second),
+            null to listOf(third, fourth)), records.groupSessions(SessionGrouping.App))
+        assertEquals(mapOf("example.test" to listOf(first, second), "2001:db8::1" to listOf(third, fourth)),
+            records.groupSessions(SessionGrouping.Domain))
+        assertEquals(listOf("Proxy → node-x", "Proxy → node-y", "direct", "block"),
+            records.groupSessions(SessionGrouping.Outbound).keys.toList())
+    }
+
     @Test fun filtersByActualRewriteAppAndSelectedNode() {
         val record = CaptureRecord("now", "GET", "example.test", "Proxy", 200, durationMs = 1,
             rewritten = true, exit = CaptureExit(chain = listOf(CaptureHop("Auto", "urltest"),

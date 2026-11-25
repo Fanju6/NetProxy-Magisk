@@ -789,4 +789,11 @@
     <string name="inbound_ipv6_hint">Turn off to use IPv4 only for managed traffic.</string>
     <string name="traffic_disable_quic">Disable QUIC during capture</string>
     <string name="traffic_disable_quic_summary">Rejects UDP port 443 for captured apps so they can fall back to TCP.</string>
+    <string name="traffic_group_none">No grouping</string>
+    <string name="traffic_group_app">Group by app</string>
+    <string name="traffic_group_domain">Group by domain</string>
+    <string name="traffic_group_outbound">Group by outbound</string>
+    <string name="traffic_group_unknown">Unknown</string>
+    <string name="traffic_group_expand">Expand group</string>
+    <string name="traffic_group_collapse">Collapse group</string>
 </resources>

@@ -789,4 +789,11 @@
     <string name="inbound_ipv6_hint">Desative para que o tráfego gerenciado use apenas IPv4.</string>
     <string name="traffic_disable_quic">Desativar QUIC durante a captura</string>
     <string name="traffic_disable_quic_summary">Rejeita UDP na porta 443 para que os apps capturados possam usar TCP.</string>
+    <string name="traffic_group_none">Sem agrupamento</string>
+    <string name="traffic_group_app">Agrupar por app</string>
+    <string name="traffic_group_domain">Agrupar por domínio</string>
+    <string name="traffic_group_outbound">Agrupar por saída</string>
+    <string name="traffic_group_unknown">Desconhecido</string>
+    <string name="traffic_group_expand">Expandir grupo</string>
+    <string name="traffic_group_collapse">Recolher grupo</string>
 </resources>

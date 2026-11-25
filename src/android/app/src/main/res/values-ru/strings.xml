@@ -789,4 +789,11 @@
     <string name="inbound_ipv6_hint">Отключите, чтобы управляемый трафик использовал только IPv4.</string>
     <string name="traffic_disable_quic">Отключать QUIC при перехвате</string>
     <string name="traffic_disable_quic_summary">Отклоняет UDP на порту 443, чтобы приложения могли переключиться на TCP.</string>
+    <string name="traffic_group_none">Без группировки</string>
+    <string name="traffic_group_app">Группировать по приложению</string>
+    <string name="traffic_group_domain">Группировать по домену</string>
+    <string name="traffic_group_outbound">Группировать по исходящему подключению</string>
+    <string name="traffic_group_unknown">Неизвестно</string>
+    <string name="traffic_group_expand">Развернуть группу</string>
+    <string name="traffic_group_collapse">Свернуть группу</string>
 </resources>

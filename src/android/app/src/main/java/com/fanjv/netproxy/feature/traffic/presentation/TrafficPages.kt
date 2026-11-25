@@ -22,6 +22,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Android
 import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.List
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Refresh
@@ -69,6 +71,7 @@ import top.yukonga.miuix.kmp.basic.DropdownDefaults
 import top.yukonga.miuix.kmp.basic.DropdownEntry
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.glass.GlassTextField
@@ -206,6 +209,8 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
     var app by rememberSaveable { mutableStateOf<String?>(null) }
     var outbound by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmClear by rememberSaveable { mutableStateOf(false) }
+    var grouping by rememberSaveable { mutableStateOf(SessionGrouping.None) }
+    var collapsed by remember(grouping) { mutableStateOf(emptySet<String>()) }
     val records = state.records.value.orEmpty()
     LaunchedEffect(viewModel) { viewModel.loadAppCatalog() }
     val methods = remember(records) {
@@ -220,10 +225,20 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
     val visible = remember(records, query, method, statusClass, tls, rewrittenOnly, app, outbound) {
         records.filter { it.matchesSession(query, method, statusClass, tls, rewrittenOnly, app, outbound) }
     }
+    val groups = remember(visible, grouping) { visible.groupSessions(grouping) }
     RefreshOnResume(viewModel)
-    TopBarMoreMenu(listOf(TopBarMenuAction(stringResource(R.string.traffic_clear), records.isNotEmpty() && !state.busy) {
+    val groupingActions = SessionGrouping.entries.map { option ->
+        val label = stringResource(when (option) {
+            SessionGrouping.None -> R.string.traffic_group_none
+            SessionGrouping.App -> R.string.traffic_group_app
+            SessionGrouping.Domain -> R.string.traffic_group_domain
+            SessionGrouping.Outbound -> R.string.traffic_group_outbound
+        })
+        TopBarMenuAction(label, grouping != option) { grouping = option }
+    }
+    TopBarMoreMenu(groupingActions + TopBarMenuAction(stringResource(R.string.traffic_clear), records.isNotEmpty() && !state.busy) {
         confirmClear = true
-    }), stringResource(R.string.more_options)) { menu ->
+    }, stringResource(R.string.more_options)) { menu ->
         TrafficFrame(R.string.traffic_records, stringResource(R.string.traffic_record_count, records.size),
             actions = {
                 AppBarButton(viewModel::refresh, !state.busy) { Icon(Icons.Rounded.Refresh, stringResource(R.string.traffic_refresh)) }
@@ -255,12 +270,25 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
                 else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
                     verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     issue?.let { item { TrafficErrorText(it) } }
-                    itemsIndexed(visible, key = { index, record -> record.id ?: "$index:${record.time}" }) { _, record ->
-                        val sourceApp = state.appCatalog[record.appRef]
-                        if (sourceApp != null) LaunchedEffect(sourceApp.iconKey) { viewModel.loadAppIcon(sourceApp.iconKey) }
-                        SessionRow(record, sourceApp) {
-                            viewModel.openRecord(record)
-                            navigator.push(Route.TrafficInspector(record.id ?: ""))
+                    for ((key, rows) in groups) {
+                        val groupKey = "group:${grouping.name}:${key.orEmpty()}"
+                        val expanded = groupKey !in collapsed
+                        if (grouping != SessionGrouping.None) item(key = groupKey) {
+                            val groupApp = if (grouping == SessionGrouping.App) state.appCatalog[key] else null
+                            if (groupApp != null) LaunchedEffect(groupApp.iconKey) { viewModel.loadAppIcon(groupApp.iconKey) }
+                            val title = groupApp?.let { "${it.label} · $key" } ?: key
+                                ?: stringResource(R.string.traffic_group_unknown)
+                            SessionGroupHeader(title, rows.size, groupApp, expanded) {
+                                collapsed = if (expanded) collapsed + groupKey else collapsed - groupKey
+                            }
+                        }
+                        if (expanded) itemsIndexed(rows, key = { index, record -> record.id ?: "$groupKey:$index:${record.time}" }) { _, record ->
+                            val sourceApp = state.appCatalog[record.appRef]
+                            if (sourceApp != null) LaunchedEffect(sourceApp.iconKey) { viewModel.loadAppIcon(sourceApp.iconKey) }
+                            SessionRow(record, sourceApp) {
+                                viewModel.openRecord(record)
+                                navigator.push(Route.TrafficInspector(record.id ?: ""))
+                            }
                         }
                     }
                 }
@@ -269,6 +297,19 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
     }
     TrafficConfirmation(confirmClear, R.string.traffic_clear, R.string.traffic_clear_prompt,
         { confirmClear = false }, { confirmClear = false; viewModel.clear() })
+}
+
+@Composable
+private fun SessionGroupHeader(title: String, count: Int, app: AppInfoModel?, expanded: Boolean, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().background(MiuixTheme.colorScheme.surfaceContainer, RoundedCornerShape(14.dp))
+        .clickable(role = Role.Button, onClick = onClick).heightIn(min = 44.dp).padding(horizontal = 10.dp, vertical = 5.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (app != null) AppIcon(app, size = 20.dp)
+        SmallTitle(title, Modifier.weight(1f), insideMargin = PaddingValues(0.dp))
+        StatusBadge(stringResource(R.string.traffic_record_count, count))
+        Icon(if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+            stringResource(if (expanded) R.string.traffic_group_collapse else R.string.traffic_group_expand))
+    }
 }
 
 @Composable
