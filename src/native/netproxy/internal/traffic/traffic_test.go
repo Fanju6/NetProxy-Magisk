@@ -113,6 +113,24 @@ func TestCaptureAndRewritingThroughCoreBridge(t *testing.T) {
 	}
 }
 
+func TestRewritePanicSkipsScriptAndLogsOnlyFunctions(t *testing.T) {
+	layout := paths.New(t.TempDir())
+	s := &session{controller: New(layout), scriptSlots: make(chan struct{}, 1)}
+	var match RewriteMatch
+	result := s.runScript(t.Context(), nil, scriptInput{URL: "http://private.example/"}, &match)
+	if match.Error != "script_error" || result.Reject || result.Redirect != "" || len(s.scriptSlots) != 0 {
+		t.Fatalf("panic did not skip the rewrite: %+v, %+v", result, match)
+	}
+	data, err := os.ReadFile(layout.ServiceLog())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(data); !strings.Contains(got, "[traffic.rewrite] [failed] [traffic.panic]") ||
+		!strings.Contains(got, "compiledRule).run") || strings.Contains(got, "private.example") {
+		t.Fatalf("unexpected panic diagnostic: %s", got)
+	}
+}
+
 func TestCaptureRetainsNewestEntries(t *testing.T) {
 	c := New(paths.New(t.TempDir()))
 	current := &session{}
@@ -179,7 +197,7 @@ func bridgeFixtureFor(layout paths.Layout, exit *Exit) func(context.Context, str
 		go func() {
 			defer relay.Close()
 			defer origin.Close()
-			relayStreams(relay, origin)
+			(&session{}).relayStreams(relay, origin)
 		}()
 		return bridge, nil
 	}

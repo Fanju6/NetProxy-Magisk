@@ -127,9 +127,15 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 	capturedResponse.failed = capturedResponse.failed || err != nil
 }
 
-func (s *session) runScript(ctx context.Context, rule *compiledRule, input scriptInput, match *RewriteMatch) rewrite {
+func (s *session) runScript(ctx context.Context, rule *compiledRule, input scriptInput, match *RewriteMatch) (result rewrite) {
 	start := time.Now()
-	defer func() { match.DurationUS = time.Since(start).Microseconds() }()
+	defer func() {
+		match.DurationUS = time.Since(start).Microseconds()
+		if recover() != nil {
+			s.logPanic("traffic.rewrite")
+			match.Error = "script_error"
+		}
+	}()
 	select {
 	case s.scriptSlots <- struct{}{}:
 		defer func() { <-s.scriptSlots }()

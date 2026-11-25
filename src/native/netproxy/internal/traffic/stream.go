@@ -8,10 +8,13 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/logfile"
 )
 
 var errBridge = errors.New("无效的透明抓包连接")
@@ -64,15 +67,42 @@ func (s *session) serve() {
 		}
 		select {
 		case s.slots <- struct{}{}:
-			go func() {
-				defer func() { <-s.slots }()
-				defer bridge.Close()
-				s.serveBridge(bridge)
-			}()
+			go s.handleBridge(bridge)
 		default:
 			_ = bridge.Close()
 		}
 	}
+}
+
+func (s *session) handleBridge(bridge *net.UnixConn) {
+	defer func() { <-s.slots }()
+	defer bridge.Close()
+	defer func() {
+		if recover() != nil {
+			s.logPanic("traffic.bridge")
+		}
+	}()
+	s.serveBridge(bridge)
+}
+
+func (s *session) logPanic(event string) {
+	var pcs [12]uintptr
+	n := runtime.Callers(2, pcs[:])
+	frames := runtime.CallersFrames(pcs[:n])
+	var functions []string
+	for {
+		frame, more := frames.Next()
+		if frame.Function != "" {
+			functions = append(functions, frame.Function)
+		}
+		if !more {
+			break
+		}
+	}
+	_ = logfile.AppendEntry(s.controller.layout.ServiceLog(), logfile.Entry{
+		Level: "ERROR", Component: "traffic", Event: event, Result: "failed", ErrorCode: "traffic.panic",
+		Message: strings.Join(functions, " <- "),
+	})
 }
 
 func (s *session) serveBridge(bridge *net.UnixConn) {
@@ -115,7 +145,7 @@ func (s *session) serveBridge(bridge *net.UnixConn) {
 		entry.TLS = "bypass"
 	}
 	s.controller.record(s, entry)
-	relayStreams(client, upstream)
+	s.relayStreams(client, upstream)
 }
 
 func sniffHTTP(reader *bufio.Reader) bool {
@@ -155,6 +185,14 @@ func (s *session) serveHTTPStream(client net.Conn, done <-chan struct{}, upstrea
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second,
 		WriteTimeout: 2 * time.Minute, MaxHeaderBytes: 32 << 10,
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer func() {
+				if value := recover(); value != nil {
+					if value != http.ErrAbortHandler {
+						s.logPanic("traffic.http")
+					}
+					panic(http.ErrAbortHandler)
+				}
+			}()
 			if r.Method == http.MethodConnect || r.URL.IsAbs() || r.URL.Host != "" {
 				http.Error(w, "Invalid origin request", http.StatusBadRequest)
 				return
@@ -167,7 +205,7 @@ func (s *session) serveHTTPStream(client net.Conn, done <-chan struct{}, upstrea
 				if conn, rw, err := http.NewResponseController(w).Hijack(); err == nil {
 					defer conn.Close()
 					if err := r.Write(upstream); err == nil {
-						relayStreams(&bufferedStream{Conn: conn, reader: rw.Reader, done: make(chan struct{})}, upstream)
+						s.relayStreams(&bufferedStream{Conn: conn, reader: rw.Reader, done: make(chan struct{})}, upstream)
 					}
 				}
 				return
@@ -229,9 +267,16 @@ func (l *flowListener) Accept() (net.Conn, error) {
 func (l *flowListener) Addr() net.Addr { return l.conn.LocalAddr() }
 func (l *flowListener) Close() error   { return l.conn.Close() }
 
-func relayStreams(a, b net.Conn) {
+func (s *session) relayStreams(a, b net.Conn) {
 	var wait sync.WaitGroup
 	relay := func(dst, src net.Conn) {
+		defer func() {
+			if recover() != nil {
+				_ = a.Close()
+				_ = b.Close()
+				s.logPanic("traffic.relay")
+			}
+		}()
 		_, _ = io.Copy(dst, src)
 		if half, ok := dst.(interface{ CloseWrite() error }); ok {
 			_ = half.CloseWrite()

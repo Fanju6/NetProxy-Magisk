@@ -114,6 +114,8 @@ func (l Layout) Executable() string { return filepath.Join(l.Bin(), "netproxyctl
 // ServiceLog 返回统一服务日志路径。
 func (l Layout) ServiceLog() string { return filepath.Join(l.Logs(), "service.log") }
 
+func (l Layout) WorkerCrashLog() string { return filepath.Join(l.Logs(), "worker-crash.log") }
+
 // DevRoot 返回运行时状态目录。
 func (l Layout) DevRoot() string { return l.devRoot }
 

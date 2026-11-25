@@ -734,6 +734,7 @@ func workerOptions(options Options) worker.Options {
 		TransferContext:     options.TransferContext,
 		PIDFile:             options.WorkerPIDFile,
 		LogFile:             options.WorkerLogFile,
+		CrashLog:            paths.New(options.ModuleDir).WorkerCrashLog(),
 		ModuleConfig:        options.ModuleConfig,
 		APIConfig:           paths.New(options.ModuleDir).APIConfig(),
 		SingBoxPath:         options.SingBoxPath,
