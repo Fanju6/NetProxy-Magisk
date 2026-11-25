@@ -63,7 +63,9 @@ import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.ui.component.ContentStatus
 import com.fanjv.netproxy.core.ui.component.TopBarMenuAction
 import com.fanjv.netproxy.core.ui.component.TopBarMoreMenu
+import com.fanjv.netproxy.feature.apps.data.AndroidApp
 import com.fanjv.netproxy.feature.apps.data.AppIconCache
+import com.fanjv.netproxy.feature.traffic.data.CaptureRecord
 import com.fanjv.netproxy.feature.traffic.data.CapturedBody
 import com.fanjv.netproxy.feature.traffic.data.CapturedMessage
 import com.fanjv.netproxy.feature.traffic.data.RewriteMatch
@@ -153,24 +155,9 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
                                     if (exit.chain.isNotEmpty()) InspectRow(stringResource(R.string.traffic_exit_chain),
                                         exit.chain.joinToString(" → ") { "${it.tag} (${it.type})" })
                                     exit.remote?.let { InspectRow(stringResource(R.string.traffic_remote), it) }
-                                    (record.sourceApp?.packageName ?: exit.packageName)?.let { name ->
-                                        val app = selection.app
-                                        if (app == null) InspectRow(stringResource(R.string.traffic_app), name)
-                                        else Row(verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            val bitmap = remember(app.iconKey, AppIconCache.revision) {
-                                                AppIconCache.cachedIcon(app.iconKey)
-                                            }
-                                            bitmap?.let { Image(it, null, Modifier.size(32.dp).clip(RoundedCornerShape(8.dp))) }
-                                            InspectRow(stringResource(R.string.traffic_app), "${app.label}\n$name")
-                                        }
-                                    }
-                                    (record.sourceApp?.uid ?: exit.uid)?.let { InspectRow("UID", it.toString()) }
-                                    record.sourceApp?.userId?.let {
-                                        InspectRow(stringResource(R.string.traffic_app_user), it.toString())
-                                    }
-                                    exit.process?.let { InspectRow(stringResource(R.string.traffic_process), it) }
                                 }
+                                InspectSourceApp(record, selection.app)
+                                record.exit?.process?.let { InspectRow(stringResource(R.string.traffic_process), it) }
                                 InspectRow(stringResource(R.string.traffic_rewrite_result), when {
                                     record.rewritten -> stringResource(R.string.traffic_rewritten)
                                     record.rewrite != null -> stringResource(R.string.traffic_rule_unchanged)
@@ -208,6 +195,30 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun InspectSourceApp(record: CaptureRecord, app: AndroidApp?) {
+    val packageName = record.sourceApp?.packageName ?: record.exit?.packageName
+    val uid = record.sourceApp?.uid ?: record.exit?.uid
+    val user = record.sourceApp?.userId
+    if (packageName == null && uid == null && user == null) return
+
+    val bitmap = app?.let {
+        remember(it.iconKey, AppIconCache.revision) { AppIconCache.cachedIcon(it.iconKey) }
+    }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            packageName?.let {
+                val appText = if (app == null || app.label == it) it else "${app.label}\n$it"
+                InspectRow(stringResource(R.string.traffic_app), appText)
+            }
+            uid?.let { InspectRow("UID", it.toString()) }
+            user?.let { InspectRow(stringResource(R.string.traffic_app_user), it.toString()) }
+        }
+        bitmap?.let { Image(it, null, Modifier.size(36.dp).clip(RoundedCornerShape(9.dp))) }
     }
 }
 
