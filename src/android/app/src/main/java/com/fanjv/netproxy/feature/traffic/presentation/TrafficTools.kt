@@ -10,14 +10,16 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -25,6 +27,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -33,6 +36,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.R
+import com.fanjv.netproxy.core.ui.component.AppBarButton
+import com.fanjv.netproxy.core.ui.component.AppBottomSheet
 import com.fanjv.netproxy.core.ui.component.AppDialog
 import com.fanjv.netproxy.core.ui.component.AppDialogButton
 import com.fanjv.netproxy.core.ui.component.AppDropdown
@@ -41,6 +46,7 @@ import com.fanjv.netproxy.core.ui.component.ContentStatus
 import com.fanjv.netproxy.core.ui.component.DialogActionRole
 import com.fanjv.netproxy.core.ui.component.TopBarMenuAction
 import com.fanjv.netproxy.core.ui.component.TopBarMoreMenu
+import com.fanjv.netproxy.core.ui.component.chromeIcon
 import com.fanjv.netproxy.core.ui.component.dialogTextFieldColors
 import com.fanjv.netproxy.core.ui.component.groupedCardSection
 import com.fanjv.netproxy.navigation.LocalNavigator
@@ -50,6 +56,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.FloatingActionButton
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.glass.GlassTextField
 import top.yukonga.miuix.kmp.preference.ArrowPreference
@@ -84,7 +91,7 @@ internal fun TrafficRulesScreen(viewModel: TrafficViewModel) {
                 CardItem(index.toString()) {
                     ArrowPreference(title = rule.pattern,
                         summary = "${phaseLabel(rule.phase)} · ${stringResource(R.string.traffic_rule_enabled)}",
-                        enabled = editable, onClick = { edit(index) })
+                        enabled = editable, onClick = { edit(index) }, insideMargin = TrafficRowInsets)
                 }
             })
         }
@@ -104,12 +111,19 @@ internal fun TrafficRuleEditorScreen(viewModel: TrafficViewModel) {
         TopBarMenuAction(stringResource(R.string.common_delete), draft.index != null && !state.saving) { confirmDelete = true },
     ), stringResource(R.string.more_options)) { menu ->
         TrafficFrame(if (draft.index == null) R.string.traffic_rule_add else R.string.traffic_rule_edit,
-            actions = { if (draft.index != null) menu() }) { padding ->
-            Column(Modifier.fillMaxSize().padding(padding).imePadding().verticalScroll(rememberScrollState()).padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            actions = {
+                if (draft.index != null) menu()
+                AppBarButton({ viewModel.saveRule() }, !state.saving && rule.pattern.isNotBlank() && rule.script.isNotBlank()) {
+                    if (state.saving) InfiniteProgressIndicator(modifier = Modifier.size(20.dp))
+                    else Icon(chromeIcon(Icons.Rounded.Check), stringResource(R.string.save_text))
+                }
+            }) { padding ->
+            Column(Modifier.fillMaxSize().padding(padding).imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 AppDropdown(title = stringResource(R.string.traffic_rule_phase),
                     items = listOf(phaseLabel("request"), phaseLabel("response")),
                     selectedIndex = if (rule.phase == "request") 0 else 1, enabled = !state.saving,
+                    insideMargin = TrafficRowInsets,
                     onSelectedIndexChange = { viewModel.updateRule(rule.copy(phase = if (it == 0) "request" else "response")) })
                 GlassTextField(value = rule.pattern, onValueChange = { viewModel.updateRule(rule.copy(pattern = it)) },
                     modifier = Modifier.fillMaxWidth(), singleLine = true, enabled = !state.saving,
@@ -120,8 +134,6 @@ internal fun TrafficRuleEditorScreen(viewModel: TrafficViewModel) {
                     textStyle = MiuixTheme.textStyles.body2.copy(fontFamily = FontFamily.Monospace),
                     colors = dialogTextFieldColors(state.draftError != null))
                 state.draftError?.let { TrafficErrorText(it) }
-                AppDialogButton(stringResource(R.string.save_text), { viewModel.saveRule() }, Modifier.fillMaxWidth(),
-                    enabled = !state.saving && rule.pattern.isNotBlank() && rule.script.isNotBlank(), role = DialogActionRole.Primary)
             }
         }
     }
@@ -172,59 +184,68 @@ internal fun TrafficHttpsScreen(viewModel: TrafficViewModel) {
             }, shareTitle))
         }
     }
-    TrafficFrame(R.string.traffic_https) { padding ->
+    TopBarMoreMenu(listOf(
+        TopBarMenuAction(stringResource(R.string.traffic_ca_export), editable) { viewModel.prepareCertificate { picker.launch(it) } },
+        TopBarMenuAction(shareTitle, editable) { share() },
+    ), stringResource(R.string.more_options)) { menu ->
+    TrafficFrame(R.string.traffic_https, actions = {
+        AppBarButton(onClick = { newHost = ""; addHost = true }, enabled = editable && !addHost) {
+            Icon(Icons.Rounded.Add, stringResource(R.string.traffic_host_add))
+        }
+        menu()
+    }) { padding ->
         if (policy == null) ContentStatus(padding,
             state.policy.error?.let { trafficError(it, R.string.traffic_https_unavailable) } ?: stringResource(R.string.traffic_https_unavailable),
             loading = state.loading)
         else LazyColumn(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
             contentPadding = PaddingValues(bottom = 24.dp)) {
             state.failure?.let { issue -> item { TrafficErrorText(issue) } }
-            groupedCardSection("https", { stringResource(R.string.traffic_https) }, listOf(CardItem("switch") {
+            item("switch") {
                 SwitchPreference(title = stringResource(R.string.traffic_mitm), summary = stringResource(R.string.traffic_mitm_hint),
-                    checked = policy.enabled, enabled = editable, onCheckedChange = viewModel::setMitmEnabled)
-            }))
+                    checked = policy.enabled, enabled = editable, onCheckedChange = viewModel::setMitmEnabled,
+                    insideMargin = TrafficRowInsets)
+            }
             groupedCardSection("hosts", { stringResource(R.string.traffic_hosts) }, buildList {
-                add(CardItem("add") {
-                    ArrowPreference(title = stringResource(R.string.traffic_host_add), summary = stringResource(R.string.traffic_hosts_hint),
-                        enabled = editable, onClick = { newHost = ""; addHost = true })
+                if (addHost) add(CardItem("add") {
+                    Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        GlassTextField(value = newHost, onValueChange = { newHost = it }, singleLine = true,
+                            label = stringResource(R.string.traffic_host), modifier = Modifier.weight(1f))
+                        AppBarButton({ addHost = false }) {
+                            Icon(Icons.Rounded.Close, stringResource(R.string.common_cancel))
+                        }
+                        AppBarButton({
+                            addHost = false
+                            viewModel.setHosts(policy.hosts + newHost.trim())
+                        }, newHost.isNotBlank() && editable) {
+                            Icon(chromeIcon(Icons.Rounded.Check), stringResource(R.string.common_confirm))
+                        }
+                    }
+                })
+                if (addHost || policy.hosts.isEmpty()) add(CardItem("hint") {
+                    Text(stringResource(R.string.traffic_hosts_hint), Modifier.padding(TrafficRowInsets),
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary, style = MiuixTheme.textStyles.footnote1)
                 })
                 policy.hosts.forEach { host -> add(CardItem("host:$host") {
                     ArrowPreference(title = host, summary = stringResource(R.string.traffic_host_remove),
-                        enabled = editable, onClick = { removeHost = host })
+                        enabled = editable, onClick = { removeHost = host }, insideMargin = TrafficRowInsets)
                 }) }
             })
             groupedCardSection("ca", { stringResource(R.string.traffic_ca_section) }, listOf(
                 CardItem("fingerprint") {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(Modifier.padding(TrafficRowInsets), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(stringResource(R.string.traffic_ca_fingerprint), style = MiuixTheme.textStyles.subtitle)
                         Text(state.fingerprint ?: stringResource(R.string.traffic_ca_not_ready),
                             style = MiuixTheme.textStyles.footnote1.copy(fontFamily = FontFamily.Monospace))
                     }
                 },
-                CardItem("export") {
-                    ArrowPreference(title = stringResource(R.string.traffic_ca_export), enabled = editable,
-                        onClick = { viewModel.prepareCertificate { picker.launch(it) } })
-                },
-                CardItem("share") {
-                    ArrowPreference(title = shareTitle, enabled = editable, onClick = { share() })
-                },
                 CardItem("trust") {
                     SwitchPreference(title = stringResource(R.string.traffic_trust), checked = policy.systemTrust,
-                        summary = stringResource(R.string.traffic_trust_hint), enabled = editable,
+                        summary = stringResource(R.string.traffic_trust_hint), enabled = editable, insideMargin = TrafficRowInsets,
                         onCheckedChange = { if (it) confirmTrust = true else viewModel.setSystemTrust(false) })
                 },
             ))
         }
     }
-    AppDialog(show = addHost, title = stringResource(R.string.traffic_host_add), onDismissRequest = { addHost = false }) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            GlassTextField(value = newHost, onValueChange = { newHost = it }, singleLine = true,
-                label = stringResource(R.string.traffic_host), modifier = Modifier.fillMaxWidth())
-            ConfirmationActions({ addHost = false }, {
-                addHost = false
-                viewModel.setHosts(policy?.hosts.orEmpty() + newHost.trim())
-            }, enabled = newHost.isNotBlank() && editable)
-        }
     }
     TrafficConfirmation(removeHost != null, R.string.traffic_host_remove, R.string.traffic_host_remove_prompt,
         { removeHost = null }, {
@@ -243,10 +264,12 @@ private fun phaseLabel(phase: String) = when (phase) {
 }
 
 @Composable
-internal fun TrafficOptionDialog(title: Int, options: List<String>, dismiss: () -> Unit, choose: (Int) -> Unit) {
-    AppDialog(show = true, title = stringResource(title), onDismissRequest = dismiss) {
-        Column(Modifier.heightIn(max = 350.dp).verticalScroll(rememberScrollState())) {
-            options.forEachIndexed { index, text -> ArrowPreference(title = text, onClick = { choose(index) }) }
+internal fun TrafficCopySheet(title: Int, options: List<String>, dismiss: () -> Unit, choose: (Int) -> Unit) {
+    AppBottomSheet(show = true, title = stringResource(title), onDismissRequest = dismiss) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            options.forEachIndexed { index, text ->
+                ArrowPreference(title = text, onClick = { choose(index) }, insideMargin = TrafficRowInsets)
+            }
         }
     }
 }
@@ -259,10 +282,10 @@ internal fun TrafficConfirmation(show: Boolean, title: Int, prompt: Int, dismiss
 }
 
 @Composable
-private fun ConfirmationActions(dismiss: () -> Unit, confirm: () -> Unit, enabled: Boolean = true) {
+private fun ConfirmationActions(dismiss: () -> Unit, confirm: () -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         AppDialogButton(stringResource(R.string.common_cancel), dismiss, Modifier.weight(1f))
-        AppDialogButton(stringResource(R.string.common_confirm), confirm, Modifier.weight(1f), enabled = enabled,
+        AppDialogButton(stringResource(R.string.common_confirm), confirm, Modifier.weight(1f),
             role = DialogActionRole.Primary)
     }
 }

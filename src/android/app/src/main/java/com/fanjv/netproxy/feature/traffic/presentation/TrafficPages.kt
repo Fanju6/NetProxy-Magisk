@@ -11,10 +11,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Code
@@ -32,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -53,9 +57,13 @@ import com.fanjv.netproxy.feature.traffic.data.TrafficChangedException
 import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.Route
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.DropdownDefaults
+import top.yukonga.miuix.kmp.basic.DropdownEntry
+import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.glass.GlassTextField
+import top.yukonga.miuix.kmp.popup.WindowDropdownPopup
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -99,9 +107,9 @@ internal fun TrafficScreen(viewModel: TrafficViewModel) {
                             null -> R.string.traffic_read_failed
                         }),
                         checked = status?.running == true, enabled = status != null && !state.busy,
-                        onCheckedChange = viewModel::setCapture,
+                        onCheckedChange = viewModel::setCapture, insideMargin = TrafficRowInsets,
                     )
-                    Row(Modifier.fillMaxWidth().padding(start = 22.dp, end = 22.dp, bottom = 16.dp),
+                    Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 10.dp),
                         horizontalArrangement = Arrangement.SpaceBetween) {
                         StatusBadge(status?.count?.let { stringResource(R.string.traffic_record_count, it) } ?: "—")
                         StatusBadge(stringResource(when (state.policy.value?.enabled) {
@@ -137,8 +145,11 @@ internal fun TrafficScreen(viewModel: TrafficViewModel) {
 @Composable
 private fun TrafficLink(title: Int, summary: Int, icon: ImageVector, onClick: () -> Unit) {
     ArrowPreference(title = stringResource(title), summary = stringResource(summary), onClick = onClick,
+        insideMargin = TrafficRowInsets,
         startAction = { Icon(icon, null, Modifier.padding(end = 12.dp), tint = MiuixTheme.colorScheme.primary) })
 }
+
+internal val TrafficRowInsets = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
 
 @Composable
 internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
@@ -152,8 +163,15 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
     var app by rememberSaveable { mutableStateOf<String?>(null) }
     var outbound by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmClear by rememberSaveable { mutableStateOf(false) }
-    var filter by rememberSaveable { mutableStateOf<String?>(null) }
     val records = state.records.value.orEmpty()
+    val methods = remember(records) {
+        (listOf("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD") + records.map { it.method }).distinct()
+    }
+    val apps = remember(records) { records.mapNotNull { it.exit?.appKey }.distinct().sorted() }
+    val outbounds = remember(records) {
+        records.flatMap { listOf(it.outbound) + it.exit?.chain.orEmpty().map { hop -> hop.tag } }
+            .filter { it.isNotBlank() }.distinct().sorted()
+    }
     val visible = remember(records, query, method, statusClass, tls, rewrittenOnly, app, outbound) {
         records.filter { it.matchesSession(query, method, statusClass, tls, rewrittenOnly, app, outbound) }
     }
@@ -169,15 +187,19 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
             Column(Modifier.fillMaxSize().padding(padding)) {
                 GlassTextField(value = query, onValueChange = { query = it }, label = stringResource(R.string.traffic_search),
                     useLabelAsPlaceholder = true, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
-                Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterPill(method ?: stringResource(R.string.traffic_method), method != null) { filter = "method" }
-                    FilterPill(statusClass?.let { "${it}xx" } ?: stringResource(R.string.traffic_http_status), statusClass != null) { filter = "status" }
-                    FilterPill(tls?.let { stringResource(if (it == "decrypted") R.string.traffic_tls_decrypted else R.string.traffic_tls_bypass) }
-                        ?: stringResource(R.string.traffic_tls), tls != null) { filter = "tls" }
-                    FilterPill(stringResource(R.string.traffic_rewritten), rewrittenOnly) { rewrittenOnly = !rewrittenOnly }
-                    FilterPill(app ?: stringResource(R.string.traffic_app), app != null) { filter = "app" }
-                    FilterPill(outbound ?: stringResource(R.string.traffic_outbound), outbound != null) { filter = "outbound" }
+                Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterDropdown(R.string.traffic_method, methods, method) { method = it }
+                    FilterDropdown(R.string.traffic_http_status, (1..5).map { "${it}xx" }, statusClass?.let { "${it}xx" }) {
+                        statusClass = it?.firstOrNull()?.digitToInt()
+                    }
+                    val tlsOptions = listOf("decrypted", "tunnel")
+                    val tlsLabels = listOf(stringResource(R.string.traffic_tls_decrypted), stringResource(R.string.traffic_tls_bypass))
+                    FilterDropdown(R.string.traffic_tls, tlsOptions, tls, tlsLabels) { tls = it }
+                    FilterChip(stringResource(R.string.traffic_rewritten), rewrittenOnly,
+                        Modifier.toggleable(rewrittenOnly, role = Role.Checkbox) { rewrittenOnly = it })
+                    FilterDropdown(R.string.traffic_app, apps, app) { app = it }
+                    FilterDropdown(R.string.traffic_outbound, outbounds, outbound) { outbound = it }
                 }
                 val issue = state.records.error ?: state.failure
                 if (visible.isEmpty()) ContentStatus(PaddingValues(0.dp), when {
@@ -198,35 +220,6 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
             }
         }
     }
-    filter?.let { kind ->
-        val all = stringResource(R.string.traffic_filter_all)
-        val title = when (kind) {
-            "method" -> R.string.traffic_method
-            "status" -> R.string.traffic_http_status
-            "app" -> R.string.traffic_app
-            "outbound" -> R.string.traffic_outbound
-            else -> R.string.traffic_tls
-        }
-        val methods = (listOf("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD") + records.map { it.method }).distinct()
-        val values = when (kind) {
-            "method" -> methods
-            "status" -> listOf("1xx", "2xx", "3xx", "4xx", "5xx")
-            "app" -> records.mapNotNull { it.exit?.appKey }.distinct().sorted()
-            "outbound" -> records.flatMap { listOf(it.outbound) + it.exit?.chain.orEmpty().map { hop -> hop.tag } }
-                .filter { it.isNotBlank() }.distinct().sorted()
-            else -> listOf(stringResource(R.string.traffic_tls_decrypted), stringResource(R.string.traffic_tls_bypass))
-        }
-        TrafficOptionDialog(title, listOf(all) + values, { filter = null }) { index ->
-            when (kind) {
-                "method" -> method = methods.getOrNull(index - 1)
-                "status" -> statusClass = index.takeIf { it > 0 }
-                "app" -> app = values.getOrNull(index - 1)
-                "outbound" -> outbound = values.getOrNull(index - 1)
-                else -> tls = listOf("decrypted", "tunnel").getOrNull(index - 1)
-            }
-            filter = null
-        }
-    }
     TrafficConfirmation(confirmClear, R.string.traffic_clear, R.string.traffic_clear_prompt,
         { confirmClear = false }, { confirmClear = false; viewModel.clear() })
 }
@@ -235,7 +228,7 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
 private fun SessionRow(record: CaptureRecord, onClick: () -> Unit) {
     val primary = MiuixTheme.colorScheme.primary
     Row(Modifier.fillMaxWidth().background(MiuixTheme.colorScheme.surfaceContainer, RoundedCornerShape(14.dp))
-        .clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 10.dp),
+        .clickable(onClick = onClick).heightIn(min = 44.dp).padding(horizontal = 9.dp, vertical = 5.dp),
         horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.CenterVertically) {
         StatusBadge(record.method, when (record.method) {
             "GET" -> primary
@@ -244,12 +237,19 @@ private fun SessionRow(record: CaptureRecord, onClick: () -> Unit) {
             else -> MiuixTheme.colorScheme.onSurfaceVariantSummary
         })
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text(record.host, style = MiuixTheme.textStyles.body1, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            record.target?.let { Text(it, style = MiuixTheme.textStyles.footnote1.copy(fontFamily = FontFamily.Monospace),
-                maxLines = 1, overflow = TextOverflow.Ellipsis, color = MiuixTheme.colorScheme.onSurfaceVariantSummary) }
-            Text("${shortTime(record.time)} · ${stringResource(R.string.traffic_milliseconds, record.durationMs)}",
-                style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
-            if (record.rewritten) StatusBadge(stringResource(R.string.traffic_rewritten))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(record.host, Modifier.weight(1f), style = MiuixTheme.textStyles.footnote1,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (record.rewritten) Text(stringResource(R.string.traffic_rewritten), color = primary,
+                    style = MiuixTheme.textStyles.footnote2, maxLines = 1)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(record.target.orEmpty(), Modifier.weight(1f),
+                    style = MiuixTheme.textStyles.footnote2.copy(fontFamily = FontFamily.Monospace),
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                Text("${shortTime(record.time)} · ${stringResource(R.string.traffic_milliseconds, record.durationMs)}",
+                    style = MiuixTheme.textStyles.footnote2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary, maxLines = 1)
+            }
         }
         val tls = record.tls
         if (tls != null) Icon(Icons.Rounded.Lock, tlsLabel(tls), Modifier.padding(end = 2.dp),
@@ -275,11 +275,32 @@ internal fun StatusBadge(text: String, color: Color = MiuixTheme.colorScheme.pri
 }
 
 @Composable
-private fun FilterPill(text: String, selected: Boolean, onClick: () -> Unit) {
+private fun FilterDropdown(title: Int, values: List<String>, selected: String?, labels: List<String> = values, choose: (String?) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val label = labels.getOrNull(values.indexOf(selected)) ?: selected ?: stringResource(title)
+    val all = stringResource(R.string.traffic_filter_all)
+    Box {
+        FilterChip("$label ▾", selected != null, Modifier.clickable { open = true })
+        WindowDropdownPopup(
+            entry = DropdownEntry(listOf(DropdownItem(text = all, selected = selected == null, onClick = { choose(null) })) +
+                values.mapIndexed { index, value ->
+                    DropdownItem(text = labels[index], selected = selected == value, onClick = { choose(value) })
+                }),
+            show = open, onDismiss = { open = false }, maxHeight = 320.dp,
+            dropdownColors = DropdownDefaults.dropdownColors(),
+        )
+    }
+}
+
+@Composable
+private fun FilterChip(text: String, selected: Boolean, modifier: Modifier) {
     val colors = MiuixTheme.colorScheme
-    Text("$text ▾", Modifier.background(if (selected) colors.primary.copy(alpha = 0.15f) else colors.surfaceContainer,
-        RoundedCornerShape(16.dp)).clickable(onClick = onClick).padding(horizontal = 13.dp, vertical = 8.dp),
-        color = if (selected) colors.primary else colors.onSurface, style = MiuixTheme.textStyles.footnote1)
+    Box(modifier.heightIn(min = 40.dp), contentAlignment = Alignment.Center) {
+        Text(text, Modifier.widthIn(max = 180.dp)
+            .background(if (selected) colors.primary.copy(alpha = 0.15f) else colors.surfaceContainer, RoundedCornerShape(10.dp))
+            .padding(horizontal = 9.dp, vertical = 4.dp), color = if (selected) colors.primary else colors.onSurface,
+            style = MiuixTheme.textStyles.footnote2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
 }
 
 @Composable

@@ -9,18 +9,33 @@ import android.os.PersistableBundle
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Code
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -34,24 +49,27 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.R
-import com.fanjv.netproxy.core.ui.component.AppDialogButton
 import com.fanjv.netproxy.core.ui.component.ContentStatus
 import com.fanjv.netproxy.core.ui.component.TopBarMenuAction
 import com.fanjv.netproxy.core.ui.component.TopBarMoreMenu
 import com.fanjv.netproxy.feature.apps.data.AppIconCache
+import com.fanjv.netproxy.feature.traffic.data.CapturedBody
 import com.fanjv.netproxy.feature.traffic.data.CapturedMessage
 import com.fanjv.netproxy.feature.traffic.data.RewriteMatch
 import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.Route
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
-import top.yukonga.miuix.kmp.basic.TabRow
+import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -88,7 +106,7 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
     val copyUrl = stringResource(R.string.traffic_copy_field, stringResource(R.string.traffic_full_url))
     val copyCurl = stringResource(R.string.traffic_copy_curl)
     headerName?.let { name ->
-        TrafficOptionDialog(R.string.traffic_header_copy, listOf(
+        TrafficCopySheet(R.string.traffic_header_copy, listOf(
             stringResource(R.string.traffic_copy_name), stringResource(R.string.traffic_copy_value),
             stringResource(R.string.traffic_copy_line),
         ), { headerName = null }) { index ->
@@ -108,13 +126,11 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
                 return@TrafficFrame
             }
             Column(Modifier.fillMaxSize().padding(padding)) {
-                TabRow(tabs = listOf(stringResource(R.string.traffic_overview), stringResource(R.string.traffic_request_detail),
+                InspectorTabs(tabs = listOf(stringResource(R.string.traffic_overview), stringResource(R.string.traffic_request_detail),
                     stringResource(R.string.traffic_response_detail), stringResource(R.string.traffic_rewrite_tab)),
-                    selectedTabIndex = tab, onTabSelected = { tab = it },
-                    minWidth = 102.dp, maxWidth = 112.dp, itemSpacing = 4.dp,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp))
-                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    selected = tab, select = { tab = it })
+                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (tab == 0) {
                         detail?.let { item {
                             InspectCard {
@@ -168,30 +184,7 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
                                 MessageHeaders(message) { name, value -> headerName = name; headerValue = value }
                             }
                             body?.let {
-                                item {
-                                    InspectCard {
-                                        Text(stringResource(R.string.traffic_body), style = MiuixTheme.textStyles.subtitle)
-                                        it.contentType?.let { type -> InspectRow(stringResource(R.string.traffic_content_type), type) }
-                                        it.contentEncoding?.let { encoding -> InspectRow(stringResource(R.string.traffic_content_encoding), encoding) }
-                                        it.size?.let { size -> InspectRow(stringResource(R.string.traffic_body_size), stringResource(R.string.traffic_bytes, size)) }
-                                        if (it.format == "base64") StatusBadge(stringResource(R.string.traffic_body_base64))
-                                        if (it.truncated) {
-                                            TruncatedNotice()
-                                            it.capturedSize?.let { size -> InspectRow(stringResource(R.string.traffic_captured_size),
-                                                stringResource(R.string.traffic_bytes, size.toLong())) }
-                                        }
-                                        if (it.data.isEmpty()) Text(stringResource(R.string.traffic_payload_empty))
-                                        else AppDialogButton(stringResource(if (expanded) R.string.traffic_hide_body else R.string.traffic_show_body),
-                                            { expanded = !expanded })
-                                        if (expanded && it.data.isNotEmpty()) {
-                                            if (json) AppDialogButton(stringResource(if (pretty) R.string.traffic_show_raw else R.string.traffic_show_pretty),
-                                                { pretty = !pretty })
-                                            val title = stringResource(R.string.traffic_body)
-                                            AppDialogButton(stringResource(R.string.traffic_copy_field, title),
-                                                { copyCapture(context, title, it.data) })
-                                        }
-                                    }
-                                }
+                                item { BodyHeader(it, expanded, { expanded = !expanded }, json, pretty, { pretty = !pretty }) }
                                 bodyContent(chunks, json && pretty)
                             }
                         }
@@ -215,25 +208,104 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
 }
 
 @Composable
+private fun InspectorTabs(tabs: List<String>, selected: Int, select: (Int) -> Unit) {
+    val colors = MiuixTheme.colorScheme
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()).widthIn(min = maxWidth).selectableGroup(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            tabs.forEachIndexed { index, title ->
+                val active = index == selected
+                Box(
+                    Modifier.height(44.dp).widthIn(min = 64.dp)
+                        .selectable(active, role = Role.Tab) { select(index) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(title, Modifier.padding(horizontal = 12.dp), style = MiuixTheme.textStyles.footnote1,
+                        color = if (active) colors.primary else colors.onSurfaceVariantSummary, maxLines = 1)
+                    if (active) Box(Modifier.matchParentSize(), contentAlignment = Alignment.BottomCenter) {
+                        Box(Modifier.fillMaxWidth().height(2.dp).padding(horizontal = 12.dp)
+                            .background(colors.primary, RoundedCornerShape(1.dp)))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun MessageHeaders(message: CapturedMessage, onHeader: (String, String) -> Unit) {
     val context = LocalContext.current
     val headersTitle = stringResource(R.string.traffic_headers)
     val copyHeaders = stringResource(R.string.traffic_copy_field, headersTitle)
     val fields = remember(message.headers) { message.headers.toSortedMap(String.CASE_INSENSITIVE_ORDER) }
     InspectCard {
-        Text(headersTitle, style = MiuixTheme.textStyles.subtitle)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(headersTitle, Modifier.weight(1f), style = MiuixTheme.textStyles.subtitle)
+            if (fields.isNotEmpty()) InspectAction(Icons.Rounded.ContentCopy, copyHeaders) {
+                copyCapture(context, headersTitle, fields.flatMap { (key, values) -> values.map { "$key: $it" } }.joinToString("\n"))
+            }
+        }
         if (fields.isEmpty()) Text(stringResource(R.string.traffic_payload_empty))
         else Text(stringResource(R.string.traffic_header_copy_hint), style = MiuixTheme.textStyles.footnote1,
             color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
         fields.forEach { (key, entries) -> entries.forEach {
             InspectRow(key, it, monospace = true, modifier = Modifier.clickable(
                 onClickLabel = stringResource(R.string.traffic_header_copy),
-            ) { onHeader(key, it) }.padding(vertical = 4.dp))
+            ) { onHeader(key, it) }.heightIn(min = 40.dp).padding(vertical = 2.dp))
         } }
         if (message.headersTruncated) TruncatedNotice()
-        if (fields.isNotEmpty()) AppDialogButton(copyHeaders, {
-            copyCapture(context, headersTitle, fields.flatMap { (key, values) -> values.map { "$key: $it" } }.joinToString("\n"))
-        })
+    }
+}
+
+@Composable
+private fun BodyHeader(body: CapturedBody, expanded: Boolean, toggle: () -> Unit, json: Boolean, pretty: Boolean, format: () -> Unit) {
+    val context = LocalContext.current
+    val title = stringResource(R.string.traffic_body)
+    val hasData = body.data.isNotEmpty()
+    val expandLabel = stringResource(if (expanded) R.string.traffic_hide_body else R.string.traffic_show_body)
+    val meta = listOfNotNull(
+        body.contentType?.substringBefore(';'),
+        body.size?.let { stringResource(R.string.traffic_bytes, it) },
+        body.contentEncoding,
+        if (body.format == "base64") stringResource(R.string.traffic_body_base64) else null,
+        if (body.truncated) stringResource(R.string.traffic_truncated) else null,
+        if (!hasData) stringResource(R.string.traffic_payload_empty) else null,
+    ).joinToString(" · ")
+    InspectCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.weight(1f).heightIn(min = 40.dp)
+                    .then(if (hasData) Modifier.clickable(onClickLabel = expandLabel, onClick = toggle) else Modifier),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = MiuixTheme.textStyles.subtitle)
+                    if (meta.isNotEmpty()) Text(meta, style = MiuixTheme.textStyles.footnote2,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                }
+                if (hasData) Icon(if (expanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+                    null, Modifier.size(18.dp), tint = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+            }
+            if (hasData && expanded && json) InspectAction(Icons.Rounded.Code,
+                stringResource(if (pretty) R.string.traffic_show_raw else R.string.traffic_show_pretty), format)
+            if (hasData) InspectAction(Icons.Rounded.ContentCopy, stringResource(R.string.traffic_copy_field, title)) {
+                copyCapture(context, title, body.data)
+            }
+        }
+        if (body.truncated) body.capturedSize?.let {
+            InspectRow(stringResource(R.string.traffic_captured_size), stringResource(R.string.traffic_bytes, it.toLong()))
+        }
+    }
+}
+
+@Composable
+private fun InspectAction(icon: ImageVector, label: String, action: () -> Unit) {
+    Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).clickable(role = Role.Button, onClick = action),
+        contentAlignment = Alignment.Center) {
+        Icon(icon, label, Modifier.size(18.dp), tint = MiuixTheme.colorScheme.primary)
     }
 }
 
@@ -246,7 +318,15 @@ private fun LazyListScope.bodyContent(chunks: List<String>, highlight: Boolean) 
 @Composable
 private fun RewriteAuditCard(match: RewriteMatch, status: Int, canEdit: Boolean, edit: () -> Unit) {
     InspectCard {
-        Text(stringResource(R.string.traffic_matched_rule, match.ruleIndex + 1), style = MiuixTheme.textStyles.subtitle)
+        val editLabel = stringResource(R.string.traffic_rule_edit)
+        Row(Modifier.fillMaxWidth().then(if (canEdit) Modifier.heightIn(min = 40.dp)
+            .clickable(onClickLabel = editLabel, onClick = edit) else Modifier),
+            verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.traffic_matched_rule, match.ruleIndex + 1), Modifier.weight(1f),
+                style = MiuixTheme.textStyles.subtitle)
+            if (canEdit) Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, Modifier.size(18.dp),
+                tint = MiuixTheme.colorScheme.primary)
+        }
         CodeText(match.pattern)
         InspectRow(stringResource(R.string.traffic_rule_phase), stringResource(
             if (match.phase == "request") R.string.traffic_request_detail else R.string.traffic_response_detail))
@@ -279,20 +359,20 @@ private fun RewriteAuditCard(match: RewriteMatch, status: Int, canEdit: Boolean,
             InspectRow(change.name, "$before → $after", monospace = true)
             if (change.truncated) TruncatedNotice()
         }
-        if (canEdit) AppDialogButton(stringResource(R.string.traffic_rule_edit), edit)
-        else Text(stringResource(R.string.traffic_rule_unavailable), style = MiuixTheme.textStyles.footnote1)
+        if (!canEdit) Text(stringResource(R.string.traffic_rule_unavailable), style = MiuixTheme.textStyles.footnote1)
     }
 }
 
 @Composable
 private fun InspectCard(content: @Composable () -> Unit) {
-    Column(Modifier.fillMaxWidth().background(MiuixTheme.colorScheme.surfaceContainer, RoundedCornerShape(18.dp)).padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(9.dp)) { content() }
+    Column(Modifier.fillMaxWidth().background(MiuixTheme.colorScheme.surfaceContainer, RoundedCornerShape(14.dp))
+        .padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { content() }
 }
 
 @Composable
 private fun InspectRow(key: String, value: String, monospace: Boolean = false, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically) {
         Text(key, Modifier.weight(0.40f), style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
         Text(value, Modifier.weight(0.60f), style = if (monospace) MiuixTheme.textStyles.footnote1.copy(fontFamily = FontFamily.Monospace)
             else MiuixTheme.textStyles.footnote1)
