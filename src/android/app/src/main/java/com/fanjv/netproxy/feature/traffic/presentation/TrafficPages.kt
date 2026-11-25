@@ -215,7 +215,7 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
     val records = state.records.value.orEmpty()
     val historical = state.batches.value.orEmpty().filterNot { it.running }
     val batchLabels = historical.map {
-        "${it.startedAt.substringBefore('.').substringBefore('Z').replace('T', ' ')} UTC · " +
+        "${it.id.take(6)} · ${it.startedAt.substringBefore('.').substringBefore('Z').replace('T', ' ')} UTC · " +
             stringResource(R.string.traffic_record_count, it.count)
     }
     LaunchedEffect(viewModel) { viewModel.loadAppCatalog() }
