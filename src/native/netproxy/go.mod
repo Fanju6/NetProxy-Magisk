@@ -3,6 +3,7 @@ module github.com/Fanju6/NetProxy-Magisk/src/native/netproxy
 go 1.27.0
 
 require (
+	github.com/andybalholm/brotli v1.1.0
 	github.com/dop251/goja v0.0.0-20250630131328-58d95d85e994
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/mdlayher/genetlink v1.4.0

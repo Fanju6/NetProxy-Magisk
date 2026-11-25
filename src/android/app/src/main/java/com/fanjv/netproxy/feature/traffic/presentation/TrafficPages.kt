@@ -331,6 +331,10 @@ private fun SessionRow(record: CaptureRecord, app: AppInfoModel?, onClick: () ->
                 if (record.rewritten) Text(stringResource(R.string.traffic_rewritten), color = primary,
                     style = MiuixTheme.textStyles.footnote2, maxLines = 1)
             }
+            record.passthroughReason?.let {
+                Text(passthroughLabel(it), style = MiuixTheme.textStyles.footnote2, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+            }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 val source = app?.label ?: record.sourceApp?.packageName ?: record.appKey
                 if (app != null) AppIcon(app, size = 14.dp)
@@ -406,7 +410,22 @@ internal fun tlsLabel(tls: String?): String = when (tls) {
     "decrypted" -> stringResource(R.string.traffic_tls_decrypted)
     "bypass" -> stringResource(R.string.traffic_tls_bypass)
     "handshake_failed" -> stringResource(R.string.traffic_tls_failed)
+    "pinned_skipped" -> stringResource(R.string.traffic_skip_certificate)
     else -> tls ?: "—"
+}
+
+@Composable
+internal fun passthroughLabel(reason: String): String = when (reason) {
+    "certificate_rejected" -> stringResource(R.string.traffic_skip_certificate)
+    "excluded_host" -> stringResource(R.string.traffic_skip_excluded)
+    "host_not_selected" -> stringResource(R.string.traffic_skip_unselected)
+    "decryption_disabled" -> stringResource(R.string.traffic_skip_disabled)
+    "decryption_unavailable" -> stringResource(R.string.traffic_skip_unavailable)
+    "non_tls" -> stringResource(R.string.traffic_skip_non_tls)
+    "sniff_timeout" -> stringResource(R.string.traffic_skip_timeout)
+    "unsupported_alpn" -> stringResource(R.string.traffic_skip_alpn)
+    "tls_hello_unavailable", "tls_host_unavailable", "protocol_unidentified" -> stringResource(R.string.traffic_skip_unidentified)
+    else -> reason
 }
 
 @Composable

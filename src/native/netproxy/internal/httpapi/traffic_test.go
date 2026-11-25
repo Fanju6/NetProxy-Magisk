@@ -97,6 +97,16 @@ func TestTrafficMITMManagementNeverExposesPrivateKey(t *testing.T) {
 	}
 }
 
+func TestTrafficPinnedListAndClear(t *testing.T) {
+	s := resourceFixture(t)
+	var entries []traffic.PinnedBypass
+	resourceAssertSuccess(t, s, http.MethodGet, trafficRoute+"pinned", "", "traffic.pinned", &entries)
+	if entries == nil || len(entries) != 0 {
+		t.Fatalf("预期空跳过列表: %+v", entries)
+	}
+	resourceAssertSuccess(t, s, http.MethodDelete, trafficRoute+"pinned", "", "traffic.pinned_cleared", &entries)
+}
+
 func TestTrafficDetailRequiresAuthenticationAndValidID(t *testing.T) {
 	s := resourceFixture(t)
 	target := trafficRoute + "detail"

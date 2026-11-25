@@ -100,7 +100,18 @@ func (s *Server) registerTraffic() {
 		policy, err := s.traffic.MITMPolicy()
 		return policy, mitmAPIError("traffic.mitm_unavailable", err)
 	})
-	s.route("PUT "+trafficRoute+"mitm", 25*time.Second, false, func(ctx context.Context, r *http.Request) (contract.Result, error) {
+	s.trafficRoute("GET", "pinned", "证书固定跳过列表", func(context.Context) (any, error) {
+		entries, err := s.traffic.PinnedBypasses()
+		return entries, mitmAPIError("traffic.pinned_unavailable", err)
+	})
+	s.route("DELETE "+trafficRoute+"pinned", 10*time.Second, false, func(_ context.Context, r *http.Request) (contract.Result, error) {
+		if err := resourceEmptyRequest(r); err != nil {
+			return contract.Result{}, err
+		}
+		entries, err := s.traffic.ClearPinnedBypasses()
+		return contract.Success("traffic.pinned_cleared", "已清除证书固定跳过列表", entries), mitmAPIError("traffic.pinned_clear_failed", err)
+	})
+	s.route("PUT "+trafficRoute+"mitm", 40*time.Second, false, func(ctx context.Context, r *http.Request) (contract.Result, error) {
 		if _, err := resourceQuery(r); err != nil {
 			return contract.Result{}, err
 		}
@@ -112,11 +123,21 @@ func (s *Server) registerTraffic() {
 		if err != nil {
 			return contract.Result{}, mitmAPIError("traffic.mitm_failed", err)
 		}
+		layout := paths.New(s.options.ModuleDir)
+		userTrustErr := traffic.ReconcileUserTrust(ctx, layout)
 		if !policy.SystemTrust {
-			if err := traffic.RemoveDisabledSystemTrust(ctx, paths.New(s.options.ModuleDir)); err != nil {
+			if err := traffic.RemoveDisabledSystemTrust(ctx, layout); err != nil {
+				if userTrustErr != nil {
+					return contract.Result{}, &contract.Error{Code: "traffic.user_trust_incomplete", HTTPStatus: http.StatusConflict,
+						Message: "配置已保存，但个人和系统 CA 状态未完全同步；请检查证书并重启设备", Data: policy}
+				}
 				return contract.Result{}, &contract.Error{Code: "traffic.trust_remove_incomplete", HTTPStatus: http.StatusConflict,
 					Message: "配置已保存，但系统 CA 卸载未完成；请重启设备", Data: policy}
 			}
+		}
+		if userTrustErr != nil {
+			return contract.Result{}, &contract.Error{Code: "traffic.user_trust_incomplete", HTTPStatus: http.StatusConflict,
+				Message: "配置已保存，但部分 Android 用户的个人 CA 未完成同步: " + userTrustErr.Error(), Data: policy}
 		}
 		return contract.Success("traffic.mitm_saved", "HTTPS 抓包配置已保存", policy), nil
 	})

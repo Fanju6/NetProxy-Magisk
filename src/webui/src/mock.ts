@@ -176,6 +176,7 @@ function execute(args: string[]): CtlResult<unknown> {
       if (clean[2] === 'detail') return failure('traffic.record_not_found', '抓包记录已清除或过期')
       if (clean[2] === 'rules') return response('traffic.rules', '重写规则', { rules: [] })
       if (clean[2] === 'mitm') return response('traffic.mitm', 'HTTPS 解密配置', { enabled: false, hosts: ['*'], bypass_hosts: [], system_trust: false })
+      if (clean[2] === 'pinned') return response('traffic.pinned', '证书固定跳过列表', [])
       return failure('traffic.preview_unavailable', '开发预览不会启用透明抓包或修改规则')
     }
     if (action === 'access') return failure('api.preview_unavailable', '开发预览不提供真实连接凭据')

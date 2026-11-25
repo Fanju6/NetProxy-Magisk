@@ -1,6 +1,10 @@
 package traffic
 
 import (
+	"bytes"
+	"compress/flate"
+	"compress/gzip"
+	"compress/zlib"
 	"encoding/base64"
 	"io"
 	"mime"
@@ -10,6 +14,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"unicode/utf8"
+
+	"github.com/andybalholm/brotli"
 )
 
 const (
@@ -48,6 +54,7 @@ type CapturedBody struct {
 	Truncated       bool   `json:"truncated"`
 	Size            int64  `json:"size"`
 	CapturedSize    int    `json:"captured_size"`
+	Decoded         bool   `json:"decoded,omitempty"`
 }
 
 func (d *HTTPDetail) size() int {
@@ -102,6 +109,12 @@ func (c *bodyCapture) body(headers http.Header, length int64, incomplete bool) C
 		mediaType == "application/json" || mediaType == "application/xml" ||
 		mediaType == "application/x-www-form-urlencoded" || mediaType == "application/javascript"
 	data := c.data
+	if preview, ok := decodedBody(data, encoding, b.Truncated); ok {
+		data = preview[:min(len(preview), captureBodyLimit)]
+		b.Decoded = true
+		b.Truncated = b.Truncated || len(preview) > captureBodyLimit
+		b.CapturedSize = len(data)
+	}
 	if b.Truncated {
 		for i := len(data) - 1; i >= max(0, len(data)-utf8.UTFMax); i-- {
 			if utf8.RuneStart(data[i]) {
@@ -112,12 +125,42 @@ func (c *bodyCapture) body(headers http.Header, length int64, incomplete bool) C
 			}
 		}
 	}
-	if textual && (encoding == "" || strings.EqualFold(encoding, "identity")) && utf8.Valid(data) {
+	if textual && (b.Decoded || encoding == "" || strings.EqualFold(encoding, "identity")) && utf8.Valid(data) {
 		b.Data = string(data)
+		if b.Decoded {
+			b.CapturedSize = len(data)
+		}
 	} else {
-		b.Format, b.Data = "base64", base64.StdEncoding.EncodeToString(c.data)
+		if !b.Decoded {
+			data = c.data
+		}
+		b.Format, b.Data = "base64", base64.StdEncoding.EncodeToString(data)
 	}
 	return b
+}
+
+func decodedBody(raw []byte, encoding string, truncated bool) ([]byte, bool) {
+	var reader io.ReadCloser
+	var err error
+	switch strings.ToLower(strings.TrimSpace(encoding)) {
+	case "gzip", "x-gzip":
+		reader, err = gzip.NewReader(bytes.NewReader(raw))
+	case "deflate":
+		reader, err = zlib.NewReader(bytes.NewReader(raw))
+		if err == zlib.ErrHeader {
+			reader, err = flate.NewReader(bytes.NewReader(raw)), nil
+		}
+	case "br":
+		reader = io.NopCloser(brotli.NewReader(bytes.NewReader(raw)))
+	default:
+		return nil, false
+	}
+	if err != nil {
+		return nil, false
+	}
+	defer reader.Close()
+	preview, err := io.ReadAll(io.LimitReader(reader, captureBodyLimit+1))
+	return preview, err == nil || truncated && err == io.ErrUnexpectedEOF && len(preview) > 0
 }
 
 func validPrefix(value string, limit int) string {

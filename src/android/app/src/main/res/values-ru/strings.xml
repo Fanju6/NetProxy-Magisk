@@ -796,4 +796,20 @@
     <string name="traffic_group_unknown">Неизвестно</string>
     <string name="traffic_group_expand">Развернуть группу</string>
     <string name="traffic_group_collapse">Свернуть группу</string>
+    <string name="traffic_pinned_title">Исключения при отклонении сертификата</string>
+    <string name="traffic_pinned_empty">Нет исключений сертификатов</string>
+    <string name="traffic_pinned_clear">Очистить список исключений</string>
+    <string name="traffic_pinned_clear_prompt">Очистить список, чтобы повторить расшифровку следующих подключений?</string>
+    <string name="traffic_body_decoded">Распаковано</string>
+    <string name="traffic_skip_reason">Причина передачи без расшифровки</string>
+    <string name="traffic_skip_certificate">Сертификат отклонён · пропущено</string>
+    <string name="traffic_skip_excluded">Хост в списке исключений</string>
+    <string name="traffic_skip_unselected">Хост не выбран для расшифровки</string>
+    <string name="traffic_skip_disabled">Расшифровка HTTPS выключена</string>
+    <string name="traffic_skip_unavailable">Расшифровка HTTPS недоступна</string>
+    <string name="traffic_skip_non_tls">Трафик не TLS</string>
+    <string name="traffic_skip_timeout">Истекло время определения протокола</string>
+    <string name="traffic_skip_alpn">Протокол приложения TLS не поддерживается</string>
+    <string name="traffic_skip_unidentified">Не удалось определить TLS или хост</string>
+    <string name="traffic_user_ca_hint">Включение расшифровки также устанавливает открытый отладочный УЦ для текущих пользователей Android. При выключении удаляются только копии, установленные NetProxy.</string>
 </resources>

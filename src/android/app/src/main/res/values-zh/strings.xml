@@ -826,4 +826,20 @@
     <string name="traffic_group_unknown">未知</string>
     <string name="traffic_group_expand">展开分组</string>
     <string name="traffic_group_collapse">折叠分组</string>
+    <string name="traffic_pinned_title">证书固定跳过列表</string>
+    <string name="traffic_pinned_empty">没有证书固定跳过记录</string>
+    <string name="traffic_pinned_clear">清除跳过列表</string>
+    <string name="traffic_pinned_clear_prompt">清除列表后，后续连接将重新尝试 HTTPS 解密。继续？</string>
+    <string name="traffic_body_decoded">已解压</string>
+    <string name="traffic_skip_reason">透传原因</string>
+    <string name="traffic_skip_certificate">证书固定或不信任 · 已跳过</string>
+    <string name="traffic_skip_excluded">主机在排除名单中</string>
+    <string name="traffic_skip_unselected">主机未选中解密</string>
+    <string name="traffic_skip_disabled">HTTPS 解密已关闭</string>
+    <string name="traffic_skip_unavailable">HTTPS 解密不可用</string>
+    <string name="traffic_skip_non_tls">非 TLS 流量</string>
+    <string name="traffic_skip_timeout">协议识别超时</string>
+    <string name="traffic_skip_alpn">不支持的 TLS 应用协议</string>
+    <string name="traffic_skip_unidentified">无法识别 TLS 或主机</string>
+    <string name="traffic_user_ca_hint">开启解密也会为当前 Android 用户安装公开调试 CA。关闭解密仅移除 NetProxy 安装的副本。</string>
 </resources>

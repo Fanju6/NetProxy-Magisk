@@ -5,6 +5,7 @@ interface CaptureBody {
   captured_size?: number
   content_type?: string
   content_encoding?: string
+  decoded?: boolean
   truncated: boolean
 }
 
@@ -34,6 +35,7 @@ export interface CaptureDetail {
   status: number
   outbound: string
   duration_ms: number
+  passthrough_reason?: string
   source_app?: { uid: number, user_id: number, package?: string }
   exit?: { inbound?: string, chain?: { tag: string, type: string }[], remote?: string, package?: string, uid?: number, process?: string }
   http?: {
@@ -48,6 +50,14 @@ const states: Record<string, string> = {
 const errors: Record<string, string> = {
   busy: '脚本执行器繁忙', deadline: '脚本超时', body_unavailable: '正文无法重写',
   invalid_result: '脚本结果无效', script_error: '脚本执行失败',
+}
+const passthroughReasons: Record<string, string> = {
+  certificate_rejected: '证书固定或不信任 · 已跳过', excluded_host: '主机在排除名单中',
+  host_not_selected: '主机未选中解密', decryption_disabled: 'HTTPS 解密已关闭',
+  decryption_unavailable: 'HTTPS 解密不可用', non_tls: '非 TLS 流量',
+  sniff_timeout: '协议识别超时', unsupported_alpn: '不支持的 TLS 应用协议',
+  protocol_unidentified: '协议无法识别', tls_hello_unavailable: '无法识别 TLS ClientHello',
+  tls_host_unavailable: '无法识别 TLS 主机',
 }
 
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string): HTMLElementTagNameMap[K] {
@@ -115,7 +125,7 @@ function message(title: string, data: CaptureMessage) {
 
   const body = data.body
   const payload = section(['正文', body.content_type, body.size === undefined ? '' : `${body.size} 字节`,
-    body.content_encoding, body.format === 'base64' ? 'Base64' : '', body.truncated ? '已截断' : ''].filter(Boolean).join(' · '))
+    body.content_encoding, body.decoded ? '已解压' : '', body.format === 'base64' ? 'Base64' : '', body.truncated ? '已截断' : ''].filter(Boolean).join(' · '))
   if (body.truncated) line(payload, '已捕获大小', body.captured_size)
   if (!body.data) payload.append(element('p', '没有正文'))
   else {
@@ -150,6 +160,7 @@ export function renderCaptureDetail(data: CaptureDetail): HTMLElement {
   if (data.http?.url_truncated) overview.append(element('p', 'URL 已截断'))
   line(overview, '入站', data.exit?.inbound)
   line(overview, '匹配的出站', data.outbound)
+  if (data.passthrough_reason) line(overview, '透传原因', passthroughReasons[data.passthrough_reason] ?? data.passthrough_reason)
   line(overview, '代理出口链', data.exit?.chain?.map(hop => `${hop.tag} (${hop.type})`).join(' → '))
   line(overview, '传输对端', data.exit?.remote)
   line(overview, '来源应用', data.source_app?.package ?? data.exit?.package)

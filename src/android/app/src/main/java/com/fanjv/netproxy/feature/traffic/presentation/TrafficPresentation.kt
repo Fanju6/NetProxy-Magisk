@@ -103,7 +103,7 @@ internal fun asCurl(method: String, detail: CapturedHttp): String {
         add("curl --request ${quote(method)}")
         request.headers.forEach { (name, values) ->
             if (!name.equals("Content-Length", true) && !name.equals("Transfer-Encoding", true) &&
-                !name.equals("Proxy-Authorization", true)) {
+                !name.equals("Proxy-Authorization", true) && !(body.decoded && name.equals("Content-Encoding", true))) {
                 values.forEach { add("--header ${quote("$name: $it")}") }
             }
         }

@@ -18,7 +18,7 @@ import (
 func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 	const maxRequest = traffic.MaxRulesBytes + 1024
 	usage := func() error {
-		return usageError("用法: netproxyctl api traffic status|start|stop|toggle|list|detail <ID>|clear|apps|set-apps <文件>|rules|set-rules|mitm|set-mitm|ca|ca-init|ca-export")
+		return usageError("用法: netproxyctl api traffic status|start|stop|toggle|list|detail <ID>|clear|apps|set-apps <文件>|rules|set-rules|mitm|set-mitm|pinned|clear-pinned|ca|ca-init|ca-export")
 	}
 	if len(args) == 0 {
 		return usage()
@@ -33,13 +33,13 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 		if err := traffic.RemoveSystemTrust(ctx, layout); err != nil {
 			return err
 		}
-		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "traffic.trust_removed", Message: "系统抓包 CA 已卸载"})
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "traffic.trust_removed", Message: "系统和个人抓包 CA 已卸载"})
 		return nil
 	}
 	var method string
 	var body io.Reader
 	switch action {
-	case "status", "list", "apps", "rules", "mitm", "ca":
+	case "status", "list", "apps", "rules", "mitm", "pinned", "ca":
 		method = http.MethodGet
 	case "detail":
 		if !traffic.ValidRecordID(args[1]) {
@@ -50,6 +50,8 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 		method = http.MethodPost
 	case "clear":
 		method, action = http.MethodDelete, "list"
+	case "clear-pinned":
+		method, action = http.MethodDelete, "pinned"
 	case "ca-export":
 		method, action = http.MethodGet, "ca"
 	case "set-rules", "set-mitm", "set-apps":

@@ -4,9 +4,11 @@ package traffic
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -23,6 +25,60 @@ func TestHTTPSRewriteAndNextConnectionBypass(t *testing.T) {
 	t.Run("bridge", func(t *testing.T) { testTransparentHTTPS(t, "") })
 	if core := os.Getenv("NETPROXY_TEST_CAPTURE_CORE"); core != "" {
 		t.Run("patched core", func(t *testing.T) { testTransparentHTTPS(t, core) })
+	}
+}
+
+func TestTLSExclusionAndUpstreamFailureDoNotPin(t *testing.T) {
+	origin := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "upstream")
+	}))
+	defer origin.Close()
+	layout := paths.New(t.TempDir())
+	c := New(layout)
+	if _, err := c.SetMITMPolicy(MITMPolicy{Enabled: true, BypassHosts: []string{"127.0.0.1"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Stop()
+	uid := uint32(10123)
+	get := func(trust *x509.CertPool, status int) {
+		t.Helper()
+		transport := &http.Transport{
+			DialContext:     bridgeFixtureFor(layout, &Exit{UID: &uid, Package: "com.example.capture"}),
+			TLSClientConfig: &tls.Config{RootCAs: trust},
+		}
+		defer transport.CloseIdleConnections()
+		client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
+		response, err := client.Get(origin.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		_, _ = io.Copy(io.Discard, response.Body)
+		if response.StatusCode != status {
+			t.Fatalf("unexpected HTTP status %d, wanted %d", response.StatusCode, status)
+		}
+	}
+	get(origin.Client().Transport.(*http.Transport).TLSClientConfig.RootCAs, http.StatusOK)
+	if entries := c.Entries(); len(entries) != 1 || entries[0].PassthroughReason != "excluded_host" {
+		t.Fatalf("expected explicit exclusion reason, got %+v", entries)
+	}
+	if _, err := c.SetMITMPolicy(MITMPolicy{Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	public, err := c.Certificate(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM([]byte(public.PEM)) {
+		t.Fatal("invalid debug CA")
+	}
+	get(roots, http.StatusBadGateway)
+	if pinned, err := c.PinnedBypasses(); err != nil || len(pinned) != 0 {
+		t.Fatalf("upstream verification failure pinned client: %+v, %v", pinned, err)
 	}
 }
 
@@ -113,7 +169,9 @@ func testTransparentHTTPS(t *testing.T, core string) {
 		t.Fatal(err)
 	}
 	defer c.Stop()
-	dial := bridgeFixture(layout)
+	ownerUID, otherUID := uint32(10123), uint32(10124)
+	const ownerPackage = "com.example.pinned"
+	dial := bridgeFixtureFor(layout, &Exit{UID: &ownerUID, Package: ownerPackage})
 	if core != "" {
 		dial = startCaptureTestCore(t, core, layout)
 	}
@@ -125,7 +183,7 @@ func testTransparentHTTPS(t *testing.T, core string) {
 	if !roots.AppendCertsFromPEM([]byte(public.PEM)) {
 		t.Fatal("无效公开 CA")
 	}
-	request := func(trust *x509.CertPool) (string, error) {
+	requestWithDial := func(trust *x509.CertPool, dial func(context.Context, string, string) (net.Conn, error)) (string, error) {
 		t.Helper()
 		transport := &http.Transport{DialContext: dial, TLSClientConfig: &tls.Config{RootCAs: trust}}
 		defer transport.CloseIdleConnections()
@@ -147,6 +205,7 @@ func testTransparentHTTPS(t *testing.T, core string) {
 		data, err := io.ReadAll(res.Body)
 		return string(data), err
 	}
+	request := func(trust *x509.CertPool) (string, error) { return requestWithDial(trust, dial) }
 	if body, err := request(roots); err != nil || body != "UPSTREAM" {
 		t.Fatalf("未重写 HTTPS 正文: %q, %v", body, err)
 	}
@@ -156,24 +215,50 @@ func testTransparentHTTPS(t *testing.T, core string) {
 	}
 	state := c.currentMITM()
 	deadline := time.Now().Add(time.Second)
-	for !state.bypass("127.0.0.1", time.Now()) && time.Now().Before(deadline) {
+	for len(c.Entries()) < 2 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
-	if body, err := request(originRoots); err != nil || body != "upstream" {
-		t.Fatalf("下次 TCP 连接未透传: %q, %v", body, err)
+	failureTLS := "handshake_failed"
+	if core == "" {
+		failureTLS = "pinned_skipped"
+		pinned := New(layout)
+		if !pinned.isPinned("127.0.0.1", &SourceApp{UID: ownerUID, Package: ownerPackage}) ||
+			pinned.isPinned("127.0.0.1", &SourceApp{UID: otherUID, Package: "com.example.other"}) ||
+			pinned.isPinned("127.0.0.1", &SourceApp{UID: 110123, UserID: 1, Package: ownerPackage}) {
+			t.Fatal("持久化证书跳过没有按应用和用户隔离")
+		}
+		if body, err := request(originRoots); err != nil || body != "upstream" {
+			t.Fatalf("下次 TCP 连接未透传: %q, %v", body, err)
+		}
+		if body, err := requestWithDial(roots, bridgeFixtureFor(layout, &Exit{UID: &otherUID, Package: "com.example.other"})); err != nil || body != "UPSTREAM" {
+			t.Fatalf("其他应用不应被跳过: %q, %v", body, err)
+		}
+		if _, err := c.ClearPinnedBypasses(); err != nil {
+			t.Fatal(err)
+		}
+		if entries, err := New(layout).PinnedBypasses(); err != nil || len(entries) != 0 {
+			t.Fatalf("未持久清空证书跳过记录: %+v, %v", entries, err)
+		}
 	}
 	entries := c.Entries()
-	if len(entries) != 3 || entries[0].TLS != "bypass" || entries[1].TLS != "handshake_failed" ||
-		entries[2].TLS != "decrypted" || entries[2].Rewrite != "response" || strings.Contains(entries[2].Host, "synthetic") {
+	if core == "" {
+		if len(entries) != 4 || entries[0].TLS != "decrypted" || entries[1].TLS != "pinned_skipped" ||
+			entries[1].PassthroughReason != "certificate_rejected" {
+			t.Fatalf("意外抓包记录: %+v", entries)
+		}
+		entries = entries[2:]
+	}
+	if len(entries) != 2 || entries[0].TLS != failureTLS || entries[0].Status != 0 ||
+		entries[1].TLS != "decrypted" || entries[1].Rewrite != "response" || strings.Contains(entries[1].Host, "synthetic") {
 		t.Fatalf("意外抓包记录: %+v", entries)
 	}
-	record, ok := c.Record(entries[2].ID)
+	record, ok := c.Record(entries[1].ID)
 	if !ok || record.HTTP == nil || record.HTTP.URL != origin.URL+"/debug?token=synthetic" ||
 		record.HTTP.Request.Headers.Get("X-Capture-Request") != "https" || record.HTTP.Request.Body.Data != "request-body" ||
 		record.HTTP.Response.Headers.Get("X-Capture-Response") != "https" || record.HTTP.Response.Body.Data != "UPSTREAM" {
 		t.Fatalf("HTTPS capture detail mismatch: %+v", record.HTTP)
 	}
-	for _, entry := range entries[:2] {
+	for _, entry := range entries[:1] {
 		if record, ok := c.Record(entry.ID); !ok || record.HTTP != nil {
 			t.Fatal("TLS fallback exposed HTTP detail")
 		}

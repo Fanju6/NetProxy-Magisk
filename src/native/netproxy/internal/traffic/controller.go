@@ -22,19 +22,20 @@ import (
 const maxEntries = 200
 
 type Entry struct {
-	ID         string     `json:"id"`
-	Time       time.Time  `json:"time"`
-	Method     string     `json:"method"`
-	Host       string     `json:"host"`
-	Target     string     `json:"target,omitempty"`
-	Outbound   string     `json:"outbound"`
-	Status     int        `json:"status"`
-	Rewrite    string     `json:"rewrite,omitempty"`
-	Rewritten  bool       `json:"rewritten,omitzero"`
-	Exit       *Exit      `json:"exit,omitempty"`
-	SourceApp  *SourceApp `json:"source_app,omitempty"`
-	TLS        string     `json:"tls,omitempty"`
-	DurationMS int64      `json:"duration_ms"`
+	ID                string     `json:"id"`
+	Time              time.Time  `json:"time"`
+	Method            string     `json:"method"`
+	Host              string     `json:"host"`
+	Target            string     `json:"target,omitempty"`
+	Outbound          string     `json:"outbound"`
+	Status            int        `json:"status"`
+	Rewrite           string     `json:"rewrite,omitempty"`
+	Rewritten         bool       `json:"rewritten,omitzero"`
+	Exit              *Exit      `json:"exit,omitempty"`
+	SourceApp         *SourceApp `json:"source_app,omitempty"`
+	TLS               string     `json:"tls,omitempty"`
+	PassthroughReason string     `json:"passthrough_reason,omitempty"`
+	DurationMS        int64      `json:"duration_ms"`
 }
 
 type Status struct {
@@ -56,6 +57,7 @@ type Controller struct {
 	upstreamRoots *x509.CertPool
 	apps          map[string]struct{}
 	owners        androidOwners
+	pinned        []PinnedBypass
 }
 
 func New(layout paths.Layout) *Controller {

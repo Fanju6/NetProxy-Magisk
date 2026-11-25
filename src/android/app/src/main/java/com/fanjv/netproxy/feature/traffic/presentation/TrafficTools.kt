@@ -162,11 +162,15 @@ internal fun TrafficHttpsScreen(viewModel: TrafficViewModel) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var confirmTrust by rememberSaveable { mutableStateOf(false) }
+    var confirmClearPinned by rememberSaveable { mutableStateOf(false) }
     var addHost by rememberSaveable { mutableStateOf(false) }
     var newHost by rememberSaveable { mutableStateOf("") }
     var removeHost by rememberSaveable { mutableStateOf<String?>(null) }
     RefreshOnResume(viewModel)
-    LaunchedEffect(Unit) { viewModel.readCertificateStatus() }
+    LaunchedEffect(Unit) {
+        viewModel.readCertificateStatus()
+        viewModel.readPinned()
+    }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/x-pem-file")) { uri ->
         val cert = viewModel.takeCertificate()
         if (uri != null && cert != null) scope.launch {
@@ -214,7 +218,8 @@ internal fun TrafficHttpsScreen(viewModel: TrafficViewModel) {
             contentPadding = PaddingValues(bottom = 24.dp)) {
             state.failure?.let { issue -> item { TrafficErrorText(issue) } }
             item("switch") {
-                SwitchPreference(title = stringResource(R.string.traffic_mitm), summary = stringResource(R.string.traffic_mitm_hint),
+                SwitchPreference(title = stringResource(R.string.traffic_mitm),
+                    summary = stringResource(R.string.traffic_mitm_hint) + " " + stringResource(R.string.traffic_user_ca_hint),
                     checked = policy.enabled, enabled = editable, onCheckedChange = viewModel::setMitmEnabled,
                     insideMargin = TrafficRowInsets)
             }
@@ -253,6 +258,25 @@ internal fun TrafficHttpsScreen(viewModel: TrafficViewModel) {
                     }
                 }
             }
+            groupedCardSection("pinned", { stringResource(R.string.traffic_pinned_title) }, buildList {
+                val pinned = state.pinned.value.orEmpty()
+                state.pinned.error?.let { error -> add(CardItem("error") { TrafficErrorText(error) }) }
+                if (pinned.isEmpty() && state.pinned.value != null) {
+                    add(CardItem("empty") {
+                        Text(stringResource(R.string.traffic_pinned_empty), Modifier.padding(TrafficRowInsets))
+                    })
+                }
+                if (pinned.isNotEmpty()) add(CardItem("clear") {
+                    ArrowPreference(title = stringResource(R.string.traffic_pinned_clear), enabled = !state.busy,
+                        onClick = { confirmClearPinned = true }, insideMargin = TrafficRowInsets)
+                })
+                pinned.forEach { pin ->
+                    add(CardItem("${pin.userId}:${pin.packageName}:${pin.host}") {
+                        val app = "${pin.userId}:${pin.packageName}"
+                        ArrowPreference(title = pin.host, summary = app, insideMargin = TrafficRowInsets)
+                    })
+                }
+            })
             groupedCardSection("ca", { stringResource(R.string.traffic_ca_section) }, listOf(
                 CardItem("fingerprint") {
                     Column(Modifier.padding(TrafficRowInsets), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -277,6 +301,8 @@ internal fun TrafficHttpsScreen(viewModel: TrafficViewModel) {
         })
     TrafficConfirmation(confirmTrust, R.string.traffic_trust, R.string.traffic_trust_warning,
         { confirmTrust = false }, { confirmTrust = false; viewModel.setSystemTrust(true) })
+    TrafficConfirmation(confirmClearPinned, R.string.traffic_pinned_clear, R.string.traffic_pinned_clear_prompt,
+        { confirmClearPinned = false }, { confirmClearPinned = false; viewModel.clearPinned() })
 }
 
 @Composable

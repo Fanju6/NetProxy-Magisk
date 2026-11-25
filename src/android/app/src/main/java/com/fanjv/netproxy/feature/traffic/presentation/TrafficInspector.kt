@@ -168,6 +168,9 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
                                 InspectRow(stringResource(R.string.traffic_time), record.time)
                                 InspectRow(stringResource(R.string.traffic_duration), stringResource(R.string.traffic_milliseconds, record.durationMs))
                                 InspectRow(stringResource(R.string.traffic_tls), tlsLabel(record.tls))
+                                record.passthroughReason?.let {
+                                    InspectRow(stringResource(R.string.traffic_skip_reason), passthroughLabel(it))
+                                }
                                 InspectRow(stringResource(R.string.traffic_inbound), record.exit?.inbound ?: "netproxy-in")
                                 InspectRow(stringResource(R.string.traffic_outbound), record.outbound)
                                 record.exit?.let { exit ->
@@ -299,6 +302,7 @@ private fun BodyHeader(body: CapturedBody, expanded: Boolean, toggle: () -> Unit
         body.contentType?.substringBefore(';'),
         body.size?.let { stringResource(R.string.traffic_bytes, it) },
         body.contentEncoding,
+        if (body.decoded) stringResource(R.string.traffic_body_decoded) else null,
         if (body.format == "base64") stringResource(R.string.traffic_body_base64) else null,
         if (body.truncated) stringResource(R.string.traffic_truncated) else null,
         if (!hasData) stringResource(R.string.traffic_payload_empty) else null,

@@ -51,6 +51,12 @@ func RestoreSystemTrust(ctx context.Context, layout paths.Layout, trigger string
 			Message: trigger + ": " + message,
 		})
 	}
+	if err := ReconcileUserTrust(ctx, layout); err != nil {
+		_ = logfile.AppendEntry(layout.ServiceLog(), logfile.Entry{
+			Level: "WARN", Component: "service", Event: "traffic.user_trust", Result: "failed",
+			Message: trigger + ": " + err.Error(),
+		})
+	}
 	log("INFO", "started", "检查并恢复抓包 CA 系统信任")
 	if err := reconcileSystemTrust(ctx, layout, trustBoot); err != nil {
 		log("WARN", "failed", "抓包 CA 未完成系统挂载: "+err.Error())
@@ -64,7 +70,7 @@ func RemoveDisabledSystemTrust(ctx context.Context, layout paths.Layout) error {
 }
 
 func RemoveSystemTrust(ctx context.Context, layout paths.Layout) error {
-	return reconcileSystemTrust(ctx, layout, trustUninstall)
+	return errors.Join(reconcileUserTrust(ctx, layout, true), reconcileSystemTrust(ctx, layout, trustUninstall))
 }
 
 func reconcileSystemTrust(ctx context.Context, layout paths.Layout, action trustAction) error {

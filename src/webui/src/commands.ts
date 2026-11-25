@@ -22,6 +22,7 @@ export const COMMANDS = {
   api traffic rules                         查看按 domains 分组的 JavaScript 重写规则
   api traffic set-rules <文件>               应用设备上的 JSON 规则文件
   api traffic mitm | set-mitm <文件>        查看或保存 HTTPS 解密配置
+  api traffic pinned | clear-pinned        查看或清除证书固定跳过列表
   api traffic ca-init | ca                  初始化或查看公开调试 CA
   api traffic ca-export <文件>              导出公开 CA，不覆盖已有文件
 
@@ -205,7 +206,7 @@ const CONFIG_TARGETS = [
 ]
 
 export const VALUE_COMPLETIONS: Record<string, string[]> = {
-  'api traffic': ['status', 'toggle', 'start', 'stop', 'list', 'detail', 'clear', 'rules', 'set-rules', 'mitm', 'set-mitm', 'apps', 'set-apps', 'ca', 'ca-init', 'ca-export'],
+  'api traffic': ['status', 'toggle', 'start', 'stop', 'list', 'detail', 'clear', 'rules', 'set-rules', 'mitm', 'set-mitm', 'apps', 'set-apps', 'pinned', 'clear-pinned', 'ca', 'ca-init', 'ca-export'],
   'app mode': ['blacklist', 'whitelist'],
   'ebpf status': ['configured', 'all', 'local', 'shared', '--raw'],
   'logs show': ['service', 'core'],

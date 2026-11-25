@@ -12,6 +12,13 @@ import kotlinx.serialization.json.jsonObject
 internal data class CaptureStatus(val running: Boolean, val count: Int)
 
 @Serializable
+internal data class PinnedBypass(
+    val host: String,
+    @SerialName("user_id") val userId: Int,
+    @SerialName("package") val packageName: String,
+)
+
+@Serializable
 internal data class CaptureRecord(
     val time: String,
     val method: String,
@@ -20,6 +27,7 @@ internal data class CaptureRecord(
     val status: Int,
     val rewrite: String? = null,
     val tls: String? = null,
+    @SerialName("passthrough_reason") val passthroughReason: String? = null,
     @SerialName("duration_ms") val durationMs: Long,
     val id: String? = null,
     val target: String? = null,
@@ -113,6 +121,7 @@ internal data class CapturedBody(
     val truncated: Boolean,
     val size: Long? = null,
     @SerialName("captured_size") val capturedSize: Int? = null,
+    val decoded: Boolean = false,
 )
 
 @Serializable
@@ -144,6 +153,8 @@ internal class TrafficRepository(private val api: ModuleApiClient) {
     suspend fun detail(id: String): CaptureDetail = api.read("/traffic/detail", mapOf("id" to id))
     suspend fun rules(): List<RewriteRule> = api.read<RewriteRules>("/traffic/rules").rules
     suspend fun policy(): MitmPolicy = api.read("/traffic/mitm")
+    suspend fun pinned(): List<PinnedBypass> = api.read("/traffic/pinned")
+    suspend fun clearPinned(): List<PinnedBypass> = api.json.decodeFromJsonElement(api.delete("/traffic/pinned").data)
     suspend fun apps(): CaptureApps = api.captureApps()
     suspend fun saveApps(apps: List<String>, disableQuic: Boolean? = null): CaptureApps =
         api.json.decodeFromJsonElement(api.saveCaptureApps(api.json.encodeToJsonElement(CaptureApps(apps, disableQuic)).jsonObject).data)
@@ -165,7 +176,7 @@ internal class TrafficRepository(private val api: ModuleApiClient) {
     }
 
     fun persistedPolicy(error: ModuleApiException): MitmPolicy? {
-        if (error.resultCode != "traffic.trust_remove_incomplete") return null
+        if (error.resultCode != "traffic.trust_remove_incomplete" && error.resultCode != "traffic.user_trust_incomplete") return null
         return runCatching { api.json.decodeFromJsonElement<MitmPolicy>(error.data) }.getOrNull()
     }
 

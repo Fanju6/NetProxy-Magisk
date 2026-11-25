@@ -796,4 +796,20 @@
     <string name="traffic_group_unknown">Unknown</string>
     <string name="traffic_group_expand">Expand group</string>
     <string name="traffic_group_collapse">Collapse group</string>
+    <string name="traffic_pinned_title">Certificate rejection bypasses</string>
+    <string name="traffic_pinned_empty">No certificate rejection bypasses</string>
+    <string name="traffic_pinned_clear">Clear bypass list</string>
+    <string name="traffic_pinned_clear_prompt">Clear the list so upcoming connections can retry HTTPS decryption?</string>
+    <string name="traffic_body_decoded">Decompressed</string>
+    <string name="traffic_skip_reason">Passthrough reason</string>
+    <string name="traffic_skip_certificate">Certificate rejected · skipped</string>
+    <string name="traffic_skip_excluded">Host on exclusion list</string>
+    <string name="traffic_skip_unselected">Host not selected for decryption</string>
+    <string name="traffic_skip_disabled">HTTPS decryption disabled</string>
+    <string name="traffic_skip_unavailable">HTTPS decryption unavailable</string>
+    <string name="traffic_skip_non_tls">Not TLS</string>
+    <string name="traffic_skip_timeout">Protocol detection timed out</string>
+    <string name="traffic_skip_alpn">Unsupported TLS application protocol</string>
+    <string name="traffic_skip_unidentified">TLS or host could not be identified</string>
+    <string name="traffic_user_ca_hint">Enabling decryption also installs the public debug CA for current Android users. Disabling decryption removes only copies installed by NetProxy.</string>
 </resources>

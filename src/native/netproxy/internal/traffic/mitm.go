@@ -37,7 +37,6 @@ type mitmState struct {
 	bypassHosts []string
 	mu          sync.Mutex
 	leaves      map[string]tls.Certificate
-	failed      map[string]time.Time
 }
 
 func loadPolicy(layout paths.Layout) (MITMPolicy, error) {
@@ -122,14 +121,12 @@ func newMITM(policy MITMPolicy, ca *authority) *mitmState {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &mitmState{ctx: ctx, cancel: cancel, ca: ca, hosts: policy.Hosts, bypassHosts: policy.BypassHosts,
-		leaves: make(map[string]tls.Certificate), failed: make(map[string]time.Time)}
+		leaves: make(map[string]tls.Certificate)}
 }
 
 func (s *mitmState) matches(host string) bool {
-	if s == nil || !validMITMHost(host) {
-		return false
-	}
-	return matchesHostPatterns(s.hosts, host) && !matchesHostPatterns(s.bypassHosts, host)
+	return s != nil && validMITMHost(host) &&
+		matchesHostPatterns(s.hosts, host) && !matchesHostPatterns(s.bypassHosts, host)
 }
 
 func matchesHostPatterns(patterns []string, host string) bool {
@@ -139,28 +136,6 @@ func matchesHostPatterns(patterns []string, host string) bool {
 		}
 	}
 	return false
-}
-
-func (s *mitmState) bypass(host string, now time.Time) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return now.Before(s.failed[host])
-}
-
-func (s *mitmState) rememberFailure(host string, now time.Time) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.failed) >= maxCachedHosts {
-		var oldest time.Time
-		var oldestHost string
-		for name, until := range s.failed {
-			if oldestHost == "" || until.Before(oldest) {
-				oldestHost, oldest = name, until
-			}
-		}
-		delete(s.failed, oldestHost)
-	}
-	s.failed[host] = now.Add(10 * time.Minute)
 }
 
 func (s *mitmState) certificate(host string, now time.Time) (tls.Certificate, error) {

@@ -796,4 +796,20 @@
     <string name="traffic_group_unknown">Desconhecido</string>
     <string name="traffic_group_expand">Expandir grupo</string>
     <string name="traffic_group_collapse">Recolher grupo</string>
+    <string name="traffic_pinned_title">Exceções por rejeição de certificado</string>
+    <string name="traffic_pinned_empty">Nenhuma exceção de certificado</string>
+    <string name="traffic_pinned_clear">Limpar lista de exceções</string>
+    <string name="traffic_pinned_clear_prompt">Limpar a lista para tentar descriptografar as próximas conexões?</string>
+    <string name="traffic_body_decoded">Descomprimido</string>
+    <string name="traffic_skip_reason">Motivo da passagem direta</string>
+    <string name="traffic_skip_certificate">Certificado rejeitado · ignorado</string>
+    <string name="traffic_skip_excluded">Host na lista de exclusão</string>
+    <string name="traffic_skip_unselected">Host não selecionado para descriptografia</string>
+    <string name="traffic_skip_disabled">Descriptografia HTTPS desativada</string>
+    <string name="traffic_skip_unavailable">Descriptografia HTTPS indisponível</string>
+    <string name="traffic_skip_non_tls">Tráfego não TLS</string>
+    <string name="traffic_skip_timeout">Tempo limite na detecção do protocolo</string>
+    <string name="traffic_skip_alpn">Protocolo de aplicação TLS não suportado</string>
+    <string name="traffic_skip_unidentified">Não foi possível identificar TLS ou o host</string>
+    <string name="traffic_user_ca_hint">Ativar a descriptografia também instala a CA de depuração pública para os usuários atuais do Android. Desativá-la remove apenas as cópias instaladas pelo NetProxy.</string>
 </resources>
