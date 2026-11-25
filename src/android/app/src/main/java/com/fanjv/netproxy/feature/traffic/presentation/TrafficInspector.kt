@@ -57,6 +57,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.ui.component.ContentStatus
@@ -253,7 +254,7 @@ private fun MessageHeaders(message: CapturedMessage, onHeader: (String, String) 
         fields.forEach { (key, entries) -> entries.forEach {
             InspectRow(key, it, monospace = true, modifier = Modifier.clickable(
                 onClickLabel = stringResource(R.string.traffic_header_copy),
-            ) { onHeader(key, it) }.heightIn(min = 40.dp).padding(vertical = 2.dp))
+            ) { onHeader(key, it) })
         } }
         if (message.headersTruncated) TruncatedNotice()
     }
@@ -366,16 +367,15 @@ private fun RewriteAuditCard(match: RewriteMatch, status: Int, canEdit: Boolean,
 @Composable
 private fun InspectCard(content: @Composable () -> Unit) {
     Column(Modifier.fillMaxWidth().background(MiuixTheme.colorScheme.surfaceContainer, RoundedCornerShape(14.dp))
-        .padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { content() }
+        .padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) { content() }
 }
 
 @Composable
-private fun InspectRow(key: String, value: String, monospace: Boolean = false, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Text(key, Modifier.weight(0.40f), style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
-        Text(value, Modifier.weight(0.60f), style = if (monospace) MiuixTheme.textStyles.footnote1.copy(fontFamily = FontFamily.Monospace)
-            else MiuixTheme.textStyles.footnote1)
+private fun InspectRow(key: String, value: String, modifier: Modifier = Modifier, monospace: Boolean = false) {
+    val style = MiuixTheme.textStyles.footnote1.copy(lineHeight = 16.sp)
+    Row(modifier.fillMaxWidth().padding(vertical = 1.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(key, Modifier.weight(0.40f), style = style, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+        Text(value, Modifier.weight(0.60f), style = if (monospace) style.copy(fontFamily = FontFamily.Monospace) else style)
     }
 }
 
