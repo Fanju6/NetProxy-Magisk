@@ -35,6 +35,8 @@ internal class ModuleApiClient(
 ) {
     constructor(context: Context) : this(LocalHttpTransport(context.applicationContext))
     internal val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
+    suspend inline fun <reified T> captureApps(): T = read("/traffic/apps")
+    suspend fun saveCaptureApps(body: JsonObject) = put("/traffic/apps", body)
     private val codec = ModuleApiCodec(json)
     private val interests = HashMap<String, Int>()
     private val topics = MutableStateFlow<Set<String>>(emptySet())

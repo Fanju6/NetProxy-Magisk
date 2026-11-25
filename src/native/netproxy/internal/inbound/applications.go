@@ -83,7 +83,7 @@ func ResolvePackageUIDs(ctx context.Context, refs []PackageRef) (PackageUIDResol
 	if err := ctx.Err(); err != nil {
 		return PackageUIDResolution{}, err
 	}
-	return resolvePackageUIDs(refs, func(user uint32) (map[string]uint32, error) { return listPackageUIDs(ctx, user) })
+	return resolvePackageUIDs(refs, func(user uint32) (map[string]uint32, error) { return ListPackageUIDs(ctx, user) })
 }
 
 // ResolveExclusivePackageUIDs excludes UIDs shared with packages outside the requested set.
@@ -138,7 +138,7 @@ func resolvePackageUIDs(refs []PackageRef, list func(uint32) (map[string]uint32,
 	return PackageUIDResolution{UIDs: uniqueUint32(result), Missing: missing}, nil
 }
 
-func listPackageUIDs(ctx context.Context, userID uint32) (map[string]uint32, error) {
+func ListPackageUIDs(ctx context.Context, userID uint32) (map[string]uint32, error) {
 	command := exec.CommandContext(ctx, "cmd", "package", "list", "packages", "--user", strconv.FormatUint(uint64(userID), 10), "-U")
 	var stderr strings.Builder
 	command.Stderr = &stderr

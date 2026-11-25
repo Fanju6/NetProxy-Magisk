@@ -10,10 +10,12 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -24,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -49,6 +52,8 @@ import com.fanjv.netproxy.core.ui.component.TopBarMoreMenu
 import com.fanjv.netproxy.core.ui.component.chromeIcon
 import com.fanjv.netproxy.core.ui.component.dialogTextFieldColors
 import com.fanjv.netproxy.core.ui.component.groupedCardSection
+import com.fanjv.netproxy.feature.apps.presentation.AppInfoModel
+import com.fanjv.netproxy.feature.apps.presentation.AppItem
 import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.Route
 import kotlinx.coroutines.Dispatchers
@@ -278,6 +283,45 @@ internal fun TrafficCopySheet(title: Int, options: List<String>, dismiss: () -> 
 internal fun TrafficConfirmation(show: Boolean, title: Int, prompt: Int, dismiss: () -> Unit, confirm: () -> Unit) {
     AppDialog(show = show, title = stringResource(title), summary = stringResource(prompt), onDismissRequest = dismiss) {
         ConfirmationActions(dismiss, confirm)
+    }
+}
+
+@Composable
+internal fun TrafficAppPicker(
+    selected: Set<String>,
+    catalog: Map<String, AppInfoModel>,
+    saving: Boolean,
+    error: Throwable?,
+    loadIcon: suspend (String) -> Unit,
+    edit: (Set<String>?) -> Unit,
+    save: () -> Unit,
+) {
+    var query by rememberSaveable { mutableStateOf("") }
+    val apps = remember(catalog, selected, query) {
+        (catalog.values + selected.filterNot { it in catalog }.map {
+            AppInfoModel(it.substringAfter(':'), it.substringAfter(':'), it.substringBefore(':'))
+        }).filter { it.label.contains(query, ignoreCase = true) || it.id.contains(query, ignoreCase = true) }
+            .sortedWith(compareBy({ it.userId.toIntOrNull() }, { it.label.lowercase() }, { it.packageName }))
+    }
+    AppDialog(show = true, title = stringResource(R.string.traffic_capture_apps),
+        summary = stringResource(R.string.traffic_capture_apps_summary), onDismissRequest = { edit(null) }) {
+        GlassTextField(value = query, onValueChange = { query = it }, label = stringResource(R.string.search),
+            useLabelAsPlaceholder = true, singleLine = true, modifier = Modifier.fillMaxWidth())
+        LazyColumn(Modifier.fillMaxWidth().height(250.dp)) {
+            items(apps, key = { it.id }) { app ->
+                LaunchedEffect(app.iconKey) { loadIcon(app.iconKey) }
+                AppItem(app, showPackageName = true, isProxied = app.id in selected,
+                    spacing = 2.dp, enabled = !saving) {
+                    edit(if (app.id in selected) selected - app.id else selected + app.id)
+                }
+            }
+        }
+        error?.let { TrafficErrorText(it) }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AppDialogButton(stringResource(R.string.common_cancel), { edit(null) }, Modifier.weight(1f), enabled = !saving)
+            AppDialogButton(stringResource(R.string.common_confirm), save, Modifier.weight(1f),
+                role = DialogActionRole.Primary, enabled = !saving)
+        }
     }
 }
 

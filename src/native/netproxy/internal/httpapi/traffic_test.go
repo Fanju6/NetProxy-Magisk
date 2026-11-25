@@ -8,7 +8,35 @@ import (
 	"testing"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/traffic"
 )
+
+func TestTrafficAppsContract(t *testing.T) {
+	s := resourceFixture(t)
+	target := trafficRoute + "apps"
+	r := httptest.NewRequest(http.MethodPut, target, strings.NewReader(`{"apps":[]}`))
+	r.Host = s.config.Listen
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("未认证请求获得 %d", w.Code)
+	}
+	var policy traffic.AppsPolicy
+	resourceAssertSuccess(t, s, http.MethodGet, target, "", "traffic.apps", &policy)
+	if policy.Apps == nil || len(policy.Apps) != 0 {
+		t.Fatalf("默认名单不为空: %+v", policy)
+	}
+	resourceAssertSuccess(t, s, http.MethodPut, target, `{"apps":["10:app.example"]}`, "traffic.apps_saved", &policy)
+	invalid, result := resourceRequest(t, s, http.MethodPut, target, `{"apps":["app.invalid"]}`)
+	if invalid.Code != http.StatusUnprocessableEntity || result.Code != "traffic.apps_failed" {
+		t.Fatalf("无效名单响应: %d %+v", invalid.Code, result)
+	}
+	resourceAssertSuccess(t, s, http.MethodGet, target, "", "traffic.apps", &policy)
+	if len(policy.Apps) != 1 || policy.Apps[0] != "10:app.example" {
+		t.Fatalf("未保留原始名单: %+v", policy)
+	}
+}
 
 func TestTrafficManagementRequiresAuthAndValidatesRules(t *testing.T) {
 	s := resourceFixture(t)

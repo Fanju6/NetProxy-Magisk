@@ -144,6 +144,7 @@ const capturePreviewId = 'ABCDEFGHIJKLMNOPQRSTUVWXY2'
 const capturePreview = {
   id: capturePreviewId, time: '2026-01-01T12:00:00Z', method: 'POST', host: 'example.test',
   target: '/orders?preview=true', status: 201, duration_ms: 38, outbound: 'Proxy', rewritten: true,
+  source_app: { uid: 10123, user_id: 0, package: 'com.example.client' },
   exit: { inbound: 'netproxy-in', remote: '192.0.2.1:443', package: 'com.example.client', uid: 10123,
     chain: [{ tag: 'Proxy', type: 'selector' }, { tag: 'Auto', type: 'urltest' }, { tag: 'node-x', type: 'direct' }] },
 }
@@ -163,6 +164,7 @@ function execute(args: string[]): CtlResult<unknown> {
     if (action === 'traffic') {
       if (clean[2] === 'status') return response('traffic.status', '抓包状态', { running: false, count: 0 })
       if (clean[2] === 'list') return response('traffic.list', '抓包记录', [])
+      if (clean[2] === 'apps') return response('traffic.apps', '抓包应用配置', { apps: [] })
       if (clean[2] === 'detail' && clean[3] === capturePreviewId) {
         return response('traffic.detail', '抓包详情', { ...capturePreview, http: {
           url: 'https://example.test/orders?preview=true', url_truncated: false,

@@ -153,7 +153,7 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
                                     if (exit.chain.isNotEmpty()) InspectRow(stringResource(R.string.traffic_exit_chain),
                                         exit.chain.joinToString(" → ") { "${it.tag} (${it.type})" })
                                     exit.remote?.let { InspectRow(stringResource(R.string.traffic_remote), it) }
-                                    exit.packageName?.let { name ->
+                                    (record.sourceApp?.packageName ?: exit.packageName)?.let { name ->
                                         val app = selection.app
                                         if (app == null) InspectRow(stringResource(R.string.traffic_app), name)
                                         else Row(verticalAlignment = Alignment.CenterVertically,
@@ -165,7 +165,10 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
                                             InspectRow(stringResource(R.string.traffic_app), "${app.label}\n$name")
                                         }
                                     }
-                                    exit.uid?.let { InspectRow("UID", it.toString()) }
+                                    (record.sourceApp?.uid ?: exit.uid)?.let { InspectRow("UID", it.toString()) }
+                                    record.sourceApp?.userId?.let {
+                                        InspectRow(stringResource(R.string.traffic_app_user), it.toString())
+                                    }
                                     exit.process?.let { InspectRow(stringResource(R.string.traffic_process), it) }
                                 }
                                 InspectRow(stringResource(R.string.traffic_rewrite_result), when {

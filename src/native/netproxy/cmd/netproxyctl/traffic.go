@@ -18,13 +18,13 @@ import (
 func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 	const maxRequest = traffic.MaxRulesBytes + 1024
 	usage := func() error {
-		return usageError("用法: netproxyctl api traffic status|start|stop|toggle|list|detail <ID>|clear|rules|set-rules|mitm|set-mitm|ca|ca-init|ca-export")
+		return usageError("用法: netproxyctl api traffic status|start|stop|toggle|list|detail <ID>|clear|apps|set-apps <文件>|rules|set-rules|mitm|set-mitm|ca|ca-init|ca-export")
 	}
 	if len(args) == 0 {
 		return usage()
 	}
 	action := args[0]
-	withArgument := action == "set-rules" || action == "set-mitm" || action == "ca-export" || action == "detail"
+	withArgument := action == "set-rules" || action == "set-mitm" || action == "set-apps" || action == "ca-export" || action == "detail"
 	if (withArgument && len(args) != 2) || (!withArgument && len(args) != 1) {
 		return usage()
 	}
@@ -39,7 +39,7 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 	var method string
 	var body io.Reader
 	switch action {
-	case "status", "list", "rules", "mitm", "ca":
+	case "status", "list", "apps", "rules", "mitm", "ca":
 		method = http.MethodGet
 	case "detail":
 		if !traffic.ValidRecordID(args[1]) {
@@ -52,12 +52,15 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 		method, action = http.MethodDelete, "list"
 	case "ca-export":
 		method, action = http.MethodGet, "ca"
-	case "set-rules", "set-mitm":
+	case "set-rules", "set-mitm", "set-apps":
 		method = http.MethodPut
 		limit := int64(maxRequest)
-		if action == "set-mitm" {
+		switch action {
+		case "set-mitm":
 			action, limit = "mitm", traffic.MaxMITMBytes
-		} else {
+		case "set-apps":
+			action, limit = "apps", traffic.MaxAppsBytes
+		default:
 			action = "rules"
 		}
 		file, err := os.Open(args[1])

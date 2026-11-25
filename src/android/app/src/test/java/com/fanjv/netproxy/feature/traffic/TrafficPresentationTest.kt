@@ -1,6 +1,7 @@
 package com.fanjv.netproxy.feature.traffic
 
 import com.fanjv.netproxy.feature.traffic.data.CaptureRecord
+import com.fanjv.netproxy.feature.traffic.data.CaptureSourceApp
 import com.fanjv.netproxy.feature.traffic.data.CaptureExit
 import com.fanjv.netproxy.feature.traffic.data.CaptureHop
 import com.fanjv.netproxy.feature.traffic.data.CapturedBody
@@ -31,6 +32,13 @@ class TrafficPresentationTest {
         val chunks = bodyChunks(data)
         assertEquals(data, chunks.joinToString(""))
         assertTrue(chunks.all { it.length <= 2048 && !it.last().isHighSurrogate() })
+    }
+
+    @Test fun appFilterDistinguishesAndroidUsers() {
+        val record = CaptureRecord("now", "GET", "example.test", "Proxy", 200, durationMs = 1,
+            sourceApp = CaptureSourceApp(1010123, 10, "com.example.app"))
+        assertTrue(record.matchesSession("", null, null, null, app = "10:com.example.app"))
+        assertFalse(record.matchesSession("", null, null, null, app = "0:com.example.app"))
     }
 
     @Test fun sessionSearchMatchesPathAndCombinesFilters() {

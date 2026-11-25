@@ -21,6 +21,7 @@ type flow struct {
 	Host        string `json:"host"`
 	Outbound    string `json:"outbound"`
 	Exit        *Exit  `json:"exit,omitempty"`
+	sourceApp   *SourceApp
 }
 
 type Exit struct {
@@ -38,7 +39,7 @@ type ExitHop struct {
 }
 
 func (f flow) entry(now time.Time, method, host string) Entry {
-	return Entry{Time: now, Method: method, Host: host, Outbound: f.Outbound, Exit: f.Exit}
+	return Entry{Time: now, Method: method, Host: host, Outbound: f.Outbound, Exit: f.Exit, SourceApp: f.sourceApp}
 }
 
 type session struct {
@@ -80,6 +81,10 @@ func (s *session) serveBridge(bridge *net.UnixConn) {
 		return
 	}
 	defer upstream.Close()
+	metadata.sourceApp = s.controller.owners.sourceApp(s.ctx, metadata.Exit)
+	if !s.controller.capturesApp(metadata.sourceApp) {
+		return
+	}
 	defer context.AfterFunc(s.ctx, func() {
 		_ = bridge.Close()
 		_ = upstream.Close()

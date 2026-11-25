@@ -775,4 +775,7 @@
     <string name="traffic_rule_redirect">Redirect target</string>
     <string name="traffic_rule_unavailable">The original rule was changed or removed.</string>
     <string name="traffic_header_copy_hint">Tap a header to copy it.</string>
+    <string name="traffic_capture_apps">Capture apps</string>
+    <string name="traffic_capture_apps_summary">Choose which apps to capture. No selection captures all apps.</string>
+    <string name="traffic_app_user">Android user</string>
 </resources>

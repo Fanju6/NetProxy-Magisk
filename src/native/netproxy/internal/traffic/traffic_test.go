@@ -128,6 +128,10 @@ func TestCaptureRetainsNewestEntries(t *testing.T) {
 }
 
 func bridgeFixture(layout paths.Layout) func(context.Context, string, string) (net.Conn, error) {
+	return bridgeFixtureFor(layout, nil)
+}
+
+func bridgeFixtureFor(layout paths.Layout, exit *Exit) func(context.Context, string, string) (net.Conn, error) {
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
 		dialer := net.Dialer{Timeout: time.Second}
 		origin, err := dialer.DialContext(ctx, network, address)
@@ -159,7 +163,7 @@ func bridgeFixture(layout paths.Layout) func(context.Context, string, string) (n
 		if err != nil {
 			return nil, err
 		}
-		metadata, _ := json.Marshal(flow{Destination: address, Outbound: "selected-by-inbound"})
+		metadata, _ := json.Marshal(flow{Destination: address, Outbound: "selected-by-inbound", Exit: exit})
 		_ = bridge.SetDeadline(time.Now().Add(time.Second))
 		_, _, err = bridge.WriteMsgUnix(append(metadata, '\n'), unix.UnixRights(int(peer.Fd())), nil)
 		var ready [1]byte
@@ -178,5 +182,45 @@ func bridgeFixture(layout paths.Layout) func(context.Context, string, string) (n
 			relayStreams(relay, origin)
 		}()
 		return bridge, nil
+	}
+}
+
+func TestCaptureAppsFilterBeforeAcknowledgingBridge(t *testing.T) {
+	layout := paths.New(t.TempDir())
+	c := New(layout)
+	if _, err := c.SetAppsPolicy(AppsPolicy{Apps: []string{"10:app.same"}}); err != nil {
+		t.Fatal(err)
+	}
+	c = New(layout)
+	if err := c.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Stop()
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "original")
+	}))
+	defer origin.Close()
+	addr := strings.TrimPrefix(origin.URL, "http://")
+	sameProfile, otherProfile := uint32(1012034), uint32(12034)
+	for _, exit := range []*Exit{nil, {UID: &otherProfile, Package: "app.same"}, {UID: &sameProfile, Package: "app.other"}} {
+		conn, err := bridgeFixtureFor(layout, exit)(t.Context(), "tcp", addr)
+		if err == nil {
+			conn.Close()
+			t.Fatal("不应接管未选中的来源")
+		}
+	}
+	client := &http.Client{Transport: &http.Transport{DialContext: bridgeFixtureFor(layout, &Exit{UID: &sameProfile, Package: "app.same"})}, Timeout: time.Second}
+	resp, err := client.Get(origin.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	entries := c.Entries()
+	if len(entries) != 1 || entries[0].SourceApp == nil || *entries[0].SourceApp != (SourceApp{UID: sameProfile, UserID: 10, Package: "app.same"}) {
+		t.Fatalf("抓包来源不匹配: %+v", entries)
+	}
+	if _, err := c.SetAppsPolicy(AppsPolicy{Apps: []string{}}); err != nil || !c.capturesApp(nil) {
+		t.Fatal("空列表应允许全部连接", err)
 	}
 }

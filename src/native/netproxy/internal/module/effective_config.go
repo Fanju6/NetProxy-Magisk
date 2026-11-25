@@ -32,6 +32,7 @@ func writeEffectiveConfig(ctx context.Context, singBoxDir, destination string, i
 		if route == nil {
 			route = make(map[string]jsontext.Value)
 		}
+		route["find_process"] = jsontext.Value("true")
 		route["netproxy_capture_socket"], err = json.Marshal(captureSocket)
 		if err != nil {
 			return err

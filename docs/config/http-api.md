@@ -135,6 +135,7 @@ HTTP 保存必须提供读取时的 revision。发生 `config.conflict` 时重�
 | `GET /logs?kind=service&lines=200` | 脱敏日志，类型为 `service/core`，最多 2000 行 |
 | `DELETE /logs?kind=service` | 清空日志 |
 | `GET /traffic/status`、`list` | 全局抓包状态和内存记录 |
+| `GET /traffic/apps`、`PUT /traffic/apps` | 读取或替换抓包应用名单：`{"apps":["0:com.example.app"]}`；空数组抓取全部 |
 | `POST /traffic/toggle`、`start`、`stop`；`DELETE /traffic/list` | 切换全局抓包、显式启停或清空记录 |
 | `GET/PUT /traffic/rules` | 读取或替换重写规则，正文为 `{"rules":[...]}`，见[规则格式](/guide/traffic-debugging) |
 | `GET/PUT /traffic/mitm` | 读取或替换 `{"enabled":false,"hosts":[],"system_trust":false}`；仅对显式配置的主机开启 HTTPS 解密。系统信任开启后下次开机安装，关闭时尝试卸载 |

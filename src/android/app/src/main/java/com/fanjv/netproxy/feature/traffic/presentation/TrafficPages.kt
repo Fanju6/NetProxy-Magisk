@@ -20,11 +20,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Android
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.List
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,6 +54,8 @@ import com.fanjv.netproxy.core.ui.component.ContentStatus
 import com.fanjv.netproxy.core.ui.component.TopBarMenuAction
 import com.fanjv.netproxy.core.ui.component.TopBarMoreMenu
 import com.fanjv.netproxy.core.ui.component.groupedCardSection
+import com.fanjv.netproxy.feature.apps.presentation.AppInfoModel
+import com.fanjv.netproxy.feature.apps.presentation.AppIcon
 import com.fanjv.netproxy.feature.traffic.data.CaptureRecord
 import com.fanjv.netproxy.feature.traffic.data.TrafficChangedException
 import com.fanjv.netproxy.navigation.LocalNavigator
@@ -127,6 +131,16 @@ internal fun TrafficScreen(viewModel: TrafficViewModel) {
                         navigator.push(Route.TrafficSessions)
                     }
                 },
+                CardItem("apps") {
+                    ArrowPreference(title = stringResource(R.string.traffic_capture_apps),
+                        summary = stringResource(R.string.traffic_capture_apps_summary),
+                        onClick = { viewModel.openAppPicker() }, enabled = !state.busy,
+                        insideMargin = TrafficRowInsets,
+                        startAction = {
+                            Icon(Icons.Rounded.Android, null, Modifier.padding(end = 12.dp),
+                                tint = MiuixTheme.colorScheme.primary)
+                        })
+                },
                 CardItem("rules") {
                     TrafficLink(R.string.traffic_rules, R.string.traffic_rules_summary, Icons.Rounded.Code) {
                         navigator.push(Route.TrafficRules)
@@ -140,6 +154,8 @@ internal fun TrafficScreen(viewModel: TrafficViewModel) {
             ))
         }
     }
+    state.appDraft?.let { TrafficAppPicker(it, state.appCatalog, state.saving, state.failure,
+        viewModel::loadAppIcon, viewModel::editCaptureApps, viewModel::saveCaptureApps) }
 }
 
 @Composable
@@ -164,10 +180,12 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
     var outbound by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmClear by rememberSaveable { mutableStateOf(false) }
     val records = state.records.value.orEmpty()
+    LaunchedEffect(viewModel) { viewModel.loadAppCatalog() }
     val methods = remember(records) {
         (listOf("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD") + records.map { it.method }).distinct()
     }
-    val apps = remember(records) { records.mapNotNull { it.exit?.appKey }.distinct().sorted() }
+    val apps = remember(records) { records.mapNotNull { it.appKey }.distinct().sorted() }
+    val appLabels = apps.map { key -> state.appCatalog[key]?.let { "${it.label} · $key" } ?: key }
     val outbounds = remember(records) {
         records.flatMap { listOf(it.outbound) + it.exit?.chain.orEmpty().map { hop -> hop.tag } }
             .filter { it.isNotBlank() }.distinct().sorted()
@@ -198,7 +216,7 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
                     FilterDropdown(R.string.traffic_tls, tlsOptions, tls, tlsLabels) { tls = it }
                     FilterChip(stringResource(R.string.traffic_rewritten), rewrittenOnly,
                         Modifier.toggleable(rewrittenOnly, role = Role.Checkbox) { rewrittenOnly = it })
-                    FilterDropdown(R.string.traffic_app, apps, app) { app = it }
+                    FilterDropdown(R.string.traffic_app, apps, app, appLabels) { app = it }
                     FilterDropdown(R.string.traffic_outbound, outbounds, outbound) { outbound = it }
                 }
                 val issue = state.records.error ?: state.failure
@@ -211,7 +229,9 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
                     verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     issue?.let { item { TrafficErrorText(it) } }
                     itemsIndexed(visible, key = { index, record -> record.id ?: "$index:${record.time}" }) { _, record ->
-                        SessionRow(record) {
+                        val sourceApp = state.appCatalog[record.appRef]
+                        if (sourceApp != null) LaunchedEffect(sourceApp.iconKey) { viewModel.loadAppIcon(sourceApp.iconKey) }
+                        SessionRow(record, sourceApp) {
                             viewModel.openRecord(record)
                             navigator.push(Route.TrafficInspector(record.id ?: ""))
                         }
@@ -225,7 +245,7 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
 }
 
 @Composable
-private fun SessionRow(record: CaptureRecord, onClick: () -> Unit) {
+private fun SessionRow(record: CaptureRecord, app: AppInfoModel?, onClick: () -> Unit) {
     val primary = MiuixTheme.colorScheme.primary
     Row(Modifier.fillMaxWidth().background(MiuixTheme.colorScheme.surfaceContainer, RoundedCornerShape(14.dp))
         .clickable(onClick = onClick).heightIn(min = 44.dp).padding(horizontal = 9.dp, vertical = 5.dp),
@@ -243,8 +263,10 @@ private fun SessionRow(record: CaptureRecord, onClick: () -> Unit) {
                 if (record.rewritten) Text(stringResource(R.string.traffic_rewritten), color = primary,
                     style = MiuixTheme.textStyles.footnote2, maxLines = 1)
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text(record.target.orEmpty(), Modifier.weight(1f),
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                val source = app?.label ?: record.sourceApp?.packageName ?: record.appKey
+                if (app != null) AppIcon(app, size = 14.dp)
+                Text(listOfNotNull(source, record.target?.takeIf { it.isNotEmpty() }).joinToString(" · "), Modifier.weight(1f),
                     style = MiuixTheme.textStyles.footnote2.copy(fontFamily = FontFamily.Monospace),
                     maxLines = 1, overflow = TextOverflow.Ellipsis, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
                 Text("${shortTime(record.time)} · ${stringResource(R.string.traffic_milliseconds, record.durationMs)}",

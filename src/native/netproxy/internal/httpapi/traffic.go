@@ -30,6 +30,21 @@ func (s *Server) registerTraffic() {
 	s.trafficRoute("GET", "list", "抓包记录", func(context.Context) (any, error) {
 		return s.traffic.Entries(), nil
 	})
+	s.trafficRoute("GET", "apps", "抓包应用配置", func(context.Context) (any, error) {
+		policy, err := s.traffic.AppsPolicy()
+		return policy, mitmAPIError("traffic.apps_unavailable", err)
+	})
+	s.route("PUT "+trafficRoute+"apps", 10*time.Second, false, func(_ context.Context, r *http.Request) (contract.Result, error) {
+		if _, err := resourceQuery(r); err != nil {
+			return contract.Result{}, err
+		}
+		var input traffic.AppsPolicy
+		if err := decodeRequestLimit(r, &input, traffic.MaxAppsBytes); err != nil {
+			return contract.Result{}, err
+		}
+		policy, err := s.traffic.SetAppsPolicy(input)
+		return contract.Success("traffic.apps_saved", "抓包应用配置已保存", policy), mitmAPIError("traffic.apps_failed", err)
+	})
 	s.route("GET "+trafficRoute+"detail", 10*time.Second, false, func(_ context.Context, r *http.Request) (contract.Result, error) {
 		query, err := resourceQuery(r, "id")
 		if err != nil {

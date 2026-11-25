@@ -25,7 +25,18 @@ internal data class CaptureRecord(
     val target: String? = null,
     val rewritten: Boolean = false,
     val exit: CaptureExit? = null,
+    @SerialName("source_app") val sourceApp: CaptureSourceApp? = null,
 )
+
+@Serializable
+internal data class CaptureSourceApp(
+    val uid: Int,
+    @SerialName("user_id") val userId: Int,
+    @SerialName("package") val packageName: String? = null,
+)
+
+@Serializable
+internal data class CaptureApps(val apps: List<String>)
 
 @Serializable
 internal data class CaptureExit(
@@ -125,6 +136,9 @@ internal class TrafficRepository(private val api: ModuleApiClient) {
     suspend fun detail(id: String): CaptureDetail = api.read("/traffic/detail", mapOf("id" to id))
     suspend fun rules(): List<RewriteRule> = api.read<RewriteRules>("/traffic/rules").rules
     suspend fun policy(): MitmPolicy = api.read("/traffic/mitm")
+    suspend fun apps(): CaptureApps = api.captureApps()
+    suspend fun saveApps(apps: List<String>): CaptureApps =
+        api.json.decodeFromJsonElement(api.saveCaptureApps(api.json.encodeToJsonElement(CaptureApps(apps)).jsonObject).data)
 
     suspend fun setCapture(enabled: Boolean): CaptureStatus =
         api.json.decodeFromJsonElement(api.post(if (enabled) "/traffic/start" else "/traffic/stop").data)

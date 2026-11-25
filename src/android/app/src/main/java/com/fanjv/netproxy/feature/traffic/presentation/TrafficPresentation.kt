@@ -14,7 +14,7 @@ internal fun CaptureRecord.matchesSession(
 ): Boolean =
     (method == null || this.method == method) &&
         (!rewrittenOnly || rewritten) &&
-        (app == null || exit?.appKey == app) &&
+        (app == null || appKey == app) &&
         (outbound == null || this.outbound == outbound || exit?.chain?.any { it.tag == outbound } == true) &&
         (statusClass == null || status / 100 == statusClass) &&
         (tls == null || tls == "decrypted" && this.tls == "decrypted" ||
@@ -26,6 +26,12 @@ private val prettyJson = Json { prettyPrint = true }
 
 internal val com.fanjv.netproxy.feature.traffic.data.CaptureExit.appKey: String?
     get() = packageName ?: uid?.let { "UID $it" } ?: process
+
+internal val CaptureRecord.appRef: String?
+    get() = sourceApp?.let { source -> source.packageName?.let { "${source.userId}:$it" } }
+
+internal val CaptureRecord.appKey: String?
+    get() = appRef ?: sourceApp?.let { "UID ${it.uid}" } ?: exit?.appKey
 
 internal fun List<RewriteRule>.indexOfCapture(match: RewriteMatch): Int? {
     fun RewriteRule.matches(): Boolean {

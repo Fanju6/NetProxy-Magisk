@@ -6,12 +6,14 @@ import com.fanjv.netproxy.core.api.ModuleApiException
 import com.fanjv.netproxy.feature.apps.data.AndroidApp
 import com.fanjv.netproxy.feature.apps.data.AppIconCache
 import com.fanjv.netproxy.feature.apps.data.AppPackageRepository
+import com.fanjv.netproxy.feature.apps.presentation.AppInfoModel
 import com.fanjv.netproxy.feature.traffic.data.CaptureCertificate
 import com.fanjv.netproxy.feature.traffic.data.CaptureDetail
 import com.fanjv.netproxy.feature.traffic.data.CaptureRecord
 import com.fanjv.netproxy.feature.traffic.data.CaptureStatus
 import com.fanjv.netproxy.feature.traffic.data.MitmPolicy
 import com.fanjv.netproxy.feature.traffic.data.RewriteRule
+import com.fanjv.netproxy.feature.traffic.data.TrafficChangedException
 import com.fanjv.netproxy.feature.traffic.data.TrafficRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -56,6 +58,9 @@ internal data class TrafficState(
     val ruleDraft: RuleDraft? = null,
     val selectedRecord: RecordDetailState? = null,
     val fingerprint: String? = null,
+    val captureApps: List<String>? = null,
+    val appCatalog: Map<String, AppInfoModel> = emptyMap(),
+    val appDraft: Set<String>? = null,
 ) {
     val busy: Boolean get() = loading || saving
 }
@@ -86,20 +91,17 @@ internal class TrafficViewModel(
             }
             val exit = record.exit
             val catalog = packages
-            val name = exit?.packageName
+            val name = record.sourceApp?.packageName ?: exit?.packageName
+            val uid = record.sourceApp?.uid ?: exit?.uid
             if (catalog != null && name != null) {
                 val app = attempt {
                     val matches = catalog.snapshot().users.asSequence().flatMap { it.apps.asSequence() }
-                        .filter { it.packageName == name && (exit.uid == null || it.uid == exit.uid) }
+                        .filter { it.packageName == name && (uid == null || it.uid == uid) }
                     matches.firstOrNull()
                 }.getOrNull()
                 if (app != null) {
                     _state.update { it.copy(selectedRecord = it.selectedRecord?.copy(app = app)) }
-                    val key = app.iconKey
-                    if (key.isNotEmpty() && AppIconCache.cachedIcon(key) == null) {
-                        val generation = AppIconCache.generation
-                        attempt { AppIconCache.putIcon(key, catalog.icon(key), generation) }
-                    }
+                    loadAppIcon(app.iconKey)
                 }
             }
         }
@@ -144,6 +146,43 @@ internal class TrafficViewModel(
     fun clear() = mutate {
         val status = repository.clear()
         _state.update { it.copy(status = TrafficContent(status), records = TrafficContent(emptyList())) }
+    }
+
+    fun loadAppCatalog() {
+        viewModelScope.launch {
+            val catalog = attempt { readAppCatalog() }.getOrNull() ?: return@launch
+            _state.update { it.copy(appCatalog = catalog) }
+        }
+    }
+
+    suspend fun loadAppIcon(key: String) {
+        val catalog = packages ?: return
+        if (key.isNotEmpty() && AppIconCache.cachedIcon(key) == null) {
+            val generation = AppIconCache.generation
+            attempt { AppIconCache.putIcon(key, catalog.icon(key), generation) }
+        }
+    }
+
+    private suspend fun readAppCatalog(): Map<String, AppInfoModel> =
+        packages?.snapshot()?.users.orEmpty().flatMap { user ->
+            user.apps.map { AppInfoModel(it.packageName, it.label, user.id.toString(), it.system, it.iconKey) }
+        }.associateBy { it.id }
+
+    fun openAppPicker() = mutate {
+        val apps = repository.apps().apps
+        val catalog = readAppCatalog()
+        _state.update { it.copy(captureApps = apps, appCatalog = catalog, appDraft = apps.toSet()) }
+    }
+
+    fun editCaptureApps(apps: Set<String>?) {
+        if (!state.value.saving) _state.update { it.copy(appDraft = apps) }
+    }
+
+    fun saveCaptureApps() = mutate {
+        val draft = state.value.appDraft ?: return@mutate
+        if (repository.apps().apps != state.value.captureApps) throw TrafficChangedException()
+        val saved = repository.saveApps(draft.sorted()).apps
+        _state.update { it.copy(captureApps = saved, appDraft = null) }
     }
 
     fun editRule(index: Int? = null) {

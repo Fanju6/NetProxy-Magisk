@@ -34,6 +34,7 @@ export interface CaptureDetail {
   status: number
   outbound: string
   duration_ms: number
+  source_app?: { uid: number, user_id: number, package?: string }
   exit?: { inbound?: string, chain?: { tag: string, type: string }[], remote?: string, package?: string, uid?: number, process?: string }
   http?: { url: string, url_truncated: boolean, request: CaptureMessage, response: CaptureMessage, rewrites?: RewriteMatch[] }
 }
@@ -148,8 +149,9 @@ export function renderCaptureDetail(data: CaptureDetail): HTMLElement {
   line(overview, '匹配的出站', data.outbound)
   line(overview, '代理出口链', data.exit?.chain?.map(hop => `${hop.tag} (${hop.type})`).join(' → '))
   line(overview, '传输对端', data.exit?.remote)
-  line(overview, '应用', data.exit?.package)
-  line(overview, 'UID', data.exit?.uid)
+  line(overview, '来源应用', data.source_app?.package ?? data.exit?.package)
+  line(overview, 'UID', data.source_app?.uid ?? data.exit?.uid)
+  line(overview, 'Android 用户', data.source_app?.user_id)
   line(overview, '进程', data.exit?.process)
   article.append(overview)
   if (!data.http) {
