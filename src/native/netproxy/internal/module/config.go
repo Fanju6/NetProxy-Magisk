@@ -50,7 +50,7 @@ var configSections = []string{
 	"providers", "route", "services", "experimental",
 }
 
-var inboundSections = []string{"backend", "root_policy", "ipv6", "app", "ebpf", "tun"}
+var inboundSections = []string{"backend", "root_policy", "ipv6", "sniff_destination", "app", "ebpf", "tun"}
 
 func configSection(target string) string {
 	if section, found := strings.CutPrefix(target, "module/"); found && (section == "wifi" || section == "auto_start") {
@@ -153,7 +153,7 @@ func sectionContent(object map[string]jsontext.Value, section string) ([]byte, e
 	fragment := make(map[string]jsontext.Value)
 	if value, exists := object[section]; exists {
 		fragment[section] = value
-	} else if section == "ipv6" {
+	} else if section == "ipv6" || section == "sniff_destination" {
 		fragment[section] = jsontext.Value("true")
 	}
 	return json.Marshal(fragment, json.Deterministic(true), jsontext.WithIndent("  "))
@@ -546,7 +546,7 @@ func validateConfig(ctx context.Context, options Options, target, candidate stri
 }
 
 func validateInboundTree(ctx context.Context, options Options, candidate string, content []byte, section string) error {
-	if section == "backend" || section == "root_policy" || section == "ipv6" || section == "app" {
+	if section == "backend" || section == "root_policy" || section == "ipv6" || section == "sniff_destination" || section == "app" {
 		if _, err := inbound.Parse(content); err != nil {
 			return err
 		}

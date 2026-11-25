@@ -184,6 +184,12 @@ internal fun InboundSettingsScreen(
                                 summary = stringResource(R.string.inbound_ipv6_hint),
                                 checked = state.snapshot!!.ipv6, enabled = enabled, onCheckedChange = viewModel::setIPv6)
                         },
+                        CardItem("sniff_destination") {
+                            SwitchPreference(title = stringResource(R.string.inbound_sniff_destination),
+                                summary = stringResource(R.string.inbound_sniff_destination_hint),
+                                checked = state.snapshot!!.sniffDestination, enabled = enabled,
+                                onCheckedChange = viewModel::setSniffDestination)
+                        },
                         CardItem("root_policy") {
                             val policies = listOf("default", "include", "exclude")
                             OverlayDropdownPreference(

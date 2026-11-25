@@ -22,7 +22,7 @@ func TestEffectiveConfigPreservesNativeFieldsAndOrdering(t *testing.T) {
 	projection := []jsontext.Value{jsontext.Value(`{"tag":"managed-provider"}`)}
 	dest := filepath.Join(dir, "runtime", "config.json")
 	inbounds := []jsontext.Value{jsontext.Value(`{"tag":"netproxy-in"}`)}
-	if err := writeEffectiveConfig(t.Context(), dir, dest, inbounds, projection, "", false); err != nil {
+	if err := writeEffectiveConfig(t.Context(), dir, dest, inbounds, projection, "", false, false); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(dest)
@@ -47,7 +47,7 @@ func TestEffectiveConfigPreservesNativeFieldsAndOrdering(t *testing.T) {
 		t.Fatal(err)
 	}
 	var invalid *json.SemanticError
-	if err := writeEffectiveConfig(t.Context(), dir, dest, inbounds, projection, "", false); !errors.As(err, &invalid) {
+	if err := writeEffectiveConfig(t.Context(), dir, dest, inbounds, projection, "", false, false); !errors.As(err, &invalid) {
 		t.Fatalf("invalid provider array not rejected: %v", err)
 	}
 	if current, err := os.ReadFile(dest); err != nil || !bytes.Equal(current, raw) {
@@ -65,7 +65,7 @@ func TestIPv4OnlyRuntimeKeepsUserDNSAndRouteOnDisk(t *testing.T) {
 		t.Fatal(err)
 	}
 	dest := filepath.Join(dir, "runtime", "config.json")
-	if err := writeEffectiveConfig(t.Context(), dir, dest, nil, nil, "/capture.sock", true); err != nil {
+	if err := writeEffectiveConfig(t.Context(), dir, dest, nil, nil, "/capture.sock", true, true); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(dest)
@@ -78,14 +78,22 @@ func TestIPv4OnlyRuntimeKeepsUserDNSAndRouteOnDisk(t *testing.T) {
 			Rules    []map[string]jsontext.Value `json:"rules"`
 		} `json:"dns"`
 		Route struct {
-			Capture string                      `json:"netproxy_capture_socket"`
-			Rules   []map[string]jsontext.Value `json:"rules"`
+			Capture     string                      `json:"netproxy_capture_socket"`
+			Sniff       bool                        `json:"netproxy_sniff_destination"`
+			FindProcess bool                        `json:"find_process"`
+			Rules       []map[string]jsontext.Value `json:"rules"`
 		} `json:"route"`
 	}
 	if err := json.Unmarshal(raw, &projected); err != nil {
 		t.Fatal(err)
 	}
 	dns, route := projected.DNS, projected.Route
+	if !route.FindProcess {
+		t.Fatal("capture must enable process owner lookup")
+	}
+	if !route.Sniff {
+		t.Fatal("runtime must enable sniff destination override")
+	}
 	if dns.Strategy != "ipv4_only" || len(dns.Rules) != 2 {
 		t.Fatalf("unexpected DNS: %s", raw)
 	}
@@ -102,6 +110,39 @@ func TestIPv4OnlyRuntimeKeepsUserDNSAndRouteOnDisk(t *testing.T) {
 		string(route.Rules[2]["inbound"]) != `"netproxy-in"` || string(route.Rules[2]["ip_version"]) != "6" ||
 		string(route.Rules[2]["no_drop"]) != "true" || string(route.Rules[3]["outbound"]) != `"proxy"` {
 		t.Fatalf("unexpected route: %s", raw)
+	}
+	if saved, err := os.ReadFile(source); err != nil || string(saved) != original {
+		t.Fatal("saved sing-box preferences changed", err)
+	}
+}
+
+func TestSniffDestinationSwitchProjectsOnlyIntoRuntime(t *testing.T) {
+	dir := t.TempDir()
+	source := paths.SingBoxConfig(dir)
+	const original = `{"route":{"final":"proxy","netproxy_sniff_destination":true}}`
+	if err := os.WriteFile(source, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(dir, "runtime", "config.json")
+	for _, enabled := range []bool{false, true} {
+		if err := writeEffectiveConfig(t.Context(), dir, dest, nil, nil, "", false, enabled); err != nil {
+			t.Fatal(err)
+		}
+		content, err := os.ReadFile(dest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var projected struct {
+			Route map[string]jsontext.Value `json:"route"`
+		}
+		if err := json.Unmarshal(content, &projected); err != nil {
+			t.Fatal(err)
+		}
+		if string(projected.Route["final"]) != `"proxy"` ||
+			(enabled && string(projected.Route["netproxy_sniff_destination"]) != "true") ||
+			(!enabled && projected.Route["netproxy_sniff_destination"] != nil) {
+			t.Fatalf("enabled=%v: %s", enabled, content)
+		}
 	}
 	if saved, err := os.ReadFile(source); err != nil || string(saved) != original {
 		t.Fatal("saved sing-box preferences changed", err)

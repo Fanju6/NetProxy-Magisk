@@ -147,6 +147,7 @@ func TestResourcesReadWhileCoreStopped(t *testing.T) {
 		{"/api/v1/configs", "config.list"},
 		{"/api/v1/config?target=inbound", "config.read"},
 		{"/api/v1/config?target=inbound/ipv6", "config.read"},
+		{"/api/v1/config?target=inbound/sniff_destination", "config.read"},
 		{"/api/v1/app-policy", "app.list"},
 		{"/api/v1/logs?kind=service", "logs.show"},
 	} {

@@ -160,7 +160,7 @@ func Prepare(ctx context.Context, options Options) (PrepareResult, error) {
 	if traffic.Enabled(layout) {
 		captureSocket = layout.TrafficSocket()
 	}
-	if err := writeEffectiveConfig(ctx, options.SingBoxDir, configPath, built.Runtime.Inbounds, runtime.Providers, captureSocket, !config.IPv6Enabled()); err != nil {
+	if err := writeEffectiveConfig(ctx, options.SingBoxDir, configPath, built.Runtime.Inbounds, runtime.Providers, captureSocket, !config.IPv6Enabled(), config.SniffDestinationEnabled()); err != nil {
 		return PrepareResult{}, err
 	}
 	for _, ref := range built.MissingPackages {

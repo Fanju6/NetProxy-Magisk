@@ -23,6 +23,7 @@ internal data class InboundSnapshot(
 ) {
     val rootPolicy: String get() = inboundJson.parseToJsonElement(partitions.getValue("root_policy").content).jsonObject.textAt("root_policy")
     val ipv6: Boolean get() = inboundJson.parseToJsonElement(partitions.getValue("ipv6").content).jsonObject.flagAt("ipv6")
+    val sniffDestination: Boolean get() = inboundJson.parseToJsonElement(partitions.getValue("sniff_destination").content).jsonObject.flagAt("sniff_destination")
 }
 
 internal data class InboundChoices(val interfaces: List<String>, val ruleSets: List<String>)
@@ -39,7 +40,7 @@ internal class InboundRepository(
     private val service: ServiceRepository
 ) {
     suspend fun load(): InboundSnapshot {
-        val partitions = listOf("backend", "root_policy", "ipv6", "ebpf", "tun").associateWith {
+        val partitions = listOf("backend", "root_policy", "ipv6", "sniff_destination", "ebpf", "tun").associateWith {
             config.readSnapshot("inbound/$it")
         }
         val backend = inboundJson.parseToJsonElement(partitions.getValue("backend").content)
@@ -79,7 +80,7 @@ internal class InboundRepository(
         val result = config.apply(target, content, revision)
         val after = service.status()
         val expected = requested ?: before.configuredBackend
-        val selectedPartition = target == "inbound/$expected" || target in setOf("inbound/root_policy", "inbound/ipv6")
+        val selectedPartition = target == "inbound/$expected" || target in setOf("inbound/root_policy", "inbound/ipv6", "inbound/sniff_destination")
         if ((requested != null && after.configuredBackend != requested) ||
             ((requested != null || selectedPartition) && before.mayBeRunning() &&
                 (after.state != "ready" || after.activeBackend != expected))

@@ -341,11 +341,12 @@
  	if dataPlane != nil {
 --- a/option/route.go
 +++ b/option/route.go
-@@ -8,6 +8,7 @@
+@@ -8,6 +8,8 @@
  )
  
  type RouteOptions struct {
 +	NetProxyCaptureSocket      string                            `json:"netproxy_capture_socket,omitempty" schema:"omit"`
++	NetProxySniffDestination   bool                              `json:"netproxy_sniff_destination,omitempty" schema:"omit"`
  	GeoIP                      *GeoIPOptions                     `json:"geoip,omitempty" schema:"omit"`
  	Geosite                    *GeositeOptions                   `json:"geosite,omitempty" schema:"omit"`
  	Rules                      []Rule                            `json:"rules,omitempty"`
@@ -557,4 +558,237 @@
 +
 +func (*ConnectionManager) netProxyCapture(context.Context, net.Conn, net.Conn, adapter.InboundContext, N.CloseHandlerFunc) bool {
 +	return false
++}
+--- a/route/route.go
++++ b/route/route.go
+@@ -153,6 +153,8 @@
+ 		buf.ReleaseMulti(buffers)
+ 		return err
+ 	}
++	outbound := chain[len(chain)-1]
++	r.applyNetProxySniffDestination(ctx, &metadata, selectedRule, outbound, false)
+ 	for _, buffer := range slices.Backward(buffers) {
+ 		conn = bufio.NewCachedConn(conn, buffer)
+ 	}
+@@ -168,7 +170,6 @@
+ 	if !interrupt.IsResourceDownloadFromContext(ctx) {
+ 		onClose = registerInterrupt(chain, conn, onClose)
+ 	}
+-	outbound := chain[len(chain)-1]
+ 	if outboundHandler, isHandler := outbound.(adapter.ConnectionHandler); isHandler {
+ 		outboundHandler.NewConnection(ctx, conn, metadata, onClose)
+ 	} else {
+@@ -339,6 +340,8 @@
+ 		N.ReleaseMultiPacketBuffer(packetBuffers)
+ 		return err
+ 	}
++	outbound := chain[len(chain)-1]
++	r.applyNetProxySniffDestination(ctx, &metadata, selectedRule, outbound, true)
+ 	for _, buffer := range slices.Backward(packetBuffers) {
+ 		conn = bufio.NewCachedPacketConn(conn, buffer.Buffer, buffer.Destination)
+ 		N.PutPacketBuffer(buffer)
+@@ -359,7 +362,6 @@
+ 	if !interrupt.IsResourceDownloadFromContext(ctx) {
+ 		onClose = registerInterrupt(chain, conn, onClose)
+ 	}
+-	outbound := chain[len(chain)-1]
+ 	if outboundHandler, isHandler := outbound.(adapter.PacketConnectionHandler); isHandler {
+ 		outboundHandler.NewPacketConnection(ctx, conn, metadata, onClose)
+ 	} else {
+--- a/route/router.go
++++ b/route/router.go
+@@ -52,6 +52,8 @@
+ 	trackers          []adapter.ConnectionTracker
+ 	platformInterface adapter.PlatformInterface
+ 
++	netProxySniffDestination bool
++
+ 	processLookupMode      process.LookupMode
+ 	processCacheGeneration atomic.Uint64
+ 
+@@ -80,6 +82,8 @@
+ 		pauseManager:      service.FromContext[pause.Manager](ctx),
+ 		platformInterface: service.FromContext[adapter.PlatformInterface](ctx),
+ 
++		netProxySniffDestination: options.NetProxySniffDestination,
++
+ 		defaultDomainMatchStrategy: C.DomainMatchStrategy(options.DefaultDomainMatchStrategy),
+ 		reloadChan:                 reloadChan,
+ 	}
+--- a/protocol/vless/outbound.go
++++ b/protocol/vless/outbound.go
+@@ -144,6 +144,10 @@
+ 	return isMultiplexTransport && multiplexTransport.MultiplexEnabled()
+ }
+ 
++func (h *Outbound) NetProxyPacketDestinationIPOnly() bool {
++	return h.packetAddr && h.multiplexDialer == nil
++}
++
+ func (h *Outbound) InterfaceUpdated(ctx context.Context) {
+ 	if h.transport != nil {
+ 		h.transport.Close()
+--- a/protocol/vmess/outbound.go
++++ b/protocol/vmess/outbound.go
+@@ -197,6 +197,10 @@
+ 	}
+ }
+ 
++func (h *Outbound) NetProxyPacketDestinationIPOnly() bool {
++	return h.packetAddr && h.multiplexDialer == nil
++}
++
+ type vmessDialer Outbound
+ 
+ func (h *vmessDialer) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
+--- /dev/null
++++ b/route/netproxy_sniff_destination.go
+@@ -0,0 +1,49 @@
++package route
++
++import (
++	"context"
++
++	"github.com/sagernet/sing-box/adapter"
++	C "github.com/sagernet/sing-box/constant"
++	R "github.com/sagernet/sing-box/route/rule"
++	M "github.com/sagernet/sing/common/metadata"
++)
++
++func (r *Router) applyNetProxySniffDestination(ctx context.Context, metadata *adapter.InboundContext, rule adapter.Rule, outbound adapter.Outbound, packet bool) {
++	if !r.netProxySniffDestination || metadata.Inbound != "netproxy-in" || !metadata.Destination.IsIP() ||
++		metadata.RouteOriginalDestination.IsValid() || metadata.FakeIP || metadata.DestOverride ||
++		metadata.SniffHasECHExtension || !M.IsDomainName(metadata.SniffHost) {
++		return
++	}
++	if rule != nil {
++		if _, bypass := rule.Action().(*R.RuleActionBypass); bypass {
++			return
++		}
++	}
++	switch outbound.Type() {
++	case C.TypeDirect, C.TypeBlock, C.TypePass, C.TypeDNS, C.TypeBridge:
++		return
++	}
++	destination := M.Socksaddr{Fqdn: metadata.SniffHost, Port: metadata.Destination.Port}
++	if packet {
++		if ipOnly, ok := outbound.(interface{ NetProxyPacketDestinationIPOnly() bool }); ok && ipOnly.NetProxyPacketDestinationIPOnly() {
++			transport, ok := r.dnsTransport.Transport("dns-proxy")
++			if !ok {
++				return
++			}
++			addresses, err := r.dns.Lookup(adapter.WithContext(ctx, metadata), destination.Fqdn, adapter.DNSQueryOptions{
++				Transport: transport,
++			})
++			if err != nil || len(addresses) == 0 {
++				r.logger.DebugContext(ctx, "cannot resolve sniffed packet destination: ", destination.Fqdn, ": ", err)
++				return
++			}
++			destination = M.SocksaddrFrom(addresses[0], destination.Port)
++		}
++		metadata.OriginDestination = metadata.Destination
++		metadata.DestOverride = true
++	}
++	metadata.Destination = destination
++	metadata.DestinationAddresses = nil
++	r.logger.DebugContext(ctx, "managed proxy destination overridden as ", destination)
++}
+--- /dev/null
++++ b/route/netproxy_sniff_destination_test.go
+@@ -0,0 +1,96 @@
++package route
++
++import (
++	"net/netip"
++	"testing"
++
++	"github.com/sagernet/sing-box/adapter"
++	C "github.com/sagernet/sing-box/constant"
++	"github.com/sagernet/sing-box/log"
++	R "github.com/sagernet/sing-box/route/rule"
++	M "github.com/sagernet/sing/common/metadata"
++	"github.com/stretchr/testify/require"
++)
++
++func TestNetProxySniffDestination(t *testing.T) {
++	ip := M.ParseSocksaddr("192.0.2.1:443")
++	domain := M.ParseSocksaddr("example.com:443")
++	tests := []struct {
++		name, inbound, outbound, host     string
++		destination, explicit             M.Socksaddr
++		packet, bypass, ech, off, rewrite bool
++	}{
++		{name: "TCP", inbound: "netproxy-in", outbound: C.TypeVLESS, host: "example.com", destination: ip, rewrite: true},
++		{name: "UDP", inbound: "netproxy-in", outbound: C.TypeVLESS, host: "example.com", destination: ip, packet: true, rewrite: true},
++		{name: "direct leaf", inbound: "netproxy-in", outbound: C.TypeDirect, host: "example.com", destination: ip},
++		{name: "block leaf", inbound: "netproxy-in", outbound: C.TypeBlock, host: "example.com", destination: ip},
++		{name: "bypass action", inbound: "netproxy-in", outbound: C.TypeVLESS, host: "example.com", destination: ip, bypass: true},
++		{name: "other inbound", inbound: "mixed-in", outbound: C.TypeVLESS, host: "example.com", destination: ip},
++		{name: "original hostname", inbound: "netproxy-in", outbound: C.TypeVLESS, host: "other.example.com", destination: domain},
++		{name: "explicit route override", inbound: "netproxy-in", outbound: C.TypeVLESS, host: "example.com", destination: ip, explicit: M.ParseSocksaddr("192.0.2.2:443")},
++		{name: "no sniff host", inbound: "netproxy-in", outbound: C.TypeVLESS, destination: ip, packet: true},
++		{name: "ECH outer host", inbound: "netproxy-in", outbound: C.TypeVLESS, host: "example.com", destination: ip, ech: true},
++		{name: "disabled switch", inbound: "netproxy-in", outbound: C.TypeVLESS, host: "example.com", destination: ip, off: true},
++	}
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			router := &Router{logger: log.NewNOPFactory().NewLogger("router"), netProxySniffDestination: !tt.off}
++			metadata := adapter.InboundContext{
++				Inbound: tt.inbound, SniffHost: tt.host, Destination: tt.destination, SniffHasECHExtension: tt.ech,
++				RouteOriginalDestination: tt.explicit, DestinationAddresses: []netip.Addr{ip.Addr},
++			}
++			var rule adapter.Rule
++			if tt.bypass {
++				rule = &testL3Rule{action: &R.RuleActionBypass{Outbound: "proxy"}}
++			}
++			router.applyNetProxySniffDestination(t.Context(), &metadata, rule, &testFlowOutbound{outboundType: tt.outbound}, tt.packet)
++			if !tt.rewrite {
++				require.Equal(t, tt.destination, metadata.Destination)
++				require.Equal(t, []netip.Addr{ip.Addr}, metadata.DestinationAddresses)
++				require.False(t, metadata.DestOverride)
++				return
++			}
++			require.Equal(t, domain, metadata.Destination)
++			require.Empty(t, metadata.DestinationAddresses)
++			require.Equal(t, tt.packet, metadata.DestOverride)
++			if tt.packet {
++				require.Equal(t, ip, metadata.OriginDestination)
++				nat := newFakeIPNATPacketConn(nil, metadata.OriginDestination, metadata.Destination)
++				require.Equal(t, domain, nat.rewriteReadDestination(ip))
++				require.Equal(t, ip, nat.rewriteWriteDestination(domain))
++			}
++		})
++	}
++}
++
++type netProxyPacketIPOutbound struct{ testFlowOutbound }
++
++func (*netProxyPacketIPOutbound) NetProxyPacketDestinationIPOnly() bool { return true }
++
++type netProxyDNSManager struct {
++	adapter.DNSTransportManager
++	proxy adapter.DNSTransport
++}
++
++func (m *netProxyDNSManager) Transport(tag string) (adapter.DNSTransport, bool) {
++	return m.proxy, tag == "dns-proxy" && m.proxy != nil
++}
++
++func TestNetProxySniffDestinationPacketAddr(t *testing.T) {
++	original := M.ParseSocksaddr("192.0.2.1:443")
++	clean := M.ParseSocksaddr("203.0.113.1:443")
++	resolver := &testL3DNSRouter{addresses: []netip.Addr{clean.Addr}}
++	router := &Router{
++		logger: log.NewNOPFactory().NewLogger("router"), dns: resolver,
++		dnsTransport:             &netProxyDNSManager{proxy: new(struct{ adapter.DNSTransport })},
++		netProxySniffDestination: true,
++	}
++	metadata := adapter.InboundContext{Inbound: "netproxy-in", Destination: original, SniffHost: "example.com"}
++	outbound := &netProxyPacketIPOutbound{testFlowOutbound{outboundType: C.TypeVLESS}}
++	router.applyNetProxySniffDestination(t.Context(), &metadata, nil, outbound, true)
++	require.Equal(t, "example.com", resolver.domain)
++	require.NotNil(t, resolver.options.Transport)
++	require.Equal(t, clean, metadata.Destination)
++	require.Equal(t, original, metadata.OriginDestination)
++	require.True(t, metadata.DestOverride)
 +}

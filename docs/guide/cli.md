@@ -152,9 +152,9 @@ su -c '/data/adb/modules/netproxy/netproxyctl logs export /sdcard/Download/netpr
 
 `policy groups` 返回核心或持久配置中的策略组。`policy select` 使用原始策略组和成员标签，只支持 Selector。停服时保存配置默认节点；运行时先由核心回读确认，再保存 `default`，无需重载。`policy delay` 仅在运行时请求测速，需再通过 `policy groups` 查看结果。两种操作都不自动重试。
 
-受管入站使用 `inbound` 完整目标与 `inbound/backend`、`inbound/root_policy`、`inbound/ipv6`、`inbound/app`、`inbound/ebpf`、`inbound/tun` 分区；分区保留对应顶层字段，例如 `{"backend":"tun"}`，不能用 `{}` 删除。Root 策略可用 `{"root_policy":"default"}`、`include`（接管）或 `exclude`（绕过），独立于应用名单。它们共用同一磁盘文件，没有 `config ebpf` 目标。包含实际入站的只读生效配置为 `runtime/config.json`。
+受管入站使用 `inbound` 完整目标与 `inbound/backend`、`inbound/root_policy`、`inbound/ipv6`、`inbound/sniff_destination`、`inbound/app`、`inbound/ebpf`、`inbound/tun` 分区；分区保留对应顶层字段，例如 `{"backend":"tun"}`，不能用 `{}` 删除。Root 策略可用 `{"root_policy":"default"}`、`include`（接管）或 `exclude`（绕过），独立于应用名单。它们共用同一磁盘文件，没有 `config ebpf` 目标。包含实际入站的只读生效配置为 `runtime/config.json`。
 
-`config list` 的六个入站目标属于 `category: "inbound"`。运行时准备结果使用 `inbound` 路径字段与 `backend`。切换强杀时中止并保留 journal，需要设备重启后再恢复，不做兜底清理。
+`config list` 的入站目标属于 `category: "inbound"`。运行时准备结果使用 `inbound` 路径字段与 `backend`。切换强杀时中止并保留 journal，需要设备重启后再恢复，不做兜底清理。
 
 `config read` 返回 `content` 和 `revision`。编辑期间需要防止覆盖并发修改时，在目标前传入读到的版本：
 

@@ -207,6 +207,7 @@ internal fun documentTitle(document: SingBoxDocument): String = when (
     "inbound/backend" -> stringResource(R.string.inbound_backend)
     "inbound/root_policy" -> stringResource(R.string.inbound_root_processes)
     "inbound/ipv6" -> stringResource(R.string.inbound_ipv6)
+    "inbound/sniff_destination" -> stringResource(R.string.inbound_sniff_destination)
     "inbound/ebpf" -> stringResource(R.string.ebpf_core_settings)
     "inbound/tun" -> stringResource(R.string.tun_settings)
     "singbox/config.json" -> stringResource(R.string.singbox_document_full)

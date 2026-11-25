@@ -6,7 +6,7 @@
 /data/adb/modules/netproxy/config/inbound/inbound.json
 ```
 
-外层包含 `backend`、`root_policy`、`ipv6`、`app`、`ebpf`、`tun`。全新安装或恢复出厂配置时，`backend` 为 `tun`，默认仅接管本机；也可选 `ebpf`。保留现有数据升级时沿用已选后端和参数。两套原生参数分别保存，切换不会转换、清空或同步另一套参数。一次只运行一个受管入站，不自动回退另一后端。
+外层包含 `backend`、`root_policy`、`ipv6`、`sniff_destination`、`app`、`ebpf`、`tun`。全新安装或恢复出厂配置时，`backend` 为 `tun`，默认仅接管本机；也可选 `ebpf`。保留现有数据升级时沿用已选后端和参数。两套原生参数分别保存，切换不会转换、清空或同步另一套参数。一次只运行一个受管入站，不自动回退另一后端。
 
 `ebpf` 和 `tun` 对象都包含原生 `type` 与固定 `tag: "netproxy-in"`，类型必须匹配分区。参数分别见 [eBPF](/config/ebpf) 和 [TUN](/config/tun)。本文件带 NetProxy 包装，不是 sing-box 根配置，不能直接作为 `sing-box -c` 输入。
 
@@ -30,6 +30,12 @@
 模块通过 Android package service 按用户查询 UID，不持久化 UID 缓存。开启共用策略时，白名单合并到原生 `include_uid`，黑名单合并到 `exclude_uid`，排除规则优先。白名单为空或应用全部不存在，且没有原生 include UID/range 时，本机 UID 流量全部绕过；独立 Root 策略仍可接管 UID 0。关闭共用策略时原生筛选保持不变；原生 package/user 筛选不能与共用策略混用。仅启用 eBPF 共享网络时不查询应用 UID；本机应用名单不筛选热点客户端。
 
 DNS 遵循所选入站的原生设置：eBPF `respect_policy` 遵循 UID 策略，`hijack` 优先拦截 DNS，`off` 不拦截 53 端口。系统代发 DNS 按实际执行进程或 socket 的 UID 判断，不按发起查询的应用名称判断。
+
+## 嗅探目标覆盖
+
+管理器 → 设置 → 入站设置 → 通用设置 → 走代理的连接按嗅探到的域名覆盖目标地址。默认开启；升级后旧配置缺少 `sniff_destination` 时也视为开启。关闭后保留原来的目标选择，不关闭嗅探或改变分流规则。
+
+当受管连接的目标是 IP、规则已选定代理出站，且嗅探得到有效域名时，核心优先通过代理访问该域名，避免继续访问应用缓存或错误解析得到的 IP。此处理在分流之后进行，不改变直连、绕过、拒绝或显式目标覆盖，也不会把 ECH 外层域名当作真实目标。只能接收 IP 的 UDP 编码使用 `dns-proxy` 解析；未配置该解析器或解析失败时保留原地址。
 
 ## IPv6
 
@@ -61,6 +67,7 @@ DNS 遵循所选入站的原生设置：eBPF `respect_policy` 遵循 UID 策略�
 | `inbound/backend` | `{"backend":"tun"}` 或 `{"backend":"ebpf"}` | 可编辑 |
 | `inbound/root_policy` | `{"root_policy":"default"}`、`include` 或 `exclude` | 可编辑 |
 | `inbound/ipv6` | `{"ipv6":true}` 或 `{"ipv6":false}` | 可编辑 |
+| `inbound/sniff_destination` | `{"sniff_destination":true}` 或 `{"sniff_destination":false}` | 可编辑 |
 | `inbound/app` | `{"app":{...}}` | 可编辑 |
 | `inbound/ebpf` | `{"ebpf":{...}}` | 可编辑 |
 | `inbound/tun` | `{"tun":{...}}` | 可编辑 |
@@ -68,7 +75,7 @@ DNS 遵循所选入站的原生设置：eBPF `respect_policy` 遵循 UID 策略�
 
 入站分区必需，不能用 `{}` 删除。分区保存只替换自己拥有的字段，保留其他分区和数组顺序。整份保存校验两套参数；启动只校验当前选中分区，不探测未选后端。整份 JSON 损坏会失败，不会回退默认值。
 
-`config list` 将以上七个可编辑目标归为 `category: "inbound"`；只读生成物仍属 `runtime`。运行时准备结果 `Prepare` 返回 `config` 路径和选中的 `backend`。
+`config list` 将以上八个可编辑目标归为 `category: "inbound"`；只读生成物仍属 `runtime`。运行时准备结果 `Prepare` 返回 `config` 路径和选中的 `backend`。
 
 ```sh
 su -c '/data/adb/modules/netproxy/netproxyctl config read inbound'

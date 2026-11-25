@@ -10,7 +10,7 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 )
 
-func writeEffectiveConfig(ctx context.Context, singBoxDir, destination string, inbounds []jsontext.Value, providers []jsontext.Value, captureSocket string, disableIPv6 bool) error {
+func writeEffectiveConfig(ctx context.Context, singBoxDir, destination string, inbounds []jsontext.Value, providers []jsontext.Value, captureSocket string, disableIPv6, sniffDestination bool) error {
 	content, err := os.ReadFile(paths.SingBoxConfig(singBoxDir))
 	if err != nil {
 		return err
@@ -27,7 +27,7 @@ func writeEffectiveConfig(ctx context.Context, singBoxDir, destination string, i
 			return err
 		}
 	}
-	if captureSocket != "" {
+	if captureSocket != "" || sniffDestination || document["route"] != nil {
 		var route map[string]jsontext.Value
 		if raw, ok := document["route"]; ok {
 			if err := json.Unmarshal(raw, &route); err != nil {
@@ -37,10 +37,17 @@ func writeEffectiveConfig(ctx context.Context, singBoxDir, destination string, i
 		if route == nil {
 			route = make(map[string]jsontext.Value)
 		}
-		route["find_process"] = jsontext.Value("true")
-		route["netproxy_capture_socket"], err = json.Marshal(captureSocket)
-		if err != nil {
-			return err
+		if captureSocket != "" {
+			route["find_process"] = jsontext.Value("true")
+			route["netproxy_capture_socket"], err = json.Marshal(captureSocket)
+			if err != nil {
+				return err
+			}
+		}
+		if sniffDestination {
+			route["netproxy_sniff_destination"] = jsontext.Value("true")
+		} else {
+			delete(route, "netproxy_sniff_destination")
 		}
 		document["route"], err = json.Marshal(route, json.Deterministic(true))
 		if err != nil {

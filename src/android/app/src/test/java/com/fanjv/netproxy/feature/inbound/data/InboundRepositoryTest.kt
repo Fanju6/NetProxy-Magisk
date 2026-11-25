@@ -39,6 +39,7 @@ class InboundRepositoryTest {
                     "backend" -> """{"backend":"ebpf"}"""
                     "root_policy" -> """{"root_policy":"default"}"""
                     "ipv6" -> """{"ipv6":true}"""
+                    "sniff_destination" -> """{"sniff_destination":true}"""
                     else -> """{"$key":{"type":"$key","tag":"netproxy-in"}}"""
                 }, "$key-revision")
             }
@@ -47,10 +48,11 @@ class InboundRepositoryTest {
         assertEquals("ebpf", loaded.backend)
         assertEquals("default", loaded.rootPolicy)
         assertTrue(loaded.ipv6)
+        assertTrue(loaded.sniffDestination)
         assertEquals(setOf("ebpf", "tun"), loaded.native.keys)
         assertNull(loaded.status!!.activeBackend)
         assertEquals("tun-revision", loaded.partitions.getValue("tun").revision)
-        assertEquals(listOf("inbound/backend", "inbound/root_policy", "inbound/ipv6", "inbound/ebpf", "inbound/tun"),
+        assertEquals(listOf("inbound/backend", "inbound/root_policy", "inbound/ipv6", "inbound/sniff_destination", "inbound/ebpf", "inbound/tun"),
             calls.filter { it.path == "/config" }.map { it.target })
         assertEquals("/service", calls.last().path)
     }

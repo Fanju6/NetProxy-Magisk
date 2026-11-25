@@ -2,6 +2,7 @@
   "backend": "tun",
   "root_policy": "include",
   "ipv6": true,
+  "sniff_destination": true,
   "app": {
     "enabled": false,
     "mode": "blacklist",

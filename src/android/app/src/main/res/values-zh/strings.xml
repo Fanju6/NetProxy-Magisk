@@ -810,6 +810,8 @@
     <string name="traffic_rule_redirect">重定向目标</string>
     <string name="traffic_rule_unavailable">原规则已变更或删除。</string>
     <string name="traffic_header_copy_hint">点击单条头字段可复制。</string>
+    <string name="inbound_sniff_destination">走代理的连接按嗅探到的域名覆盖目标地址</string>
+    <string name="inbound_sniff_destination_hint">通过代理访问嗅探到的域名，而不是应用提供的 IP 地址。直连流量不受影响。</string>
     <string name="traffic_capture_apps">抓包应用</string>
     <string name="traffic_capture_apps_summary">选择要抓包的应用。不选择则抓取所有应用。</string>
     <string name="traffic_app_user">Android 用户</string>

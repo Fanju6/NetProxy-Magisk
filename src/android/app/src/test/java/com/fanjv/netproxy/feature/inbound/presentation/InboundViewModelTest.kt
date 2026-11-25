@@ -54,6 +54,7 @@ class InboundViewModelTest {
     private val choicesEntered = CompletableDeferred<Unit>()
     private var choicesFailure = false
     private var ipv6 = true
+    private var sniffDestination = true
 
     private fun output(data: String) = apiSuccess(data)
     private fun viewModel(scope: CoroutineScope, saveScope: CoroutineScope = scope,
@@ -88,6 +89,7 @@ class InboundViewModelTest {
                         "inbound/backend" -> """{"backend":"$backend"}"""
                         "inbound/root_policy" -> """{"root_policy":"$rootPolicy"}"""
                         "inbound/ipv6" -> """{"ipv6":$ipv6}"""
+                        "inbound/sniff_destination" -> """{"sniff_destination":$sniffDestination}"""
                         "inbound/ebpf" -> """{"ebpf":$ebpf}"""
                         "inbound/tun" -> """{"tun":$tun}"""
                         "singbox/config.json" -> """{"route":{"rule_set":[{"tag":"private"}]}}"""
@@ -104,6 +106,7 @@ class InboundViewModelTest {
                             "inbound/backend" -> backend = (content.getValue("backend") as JsonPrimitive).content
                             "inbound/root_policy" -> rootPolicy = (content.getValue("root_policy") as JsonPrimitive).content
                             "inbound/ipv6" -> ipv6 = content.getValue("ipv6").toString().toBooleanStrict()
+                            "inbound/sniff_destination" -> sniffDestination = content.getValue("sniff_destination").toString().toBooleanStrict()
                             "inbound/ebpf" -> ebpf = content.getValue("ebpf").toString()
                             "inbound/tun" -> tun = content.getValue("tun").toString()
                         }
@@ -136,6 +139,19 @@ class InboundViewModelTest {
         assertEquals(revision, edits.last().text("revision"))
         assertEquals(Json.parseToJsonElement("""{"ipv6":false}"""), Json.parseToJsonElement(edits.last().text("content")!!))
         assertFalse(vm.state.value.snapshot!!.ipv6)
+    }
+
+    @Test fun sniffDestinationSwitchWritesBooleanAfterSavingNativeDraft() = runBlocking {
+        val vm = viewModel(this)
+        vm.refresh(); vm.loaded()
+        val revision = configRevision("inbound/sniff_destination")
+        vm.setField("udp_timeout", JsonPrimitive("5m"))
+        vm.setSniffDestination(false); vm.idle()
+        val edits = calls.filter { it.path == "/config" && it.method == "PUT" }
+        assertEquals(listOf("inbound/ebpf", "inbound/sniff_destination"), edits.map { it.target })
+        assertEquals(revision, edits.last().text("revision"))
+        assertEquals(Json.parseToJsonElement("""{"sniff_destination":false}"""), Json.parseToJsonElement(edits.last().text("content")!!))
+        assertFalse(vm.state.value.snapshot!!.sniffDestination)
     }
 
     @Test fun ebpfDataPlanesAndAdvancedOptionShareOneRevisionedDraft() = runBlocking {

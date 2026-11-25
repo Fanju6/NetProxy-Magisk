@@ -60,7 +60,7 @@ const MODULE_DOCUMENTS = [
 
 const CONFIG_DOCUMENTS = [
   { id: 'inbound', filename: 'inbound.json', category: 'inbound', editable: true },
-  ...['backend', 'root_policy', 'ipv6', 'app', 'ebpf', 'tun'].map(section => ({
+  ...['backend', 'root_policy', 'ipv6', 'sniff_destination', 'app', 'ebpf', 'tun'].map(section => ({
     id: `inbound/${section}`, filename: section, category: 'inbound', editable: true, section,
   })),
   { id: 'singbox/config.json', filename: 'config.json', category: 'config', editable: true },

@@ -140,7 +140,7 @@ func TestInboundConfigTargetsAndPartitionRevisions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, target := range []string{"inbound", "inbound/backend", "inbound/root_policy", "inbound/ipv6", "inbound/app", "inbound/ebpf", "inbound/tun", "runtime/config.json"} {
+	for _, target := range []string{"inbound", "inbound/backend", "inbound/root_policy", "inbound/ipv6", "inbound/sniff_destination", "inbound/app", "inbound/ebpf", "inbound/tun", "runtime/config.json"} {
 		index := slices.IndexFunc(documents, func(document ConfigDocument) bool { return document.ID == target })
 		if index < 0 || documents[index].Editable == strings.HasPrefix(target, "runtime/") {
 			t.Fatalf("配置目标缺失或权限错误: %s", target)
@@ -343,6 +343,34 @@ func TestIPv6PartitionReloadsWithoutChangingNativePreferences(t *testing.T) {
 				t.Fatal(err)
 			}
 			if _, err := ApplyConfig(t.Context(), options, target, on, false, revision); err != nil || reloads != 2 {
+				t.Fatal(reloads, err)
+			}
+		})
+	}
+}
+
+func TestSniffDestinationPartitionDefaultsOnAndReloads(t *testing.T) {
+	for _, backend := range []string{"ebpf", "tun"} {
+		t.Run(backend, func(t *testing.T) {
+			options, _, _, _ := inboundApplyFixture(t, backend, true)
+			reloads := 0
+			configReload = func(context.Context, Options) error { reloads++; return nil }
+			const target = "inbound/sniff_destination"
+			snapshot, err := ReadConfig(options, target)
+			if err != nil || !strings.Contains(snapshot["content"], `"sniff_destination": true`) {
+				t.Fatal(snapshot, err)
+			}
+			for _, invalid := range []string{`{}`, `{"sniff_destination":null}`, `{"sniff_destination":"false"}`} {
+				if _, err := ApplyConfigContent(t.Context(), options, target, []byte(invalid), false, snapshot["revision"]); err == nil {
+					t.Fatal("accepted", invalid)
+				}
+			}
+			off := []byte(`{"sniff_destination":false}`)
+			revision, err := ApplyConfigContent(t.Context(), options, target, off, false, snapshot["revision"])
+			if err != nil || reloads != 1 {
+				t.Fatal(reloads, err)
+			}
+			if _, err := ApplyConfigContent(t.Context(), options, target, off, false, revision); err != nil || reloads != 1 {
 				t.Fatal(reloads, err)
 			}
 		})

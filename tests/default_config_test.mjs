@@ -129,7 +129,8 @@ test('eBPF 默认绕过引用与上游和静态规则一致', () => {
 })
 
 test('受管入站默认选择 TUN，保留备用 eBPF 参数及关闭共享偏好', () => {
-  assert.deepEqual(Object.keys(managed), ['backend', 'root_policy', 'ipv6', 'app', 'ebpf', 'tun'])
+  assert.deepEqual(Object.keys(managed), ['backend', 'root_policy', 'ipv6', 'sniff_destination', 'app', 'ebpf', 'tun'])
+  assert.equal(managed.sniff_destination, true)
   assert.equal(managed.root_policy, 'include')
   assert.equal(managed.ipv6, true)
   assert.equal(managed.backend, 'tun')
