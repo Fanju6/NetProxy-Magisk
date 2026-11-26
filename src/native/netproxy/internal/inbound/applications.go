@@ -88,7 +88,7 @@ func ResolvePackageUIDs(ctx context.Context, refs []PackageRef) (PackageUIDResol
 
 // ResolveExclusivePackageUIDs excludes UIDs shared with packages outside the requested set.
 func ResolveExclusivePackageUIDs(ctx context.Context, user uint32, names ...string) (map[uint32]bool, error) {
-	packages, err := listPackageUIDs(ctx, user)
+	packages, err := ListPackageUIDs(ctx, user)
 	if err != nil {
 		return nil, err
 	}
