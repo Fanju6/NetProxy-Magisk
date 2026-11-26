@@ -153,6 +153,10 @@ func RequestPolicyDelay(ctx context.Context, options Options, target service.Pol
 	return service.RequestPolicyDelay(ctx, networkControlOptions(options), target)
 }
 
+func TestNodeLatency(ctx context.Context, options Options, target service.NodeLatencyTarget) (service.NodeLatency, error) {
+	return service.TestNodeLatency(ctx, networkControlOptions(options), paths.RuntimeConfig(options.RuntimeDir), target)
+}
+
 func lockPolicyOperation(ctx context.Context, options Options) (func(), error) {
 	lock, err := waitLifecycleLock(ctx, options.StateFile)
 	if err != nil {

@@ -110,6 +110,9 @@ class PolicyGroupEditorTest {
                 "/subscriptions" -> apiSuccess(
                     """[{"id":"default","name":"Local","type":"local","node_count":2,"runtime_tag":"Local"}]"""
                 )
+                "/nodes" -> apiSuccess(
+                    """[{"group":{"id":"default","name":"Local","type":"local","runtime_tag":"Local"},"nodes":[{"tag":"Node +1"}]}]"""
+                )
                 else -> error("Unexpected request")
             }
         })
@@ -117,6 +120,7 @@ class PolicyGroupEditorTest {
         val document = repository.openEditor(null)
         assertEquals(listOf("direct", "Proxy", "block", "WireGuard"), document.memberTags)
         assertEquals(listOf("native", "Local"), document.providerChoices)
+        assertEquals(listOf("Local/Node +1"), document.providerNodes["Local"])
         repository.saveGroup(document, document.initial.copy(tag = "Auto", type = "urltest",
             outbounds = listOf("direct"), testInterval = "3m"))
         assertEquals(1, writes)

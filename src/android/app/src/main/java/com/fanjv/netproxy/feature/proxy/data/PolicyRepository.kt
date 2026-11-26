@@ -2,6 +2,7 @@ package com.fanjv.netproxy.feature.proxy.data
 
 import com.fanjv.netproxy.core.api.ModuleApiClient
 import com.fanjv.netproxy.feature.catalog.model.CatalogGroupSummary
+import com.fanjv.netproxy.feature.catalog.model.CatalogNodeGroup
 import com.fanjv.netproxy.feature.settings.data.ConfigRepository
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.SerialName
@@ -40,6 +41,7 @@ internal data class PolicyMember(
     @SerialName("url_test_time") val delayTime: Long = 0,
     @Transient val runtimeAvailable: Boolean = false,
     @SerialName("display_name") val name: String = "",
+    @SerialName("provider_tag") val providerTag: String = "",
 )
 
 internal fun PolicySnapshot.withRuntime(
@@ -74,27 +76,57 @@ internal class PolicyRepository(
     private val client: ModuleApiClient,
     private val config: ConfigRepository = ConfigRepository(client),
 ) {
-    suspend fun openEditor(tag: String?): PolicyGroupDocument = groupDocument(tag, catalogGroups())
+    suspend fun openEditor(tag: String?): PolicyGroupDocument = groupDocument(tag, catalogGroups(), loadNodes = true)
 
     private suspend fun catalogGroups() = client.read<List<CatalogGroupSummary>>("/subscriptions")
 
-    private suspend fun groupDocument(tag: String?, resources: List<CatalogGroupSummary>): PolicyGroupDocument {
+    private suspend fun groupDocument(tag: String?, resources: List<CatalogGroupSummary>, loadNodes: Boolean = false): PolicyGroupDocument {
         val snapshot = config.readSnapshot("singbox/outbounds")
         val outbounds = parsePolicySection(snapshot.content, "outbounds")
         val endpoints = parsePolicySection(config.read("singbox/endpoints"), "endpoints")
         val nativeProviders = parsePolicySection(config.read("singbox/providers"), "providers")
             .map { it.text("tag") }
+        val providerNodes = if (loadNodes && resources.any { it.nodeCount > 0 }) client.read<List<CatalogNodeGroup>>("/nodes")
+            .filterNot { it.group.runtimeTag in nativeProviders }
+            .associate { item -> item.group.runtimeTag to item.nodes.map { item.group.runtimeTag + "/" + it.tag } }
+        else emptyMap()
         return PolicyGroupDocument(
             outbounds, snapshot.revision, tag,
             (outbounds + endpoints).map { it.text("tag") }.filter(String::isNotBlank).distinct(),
             (nativeProviders + resources.filter { it.nodeCount > 0 }.map { it.runtimeTag })
                 .filter(String::isNotBlank).distinct(),
+            providerNodes,
         )
     }
 
     suspend fun saveGroup(document: PolicyGroupDocument, draft: PolicyGroupDraft) {
         config.apply("singbox/outbounds", document.updated(draft), document.revision)
     }
+
+    suspend fun addToGroups(member: PolicyMember, groups: Set<String>): Int {
+        val snapshot = config.readSnapshot("singbox/outbounds")
+        val outbounds = parsePolicySection(snapshot.content, "outbounds")
+        var count = 0
+        val updated = outbounds.map { original ->
+            val draft = PolicyGroupDraft.from(original)
+            if (draft.tag !in groups) return@map original
+            require(draft.type in editablePolicyTypes)
+            val next = draft.addPolicyMember(member)
+            if (next == draft) return@map original
+            count++
+            val fields = original.toMutableMap()
+            if (next.outbounds != draft.outbounds) fields["outbounds"] = JsonArray(next.outbounds.map(::JsonPrimitive))
+            if (next.providers != draft.providers) fields["providers"] = JsonArray(next.providers.map(::JsonPrimitive))
+            if (next.include != draft.include) fields["include"] = JsonPrimitive(next.include)
+            JsonObject(fields)
+        }
+        require(outbounds.count { it.text("tag") in groups } == groups.size)
+        if (count > 0) writeOutbounds(updated, snapshot.revision)
+        return count
+    }
+
+    suspend fun testNodeLatency(identity: Long, member: PolicyMember): Int =
+        client.testNodeLatency(identity, member.tag, member.providerTag)
 
     suspend fun createSubscriptionGroups(suffix: String): Int {
         val resources = catalogGroups()

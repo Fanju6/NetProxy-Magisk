@@ -13,6 +13,22 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 )
 
+func TestNodeLatencyContract(t *testing.T) {
+	server := resourceFixture(t)
+	path := "/api/v1/nodes/latency"
+	request := httptest.NewRequest(http.MethodPost, path, nil)
+	request.Host = server.config.Listen
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("unexpected auth status: %d", recorder.Code)
+	}
+	response, result := resourceRequest(t, server, http.MethodPost, path, `{"core_started_at_millis":1,"node_tag":"other/node","provider_tag":"provider"}`)
+	if response.Code != http.StatusBadRequest || result.Code != "policy.invalid" {
+		t.Fatalf("unexpected validation result: %d %+v", response.Code, result)
+	}
+}
+
 func TestPolicyRoutesWhileCoreStopped(t *testing.T) {
 	server := resourceFixture(t)
 	resourceWriteFile(t, paths.SingBoxConfig(server.options.SingBoxDir), `{

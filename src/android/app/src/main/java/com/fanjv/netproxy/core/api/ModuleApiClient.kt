@@ -94,6 +94,12 @@ internal class ModuleApiClient(
     }
     suspend fun post(path: String, body: JsonObject = JsonObject(emptyMap()), mutation: Boolean = true,
         query: Map<String, String> = emptyMap()) = request("POST", path, body, query, mutation)
+    suspend fun testNodeLatency(coreIdentity: Long, nodeTag: String, providerTag: String): Int =
+        post("/nodes/latency", buildJsonObject {
+            put("core_started_at_millis", coreIdentity)
+            put("node_tag", nodeTag)
+            if (providerTag.isNotEmpty()) put("provider_tag", providerTag)
+        }, mutation = false).data.jsonObject.getValue("delay_ms").jsonPrimitive.int
     suspend fun put(path: String, body: JsonObject, query: Map<String, String> = emptyMap()) = request("PUT", path, body, query, true)
     suspend fun delete(path: String, query: Map<String, String> = emptyMap()) = request("DELETE", path, query = query, mutation = true)
     suspend inline fun <reified T> read(path: String, query: Map<String, String> = emptyMap()): T =

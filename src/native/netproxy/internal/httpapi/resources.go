@@ -43,6 +43,7 @@ func (s *Server) registerResources() {
 	s.route("POST /api/v1/policy-groups/select", resourceWriteTimeout, false, s.selectPolicyGroup)
 	s.route("POST /api/v1/policy-groups/delay", resourceWriteTimeout, true, s.requestPolicyDelay)
 	s.route("GET /api/v1/nodes", resourceReadTimeout, false, s.readNodes)
+	s.route("POST /api/v1/nodes/latency", resourceReadTimeout, false, s.testNodeLatency)
 	s.route("GET /api/v1/nodes/get", resourceReadTimeout, false, s.readNode)
 	s.route("GET /api/v1/nodes/export", resourceReadTimeout, false, s.exportNode)
 	s.route("POST /api/v1/nodes", resourceWriteTimeout, true, s.addNode)

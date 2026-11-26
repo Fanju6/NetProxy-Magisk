@@ -82,6 +82,8 @@ su -c '/data/adb/modules/netproxy/netproxyctl node import /sdcard/Download/nodes
 su -c '/data/adb/modules/netproxy/netproxyctl policy groups'
 su -c '/data/adb/modules/netproxy/netproxyctl policy select "<策略组标签>" "<成员标签>"'
 su -c '/data/adb/modules/netproxy/netproxyctl policy delay "<策略组标签>"'
+su -c '/data/adb/modules/netproxy/netproxyctl node latency "<静态节点标签>"'
+su -c '/data/adb/modules/netproxy/netproxyctl node latency --provider "<Provider 标签>" "<Provider 标签>/<节点标签>"'
 su -c '/data/adb/modules/netproxy/netproxyctl node export default/<节点标签>'
 
 su -c '/data/adb/modules/netproxy/netproxyctl sub add https://example.com/sub'

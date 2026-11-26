@@ -668,4 +668,12 @@
     <string name="routing_error_package_name">Enter a full package name, such as com.android.chrome, without a user ID, spaces or a URL.</string>
     <string name="routing_invalid_document">This rule set cannot be edited as a form. Check its version and rules in the JSON editor.</string>
     <string name="routing_reload_draft">Discard draft and reload</string>
+    <string name="policy_node_add_to_groups">Add to policy groups…</string>
+    <string name="policy_node_added">Node added to the selected groups</string>
+    <string name="policy_node_already_added">Node is already in the selected groups</string>
+    <string name="policy_group_provider_nodes">Provider nodes</string>
+    <string name="policy_provider_entire">Entire provider (auto-includes new nodes)</string>
+    <string name="policy_provider_selected">Only selected nodes</string>
+    <string name="policy_provider_nodes_unavailable">Node list unavailable for this provider</string>
+    <string name="policy_provider_regex_conflict">Existing include/exclude rules prevent a safe automatic change. Review the advanced filters.</string>
 </resources>

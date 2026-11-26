@@ -51,6 +51,7 @@ internal data class PolicyGroupDocument(
     val originalTag: String?,
     val memberTags: List<String>,
     val providerChoices: List<String>,
+    val providerNodes: Map<String, List<String>> = emptyMap(),
 ) {
     private val index = originalTag?.let { tag ->
         outbounds.indexOfFirst { it.text("tag") == tag }.also { require(it >= 0) }

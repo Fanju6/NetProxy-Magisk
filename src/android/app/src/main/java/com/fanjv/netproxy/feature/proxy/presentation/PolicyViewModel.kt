@@ -10,6 +10,7 @@ import com.fanjv.netproxy.feature.proxy.data.PolicyDelays
 import com.fanjv.netproxy.feature.proxy.data.PolicyGroup
 import com.fanjv.netproxy.feature.proxy.data.PolicyMember
 import com.fanjv.netproxy.feature.proxy.data.PolicyRepository
+import com.fanjv.netproxy.feature.proxy.data.PolicyRegexConflict
 import com.fanjv.netproxy.feature.proxy.data.PolicySnapshot
 import com.fanjv.netproxy.feature.proxy.data.editablePolicyTypes
 import com.fanjv.netproxy.feature.proxy.data.withRuntime
@@ -38,6 +39,9 @@ internal data class PolicyState(
     val noticeIsError: Boolean = false,
     val delays: PolicyDelays = PolicyDelays(),
     val manualTests: Map<String, ManualPolicyTest> = emptyMap(),
+    val nodeLatency: Map<String, String> = emptyMap(),
+    val nodeLatencyIdentity: Long = 0,
+    val membershipNotice: Int? = null,
 ) {
     val loading: Boolean get() = refreshing || (configured == null && !stale)
     val live: Boolean get() = !stale && runtimeConfirmed && snapshot?.live == true
@@ -210,6 +214,44 @@ internal class PolicyViewModel(
         repository.delay(identity, group)
         null
     }
+
+    fun testNode(member: PolicyMember) {
+        val state = mutable.value
+        val identity = state.snapshot?.coreIdentity ?: return
+        if (!visible || !state.live || !member.runtimeAvailable || state.operating ||
+            (state.nodeLatencyIdentity == identity && state.nodeLatency[member.tag] == "testing...")
+        ) return
+        mutable.update {
+            val previous = it.nodeLatency.takeIf { _ -> it.nodeLatencyIdentity == identity }.orEmpty()
+            it.copy(nodeLatency = previous + (member.tag to "testing..."), nodeLatencyIdentity = identity)
+        }
+        viewModelScope.launch {
+            val value = try {
+                repository.testNodeLatency(identity, member).toString()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                postNotice(error.toUiText(), isError = true)
+                "failed"
+            }
+            mutable.update {
+                if (it.nodeLatencyIdentity == identity) it.copy(nodeLatency = it.nodeLatency + (member.tag to value)) else it
+            }
+        }
+    }
+
+    fun addNodeToGroups(member: PolicyMember, groups: Set<String>) = updateGroups {
+        try {
+            val count = repository.addToGroups(member, groups)
+            mutable.update { it.copy(membershipNotice = if (count == 0) R.string.policy_node_already_added else R.string.policy_node_added) }
+            UiText.Empty
+        } catch (_: PolicyRegexConflict) {
+            postNotice(UiText.Resource(R.string.policy_provider_regex_conflict), isError = true)
+            UiText.Empty
+        }
+    }
+
+    fun clearMembershipNotice() = mutable.update { it.copy(membershipNotice = null) }
 
     fun deleteGroup(tag: String, type: String) {
         val current = mutable.value

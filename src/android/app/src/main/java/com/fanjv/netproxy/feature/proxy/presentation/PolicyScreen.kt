@@ -1,6 +1,7 @@
 package com.fanjv.netproxy.feature.proxy.presentation
 
 import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +15,8 @@ import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,7 +26,10 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -50,6 +56,7 @@ import com.fanjv.netproxy.core.ui.component.DialogActionRole
 import com.fanjv.netproxy.core.ui.component.AppSnackbarHost
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.AppContentCard
+import com.fanjv.netproxy.core.ui.component.AppBottomSheet
 import com.fanjv.netproxy.core.ui.component.AppOverlayList
 import com.fanjv.netproxy.core.ui.component.AppOverlayListDivider
 import com.fanjv.netproxy.core.ui.component.ContentStatus
@@ -68,6 +75,7 @@ import com.fanjv.netproxy.feature.proxy.data.editablePolicyTypes
 import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.Route
 import top.yukonga.miuix.kmp.basic.DropdownEntry
+import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
@@ -81,6 +89,7 @@ import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.ExpandLess
 import top.yukonga.miuix.kmp.icon.extended.ExpandMore
+import top.yukonga.miuix.kmp.preference.CheckboxPreference
 import com.fanjv.netproxy.core.ui.component.AppDialog as OverlayDialog
 import com.fanjv.netproxy.core.ui.component.AppDropdown as OverlayDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -116,6 +125,8 @@ internal fun PolicyScreen(
     var expanded by rememberSaveable { mutableStateOf<List<String>?>(null) }
     var showDisplay by rememberSaveable { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<PolicyGroup?>(null) }
+    var nodeActions by remember { mutableStateOf<PolicyMember?>(null) }
+    var addNode by remember { mutableStateOf<PolicyMember?>(null) }
 
     val groups = state.snapshot?.groups.orEmpty()
     val selectedIndex = groups.indexOfFirst { it.tag == selectedTag }.coerceAtLeast(0)
@@ -128,6 +139,41 @@ internal fun PolicyScreen(
     val subscriptionSuffix = stringResource(R.string.policy_subscription_group_suffix)
 
     SnackbarNoticeEffect(state.noticeId, state.notice.resolve(), state.noticeIsError, snackbar, viewModel::clearNotice)
+    LaunchedEffect(state.membershipNotice) {
+        state.membershipNotice?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            viewModel.clearMembershipNotice()
+        }
+    }
+
+    nodeActions?.let { member ->
+        AppBottomSheet(show = true, title = member.displayName, onDismissRequest = { nodeActions = null }) {
+            AppOverlayList(Modifier.navigationBarsPadding()) {
+                BasicComponent(
+                    title = stringResource(R.string.node_test_delay),
+                    onClick = if (state.live && member.runtimeAvailable && !state.operating) ({
+                        nodeActions = null
+                        viewModel.testNode(member)
+                    }) else null,
+                )
+                AppOverlayListDivider()
+                BasicComponent(
+                    title = stringResource(R.string.policy_node_add_to_groups),
+                    onClick = {
+                        nodeActions = null
+                        addNode = member
+                    },
+                )
+            }
+        }
+    }
+    addNode?.let { member ->
+        val targets = groups.filter { it.type in editablePolicyTypes && it.tag != member.tag }.map { it.tag }
+        NodePolicyGroupPicker(targets, { addNode = null }) { tags ->
+            addNode = null
+            viewModel.addNodeToGroups(member, tags)
+        }
+    }
 
     ManagerMenu(
         entries = listOf(DropdownEntry(items = listOf(
@@ -270,11 +316,16 @@ internal fun PolicyScreen(
                                 NodeCard(
                                     title = member.displayName,
                                     protocol = member.type.uppercase(),
-                                    latency = member.delay.takeIf { state.live && it > 0 }?.toString(),
+                                    latency = state.nodeLatency[member.tag].takeIf {
+                                        state.live && state.nodeLatencyIdentity == state.snapshot?.coreIdentity
+                                    } ?: member.delay.takeIf { state.live && it > 0 }?.toString(),
                                     selected = state.selectedMember(group) == member.tag,
                                     enabled = state.canSelect(group, member),
                                     itemSize = cardSize,
                                     onClick = { viewModel.select(group.tag, member.tag) },
+                                    onLongClick = if (!state.stale && !state.operating && member.type.isNotBlank() &&
+                                        member.type !in editablePolicyTypes && member.type !in setOf("block", "dns")
+                                    ) ({ nodeActions = member }) else null,
                                 )
                             }
                         }
@@ -356,6 +407,28 @@ internal fun PolicyScreen(
                 role = DialogActionRole.Primary,
                 onClick = { showDisplay = false },
             )
+        }
+    }
+}
+
+@Composable
+private fun NodePolicyGroupPicker(groups: List<String>, dismiss: () -> Unit, save: (Set<String>) -> Unit) {
+    var checked by remember { mutableStateOf(emptySet<String>()) }
+    OverlayDialog(show = true, title = stringResource(R.string.policy_node_add_to_groups), onDismissRequest = dismiss) {
+        if (groups.isEmpty()) Text(stringResource(R.string.policy_group_no_choices))
+        LazyColumn(Modifier.heightIn(max = 320.dp)) {
+            items(groups, key = { it }) { tag ->
+                CheckboxPreference(
+                    title = tag,
+                    checked = tag in checked,
+                    onCheckedChange = { value -> checked = if (value) checked + tag else checked - tag },
+                )
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            AppDialogButton(stringResource(R.string.common_cancel), modifier = Modifier.weight(1f), onClick = dismiss)
+            AppDialogButton(stringResource(R.string.common_done), modifier = Modifier.weight(1f), enabled = checked.isNotEmpty(),
+                onClick = { save(checked) })
         }
     }
 }
