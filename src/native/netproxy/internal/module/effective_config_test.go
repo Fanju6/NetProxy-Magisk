@@ -65,7 +65,7 @@ func TestIPv4OnlyRuntimeKeepsUserDNSAndRouteOnDisk(t *testing.T) {
 		t.Fatal(err)
 	}
 	dest := filepath.Join(dir, "runtime", "config.json")
-	if err := writeEffectiveConfig(t.Context(), dir, dest, nil, nil, "/capture.sock", true); err != nil {
+	if err := writeEffectiveConfig(t.Context(), dir, dest, nil, nil, true); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(dest)
@@ -78,8 +78,7 @@ func TestIPv4OnlyRuntimeKeepsUserDNSAndRouteOnDisk(t *testing.T) {
 			Rules    []map[string]jsontext.Value `json:"rules"`
 		} `json:"dns"`
 		Route struct {
-			Capture string                      `json:"netproxy_capture_socket"`
-			Rules   []map[string]jsontext.Value `json:"rules"`
+			Rules []map[string]jsontext.Value `json:"rules"`
 		} `json:"route"`
 	}
 	if err := json.Unmarshal(raw, &projected); err != nil {
@@ -97,7 +96,7 @@ func TestIPv4OnlyRuntimeKeepsUserDNSAndRouteOnDisk(t *testing.T) {
 		string(dns.Rules[1]["strategy"]) != `"ipv4_only"` {
 		t.Fatalf("unexpected DNS: %s", raw)
 	}
-	if route.Capture != "/capture.sock" || len(route.Rules) != 4 || string(route.Rules[0]["clash_mode"]) != `"Direct"` ||
+	if len(route.Rules) != 4 || string(route.Rules[0]["clash_mode"]) != `"Direct"` ||
 		string(route.Rules[0]["action"]) != `"route"` || string(route.Rules[1]["action"]) != `"hijack-dns"` ||
 		string(route.Rules[2]["inbound"]) != `"netproxy-in"` || string(route.Rules[2]["ip_version"]) != "6" ||
 		string(route.Rules[2]["no_drop"]) != "true" || string(route.Rules[3]["outbound"]) != `"proxy"` {
