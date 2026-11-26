@@ -109,7 +109,8 @@ export default defineConfig({
             { text: '节点与订阅', link: '/guide/nodes-subscriptions' },
             { text: '透明代理与分应用策略', link: '/guide/transparent-proxy' },
             { text: 'Wi-Fi 自动策略', link: '/guide/wifi-policy' },
-            { text: '控制面板与 API', link: '/guide/control-panel' }
+            { text: '控制面板与 API', link: '/guide/control-panel' },
+            { text: '抓包与脚本重写', link: '/guide/traffic-debugging' }
           ]
         },
         {

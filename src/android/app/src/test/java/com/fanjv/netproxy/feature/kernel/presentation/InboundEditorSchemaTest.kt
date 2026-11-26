@@ -42,6 +42,8 @@ class InboundEditorSchemaTest {
             assertEquals(SingBoxSchemaValidationResult.Valid, validator("inbound/root_policy").validate("""{"root_policy":"$policy"}"""))
         }
         assertTrue(validator("inbound/root_policy").validate("""{"root_policy":"auto"}""") is SingBoxSchemaValidationResult.Invalid)
+        assertEquals(SingBoxSchemaValidationResult.Valid, validator("inbound/sniff_destination").validate("""{"sniff_destination":false}"""))
+        assertTrue(validator("inbound/sniff_destination").validate("""{"sniff_destination":"false"}""") is SingBoxSchemaValidationResult.Invalid)
         assertTrue(validator("inbound/tun").validate(tun) is SingBoxSchemaValidationResult.Invalid)
         assertTrue(validator("inbound/ebpf").validate("""{"ebpf":{"type":"tun","tag":"netproxy-in"}}""") is SingBoxSchemaValidationResult.Invalid)
         assertTrue(validator("inbound/tun").validate("""{"tun":$tun}""".replace("netproxy-in", "wrong-tag")) is SingBoxSchemaValidationResult.Invalid)

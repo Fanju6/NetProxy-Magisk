@@ -65,6 +65,34 @@ sealed interface Route : NavKey, Parcelable {
 
     @Parcelize
     @Serializable
+    data object Traffic : Route
+
+    @Parcelize
+    @Serializable
+    data object TrafficSessions : Route
+
+    @Parcelize
+    @Serializable
+    data object TrafficApps : Route
+
+    @Parcelize
+    @Serializable
+    data class TrafficInspector(val id: String) : Route
+
+    @Parcelize
+    @Serializable
+    data object TrafficRules : Route
+
+    @Parcelize
+    @Serializable
+    data object TrafficRuleEditor : Route
+
+    @Parcelize
+    @Serializable
+    data object TrafficHttps : Route
+
+    @Parcelize
+    @Serializable
     data object About : Route
 
     @Parcelize
@@ -80,7 +108,9 @@ class Navigator(
     val backStack: NavBackStack,
 ) {
     fun push(key: NavKey) {
-        backStack.add(key)
+        if (key !in backStack) {
+            backStack.add(key)
+        }
     }
 
     fun pop() {

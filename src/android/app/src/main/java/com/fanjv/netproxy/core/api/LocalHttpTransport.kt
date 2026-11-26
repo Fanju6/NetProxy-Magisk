@@ -52,8 +52,10 @@ import kotlin.coroutines.resumeWithException
 internal class LocalHttpTransport internal constructor(
     private val connections: ConnectionStore,
     private val defaultAddress: String = "https://127.0.0.1:9091",
+    private val mutationTimeoutMessage: () -> String = { "请求超时，请检查服务状态后再试" },
 ) : ModuleApiTransport {
-    constructor(context: Context) : this(ConnectionStore(context.applicationContext))
+    constructor(context: Context) : this(ConnectionStore(context.applicationContext),
+        mutationTimeoutMessage = { context.getString(com.fanjv.netproxy.R.string.service_restart_timeout) })
 
     internal val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
     private val pairing = Mutex()
@@ -128,17 +130,19 @@ internal class LocalHttpTransport internal constructor(
     }
 
     override suspend fun download(path: String, query: Map<String, String>, destination: File) {
+        val capture = path == "/traffic/body"
+        val limit = if (capture) 16 * 1024 * 1024 else DIAGNOSTIC_LIMIT
         try {
             val credentials = connect()
             execute(pinned(credentials.certificate_sha256), requestBuilder(credentials, path, query).build(),
                 credentials, 150_000) { response ->
                 if (!response.isSuccessful) fail(response, "api.download_failed", "诊断包下载失败")
-                require(response.body.contentType()?.toString() == "application/gzip")
+                require(response.body.contentType()?.toString() == (if (capture) "application/octet-stream" else "application/gzip"))
                 try {
                     val length = response.body.contentLength()
-                    require(length <= DIAGNOSTIC_LIMIT)
+                    require(length <= limit)
                     val count = destination.outputStream().use { output ->
-                        LimitedInputStream(response.body.byteStream(), DIAGNOSTIC_LIMIT).use { it.copyTo(output) }
+                        LimitedInputStream(response.body.byteStream(), limit).use { it.copyTo(output) }
                     }
                     require(count > 0 && (length < 0 || count == length))
                 } catch (error: Throwable) {
@@ -259,6 +263,8 @@ internal class LocalHttpTransport internal constructor(
             if (connections.invalidate(credentials)) address = credentials.address
             ModuleApiException("api.unauthorized", "模块身份验证失败，请重新连接")
         }
+        error is InterruptedIOException && call.request().method != "GET" ->
+            ModuleApiException("api.timeout", mutationTimeoutMessage())
         error is IOException -> ModuleApiException("api.connection_failed", "无法连接模块后台，操作结果需要重新确认")
         else -> error
     }

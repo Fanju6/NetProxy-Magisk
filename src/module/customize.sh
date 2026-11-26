@@ -234,25 +234,33 @@ validate_stage() {
 # 返回: 0=已停服或没有安装，1=停止失败。
 #######################################
 stop_proxy_if_running() {
+  local status pid
   has_existing_user_data || return 0
   [ -x "$LIVE_DIR/bin/netproxyctl" ] || return 1
-  if pidof -s "$LIVE_DIR/bin/sing-box" >/dev/null 2>&1; then
-    PROXY_WAS_RUNNING=true
-  fi
+  status="$("$LIVE_DIR/netproxyctl" service status)" || return 1
+  case "$status" in
+    *'"pid":'*) pid="${status#*\"pid\":}"; pid="${pid%%[,\}]*}" ;;
+    *) return 1 ;;
+  esac
+  case "$pid" in
+    null) PROXY_WAS_RUNNING=false ;;
+    ''|0|*[!0-9]*) return 1 ;;
+    *) PROXY_WAS_RUNNING=true ;;
+  esac
   # Worker 可能独立运行；即使核心已停止，也必须确认调度进程已退出。
   SERVICE_STOPPED=true
   "$LIVE_DIR/bin/netproxyctl" __internal worker stop --module-dir "$LIVE_DIR" >/dev/null 2>&1 \
     && "$LIVE_DIR/netproxyctl" service stop >/dev/null 2>&1
 }
 
-# 参数: 无。
+# 参数: 可选 Worker 启动参数；仅已提交更新时传递。
 # 返回: 0=成功或无需恢复，1=恢复失败。
 restore_live_service() {
   [ "$SERVICE_STOPPED" = true ] || return 0
   local result=0
-  su -c "\"$LIVE_DIR/bin/netproxyctl\" __internal worker start --module-dir \"$LIVE_DIR\"" >/dev/null 2>&1 || result=1
+  "$LIVE_DIR/bin/netproxyctl" __internal worker start --module-dir "$LIVE_DIR" "$@" >/dev/null 2>&1 || result=1
   if [ "$PROXY_WAS_RUNNING" = true ]; then
-    su -c "\"$LIVE_DIR/netproxyctl\" service start" >/dev/null 2>&1 || result=1
+    "$LIVE_DIR/netproxyctl" service start >/dev/null 2>&1 || result=1
   fi
   return "$result"
 }
@@ -279,7 +287,7 @@ copy_catalog_state() {
 # 返回: 0=输出保留清单，1=安装模式无效。
 persistent_entries() {
   case "$INSTALL_MODE" in
-    preserve) printf '%s\n' config data/catalog logs ;;
+    preserve) printf '%s\n' config data/catalog data/traffic-history logs ;;
     nodes) printf '%s\n' data/catalog logs ;;
     fresh) ;;
     *) return 1 ;;
@@ -481,9 +489,12 @@ apply_hot_update() {
   stop_proxy_if_running || return 1
   [ "$INSTALL_MODE" = fresh ] || "$LIVE_DIR/netproxyctl" catalog list >/dev/null 2>&1 || return 1
   with_user_data_locks commit_hot_update || return 1
-  write_log INFO success - "后台热更新已完成，无需重启设备"
   SERVICE_STOPPED=true
-  restore_live_service || write_log WARN failed service.restore_failed "新版已应用，后台 Worker 或服务恢复失败，请在管理器中检查"
+  if restore_live_service --restore-system-trust; then
+    write_log INFO success - "后台热更新已完成，无需重启设备"
+  else
+    write_log WARN failed service.restore_failed "新版已应用，后台 Worker 或服务恢复失败，请在管理器中检查"
+  fi
   "$LIVE_DIR/bin/netproxyctl" __internal google-firewall --module-dir "$LIVE_DIR" </dev/null >/dev/null 2>&1 \
     || write_log WARN failed google_firewall.launch_failed "新版已应用，未能执行 Google 联网修复"
 }

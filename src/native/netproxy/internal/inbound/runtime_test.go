@@ -37,6 +37,24 @@ func builtFilters(t *testing.T, built BuildResult) (include []uint32, includeRan
 	return native.IncludeUID, native.IncludeUIDRange, native.ExcludeUID, native.ExcludeUIDRange
 }
 
+func TestIPv4OnlyProjectsManagedEBPFWithoutChangingSavedIPv6(t *testing.T) {
+	config := fixture(t, "ebpf", `{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true,"ipv6":true},"shared":{"enabled":true,"interface":["wlan2"],"ipv6":true}}`, testTUN)
+	config.IPv6 = new(false)
+	saved := encodeConfig(t, config)
+	built, err := config.Build(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var actual ebpfInbound
+	if err := unmarshalNative(built.Runtime.Inbounds[0], &actual); err != nil {
+		t.Fatal(err)
+	}
+	if actual.Local.IPv6 == nil || *actual.Local.IPv6 || actual.Shared.IPv6 == nil || !*actual.Shared.IPv6 ||
+		!bytes.Equal(saved, encodeConfig(t, config)) {
+		t.Fatalf("unexpected IPv4-only projection: %s", built.Runtime.Inbounds[0])
+	}
+}
+
 func TestDNSBypassDoesNotChangeSavedPreferences(t *testing.T) {
 	for _, backend := range []string{"ebpf", "tun"} {
 		original := fixture(t, backend, `{"type":"ebpf","tag":"netproxy-in","local":{"enabled":true,"dns_mode":"respect_policy"},"shared":{"enabled":false,"dns_mode":"hijack"}}`, strings.TrimSuffix(testTUN, "}")+`,"dns_mode":"native"}`)

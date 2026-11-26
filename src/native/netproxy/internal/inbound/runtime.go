@@ -153,6 +153,9 @@ func (c Config) BuildWithResolver(resolve PackageUIDResolver) (BuildResult, erro
 			}
 		}
 		if local {
+			if !c.IPv6Enabled() {
+				native.Local.IPv6 = new(false)
+			}
 			if err := c.applyRootPolicy(&native.Local.IncludeUID, native.Local.IncludeUIDRange, &native.Local.ExcludeUID, &native.Local.ExcludeUIDRange,
 				len(native.Local.IncludePackage) > 0); err != nil {
 				return BuildResult{}, err
@@ -288,7 +291,7 @@ func (c Config) EffectiveContent() ([]byte, error) {
 			app.BypassApps = values
 		}
 	}
-	return json.Marshal(map[string]any{"backend": c.Backend, "app": app, c.Backend: jsontext.Value(content)}, json.Deterministic(true))
+	return json.Marshal(map[string]any{"backend": c.Backend, "app": app, "ipv6": c.IPv6Enabled(), "sniff_destination": c.SniffDestinationEnabled(), c.Backend: jsontext.Value(content)}, json.Deterministic(true))
 }
 
 func WriteAtomic(ctx context.Context, path string, config Config) ([]PackageRef, error) {

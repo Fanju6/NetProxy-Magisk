@@ -90,6 +90,13 @@ code, pre { font-family: var(--mono); }
 .entry { padding: 20px 0; border-top: 1px solid var(--border); }
 .entry-heading { align-items: flex-start; margin-bottom: 12px; }
 .entry-output { overflow-x: auto; overscroll-behavior-x: contain; }
+.capture-detail details { margin-block: 8px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; }
+.capture-detail summary { cursor: pointer; overflow-wrap: anywhere; }
+.capture-detail details[open] > summary { margin-bottom: 8px; }
+.capture-detail button { margin: 4px 6px 4px 0; }
+.capture-detail .capture-line { display: grid; grid-template-columns: minmax(72px, 1fr) minmax(0, 3fr); gap: 12px; padding-block: 4px; }
+.capture-detail .capture-line span, .out .capture-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.capture-detail pre { max-height: 26rem; overflow: auto; padding: 8px; }
 .out pre { white-space: pre; font: 14px/1.7 var(--mono); tab-size: 2; }
 .entry-command { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .out .entry-command { font-weight: 500; }

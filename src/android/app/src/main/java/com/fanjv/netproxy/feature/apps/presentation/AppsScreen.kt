@@ -100,6 +100,7 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 fun AppIcon(
     app: AppInfoModel,
     modifier: Modifier = Modifier,
+    size: androidx.compose.ui.unit.Dp = 40.dp,
 ) {
     val iconRevision = AppIconCache.revision
     var icon by remember(app.id) {
@@ -112,7 +113,7 @@ fun AppIcon(
 
     Box(
         modifier = modifier
-            .requiredSize(40.dp)
+            .requiredSize(size)
             .clip(RoundedCornerShape(10.dp)),
         contentAlignment = androidx.compose.ui.Alignment.Center
     ) {
@@ -120,14 +121,14 @@ fun AppIcon(
             androidx.compose.foundation.Image(
                 bitmap = icon!!,
                 contentDescription = null,
-                modifier = Modifier.requiredSize(40.dp),
+                modifier = Modifier.requiredSize(size),
                 contentScale = ContentScale.Fit
             )
         } else {
             Icon(
                 imageVector = Icons.Rounded.Android,
                 contentDescription = null,
-                modifier = Modifier.requiredSize(24.dp),
+                modifier = Modifier.requiredSize(size * 0.6f),
                 tint = colorScheme.onBackground.copy(alpha = 0.5f)
             )
         }
@@ -319,7 +320,7 @@ private fun AppProxyMode(apps: AppsUiState, onChange: (Boolean, String?) -> Unit
 
 
 @Composable
-private fun AppItem(
+internal fun AppItem(
     app: AppInfoModel,
     showPackageName: Boolean,
     isProxied: Boolean,
