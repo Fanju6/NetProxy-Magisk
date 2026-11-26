@@ -45,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import top.yukonga.miuix.kmp.layout.DialogDefaults
 import top.yukonga.miuix.kmp.glass.*
+import top.yukonga.miuix.kmp.utils.MiuixPopupUtils.Companion.PopupLayout
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 
 
@@ -146,18 +147,50 @@ internal fun ManagerDialog(show: Boolean, title: String?, summary: String?, onDi
 }
 
 @Composable
-internal fun ManagerSheet(show: Boolean, title: String?, onDismissRequest: () -> Unit, content: @Composable () -> Unit) {
+internal fun ManagerSheet(
+    show: Boolean, title: String?, onDismissRequest: () -> Unit, allowDismiss: Boolean,
+    onDismissFinished: (() -> Unit)?, startAction: (@Composable () -> Unit)?, endAction: (@Composable () -> Unit)?,
+    content: @Composable () -> Unit,
+) {
     GlassBottomSheet(
         onDismissRequest = onDismissRequest,
         show = show,
         backdrop = glassBackdrop(LocalManagerBackdrop.current),
         title = title,
+        allowDismiss = allowDismiss,
+        onDismissFinished = onDismissFinished,
+        startAction = startAction,
+        endAction = endAction,
         modifier = Modifier.windowInsetsPadding(
             WindowInsets.tappableElement.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
         ),
     ) {
         // Keep the glass behind the gesture bar, but keep the sheet's controls above it.
         Box(Modifier.navigationBarsPadding()) { content() }
+    }
+}
+
+@Composable
+internal fun AppSheetMoreMenu(entry: DropdownEntry, description: String) {
+    val expanded = remember { mutableStateOf(false) }
+    val anchor = rememberGlassPopupAnchor()
+    val icon = chromeIcon(MiuixIcons.MoreCircle)
+    val backdrop = glassBackdrop(LocalManagerBackdrop.current)
+    GlassIconButton(
+        onClick = { expanded.value = !expanded.value },
+        modifier = Modifier.glassPopupAnchor(anchor, GlassTopAppBarDefaults.ButtonSize / 2, floating = true),
+    ) {
+        Icon(icon, description, Modifier.glassPopupAnchorContent(anchor), tint = colorScheme.onSurface)
+    }
+    // The sheet header only has button-sized bounds. Host the popup outside those bounds.
+    PopupLayout(visible = expanded, enableWindowDim = false, enableBackHandler = false) {
+        Box(Modifier.fillMaxSize()) {
+            GlassIconDropdownMenu(
+                show = expanded.value, onDismissRequest = { expanded.value = false }, anchor = anchor,
+                anchorContent = { Icon(icon, null, tint = colorScheme.onSurface) },
+                entries = listOf(entry), backdrop = backdrop,
+            )
+        }
     }
 }
 

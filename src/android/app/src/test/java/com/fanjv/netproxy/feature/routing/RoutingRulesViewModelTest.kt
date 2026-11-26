@@ -9,8 +9,10 @@ import com.fanjv.netproxy.feature.routing.model.RuleField
 import com.fanjv.netproxy.feature.routing.model.policyRule
 import com.fanjv.netproxy.feature.routing.model.simpleRule
 import com.fanjv.netproxy.feature.routing.presentation.RuleIdentity
+import com.fanjv.netproxy.feature.routing.presentation.RuleSection
 import com.fanjv.netproxy.feature.routing.presentation.RoutingRulesState
 import com.fanjv.netproxy.feature.routing.presentation.RoutingRulesViewModel
+import com.fanjv.netproxy.feature.routing.presentation.groupedRules
 import com.fanjv.netproxy.feature.settings.data.ConfigRepository
 import java.io.File
 import java.util.concurrent.CountDownLatch
@@ -39,6 +41,7 @@ class RoutingRulesViewModelTest {
         val revisions = mutableMapOf<String, String>()
         val readErrors = mutableMapOf<String, Exception>()
         var gate: CountDownLatch? = null
+        var readGate: CompletableDeferred<Unit>? = null
         var appsSnapshot = """{"users":[]}"""
         val entered = CompletableDeferred<Unit>()
         val calls = mutableListOf<ApiTestRequest>()
@@ -48,6 +51,7 @@ class RoutingRulesViewModelTest {
             if (request.path == "/android/apps") return apiSuccess(appsSnapshot)
             val data = when (request.method) {
                 "GET" -> {
+                    readGate?.await()
                     (readErrors[request.target] ?: readError)?.let { throw it }
                     val saved = contents[request.target] ?: when (request.target) {
                         LocalRuleSet.Policy.target -> defaultRoute
@@ -85,6 +89,87 @@ class RoutingRulesViewModelTest {
 
     private suspend fun RoutingRulesViewModel.saved(): RoutingRulesState = withTimeout(5_000) {
         state.first { !it.isSaving }
+    }
+
+    @Test fun groupingKeepsDocumentAndIndexForApplicationAddressAndAdvancedRules() = runBlocking {
+        val transport = Transport().apply {
+            contents[LocalRuleSet.Proxy.target] = """{"version":1,"rules":[{"domain":"example.org"},{"domain":"example.net","port":443}]}"""
+            contents[LocalRuleSet.Direct.target] = """{"version":1,"rules":[{"package_name":"com.android.chrome"}]}"""
+            contents[LocalRuleSet.Block.target] = """{"version":1,"rules":[]}"""
+            contents[LocalRuleSet.Policy.target] = """{"route":{"rules":[{"type":"default","package_name":["com.example.test"],"action":"route","outbound":"AI"}]}}"""
+        }
+        val vm = model(this, transport)
+        vm.refresh()
+        val state = vm.loaded()
+        val grouped = state.groupedRules()
+        assertEquals(listOf(RuleIdentity(LocalRuleSet.Direct, 0), RuleIdentity(LocalRuleSet.Policy, 0)),
+            grouped.getValue(RuleSection.Apps).map { it.identity })
+        assertEquals("AI", grouped.getValue(RuleSection.Apps).last().policyTag)
+        assertEquals(RuleIdentity(LocalRuleSet.Proxy, 0), grouped.getValue(RuleSection.Address).single().identity)
+        assertEquals(RuleIdentity(LocalRuleSet.Proxy, 1), grouped.getValue(RuleSection.Advanced).single().identity)
+        assertFalse(transport.calls.any { it.mutation })
+    }
+
+    @Test fun ruleSheetDoesNotOpenAReusedIndexAfterRevisionChanges() = runBlocking {
+        val identity = RuleIdentity(LocalRuleSet.Direct, 0)
+        val transport = Transport().apply {
+            contents[identity.target.target] = """{"version":1,"rules":[{"domain":"new.example"}]}"""
+            revisions[identity.target.target] = "new-revision"
+        }
+        val vm = model(this, transport)
+        vm.openEditor(identity, "old-revision")
+        val state = vm.loaded()
+        assertNull(state.draft)
+        assertEquals("new-revision", state.file(identity.target).revision)
+        vm.save()
+        assertFalse(transport.calls.any { it.mutation })
+    }
+
+    @Test fun ruleSheetSavesMatchingRevisionAndCanOpenAnotherDraft() = runBlocking {
+        val transport = Transport()
+        val vm = model(this, transport)
+        val identity = RuleIdentity(LocalRuleSet.Direct, 0)
+        vm.openEditor(identity, transport.revision)
+        val opened = withTimeout(5_000) { vm.state.first { it.draft != null } }
+        assertEquals(identity.index, opened.draft?.index)
+        assertEquals(identity.target, opened.draft?.target)
+        vm.updateDraft(RuleField.DomainSuffix, "saved.example")
+        vm.save()
+        assertEquals(false, vm.saved().editor?.visible)
+        assertEquals("saved.example", LocalRuleDocument.parse(transport.contents.getValue(identity.target.target))
+            .rules.first().simpleRule()?.values?.single())
+        vm.dismiss()
+        vm.openEditor(identity, "saved-revision")
+        val reopened = withTimeout(5_000) { vm.state.first { it.draft != null } }
+        assertEquals("saved.example", reopened.draft?.text)
+        assertEquals(1, transport.calls.count { it.mutation })
+    }
+
+    @Test fun closingRuleSheetDuringReadDoesNotCreateAHiddenDraft() = runBlocking {
+        val gate = CompletableDeferred<Unit>()
+        val transport = Transport().apply { readGate = gate }
+        val vm = model(this, transport)
+        vm.openEditor(null, null)
+        assertTrue(vm.state.value.isLoading)
+        vm.closeEditor()
+        assertEquals(false, vm.state.value.editor?.visible)
+        vm.dismiss()
+        gate.complete(Unit)
+        assertNull(vm.loaded().draft)
+        assertNull(vm.state.value.editor)
+        assertFalse(transport.calls.any { it.mutation })
+    }
+
+    @Test fun newRuleSheetCanRetryAfterReadFailure() = runBlocking {
+        val transport = Transport().apply { readError = IllegalStateException("offline") }
+        val vm = model(this, transport)
+        vm.openEditor(null, null)
+        assertNull(vm.loaded().draft)
+        transport.readError = null
+        vm.openEditor(null, null, discardDraft = true)
+        val reopened = withTimeout(5_000) { vm.state.first { it.draft != null } }
+        assertTrue(reopened.editor?.visible == true)
+        assertFalse(transport.calls.any { it.mutation })
     }
 
     @Test fun applicationChoicesAreReadOnDemandAndDeduplicatedByPackage() = runBlocking {
@@ -550,7 +635,7 @@ class RoutingRulesViewModelTest {
         assertFalse(transport.calls.any { it.method == "PUT" })
     }
 
-    @Test fun deleteFromEditorClosesDraftAndCancellationDoesNotWrite() = runBlocking {
+    @Test fun cancelingDeleteReturnsToExistingDraftWithoutWriting() = runBlocking {
         val transport = Transport()
         val vm = model(this, transport)
         vm.refresh()
@@ -559,10 +644,12 @@ class RoutingRulesViewModelTest {
         vm.edit(identity)
         vm.updateDraft(RuleField.DomainSuffix, "unsaved.example")
         vm.requestDelete(identity)
-        assertNull(vm.state.value.draft)
+        assertEquals("unsaved.example", vm.state.value.draft?.text)
         assertEquals(identity, vm.state.value.deleting)
-        vm.dismiss()
+        vm.save()
+        vm.cancelDelete()
         assertNull(vm.state.value.deleting)
+        assertEquals("unsaved.example", vm.state.value.draft?.text)
         assertEquals(loaded.files, vm.state.value.files)
         assertFalse(transport.calls.any { it.method == "PUT" })
     }

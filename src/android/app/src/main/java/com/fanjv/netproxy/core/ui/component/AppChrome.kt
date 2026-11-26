@@ -72,7 +72,9 @@ internal fun AppDialog(
 @Composable
 internal fun AppBottomSheet(
     show: Boolean, title: String? = null, onDismissRequest: () -> Unit,
+    allowDismiss: Boolean = true, onDismissFinished: (() -> Unit)? = null,
+    startAction: (@Composable () -> Unit)? = null, endAction: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
-    ManagerSheet(show, title, onDismissRequest, content)
+    ManagerSheet(show, title, onDismissRequest, allowDismiss, onDismissFinished, startAction, endAction, content)
 }

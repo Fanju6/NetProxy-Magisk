@@ -29,6 +29,8 @@ import kotlinx.coroutines.withContext
 
 internal data class RuleIdentity(val target: LocalRuleSet, val index: Int)
 
+internal data class RuleEditor(val identity: RuleIdentity?, val visible: Boolean = true)
+
 internal data class RuleDraft(
     val target: LocalRuleSet,
     val index: Int? = null,
@@ -53,6 +55,7 @@ internal data class RoutingRulesState(
     val deleting: RuleIdentity? = null,
     val inputError: RuleInputError? = null,
     val policyTargets: List<String> = emptyList(),
+    val editor: RuleEditor? = null,
 ) {
     val rules: List<RuleIdentity> get() = LocalRuleSet.entries.flatMap { target ->
         files.getValue(target).document?.editableIndices?.map { RuleIdentity(target, it) }.orEmpty()
@@ -108,7 +111,7 @@ internal class RoutingRulesViewModel(
         val draft = current.draft ?: return
         if (draft.index != null || current.isLoading || current.isSaving) return
         mutableState.update {
-            it.copy(draft = draft.copy(target = target, policyTag = null), inputError = null)
+            it.copy(draft = draft.copy(target = target, policyTag = null))
         }
     }
 
@@ -119,7 +122,23 @@ internal class RoutingRulesViewModel(
         mutableState.update { it.copy(draft = draft.copy(policyTag = tag)) }
     }
 
+    fun openEditor(identity: RuleIdentity?, revision: String?, discardDraft: Boolean = false) {
+        val current = state.value
+        if (current.isLoading || current.isSaving || (!discardDraft && current.editor != null)) return
+        val editor = RuleEditor(identity)
+        mutableState.update { it.copy(editor = editor) }
+        refresh(discardDraft) {
+            if (state.value.editor != editor) return@refresh
+            if (identity == null) add()
+            else if (revision != null && state.value.files.getValue(identity.target).revision == revision) edit(identity)
+        }
+    }
+
     fun refresh(discardDraft: Boolean = false) {
+        if (state.value.editor == null || discardDraft) refresh(discardDraft, onLoaded = {})
+    }
+
+    private fun refresh(discardDraft: Boolean, onLoaded: () -> Unit) {
         val current = state.value
         if (current.isLoading || current.isSaving || (!discardDraft && (current.draft != null || current.deleting != null))) return
         mutableState.update { it.copy(isLoading = true, draft = null, deleting = null, inputError = null) }
@@ -155,6 +174,7 @@ internal class RoutingRulesViewModel(
             } finally {
                 mutableState.update { it.copy(isLoading = false) }
             }
+            onLoaded()
         }
     }
 
@@ -182,7 +202,7 @@ internal class RoutingRulesViewModel(
     fun updateDraft(field: RuleField, text: String) {
         val current = state.value
         val draft = current.draft ?: return
-        if (current.isSaving || draft.field == null) return
+        if (current.isSaving || current.deleting != null || draft.field == null) return
         mutableState.update {
             val file = it.files.getValue(draft.target)
             it.copy(draft = draft.copy(field = field, text = text), inputError = null)
@@ -193,19 +213,34 @@ internal class RoutingRulesViewModel(
     fun requestDelete(identity: RuleIdentity) {
         val current = state.value
         if (!current.editable(identity.target) || identity.index !in current.files.getValue(identity.target).document!!.editableIndices) return
-        mutableState.update { it.copy(draft = null, deleting = identity, inputError = null)
+        mutableState.update { it.copy(
+            draft = it.draft?.takeIf { draft -> draft.target == identity.target && draft.index == identity.index },
+            deleting = identity, inputError = null,
+        )
             .withFile(identity.target, it.files.getValue(identity.target).copy(error = "")) }
     }
 
+    fun cancelDelete() {
+        if (!state.value.isSaving) mutableState.update { it.copy(deleting = null) }
+    }
+
+    fun closeEditor() {
+        if (!state.value.isSaving) mutableState.update {
+            it.copy(editor = it.editor?.copy(visible = false), deleting = null)
+        }
+    }
+
     fun dismiss() {
-        if (!state.value.isSaving) mutableState.update { it.copy(draft = null, deleting = null, inputError = null) }
+        if (!state.value.isSaving) mutableState.update {
+            it.copy(editor = null, draft = null, deleting = null, inputError = null)
+        }
     }
 
     fun save() {
         val current = state.value
         val draft = current.draft ?: return
         val field = draft.field ?: return
-        if (!current.canSave(draft)) return
+        if (current.deleting != null || !current.canSave(draft)) return
         val error = field.inputError(draft.text)
         if (error != null) {
             mutableState.update { it.copy(inputError = error) }
@@ -231,7 +266,10 @@ internal class RoutingRulesViewModel(
             try {
                 val content = withContext(Dispatchers.Default) { document.content() }
                 val revision = repository.apply(target.target, content, file.revision)
-                mutableState.update { it.copy(isSaving = false, draft = null, deleting = null, inputError = null)
+                mutableState.update { it.copy(
+                    isSaving = false, draft = if (it.editor != null) it.draft else null, deleting = null,
+                    inputError = null, editor = it.editor?.copy(visible = false),
+                )
                     .withFile(target, RuleFileState(document, revision)) }
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
