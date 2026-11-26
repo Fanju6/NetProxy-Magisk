@@ -29,7 +29,7 @@ func TestExclusivePackageUIDsSkipsSharedAndSystemUIDs(t *testing.T) {
 func TestPackageQueryPreservesCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if _, err := listPackageUIDs(ctx, 0); !errors.Is(err, context.Canceled) {
+	if _, err := ListPackageUIDs(ctx, 0); !errors.Is(err, context.Canceled) {
 		t.Fatalf("取消变为其他错误: %v", err)
 	}
 }
@@ -43,7 +43,7 @@ func TestPackageQueryStopsRunningCommand(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { _, err := listPackageUIDs(ctx, 0); done <- err }()
+	go func() { _, err := ListPackageUIDs(ctx, 0); done <- err }()
 	deadline := time.After(5 * time.Second)
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()

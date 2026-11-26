@@ -62,6 +62,7 @@ func runWorker(ctx context.Context, args []string) error {
 	options.ProgressDir = *progressDir
 	options.PIDFile = *pidFile
 	options.LogFile = *logFile
+	options.CrashLog = layout.WorkerCrashLog()
 	options.ModuleConfig = *moduleConfig
 	options.APIConfig = *apiConfig
 	if options.APIConfig == "" {

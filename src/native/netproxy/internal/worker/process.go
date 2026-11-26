@@ -19,7 +19,12 @@ import (
 const workerStartTimeout = 2 * time.Second
 
 // RunProcess 安装系统信号并运行 Worker。
-func RunProcess(ctx context.Context, options Options, logger *log.Logger) error {
+func RunProcess(ctx context.Context, options Options, logger *log.Logger) (err error) {
+	defer func() {
+		if err != nil {
+			logWorker(logger, "ERROR", "worker.exit", "failed", "后台 Worker 退出: %v", err)
+		}
+	}()
 	if runtime.GOOS == "android" {
 		if err := prepareProcessEnvironment(); err != nil {
 			return err
@@ -63,7 +68,7 @@ func RunProcess(ctx context.Context, options Options, logger *log.Logger) error 
 	}()
 	serverDone := make(chan error, 1)
 	go func() { serverDone <- options.RunServer(processContext, serverWake) }()
-	err := Run(processContext, options, taskWake, logger)
+	err = Run(processContext, options, taskWake, logger)
 	cancel()
 	serverErr := <-serverDone
 	<-wakeDone
@@ -108,7 +113,12 @@ func Start(ctx context.Context, options Options, executable string) (Status, err
 	defer devNull.Close()
 	command.Stdin = devNull
 	command.Stdout = devNull
-	command.Stderr = devNull
+	crashLog, err := logfile.OpenForProcess(options.CrashLog)
+	if err != nil {
+		return Status{}, fmt.Errorf("无法打开 Worker 崩溃日志: %w", err)
+	}
+	defer crashLog.Close()
+	command.Stderr = crashLog
 	detachCommand(command)
 	if err := command.Start(); err != nil {
 		return Status{}, err

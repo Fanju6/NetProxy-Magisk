@@ -76,6 +76,7 @@ NetProxy 是面向已 Root Android 设备的系统级透明代理模块，支持
 | 网络自动切换 | [Wi-Fi 自动策略](https://www.netproxy.store/guide/wifi-policy) |
 | 路由、DNS 与策略组 | [配置参考](https://www.netproxy.store/config/singbox) · [策略分组](https://www.netproxy.store/config/policy-groups) |
 | 终端、面板与第三方客户端 | [CLI](https://www.netproxy.store/guide/cli) · [控制面板与 API](https://www.netproxy.store/guide/control-panel) |
+| 全局透明抓包与 HTTP/HTTPS 调试 | [抓包与脚本重写](https://www.netproxy.store/guide/traffic-debugging) |
 | 故障排查与问题反馈 | [常见问题与诊断](https://www.netproxy.store/guide/faq) |
 
 [更新日志](https://www.netproxy.store/changelog) · [隐私政策](https://www.netproxy.store/privacy)

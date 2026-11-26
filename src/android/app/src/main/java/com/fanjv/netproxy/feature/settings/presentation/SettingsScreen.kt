@@ -153,6 +153,13 @@ internal fun SettingsScreen(
                                 onClick = { navigator.push(Route.KernelSettings) }
                             )
                         },
+                        CardItem("traffic") {
+                            ArrowPreference(
+                                title = stringResource(R.string.traffic_title),
+                                summary = stringResource(R.string.traffic_settings_summary),
+                                onClick = { navigator.push(Route.Traffic) },
+                            )
+                        },
                     ),
                 )
 
