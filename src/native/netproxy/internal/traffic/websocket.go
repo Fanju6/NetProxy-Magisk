@@ -4,8 +4,10 @@ import (
 	"encoding/binary"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"unicode/utf8"
 )
 
@@ -25,6 +27,7 @@ type WebSocketFrame struct {
 	Size      uint64 `json:"size"`
 	Text      string `json:"text,omitempty"`
 	Truncated bool   `json:"truncated"`
+	sequence  uint64
 }
 
 func webSocketUpgrade(headers http.Header) bool {
@@ -45,25 +48,55 @@ func setWebSocketUpgrade(headers http.Header) {
 
 type webSocketCapture struct {
 	mu     sync.Mutex
+	next   atomic.Uint64
 	detail WebSocketDetail
 }
 
+type webSocketFrameForwarder struct {
+	dst      io.Writer
+	next     *atomic.Uint64
+	sequence uint64
+}
+
+func (f *webSocketFrameForwarder) Write(p []byte) (int, error) {
+	// 首次转发前编号；对端可能在本次 Write 返回前发出回复。
+	if len(p) != 0 && f.sequence == 0 {
+		f.sequence = f.next.Add(1)
+	}
+	return f.dst.Write(p)
+}
+
 func (c *webSocketCapture) relay(dst io.Writer, src io.Reader, direction string) {
-	stream := io.TeeReader(src, dst)
+	forwarder := &webSocketFrameForwarder{dst: dst, next: &c.next}
+	stream := io.TeeReader(src, forwarder)
 	for {
+		forwarder.sequence = 0
 		frame, err := readWebSocketFrame(stream)
 		if err != nil {
 			return
 		}
 		frame.Direction = direction
-		c.mu.Lock()
-		if len(c.detail.Frames) < wsFrameLimit {
-			c.detail.Frames = append(c.detail.Frames, frame)
-		} else {
-			c.detail.Truncated = true
-		}
-		c.mu.Unlock()
+		frame.sequence = forwarder.sequence
+		c.record(frame)
 	}
+}
+
+func (c *webSocketCapture) record(frame WebSocketFrame) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	frames := c.detail.Frames
+	index := sort.Search(len(frames), func(i int) bool { return frames[i].sequence > frame.sequence })
+	if len(frames) < wsFrameLimit {
+		frames = append(frames, WebSocketFrame{})
+	} else {
+		c.detail.Truncated = true
+		if index == len(frames) {
+			return
+		}
+	}
+	copy(frames[index+1:], frames[index:])
+	frames[index] = frame
+	c.detail.Frames = frames
 }
 
 func readWebSocketFrame(stream io.Reader) (WebSocketFrame, error) {

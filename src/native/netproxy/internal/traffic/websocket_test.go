@@ -1,8 +1,10 @@
 package traffic
 
 import (
+	"bytes"
 	"crypto/tls"
 	"crypto/x509"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +15,43 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"golang.org/x/net/websocket"
 )
+
+type webSocketReplyWriter struct {
+	remaining int
+	reply     func()
+}
+
+func (w *webSocketReplyWriter) Write(p []byte) (int, error) {
+	w.remaining -= len(p)
+	if w.remaining == 0 {
+		w.reply()
+	}
+	return len(p), nil
+}
+
+func TestWebSocketCaptureOrdersByObservationBeforeForwarding(t *testing.T) {
+	for _, directions := range [][2]string{{"send", "receive"}, {"receive", "send"}} {
+		t.Run(directions[0]+"_first", func(t *testing.T) {
+			for _, replies := range []int{1, wsFrameLimit} {
+				first := []byte{0x81, 1, 'a'}
+				reply := []byte{0x81, 1, 'b'}
+				capture := &webSocketCapture{}
+				dst := &webSocketReplyWriter{remaining: len(first), reply: func() {
+					capture.relay(io.Discard, bytes.NewReader(bytes.Repeat(reply, replies)), directions[1])
+				}}
+				capture.relay(dst, bytes.NewReader(first), directions[0])
+				frames := capture.detail.Frames
+				if len(frames) != min(1+replies, wsFrameLimit) || capture.detail.Truncated != (replies == wsFrameLimit) {
+					t.Fatalf("unexpected retention for %d replies: %+v", replies, capture.detail)
+				}
+				if frames[0].Direction != directions[0] || frames[0].Text != "a" ||
+					frames[1].Direction != directions[1] || frames[1].Text != "b" {
+					t.Fatalf("observed frame was recorded after its reply: %+v", frames[:2])
+				}
+			}
+		})
+	}
+}
 
 func TestCaptureWebSocketThroughCoreBridge(t *testing.T) {
 	for _, scheme := range []string{"ws", "wss"} {
