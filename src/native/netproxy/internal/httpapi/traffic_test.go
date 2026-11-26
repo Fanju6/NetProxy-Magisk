@@ -298,6 +298,22 @@ func TestTrafficBreakpointContract(t *testing.T) {
 	}
 }
 
+func TestTrafficBreakpointAndroidPayload(t *testing.T) {
+	s := resourceFixture(t)
+	config := trafficRoute + "breakpoints"
+	w, result := resourceRequest(t, s, http.MethodPut, config, `{"rules":[{"domains":["breakpoint.example.test"],"pattern":"/fixture","name":"Fixture"}]}`)
+	if w.Code != http.StatusUnprocessableEntity || result.Code != "traffic.breakpoints_invalid" || !strings.Contains(result.Message, "phase") {
+		t.Fatalf("missing phase: %d %s %s", w.Code, result.Code, result.Message)
+	}
+	w, result = resourceRequest(t, s, http.MethodPut, config, `{"rules":[{"domains":["breakpoint.example.test"],"pattern":"/fixture","phase":"request"}]}`)
+	if w.Code != http.StatusOK || result.Code != "traffic.breakpoints_saved" ||
+		!strings.Contains(w.Body.String(), `"phase":"request"`) ||
+		!strings.Contains(w.Body.String(), `"enabled":true`) ||
+		!strings.Contains(w.Body.String(), `"timeout_seconds":60`) {
+		t.Fatalf("default Android breakpoint: %d %s", w.Code, w.Body.String())
+	}
+}
+
 func TestTrafficDomainQueries(t *testing.T) {
 	s := resourceFixture(t)
 	id, batch := strings.Repeat("A", 26), strings.Repeat("B", 26)

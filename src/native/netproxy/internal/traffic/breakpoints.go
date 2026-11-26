@@ -120,16 +120,21 @@ func compileBreakpoints(config BreakpointConfig) (BreakpointConfig, []breakpoint
 	compiled := make([]breakpointRule, 0, len(config.Rules))
 	for i, rule := range config.Rules {
 		rule.Name = strings.TrimSpace(rule.Name)
-		if utf8.RuneCountInString(rule.Name) > 64 || len(rule.Pattern) == 0 || len(rule.Pattern) > 1024 ||
-			(rule.Phase != "request" && rule.Phase != "response" && rule.Phase != "both") ||
-			len(rule.Domains) < 1 || len(rule.Domains) > 32 {
-			return BreakpointConfig{}, nil, fmt.Errorf("第 %d 条断点规则的标题、域名、阶段或表达式无效", i+1)
+		switch {
+		case utf8.RuneCountInString(rule.Name) > 64:
+			return BreakpointConfig{}, nil, fmt.Errorf("第 %d 条断点规则的标题（name）不能超过 64 个字符", i+1)
+		case len(rule.Domains) < 1 || len(rule.Domains) > 32:
+			return BreakpointConfig{}, nil, fmt.Errorf("第 %d 条断点规则需要 1–32 个域名（domains）", i+1)
+		case len(rule.Pattern) == 0 || len(rule.Pattern) > 1024:
+			return BreakpointConfig{}, nil, fmt.Errorf("第 %d 条断点规则的 URL 正则表达式（pattern）长度必须为 1–1024 字节", i+1)
+		case rule.Phase != "request" && rule.Phase != "response" && rule.Phase != "both":
+			return BreakpointConfig{}, nil, fmt.Errorf("第 %d 条断点规则的阶段（phase）必须为 request、response 或 both", i+1)
 		}
 		var domains []string
 		for _, item := range rule.Domains {
 			host := canonicalHost(strings.TrimSpace(item))
 			if !validMITMHost(host) {
-				return BreakpointConfig{}, nil, fmt.Errorf("第 %d 条断点规则的域名无效", i+1)
+				return BreakpointConfig{}, nil, fmt.Errorf("第 %d 条断点规则的域名（domains）无效", i+1)
 			}
 			if !slices.Contains(domains, host) {
 				domains = append(domains, host)
@@ -140,7 +145,7 @@ func compileBreakpoints(config BreakpointConfig) (BreakpointConfig, []breakpoint
 		rule.Enabled = &enabled
 		regex, err := regexp.Compile(rule.Pattern)
 		if err != nil {
-			return BreakpointConfig{}, nil, fmt.Errorf("第 %d 条断点规则的 URL 正则表达式无效", i+1)
+			return BreakpointConfig{}, nil, fmt.Errorf("第 %d 条断点规则的 URL 正则表达式（pattern）无效", i+1)
 		}
 		rules = append(rules, rule)
 		compiled = append(compiled, breakpointRule{rule, regex})

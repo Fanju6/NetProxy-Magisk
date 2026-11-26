@@ -72,9 +72,13 @@ func compileRules(rules []Rule, legacy bool) ([]compiledRule, error) {
 		if utf8.RuneCountInString(rule.Name) > 64 {
 			return nil, fmt.Errorf("第 %d 条重写规则的标题不能超过 64 个字符", i+1)
 		}
-		if (rule.Phase != "request" && rule.Phase != "response") || len(rule.Pattern) == 0 ||
-			len(rule.Pattern) > 1024 || len(rule.Script) == 0 || len(rule.Script) > 8192 {
-			return nil, fmt.Errorf("第 %d 条重写规则的阶段、表达式或脚本长度无效", i+1)
+		switch {
+		case rule.Phase != "request" && rule.Phase != "response":
+			return nil, fmt.Errorf("第 %d 条重写规则的阶段（phase）必须为 request 或 response", i+1)
+		case len(rule.Pattern) == 0 || len(rule.Pattern) > 1024:
+			return nil, fmt.Errorf("第 %d 条重写规则的 URL 正则表达式（pattern）长度必须为 1–1024 字节", i+1)
+		case len(rule.Script) == 0 || len(rule.Script) > 8192:
+			return nil, fmt.Errorf("第 %d 条重写规则的脚本（script）长度必须为 1–8192 字节", i+1)
 		}
 		if legacy && rule.Domains == nil {
 			rule.Domains = legacyDomains(rule.Pattern)

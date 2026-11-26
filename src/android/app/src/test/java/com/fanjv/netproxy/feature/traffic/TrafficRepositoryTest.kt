@@ -7,6 +7,7 @@ import com.fanjv.netproxy.core.api.TestApiTransport
 import com.fanjv.netproxy.core.api.apiSuccess
 import com.fanjv.netproxy.feature.traffic.data.CaptureBreakpointConfig
 import com.fanjv.netproxy.feature.traffic.data.CaptureBreakpointEdit
+import com.fanjv.netproxy.feature.traffic.data.CaptureBreakpointRule
 import com.fanjv.netproxy.feature.traffic.data.CapturePageCache
 import com.fanjv.netproxy.feature.traffic.data.CaptureReplayEdit
 import com.fanjv.netproxy.feature.traffic.data.MitmPolicy
@@ -47,6 +48,18 @@ class TrafficRepositoryTest {
             apiSuccess("""{"timeout_seconds":60,"rules":[]}""")
         }))
         repository.saveBreakpoints(CaptureBreakpointConfig(rules = emptyList()))
+    }
+
+    @Test fun savingBreakpointIncludesDefaultRequestPhase() = runBlocking {
+        val repository = TrafficRepository(ModuleApiClient(TestApiTransport { request ->
+            assertEquals("/traffic/breakpoints", request.path)
+            assertEquals("PUT", request.method)
+            assertEquals(Json.parseToJsonElement("""{"rules":[{"domains":["breakpoint.example.test"],"pattern":"/fixture","phase":"request"}]}"""), request.body)
+            apiSuccess("{}")
+        }))
+        repository.saveBreakpoints(CaptureBreakpointConfig(
+            rules = listOf(CaptureBreakpointRule(domains = listOf("breakpoint.example.test"), pattern = "/fixture"))
+        ))
     }
 
     @Test fun readsPausedResponseAndPostsOnlyEditedFields() = runBlocking {

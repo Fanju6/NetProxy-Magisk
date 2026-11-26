@@ -1,5 +1,7 @@
 package com.fanjv.netproxy.feature.traffic.data
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -7,7 +9,8 @@ import kotlinx.serialization.Serializable
 internal data class CaptureBreakpointRule(
     val domains: List<String> = emptyList(),
     val pattern: String = "",
-    val phase: String = "request",
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault val phase: String = "request",
     val enabled: Boolean = true,
     val name: String = "",
 )
