@@ -1,5 +1,6 @@
 package com.fanjv.netproxy
 
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
@@ -27,6 +28,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Density
@@ -67,6 +70,18 @@ import com.fanjv.netproxy.feature.dashboard.presentation.CatalogDashboardViewMod
 import com.fanjv.netproxy.feature.kernel.presentation.SingBoxJsonEditScreen
 import com.fanjv.netproxy.feature.kernel.presentation.SingBoxKernelSettingsScreen
 import com.fanjv.netproxy.feature.logs.presentation.LogsScreen
+import com.fanjv.netproxy.feature.traffic.presentation.TrafficScreen
+import com.fanjv.netproxy.feature.traffic.presentation.TrafficSessionsScreen
+import com.fanjv.netproxy.feature.traffic.presentation.TrafficAppsScreen
+import com.fanjv.netproxy.feature.traffic.presentation.TrafficInspectorScreen
+import com.fanjv.netproxy.feature.traffic.presentation.TrafficRulesScreen
+import com.fanjv.netproxy.feature.traffic.presentation.TrafficRuleEditorScreen
+import com.fanjv.netproxy.feature.traffic.presentation.TrafficHttpsScreen
+import com.fanjv.netproxy.feature.traffic.presentation.TrafficViewModel
+import com.fanjv.netproxy.feature.traffic.presentation.CaptureOverlay
+import com.fanjv.netproxy.feature.traffic.presentation.BreakpointRulesScreen
+import com.fanjv.netproxy.feature.traffic.presentation.PausedCaptureScreen
+import com.fanjv.netproxy.feature.traffic.presentation.PauseEditorScreen
 import com.fanjv.netproxy.feature.inbound.presentation.InboundSettingsScreen
 import com.fanjv.netproxy.feature.settings.presentation.NetworkMatchingScreen
 import com.fanjv.netproxy.feature.routing.presentation.RoutingRulesScreen
@@ -78,6 +93,7 @@ import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.MainBottomBar
 import com.fanjv.netproxy.navigation.MainPagerState
 import com.fanjv.netproxy.navigation.Route.About
+import com.fanjv.netproxy.navigation.Route
 import com.fanjv.netproxy.navigation.Route.Apps
 import com.fanjv.netproxy.navigation.Route.JsonEdit
 import com.fanjv.netproxy.navigation.Route.KernelSettings
@@ -91,11 +107,13 @@ import com.fanjv.netproxy.navigation.Route.RoutingRules
 import com.fanjv.netproxy.navigation.Route.SubscriptionDetails
 import com.fanjv.netproxy.navigation.Route.SubscriptionEdit
 import com.fanjv.netproxy.navigation.Route.ThemeSettings
+import com.fanjv.netproxy.navigation.Route.Traffic
 import com.fanjv.netproxy.navigation.rememberMainPagerState
 import com.fanjv.netproxy.navigation.rememberNavigator
 import com.fanjv.netproxy.navigation.mainDestinations
 import com.fanjv.netproxy.navigation.availableIn
 import top.yukonga.miuix.kmp.basic.NavigationItem
+import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.glass.GlassTextField as TextField
 import com.fanjv.netproxy.core.ui.component.AppDialog as OverlayDialog
@@ -108,9 +126,36 @@ import top.yukonga.miuix.kmp.theme.ThemeColorSpec
 import top.yukonga.miuix.kmp.theme.ThemePaletteStyle
 
 class MainActivity : ComponentActivity() {
+    private val captureOverlay get() = (application as NetProxyApplication).container.captureOverlay
+    private var captureShortcut by mutableStateOf<Route?>(null)
+
+    override fun onStart() {
+        super.onStart()
+        captureOverlay.leaveBackground()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) captureOverlay.enterBackground()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        captureShortcut = intent.captureShortcut()
+    }
+
+    private fun Intent.captureShortcut(): Route? = when (action) {
+        CaptureOverlay.OpenRecords -> Route.TrafficSessions
+        CaptureOverlay.OpenPaused -> getStringExtra(CaptureOverlay.PauseId)
+            ?.takeIf { it.length == 26 && it.all { char -> char in 'A'..'Z' || char in '2'..'7' } }
+            ?.let { Route.TrafficPauseEditor(it) } ?: Route.TrafficPaused
+        else -> null
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(R.style.Theme_NetProxy)
         super.onCreate(savedInstanceState)
+        captureShortcut = if (savedInstanceState == null) intent.captureShortcut() else null
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -157,7 +202,7 @@ class MainActivity : ComponentActivity() {
                     paletteStyle = paletteStyle,
                     colorSpec = colorSpec,
                 ) {
-                    NetProxyApp(themeViewModel)
+                    NetProxyApp(themeViewModel, captureShortcut) { captureShortcut = null }
                 }
             }
         }
@@ -165,13 +210,24 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
+internal fun NetProxyApp(themeViewModel: ThemeViewModel, captureShortcut: Route?, onCaptureShortcutOpened: () -> Unit) {
     val navigator = rememberNavigator(Main)
     val catalogNodesViewModel: CatalogNodesViewModel = netProxyViewModel()
     val moduleAccess: ModuleAccessViewModel = netProxyViewModel()
+    val traffic: TrafficViewModel = netProxyViewModel()
+    val context = LocalContext.current
+    val restarting by (context.applicationContext as NetProxyApplication).container.restartingService
+        .collectAsStateWithLifecycle(initialValue = false)
     val availability by moduleAccess.state.collectAsStateWithLifecycle()
     var reconnect by rememberSaveable { mutableStateOf(false) }
     val overlayBackdrop = rememberBlurBackdrop()
+
+    LaunchedEffect(captureShortcut, availability?.available) {
+        if (captureShortcut != null && availability?.available == true) {
+            navigator.push(captureShortcut)
+            onCaptureShortcutOpened()
+        }
+    }
 
     LifecycleResumeEffect(Unit) {
         moduleAccess.refresh()
@@ -266,8 +322,63 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
                         LogsScreen(onBack = { navigator.pop() })
                     }
                 }
+                entry<Traffic> {
+                    ModulePage(R.string.traffic_title, R.string.traffic_read_failed, { navigator.pop() }) {
+                        TrafficScreen(traffic)
+                    }
+                }
+                entry<Route.TrafficSessions> {
+                    ModulePage(R.string.traffic_records, R.string.traffic_read_failed, navigator::pop) {
+                        TrafficSessionsScreen(traffic)
+                    }
+                }
+                entry<Route.TrafficApps> {
+                    ModulePage(R.string.traffic_capture_apps, R.string.traffic_read_failed, navigator::pop) {
+                        TrafficAppsScreen(traffic)
+                    }
+                }
+                entry<Route.TrafficInspector> { route ->
+                    ModulePage(R.string.traffic_record_detail, R.string.traffic_read_failed, navigator::pop) {
+                        TrafficInspectorScreen(route.id, traffic)
+                    }
+                }
+                entry<Route.TrafficRules> {
+                    ModulePage(R.string.traffic_rules, R.string.traffic_read_failed, navigator::pop) {
+                        TrafficRulesScreen(traffic)
+                    }
+                }
+                entry<Route.TrafficBreakpoints> {
+                    ModulePage(R.string.traffic_breakpoints, R.string.traffic_read_failed, navigator::pop) {
+                        BreakpointRulesScreen(traffic)
+                    }
+                }
+                entry<Route.TrafficPaused> {
+                    ModulePage(R.string.traffic_breakpoints_paused, R.string.traffic_read_failed, navigator::pop) {
+                        PausedCaptureScreen(traffic)
+                    }
+                }
+                entry<Route.TrafficPauseEditor> { route ->
+                    ModulePage(R.string.traffic_breakpoints_paused, R.string.traffic_read_failed, navigator::pop) {
+                        PauseEditorScreen(traffic, route.id)
+                    }
+                }
+                entry<Route.TrafficRuleEditor> {
+                    ModulePage(R.string.traffic_rule_edit, R.string.traffic_read_failed, navigator::pop) {
+                        TrafficRuleEditorScreen(traffic)
+                    }
+                }
+                entry<Route.TrafficHttps> {
+                    ModulePage(R.string.traffic_https, R.string.traffic_read_failed, navigator::pop) {
+                        TrafficHttpsScreen(traffic)
+                    }
+                }
             }
             ModuleConnectionDialog(reconnect, moduleAccess::reconnect) { reconnect = false }
+            OverlayDialog(show = restarting, title = stringResource(R.string.service_restarting)) {
+                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                    InfiniteProgressIndicator()
+                }
+            }
         }
     }
 }

@@ -7,13 +7,39 @@ interface CommandSpec {
 export const COMMANDS = {
   api: {
     overview: 'api <命令>      模块 HTTP 管理接口',
-    actions: ['init', 'start', 'status', 'access'],
+    actions: ['init', 'start', 'status', 'access', 'traffic'],
     help: `api - 模块 HTTP 管理接口
 
   api init      初始化独立随机凭据，不覆盖已有配置
   api start     启动或恢复后台管理接口
   api status    查看实际接口就绪状态
   api access    读取地址与凭据，仅供 Root 客户端连接
+
+  api traffic toggle | start | stop        切换或启停全局透明抓包
+  api traffic status | clear                查看状态或清空所有抓包批次
+  api traffic batches | list [批次ID]        查看批次或批次记录（默认当前或最近批次）
+  api traffic page [批次ID [游标]]           分页读取已保存的记录
+  api traffic delete-batch <批次ID>          删除已停止的批次
+  api traffic detail <ID>                   查看出口、重写记录、请求和响应详情
+  api traffic resend <ID>                   按当前路由重发完整的抓包请求
+  api traffic breakpoints                   查看交互断点配置
+  api traffic set-breakpoints <文件>        保存断点规则和自动继续超时
+  api traffic paused [ID]                   列出待处理断点，或读取一个断点的编辑字段
+  api traffic resume <ID> [文件]            原样继续或应用 JSON 修改
+  api traffic abort <ID>                    中止该请求并返回 502
+  api traffic replay <文件>                 按当前路由发送 JSON 文件中的编辑请求
+  api traffic apps | set-apps <文件>        查看或保存 mode/all、blacklist、whitelist、disable_quic
+  api traffic rules                         查看按 domains 分组的 JavaScript 重写规则
+  api traffic set-rules <文件>               应用设备上的 JSON 规则文件（可选 name 标题，单条 enabled: false 可停用）
+  api traffic mitm | set-mitm <文件>        查看或保存 HTTPS 解密配置
+  api traffic pinned | clear-pinned        查看或清除证书固定跳过列表
+  api traffic alpn-bypasses | clear-alpn-bypasses  查看或清除 ALPN 临时跳过列表
+  api traffic ca-init | ca                  初始化或查看公开调试 CA
+  api traffic ca-remove                     移除模块安装的个人调试 CA（先关闭解密）
+  api traffic ca-export <文件>              导出公开 CA，不覆盖已有文件
+
+记录 TUN/eBPF 受管透明入站的 TCP 流量；不需要设置代理端口或凭据。
+HTTPS 解密默认关闭，开启后仅解密所选主机。优先仅在测试客户端信任此 CA。
 
 接口默认仅监听 127.0.0.1:9091，关闭 sing-box 不关闭管理接口。
 凭据不可分享或粘贴到公共聊天中。
@@ -158,7 +184,7 @@ configured_backend 是保存的入站；active_backend 仅在 ready 且 PID/API 
   模块分区：module/wifi、module/auto_start
   模块分区保留顶层字段，例如 {"auto_start":true}、{"wifi":{...}}；不能用 {} 删除。
   模块分区 revision 独立，保存时保留其他分区；auto_start 只影响下次开机。
-  入站分区：inbound/backend、inbound/root_policy、inbound/app、inbound/ebpf、inbound/tun
+  入站分区：inbound/backend、inbound/root_policy、inbound/ipv6、inbound/sniff_destination、inbound/app、inbound/ebpf、inbound/tun
   入站分区保留顶层字段，例如 {"backend":"tun"}；不能用 {} 删除。
   核心分区：singbox/dns、singbox/inbounds、singbox/route 等
   核心分区保留顶层字段，例如 {"dns":{...}}；{} 删除该分区。
@@ -186,12 +212,13 @@ export const ROOT_COMPLETIONS = [...COMMAND_NAMES, 'help', 'clear', 'exit']
 export const HELP_TOPICS = [...COMMAND_NAMES, 'shell']
 const CONFIG_TARGETS = [
   'module', 'module/wifi', 'module/auto_start',
-  'inbound', 'inbound/backend', 'inbound/root_policy', 'inbound/app', 'inbound/ebpf', 'inbound/tun', 'singbox/config.json',
+  'inbound', 'inbound/backend', 'inbound/root_policy', 'inbound/ipv6', 'inbound/sniff_destination', 'inbound/app', 'inbound/ebpf', 'inbound/tun', 'singbox/config.json',
   'singbox/log', 'singbox/dns', 'singbox/inbounds', 'singbox/outbounds', 'singbox/route',
   'singbox/experimental', 'singbox/http_clients', 'singbox/services',
 ]
 
 export const VALUE_COMPLETIONS: Record<string, string[]> = {
+  'api traffic': ['status', 'toggle', 'start', 'stop', 'batches', 'list', 'page', 'delete-batch', 'detail', 'resend', 'replay', 'breakpoints', 'set-breakpoints', 'paused', 'resume', 'abort', 'clear', 'rules', 'set-rules', 'mitm', 'set-mitm', 'apps', 'set-apps', 'pinned', 'clear-pinned', 'alpn-bypasses', 'clear-alpn-bypasses', 'ca', 'ca-init', 'ca-export', 'ca-remove'],
   'app mode': ['blacklist', 'whitelist'],
   'ebpf status': ['configured', 'all', 'local', 'shared', '--raw'],
   'logs show': ['service', 'core'],

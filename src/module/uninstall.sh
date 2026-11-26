@@ -42,4 +42,8 @@ if [ -x "$MODDIR/bin/netproxyctl" ]; then
 fi
 stop_worker_processes
 
+if [ -x "$MODDIR/bin/netproxyctl" ]; then
+  NETPROXY_MODULE_DIR="$MODDIR" "$MODDIR/bin/netproxyctl" api traffic trust-remove > /dev/null 2>&1 || true
+fi
+
 rm -rf /dev/netproxy/subscriptions 2> /dev/null || true

@@ -101,7 +101,7 @@ internal class InboundViewModel(
             val status = repository.status()
             if (status.requiresBackendSwitch(backend)) {
                 if (viewModelScope.isActive) mutableState.update { it.copy(pendingBackend = backend) }
-            } else if (backend != state.value.backend) applyChoice("backend", backend)
+            } else if (backend != state.value.backend) applyChoice("backend", JsonPrimitive(backend))
             else mutableState.update { it.copy(snapshot = it.snapshot?.copy(status = status)) }
         }, afterWrite = ::restoreFailedBackend)
     }
@@ -110,7 +110,7 @@ internal class InboundViewModel(
     fun confirmBackendSwitch() {
         val backend = state.value.pendingBackend ?: return
         cancelBackendSwitch()
-        mutate("backend", write = { applyChoice("backend", backend, confirmed = true) }, afterWrite = ::restoreFailedBackend)
+        mutate("backend", write = { applyChoice("backend", JsonPrimitive(backend), confirmed = true) }, afterWrite = ::restoreFailedBackend)
     }
 
     fun setRootPolicy(policy: String) {
@@ -118,7 +118,23 @@ internal class InboundViewModel(
         if (!state.value.editable || state.value.isSaving || policy == state.value.snapshot?.rootPolicy) return
         mutate("root_policy", write = {
             applyPending()
-            applyChoice("root_policy", policy)
+            applyChoice("root_policy", JsonPrimitive(policy))
+        })
+    }
+
+    fun setIPv6(enabled: Boolean) {
+        if (!state.value.editable || state.value.isSaving || enabled == state.value.snapshot?.ipv6) return
+        mutate("ipv6", write = {
+            applyPending()
+            applyChoice("ipv6", JsonPrimitive(enabled))
+        })
+    }
+
+    fun setSniffDestination(enabled: Boolean) {
+        if (!state.value.editable || state.value.isSaving || enabled == state.value.snapshot?.sniffDestination) return
+        mutate("sniff_destination", write = {
+            applyPending()
+            applyChoice("sniff_destination", JsonPrimitive(enabled))
         })
     }
 
@@ -190,22 +206,22 @@ internal class InboundViewModel(
         }
     }
 
-    private suspend fun applyChoice(partition: String, value: String, confirmed: Boolean = false) {
+    private suspend fun applyChoice(partition: String, value: JsonPrimitive, confirmed: Boolean = false) {
         val snapshot = state.value.snapshot!!.partitions.getValue(partition)
-        val content = inboundJson.encodeToString(JsonObject(mapOf(partition to JsonPrimitive(value))))
+        val content = inboundJson.encodeToString(JsonObject(mapOf(partition to value)))
         val draft = InboundDraft(partition, ConfigSnapshot(content, snapshot.revision))
         try {
             val result = repository.apply("inbound/$partition", content, snapshot.revision, confirmed)
             mutableState.update { current ->
                 val previous = current.snapshot!!
                 current.copy(snapshot = previous.copy(
-                    backend = if (partition == "backend") value else previous.backend,
+                    backend = if (partition == "backend") value.content else previous.backend,
                     partitions = previous.partitions + (partition to ConfigSnapshot(content, result.revision)),
                     status = result.status
                 ))
             }
         } catch (error: InboundSwitchConfirmationRequired) {
-            if (viewModelScope.isActive) mutableState.update { it.copy(pendingBackend = value) }
+            if (viewModelScope.isActive) mutableState.update { it.copy(pendingBackend = value.content) }
         } catch (error: Exception) {
             if (error is CancellationException) throw error
             mutableState.update { it.copy(failedDraft = draft) }
