@@ -103,6 +103,7 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
     val detail = selection?.detail?.http
     val context = LocalContext.current
     val navigator = LocalNavigator.current
+    val isCurrentInspector = navigator.backStack.lastOrNull() == Route.TrafficInspector(id)
     val pager = rememberPagerState { 4 }
     val scope = rememberCoroutineScope()
     var headerName by remember(id) { mutableStateOf<String?>(null) }
@@ -113,8 +114,8 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
     val auditIndices = remember(detail, state.rules.value) {
         detail?.rewrites.orEmpty().map { state.rules.value?.indexOfCapture(it) }
     }
-    LaunchedEffect(id, selection == null, cachedRecord) {
-        if (selection == null) {
+    LaunchedEffect(id, isCurrentInspector, selection == null, cachedRecord) {
+        if (isCurrentInspector && selection == null) {
             if (cachedRecord != null) viewModel.openRecord(cachedRecord)
             else if (state.records.value == null) viewModel.refresh()
         }
