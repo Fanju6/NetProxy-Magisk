@@ -97,16 +97,16 @@ func TestCaptureAndRewritingThroughCoreBridge(t *testing.T) {
 	layout := paths.New(t.TempDir())
 	config := New(layout)
 	rules := []Rule{
-		{"/blocked", "request", "return {reject: true}", []string{"127.0.0.1"}},
-		{"/redirect", "request", `return {redirect: "https://example.org/new"}`, []string{"127.0.0.1"}},
-		{"/rewrite", "request", `return {set_headers: {"X-Edited": "yes"}}`, []string{"127.0.0.1"}},
-		{"/rewrite", "response", `return {body: input.body.toUpperCase(), set_headers: {"X-Rewritten": "yes"}}`, []string{"127.0.0.1"}},
-		{"/timeout", "response", `while (true) {}`, []string{"127.0.0.1"}},
+		{"/blocked", "request", "return {reject: true}", []string{"127.0.0.1"}, nil},
+		{"/redirect", "request", `return {redirect: "https://example.org/new"}`, []string{"127.0.0.1"}, nil},
+		{"/rewrite", "request", `return {set_headers: {"X-Edited": "yes"}}`, []string{"127.0.0.1"}, nil},
+		{"/rewrite", "response", `return {body: input.body.toUpperCase(), set_headers: {"X-Rewritten": "yes"}}`, []string{"127.0.0.1"}, nil},
+		{"/timeout", "response", `while (true) {}`, []string{"127.0.0.1"}, nil},
 	}
 	if err := config.ReplaceRules(rules); err != nil {
 		t.Fatal(err)
 	}
-	if err := config.ReplaceRules([]Rule{{"[", "request", "return {}", []string{"127.0.0.1"}}}); err == nil {
+	if err := config.ReplaceRules([]Rule{{"[", "request", "return {}", []string{"127.0.0.1"}, nil}}); err == nil {
 		t.Fatal("接受了无效正则")
 	}
 	controller := New(layout)
@@ -170,6 +170,120 @@ func TestCaptureAndRewritingThroughCoreBridge(t *testing.T) {
 	controller.Clear()
 	if entries := controller.Entries(); len(entries) != 0 {
 		t.Fatalf("clear left entries: %+v", entries)
+	}
+	if err := controller.Start(); err != nil {
+		t.Fatal(err)
+	}
+	rules = append(rules, Rule{Pattern: "/rewrite/", Phase: "request", Script: `return {set_headers: {"X-Edited": "fallback"}}`, Domains: []string{"127.0.0.1"}})
+	rules[2].Enabled = new(bool)
+	if err := controller.ReplaceRules(rules); err != nil {
+		t.Fatal(err)
+	}
+	headers = do(plain.URL+"/rewrite/test", http.StatusOK, "ORIGINAL")
+	if headers.Get("X-Request") != "fallback" {
+		t.Fatalf("disabled rule shadowed enabled fallback: %v", headers)
+	}
+	entries = controller.Entries()
+	if len(entries) != 1 {
+		t.Fatalf("unexpected records with disabled rule: %+v", entries)
+	}
+	record, ok := controller.Record(entries[0].ID)
+	if !ok || record.HTTP == nil || len(record.HTTP.Rewrites) != 2 || record.HTTP.Rewrites[0].RuleIndex != 3 || record.HTTP.Rewrites[1].RuleIndex != 5 {
+		t.Fatalf("unexpected audits with disabled rule: %+v", record.HTTP)
+	}
+	*rules[2].Enabled = true
+	if err := controller.ReplaceRules(rules); err != nil {
+		t.Fatal(err)
+	}
+	headers = do(plain.URL+"/rewrite/test", http.StatusOK, "ORIGINAL")
+	if headers.Get("X-Request") != "yes" {
+		t.Fatalf("re-enabled rule did not regain priority: %v", headers)
+	}
+}
+
+func TestRequestBodyRewritePreservesFramingAndInput(t *testing.T) {
+	type received struct {
+		body, encoding, digest string
+		length                 int64
+		chunked                bool
+	}
+	upstream := make(chan received, 1)
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Error(err)
+		}
+		upstream <- received{string(body), r.Header.Get("Content-Encoding"), r.Header.Get("Content-Digest"), r.ContentLength, len(r.TransferEncoding) != 0}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer origin.Close()
+	layout := paths.New(t.TempDir())
+	controller := New(layout)
+	if err := controller.ReplaceRules([]Rule{
+		{Pattern: "/edit$", Phase: "request", Domains: []string{"127.0.0.1"},
+			Script: `return {body: input.body === "empty" ? "" : (input.body || "") + "!", set_headers: {"X-Rewrite": "yes"}};`},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := controller.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer controller.Stop()
+	transport := &http.Transport{DialContext: bridgeFixture(layout), DisableKeepAlives: true}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
+	for _, test := range []struct {
+		name, body, encoding, contentType string
+		chunked, changed                  bool
+		want                              string
+	}{
+		{"fixed", "sample", "", "text/plain", false, true, "sample!"},
+		{"chunked", "sample", "", "application/json", true, true, "sample!"},
+		{"empty result", "empty", "", "text/plain", true, true, ""},
+		{"oversized chunked", strings.Repeat("a", maxBody+1), "", "text/plain", true, false, ""},
+		{"oversized fixed", strings.Repeat("a", maxBody+1), "", "text/plain", false, false, ""},
+		{"encoded", "compressed-bytes", "gzip", "text/plain", false, false, ""},
+		{"non-UTF-8", "\xff", "", "text/plain", false, false, ""},
+		{"binary", "sample", "", "application/octet-stream", false, false, ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, origin.URL+"/edit", strings.NewReader(test.body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.chunked {
+				req.ContentLength = -1
+			}
+			req.Header.Set("Content-Type", test.contentType)
+			req.Header.Set("Content-Digest", "fixture")
+			if test.encoding != "" {
+				req.Header.Set("Content-Encoding", test.encoding)
+			}
+			res, err := client.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			res.Body.Close()
+			if res.StatusCode != http.StatusNoContent {
+				t.Fatalf("unexpected status %d", res.StatusCode)
+			}
+			got := <-upstream
+			record, ok := controller.Record(controller.Entries()[0].ID)
+			if !ok || record.HTTP == nil || len(record.HTTP.Rewrites) != 1 {
+				t.Fatalf("missing rewrite audit: %+v", record.HTTP)
+			}
+			audit := record.HTTP.Rewrites[0]
+			if test.changed {
+				if got.body != test.want || got.length != int64(len(test.want)) || got.chunked || got.digest != "" || got.encoding != "" {
+					t.Fatalf("wrong rewritten body/framing: %+v", got)
+				}
+				if audit.Body == nil || *audit.Body != (BodyChange{len(test.body), len(test.want)}) || record.HTTP.Request.Body.Data != test.body {
+					t.Fatalf("wrong body audit or captured original: %+v", record.HTTP)
+				}
+			} else if got.body != test.body || got.encoding != test.encoding || got.digest != "fixture" || audit.Error != "body_unavailable" {
+				t.Fatalf("unavailable body changed (length=%d, encoding=%q, digest=%q): %+v", len(got.body), got.encoding, got.digest, audit)
+			}
+		})
 	}
 }
 

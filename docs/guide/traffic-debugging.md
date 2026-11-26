@@ -71,7 +71,7 @@ HTTP/1.1 WebSocket（WS、WSS）连接结束后，在详情中显示握手和前
 
 ## 编写规则
 
-将以下文件保存到设备上，例如 `/data/local/tmp/netproxy-rewrite.json`。在 WebUI 输入 `api traffic set-rules /data/local/tmp/netproxy-rewrite.json` 应用，或使用 Root CLI 执行同一操作。不需要重启 Worker 或核心。用 `api traffic rules` 查看，应用 `{"rules":[]}` 删除全部规则。
+将以下文件保存到设备上，例如 `/data/local/tmp/netproxy-rewrite.json`。在 WebUI 输入 `api traffic set-rules /data/local/tmp/netproxy-rewrite.json` 应用，或使用 Root CLI 执行同一操作。不需要重启 Worker 或核心。用 `api traffic rules` 查看，应用 `{"rules":[]}` 删除全部规则。管理器中可开关每一条规则；用 WebUI 或 CLI 时，在该条规则中设 `"enabled":false` 或 `true` 后重新应用。省略时（含旧规则）默认启用，禁用规则不参与匹配或执行，也不改变规则顺序。
 
 ```json
 {
@@ -95,5 +95,5 @@ HTTP/1.1 WebSocket（WS、WSS）连接结束后，在详情中显示握手和前
 - 每条规则先配置 `domains`（精确域名或 IP，无端口、无通配符）。只有目标主机在名单内才运行完整 URL（含 `ws://` 或 `wss://` 握手 URL）的 Go 正则匹配；各阶段仍按顺序执行第一条命中规则。旧规则从锚定的字面主机前缀推导域名；无法推导的保留供编辑，但添加域名之前不执行。脚本是函数体，不需要声明函数。
 - `input.url`、`input.method` 两个阶段均可用；响应阶段额外提供 `input.status`。在正文可读取时还提供 `input.body`：最大 256 KiB 的 UTF-8 文本或 JSON；不可读取时不提供该字段。
 - 两个阶段均可返回 `set_headers` 对象和 `remove_headers` 数组。连接级头、代理认证头和正文长度等由代理管理。
-- 请求阶段还可返回 `{redirect: "https://example.org/new"}`（给客户端返回 302）或 `{reject: true}`（403）。响应阶段可返回 `{body: "..."}` 替换可读取的正文。返回空值表示不改写。
+- 请求阶段还可返回 `{redirect: "https://example.org/new"}`（给客户端返回 302）或 `{reject: true}`（403）。两个阶段均可返回 `{body: "..."}` 替换可读取的正文。压缩、超限、分段或非 UTF-8 的正文不支持替换；否则继续原样转发。返回空值表示不改写。
 - 规则只应使用你信任的本地脚本。JavaScript 不提供文件、网络或命令执行 API。脚本执行错误、超时或返回格式无效时，忽略该阶段的修改。保存时语法或格式无效会保留原来的规则。

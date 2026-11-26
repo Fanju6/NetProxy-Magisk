@@ -52,8 +52,10 @@ import kotlin.coroutines.resumeWithException
 internal class LocalHttpTransport internal constructor(
     private val connections: ConnectionStore,
     private val defaultAddress: String = "https://127.0.0.1:9091",
+    private val mutationTimeoutMessage: () -> String = { "请求超时，请检查服务状态后再试" },
 ) : ModuleApiTransport {
-    constructor(context: Context) : this(ConnectionStore(context.applicationContext))
+    constructor(context: Context) : this(ConnectionStore(context.applicationContext),
+        mutationTimeoutMessage = { context.getString(com.fanjv.netproxy.R.string.service_restart_timeout) })
 
     internal val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
     private val pairing = Mutex()
@@ -261,6 +263,8 @@ internal class LocalHttpTransport internal constructor(
             if (connections.invalidate(credentials)) address = credentials.address
             ModuleApiException("api.unauthorized", "模块身份验证失败，请重新连接")
         }
+        error is InterruptedIOException && call.request().method != "GET" ->
+            ModuleApiException("api.timeout", mutationTimeoutMessage())
         error is IOException -> ModuleApiException("api.connection_failed", "无法连接模块后台，操作结果需要重新确认")
         else -> error
     }

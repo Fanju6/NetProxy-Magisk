@@ -64,6 +64,8 @@
     <string name="traffic_detail_expired">此记录已清除或过期，请刷新列表。</string>
     <string name="traffic_detail_failed">无法读取抓包详情。</string>
     <string name="traffic_rules">重写规则</string>
+    <string name="service_restarting">正在重启服务…</string>
+    <string name="service_restart_timeout">等待服务响应超时，请检查服务状态后再试。</string>
     <string name="traffic_rule_add">添加重写规则</string>
     <string name="traffic_rule_edit">编辑重写规则</string>
     <string name="traffic_rule_delete">删除这条重写规则？</string>

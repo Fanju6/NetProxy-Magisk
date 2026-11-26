@@ -28,6 +28,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Density
@@ -108,6 +109,7 @@ import com.fanjv.netproxy.navigation.rememberNavigator
 import com.fanjv.netproxy.navigation.mainDestinations
 import com.fanjv.netproxy.navigation.availableIn
 import top.yukonga.miuix.kmp.basic.NavigationItem
+import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.glass.GlassTextField as TextField
 import com.fanjv.netproxy.core.ui.component.AppDialog as OverlayDialog
@@ -189,6 +191,13 @@ class MainActivity : ComponentActivity() {
                     colorSpec = colorSpec,
                 ) {
                     NetProxyApp(themeViewModel, showCaptureRecords) { showCaptureRecords = false }
+                    val restarting by (application as NetProxyApplication).container.restartingService
+                        .collectAsStateWithLifecycle(initialValue = false)
+                    OverlayDialog(show = restarting, title = stringResource(R.string.service_restarting)) {
+                        Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                            InfiniteProgressIndicator()
+                        }
+                    }
                 }
             }
         }

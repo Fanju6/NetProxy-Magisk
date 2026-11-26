@@ -241,7 +241,7 @@ func (c *Controller) Rules() ([]Rule, error) {
 	}
 	rules := make([]Rule, len(c.rules))
 	for i := range rules {
-		rules[i] = c.rules[i].Rule
+		rules[i] = c.rules[i].Rule.copyEnabled()
 	}
 	return rules, nil
 }

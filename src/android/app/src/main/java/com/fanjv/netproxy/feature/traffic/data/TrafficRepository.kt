@@ -169,7 +169,13 @@ internal data class CapturedBody(
 )
 
 @Serializable
-internal data class RewriteRule(val pattern: String, val phase: String, val script: String, val domains: List<String> = emptyList())
+internal data class RewriteRule(
+    val pattern: String,
+    val phase: String,
+    val script: String,
+    val domains: List<String> = emptyList(),
+    val enabled: Boolean = true,
+)
 
 @Serializable
 private data class RewriteRules(val rules: List<RewriteRule>)

@@ -27,6 +27,15 @@ type Rule struct {
 	Phase   string   `json:"phase"`
 	Script  string   `json:"script"`
 	Domains []string `json:"domains"`
+	Enabled *bool    `json:"enabled,omitempty"`
+}
+
+func (rule Rule) enabled() bool { return rule.Enabled == nil || *rule.Enabled }
+
+func (rule Rule) copyEnabled() Rule {
+	enabled := rule.enabled()
+	rule.Enabled = &enabled
+	return rule
 }
 
 type compiledRule struct {
@@ -61,10 +70,6 @@ func compileRules(rules []Rule, legacy bool) ([]compiledRule, error) {
 			len(rule.Pattern) > 1024 || len(rule.Script) == 0 || len(rule.Script) > 8192 {
 			return nil, fmt.Errorf("第 %d 条重写规则的阶段、表达式或脚本长度无效", i+1)
 		}
-		pattern, err := regexp.Compile(rule.Pattern)
-		if err != nil {
-			return nil, fmt.Errorf("第 %d 条重写规则的 URL 正则表达式无效", i+1)
-		}
 		if legacy && rule.Domains == nil {
 			rule.Domains = legacyDomains(rule.Pattern)
 		}
@@ -84,12 +89,21 @@ func compileRules(rules []Rule, legacy bool) ([]compiledRule, error) {
 			}
 		}
 		rule.Domains = domains
-		program, err := goja.Compile("rewrite.js", "(function (input) {\n"+rule.Script+"\n})", true)
-		if err != nil {
-			return nil, fmt.Errorf("第 %d 条重写规则的 JavaScript 语法无效", i+1)
+		var pattern *regexp.Regexp
+		var program *goja.Program
+		if rule.enabled() {
+			var err error
+			pattern, err = regexp.Compile(rule.Pattern)
+			if err != nil {
+				return nil, fmt.Errorf("第 %d 条重写规则的 URL 正则表达式无效", i+1)
+			}
+			program, err = goja.Compile("rewrite.js", "(function (input) {\n"+rule.Script+"\n})", true)
+			if err != nil {
+				return nil, fmt.Errorf("第 %d 条重写规则的 JavaScript 语法无效", i+1)
+			}
 		}
 		sum := sha256.Sum256([]byte(rule.Phase + "\x00" + rule.Pattern + "\x00" + rule.Script + "\x00" + strings.Join(domains, "\x00")))
-		compiled = append(compiled, compiledRule{rule, hex.EncodeToString(sum[:]), pattern, program})
+		compiled = append(compiled, compiledRule{rule.copyEnabled(), hex.EncodeToString(sum[:]), pattern, program})
 	}
 	return compiled, nil
 }
@@ -120,6 +134,9 @@ func legacyDomains(pattern string) []string {
 func indexRules(rules []compiledRule) map[string][]int {
 	index := make(map[string][]int)
 	for i, rule := range rules {
+		if !rule.enabled() {
+			continue
+		}
 		for _, domain := range rule.Domains {
 			index[domain] = append(index[domain], i)
 		}
@@ -180,7 +197,7 @@ func (rule *compiledRule) run(ctx context.Context, input scriptInput) (rewrite, 
 
 func (result rewrite) valid(phase string) bool {
 	if len(result.SetHeaders)+len(result.RemoveHeaders) > 32 ||
-		(result.Body != nil && (phase != "response" || len(*result.Body) > maxBody)) ||
+		(result.Body != nil && len(*result.Body) > maxBody) ||
 		(phase != "request" && (result.Redirect != "" || result.Reject)) ||
 		(result.Redirect != "" && result.Reject) {
 		return false

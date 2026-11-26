@@ -64,6 +64,8 @@
     <string name="traffic_detail_expired">Este registro foi limpo ou expirou. Atualize a lista.</string>
     <string name="traffic_detail_failed">Não foi possível carregar os detalhes da captura.</string>
     <string name="traffic_rules">Regras de reescrita</string>
+    <string name="service_restarting">Reiniciando o serviço…</string>
+    <string name="service_restart_timeout">Tempo de espera pelo serviço esgotado. Verifique o estado antes de tentar novamente.</string>
     <string name="traffic_rule_add">Adicionar regra de reescrita</string>
     <string name="traffic_rule_edit">Editar regra de reescrita</string>
     <string name="traffic_rule_delete">Excluir esta regra de reescrita?</string>

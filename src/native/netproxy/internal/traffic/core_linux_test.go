@@ -26,9 +26,9 @@ func TestPatchedCoreKeepsOriginalInboundRoute(t *testing.T) {
 	layout := paths.New(t.TempDir())
 	controller := New(layout)
 	if err := controller.ReplaceRules([]Rule{
-		{"^http://", "request", `return {set_headers: {"X-Capture-Request":"changed"}};`, []string{"127.0.0.1"}},
-		{"^http://", "request", `return {reject: true};`, []string{"127.0.0.1"}},
-		{"^http://", "response", `return {body: input.body.toUpperCase()};`, []string{"127.0.0.1"}},
+		{"^http://", "request", `return {set_headers: {"X-Capture-Request":"changed"}};`, []string{"127.0.0.1"}, nil},
+		{"^http://", "request", `return {reject: true};`, []string{"127.0.0.1"}, nil},
+		{"^http://", "response", `return {body: input.body.toUpperCase()};`, []string{"127.0.0.1"}, nil},
 	}); err != nil {
 		t.Fatal(err)
 	}

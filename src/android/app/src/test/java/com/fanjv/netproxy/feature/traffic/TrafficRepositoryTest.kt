@@ -21,6 +21,22 @@ import org.junit.rules.TemporaryFolder
 class TrafficRepositoryTest {
     @get:Rule val cacheDir = TemporaryFolder()
 
+    @Test fun rewriteRulesDefaultToEnabledAndPersistExplicitDisable() = runBlocking {
+        val rule = """{"pattern":"/inspect","phase":"request","script":"return {}","domains":["example.test"]}"""
+        var stored = """{"rules":[$rule]}"""
+        val repository = TrafficRepository(ModuleApiClient(TestApiTransport { request ->
+            assertEquals("/traffic/rules", request.path)
+            if (request.method == "PUT") stored = request.body.toString()
+            apiSuccess(stored)
+        }))
+        val original = repository.rules()
+        assertTrue(original.single().enabled)
+        val disabled = original.map { it.copy(enabled = false) }
+        assertEquals(disabled, repository.saveRules(original, disabled))
+        assertTrue(stored.contains("\"enabled\":false"))
+        assertEquals(original, repository.saveRules(disabled, original))
+    }
+
     @Test fun overlayPreviewUsesOneReadAndDecodesSessionTotal() = runBlocking {
         val repository = TrafficRepository(ModuleApiClient(TestApiTransport { request ->
             assertEquals("GET", request.method)

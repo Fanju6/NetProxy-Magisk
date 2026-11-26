@@ -63,6 +63,8 @@
     <string name="traffic_copy_field">Copy %1$s</string>
     <string name="traffic_detail_expired">This record was cleared or expired. Refresh the list.</string>
     <string name="traffic_detail_failed">Could not load capture details.</string>
+    <string name="service_restarting">Restarting service…</string>
+    <string name="service_restart_timeout">Timed out waiting for the service. Check its status before retrying.</string>
     <string name="traffic_rules">Rewrite rules</string>
     <string name="traffic_rule_add">Add rewrite rule</string>
     <string name="traffic_rule_edit">Edit rewrite rule</string>

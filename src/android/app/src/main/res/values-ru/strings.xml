@@ -64,6 +64,8 @@
     <string name="traffic_detail_expired">Запись удалена или устарела. Обновите список.</string>
     <string name="traffic_detail_failed">Не удалось загрузить сведения о записи.</string>
     <string name="traffic_rules">Правила подмены</string>
+    <string name="service_restarting">Перезапуск службы…</string>
+    <string name="service_restart_timeout">Время ожидания службы истекло. Проверьте её состояние перед повтором.</string>
     <string name="traffic_rule_add">Добавить правило подмены</string>
     <string name="traffic_rule_edit">Изменить правило подмены</string>
     <string name="traffic_rule_delete">Удалить это правило подмены?</string>

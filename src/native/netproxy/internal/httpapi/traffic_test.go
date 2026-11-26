@@ -74,6 +74,17 @@ func TestTrafficManagementRequiresAuthAndValidatesRules(t *testing.T) {
 	if err != nil || !strings.Contains(string(saved), "example") {
 		t.Fatalf("无效规则覆盖已有配置: %q %v", saved, err)
 	}
+	var rules trafficRules
+	resourceAssertSuccess(t, s, http.MethodGet, target, "", "traffic.rules", &rules)
+	if len(rules.Rules) != 1 || rules.Rules[0].Enabled == nil || !*rules.Rules[0].Enabled {
+		t.Fatalf("旧规则未默认启用: %+v", rules.Rules)
+	}
+	disabled := strings.Replace(body, `"phase":"request"`, `"phase":"request","enabled":false`, 1)
+	resourceAssertSuccess(t, s, http.MethodPut, target, disabled, "traffic.rules_saved", nil)
+	resourceAssertSuccess(t, s, http.MethodGet, target, "", "traffic.rules", &rules)
+	if len(rules.Rules) != 1 || rules.Rules[0].Enabled == nil || *rules.Rules[0].Enabled {
+		t.Fatalf("未保留规则禁用状态: %+v", rules.Rules)
+	}
 	resourceAssertSuccess(t, s, http.MethodPost, trafficRoute+"toggle", "", "traffic.toggle", nil)
 	resourceAssertSuccess(t, s, http.MethodPost, trafficRoute+"toggle", "", "traffic.toggle", nil)
 	w, result = resourceRequest(t, s, http.MethodGet, trafficRoute+"access", "")

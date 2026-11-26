@@ -28,6 +28,54 @@ func TestRewriteIndexLimitsRegexToConfiguredDomain(t *testing.T) {
 	}
 }
 
+func TestRewriteEnableStatePreservesOrderAndIdentity(t *testing.T) {
+	layout := paths.New(t.TempDir())
+	if err := os.MkdirAll(layout.Config(), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := provider.WriteAtomic(layout.TrafficRules(), []byte(`[
+		{"pattern":"/inspect","phase":"request","script":"return {}","domains":["example.org"]},
+		{"pattern":"[","phase":"request","script":"not valid JavaScript","domains":["example.org"],"enabled":false},
+		{"pattern":"/inspect","phase":"request","script":"return {reject:true}","domains":["example.org"]}
+	]`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	controller := New(layout)
+	rules, err := controller.Rules()
+	if err != nil || len(rules) != 3 || !rules[0].enabled() || rules[1].enabled() || !rules[2].enabled() {
+		t.Fatalf("unexpected persisted state: %+v, %v", rules, err)
+	}
+	snapshot, candidates := controller.snapshotRules("example.org")
+	matches, first, _ := matchingRules(snapshot, candidates, "http://example.org/inspect")
+	if len(matches) != 2 || first != 0 || matches[0].RuleIndex != 0 || matches[1].RuleIndex != 2 || matches[1].State != "shadowed" {
+		t.Fatalf("unexpected initial matches: %+v", matches)
+	}
+	originalID := matches[0].ID
+	*rules[0].Enabled = false
+	if err := controller.ReplaceRules(rules); err != nil {
+		t.Fatal(err)
+	}
+	controller = New(layout)
+	rules, err = controller.Rules()
+	if err != nil || rules[0].enabled() {
+		t.Fatalf("disable did not persist: %+v, %v", rules, err)
+	}
+	snapshot, candidates = controller.snapshotRules("example.org")
+	matches, first, _ = matchingRules(snapshot, candidates, "http://example.org/inspect")
+	if len(matches) != 1 || first != 0 || matches[first].RuleIndex != 2 {
+		t.Fatalf("unexpected matches after disable: %+v", matches)
+	}
+	*rules[0].Enabled = true
+	if err := controller.ReplaceRules(rules); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, candidates = controller.snapshotRules("example.org")
+	matches, first, _ = matchingRules(snapshot, candidates, "http://example.org/inspect")
+	if len(matches) != 2 || first != 0 || matches[first].ID != originalID {
+		t.Fatalf("unexpected matches after re-enable: %+v", matches)
+	}
+}
+
 func TestReplaceRulesKeepsUnchangedInactiveLegacyRule(t *testing.T) {
 	layout := paths.New(t.TempDir())
 	if err := os.MkdirAll(layout.Config(), 0700); err != nil {

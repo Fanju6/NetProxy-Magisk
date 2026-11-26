@@ -98,7 +98,15 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 	}
 	if requestMatch >= 0 {
 		match := &matches[requestMatch]
-		result := s.runScript(ctx, &rules[match.RuleIndex], scriptInput{URL: target, Method: r.Method}, match)
+		input := scriptInput{URL: target, Method: r.Method}
+		if request.Body != nil && request.Body != http.NoBody && request.Header.Get("Content-Range") == "" &&
+			accessibleBody(request.ContentLength, request.Header) {
+			request.Body, input.Body = readRewriteBody(request.Body)
+		}
+		result := s.runScript(ctx, &rules[match.RuleIndex], input, match)
+		if result.Body != nil && input.Body == nil {
+			match.Error = "body_unavailable"
+		}
 		if match.Error != "" {
 			entry.Rewrite = "request_skipped"
 			match.finish()
@@ -122,6 +130,18 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 			}
 			track := match.trackHeaders(request.Header, result)
 			applyHeaders(request.Header, result)
+			if result.Body != nil {
+				_ = request.Body.Close()
+				request.Body = http.NoBody
+				if *result.Body != "" {
+					request.Body = io.NopCloser(strings.NewReader(*result.Body))
+				}
+				request.GetBody = nil
+				request.ContentLength = int64(len(*result.Body))
+				request.TransferEncoding = nil
+				request.Header.Del("Content-Length")
+				recordBodyChange(match, request.Header, *input.Body, *result.Body)
+			}
 			track()
 			entry.Rewritten = match.finish()
 		}
@@ -225,17 +245,11 @@ func (s *session) runScript(ctx context.Context, rule *compiledRule, input scrip
 var bodyValidators = []string{"ETag", "Last-Modified", "Content-MD5", "Digest", "Content-Digest", "Repr-Digest", "Accept-Ranges"}
 
 func (s *session) rewriteResponse(ctx context.Context, rule *compiledRule, input scriptInput, response *http.Response, match *RewriteMatch) string {
-	body := response.Body
-	if accessibleBody(input, response) {
-		content, err := io.ReadAll(io.LimitReader(body, maxBody+1))
-		response.Body = struct {
-			io.Reader
-			io.Closer
-		}{io.MultiReader(bytes.NewReader(content), body), body}
-		if err == nil && len(content) <= maxBody && utf8.Valid(content) {
-			text := string(content)
-			input.Body = &text
-		}
+	if input.Method != http.MethodHead && response.StatusCode >= 200 &&
+		response.StatusCode != http.StatusNoContent && response.StatusCode != http.StatusResetContent &&
+		response.StatusCode != http.StatusNotModified && response.StatusCode != http.StatusPartialContent &&
+		accessibleBody(response.ContentLength, response.Header) {
+		response.Body, input.Body = readRewriteBody(response.Body)
 	}
 	result := s.runScript(ctx, rule, input, match)
 	if result.Body != nil && input.Body == nil {
@@ -247,25 +261,39 @@ func (s *session) rewriteResponse(ctx context.Context, rule *compiledRule, input
 	track := match.trackHeaders(response.Header, result)
 	applyHeaders(response.Header, result)
 	if result.Body != nil {
-		match.Body = &BodyChange{Before: len(*input.Body), After: len(*result.Body)}
-		match.Actions = append(match.Actions, "body")
 		response.Body = io.NopCloser(strings.NewReader(*result.Body))
 		response.Header.Set("Content-Length", strconv.Itoa(len(*result.Body)))
-		for _, header := range bodyValidators {
-			response.Header.Del(header)
-		}
+		recordBodyChange(match, response.Header, *input.Body, *result.Body)
 	}
 	track()
 	return "response"
 }
 
-func accessibleBody(input scriptInput, response *http.Response) bool {
-	kind, _, _ := mime.ParseMediaType(response.Header.Get("Content-Type"))
-	return input.Method != http.MethodHead && response.StatusCode >= 200 &&
-		response.StatusCode != http.StatusNoContent && response.StatusCode != http.StatusResetContent &&
-		response.StatusCode != http.StatusNotModified && response.StatusCode != http.StatusPartialContent &&
-		response.ContentLength <= maxBody && response.Header.Get("Content-Encoding") == "" &&
+func accessibleBody(length int64, headers http.Header) bool {
+	kind, _, _ := mime.ParseMediaType(headers.Get("Content-Type"))
+	return length <= maxBody && len(headers.Values("Content-Encoding")) == 0 &&
 		(strings.HasPrefix(kind, "text/") || kind == "application/json" || strings.HasSuffix(kind, "+json"))
+}
+
+func readRewriteBody(body io.ReadCloser) (io.ReadCloser, *string) {
+	content, err := io.ReadAll(io.LimitReader(body, maxBody+1))
+	replay := struct {
+		io.Reader
+		io.Closer
+	}{io.MultiReader(bytes.NewReader(content), body), body}
+	if err != nil || len(content) > maxBody || !utf8.Valid(content) {
+		return replay, nil
+	}
+	text := string(content)
+	return replay, &text
+}
+
+func recordBodyChange(match *RewriteMatch, headers http.Header, before, after string) {
+	match.Body = &BodyChange{Before: len(before), After: len(after)}
+	match.Actions = append(match.Actions, "body")
+	for _, header := range bodyValidators {
+		headers.Del(header)
+	}
 }
 
 func validTarget(target *url.URL) bool {

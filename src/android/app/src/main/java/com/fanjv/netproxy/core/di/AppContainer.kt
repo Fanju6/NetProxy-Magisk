@@ -26,6 +26,7 @@ import com.fanjv.netproxy.feature.traffic.presentation.CaptureOverlay
 internal class AppContainer(context: Context) {
     private val appContext = context.applicationContext
     private val apiClient = ModuleApiClient(appContext)
+    val restartingService = apiClient.restartingService
     val configurationWrites = ConfigurationWrites(reportFailure = { reportConfigurationSaveFailure(it.userMessage()) })
 
     val serviceRepository = ServiceRepository(apiClient)

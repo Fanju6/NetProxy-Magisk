@@ -348,6 +348,17 @@ internal class TrafficViewModel(
         _state.update { it.copy(ruleDraft = it.ruleDraft?.copy(rule = rule), draftError = null) }
     }
 
+    fun setRuleEnabled(index: Int, enabled: Boolean) {
+        val rules = state.value.rules.value ?: return
+        val rule = rules.getOrNull(index) ?: return
+        if (rule.enabled == enabled) return
+        val updated = rules.toMutableList().apply { this[index] = rule.copy(enabled = enabled) }
+        mutate {
+            val saved = repository.saveRules(rules, updated)
+            _state.update { it.copy(rules = TrafficContent(saved)) }
+        }
+    }
+
     fun saveRule(delete: Boolean = false) {
         val draft = state.value.ruleDraft ?: return
         val updated = draft.original.toMutableList()

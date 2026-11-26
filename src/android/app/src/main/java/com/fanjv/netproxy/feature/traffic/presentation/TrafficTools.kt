@@ -87,11 +87,14 @@ internal fun TrafficRulesScreen(viewModel: TrafficViewModel) {
             loading = state.loading)
         else LazyColumn(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
             contentPadding = PaddingValues(bottom = 88.dp)) {
+            state.failure?.let { issue -> item { TrafficErrorText(issue) } }
             groupedCardSection("rules", { stringResource(R.string.traffic_rules) }, rules.mapIndexed { index, rule ->
                 CardItem(index.toString()) {
                     ArrowPreference(title = rule.pattern,
                         summary = "${phaseLabel(rule.phase)} · ${rule.domains.joinToString().ifEmpty { stringResource(R.string.traffic_rule_domains) }}",
                         enabled = editable, onClick = { edit(index) }, insideMargin = TrafficRowInsets)
+                    SwitchPreference(title = stringResource(R.string.traffic_rule_enabled), checked = rule.enabled,
+                        enabled = editable, onCheckedChange = { viewModel.setRuleEnabled(index, it) }, insideMargin = TrafficRowInsets)
                 }
             })
         }
@@ -121,6 +124,8 @@ internal fun TrafficRuleEditorScreen(viewModel: TrafficViewModel) {
             }) { padding ->
             Column(Modifier.fillMaxSize().padding(padding).imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 14.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SwitchPreference(title = stringResource(R.string.traffic_rule_enabled), checked = rule.enabled,
+                    enabled = !state.saving, onCheckedChange = { viewModel.updateRule(rule.copy(enabled = it)) }, insideMargin = TrafficRowInsets)
                 AppDropdown(title = stringResource(R.string.traffic_rule_phase),
                     items = listOf(phaseLabel("request"), phaseLabel("response")),
                     selectedIndex = if (rule.phase == "request") 0 else 1, enabled = !state.saving,
