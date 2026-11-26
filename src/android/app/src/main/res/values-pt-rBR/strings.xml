@@ -893,4 +893,30 @@
     <string name="traffic_replay_route_failed">O núcleo não conseguiu rotear esta requisição.</string>
     <string name="traffic_replay_invalid">A requisição é inválida ou a captura original está incompleta.</string>
     <string name="traffic_replay_failed">O reenvio não recebeu uma resposta válida.</string>
+    <string name="traffic_breakpoints">Pontos de interrupção</string>
+    <string name="traffic_breakpoints_paused">Solicitações pausadas</string>
+    <string name="traffic_breakpoints_no_pauses">Nenhuma solicitação pausada</string>
+    <string name="traffic_breakpoint_add">Adicionar ponto de interrupção</string>
+    <string name="traffic_breakpoint_timeout_seconds">Continuar automaticamente após (segundos)</string>
+    <string name="traffic_breakpoint_both">Solicitação e resposta</string>
+    <string name="traffic_breakpoint_continue">Continuar</string>
+    <string name="traffic_breakpoint_edit_continue">Continuar com alterações</string>
+    <string name="traffic_breakpoint_abort">Cancelar (502)</string>
+    <string name="traffic_breakpoint_headers">Cabeçalhos (Nome: valor)</string>
+    <string name="traffic_breakpoint_body_unavailable">Este corpo não pode ser editado.</string>
+    <string name="traffic_breakpoint_edited">Continuou com alterações</string>
+    <string name="traffic_breakpoint_continued">Continuou sem alterações</string>
+    <string name="traffic_breakpoint_aborted">Cancelado</string>
+    <string name="traffic_breakpoint_timed_out">Continuou sem alterações após o tempo limite</string>
+    <string name="traffic_breakpoint_shutdown">Continuou sem alterações ao encerrar</string>
+    <string name="traffic_breakpoint_canceled">O cliente se desconectou</string>
+    <string name="traffic_breakpoint_origin_changed">Destino alterado; rota recalculada</string>
+    <string name="traffic_breakpoint_operator">Operador</string>
+    <string name="traffic_breakpoint_worker">Processo em segundo plano</string>
+    <string name="traffic_breakpoint_gone">Esta pausa terminou.</string>
+    <string name="traffic_breakpoint_invalid">Verifique a regra ou os campos editados.</string>
+    <plurals name="traffic_breakpoint_count">
+        <item quantity="one">%d solicitação pausada</item>
+        <item quantity="other">%d solicitações pausadas</item>
+    </plurals>
 </resources>

@@ -893,4 +893,32 @@
     <string name="traffic_replay_route_failed">Ядро не смогло выбрать маршрут для запроса.</string>
     <string name="traffic_replay_invalid">Запрос повтора недействителен или исходная запись неполная.</string>
     <string name="traffic_replay_failed">Не получен корректный ответ на повторный запрос.</string>
+    <string name="traffic_breakpoints">Точки останова</string>
+    <string name="traffic_breakpoints_paused">Приостановленные запросы</string>
+    <string name="traffic_breakpoints_no_pauses">Нет приостановленных запросов</string>
+    <string name="traffic_breakpoint_add">Добавить точку останова</string>
+    <string name="traffic_breakpoint_timeout_seconds">Автопродолжение через (секунды)</string>
+    <string name="traffic_breakpoint_both">Запрос и ответ</string>
+    <string name="traffic_breakpoint_continue">Продолжить</string>
+    <string name="traffic_breakpoint_edit_continue">Продолжить с изменениями</string>
+    <string name="traffic_breakpoint_abort">Прервать (502)</string>
+    <string name="traffic_breakpoint_headers">Заголовки (Имя: значение)</string>
+    <string name="traffic_breakpoint_body_unavailable">Тело недоступно для редактирования.</string>
+    <string name="traffic_breakpoint_edited">Продолжено с изменениями</string>
+    <string name="traffic_breakpoint_continued">Продолжено без изменений</string>
+    <string name="traffic_breakpoint_aborted">Прервано</string>
+    <string name="traffic_breakpoint_timed_out">Продолжено без изменений по тайм-ауту</string>
+    <string name="traffic_breakpoint_shutdown">Продолжено без изменений при остановке</string>
+    <string name="traffic_breakpoint_canceled">Клиент отключился</string>
+    <string name="traffic_breakpoint_origin_changed">Адрес изменён, маршрут выбран заново</string>
+    <string name="traffic_breakpoint_operator">Оператор</string>
+    <string name="traffic_breakpoint_worker">Фоновый процесс</string>
+    <string name="traffic_breakpoint_gone">Остановка уже завершена.</string>
+    <string name="traffic_breakpoint_invalid">Проверьте правило или изменённые поля.</string>
+    <plurals name="traffic_breakpoint_count">
+        <item quantity="one">Приостановлен %d запрос</item>
+        <item quantity="few">Приостановлено %d запроса</item>
+        <item quantity="many">Приостановлено %d запросов</item>
+        <item quantity="other">Приостановлено %d запросов</item>
+    </plurals>
 </resources>

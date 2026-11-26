@@ -32,12 +32,13 @@ type Record struct {
 }
 
 type HTTPDetail struct {
-	URL          string           `json:"url"`
-	URLTruncated bool             `json:"url_truncated"`
-	Request      CapturedMessage  `json:"request"`
-	Response     CapturedMessage  `json:"response"`
-	Rewrites     []RewriteMatch   `json:"rewrites,omitempty"`
-	WebSocket    *WebSocketDetail `json:"websocket,omitempty"`
+	URL          string            `json:"url"`
+	URLTruncated bool              `json:"url_truncated"`
+	Request      CapturedMessage   `json:"request"`
+	Response     CapturedMessage   `json:"response"`
+	Rewrites     []RewriteMatch    `json:"rewrites,omitempty"`
+	Breakpoints  []BreakpointAudit `json:"breakpoints,omitempty"`
+	WebSocket    *WebSocketDetail  `json:"websocket,omitempty"`
 }
 
 type CapturedMessage struct {
@@ -73,6 +74,16 @@ func (d *HTTPDetail) size() int {
 	size := 256 + len(d.URL) + d.Request.size + d.Response.size
 	for _, m := range d.Rewrites {
 		size += m.size()
+	}
+	for _, audit := range d.Breakpoints {
+		size += 1024 + len(audit.Rule)
+		for _, exit := range []*Exit{audit.OriginalExit, audit.ActualExit} {
+			if exit != nil {
+				for _, hop := range exit.Chain {
+					size += 64 + len(hop.Type) + len(hop.Tag)
+				}
+			}
+		}
 	}
 	if d.WebSocket != nil {
 		for _, frame := range d.WebSocket.Frames {

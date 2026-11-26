@@ -19,15 +19,17 @@ import (
 func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 	const maxRequest = traffic.MaxRulesBytes + 1024
 	usage := func() error {
-		return usageError("用法: netproxyctl api traffic status|start|stop|toggle|list [批次ID]|page [批次ID [游标]]|batches|delete-batch <ID>|detail <ID>|resend <ID>|replay <文件>|clear|apps|set-apps <文件>|rules|set-rules <文件>|mitm|set-mitm|pinned|clear-pinned|alpn-bypasses|clear-alpn-bypasses|ca|ca-init|ca-export|ca-remove（规则可选 name 标题，enabled=false 可单独停用）")
+		return usageError("用法: netproxyctl api traffic status|start|stop|toggle|list [批次ID]|page [批次ID [游标]]|batches|delete-batch <ID>|detail <ID>|resend <ID>|replay <文件>|breakpoints|set-breakpoints <文件>|paused [ID]|resume <ID> [文件]|abort <ID>|clear|apps|set-apps <文件>|rules|set-rules <文件>|mitm|set-mitm|pinned|clear-pinned|alpn-bypasses|clear-alpn-bypasses|ca|ca-init|ca-export|ca-remove（规则可选 name 标题，enabled=false 可单独停用）")
 	}
 	if len(args) == 0 {
 		return usage()
 	}
 	action := args[0]
 	withArgument := action == "set-rules" || action == "set-mitm" || action == "set-apps" || action == "ca-export" ||
-		action == "detail" || action == "delete-batch" || action == "replay" || action == "resend" || (action == "list" && len(args) > 1)
-	if (action == "page" && len(args) > 3) || (action != "page" && ((withArgument && len(args) != 2) || (!withArgument && len(args) != 1))) {
+		action == "detail" || action == "delete-batch" || action == "replay" || action == "resend" ||
+		action == "set-breakpoints" || action == "abort" || ((action == "list" || action == "paused") && len(args) > 1)
+	if (action == "page" && len(args) > 3) || (action == "resume" && (len(args) < 2 || len(args) > 3)) ||
+		(action != "page" && action != "resume" && ((withArgument && len(args) != 2) || (!withArgument && len(args) != 1))) {
 		return usage()
 	}
 	layout := paths.New(c.options.ModuleDir)
@@ -41,8 +43,26 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 	var method string
 	var body io.Reader
 	switch action {
-	case "status", "batches", "apps", "rules", "mitm", "pinned", "alpn-bypasses", "ca":
+	case "status", "batches", "apps", "rules", "mitm", "pinned", "alpn-bypasses", "ca", "breakpoints":
 		method = http.MethodGet
+	case "paused", "resume", "abort":
+		method = http.MethodPost
+		if action == "paused" {
+			method = http.MethodGet
+		}
+		if len(args) > 1 {
+			if !traffic.ValidRecordID(args[1]) {
+				return usageError("断点 ID 无效")
+			}
+			action += "?id=" + url.QueryEscape(args[1])
+		}
+		if len(args) == 3 {
+			content, err := readTrafficInput(args[2], 2<<20)
+			if err != nil {
+				return err
+			}
+			body = bytes.NewReader(content)
+		}
 	case "page":
 		method = http.MethodGet
 		query := url.Values{}
@@ -99,7 +119,7 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 		method, action = http.MethodDelete, "ca/trust"
 	case "ca-export":
 		method, action = http.MethodGet, "ca"
-	case "set-rules", "set-mitm", "set-apps", "replay":
+	case "set-rules", "set-mitm", "set-apps", "set-breakpoints", "replay":
 		method = http.MethodPut
 		limit := int64(maxRequest)
 		switch action {
@@ -109,17 +129,14 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 			action, limit = "apps", traffic.MaxAppsBytes
 		case "replay":
 			method, limit = http.MethodPost, 512<<10
+		case "set-breakpoints":
+			action = "breakpoints"
 		default:
 			action = "rules"
 		}
-		file, err := os.Open(args[1])
+		content, err := readTrafficInput(args[1], limit)
 		if err != nil {
-			return usageError("无法打开配置文件")
-		}
-		defer file.Close()
-		content, err := io.ReadAll(io.LimitReader(file, limit+1))
-		if err != nil || int64(len(content)) > limit {
-			return usageError("无法读取配置文件或文件超出大小限制")
+			return err
 		}
 		body = bytes.NewReader(content)
 	default:
@@ -162,6 +179,19 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 	}
 	writeJSON(os.Stdout, envelope)
 	return nil
+}
+
+func readTrafficInput(path string, limit int64) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, usageError("无法打开配置文件")
+	}
+	defer file.Close()
+	content, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if err != nil || int64(len(content)) > limit {
+		return nil, usageError("无法读取配置文件或文件超出大小限制")
+	}
+	return content, nil
 }
 
 func exportTrafficCA(path string, data any) error {

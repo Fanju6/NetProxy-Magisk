@@ -48,14 +48,15 @@ func (f flow) entry(now time.Time, method, host string) Entry {
 }
 
 type session struct {
-	controller  *Controller
-	listener    *net.UnixListener
-	ctx         context.Context
-	cancel      context.CancelFunc
-	slots       chan struct{}
-	scriptSlots chan struct{}
-	replayMu    sync.Mutex
-	replayOffer *net.UnixConn
+	controller          *Controller
+	listener            *net.UnixListener
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	slots               chan struct{}
+	scriptSlots         chan struct{}
+	replayMu            sync.Mutex
+	replayOffer         *net.UnixConn
+	drainingBreakpoints bool
 }
 
 func (s *session) close() {
@@ -270,7 +271,11 @@ func (s *session) serveHTTPStream(client net.Conn, done <-chan struct{}, upstrea
 				return
 			}
 			w.Header().Set("Connection", "close")
-			s.proxyHTTP(w, r, time.Now(), transport, metadata, 1)
+			s.proxyHTTP(w, r, time.Now(), transport, metadata, 1, func() {
+				if upstream != nil {
+					_ = upstream.Close()
+				}
+			})
 		}),
 	}
 	server.SetKeepAlivesEnabled(false)
@@ -311,7 +316,7 @@ func (s *session) serveH2(client net.Conn, upstream net.Conn, metadata flow, hos
 				http.Error(w, "Request does not match TLS host", http.StatusMisdirectedRequest)
 				return
 			}
-			s.proxyHTTP(w, r, now, transport, metadata, seq)
+			s.proxyHTTP(w, r, now, transport, metadata, seq, nil)
 		}),
 	})
 }

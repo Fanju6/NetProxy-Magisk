@@ -5,6 +5,8 @@ import com.fanjv.netproxy.core.api.ModuleApiException
 import com.fanjv.netproxy.core.api.ModuleHttpResponse
 import com.fanjv.netproxy.core.api.TestApiTransport
 import com.fanjv.netproxy.core.api.apiSuccess
+import com.fanjv.netproxy.feature.traffic.data.CaptureBreakpointConfig
+import com.fanjv.netproxy.feature.traffic.data.CaptureBreakpointEdit
 import com.fanjv.netproxy.feature.traffic.data.CapturePageCache
 import com.fanjv.netproxy.feature.traffic.data.CaptureReplayEdit
 import com.fanjv.netproxy.feature.traffic.data.MitmPolicy
@@ -23,6 +25,39 @@ import org.junit.rules.TemporaryFolder
 
 class TrafficRepositoryTest {
     @get:Rule val cacheDir = TemporaryFolder()
+
+    @Test fun clearingLastBreakpointSendsEmptyRulesArray() = runBlocking {
+        val repository = TrafficRepository(ModuleApiClient(TestApiTransport { request ->
+            assertEquals("/traffic/breakpoints", request.path)
+            assertEquals("PUT", request.method)
+            assertEquals(Json.parseToJsonElement("""{"rules":[]}"""), request.body)
+            apiSuccess("""{"timeout_seconds":60,"rules":[]}""")
+        }))
+        repository.saveBreakpoints(CaptureBreakpointConfig(rules = emptyList()))
+    }
+
+    @Test fun readsPausedResponseAndPostsOnlyEditedFields() = runBlocking {
+        val id = "A".repeat(26)
+        var posts = 0
+        val repository = TrafficRepository(ModuleApiClient(TestApiTransport { request ->
+            assertEquals(mapOf("id" to id), request.query)
+            when (request.path) {
+                "/traffic/paused" -> apiSuccess("""{"id":"$id","phase":"response","method":"GET","url":"https://example.test/","status":200,"headers":{"Content-Type":["text/plain"]},"body":"original"}""")
+                "/traffic/resume" -> {
+                    assertEquals("POST", request.method)
+                    assertEquals(Json.parseToJsonElement("""{"status":202,"body":""}"""), request.body)
+                    posts++
+                    apiSuccess("{}")
+                }
+                else -> error("Unexpected request ${request.path}")
+            }
+        }))
+        val pause = repository.pausedDetail(id)
+        assertEquals("response", pause.phase)
+        assertEquals("original", pause.body)
+        repository.resolvePause(id, CaptureBreakpointEdit(status = 202, body = ""), false)
+        assertEquals(1, posts)
+    }
 
     @Test fun replayPostsOnceAndDecodesRouteAttribution() = runBlocking {
         val original = "A".repeat(26)

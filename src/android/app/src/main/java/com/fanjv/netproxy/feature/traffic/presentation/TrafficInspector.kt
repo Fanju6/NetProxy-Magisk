@@ -312,7 +312,11 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
                                 }
                             }
                             tab == 3 -> {
-                                if (detail.rewrites.isEmpty()) item { Text(stringResource(R.string.traffic_no_rewrites)) }
+                                if (detail.breakpoints.isNotEmpty()) {
+                                    item { Text(stringResource(R.string.traffic_breakpoints)) }
+                                    items(detail.breakpoints.size) { index -> BreakpointAuditCard(detail.breakpoints[index]) }
+                                }
+                                if (detail.rewrites.isEmpty() && detail.breakpoints.isEmpty()) item { Text(stringResource(R.string.traffic_no_rewrites)) }
                                 items(detail.rewrites.size) { index ->
                                     RewriteAuditCard(detail.rewrites[index], record.status,
                                         canEdit = auditIndices[index] != null && !state.busy) {

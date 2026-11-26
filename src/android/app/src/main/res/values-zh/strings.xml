@@ -923,4 +923,29 @@
     <string name="traffic_replay_route_failed">核心无法为此请求建立路由。</string>
     <string name="traffic_replay_invalid">重放请求无效或原始请求不完整。</string>
     <string name="traffic_replay_failed">重放未收到有效响应。</string>
+    <string name="traffic_breakpoints">断点</string>
+    <string name="traffic_breakpoints_paused">已暂停的请求</string>
+    <string name="traffic_breakpoints_no_pauses">没有暂停的请求</string>
+    <string name="traffic_breakpoint_add">添加断点</string>
+    <string name="traffic_breakpoint_timeout_seconds">自动继续等待时间（秒）</string>
+    <string name="traffic_breakpoint_both">请求和响应</string>
+    <string name="traffic_breakpoint_continue">继续</string>
+    <string name="traffic_breakpoint_edit_continue">修改后继续</string>
+    <string name="traffic_breakpoint_abort">中止（502）</string>
+    <string name="traffic_breakpoint_headers">头字段（名称: 值）</string>
+    <string name="traffic_breakpoint_body_unavailable">此正文不可编辑。</string>
+    <string name="traffic_breakpoint_edited">修改后继续</string>
+    <string name="traffic_breakpoint_continued">原样继续</string>
+    <string name="traffic_breakpoint_aborted">已中止</string>
+    <string name="traffic_breakpoint_timed_out">超时后原样继续</string>
+    <string name="traffic_breakpoint_shutdown">关闭时原样继续</string>
+    <string name="traffic_breakpoint_canceled">客户端已断开</string>
+    <string name="traffic_breakpoint_origin_changed">目标已更改，重新路由</string>
+    <string name="traffic_breakpoint_operator">操作者</string>
+    <string name="traffic_breakpoint_worker">后台进程</string>
+    <string name="traffic_breakpoint_gone">此断点已结束。</string>
+    <string name="traffic_breakpoint_invalid">请检查规则或修改的字段。</string>
+    <plurals name="traffic_breakpoint_count">
+        <item quantity="other">%d 个请求已暂停</item>
+    </plurals>
 </resources>

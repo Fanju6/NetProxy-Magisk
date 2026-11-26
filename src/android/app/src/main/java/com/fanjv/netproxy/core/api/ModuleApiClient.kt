@@ -68,7 +68,7 @@ internal class ModuleApiClient(
     }.stateIn(eventScope, SharingStarted.WhileSubscribed(2_000, 0), ModuleEventSnapshot())
 
     fun observe(names: Set<String>): Flow<Result<Map<String, ModuleEventFrame>>> = flow {
-        require(names.isNotEmpty() && names.all { it in setOf("status", "traffic", "groups", "subscriptions") })
+        require(names.isNotEmpty() && names.all { it in setOf("status", "traffic", "groups", "subscriptions", "paused") })
         updateInterests(names, 1)
         try {
             snapshots.collect { snapshot ->
@@ -84,7 +84,7 @@ internal class ModuleApiClient(
 
     private fun updateInterests(names: Set<String>, change: Int) = synchronized(interests) {
         names.map { if (it == "traffic") "status" else it }.forEach { topic ->
-            require(topic in setOf("status", "groups", "subscriptions"))
+            require(topic in setOf("status", "groups", "subscriptions", "paused"))
             val count = (interests[topic] ?: 0) + change
             if (count == 0) interests.remove(topic) else interests[topic] = count
         }

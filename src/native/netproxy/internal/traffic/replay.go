@@ -145,14 +145,15 @@ func (c *replayConn) Read(p []byte) (int, error) {
 	return c.reader.Read(p)
 }
 
-func (s *session) replay(req *http.Request, original Record) (string, error) {
-	ctx, cancel := context.WithTimeout(req.Context(), 90*time.Second)
-	defer cancel()
-	req = req.WithContext(ctx)
-	owner := original.SourceApp
+func attributedOwner(owner *SourceApp) *SourceApp {
 	if owner == nil || owner.UID > math.MaxInt32 || owner.UserID != owner.UID/androidUIDRange || owner.Package == "" {
-		owner = nil
+		return nil
 	}
+	return owner
+}
+
+func (s *session) openRoutedTransport(req *http.Request, owner *SourceApp) (*http.Transport, *replayConn, func(), error) {
+	ctx := req.Context()
 	port := req.URL.Port()
 	if port == "" {
 		port = "80"
@@ -165,11 +166,15 @@ func (s *session) replay(req *http.Request, original Record) (string, error) {
 	s.replayOffer = nil
 	s.replayMu.Unlock()
 	if bridge == nil {
-		return "", ErrReplayCore
+		return nil, nil, nil, ErrReplayCore
 	}
-	defer bridge.Close()
-	defer context.AfterFunc(s.ctx, func() { bridge.Close() })()
-	defer context.AfterFunc(ctx, func() { bridge.Close() })()
+	stopSession := context.AfterFunc(s.ctx, func() { bridge.Close() })
+	stopRequest := context.AfterFunc(ctx, func() { bridge.Close() })
+	closeBridge := func() {
+		stopSession()
+		stopRequest()
+		_ = bridge.Close()
+	}
 	_ = bridge.SetDeadline(time.Now().Add(5 * time.Second))
 	err := json.NewEncoder(bridge).Encode(struct {
 		Destination string  `json:"destination"`
@@ -179,10 +184,12 @@ func (s *session) replay(req *http.Request, original Record) (string, error) {
 	}{net.JoinHostPort(req.URL.Hostname(), port), replayUID(owner), replayUser(owner), replayPackage(owner)})
 	var ack [1]byte
 	if err != nil {
-		return "", ErrReplayCore
+		closeBridge()
+		return nil, nil, nil, ErrReplayCore
 	}
 	if _, err := io.ReadFull(bridge, ack[:]); err != nil || ack[0] != 1 {
-		return "", ErrReplayCore
+		closeBridge()
+		return nil, nil, nil, ErrReplayCore
 	}
 	_ = bridge.SetDeadline(time.Time{})
 	conn := &replayConn{Conn: bridge, reader: bufio.NewReaderSize(bridge, 4096)}
@@ -202,7 +209,22 @@ func (s *session) replay(req *http.Request, original Record) (string, error) {
 		TLSHandshakeTimeout: 15 * time.Second, ResponseHeaderTimeout: 30 * time.Second,
 		MaxResponseHeaderBytes: 64 << 10,
 	}
-	defer transport.CloseIdleConnections()
+	return transport, conn, func() {
+		transport.CloseIdleConnections()
+		closeBridge()
+	}, nil
+}
+
+func (s *session) replay(req *http.Request, original Record) (string, error) {
+	ctx, cancel := context.WithTimeout(req.Context(), 90*time.Second)
+	defer cancel()
+	req = req.WithContext(ctx)
+	owner := attributedOwner(original.SourceApp)
+	transport, conn, closeRoute, err := s.openRoutedTransport(req, owner)
+	if err != nil {
+		return "", err
+	}
+	defer closeRoute()
 	now := time.Now()
 	capture := &captureReader{ReadCloser: req.Body}
 	if req.Body != nil && req.Body != http.NoBody {

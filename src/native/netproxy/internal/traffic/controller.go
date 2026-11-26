@@ -60,6 +60,7 @@ type Controller struct {
 	layout        paths.Layout
 	rules         []compiledRule
 	rulesByHost   map[string][]int
+	breakpoints   breakpointState
 	session       *session
 	entries       [maxEntries]Record
 	detailBytes   int

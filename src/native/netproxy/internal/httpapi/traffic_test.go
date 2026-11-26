@@ -233,6 +233,27 @@ func TestTrafficReplayRejectsUnauthorizedInvalidAndMissingRecords(t *testing.T) 
 	}
 }
 
+func TestTrafficBreakpointContract(t *testing.T) {
+	s := resourceFixture(t)
+	config := trafficRoute + "breakpoints"
+	w, result := resourceRequest(t, s, http.MethodPut, config, `{"rules":[{"domains":[],"pattern":"/","phase":"both"}]}`)
+	if w.Code != http.StatusUnprocessableEntity || result.Code != "traffic.breakpoints_invalid" {
+		t.Fatalf("invalid breakpoint rules: %d %s", w.Code, result.Code)
+	}
+	w, result = resourceRequest(t, s, http.MethodPut, config, `{"rules":[{"domains":["example.test"],"pattern":"/","phase":"both"}]}`)
+	if w.Code != http.StatusOK || result.Code != "traffic.breakpoints_saved" || !strings.Contains(w.Body.String(), `"timeout_seconds":60`) {
+		t.Fatalf("save breakpoint rules: %d %s", w.Code, result.Code)
+	}
+	w, result = resourceRequest(t, s, http.MethodGet, trafficRoute+"paused", "")
+	if w.Code != http.StatusOK || result.Code != "traffic.paused" || !strings.Contains(w.Body.String(), `"data":[]`) {
+		t.Fatalf("list paused requests: %d %s", w.Code, result.Code)
+	}
+	w, result = resourceRequest(t, s, http.MethodPost, trafficRoute+"resume?id="+strings.Repeat("A", 26), `{}`)
+	if w.Code != http.StatusNotFound || result.Code != "traffic.breakpoint_gone" {
+		t.Fatalf("resume missing pause: %d %s", w.Code, result.Code)
+	}
+}
+
 func TestTrafficDomainQueries(t *testing.T) {
 	s := resourceFixture(t)
 	id, batch := strings.Repeat("A", 26), strings.Repeat("B", 26)

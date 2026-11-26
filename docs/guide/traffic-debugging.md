@@ -45,6 +45,14 @@ api traffic stop
 
 终端 WebUI 中使用 `api traffic resend <ID>`，或把包含 `id` 和 `edit` 的[请求 JSON](/config/http-api)保存到设备文件后执行 `api traffic replay <文件>`。设备 Shell 示例：`su -c '/data/adb/modules/netproxy/netproxyctl api traffic replay /data/local/tmp/replay.json'`。
 
+## 交互断点
+
+在抓包工具中打开「断点」，按必填域名、URL 正则和请求/响应阶段添加规则。断点只应用于已选抓包应用的 HTTP/1 和 HTTP/2 流，在脚本重写之后执行。每次仅暂停该流；最多同时暂停 16 个流，超过上限时新匹配的流正常继续。
+
+从「已暂停的请求」或录制悬浮窗打开编辑器，可原样继续、修改后继续或中止（返回 502）。支持编辑 256 KiB 以内的文本正文；不可编辑的正文原样转发。更改 URL 的来源（协议/主机/端口）时，核心使用原应用归属重新选择路由并正常验证上游 TLS。记录的审计会标明操作、超时或关停及路由变化。默认 60 秒后原样继续，也可配置等待时间；Worker 正常关停时先原样释放已暂停的流。
+
+CLI（前缀为 `su -c /data/adb/modules/netproxy/netproxyctl`）：`api traffic breakpoints` 查看配置，`api traffic set-breakpoints <文件>` 保存配置，`api traffic paused [ID]` 查看断点，`api traffic resume <ID> [文件]` 继续，`api traffic abort <ID>` 中止。
+
 ## 按主机启用 HTTPS 解密
 
 在管理器的 **HTTPS 调试** 区域编辑主机名单（每行一项），开启解密并导出公开调试 CA。导出通过 Android 文件选择器保存，可再从文件管理器分享；私钥始终留在模块内。需要系统级信任时，阅读确认提示后启用 **Android 系统信任**，在下次开机或热更新时应用。若模块版本不支持 HTTPS 调试，管理器仍可使用抓包和重写。

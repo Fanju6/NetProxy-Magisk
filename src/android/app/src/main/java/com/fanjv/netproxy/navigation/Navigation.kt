@@ -85,6 +85,18 @@ sealed interface Route : NavKey, Parcelable {
 
     @Parcelize
     @Serializable
+    data object TrafficBreakpoints : Route
+
+    @Parcelize
+    @Serializable
+    data object TrafficPaused : Route
+
+    @Parcelize
+    @Serializable
+    data class TrafficPauseEditor(val id: String) : Route
+
+    @Parcelize
+    @Serializable
     data object TrafficRuleEditor : Route
 
     @Parcelize

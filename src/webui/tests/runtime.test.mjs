@@ -23,7 +23,10 @@ test('HTTP API 帮助、补全与预览不伪造可用服务或真实凭据', ()
 
 test('透明抓包帮助、补全与预览只提供只读状态', () => {
   assert.deepEqual(complete('api tr').candidates, ['traffic'])
-  assert.deepEqual(complete('api traffic se').candidates, ['set-rules', 'set-mitm', 'set-apps'])
+  assert.deepEqual(complete('api traffic se').candidates, ['set-breakpoints', 'set-rules', 'set-mitm', 'set-apps'])
+  assert.deepEqual(complete('api traffic pa').candidates, ['page', 'paused'])
+  assert.deepEqual(complete('api traffic res').candidates, ['resend', 'resume'])
+  assert.deepEqual(complete('api traffic ab').candidates, ['abort'])
   assert.deepEqual(complete('api traffic app').candidates, ['apps'])
   assert.deepEqual(decodeCtlResult(mockCtl(['api', 'traffic', 'apps'])).data, { apps: [], disable_quic: true })
   assert.deepEqual(decodeCtlResult(mockCtl(['api', 'traffic', 'pinned'])).data, [])

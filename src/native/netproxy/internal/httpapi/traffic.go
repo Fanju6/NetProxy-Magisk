@@ -18,6 +18,7 @@ import (
 const trafficRoute = "/api/v1/traffic/"
 
 func (s *Server) registerTraffic() {
+	s.registerBreakpointRoutes()
 	s.mux.HandleFunc("GET "+trafficRoute+"body", s.readTrafficBody)
 	s.trafficRoute("GET", "status", "抓包状态", func(context.Context) (any, error) {
 		return s.traffic.Status(), nil

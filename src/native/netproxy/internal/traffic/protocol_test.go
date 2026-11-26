@@ -102,6 +102,112 @@ func TestH2GRPCCaptureThroughCoreBridge(t *testing.T) {
 	}
 }
 
+func TestH2BreakpointChangesOriginWithoutClosingSharedUpstream(t *testing.T) {
+	core := os.Getenv("NETPROXY_TEST_CAPTURE_CORE")
+	if core == "" {
+		t.Skip("set NETPROXY_TEST_CAPTURE_CORE to the patched Linux sing-box")
+	}
+	original := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "original "+r.URL.Path)
+	}))
+	original.EnableHTTP2 = true
+	original.StartTLS()
+	defer original.Close()
+	edited := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "edited "+r.URL.Path)
+	}))
+	defer edited.Close()
+
+	layout := paths.New(t.TempDir())
+	c := New(layout)
+	c.upstreamRoots = original.Client().Transport.(*http.Transport).TLSClientConfig.RootCAs
+	if err := c.ReplaceBreakpoints(BreakpointConfig{Rules: []BreakpointRule{
+		{Domains: []string{"127.0.0.1"}, Pattern: "/pause$", Phase: "request"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	roots := startProtocolCapture(t, c)
+	startCaptureTestSOCKS(t, core, layout, false)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		c.session.replayMu.Lock()
+		ready := c.session.replayOffer != nil
+		c.session.replayMu.Unlock()
+		if ready {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("core did not offer a routed connection")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	conn, err := bridgeFixture(layout)(t.Context(), "tcp", original.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream := tls.Client(conn, &tls.Config{RootCAs: roots, ServerName: "127.0.0.1", NextProtos: []string{"h2"}})
+	defer stream.Close()
+	_ = stream.SetDeadline(time.Now().Add(10 * time.Second))
+	if err := stream.HandshakeContext(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	client, err := (&http2.Transport{}).NewClientConn(stream)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	request := func(path string) string {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, original.URL+path, nil)
+		if err != nil {
+			t.Error(err)
+			return ""
+		}
+		res, err := client.RoundTrip(req)
+		if err != nil {
+			t.Error(err)
+			return ""
+		}
+		defer res.Body.Close()
+		body, err := io.ReadAll(res.Body)
+		if err != nil || res.StatusCode != 200 {
+			t.Errorf("response for %s: %d, %s, %v", path, res.StatusCode, body, err)
+		}
+		return string(body)
+	}
+	result := make(chan string, 1)
+	go func() { result <- request("/pause") }()
+	pause := nextPause(t, c, "request")
+	if got := request("/parallel"); got != "original /parallel" {
+		t.Fatalf("parallel stream was affected: %s", got)
+	}
+	target := edited.URL + "/new"
+	if err := c.ResolveBreakpoint(pause.ID, &BreakpointEdit{URL: &target}, false); err != nil {
+		t.Fatal(err)
+	}
+	if got := <-result; got != "edited /new" {
+		t.Fatalf("edited stream did not use the new origin: %s", got)
+	}
+	if got := request("/later"); got != "original /later" {
+		t.Fatalf("shared upstream closed: %s", got)
+	}
+	for _, entry := range c.Entries() {
+		if entry.Target != "/pause" {
+			continue
+		}
+		record, _ := c.Record(entry.ID)
+		if len(record.HTTP.Breakpoints) != 1 {
+			t.Fatalf("missing breakpoint audit: %+v", record)
+		}
+		audit := record.HTTP.Breakpoints[0]
+		if !audit.OriginChanged || audit.ActualExit == nil || audit.ActualExit.Chain[0].Tag != "match-original-inbound" ||
+			!audit.Unattributed || audit.RouteFailure != "" {
+			t.Fatalf("incorrect route audit: %+v", audit)
+		}
+		return
+	}
+	t.Fatal("missing edited stream record")
+}
+
 func startProtocolCapture(t *testing.T, c *Controller) *x509.CertPool {
 	t.Helper()
 	if _, err := c.SetMITMPolicy(MITMPolicy{Enabled: true}); err != nil {

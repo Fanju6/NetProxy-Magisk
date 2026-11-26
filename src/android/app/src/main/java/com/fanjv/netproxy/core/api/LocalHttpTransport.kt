@@ -326,7 +326,7 @@ internal class LocalHttpTransport internal constructor(
     private companion object {
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
         const val RESPONSE_LIMIT = 8 * 1024 * 1024
-        val EVENT_NAMES = setOf("status", "traffic", "groups", "subscriptions")
+        val EVENT_NAMES = setOf("status", "traffic", "groups", "subscriptions", "paused")
         const val DIAGNOSTIC_LIMIT = 64 * 1024 * 1024
     }
 

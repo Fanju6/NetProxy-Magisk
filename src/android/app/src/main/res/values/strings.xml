@@ -893,4 +893,30 @@
     <string name="traffic_replay_route_failed">The core could not route this request.</string>
     <string name="traffic_replay_invalid">The replay request is invalid or the original is incomplete.</string>
     <string name="traffic_replay_failed">Replay did not receive a valid response.</string>
+    <string name="traffic_breakpoints">Breakpoints</string>
+    <string name="traffic_breakpoints_paused">Paused requests</string>
+    <string name="traffic_breakpoints_no_pauses">No requests are paused</string>
+    <string name="traffic_breakpoint_add">Add breakpoint</string>
+    <string name="traffic_breakpoint_timeout_seconds">Auto-continue after (seconds)</string>
+    <string name="traffic_breakpoint_both">Request and response</string>
+    <string name="traffic_breakpoint_continue">Continue</string>
+    <string name="traffic_breakpoint_edit_continue">Continue edited</string>
+    <string name="traffic_breakpoint_abort">Abort (502)</string>
+    <string name="traffic_breakpoint_headers">Headers (Name: value)</string>
+    <string name="traffic_breakpoint_body_unavailable">This body is not available for editing.</string>
+    <string name="traffic_breakpoint_edited">Edited and continued</string>
+    <string name="traffic_breakpoint_continued">Continued unchanged</string>
+    <string name="traffic_breakpoint_aborted">Aborted</string>
+    <string name="traffic_breakpoint_timed_out">Timed out and continued unchanged</string>
+    <string name="traffic_breakpoint_shutdown">Continued unchanged on shutdown</string>
+    <string name="traffic_breakpoint_canceled">Client disconnected</string>
+    <string name="traffic_breakpoint_origin_changed">Destination changed; routed again</string>
+    <string name="traffic_breakpoint_operator">Operator</string>
+    <string name="traffic_breakpoint_worker">Worker</string>
+    <string name="traffic_breakpoint_gone">This pause has ended.</string>
+    <string name="traffic_breakpoint_invalid">Check the rule or the edited fields.</string>
+    <plurals name="traffic_breakpoint_count">
+        <item quantity="one">%d request paused</item>
+        <item quantity="other">%d requests paused</item>
+    </plurals>
 </resources>

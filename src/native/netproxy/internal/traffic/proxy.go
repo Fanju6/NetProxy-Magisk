@@ -3,10 +3,12 @@ package traffic
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"mime"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -15,7 +17,7 @@ import (
 	"golang.org/x/net/http/httpguts"
 )
 
-func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Time, transport http.RoundTripper, metadata flow, sequence uint64) {
+func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Time, transport http.RoundTripper, metadata flow, sequence uint64, closeOriginal func()) {
 	isWebSocket := webSocketUpgrade(r.Header)
 	isH2 := r.ProtoMajor == 2
 	if isWebSocket && r.Body != nil && r.Body != http.NoBody {
@@ -27,7 +29,7 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 	if isWebSocket {
 		ctx, cancel = context.WithCancel(r.Context())
 	} else {
-		ctx, cancel = context.WithTimeout(r.Context(), 2*time.Minute)
+		ctx, cancel = context.WithTimeout(r.Context(), 2*time.Minute+s.breakpointBudget())
 	}
 	defer cancel()
 	url := *r.URL
@@ -75,6 +77,8 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 	}
 	capturedResponse := &captureWriter{ResponseWriter: w, message: &detail.Response, head: r.Method == http.MethodHead, factory: media}
 	w = capturedResponse
+	streamDone := make(chan struct{})
+	defer close(streamDone)
 	defer func() {
 		var requestMedia *mediaSpool
 		if capturedRequest != nil {
@@ -178,12 +182,69 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 	if responseMatch >= 0 && request.Header.Get("Range") == "" {
 		request.Header.Del("Accept-Encoding")
 	}
+	var routed *replayConn
+	var routeAudit *BreakpointAudit
+	if !isWebSocket {
+		if name, timeout, matched := s.reserveBreakpoint("request", request.URL.Hostname(), request.URL.String()); matched {
+			if !isH2 {
+				_ = http.NewResponseController(capturedResponse.ResponseWriter).SetWriteDeadline(time.Now().Add(2*time.Minute + 2*timeout))
+			}
+			var text *string
+			request.Body, text = breakpointText(request.Body, request.ContentLength, request.Header)
+			view := PausedStream{Rule: name, Phase: "request", URL: request.URL.String(), Method: request.Method,
+				Headers: request.Header.Clone(), Body: text}
+			decision := s.pauseBreakpoint(ctx, view, timeout, streamDone)
+			audit := newBreakpointAudit(view, decision)
+			if decision.edit != nil {
+				applyBreakpointRequest(request, decision.edit, &audit)
+			}
+			detail.Breakpoints = append(detail.Breakpoints, audit)
+			if decision.outcome == "aborted" {
+				entry.Status = http.StatusBadGateway
+				http.Error(w, "Aborted by breakpoint", entry.Status)
+				return
+			}
+			if audit.OriginChanged {
+				routeAudit = &detail.Breakpoints[len(detail.Breakpoints)-1]
+				routeAudit.OriginalExit = entry.Exit
+				if routeAudit.OriginalExit == nil && entry.Outbound != "" {
+					routeAudit.OriginalExit = &Exit{Chain: []ExitHop{{Tag: entry.Outbound}}}
+				}
+				owner := attributedOwner(entry.SourceApp)
+				routeAudit.Unattributed = owner == nil
+				if closeOriginal != nil {
+					closeOriginal()
+				}
+				var closeRoute func()
+				var err error
+				transport, routed, closeRoute, err = s.openRoutedTransport(request, owner)
+				if err != nil {
+					routeAudit.RouteFailure = "core_unavailable"
+					entry.Status = http.StatusBadGateway
+					http.Error(w, "Breakpoint route unavailable", entry.Status)
+					return
+				}
+				defer closeRoute()
+			}
+		}
+	}
 	response, err := transport.RoundTrip(request)
 	if err != nil {
+		if routeAudit != nil {
+			routeAudit.RouteFailure = "response_failed"
+			if errors.Is(err, ErrReplayRoute) {
+				routeAudit.RouteFailure = "route_failed"
+			}
+		}
 		entry.Status = http.StatusBadGateway
 		entry.PassthroughReason = metadata.upstreamFailure
 		http.Error(w, "sing-box upstream unavailable", entry.Status)
 		return
+	}
+	if routed != nil && routed.route.Exit != nil {
+		routeAudit.ActualExit = routed.route.Exit
+		routeAudit.RouteChanged = routeAudit.OriginalExit != nil &&
+			!slices.Equal(routeAudit.OriginalExit.Chain, routed.route.Exit.Chain)
 	}
 	defer response.Body.Close()
 	if isWebSocket && response.StatusCode == http.StatusSwitchingProtocols && webSocketUpgrade(response.Header) {
@@ -201,7 +262,7 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 	if responseMatch >= 0 {
 		match := &matches[responseMatch]
 		match.OriginalStatus = response.StatusCode
-		state := s.rewriteResponse(ctx, &rules[match.RuleIndex], scriptInput{URL: target, Method: r.Method, Status: entry.Status}, response, match)
+		state := s.rewriteResponse(ctx, &rules[match.RuleIndex], scriptInput{URL: target, Method: request.Method, Status: entry.Status}, response, match)
 		entry.Rewritten = match.finish() || entry.Rewritten
 		if entry.Rewrite == "" {
 			entry.Rewrite = state
@@ -209,6 +270,31 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 			entry.Rewrite += "+" + state
 		}
 	}
+	if !isWebSocket {
+		if name, timeout, matched := s.reserveBreakpoint("response", request.URL.Hostname(), request.URL.String()); matched {
+			if !isH2 {
+				_ = http.NewResponseController(capturedResponse.ResponseWriter).SetWriteDeadline(time.Now().Add(2*time.Minute + timeout))
+			}
+			var text *string
+			if breakpointResponseBody(request.Method, response.StatusCode) {
+				response.Body, text = breakpointText(response.Body, response.ContentLength, response.Header)
+			}
+			view := PausedStream{Rule: name, Phase: "response", URL: request.URL.String(), Method: request.Method,
+				Status: response.StatusCode, Headers: response.Header.Clone(), Body: text}
+			decision := s.pauseBreakpoint(ctx, view, timeout, streamDone)
+			audit := newBreakpointAudit(view, decision)
+			if decision.edit != nil {
+				applyBreakpointResponse(response, decision.edit, &audit)
+			}
+			detail.Breakpoints = append(detail.Breakpoints, audit)
+			if decision.outcome == "aborted" {
+				entry.Status = http.StatusBadGateway
+				http.Error(w, "Aborted by breakpoint", entry.Status)
+				return
+			}
+		}
+	}
+	entry.Status = response.StatusCode
 	for name, values := range response.Header {
 		w.Header()[name] = values
 	}
@@ -327,7 +413,9 @@ func (s *session) rewriteResponse(ctx context.Context, rule *compiledRule, input
 	track := match.trackHeaders(response.Header, result)
 	applyHeaders(response.Header, result)
 	if result.Body != nil {
+		_ = response.Body.Close()
 		response.Body = io.NopCloser(strings.NewReader(*result.Body))
+		response.ContentLength = int64(len(*result.Body))
 		response.Header.Set("Content-Length", strconv.Itoa(len(*result.Body)))
 		recordBodyChange(match, response.Header, *input.Body, *result.Body)
 	}

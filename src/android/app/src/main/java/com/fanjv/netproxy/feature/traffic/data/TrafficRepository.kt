@@ -3,6 +3,7 @@ package com.fanjv.netproxy.feature.traffic.data
 import android.content.Context
 import com.fanjv.netproxy.core.api.ModuleApiClient
 import com.fanjv.netproxy.core.api.ModuleApiException
+import kotlinx.coroutines.flow.map
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.decodeFromJsonElement
@@ -148,6 +149,7 @@ internal data class CapturedHttp(
     val request: CapturedMessage,
     val response: CapturedMessage,
     val rewrites: List<RewriteMatch> = emptyList(),
+    val breakpoints: List<CaptureBreakpointAudit> = emptyList(),
     val websocket: WebSocketDetail? = null,
 )
 
@@ -321,6 +323,18 @@ internal class TrafficRepository(private val api: ModuleApiClient, private val c
         require(destination.length() == size.toLong())
     }
     suspend fun rules(): List<RewriteRule> = api.read<RewriteRules>("/traffic/rules").rules
+    suspend fun breakpoints(): CaptureBreakpointConfig = api.read("/traffic/breakpoints")
+    suspend fun saveBreakpoints(config: CaptureBreakpointConfig) {
+        api.put("/traffic/breakpoints", api.json.encodeToJsonElement(config).jsonObject)
+    }
+    suspend fun pausedDetail(id: String): CapturePause = api.read("/traffic/paused", mapOf("id" to id))
+    fun observePauses() = api.observe(setOf("paused")).map { result ->
+        result.mapCatching { it.getValue("paused").decode<List<CapturePause>>() }
+    }
+    suspend fun resolvePause(id: String, edit: CaptureBreakpointEdit?, abort: Boolean) {
+        val payload = edit?.let { api.json.encodeToJsonElement(it).jsonObject } ?: buildJsonObject { }
+        api.post(if (abort) "/traffic/abort" else "/traffic/resume", payload, query = mapOf("id" to id))
+    }
     suspend fun policy(): MitmPolicy = api.read("/traffic/mitm")
     suspend fun pinned(): List<PinnedBypass> = api.read("/traffic/pinned")
     suspend fun clearPinned(): List<PinnedBypass> = api.json.decodeFromJsonElement(api.delete("/traffic/pinned").data)

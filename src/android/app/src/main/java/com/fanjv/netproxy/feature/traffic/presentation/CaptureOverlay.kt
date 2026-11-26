@@ -30,6 +30,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -45,6 +46,7 @@ internal class CaptureOverlay(private val context: Context, private val reposito
     private var background = false
     private var panel: LinearLayout? = null
     private var header: TextView? = null
+    private var paused: TextView? = null
     private var rows = emptyList<TextView>()
     private var positionX = dp(12)
     private var positionY = dp(72)
@@ -87,11 +89,27 @@ internal class CaptureOverlay(private val context: Context, private val reposito
         val currentGeneration = ++generation
         refresh = scope.launch {
             try {
-                while (enabled && Settings.canDrawOverlays(context) && power.isInteractive && !keyguard.isKeyguardLocked) {
-                    val preview = repository.preview()
-                    if (!preview.running) break
-                    render(preview.count, preview.entries)
-                    delay(2_000)
+                coroutineScope {
+                    val changes = launch {
+                        repository.observePauses().collect { result ->
+                            val items = result.getOrNull().orEmpty()
+                            val count = items.size
+                            if (count > 0 && panel == null) show()
+                            paused?.visibility = if (count > 0) View.VISIBLE else View.GONE
+                            paused?.text = context.resources.getQuantityString(R.plurals.traffic_breakpoint_count, count, count)
+                            paused?.setOnClickListener { openRecords(OpenPaused, items.singleOrNull()?.id) }
+                        }
+                    }
+                    try {
+                        while (enabled && Settings.canDrawOverlays(context) && power.isInteractive && !keyguard.isKeyguardLocked) {
+                            val preview = repository.preview()
+                            if (!preview.running) break
+                            render(preview.count, preview.entries)
+                            delay(2_000)
+                        }
+                    } finally {
+                        changes.cancel()
+                    }
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -114,6 +132,7 @@ internal class CaptureOverlay(private val context: Context, private val reposito
         panel?.let { runCatching { window.removeViewImmediate(it) } }
         panel = null
         header = null
+        paused = null
         rows = emptyList()
     }
 
@@ -165,6 +184,11 @@ internal class CaptureOverlay(private val context: Context, private val reposito
             addView(title, LinearLayout.LayoutParams(0, dp(44), 1f))
             addView(close, LinearLayout.LayoutParams(dp(44), dp(44)))
         })
+        paused = text(14f).apply {
+            minHeight = dp(48)
+            visibility = View.GONE
+            content.addView(this)
+        }
         val previewRows = List(3) {
             text(12f).apply {
                 visibility = View.GONE
@@ -222,10 +246,11 @@ internal class CaptureOverlay(private val context: Context, private val reposito
         }
     }
 
-    private fun openRecords() {
+    private fun openRecords(destination: String = OpenRecords, pauseId: String? = null) {
         leaveBackground()
         val intent = Intent(context, MainActivity::class.java).apply {
-            action = OpenRecords
+            action = destination
+            if (pauseId != null) putExtra(PauseId, pauseId)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
         context.startActivity(intent)
@@ -235,5 +260,7 @@ internal class CaptureOverlay(private val context: Context, private val reposito
 
     companion object {
         const val OpenRecords = "com.fanjv.netproxy.OPEN_CAPTURE_RECORDS"
+        const val OpenPaused = "com.fanjv.netproxy.OPEN_CAPTURE_PAUSED"
+        const val PauseId = "com.fanjv.netproxy.CAPTURE_PAUSE_ID"
     }
 }

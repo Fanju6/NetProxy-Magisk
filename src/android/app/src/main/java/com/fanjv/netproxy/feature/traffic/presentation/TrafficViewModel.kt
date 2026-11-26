@@ -1,5 +1,8 @@
 package com.fanjv.netproxy.feature.traffic.presentation
 
+import com.fanjv.netproxy.feature.traffic.data.CaptureBreakpointConfig
+import com.fanjv.netproxy.feature.traffic.data.CaptureBreakpointEdit
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fanjv.netproxy.core.api.ModuleApiException
@@ -86,6 +89,13 @@ internal class TrafficViewModel(
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     private val packages: AppPackageRepository? = null,
 ) : ViewModel(scope) {
+    fun observePauses() = repository.observePauses()
+    suspend fun breakpointConfig() = repository.breakpoints()
+    suspend fun saveBreakpoints(config: CaptureBreakpointConfig) =
+        repository.saveBreakpoints(config)
+    suspend fun pausedDetail(id: String) = repository.pausedDetail(id)
+    suspend fun resolvePause(id: String, edit: CaptureBreakpointEdit?, abort: Boolean) =
+        repository.resolvePause(id, edit, abort)
     suspend fun downloadBody(id: String, side: String, destination: File, size: Int) =
         repository.downloadBody(id, side, destination, size)
 

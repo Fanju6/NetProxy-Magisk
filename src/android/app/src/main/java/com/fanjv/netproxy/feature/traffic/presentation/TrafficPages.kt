@@ -132,6 +132,7 @@ internal fun TrafficFrame(
 @Composable
 internal fun TrafficScreen(viewModel: TrafficViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val pauses by remember(viewModel) { viewModel.observePauses() }.collectAsStateWithLifecycle(initialValue = null)
     val navigator = LocalNavigator.current
     RefreshOnResume(viewModel)
     TrafficFrame(R.string.traffic_title) { padding ->
@@ -192,6 +193,15 @@ internal fun TrafficScreen(viewModel: TrafficViewModel) {
                     TrafficLink(R.string.traffic_rules, R.string.traffic_rules_summary, Icons.Rounded.Code) {
                         navigator.push(Route.TrafficRules)
                     }
+                },
+                CardItem("breakpoints") {
+                    ArrowPreference(title = stringResource(R.string.traffic_breakpoints),
+                        onClick = { navigator.push(Route.TrafficBreakpoints) }, insideMargin = TrafficRowInsets)
+                },
+                CardItem("paused") {
+                    val count = pauses?.getOrNull()?.size ?: 0
+                    ArrowPreference(title = if (count > 0) pausedCountLabel(count) else stringResource(R.string.traffic_breakpoints_paused),
+                        onClick = { navigator.push(Route.TrafficPaused) }, insideMargin = TrafficRowInsets)
                 },
                 CardItem("https") {
                     TrafficLink(R.string.traffic_https, R.string.traffic_ca_hint, Icons.Rounded.Lock) {
@@ -565,6 +575,8 @@ internal fun trafficError(error: Throwable, fallback: Int): String = when (error
         "traffic.replay_core_unavailable" -> stringResource(R.string.traffic_replay_core)
         "traffic.replay_route_failed" -> stringResource(R.string.traffic_replay_route_failed)
         "traffic.replay_invalid" -> stringResource(R.string.traffic_replay_invalid)
+        "traffic.breakpoint_gone" -> stringResource(R.string.traffic_breakpoint_gone)
+        "traffic.breakpoint_edit_invalid", "traffic.breakpoints_invalid" -> stringResource(R.string.traffic_breakpoint_invalid)
         "traffic.replay_response_failed" -> stringResource(R.string.traffic_replay_failed)
         else -> stringResource(R.string.traffic_api_error, stringResource(fallback), error.resultCode, error.message)
     }

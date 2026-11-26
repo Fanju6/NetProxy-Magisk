@@ -22,6 +22,11 @@ export const COMMANDS = {
   api traffic delete-batch <批次ID>          删除已停止的批次
   api traffic detail <ID>                   查看出口、重写记录、请求和响应详情
   api traffic resend <ID>                   按当前路由重发完整的抓包请求
+  api traffic breakpoints                   查看交互断点配置
+  api traffic set-breakpoints <文件>        保存断点规则和自动继续超时
+  api traffic paused [ID]                   列出待处理断点，或读取一个断点的编辑字段
+  api traffic resume <ID> [文件]            原样继续或应用 JSON 修改
+  api traffic abort <ID>                    中止该请求并返回 502
   api traffic replay <文件>                 按当前路由发送 JSON 文件中的编辑请求
   api traffic apps | set-apps <文件>        查看或保存 mode/all、blacklist、whitelist、disable_quic
   api traffic rules                         查看按 domains 分组的 JavaScript 重写规则
@@ -213,7 +218,7 @@ const CONFIG_TARGETS = [
 ]
 
 export const VALUE_COMPLETIONS: Record<string, string[]> = {
-  'api traffic': ['status', 'toggle', 'start', 'stop', 'batches', 'list', 'page', 'delete-batch', 'detail', 'resend', 'replay', 'clear', 'rules', 'set-rules', 'mitm', 'set-mitm', 'apps', 'set-apps', 'pinned', 'clear-pinned', 'alpn-bypasses', 'clear-alpn-bypasses', 'ca', 'ca-init', 'ca-export', 'ca-remove'],
+  'api traffic': ['status', 'toggle', 'start', 'stop', 'batches', 'list', 'page', 'delete-batch', 'detail', 'resend', 'replay', 'breakpoints', 'set-breakpoints', 'paused', 'resume', 'abort', 'clear', 'rules', 'set-rules', 'mitm', 'set-mitm', 'apps', 'set-apps', 'pinned', 'clear-pinned', 'alpn-bypasses', 'clear-alpn-bypasses', 'ca', 'ca-init', 'ca-export', 'ca-remove'],
   'app mode': ['blacklist', 'whitelist'],
   'ebpf status': ['configured', 'all', 'local', 'shared', '--raw'],
   'logs show': ['service', 'core'],
