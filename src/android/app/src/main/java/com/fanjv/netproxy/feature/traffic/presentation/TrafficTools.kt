@@ -22,6 +22,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.FileDownload
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.RemoveCircleOutline
+import androidx.compose.material.icons.rounded.Security
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -247,8 +254,10 @@ internal fun TrafficHttpsScreen(viewModel: TrafficViewModel) {
         }
     }
     TopBarMoreMenu(listOf(
-        TopBarMenuAction(stringResource(R.string.traffic_ca_export), editable) { viewModel.prepareCertificate { picker.launch(it) } },
-        TopBarMenuAction(shareTitle, editable) { share() },
+        TopBarMenuAction(stringResource(R.string.traffic_ca_export), editable, icon = Icons.Rounded.FileDownload) {
+            viewModel.prepareCertificate { picker.launch(it) }
+        },
+        TopBarMenuAction(shareTitle, editable, icon = Icons.Rounded.Share) { share() },
     ), stringResource(R.string.more_options)) { menu ->
     TrafficFrame(R.string.traffic_https, actions = {
         AppBarButton(onClick = { newHost = ""; addHost = true }, enabled = editable && !addHost) {
@@ -266,7 +275,7 @@ internal fun TrafficHttpsScreen(viewModel: TrafficViewModel) {
                 SwitchPreference(title = stringResource(R.string.traffic_mitm),
                     summary = stringResource(R.string.traffic_mitm_hint) + " " + stringResource(R.string.traffic_user_ca_hint),
                     checked = policy.enabled, enabled = editable, onCheckedChange = viewModel::setMitmEnabled,
-                    insideMargin = TrafficRowInsets)
+                    insideMargin = TrafficRowInsets, startAction = { CaptureRowIcon(Icons.Rounded.Lock) })
             }
             groupedCardSection("hosts", { stringResource(R.string.traffic_hosts) }, buildList {
                 if (addHost) add(CardItem("add") {
@@ -313,7 +322,8 @@ internal fun TrafficHttpsScreen(viewModel: TrafficViewModel) {
                 }
                 if (pinned.isNotEmpty()) add(CardItem("clear") {
                     ArrowPreference(title = stringResource(R.string.traffic_pinned_clear), enabled = !state.busy,
-                        onClick = { confirmClearPinned = true }, insideMargin = TrafficRowInsets)
+                        onClick = { confirmClearPinned = true }, insideMargin = TrafficRowInsets,
+                        startAction = { CaptureRowIcon(Icons.Rounded.DeleteOutline) })
                 })
                 pinned.forEach { pin ->
                     add(CardItem("${pin.userId}:${pin.packageName}:${pin.host}") {
@@ -332,7 +342,8 @@ internal fun TrafficHttpsScreen(viewModel: TrafficViewModel) {
                 }
                 if (bypasses.isNotEmpty()) add(CardItem("clear") {
                     ArrowPreference(title = stringResource(R.string.traffic_alpn_clear), enabled = !state.busy,
-                        onClick = { confirmClearAlpn = true }, insideMargin = TrafficRowInsets)
+                        onClick = { confirmClearAlpn = true }, insideMargin = TrafficRowInsets,
+                        startAction = { CaptureRowIcon(Icons.Rounded.DeleteOutline) })
                 })
                 bypasses.forEach { entry ->
                     add(CardItem("${entry.userId}:${entry.packageName}:${entry.host}") {
@@ -354,11 +365,13 @@ internal fun TrafficHttpsScreen(viewModel: TrafficViewModel) {
                 CardItem("trust") {
                     SwitchPreference(title = stringResource(R.string.traffic_trust), checked = policy.systemTrust,
                         summary = stringResource(R.string.traffic_trust_hint), enabled = editable, insideMargin = TrafficRowInsets,
+                        startAction = { CaptureRowIcon(Icons.Rounded.Security) },
                         onCheckedChange = { if (it) confirmTrust = true else viewModel.setSystemTrust(false) })
                 },
                 CardItem("removeUserCA") {
                     ArrowPreference(title = stringResource(R.string.traffic_user_ca_remove),
-                        enabled = editable, onClick = { confirmRemoveUserCA = true }, insideMargin = TrafficRowInsets)
+                        enabled = editable, onClick = { confirmRemoveUserCA = true }, insideMargin = TrafficRowInsets,
+                        startAction = { CaptureRowIcon(Icons.Rounded.RemoveCircleOutline) })
                 },
             ))
         }
@@ -418,7 +431,9 @@ private fun BypassRow(item: BypassItem, enabled: Boolean, summary: String, selec
             onHorizontalDrag = { _, distance -> offset += distance },
         )
     }) {
-        ArrowPreference(title = item.host, summary = summary, enabled = enabled, onClick = select, insideMargin = TrafficRowInsets)
+        ArrowPreference(title = item.host, summary = summary, enabled = enabled, onClick = select,
+            insideMargin = TrafficRowInsets,
+            startAction = { CaptureRowIcon(if (item.alpn) Icons.Rounded.SwapHoriz else Icons.Rounded.Security) })
     }
 }
 

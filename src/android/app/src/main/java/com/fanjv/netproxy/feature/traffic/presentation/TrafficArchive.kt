@@ -8,6 +8,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.FileDownload
+import androidx.compose.material.icons.rounded.FileUpload
+import androidx.compose.material.icons.rounded.FilterAlt
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -160,12 +164,15 @@ internal fun trafficArchiveActions(
     }
     return buildList {
         add(TopBarMenuAction(stringResource(if (single) R.string.traffic_har_export_record else R.string.traffic_har_export_batch),
-            enabled && !busy) { choose(batch) })
+            enabled && !busy, icon = Icons.Rounded.FileDownload) { choose(batch) })
         if (!single) {
-            add(TopBarMenuAction(stringResource(R.string.traffic_har_export_filtered), enabled && !busy && filters.isNotEmpty()) {
+            add(TopBarMenuAction(stringResource(R.string.traffic_har_export_filtered),
+                enabled && !busy && filters.isNotEmpty(), icon = Icons.Rounded.FilterAlt) {
                 choose(batch + filters)
             })
-            add(TopBarMenuAction(stringResource(R.string.traffic_har_import), !busy) { open.launch(arrayOf("*/*")) })
+            add(TopBarMenuAction(stringResource(R.string.traffic_har_import), !busy, icon = Icons.Rounded.FileUpload) {
+                open.launch(arrayOf("*/*"))
+            })
         }
     }
 }

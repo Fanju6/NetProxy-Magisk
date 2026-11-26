@@ -30,7 +30,12 @@ import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.List
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.NetworkCheck
+import androidx.compose.material.icons.rounded.PauseCircle
+import androidx.compose.material.icons.rounded.PictureInPictureAlt
+import androidx.compose.material.icons.rounded.RadioButtonChecked
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.TrackChanges
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -152,6 +157,7 @@ internal fun TrafficScreen(viewModel: TrafficViewModel) {
                         }),
                         checked = status?.running == true, enabled = status != null && !state.busy,
                         onCheckedChange = viewModel::setCapture, insideMargin = TrafficRowInsets,
+                        startAction = { CaptureRowIcon(Icons.Rounded.RadioButtonChecked) },
                     )
                     SwitchPreference(
                         title = stringResource(R.string.traffic_disable_quic),
@@ -159,6 +165,7 @@ internal fun TrafficScreen(viewModel: TrafficViewModel) {
                         checked = state.captureAppPolicy?.disableQuic == true,
                         enabled = state.captureAppPolicy?.disableQuic != null && !state.busy,
                         onCheckedChange = viewModel::setCaptureDisableQuic, insideMargin = TrafficRowInsets,
+                        startAction = { CaptureRowIcon(Icons.Rounded.NetworkCheck) },
                     )
                     CaptureOverlayPreference(status?.running == true)
                     Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 10.dp),
@@ -184,10 +191,7 @@ internal fun TrafficScreen(viewModel: TrafficViewModel) {
                         summary = stringResource(R.string.traffic_capture_apps_summary),
                         onClick = { navigator.push(Route.TrafficApps) }, enabled = !state.busy,
                         insideMargin = TrafficRowInsets,
-                        startAction = {
-                            Icon(Icons.Rounded.Android, null, Modifier.padding(end = 12.dp),
-                                tint = MiuixTheme.colorScheme.primary)
-                        })
+                        startAction = { CaptureRowIcon(Icons.Rounded.Android) })
                 },
                 CardItem("rules") {
                     TrafficLink(R.string.traffic_rules, R.string.traffic_rules_summary, Icons.Rounded.Code) {
@@ -196,12 +200,14 @@ internal fun TrafficScreen(viewModel: TrafficViewModel) {
                 },
                 CardItem("breakpoints") {
                     ArrowPreference(title = stringResource(R.string.traffic_breakpoints),
-                        onClick = { navigator.push(Route.TrafficBreakpoints) }, insideMargin = TrafficRowInsets)
+                        onClick = { navigator.push(Route.TrafficBreakpoints) }, insideMargin = TrafficRowInsets,
+                        startAction = { CaptureRowIcon(Icons.Rounded.TrackChanges) })
                 },
                 CardItem("paused") {
                     val count = pauses?.getOrNull()?.size ?: 0
                     ArrowPreference(title = if (count > 0) pausedCountLabel(count) else stringResource(R.string.traffic_breakpoints_paused),
-                        onClick = { navigator.push(Route.TrafficPaused) }, insideMargin = TrafficRowInsets)
+                        onClick = { navigator.push(Route.TrafficPaused) }, insideMargin = TrafficRowInsets,
+                        startAction = { CaptureRowIcon(Icons.Rounded.PauseCircle) })
                 },
                 CardItem("https") {
                     TrafficLink(R.string.traffic_https, R.string.traffic_ca_hint, Icons.Rounded.Lock) {
@@ -236,10 +242,12 @@ private fun CaptureOverlayPreference(capturing: Boolean) {
             enabled = it
         },
         insideMargin = TrafficRowInsets,
+        startAction = { CaptureRowIcon(Icons.Rounded.PictureInPictureAlt) },
     )
     if (enabled && !granted) {
         ArrowPreference(title = stringResource(R.string.traffic_overlay_permission),
-            onClick = { explain = true }, insideMargin = TrafficRowInsets)
+            onClick = { explain = true }, insideMargin = TrafficRowInsets,
+            startAction = { CaptureRowIcon(Icons.Rounded.PictureInPictureAlt) })
     }
     AppDialog(
         show = explain && enabled && !granted,
@@ -262,7 +270,12 @@ private fun CaptureOverlayPreference(capturing: Boolean) {
 private fun TrafficLink(title: Int, summary: Int, icon: ImageVector, onClick: () -> Unit) {
     ArrowPreference(title = stringResource(title), summary = stringResource(summary), onClick = onClick,
         insideMargin = TrafficRowInsets,
-        startAction = { Icon(icon, null, Modifier.padding(end = 12.dp), tint = MiuixTheme.colorScheme.primary) })
+        startAction = { CaptureRowIcon(icon) })
+}
+
+@Composable
+internal fun CaptureRowIcon(icon: ImageVector) {
+    Icon(icon, null, Modifier.padding(end = 12.dp), tint = MiuixTheme.colorScheme.primary)
 }
 
 internal val TrafficRowInsets = PaddingValues(horizontal = 14.dp, vertical = 8.dp)

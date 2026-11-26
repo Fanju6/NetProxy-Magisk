@@ -12,6 +12,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.PauseCircle
+import androidx.compose.material.icons.rounded.TrackChanges
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -61,7 +64,8 @@ internal fun PausedCaptureScreen(viewModel: TrafficViewModel) {
         } else LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(horizontal = 14.dp)) {
             items(pauses, key = CapturePause::id) { pause ->
                 ArrowPreference(title = "${pause.method} · ${breakpointPhase(pause.phase)}", summary = pause.url,
-                    onClick = { navigator.push(Route.TrafficPauseEditor(pause.id)) }, insideMargin = TrafficRowInsets)
+                    onClick = { navigator.push(Route.TrafficPauseEditor(pause.id)) }, insideMargin = TrafficRowInsets,
+                    startAction = { CaptureRowIcon(Icons.Rounded.PauseCircle) })
             }
         }
     }
@@ -204,6 +208,7 @@ internal fun BreakpointRulesScreen(viewModel: TrafficViewModel) {
                 val rule = loaded.rules[position]
                 val phase = breakpointPhase(rule.phase)
                 BasicComponent(enabled = !saving, onClick = { editing = position }, insideMargin = TrafficRowInsets,
+                    startAction = { CaptureRowIcon(Icons.Rounded.TrackChanges) },
                     endActions = {
                         Switch(checked = rule.enabled, enabled = !saving, onCheckedChange = { enabled ->
                             save(loaded.copy(rules = loaded.rules.mapIndexed { i, current ->
