@@ -368,17 +368,23 @@
  }
  
  func NewConnectionManager(ctx context.Context, logger logger.ContextLogger) *ConnectionManager {
-@@ -152,7 +153,8 @@
+@@ -152,7 +153,14 @@
  		m.logger.ErrorContext(ctx, err)
  		return
  	}
 -	if !metadata.TLSFragment && !metadata.TLSRecordFragment && metadata.TLSSpoof == "" {
-+	capture := m.NetProxyCaptureSocket != "" && metadata.Inbound == "netproxy-in"
++	replay, err := netProxyReplayConnected(ctx, metadata, remoteConn)
++	if err != nil {
++		remoteConn.Close()
++		N.CloseOnHandshakeFailure(conn, onClose, err)
++		return
++	}
++	capture := !replay && m.NetProxyCaptureSocket != "" && metadata.Inbound == "netproxy-in"
 +	if !capture && !metadata.TLSFragment && !metadata.TLSRecordFragment && metadata.TLSSpoof == "" {
  		var spliced bool
  		spliced, err = m.spliceConnection(ctx, conn, remoteConn, onClose)
  		if err != nil {
-@@ -178,6 +180,21 @@
+@@ -178,6 +186,21 @@
  			return
  		}
  		remoteConn = spoofConn
@@ -543,7 +549,7 @@
 +}
 --- /dev/null
 +++ b/route/netproxy_capture_other.go
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,21 @@
 +//go:build !linux
 +
 +package route
@@ -558,6 +564,12 @@
 +
 +func (*ConnectionManager) netProxyCapture(context.Context, net.Conn, net.Conn, adapter.InboundContext, N.CloseHandlerFunc) bool {
 +	return false
++}
++
++func (*Router) startNetProxyReplay(string, *adapter.Scope) {}
++
++func netProxyReplayConnected(context.Context, adapter.InboundContext, net.Conn) (bool, error) {
++	return false, nil
 +}
 --- a/route/route.go
 +++ b/route/route.go
@@ -791,4 +803,147 @@
 +	require.Equal(t, clean, metadata.Destination)
 +	require.Equal(t, original, metadata.OriginDestination)
 +	require.True(t, metadata.DestOverride)
++}
+--- a/route/router.go
++++ b/route/router.go
+@@ -249,6 +249,9 @@
+ 	case adapter.StartStateStarted:
++		if manager, ok := r.connection.(*ConnectionManager); ok && manager.NetProxyCaptureSocket != "" {
++			r.startNetProxyReplay(manager.NetProxyCaptureSocket, scope)
++		}
+ 		for _, ruleSet := range r.ruleSets {
+ 			ruleSet.Cleanup()
+ 		}
+ 		runtime.GC()
+ 	}
+--- /dev/null
++++ b/route/netproxy_replay_linux.go
+@@ -0,0 +1,128 @@
++package route
++
++import (
++	"bufio"
++	"context"
++	"encoding/json"
++	"net"
++	"sync"
++	"time"
++
++	"github.com/sagernet/sing-box/adapter"
++	M "github.com/sagernet/sing/common/metadata"
++	N "github.com/sagernet/sing/common/network"
++)
++
++type netProxyReplayKey struct{}
++
++type netProxyReplay struct {
++	conn net.Conn
++	once sync.Once
++}
++
++func (r *Router) startNetProxyReplay(path string, scope *adapter.Scope) {
++	ctx, cancel := context.WithCancel(r.ctx)
++	scope.Add(func() error {
++		cancel()
++		return nil
++	})
++	go func() {
++		var dialer net.Dialer
++		slots := make(chan struct{}, 4)
++		for ctx.Err() == nil {
++			conn, err := dialer.DialContext(ctx, "unix", path)
++			if err == nil {
++				if r.acceptNetProxyReplay(ctx, conn, slots) {
++					continue
++				}
++				conn.Close()
++			}
++			timer := time.NewTimer(time.Second)
++			select {
++			case <-ctx.Done():
++				timer.Stop()
++				return
++			case <-timer.C:
++			}
++		}
++	}()
++}
++
++func (r *Router) acceptNetProxyReplay(ctx context.Context, conn net.Conn, slots chan struct{}) bool {
++	stop := context.AfterFunc(ctx, func() { conn.Close() })
++	defer stop()
++	if _, err := conn.Write([]byte{0}); err != nil {
++		return false
++	}
++	line, err := bufio.NewReaderSize(conn, 2048).ReadSlice('\n')
++	if err != nil {
++		return false
++	}
++	var request struct {
++		Destination string `json:"destination"`
++		UID         *int32 `json:"uid"`
++		UserID      uint32 `json:"user_id"`
++		Package     string `json:"package"`
++	}
++	if json.Unmarshal(line, &request) != nil {
++		return false
++	}
++	destination := M.ParseSocksaddr(request.Destination)
++	inbound, ok := r.inbound.Get("netproxy-in")
++	if !ok || !destination.IsValid() || destination.Port == 0 {
++		return false
++	}
++	metadata := adapter.InboundContext{
++		Inbound: inbound.Tag(), InboundType: inbound.Type(), Network: N.NetworkTCP,
++		Destination: destination, OriginDestination: destination,
++	}
++	if request.UID != nil && *request.UID >= 0 && uint32(*request.UID)/100000 == request.UserID && request.Package != "" && len(request.Package) <= 256 {
++		metadata.ProcessInfo = &adapter.ConnectionOwner{UserId: *request.UID, PackageNames: []string{request.Package}}
++	}
++	select {
++	case slots <- struct{}{}:
++	default:
++		return false
++	}
++	if _, err := conn.Write([]byte{1}); err != nil {
++		<-slots
++		return false
++	}
++	go func() {
++		ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
++		defer cancel()
++		defer func() { <-slots }()
++		defer conn.Close()
++		_ = conn.SetDeadline(time.Now().Add(2 * time.Minute))
++		stop := context.AfterFunc(ctx, func() { conn.Close() })
++		defer stop()
++		replay := &netProxyReplay{conn: conn}
++		done := make(chan struct{})
++		r.RouteConnectionEx(context.WithValue(ctx, netProxyReplayKey{}, replay), conn, metadata, N.OnceClose(func(err error) {
++			replay.once.Do(func() {
++				_, _ = conn.Write([]byte("{\"error\":\"traffic.replay_route_failed\"}\n"))
++			})
++			close(done)
++		}))
++		select {
++		case <-done:
++		case <-ctx.Done():
++		}
++	}()
++	return true
++}
++
++func netProxyReplayConnected(ctx context.Context, metadata adapter.InboundContext, upstream net.Conn) (bool, error) {
++	replay, ok := ctx.Value(netProxyReplayKey{}).(*netProxyReplay)
++	if !ok {
++		return false, nil
++	}
++	var err error
++	replay.once.Do(func() {
++		err = json.NewEncoder(replay.conn).Encode(struct {
++			Outbound string `json:"outbound"`
++			Exit     any    `json:"exit"`
++		}{netProxyLabel(metadata.RouteOutbound, 128), netProxyExit(metadata, upstream)})
++	})
++	return true, err
 +}

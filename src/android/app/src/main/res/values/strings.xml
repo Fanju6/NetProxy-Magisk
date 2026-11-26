@@ -877,4 +877,20 @@
     <string name="traffic_alpn_expires">Expires: %1$s</string>
     <string name="traffic_alpn_incompatible">Incompatible ALPN · connection closed</string>
     <string name="traffic_alpn_bypassed">Incompatible ALPN · passed through</string>
+    <string name="traffic_replay_resend">Resend</string>
+    <string name="traffic_replay_edit">Edit and resend</string>
+    <string name="traffic_replay_of">Replay of</string>
+    <string name="traffic_replay_original_route">Original route</string>
+    <string name="traffic_replay_new_origin">Destination changed. Review cookies and authorization headers before sending.</string>
+    <string name="traffic_replay_route_changed">Replay used a different route.</string>
+    <string name="traffic_replay_unattributed">Replay had no original app attribution.</string>
+    <string name="traffic_replay_headers">Request headers (Name: value)</string>
+    <string name="traffic_replay_invalid_headers">Enter one header per line as Name: value.</string>
+    <string name="traffic_replay_body">Request body</string>
+    <string name="traffic_replay_base64">Request body (Base64)</string>
+    <string name="traffic_replay_incomplete">This capture is incomplete. Review and replace missing fields before sending.</string>
+    <string name="traffic_replay_core">The capture core is unavailable. Start capture and try again.</string>
+    <string name="traffic_replay_route_failed">The core could not route this request.</string>
+    <string name="traffic_replay_invalid">The replay request is invalid or the original is incomplete.</string>
+    <string name="traffic_replay_failed">Replay did not receive a valid response.</string>
 </resources>

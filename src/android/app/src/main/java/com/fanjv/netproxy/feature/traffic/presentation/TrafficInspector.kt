@@ -6,6 +6,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
 import android.os.PersistableBundle
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -30,6 +32,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.selection.selectable
@@ -66,23 +69,29 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.R
+import com.fanjv.netproxy.core.ui.component.AppDialogButton
 import com.fanjv.netproxy.core.ui.component.ContentStatus
 import com.fanjv.netproxy.core.ui.component.TopBarMenuAction
 import com.fanjv.netproxy.core.ui.component.TopBarMoreMenu
 import com.fanjv.netproxy.feature.apps.data.AndroidApp
 import com.fanjv.netproxy.feature.apps.data.AppIconCache
 import com.fanjv.netproxy.feature.traffic.data.CaptureRecord
+import com.fanjv.netproxy.feature.traffic.data.CaptureReplayEdit
 import com.fanjv.netproxy.feature.traffic.data.CapturedBody
+import com.fanjv.netproxy.feature.traffic.data.CapturedHttp
 import com.fanjv.netproxy.feature.traffic.data.GrpcDetail
 import com.fanjv.netproxy.feature.traffic.data.ProtoField
 import com.fanjv.netproxy.feature.traffic.data.WebSocketFrame
 import com.fanjv.netproxy.feature.traffic.data.RewriteMatch
 import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.Route
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.glass.GlassTextField
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 @Composable
@@ -98,6 +107,9 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
     val scope = rememberCoroutineScope()
     var headerName by remember(id) { mutableStateOf<String?>(null) }
     var headerValue by remember(id) { mutableStateOf("") }
+    var editingReplay by rememberSaveable(id) { mutableStateOf(false) }
+    var sendingReplay by remember(id) { mutableStateOf(false) }
+    var replayFailure by remember(id) { mutableStateOf<Throwable?>(null) }
     val auditIndices = remember(detail, state.rules.value) {
         detail?.rewrites.orEmpty().map { state.rules.value?.indexOfCapture(it) }
     }
@@ -109,6 +121,41 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
     }
     val copyUrl = stringResource(R.string.traffic_copy_field, stringResource(R.string.traffic_full_url))
     val copyCurl = stringResource(R.string.traffic_copy_curl)
+    val canEditReplay = detail != null && detail.websocket == null &&
+        (detail.url.startsWith("http://") || detail.url.startsWith("https://"))
+    val completeRequest = detail?.let {
+        !it.urlTruncated && !it.request.headersTruncated && !it.request.body.truncated &&
+            it.request.trailers.isEmpty() && !it.request.trailersTruncated
+    } == true
+    val sendReplay: (CaptureReplayEdit?) -> Unit = { edit ->
+        if (!sendingReplay) {
+            sendingReplay = true
+            replayFailure = null
+            scope.launch {
+                try {
+                    val replay = viewModel.replay(id, edit)
+                    val replayId = replay.id
+                    if (replayId != null) {
+                        editingReplay = false
+                        viewModel.openRecord(replay)
+                        navigator.push(Route.TrafficInspector(replayId))
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    replayFailure = error
+                } finally {
+                    sendingReplay = false
+                }
+            }
+        }
+    }
+    if (editingReplay && record != null && detail != null) {
+        BackHandler { if (!sendingReplay) editingReplay = false }
+        ReplayEditor(id, record.method, detail, completeRequest, sendingReplay, replayFailure,
+            dismiss = { if (!sendingReplay) editingReplay = false }, send = sendReplay)
+        return
+    }
     headerName?.let { name ->
         TrafficCopySheet(R.string.traffic_header_copy, listOf(
             stringResource(R.string.traffic_copy_name), stringResource(R.string.traffic_copy_value),
@@ -130,6 +177,19 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
                 return@TrafficFrame
             }
             Column(Modifier.fillMaxSize().padding(padding)) {
+                if (canEditReplay && detail != null) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        AppDialogButton(stringResource(R.string.traffic_replay_resend), { sendReplay(null) }, Modifier.weight(1f),
+                            enabled = !sendingReplay && completeRequest && !detail.request.body.decoded)
+                        AppDialogButton(stringResource(R.string.traffic_replay_edit), {
+                            replayFailure = null
+                            editingReplay = true
+                        }, Modifier.weight(1f), enabled = !sendingReplay)
+                    }
+                    if (sendingReplay) InfiniteProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
+                    replayFailure?.let { TrafficErrorText(it, R.string.traffic_replay_failed) }
+                }
                 InspectorTabs(tabs = listOf(stringResource(R.string.traffic_overview), stringResource(R.string.traffic_request_detail),
                     stringResource(R.string.traffic_response_detail), stringResource(R.string.traffic_rewrite_tab)),
                     selected = pager.currentPage, select = { scope.launch { pager.animateScrollToPage(it) } })
@@ -202,6 +262,17 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
                                             exit.chain.joinToString(" → ") { "${it.tag} (${it.type})" })
                                         exit.remote?.let { InspectRow(stringResource(R.string.traffic_remote), it) }
                                     }
+                                    record.replayOf?.let { original ->
+                                        InspectRow(stringResource(R.string.traffic_replay_of), original)
+                                        record.replayOriginalExit?.takeIf { it.chain.isNotEmpty() }?.let { exit ->
+                                            InspectRow(stringResource(R.string.traffic_replay_original_route),
+                                                exit.chain.joinToString(" → ") { hop ->
+                                                    if (hop.type.isBlank()) hop.tag else "${hop.tag} (${hop.type})"
+                                                })
+                                        }
+                                        if (record.replayRouteChanged) Text(stringResource(R.string.traffic_replay_route_changed))
+                                        if (record.replayUnattributed) Text(stringResource(R.string.traffic_replay_unattributed))
+                                    }
                                     InspectSourceApp(record, selection.app)
                                     record.exit?.process?.let { InspectRow(stringResource(R.string.traffic_process), it) }
                                     InspectRow(stringResource(R.string.traffic_rewrite_result), when {
@@ -257,6 +328,62 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
             }
         }
     }
+}
+
+@Composable
+private fun ReplayEditor(id: String, originalMethod: String, detail: CapturedHttp, complete: Boolean, busy: Boolean,
+    error: Throwable?, dismiss: () -> Unit, send: (CaptureReplayEdit) -> Unit) {
+    val request = detail.request
+    var method by rememberSaveable(id) { mutableStateOf(originalMethod) }
+    var url by rememberSaveable(id) { mutableStateOf(detail.url) }
+    var headers by rememberSaveable(id) {
+        mutableStateOf(request.headers.entries.filterNot { (name, _) ->
+            name.equals("Host", true) || name.equals("Content-Length", true) ||
+                request.body.decoded && name.equals("Content-Encoding", true)
+        }.flatMap { (name, values) -> values.map { "$name: $it" } }.joinToString("\n"))
+    }
+    var body by rememberSaveable(id) { mutableStateOf(request.body.data) }
+    val parsed = remember(headers) { replayHeaderLines(headers) }
+    val changedOrigin = remember(url, detail.url) {
+        val original = detail.url.toHttpUrlOrNull()
+        val edited = url.trim().toHttpUrlOrNull()
+        original != null && edited != null &&
+            (original.scheme != edited.scheme || original.host != edited.host || original.port != edited.port)
+    }
+    TrafficFrame(R.string.traffic_replay_edit, onBack = dismiss) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).imePadding().verticalScroll(rememberScrollState()).padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            GlassTextField(method, { method = it }, Modifier.fillMaxWidth(), enabled = !busy,
+                singleLine = true, label = stringResource(R.string.traffic_method))
+            GlassTextField(url, { url = it }, Modifier.fillMaxWidth(), enabled = !busy,
+                singleLine = true, label = stringResource(R.string.traffic_full_url))
+            if (changedOrigin) Text(stringResource(R.string.traffic_replay_new_origin))
+            GlassTextField(headers, { headers = it }, Modifier.fillMaxWidth(), enabled = !busy, minLines = 3,
+                label = stringResource(R.string.traffic_replay_headers))
+            if (parsed == null) Text(stringResource(R.string.traffic_replay_invalid_headers))
+            GlassTextField(body, { body = it }, Modifier.fillMaxWidth(), enabled = !busy, minLines = 4,
+                label = stringResource(if (request.body.format == "base64") R.string.traffic_replay_base64 else R.string.traffic_replay_body))
+            if (!complete) Text(stringResource(R.string.traffic_replay_incomplete))
+            error?.let { TrafficErrorText(it, R.string.traffic_replay_failed) }
+            AppDialogButton(stringResource(R.string.traffic_replay_resend), {
+                parsed?.let { send(CaptureReplayEdit(method.trim(), url.trim(), it, body, request.body.format == "base64")) }
+            }, Modifier.fillMaxWidth(), enabled = !busy && method.isNotBlank() && url.isNotBlank() && parsed != null)
+            if (busy) InfiniteProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
+        }
+    }
+}
+
+internal fun replayHeaderLines(text: String): Map<String, List<String>>? {
+    val headers = linkedMapOf<String, MutableList<String>>()
+    for (line in text.lineSequence()) {
+        if (line.isBlank()) continue
+        val separator = line.indexOf(':')
+        if (separator <= 0) return null
+        val name = line.substring(0, separator).trim()
+        if (name.isEmpty()) return null
+        headers.getOrPut(name) { mutableListOf() }.add(line.substring(separator + 1).trimStart())
+    }
+    return headers
 }
 
 @Composable

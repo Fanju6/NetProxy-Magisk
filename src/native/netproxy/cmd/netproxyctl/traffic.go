@@ -19,14 +19,14 @@ import (
 func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 	const maxRequest = traffic.MaxRulesBytes + 1024
 	usage := func() error {
-		return usageError("用法: netproxyctl api traffic status|start|stop|toggle|list [批次ID]|page [批次ID [游标]]|batches|delete-batch <ID>|detail <ID>|clear|apps|set-apps <文件>|rules|set-rules <文件>|mitm|set-mitm|pinned|clear-pinned|alpn-bypasses|clear-alpn-bypasses|ca|ca-init|ca-export|ca-remove（规则可选 name 标题，enabled=false 可单独停用）")
+		return usageError("用法: netproxyctl api traffic status|start|stop|toggle|list [批次ID]|page [批次ID [游标]]|batches|delete-batch <ID>|detail <ID>|resend <ID>|replay <文件>|clear|apps|set-apps <文件>|rules|set-rules <文件>|mitm|set-mitm|pinned|clear-pinned|alpn-bypasses|clear-alpn-bypasses|ca|ca-init|ca-export|ca-remove（规则可选 name 标题，enabled=false 可单独停用）")
 	}
 	if len(args) == 0 {
 		return usage()
 	}
 	action := args[0]
 	withArgument := action == "set-rules" || action == "set-mitm" || action == "set-apps" || action == "ca-export" ||
-		action == "detail" || action == "delete-batch" || (action == "list" && len(args) > 1)
+		action == "detail" || action == "delete-batch" || action == "replay" || action == "resend" || (action == "list" && len(args) > 1)
 	if (action == "page" && len(args) > 3) || (action != "page" && ((withArgument && len(args) != 2) || (!withArgument && len(args) != 1))) {
 		return usage()
 	}
@@ -78,6 +78,15 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 			return usageError("抓包记录 ID 无效")
 		}
 		method, action = http.MethodGet, "detail?id="+url.QueryEscape(args[1])
+	case "resend":
+		if !traffic.ValidRecordID(args[1]) {
+			return usageError("抓包记录 ID 无效")
+		}
+		payload, err := json.Marshal(traffic.ReplayInput{ID: args[1]})
+		if err != nil {
+			return err
+		}
+		method, action, body = http.MethodPost, "replay", bytes.NewReader(payload)
 	case "start", "stop", "toggle", "ca-init":
 		method = http.MethodPost
 	case "clear":
@@ -90,7 +99,7 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 		method, action = http.MethodDelete, "ca/trust"
 	case "ca-export":
 		method, action = http.MethodGet, "ca"
-	case "set-rules", "set-mitm", "set-apps":
+	case "set-rules", "set-mitm", "set-apps", "replay":
 		method = http.MethodPut
 		limit := int64(maxRequest)
 		switch action {
@@ -98,6 +107,8 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 			action, limit = "mitm", traffic.MaxMITMBytes
 		case "set-apps":
 			action, limit = "apps", traffic.MaxAppsBytes
+		case "replay":
+			method, limit = http.MethodPost, 512<<10
 		default:
 			action = "rules"
 		}

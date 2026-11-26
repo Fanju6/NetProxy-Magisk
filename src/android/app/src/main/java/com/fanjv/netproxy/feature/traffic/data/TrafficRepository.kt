@@ -6,8 +6,10 @@ import com.fanjv.netproxy.core.api.ModuleApiException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import java.io.File
 
 @Serializable
@@ -70,7 +72,26 @@ internal data class CaptureRecord(
     @SerialName("source_app") val sourceApp: CaptureSourceApp? = null,
     val protocol: String? = null,
     val sequence: Long? = null,
+    @SerialName("replay_of") val replayOf: String? = null,
+    @SerialName("replay_original_exit") val replayOriginalExit: CaptureExit? = null,
+    @SerialName("replay_route_changed") val replayRouteChanged: Boolean = false,
+    @SerialName("replay_unattributed") val replayUnattributed: Boolean = false,
 )
+
+@Serializable
+internal data class CaptureReplayEdit(
+    val method: String,
+    val url: String,
+    val headers: Map<String, List<String>>,
+    val body: String,
+    @SerialName("body_base64") val bodyBase64: Boolean = false,
+)
+
+@Serializable
+private data class CaptureReplayInput(val id: String, val edit: CaptureReplayEdit? = null)
+
+@Serializable
+private data class CaptureReplayResult(val id: String)
 
 @Serializable
 internal data class CaptureCaStores(val user: String, val system: String)
@@ -288,6 +309,13 @@ internal class TrafficRepository(private val api: ModuleApiClient, private val c
         cache?.invalidate(id)
     }
     suspend fun detail(id: String): CaptureDetail = api.read("/traffic/detail", mapOf("id" to id))
+    suspend fun replay(id: String, edit: CaptureReplayEdit?): CaptureRecord {
+        val payload = if (edit == null) buildJsonObject {
+            put("id", id)
+        } else api.json.encodeToJsonElement(CaptureReplayInput(id, edit)).jsonObject
+        val result = api.json.decodeFromJsonElement<CaptureReplayResult>(api.post("/traffic/replay", payload).data)
+        return api.read("/traffic/detail", mapOf("id" to result.id))
+    }
     suspend fun downloadBody(id: String, side: String, destination: File, size: Int) {
         api.download("/traffic/body", mapOf("id" to id, "side" to side), destination)
         require(destination.length() == size.toLong())

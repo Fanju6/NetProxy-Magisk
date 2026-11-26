@@ -562,6 +562,10 @@ internal fun trafficError(error: Throwable, fallback: Int): String = when (error
         "traffic.ca_invalid" -> stringResource(R.string.traffic_ca_failed)
         "traffic.record_not_found" -> stringResource(R.string.traffic_detail_expired)
         "traffic.trust_remove_incomplete" -> stringResource(R.string.traffic_trust_remove_incomplete)
+        "traffic.replay_core_unavailable" -> stringResource(R.string.traffic_replay_core)
+        "traffic.replay_route_failed" -> stringResource(R.string.traffic_replay_route_failed)
+        "traffic.replay_invalid" -> stringResource(R.string.traffic_replay_invalid)
+        "traffic.replay_response_failed" -> stringResource(R.string.traffic_replay_failed)
         else -> stringResource(R.string.traffic_api_error, stringResource(fallback), error.resultCode, error.message)
     }
     else -> stringResource(fallback)

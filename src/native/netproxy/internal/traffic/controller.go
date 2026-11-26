@@ -22,23 +22,27 @@ import (
 const maxEntries = 200
 
 type Entry struct {
-	ID                string     `json:"id"`
-	Time              time.Time  `json:"time"`
-	Method            string     `json:"method"`
-	Host              string     `json:"host"`
-	Target            string     `json:"target,omitempty"`
-	Outbound          string     `json:"outbound"`
-	Status            int        `json:"status"`
-	Rewrite           string     `json:"rewrite,omitempty"`
-	Rewritten         bool       `json:"rewritten,omitzero"`
-	Exit              *Exit      `json:"exit,omitempty"`
-	SourceApp         *SourceApp `json:"source_app,omitempty"`
-	TLS               string     `json:"tls,omitempty"`
-	Protocol          string     `json:"protocol,omitempty"`
-	Sequence          uint64     `json:"sequence,omitempty"`
-	PassthroughReason string     `json:"passthrough_reason,omitempty"`
-	CAStores          *CAStores  `json:"ca_stores,omitempty"`
-	DurationMS        int64      `json:"duration_ms"`
+	ID                 string     `json:"id"`
+	Time               time.Time  `json:"time"`
+	Method             string     `json:"method"`
+	Host               string     `json:"host"`
+	Target             string     `json:"target,omitempty"`
+	Outbound           string     `json:"outbound"`
+	Status             int        `json:"status"`
+	Rewrite            string     `json:"rewrite,omitempty"`
+	Rewritten          bool       `json:"rewritten,omitzero"`
+	Exit               *Exit      `json:"exit,omitempty"`
+	SourceApp          *SourceApp `json:"source_app,omitempty"`
+	TLS                string     `json:"tls,omitempty"`
+	Protocol           string     `json:"protocol,omitempty"`
+	Sequence           uint64     `json:"sequence,omitempty"`
+	PassthroughReason  string     `json:"passthrough_reason,omitempty"`
+	CAStores           *CAStores  `json:"ca_stores,omitempty"`
+	ReplayOf           string     `json:"replay_of,omitempty"`
+	ReplayOriginal     *Exit      `json:"replay_original_exit,omitempty"`
+	ReplayRouteChanged bool       `json:"replay_route_changed,omitempty"`
+	ReplayUnattributed bool       `json:"replay_unattributed,omitempty"`
+	DurationMS         int64      `json:"duration_ms"`
 }
 
 type Status struct {
@@ -206,7 +210,7 @@ func (c *Controller) recordDetail(owner *session, entry Entry, detail *HTTPDetai
 	c.recordMediaDetail(owner, entry, detail, nil, nil)
 }
 
-func (c *Controller) recordMediaDetail(owner *session, entry Entry, detail *HTTPDetail, request, response *mediaSpool) {
+func (c *Controller) recordMediaDetail(owner *session, entry Entry, detail *HTTPDetail, request, response *mediaSpool) string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.session == owner {
@@ -232,9 +236,12 @@ func (c *Controller) recordMediaDetail(owner *session, entry Entry, detail *HTTP
 		c.count++
 		c.recorded++
 		c.detailBytes += size
+	} else {
+		entry.ID = ""
 	}
 	request.discard()
 	response.discard()
+	return entry.ID
 }
 
 func (c *Controller) Rules() ([]Rule, error) {

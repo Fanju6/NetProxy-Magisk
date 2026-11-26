@@ -21,6 +21,8 @@ export const COMMANDS = {
   api traffic page [批次ID [游标]]           分页读取已保存的记录
   api traffic delete-batch <批次ID>          删除已停止的批次
   api traffic detail <ID>                   查看出口、重写记录、请求和响应详情
+  api traffic resend <ID>                   按当前路由重发完整的抓包请求
+  api traffic replay <文件>                 按当前路由发送 JSON 文件中的编辑请求
   api traffic apps | set-apps <文件>        查看或保存 mode/all、blacklist、whitelist、disable_quic
   api traffic rules                         查看按 domains 分组的 JavaScript 重写规则
   api traffic set-rules <文件>               应用设备上的 JSON 规则文件（可选 name 标题，单条 enabled: false 可停用）
@@ -211,7 +213,7 @@ const CONFIG_TARGETS = [
 ]
 
 export const VALUE_COMPLETIONS: Record<string, string[]> = {
-  'api traffic': ['status', 'toggle', 'start', 'stop', 'batches', 'list', 'page', 'delete-batch', 'detail', 'clear', 'rules', 'set-rules', 'mitm', 'set-mitm', 'apps', 'set-apps', 'pinned', 'clear-pinned', 'alpn-bypasses', 'clear-alpn-bypasses', 'ca', 'ca-init', 'ca-export', 'ca-remove'],
+  'api traffic': ['status', 'toggle', 'start', 'stop', 'batches', 'list', 'page', 'delete-batch', 'detail', 'resend', 'replay', 'clear', 'rules', 'set-rules', 'mitm', 'set-mitm', 'apps', 'set-apps', 'pinned', 'clear-pinned', 'alpn-bypasses', 'clear-alpn-bypasses', 'ca', 'ca-init', 'ca-export', 'ca-remove'],
   'app mode': ['blacklist', 'whitelist'],
   'ebpf status': ['configured', 'all', 'local', 'shared', '--raw'],
   'logs show': ['service', 'core'],

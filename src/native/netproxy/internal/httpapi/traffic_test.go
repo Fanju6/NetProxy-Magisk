@@ -213,6 +213,26 @@ func TestTrafficPreviewRequiresAuthentication(t *testing.T) {
 	}
 }
 
+func TestTrafficReplayRejectsUnauthorizedInvalidAndMissingRecords(t *testing.T) {
+	s := resourceFixture(t)
+	target := trafficRoute + "replay"
+	r := httptest.NewRequest(http.MethodPost, target, nil)
+	r.Host = s.config.Listen
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated replay: %d", w.Code)
+	}
+	w, result := resourceRequest(t, s, http.MethodPost, target, `{"id":"bad"}`)
+	if w.Code != http.StatusBadRequest || result.Code != "traffic.replay_invalid" {
+		t.Fatalf("invalid replay: %d %s", w.Code, result.Code)
+	}
+	w, result = resourceRequest(t, s, http.MethodPost, target, `{"id":"`+strings.Repeat("A", 26)+`"}`)
+	if w.Code != http.StatusNotFound || result.Code != "traffic.record_not_found" {
+		t.Fatalf("missing replay record: %d %s", w.Code, result.Code)
+	}
+}
+
 func TestTrafficDomainQueries(t *testing.T) {
 	s := resourceFixture(t)
 	id, batch := strings.Repeat("A", 26), strings.Repeat("B", 26)

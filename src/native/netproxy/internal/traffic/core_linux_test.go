@@ -2,6 +2,7 @@ package traffic
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -145,7 +146,103 @@ func startCaptureTestCoreWithVLESS(t *testing.T, core string, layout paths.Layou
 	return dialer.(proxy.ContextDialer).DialContext
 }
 
-func startCaptureTestSOCKS(t *testing.T, core string, layout paths.Layout, vless bool) string {
+func TestPatchedCoreReplayRoutesEditedOriginWithOriginalApp(t *testing.T) {
+	core := os.Getenv("NETPROXY_TEST_CAPTURE_CORE")
+	if core == "" {
+		t.Skip("set NETPROXY_TEST_CAPTURE_CORE to the patched Linux sing-box")
+	}
+	var received = make(chan string, 4)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		received <- r.Method + " " + r.URL.Path + " " + r.Header.Get("X-Replay") + " " + string(body)
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = io.WriteString(w, "origin response")
+	})
+	first, second, untrusted := httptest.NewServer(handler), httptest.NewServer(handler), httptest.NewTLSServer(handler)
+	defer first.Close()
+	defer second.Close()
+	defer untrusted.Close()
+	layout := paths.New(t.TempDir())
+	controller := New(layout)
+	if err := controller.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer controller.Stop()
+	owner := &SourceApp{UID: 1010123, UserID: 10, Package: "com.example.replay"}
+	exit := &Exit{Inbound: "netproxy-in", Chain: []ExitHop{{Tag: "match-original-inbound", Type: "selector"}, {Tag: "capture-node", Type: "direct"}}}
+	saved := func(app *SourceApp) string {
+		controller.recordDetail(controller.session, Entry{Method: http.MethodPost, Exit: exit, SourceApp: app}, &HTTPDetail{
+			URL: first.URL + "/original",
+			Request: CapturedMessage{
+				Headers: http.Header{"X-Replay": {"before"}},
+				Body:    CapturedBody{Data: "before body", Format: "text"},
+			},
+		})
+		return controller.Entries()[0].ID
+	}
+	original := saved(owner)
+	req := ReplayInput{ID: original}
+	if _, err := controller.Replay(t.Context(), req); !errors.Is(err, ErrReplayCore) {
+		t.Fatalf("replay without a running core = %v", err)
+	}
+	port := second.Listener.Addr().(*net.TCPAddr).Port
+	startCaptureTestSOCKS(t, core, layout, false,
+		fmt.Sprintf(`{"inbound":"netproxy-in","port":%d,"user_id":%d,"package_name":%q,"action":"route","outbound":"direct"}`, port, owner.UID, owner.Package))
+	replay := func(input ReplayInput) (string, error) {
+		t.Helper()
+		for range 100 {
+			controller.session.replayMu.Lock()
+			available := controller.session.replayOffer != nil
+			controller.session.replayMu.Unlock()
+			if available {
+				return controller.Replay(t.Context(), input)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatal("core did not offer a replay connection")
+		return "", nil
+	}
+	id, err := replay(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	quick, _ := controller.Record(id)
+	if quick.ReplayOf != original || quick.ReplayRouteChanged || quick.Outbound != "match-original-inbound" || quick.HTTP.Response.Body.Data != "origin response" {
+		t.Fatalf("quick resend = %+v", quick)
+	}
+	if got := <-received; got != "POST /original before before body" {
+		t.Fatalf("quick request = %q", got)
+	}
+	req.Edit = &ReplayEdit{Method: http.MethodPut, URL: second.URL + "/edited", Headers: http.Header{"X-Replay": {"after"}}, Body: "after body"}
+	id, err = replay(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited, _ := controller.Record(id)
+	if edited.ReplayOf != original || !edited.ReplayRouteChanged || edited.Outbound != "direct" ||
+		edited.ReplayOriginal.Chain[1].Tag != "capture-node" || edited.Exit.Package != owner.Package ||
+		edited.SourceApp == nil || *edited.SourceApp != *owner {
+		t.Fatalf("edited replay = %+v", edited)
+	}
+	if got := <-received; got != "PUT /edited after after body" {
+		t.Fatalf("edited request = %q", got)
+	}
+	req.ID = saved(nil)
+	id, err = replay(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unattributed, _ := controller.Record(id)
+	if !unattributed.ReplayUnattributed || unattributed.SourceApp != nil || unattributed.Outbound != "match-original-inbound" {
+		t.Fatalf("unattributed replay = %+v", unattributed)
+	}
+	req.Edit.URL = untrusted.URL
+	if _, err := replay(req); !errors.Is(err, ErrReplayResponse) {
+		t.Fatalf("self-signed replay = %v", err)
+	}
+}
+
+func startCaptureTestSOCKS(t *testing.T, core string, layout paths.Layout, vless bool, replayRules ...string) string {
 	t.Helper()
 	address, port := reserveCaptureTestPort(t)
 	upstreamInbound, upstreamOutbound := "", `{"type":"direct","tag":"capture-node"}`
@@ -155,7 +252,8 @@ func startCaptureTestSOCKS(t *testing.T, core string, layout paths.Layout, vless
 		upstreamInbound = fmt.Sprintf(`,{"type":"vless","tag":"test-relay","listen":"127.0.0.1","listen_port":%d,"users":[{"uuid":%q}]}`, relayPort, uuid)
 		upstreamOutbound = fmt.Sprintf(`{"type":"vless","tag":"capture-node","server":"127.0.0.1","server_port":%d,"uuid":%q}`, relayPort, uuid)
 	}
-	config := fmt.Sprintf(`{"inbounds":[{"type":"mixed","tag":"netproxy-in","listen":"127.0.0.1","listen_port":%d}%s],"outbounds":[%s,{"type":"selector","tag":"match-original-inbound","outbounds":["capture-node"]},{"type":"direct","tag":"direct"},{"type":"block","tag":"block"}],"route":{"netproxy_capture_socket":%q,"final":"block","rules":[{"inbound":"netproxy-in","action":"route","outbound":"match-original-inbound"},{"inbound":"test-relay","action":"route","outbound":"direct"}]}}`, port, upstreamInbound, upstreamOutbound, layout.TrafficSocket())
+	rules := append(replayRules, `{"inbound":"netproxy-in","action":"route","outbound":"match-original-inbound"}`, `{"inbound":"test-relay","action":"route","outbound":"direct"}`)
+	config := fmt.Sprintf(`{"inbounds":[{"type":"mixed","tag":"netproxy-in","listen":"127.0.0.1","listen_port":%d}%s],"outbounds":[%s,{"type":"selector","tag":"match-original-inbound","outbounds":["capture-node"]},{"type":"direct","tag":"direct"},{"type":"block","tag":"block"}],"route":{"netproxy_capture_socket":%q,"final":"block","rules":[%s]}}`, port, upstreamInbound, upstreamOutbound, layout.TrafficSocket(), strings.Join(rules, ","))
 	configPath := filepath.Join(layout.Root(), "test-core.json")
 	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
 		t.Fatal(err)

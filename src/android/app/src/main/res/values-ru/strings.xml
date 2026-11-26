@@ -877,4 +877,20 @@
     <string name="traffic_alpn_expires">Действует до: %1$s</string>
     <string name="traffic_alpn_incompatible">ALPN несовместим · соединение закрыто</string>
     <string name="traffic_alpn_bypassed">ALPN несовместим · трафик пропущен без расшифровки</string>
+    <string name="traffic_replay_resend">Отправить снова</string>
+    <string name="traffic_replay_edit">Изменить и отправить</string>
+    <string name="traffic_replay_of">Исходная запись</string>
+    <string name="traffic_replay_original_route">Исходный маршрут</string>
+    <string name="traffic_replay_new_origin">Адрес назначения изменился. Перед отправкой проверьте файлы cookie и заголовки авторизации.</string>
+    <string name="traffic_replay_route_changed">Повтор отправлен по другому маршруту.</string>
+    <string name="traffic_replay_unattributed">Исходное приложение не определено.</string>
+    <string name="traffic_replay_headers">Заголовки запроса (Имя: значение)</string>
+    <string name="traffic_replay_invalid_headers">Введите по одному заголовку на строку в формате Имя: значение.</string>
+    <string name="traffic_replay_body">Тело запроса</string>
+    <string name="traffic_replay_base64">Тело запроса (Base64)</string>
+    <string name="traffic_replay_incomplete">Запись неполная. Проверьте и заполните недостающие поля перед отправкой.</string>
+    <string name="traffic_replay_core">Ядро захвата недоступно. Запустите захват и повторите попытку.</string>
+    <string name="traffic_replay_route_failed">Ядро не смогло выбрать маршрут для запроса.</string>
+    <string name="traffic_replay_invalid">Запрос повтора недействителен или исходная запись неполная.</string>
+    <string name="traffic_replay_failed">Не получен корректный ответ на повторный запрос.</string>
 </resources>

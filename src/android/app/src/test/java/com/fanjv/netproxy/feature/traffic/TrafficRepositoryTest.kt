@@ -6,13 +6,16 @@ import com.fanjv.netproxy.core.api.ModuleHttpResponse
 import com.fanjv.netproxy.core.api.TestApiTransport
 import com.fanjv.netproxy.core.api.apiSuccess
 import com.fanjv.netproxy.feature.traffic.data.CapturePageCache
+import com.fanjv.netproxy.feature.traffic.data.CaptureReplayEdit
 import com.fanjv.netproxy.feature.traffic.data.MitmPolicy
 import com.fanjv.netproxy.feature.traffic.data.RewriteRule
 import com.fanjv.netproxy.feature.traffic.data.TrafficChangedException
 import com.fanjv.netproxy.feature.traffic.data.TrafficRepository
+import com.fanjv.netproxy.feature.traffic.presentation.replayHeaderLines
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.Rule
@@ -20,6 +23,39 @@ import org.junit.rules.TemporaryFolder
 
 class TrafficRepositoryTest {
     @get:Rule val cacheDir = TemporaryFolder()
+
+    @Test fun replayPostsOnceAndDecodesRouteAttribution() = runBlocking {
+        val original = "A".repeat(26)
+        val id = "B".repeat(26)
+        val edit = CaptureReplayEdit("PUT", "https://other.test/path", mapOf("X-Note" to listOf("one", "two")), "edited")
+        var posts = 0
+        val repository = TrafficRepository(ModuleApiClient(TestApiTransport { request ->
+            if (request.path == "/traffic/replay") {
+                assertEquals("POST", request.method)
+                val body = if (posts++ == 0) """{"id":"$original"}""" else
+                    """{"id":"$original","edit":{"method":"PUT","url":"https://other.test/path","headers":{"X-Note":["one","two"]},"body":"edited"}}"""
+                assertEquals(Json.parseToJsonElement(body), request.body)
+                apiSuccess("""{"id":"$id"}""")
+            } else {
+                assertEquals("/traffic/detail", request.path)
+                assertEquals(mapOf("id" to id), request.query)
+                apiSuccess("""{"id":"$id","time":"now","method":"PUT","host":"other.test","outbound":"direct","status":200,"duration_ms":1,"replay_of":"$original","replay_route_changed":true,"replay_unattributed":true,"replay_original_exit":{"chain":[{"tag":"Proxy","type":"selector"}]}}""")
+            }
+        }))
+        assertEquals(id, repository.replay(original, null).id)
+        val record = repository.replay(original, edit)
+        assertEquals(original, record.replayOf)
+        assertEquals("Proxy", record.replayOriginalExit?.chain?.single()?.tag)
+        assertTrue(record.replayRouteChanged)
+        assertTrue(record.replayUnattributed)
+        assertEquals(2, posts)
+    }
+
+    @Test fun replayHeaderEditorPreservesRepeatedValues() {
+        assertEquals(mapOf("X-Note" to listOf("one:two", "three"), "Empty" to listOf("")),
+            replayHeaderLines("X-Note: one:two\nX-Note: three\nEmpty:"))
+        assertNull(replayHeaderLines("invalid"))
+    }
 
     @Test fun captureRecordsDecodeCertificateDiagnostics() = runBlocking {
         val repository = TrafficRepository(ModuleApiClient(TestApiTransport {

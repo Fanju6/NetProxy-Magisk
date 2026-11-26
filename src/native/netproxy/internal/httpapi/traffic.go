@@ -153,6 +153,31 @@ func (s *Server) registerTraffic() {
 		}
 		return contract.Success("traffic.detail", "抓包详情", record), nil
 	})
+	s.route("POST "+trafficRoute+"replay", 45*time.Second, true, func(ctx context.Context, r *http.Request) (contract.Result, error) {
+		if _, err := resourceQuery(r); err != nil {
+			return contract.Result{}, err
+		}
+		var input traffic.ReplayInput
+		if err := decodeRequestLimit(r, &input, 512<<10); err != nil {
+			return contract.Result{}, err
+		}
+		id, err := s.traffic.Replay(ctx, input)
+		if err != nil {
+			code, status := "traffic.replay_response_failed", http.StatusBadGateway
+			switch err {
+			case traffic.ErrReplayCore:
+				code, status = "traffic.replay_core_unavailable", http.StatusServiceUnavailable
+			case traffic.ErrReplayRoute:
+				code = "traffic.replay_route_failed"
+			case traffic.ErrReplayRecord:
+				code, status = "traffic.record_not_found", http.StatusNotFound
+			case traffic.ErrReplayRequest:
+				code, status = "traffic.replay_invalid", http.StatusBadRequest
+			}
+			return contract.Result{}, &contract.Error{Code: code, Message: err.Error(), HTTPStatus: status}
+		}
+		return contract.Success("traffic.replayed", "已发送重放请求", map[string]string{"id": id}), nil
+	})
 	s.trafficRoute("DELETE", "list", "已清空抓包记录", func(context.Context) (any, error) {
 		if err := s.traffic.Clear(); err != nil {
 			return nil, captureHistoryError()

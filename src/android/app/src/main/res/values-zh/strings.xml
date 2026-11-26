@@ -907,4 +907,20 @@
     <string name="traffic_alpn_expires">到期：%1$s</string>
     <string name="traffic_alpn_incompatible">ALPN 不兼容 · 已关闭连接</string>
     <string name="traffic_alpn_bypassed">ALPN 不兼容 · 本次透传</string>
+    <string name="traffic_replay_resend">重发</string>
+    <string name="traffic_replay_edit">编辑并重发</string>
+    <string name="traffic_replay_of">原始记录</string>
+    <string name="traffic_replay_original_route">原始路由</string>
+    <string name="traffic_replay_new_origin">目标源已变更，发送前请检查 Cookie 和授权头。</string>
+    <string name="traffic_replay_route_changed">重放使用了不同的路由。</string>
+    <string name="traffic_replay_unattributed">重放没有原始应用归属。</string>
+    <string name="traffic_replay_headers">请求头（名称: 值）</string>
+    <string name="traffic_replay_invalid_headers">每行输入一个请求头，格式为名称: 值。</string>
+    <string name="traffic_replay_body">请求正文</string>
+    <string name="traffic_replay_base64">请求正文（Base64）</string>
+    <string name="traffic_replay_incomplete">此抓包记录不完整，请在发送前检查并补全缺失字段。</string>
+    <string name="traffic_replay_core">抓包核心不可用，请开启抓包后重试。</string>
+    <string name="traffic_replay_route_failed">核心无法为此请求建立路由。</string>
+    <string name="traffic_replay_invalid">重放请求无效或原始请求不完整。</string>
+    <string name="traffic_replay_failed">重放未收到有效响应。</string>
 </resources>

@@ -54,11 +54,19 @@ type session struct {
 	cancel      context.CancelFunc
 	slots       chan struct{}
 	scriptSlots chan struct{}
+	replayMu    sync.Mutex
+	replayOffer *net.UnixConn
 }
 
 func (s *session) close() {
 	s.cancel()
 	_ = s.listener.Close()
+	s.replayMu.Lock()
+	if s.replayOffer != nil {
+		_ = s.replayOffer.Close()
+		s.replayOffer = nil
+	}
+	s.replayMu.Unlock()
 }
 
 func (s *session) serve() {
@@ -78,7 +86,6 @@ func (s *session) serve() {
 
 func (s *session) handleBridge(bridge *net.UnixConn) {
 	defer func() { <-s.slots }()
-	defer bridge.Close()
 	defer func() {
 		if recover() != nil {
 			s.logPanic("traffic.bridge")
@@ -109,6 +116,20 @@ func (s *session) logPanic(event string) {
 
 func (s *session) serveBridge(bridge *net.UnixConn) {
 	upstream, metadata, err := readBridge(bridge)
+	if errors.Is(err, errReplayOffer) {
+		s.replayMu.Lock()
+		defer s.replayMu.Unlock()
+		if s.ctx.Err() != nil {
+			_ = bridge.Close()
+			return
+		}
+		if s.replayOffer != nil {
+			_ = s.replayOffer.Close()
+		}
+		s.replayOffer = bridge
+		return
+	}
+	defer bridge.Close()
 	if err != nil {
 		return
 	}

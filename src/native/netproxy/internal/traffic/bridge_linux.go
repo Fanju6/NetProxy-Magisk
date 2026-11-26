@@ -20,6 +20,9 @@ func readBridge(bridge *net.UnixConn) (net.Conn, flow, error) {
 	if err != nil {
 		return nil, flow{}, err
 	}
+	if n == 1 && data[0] == 0 && used == 0 {
+		return nil, flow{}, errReplayOffer
+	}
 	messages, err := unix.ParseSocketControlMessage(control[:used])
 	if err != nil {
 		return nil, flow{}, err

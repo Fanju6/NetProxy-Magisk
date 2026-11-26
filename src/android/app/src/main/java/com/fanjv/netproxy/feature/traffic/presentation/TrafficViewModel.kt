@@ -13,6 +13,7 @@ import com.fanjv.netproxy.feature.traffic.data.CaptureCertificate
 import com.fanjv.netproxy.feature.traffic.data.CaptureDetail
 import com.fanjv.netproxy.feature.traffic.data.CapturePage
 import com.fanjv.netproxy.feature.traffic.data.CaptureRecord
+import com.fanjv.netproxy.feature.traffic.data.CaptureReplayEdit
 import com.fanjv.netproxy.feature.traffic.data.CaptureStatus
 import com.fanjv.netproxy.feature.traffic.data.MitmPolicy
 import com.fanjv.netproxy.feature.traffic.data.PinnedBypass
@@ -97,6 +98,9 @@ internal class TrafficViewModel(
     private var detailJob: Job? = null
     private var olderJob: Job? = null
     private var pollJob: Job? = null
+
+    suspend fun replay(id: String, edit: CaptureReplayEdit?) =
+        repository.replay(id, edit)
 
     fun openRecord(record: CaptureRecord) {
         detailJob?.cancel()

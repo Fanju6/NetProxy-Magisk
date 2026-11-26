@@ -136,6 +136,7 @@ HTTP 保存必须提供读取时的 revision。发生 `config.conflict` 时重�
 | `DELETE /logs?kind=service` | 清空日志 |
 | `GET /traffic/status`、`list?batch=…`、`detail?id=…` | 全局抓包状态、指定批次的记录和详情；不传 `batch` 时使用当前或最近批次。HTTP 记录带 `protocol` 和连接内 `sequence`（不是线路 Stream ID）；HTTP/2 请求、响应详情可带 `trailers` 与 `trailers_truncated`，gRPC 可带 `grpc`（有界的 `messages`、`status`、`message`）。WS/WSS 详情含有界的 `http.websocket.frames` 与 `messages`。 |
 | `GET /traffic/preview` | 当前抓包状态、当前批次的累计记录数和最新三条记录的元数据；停止时返回空列表 |
+| `POST /traffic/replay` | `{"id":"记录ID"}` 重发完整请求；可选 `edit: {"method":"POST","url":"https://example.org/","headers":{"X-Debug":["1"]},"body":"edited"}` 替换请求（`body_base64:true` 发送 Base64 字节）。返回新记录的 `id`。记录包含 `replay_of`、`replay_original_exit` 和实际 `exit`，路由变化及缺少应用归属分别标为 `replay_route_changed` 和 `replay_unattributed`。抓包核心未运行时返回 `traffic.replay_core_unavailable`，不会直连兜底。 |
 | `GET /traffic/body?id=…&side=response` | 鉴权后读取指定记录的本地正文（`side=request` 或 `response`）。成功响应为 `application/octet-stream`，支持对已保留字节使用 HTTP Range；未保留或已删除时返回 `traffic.body_not_found`。详情正文的 `blob`、`captured_size`、`size`、`truncated` 分别表示正文是否单独保存、已保留字节数、源正文大小及是否截断；`content_range` 表示上游分段而非本接口的 Range。 |
 | `GET /traffic/batches`、`DELETE /traffic/batches?id=…` | 查看本地批次（ID、开始/停止时间、运行状态、已保存条数、字节数）或删除指定的已停止批次 |
 | `GET /traffic/page?batch=…&limit=50&before=…` | 按新到旧读取指定批次（默认当前或最近批次）；每页 1–100 条。响应的 `before` 用于继续向前翻页；用 `since`（或 `after`）代替 `before` 读取更新，使用返回的 `since` 继续拉取；`oldest` 表示当前保留范围起点 |
