@@ -849,4 +849,18 @@
     <string name="traffic_media_share">Share file</string>
     <string name="traffic_media_play">Play</string>
     <string name="traffic_media_pause">Pause</string>
+    <string name="traffic_ws_messages">WebSocket messages</string>
+    <string name="traffic_ws_close_code">Close code</string>
+    <string name="traffic_compressed">Compressed</string>
+    <string name="traffic_protocol">Protocol</string>
+    <string name="traffic_connection_sequence">Connection sequence</string>
+    <string name="traffic_trailers">Trailers</string>
+    <string name="traffic_grpc_message">Message %1$d</string>
+    <string name="traffic_alpn_title">Temporary ALPN bypasses</string>
+    <string name="traffic_alpn_empty">No active ALPN bypasses</string>
+    <string name="traffic_alpn_clear">Clear ALPN bypasses</string>
+    <string name="traffic_alpn_clear_prompt">Clear all temporary ALPN bypasses?</string>
+    <string name="traffic_alpn_expires">Expires: %1$s</string>
+    <string name="traffic_alpn_incompatible">Incompatible ALPN · connection closed</string>
+    <string name="traffic_alpn_bypassed">Incompatible ALPN · passed through</string>
 </resources>

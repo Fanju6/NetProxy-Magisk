@@ -16,6 +16,7 @@ import com.fanjv.netproxy.feature.traffic.data.CaptureRecord
 import com.fanjv.netproxy.feature.traffic.data.CaptureStatus
 import com.fanjv.netproxy.feature.traffic.data.MitmPolicy
 import com.fanjv.netproxy.feature.traffic.data.PinnedBypass
+import com.fanjv.netproxy.feature.traffic.data.AlpnBypass
 import com.fanjv.netproxy.feature.traffic.data.RewriteRule
 import com.fanjv.netproxy.feature.traffic.data.TrafficChangedException
 import com.fanjv.netproxy.feature.traffic.data.TrafficRepository
@@ -63,6 +64,7 @@ internal data class TrafficState(
     val rules: TrafficContent<List<RewriteRule>> = TrafficContent(),
     val policy: TrafficContent<MitmPolicy> = TrafficContent(),
     val pinned: TrafficContent<List<PinnedBypass>> = TrafficContent(),
+    val alpnBypasses: TrafficContent<List<AlpnBypass>> = TrafficContent(),
     val loading: Boolean = true,
     val saving: Boolean = false,
     val failure: Throwable? = null,
@@ -284,6 +286,16 @@ internal class TrafficViewModel(
     fun clearPinned() = mutate {
         val entries = repository.clearPinned()
         _state.update { it.copy(pinned = TrafficContent(entries)) }
+    }
+
+    fun readAlpnBypasses() = viewModelScope.launch {
+        val result = attempt { repository.alpnBypasses() }
+        _state.update { it.copy(alpnBypasses = it.alpnBypasses.refreshed(result)) }
+    }
+
+    fun clearAlpnBypasses() = mutate {
+        val entries = repository.clearAlpnBypasses()
+        _state.update { it.copy(alpnBypasses = TrafficContent(entries)) }
     }
 
     fun setCaptureDisableQuic(disabled: Boolean) = mutate {

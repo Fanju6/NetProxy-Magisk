@@ -6,10 +6,105 @@ import (
 	"io"
 	"os"
 	"slices"
+	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/inbound"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/provider"
 )
+
+const alpnBypassTTL = 15 * time.Minute
+
+type ALPNBypass struct {
+	PinnedBypass
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+func (c *Controller) ALPNBypasses() ([]ALPNBypass, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.loadALPNLocked(); err != nil {
+		return nil, err
+	}
+	c.expireALPNLocked(time.Now())
+	return slices.Clone(c.alpn), nil
+}
+
+func (c *Controller) ClearALPNBypasses() ([]ALPNBypass, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entries := []ALPNBypass{}
+	return entries, c.saveALPNLocked(entries)
+}
+
+func (c *Controller) loadALPNLocked() error {
+	if c.alpn != nil {
+		return nil
+	}
+	f, err := os.Open(c.layout.TrafficALPNBypasses())
+	if errors.Is(err, os.ErrNotExist) {
+		c.alpn = []ALPNBypass{}
+		return nil
+	}
+	if err != nil {
+		return errors.New("无法读取 ALPN 临时跳过列表")
+	}
+	defer f.Close()
+	content, err := io.ReadAll(io.LimitReader(f, maxPinnedBytes+1))
+	var entries []ALPNBypass
+	if err != nil || len(content) > maxPinnedBytes || json.Unmarshal(content, &entries, json.RejectUnknownMembers(true)) != nil ||
+		entries == nil || len(entries) > maxPinnedEntries || slices.ContainsFunc(entries, func(entry ALPNBypass) bool {
+		return !entry.valid() || entry.ExpiresAt.IsZero()
+	}) {
+		return errors.New("ALPN 临时跳过列表无效")
+	}
+	c.alpn = entries
+	return nil
+}
+
+func (c *Controller) saveALPNLocked(entries []ALPNBypass) error {
+	content, err := json.Marshal(entries)
+	if err != nil || len(content) > maxPinnedBytes || provider.WriteAtomic(c.layout.TrafficALPNBypasses(), content, 0o600) != nil {
+		return errors.New("无法保存 ALPN 临时跳过列表")
+	}
+	c.alpn = entries
+	return nil
+}
+
+func (c *Controller) expireALPNLocked(now time.Time) {
+	c.alpn = slices.DeleteFunc(c.alpn, func(entry ALPNBypass) bool { return !entry.ExpiresAt.After(now) })
+}
+
+func (c *Controller) isALPNBypassed(host string, app *SourceApp) bool {
+	key, ok := pinnedKey(canonicalHost(host), app)
+	if !ok {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.loadALPNLocked() != nil {
+		return false
+	}
+	c.expireALPNLocked(time.Now())
+	return slices.ContainsFunc(c.alpn, func(entry ALPNBypass) bool { return entry.PinnedBypass == key })
+}
+
+func (c *Controller) rememberALPN(host string, app *SourceApp) {
+	key, ok := pinnedKey(canonicalHost(host), app)
+	if !ok {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	_ = c.loadALPNLocked()
+	now := time.Now()
+	c.expireALPNLocked(now)
+	c.alpn = slices.DeleteFunc(c.alpn, func(entry ALPNBypass) bool { return entry.PinnedBypass == key })
+	if len(c.alpn) == maxPinnedEntries {
+		c.alpn = slices.Delete(c.alpn, 0, 1)
+	}
+	c.alpn = append(c.alpn, ALPNBypass{key, now.Add(alpnBypassTTL)})
+	_ = c.saveALPNLocked(c.alpn)
+}
 
 const (
 	maxPinnedEntries = 512

@@ -2,6 +2,7 @@ package traffic
 
 import (
 	"bytes"
+	"compress/flate"
 	"crypto/tls"
 	"crypto/x509"
 	"io"
@@ -140,5 +141,47 @@ func TestCaptureWebSocketThroughCoreBridge(t *testing.T) {
 			}
 			t.Fatal("capture not recorded")
 		})
+	}
+}
+
+func TestWebSocketCaptureFragmentedDeflateAndClose(t *testing.T) {
+	var compressed bytes.Buffer
+	zip, err := flate.NewWriter(&compressed, flate.BestCompression)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer zip.Close()
+	first := strings.Repeat("capture fragment ", 7)
+	second := first + "again"
+	compress := func(message string) []byte {
+		compressed.Reset()
+		if _, err := io.WriteString(zip, message); err != nil {
+			t.Fatal(err)
+		}
+		if err := zip.Flush(); err != nil {
+			t.Fatal(err)
+		}
+		return bytes.Clone(compressed.Bytes()[:compressed.Len()-4])
+	}
+	fragmented, following := compress(first), compress(second)
+	wire := []byte{0x41, 1, fragmented[0], 0x89, 0}
+	wire = append(wire, 0x80, byte(len(fragmented)-1))
+	wire = append(wire, fragmented[1:]...)
+	wire = append(wire, 0xc1, byte(len(following)))
+	wire = append(wire, following...)
+	wire = append(wire, 0x88, 5, 3, 232, 'b', 'y', 'e')
+	capture := &webSocketCapture{}
+	capture.configure(http.Header{"Sec-Websocket-Extensions": {"permessage-deflate"}})
+	var forwarded bytes.Buffer
+	capture.relay(&forwarded, bytes.NewReader(wire), "receive")
+	if !bytes.Equal(forwarded.Bytes(), wire) {
+		t.Fatal("relay modified compressed wire bytes")
+	}
+	if messages := capture.detail.Messages; len(messages) != 2 || messages[0].Text != first || messages[1].Text != second ||
+		!messages[0].Compressed || !messages[1].Compressed || messages[0].Truncated || messages[1].Truncated {
+		t.Fatalf("unexpected captured messages: %+v", messages)
+	}
+	if frames := capture.detail.Frames; len(frames) != 5 || frames[4].CloseCode == nil || *frames[4].CloseCode != 1000 || frames[4].Text != "bye" {
+		t.Fatalf("unexpected close frame: %+v", frames)
 	}
 }

@@ -849,4 +849,18 @@
     <string name="traffic_media_share">Поделиться файлом</string>
     <string name="traffic_media_play">Воспроизвести</string>
     <string name="traffic_media_pause">Пауза</string>
+    <string name="traffic_ws_messages">Сообщения WebSocket</string>
+    <string name="traffic_ws_close_code">Код закрытия</string>
+    <string name="traffic_compressed">Сжато</string>
+    <string name="traffic_protocol">Протокол</string>
+    <string name="traffic_connection_sequence">Порядковый номер в соединении</string>
+    <string name="traffic_trailers">Завершающие заголовки</string>
+    <string name="traffic_grpc_message">Сообщение %1$d</string>
+    <string name="traffic_alpn_title">Временный обход ALPN</string>
+    <string name="traffic_alpn_empty">Нет активных записей обхода ALPN</string>
+    <string name="traffic_alpn_clear">Очистить список обхода ALPN</string>
+    <string name="traffic_alpn_clear_prompt">Очистить все записи временного обхода ALPN?</string>
+    <string name="traffic_alpn_expires">Действует до: %1$s</string>
+    <string name="traffic_alpn_incompatible">ALPN несовместим · соединение закрыто</string>
+    <string name="traffic_alpn_bypassed">ALPN несовместим · трафик пропущен без расшифровки</string>
 </resources>

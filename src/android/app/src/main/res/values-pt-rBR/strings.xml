@@ -849,4 +849,18 @@
     <string name="traffic_media_share">Compartilhar arquivo</string>
     <string name="traffic_media_play">Reproduzir</string>
     <string name="traffic_media_pause">Pausar</string>
+    <string name="traffic_ws_messages">Mensagens WebSocket</string>
+    <string name="traffic_ws_close_code">Código de encerramento</string>
+    <string name="traffic_compressed">Compactado</string>
+    <string name="traffic_protocol">Protocolo</string>
+    <string name="traffic_connection_sequence">Sequência na conexão</string>
+    <string name="traffic_trailers">Cabeçalhos finais</string>
+    <string name="traffic_grpc_message">Mensagem %1$d</string>
+    <string name="traffic_alpn_title">Exceções temporárias de ALPN</string>
+    <string name="traffic_alpn_empty">Nenhuma exceção de ALPN ativa</string>
+    <string name="traffic_alpn_clear">Limpar exceções de ALPN</string>
+    <string name="traffic_alpn_clear_prompt">Limpar todas as exceções temporárias de ALPN?</string>
+    <string name="traffic_alpn_expires">Expira em: %1$s</string>
+    <string name="traffic_alpn_incompatible">ALPN incompatível · conexão encerrada</string>
+    <string name="traffic_alpn_bypassed">ALPN incompatível · sem descriptografia</string>
 </resources>

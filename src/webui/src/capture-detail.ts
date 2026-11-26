@@ -15,7 +15,34 @@ interface CaptureBody {
 interface CaptureMessage {
   headers: Record<string, string[]> | null
   headers_truncated: boolean
+  trailers?: Record<string, string[]>
+  trailers_truncated?: boolean
+  grpc?: { status?: string, message?: string, messages: GRPCMessage[], truncated?: boolean }
   body: CaptureBody
+}
+
+interface GRPCMessage {
+  size: number
+  compressed?: boolean
+  truncated?: boolean
+  fields?: ProtoField[]
+}
+
+interface ProtoField {
+  number: number
+  wire: number
+  value?: string
+  fields?: ProtoField[]
+}
+
+interface WebSocketFrame {
+  direction: string
+  opcode: number
+  size: number
+  text?: string
+  truncated: boolean
+  close_code?: number
+  compressed?: boolean
 }
 
 interface RewriteMatch {
@@ -38,12 +65,14 @@ export interface CaptureDetail {
   status: number
   outbound: string
   duration_ms: number
+  protocol?: string
+  sequence?: number
   passthrough_reason?: string
   source_app?: { uid: number, user_id: number, package?: string }
   exit?: { inbound?: string, chain?: { tag: string, type: string }[], remote?: string, package?: string, uid?: number, process?: string }
   http?: {
     url: string, url_truncated: boolean, request: CaptureMessage, response: CaptureMessage, rewrites?: RewriteMatch[]
-    websocket?: { frames: { direction: string, opcode: number, size: number, text?: string, truncated: boolean }[], truncated: boolean }
+    websocket?: { frames: WebSocketFrame[], truncated: boolean, messages?: WebSocketFrame[], messages_truncated?: boolean }
   }
 }
 
@@ -61,6 +90,8 @@ const passthroughReasons: Record<string, string> = {
   sniff_timeout: '协议识别超时', unsupported_alpn: '不支持的 TLS 应用协议',
   protocol_unidentified: '协议无法识别', tls_hello_unavailable: '无法识别 TLS ClientHello',
   tls_host_unavailable: '无法识别 TLS 主机',
+  alpn_incompatible: 'ALPN 不兼容 · 已关闭连接',
+  alpn_bypassed: 'ALPN 不兼容 · 本次透传',
 }
 
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string): HTMLElementTagNameMap[K] {
@@ -123,11 +154,10 @@ export function captureHex(data: string): string {
   }
 }
 
-function message(title: string, data: CaptureMessage) {
-  const node = section(title)
-  const headers = section('头字段', true)
+function fields(title: string, data: Record<string, string[]> | null, truncated?: boolean) {
+  const headers = section(title, true)
   const lines: string[] = []
-  for (const [name, values] of Object.entries(data.headers ?? {})) {
+  for (const [name, values] of Object.entries(data ?? {})) {
     for (const value of values) {
       const full = `${name}: ${value}`
       const row = section(full)
@@ -136,10 +166,40 @@ function message(title: string, data: CaptureMessage) {
       lines.push(full)
     }
   }
-  if (lines.length) headers.append(copy('复制所有头字段', lines.join('\n')))
-  else headers.append(element('p', '没有头字段'))
-  if (data.headers_truncated) headers.append(element('p', '部分头字段已截断'))
-  node.append(headers)
+  if (lines.length) headers.append(copy(`复制所有${title}`, lines.join('\n')))
+  else headers.append(element('p', `没有${title}`))
+  if (truncated) headers.append(element('p', `部分${title}已截断`))
+  return headers
+}
+
+function protoFields(parent: HTMLElement, entries: ProtoField[]) {
+  for (const field of entries) {
+    const key = `#${field.number} · wire ${field.wire}`
+    if (field.fields?.length) {
+      const nested = section(key, true)
+      protoFields(nested, field.fields)
+      parent.append(nested)
+    } else line(parent, key, field.value ?? '—')
+  }
+}
+
+function message(title: string, data: CaptureMessage) {
+  const node = section(title)
+  node.append(fields('头字段', data.headers, data.headers_truncated))
+  if (data.trailers || data.trailers_truncated) node.append(fields('尾字段（Trailers）', data.trailers ?? null, data.trailers_truncated))
+  if (data.grpc) {
+    const grpc = section('gRPC · Protobuf', true)
+    line(grpc, 'grpc-status', data.grpc.status)
+    line(grpc, 'grpc-message', data.grpc.message)
+    data.grpc.messages.forEach((msg, index) => {
+      const row = section(`消息 ${index + 1} · ${msg.size} 字节${msg.compressed ? ' · 压缩' : ''}`, true)
+      protoFields(row, msg.fields ?? [])
+      if (msg.truncated) row.append(element('p', '消息无法完整解析。'))
+      grpc.append(row)
+    })
+    if (data.grpc.truncated) grpc.append(element('p', '仅显示部分 gRPC 消息。'))
+    node.append(grpc)
+  }
 
   const body = data.body
   const payload = section(['正文', body.content_type, body.size === undefined ? '' : `${body.size} 字节`,
@@ -177,6 +237,8 @@ export function renderCaptureDetail(data: CaptureDetail): HTMLElement {
   const overview = section('概览与代理出口', true)
   line(overview, '会话', `${data.method} ${data.host}${data.status > 0 ? ` · ${data.status}` : ''}`)
   line(overview, '耗时', `${data.duration_ms} ms`)
+  line(overview, '协议', data.protocol)
+  line(overview, '连接内序号', data.sequence)
   line(overview, '完整 URL', data.http?.url)
   if (data.http?.url_truncated) overview.append(element('p', 'URL 已截断'))
   line(overview, '入站', data.exit?.inbound)
@@ -214,14 +276,22 @@ export function renderCaptureDetail(data: CaptureDetail): HTMLElement {
   }
   article.append(rewrites, message('请求', data.http.request), message('响应', data.http.response))
   if (data.http.websocket) {
-    const socket = section('WebSocket 帧', true)
-    for (const frame of data.http.websocket.frames) {
-      line(socket, frame.direction === 'send' ? '发送' : '接收', `0x${frame.opcode.toString(16)} · ${frame.size} 字节`)
-      if (frame.text) socket.append(element('pre', frame.text))
-      if (frame.truncated) socket.append(element('p', '文本预览已截断。'))
-    }
-    if (data.http.websocket.truncated) socket.append(element('p', '仅显示前 64 帧。'))
-    article.append(socket)
+    const ws = data.http.websocket
+    if (ws.messages) article.append(socketDetails('WebSocket 消息', ws.messages, ws.messages_truncated))
+    article.append(socketDetails('WebSocket 帧', ws.frames ?? [], ws.truncated))
   }
   return article
+}
+
+function socketDetails(title: string, frames: WebSocketFrame[], truncated?: boolean) {
+  const socket = section(title, true)
+  for (const frame of frames) {
+    line(socket, frame.direction === 'send' ? '发送' : '接收',
+      `0x${frame.opcode.toString(16)} · ${frame.size} 字节${frame.compressed ? ' · 压缩' : ''}`)
+    line(socket, '关闭码', frame.close_code)
+    if (frame.text) socket.append(element('pre', frame.text))
+    if (frame.truncated) socket.append(element('p', '文本预览不完整。'))
+  }
+  if (truncated) socket.append(element('p', '仅显示前 64 条。'))
+  return socket
 }

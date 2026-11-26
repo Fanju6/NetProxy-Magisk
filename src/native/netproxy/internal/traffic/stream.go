@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/tls"
 	"errors"
 	"io"
 	"net"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/logfile"
+	"golang.org/x/net/http2"
 )
 
 var errBridge = errors.New("无效的透明抓包连接")
@@ -130,12 +130,13 @@ func (s *session) serveBridge(bridge *net.UnixConn) {
 	isHTTP := sniffHTTP(client.reader)
 	policy := s.controller.currentMITM()
 	host, reason := "", ""
+	var offered []string
 	if !isHTTP {
-		host, reason = sniffTLS(s.ctx, client, metadata)
+		host, offered, reason = sniffTLS(s.ctx, client, metadata)
 	}
 	_ = client.SetReadDeadline(time.Time{})
 	if isHTTP {
-		s.serveHTTPStream(client, client.done, upstream, metadata, "http", nil)
+		s.serveHTTPStream(client, client.done, upstream, metadata, "", nil)
 		return
 	}
 	entry := metadata.entry(now, "TCP", metadata.Destination)
@@ -150,7 +151,9 @@ func (s *session) serveBridge(bridge *net.UnixConn) {
 		case s.controller.isPinned(host, metadata.sourceApp):
 			reason = "certificate_rejected"
 			entry.TLS = "pinned_skipped"
-		case s.intercept(client, upstream, metadata, host, policy, now):
+		case s.controller.isALPNBypassed(host, metadata.sourceApp):
+			reason = "alpn_bypassed"
+		case s.intercept(client, upstream, metadata, host, offered, policy, now):
 			return
 		default:
 			reason = "decryption_unavailable"
@@ -183,16 +186,19 @@ func sniffHTTP(reader *bufio.Reader) bool {
 	return false
 }
 
-func (s *session) serveHTTPStream(client net.Conn, done <-chan struct{}, upstream net.Conn, metadata flow, scheme string, upstreamTLS *tls.Config) {
+func (s *session) serveHTTPStream(client net.Conn, done <-chan struct{}, upstream net.Conn, metadata flow, tlsHost string, failed error) {
 	var dialed atomic.Bool
+	dial := func(context.Context, string, string) (net.Conn, error) {
+		if failed != nil {
+			return nil, failed
+		}
+		if dialed.Swap(true) {
+			return nil, io.EOF
+		}
+		return upstream, nil
+	}
 	transport := &http.Transport{
-		DialContext: func(context.Context, string, string) (net.Conn, error) {
-			if dialed.Swap(true) {
-				return nil, io.EOF
-			}
-			return upstream, nil
-		},
-		TLSClientConfig: upstreamTLS, TLSHandshakeTimeout: 10 * time.Second, DisableKeepAlives: true, DisableCompression: true,
+		DialContext: dial, DialTLSContext: dial, DisableKeepAlives: true, DisableCompression: true,
 		ResponseHeaderTimeout: 30 * time.Second, MaxResponseHeaderBytes: 64 << 10,
 	}
 	defer transport.CloseIdleConnections()
@@ -214,7 +220,7 @@ func (s *session) serveHTTPStream(client net.Conn, done <-chan struct{}, upstrea
 				return
 			}
 			if r.Header.Get("Upgrade") != "" && !webSocketUpgrade(r.Header) {
-				if upstreamTLS != nil {
+				if tlsHost != "" {
 					http.Error(w, "HTTPS protocol upgrade is not supported", http.StatusNotImplemented)
 					return
 				}
@@ -229,21 +235,63 @@ func (s *session) serveHTTPStream(client net.Conn, done <-chan struct{}, upstrea
 				}
 				return
 			}
-			r.URL.Scheme, r.URL.Host = scheme, r.Host
+			r.URL.Scheme, r.URL.Host = "http", r.Host
+			if tlsHost != "" {
+				r.URL.Scheme = "https"
+			}
 			if !validTarget(r.URL) {
 				http.Error(w, "Invalid origin request", http.StatusBadRequest)
 				return
 			}
-			if upstreamTLS != nil && canonicalHost(r.URL.Hostname()) != upstreamTLS.ServerName {
+			if tlsHost != "" && canonicalHost(r.URL.Hostname()) != tlsHost {
 				http.Error(w, "Request does not match TLS host", http.StatusMisdirectedRequest)
 				return
 			}
 			w.Header().Set("Connection", "close")
-			s.proxyHTTP(w, r, time.Now(), transport, metadata)
+			s.proxyHTTP(w, r, time.Now(), transport, metadata, 1)
 		}),
 	}
 	server.SetKeepAlivesEnabled(false)
 	_ = server.Serve(&flowListener{conn: client, done: done})
+}
+
+type failedTransport struct{ err error }
+
+func (t failedTransport) RoundTrip(*http.Request) (*http.Response, error) { return nil, t.err }
+
+func (s *session) serveH2(client net.Conn, upstream net.Conn, metadata flow, host string, upstreamErr error) {
+	var transport http.RoundTripper
+	if upstreamErr == nil {
+		upstreamH2, err := (&http2.Transport{DisableCompression: true, MaxHeaderListSize: 64 << 10}).NewClientConn(upstream)
+		if err != nil {
+			upstreamErr = err
+		} else {
+			defer upstreamH2.Close()
+			transport = upstreamH2
+		}
+	}
+	if upstreamErr != nil {
+		transport = failedTransport{upstreamErr}
+	}
+	var sequence atomic.Uint64
+	server := http2.Server{MaxConcurrentStreams: 16, IdleTimeout: time.Minute, MaxReadFrameSize: 16 << 10}
+	server.ServeConn(client, &http2.ServeConnOpts{
+		Context: s.ctx, BaseConfig: &http.Server{MaxHeaderBytes: 32 << 10},
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			seq := sequence.Add(1)
+			now := time.Now()
+			if r.Method == http.MethodConnect {
+				http.Error(w, "Invalid origin request", http.StatusBadRequest)
+				return
+			}
+			r.URL.Scheme, r.URL.Host = "https", r.Host
+			if !validTarget(r.URL) || canonicalHost(r.URL.Hostname()) != host {
+				http.Error(w, "Request does not match TLS host", http.StatusMisdirectedRequest)
+				return
+			}
+			s.proxyHTTP(w, r, now, transport, metadata, seq)
+		}),
+	})
 }
 
 func hijackStream(w http.ResponseWriter) (net.Conn, *bufio.Reader, error) {

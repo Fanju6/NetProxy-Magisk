@@ -41,10 +41,13 @@ type HTTPDetail struct {
 }
 
 type CapturedMessage struct {
-	Headers          http.Header  `json:"headers"`
-	HeadersTruncated bool         `json:"headers_truncated"`
-	Body             CapturedBody `json:"body"`
-	size             int
+	Headers           http.Header  `json:"headers"`
+	HeadersTruncated  bool         `json:"headers_truncated"`
+	Trailers          http.Header  `json:"trailers,omitempty"`
+	TrailersTruncated bool         `json:"trailers_truncated,omitempty"`
+	GRPC              *GRPCDetail  `json:"grpc,omitempty"`
+	Body              CapturedBody `json:"body"`
+	size              int
 }
 
 type CapturedBody struct {
@@ -75,6 +78,9 @@ func (d *HTTPDetail) size() int {
 		for _, frame := range d.WebSocket.Frames {
 			size += 128 + len(frame.Text)
 		}
+		for _, message := range d.WebSocket.Messages {
+			size += 128 + len(message.Text)
+		}
 	}
 	return size
 }
@@ -86,11 +92,15 @@ type bodyCapture struct {
 	total     int64
 	binary    bool
 	spool     *mediaSpool
+	grpc      *grpcCapture
 }
 
 func (c *bodyCapture) Write(p []byte) (int, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.grpc != nil {
+		c.grpc.offer(p)
+	}
 	if c.binary {
 		if c.spool != nil {
 			c.spool.offer(p)
@@ -219,7 +229,27 @@ func (m *CapturedMessage) setBody(body CapturedBody) {
 		len(body.ContentRange) + len(body.Disposition) + len(body.Filename)
 }
 
+func (m *CapturedMessage) setTrailers(source http.Header) {
+	if len(source) != 0 {
+		trailers := captureMessage(source)
+		m.Trailers, m.TrailersTruncated = trailers.Headers, trailers.HeadersTruncated
+		m.size += trailers.size
+	}
+}
+
+func (m *CapturedMessage) setGRPC(c *bodyCapture) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.grpc != nil {
+		m.GRPC = c.grpc.snapshot(m.Headers, m.Trailers)
+		m.size += len(m.GRPC.Messages) * grpcMessageBytes * 2
+	}
+}
+
 func (c *bodyCapture) initMedia(headers http.Header, factory func() *mediaSpool) {
+	if grpcContentType(headers) {
+		c.grpc = &grpcCapture{encoding: strings.ToLower(headers.Get("Grpc-Encoding"))}
+	}
 	c.binary = mediaBody(headers)
 	if c.binary && factory != nil {
 		c.spool = factory()
@@ -265,14 +295,19 @@ func (w *captureWriter) Write(p []byte) (int, error) {
 
 type captureReader struct {
 	io.ReadCloser
-	body bodyCapture
-	eof  atomic.Bool
+	body   bodyCapture
+	eof    atomic.Bool
+	once   sync.Once
+	finish func()
 }
 
 func (r *captureReader) Read(p []byte) (int, error) {
 	n, err := r.ReadCloser.Read(p)
 	_, _ = r.body.Write(p[:n])
 	if err == io.EOF {
+		if r.finish != nil {
+			r.once.Do(r.finish)
+		}
 		r.eof.Store(true)
 	}
 	return n, err

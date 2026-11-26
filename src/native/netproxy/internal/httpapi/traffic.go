@@ -222,6 +222,17 @@ func (s *Server) registerTraffic() {
 		entries, err := s.traffic.ClearPinnedBypasses()
 		return contract.Success("traffic.pinned_cleared", "已清除证书固定跳过列表", entries), mitmAPIError("traffic.pinned_clear_failed", err)
 	})
+	s.trafficRoute("GET", "alpn-bypasses", "ALPN 临时跳过列表", func(context.Context) (any, error) {
+		entries, err := s.traffic.ALPNBypasses()
+		return entries, mitmAPIError("traffic.alpn_bypasses_unavailable", err)
+	})
+	s.route("DELETE "+trafficRoute+"alpn-bypasses", 10*time.Second, false, func(_ context.Context, r *http.Request) (contract.Result, error) {
+		if err := resourceEmptyRequest(r); err != nil {
+			return contract.Result{}, err
+		}
+		entries, err := s.traffic.ClearALPNBypasses()
+		return contract.Success("traffic.alpn_bypasses_cleared", "已清除 ALPN 临时跳过列表", entries), mitmAPIError("traffic.alpn_bypasses_clear_failed", err)
+	})
 	s.route("PUT "+trafficRoute+"mitm", 40*time.Second, false, func(ctx context.Context, r *http.Request) (contract.Result, error) {
 		if _, err := resourceQuery(r); err != nil {
 			return contract.Result{}, err

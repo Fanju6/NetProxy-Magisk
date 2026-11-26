@@ -134,7 +134,7 @@ HTTP 保存必须提供读取时的 revision。发生 `config.conflict` 时重�
 | `POST /diagnostics/ebpf` | 能力预检，正文含 `mode/raw` |
 | `GET /logs?kind=service&lines=200` | 脱敏日志，类型为 `service/core`，最多 2000 行 |
 | `DELETE /logs?kind=service` | 清空日志 |
-| `GET /traffic/status`、`list?batch=…`、`detail?id=…` | 全局抓包状态、指定批次的记录和详情；不传 `batch` 时使用当前或最近批次；WS/WSS 详情含有界的 `http.websocket.frames` |
+| `GET /traffic/status`、`list?batch=…`、`detail?id=…` | 全局抓包状态、指定批次的记录和详情；不传 `batch` 时使用当前或最近批次。HTTP 记录带 `protocol` 和连接内 `sequence`（不是线路 Stream ID）；HTTP/2 请求、响应详情可带 `trailers` 与 `trailers_truncated`，gRPC 可带 `grpc`（有界的 `messages`、`status`、`message`）。WS/WSS 详情含有界的 `http.websocket.frames` 与 `messages`。 |
 | `GET /traffic/preview` | 当前抓包状态、当前批次的累计记录数和最新三条记录的元数据；停止时返回空列表 |
 | `GET /traffic/body?id=…&side=response` | 鉴权后读取指定记录的本地正文（`side=request` 或 `response`）。成功响应为 `application/octet-stream`，支持对已保留字节使用 HTTP Range；未保留或已删除时返回 `traffic.body_not_found`。详情正文的 `blob`、`captured_size`、`size`、`truncated` 分别表示正文是否单独保存、已保留字节数、源正文大小及是否截断；`content_range` 表示上游分段而非本接口的 Range。 |
 | `GET /traffic/batches`、`DELETE /traffic/batches?id=…` | 查看本地批次（ID、开始/停止时间、运行状态、已保存条数、字节数）或删除指定的已停止批次 |
@@ -145,6 +145,8 @@ HTTP 保存必须提供读取时的 revision。发生 `config.conflict` 时重�
 | `POST /traffic/toggle`、`start`、`stop`；`DELETE /traffic/list` | 切换全局抓包、显式启停或清空所有批次的记录 |
 | `GET/PUT /traffic/rules` | 读取或替换重写规则，正文为 `{"rules":[...]}`，新增和修改的规则需要 `domains`。可选 `name` 标题（去除首尾空白后最多 64 个字符）；单条规则可设 `"enabled":false`，省略时启用。见[规则格式](/guide/traffic-debugging) |
 | `GET/PUT /traffic/mitm` | 读取或替换 `{"enabled":false,"hosts":["*"],"bypass_hosts":[],"system_trust":false}`；启用后默认解密全部 HTTPS/WSS，排除名单优先。系统信任在开机、热更新或开启抓包时重新应用，关闭时尝试卸载 |
+| `GET/DELETE /traffic/pinned` | 查看或清除证书固定跳过列表 |
+| `GET/DELETE /traffic/alpn-bypasses` | 查看或清除仍生效的 ALPN 临时跳过列表，每项含 `host`、`user_id`、`package`、`expires_at`。识别到上游 ALPN 不兼容时，记录 `alpn_incompatible`，后续跳过解密的连接记录 `alpn_bypassed`。 |
 | `POST /traffic/ca-init`；`GET /traffic/ca` | 显式初始化或读取公开 CA；返回 `pem`、`filename`、`sha256`，不返回任何私钥 |
 | `GET /diagnostics/export` | 下载脱敏诊断包 |
 | `GET /events?topics=status,groups,subscriptions` | 实时事件流 |

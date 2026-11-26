@@ -19,7 +19,7 @@ import (
 func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 	const maxRequest = traffic.MaxRulesBytes + 1024
 	usage := func() error {
-		return usageError("用法: netproxyctl api traffic status|start|stop|toggle|list [批次ID]|page [批次ID [游标]]|batches|delete-batch <ID>|detail <ID>|clear|apps|set-apps <文件>|rules|set-rules <文件>|mitm|set-mitm|pinned|clear-pinned|ca|ca-init|ca-export|ca-remove（规则可选 name 标题，enabled=false 可单独停用）")
+		return usageError("用法: netproxyctl api traffic status|start|stop|toggle|list [批次ID]|page [批次ID [游标]]|batches|delete-batch <ID>|detail <ID>|clear|apps|set-apps <文件>|rules|set-rules <文件>|mitm|set-mitm|pinned|clear-pinned|alpn-bypasses|clear-alpn-bypasses|ca|ca-init|ca-export|ca-remove（规则可选 name 标题，enabled=false 可单独停用）")
 	}
 	if len(args) == 0 {
 		return usage()
@@ -41,7 +41,7 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 	var method string
 	var body io.Reader
 	switch action {
-	case "status", "batches", "apps", "rules", "mitm", "pinned", "ca":
+	case "status", "batches", "apps", "rules", "mitm", "pinned", "alpn-bypasses", "ca":
 		method = http.MethodGet
 	case "page":
 		method = http.MethodGet
@@ -84,6 +84,8 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 		method, action = http.MethodDelete, "list"
 	case "clear-pinned":
 		method, action = http.MethodDelete, "pinned"
+	case "clear-alpn-bypasses":
+		method, action = http.MethodDelete, "alpn-bypasses"
 	case "ca-remove":
 		method, action = http.MethodDelete, "ca/trust"
 	case "ca-export":

@@ -73,6 +73,10 @@ func (l Layout) TrafficCA() string { return filepath.Join(l.Config(), "traffic-c
 func (l Layout) TrafficMITM() string   { return filepath.Join(l.Config(), "traffic-mitm.json") }
 func (l Layout) TrafficPinned() string { return filepath.Join(l.Config(), "traffic-pinned.json") }
 
+func (l Layout) TrafficALPNBypasses() string {
+	return filepath.Join(l.Config(), "traffic-alpn-bypasses.json")
+}
+
 func (l Layout) TrafficTrust() string { return filepath.Join(l.DevRoot(), "traffic-trust") }
 
 func (l Layout) TrafficUserTrust() string { return filepath.Join(l.Config(), "traffic-user-trust") }

@@ -57,9 +57,13 @@ api traffic stop
 
 启用解密后，默认匹配全部 HTTPS 和 WSS 主机；仍须信任调试 CA。用 `hosts` 限制解密范围，或用 `bypass_hosts` 排除主机，排除优先。支持精确主机名、IP、`*.域名`（仅子域名）和 `*`。已有非空名单保留原有范围；空名单使用新默认值。优先匹配 TLS 握手中的服务器名，无服务器名时匹配原目标地址。上游 TLS 仍校验证书。
 
-如果客户端拒绝调试证书，当前连接不能恢复，也没有 HTTP 状态码。能够识别客户端归属时，模块将该应用和主机的组合加入持久跳过列表；仅同一应用在同一 Android 用户下连接该主机时自动透传。可以在管理器的 HTTPS 调试页查看和清除，或运行 `api traffic pinned` 和 `api traffic clear-pinned`。证书拒绝可能来自钉扎，也可能是客户端未信任 CA；上游 TLS 失败不会加入该名单。新 TCP 记录显示实际透传原因，例如主机被排除、HTTP/2-only、非 TLS 或协议识别超时。未被抓包选中的应用不会产生记录。不支持双向 TLS 和非 WebSocket 的 HTTPS 协议升级。
+如果客户端拒绝调试证书，当前连接不能恢复，也没有 HTTP 状态码。能够识别客户端归属时，模块将该应用和主机的组合加入持久跳过列表；仅同一应用在同一 Android 用户下连接该主机时自动透传。可以在管理器的 HTTPS 调试页查看和清除，或运行 `api traffic pinned` 和 `api traffic clear-pinned`。证书拒绝可能来自钉扎，也可能是客户端未信任 CA；上游 TLS 失败不会加入该名单。未被抓包选中的应用不会产生记录。不支持双向 TLS 和非 WebSocket 的 HTTPS 协议升级。
 
-HTTP/1.1 WebSocket（WS、WSS）连接结束后，在详情中显示握手和前 64 帧的方向、操作码及负载大小；未压缩文本帧最多预览 256 字节。不会修改 WebSocket 帧。
+HTTPS 解密先用客户端提供的 ALPN 列表与上游协商，再向客户端提供上游选择的协议。HTTP/2 每个请求流产生一条记录，包含协议、连接内序号（不是 HTTP/2 线路 Stream ID）、头字段、尾字段和有界正文。已知不支持的客户端协议直接透传；只有与上游握手后才发现不兼容时，关闭当前连接并记录原因。若能识别应用，按主机、Android 用户和应用加入为期 15 分钟的临时跳过列表，下次连接不尝试解密。可在 HTTPS 调试页或用 `api traffic alpn-bypasses`、`api traffic clear-alpn-bypasses` 查看与清除。
+
+HTTP/2 的 `application/grpc` 请求和响应显示各方向的前 8 条长度分帧消息、`grpc-status` 与 `grpc-message`。每条最多解析 2 KiB，支持 gzip，按字段号和 wire type 尽力解析 Protobuf 及其嵌套内容。没有 schema 时不会猜测字段名称或具体类型。
+
+HTTP/1.1 WebSocket（WS、WSS）连接结束后，在详情中显示握手、前 64 帧和前 64 条重组消息，并展示关闭码。文本最多预览 256 字节，包含可有界解压的 permessage-deflate 消息。不会修改 WebSocket 帧。阻止 QUIC 时仍只拒绝 UDP/443 以促使客户端回退到 TCP；不解析 HTTP/3，也不记录单个拒绝事件。
 
 ### 可选：Android 系统信任
 

@@ -879,4 +879,18 @@
     <string name="traffic_media_share">分享文件</string>
     <string name="traffic_media_play">播放</string>
     <string name="traffic_media_pause">暂停</string>
+    <string name="traffic_ws_messages">WebSocket 消息</string>
+    <string name="traffic_ws_close_code">关闭码</string>
+    <string name="traffic_compressed">已压缩</string>
+    <string name="traffic_protocol">协议</string>
+    <string name="traffic_connection_sequence">连接内序号</string>
+    <string name="traffic_trailers">尾字段（Trailers）</string>
+    <string name="traffic_grpc_message">消息 %1$d</string>
+    <string name="traffic_alpn_title">ALPN 临时跳过列表</string>
+    <string name="traffic_alpn_empty">没有生效中的 ALPN 跳过记录</string>
+    <string name="traffic_alpn_clear">清除 ALPN 跳过记录</string>
+    <string name="traffic_alpn_clear_prompt">要清除所有 ALPN 临时跳过记录吗？</string>
+    <string name="traffic_alpn_expires">到期：%1$s</string>
+    <string name="traffic_alpn_incompatible">ALPN 不兼容 · 已关闭连接</string>
+    <string name="traffic_alpn_bypassed">ALPN 不兼容 · 本次透传</string>
 </resources>

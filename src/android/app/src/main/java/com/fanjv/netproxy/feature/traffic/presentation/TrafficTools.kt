@@ -199,6 +199,7 @@ internal fun TrafficHttpsScreen(viewModel: TrafficViewModel) {
     var confirmTrust by rememberSaveable { mutableStateOf(false) }
     var confirmRemoveUserCA by rememberSaveable { mutableStateOf(false) }
     var confirmClearPinned by rememberSaveable { mutableStateOf(false) }
+    var confirmClearAlpn by rememberSaveable { mutableStateOf(false) }
     var addHost by rememberSaveable { mutableStateOf(false) }
     var newHost by rememberSaveable { mutableStateOf("") }
     var removeHost by rememberSaveable { mutableStateOf<String?>(null) }
@@ -206,6 +207,7 @@ internal fun TrafficHttpsScreen(viewModel: TrafficViewModel) {
     LaunchedEffect(Unit) {
         viewModel.readCertificateStatus()
         viewModel.readPinned()
+        viewModel.readAlpnBypasses()
     }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/x-pem-file")) { uri ->
         val cert = viewModel.takeCertificate()
@@ -313,6 +315,26 @@ internal fun TrafficHttpsScreen(viewModel: TrafficViewModel) {
                     })
                 }
             })
+            groupedCardSection("alpn", { stringResource(R.string.traffic_alpn_title) }, buildList {
+                val bypasses = state.alpnBypasses.value.orEmpty()
+                state.alpnBypasses.error?.let { error -> add(CardItem("error") { TrafficErrorText(error) }) }
+                if (bypasses.isEmpty() && state.alpnBypasses.value != null) {
+                    add(CardItem("empty") {
+                        Text(stringResource(R.string.traffic_alpn_empty), Modifier.padding(TrafficRowInsets))
+                    })
+                }
+                if (bypasses.isNotEmpty()) add(CardItem("clear") {
+                    ArrowPreference(title = stringResource(R.string.traffic_alpn_clear), enabled = !state.busy,
+                        onClick = { confirmClearAlpn = true }, insideMargin = TrafficRowInsets)
+                })
+                bypasses.forEach { entry ->
+                    add(CardItem("${entry.userId}:${entry.packageName}:${entry.host}") {
+                        ArrowPreference(title = entry.host,
+                            summary = "${entry.userId}:${entry.packageName}\n" + stringResource(R.string.traffic_alpn_expires, entry.expiresAt),
+                            insideMargin = TrafficRowInsets)
+                    })
+                }
+            })
             groupedCardSection("ca", { stringResource(R.string.traffic_ca_section) }, listOf(
                 CardItem("fingerprint") {
                     Column(Modifier.padding(TrafficRowInsets), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -345,6 +367,8 @@ internal fun TrafficHttpsScreen(viewModel: TrafficViewModel) {
         { confirmRemoveUserCA = false }, { confirmRemoveUserCA = false; viewModel.removeUserCertificate() })
     TrafficConfirmation(confirmClearPinned, R.string.traffic_pinned_clear, R.string.traffic_pinned_clear_prompt,
         { confirmClearPinned = false }, { confirmClearPinned = false; viewModel.clearPinned() })
+    TrafficConfirmation(confirmClearAlpn, R.string.traffic_alpn_clear, R.string.traffic_alpn_clear_prompt,
+        { confirmClearAlpn = false }, { confirmClearAlpn = false; viewModel.clearAlpnBypasses() })
 }
 
 @Composable

@@ -134,6 +134,31 @@ class TrafficRepositoryTest {
         assertEquals("br", detail.response.body.contentEncoding)
     }
 
+    @Test fun detailDecodesProtocolTrailersAndNestedMessages() = runBlocking {
+        val repository = TrafficRepository(ModuleApiClient(TestApiTransport { request ->
+            assertEquals("/traffic/detail", request.path)
+            apiSuccess("""
+                {"id":"AAAAAAAAAAAAAAAAAAAAAAAAAA","http":{"url":"https://example.test/example.Echo/Send","url_truncated":false,
+                "request":{"headers":{},"headers_truncated":false,"body":{"data":"","format":"base64","truncated":false}},
+                "response":{"headers":{},"headers_truncated":false,"trailers":{"Grpc-Status":["3"]},
+                "grpc":{"status":"3","message":"sample error","messages":[{"size":4,"fields":[{"number":3,"wire":2,
+                "fields":[{"number":1,"wire":0,"value":"7"}]}]}]},
+                "body":{"data":"","format":"base64","truncated":false}},
+                "websocket":{"frames":[{"direction":"receive","opcode":8,"size":2,"close_code":1000,"truncated":false}],
+                "messages":[{"direction":"receive","opcode":1,"size":8,"text":"example","compressed":true,"truncated":false}],
+                "truncated":false}}}
+            """.trimIndent())
+        }))
+        val detail = requireNotNull(repository.detail("AAAAAAAAAAAAAAAAAAAAAAAAAA").http)
+        assertEquals(listOf("3"), detail.response.trailers["Grpc-Status"])
+        val grpc = requireNotNull(detail.response.grpc)
+        assertEquals("sample error", grpc.message)
+        assertEquals("7", grpc.messages.single().fields.single().fields.single().value)
+        val websocket = requireNotNull(detail.websocket)
+        assertEquals(1000, websocket.frames.single().closeCode)
+        assertTrue(websocket.messages.single().compressed)
+    }
+
     @Test fun batchOperationsUseExplicitIDs() = runBlocking {
         val id = "AAAAAAAAAAAAAAAAAAAAAAAAAA"
         val repository = TrafficRepository(ModuleApiClient(TestApiTransport { request ->

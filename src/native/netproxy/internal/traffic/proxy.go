@@ -15,8 +15,9 @@ import (
 	"golang.org/x/net/http/httpguts"
 )
 
-func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Time, transport *http.Transport, metadata flow) {
+func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Time, transport http.RoundTripper, metadata flow, sequence uint64) {
 	isWebSocket := webSocketUpgrade(r.Header)
+	isH2 := r.ProtoMajor == 2
 	if isWebSocket && r.Body != nil && r.Body != http.NoBody {
 		http.Error(w, "WebSocket upgrade must not include a request body", http.StatusBadRequest)
 		return
@@ -43,6 +44,12 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 		method = "OTHER"
 	}
 	entry := metadata.entry(now, method, r.URL.Host)
+	entry.Protocol, entry.Sequence = "http/1.1", sequence
+	if isH2 {
+		entry.Protocol = "h2"
+	} else if r.ProtoMinor == 0 {
+		entry.Protocol = "http/1.0"
+	}
 	entry.Target = strings.Clone(validPrefix(r.URL.RequestURI(), 1024))
 	if r.URL.Scheme == "https" {
 		entry.TLS = "decrypted"
@@ -74,6 +81,12 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 			requestMedia = capturedRequest.body.finishMedia()
 			detail.Request.setBody(capturedRequest.body.body(requestHeaders, r.ContentLength,
 				r.ContentLength < 0 && !capturedRequest.eof.Load()))
+			if isH2 && capturedRequest.eof.Load() {
+				detail.Request.setTrailers(r.Trailer)
+			}
+			if isH2 {
+				detail.Request.setGRPC(&capturedRequest.body)
+			}
 		} else {
 			detail.Request.setBody((&bodyCapture{}).body(requestHeaders, 0, false))
 		}
@@ -93,6 +106,22 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 		setWebSocketUpgrade(request.Header)
 	}
 	request.Trailer = nil
+	if isH2 {
+		if slicesContainFold(r.Header.Values("Te"), "trailers") {
+			request.Header.Set("Te", "trailers")
+		}
+		if capturedRequest != nil {
+			request.Trailer = make(http.Header, len(r.Trailer))
+			for name := range r.Trailer {
+				request.Trailer[name] = nil
+			}
+			capturedRequest.finish = func() {
+				for name, values := range r.Trailer {
+					request.Trailer[name] = values
+				}
+			}
+		}
+	}
 	if request.ContentLength == 0 {
 		request.Body = nil
 	}
@@ -183,8 +212,43 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 		w.Header()[name] = values
 	}
 	w.WriteHeader(response.StatusCode)
-	_, err = io.Copy(w, response.Body)
+	if isH2 && grpcContentType(response.Header) {
+		flusher := http.NewResponseController(capturedResponse.ResponseWriter)
+		_ = flusher.Flush()
+		_, err = io.Copy(flushWriter{w, flusher}, response.Body)
+	} else {
+		_, err = io.Copy(w, response.Body)
+	}
+	if isH2 {
+		detail.Response.setTrailers(response.Trailer)
+		detail.Response.setGRPC(&capturedResponse.body)
+		for name, values := range response.Trailer {
+			w.Header()[http.TrailerPrefix+name] = values
+		}
+	}
 	capturedResponse.failed = capturedResponse.failed || err != nil
+}
+
+func slicesContainFold(values []string, target string) bool {
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), target) {
+			return true
+		}
+	}
+	return false
+}
+
+type flushWriter struct {
+	io.Writer
+	*http.ResponseController
+}
+
+func (w flushWriter) Write(p []byte) (int, error) {
+	n, err := w.Writer.Write(p)
+	if err == nil {
+		err = w.Flush()
+	}
+	return n, err
 }
 
 func (s *session) captureWebSocket(w http.ResponseWriter, response *http.Response, upstream io.ReadWriteCloser, detail *HTTPDetail) {
@@ -207,6 +271,7 @@ func (s *session) captureWebSocket(w http.ResponseWriter, response *http.Respons
 	}
 	detail.Response = captureMessage(headers)
 	frames := &webSocketCapture{}
+	frames.configure(headers)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)

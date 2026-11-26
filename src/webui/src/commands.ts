@@ -26,6 +26,7 @@ export const COMMANDS = {
   api traffic set-rules <文件>               应用设备上的 JSON 规则文件（可选 name 标题，单条 enabled: false 可停用）
   api traffic mitm | set-mitm <文件>        查看或保存 HTTPS 解密配置
   api traffic pinned | clear-pinned        查看或清除证书固定跳过列表
+  api traffic alpn-bypasses | clear-alpn-bypasses  查看或清除 ALPN 临时跳过列表
   api traffic ca-init | ca                  初始化或查看公开调试 CA
   api traffic ca-remove                     移除模块安装的个人调试 CA（先关闭解密）
   api traffic ca-export <文件>              导出公开 CA，不覆盖已有文件
@@ -210,7 +211,7 @@ const CONFIG_TARGETS = [
 ]
 
 export const VALUE_COMPLETIONS: Record<string, string[]> = {
-  'api traffic': ['status', 'toggle', 'start', 'stop', 'batches', 'list', 'page', 'delete-batch', 'detail', 'clear', 'rules', 'set-rules', 'mitm', 'set-mitm', 'apps', 'set-apps', 'pinned', 'clear-pinned', 'ca', 'ca-init', 'ca-export', 'ca-remove'],
+  'api traffic': ['status', 'toggle', 'start', 'stop', 'batches', 'list', 'page', 'delete-batch', 'detail', 'clear', 'rules', 'set-rules', 'mitm', 'set-mitm', 'apps', 'set-apps', 'pinned', 'clear-pinned', 'alpn-bypasses', 'clear-alpn-bypasses', 'ca', 'ca-init', 'ca-export', 'ca-remove'],
   'app mode': ['blacklist', 'whitelist'],
   'ebpf status': ['configured', 'all', 'local', 'shared', '--raw'],
   'logs show': ['service', 'core'],

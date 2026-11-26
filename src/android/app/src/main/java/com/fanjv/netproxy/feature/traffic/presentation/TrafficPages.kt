@@ -537,6 +537,8 @@ internal fun passthroughLabel(reason: String): String = when (reason) {
     "non_tls" -> stringResource(R.string.traffic_skip_non_tls)
     "sniff_timeout" -> stringResource(R.string.traffic_skip_timeout)
     "unsupported_alpn" -> stringResource(R.string.traffic_skip_alpn)
+    "alpn_incompatible" -> stringResource(R.string.traffic_alpn_incompatible)
+    "alpn_bypassed" -> stringResource(R.string.traffic_alpn_bypassed)
     "tls_hello_unavailable", "tls_host_unavailable", "protocol_unidentified" -> stringResource(R.string.traffic_skip_unidentified)
     else -> reason
 }
