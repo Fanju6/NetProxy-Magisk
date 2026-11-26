@@ -639,6 +639,11 @@
     <string name="routing_port">Porta de destino</string>
     <string name="routing_port_range">Intervalo de portas de destino</string>
     <string name="routing_package_name">Nome do pacote Android</string>
+    <string name="routing_pick_apps">Selecionar apps instalados</string>
+    <string name="routing_retry_apps">Carregar apps novamente</string>
+    <string name="routing_apps_unavailable">Não foi possível carregar a lista. Você ainda pode digitar os nomes dos pacotes.</string>
+    <string name="routing_apps_empty">Nenhum app instalado foi encontrado.</string>
+    <string name="routing_apps_scope">A regra usa o nome do pacote, inclusive em cópias de outros perfis.</string>
     <string name="routing_domain_suffix_hint">example.com corresponde a example.com e seus subdomínios. Não insira uma URL.</string>
     <string name="routing_domain_hint">www.example.com corresponde apenas a este domínio. Não insira uma URL.</string>
     <string name="routing_domain_keyword_hint">example corresponde a domínios que contêm este texto.</string>

@@ -15,7 +15,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -25,8 +24,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
@@ -220,20 +217,9 @@ internal class AppsViewModel(
         }
     }
 
-    suspend fun loadIcons(references: List<String>) = coroutineScope {
-        val generation = AppIconCache.generation
+    suspend fun loadIcons(references: List<String>) {
         val ids = references.toSet()
-        val slots = Semaphore(4)
-        _state.value.masterAppList.filter { it.id in ids }.map { it.iconKey }.distinct()
-            .filter { it.isNotEmpty() && AppIconCache.cachedIcon(it) == null }.map { key ->
-                async {
-                    slots.withPermit {
-                        try { AppIconCache.putIcon(key, packageCatalog.icon(key), generation) }
-                        catch (error: CancellationException) { throw error }
-                        catch (_: Exception) { }
-                    }
-                }
-            }.awaitAll()
+        AppIconCache.loadMissing(_state.value.masterAppList.filter { it.id in ids }.map { it.iconKey }, packageCatalog)
     }
 
     private fun activeItems(config: AppProxyConfig): Set<String> =

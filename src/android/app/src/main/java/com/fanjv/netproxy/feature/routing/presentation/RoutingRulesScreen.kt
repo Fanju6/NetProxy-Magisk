@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -185,17 +186,37 @@ internal fun RoutingRulesScreen(
     }
 
     var retainedDraft by remember { mutableStateOf<RuleDraft?>(null) }
+    var pickingApps by remember { mutableStateOf(false) }
     val draft = state.draft ?: retainedDraft
     SideEffect { if (state.draft != null) retainedDraft = state.draft }
-    OverlayDialog(show = state.draft != null, title = stringResource(if (draft?.index == null) R.string.routing_add else R.string.routing_edit),
-        onDismissRequest = viewModel::dismiss, onDismissFinished = { retainedDraft = null }) {
+    OverlayDialog(show = state.draft != null, title = stringResource(when {
+        pickingApps -> R.string.routing_pick_apps
+        draft?.index == null -> R.string.routing_add
+        else -> R.string.routing_edit
+    }), onDismissRequest = { if (pickingApps) pickingApps = false else viewModel.dismiss() },
+        onDismissFinished = { retainedDraft = null; pickingApps = false }) {
         if (draft != null) {
             val file = state.files.getValue(draft.target)
             val textState = rememberTextFieldState(draft.text)
+            val focus = LocalFocusManager.current
             LaunchedEffect(textState, draft.field) {
                 draft.field?.let { field ->
                     snapshotFlow { textState.text.toString() }.collect { viewModel.updateDraft(field, it) }
                 }
+            }
+            if (pickingApps && draft.field == RuleField.PackageName) {
+                RoutingAppPicker(
+                    initialText = textState.text.toString(),
+                    viewModel = viewModel,
+                    onCancel = { focus.clearFocus(); pickingApps = false },
+                    onDone = { value ->
+                        focus.clearFocus()
+                        textState.edit { replace(0, length, value) }
+                        viewModel.updateDraft(RuleField.PackageName, value)
+                        pickingApps = false
+                    },
+                )
+                return@OverlayDialog
             }
             Column(Modifier.heightIn(max = 500.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
@@ -240,6 +261,14 @@ internal fun RoutingRulesScreen(
                             enabled = !state.isSaving,
                             insideMargin = PaddingValues(vertical = 12.dp),
                             onSelectedIndexChange = { viewModel.updateDraft(RuleField.entries[it], textState.text.toString()) })
+                        if (field == RuleField.PackageName) {
+                            ArrowPreference(
+                                title = stringResource(R.string.routing_pick_apps),
+                                insideMargin = PaddingValues(vertical = 12.dp),
+                                enabled = !state.isSaving,
+                                onClick = { focus.clearFocus(); pickingApps = true },
+                            )
+                        }
                         TextField(colors = dialogTextFieldColors(state.inputError != null), state = textState,
                             label = stringResource(R.string.routing_values), lineLimits = TextFieldLineLimits.MultiLine(3, 6),
                             keyboardOptions = KeyboardOptions(autoCorrectEnabled = false,

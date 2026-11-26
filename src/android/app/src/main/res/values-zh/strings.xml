@@ -669,6 +669,11 @@
     <string name="routing_port">目标端口</string>
     <string name="routing_port_range">目标端口范围</string>
     <string name="routing_package_name">Android 包名</string>
+    <string name="routing_pick_apps">选择已安装应用</string>
+    <string name="routing_retry_apps">重新加载应用</string>
+    <string name="routing_apps_unavailable">无法读取应用列表，仍可手动输入包名。</string>
+    <string name="routing_apps_empty">未找到已安装的应用。</string>
+    <string name="routing_apps_scope">按包名匹配，同包名的应用分身和工作资料也会命中。</string>
     <string name="routing_domain_suffix_hint">example.com 匹配该域名及其所有子域名，不需要填写网址。</string>
     <string name="routing_domain_hint">www.example.com 仅匹配这个域名，不需要填写网址。</string>
     <string name="routing_domain_keyword_hint">example 匹配域名中包含这段文字的目标。</string>

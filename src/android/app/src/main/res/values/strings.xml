@@ -639,6 +639,11 @@
     <string name="routing_port">Destination port</string>
     <string name="routing_port_range">Destination port range</string>
     <string name="routing_package_name">Android package name</string>
+    <string name="routing_pick_apps">Choose installed apps</string>
+    <string name="routing_retry_apps">Retry loading apps</string>
+    <string name="routing_apps_unavailable">Could not load installed apps. You can still enter package names manually.</string>
+    <string name="routing_apps_empty">No installed apps found.</string>
+    <string name="routing_apps_scope">Matches the package name, including any copies in other profiles.</string>
     <string name="routing_domain_suffix_hint">example.com matches example.com and its subdomains. Do not enter a URL.</string>
     <string name="routing_domain_hint">www.example.com matches only this domain. Do not enter a URL.</string>
     <string name="routing_domain_keyword_hint">example matches domains containing this text.</string>

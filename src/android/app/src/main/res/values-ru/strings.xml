@@ -639,6 +639,11 @@
     <string name="routing_port">Порт назначения</string>
     <string name="routing_port_range">Диапазон портов назначения</string>
     <string name="routing_package_name">Имя пакета Android</string>
+    <string name="routing_pick_apps">Выбрать установленные приложения</string>
+    <string name="routing_retry_apps">Загрузить приложения снова</string>
+    <string name="routing_apps_unavailable">Не удалось загрузить список. Имена пакетов можно ввести вручную.</string>
+    <string name="routing_apps_empty">Установленные приложения не найдены.</string>
+    <string name="routing_apps_scope">Правило совпадает по имени пакета, включая копии в других профилях.</string>
     <string name="routing_domain_suffix_hint">example.com соответствует этому домену и всем его поддоменам. Не вводите URL.</string>
     <string name="routing_domain_hint">www.example.com соответствует только этому домену. Не вводите URL.</string>
     <string name="routing_domain_keyword_hint">example соответствует доменам, содержащим этот текст.</string>

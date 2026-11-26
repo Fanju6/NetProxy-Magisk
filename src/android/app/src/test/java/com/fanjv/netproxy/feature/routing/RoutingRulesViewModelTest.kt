@@ -2,6 +2,7 @@ package com.fanjv.netproxy.feature.routing
 
 import com.fanjv.netproxy.core.api.*
 
+import com.fanjv.netproxy.feature.apps.data.AppPackageRepository
 import com.fanjv.netproxy.feature.routing.model.LocalRuleDocument
 import com.fanjv.netproxy.feature.routing.model.LocalRuleSet
 import com.fanjv.netproxy.feature.routing.model.RuleField
@@ -38,11 +39,13 @@ class RoutingRulesViewModelTest {
         val revisions = mutableMapOf<String, String>()
         val readErrors = mutableMapOf<String, Exception>()
         var gate: CountDownLatch? = null
+        var appsSnapshot = """{"users":[]}"""
         val entered = CompletableDeferred<Unit>()
         val calls = mutableListOf<ApiTestRequest>()
 
         override suspend fun respond(request: ApiTestRequest): ModuleHttpResponse {
             calls += request
+            if (request.path == "/android/apps") return apiSuccess(appsSnapshot)
             val data = when (request.method) {
                 "GET" -> {
                     (readErrors[request.target] ?: readError)?.let { throw it }
@@ -69,8 +72,10 @@ class RoutingRulesViewModelTest {
         }
     }
 
-    private fun model(scope: CoroutineScope, transport: Transport) = RoutingRulesViewModel(
-        ConfigRepository(ModuleApiClient(transport = transport)), scope)
+    private fun model(scope: CoroutineScope, transport: Transport): RoutingRulesViewModel {
+        val client = ModuleApiClient(transport = transport)
+        return RoutingRulesViewModel(ConfigRepository(client), AppPackageRepository(client), scope)
+    }
 
     private fun RoutingRulesState.file(target: LocalRuleSet = LocalRuleSet.Proxy) = files.getValue(target)
 
@@ -80,6 +85,47 @@ class RoutingRulesViewModelTest {
 
     private suspend fun RoutingRulesViewModel.saved(): RoutingRulesState = withTimeout(5_000) {
         state.first { !it.isSaving }
+    }
+
+    @Test fun applicationChoicesAreReadOnDemandAndDeduplicatedByPackage() = runBlocking {
+        val transport = Transport().apply {
+            appsSnapshot = """{"users":[
+                {"id":10,"name":"Work","revision":"a","apps":[
+                    {"package_name":"com.android.chrome","label":"Chrome (work)","uid":1010022,"system":false,"version_code":1,"last_update_time":1,"icon_key":"work"},
+                    {"package_name":"com.example.profile","label":"","uid":1010023,"system":false,"version_code":1,"last_update_time":1,"icon_key":""}
+                ]},
+                {"id":0,"name":"Owner","revision":"b","apps":[
+                    {"package_name":"com.android.chrome","label":"Chrome","uid":10022,"system":false,"version_code":1,"last_update_time":1,"icon_key":"owner"},
+                    {"package_name":"com.google.android.gms","label":"Google Play services","uid":10023,"system":true,"version_code":1,"last_update_time":1,"icon_key":"gms"}
+                ]}
+            ]}"""
+        }
+        val vm = model(this, transport)
+        vm.refresh()
+        vm.loaded()
+        vm.add()
+        vm.selectTarget(LocalRuleSet.Policy)
+        vm.selectPolicy("AI")
+        vm.updateDraft(RuleField.PackageName, "com.example.notinstalled")
+        assertEquals(0, transport.calls.count { it.path == "/android/apps" })
+
+        val apps = vm.installedApps()
+        assertEquals(listOf("com.android.chrome", "com.example.profile", "com.google.android.gms"), apps.map { it.packageName })
+        assertEquals("owner", apps.first().iconKey)
+        assertEquals("com.example.profile", apps[1].label)
+        assertEquals(apps, vm.installedApps())
+        assertEquals(1, transport.calls.count { it.path == "/android/apps" })
+        assertEquals("com.example.notinstalled", vm.state.value.draft?.text)
+
+        vm.updateDraft(RuleField.PackageName, "com.example.notinstalled\n${apps.first().packageName}")
+        assertTrue(transport.calls.none { it.mutation })
+        vm.save()
+        vm.saved()
+        val saved = transport.contents.getValue(LocalRuleSet.Policy.target)
+        val (destination, rule) = LocalRuleDocument.parse(saved, nativeRoute = true).rules
+            .mapNotNull { it.policyRule() }.single()
+        assertEquals("AI", destination)
+        assertEquals(listOf("com.example.notinstalled", "com.android.chrome"), rule.values)
     }
 
     @Test fun initialLoadMergesAllGroupsWithDistinctFileAndIndexIdentities() = runBlocking {

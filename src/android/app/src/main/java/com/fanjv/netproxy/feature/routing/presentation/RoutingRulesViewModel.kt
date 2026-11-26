@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fanjv.netproxy.core.api.ModuleApiException
 import com.fanjv.netproxy.core.ui.userMessage
+import com.fanjv.netproxy.feature.apps.data.AppIconCache
+import com.fanjv.netproxy.feature.apps.data.AppPackageRepository
+import com.fanjv.netproxy.feature.apps.presentation.AppInfoModel
 import com.fanjv.netproxy.feature.proxy.data.editablePolicyTypes
 import com.fanjv.netproxy.feature.proxy.data.parsePolicySection
 import com.fanjv.netproxy.feature.proxy.data.text
@@ -77,10 +80,28 @@ internal data class RoutingRulesState(
 
 internal class RoutingRulesViewModel(
     private val repository: ConfigRepository,
+    private val packages: AppPackageRepository,
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
 ) : ViewModel(scope) {
     private val mutableState = MutableStateFlow(RoutingRulesState())
     val state = mutableState.asStateFlow()
+
+    suspend fun installedApps(): List<AppInfoModel> {
+        val snapshot = packages.snapshot()
+        return withContext(Dispatchers.Default) {
+            // package_name matches all profiles; use the owner entry when available.
+            snapshot.users.sortedBy { it.id }.asSequence()
+                .flatMap { it.apps.asSequence() }
+                .distinctBy { it.packageName }
+                .map { AppInfoModel(it.packageName, it.label.ifBlank { it.packageName }, iconKey = it.iconKey) }
+                .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER, AppInfoModel::label).thenBy(AppInfoModel::packageName))
+                .toList()
+        }
+    }
+
+    suspend fun loadAppIcons(keys: Collection<String>) {
+        AppIconCache.loadMissing(keys, packages)
+    }
 
     fun selectTarget(target: LocalRuleSet) {
         val current = state.value
