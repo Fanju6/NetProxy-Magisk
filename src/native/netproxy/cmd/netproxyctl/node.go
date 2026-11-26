@@ -5,6 +5,7 @@ import (
 	"encoding/json/jsontext"
 	"errors"
 	"os"
+	"strings"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/catalog"
 	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
@@ -19,6 +20,10 @@ func (c *cli) node(ctx context.Context, args []string) error {
 	action := args[0]
 	flags := newFlagSet("node " + action)
 	allowInsecure := flags.Bool("allow-insecure", false, "跳过节点 TLS 校验")
+	var providerTag string
+	if action == "latency" {
+		flags.StringVar(&providerTag, "provider", "", "节点的原生 Provider 标签")
+	}
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -36,6 +41,25 @@ func (c *cli) node(ctx context.Context, args []string) error {
 		}
 	}
 	switch action {
+	case "latency":
+		if len(positionals) != 1 || strings.TrimSpace(positionals[0]) == "" {
+			return usageError("node latency [--provider <provider>] <完整节点标签>")
+		}
+		state, err := moduleapp.ReadServiceState(options.StateFile)
+		if err != nil {
+			return err
+		}
+		if state.State != "ready" {
+			return &service.Error{Code: "policy.core_changed", Message: "核心尚未就绪，请启动后再试"}
+		}
+		data, err := moduleapp.TestNodeLatency(ctx, options, service.NodeLatencyTarget{
+			CoreStartedAtMillis: state.CoreStartedAtMillis, NodeTag: positionals[0], ProviderTag: providerTag,
+		})
+		if err != nil {
+			return err
+		}
+		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "node.latency", Message: "节点测速完成", Data: data})
+		return nil
 	case "list":
 		groups, err := service.ReadNodes(ctx, control, first(positionals))
 		if err != nil {
@@ -102,7 +126,7 @@ func (c *cli) node(ctx context.Context, args []string) error {
 		}
 		writeJSON(os.Stdout, result{Schema: 1, OK: true, Code: "node.removed", Message: "节点已删除", Data: data})
 	default:
-		return usageError("用法: netproxyctl node list|show|get|export|add|import|edit|remove；切换和测速使用 policy")
+		return usageError("用法: netproxyctl node list|show|get|export|add|import|edit|remove|latency")
 	}
 	return nil
 }

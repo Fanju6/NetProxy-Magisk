@@ -51,3 +51,12 @@ func (s *Server) requestPolicyDelay(ctx context.Context, r *http.Request) (contr
 	err := module.RequestPolicyDelay(ctx, s.options, target)
 	return contract.Success("policy.delay_requested", "核心已接受策略组测速请求", target), err
 }
+
+func (s *Server) testNodeLatency(ctx context.Context, r *http.Request) (contract.Result, error) {
+	var target service.NodeLatencyTarget
+	if err := resourceDecode(r, &target); err != nil {
+		return contract.Result{}, err
+	}
+	result, err := module.TestNodeLatency(ctx, s.options, target)
+	return contract.Success("node.latency", "节点测速完成", result), err
+}

@@ -47,7 +47,7 @@ configured_backend 是保存的入站；active_backend 仅在 ready 且 PID/API 
   },
   node: {
     overview: 'node <命令>     节点管理',
-    actions: ['list', 'show', 'get', 'export', 'add', 'import', 'edit', 'remove'],
+    actions: ['list', 'show', 'get', 'export', 'add', 'import', 'edit', 'remove', 'latency'],
     help: `node - 节点管理
 
   node list [分组]                 列出节点
@@ -58,6 +58,7 @@ configured_backend 是保存的入站；active_backend 仅在 ready 且 PID/API 
   node import <文件>               导入节点文件
   node edit <分组>/<tag> <来源>    编辑节点
   node remove <分组>/<tag>         删除节点
+  node latency [--provider <标签>] <完整节点标签>  测试单节点延迟
 `,
   },
   policy: {

@@ -166,6 +166,7 @@ function execute(args: string[]): CtlResult<unknown> {
   if (command === 'catalog') {
     if (action === 'list') return response('catalog.groups', 'Catalog 分组快照', GROUPS)
     if (action === 'show') return response('catalog.show', 'Catalog 分组快照', snapshot())
+    if (action === 'latency') return failure('policy.preview_unavailable', '开发预览不连接 sing-box 核心')
   }
 
   if (command === 'sub') {

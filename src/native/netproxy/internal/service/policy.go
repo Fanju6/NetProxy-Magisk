@@ -153,25 +153,27 @@ func ReadConfiguredPolicyGroups(ctx context.Context, options Options) (PolicySna
 			group.ConfiguredDefault = config.Default
 		}
 		seen := make(map[string]bool)
-		add := func(tag, protocol, displayName string) {
+		add := func(tag, protocol, displayName, provider string) {
 			if !seen[tag] {
-				group.Items = append(group.Items, serviceapi.GroupItem{Tag: tag, Type: protocol, DisplayName: displayName})
+				group.Items = append(group.Items, serviceapi.GroupItem{Tag: tag, Type: protocol, DisplayName: displayName, ProviderTag: provider})
 				seen[tag] = true
 			}
 		}
 		for _, member := range config.Outbounds {
 			protocol, name := types[member], ""
+			provider := ""
 			if providerTag, nodeTag, qualified := strings.Cut(member, "/"); qualified && protocol == "" {
 				if entry := providersByName[providerTag]; entry != nil && !slices.Contains(nativeProviders, providerTag) {
 					for _, node := range entry.Nodes {
 						if node.Tag == nodeTag {
 							protocol, name = node.Protocol, node.Tag
+							provider = providerTag
 							break
 						}
 					}
 				}
 			}
-			add(member, protocol, name)
+			add(member, protocol, name, provider)
 		}
 		references := config.Providers
 		if config.UseAll {
@@ -203,7 +205,7 @@ func ReadConfiguredPolicyGroups(ctx context.Context, options Options) (PolicySna
 				if (config.Include != "" && !include.MatchString(tag)) || (config.Exclude != "" && exclude.MatchString(tag)) {
 					continue
 				}
-				add(tag, node.Protocol, node.Tag)
+				add(tag, node.Protocol, node.Tag, reference)
 			}
 		}
 		result.Groups = append(result.Groups, group)

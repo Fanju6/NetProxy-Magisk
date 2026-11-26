@@ -277,11 +277,11 @@ func failureStatus(code string, err error) int {
 		return http.StatusConflict
 	case "android.icon.not_found", "policy.group_not_found", "policy.member_not_found":
 		return http.StatusNotFound
-	case "command.timeout":
+	case "command.timeout", "policy.latency_timeout":
 		return http.StatusGatewayTimeout
 	case "command.canceled", "subscription.cancelled":
 		return http.StatusRequestTimeout
-	case "node.runtime_sync_failed", "mode.runtime_sync_failed", "subscription.runtime_sync_failed", "policy.api_failed", "policy.outcome_unknown":
+	case "node.runtime_sync_failed", "mode.runtime_sync_failed", "subscription.runtime_sync_failed", "policy.api_failed", "policy.outcome_unknown", "policy.latency_failed":
 		return http.StatusBadGateway
 	case "subscription.invalid_target", "subscription.invalid_group", "subscription.read_only", "subscription.interval_too_short",
 		"subscription.edit_invalid", "subscription.proxy_mode_invalid", "subscription.timeout_invalid", "subscription.text_invalid", "mode.invalid", "mode.unavailable",
