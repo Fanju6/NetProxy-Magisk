@@ -68,6 +68,7 @@ export interface CaptureDetail {
   protocol?: string
   sequence?: number
   passthrough_reason?: string
+  ca_stores?: { user: string, system: string }
   source_app?: { uid: number, user_id: number, package?: string }
   exit?: { inbound?: string, chain?: { tag: string, type: string }[], remote?: string, package?: string, uid?: number, process?: string }
   http?: {
@@ -84,7 +85,11 @@ const errors: Record<string, string> = {
   invalid_result: '脚本结果无效', script_error: '脚本执行失败',
 }
 const passthroughReasons: Record<string, string> = {
-  certificate_rejected: '证书固定或不信任 · 已跳过', excluded_host: '主机在排除名单中',
+  certificate_rejected: '客户端拒绝 TLS 证书', certificate_bypassed: '证书拒绝后的跳过连接',
+  client_ca_untrusted: '客户端不信任证书颁发机构', excluded_host: '主机在排除名单中',
+  client_handshake_closed: '客户端在 TLS 握手期间关闭连接',
+  client_handshake_timeout: '客户端 TLS 握手超时', client_handshake_failed: '客户端 TLS 握手失败',
+  upstream_handshake_timeout: '上游 TLS 握手超时', upstream_handshake_failed: '上游 TLS 握手失败',
   host_not_selected: '主机未选中解密', decryption_disabled: 'HTTPS 解密已关闭',
   decryption_unavailable: 'HTTPS 解密不可用', non_tls: '非 TLS 流量',
   sniff_timeout: '协议识别超时', unsupported_alpn: '不支持的 TLS 应用协议',
@@ -93,6 +98,8 @@ const passthroughReasons: Record<string, string> = {
   alpn_incompatible: 'ALPN 不兼容 · 已关闭连接',
   alpn_bypassed: 'ALPN 不兼容 · 本次透传',
 }
+
+const caStoreLabels: Record<string, string> = { present: '已找到', absent: '未找到', unknown: '未知' }
 
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag)
@@ -243,7 +250,16 @@ export function renderCaptureDetail(data: CaptureDetail): HTMLElement {
   if (data.http?.url_truncated) overview.append(element('p', 'URL 已截断'))
   line(overview, '入站', data.exit?.inbound)
   line(overview, '匹配的出站', data.outbound)
-  if (data.passthrough_reason) line(overview, '透传原因', passthroughReasons[data.passthrough_reason] ?? data.passthrough_reason)
+  if (data.passthrough_reason) {
+    line(overview, '连接原因', passthroughReasons[data.passthrough_reason] ?? data.passthrough_reason)
+    if (['certificate_rejected', 'certificate_bypassed', 'client_ca_untrusted'].includes(data.passthrough_reason)) {
+      if (data.ca_stores) {
+        line(overview, 'Android 用户证书库中的 CA', caStoreLabels[data.ca_stores.user] ?? caStoreLabels.unknown)
+        line(overview, '系统证书库中的 CA（init 命名空间）', caStoreLabels[data.ca_stores.system] ?? caStoreLabels.unknown)
+      }
+      overview.append(element('p', '证书库中有 CA 不代表应用信任它。必要时安装调试 CA 或开启系统信任，重启应用并清除证书跳过记录后再试。'))
+    }
+  }
   line(overview, '代理出口链', data.exit?.chain?.map(hop => `${hop.tag} (${hop.type})`).join(' → '))
   line(overview, '传输对端', data.exit?.remote)
   line(overview, '来源应用', data.source_app?.package ?? data.exit?.package)

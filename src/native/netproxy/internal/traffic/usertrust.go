@@ -36,6 +36,63 @@ type userCAOwnership struct {
 	Digest string `json:"sha256"`
 }
 
+type CAStores struct {
+	User   string `json:"user"`
+	System string `json:"system"`
+}
+
+func observeCAStores(app *SourceApp, cert Certificate) *CAStores {
+	if runtime.GOOS != "android" {
+		return nil
+	}
+	stores := &CAStores{User: "unknown", System: "unknown"}
+	if app != nil {
+		user := filepath.Join(userCredentialRoot, strconv.FormatUint(uint64(app.UserID), 10))
+		if root, err := os.OpenRoot(user); err == nil {
+			stores.User = userCAStoreState(root, cert)
+			_ = root.Close()
+		}
+	}
+	for i := len(systemStores) - 1; i >= 0; i-- {
+		store := procRoot(1, systemStores[i].target)
+		if _, err := os.Stat(store); errors.Is(err, os.ErrNotExist) {
+			continue
+		} else if err != nil {
+			break
+		}
+		path := filepath.Join(store, cert.Filename)
+		if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+			stores.System = "absent"
+		} else if err == nil {
+			if content, err := readStockCA(path); err == nil {
+				stores.System = "absent"
+				if certificateDigest(content) == cert.SHA256 {
+					stores.System = "present"
+				}
+			}
+		}
+		break
+	}
+	return stores
+}
+
+func userCAStoreState(root *os.Root, cert Certificate) string {
+	base := strings.TrimSuffix(cert.Filename, ".0")
+	for index := range userCertSlots {
+		content, err := readUserCAFile(root, filepath.Join(userCertDir, base+"."+strconv.Itoa(index)))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return "unknown"
+		}
+		if certificateDigest(content) == cert.SHA256 {
+			return "present"
+		}
+	}
+	return "absent"
+}
+
 func ReconcileUserTrust(ctx context.Context, layout paths.Layout) error {
 	return reconcileUserTrust(ctx, layout, false)
 }

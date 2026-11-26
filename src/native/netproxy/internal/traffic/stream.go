@@ -21,11 +21,12 @@ import (
 var errBridge = errors.New("无效的透明抓包连接")
 
 type flow struct {
-	Destination string `json:"destination"`
-	Host        string `json:"host"`
-	Outbound    string `json:"outbound"`
-	Exit        *Exit  `json:"exit,omitempty"`
-	sourceApp   *SourceApp
+	Destination     string `json:"destination"`
+	Host            string `json:"host"`
+	Outbound        string `json:"outbound"`
+	Exit            *Exit  `json:"exit,omitempty"`
+	sourceApp       *SourceApp
+	upstreamFailure string
 }
 
 type Exit struct {
@@ -149,7 +150,7 @@ func (s *session) serveBridge(bridge *net.UnixConn) {
 		case !policy.matches(host):
 			reason = "host_not_selected"
 		case s.controller.isPinned(host, metadata.sourceApp):
-			reason = "certificate_rejected"
+			reason = "certificate_bypassed"
 			entry.TLS = "pinned_skipped"
 		case s.controller.isALPNBypassed(host, metadata.sourceApp):
 			reason = "alpn_bypassed"

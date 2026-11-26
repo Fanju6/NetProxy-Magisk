@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -77,8 +78,97 @@ func TestTLSExclusionAndUpstreamFailureDoNotPin(t *testing.T) {
 		t.Fatal("invalid debug CA")
 	}
 	get(roots, http.StatusBadGateway)
+	if entries := c.Entries(); len(entries) != 2 || entries[0].PassthroughReason != "upstream_handshake_failed" {
+		t.Fatalf("expected upstream TLS failure reason, got %+v", entries)
+	}
 	if pinned, err := c.PinnedBypasses(); err != nil || len(pinned) != 0 {
 		t.Fatalf("upstream verification failure pinned client: %+v, %v", pinned, err)
+	}
+}
+
+func TestClientTLSCloseAfterCertificateDoesNotPin(t *testing.T) {
+	origin := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer origin.Close()
+	layout := paths.New(t.TempDir())
+	c := New(layout)
+	c.upstreamRoots = origin.Client().Transport.(*http.Transport).TLSClientConfig.RootCAs
+	if _, err := c.SetMITMPolicy(MITMPolicy{Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer c.Stop()
+	public, err := c.Certificate(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM([]byte(public.PEM)) {
+		t.Fatal("invalid debug CA")
+	}
+	uid := uint32(10123)
+	dial := bridgeFixtureFor(layout, &Exit{UID: &uid, Package: "com.example.capture"})
+	for i := range 4 {
+		raw, err := dial(t.Context(), "tcp", origin.Listener.Addr().String())
+		if err != nil {
+			t.Fatal(err)
+		}
+		gotCertificate := false
+		client := tls.Client(raw, &tls.Config{
+			ServerName: "127.0.0.1", RootCAs: roots,
+			VerifyConnection: func(tls.ConnectionState) error {
+				gotCertificate = true
+				_ = raw.Close()
+				return io.EOF
+			},
+		})
+		err = client.HandshakeContext(t.Context())
+		_ = raw.Close()
+		if err == nil || !gotCertificate {
+			t.Fatalf("connection %d did not close after receiving the certificate: %v", i, err)
+		}
+		deadline := time.Now().Add(time.Second)
+		for len(c.Entries()) <= i && time.Now().Before(deadline) {
+			time.Sleep(time.Millisecond)
+		}
+		entries := c.Entries()
+		if len(entries) != i+1 || entries[0].TLS != "handshake_failed" || entries[0].PassthroughReason != "client_handshake_closed" {
+			t.Fatalf("unexpected close record: %+v", entries)
+		}
+	}
+	if pinned, err := c.PinnedBypasses(); err != nil || len(pinned) != 0 {
+		t.Fatalf("client close created a bypass: %+v, %v", pinned, err)
+	}
+}
+
+func TestTLSHandshakeFailureClassification(t *testing.T) {
+	for alert, reason := range map[tls.AlertError]string{
+		42: "certificate_rejected", 46: "certificate_rejected", 48: "client_ca_untrusted", 49: "certificate_rejected",
+	} {
+		if got := remoteCertificateReason(&net.OpError{Op: "remote error", Err: alert}); got != reason {
+			t.Errorf("remote alert %v: got %q, want %q", alert, got, reason)
+		}
+	}
+	for _, tc := range []struct {
+		err      error
+		upstream bool
+		reason   string
+	}{
+		{io.EOF, false, "client_handshake_closed"},
+		{&net.OpError{Op: "read", Err: syscall.ECONNRESET}, false, "client_handshake_closed"},
+		{&net.OpError{Op: "local error", Err: tls.AlertError(42)}, false, "client_handshake_failed"},
+		{&net.OpError{Op: "remote error", Err: tls.AlertError(40)}, false, "client_handshake_failed"},
+		{os.ErrDeadlineExceeded, false, "client_handshake_timeout"},
+		{context.DeadlineExceeded, true, "upstream_handshake_timeout"},
+		{&net.DNSError{Err: "fixture", Name: "example.invalid"}, true, "upstream_handshake_failed"},
+	} {
+		if remoteCertificateReason(tc.err) != "" {
+			t.Errorf("%v incorrectly counted as a remote certificate alert", tc.err)
+		}
+		if got := tlsHandshakeReason(tc.err, tc.upstream); got != tc.reason {
+			t.Errorf("reason for %v: got %q, want %q", tc.err, got, tc.reason)
+		}
 	}
 }
 
@@ -243,12 +333,12 @@ func testTransparentHTTPS(t *testing.T, core string) {
 	entries := c.Entries()
 	if core == "" {
 		if len(entries) != 4 || entries[0].TLS != "decrypted" || entries[1].TLS != "pinned_skipped" ||
-			entries[1].PassthroughReason != "certificate_rejected" {
+			entries[1].PassthroughReason != "certificate_bypassed" {
 			t.Fatalf("意外抓包记录: %+v", entries)
 		}
 		entries = entries[2:]
 	}
-	if len(entries) != 2 || entries[0].TLS != failureTLS || entries[0].Status != 0 ||
+	if len(entries) != 2 || entries[0].TLS != failureTLS || entries[0].Status != 0 || entries[0].PassthroughReason != "certificate_rejected" ||
 		entries[1].TLS != "decrypted" || entries[1].Rewrite != "response" || strings.Contains(entries[1].Host, "synthetic") {
 		t.Fatalf("意外抓包记录: %+v", entries)
 	}

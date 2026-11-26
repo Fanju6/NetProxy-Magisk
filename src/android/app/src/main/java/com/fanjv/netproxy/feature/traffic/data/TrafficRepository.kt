@@ -61,6 +61,7 @@ internal data class CaptureRecord(
     val rewrite: String? = null,
     val tls: String? = null,
     @SerialName("passthrough_reason") val passthroughReason: String? = null,
+    @SerialName("ca_stores") val caStores: CaptureCaStores? = null,
     @SerialName("duration_ms") val durationMs: Long,
     val id: String? = null,
     val target: String? = null,
@@ -70,6 +71,9 @@ internal data class CaptureRecord(
     val protocol: String? = null,
     val sequence: Long? = null,
 )
+
+@Serializable
+internal data class CaptureCaStores(val user: String, val system: String)
 
 @Serializable
 internal data class CaptureSourceApp(

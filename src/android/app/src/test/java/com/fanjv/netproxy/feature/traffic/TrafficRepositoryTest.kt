@@ -21,6 +21,16 @@ import org.junit.rules.TemporaryFolder
 class TrafficRepositoryTest {
     @get:Rule val cacheDir = TemporaryFolder()
 
+    @Test fun captureRecordsDecodeCertificateDiagnostics() = runBlocking {
+        val repository = TrafficRepository(ModuleApiClient(TestApiTransport {
+            apiSuccess("""{"running":true,"count":1,"entries":[{"time":"now","method":"TLS","host":"example.test","outbound":"direct","status":0,"duration_ms":1,"tls":"pinned_skipped","passthrough_reason":"client_ca_untrusted","ca_stores":{"user":"present","system":"absent"}}]}""")
+        }))
+        val record = repository.preview().entries.single()
+        assertEquals("client_ca_untrusted", record.passthroughReason)
+        assertEquals("present", record.caStores?.user)
+        assertEquals("absent", record.caStores?.system)
+    }
+
     @Test fun capturedDomainsAndFilteredPagesUseBatchQueriesAndDoNotPolluteCache() = runBlocking {
         val batch = "A".repeat(26)
         val cache = CapturePageCache(cacheDir.root, Json)

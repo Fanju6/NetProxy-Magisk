@@ -145,7 +145,7 @@ HTTP 保存必须提供读取时的 revision。发生 `config.conflict` 时重�
 | `POST /traffic/toggle`、`start`、`stop`；`DELETE /traffic/list` | 切换全局抓包、显式启停或清空所有批次的记录 |
 | `GET/PUT /traffic/rules` | 读取或替换重写规则，正文为 `{"rules":[...]}`，新增和修改的规则需要 `domains`。可选 `name` 标题（去除首尾空白后最多 64 个字符）；单条规则可设 `"enabled":false`，省略时启用。见[规则格式](/guide/traffic-debugging) |
 | `GET/PUT /traffic/mitm` | 读取或替换 `{"enabled":false,"hosts":["*"],"bypass_hosts":[],"system_trust":false}`；启用后默认解密全部 HTTPS/WSS，排除名单优先。系统信任在开机、热更新或开启抓包时重新应用，关闭时尝试卸载 |
-| `GET/DELETE /traffic/pinned` | 查看或清除证书固定跳过列表 |
+| `GET/DELETE /traffic/pinned` | 查看或清除证书固定跳过列表。明确的客户端 TLS 警报记录为 `client_ca_untrusted` 或 `certificate_rejected`，后续透传记录为 `certificate_bypassed`。其他握手故障通过 `passthrough_reason` 区分：`client_handshake_closed`、`client_handshake_timeout`、`client_handshake_failed`、`upstream_handshake_timeout`、`upstream_handshake_failed`。Android 的首次拒绝记录可附 `ca_stores.user`（对应用户）与 `ca_stores.system`（init 命名空间），取值 `present`、`absent` 或 `unknown`，不表示应用是否信任。 |
 | `GET/DELETE /traffic/alpn-bypasses` | 查看或清除仍生效的 ALPN 临时跳过列表，每项含 `host`、`user_id`、`package`、`expires_at`。识别到上游 ALPN 不兼容时，记录 `alpn_incompatible`，后续跳过解密的连接记录 `alpn_bypassed`。 |
 | `POST /traffic/ca-init`；`GET /traffic/ca` | 显式初始化或读取公开 CA；返回 `pem`、`filename`、`sha256`，不返回任何私钥 |
 | `GET /diagnostics/export` | 下载脱敏诊断包 |

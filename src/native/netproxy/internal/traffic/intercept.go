@@ -12,6 +12,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -80,25 +81,60 @@ type handshakePeer struct {
 
 func (p *handshakePeer) Write(b []byte) (int, error) {
 	n, err := p.Conn.Write(b)
-	if p.certificateSelected && err == nil && n == len(b) {
+	if p.certificateSelected && !p.certificateFlight && err == nil && n == len(b) {
 		p.certificateFlight = true
 	}
 	return n, err
 }
 
-func (p *handshakePeer) rejectedCertificate(err error) bool {
-	if !p.certificateFlight {
-		return false
-	}
+func remoteCertificateReason(err error) string {
 	var peerError *net.OpError
 	if errors.As(err, &peerError) && peerError.Op == "remote error" {
 		// crypto/tls wraps TCP peer alerts in its private alert type.
 		switch peerError.Err.Error() {
-		case tls.AlertError(42).Error(), tls.AlertError(46).Error(), tls.AlertError(48).Error():
-			return true
+		case tls.AlertError(48).Error():
+			return "client_ca_untrusted"
+		case tls.AlertError(42).Error(), tls.AlertError(46).Error(), tls.AlertError(49).Error():
+			return "certificate_rejected"
 		}
 	}
-	return errors.Is(err, io.EOF) || errors.Is(err, syscall.ECONNRESET) && peerError != nil && peerError.Op == "read"
+	return ""
+}
+
+type initialTLSRead struct {
+	*tls.Conn
+	once     sync.Once
+	rejected func(error)
+}
+
+func (c *initialTLSRead) Read(b []byte) (int, error) {
+	n, err := c.Conn.Read(b)
+	if n != 0 || err != nil {
+		c.once.Do(func() {
+			if n == 0 && err != nil {
+				c.rejected(err)
+			}
+		})
+	}
+	return n, err
+}
+
+func tlsHandshakeReason(err error, upstream bool) string {
+	var netErr net.Error
+	timeout := errors.Is(err, context.DeadlineExceeded) || errors.As(err, &netErr) && netErr.Timeout()
+	if upstream {
+		if timeout {
+			return "upstream_handshake_timeout"
+		}
+		return "upstream_handshake_failed"
+	}
+	if timeout {
+		return "client_handshake_timeout"
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) {
+		return "client_handshake_closed"
+	}
+	return "client_handshake_failed"
 }
 
 func (s *session) intercept(client *bufferedStream, upstream net.Conn, metadata flow, host string, offered []string, policy *mitmState, now time.Time) bool {
@@ -129,12 +165,9 @@ func (s *session) intercept(client *bufferedStream, upstream net.Conn, metadata 
 		return true
 	}
 	if originErr != nil {
+		metadata.upstreamFailure = tlsHandshakeReason(originErr, true)
 		if len(offered) != 0 && !slices.Contains(offered, "http/1.1") {
-			if s.ctx.Err() == nil && policy.ctx.Err() == nil {
-				entry := metadata.entry(now, "TLS", host)
-				entry.TLS, entry.DurationMS = "handshake_failed", time.Since(now).Milliseconds()
-				s.controller.record(s, entry)
-			}
+			s.recordHandshakeFailure(metadata, host, policy, now, metadata.upstreamFailure)
 			return true
 		}
 		protocol = ""
@@ -158,23 +191,45 @@ func (s *session) intercept(client *bufferedStream, upstream net.Conn, metadata 
 	err = secure.HandshakeContext(handshake)
 	cancel()
 	if err != nil {
-		if policy.ctx.Err() == nil && s.ctx.Err() == nil {
-			entry := metadata.entry(now, "TLS", host)
-			entry.TLS, entry.DurationMS = "handshake_failed", time.Since(now).Milliseconds()
-			if originErr == nil && peer.rejectedCertificate(err) && s.controller.rememberPinned(host, metadata.sourceApp) {
-				entry.TLS, entry.PassthroughReason = "pinned_skipped", "certificate_rejected"
+		reason := metadata.upstreamFailure
+		if reason == "" {
+			reason = tlsHandshakeReason(err, false)
+			if rejection := remoteCertificateReason(err); peer.certificateFlight && rejection != "" {
+				reason = rejection
 			}
-			// No HTTP response exists for a failed client TLS handshake.
-			s.controller.record(s, entry)
 		}
+		s.recordHandshakeFailure(metadata, host, policy, now, reason)
 		return true
 	}
+	var downstreamConn net.Conn = secure
+	if originErr == nil && peer.certificateFlight {
+		downstreamConn = &initialTLSRead{Conn: secure, rejected: func(err error) {
+			if reason := remoteCertificateReason(err); reason != "" {
+				s.recordHandshakeFailure(metadata, host, policy, now, reason)
+			}
+		}}
+	}
 	if protocol == "h2" {
-		s.serveH2(secure, origin, metadata, host, originErr)
+		s.serveH2(downstreamConn, origin, metadata, host, originErr)
 	} else {
-		s.serveHTTPStream(secure, client.done, origin, metadata, host, originErr)
+		s.serveHTTPStream(downstreamConn, client.done, origin, metadata, host, originErr)
 	}
 	return true
+}
+
+func (s *session) recordHandshakeFailure(metadata flow, host string, policy *mitmState, now time.Time, reason string) {
+	if policy.ctx.Err() != nil || s.ctx.Err() != nil {
+		return
+	}
+	entry := metadata.entry(now, "TLS", host)
+	entry.TLS, entry.PassthroughReason, entry.DurationMS = "handshake_failed", reason, time.Since(now).Milliseconds()
+	if reason == "certificate_rejected" || reason == "client_ca_untrusted" {
+		entry.CAStores = observeCAStores(metadata.sourceApp, policy.ca.public)
+		if s.controller.rememberPinned(host, metadata.sourceApp) {
+			entry.TLS = "pinned_skipped"
+		}
+	}
+	s.controller.record(s, entry)
 }
 
 func alpnMismatch(offered []string, protocol string, err error) bool {

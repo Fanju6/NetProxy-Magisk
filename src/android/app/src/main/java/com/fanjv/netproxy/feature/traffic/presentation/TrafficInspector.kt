@@ -186,7 +186,14 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
                                     record.protocol?.let { InspectRow(stringResource(R.string.traffic_protocol), it) }
                                     record.sequence?.let { InspectRow(stringResource(R.string.traffic_connection_sequence), it.toString()) }
                                     record.passthroughReason?.let {
-                                        InspectRow(stringResource(R.string.traffic_skip_reason), passthroughLabel(it))
+                                        InspectRow(stringResource(R.string.traffic_connection_reason), passthroughLabel(it))
+                                        if (it == "certificate_rejected" || it == "client_ca_untrusted" || it == "certificate_bypassed") {
+                                            record.caStores?.let { stores ->
+                                                InspectRow(stringResource(R.string.traffic_ca_user_store), caStoreLabel(stores.user))
+                                                InspectRow(stringResource(R.string.traffic_ca_system_store), caStoreLabel(stores.system))
+                                            }
+                                            Text(stringResource(R.string.traffic_ca_retry_hint), style = MiuixTheme.textStyles.body2)
+                                        }
                                     }
                                     InspectRow(stringResource(R.string.traffic_inbound), record.exit?.inbound ?: "netproxy-in")
                                     InspectRow(stringResource(R.string.traffic_outbound), record.outbound)
@@ -251,6 +258,13 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
         }
     }
 }
+
+@Composable
+private fun caStoreLabel(state: String): String = stringResource(when (state) {
+    "present" -> R.string.traffic_ca_store_present
+    "absent" -> R.string.traffic_ca_store_absent
+    else -> R.string.traffic_ca_store_unknown
+})
 
 @Composable
 private fun InspectSourceApp(record: CaptureRecord, app: AndroidApp?) {

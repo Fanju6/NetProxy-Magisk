@@ -74,8 +74,14 @@ func TestUserCARemovalPreservesOtherCertificatesAndUsers(t *testing.T) {
 		}
 	}
 	for _, root := range []*os.Root{user0, clone} {
+		if state := userCAStoreState(root, ca.public); state != "absent" {
+			t.Fatalf("different certificates in the store: %q", state)
+		}
 		if changed, err := reconcileUserCA(root, ca, uid, gid, label); err != nil || !changed {
 			t.Fatalf("could not install public CA: %t, %v", changed, err)
+		}
+		if state := userCAStoreState(root, ca.public); state != "present" {
+			t.Fatalf("installed CA not found: %q", state)
 		}
 		if changed, err := reconcileUserCA(root, ca, uid, gid, label); err != nil || changed {
 			t.Fatalf("repeat install should be a no-op: %t, %v", changed, err)

@@ -37,6 +37,7 @@ type Entry struct {
 	Protocol          string     `json:"protocol,omitempty"`
 	Sequence          uint64     `json:"sequence,omitempty"`
 	PassthroughReason string     `json:"passthrough_reason,omitempty"`
+	CAStores          *CAStores  `json:"ca_stores,omitempty"`
 	DurationMS        int64      `json:"duration_ms"`
 }
 

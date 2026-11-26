@@ -181,6 +181,7 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 	response, err := transport.RoundTrip(request)
 	if err != nil {
 		entry.Status = http.StatusBadGateway
+		entry.PassthroughReason = metadata.upstreamFailure
 		http.Error(w, "sing-box upstream unavailable", entry.Status)
 		return
 	}
