@@ -1,0 +1,5 @@
+# NetProxy sing-box patch
+
+`sing-box-netproxy-capture.patch` adds the private capture handoff after normal TCP outbound selection and dialing. Only the generated runtime configuration enables it. No route rule or public listener is added.
+
+When updating the pinned reF1nd version, apply the patch with `patch -p1` from the upstream source root. If it no longer applies, port the small stream bridge to the new TCP connection manager, keeping the hook after outbound dialing and inbound handshake reporting and before the connection copy. Regenerate the patch against the clean tag. Verify Linux and Android arm64 builds with `.github/scripts/build-capture-core.sh <output>` (invoke with `sh`), and exercise transparent HTTP/TLS and an original-inbound routing rule. The resource update workflow applies the patch before its own build; the module packaging action builds from the same pinned source rather than packaging the checked-in baseline core.

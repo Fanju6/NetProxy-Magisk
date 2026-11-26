@@ -3,6 +3,7 @@ package module
 
 import (
 	"context"
+	"encoding/json/jsontext"
 	json "encoding/json/v2"
 	"errors"
 	"fmt"
@@ -21,6 +22,7 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/subscription"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/telemetry"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/traffic"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/worker"
 	"github.com/sagernet/sing-box/option"
 )
@@ -154,7 +156,17 @@ func Prepare(ctx context.Context, options Options) (PrepareResult, error) {
 		return PrepareResult{}, err
 	}
 	configPath := paths.RuntimeConfig(options.RuntimeDir)
-	if err := writeEffectiveConfig(ctx, options.SingBoxDir, configPath, built.Runtime.Inbounds, runtime.Providers); err != nil {
+	layout := paths.New(options.ModuleDir)
+	var captureSocket string
+	var captureQUICRule jsontext.Value
+	if traffic.Enabled(layout) {
+		captureSocket = layout.TrafficSocket()
+		captureQUICRule, err = traffic.CaptureQUICRule(ctx, layout)
+		if err != nil {
+			logService(options, "WARN", "traffic.quic", "skipped", "未能按抓包应用限制 QUIC，已保留 UDP：%v", err)
+		}
+	}
+	if err := writeEffectiveConfig(ctx, options.SingBoxDir, configPath, built.Runtime.Inbounds, runtime.Providers, captureSocket, !config.IPv6Enabled(), config.SniffDestinationEnabled(), captureQUICRule); err != nil {
 		return PrepareResult{}, err
 	}
 	for _, ref := range built.MissingPackages {
@@ -728,6 +740,7 @@ func workerOptions(options Options) worker.Options {
 		TransferContext:     options.TransferContext,
 		PIDFile:             options.WorkerPIDFile,
 		LogFile:             options.WorkerLogFile,
+		CrashLog:            paths.New(options.ModuleDir).WorkerCrashLog(),
 		ModuleConfig:        options.ModuleConfig,
 		APIConfig:           paths.New(options.ModuleDir).APIConfig(),
 		SingBoxPath:         options.SingBoxPath,

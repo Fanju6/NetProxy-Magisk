@@ -59,6 +59,28 @@ func (l Layout) ModuleConfig() string { return filepath.Join(l.Config(), "module
 
 func (l Layout) APIConfig() string { return filepath.Join(l.Config(), "api.json") }
 
+func (l Layout) TrafficRules() string { return filepath.Join(l.Config(), "traffic-rules.json") }
+
+func (l Layout) TrafficSocket() string { return filepath.Join(l.Runtime(), "capture.sock") }
+
+func (l Layout) TrafficHistory() string { return filepath.Join(l.Data(), "traffic-history") }
+
+func (l Layout) TrafficEnabled() string { return filepath.Join(l.Config(), "traffic-enabled.json") }
+func (l Layout) TrafficApps() string    { return filepath.Join(l.Config(), "traffic-apps.json") }
+
+func (l Layout) TrafficCA() string { return filepath.Join(l.Config(), "traffic-ca.pem") }
+
+func (l Layout) TrafficMITM() string   { return filepath.Join(l.Config(), "traffic-mitm.json") }
+func (l Layout) TrafficPinned() string { return filepath.Join(l.Config(), "traffic-pinned.json") }
+
+func (l Layout) TrafficALPNBypasses() string {
+	return filepath.Join(l.Config(), "traffic-alpn-bypasses.json")
+}
+
+func (l Layout) TrafficTrust() string { return filepath.Join(l.DevRoot(), "traffic-trust") }
+
+func (l Layout) TrafficUserTrust() string { return filepath.Join(l.Config(), "traffic-user-trust") }
+
 func (l Layout) APITempDir() string { return filepath.Join(l.DevRoot(), "http") }
 
 func (l Layout) AndroidPlatformDEX() string { return filepath.Join(l.Bin(), "android-platform.dex") }
@@ -100,6 +122,8 @@ func (l Layout) Executable() string { return filepath.Join(l.Bin(), "netproxyctl
 
 // ServiceLog 返回统一服务日志路径。
 func (l Layout) ServiceLog() string { return filepath.Join(l.Logs(), "service.log") }
+
+func (l Layout) WorkerCrashLog() string { return filepath.Join(l.Logs(), "worker-crash.log") }
 
 // DevRoot 返回运行时状态目录。
 func (l Layout) DevRoot() string { return l.devRoot }

@@ -1,0 +1,794 @@
+--- a/box.go
++++ b/box.go
+@@ -244,6 +244,7 @@
+ 	service.MustRegister[adapter.DNSRouter](ctx, dnsRouter)
+ 	service.MustRegister[adapter.DNSRuleSetUpdateValidator](ctx, dnsRouter)
+ 	connectionManager := route.NewConnectionManager(ctx, logFactory.NewLogger("connection"))
++	connectionManager.NetProxyCaptureSocket = routeOptions.NetProxyCaptureSocket
+ 	service.MustRegister[adapter.ConnectionManager](ctx, connectionManager)
+ 	networkManager, err := route.NewNetworkManager(ctx, logFactory.NewLogger("network"), routeOptions, dnsOptions)
+ 	if err != nil {
+--- a/protocol/ebpf/inbound.go
++++ b/protocol/ebpf/inbound.go
+@@ -158,6 +158,8 @@
+ 	localDNSMode              string
+ 	sharedDNSMode             string
+ 	localIPv6                 bool
++	rejectLocalIPv6           bool
++	localIPv6RejectLinks      []func() error
+ 	localPolicy               localUIDPolicy
+ 	compiledPolicy            commonEBPF.CompiledPolicy
+ 	androidUIDOptions         *androidUIDOptions
+@@ -305,6 +307,7 @@
+ 			return nil, E.New("eBPF self-bypass sockets were not prepared")
+ 		}
+ 	}
++	localIPv6, rejectLocalIPv6 := localIPv6Policy(localEnabled, tag, options.Local.IPv6)
+ 	inbound := &Inbound{
+ 		Adapter:        inbound.NewAdapter(C.TypeEBPF, tag),
+ 		ctx:            ctx,
+@@ -326,7 +329,8 @@
+ 		enableUDP:           enableUDP,
+ 		localDNSMode:        localDNSMode,
+ 		sharedDNSMode:       sharedDNSMode,
+-		localIPv6:           localEnabled && enabledByDefault(options.Local.IPv6),
++		localIPv6:           localIPv6,
++		rejectLocalIPv6:     rejectLocalIPv6,
+ 		sharedOptions:       sharedOptions,
+ 		sharedEnabled:       sharedEnabled,
+ 		sharedDataPlane:     sharedDataPlane,
+--- a/protocol/ebpf/ipv6.go
++++ b/protocol/ebpf/ipv6.go
+@@ -2,6 +2,8 @@
+ 
+ package ebpf
+ 
++import "net/netip"
++
+ func (i *Inbound) cgroupIPv6Enabled() bool {
+ 	return i.localCgroupEnabled() && i.localIPv6 && i.redirectIPv6Prefix.IsValid()
+ }
+@@ -13,3 +15,12 @@
+ func (i *Inbound) sharedRewriteIPv6Enabled() bool {
+ 	return i.sharedRewriteEnabled() && i.sharedIPv6 && i.redirectIPv6Prefix.IsValid()
+ }
++
++func (i *Inbound) rejectsLocalIPv6(destination netip.Addr, local bool) bool {
++	return i.rejectLocalIPv6 && local && destination.Unmap().Is6()
++}
++
++func localIPv6Policy(enabled bool, tag string, ipv6 *bool) (intercept, reject bool) {
++	reject = enabled && tag == "netproxy-in" && !enabledByDefault(ipv6)
++	return enabled && (enabledByDefault(ipv6) || reject), reject
++}
+--- /dev/null
++++ b/protocol/ebpf/netproxy_ipv6_test.go
+@@ -0,0 +1,55 @@
++//go:build with_ebpf && (linux || android)
++
++package ebpf
++
++import (
++	"net/netip"
++	"slices"
++	"testing"
++
++	"github.com/sagernet/sing/common"
++)
++
++func TestNetProxyLocalIPv6Policy(t *testing.T) {
++	for _, tt := range []struct {
++		name              string
++		local             bool
++		tag               string
++		ipv6              *bool
++		intercept, reject bool
++	}{
++		{"managed disabled", true, "netproxy-in", common.Ptr(false), true, true},
++		{"managed enabled", true, "netproxy-in", common.Ptr(true), true, false},
++		{"managed default", true, "netproxy-in", nil, true, false},
++		{"shared only", false, "netproxy-in", nil, false, false},
++		{"other inbound disabled", true, "custom", common.Ptr(false), false, false},
++	} {
++		t.Run(tt.name, func(t *testing.T) {
++			intercept, reject := localIPv6Policy(tt.local, tt.tag, tt.ipv6)
++			if intercept != tt.intercept || reject != tt.reject {
++				t.Fatalf("intercept=%v reject=%v", intercept, reject)
++			}
++			i := Inbound{rejectLocalIPv6: reject}
++			v6 := netip.MustParseAddr("2001:db8::1")
++			if i.rejectsLocalIPv6(v6, true) != tt.reject || i.rejectsLocalIPv6(v6, false) ||
++				i.rejectsLocalIPv6(netip.MustParseAddr("::ffff:192.0.2.1"), true) {
++				t.Fatal("IPv6 rejection did not respect traffic scope or address family")
++			}
++		})
++	}
++}
++
++func TestNetProxyIPv6RejectUIDRanges(t *testing.T) {
++	for _, tt := range []struct {
++		start, end uint32
++		want       []rejectUIDPrefix
++	}{
++		{0, ^uint32(0), []rejectUIDPrefix{{Bits: 0}}},
++		{10418, 10418, []rejectUIDPrefix{{32, [4]byte{0, 0, 40, 178}}}},
++		{100000, 100003, []rejectUIDPrefix{{30, [4]byte{0, 1, 134, 160}}}},
++	} {
++		if got := rejectUIDPrefixes(tt.start, tt.end); !slices.Equal(got, tt.want) {
++			t.Fatalf("range %d..%d: got %+v, want %+v", tt.start, tt.end, got, tt.want)
++		}
++	}
++}
+--- a/protocol/ebpf/inbound_connection.go
++++ b/protocol/ebpf/inbound_connection.go
+@@ -80,6 +80,10 @@
+ 			_ = conn.Close()
+ 			return
+ 		}
++		if i.rejectsLocalIPv6(original.Destination.Addr(), true) {
++			N.CloseOnHandshakeFailure(conn, onClose, unix.ECONNREFUSED)
++			return
++		}
+ 		metadata.Inbound = i.Tag()
+ 		metadata.InboundType = i.Type()
+ 		metadata.Source = M.SocksaddrFromNet(conn.RemoteAddr())
+@@ -180,6 +184,11 @@
+ 		Destination: destination,
+ 	}
+ 	key, keyLoaded := udpSessionKeyFromContext(ctx)
++	if keyLoaded && i.rejectsLocalIPv6(destination.Addr,
++		key.Scope == udpSessionScopeLocalCgroup || key.Scope == udpSessionScopeLocalTC) {
++		N.CloseOnHandshakeFailure(conn, onClose, unix.ECONNREFUSED)
++		return
++	}
+ 	if clientState, loaded := i.udpClientTable.load(key); keyLoaded && loaded {
+ 		metadata.SourceMACAddress = clientState.sourceMACAddress()
+ 		metadata.ProcessInfo = i.lookupProcessInfo(clientState.processSocketCookie())
+--- a/protocol/ebpf/tc_connection.go
++++ b/protocol/ebpf/tc_connection.go
+@@ -48,6 +48,10 @@
+ 		return
+ 	}
+ 	onClose = N.AppendClose(onClose, N.OnceClose(func(error) { returnHandle.Release() }))
++	if i.rejectsLocalIPv6(destination.Addr(), assignment.Path == commonEBPF.TCPathDelivery) {
++		N.CloseOnHandshakeFailure(conn, onClose, unix.ECONNREFUSED)
++		return
++	}
+ 	metadata.Inbound = i.Tag()
+ 	metadata.InboundType = i.Type()
+ 	metadata.Source = M.SocksaddrFromNetIP(source)
+--- /dev/null
++++ b/protocol/ebpf/netproxy_ipv6_reject.go
+@@ -0,0 +1,154 @@
++//go:build with_ebpf && (linux || android)
++
++package ebpf
++
++import (
++	"errors"
++	"math/bits"
++	"os"
++
++	commonEBPF "github.com/CHIZI-0618/sing-ebpf"
++	bpf "github.com/cilium/ebpf"
++	"github.com/cilium/ebpf/asm"
++	"github.com/cilium/ebpf/link"
++	"golang.org/x/sys/unix"
++)
++
++type rejectUIDPrefix struct {
++	Bits uint32
++	UID  [4]byte
++}
++
++func rejectUIDPrefixes(start, end uint32) []rejectUIDPrefix {
++	var prefixes []rejectUIDPrefix
++	for first, last := uint64(start), uint64(end); first <= last; {
++		width := min(bits.TrailingZeros64(first), bits.Len64(last-first+1)-1)
++		prefixes = append(prefixes, rejectUIDPrefix{32 - uint32(width),
++			[4]byte{byte(first >> 24), byte(first >> 16), byte(first >> 8), byte(first)},
++		})
++		first += uint64(1) << width
++	}
++	return prefixes
++}
++
++func (i *Inbound) startLocalIPv6Rejection() error {
++	if !i.rejectLocalIPv6 {
++		return nil
++	}
++	path := i.cgroupPath
++	if path == "" {
++		var err error
++		path, err = commonEBPF.DetectCgroup2Root()
++		if err != nil {
++			return err
++		}
++	}
++	group, err := os.Open(path)
++	if err != nil {
++		return err
++	}
++	defer group.Close()
++
++	decisions, defaultAction := i.compileProcessUIDPolicy()
++	entries := make(map[rejectUIDPrefix]uint32)
++	for _, decision := range decisions {
++		for _, prefix := range rejectUIDPrefixes(decision.Start, decision.End) {
++			if decision.Action == commonEBPF.DecisionPass {
++				entries[prefix] = 1
++			} else {
++				entries[prefix] = 0
++			}
++		}
++	}
++	policy, err := bpf.NewMap(&bpf.MapSpec{
++		Type: bpf.LPMTrie, KeySize: 8, ValueSize: 4,
++		MaxEntries: uint32(max(1, len(entries))), Flags: unix.BPF_F_NO_PREALLOC,
++	})
++	if err != nil {
++		return err
++	}
++	defer policy.Close()
++	for prefix, action := range entries {
++		if err := policy.Put(prefix, action); err != nil {
++			return err
++		}
++	}
++
++	defaultResult := int32(0)
++	if defaultAction == commonEBPF.DecisionPass {
++		defaultResult = 1
++	}
++	attachments := []bpf.AttachType{bpf.AttachCGroupInet6Connect}
++	if i.enableUDP {
++		attachments = append(attachments, bpf.AttachCGroupUDP6Sendmsg)
++	}
++	for _, attach := range attachments {
++		program, err := bpf.NewProgram(&bpf.ProgramSpec{
++			Name: "np_ipv6_reject", Type: bpf.CGroupSockAddr, AttachType: attach,
++			License: "GPL", Instructions: rejectIPv6Instructions(policy.FD(), os.Getpid(), defaultResult, i.enableTCP, i.enableUDP),
++		})
++		if err != nil {
++			return err
++		}
++		attached, err := link.AttachRawLink(link.RawLinkOptions{Target: int(group.Fd()), Program: program, Attach: attach})
++		program.Close()
++		if err != nil {
++			return err
++		}
++		i.localIPv6RejectLinks = append(i.localIPv6RejectLinks, attached.Close)
++	}
++	return nil
++}
++
++func (i *Inbound) closeLocalIPv6Rejection() error {
++	var err error
++	for _, closeLink := range i.localIPv6RejectLinks {
++		err = errors.Join(err, closeLink())
++	}
++	i.localIPv6RejectLinks = nil
++	return err
++}
++
++func rejectIPv6Instructions(policyFD, selfPID int, defaultResult int32, tcp, udp bool) asm.Instructions {
++	// bpf_sock_addr：IPv6 地址占字节 8–23，协议位于字节 36–39。
++	instructions := asm.Instructions{asm.LoadMem(asm.R2, asm.R1, 36, asm.Word)}
++	if !tcp {
++		instructions = append(instructions, asm.JEq.Imm(asm.R2, unix.IPPROTO_TCP, "pass"))
++	}
++	if !udp {
++		instructions = append(instructions, asm.JEq.Imm(asm.R2, unix.IPPROTO_UDP, "pass"))
++	}
++	return append(instructions,
++		asm.LoadMem(asm.R2, asm.R1, 8, asm.Word),
++		asm.JNE.Imm(asm.R2, 0, "self"),
++		asm.LoadMem(asm.R2, asm.R1, 12, asm.Word),
++		asm.JNE.Imm(asm.R2, 0, "self"),
++		asm.LoadMem(asm.R2, asm.R1, 16, asm.Word),
++		asm.HostTo(asm.BE, asm.R2, asm.Word),
++		asm.JEq.Imm(asm.R2, 0xffff, "pass"),
++		asm.JNE.Imm(asm.R2, 0, "self"),
++		asm.LoadMem(asm.R2, asm.R1, 20, asm.Word),
++		asm.HostTo(asm.BE, asm.R2, asm.Word),
++		asm.JLE.Imm(asm.R2, 1, "pass"),
++		// 核心可能和受管 Root 进程同为 UID 0，出站不能按 UID 一并拒绝。
++		asm.FnGetCurrentPidTgid.Call().WithSymbol("self"),
++		asm.RSh.Imm(asm.R0, 32),
++		asm.JEq.Imm(asm.R0, int32(selfPID), "pass"),
++		asm.FnGetCurrentUidGid.Call(),
++		asm.HostTo(asm.BE, asm.R0, asm.Word),
++		asm.StoreImm(asm.RFP, -8, 32, asm.Word),
++		asm.StoreMem(asm.RFP, -4, asm.R0, asm.Word),
++		asm.LoadMapPtr(asm.R1, policyFD),
++		asm.Mov.Reg(asm.R2, asm.RFP),
++		asm.Add.Imm(asm.R2, -8),
++		asm.FnMapLookupElem.Call(),
++		asm.JEq.Imm(asm.R0, 0, "default"),
++		asm.LoadMem(asm.R0, asm.R0, 0, asm.Word),
++		asm.And.Imm(asm.R0, 1),
++		asm.Return(),
++		asm.Mov.Imm(asm.R0, defaultResult).WithSymbol("default"),
++		asm.Return(),
++		asm.Mov.Imm(asm.R0, 1).WithSymbol("pass"),
++		asm.Return(),
++	)
++}
+--- a/protocol/ebpf/lifecycle_start.go
++++ b/protocol/ebpf/lifecycle_start.go
+@@ -234,6 +234,9 @@
+ 	if i.enableUDP && (i.localSocketAssignEnabled() || i.sharedSocketAssignEnabled()) {
+ 		i.udpReplySockets.startSweeper(i.ctx)
+ 	}
++	if err := i.startLocalIPv6Rejection(); err != nil {
++		return E.Cause(err, "start managed IPv6 socket rejection")
++	}
+ 	i.logStartupSummaryLocked()
+ 	return nil
+ }
+--- a/protocol/ebpf/lifecycle_close.go
++++ b/protocol/ebpf/lifecycle_close.go
+@@ -27,6 +27,10 @@
+ func (i *Inbound) closeResources() error {
++	return E.Errors(i.closeLocalIPv6Rejection(), i.closeDataPlaneResources())
++}
++
++func (i *Inbound) closeDataPlaneResources() error {
+ 	monitorErr := i.stopInboundWorkers()
+ 	sharedRewriteErr := i.closeSharedRewriteOwner()
+ 	dataPlane := i.takeTCDataPlane()
+ 	disableErr := error(nil)
+ 	if dataPlane != nil {
+--- a/option/route.go
++++ b/option/route.go
+@@ -8,6 +8,8 @@
+ )
+ 
+ type RouteOptions struct {
++	NetProxyCaptureSocket      string                            `json:"netproxy_capture_socket,omitempty" schema:"omit"`
++	NetProxySniffDestination   bool                              `json:"netproxy_sniff_destination,omitempty" schema:"omit"`
+ 	GeoIP                      *GeoIPOptions                     `json:"geoip,omitempty" schema:"omit"`
+ 	Geosite                    *GeositeOptions                   `json:"geosite,omitempty" schema:"omit"`
+ 	Rules                      []Rule                            `json:"rules,omitempty"`
+--- a/route/conn.go
++++ b/route/conn.go
+@@ -38,10 +38,11 @@
+ var _ adapter.ConnectionManager = (*ConnectionManager)(nil)
+ 
+ type ConnectionManager struct {
+-	logger         logger.ContextLogger
+-	urlTestHistory *urltest.HistoryStorage
+-	access         sync.Mutex
+-	connections    list.List[io.Closer]
++	NetProxyCaptureSocket string
++	logger                logger.ContextLogger
++	urlTestHistory        *urltest.HistoryStorage
++	access                sync.Mutex
++	connections           list.List[io.Closer]
+ }
+ 
+ func NewConnectionManager(ctx context.Context, logger logger.ContextLogger) *ConnectionManager {
+@@ -152,7 +153,8 @@
+ 		m.logger.ErrorContext(ctx, err)
+ 		return
+ 	}
+-	if !metadata.TLSFragment && !metadata.TLSRecordFragment && metadata.TLSSpoof == "" {
++	capture := m.NetProxyCaptureSocket != "" && metadata.Inbound == "netproxy-in"
++	if !capture && !metadata.TLSFragment && !metadata.TLSRecordFragment && metadata.TLSSpoof == "" {
+ 		var spliced bool
+ 		spliced, err = m.spliceConnection(ctx, conn, remoteConn, onClose)
+ 		if err != nil {
+@@ -178,6 +180,21 @@
+ 			return
+ 		}
+ 		remoteConn = spoofConn
++	}
++	if capture && m.netProxyCapture(ctx, conn, remoteConn, metadata, onClose) {
++		return
++	}
++	if capture && !metadata.TLSFragment && !metadata.TLSRecordFragment && metadata.TLSSpoof == "" {
++		spliced, spliceErr := m.spliceConnection(ctx, conn, remoteConn, onClose)
++		if spliceErr != nil {
++			N.CloseOnHandshakeFailure(conn, onClose, spliceErr)
++			remoteConn.Close()
++			m.logger.ErrorContext(ctx, spliceErr)
++			return
++		}
++		if spliced {
++			return
++		}
+ 	}
+ 	serverFirst := sniff.Skip(&metadata)
+ 	var done atomic.Bool
+--- /dev/null
++++ b/route/netproxy_capture_linux.go
+@@ -0,0 +1,138 @@
++package route
++
++import (
++	"context"
++	"encoding/json"
++	"io"
++	"net"
++	"os"
++	"sync"
++	"sync/atomic"
++	"time"
++
++	"github.com/sagernet/sing-box/adapter"
++	N "github.com/sagernet/sing/common/network"
++	"golang.org/x/sys/unix"
++)
++
++func (m *ConnectionManager) netProxyCapture(ctx context.Context, client, upstream net.Conn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) bool {
++	deadline := time.Now().Add(250 * time.Millisecond)
++	dialer := net.Dialer{Deadline: deadline}
++	conn, err := dialer.DialContext(ctx, "unix", m.NetProxyCaptureSocket)
++	if err != nil {
++		return false
++	}
++	bridge := conn.(*net.UnixConn)
++	_ = bridge.SetDeadline(deadline)
++	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
++	if err != nil {
++		bridge.Close()
++		return false
++	}
++	local := os.NewFile(uintptr(fds[0]), "netproxy-core")
++	peer := os.NewFile(uintptr(fds[1]), "netproxy-worker")
++	defer local.Close()
++	defer peer.Close()
++	remoteBridge, err := net.FileConn(local)
++	if err != nil {
++		bridge.Close()
++		return false
++	}
++	exit := netProxyExit(metadata, upstream)
++	info, _ := json.Marshal(struct {
++		Destination string `json:"destination"`
++		Host        string `json:"host,omitempty"`
++		Outbound    string `json:"outbound"`
++		Exit        any    `json:"exit"`
++	}{metadata.Destination.String(), metadata.SniffHost, netProxyLabel(metadata.RouteOutbound, 128), exit})
++	info = append(info, '\n')
++	n, _, err := bridge.WriteMsgUnix(info, unix.UnixRights(int(peer.Fd())), nil)
++	if err != nil || n != len(info) {
++		bridge.Close()
++		remoteBridge.Close()
++		return false
++	}
++	var ready [1]byte
++	if _, err := io.ReadFull(bridge, ready[:]); err != nil || ready[0] != 1 {
++		bridge.Close()
++		remoteBridge.Close()
++		return false
++	}
++	_ = bridge.SetDeadline(time.Time{})
++	go func() {
++		var done atomic.Bool
++		if m.kickWriteHandshake(ctx, client, upstream, true, false, &done, onClose) ||
++			m.kickWriteHandshake(ctx, upstream, client, true, true, &done, onClose) {
++			_ = bridge.Close()
++			_ = remoteBridge.Close()
++			return
++		}
++		netProxyCaptureRelay(client, bridge, upstream, remoteBridge, onClose)
++	}()
++	return true
++}
++
++func netProxyLabel(value string, limit int) string {
++	if len(value) > limit {
++		return value[:limit]
++	}
++	return value
++}
++
++func netProxyExit(metadata adapter.InboundContext, upstream net.Conn) any {
++	type hop struct {
++		Tag  string `json:"tag"`
++		Type string `json:"type"`
++	}
++	exit := struct {
++		Inbound string `json:"inbound"`
++		Chain   []hop  `json:"chain,omitempty"`
++		Remote  string `json:"remote,omitempty"`
++		Package string `json:"package,omitempty"`
++		UID     *int32 `json:"uid,omitempty"`
++		Process string `json:"process,omitempty"`
++	}{Inbound: metadata.Inbound}
++	for i, outbound := range metadata.OutboundChain {
++		if i >= 8 && i != len(metadata.OutboundChain)-1 {
++			continue
++		}
++		exit.Chain = append(exit.Chain, hop{netProxyLabel(outbound.Tag(), 128), netProxyLabel(outbound.Type(), 32)})
++	}
++	if remote := upstream.RemoteAddr(); remote != nil {
++		exit.Remote = netProxyLabel(remote.String(), 256)
++	}
++	if owner := metadata.ProcessInfo; owner != nil {
++		if owner.UserId >= 0 {
++			exit.UID = &owner.UserId
++		}
++		if len(owner.PackageNames) == 1 {
++			exit.Package = netProxyLabel(owner.PackageNames[0], 256)
++		}
++		if len(owner.ProcessPaths) == 1 {
++			exit.Process = netProxyLabel(owner.ProcessPaths[0], 256)
++		}
++	}
++	return exit
++}
++
++func netProxyCaptureRelay(client, bridge, upstream, remoteBridge net.Conn, onClose N.CloseHandlerFunc) {
++	var wait sync.WaitGroup
++	for _, pair := range [][2]net.Conn{{client, bridge}, {bridge, client}, {upstream, remoteBridge}, {remoteBridge, upstream}} {
++		wait.Go(func() {
++			_, _ = io.Copy(pair[1], pair[0])
++			if closer, ok := pair[1].(interface{ CloseWrite() error }); ok {
++				_ = closer.CloseWrite()
++			} else {
++				_ = pair[1].Close()
++			}
++		})
++	}
++	wait.Wait()
++	client.Close()
++	bridge.Close()
++	upstream.Close()
++	remoteBridge.Close()
++	if onClose != nil {
++		onClose(nil)
++	}
++}
+--- /dev/null
++++ b/route/netproxy_capture_other.go
+@@ -0,0 +1,15 @@
++//go:build !linux
++
++package route
++
++import (
++	"context"
++	"net"
++
++	"github.com/sagernet/sing-box/adapter"
++	N "github.com/sagernet/sing/common/network"
++)
++
++func (*ConnectionManager) netProxyCapture(context.Context, net.Conn, net.Conn, adapter.InboundContext, N.CloseHandlerFunc) bool {
++	return false
++}
+--- a/route/route.go
++++ b/route/route.go
+@@ -153,6 +153,8 @@
+ 		buf.ReleaseMulti(buffers)
+ 		return err
+ 	}
++	outbound := chain[len(chain)-1]
++	r.applyNetProxySniffDestination(ctx, &metadata, selectedRule, outbound, false)
+ 	for _, buffer := range slices.Backward(buffers) {
+ 		conn = bufio.NewCachedConn(conn, buffer)
+ 	}
+@@ -168,7 +170,6 @@
+ 	if !interrupt.IsResourceDownloadFromContext(ctx) {
+ 		onClose = registerInterrupt(chain, conn, onClose)
+ 	}
+-	outbound := chain[len(chain)-1]
+ 	if outboundHandler, isHandler := outbound.(adapter.ConnectionHandler); isHandler {
+ 		outboundHandler.NewConnection(ctx, conn, metadata, onClose)
+ 	} else {
+@@ -339,6 +340,8 @@
+ 		N.ReleaseMultiPacketBuffer(packetBuffers)
+ 		return err
+ 	}
++	outbound := chain[len(chain)-1]
++	r.applyNetProxySniffDestination(ctx, &metadata, selectedRule, outbound, true)
+ 	for _, buffer := range slices.Backward(packetBuffers) {
+ 		conn = bufio.NewCachedPacketConn(conn, buffer.Buffer, buffer.Destination)
+ 		N.PutPacketBuffer(buffer)
+@@ -359,7 +362,6 @@
+ 	if !interrupt.IsResourceDownloadFromContext(ctx) {
+ 		onClose = registerInterrupt(chain, conn, onClose)
+ 	}
+-	outbound := chain[len(chain)-1]
+ 	if outboundHandler, isHandler := outbound.(adapter.PacketConnectionHandler); isHandler {
+ 		outboundHandler.NewPacketConnection(ctx, conn, metadata, onClose)
+ 	} else {
+--- a/route/router.go
++++ b/route/router.go
+@@ -52,6 +52,8 @@
+ 	trackers          []adapter.ConnectionTracker
+ 	platformInterface adapter.PlatformInterface
+ 
++	netProxySniffDestination bool
++
+ 	processLookupMode      process.LookupMode
+ 	processCacheGeneration atomic.Uint64
+ 
+@@ -80,6 +82,8 @@
+ 		pauseManager:      service.FromContext[pause.Manager](ctx),
+ 		platformInterface: service.FromContext[adapter.PlatformInterface](ctx),
+ 
++		netProxySniffDestination: options.NetProxySniffDestination,
++
+ 		defaultDomainMatchStrategy: C.DomainMatchStrategy(options.DefaultDomainMatchStrategy),
+ 		reloadChan:                 reloadChan,
+ 	}
+--- a/protocol/vless/outbound.go
++++ b/protocol/vless/outbound.go
+@@ -144,6 +144,10 @@
+ 	return isMultiplexTransport && multiplexTransport.MultiplexEnabled()
+ }
+ 
++func (h *Outbound) NetProxyPacketDestinationIPOnly() bool {
++	return h.packetAddr && h.multiplexDialer == nil
++}
++
+ func (h *Outbound) InterfaceUpdated(ctx context.Context) {
+ 	if h.transport != nil {
+ 		h.transport.Close()
+--- a/protocol/vmess/outbound.go
++++ b/protocol/vmess/outbound.go
+@@ -197,6 +197,10 @@
+ 	}
+ }
+ 
++func (h *Outbound) NetProxyPacketDestinationIPOnly() bool {
++	return h.packetAddr && h.multiplexDialer == nil
++}
++
+ type vmessDialer Outbound
+ 
+ func (h *vmessDialer) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
+--- /dev/null
++++ b/route/netproxy_sniff_destination.go
+@@ -0,0 +1,49 @@
++package route
++
++import (
++	"context"
++
++	"github.com/sagernet/sing-box/adapter"
++	C "github.com/sagernet/sing-box/constant"
++	R "github.com/sagernet/sing-box/route/rule"
++	M "github.com/sagernet/sing/common/metadata"
++)
++
++func (r *Router) applyNetProxySniffDestination(ctx context.Context, metadata *adapter.InboundContext, rule adapter.Rule, outbound adapter.Outbound, packet bool) {
++	if !r.netProxySniffDestination || metadata.Inbound != "netproxy-in" || !metadata.Destination.IsIP() ||
++		metadata.RouteOriginalDestination.IsValid() || metadata.FakeIP || metadata.DestOverride ||
++		metadata.SniffHasECHExtension || !M.IsDomainName(metadata.SniffHost) {
++		return
++	}
++	if rule != nil {
++		if _, bypass := rule.Action().(*R.RuleActionBypass); bypass {
++			return
++		}
++	}
++	switch outbound.Type() {
++	case C.TypeDirect, C.TypeBlock, C.TypePass, C.TypeDNS, C.TypeBridge:
++		return
++	}
++	destination := M.Socksaddr{Fqdn: metadata.SniffHost, Port: metadata.Destination.Port}
++	if packet {
++		if ipOnly, ok := outbound.(interface{ NetProxyPacketDestinationIPOnly() bool }); ok && ipOnly.NetProxyPacketDestinationIPOnly() {
++			transport, ok := r.dnsTransport.Transport("dns-proxy")
++			if !ok {
++				return
++			}
++			addresses, err := r.dns.Lookup(adapter.WithContext(ctx, metadata), destination.Fqdn, adapter.DNSQueryOptions{
++				Transport: transport,
++			})
++			if err != nil || len(addresses) == 0 {
++				r.logger.DebugContext(ctx, "cannot resolve sniffed packet destination: ", destination.Fqdn, ": ", err)
++				return
++			}
++			destination = M.SocksaddrFrom(addresses[0], destination.Port)
++		}
++		metadata.OriginDestination = metadata.Destination
++		metadata.DestOverride = true
++	}
++	metadata.Destination = destination
++	metadata.DestinationAddresses = nil
++	r.logger.DebugContext(ctx, "managed proxy destination overridden as ", destination)
++}
+--- /dev/null
++++ b/route/netproxy_sniff_destination_test.go
+@@ -0,0 +1,96 @@
++package route
++
++import (
++	"net/netip"
++	"testing"
++
++	"github.com/sagernet/sing-box/adapter"
++	C "github.com/sagernet/sing-box/constant"
++	"github.com/sagernet/sing-box/log"
++	R "github.com/sagernet/sing-box/route/rule"
++	M "github.com/sagernet/sing/common/metadata"
++	"github.com/stretchr/testify/require"
++)
++
++func TestNetProxySniffDestination(t *testing.T) {
++	ip := M.ParseSocksaddr("192.0.2.1:443")
++	domain := M.ParseSocksaddr("example.com:443")
++	tests := []struct {
++		name, inbound, outbound, host     string
++		destination, explicit             M.Socksaddr
++		packet, bypass, ech, off, rewrite bool
++	}{
++		{name: "TCP", inbound: "netproxy-in", outbound: C.TypeVLESS, host: "example.com", destination: ip, rewrite: true},
++		{name: "UDP", inbound: "netproxy-in", outbound: C.TypeVLESS, host: "example.com", destination: ip, packet: true, rewrite: true},
++		{name: "direct leaf", inbound: "netproxy-in", outbound: C.TypeDirect, host: "example.com", destination: ip},
++		{name: "block leaf", inbound: "netproxy-in", outbound: C.TypeBlock, host: "example.com", destination: ip},
++		{name: "bypass action", inbound: "netproxy-in", outbound: C.TypeVLESS, host: "example.com", destination: ip, bypass: true},
++		{name: "other inbound", inbound: "mixed-in", outbound: C.TypeVLESS, host: "example.com", destination: ip},
++		{name: "original hostname", inbound: "netproxy-in", outbound: C.TypeVLESS, host: "other.example.com", destination: domain},
++		{name: "explicit route override", inbound: "netproxy-in", outbound: C.TypeVLESS, host: "example.com", destination: ip, explicit: M.ParseSocksaddr("192.0.2.2:443")},
++		{name: "no sniff host", inbound: "netproxy-in", outbound: C.TypeVLESS, destination: ip, packet: true},
++		{name: "ECH outer host", inbound: "netproxy-in", outbound: C.TypeVLESS, host: "example.com", destination: ip, ech: true},
++		{name: "disabled switch", inbound: "netproxy-in", outbound: C.TypeVLESS, host: "example.com", destination: ip, off: true},
++	}
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			router := &Router{logger: log.NewNOPFactory().NewLogger("router"), netProxySniffDestination: !tt.off}
++			metadata := adapter.InboundContext{
++				Inbound: tt.inbound, SniffHost: tt.host, Destination: tt.destination, SniffHasECHExtension: tt.ech,
++				RouteOriginalDestination: tt.explicit, DestinationAddresses: []netip.Addr{ip.Addr},
++			}
++			var rule adapter.Rule
++			if tt.bypass {
++				rule = &testL3Rule{action: &R.RuleActionBypass{Outbound: "proxy"}}
++			}
++			router.applyNetProxySniffDestination(t.Context(), &metadata, rule, &testFlowOutbound{outboundType: tt.outbound}, tt.packet)
++			if !tt.rewrite {
++				require.Equal(t, tt.destination, metadata.Destination)
++				require.Equal(t, []netip.Addr{ip.Addr}, metadata.DestinationAddresses)
++				require.False(t, metadata.DestOverride)
++				return
++			}
++			require.Equal(t, domain, metadata.Destination)
++			require.Empty(t, metadata.DestinationAddresses)
++			require.Equal(t, tt.packet, metadata.DestOverride)
++			if tt.packet {
++				require.Equal(t, ip, metadata.OriginDestination)
++				nat := newFakeIPNATPacketConn(nil, metadata.OriginDestination, metadata.Destination)
++				require.Equal(t, domain, nat.rewriteReadDestination(ip))
++				require.Equal(t, ip, nat.rewriteWriteDestination(domain))
++			}
++		})
++	}
++}
++
++type netProxyPacketIPOutbound struct{ testFlowOutbound }
++
++func (*netProxyPacketIPOutbound) NetProxyPacketDestinationIPOnly() bool { return true }
++
++type netProxyDNSManager struct {
++	adapter.DNSTransportManager
++	proxy adapter.DNSTransport
++}
++
++func (m *netProxyDNSManager) Transport(tag string) (adapter.DNSTransport, bool) {
++	return m.proxy, tag == "dns-proxy" && m.proxy != nil
++}
++
++func TestNetProxySniffDestinationPacketAddr(t *testing.T) {
++	original := M.ParseSocksaddr("192.0.2.1:443")
++	clean := M.ParseSocksaddr("203.0.113.1:443")
++	resolver := &testL3DNSRouter{addresses: []netip.Addr{clean.Addr}}
++	router := &Router{
++		logger: log.NewNOPFactory().NewLogger("router"), dns: resolver,
++		dnsTransport:             &netProxyDNSManager{proxy: new(struct{ adapter.DNSTransport })},
++		netProxySniffDestination: true,
++	}
++	metadata := adapter.InboundContext{Inbound: "netproxy-in", Destination: original, SniffHost: "example.com"}
++	outbound := &netProxyPacketIPOutbound{testFlowOutbound{outboundType: C.TypeVLESS}}
++	router.applyNetProxySniffDestination(t.Context(), &metadata, nil, outbound, true)
++	require.Equal(t, "example.com", resolver.domain)
++	require.NotNil(t, resolver.options.Transport)
++	require.Equal(t, clean, metadata.Destination)
++	require.Equal(t, original, metadata.OriginDestination)
++	require.True(t, metadata.DestOverride)
++}

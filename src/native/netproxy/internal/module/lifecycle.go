@@ -17,6 +17,7 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/serviceapi"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/traffic"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/worker"
 )
 
@@ -436,6 +437,7 @@ func Boot(ctx context.Context, options Options) error {
 	var compatibility sync.WaitGroup
 	compatibility.Go(func() { RepairGoogleConnectivity(ctx, options, time.Minute) })
 	defer compatibility.Wait()
+	traffic.RestoreSystemTrust(ctx, paths.New(options.ModuleDir), "boot")
 	if err := EnsureWorker(ctx, options); err != nil {
 		logService(options, "WARN", "worker.start", "failed", "后台 Worker 启动失败，可稍后手动重试: %v", err)
 	}

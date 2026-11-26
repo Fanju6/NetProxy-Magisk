@@ -14,11 +14,14 @@ import (
 )
 
 func (c *cli) api(ctx context.Context, args []string) error {
-	if len(args) != 1 {
-		return usageError("用法: netproxyctl api init|start|status|access")
-	}
 	if runtime.GOOS != "windows" && os.Geteuid() != 0 {
 		return &resultError{Code: "api.root_required", Message: "管理接口设置只能由 Root 读取和操作"}
+	}
+	if len(args) > 0 && args[0] == "traffic" {
+		return c.trafficAPI(ctx, args[1:])
+	}
+	if len(args) != 1 {
+		return usageError("用法: netproxyctl api init|start|status|access|traffic")
 	}
 	path := paths.New(c.options.ModuleDir).APIConfig()
 	if args[0] == "init" {
@@ -32,7 +35,7 @@ func (c *cli) api(ctx context.Context, args []string) error {
 	switch args[0] {
 	case "access", "status", "start":
 	default:
-		return usageError("用法: netproxyctl api init|start|status|access")
+		return usageError("用法: netproxyctl api init|start|status|access|traffic")
 	}
 	config, err := apiconfig.Load(path)
 	if err != nil {

@@ -43,6 +43,14 @@ internal fun editorSchema(root: JsonObject, documentId: String): JsonObject {
             put("type", "string")
             put("enum", JsonArray(listOf("default", "include", "exclude").map(::JsonPrimitive)))
         })
+        put("ipv6", buildJsonObject {
+            put("type", "boolean")
+            put("default", true)
+        })
+        put("sniff_destination", buildJsonObject {
+            put("type", "boolean")
+            put("default", true)
+        })
         put("app", buildJsonObject {
             put("type", "object")
             put("properties", buildJsonObject {
@@ -71,7 +79,7 @@ internal fun editorSchema(root: JsonObject, documentId: String): JsonObject {
         put("\$defs", definitions)
         put("type", "object")
         put("properties", JsonObject(properties.filterKeys { it in fields }))
-        put("required", JsonArray(fields.map(::JsonPrimitive)))
+        put("required", JsonArray(fields.filter { documentId != "inbound" || it !in setOf("ipv6", "sniff_destination") }.map(::JsonPrimitive)))
         put("additionalProperties", false)
     }
 }

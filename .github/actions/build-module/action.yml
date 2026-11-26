@@ -60,6 +60,12 @@ runs:
         sh tests/ci_verify.sh
         install -m 0755 "$NETPROXY_CI_BUILD_DIR/netproxyctl-android" src/module/bin/netproxyctl
 
+    - name: 构建包含透明抓包钩子的 sing-box
+      shell: bash
+      run: |
+        CGO_ENABLED=0 GOOS=android GOARCH=arm64 sh .github/scripts/build-capture-core.sh "$RUNNER_TEMP/sing-box"
+        install -m 0755 "$RUNNER_TEMP/sing-box" src/module/bin/sing-box
+
     - name: 构建 WebUI（产物 → src/module/webroot/netproxy）
       shell: bash
       working-directory: src/webui

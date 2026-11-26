@@ -9,6 +9,7 @@ import { createPoller } from '../src/polling.ts'
 import { complete, replaceCompletion } from '../src/autocomplete.ts'
 import { parseCommandLine } from '../src/command.ts'
 import { formatCtlOutput } from '../src/format.ts'
+import { captureHex, formatCaptureBody } from '../src/capture-detail.ts'
 import { mockCtl } from '../src/mock.ts'
 import { COMMANDS } from '../src/commands.ts'
 
@@ -18,6 +19,31 @@ test('HTTP API 帮助、补全与预览不伪造可用服务或真实凭据', ()
   assert.equal(decodeCtlResult(mockCtl(['api', 'access'])).ok, false)
   assert.equal(decodeCtlResult(mockCtl(['api', 'start'])).ok, false)
   assert.equal(decodeCtlResult(mockCtl(['api', 'status'])).data.state, 'unavailable')
+})
+
+test('透明抓包帮助、补全与预览只提供只读状态', () => {
+  assert.deepEqual(complete('api tr').candidates, ['traffic'])
+  assert.deepEqual(complete('api traffic se').candidates, ['set-rules', 'set-mitm', 'set-apps'])
+  assert.deepEqual(complete('api traffic app').candidates, ['apps'])
+  assert.deepEqual(decodeCtlResult(mockCtl(['api', 'traffic', 'apps'])).data, { apps: [], disable_quic: true })
+  assert.deepEqual(decodeCtlResult(mockCtl(['api', 'traffic', 'pinned'])).data, [])
+  assert.deepEqual(complete('api traffic clear-p').candidates, ['clear-pinned'])
+  assert.deepEqual(complete('api traffic ca-rem').candidates, ['ca-remove'])
+  assert.deepEqual(complete('api traffic bat').candidates, ['batches'])
+  assert.equal(decodeCtlResult(mockCtl(['api', 'traffic', 'set-apps', 'apps.json'])).ok, false)
+  assert.match(COMMANDS.api.help, /受管透明入站/)
+  assert.deepEqual(decodeCtlResult(mockCtl(['api', 'traffic', 'list'])).data, [])
+  assert.deepEqual(decodeCtlResult(mockCtl(['api', 'traffic', 'batches'])).data, [])
+  assert.deepEqual(decodeCtlResult(mockCtl(['api', 'traffic', 'page'])).data, { entries: [] })
+  assert.deepEqual(complete('api traffic de').candidates, ['delete-batch', 'detail'])
+  assert.equal(decodeCtlResult(mockCtl(['api', 'traffic', 'detail', 'AAAAAAAAAAAAAAAAAAAAAAAAAA'])).code, 'traffic.record_not_found')
+  assert.deepEqual(decodeCtlResult(mockCtl(['api', 'traffic', 'rules'])).data, { rules: [] })
+  assert.match(COMMANDS.api.help, /enabled: false/)
+  assert.match(COMMANDS.api.help, /name 标题/)
+  assert.deepEqual(complete('api traffic to').candidates, ['toggle'])
+  assert.equal(decodeCtlResult(mockCtl(['api', 'traffic', 'toggle'])).ok, false)
+  assert.deepEqual(decodeCtlResult(mockCtl(['api', 'traffic', 'mitm'])).data, { enabled: false, hosts: ['*'], system_trust: false, bypass_hosts: [] })
+  assert.equal(decodeCtlResult(mockCtl(['api', 'traffic', 'ca-init'])).ok, false)
 })
 
 test('构建检查拒绝缺失或空的页面资源及运行时角色帧', t => {
@@ -102,6 +128,16 @@ test('原生策略组补全与预览区分配置快照和运行时操作', () =>
   assert.equal(run('sub', 'activate', 'default').code, 'usage.invalid')
 })
 
+test('抓包正文仅格式化有效 JSON，保留原始文本与截断内容', () => {
+  const body = '{"order":"NP-2048"}'
+  assert.equal(formatCaptureBody(body, 'Application/Problem+JSON; charset=UTF-8'), '{\n  "order": "NP-2048"\n}')
+  assert.equal(formatCaptureBody(body, 'text/plain'), body)
+  assert.equal(formatCaptureBody('{broken', 'application/json'), '{broken')
+  assert.equal(formatCaptureBody('q=test+file&empty=', 'application/x-www-form-urlencoded'), 'q = test file\nempty = ')
+  assert.equal(formatCaptureBody('<p><b/></p>', 'text/html'), '<p>\n<b/>\n</p>')
+  assert.equal(captureHex('AH//'), '00 7f ff')
+})
+
 test('策略组选择结果未知时保留核心错误，不伪造确认', () => {
   const response = { schema: 1, ok: false, code: 'policy.outcome_unknown', message: '无法确认节点选择结果，请刷新后核对' }
   const output = { out: JSON.stringify(response), err: '', code: 1 }
@@ -126,7 +162,7 @@ test('模式补全仅使用配置列表，保留自定义名称和空格', () =>
 })
 
 test('入站帮助与补全只使用公共配置目标，诊断仍保留 ebpf status', () => {
-  const targets = ['inbound', 'inbound/backend', 'inbound/root_policy', 'inbound/app', 'inbound/ebpf', 'inbound/tun']
+  const targets = ['inbound', 'inbound/backend', 'inbound/root_policy', 'inbound/ipv6', 'inbound/sniff_destination', 'inbound/app', 'inbound/ebpf', 'inbound/tun']
   for (const action of ['read', 'apply', 'validate']) {
     assert.deepEqual(complete(`config ${action} in`).candidates, targets)
     assert.ok(!complete(`config ${action} `).candidates.includes('ebpf'))
@@ -171,9 +207,9 @@ test('mock 同步单文件模板、分区与真实后端状态边界', () => {
   assert.equal(run('service', 'status').data.active_backend, null)
   assert.deepEqual(JSON.parse(run('config', 'read', 'inbound').data.content), defaults)
   assert.deepEqual(run('config', 'list').data.filter(item => item.category === 'inbound').map(item => item.id), [
-    'inbound', 'inbound/backend', 'inbound/root_policy', 'inbound/app', 'inbound/ebpf', 'inbound/tun',
+    'inbound', 'inbound/backend', 'inbound/root_policy', 'inbound/ipv6', 'inbound/sniff_destination', 'inbound/app', 'inbound/ebpf', 'inbound/tun',
   ])
-  for (const section of ['backend', 'root_policy', 'app', 'ebpf', 'tun']) {
+  for (const section of ['backend', 'root_policy', 'ipv6', 'sniff_destination', 'app', 'ebpf', 'tun']) {
     const result = run('config', 'read', `inbound/${section}`)
     assert.deepEqual(JSON.parse(result.data.content), { [section]: defaults[section] })
     assert.ok(result.data.revision)

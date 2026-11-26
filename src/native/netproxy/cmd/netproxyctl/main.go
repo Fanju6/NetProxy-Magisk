@@ -140,6 +140,14 @@ func (c *cli) runInternal(ctx context.Context, args []string) int {
 }
 
 func defaultTimeoutFor(args []string) time.Duration {
+	if len(args) > 2 && args[0] == "api" && args[1] == "traffic" {
+		switch args[2] {
+		case "start", "stop", "toggle":
+			return 65 * time.Second
+		case "set-mitm", "trust-remove":
+			return 45 * time.Second
+		}
+	}
 	if isSubscriptionMutation(args) {
 		// 每个订阅已经有自己的下载超时；外层默认时限会提前取消事务，丢失已持久化状态。
 		return 0

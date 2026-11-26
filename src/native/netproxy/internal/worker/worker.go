@@ -64,6 +64,7 @@ type Options struct {
 	ProgressDir    string
 	PIDFile        string
 	LogFile        string
+	CrashLog       string
 	ModuleConfig   string
 	APIConfig      string
 	SingBoxPath    string
