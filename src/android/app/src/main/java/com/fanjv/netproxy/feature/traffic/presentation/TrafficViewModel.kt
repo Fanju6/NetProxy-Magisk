@@ -112,6 +112,18 @@ internal class TrafficViewModel(
     suspend fun replay(id: String, edit: CaptureReplayEdit?) =
         repository.replay(id, edit)
 
+    suspend fun exportHAR(query: Map<String, String>, destination: File) = repository.exportHAR(query, destination)
+
+    suspend fun importHAR(name: String, source: File) {
+        val batch = repository.importHAR(name, source)
+        val head = attempt { captureHead(batch.id, host = null) }
+        val batches = attempt { repository.batches() }
+        _state.update {
+            applyHead(it.copy(page = null, records = TrafficContent()), head).copy(selectedBatch = batch.id,
+                selectedDomain = null, batches = it.batches.refreshed(batches))
+        }
+    }
+
     fun openRecord(record: CaptureRecord) {
         detailJob?.cancel()
         val id = record.id
@@ -310,6 +322,16 @@ internal class TrafficViewModel(
     fun clearAlpnBypasses() = mutate {
         val entries = repository.clearAlpnBypasses()
         _state.update { it.copy(alpnBypasses = TrafficContent(entries)) }
+    }
+
+    fun removeBypass(host: String, app: String, alpn: Boolean) = mutate {
+        if (alpn) {
+            val entries = repository.removeAlpnBypass(host, app)
+            _state.update { it.copy(alpnBypasses = TrafficContent(entries)) }
+        } else {
+            val entries = repository.removePinned(host, app)
+            _state.update { it.copy(pinned = TrafficContent(entries)) }
+        }
     }
 
     fun setCaptureDisableQuic(disabled: Boolean) = mutate {

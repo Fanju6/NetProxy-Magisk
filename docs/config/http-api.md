@@ -147,10 +147,13 @@ HTTP 保存必须提供读取时的 revision。发生 `config.conflict` 时重�
 | `GET/PUT /traffic/rules` | 读取或替换重写规则，正文为 `{"rules":[...]}`，新增和修改的规则需要 `domains`。可选 `name` 标题（去除首尾空白后最多 64 个字符）；单条规则可设 `"enabled":false`，省略时启用。见[规则格式](/guide/traffic-debugging) |
 | `GET/PUT /traffic/breakpoints` | 读取或替换 `{"timeout_seconds":60,"rules":[{"domains":["example.org"],"pattern":"/debug","phase":"both","enabled":true,"name":"调试"}]}`。超时范围为 1–120 秒，省略时 60 秒；阶段为 `request`、`response`、`both`。 |
 | `GET /traffic/paused` | 待处理断点摘要；带 `?id=…` 时返回单个断点的编辑字段，包括可编辑的文本正文（若可用）。 |
+| `GET /traffic/export` | 下载 HAR 1.2 原始 JSON（不使用结果 envelope）。可选 `batch` 或 `id`，以及 `host`、`query`、`method`、`status_class`（1–5）、`tls`（decrypted/tunnel）、`rewritten`、`app`、`outbound`。 |
+| `POST /traffic/import?name=文件名.har` | 正文为 HAR 1.2 JSON（`application/json`），最多 4 MiB / 2,000 条；成功返回新只读批次，包含 `name`、`imported`。无效文件不会发布部分批次。 |
 | `POST /traffic/resume?id=…`、`POST /traffic/abort?id=…` | 空请求或空对象原样继续；继续时可提交修改字段：请求的 `method/url/headers/body` 或响应的 `status/headers/body`。中止返回 502。已结束的断点返回 `traffic.breakpoint_gone`，无效修改返回 `traffic.breakpoint_edit_invalid`。流的 `http.breakpoints` 记录审计。 |
 | `GET/PUT /traffic/mitm` | 读取或替换 `{"enabled":false,"hosts":["*"],"bypass_hosts":[],"system_trust":false}`；启用后默认解密全部 HTTPS/WSS，排除名单优先。系统信任在开机、热更新或开启抓包时重新应用，关闭时尝试卸载 |
 | `GET/DELETE /traffic/pinned` | 查看或清除证书固定跳过列表。明确的客户端 TLS 警报记录为 `client_ca_untrusted` 或 `certificate_rejected`，后续透传记录为 `certificate_bypassed`。其他握手故障通过 `passthrough_reason` 区分：`client_handshake_closed`、`client_handshake_timeout`、`client_handshake_failed`、`upstream_handshake_timeout`、`upstream_handshake_failed`。Android 的首次拒绝记录可附 `ca_stores.user`（对应用户）与 `ca_stores.system`（init 命名空间），取值 `present`、`absent` 或 `unknown`，不表示应用是否信任。 |
 | `GET/DELETE /traffic/alpn-bypasses` | 查看或清除仍生效的 ALPN 临时跳过列表，每项含 `host`、`user_id`、`package`、`expires_at`。识别到上游 ALPN 不兼容时，记录 `alpn_incompatible`，后续跳过解密的连接记录 `alpn_bypassed`。 |
+| `DELETE /traffic/pinned?host=…&app=…` 或 `DELETE /traffic/alpn-bypasses?host=…&app=…` | 仅删除指定域名与 `<用户ID>:<包名>` 的组合，返回剩余列表；必须同时提供两个参数。新建的证书拒绝跳过条目还含 `reason` 和 `created_at`。 |
 | `POST /traffic/ca-init`；`GET /traffic/ca` | 显式初始化或读取公开 CA；返回 `pem`、`filename`、`sha256`，不返回任何私钥 |
 | `GET /diagnostics/export` | 下载脱敏诊断包 |
 | `GET /events?topics=status,groups,subscriptions,paused` | 实时事件流；显式订阅 `paused` 可接收初始及变更后的完整断点摘要。 |

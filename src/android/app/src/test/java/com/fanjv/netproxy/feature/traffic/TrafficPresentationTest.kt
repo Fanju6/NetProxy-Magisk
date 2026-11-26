@@ -111,4 +111,13 @@ class TrafficPresentationTest {
         assertTrue(command.contains("--data-binary @- -- 'https://example.test/a?b=c&d=e'"))
         assertFalse(command.contains("Content-Length"))
     }
+
+    @Test fun curlTreatsAtPrefixedBodyAndGlobsAsLiteralData() {
+        val body = CapturedBody("@not-a-file", "text", "text/plain", truncated = false)
+        val message = CapturedMessage(mapOf("X-Empty" to listOf("")), false, body)
+        val command = asCurl("POST", CapturedHttp("https://example.test/[item]", false, message, message))
+        assertTrue(command.contains("curl -q --globoff"))
+        assertTrue(command.contains("--header 'X-Empty;'"))
+        assertTrue(command.contains("--data-raw '@not-a-file'"))
+    }
 }

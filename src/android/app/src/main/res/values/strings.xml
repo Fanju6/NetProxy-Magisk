@@ -852,6 +852,8 @@
     <string name="traffic_overlay_explain">NetProxy needs permission to appear over other apps to display a live capture preview. No preview is shown on the lock screen.</string>
     <string name="traffic_overlay_open_settings">Open settings</string>
     <string name="traffic_overlay_close">Close capture preview</string>
+    <string name="traffic_overlay_minimize">Minimize capture preview</string>
+    <string name="traffic_overlay_expand">Expand capture preview (%1$d records)</string>
     <string name="traffic_media_sizes">Retained: %1$d B · Original: %2$d B</string>
     <string name="traffic_media_truncated">Truncated. Save and share contain only the retained bytes.</string>
     <string name="traffic_media_unavailable">No media bytes were retained.</string>
@@ -919,4 +921,20 @@
         <item quantity="one">%d request paused</item>
         <item quantity="other">%d requests paused</item>
     </plurals>
+    <string name="traffic_har_export">Export HAR</string>
+    <string name="traffic_har_export_batch">Export batch as HAR</string>
+    <string name="traffic_har_export_filtered">Export filtered records as HAR</string>
+    <string name="traffic_har_export_record">Export record as HAR</string>
+    <string name="traffic_har_import">Import HAR</string>
+    <string name="traffic_har_save">Save to Files</string>
+    <string name="traffic_har_share">Share HAR</string>
+    <string name="traffic_har_warning">HAR files may contain private headers and bodies. Stored media is included and can make the file large; files over 4 MiB cannot be imported here.</string>
+    <string name="traffic_har_saved">HAR saved</string>
+    <string name="traffic_har_failed">Could not transfer HAR</string>
+    <string name="traffic_har_import_invalid">Select a valid HAR 1.2 file up to 4 MiB and 2,000 records.</string>
+    <string name="traffic_har_read_only">%1$s (read-only)</string>
+    <string name="traffic_bypass_remove">Delete bypass?</string>
+    <string name="traffic_bypass_app">App: %1$s · Android user: %2$d</string>
+    <string name="traffic_bypass_created">Added: %1$s</string>
+    <string name="traffic_bypass_unknown">Not recorded</string>
 </resources>

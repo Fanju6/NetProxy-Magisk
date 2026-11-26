@@ -166,12 +166,13 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
             headerName = null
         }
     }
+    val archiveActions = trafficArchiveActions(viewModel, mapOf("id" to id), single = true, enabled = record != null)
     TopBarMoreMenu(listOf(
         TopBarMenuAction(copyUrl, detail != null) { detail?.let { copyCapture(context, copyUrl, it.url) } },
-        TopBarMenuAction(copyCurl, detail != null) {
+        TopBarMenuAction(copyCurl, canEditReplay) {
             detail?.let { copyCapture(context, copyCurl, asCurl(record?.method.orEmpty(), it)) }
         },
-    ), stringResource(R.string.more_options)) { menu ->
+    ) + archiveActions, stringResource(R.string.more_options)) { menu ->
         TrafficFrame(R.string.traffic_record_detail, record?.host.orEmpty(), actions = { menu() }) { padding ->
             if (record == null) {
                 ContentStatus(padding, stringResource(R.string.traffic_detail_expired), loading = state.loading)

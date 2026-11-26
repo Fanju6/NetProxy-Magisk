@@ -24,6 +24,8 @@ internal interface ModuleApiTransport {
     suspend fun <T> request(method: String, path: String, body: JsonObject?, query: Map<String, String>, mutation: Boolean,
         decode: (Int, InputStream) -> T): T
     suspend fun download(path: String, query: Map<String, String>, destination: File)
+    suspend fun <T> upload(path: String, query: Map<String, String>, source: File, decode: (Int, InputStream) -> T): T =
+        throw UnsupportedOperationException()
     suspend fun image(path: String): ByteArray
     suspend fun watch(topics: Set<String>, consume: suspend (ModuleEvent) -> Unit)
 }
@@ -105,6 +107,12 @@ internal class ModuleApiClient(
     suspend fun <T> read(path: String, query: Map<String, String>, serializer: kotlinx.serialization.KSerializer<T>): T =
         request("GET", path, query = query) { status, input -> codec.decode(status, input, serializer) }
     suspend fun download(path: String, query: Map<String, String>, destination: File) = transport.download(path, query, destination)
+    suspend fun upload(path: String, query: Map<String, String>, source: File): ModuleApiResponse {
+        currentCoroutineContext().ensureActive()
+        return withContext(NonCancellable + Dispatchers.IO) {
+            transport.upload(path, query, source) { status, input -> codec.decode(status, input) }
+        }
+    }
     suspend fun image(path: String) = transport.image(path)
 
     private suspend fun request(method: String, path: String, body: JsonObject? = null,

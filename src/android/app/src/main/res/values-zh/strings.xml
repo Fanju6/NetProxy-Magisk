@@ -882,6 +882,8 @@
     <string name="traffic_overlay_explain">NetProxy 需要在其他应用上层显示的权限，才能实时显示抓包预览。锁屏时不会显示。</string>
     <string name="traffic_overlay_open_settings">打开设置</string>
     <string name="traffic_overlay_close">关闭抓包悬浮窗</string>
+    <string name="traffic_overlay_minimize">最小化抓包悬浮窗</string>
+    <string name="traffic_overlay_expand">展开抓包悬浮窗（%1$d 条记录）</string>
     <string name="traffic_media_sizes">已保留：%1$d B · 原始：%2$d B</string>
     <string name="traffic_media_truncated">已截断。保存或分享仅包含已保留的字节。</string>
     <string name="traffic_media_unavailable">未保留媒体正文。</string>
@@ -948,4 +950,20 @@
     <plurals name="traffic_breakpoint_count">
         <item quantity="other">%d 个请求已暂停</item>
     </plurals>
+    <string name="traffic_har_export">导出 HAR</string>
+    <string name="traffic_har_export_batch">导出批次为 HAR</string>
+    <string name="traffic_har_export_filtered">导出筛选记录为 HAR</string>
+    <string name="traffic_har_export_record">导出记录为 HAR</string>
+    <string name="traffic_har_import">导入 HAR</string>
+    <string name="traffic_har_save">保存到文件</string>
+    <string name="traffic_har_share">分享 HAR</string>
+    <string name="traffic_har_warning">HAR 可能包含私密请求头和正文。文件会包含已保存的媒体，体积可能较大；超过 4 MiB 的文件无法在此导入。</string>
+    <string name="traffic_har_saved">HAR 已保存</string>
+    <string name="traffic_har_failed">无法传输 HAR</string>
+    <string name="traffic_har_import_invalid">请选择有效的 HAR 1.2 文件，大小不超过 4 MiB，最多 2000 条记录。</string>
+    <string name="traffic_har_read_only">%1$s（只读）</string>
+    <string name="traffic_bypass_remove">删除跳过条目？</string>
+    <string name="traffic_bypass_app">应用：%1$s · Android 用户：%2$d</string>
+    <string name="traffic_bypass_created">添加时间：%1$s</string>
+    <string name="traffic_bypass_unknown">未记录</string>
 </resources>

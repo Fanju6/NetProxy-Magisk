@@ -48,8 +48,14 @@ internal class CaptureOverlay(private val context: Context, private val reposito
     private var header: TextView? = null
     private var paused: TextView? = null
     private var rows = emptyList<TextView>()
-    private var positionX = dp(12)
-    private var positionY = dp(72)
+    private var positionX = preferences.getInt("x", dp(12))
+    private var positionY = preferences.getInt("y", dp(72))
+    private var minimized = preferences.getBoolean("minimized", false)
+    private var rightEdge = preferences.getBoolean("right_edge", false)
+    private var recordCount = 0
+    private var records = emptyList<CaptureRecord>()
+    private var pauseIDs = emptyList<String>()
+    private var highlight: Job? = null
 
     private val screen = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -93,11 +99,12 @@ internal class CaptureOverlay(private val context: Context, private val reposito
                     val changes = launch {
                         repository.observePauses().collect { result ->
                             val items = result.getOrNull().orEmpty()
-                            val count = items.size
-                            if (count > 0 && panel == null) show()
-                            paused?.visibility = if (count > 0) View.VISIBLE else View.GONE
-                            paused?.text = context.resources.getQuantityString(R.plurals.traffic_breakpoint_count, count, count)
-                            paused?.setOnClickListener { openRecords(OpenPaused, items.singleOrNull()?.id) }
+                            val ids = items.map { it.id }
+                            val added = ids.any { it !in pauseIDs }
+                            pauseIDs = ids
+                            if (ids.isNotEmpty() && panel == null) show()
+                            updatePause()
+                            if (minimized && added) flashTab()
                         }
                     }
                     try {
@@ -125,10 +132,14 @@ internal class CaptureOverlay(private val context: Context, private val reposito
         generation++
         refresh?.cancel()
         refresh = null
+        recordCount = 0
+        records = emptyList()
+        pauseIDs = emptyList()
         hide()
     }
 
     private fun hide() {
+        highlight?.cancel()
         panel?.let { runCatching { window.removeViewImmediate(it) } }
         panel = null
         header = null
@@ -137,8 +148,18 @@ internal class CaptureOverlay(private val context: Context, private val reposito
     }
 
     private fun render(count: Int, records: List<CaptureRecord>) {
+        recordCount = count
+        this.records = records
         if (panel == null) show()
-        header?.text = context.getString(R.string.traffic_record_count, count)
+        updatePanel()
+    }
+
+    private fun updatePanel() {
+        header?.text = if (minimized) recordCount.toString() else context.getString(R.string.traffic_record_count, recordCount)
+        if (minimized) {
+            header?.contentDescription = context.getString(R.string.traffic_overlay_expand, recordCount)
+        }
+        updatePause()
         rows.forEachIndexed { index, row ->
             val record = records.getOrNull(index)
             row.visibility = if (record == null) View.GONE else View.VISIBLE
@@ -146,32 +167,93 @@ internal class CaptureOverlay(private val context: Context, private val reposito
         }
     }
 
+    private fun updatePause() {
+        val count = pauseIDs.size
+        val label = context.resources.getQuantityString(R.plurals.traffic_breakpoint_count, count, count)
+        paused?.visibility = if (count > 0) View.VISIBLE else View.GONE
+        paused?.text = if (minimized) "! $count" else label
+        paused?.contentDescription = label
+    }
+
+    private fun flashTab() {
+        highlight?.cancel()
+        val background = panel?.background as? GradientDrawable ?: return
+        background.setColor(Color.rgb(67, 108, 116))
+        highlight = scope.launch {
+            delay(1_200)
+            background.setColor(Color.rgb(32, 44, 48))
+        }
+    }
+
+    private fun toggleMinimized() {
+        val width = context.resources.displayMetrics.widthPixels
+        if (!minimized) {
+            rightEdge = positionX + (panel?.width ?: dp(248)) / 2 >= width / 2
+        } else {
+            positionX = if (rightEdge) (width - dp(248)).coerceAtLeast(0) else 0
+        }
+        minimized = !minimized
+        persistPosition()
+        hide()
+        show()
+    }
+
+    private fun persistPosition() {
+        preferences.edit().putBoolean("minimized", minimized).putBoolean("right_edge", rightEdge)
+            .putInt("x", positionX).putInt("y", positionY).apply()
+    }
+
     @SuppressLint("RtlHardcoded")
     private fun show() {
         val content = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(4), dp(8), dp(8))
+            setPadding(dp(if (minimized) 0 else 12), dp(4), dp(if (minimized) 0 else 8), dp(8))
             background = GradientDrawable().apply {
                 setColor(Color.rgb(32, 44, 48))
                 cornerRadius = dp(16).toFloat()
             }
             elevation = dp(8).toFloat()
         }
+        val metrics = context.resources.displayMetrics
+        val width = dp(if (minimized) 52 else 248).coerceAtMost(metrics.widthPixels)
         val params = WindowManager.LayoutParams(
-            dp(248).coerceAtMost(context.resources.displayMetrics.widthPixels),
+            width,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.LEFT
-            x = positionX
-            y = positionY
+            x = if (minimized) (if (rightEdge) metrics.widthPixels - width else 0)
+                else positionX.coerceIn(0, metrics.widthPixels - width)
+            y = positionY.coerceIn(0, (metrics.heightPixels - dp(if (minimized) 140 else 224)).coerceAtLeast(0))
         }
         val title = text(14f).apply {
             minHeight = dp(44)
-            setOnClickListener { openRecords() }
+            if (minimized) gravity = Gravity.CENTER
+            setOnClickListener { if (minimized) toggleMinimized() else openRecords() }
             enableDrag(content, params)
+        }
+        if (minimized) {
+            content.addView(title, LinearLayout.LayoutParams(-1, dp(44)))
+            paused = text(12f).apply {
+                gravity = Gravity.CENTER
+                setTextColor(Color.rgb(255, 194, 100))
+                setOnClickListener { toggleMinimized() }
+                enableDrag(content, params)
+                content.addView(this, LinearLayout.LayoutParams(-1, dp(32)))
+            }
+            window.addView(content, params)
+            panel = content
+            header = title
+            updatePanel()
+            return
+        }
+        val minimize = text(20f).apply {
+            text = "−"
+            gravity = Gravity.CENTER
+            contentDescription = context.getString(R.string.traffic_overlay_minimize)
+            setOnClickListener { toggleMinimized() }
         }
         val close = text(20f).apply {
             text = "×"
@@ -182,11 +264,13 @@ internal class CaptureOverlay(private val context: Context, private val reposito
         content.addView(LinearLayout(context).apply {
             gravity = Gravity.CENTER_VERTICAL
             addView(title, LinearLayout.LayoutParams(0, dp(44), 1f))
+            addView(minimize, LinearLayout.LayoutParams(dp(44), dp(44)))
             addView(close, LinearLayout.LayoutParams(dp(44), dp(44)))
         })
         paused = text(14f).apply {
             minHeight = dp(48)
             visibility = View.GONE
+            setOnClickListener { openRecords(OpenPaused, pauseIDs.singleOrNull()) }
             content.addView(this)
         }
         val previewRows = List(3) {
@@ -200,6 +284,7 @@ internal class CaptureOverlay(private val context: Context, private val reposito
         panel = content
         header = title
         rows = previewRows
+        updatePanel()
     }
 
     private fun text(size: Float) = TextView(context).apply {
@@ -240,7 +325,20 @@ internal class CaptureOverlay(private val context: Context, private val reposito
                         window.updateViewLayout(content, params)
                     }
                 }
-                MotionEvent.ACTION_UP -> if (!moving) view.performClick()
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (moving) {
+                        if (minimized) {
+                            val width = context.resources.displayMetrics.widthPixels
+                            rightEdge = params.x + content.width / 2 >= width / 2
+                            positionX = if (rightEdge) (width - content.width).coerceAtLeast(0) else 0
+                            params.x = positionX
+                            window.updateViewLayout(content, params)
+                        }
+                        persistPosition()
+                    } else if (event.actionMasked == MotionEvent.ACTION_UP) {
+                        view.performClick()
+                    }
+                }
             }
             true
         }

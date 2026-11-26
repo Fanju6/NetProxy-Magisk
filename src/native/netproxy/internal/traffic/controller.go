@@ -43,6 +43,7 @@ type Entry struct {
 	ReplayRouteChanged bool       `json:"replay_route_changed,omitempty"`
 	ReplayUnattributed bool       `json:"replay_unattributed,omitempty"`
 	DurationMS         int64      `json:"duration_ms"`
+	Imported           bool       `json:"imported,omitempty"`
 }
 
 type Status struct {

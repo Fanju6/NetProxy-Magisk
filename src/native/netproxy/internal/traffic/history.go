@@ -35,6 +35,8 @@ type Batch struct {
 	Running   bool       `json:"running"`
 	Count     int        `json:"count"`
 	Size      int64      `json:"size"`
+	Name      string     `json:"name,omitempty"`
+	Imported  bool       `json:"imported,omitempty"`
 }
 
 type savedRecord struct {
@@ -347,7 +349,7 @@ func (h *historyStore) prune(active *savedBatch, incoming int64, count int) erro
 	}
 	for i := 0; i < len(h.batches) && (len(h.batches) > historyBatchLimit || total > h.byteLimit || count > historyCountLimit); {
 		batch := h.batches[i]
-		if batch == active {
+		if batch == active || batch.Running {
 			i++
 			continue
 		}
@@ -446,7 +448,19 @@ func (c *Controller) HistoryPage(request PageRequest) (HistoryPage, bool) {
 	if c.history == nil {
 		return HistoryPage{Entries: []Entry{}}, request.Batch == ""
 	}
+	if request.Batch == "" {
+		request.Batch = c.activeHistoryBatch()
+	}
 	return c.history.page(request)
+}
+
+func (c *Controller) activeHistoryBatch() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.session != nil && c.batch != nil {
+		return c.batch.ID
+	}
+	return ""
 }
 
 func (h *historyStore) page(request PageRequest) (HistoryPage, bool) {
@@ -513,6 +527,9 @@ type CaptureDomain struct {
 func (c *Controller) HistoryDomains(id string) ([]CaptureDomain, bool) {
 	if c.history == nil {
 		return []CaptureDomain{}, id == ""
+	}
+	if id == "" {
+		id = c.activeHistoryBatch()
 	}
 	return c.history.domains(id)
 }

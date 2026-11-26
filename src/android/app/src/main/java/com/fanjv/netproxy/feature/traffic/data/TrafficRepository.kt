@@ -25,6 +25,8 @@ internal data class CaptureBatch(
     @SerialName("started_at") val startedAt: String,
     val count: Int,
     val running: Boolean,
+    val name: String? = null,
+    val imported: Boolean = false,
 )
 
 @Serializable
@@ -44,6 +46,8 @@ internal data class PinnedBypass(
     val host: String,
     @SerialName("user_id") val userId: Int,
     @SerialName("package") val packageName: String,
+    val reason: String? = null,
+    @SerialName("created_at") val createdAt: String? = null,
 )
 
 @Serializable
@@ -283,6 +287,9 @@ internal class TrafficRepository(private val api: ModuleApiClient, private val c
 
     suspend fun status(): CaptureStatus = api.read("/traffic/status")
     suspend fun preview(): CapturePreview = api.read("/traffic/preview")
+    suspend fun exportHAR(query: Map<String, String>, destination: File) = api.download("/traffic/export", query, destination)
+    suspend fun importHAR(name: String, source: File): CaptureBatch =
+        api.json.decodeFromJsonElement(api.upload("/traffic/import", mapOf("name" to name), source).data)
     suspend fun records(batch: String? = null): List<CaptureRecord> =
         api.read("/traffic/list", if (batch == null) emptyMap() else mapOf("batch" to batch))
     suspend fun page(batch: String? = null, before: String? = null, since: String? = null, oldest: String? = null,
@@ -338,8 +345,12 @@ internal class TrafficRepository(private val api: ModuleApiClient, private val c
     suspend fun policy(): MitmPolicy = api.read("/traffic/mitm")
     suspend fun pinned(): List<PinnedBypass> = api.read("/traffic/pinned")
     suspend fun clearPinned(): List<PinnedBypass> = api.json.decodeFromJsonElement(api.delete("/traffic/pinned").data)
+    suspend fun removePinned(host: String, app: String): List<PinnedBypass> =
+        api.json.decodeFromJsonElement(api.delete("/traffic/pinned", mapOf("host" to host, "app" to app)).data)
     suspend fun alpnBypasses(): List<AlpnBypass> = api.read("/traffic/alpn-bypasses")
     suspend fun clearAlpnBypasses(): List<AlpnBypass> = api.json.decodeFromJsonElement(api.delete("/traffic/alpn-bypasses").data)
+    suspend fun removeAlpnBypass(host: String, app: String): List<AlpnBypass> =
+        api.json.decodeFromJsonElement(api.delete("/traffic/alpn-bypasses", mapOf("host" to host, "app" to app)).data)
     suspend fun apps(): CaptureApps = api.captureApps()
     suspend fun saveApps(policy: CaptureApps): CaptureApps = api.json.decodeFromJsonElement(
         api.saveCaptureApps(api.json.encodeToJsonElement(policy.copy(apps = emptyList(), mode = policy.effectiveMode)).jsonObject).data,

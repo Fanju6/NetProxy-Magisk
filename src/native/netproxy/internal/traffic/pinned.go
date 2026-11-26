@@ -36,6 +36,21 @@ func (c *Controller) ClearALPNBypasses() ([]ALPNBypass, error) {
 	return entries, c.saveALPNLocked(entries)
 }
 
+func (c *Controller) RemoveALPNBypass(host, app string) ([]ALPNBypass, error) {
+	key, err := bypassKey(host, app)
+	if err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.loadALPNLocked(); err != nil {
+		return nil, err
+	}
+	c.expireALPNLocked(time.Now())
+	entries := slices.DeleteFunc(slices.Clone(c.alpn), func(entry ALPNBypass) bool { return key.matches(entry.PinnedBypass) })
+	return slices.Clone(entries), c.saveALPNLocked(entries)
+}
+
 func (c *Controller) loadALPNLocked() error {
 	if c.alpn != nil {
 		return nil
@@ -85,7 +100,7 @@ func (c *Controller) isALPNBypassed(host string, app *SourceApp) bool {
 		return false
 	}
 	c.expireALPNLocked(time.Now())
-	return slices.ContainsFunc(c.alpn, func(entry ALPNBypass) bool { return entry.PinnedBypass == key })
+	return slices.ContainsFunc(c.alpn, func(entry ALPNBypass) bool { return key.matches(entry.PinnedBypass) })
 }
 
 func (c *Controller) rememberALPN(host string, app *SourceApp) {
@@ -98,7 +113,7 @@ func (c *Controller) rememberALPN(host string, app *SourceApp) {
 	_ = c.loadALPNLocked()
 	now := time.Now()
 	c.expireALPNLocked(now)
-	c.alpn = slices.DeleteFunc(c.alpn, func(entry ALPNBypass) bool { return entry.PinnedBypass == key })
+	c.alpn = slices.DeleteFunc(c.alpn, func(entry ALPNBypass) bool { return key.matches(entry.PinnedBypass) })
 	if len(c.alpn) == maxPinnedEntries {
 		c.alpn = slices.Delete(c.alpn, 0, 1)
 	}
@@ -112,9 +127,25 @@ const (
 )
 
 type PinnedBypass struct {
-	Host    string `json:"host"`
-	UserID  uint32 `json:"user_id"`
-	Package string `json:"package"`
+	Host      string    `json:"host"`
+	UserID    uint32    `json:"user_id"`
+	Package   string    `json:"package"`
+	Reason    string    `json:"reason,omitempty"`
+	CreatedAt time.Time `json:"created_at,omitzero"`
+}
+
+var ErrBypassKey = errors.New("跳过条目的域名或应用无效")
+
+func bypassKey(host, app string) (PinnedBypass, error) {
+	ref, err := inbound.ParsePackageRef(app)
+	if err != nil {
+		return PinnedBypass{}, ErrBypassKey
+	}
+	key, ok := pinnedKey(canonicalHost(host), &SourceApp{UserID: ref.UserID, Package: ref.Package})
+	if !ok {
+		return PinnedBypass{}, ErrBypassKey
+	}
+	return key, nil
 }
 
 func pinnedKey(host string, app *SourceApp) (PinnedBypass, bool) {
@@ -134,7 +165,7 @@ func (key PinnedBypass) valid() bool {
 }
 
 func (key PinnedBypass) matches(other PinnedBypass) bool {
-	return key == other
+	return key.Host == other.Host && key.UserID == other.UserID && key.Package == other.Package
 }
 
 func (c *Controller) loadPinnedLocked() error {
@@ -185,6 +216,20 @@ func (c *Controller) ClearPinnedBypasses() ([]PinnedBypass, error) {
 	return entries, c.savePinnedLocked(entries)
 }
 
+func (c *Controller) RemovePinnedBypass(host, app string) ([]PinnedBypass, error) {
+	key, err := bypassKey(host, app)
+	if err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.loadPinnedLocked(); err != nil {
+		return nil, err
+	}
+	entries := slices.DeleteFunc(slices.Clone(c.pinned), key.matches)
+	return slices.Clone(entries), c.savePinnedLocked(entries)
+}
+
 func (c *Controller) isPinned(host string, app *SourceApp) bool {
 	key, ok := pinnedKey(host, app)
 	if !ok {
@@ -195,7 +240,7 @@ func (c *Controller) isPinned(host string, app *SourceApp) bool {
 	return c.loadPinnedLocked() == nil && slices.ContainsFunc(c.pinned, key.matches)
 }
 
-func (c *Controller) rememberPinned(host string, app *SourceApp) bool {
+func (c *Controller) rememberPinned(host string, app *SourceApp, reason string) bool {
 	key, ok := pinnedKey(host, app)
 	if !ok {
 		return false
@@ -212,5 +257,6 @@ func (c *Controller) rememberPinned(host string, app *SourceApp) bool {
 	if len(previous) >= maxPinnedEntries {
 		previous = previous[1:]
 	}
+	key.Reason, key.CreatedAt = reason, time.Now().UTC()
 	return c.savePinnedLocked(append(slices.Clone(previous), key)) == nil
 }

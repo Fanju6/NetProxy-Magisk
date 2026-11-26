@@ -4,7 +4,9 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -24,11 +26,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -57,6 +62,7 @@ import com.fanjv.netproxy.navigation.Route
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.FloatingActionButton
 import top.yukonga.miuix.kmp.basic.Icon
@@ -200,6 +206,7 @@ internal fun TrafficHttpsScreen(viewModel: TrafficViewModel) {
     var confirmRemoveUserCA by rememberSaveable { mutableStateOf(false) }
     var confirmClearPinned by rememberSaveable { mutableStateOf(false) }
     var confirmClearAlpn by rememberSaveable { mutableStateOf(false) }
+    var removeBypass by remember { mutableStateOf<BypassItem?>(null) }
     var addHost by rememberSaveable { mutableStateOf(false) }
     var newHost by rememberSaveable { mutableStateOf("") }
     var removeHost by rememberSaveable { mutableStateOf<String?>(null) }
@@ -310,8 +317,8 @@ internal fun TrafficHttpsScreen(viewModel: TrafficViewModel) {
                 })
                 pinned.forEach { pin ->
                     add(CardItem("${pin.userId}:${pin.packageName}:${pin.host}") {
-                        val app = "${pin.userId}:${pin.packageName}"
-                        ArrowPreference(title = pin.host, summary = app, insideMargin = TrafficRowInsets)
+                        val item = BypassItem(pin.host, pin.userId, pin.packageName, pin.reason, pin.createdAt)
+                        BypassRow(item, !state.busy, item.app) { removeBypass = item }
                     })
                 }
             })
@@ -329,9 +336,10 @@ internal fun TrafficHttpsScreen(viewModel: TrafficViewModel) {
                 })
                 bypasses.forEach { entry ->
                     add(CardItem("${entry.userId}:${entry.packageName}:${entry.host}") {
-                        ArrowPreference(title = entry.host,
-                            summary = "${entry.userId}:${entry.packageName}\n" + stringResource(R.string.traffic_alpn_expires, entry.expiresAt),
-                            insideMargin = TrafficRowInsets)
+                        val item = BypassItem(entry.host, entry.userId, entry.packageName, "alpn_incompatible", entry.expiresAt, true)
+                        BypassRow(item, !state.busy, item.app + "\n" + stringResource(R.string.traffic_alpn_expires, entry.expiresAt)) {
+                            removeBypass = item
+                        }
                     })
                 }
             })
@@ -369,6 +377,49 @@ internal fun TrafficHttpsScreen(viewModel: TrafficViewModel) {
         { confirmClearPinned = false }, { confirmClearPinned = false; viewModel.clearPinned() })
     TrafficConfirmation(confirmClearAlpn, R.string.traffic_alpn_clear, R.string.traffic_alpn_clear_prompt,
         { confirmClearAlpn = false }, { confirmClearAlpn = false; viewModel.clearAlpnBypasses() })
+    removeBypass?.let { item ->
+        val reason = item.reason?.let { passthroughLabel(it) } ?: stringResource(R.string.traffic_bypass_unknown)
+        val time = if (item.alpn && item.time != null) stringResource(R.string.traffic_alpn_expires, item.time)
+            else stringResource(R.string.traffic_bypass_created, item.time ?: stringResource(R.string.traffic_bypass_unknown))
+        AppDialog(show = true, title = stringResource(R.string.traffic_bypass_remove),
+            summary = "${item.host}\n${stringResource(R.string.traffic_bypass_app, item.packageName, item.user)}\n$reason\n$time",
+            onDismissRequest = { removeBypass = null }) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AppDialogButton(stringResource(R.string.common_cancel), { removeBypass = null }, Modifier.weight(1f))
+                AppDialogButton(stringResource(R.string.common_delete), {
+                    removeBypass = null
+                    viewModel.removeBypass(item.host, item.app, item.alpn)
+                }, Modifier.weight(1f), role = DialogActionRole.Destructive)
+            }
+        }
+    }
+}
+
+private data class BypassItem(
+    val host: String,
+    val user: Int,
+    val packageName: String,
+    val reason: String?,
+    val time: String?,
+    val alpn: Boolean = false,
+) {
+    val app: String get() = "$user:$packageName"
+}
+
+@Composable
+private fun BypassRow(item: BypassItem, enabled: Boolean, summary: String, select: () -> Unit) {
+    val action by rememberUpdatedState(select)
+    Box(Modifier.fillMaxWidth().pointerInput(item, enabled) {
+        if (!enabled) return@pointerInput
+        var offset = 0f
+        detectHorizontalDragGestures(
+            onDragStart = { offset = 0f },
+            onDragEnd = { if (abs(offset) >= 52.dp.toPx()) action() },
+            onHorizontalDrag = { _, distance -> offset += distance },
+        )
+    }) {
+        ArrowPreference(title = item.host, summary = summary, enabled = enabled, onClick = select, insideMargin = TrafficRowInsets)
+    }
 }
 
 @Composable

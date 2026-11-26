@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +12,49 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/traffic"
 )
+
+func TestTrafficHARDownloadAndImport(t *testing.T) {
+	s := resourceFixture(t)
+	fixture := `{"log":{"version":"1.2","entries":[{"startedDateTime":"2026-01-01T00:00:00Z","time":42,"request":{"method":"GET","url":"http://example.test/capture"},"response":{"status":200,"content":{"text":"sample","mimeType":"text/plain","size":6}}}]}}`
+	var batch traffic.Batch
+	resourceAssertSuccess(t, s, http.MethodPost, trafficRoute+"import?name=fixture.har", fixture, "traffic.har_imported", &batch)
+	if !batch.Imported || batch.Running || batch.Name != "fixture.har" || batch.Count != 1 {
+		t.Fatalf("unexpected batch: %+v", batch)
+	}
+	target := trafficRoute + "export?batch=" + batch.ID + "&host=example.test&status_class=2"
+	r := httptest.NewRequest(http.MethodGet, target, nil)
+	r.Host = s.config.Listen
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated export = %d", w.Code)
+	}
+	r.Header.Set("Authorization", "Bearer "+s.config.Secret)
+	w = httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	if w.Code != http.StatusOK || !json.Valid(w.Body.Bytes()) ||
+		w.Header().Get("Content-Disposition") != `attachment; filename="capture.har"` ||
+		!strings.Contains(w.Body.String(), "sample") {
+		t.Fatalf("export = %d %s", w.Code, w.Body.String())
+	}
+	var imported traffic.Batch
+	resourceAssertSuccess(t, s, http.MethodPost, trafficRoute+"import?name=round-trip.har", w.Body.String(), "traffic.har_imported", &imported)
+	if imported.ID == batch.ID || imported.Count != 1 {
+		t.Fatalf("round-trip = %+v", imported)
+	}
+}
+
+func TestTrafficBypassDeleteRejectsIncompleteSelection(t *testing.T) {
+	s := resourceFixture(t)
+	for _, path := range []string{"pinned", "alpn-bypasses"} {
+		w, _ := resourceRequest(t, s, http.MethodDelete, trafficRoute+path+"?host=example.test", "")
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("%s accepted incomplete selection: %d", path, w.Code)
+		}
+	}
+	resourceAssertSuccess(t, s, http.MethodDelete, trafficRoute+"pinned?host=example.test&app=0%3Atest.example", "", "traffic.pinned_removed", nil)
+	resourceAssertSuccess(t, s, http.MethodDelete, trafficRoute+"alpn-bypasses?host=example.test&app=0%3Atest.example", "", "traffic.alpn_bypass_removed", nil)
+}
 
 func TestTrafficAppsContract(t *testing.T) {
 	s := resourceFixture(t)

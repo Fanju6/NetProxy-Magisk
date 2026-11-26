@@ -852,6 +852,8 @@
     <string name="traffic_overlay_explain">O NetProxy precisa de permissão para aparecer sobre outros apps e mostrar registros em tempo real. A prévia não aparece na tela de bloqueio.</string>
     <string name="traffic_overlay_open_settings">Abrir configurações</string>
     <string name="traffic_overlay_close">Fechar prévia da captura</string>
+    <string name="traffic_overlay_minimize">Minimizar prévia da captura</string>
+    <string name="traffic_overlay_expand">Expandir prévia da captura (%1$d registros)</string>
     <string name="traffic_media_sizes">Retido: %1$d B · Original: %2$d B</string>
     <string name="traffic_media_truncated">Conteúdo truncado. Salvar e compartilhar inclui apenas os bytes retidos.</string>
     <string name="traffic_media_unavailable">Nenhum byte de mídia foi retido.</string>
@@ -919,4 +921,20 @@
         <item quantity="one">%d solicitação pausada</item>
         <item quantity="other">%d solicitações pausadas</item>
     </plurals>
+    <string name="traffic_har_export">Exportar HAR</string>
+    <string name="traffic_har_export_batch">Exportar lote como HAR</string>
+    <string name="traffic_har_export_filtered">Exportar registros filtrados como HAR</string>
+    <string name="traffic_har_export_record">Exportar registro como HAR</string>
+    <string name="traffic_har_import">Importar HAR</string>
+    <string name="traffic_har_save">Salvar em Arquivos</string>
+    <string name="traffic_har_share">Compartilhar HAR</string>
+    <string name="traffic_har_warning">Um HAR pode conter cabeçalhos e corpos privados. A mídia armazenada é incluída e pode aumentar o tamanho do arquivo; arquivos acima de 4 MiB não podem ser importados aqui.</string>
+    <string name="traffic_har_saved">HAR salvo</string>
+    <string name="traffic_har_failed">Falha ao transferir HAR</string>
+    <string name="traffic_har_import_invalid">Selecione um HAR 1.2 válido de até 4 MiB e 2.000 registros.</string>
+    <string name="traffic_har_read_only">%1$s (somente leitura)</string>
+    <string name="traffic_bypass_remove">Excluir exceção?</string>
+    <string name="traffic_bypass_app">App: %1$s · Usuário do Android: %2$d</string>
+    <string name="traffic_bypass_created">Adicionada em: %1$s</string>
+    <string name="traffic_bypass_unknown">Não registrado</string>
 </resources>

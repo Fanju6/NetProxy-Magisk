@@ -26,6 +26,19 @@ import org.junit.rules.TemporaryFolder
 class TrafficRepositoryTest {
     @get:Rule val cacheDir = TemporaryFolder()
 
+    @Test fun deletingOneBypassSendsHostAndAppReference() = runBlocking {
+        val called = mutableListOf<String>()
+        val repository = TrafficRepository(ModuleApiClient(TestApiTransport { request ->
+            assertEquals("DELETE", request.method)
+            assertEquals(mapOf("host" to "example.test", "app" to "10:test.example"), request.query)
+            called += request.path
+            apiSuccess("[]")
+        }))
+        assertTrue(repository.removePinned("example.test", "10:test.example").isEmpty())
+        assertTrue(repository.removeAlpnBypass("example.test", "10:test.example").isEmpty())
+        assertEquals(listOf("/traffic/pinned", "/traffic/alpn-bypasses"), called)
+    }
+
     @Test fun clearingLastBreakpointSendsEmptyRulesArray() = runBlocking {
         val repository = TrafficRepository(ModuleApiClient(TestApiTransport { request ->
             assertEquals("/traffic/breakpoints", request.path)

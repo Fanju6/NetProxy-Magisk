@@ -286,7 +286,8 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
     val records = state.records.value.orEmpty()
     val historical = state.batches.value.orEmpty().filterNot { it.running }
     val batchLabels = historical.map {
-        "${it.id.take(6)} · ${it.startedAt.substringBefore('.').substringBefore('Z').replace('T', ' ')} UTC · " +
+        val name = if (it.imported) stringResource(R.string.traffic_har_read_only, it.name.orEmpty()) else it.id.take(6)
+        "$name · ${it.startedAt.substringBefore('.').substringBefore('Z').replace('T', ' ')} UTC · " +
             stringResource(R.string.traffic_record_count, it.count)
     }
     LaunchedEffect(viewModel) { viewModel.loadAppCatalog() }
@@ -340,7 +341,19 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
             (records.isNotEmpty() || state.batches.value.orEmpty().any { it.count > 0 } ||
                 (state.status.value?.count ?: 0) > 0 || historical.isNotEmpty()) && !state.busy) { confirmClear = true },
     )
-    TopBarMoreMenu(groupingActions + batchActions, stringResource(R.string.more_options)) { menu ->
+    val archiveActions = trafficArchiveActions(viewModel,
+        batch = (state.selectedBatch ?: state.page?.batch)?.let { mapOf("batch" to it) }.orEmpty(),
+        filters = buildMap {
+            state.selectedDomain?.let { put("host", it) }
+            query.trim().takeIf { it.isNotEmpty() }?.let { put("query", it) }
+            method?.let { put("method", it) }
+            statusClass?.let { put("status_class", it.toString()) }
+            tls?.let { put("tls", it) }
+            if (rewrittenOnly) put("rewritten", "true")
+            app?.let { put("app", it) }
+            outbound?.let { put("outbound", it) }
+        }, enabled = !state.busy)
+    TopBarMoreMenu(groupingActions + batchActions + archiveActions, stringResource(R.string.more_options)) { menu ->
         TrafficFrame(R.string.traffic_records, stringResource(R.string.traffic_record_count, records.size),
             actions = {
                 AppBarButton(viewModel::refresh, !state.busy) { Icon(Icons.Rounded.Refresh, stringResource(R.string.traffic_refresh)) }

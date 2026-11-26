@@ -225,7 +225,7 @@ func (s *session) recordHandshakeFailure(metadata flow, host string, policy *mit
 	entry.TLS, entry.PassthroughReason, entry.DurationMS = "handshake_failed", reason, time.Since(now).Milliseconds()
 	if reason == "certificate_rejected" || reason == "client_ca_untrusted" {
 		entry.CAStores = observeCAStores(metadata.sourceApp, policy.ca.public)
-		if s.controller.rememberPinned(host, metadata.sourceApp) {
+		if s.controller.rememberPinned(host, metadata.sourceApp, reason) {
 			entry.TLS = "pinned_skipped"
 		}
 	}

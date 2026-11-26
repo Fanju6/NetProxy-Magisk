@@ -852,6 +852,8 @@
     <string name="traffic_overlay_explain">Чтобы показывать новые записи поверх других приложений, NetProxy требуется разрешение. На экране блокировки окно не отображается.</string>
     <string name="traffic_overlay_open_settings">Открыть настройки</string>
     <string name="traffic_overlay_close">Закрыть окно захвата</string>
+    <string name="traffic_overlay_minimize">Свернуть окно захвата</string>
+    <string name="traffic_overlay_expand">Развернуть окно захвата (записей: %1$d)</string>
     <string name="traffic_media_sizes">Сохранено: %1$d Б · Исходный размер: %2$d Б</string>
     <string name="traffic_media_truncated">Тело усечено. Сохранение и отправка включают только сохранённые байты.</string>
     <string name="traffic_media_unavailable">Данные медиафайла не сохранены.</string>
@@ -921,4 +923,20 @@
         <item quantity="many">Приостановлено %d запросов</item>
         <item quantity="other">Приостановлено %d запросов</item>
     </plurals>
+    <string name="traffic_har_export">Экспорт HAR</string>
+    <string name="traffic_har_export_batch">Экспорт пакета в HAR</string>
+    <string name="traffic_har_export_filtered">Экспорт отфильтрованных записей в HAR</string>
+    <string name="traffic_har_export_record">Экспорт записи в HAR</string>
+    <string name="traffic_har_import">Импорт HAR</string>
+    <string name="traffic_har_save">Сохранить в файлы</string>
+    <string name="traffic_har_share">Поделиться HAR</string>
+    <string name="traffic_har_warning">HAR может содержать конфиденциальные заголовки и тела. Сохранённые медиа увеличивают размер файла; файлы больше 4 МиБ нельзя импортировать.</string>
+    <string name="traffic_har_saved">HAR сохранён</string>
+    <string name="traffic_har_failed">Не удалось передать HAR</string>
+    <string name="traffic_har_import_invalid">Выберите корректный HAR 1.2 размером до 4 МиБ и не более 2000 записей.</string>
+    <string name="traffic_har_read_only">%1$s (только чтение)</string>
+    <string name="traffic_bypass_remove">Удалить исключение?</string>
+    <string name="traffic_bypass_app">Приложение: %1$s · Пользователь Android: %2$d</string>
+    <string name="traffic_bypass_created">Добавлено: %1$s</string>
+    <string name="traffic_bypass_unknown">Не записано</string>
 </resources>

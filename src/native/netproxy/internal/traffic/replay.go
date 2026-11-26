@@ -62,6 +62,21 @@ func (c *Controller) Replay(ctx context.Context, input ReplayInput) (string, err
 		}
 		edit = &ReplayEdit{Method: original.Method, URL: original.HTTP.URL, Headers: request.Headers,
 			Body: request.Body.Data, Base64: request.Body.Format == "base64"}
+		if request.Body.Blob {
+			if request.Body.CapturedSize <= 0 || request.Body.CapturedSize > maxBody {
+				return "", ErrReplayRequest
+			}
+			file, ok := c.OpenBody(original.ID, "request")
+			if !ok {
+				return "", ErrReplayRequest
+			}
+			data, err := io.ReadAll(io.LimitReader(file, maxBody+1))
+			_ = file.Close()
+			if err != nil || len(data) != request.Body.CapturedSize {
+				return "", ErrReplayRequest
+			}
+			edit.Body, edit.Base64 = base64.StdEncoding.EncodeToString(data), true
+		}
 	}
 	req, err := edit.request(ctx)
 	if err != nil {
@@ -220,6 +235,9 @@ func (s *session) replay(req *http.Request, original Record) (string, error) {
 	defer cancel()
 	req = req.WithContext(ctx)
 	owner := attributedOwner(original.SourceApp)
+	if original.Imported {
+		owner = nil
+	}
 	transport, conn, closeRoute, err := s.openRoutedTransport(req, owner)
 	if err != nil {
 		return "", err

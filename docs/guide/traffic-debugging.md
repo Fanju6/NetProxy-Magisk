@@ -53,6 +53,14 @@ api traffic stop
 
 CLI（前缀为 `su -c /data/adb/modules/netproxy/netproxyctl`）：`api traffic breakpoints` 查看配置，`api traffic set-breakpoints <文件>` 保存配置，`api traffic paused [ID]` 查看断点，`api traffic resume <ID> [文件]` 继续，`api traffic abort <ID>` 中止。
 
+## HAR 导入导出
+
+在记录列表的菜单导出整个批次或符合筛选条件的记录（包括未加载的页面），也可从详情导出单条记录或复制为 cURL。管理器可以保存到系统文件应用或分享。HAR 包含存储的头部、正文与媒体，二进制使用 Base64；它可能很大，也可能包含身份凭据，请仅与可信对象分享。存储中已截断的数据不会恢复。NetProxy 在 `_netproxy` 保存应用归属、出站链、TLS/跳过原因及审计信息。抓包只测量总耗时，HAR 将其放在 `wait` 并标记为汇总值。
+
+可将不超过 4 MiB、最多 2,000 条的 HAR 1.2 文件导入为以文件名标识的只读批次。导入数据可分组、筛选、查看详情；完整 HTTP 请求可以使用现有功能重放，文件中声称的应用归属仅供查看，不会用于路由。
+
+在设备上执行 `su -c '/data/adb/modules/netproxy/netproxyctl api traffic export --host example.test' > capture.har`；也可加 `--batch ID` 或用 `--id ID` 导出单条。将文件复制到设备后，用 `su -c '/data/adb/modules/netproxy/netproxyctl api traffic import /data/local/tmp/capture.har'` 导入。
+
 ## 按主机启用 HTTPS 解密
 
 在管理器的 **HTTPS 调试** 区域编辑主机名单（每行一项），开启解密并导出公开调试 CA。导出通过 Android 文件选择器保存，可再从文件管理器分享；私钥始终留在模块内。需要系统级信任时，阅读确认提示后启用 **Android 系统信任**，在下次开机或热更新时应用。若模块版本不支持 HTTPS 调试，管理器仍可使用抓包和重写。

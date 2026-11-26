@@ -27,6 +27,8 @@ test('透明抓包帮助、补全与预览只提供只读状态', () => {
   assert.deepEqual(complete('api traffic pa').candidates, ['page', 'paused'])
   assert.deepEqual(complete('api traffic res').candidates, ['resend', 'resume'])
   assert.deepEqual(complete('api traffic ab').candidates, ['abort'])
+  assert.deepEqual(complete('api traffic ex').candidates, ['export'])
+  assert.deepEqual(complete('api traffic im').candidates, ['import'])
   assert.deepEqual(complete('api traffic app').candidates, ['apps'])
   assert.deepEqual(decodeCtlResult(mockCtl(['api', 'traffic', 'apps'])).data, { apps: [], disable_quic: true })
   assert.deepEqual(decodeCtlResult(mockCtl(['api', 'traffic', 'pinned'])).data, [])

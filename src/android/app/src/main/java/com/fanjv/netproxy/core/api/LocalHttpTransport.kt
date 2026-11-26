@@ -23,6 +23,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.io.File
@@ -131,13 +132,15 @@ internal class LocalHttpTransport internal constructor(
 
     override suspend fun download(path: String, query: Map<String, String>, destination: File) {
         val capture = path == "/traffic/body"
-        val limit = if (capture) 16 * 1024 * 1024 else DIAGNOSTIC_LIMIT
+        val har = path == "/traffic/export"
+        val limit = if (har) 512 * 1024 * 1024 else if (capture) 16 * 1024 * 1024 else DIAGNOSTIC_LIMIT
+        val mime = if (har) "application/json" else if (capture) "application/octet-stream" else "application/gzip"
         try {
             val credentials = connect()
             execute(pinned(credentials.certificate_sha256), requestBuilder(credentials, path, query).build(),
                 credentials, 150_000) { response ->
                 if (!response.isSuccessful) fail(response, "api.download_failed", "诊断包下载失败")
-                require(response.body.contentType()?.toString() == (if (capture) "application/octet-stream" else "application/gzip"))
+                require(response.body.contentType()?.toString() == mime)
                 try {
                     val length = response.body.contentLength()
                     require(length <= limit)
@@ -154,6 +157,14 @@ internal class LocalHttpTransport internal constructor(
         } catch (error: Throwable) {
             destination.delete()
             throw error
+        }
+    }
+
+    override suspend fun <T> upload(path: String, query: Map<String, String>, source: File, decode: (Int, InputStream) -> T): T {
+        val credentials = connect()
+        val request = requestBuilder(credentials, path, query).post(source.asRequestBody(JSON_MEDIA_TYPE)).build()
+        return execute(pinned(credentials.certificate_sha256), request, credentials, 45_000) { response ->
+            decode(response.code, LimitedInputStream(response.body.byteStream(), RESPONSE_LIMIT))
         }
     }
 

@@ -19,6 +19,7 @@ const trafficRoute = "/api/v1/traffic/"
 
 func (s *Server) registerTraffic() {
 	s.registerBreakpointRoutes()
+	s.registerHARRoutes()
 	s.mux.HandleFunc("GET "+trafficRoute+"body", s.readTrafficBody)
 	s.trafficRoute("GET", "status", "抓包状态", func(context.Context) (any, error) {
 		return s.traffic.Status(), nil
@@ -242,8 +243,13 @@ func (s *Server) registerTraffic() {
 		return entries, mitmAPIError("traffic.pinned_unavailable", err)
 	})
 	s.route("DELETE "+trafficRoute+"pinned", 10*time.Second, false, func(_ context.Context, r *http.Request) (contract.Result, error) {
-		if err := resourceEmptyRequest(r); err != nil {
+		host, app, err := bypassDeleteQuery(r)
+		if err != nil {
 			return contract.Result{}, err
+		}
+		if host != "" {
+			entries, err := s.traffic.RemovePinnedBypass(host, app)
+			return contract.Success("traffic.pinned_removed", "已删除证书固定跳过条目", entries), bypassDeleteError("traffic.pinned_clear_failed", err)
 		}
 		entries, err := s.traffic.ClearPinnedBypasses()
 		return contract.Success("traffic.pinned_cleared", "已清除证书固定跳过列表", entries), mitmAPIError("traffic.pinned_clear_failed", err)
@@ -253,8 +259,13 @@ func (s *Server) registerTraffic() {
 		return entries, mitmAPIError("traffic.alpn_bypasses_unavailable", err)
 	})
 	s.route("DELETE "+trafficRoute+"alpn-bypasses", 10*time.Second, false, func(_ context.Context, r *http.Request) (contract.Result, error) {
-		if err := resourceEmptyRequest(r); err != nil {
+		host, app, err := bypassDeleteQuery(r)
+		if err != nil {
 			return contract.Result{}, err
+		}
+		if host != "" {
+			entries, err := s.traffic.RemoveALPNBypass(host, app)
+			return contract.Success("traffic.alpn_bypass_removed", "已删除 ALPN 临时跳过条目", entries), bypassDeleteError("traffic.alpn_bypasses_clear_failed", err)
 		}
 		entries, err := s.traffic.ClearALPNBypasses()
 		return contract.Success("traffic.alpn_bypasses_cleared", "已清除 ALPN 临时跳过列表", entries), mitmAPIError("traffic.alpn_bypasses_clear_failed", err)
@@ -294,6 +305,25 @@ func (s *Server) registerTraffic() {
 		}
 		return contract.Success("traffic.mitm_saved", "HTTPS 抓包配置已保存", policy), nil
 	})
+}
+
+func bypassDeleteQuery(r *http.Request) (host, app string, err error) {
+	query, err := resourceQuery(r, "host", "app")
+	if err != nil {
+		return "", "", err
+	}
+	host, app = query.Get("host"), query.Get("app")
+	if len(query) != 0 && (host == "" || app == "") {
+		return "", "", invalid("必须同时指定跳过条目的域名和应用")
+	}
+	return host, app, resourceEmptyBody(r)
+}
+
+func bypassDeleteError(code string, err error) error {
+	if errors.Is(err, traffic.ErrBypassKey) {
+		return invalid(err.Error())
+	}
+	return mitmAPIError(code, err)
 }
 
 func (s *Server) readTrafficBody(w http.ResponseWriter, r *http.Request) {

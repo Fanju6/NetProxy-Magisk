@@ -124,19 +124,32 @@ internal fun asCurl(method: String, detail: CapturedHttp): String {
     fun quote(value: String) = "'" + value.replace("'", "'\"'\"'") + "'"
     val request = detail.request
     val body = request.body
+    val encoded = when {
+        body.format == "base64" -> body.data
+        '\u0000' in body.data -> Base64.getEncoder().encodeToString(body.data.toByteArray())
+        else -> null
+    }
     val args = buildList {
-        add("curl --request ${quote(method)}")
+        add("curl -q --globoff --request ${quote(method)}")
         request.headers.forEach { (name, values) ->
             if (!name.equals("Content-Length", true) && !name.equals("Transfer-Encoding", true) &&
                 !name.equals("Proxy-Authorization", true) && !(body.decoded && name.equals("Content-Encoding", true))) {
-                values.forEach { add("--header ${quote("$name: $it")}") }
+                values.forEach { add("--header ${quote(if (it.isEmpty()) "$name;" else "$name: $it")}") }
             }
         }
-        if (body.data.isNotEmpty()) add(if (body.format == "base64") "--data-binary @-" else "--data-binary ${quote(body.data)}")
+        if (body.data.isNotEmpty()) {
+            if (request.headers.keys.none { it.equals("Content-Type", true) }) add("--header 'Content-Type:'")
+            add(when {
+                encoded != null -> "--data-binary @-"
+                body.data.startsWith("@") -> "--data-raw ${quote(body.data)}"
+                else -> "--data-binary ${quote(body.data)}"
+            })
+        }
         add("-- ${quote(detail.url)}")
     }.joinToString(" ")
-    val command = if (body.format == "base64" && body.data.isNotEmpty()) {
-        "printf %s ${quote(body.data)} | base64 -d | $args"
+    val command = if (!encoded.isNullOrEmpty()) {
+        "printf %s ${quote(encoded)} | base64 -d | $args"
     } else args
-    return if (detail.urlTruncated || request.headersTruncated || body.truncated) "# Capture incomplete; replay may differ\n$command" else command
+    return if (detail.urlTruncated || request.headersTruncated || request.trailers.isNotEmpty() ||
+        request.trailersTruncated || body.truncated || body.blob) "# Capture incomplete; replay may differ\n$command" else command
 }

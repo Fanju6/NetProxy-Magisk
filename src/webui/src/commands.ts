@@ -24,6 +24,9 @@ export const COMMANDS = {
   api traffic resend <ID>                   按当前路由重发完整的抓包请求
   api traffic breakpoints                   查看交互断点配置
   api traffic set-breakpoints <文件>        保存断点规则和自动继续超时
+  api traffic export [--batch ID | --id ID] 导出 HAR（使用 Shell 重定向保存文件）
+  api traffic import <文件>                导入只读 HAR 批次
+  api traffic pinned remove <域名> <用户:包名> 删除单个证书固定跳过条目（alpn-bypasses 同理）
   api traffic paused [ID]                   列出待处理断点，或读取一个断点的编辑字段
   api traffic resume <ID> [文件]            原样继续或应用 JSON 修改
   api traffic abort <ID>                    中止该请求并返回 502
@@ -218,7 +221,9 @@ const CONFIG_TARGETS = [
 ]
 
 export const VALUE_COMPLETIONS: Record<string, string[]> = {
-  'api traffic': ['status', 'toggle', 'start', 'stop', 'batches', 'list', 'page', 'delete-batch', 'detail', 'resend', 'replay', 'breakpoints', 'set-breakpoints', 'paused', 'resume', 'abort', 'clear', 'rules', 'set-rules', 'mitm', 'set-mitm', 'apps', 'set-apps', 'pinned', 'clear-pinned', 'alpn-bypasses', 'clear-alpn-bypasses', 'ca', 'ca-init', 'ca-export', 'ca-remove'],
+  'api traffic': ['status', 'toggle', 'start', 'stop', 'batches', 'list', 'page', 'delete-batch', 'detail', 'export', 'import', 'resend', 'replay', 'breakpoints', 'set-breakpoints', 'paused', 'resume', 'abort', 'clear', 'rules', 'set-rules', 'mitm', 'set-mitm', 'apps', 'set-apps', 'pinned', 'clear-pinned', 'alpn-bypasses', 'clear-alpn-bypasses', 'ca', 'ca-init', 'ca-export', 'ca-remove'],
+  'api traffic pinned': ['remove'],
+  'api traffic alpn-bypasses': ['remove'],
   'app mode': ['blacklist', 'whitelist'],
   'ebpf status': ['configured', 'all', 'local', 'shared', '--raw'],
   'logs show': ['service', 'core'],

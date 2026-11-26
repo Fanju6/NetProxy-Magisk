@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/apiconfig"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
@@ -25,11 +27,13 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 		return usage()
 	}
 	action := args[0]
+	removeBypass := (action == "pinned" || action == "alpn-bypasses") && len(args) > 1
+	archive := action == "export" || action == "import"
 	withArgument := action == "set-rules" || action == "set-mitm" || action == "set-apps" || action == "ca-export" ||
 		action == "detail" || action == "delete-batch" || action == "replay" || action == "resend" ||
 		action == "set-breakpoints" || action == "abort" || ((action == "list" || action == "paused") && len(args) > 1)
-	if (action == "page" && len(args) > 3) || (action == "resume" && (len(args) < 2 || len(args) > 3)) ||
-		(action != "page" && action != "resume" && ((withArgument && len(args) != 2) || (!withArgument && len(args) != 1))) {
+	if !archive && !removeBypass && ((action == "page" && len(args) > 3) || (action == "resume" && (len(args) < 2 || len(args) > 3)) ||
+		(action != "page" && action != "resume" && ((withArgument && len(args) != 2) || (!withArgument && len(args) != 1)))) {
 		return usage()
 	}
 	layout := paths.New(c.options.ModuleDir)
@@ -43,8 +47,40 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 	var method string
 	var body io.Reader
 	switch action {
+	case "export":
+		query := url.Values{}
+		for i := 1; i < len(args); i += 2 {
+			flag, ok := strings.CutPrefix(args[i], "--")
+			switch flag {
+			case "batch", "id", "host", "query", "method", "status-class", "tls", "rewritten", "app", "outbound":
+			default:
+				ok = false
+			}
+			key := strings.ReplaceAll(flag, "-", "_")
+			if !ok || i+1 >= len(args) || query.Has(key) {
+				return usageError("用法: netproxyctl api traffic export [--batch ID | --id ID] [--host 域名] [--query 搜索] [--method 方法] [--status-class 1–5] [--tls decrypted|tunnel] [--rewritten true|false] [--app 应用] [--outbound 出站]")
+			}
+			query.Set(key, args[i+1])
+		}
+		method, action = http.MethodGet, "export?"+query.Encode()
+	case "import":
+		if len(args) != 2 {
+			return usageError("用法: netproxyctl api traffic import <文件>")
+		}
+		content, err := readTrafficInput(args[1], traffic.MaxHARImportBytes)
+		if err != nil {
+			return err
+		}
+		method, action, body = http.MethodPost, "import?name="+url.QueryEscape(filepath.Base(args[1])), bytes.NewReader(content)
 	case "status", "batches", "apps", "rules", "mitm", "pinned", "alpn-bypasses", "ca", "breakpoints":
 		method = http.MethodGet
+		if removeBypass {
+			if len(args) != 4 || args[1] != "remove" || args[2] == "" || args[3] == "" {
+				return usageError("用法: netproxyctl api traffic pinned|alpn-bypasses [remove <域名> <用户ID:包名>]")
+			}
+			query := url.Values{"host": {args[2]}, "app": {args[3]}}
+			method, action = http.MethodDelete, action+"?"+query.Encode()
+		}
 	case "paused", "resume", "abort":
 		method = http.MethodPost
 		if action == "paused" {
@@ -164,6 +200,13 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 		return &resultError{Code: "traffic.api_unavailable", Message: "无法连接本机管理接口，请检查 api status"}
 	}
 	defer response.Body.Close()
+	if args[0] == "export" && response.StatusCode == http.StatusOK {
+		if response.Header.Get("Content-Type") != "application/json" || response.Header.Get("Content-Disposition") == "" {
+			return &resultError{Code: "traffic.api_unavailable", Message: "管理接口没有返回 HAR 文件"}
+		}
+		_, err := io.Copy(os.Stdout, response.Body)
+		return err
+	}
 	const maxResponse = 4 << 20
 	content, err := io.ReadAll(io.LimitReader(response.Body, maxResponse+1))
 	var envelope result
