@@ -29,6 +29,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Density
@@ -191,13 +192,6 @@ class MainActivity : ComponentActivity() {
                     colorSpec = colorSpec,
                 ) {
                     NetProxyApp(themeViewModel, showCaptureRecords) { showCaptureRecords = false }
-                    val restarting by (application as NetProxyApplication).container.restartingService
-                        .collectAsStateWithLifecycle(initialValue = false)
-                    OverlayDialog(show = restarting, title = stringResource(R.string.service_restarting)) {
-                        Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                            InfiniteProgressIndicator()
-                        }
-                    }
                 }
             }
         }
@@ -210,6 +204,9 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel, showCaptureRecords: Boo
     val catalogNodesViewModel: CatalogNodesViewModel = netProxyViewModel()
     val moduleAccess: ModuleAccessViewModel = netProxyViewModel()
     val traffic: TrafficViewModel = netProxyViewModel()
+    val context = LocalContext.current
+    val restarting by (context.applicationContext as NetProxyApplication).container.restartingService
+        .collectAsStateWithLifecycle(initialValue = false)
     val availability by moduleAccess.state.collectAsStateWithLifecycle()
     var reconnect by rememberSaveable { mutableStateOf(false) }
     val overlayBackdrop = rememberBlurBackdrop()
@@ -351,6 +348,11 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel, showCaptureRecords: Boo
                 }
             }
             ModuleConnectionDialog(reconnect, moduleAccess::reconnect) { reconnect = false }
+            OverlayDialog(show = restarting, title = stringResource(R.string.service_restarting)) {
+                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                    InfiniteProgressIndicator()
+                }
+            }
         }
     }
 }
