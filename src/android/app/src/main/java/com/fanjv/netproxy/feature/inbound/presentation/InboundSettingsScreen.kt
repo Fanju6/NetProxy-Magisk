@@ -179,6 +179,11 @@ internal fun InboundSettingsScreen(
                                 onSelectedIndexChange = { viewModel.requestBackend(if (it == 1) "tun" else "ebpf") }
                             )
                         },
+                        CardItem("ipv6") {
+                            SwitchPreference(title = stringResource(R.string.inbound_ipv6),
+                                summary = stringResource(R.string.inbound_ipv6_hint),
+                                checked = state.snapshot!!.ipv6, enabled = enabled, onCheckedChange = viewModel::setIPv6)
+                        },
                         CardItem("root_policy") {
                             val policies = listOf("default", "include", "exclude")
                             OverlayDropdownPreference(
@@ -369,10 +374,6 @@ private fun LazyListScope.tunForm(
                 listOf(R.string.ebpf_dns_mode_hijack, R.string.tun_dns_disabled, R.string.tun_dns_native),
                 enabled, selectableCount = 2) { vm.setField("dns_mode", JsonPrimitive(it)) }
         },
-        CardItem("ipv6") {
-            SwitchPreference(title = stringResource(R.string.tun_ipv6), summary = stringResource(R.string.tun_ipv6_hint),
-                checked = native.listAt("address").any { ':' in it }, enabled = enabled, onCheckedChange = vm::setTunIpv6)
-        },
         filterItem("include_interface", "exclude_interface", R.string.tun_interfaces, native, enabled, InputKind.Interface, edit),
         textItem("route_exclude_address", R.string.tun_exclude_addresses, native, enabled, InputKind.Cidr, edit),
         textItem("route_exclude_address_set", R.string.tun_exclude_rule_sets, native, enabled, InputKind.RuleSet, edit),
@@ -386,6 +387,10 @@ private fun LazyListScope.tunForm(
         }
     ).withProgress(applyingField))
     if (advanced) groupedCardSection("tun_advanced", { stringResource(R.string.inbound_advanced) }, listOf(
+        CardItem("tun_ipv6") {
+            SwitchPreference(title = stringResource(R.string.tun_ipv6), summary = stringResource(R.string.tun_ipv6_hint),
+                checked = native.listAt("address").any { ':' in it }, enabled = enabled, onCheckedChange = vm::setTunIpv6)
+        },
         textItem("address", R.string.tun_address, native, enabled, InputKind.Cidr, edit),
         textItem("interface_name", R.string.tun_interface_name, native, enabled, InputKind.Text, edit),
         textItem("mtu", R.string.tun_mtu, native, enabled, InputKind.Number, edit),

@@ -668,4 +668,6 @@
     <string name="routing_error_package_name">Enter a full package name, such as com.android.chrome, without a user ID, spaces or a URL.</string>
     <string name="routing_invalid_document">This rule set cannot be edited as a form. Check its version and rules in the JSON editor.</string>
     <string name="routing_reload_draft">Discard draft and reload</string>
+    <string name="inbound_ipv6">IPv6</string>
+    <string name="inbound_ipv6_hint">Turn off to use IPv4 only for managed traffic.</string>
 </resources>

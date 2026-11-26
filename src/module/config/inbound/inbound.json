@@ -1,6 +1,7 @@
 {
   "backend": "tun",
   "root_policy": "include",
+  "ipv6": true,
   "app": {
     "enabled": false,
     "mode": "blacklist",

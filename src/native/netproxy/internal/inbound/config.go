@@ -18,6 +18,7 @@ const Tag = "netproxy-in"
 type Config struct {
 	Backend    string         `json:"backend"`
 	RootPolicy string         `json:"root_policy"`
+	IPv6       *bool          `json:"ipv6,omitempty"`
 	App        AppPolicy      `json:"app"`
 	EBPF       jsontext.Value `json:"ebpf"`
 	TUN        jsontext.Value `json:"tun"`
@@ -28,6 +29,10 @@ type AppPolicy struct {
 	Mode       string   `json:"mode"`
 	ProxyApps  []string `json:"proxy_apps"`
 	BypassApps []string `json:"bypass_apps"`
+}
+
+func (c Config) IPv6Enabled() bool {
+	return c.IPv6 == nil || *c.IPv6
 }
 
 type Diagnostic struct {
@@ -98,6 +103,9 @@ func parseOuter(content []byte) (Config, error) {
 		if _, exists := fields[field]; !exists {
 			return Config{}, validationError("inbound.field_required", field, "入站配置缺少必需字段: "+field)
 		}
+	}
+	if value, exists := fields["ipv6"]; exists && value.Kind() != 't' && value.Kind() != 'f' {
+		return Config{}, validationError("inbound.ipv6_invalid", "ipv6", "IPv6 设置必须为 JSON 布尔值")
 	}
 	app, err := objectFields(fields["app"], "app")
 	if err != nil {

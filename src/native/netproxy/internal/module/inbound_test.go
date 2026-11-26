@@ -140,7 +140,7 @@ func TestInboundConfigTargetsAndPartitionRevisions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, target := range []string{"inbound", "inbound/backend", "inbound/root_policy", "inbound/app", "inbound/ebpf", "inbound/tun", "runtime/config.json"} {
+	for _, target := range []string{"inbound", "inbound/backend", "inbound/root_policy", "inbound/ipv6", "inbound/app", "inbound/ebpf", "inbound/tun", "runtime/config.json"} {
 		index := slices.IndexFunc(documents, func(document ConfigDocument) bool { return document.ID == target })
 		if index < 0 || documents[index].Editable == strings.HasPrefix(target, "runtime/") {
 			t.Fatalf("配置目标缺失或权限错误: %s", target)
@@ -302,6 +302,49 @@ func TestRootPartitionUsesIndependentRevisionAndTransaction(t *testing.T) {
 				t.Fatal("Root 应用失败未回滚")
 			}
 			assertInboundJournalAbsent(t, options)
+		})
+	}
+}
+
+func TestIPv6PartitionReloadsWithoutChangingNativePreferences(t *testing.T) {
+	for _, backend := range []string{"ebpf", "tun"} {
+		t.Run(backend, func(t *testing.T) {
+			options, _, _, _ := inboundApplyFixture(t, backend, true)
+			reloads := 0
+			configReload = func(context.Context, Options) error { reloads++; return nil }
+			const target = "inbound/ipv6"
+			snapshot, err := ReadConfig(options, target)
+			if err != nil || !strings.Contains(snapshot["content"], `"ipv6": true`) {
+				t.Fatal(snapshot, err)
+			}
+			before, err := ReadConfig(options, "inbound/"+backend)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, invalid := range []string{`{}`, `{"ipv6":null}`, `{"ipv6":"false"}`} {
+				if _, err := ApplyConfig(t.Context(), options, target, writeSectionSource(t, invalid), false, snapshot["revision"]); err == nil {
+					t.Fatal("accepted", invalid)
+				}
+			}
+			off := writeSectionSource(t, `{"ipv6":false}`)
+			revision, err := ApplyConfig(t.Context(), options, target, off, false, snapshot["revision"])
+			if err != nil || reloads != 1 {
+				t.Fatal(reloads, err)
+			}
+			after, err := ReadConfig(options, "inbound/"+backend)
+			if err != nil || !reflect.DeepEqual(before, after) {
+				t.Fatal(after, err)
+			}
+			if _, err := ApplyConfig(t.Context(), options, target, off, false, revision); err != nil || reloads != 1 {
+				t.Fatal(reloads, err)
+			}
+			on := writeSectionSource(t, `{"ipv6":true}`)
+			if _, err := ApplyConfig(t.Context(), options, target, on, false, snapshot["revision"]); !errors.Is(err, ErrConfigConflict) {
+				t.Fatal(err)
+			}
+			if _, err := ApplyConfig(t.Context(), options, target, on, false, revision); err != nil || reloads != 2 {
+				t.Fatal(reloads, err)
+			}
 		})
 	}
 }
