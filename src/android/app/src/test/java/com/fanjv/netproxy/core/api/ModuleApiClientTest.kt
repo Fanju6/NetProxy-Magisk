@@ -3,12 +3,34 @@ package com.fanjv.netproxy.core.api
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import org.junit.Assert.*
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
 import com.fanjv.netproxy.feature.catalog.data.SubscriptionRepository
 
 class ModuleApiClientTest {
+    @Test fun serviceRestartProgressWaitsForSuccessOrError() = runBlocking {
+        for (failure in listOf(null, ModuleApiException("config.failed", "failed"), ModuleApiException("api.timeout", "timeout"))) {
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            val client = ModuleApiClient(TestApiTransport {
+                entered.complete(Unit)
+                release.await()
+                if (failure != null) throw failure
+                apiSuccess("{}")
+            })
+            assertFalse(client.restartingService.first())
+            val pending = async { runCatching { client.put("/config", JsonObject(emptyMap()),
+                mapOf("target" to "inbound/ipv6")) } }
+            entered.await()
+            assertTrue(client.restartingService.first())
+            release.complete(Unit)
+            assertSame(failure, pending.await().exceptionOrNull())
+            assertFalse(client.restartingService.first())
+        }
+    }
+
     @Test fun explicitReconnectConfirmsThePinnedServiceBeforeSuccess() = runBlocking {
         val steps = mutableListOf<String>()
         val client = ModuleApiClient(object : TestApiTransport() {

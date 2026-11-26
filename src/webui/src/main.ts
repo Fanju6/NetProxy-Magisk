@@ -1,5 +1,6 @@
 import { complete, replaceCompletion } from './autocomplete'
 import { parseCommandLine } from './command'
+import { renderCaptureDetail, type CaptureDetail } from './capture-detail'
 import { decodeCtlResult } from './contract'
 import { ctl, ctlJson, shell, inKsu, completions as fetchCompletions } from './exec'
 import { formatCtlOutput } from './format'
@@ -44,6 +45,7 @@ const previousButton = byId<HTMLButtonElement>('history-prev')
 const nextButton = byId<HTMLButtonElement>('history-next')
 const runButton = byId<HTMLButtonElement>('run')
 const copyButton = byId<HTMLButtonElement>('copy')
+const captureToggle = byId<HTMLButtonElement>('capture-toggle')
 const clearButton = byId<HTMLButtonElement>('clear')
 const latestButton = byId<HTMLButtonElement>('latest')
 const mascot = byId<HTMLElement>('mascot')
@@ -95,6 +97,15 @@ function updateControls() {
   nextButton.disabled = busy || historyIndex === -1
   clearButton.disabled = busy || !output.querySelector('.entry')
   copyButton.disabled = !lastResult
+  captureToggle.disabled = busy
+}
+
+async function refreshCapture() {
+  const result = await ctlJson<{ running: boolean }>(['api', 'traffic', 'status'])
+  if (result.ok && typeof result.data?.running === 'boolean') {
+    captureToggle.setAttribute('aria-pressed', String(result.data.running))
+    captureToggle.textContent = result.data.running ? '全局抓包：开' : '全局抓包：关'
+  }
 }
 
 function scrollToLatest(force = false) {
@@ -199,6 +210,7 @@ async function run(raw: string) {
     let err = ''
     let code = 0
     let kind: 'o' | 'help' = 'o'
+    let captureDetail: CaptureDetail | undefined
     if (command === 'exit') {
       err = '请关闭模块 WebUI 页面退出终端'
       code = 1
@@ -218,10 +230,15 @@ async function run(raw: string) {
       failed = !decoded.ok
       if (failed && !err && (decoded.code.startsWith('transport.') || !out)) err = decoded.message
       if (!args.includes('--raw')) out = formatCtlOutput(out)
+      if (decoded.ok && decoded.code === 'traffic.detail' && !args.includes('--raw')) {
+        captureDetail = decoded.data as CaptureDetail | undefined
+      }
       if (['service', 'sub', 'node', 'catalog'].includes(args[0])) void refreshCompletions()
+      if (args[0] === 'api' && args[1] === 'traffic') void refreshCapture()
     }
     failed ||= code !== 0
-    append(resultOutput, kind, out)
+    if (captureDetail) resultOutput.append(renderCaptureDetail(captureDetail))
+    else append(resultOutput, kind, out)
     append(resultOutput, 'e', err)
     resultText = [out, err].filter(Boolean).join('\n')
   } catch (error) {
@@ -271,6 +288,7 @@ function moveHistory(direction: -1 | 1) {
 }
 
 form.addEventListener('submit', event => { event.preventDefault(); void run(input.value) })
+captureToggle.addEventListener('click', () => { void run('api traffic toggle') })
 input.addEventListener('compositionstart', () => { composing = true })
 input.addEventListener('compositionend', () => { composing = false; updateControls() })
 input.addEventListener('input', () => {
@@ -350,5 +368,6 @@ window.addEventListener('pageshow', () => {
 
 byId('environment').hidden = !(import.meta.env.DEV && !inKsu)
 void refreshCompletions()
+void refreshCapture()
 updateControls()
 statusPoller.setActive(!document.hidden)

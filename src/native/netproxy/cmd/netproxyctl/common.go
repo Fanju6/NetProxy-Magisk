@@ -56,6 +56,14 @@ func (c *cli) help() {
   netproxyctl [--json] [--timeout <秒|时长>] config list|read|check|validate|apply
   netproxyctl [--json] [--timeout <秒|时长>] logs show|clear|export
   netproxyctl [--json] [--timeout <秒|时长>] api init|start|status|access
+  netproxyctl [--json] [--timeout <秒|时长>] api traffic status|start|stop|toggle|list [批次ID]|detail <ID>|clear|rules|set-rules <文件>
+  netproxyctl [--json] [--timeout <秒|时长>] api traffic batches|delete-batch <ID>
+  netproxyctl [--json] [--timeout <秒|时长>] api traffic page [批次ID [游标]] [--host 域名] [--response-types json,html,…]
+  netproxyctl [--json] [--timeout <秒|时长>] api traffic response-types [批次ID] [--host 域名]
+  netproxyctl [--json] [--timeout <秒|时长>] api traffic mitm|set-mitm <文件>|ca-init|ca|ca-export <文件>|ca-remove
+  netproxyctl [--json] [--timeout <秒|时长>] api traffic pinned|clear-pinned
+  netproxyctl [--json] [--timeout <秒|时长>] api traffic apps|set-apps <文件>
+    抓包应用配置支持 disable_quic，默认 true（仅抓包时生效）。
 
 默认配置的出站模式:
   Rule          规则

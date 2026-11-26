@@ -12,7 +12,7 @@ import (
 )
 
 func detachCommand(command *exec.Cmd) {
-	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 }
 
 func isProcessRunningPID(pid int) bool {

@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.ContactPage
+import androidx.compose.material.icons.rounded.List
 import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PowerSettingsNew
@@ -151,6 +152,17 @@ internal fun SettingsScreen(
                                     )
                                 },
                                 onClick = { navigator.push(Route.KernelSettings) }
+                            )
+                        },
+                        CardItem("traffic") {
+                            ArrowPreference(
+                                title = stringResource(R.string.traffic_title),
+                                summary = stringResource(R.string.traffic_settings_summary),
+                                startAction = {
+                                    Icon(Icons.Rounded.List, contentDescription = null,
+                                        modifier = Modifier.padding(end = 6.dp), tint = colorScheme.onBackground)
+                                },
+                                onClick = { navigator.push(Route.Traffic) },
                             )
                         },
                     ),

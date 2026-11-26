@@ -30,7 +30,6 @@ awk '
 ui_print() { printf '%s\n' "$*"; }
 chown() { :; }
 chcon() { :; }
-pidof() { [ "${TEST_RUNNING:-false}" = true ]; }
 su() { [ "$1" = -c ]; sh -c "$2"; }
 
 # 参数: $1 TUN 接口名，用于区分快照来源。
@@ -72,6 +71,7 @@ write_module() {
     'case "$1:$2:$3" in' \
     '  __internal:worker:stop) exit "${TEST_WORKER_STOP:-0}" ;;' \
     '  __internal:google-firewall:--module-dir) exit "${TEST_GOOGLE_FIREWALL:-0}" ;;' \
+    '  service:status:) [ "${TEST_STATUS_FAIL:-0}" = 0 ] || exit 1; if [ "${TEST_RUNNING:-false}" = true ]; then pid=123; else pid=null; fi; printf "{\"schema\":1,\"ok\":true,\"code\":\"service.status\",\"data\":{\"pid\":%s,\"worker_pid\":456}}\n" "$pid" ;;' \
     '  service:stop:) exit "${TEST_SERVICE_STOP:-0}" ;;' \
     '  config:check:) exit "${TEST_CONFIG_CHECK:-0}" ;;' \
     '  api:init:) exit "${TEST_API_INIT:-0}" ;;' \
@@ -103,7 +103,8 @@ reset_modules() {
   SERVICE_STOPPED=false
   KEY_PID=""
   TEST_RUNNING=false
-  unset TEST_WORKER_STOP TEST_SERVICE_STOP TEST_CONFIG_CHECK TEST_PIDOF TEST_API_INIT TEST_GOOGLE_FIREWALL
+  export TEST_RUNNING
+  unset TEST_WORKER_STOP TEST_SERVICE_STOP TEST_CONFIG_CHECK TEST_API_INIT TEST_GOOGLE_FIREWALL TEST_STATUS_FAIL
 }
 
 assert_value() { grep -Fxq "$2" "$1"; }
@@ -221,6 +222,8 @@ test_snapshot_modes() (
     mode="$INSTALL_MODE"
     reset_modules
     INSTALL_MODE="$mode"
+    mkdir -p "$LIVE/data/traffic-history"
+    printf '%s\n' 'saved-batch' > "$LIVE/data/traffic-history/batch.json"
     copy_user_data_locked
     if [ "$mode" = fresh ]; then
       assert_value "$STAGE/data/catalog/default/provider.json" package-provider
@@ -232,6 +235,7 @@ test_snapshot_modes() (
       assert_value "$STAGE/logs/service.log" current-log
     fi
     if [ "$mode" = preserve ]; then
+      assert_value "$STAGE/data/traffic-history/batch.json" saved-batch
       assert_inbound "$STAGE/config/inbound/inbound.json" current
       assert_module "$STAGE/config/module.json" current
       assert_value "$STAGE/config/singbox/config.json" current-config
@@ -240,6 +244,7 @@ test_snapshot_modes() (
       assert_value "$STAGE/config/singbox/custom-state/state.json" current-state
       assert_value "$STAGE/config/telemetry/state.json" current-telemetry-queue
     else
+      [ ! -e "$STAGE/data/traffic-history" ]
       assert_inbound "$STAGE/config/inbound/inbound.json" package
       assert_module "$STAGE/config/module.json" package
       assert_value "$STAGE/config/singbox/rules/local/custom.json" package-local
@@ -363,9 +368,10 @@ test_service_failures() (
   TEST_WORKER_STOP=1
   export TEST_WORKER_STOP
   if stop_proxy_if_running; then exit 1; fi
-  [ "$(wc -l < "$CALL_LOG")" -eq 1 ]
+  [ "$(wc -l < "$CALL_LOG")" -eq 2 ]
   restore_live_service
   grep -q '^service start$' "$CALL_LOG"
+  ! grep -q 'restore-system-trust' "$CALL_LOG"
   reset_modules
   TEST_SERVICE_STOP=1
   export TEST_SERVICE_STOP
@@ -373,6 +379,13 @@ test_service_failures() (
   restore_live_service
   grep -q '^__internal worker start' "$CALL_LOG"
   ! grep -q '^service start$' "$CALL_LOG"
+
+  reset_modules
+  TEST_STATUS_FAIL=1
+  export TEST_STATUS_FAIL
+  if stop_proxy_if_running; then exit 1; fi
+  restore_live_service
+  [ "$(cat "$CALL_LOG")" = 'service status' ]
 )
 
 test_manager_install() (
@@ -452,6 +465,7 @@ test_hot_update() (
     INSTALL_MODE="$mode"
     INSTALLER_PID=99999999
     if [ "$mode" = preserve ]; then TEST_RUNNING=true; fi
+    printf '%s\n' true > "$LIVE/config/traffic-enabled.json"
     if [ "$mode" = nodes ]; then export TEST_GOOGLE_FIREWALL=1; fi
     sleep() { :; }
     with_user_data_locks() {
@@ -466,13 +480,16 @@ test_hot_update() (
     assert_value "$LIVE/module.prop" version=package
     grep -Fq '后台热更新已完成' "$LIVE/logs/service.log"
     grep -q '^__internal worker start' "$CALL_LOG"
+    grep -Fxq "__internal worker start --module-dir $LIVE --restore-system-trust" "$CALL_LOG"
     grep -Fxq 'api init' "$CALL_LOG"
     [ "$(grep -Fxc "__internal google-firewall --module-dir $LIVE" "$CALL_LOG")" -eq 1 ]
     [ "$(tail -n 1 "$CALL_LOG")" = "__internal google-firewall --module-dir $LIVE" ]
     if [ "$mode" = preserve ]; then
       grep -Fxq 'service start' "$CALL_LOG"
+      assert_value "$LIVE/config/traffic-enabled.json" true
     else
       ! grep -Fxq 'service start' "$CALL_LOG"
+      [ ! -e "$LIVE/config/traffic-enabled.json" ]
     fi
     if [ "$mode" = nodes ]; then
       grep -Fq 'google_firewall.launch_failed' "$LIVE/logs/service.log"
@@ -615,7 +632,6 @@ test_installer_entrypoints() (
   for name in chown chcon getevent sleep; do
     printf '#!/bin/sh\nexit 0\n' > "$mocks/$name"
   done
-  printf '#!/bin/sh\nexit "${TEST_PIDOF:-1}"\n' > "$mocks/pidof"
   printf '%s\n' '#!/bin/sh' '[ -p /proc/self/fd/1 ] || exit 2' \
     '[ "$#" -eq 3 ] && [ "$1" = install ] && [ "$2" = -r ] && [ -s "$3" ]' > "$mocks/pm"
   printf '%s\n' '#!/bin/sh' '[ "$1" = -c ] || exit 1' \
@@ -693,8 +709,8 @@ test_installer_entrypoints() (
   assert_value "$LIVE/module.prop" version=current
 
   reset_modules
-  BOOTMODE=true TEST_CONFIG_CHECK=1 TEST_PIDOF=0
-  export TEST_CONFIG_CHECK TEST_PIDOF
+  BOOTMODE=true TEST_CONFIG_CHECK=1
+  export TEST_CONFIG_CHECK
   if run_foreground; then exit 1; fi
   assert_value "$LIVE/module.prop" version=current
   [ -d "$STAGE" ]

@@ -26,6 +26,7 @@ const (
 	topicStatus = 1 << iota
 	topicGroups
 	topicSubscriptions
+	topicPaused
 	allTopics = topicStatus | topicGroups | topicSubscriptions
 )
 
@@ -77,8 +78,10 @@ func (s *Server) streamEvents(w http.ResponseWriter, r *http.Request) {
 				topics |= topicGroups
 			case "subscriptions":
 				topics |= topicSubscriptions
+			case "paused":
+				topics |= topicPaused
 			default:
-				s.fail(w, r.Context(), invalid("事件主题只能为 status、groups、subscriptions"))
+				s.fail(w, r.Context(), invalid("事件主题只能为 status、groups、subscriptions、paused"))
 				return
 			}
 		}
@@ -217,7 +220,7 @@ func (h *eventHub) emit(topic int, name string, response contract.Result) {
 }
 
 func (h *eventHub) validEvent(event eventMessage) bool {
-	if event.topic == topicSubscriptions {
+	if event.topic == topicSubscriptions || event.topic == topicPaused {
 		return true
 	}
 	if event.epoch != h.epoch.Load() {
@@ -317,16 +320,30 @@ func (h *eventHub) runEvents(watcher *fsnotify.Watcher) error {
 	feed.refresh(h.interests())
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
+	var pausedChanged <-chan struct{}
+	refreshPaused := func() {
+		if h.interests()&topicPaused != 0 {
+			items, changed := h.server.traffic.Paused()
+			pausedChanged = changed
+			h.emit(topicPaused, "paused", contract.Success("traffic.paused", "待处理断点", items))
+		} else {
+			pausedChanged = nil
+		}
+	}
+	refreshPaused()
 	for {
 		select {
 		case <-h.ctx.Done():
 			return nil
 		case <-h.wake:
+			refreshPaused()
 			if feed.sync() {
 				feed.refresh(h.interests() & (topicStatus | topicGroups))
 			}
 			feed.refresh(h.missingTopics())
 			h.replay()
+		case <-pausedChanged:
+			refreshPaused()
 		case event, ok := <-watcher.Events:
 			if !ok {
 				return errors.New("文件监听已关闭")

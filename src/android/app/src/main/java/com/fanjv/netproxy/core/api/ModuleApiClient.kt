@@ -24,6 +24,8 @@ internal interface ModuleApiTransport {
     suspend fun <T> request(method: String, path: String, body: JsonObject?, query: Map<String, String>, mutation: Boolean,
         decode: (Int, InputStream) -> T): T
     suspend fun download(path: String, query: Map<String, String>, destination: File)
+    suspend fun <T> upload(path: String, query: Map<String, String>, source: File, decode: (Int, InputStream) -> T): T =
+        throw UnsupportedOperationException()
     suspend fun image(path: String): ByteArray
     suspend fun watch(topics: Set<String>, consume: suspend (ModuleEvent) -> Unit)
 }
@@ -35,6 +37,10 @@ internal class ModuleApiClient(
 ) {
     constructor(context: Context) : this(LocalHttpTransport(context.applicationContext))
     internal val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
+    private val restarting = MutableStateFlow(0)
+    val restartingService: Flow<Boolean> = restarting.map { it != 0 }.distinctUntilChanged()
+    suspend inline fun <reified T> captureApps(): T = read("/traffic/apps")
+    suspend fun saveCaptureApps(body: JsonObject) = put("/traffic/apps", body)
     private val codec = ModuleApiCodec(json)
     private val interests = HashMap<String, Int>()
     private val topics = MutableStateFlow<Set<String>>(emptySet())
@@ -64,7 +70,7 @@ internal class ModuleApiClient(
     }.stateIn(eventScope, SharingStarted.WhileSubscribed(2_000, 0), ModuleEventSnapshot())
 
     fun observe(names: Set<String>): Flow<Result<Map<String, ModuleEventFrame>>> = flow {
-        require(names.isNotEmpty() && names.all { it in setOf("status", "traffic", "groups", "subscriptions") })
+        require(names.isNotEmpty() && names.all { it in setOf("status", "traffic", "groups", "subscriptions", "paused") })
         updateInterests(names, 1)
         try {
             snapshots.collect { snapshot ->
@@ -80,7 +86,7 @@ internal class ModuleApiClient(
 
     private fun updateInterests(names: Set<String>, change: Int) = synchronized(interests) {
         names.map { if (it == "traffic") "status" else it }.forEach { topic ->
-            require(topic in setOf("status", "groups", "subscriptions"))
+            require(topic in setOf("status", "groups", "subscriptions", "paused"))
             val count = (interests[topic] ?: 0) + change
             if (count == 0) interests.remove(topic) else interests[topic] = count
         }
@@ -101,6 +107,12 @@ internal class ModuleApiClient(
     suspend fun <T> read(path: String, query: Map<String, String>, serializer: kotlinx.serialization.KSerializer<T>): T =
         request("GET", path, query = query) { status, input -> codec.decode(status, input, serializer) }
     suspend fun download(path: String, query: Map<String, String>, destination: File) = transport.download(path, query, destination)
+    suspend fun upload(path: String, query: Map<String, String>, source: File): ModuleApiResponse {
+        currentCoroutineContext().ensureActive()
+        return withContext(NonCancellable + Dispatchers.IO) {
+            transport.upload(path, query, source) { status, input -> codec.decode(status, input) }
+        }
+    }
     suspend fun image(path: String) = transport.image(path)
 
     private suspend fun request(method: String, path: String, body: JsonObject? = null,
@@ -111,8 +123,23 @@ internal class ModuleApiClient(
     private suspend fun <T> request(method: String, path: String, body: JsonObject? = null,
         query: Map<String, String> = emptyMap(), mutation: Boolean = false, decode: (Int, InputStream) -> T): T {
         currentCoroutineContext().ensureActive()
+        val reportsRestart = mutation && mayReloadService(method, path, query)
         return withContext(if (mutation) NonCancellable + Dispatchers.IO else Dispatchers.IO) {
-            transport.request(method, path, body, query, mutation, decode)
+            if (reportsRestart) restarting.update { it + 1 }
+            try {
+                transport.request(method, path, body, query, mutation, decode)
+            } finally {
+                if (reportsRestart) restarting.update { it - 1 }
+            }
         }
     }
+}
+
+private fun mayReloadService(method: String, path: String, query: Map<String, String>): Boolean = when (method) {
+    "PUT" -> (path == "/config" && query["target"] != "module/auto_start") ||
+        path in setOf("/mode", "/nodes", "/traffic/apps") || path.startsWith("/subscriptions/")
+    "POST" -> path in setOf("/service/restart", "/service/reload", "/traffic/start", "/traffic/stop", "/traffic/toggle",
+        "/nodes", "/nodes/import")
+    "DELETE" -> path == "/nodes" || path.startsWith("/subscriptions/")
+    else -> false
 }
