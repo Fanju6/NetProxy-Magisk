@@ -108,7 +108,9 @@ class Navigator(
     val backStack: NavBackStack,
 ) {
     fun push(key: NavKey) {
-        backStack.add(key)
+        if (key !in backStack) {
+            backStack.add(key)
+        }
     }
 
     fun pop() {

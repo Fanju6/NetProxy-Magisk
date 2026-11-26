@@ -213,7 +213,7 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel, showCaptureRecords: Boo
 
     LaunchedEffect(showCaptureRecords, availability?.available) {
         if (showCaptureRecords && availability?.available == true) {
-            if (navigator.backStack.lastOrNull() != Route.TrafficSessions) navigator.push(Route.TrafficSessions)
+            navigator.push(Route.TrafficSessions)
             onCaptureRecordsOpened()
         }
     }
