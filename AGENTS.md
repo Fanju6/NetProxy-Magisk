@@ -34,7 +34,8 @@
 - Catalog Provider 标签等于唯一资源名称，内部 ID 仅用于目录与业务定位。创建和改名在 Catalog 锁内处理重名；订阅更新不得根据响应头改名。改名会变更节点完整标签，显式引用存在时拒绝改名，运行中改名复用配置事务重载。
 - 默认 Proxy 无代理节点时使用 block，不能静默直连。自动测速组仅由原生配置定义。
 - eBPF 与 TUN 都是 sing-box 的入站实现，不是独立代理核心。服务、模式和节点切换文案继续使用“服务”或“sing-box”，不要泛化为“eBPF 服务”或“TUN 服务”。
-- `config/inbound/inbound.json` 是 backend、独立 Root 策略、共用 app 策略与两套原生入站参数的唯一事实源，不在 module.json 或客户端偏好中双写。外层固定为 `backend/root_policy/app/ebpf/tun`，两个原生对象的 type 匹配分区、tag 均固定为 `netproxy-in`；主配置不得重复定义受管 eBPF/TUN 或占用该标签。
+- `config/inbound/inbound.json` 是 backend、独立 Root 策略、共用 IPv6 开关、共用 app 策略与两套原生入站参数的唯一事实源，不在 module.json 或客户端偏好中双写。外层固定为 `backend/root_policy/ipv6/app/ebpf/tun`，两个原生对象的 type 匹配分区、tag 均固定为 `netproxy-in`；主配置不得重复定义受管 eBPF/TUN 或占用该标签。
+- `ipv6` 是跨后端的运行时兼容开关，旧配置缺省为 true；关闭只在生效配置中限制核心 DNS 和拒绝受管入站 IPv6，不覆盖保存的 TUN/eBPF 原生参数、DNS 或路由，也不关闭系统 IPv6。
 - `root_policy=default/include/exclude` 独立于 app 开关与名单模式，只投影本机 UID 0，不改原生模板；default 不干预，include 覆盖 UID 0 的原生 UID 排除，exclude 排除 UID 0。空 include 原生表示不限 UID，不得为接管 Root 将其收窄为只含 0；空应用白名单仍可仅接管 Root。原生 include_android_user 通过内核生成排除范围，不能当成 UID include；接管 Root 时该用户范围必须包含用户 0，否则报冲突，不扩大用户范围。仅 eBPF shared 时不应用 Root 策略，也不因该字段变化重载。管理器通用选择即时保存，先提交已确认原生草稿；完整 JSON 编辑入口位于右上角菜单，不在应用列表伪造 Root 条目。
 - 唯一核心运行时配置为 `runtime/config.json`，追加当前选择的一个受管入站。切换不转换或清空另一套参数，失败不自动改用另一后端。
 - 分应用策略持久化严格的 `<user-id>:<package>` 引用，Android 每个用户独立展示；Go 通过 Android package service 查询 UID，运行时生成 `include_uid` / `exclude_uid`。
@@ -101,7 +102,7 @@ src/module/service.sh
 - Catalog 等待锁使用调用方 context，分组锁先于根锁。锁文件不保存业务或 owner 状态，互斥由操作系统文件锁保证。
 - sing-box 静态事实源只有 `config/singbox/config.json`。分区编辑由 Go 在配置事务锁内替换指定顶层字段，保留其他字段和数组顺序；客户端使用读取时的 `revision`，同分区冲突返回 `config.conflict`。不能在 Android 中把整份旧快照合并写回。
 - 模块复用 `config read/apply/validate` 的 `module` 完整 JSON 与 `module/wifi`、`module/auto_start` 分区；分区保留对应顶层键，必需且不支持 `{}` 删除，各自 revision 只跟踪所属分区。配置应用复用现有事务，全部模块写入共用 `module.json.lock`，仅在锁内合并最新文件；网络匹配与开机自启不得用整份旧快照写回，没有 `module/selection` 公共目标。
-- 入站复用 `config read/apply/validate` 的 `inbound`、`inbound/backend`、`inbound/root_policy`、`inbound/app`、`inbound/ebpf`、`inbound/tun` 目标，不增加公共 inbound 命令组或旧 config ebpf 别名。入站分区必需，不能用 `{}` 删除；全部目标与 app 增删共用配置事务和 `inbound.json.lock`，仅在锁内合并最新文件。
+- 入站复用 `config read/apply/validate` 的 `inbound`、`inbound/backend`、`inbound/root_policy`、`inbound/ipv6`、`inbound/app`、`inbound/ebpf`、`inbound/tun` 目标，不增加公共 inbound 命令组或旧 config ebpf 别名。入站分区必需，不能用 `{}` 删除；全部目标与 app 增删共用配置事务和 `inbound.json.lock`，仅在锁内合并最新文件。
 - `auto_start` 只影响下次开机，单独修改不得重载运行实例。分应用有效策略变化通过配置事务自动 reload，停止时只保存；管理器分应用、入站原生参数与网络匹配只在离页或进入后台合并提交，不使用闲置计时器或待保存提示。普通返回立即导航，提交时先登记目标与本次草稿快照，再由应用级短生命周期任务完成，不随页面销毁取消；重新读取只等待同配置文件的在途写入，不扫描整个作用域。写入阶段不得读取配置，写后确认须在解除该等待后执行；已确认的后端切换与重启同样完成收尾，未确认切换不得在离页后自动执行。保存失败须在页面退出后仍通知用户，页面存续时保留草稿；冲突只能显式放弃草稿后重新加载，恢复前台不得刷新覆盖草稿或借用新 revision 重试。开机自启、后端切换、节点与模式选择仍立即执行；切换后端、重启或进入入站子页前先提交已确认参数。搜索勾选只更新统一名单，不切换加载分支或重新计算搜索结果；默认与搜索列表共用选中优先和反序的显示排序，搜索重排不跟随已选条目滚动。Auto 节点选择只发布完整确认快照，不用缺少实际节点的占位状态覆盖已有显示。
 - `ebpf status` 是保存的 eBPF 模板所选能力的预检，TUN 模式也可执行，不代表当前挂载状态。普通 `data.content` 始终是可读诊断，原始 JSON 仅在显式 `--raw` 时作为正文返回；预检通过不能表述为实际接管成功。
 - 启动只校验当前原生分区；保存分区校验该分区，完整保存校验两套格式，整份 JSON 损坏必须失败。未选分区变化不 reload，停止时保存不启动核心或 Worker。切换后端先停旧实例再启动新实例；强杀或清理未确认时中止并保留 journal，必须设备重启后再恢复，不增加兜底清理。
@@ -258,7 +259,7 @@ WebUI ───────────┼─> netproxyctl ─> Go 业务层 ─
 | 模块设置 | `src/module/config/module.json` | `auto_start` 与 `wifi` |
 | 默认出站模式 | `config/singbox/config.json` 的 `experimental.clash_api.default_mode` | 可选模式来自 route/DNS 规则与默认模式；API 报告运行时实际模式 |
 | 设备统计队列 | `config/telemetry/state.json` | 每日去重和离线队列；设备身份由 Worker 从系统派生，不作为用户配置展示 |
-| 入站与应用策略 | `src/module/config/inbound/inbound.json` | backend、root_policy、app 与 eBPF/TUN 原生对象；只生成当前所选入站 |
+| 入站与应用策略 | `src/module/config/inbound/inbound.json` | backend、root_policy、ipv6、app 与 eBPF/TUN 原生对象；只生成当前所选入站 |
 | 节点与订阅 | `src/module/data/catalog/<group-id>/` | `meta.json` + `provider.json` |
 | sing-box 静态配置 | `src/module/config/singbox/config.json` | 单一主配置，支持整份或按顶层字段编辑 |
 | sing-box 运行时配置 | `src/module/runtime/` | config.json；可重建，不由客户端编辑或安装保留 |
@@ -360,9 +361,9 @@ Go 生命周期控制器只将 `runtime/config.json` 传给核心。该只读文
 
 模块目标 `module` 读取或替换完整 `auto_start/wifi` JSON；`module/wifi` 与 `module/auto_start` 分别使用 `{"wifi": {...}}`、`{"auto_start": true}`。完整 revision 跟踪整个文件，分区 revision 只跟踪所属分区，不受其他分区变更影响。同分区冲突返回 `config.conflict`；分区不能删除或包含其他顶层字段，写入只在 `module.json.lock` 内合并最新文件，不维护第二份配置或旧格式别名。
 
-入站目标 `inbound` 替换完整五字段包装；`inbound/backend`、`inbound/root_policy`、`inbound/app`、`inbound/ebpf`、`inbound/tun` 分别使用对应顶层键。分区 revision 只跟踪该分区，完整 revision 跟踪整个文件；入站分区不支持空对象删除，所有写入在同一个配置文件锁内合并最新其他字段。
+入站目标 `inbound` 替换完整入站包装；`inbound/backend`、`inbound/root_policy`、`inbound/ipv6`、`inbound/app`、`inbound/ebpf`、`inbound/tun` 分别使用对应顶层键。分区 revision 只跟踪该分区，完整 revision 跟踪整个文件；入站分区不支持空对象删除，所有写入在同一个配置文件锁内合并最新其他字段。
 
-`config list` 的六个入站逻辑目标归类为 `category=inbound`；Prepare JSON 使用 `config` 路径字段与 `backend`。schema=1 字段与类别变化需同步 Shell、Go、Android、WebUI 与 tests。
+`config list` 的七个入站逻辑目标归类为 `category=inbound`；Prepare JSON 使用 `config` 路径字段与 `backend`。schema=1 字段与类别变化需同步 Shell、Go、Android、WebUI 与 tests。
 
 安装只处理当前数据布局，不读取、转换或清理旧版配置。保留现有数据包含整个用户配置目录（包括核心持久状态）、Catalog 与日志，但 `config/singbox/rules/remote` 始终使用本次安装包的内置规则；仅保留节点与订阅包含 Catalog 与日志；全新安装使用包内默认内容。保留模式要求对应数据完整，不能因缺失而静默回退默认配置。热切换前重新复制最新数据，不复制 Catalog staging 或可重建的运行时文件。
 

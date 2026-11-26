@@ -10,7 +10,7 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 )
 
-func writeEffectiveConfig(ctx context.Context, singBoxDir, destination string, inbounds []jsontext.Value, providers []jsontext.Value, captureSocket string) error {
+func writeEffectiveConfig(ctx context.Context, singBoxDir, destination string, inbounds []jsontext.Value, providers []jsontext.Value, captureSocket string, disableIPv6 bool) error {
 	content, err := os.ReadFile(paths.SingBoxConfig(singBoxDir))
 	if err != nil {
 		return err
@@ -21,6 +21,11 @@ func writeEffectiveConfig(ctx context.Context, singBoxDir, destination string, i
 	}
 	if err := validateConfiguredCatalogProviders(document, providers); err != nil {
 		return err
+	}
+	if disableIPv6 {
+		if err := projectIPv4Only(document); err != nil {
+			return err
+		}
 	}
 	if captureSocket != "" {
 		var route map[string]jsontext.Value

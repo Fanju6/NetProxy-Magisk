@@ -808,4 +808,6 @@
     <string name="traffic_capture_apps">抓包应用</string>
     <string name="traffic_capture_apps_summary">选择要抓包的应用。不选择则抓取所有应用。</string>
     <string name="traffic_app_user">Android 用户</string>
+    <string name="inbound_ipv6">IPv6</string>
+    <string name="inbound_ipv6_hint">关闭后，受管流量仅使用 IPv4。</string>
 </resources>

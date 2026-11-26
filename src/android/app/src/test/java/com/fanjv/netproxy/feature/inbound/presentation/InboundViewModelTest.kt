@@ -18,6 +18,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
@@ -52,6 +53,7 @@ class InboundViewModelTest {
     private var choicesGate: CountDownLatch? = null
     private val choicesEntered = CompletableDeferred<Unit>()
     private var choicesFailure = false
+    private var ipv6 = true
 
     private fun output(data: String) = apiSuccess(data)
     private fun viewModel(scope: CoroutineScope, saveScope: CoroutineScope = scope,
@@ -85,6 +87,7 @@ class InboundViewModelTest {
                     val content = when (args.target) {
                         "inbound/backend" -> """{"backend":"$backend"}"""
                         "inbound/root_policy" -> """{"root_policy":"$rootPolicy"}"""
+                        "inbound/ipv6" -> """{"ipv6":$ipv6}"""
                         "inbound/ebpf" -> """{"ebpf":$ebpf}"""
                         "inbound/tun" -> """{"tun":$tun}"""
                         "singbox/config.json" -> """{"route":{"rule_set":[{"tag":"private"}]}}"""
@@ -100,6 +103,7 @@ class InboundViewModelTest {
                         when (args.target) {
                             "inbound/backend" -> backend = (content.getValue("backend") as JsonPrimitive).content
                             "inbound/root_policy" -> rootPolicy = (content.getValue("root_policy") as JsonPrimitive).content
+                            "inbound/ipv6" -> ipv6 = content.getValue("ipv6").toString().toBooleanStrict()
                             "inbound/ebpf" -> ebpf = content.getValue("ebpf").toString()
                             "inbound/tun" -> tun = content.getValue("tun").toString()
                         }
@@ -119,6 +123,19 @@ class InboundViewModelTest {
     private suspend fun InboundViewModel.idle() {
         flush()
         withTimeout(5_000) { state.first { !it.isSaving } }
+    }
+
+    @Test fun ipv6SwitchWritesBooleanAfterSavingNativeDraft() = runBlocking {
+        val vm = viewModel(this)
+        vm.refresh(); vm.loaded()
+        val revision = configRevision("inbound/ipv6")
+        vm.setField("udp_timeout", JsonPrimitive("5m"))
+        vm.setIPv6(false); vm.idle()
+        val edits = calls.filter { it.path == "/config" && it.method == "PUT" }
+        assertEquals(listOf("inbound/ebpf", "inbound/ipv6"), edits.map { it.target })
+        assertEquals(revision, edits.last().text("revision"))
+        assertEquals(Json.parseToJsonElement("""{"ipv6":false}"""), Json.parseToJsonElement(edits.last().text("content")!!))
+        assertFalse(vm.state.value.snapshot!!.ipv6)
     }
 
     @Test fun ebpfDataPlanesAndAdvancedOptionShareOneRevisionedDraft() = runBlocking {

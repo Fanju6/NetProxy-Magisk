@@ -778,4 +778,6 @@
     <string name="traffic_capture_apps">Capture apps</string>
     <string name="traffic_capture_apps_summary">Choose which apps to capture. No selection captures all apps.</string>
     <string name="traffic_app_user">Android user</string>
+    <string name="inbound_ipv6">IPv6</string>
+    <string name="inbound_ipv6_hint">Turn off to use IPv4 only for managed traffic.</string>
 </resources>
