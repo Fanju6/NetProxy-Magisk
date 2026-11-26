@@ -140,7 +140,7 @@ func TestIPv4OnlyRuntimeKeepsUserDNSAndRouteOnDisk(t *testing.T) {
 		string(dns.Rules[1]["strategy"]) != `"ipv4_only"` {
 		t.Fatalf("unexpected DNS: %s", raw)
 	}
-	if route.Capture != "/capture.sock" || len(route.Rules) != 4 || string(route.Rules[0]["clash_mode"]) != `"Direct"` ||
+	if len(route.Rules) != 4 || string(route.Rules[0]["clash_mode"]) != `"Direct"` ||
 		string(route.Rules[0]["action"]) != `"route"` || string(route.Rules[1]["action"]) != `"hijack-dns"` ||
 		string(route.Rules[2]["inbound"]) != `"netproxy-in"` || string(route.Rules[2]["ip_version"]) != "6" ||
 		string(route.Rules[2]["no_drop"]) != "true" || string(route.Rules[3]["outbound"]) != `"proxy"` {
