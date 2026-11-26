@@ -56,6 +56,9 @@ func (c *cli) help() {
   netproxyctl [--json] [--timeout <秒|时长>] config list|read|check|validate|apply
   netproxyctl [--json] [--timeout <秒|时长>] logs show|clear|export
   netproxyctl [--json] [--timeout <秒|时长>] api init|start|status|access
+  netproxyctl [--json] [--timeout <秒|时长>] api traffic status|start|stop|toggle|list|detail <ID>|clear|rules|set-rules <文件>
+  netproxyctl [--json] [--timeout <秒|时长>] api traffic mitm|set-mitm <文件>|ca-init|ca|ca-export <文件>
+  netproxyctl [--json] [--timeout <秒|时长>] api traffic apps|set-apps <文件>
 
 默认配置的出站模式:
   Rule          规则

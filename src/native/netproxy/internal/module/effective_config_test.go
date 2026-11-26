@@ -22,7 +22,7 @@ func TestEffectiveConfigPreservesNativeFieldsAndOrdering(t *testing.T) {
 	projection := []jsontext.Value{jsontext.Value(`{"tag":"managed-provider"}`)}
 	dest := filepath.Join(dir, "runtime", "config.json")
 	inbounds := []jsontext.Value{jsontext.Value(`{"tag":"netproxy-in"}`)}
-	if err := writeEffectiveConfig(t.Context(), dir, dest, inbounds, projection); err != nil {
+	if err := writeEffectiveConfig(t.Context(), dir, dest, inbounds, projection, ""); err != nil {
 		t.Fatal(err)
 	}
 	raw, err := os.ReadFile(dest)
@@ -47,7 +47,7 @@ func TestEffectiveConfigPreservesNativeFieldsAndOrdering(t *testing.T) {
 		t.Fatal(err)
 	}
 	var invalid *json.SemanticError
-	if err := writeEffectiveConfig(t.Context(), dir, dest, inbounds, projection); !errors.As(err, &invalid) {
+	if err := writeEffectiveConfig(t.Context(), dir, dest, inbounds, projection, ""); !errors.As(err, &invalid) {
 		t.Fatalf("invalid provider array not rejected: %v", err)
 	}
 	if current, err := os.ReadFile(dest); err != nil || !bytes.Equal(current, raw) {

@@ -10,7 +10,7 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 )
 
-func writeEffectiveConfig(ctx context.Context, singBoxDir, destination string, inbounds []jsontext.Value, providers []jsontext.Value) error {
+func writeEffectiveConfig(ctx context.Context, singBoxDir, destination string, inbounds []jsontext.Value, providers []jsontext.Value, captureSocket string) error {
 	content, err := os.ReadFile(paths.SingBoxConfig(singBoxDir))
 	if err != nil {
 		return err
@@ -21,6 +21,26 @@ func writeEffectiveConfig(ctx context.Context, singBoxDir, destination string, i
 	}
 	if err := validateConfiguredCatalogProviders(document, providers); err != nil {
 		return err
+	}
+	if captureSocket != "" {
+		var route map[string]jsontext.Value
+		if raw, ok := document["route"]; ok {
+			if err := json.Unmarshal(raw, &route); err != nil {
+				return err
+			}
+		}
+		if route == nil {
+			route = make(map[string]jsontext.Value)
+		}
+		route["find_process"] = jsontext.Value("true")
+		route["netproxy_capture_socket"], err = json.Marshal(captureSocket)
+		if err != nil {
+			return err
+		}
+		document["route"], err = json.Marshal(route, json.Deterministic(true))
+		if err != nil {
+			return err
+		}
 	}
 	for key, entries := range map[string][]jsontext.Value{
 		"inbounds": inbounds, "providers": providers,

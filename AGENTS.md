@@ -404,6 +404,8 @@ Go 生命周期控制器只将 `runtime/config.json` 传给核心。该只读文
 
 `netproxyctl __internal` 只供模块生命周期内部使用。终端 WebUI 只能调用公开命令组；Android 只能调用模块 API，以免形成两套公共契约。
 
+`api traffic` 通过钉扎 HTTPS 控制 Worker 内的全局透明抓包，不新增 TCP 监听或后台进程。启用时才向生成的 `runtime/config.json` 投影私有 Unix 套接字。sing-box 对 `netproxy-in` 的 TCP 连接先以原入站元数据执行既有路由并拨号，再交给 Worker；套接字不可用时按原路径透传。HTTPS 解密默认关闭且按主机匹配，使用独立于管理 API 的调试 CA；系统信任也须单独启用。抓包记录只保留在内存，不进入日志、诊断或遥测；持久化开关、重写规则、HTTPS 策略与 CA，不导出 CA 私钥。
+
 ## 客户端边界
 
 **Android**：按 `core/`、`feature/`、`navigation/` 组织。每个功能域拥有自己的 Repository、ViewModel 和 UI state；应用级长生命周期依赖由 `AppContainer` 组合。模块业务只从 `ModuleApiClient` 发出，页面不读取模块路径或执行 Shell。底部一级入口为「仪表盘 / 代理 / 资源 / 设置」。代理页通过 `/policy-groups` 读取与操作原生策略组；资源页管理 Catalog，不再操作活动组。

@@ -3,4 +3,5 @@
     <cache-path
         name="log_reports"
         path="reports/" />
+    <cache-path name="traffic_ca" path="traffic-ca/" />
 </paths>
