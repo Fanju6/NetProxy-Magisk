@@ -11,6 +11,7 @@
     <string name="traffic_copy_curl">Copiar como cURL</string>
     <string name="traffic_rules_empty">Nenhuma regra de reescrita. Toque em + para criar.</string>
     <string name="traffic_rule_enabled">Ativada</string>
+    <string name="traffic_rule_name">Título da regra (opcional)</string>
     <string name="traffic_host_add">Adicionar host</string>
     <string name="traffic_host_remove">Remover host</string>
     <string name="traffic_host_remove_prompt">Remover este host da lista de descriptografia HTTPS?</string>

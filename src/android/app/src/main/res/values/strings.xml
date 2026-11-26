@@ -11,6 +11,7 @@
     <string name="traffic_copy_curl">Copy as cURL</string>
     <string name="traffic_rules_empty">No rewrite rules. Tap + to create one.</string>
     <string name="traffic_rule_enabled">Enabled</string>
+    <string name="traffic_rule_name">Rule title (optional)</string>
     <string name="traffic_host_add">Add host</string>
     <string name="traffic_host_remove">Remove host</string>
     <string name="traffic_host_remove_prompt">Remove this host from HTTPS decryption?</string>

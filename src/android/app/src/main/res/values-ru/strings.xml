@@ -11,6 +11,7 @@
     <string name="traffic_copy_curl">Копировать как cURL</string>
     <string name="traffic_rules_empty">Правил подмены нет. Нажмите +, чтобы добавить.</string>
     <string name="traffic_rule_enabled">Включено</string>
+    <string name="traffic_rule_name">Название правила (необязательно)</string>
     <string name="traffic_host_add">Добавить хост</string>
     <string name="traffic_host_remove">Удалить хост</string>
     <string name="traffic_host_remove_prompt">Удалить этот хост из списка расшифровки HTTPS?</string>

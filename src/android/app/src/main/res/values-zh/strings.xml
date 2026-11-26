@@ -11,6 +11,7 @@
     <string name="traffic_copy_curl">复制为 cURL</string>
     <string name="traffic_rules_empty">暂无重写规则。点击 + 新建。</string>
     <string name="traffic_rule_enabled">已启用</string>
+    <string name="traffic_rule_name">规则标题（选填）</string>
     <string name="traffic_host_add">添加主机</string>
     <string name="traffic_host_remove">移除主机</string>
     <string name="traffic_host_remove_prompt">从 HTTPS 解密名单中移除此主机？</string>

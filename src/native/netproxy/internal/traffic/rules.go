@@ -12,6 +12,7 @@ import (
 	"regexp/syntax"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dop251/goja"
 	"golang.org/x/net/http/httpguts"
@@ -28,6 +29,7 @@ type Rule struct {
 	Script  string   `json:"script"`
 	Domains []string `json:"domains"`
 	Enabled *bool    `json:"enabled,omitempty"`
+	Name    string   `json:"name,omitempty"`
 }
 
 func (rule Rule) enabled() bool { return rule.Enabled == nil || *rule.Enabled }
@@ -66,6 +68,10 @@ func compileRules(rules []Rule, legacy bool) ([]compiledRule, error) {
 	}
 	compiled := make([]compiledRule, 0, len(rules))
 	for i, rule := range rules {
+		rule.Name = strings.TrimSpace(rule.Name)
+		if utf8.RuneCountInString(rule.Name) > 64 {
+			return nil, fmt.Errorf("第 %d 条重写规则的标题不能超过 64 个字符", i+1)
+		}
 		if (rule.Phase != "request" && rule.Phase != "response") || len(rule.Pattern) == 0 ||
 			len(rule.Pattern) > 1024 || len(rule.Script) == 0 || len(rule.Script) > 8192 {
 			return nil, fmt.Errorf("第 %d 条重写规则的阶段、表达式或脚本长度无效", i+1)

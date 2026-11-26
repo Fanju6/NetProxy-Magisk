@@ -175,6 +175,7 @@ internal data class RewriteRule(
     val script: String,
     val domains: List<String> = emptyList(),
     val enabled: Boolean = true,
+    val name: String = "",
 )
 
 @Serializable

@@ -141,7 +141,7 @@ HTTP 保存必须提供读取时的 revision。发生 `config.conflict` 时重�
 | `GET /traffic/page?batch=…&limit=50&before=…` | 按新到旧读取指定批次（默认当前或最近批次）；每页 1–100 条。响应的 `before` 用于继续向前翻页；用 `since`（或 `after`）代替 `before` 读取更新，使用返回的 `since` 继续拉取；`oldest` 表示当前保留范围起点 |
 | `GET /traffic/apps`、`PUT /traffic/apps` | 读取或替换抓包范围：`{"mode":"whitelist","blacklist":[],"whitelist":["0:com.example.app"],"disable_quic":true}`。模式为 `all`、`blacklist` 或 `whitelist`；分别抓取所有应用、排除黑名单或只抓取白名单。`disable_quic` 默认开启，写入时省略则保留原值。旧 `apps` 格式的非空名单迁移为白名单、空名单迁移为全部。 |
 | `POST /traffic/toggle`、`start`、`stop`；`DELETE /traffic/list` | 切换全局抓包、显式启停或清空所有批次的记录 |
-| `GET/PUT /traffic/rules` | 读取或替换重写规则，正文为 `{"rules":[...]}`，新增和修改的规则需要 `domains`。单条规则可设 `"enabled":false`，省略时启用。见[规则格式](/guide/traffic-debugging) |
+| `GET/PUT /traffic/rules` | 读取或替换重写规则，正文为 `{"rules":[...]}`，新增和修改的规则需要 `domains`。可选 `name` 标题（去除首尾空白后最多 64 个字符）；单条规则可设 `"enabled":false`，省略时启用。见[规则格式](/guide/traffic-debugging) |
 | `GET/PUT /traffic/mitm` | 读取或替换 `{"enabled":false,"hosts":["*"],"bypass_hosts":[],"system_trust":false}`；启用后默认解密全部 HTTPS/WSS，排除名单优先。系统信任在开机、热更新或开启抓包时重新应用，关闭时尝试卸载 |
 | `POST /traffic/ca-init`；`GET /traffic/ca` | 显式初始化或读取公开 CA；返回 `pem`、`filename`、`sha256`，不返回任何私钥 |
 | `GET /diagnostics/export` | 下载脱敏诊断包 |

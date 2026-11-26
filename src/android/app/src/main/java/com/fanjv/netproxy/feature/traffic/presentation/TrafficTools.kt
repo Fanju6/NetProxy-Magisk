@@ -31,7 +31,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -54,9 +57,11 @@ import com.fanjv.netproxy.navigation.Route
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.FloatingActionButton
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
+import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.glass.GlassTextField
 import top.yukonga.miuix.kmp.preference.ArrowPreference
@@ -90,11 +95,24 @@ internal fun TrafficRulesScreen(viewModel: TrafficViewModel) {
             state.failure?.let { issue -> item { TrafficErrorText(issue) } }
             groupedCardSection("rules", { stringResource(R.string.traffic_rules) }, rules.mapIndexed { index, rule ->
                 CardItem(index.toString()) {
-                    ArrowPreference(title = rule.pattern,
-                        summary = "${phaseLabel(rule.phase)} · ${rule.domains.joinToString().ifEmpty { stringResource(R.string.traffic_rule_domains) }}",
-                        enabled = editable, onClick = { edit(index) }, insideMargin = TrafficRowInsets)
-                    SwitchPreference(title = stringResource(R.string.traffic_rule_enabled), checked = rule.enabled,
-                        enabled = editable, onCheckedChange = { viewModel.setRuleEnabled(index, it) }, insideMargin = TrafficRowInsets)
+                    val phase = phaseLabel(rule.phase)
+                    val title = rule.name.ifBlank { rule.domains.firstOrNull()?.let { "$it · $phase" } ?: phase }
+                    val summary = (rule.domains + phase).joinToString(" · ")
+                    val switchLabel = stringResource(R.string.traffic_rule_enabled)
+                    BasicComponent(
+                        enabled = editable, onClick = { edit(index) }, insideMargin = TrafficRowInsets,
+                        endActions = {
+                            Switch(checked = rule.enabled, enabled = editable,
+                                onCheckedChange = { viewModel.setRuleEnabled(index, it) },
+                                modifier = Modifier.semantics { contentDescription = "$title · $switchLabel" })
+                        },
+                    ) {
+                        Text(title, style = MiuixTheme.textStyles.headline1, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(summary, style = MiuixTheme.textStyles.body2, color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(rule.pattern, style = MiuixTheme.textStyles.body2.copy(fontFamily = FontFamily.Monospace),
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
                 }
             })
         }
@@ -124,6 +142,9 @@ internal fun TrafficRuleEditorScreen(viewModel: TrafficViewModel) {
             }) { padding ->
             Column(Modifier.fillMaxSize().padding(padding).imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 14.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                GlassTextField(value = rule.name, onValueChange = { viewModel.updateRule(rule.copy(name = it)) },
+                    modifier = Modifier.fillMaxWidth(), singleLine = true, enabled = !state.saving,
+                    label = stringResource(R.string.traffic_rule_name))
                 SwitchPreference(title = stringResource(R.string.traffic_rule_enabled), checked = rule.enabled,
                     enabled = !state.saving, onCheckedChange = { viewModel.updateRule(rule.copy(enabled = it)) }, insideMargin = TrafficRowInsets)
                 AppDropdown(title = stringResource(R.string.traffic_rule_phase),

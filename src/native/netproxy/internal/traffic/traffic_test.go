@@ -97,16 +97,16 @@ func TestCaptureAndRewritingThroughCoreBridge(t *testing.T) {
 	layout := paths.New(t.TempDir())
 	config := New(layout)
 	rules := []Rule{
-		{"/blocked", "request", "return {reject: true}", []string{"127.0.0.1"}, nil},
-		{"/redirect", "request", `return {redirect: "https://example.org/new"}`, []string{"127.0.0.1"}, nil},
-		{"/rewrite", "request", `return {set_headers: {"X-Edited": "yes"}}`, []string{"127.0.0.1"}, nil},
-		{"/rewrite", "response", `return {body: input.body.toUpperCase(), set_headers: {"X-Rewritten": "yes"}}`, []string{"127.0.0.1"}, nil},
-		{"/timeout", "response", `while (true) {}`, []string{"127.0.0.1"}, nil},
+		{"/blocked", "request", "return {reject: true}", []string{"127.0.0.1"}, nil, ""},
+		{"/redirect", "request", `return {redirect: "https://example.org/new"}`, []string{"127.0.0.1"}, nil, ""},
+		{"/rewrite", "request", `return {set_headers: {"X-Edited": "yes"}}`, []string{"127.0.0.1"}, nil, ""},
+		{"/rewrite", "response", `return {body: input.body.toUpperCase(), set_headers: {"X-Rewritten": "yes"}}`, []string{"127.0.0.1"}, nil, ""},
+		{"/timeout", "response", `while (true) {}`, []string{"127.0.0.1"}, nil, ""},
 	}
 	if err := config.ReplaceRules(rules); err != nil {
 		t.Fatal(err)
 	}
-	if err := config.ReplaceRules([]Rule{{"[", "request", "return {}", []string{"127.0.0.1"}, nil}}); err == nil {
+	if err := config.ReplaceRules([]Rule{{"[", "request", "return {}", []string{"127.0.0.1"}, nil, ""}}); err == nil {
 		t.Fatal("接受了无效正则")
 	}
 	controller := New(layout)

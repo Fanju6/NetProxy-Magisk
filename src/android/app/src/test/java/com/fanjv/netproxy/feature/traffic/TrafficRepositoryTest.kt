@@ -37,6 +37,21 @@ class TrafficRepositoryTest {
         assertEquals(original, repository.saveRules(disabled, original))
     }
 
+    @Test fun rewriteTitlesAreOptionalAndSurviveUpdate() = runBlocking {
+        var stored = """{"rules":[{"pattern":"/get","phase":"request","script":"return {}","domains":["example.test"]}]}"""
+        val repository = TrafficRepository(ModuleApiClient(TestApiTransport { request ->
+            if (request.method == "PUT") stored = request.body.toString()
+            apiSuccess(stored)
+        }))
+        val original = repository.rules()
+        assertEquals("", original.single().name)
+        val titled = original.map { it.copy(name = "Add test header") }
+        assertEquals(titled, repository.saveRules(original, titled))
+        assertTrue(stored.contains("\"name\":\"Add test header\""))
+        assertEquals(original, repository.saveRules(titled, original))
+        assertTrue(!stored.contains("\"name\""))
+    }
+
     @Test fun overlayPreviewUsesOneReadAndDecodesSessionTotal() = runBlocking {
         val repository = TrafficRepository(ModuleApiClient(TestApiTransport { request ->
             assertEquals("GET", request.method)

@@ -76,14 +76,22 @@ func TestTrafficManagementRequiresAuthAndValidatesRules(t *testing.T) {
 	}
 	var rules trafficRules
 	resourceAssertSuccess(t, s, http.MethodGet, target, "", "traffic.rules", &rules)
-	if len(rules.Rules) != 1 || rules.Rules[0].Enabled == nil || !*rules.Rules[0].Enabled {
+	if len(rules.Rules) != 1 || rules.Rules[0].Enabled == nil || !*rules.Rules[0].Enabled || rules.Rules[0].Name != "" {
 		t.Fatalf("旧规则未默认启用: %+v", rules.Rules)
 	}
-	disabled := strings.Replace(body, `"phase":"request"`, `"phase":"request","enabled":false`, 1)
+	disabled := strings.Replace(body, `"phase":"request"`, `"phase":"request","enabled":false,"name":"  请求标题  "`, 1)
 	resourceAssertSuccess(t, s, http.MethodPut, target, disabled, "traffic.rules_saved", nil)
 	resourceAssertSuccess(t, s, http.MethodGet, target, "", "traffic.rules", &rules)
 	if len(rules.Rules) != 1 || rules.Rules[0].Enabled == nil || *rules.Rules[0].Enabled {
 		t.Fatalf("未保留规则禁用状态: %+v", rules.Rules)
+	}
+	if rules.Rules[0].Name != "请求标题" {
+		t.Fatalf("未保留规范化的规则标题: %+v", rules.Rules)
+	}
+	overlong := strings.Replace(disabled, "请求标题", strings.Repeat("字", 65), 1)
+	w, result = resourceRequest(t, s, http.MethodPut, target, overlong)
+	if w.Code != http.StatusUnprocessableEntity || result.Code != "traffic.rules_failed" {
+		t.Fatalf("超长标题响应: %d %+v", w.Code, result)
 	}
 	resourceAssertSuccess(t, s, http.MethodPost, trafficRoute+"toggle", "", "traffic.toggle", nil)
 	resourceAssertSuccess(t, s, http.MethodPost, trafficRoute+"toggle", "", "traffic.toggle", nil)

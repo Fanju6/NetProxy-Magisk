@@ -71,6 +71,8 @@ HTTP/1.1 WebSocket（WS、WSS）连接结束后，在详情中显示握手和前
 
 ## 编写规则
 
+每条规则可选 `name` 标题，去除首尾空白后最多 64 个字符。标题不影响规则匹配或执行；未填写时，管理器显示第一个域名及执行阶段。
+
 将以下文件保存到设备上，例如 `/data/local/tmp/netproxy-rewrite.json`。在 WebUI 输入 `api traffic set-rules /data/local/tmp/netproxy-rewrite.json` 应用，或使用 Root CLI 执行同一操作。不需要重启 Worker 或核心。用 `api traffic rules` 查看，应用 `{"rules":[]}` 删除全部规则。管理器中可开关每一条规则；用 WebUI 或 CLI 时，在该条规则中设 `"enabled":false` 或 `true` 后重新应用。省略时（含旧规则）默认启用，禁用规则不参与匹配或执行，也不改变规则顺序。
 
 ```json

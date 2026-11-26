@@ -159,7 +159,7 @@ func testTransparentHTTPS(t *testing.T, core string) {
 	c := New(layout)
 	originRoots := origin.Client().Transport.(*http.Transport).TLSClientConfig.RootCAs
 	c.upstreamRoots = originRoots
-	if err := c.ReplaceRules([]Rule{{"^https://127[.]0[.]0[.]1:", "response", `return {body: input.body.toUpperCase()};`, []string{"127.0.0.1"}, nil}}); err != nil {
+	if err := c.ReplaceRules([]Rule{{"^https://127[.]0[.]0[.]1:", "response", `return {body: input.body.toUpperCase()};`, []string{"127.0.0.1"}, nil, ""}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := c.SetMITMPolicy(MITMPolicy{Enabled: true}); err != nil {
