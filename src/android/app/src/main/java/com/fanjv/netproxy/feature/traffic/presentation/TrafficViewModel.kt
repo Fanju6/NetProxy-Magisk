@@ -56,6 +56,7 @@ internal data class TrafficState(
     val records: TrafficContent<List<CaptureRecord>> = TrafficContent(),
     val batches: TrafficContent<List<CaptureBatch>> = TrafficContent(),
     val selectedBatch: String? = null,
+    val selectedDomain: String? = null,
     val page: CapturePage? = null,
     val loadingOlder: Boolean = false,
     val olderError: Throwable? = null,
@@ -84,6 +85,8 @@ internal class TrafficViewModel(
 ) : ViewModel(scope) {
     suspend fun downloadBody(id: String, side: String, destination: File, size: Int) =
         repository.downloadBody(id, side, destination, size)
+
+    suspend fun capturedDomains(batch: String?) = repository.domains(batch)
 
     private val _state = MutableStateFlow(TrafficState())
     val state = _state.asStateFlow()
@@ -176,6 +179,14 @@ internal class TrafficViewModel(
         _state.update { applyHead(it.copy(page = null), Result.success(head)).copy(selectedBatch = id) }
     }
 
+    fun selectDomain(host: String?) {
+        if (host == state.value.selectedDomain) return
+        mutate {
+            val head = captureHead(state.value.selectedBatch, host)
+            _state.update { applyHead(it.copy(page = null), Result.success(head)).copy(selectedDomain = host) }
+        }
+    }
+
     fun deleteBatch(id: String) = mutate {
         repository.deleteBatch(id)
         val batches = attempt { repository.batches() }
@@ -192,7 +203,7 @@ internal class TrafficViewModel(
         _state.update { it.copy(loadingOlder = true, olderError = null) }
         olderJob = viewModelScope.launch {
             val result = attempt {
-                val older = repository.page(batch = page.batch, before = before, oldest = page.oldest)
+                val older = repository.page(batch = page.batch, before = before, oldest = page.oldest, host = current.selectedDomain)
                 if (older.oldest != page.oldest) captureHead(current.selectedBatch) to true else older to false
             }
             _state.update { latest ->
@@ -219,7 +230,7 @@ internal class TrafficViewModel(
             current.status.value?.running != true || pollJob?.isActive == true) return
         val previous = current.page ?: return
         pollJob = viewModelScope.launch {
-            val update = attempt { repository.page(since = previous.since) }.getOrNull() ?: return@launch
+            val update = attempt { repository.page(since = previous.since, host = current.selectedDomain) }.getOrNull() ?: return@launch
             val reset = previous.since == null || previous.batch != update.batch || previous.oldest != update.oldest
             val head = if (reset && previous.since != null) attempt { captureHead() }.getOrNull() ?: return@launch else update
             _state.update { latest ->
@@ -233,10 +244,10 @@ internal class TrafficViewModel(
         }
     }
 
-    private suspend fun captureHead(id: String? = null): CapturePage = try {
-        repository.page(batch = id)
+    private suspend fun captureHead(id: String? = null, host: String? = state.value.selectedDomain): CapturePage = try {
+        repository.page(batch = id, host = host)
     } catch (error: ModuleApiException) {
-        if (error.resultCode != "api.not_found") throw error
+        if (host != null || error.resultCode != "api.not_found") throw error
         CapturePage(repository.records(id), batch = id)
     }
 

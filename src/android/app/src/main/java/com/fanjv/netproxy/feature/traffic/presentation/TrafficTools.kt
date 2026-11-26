@@ -129,6 +129,7 @@ internal fun TrafficRuleEditorScreen(viewModel: TrafficViewModel) {
     if (draft == null) return
     val rule = draft.rule
     var domains by rememberSaveable(draft.index) { mutableStateOf(rule.domains.joinToString(", ")) }
+    var pickDomain by rememberSaveable { mutableStateOf(false) }
     TopBarMoreMenu(listOf(
         TopBarMenuAction(stringResource(R.string.common_delete), draft.index != null && !state.saving) { confirmDelete = true },
     ), stringResource(R.string.more_options)) { menu ->
@@ -157,9 +158,15 @@ internal fun TrafficRuleEditorScreen(viewModel: TrafficViewModel) {
                     viewModel.updateRule(rule.copy(domains = hostList(it)))
                 }, modifier = Modifier.fillMaxWidth(), singleLine = true, enabled = !state.saving,
                     label = stringResource(R.string.traffic_rule_domains))
+                ArrowPreference(title = stringResource(R.string.traffic_rule_pick_domain),
+                    enabled = !state.saving, onClick = { pickDomain = true }, insideMargin = TrafficRowInsets)
                 GlassTextField(value = rule.pattern, onValueChange = { viewModel.updateRule(rule.copy(pattern = it)) },
-                    modifier = Modifier.fillMaxWidth(), singleLine = true, enabled = !state.saving && rule.domains.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth(), singleLine = true, enabled = !state.saving,
                     label = stringResource(R.string.traffic_rule_pattern), colors = dialogTextFieldColors(state.draftError != null))
+                if (rule.domains.isEmpty()) {
+                    Text(stringResource(R.string.traffic_rule_domain_required), style = MiuixTheme.textStyles.footnote1,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                }
                 GlassTextField(value = rule.script, onValueChange = { viewModel.updateRule(rule.copy(script = it)) },
                     modifier = Modifier.fillMaxWidth(), minLines = 8, maxLines = 16, enabled = !state.saving,
                     label = stringResource(R.string.traffic_rule_script),
@@ -167,6 +174,13 @@ internal fun TrafficRuleEditorScreen(viewModel: TrafficViewModel) {
                     colors = dialogTextFieldColors(state.draftError != null))
                 state.draftError?.let { TrafficErrorText(it) }
             }
+        }
+    }
+    if (pickDomain) CaptureDomainPicker(viewModel, null, null, allowAll = false, onDismiss = { pickDomain = false }) { host ->
+        if (host != null && host !in rule.domains) {
+            val updated = rule.domains + host
+            domains = updated.joinToString(", ")
+            viewModel.updateRule(rule.copy(domains = updated))
         }
     }
     TrafficConfirmation(confirmDelete, R.string.common_delete, R.string.traffic_rule_delete,

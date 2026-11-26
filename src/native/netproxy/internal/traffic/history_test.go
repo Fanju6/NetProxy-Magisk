@@ -114,3 +114,37 @@ func TestCaptureHistoryPagesBeyondMemoryRing(t *testing.T) {
 		t.Fatalf("increment skipped records: %+v", page)
 	}
 }
+
+func TestCaptureHistoryDomainFilterAfterRestart(t *testing.T) {
+	layout := paths.New(t.TempDir())
+	h := openHistory(layout)
+	batch := &savedBatch{Batch: Batch{ID: rand.Text(), StartedAt: time.Now().UTC()}}
+	h.start(batch)
+	for _, host := range []string{"EXAMPLE.test.:8080", "other.test", "example.test", "example.test:443", "[2001:db8::1]:443"} {
+		if err := h.append(batch, Record{Entry: Entry{ID: rand.Text(), Host: host}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.finish(batch)
+	h = openHistory(layout)
+	domains, ok := h.domains(batch.ID)
+	if !ok || len(domains) != 3 || domains[0] != (CaptureDomain{"2001:db8::1", 1}) || domains[1] != (CaptureDomain{"example.test", 3}) {
+		t.Fatalf("domain totals: %+v", domains)
+	}
+	first, _ := h.page(PageRequest{Host: "example.test", Limit: 2})
+	if first.Before != "3" || first.Since != "5" || first.Oldest != "1" || len(first.Entries) != 2 || first.Entries[0].Host != "example.test:443" {
+		t.Fatalf("first filtered page: %+v", first)
+	}
+	older, _ := h.page(PageRequest{Host: "example.test", Before: 3, Limit: 2})
+	if older.Before != "" || len(older.Entries) != 1 || older.Entries[0].Host != "EXAMPLE.test.:8080" {
+		t.Fatalf("older filtered page: %+v", older)
+	}
+	next, _ := h.page(PageRequest{Host: "example.test", Since: 1, Incremental: true, Limit: 1})
+	if next.Since != "3" || len(next.Entries) != 1 || next.Entries[0].Host != "example.test" {
+		t.Fatalf("filtered update skipped records: %+v", next)
+	}
+	empty, _ := h.page(PageRequest{Host: "not-found.test", Limit: 2})
+	if empty.Before != "" || empty.Since != "5" || len(empty.Entries) != 0 {
+		t.Fatalf("filtered empty page: %+v", empty)
+	}
+}

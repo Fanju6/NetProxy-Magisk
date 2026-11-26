@@ -34,6 +34,9 @@ internal data class CapturePage(
 )
 
 @Serializable
+internal data class CaptureDomain(val host: String, val count: Int)
+
+@Serializable
 internal data class PinnedBypass(
     val host: String,
     @SerialName("user_id") val userId: Int,
@@ -206,20 +209,24 @@ internal class TrafficRepository(private val api: ModuleApiClient, private val c
     suspend fun preview(): CapturePreview = api.read("/traffic/preview")
     suspend fun records(batch: String? = null): List<CaptureRecord> =
         api.read("/traffic/list", if (batch == null) emptyMap() else mapOf("batch" to batch))
-    suspend fun page(batch: String? = null, before: String? = null, since: String? = null, oldest: String? = null): CapturePage {
-        if (batch != null && before != null && oldest != null) {
+    suspend fun page(batch: String? = null, before: String? = null, since: String? = null, oldest: String? = null,
+        host: String? = null): CapturePage {
+        if (host == null && batch != null && before != null && oldest != null) {
             cache?.read(batch, oldest, before)?.let { return it }
         }
         val page = api.read<CapturePage>("/traffic/page", buildMap {
             batch?.let { put("batch", it) }
             before?.let { put("before", it) }
             since?.let { put("since", it) }
+            host?.let { put("host", it) }
         })
-        if (batch != null && before != null && page.batch == batch && page.oldest != null) {
+        if (host == null && batch != null && before != null && page.batch == batch && page.oldest != null) {
             cache?.write(batch, page.oldest, before, page)
         }
         return page
     }
+    suspend fun domains(batch: String? = null): List<CaptureDomain> =
+        api.read("/traffic/domains", if (batch == null) emptyMap() else mapOf("batch" to batch))
     suspend fun batches(): List<CaptureBatch> = api.read<List<CaptureBatch>>("/traffic/batches").also { batches ->
         cache?.retain(batches.mapTo(mutableSetOf()) { it.id })
     }

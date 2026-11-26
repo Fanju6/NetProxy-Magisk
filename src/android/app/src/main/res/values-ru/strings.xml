@@ -7,6 +7,11 @@
     <string name="traffic_search">Поиск по хосту или URL</string>
     <string name="traffic_no_matches">Нет сеансов, подходящих под фильтры</string>
     <string name="traffic_filter_all">Все</string>
+    <string name="traffic_domain_filter">Домен</string>
+    <string name="traffic_domain_search">Поиск доменов</string>
+    <string name="traffic_no_domains">Нет подходящих доменов</string>
+    <string name="traffic_rule_pick_domain">Выбрать домен из записей</string>
+    <string name="traffic_rule_domain_required">Перед сохранением добавьте домен. Регулярное выражение применяется только к подходящим доменам.</string>
     <string name="traffic_overview">Обзор</string>
     <string name="traffic_copy_curl">Копировать как cURL</string>
     <string name="traffic_rules_empty">Правил подмены нет. Нажмите +, чтобы добавить.</string>

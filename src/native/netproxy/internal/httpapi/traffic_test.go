@@ -213,6 +213,25 @@ func TestTrafficPreviewRequiresAuthentication(t *testing.T) {
 	}
 }
 
+func TestTrafficDomainQueries(t *testing.T) {
+	s := resourceFixture(t)
+	id, batch := strings.Repeat("A", 26), strings.Repeat("B", 26)
+	dir := filepath.Join(paths.New(s.options.ModuleDir).TrafficHistory(), batch)
+	resourceWriteFile(t, filepath.Join(dir, "batch.json"), `{"id":"`+batch+`","started_at":"2026-01-01T00:00:00Z"}`)
+	resourceWriteFile(t, filepath.Join(dir, "0000000000000001-"+id+".json"), `{"id":"`+id+`","host":"example.test:8080"}`)
+	s.traffic = traffic.New(paths.New(s.options.ModuleDir))
+	var domains []traffic.CaptureDomain
+	resourceAssertSuccess(t, s, http.MethodGet, trafficRoute+"domains?batch="+batch, "", "traffic.domains", &domains)
+	if len(domains) != 1 || domains[0].Host != "example.test" || domains[0].Count != 1 {
+		t.Fatalf("domains: %+v", domains)
+	}
+	var page traffic.HistoryPage
+	resourceAssertSuccess(t, s, http.MethodGet, trafficRoute+"page?host=example.test", "", "traffic.page", &page)
+	if len(page.Entries) != 1 || page.Entries[0].ID != id {
+		t.Fatalf("filtered page: %+v", page)
+	}
+}
+
 func TestTrafficBodyAuthenticationAndRanges(t *testing.T) {
 	s := resourceFixture(t)
 	id, batch := strings.Repeat("A", 26), strings.Repeat("B", 26)

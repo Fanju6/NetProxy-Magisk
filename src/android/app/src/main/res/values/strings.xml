@@ -7,6 +7,11 @@
     <string name="traffic_search">Search host or URL</string>
     <string name="traffic_no_matches">No sessions match these filters</string>
     <string name="traffic_filter_all">All</string>
+    <string name="traffic_domain_filter">Domain</string>
+    <string name="traffic_domain_search">Search domains</string>
+    <string name="traffic_no_domains">No captured domains match</string>
+    <string name="traffic_rule_pick_domain">Choose from captured domains</string>
+    <string name="traffic_rule_domain_required">Add a domain before saving. The URL regex only runs for matching domains.</string>
     <string name="traffic_overview">Overview</string>
     <string name="traffic_copy_curl">Copy as cURL</string>
     <string name="traffic_rules_empty">No rewrite rules. Tap + to create one.</string>

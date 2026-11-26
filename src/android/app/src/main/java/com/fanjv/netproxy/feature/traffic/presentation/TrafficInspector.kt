@@ -27,7 +27,11 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -40,9 +44,9 @@ import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -73,6 +77,7 @@ import com.fanjv.netproxy.feature.traffic.data.CapturedMessage
 import com.fanjv.netproxy.feature.traffic.data.RewriteMatch
 import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.Route
+import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
@@ -87,21 +92,10 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
     val detail = selection?.detail?.http
     val context = LocalContext.current
     val navigator = LocalNavigator.current
-    var tab by rememberSaveable(id) { mutableIntStateOf(0) }
-    var expanded by rememberSaveable(id, tab) { mutableStateOf(false) }
-    var pretty by rememberSaveable(id, tab) { mutableStateOf(true) }
-    var headerName by remember(id, tab) { mutableStateOf<String?>(null) }
-    var headerValue by remember(id, tab) { mutableStateOf("") }
-    val message = when (tab) { 1 -> detail?.request; 2 -> detail?.response; else -> null }
-    val body = message?.body
-    val json = body?.format == "text" && isJsonBody(body.contentType)
-    val formatted = remember(body, expanded) {
-        if (!expanded) null else body?.let { if (it.format == "base64") captureHex(it.data) else displayBody(it.data, it.contentType) }
-    }
-    val chunks = remember(expanded, body, pretty) {
-        if (!expanded || body == null || body.data.isEmpty()) emptyList()
-        else bodyChunks(if (pretty) formatted ?: body.data else body.data)
-    }
+    val pager = rememberPagerState { 4 }
+    val scope = rememberCoroutineScope()
+    var headerName by remember(id) { mutableStateOf<String?>(null) }
+    var headerValue by remember(id) { mutableStateOf("") }
     val auditIndices = remember(detail, state.rules.value) {
         detail?.rewrites.orEmpty().map { state.rules.value?.indexOfCapture(it) }
     }
@@ -136,86 +130,100 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
             Column(Modifier.fillMaxSize().padding(padding)) {
                 InspectorTabs(tabs = listOf(stringResource(R.string.traffic_overview), stringResource(R.string.traffic_request_detail),
                     stringResource(R.string.traffic_response_detail), stringResource(R.string.traffic_rewrite_tab)),
-                    selected = tab, select = { tab = it })
-                LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (tab == 0) {
-                        detail?.websocket?.let { websocket ->
-                            item {
-                                InspectCard {
-                                    Text(stringResource(R.string.traffic_ws_frames), style = MiuixTheme.textStyles.subtitle)
-                                    if (websocket.truncated) TruncatedNotice()
-                                }
-                            }
-                            items(websocket.frames.size) { index ->
-                                val frame = websocket.frames[index]
-                                InspectCard {
-                                    val direction = stringResource(if (frame.direction == "send") R.string.traffic_ws_sent else R.string.traffic_ws_received)
-                                    InspectRow(direction, "0x${frame.opcode.toString(16)} · ${frame.size} B")
-                                    frame.text?.let { CodeText(it) }
-                                    if (frame.truncated) TruncatedNotice()
-                                }
-                            }
-                        }
-                        detail?.let { item {
-                            InspectCard {
-                                Text(stringResource(R.string.traffic_full_url), style = MiuixTheme.textStyles.subtitle)
-                                CodeText(it.url)
-                                if (it.urlTruncated) TruncatedNotice()
-                            }
-                        } }
-                        item {
-                            InspectCard {
-                                InspectRow(stringResource(R.string.traffic_method), record.method)
-                                InspectRow(stringResource(R.string.traffic_http_status), record.status.takeIf { it > 0 }?.toString() ?: "—")
-                                InspectRow(stringResource(R.string.traffic_time), record.time)
-                                InspectRow(stringResource(R.string.traffic_duration), stringResource(R.string.traffic_milliseconds, record.durationMs))
-                                InspectRow(stringResource(R.string.traffic_tls), tlsLabel(record.tls))
-                                record.passthroughReason?.let {
-                                    InspectRow(stringResource(R.string.traffic_skip_reason), passthroughLabel(it))
-                                }
-                                InspectRow(stringResource(R.string.traffic_inbound), record.exit?.inbound ?: "netproxy-in")
-                                InspectRow(stringResource(R.string.traffic_outbound), record.outbound)
-                                record.exit?.let { exit ->
-                                    if (exit.chain.isNotEmpty()) InspectRow(stringResource(R.string.traffic_exit_chain),
-                                        exit.chain.joinToString(" → ") { "${it.tag} (${it.type})" })
-                                    exit.remote?.let { InspectRow(stringResource(R.string.traffic_remote), it) }
-                                }
-                                InspectSourceApp(record, selection.app)
-                                record.exit?.process?.let { InspectRow(stringResource(R.string.traffic_process), it) }
-                                InspectRow(stringResource(R.string.traffic_rewrite_result), when {
-                                    record.rewritten -> stringResource(R.string.traffic_rewritten)
-                                    record.rewrite != null -> stringResource(R.string.traffic_rule_unchanged)
-                                    else -> "—"
-                                })
-                            }
-                        }
+                    selected = pager.currentPage, select = { scope.launch { pager.animateScrollToPage(it) } })
+                HorizontalPager(state = pager, modifier = Modifier.weight(1f)) { tab ->
+                    var expanded by rememberSaveable(id) { mutableStateOf(false) }
+                    var pretty by rememberSaveable(id) { mutableStateOf(true) }
+                    val message = when (tab) { 1 -> detail?.request; 2 -> detail?.response; else -> null }
+                    val body = message?.body
+                    val json = body?.format == "text" && isJsonBody(body.contentType)
+                    val formatted = remember(body, expanded) {
+                        if (!expanded) null else body?.let { if (it.format == "base64") captureHex(it.data) else displayBody(it.data, it.contentType) }
                     }
-                    when {
-                        selection.loading -> item { InfiniteProgressIndicator() }
-                        selection.error != null -> item { TrafficErrorText(selection.error, R.string.traffic_detail_failed) }
-                        detail == null -> item { Text(stringResource(R.string.traffic_metadata_only)) }
-                        message != null -> {
-                            item {
-                                MessageHeaders(message) { name, value -> headerName = name; headerValue = value }
+                    val chunks = remember(expanded, body, pretty) {
+                        if (!expanded || body == null || body.data.isEmpty()) emptyList()
+                        else bodyChunks(if (pretty) formatted ?: body.data else body.data)
+                    }
+                    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (tab == 0) {
+                            detail?.websocket?.let { websocket ->
+                                item {
+                                    InspectCard {
+                                        Text(stringResource(R.string.traffic_ws_frames), style = MiuixTheme.textStyles.subtitle)
+                                        if (websocket.truncated) TruncatedNotice()
+                                    }
+                                }
+                                items(websocket.frames.size) { index ->
+                                    val frame = websocket.frames[index]
+                                    InspectCard {
+                                        val direction = stringResource(if (frame.direction == "send") R.string.traffic_ws_sent else R.string.traffic_ws_received)
+                                        InspectRow(direction, "0x${frame.opcode.toString(16)} · ${frame.size} B")
+                                        frame.text?.let { CodeText(it) }
+                                        if (frame.truncated) TruncatedNotice()
+                                    }
+                                }
                             }
-                            body?.let {
-                                if (it.format == "binary" || it.blob) {
-                                    item("media-$tab") { TrafficMedia(id, if (tab == 1) "request" else "response", it, viewModel) }
-                                } else {
-                                    item { BodyHeader(it, expanded, { expanded = !expanded }, formatted != it.data, pretty, { pretty = !pretty }) }
-                                    bodyContent(chunks, json && pretty)
+                            detail?.let { item {
+                                InspectCard {
+                                    Text(stringResource(R.string.traffic_full_url), style = MiuixTheme.textStyles.subtitle)
+                                    CodeText(it.url)
+                                    if (it.urlTruncated) TruncatedNotice()
+                                }
+                            } }
+                            item {
+                                InspectCard {
+                                    InspectRow(stringResource(R.string.traffic_method), record.method)
+                                    InspectRow(stringResource(R.string.traffic_http_status), record.status.takeIf { it > 0 }?.toString() ?: "—")
+                                    InspectRow(stringResource(R.string.traffic_time), record.time)
+                                    InspectRow(stringResource(R.string.traffic_duration), stringResource(R.string.traffic_milliseconds, record.durationMs))
+                                    InspectRow(stringResource(R.string.traffic_tls), tlsLabel(record.tls))
+                                    record.passthroughReason?.let {
+                                        InspectRow(stringResource(R.string.traffic_skip_reason), passthroughLabel(it))
+                                    }
+                                    InspectRow(stringResource(R.string.traffic_inbound), record.exit?.inbound ?: "netproxy-in")
+                                    InspectRow(stringResource(R.string.traffic_outbound), record.outbound)
+                                    record.exit?.let { exit ->
+                                        if (exit.chain.isNotEmpty()) InspectRow(stringResource(R.string.traffic_exit_chain),
+                                            exit.chain.joinToString(" → ") { "${it.tag} (${it.type})" })
+                                        exit.remote?.let { InspectRow(stringResource(R.string.traffic_remote), it) }
+                                    }
+                                    InspectSourceApp(record, selection.app)
+                                    record.exit?.process?.let { InspectRow(stringResource(R.string.traffic_process), it) }
+                                    InspectRow(stringResource(R.string.traffic_rewrite_result), when {
+                                        record.rewritten -> stringResource(R.string.traffic_rewritten)
+                                        record.rewrite != null -> stringResource(R.string.traffic_rule_unchanged)
+                                        else -> "—"
+                                    })
                                 }
                             }
                         }
-                        tab == 3 -> {
-                            if (detail.rewrites.isEmpty()) item { Text(stringResource(R.string.traffic_no_rewrites)) }
-                            items(detail.rewrites.size) { index ->
-                                RewriteAuditCard(detail.rewrites[index], record.status,
-                                    canEdit = auditIndices[index] != null && !state.busy) {
-                                    auditIndices[index]?.let {
-                                        viewModel.editRule(it)
-                                        navigator.push(Route.TrafficRuleEditor)
+                        when {
+                            selection.loading -> item { InfiniteProgressIndicator() }
+                            selection.error != null -> item { TrafficErrorText(selection.error, R.string.traffic_detail_failed) }
+                            detail == null -> item { Text(stringResource(R.string.traffic_metadata_only)) }
+                            message != null -> {
+                                item {
+                                    MessageHeaders(message) { name, value -> headerName = name; headerValue = value }
+                                }
+                                body?.let {
+                                    if (it.format == "binary" || it.blob) {
+                                        item("media-$tab") { TrafficMedia(id, if (tab == 1) "request" else "response", it, viewModel) }
+                                    } else {
+                                        item { BodyHeader(it, expanded, { expanded = !expanded }, formatted != it.data, pretty, { pretty = !pretty }) }
+                                        bodyContent(chunks, json && pretty)
+                                    }
+                                }
+                            }
+                            tab == 3 -> {
+                                if (detail.rewrites.isEmpty()) item { Text(stringResource(R.string.traffic_no_rewrites)) }
+                                items(detail.rewrites.size) { index ->
+                                    RewriteAuditCard(detail.rewrites[index], record.status,
+                                        canEdit = auditIndices[index] != null && !state.busy) {
+                                        auditIndices[index]?.let {
+                                            viewModel.editRule(it)
+                                            navigator.push(Route.TrafficRuleEditor)
+                                        }
                                     }
                                 }
                             }
@@ -257,8 +265,13 @@ private fun InspectorTabs(tabs: List<String>, selected: Int, select: (Int) -> Un
         ) {
             tabs.forEachIndexed { index, title ->
                 val active = index == selected
+                val requester = remember { BringIntoViewRequester() }
+                LaunchedEffect(active) {
+                    if (active) requester.bringIntoView()
+                }
                 Box(
                     Modifier.height(44.dp).widthIn(min = 64.dp)
+                        .bringIntoViewRequester(requester)
                         .selectable(active, role = Role.Tab) { select(index) },
                     contentAlignment = Alignment.Center,
                 ) {

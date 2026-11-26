@@ -52,12 +52,27 @@ func (s *Server) registerTraffic() {
 	s.trafficRoute("GET", "batches", "抓包批次", func(context.Context) (any, error) {
 		return s.traffic.Batches(), nil
 	})
-	s.route("GET "+trafficRoute+"page", 10*time.Second, false, func(_ context.Context, r *http.Request) (contract.Result, error) {
-		query, err := resourceQuery(r, "batch", "limit", "before", "after", "since")
+	s.route("GET "+trafficRoute+"domains", 10*time.Second, false, func(_ context.Context, r *http.Request) (contract.Result, error) {
+		query, err := resourceQuery(r, "batch")
 		if err != nil {
 			return contract.Result{}, err
 		}
-		request := traffic.PageRequest{Batch: query.Get("batch"), Limit: 50}
+		id := query.Get("batch")
+		if query.Has("batch") && !traffic.ValidRecordID(id) {
+			return contract.Result{}, invalid("抓包批次 ID 无效")
+		}
+		domains, ok := s.traffic.HistoryDomains(id)
+		if !ok {
+			return contract.Result{}, captureBatchNotFound()
+		}
+		return contract.Success("traffic.domains", "抓包域名统计", domains), nil
+	})
+	s.route("GET "+trafficRoute+"page", 10*time.Second, false, func(_ context.Context, r *http.Request) (contract.Result, error) {
+		query, err := resourceQuery(r, "batch", "limit", "before", "after", "since", "host")
+		if err != nil {
+			return contract.Result{}, err
+		}
+		request := traffic.PageRequest{Batch: query.Get("batch"), Host: query.Get("host"), Limit: 50}
 		if query.Has("batch") && !traffic.ValidRecordID(request.Batch) {
 			return contract.Result{}, invalid("抓包批次 ID 无效")
 		}

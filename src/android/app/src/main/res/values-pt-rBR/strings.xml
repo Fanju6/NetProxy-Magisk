@@ -7,6 +7,11 @@
     <string name="traffic_search">Pesquisar host ou URL</string>
     <string name="traffic_no_matches">Nenhuma sessão corresponde aos filtros</string>
     <string name="traffic_filter_all">Todos</string>
+    <string name="traffic_domain_filter">Domínio</string>
+    <string name="traffic_domain_search">Pesquisar domínios</string>
+    <string name="traffic_no_domains">Nenhum domínio capturado corresponde à busca</string>
+    <string name="traffic_rule_pick_domain">Escolher um domínio capturado</string>
+    <string name="traffic_rule_domain_required">Adicione um domínio antes de salvar. A expressão de URL só é aplicada aos domínios correspondentes.</string>
     <string name="traffic_overview">Visão geral</string>
     <string name="traffic_copy_curl">Copiar como cURL</string>
     <string name="traffic_rules_empty">Nenhuma regra de reescrita. Toque em + para criar.</string>

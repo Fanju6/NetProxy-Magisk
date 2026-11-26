@@ -21,6 +21,27 @@ import org.junit.rules.TemporaryFolder
 class TrafficRepositoryTest {
     @get:Rule val cacheDir = TemporaryFolder()
 
+    @Test fun capturedDomainsAndFilteredPagesUseBatchQueriesAndDoNotPolluteCache() = runBlocking {
+        val batch = "A".repeat(26)
+        val cache = CapturePageCache(cacheDir.root, Json)
+        var pages = 0
+        val repository = TrafficRepository(ModuleApiClient(TestApiTransport { request ->
+            if (request.path == "/traffic/domains") {
+                assertEquals(mapOf("batch" to batch), request.query)
+                apiSuccess("""[{"host":"example.test","count":2}]""")
+            } else {
+                pages++
+                assertEquals(mapOf("batch" to batch, "before" to "3") +
+                    if (pages == 1) mapOf("host" to "example.test") else emptyMap(), request.query)
+                apiSuccess("""{"entries":[],"batch":"$batch","oldest":"1"}""")
+            }
+        }), cache)
+        assertEquals(2, repository.domains(batch).single().count)
+        repository.page(batch, before = "3", oldest = "1", host = "example.test")
+        repository.page(batch, before = "3", oldest = "1")
+        assertEquals(2, pages)
+    }
+
     @Test fun rewriteRulesDefaultToEnabledAndPersistExplicitDisable() = runBlocking {
         val rule = """{"pattern":"/inspect","phase":"request","script":"return {}","domains":["example.test"]}"""
         var stored = """{"rules":[$rule]}"""

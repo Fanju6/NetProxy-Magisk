@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
@@ -39,6 +40,7 @@ type Batch struct {
 type savedRecord struct {
 	name      string
 	id        string
+	host      string
 	size      int64
 	sequence  uint64
 	mediaSize int64
@@ -115,6 +117,7 @@ func openHistory(layout paths.Layout) *historyStore {
 				_ = os.Remove(h.path(batch.ID, file.Name()))
 				continue
 			}
+			saved.host = historyHost(record.Host)
 			for _, side := range []string{"request", "response"} {
 				if body := bodyFor(record, side); body != nil && body.Blob {
 					blobs[mediaName(id, side)] = true
@@ -311,7 +314,7 @@ func (h *historyStore) appendPending(batch *savedBatch, pending pendingRecord) e
 	if err := provider.WriteAtomic(h.path(batch.ID, name), data, 0o600); err != nil {
 		return err
 	}
-	batch.records = append(batch.records, savedRecord{name, record.ID, size, batch.sequence, mediaSize})
+	batch.records = append(batch.records, savedRecord{name, record.ID, historyHost(record.Host), size, batch.sequence, mediaSize})
 	batch.Count++
 	batch.Size += size + mediaSize
 	batch.mediaSize += mediaSize
@@ -433,6 +436,7 @@ type HistoryPage struct {
 
 type PageRequest struct {
 	Batch         string
+	Host          string
 	Before, Since uint64
 	Incremental   bool
 	Limit         int
@@ -459,34 +463,89 @@ func (h *historyStore) page(request PageRequest) (HistoryPage, bool) {
 			return page, true
 		}
 		limit := min(MaxHistoryPage, max(1, request.Limit))
-		low, high := 0, len(batch.records)
 		page.Oldest = strconv.FormatUint(batch.records[0].sequence, 10)
+		records := batch.records
+		if request.Host != "" {
+			host := historyHost(request.Host)
+			records = nil
+			for _, record := range batch.records {
+				if record.host == host {
+					records = append(records, record)
+				}
+			}
+		}
+		low, high := 0, len(records)
 		if request.Incremental {
-			low, _ = slices.BinarySearchFunc(batch.records, request.Since, compareSequence)
-			for low < high && batch.records[low].sequence <= request.Since {
+			low, _ = slices.BinarySearchFunc(records, request.Since, compareSequence)
+			for low < high && records[low].sequence <= request.Since {
 				low++
 			}
 			high = min(high, low+limit)
 		} else {
 			if request.Before != 0 {
-				high, _ = slices.BinarySearchFunc(batch.records, request.Before, compareSequence)
+				high, _ = slices.BinarySearchFunc(records, request.Before, compareSequence)
 			}
 			low = max(0, high-limit)
 			if low > 0 {
-				page.Before = strconv.FormatUint(batch.records[low].sequence, 10)
+				page.Before = strconv.FormatUint(records[low].sequence, 10)
 			}
 		}
-		if high > 0 {
-			page.Since = strconv.FormatUint(batch.records[high-1].sequence, 10)
+		if request.Host != "" && request.Before == 0 && high == len(records) {
+			page.Since = strconv.FormatUint(batch.records[len(batch.records)-1].sequence, 10)
+		} else if high > 0 {
+			page.Since = strconv.FormatUint(records[high-1].sequence, 10)
 		}
 		for i := high - 1; i >= low; i-- {
-			if entry, ok := h.readEntry(batch, batch.records[i]); ok {
+			if entry, ok := h.readEntry(batch, records[i]); ok {
 				page.Entries = append(page.Entries, entry)
 			}
 		}
 		return page, true
 	}
 	return page, request.Batch == ""
+}
+
+type CaptureDomain struct {
+	Host  string `json:"host"`
+	Count int    `json:"count"`
+}
+
+func (c *Controller) HistoryDomains(id string) ([]CaptureDomain, bool) {
+	if c.history == nil {
+		return []CaptureDomain{}, id == ""
+	}
+	return c.history.domains(id)
+}
+
+func (h *historyStore) domains(id string) ([]CaptureDomain, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	domains := []CaptureDomain{}
+	for i := len(h.batches) - 1; i >= 0; i-- {
+		batch := h.batches[i]
+		if id != "" && batch.ID != id {
+			continue
+		}
+		counts := map[string]int{}
+		for _, record := range batch.records {
+			if record.host != "" {
+				counts[record.host]++
+			}
+		}
+		for host, count := range counts {
+			domains = append(domains, CaptureDomain{Host: host, Count: count})
+		}
+		slices.SortFunc(domains, func(a, b CaptureDomain) int { return strings.Compare(a.Host, b.Host) })
+		return domains, true
+	}
+	return domains, id == ""
+}
+
+func historyHost(host string) string {
+	if name, _, err := net.SplitHostPort(host); err == nil {
+		host = name
+	}
+	return canonicalHost(strings.TrimSuffix(strings.TrimPrefix(host, "["), "]"))
 }
 
 func compareSequence(record savedRecord, sequence uint64) int {

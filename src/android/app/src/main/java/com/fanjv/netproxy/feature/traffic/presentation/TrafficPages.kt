@@ -34,6 +34,7 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -269,6 +270,7 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
     var outbound by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmClear by rememberSaveable { mutableStateOf(false) }
     var deleteBatch by rememberSaveable { mutableStateOf<String?>(null) }
+    var showDomains by rememberSaveable { mutableStateOf(false) }
     var grouping by rememberSaveable { mutableStateOf(SessionGrouping.None) }
     var collapsed by remember(grouping) { mutableStateOf(emptySet<String>()) }
     val records = state.records.value.orEmpty()
@@ -291,7 +293,7 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
         records.filter { it.matchesSession(query, method, statusClass, tls, rewrittenOnly, app, outbound) }
     }
     val groups = remember(visible, grouping) { visible.groupSessions(grouping) }
-    val listState = rememberLazyListState()
+    val listState = key(state.selectedBatch, state.selectedDomain) { rememberLazyListState() }
     val before = state.page?.before
     val running = state.status.value?.running == true
     LaunchedEffect(listState, before, visible.isNotEmpty(), state.busy, state.loadingOlder, state.olderError) {
@@ -325,7 +327,8 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
             deleteBatch = state.selectedBatch
         },
         TopBarMenuAction(stringResource(R.string.traffic_clear),
-            (records.isNotEmpty() || historical.isNotEmpty()) && !state.busy) { confirmClear = true },
+            (records.isNotEmpty() || state.batches.value.orEmpty().any { it.count > 0 } ||
+                (state.status.value?.count ?: 0) > 0 || historical.isNotEmpty()) && !state.busy) { confirmClear = true },
     )
     TopBarMoreMenu(groupingActions + batchActions, stringResource(R.string.more_options)) { menu ->
         TrafficFrame(R.string.traffic_records, stringResource(R.string.traffic_record_count, records.size),
@@ -342,6 +345,10 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
                     useLabelAsPlaceholder = true, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
                 Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 3.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val domainLabel = state.selectedDomain ?: stringResource(R.string.traffic_domain_filter)
+                    FilterChip("$domainLabel ▾", state.selectedDomain != null, Modifier.clickable(enabled = !state.busy) {
+                        showDomains = true
+                    })
                     FilterDropdown(R.string.traffic_method, methods, method) { method = it }
                     FilterDropdown(R.string.traffic_http_status, (1..5).map { "${it}xx" }, statusClass?.let { "${it}xx" }) {
                         statusClass = it?.firstOrNull()?.digitToInt()
@@ -357,7 +364,7 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
                 val issue = state.records.error ?: state.failure
                 if (visible.isEmpty() && before == null) ContentStatus(PaddingValues(0.dp), when {
                     issue != null -> trafficError(issue, R.string.traffic_read_failed)
-                    records.isNotEmpty() -> stringResource(R.string.traffic_no_matches)
+                    records.isNotEmpty() || state.selectedDomain != null -> stringResource(R.string.traffic_no_matches)
                     else -> stringResource(R.string.traffic_empty)
                 }, loading = state.loading)
                 else LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
@@ -396,6 +403,8 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
             }
         }
     }
+    if (showDomains) CaptureDomainPicker(viewModel, state.page?.batch ?: state.selectedBatch, state.selectedDomain,
+        allowAll = true, onDismiss = { showDomains = false }, choose = viewModel::selectDomain)
     TrafficConfirmation(confirmClear, R.string.traffic_clear, R.string.traffic_clear_prompt,
         { confirmClear = false }, { confirmClear = false; viewModel.clear() })
     TrafficConfirmation(deleteBatch != null, R.string.traffic_delete_batch, R.string.traffic_delete_batch_prompt,
