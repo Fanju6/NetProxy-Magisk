@@ -766,8 +766,8 @@
     <string name="traffic_bytes">%1$d B</string>
     <string name="traffic_show_body">Expandir corpo</string>
     <string name="traffic_hide_body">Recolher corpo</string>
-    <string name="traffic_show_raw">Ver JSON bruto</string>
-    <string name="traffic_show_pretty">Formatar JSON</string>
+    <string name="traffic_show_raw">Ver corpo bruto</string>
+    <string name="traffic_show_pretty">Formatar corpo</string>
     <string name="traffic_no_rewrites">Nenhuma regra de reescrita corresponde à sessão.</string>
     <string name="traffic_matched_rule">Regra %1$d</string>
     <string name="traffic_rule_shadowed">Uma regra anterior teve prioridade</string>
@@ -787,7 +787,11 @@
     <string name="inbound_sniff_destination">Usar domínios detectados nas conexões via proxy</string>
     <string name="inbound_sniff_destination_hint">Conecta ao domínio detectado em vez de usar o endereço IP do app. O tráfego direto não muda.</string>
     <string name="traffic_capture_apps">Apps para captura</string>
-    <string name="traffic_capture_apps_summary">Escolha os apps para captura. Sem seleção, todos os apps são capturados.</string>
+    <string name="traffic_capture_apps_summary">Escolha quais apps serão capturados.</string>
+    <string name="traffic_capture_app_mode">Modo de captura</string>
+    <string name="traffic_capture_app_all_summary">Capturar todos os apps.</string>
+    <string name="traffic_capture_app_blacklist_summary">Capturar todos os apps, exceto os selecionados abaixo.</string>
+    <string name="traffic_capture_app_whitelist_summary">Capturar apenas os apps selecionados abaixo. Uma lista vazia não captura nenhum app.</string>
     <string name="traffic_app_user">Usuário do Android</string>
     <string name="inbound_ipv6">IPv6</string>
     <string name="inbound_ipv6_hint">Desative para que o tráfego gerenciado use apenas IPv4.</string>
@@ -820,4 +824,21 @@
     <string name="traffic_user_ca_remove_prompt">Remove apenas as cópias instaladas pelo NetProxy para usuários do Android. Não altera a confiança do sistema ou certificados instalados manualmente. Desative a descriptografia primeiro.</string>
     <string name="traffic_apps_select_all">Selecionar todos os apps exibidos</string>
     <string name="traffic_apps_clear_selection">Limpar seleção</string>
+    <string name="traffic_overlay">Prévia flutuante da captura</string>
+    <string name="traffic_overlay_summary">Mostrar registros recentes ao sair do NetProxy.</string>
+    <string name="traffic_overlay_permission">Permitir prévia flutuante</string>
+    <string name="traffic_overlay_explain">O NetProxy precisa de permissão para aparecer sobre outros apps e mostrar registros em tempo real. A prévia não aparece na tela de bloqueio.</string>
+    <string name="traffic_overlay_open_settings">Abrir configurações</string>
+    <string name="traffic_overlay_close">Fechar prévia da captura</string>
+    <string name="traffic_media_sizes">Retido: %1$d B · Original: %2$d B</string>
+    <string name="traffic_media_truncated">Conteúdo truncado. Salvar e compartilhar inclui apenas os bytes retidos.</string>
+    <string name="traffic_media_unavailable">Nenhum byte de mídia foi retido.</string>
+    <string name="traffic_media_load">Carregar corpo retido</string>
+    <string name="traffic_media_loading">Carregando corpo…</string>
+    <string name="traffic_media_failed">Não foi possível abrir ou exportar o corpo retido.</string>
+    <string name="traffic_media_preview_unavailable">Não há prévia para este corpo.</string>
+    <string name="traffic_media_save">Salvar arquivo</string>
+    <string name="traffic_media_share">Compartilhar arquivo</string>
+    <string name="traffic_media_play">Reproduzir</string>
+    <string name="traffic_media_pause">Pausar</string>
 </resources>

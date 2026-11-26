@@ -796,8 +796,8 @@
     <string name="traffic_bytes">%1$d 字节</string>
     <string name="traffic_show_body">展开正文</string>
     <string name="traffic_hide_body">折叠正文</string>
-    <string name="traffic_show_raw">显示原始 JSON</string>
-    <string name="traffic_show_pretty">格式化 JSON</string>
+    <string name="traffic_show_raw">显示原始正文</string>
+    <string name="traffic_show_pretty">格式化正文</string>
     <string name="traffic_no_rewrites">该会话没有匹配的重写规则。</string>
     <string name="traffic_matched_rule">匹配规则 %1$d</string>
     <string name="traffic_rule_shadowed">已由前序规则优先处理</string>
@@ -817,7 +817,11 @@
     <string name="inbound_sniff_destination">走代理的连接按嗅探到的域名覆盖目标地址</string>
     <string name="inbound_sniff_destination_hint">通过代理访问嗅探到的域名，而不是应用提供的 IP 地址。直连流量不受影响。</string>
     <string name="traffic_capture_apps">抓包应用</string>
-    <string name="traffic_capture_apps_summary">选择要抓包的应用。不选择则抓取所有应用。</string>
+    <string name="traffic_capture_apps_summary">选择要抓包的应用范围。</string>
+    <string name="traffic_capture_app_mode">抓包模式</string>
+    <string name="traffic_capture_app_all_summary">抓取全部应用。</string>
+    <string name="traffic_capture_app_blacklist_summary">抓取下方选中应用之外的全部应用。</string>
+    <string name="traffic_capture_app_whitelist_summary">仅抓取下方选中的应用。名单为空时不抓取任何应用。</string>
     <string name="traffic_app_user">Android 用户</string>
     <string name="inbound_ipv6">IPv6</string>
     <string name="inbound_ipv6_hint">关闭后，受管流量仅使用 IPv4。</string>
@@ -850,4 +854,21 @@
     <string name="traffic_user_ca_remove_prompt">仅移除 NetProxy 为 Android 用户安装的副本，不影响系统信任或手动安装的证书。请先关闭解密。</string>
     <string name="traffic_apps_select_all">全选显示的应用</string>
     <string name="traffic_apps_clear_selection">清空选择</string>
+    <string name="traffic_overlay">抓包悬浮窗</string>
+    <string name="traffic_overlay_summary">离开 NetProxy 后悬浮显示最新抓包记录。</string>
+    <string name="traffic_overlay_permission">允许显示抓包悬浮窗</string>
+    <string name="traffic_overlay_explain">NetProxy 需要在其他应用上层显示的权限，才能实时显示抓包预览。锁屏时不会显示。</string>
+    <string name="traffic_overlay_open_settings">打开设置</string>
+    <string name="traffic_overlay_close">关闭抓包悬浮窗</string>
+    <string name="traffic_media_sizes">已保留：%1$d B · 原始：%2$d B</string>
+    <string name="traffic_media_truncated">已截断。保存或分享仅包含已保留的字节。</string>
+    <string name="traffic_media_unavailable">未保留媒体正文。</string>
+    <string name="traffic_media_load">加载已保留的正文</string>
+    <string name="traffic_media_loading">正在加载正文…</string>
+    <string name="traffic_media_failed">无法打开或导出已保留的正文。</string>
+    <string name="traffic_media_preview_unavailable">此正文无法预览。</string>
+    <string name="traffic_media_save">保存文件</string>
+    <string name="traffic_media_share">分享文件</string>
+    <string name="traffic_media_play">播放</string>
+    <string name="traffic_media_pause">暂停</string>
 </resources>

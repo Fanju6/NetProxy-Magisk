@@ -59,23 +59,32 @@ func (s *session) proxyHTTP(w http.ResponseWriter, r *http.Request, now time.Tim
 	}
 	matches, requestMatch, responseMatch := matchingRules(rules, candidates, target)
 	detail.Rewrites = matches
+	media := s.controller.mediaFactory(s)
 	var capturedRequest *captureReader
 	if r.Body != nil && r.Body != http.NoBody {
 		capturedRequest = &captureReader{ReadCloser: r.Body}
+		capturedRequest.body.initMedia(requestHeaders, media)
 		request.Body = capturedRequest
 	}
-	capturedResponse := &captureWriter{ResponseWriter: w, message: &detail.Response, head: r.Method == http.MethodHead}
+	capturedResponse := &captureWriter{ResponseWriter: w, message: &detail.Response, head: r.Method == http.MethodHead, factory: media}
 	w = capturedResponse
 	defer func() {
+		var requestMedia *mediaSpool
 		if capturedRequest != nil {
+			requestMedia = capturedRequest.body.finishMedia()
 			detail.Request.setBody(capturedRequest.body.body(requestHeaders, r.ContentLength,
 				r.ContentLength < 0 && !capturedRequest.eof.Load()))
 		} else {
 			detail.Request.setBody((&bodyCapture{}).body(requestHeaders, 0, false))
 		}
-		detail.Response.setBody(capturedResponse.body.body(w.Header(), 0, capturedResponse.failed))
+		responseMedia := capturedResponse.body.finishMedia()
+		var responseLength int64
+		if !capturedResponse.head && entry.Status >= 200 && entry.Status != http.StatusNoContent && entry.Status != http.StatusNotModified {
+			responseLength, _ = strconv.ParseInt(w.Header().Get("Content-Length"), 10, 64)
+		}
+		detail.Response.setBody(capturedResponse.body.body(w.Header(), responseLength, capturedResponse.failed))
 		entry.DurationMS = time.Since(now).Milliseconds()
-		s.controller.recordDetail(s, entry, detail)
+		s.controller.recordMediaDetail(s, entry, detail, requestMedia, responseMedia)
 	}()
 	request.RequestURI = ""
 	request.Host = request.URL.Host

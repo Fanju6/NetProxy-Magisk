@@ -43,6 +43,11 @@ type Status struct {
 	Count   int  `json:"count"`
 }
 
+type Preview struct {
+	Status
+	Entries []Entry `json:"entries"`
+}
+
 type Controller struct {
 	mu            sync.Mutex
 	layout        paths.Layout
@@ -52,10 +57,12 @@ type Controller struct {
 	entries       [maxEntries]Record
 	detailBytes   int
 	count         int
+	recorded      int
 	next          int
 	mitm          *mitmState
 	upstreamRoots *x509.CertPool
 	apps          map[string]struct{}
+	appMode       string
 	owners        androidOwners
 	pinned        []PinnedBypass
 	history       *historyStore
@@ -84,6 +91,19 @@ func (c *Controller) Status() Status {
 func (c *Controller) Entries() []Entry {
 	entries, _ := c.BatchEntries("")
 	return entries
+}
+
+func (c *Controller) Preview() Preview {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	preview := Preview{Entries: []Entry{}}
+	if c.session != nil {
+		preview.Status = Status{Running: true, Count: c.recorded}
+		for i := 0; i < min(c.count, 3); i++ {
+			preview.Entries = append(preview.Entries, c.entries[(c.next+maxEntries-1-i)%maxEntries].Entry)
+		}
+	}
+	return preview
 }
 
 func (c *Controller) BatchEntries(id string) ([]Entry, bool) {
@@ -120,6 +140,11 @@ func (c *Controller) Record(id string) (Record, bool) {
 		record := c.entries[(c.next+maxEntries-1-i)%maxEntries]
 		if record.ID == id {
 			c.mu.Unlock()
+			if record.hasMedia && c.history != nil {
+				if persisted, ok := c.history.record(id); ok {
+					return persisted, true
+				}
+			}
 			return record, true
 		}
 	}
@@ -174,6 +199,10 @@ func (c *Controller) record(owner *session, entry Entry) {
 }
 
 func (c *Controller) recordDetail(owner *session, entry Entry, detail *HTTPDetail) {
+	c.recordMediaDetail(owner, entry, detail, nil, nil)
+}
+
+func (c *Controller) recordMediaDetail(owner *session, entry Entry, detail *HTTPDetail, request, response *mediaSpool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.session == owner {
@@ -185,19 +214,23 @@ func (c *Controller) recordDetail(owner *session, entry Entry, detail *HTTPDetai
 			c.count--
 		}
 		entry.ID = rand.Text()
-		record := Record{Entry: entry, HTTP: detail}
+		record := Record{Entry: entry, HTTP: detail, hasMedia: request != nil || response != nil}
 		c.entries[c.next] = record
 		if c.writer != nil {
 			select {
-			case c.writer.queue <- record:
+			case c.writer.queue <- pendingRecord{record, request, response}:
+				request, response = nil, nil
 			default:
 				c.writer.dropped.Store(true)
 			}
 		}
 		c.next = (c.next + 1) % maxEntries
 		c.count++
+		c.recorded++
 		c.detailBytes += size
 	}
+	request.discard()
+	response.discard()
 }
 
 func (c *Controller) Rules() ([]Rule, error) {
@@ -381,4 +414,5 @@ func (c *Controller) finishBatchLocked() {
 
 func (c *Controller) clearLocked() {
 	c.entries, c.count, c.next, c.detailBytes = [maxEntries]Record{}, 0, 0, 0
+	c.recorded = 0
 }

@@ -20,6 +20,7 @@ import com.fanjv.netproxy.feature.inbound.data.InboundRepository
 import com.fanjv.netproxy.feature.settings.data.ConfigRepository
 import com.fanjv.netproxy.feature.theme.presentation.ThemeManager
 import com.fanjv.netproxy.feature.traffic.data.TrafficRepository
+import com.fanjv.netproxy.feature.traffic.presentation.CaptureOverlay
 
 /** 应用级依赖容器，保持 Repository 与 HTTP 客户端共享。 */
 internal class AppContainer(context: Context) {
@@ -38,6 +39,7 @@ internal class AppContainer(context: Context) {
     val inboundRepository = InboundRepository(configRepository, serviceRepository)
     val logRepository = LogRepository(apiClient, appContext)
     val trafficRepository = TrafficRepository(apiClient, appContext)
+    val captureOverlay = CaptureOverlay(appContext, trafficRepository)
     val moduleEnvironment = AndroidModuleEnvironment(appContext, apiClient)
     val nodeImportStore = NodeImportStore(appContext)
     val appPackageRepository = AppPackageRepository(apiClient)

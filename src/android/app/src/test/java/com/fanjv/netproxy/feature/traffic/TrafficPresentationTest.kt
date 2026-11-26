@@ -12,6 +12,8 @@ import com.fanjv.netproxy.feature.traffic.presentation.SessionGrouping
 import com.fanjv.netproxy.feature.traffic.presentation.asCurl
 import com.fanjv.netproxy.feature.traffic.presentation.bodyChunks
 import com.fanjv.netproxy.feature.traffic.presentation.captureAppGroups
+import com.fanjv.netproxy.feature.traffic.presentation.captureHex
+import com.fanjv.netproxy.feature.traffic.presentation.captureMediaName
 import com.fanjv.netproxy.feature.traffic.presentation.displayBody
 import com.fanjv.netproxy.feature.traffic.presentation.groupSessions
 import com.fanjv.netproxy.feature.traffic.presentation.matchesSession
@@ -88,6 +90,14 @@ class TrafficPresentationTest {
         assertEquals("{\n    \"ok\": true\n}", displayBody("{\"ok\":true}", "application/problem+json; charset=utf-8"))
         assertEquals("{invalid", displayBody("{invalid", "application/json"))
         assertEquals("{\"ok\":true}", displayBody("{\"ok\":true}", "text/plain"))
+    }
+
+    @Test fun captureMediaPresentationDoesNotRenderMarkupOrTrustRemotePaths() {
+        assertEquals("file name.png", captureMediaName("../../file name.png", "png"))
+        assertEquals("capture.mp4", captureMediaName("..", "mp4"))
+        assertEquals("00 7f ff", captureHex("AH//"))
+        assertEquals("order = test file\nempty = ", displayBody("order=test+file&empty=", "application/x-www-form-urlencoded"))
+        assertEquals("<svg>\n<path/>\n</svg>", displayBody("<svg><path/></svg>", "image/svg+xml"))
     }
 
     @Test fun curlQuotesArgumentsAndStreamsEncodedBodyWithoutContentLength() {

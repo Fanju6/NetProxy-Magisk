@@ -7,6 +7,9 @@ interface CaptureBody {
   content_encoding?: string
   decoded?: boolean
   truncated: boolean
+  blob?: boolean
+  filename?: string
+  content_range?: string
 }
 
 interface CaptureMessage {
@@ -97,9 +100,24 @@ function copy(label: string, value: string) {
 
 export function formatCaptureBody(data: string, type?: string): string {
   const mime = type?.split(';', 1)[0].trim().toLowerCase()
-  if (mime !== 'application/json' && !mime?.endsWith('+json')) return data
   try {
-    return JSON.stringify(JSON.parse(data), null, 2)
+    if (mime === 'application/json' || mime?.endsWith('+json')) return JSON.stringify(JSON.parse(data), null, 2)
+    if (mime === 'application/x-www-form-urlencoded') {
+      return Array.from(new URLSearchParams(data), ([key, value]) => `${key} = ${value}`).join('\n')
+    }
+    if (mime && (['text/html', 'text/xml', 'application/xml', 'image/svg+xml'].includes(mime) || mime.endsWith('+xml'))) {
+      return data.replace(/>\s*(?=<)/g, '>\n')
+    }
+    return data
+  } catch {
+    return data
+  }
+}
+
+export function captureHex(data: string): string {
+  try {
+    return Array.from(atob(data), (value, index) =>
+      `${index ? index % 16 === 0 ? '\n' : ' ' : ''}${value.charCodeAt(0).toString(16).padStart(2, '0')}`).join('')
   } catch {
     return data
   }
@@ -126,20 +144,23 @@ function message(title: string, data: CaptureMessage) {
   const body = data.body
   const payload = section(['正文', body.content_type, body.size === undefined ? '' : `${body.size} 字节`,
     body.content_encoding, body.decoded ? '已解压' : '', body.format === 'base64' ? 'Base64' : '', body.truncated ? '已截断' : ''].filter(Boolean).join(' · '))
-  if (body.truncated) line(payload, '已捕获大小', body.captured_size)
-  if (!body.data) payload.append(element('p', '没有正文'))
+  if (body.truncated || body.blob) line(payload, '已捕获大小', body.captured_size)
+  line(payload, '文件名', body.filename)
+  line(payload, '响应分段', body.content_range)
+  if (body.blob) payload.append(element('p', '二进制正文已保存在本地；可在 Android 管理器中预览或导出已保留的字节。'))
+  else if (!body.data) payload.append(element('p', body.format === 'binary' ? '未保留二进制正文' : '没有正文'))
   else {
     payload.addEventListener('toggle', () => {
       if (!payload.open || payload.querySelector('pre')) return
-      const pretty = body.format === 'text' ? formatCaptureBody(body.data, body.content_type) : body.data
+      const pretty = body.format === 'text' ? formatCaptureBody(body.data, body.content_type) : captureHex(body.data)
       const code = element('pre', pretty)
       if (pretty !== body.data) {
-        const toggle = element('button', '显示原始 JSON')
+        const toggle = element('button', '显示原始正文')
         toggle.type = 'button'
         toggle.addEventListener('click', () => {
           const raw = code.textContent === pretty
           code.textContent = raw ? body.data : pretty
-          toggle.textContent = raw ? '格式化 JSON' : '显示原始 JSON'
+          toggle.textContent = raw ? '格式化正文' : '显示原始正文'
         })
         payload.append(toggle)
       }

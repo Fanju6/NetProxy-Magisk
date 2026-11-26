@@ -766,8 +766,8 @@
     <string name="traffic_bytes">%1$d Б</string>
     <string name="traffic_show_body">Развернуть тело</string>
     <string name="traffic_hide_body">Свернуть тело</string>
-    <string name="traffic_show_raw">Исходный JSON</string>
-    <string name="traffic_show_pretty">Форматировать JSON</string>
+    <string name="traffic_show_raw">Исходное тело</string>
+    <string name="traffic_show_pretty">Форматировать тело</string>
     <string name="traffic_no_rewrites">Нет подходящих правил перезаписи.</string>
     <string name="traffic_matched_rule">Правило %1$d</string>
     <string name="traffic_rule_shadowed">Сработало более раннее правило</string>
@@ -787,7 +787,11 @@
     <string name="inbound_sniff_destination">Использовать обнаруженные домены для прокси</string>
     <string name="inbound_sniff_destination_hint">Подключаться к обнаруженному домену вместо IP-адреса приложения. Прямой трафик не меняется.</string>
     <string name="traffic_capture_apps">Приложения для перехвата</string>
-    <string name="traffic_capture_apps_summary">Выберите приложения для перехвата. Если ничего не выбрано, перехватываются все приложения.</string>
+    <string name="traffic_capture_apps_summary">Выберите, какие приложения перехватывать.</string>
+    <string name="traffic_capture_app_mode">Режим перехвата</string>
+    <string name="traffic_capture_app_all_summary">Перехватывать все приложения.</string>
+    <string name="traffic_capture_app_blacklist_summary">Перехватывать все приложения, кроме выбранных ниже.</string>
+    <string name="traffic_capture_app_whitelist_summary">Перехватывать только выбранные ниже приложения. Пустой список отключает перехват для всех приложений.</string>
     <string name="traffic_app_user">Пользователь Android</string>
     <string name="inbound_ipv6">IPv6</string>
     <string name="inbound_ipv6_hint">Отключите, чтобы управляемый трафик использовал только IPv4.</string>
@@ -820,4 +824,21 @@
     <string name="traffic_user_ca_remove_prompt">Удаляет только копии, установленные NetProxy для пользователей Android. Системное доверие и установленные вручную сертификаты не изменяются. Сначала отключите расшифровку.</string>
     <string name="traffic_apps_select_all">Выбрать все показанные приложения</string>
     <string name="traffic_apps_clear_selection">Очистить выбор</string>
+    <string name="traffic_overlay">Плавающее окно захвата</string>
+    <string name="traffic_overlay_summary">Показывать последние записи после выхода из NetProxy.</string>
+    <string name="traffic_overlay_permission">Разрешить плавающее окно</string>
+    <string name="traffic_overlay_explain">Чтобы показывать новые записи поверх других приложений, NetProxy требуется разрешение. На экране блокировки окно не отображается.</string>
+    <string name="traffic_overlay_open_settings">Открыть настройки</string>
+    <string name="traffic_overlay_close">Закрыть окно захвата</string>
+    <string name="traffic_media_sizes">Сохранено: %1$d Б · Исходный размер: %2$d Б</string>
+    <string name="traffic_media_truncated">Тело усечено. Сохранение и отправка включают только сохранённые байты.</string>
+    <string name="traffic_media_unavailable">Данные медиафайла не сохранены.</string>
+    <string name="traffic_media_load">Загрузить сохранённое тело</string>
+    <string name="traffic_media_loading">Загрузка тела…</string>
+    <string name="traffic_media_failed">Не удалось открыть или экспортировать данные.</string>
+    <string name="traffic_media_preview_unavailable">Предпросмотр этого тела недоступен.</string>
+    <string name="traffic_media_save">Сохранить файл</string>
+    <string name="traffic_media_share">Поделиться файлом</string>
+    <string name="traffic_media_play">Воспроизвести</string>
+    <string name="traffic_media_pause">Пауза</string>
 </resources>

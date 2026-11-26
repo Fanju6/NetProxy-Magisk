@@ -1,5 +1,6 @@
 package com.fanjv.netproxy
 
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
@@ -75,6 +76,7 @@ import com.fanjv.netproxy.feature.traffic.presentation.TrafficRulesScreen
 import com.fanjv.netproxy.feature.traffic.presentation.TrafficRuleEditorScreen
 import com.fanjv.netproxy.feature.traffic.presentation.TrafficHttpsScreen
 import com.fanjv.netproxy.feature.traffic.presentation.TrafficViewModel
+import com.fanjv.netproxy.feature.traffic.presentation.CaptureOverlay
 import com.fanjv.netproxy.feature.inbound.presentation.InboundSettingsScreen
 import com.fanjv.netproxy.feature.settings.presentation.NetworkMatchingScreen
 import com.fanjv.netproxy.feature.routing.presentation.RoutingRulesScreen
@@ -118,9 +120,28 @@ import top.yukonga.miuix.kmp.theme.ThemeColorSpec
 import top.yukonga.miuix.kmp.theme.ThemePaletteStyle
 
 class MainActivity : ComponentActivity() {
+    private val captureOverlay get() = (application as NetProxyApplication).container.captureOverlay
+    private var showCaptureRecords by mutableStateOf(false)
+
+    override fun onStart() {
+        super.onStart()
+        captureOverlay.leaveBackground()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations) captureOverlay.enterBackground()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.action == CaptureOverlay.OpenRecords) showCaptureRecords = true
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         setTheme(R.style.Theme_NetProxy)
         super.onCreate(savedInstanceState)
+        showCaptureRecords = savedInstanceState == null && intent.action == CaptureOverlay.OpenRecords
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -167,7 +188,7 @@ class MainActivity : ComponentActivity() {
                     paletteStyle = paletteStyle,
                     colorSpec = colorSpec,
                 ) {
-                    NetProxyApp(themeViewModel)
+                    NetProxyApp(themeViewModel, showCaptureRecords) { showCaptureRecords = false }
                 }
             }
         }
@@ -175,7 +196,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
+internal fun NetProxyApp(themeViewModel: ThemeViewModel, showCaptureRecords: Boolean, onCaptureRecordsOpened: () -> Unit) {
     val navigator = rememberNavigator(Main)
     val catalogNodesViewModel: CatalogNodesViewModel = netProxyViewModel()
     val moduleAccess: ModuleAccessViewModel = netProxyViewModel()
@@ -183,6 +204,13 @@ internal fun NetProxyApp(themeViewModel: ThemeViewModel) {
     val availability by moduleAccess.state.collectAsStateWithLifecycle()
     var reconnect by rememberSaveable { mutableStateOf(false) }
     val overlayBackdrop = rememberBlurBackdrop()
+
+    LaunchedEffect(showCaptureRecords, availability?.available) {
+        if (showCaptureRecords && availability?.available == true) {
+            if (navigator.backStack.lastOrNull() != Route.TrafficSessions) navigator.push(Route.TrafficSessions)
+            onCaptureRecordsOpened()
+        }
+    }
 
     LifecycleResumeEffect(Unit) {
         moduleAccess.refresh()

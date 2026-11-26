@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -42,6 +43,11 @@ func TestTrafficAppsContract(t *testing.T) {
 	}
 	if policy.DisableQUIC == nil || *policy.DisableQUIC {
 		t.Fatalf("保存名单覆盖了 QUIC 偏好: %+v", policy)
+	}
+	resourceAssertSuccess(t, s, http.MethodPut, target, `{"mode":"blacklist","blacklist":["0:app.example"],"whitelist":["10:app.example"]}`, "traffic.apps_saved", &policy)
+	resourceAssertSuccess(t, s, http.MethodPut, target, `{"apps":[],"disable_quic":true}`, "traffic.apps_saved", &policy)
+	if policy.Mode != "blacklist" || len(policy.Blacklist) != 1 || len(policy.Whitelist) != 1 || !*policy.DisableQUIC {
+		t.Fatalf("旧版客户端修改 QUIC 时覆盖了模式或名单: %+v", policy)
 	}
 }
 
@@ -168,5 +174,59 @@ func TestTrafficDetailRequiresAuthenticationAndValidID(t *testing.T) {
 	w, result := resourceRequest(t, s, http.MethodGet, target+"?id="+strings.Repeat("A", 26), "")
 	if w.Code != http.StatusNotFound || result.Code != "traffic.record_not_found" {
 		t.Fatalf("missing record: %d %s", w.Code, result.Code)
+	}
+}
+
+func TestTrafficPreviewRequiresAuthentication(t *testing.T) {
+	s := resourceFixture(t)
+	target := trafficRoute + "preview"
+	r := httptest.NewRequest(http.MethodGet, target, nil)
+	r.Host = s.config.Listen
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated preview request: %d", w.Code)
+	}
+	var preview traffic.Preview
+	resourceAssertSuccess(t, s, http.MethodGet, target, "", "traffic.preview", &preview)
+	if preview.Running || preview.Count != 0 || preview.Entries == nil || len(preview.Entries) != 0 {
+		t.Fatalf("stopped preview: %+v", preview)
+	}
+}
+
+func TestTrafficBodyAuthenticationAndRanges(t *testing.T) {
+	s := resourceFixture(t)
+	id, batch := strings.Repeat("A", 26), strings.Repeat("B", 26)
+	dir := filepath.Join(paths.New(s.options.ModuleDir).TrafficHistory(), batch)
+	resourceWriteFile(t, filepath.Join(dir, "batch.json"), `{"id":"`+batch+`","started_at":"2026-01-01T00:00:00Z"}`)
+	resourceWriteFile(t, filepath.Join(dir, "0000000000000001-"+id+".json"),
+		`{"id":"`+id+`","http":{"response":{"body":{"format":"binary","blob":true,"captured_size":6}}}}`)
+	resourceWriteFile(t, filepath.Join(dir, id+".response.blob"), "abcdef")
+	s.traffic = traffic.New(paths.New(s.options.ModuleDir))
+	fetch := func(auth bool, rangeHeader string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodGet, trafficRoute+"body?id="+id+"&side=response", nil)
+		r.Host = s.config.Listen
+		if auth {
+			r.Header.Set("Authorization", "Bearer "+s.config.Secret)
+		}
+		if rangeHeader != "" {
+			r.Header.Set("Range", rangeHeader)
+		}
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, r)
+		return w
+	}
+	if w := fetch(false, "bytes=2-4"); w.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated status: %d", w.Code)
+	}
+	if w := fetch(true, "bytes=2-4"); w.Code != http.StatusPartialContent || w.Body.String() != "cde" ||
+		w.Header().Get("Content-Range") != "bytes 2-4/6" {
+		t.Fatalf("partial content: %d %q %s", w.Code, w.Body, w.Header())
+	}
+	if w := fetch(true, "bytes=6-"); w.Code != http.StatusRequestedRangeNotSatisfiable {
+		t.Fatalf("out-of-range status: %d", w.Code)
+	}
+	if w := fetch(true, ""); w.Code != http.StatusOK || w.Body.String() != "abcdef" {
+		t.Fatalf("whole body: %d %q", w.Code, w.Body)
 	}
 }

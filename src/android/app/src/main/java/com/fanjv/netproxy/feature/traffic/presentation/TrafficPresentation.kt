@@ -5,6 +5,8 @@ import com.fanjv.netproxy.feature.traffic.data.CapturedHttp
 import com.fanjv.netproxy.feature.traffic.data.RewriteMatch
 import com.fanjv.netproxy.feature.traffic.data.RewriteRule
 import java.security.MessageDigest
+import java.net.URLDecoder
+import java.util.Base64
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 
@@ -76,9 +78,32 @@ internal fun isJsonBody(type: String?): Boolean {
 }
 
 internal fun displayBody(data: String, type: String?): String {
-    if (!isJsonBody(type)) return data
-    return runCatching { prettyJson.encodeToString(JsonElement.serializer(), Json.parseToJsonElement(data)) }.getOrDefault(data)
+    val mime = type?.substringBefore(';')?.trim()?.lowercase().orEmpty()
+    return runCatching {
+        when {
+            isJsonBody(mime) -> prettyJson.encodeToString(JsonElement.serializer(), Json.parseToJsonElement(data))
+            mime == "application/x-www-form-urlencoded" -> data.split('&').joinToString("\n") { field ->
+                field.split('=', limit = 2).joinToString(" = ") { URLDecoder.decode(it, "UTF-8") }
+            }
+            mime in setOf("text/html", "text/xml", "application/xml", "image/svg+xml") || mime.endsWith("+xml") ->
+                data.replace(Regex(">\\s*(?=<)"), ">\n")
+            else -> data
+        }
+    }.getOrDefault(data)
 }
+
+internal fun captureHex(data: String): String = runCatching {
+    val bytes = Base64.getDecoder().decode(data)
+    val digits = "0123456789abcdef"
+    buildString(bytes.size * 3) {
+        bytes.forEachIndexed { index, byte ->
+            val value = byte.toInt() and 0xff
+            if (index != 0) append(if (index % 16 == 0) '\n' else ' ')
+            append(digits[value shr 4])
+            append(digits[value and 15])
+        }
+    }
+}.getOrDefault(data)
 
 internal fun bodyChunks(text: String): List<String> = buildList {
     var start = 0

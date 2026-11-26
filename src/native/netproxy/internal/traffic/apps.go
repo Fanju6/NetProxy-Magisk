@@ -29,27 +29,70 @@ type SourceApp struct {
 
 type AppsPolicy struct {
 	Apps        []string `json:"apps"`
+	Mode        string   `json:"mode"`
+	Blacklist   []string `json:"blacklist"`
+	Whitelist   []string `json:"whitelist"`
 	DisableQUIC *bool    `json:"disable_quic,omitempty"`
 }
 
-func normalizeApps(policy AppsPolicy) (AppsPolicy, map[string]struct{}, error) {
-	if policy.Apps == nil || len(policy.Apps) > 1000 {
-		return AppsPolicy{}, nil, errors.New("apps 必须是数组，最多允许选择 1000 个应用")
+func normalizeAppList(values []string) ([]string, error) {
+	if len(values) > 1000 {
+		return nil, errors.New("每个抓包名单最多允许选择 1000 个应用")
 	}
-	result := AppsPolicy{Apps: make([]string, 0, len(policy.Apps)), DisableQUIC: policy.DisableQUIC}
-	set := make(map[string]struct{}, len(policy.Apps))
-	for _, value := range policy.Apps {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]bool, len(values))
+	for _, value := range values {
 		ref, err := inbound.ParsePackageRef(value)
 		if err != nil || len(ref.Package) > 256 {
-			return AppsPolicy{}, nil, errors.New("抓包应用必须使用 <用户ID>:<包名> 格式")
+			return nil, errors.New("抓包应用必须使用 <用户ID>:<包名> 格式")
 		}
 		key := ref.String()
-		if _, known := set[key]; !known {
-			set[key] = struct{}{}
-			result.Apps = append(result.Apps, key)
+		if !seen[key] {
+			seen[key] = true
+			result = append(result, key)
 		}
 	}
-	return result, set, nil
+	return result, nil
+}
+
+func normalizeApps(policy AppsPolicy) (AppsPolicy, error) {
+	if policy.Mode == "" {
+		if policy.Apps == nil || policy.Blacklist != nil || policy.Whitelist != nil {
+			return AppsPolicy{}, errors.New("缺少抓包应用模式")
+		}
+		policy.Mode = "all"
+		if len(policy.Apps) > 0 {
+			policy.Mode, policy.Whitelist = "whitelist", policy.Apps
+		}
+	}
+	switch policy.Mode {
+	case "all", "blacklist", "whitelist":
+	default:
+		return AppsPolicy{}, errors.New("无效的抓包应用模式")
+	}
+	var err error
+	if policy.Blacklist, err = normalizeAppList(policy.Blacklist); err != nil {
+		return AppsPolicy{}, err
+	}
+	if policy.Whitelist, err = normalizeAppList(policy.Whitelist); err != nil {
+		return AppsPolicy{}, err
+	}
+	policy.Apps = []string{}
+	if policy.Mode == "whitelist" {
+		policy.Apps = policy.Whitelist
+	}
+	return policy, nil
+}
+
+func (p AppsPolicy) ActiveApps() []string {
+	switch p.Mode {
+	case "blacklist":
+		return p.Blacklist
+	case "whitelist":
+		return p.Whitelist
+	default:
+		return nil
+	}
 }
 
 func (c *Controller) AppsPolicy() (AppsPolicy, error) {
@@ -61,7 +104,7 @@ func (c *Controller) AppsPolicy() (AppsPolicy, error) {
 func readApps(layout paths.Layout) (AppsPolicy, error) {
 	file, err := os.Open(layout.TrafficApps())
 	if errors.Is(err, os.ErrNotExist) {
-		return AppsPolicy{Apps: []string{}, DisableQUIC: new(true)}, nil
+		return normalizeApps(AppsPolicy{Mode: "all", DisableQUIC: new(true)})
 	}
 	if err != nil {
 		return AppsPolicy{}, errors.New("无法读取抓包应用配置")
@@ -72,11 +115,20 @@ func readApps(layout paths.Layout) (AppsPolicy, error) {
 	if err != nil || len(content) > MaxAppsBytes || json.Unmarshal(content, &policy, json.RejectUnknownMembers(true)) != nil {
 		return AppsPolicy{}, errors.New("抓包应用配置无效")
 	}
-	normalized, _, err := normalizeApps(policy)
+	normalized, err := normalizeApps(policy)
 	if normalized.DisableQUIC == nil {
 		normalized.DisableQUIC = new(true)
 	}
 	return normalized, err
+}
+
+func (c *Controller) applyApps(policy AppsPolicy) {
+	c.appMode = policy.Mode
+	apps := policy.ActiveApps()
+	c.apps = make(map[string]struct{}, len(apps))
+	for _, app := range apps {
+		c.apps[app] = struct{}{}
+	}
 }
 
 func (c *Controller) loadApps() error {
@@ -84,23 +136,35 @@ func (c *Controller) loadApps() error {
 	if err != nil {
 		return err
 	}
-	_, c.apps, err = normalizeApps(policy)
-	return err
+	c.applyApps(policy)
+	return nil
 }
 
 func (c *Controller) SetAppsPolicy(policy AppsPolicy) (AppsPolicy, error) {
-	normalized, set, err := normalizeApps(policy)
+	normalized, err := normalizeApps(policy)
 	if err != nil {
 		return AppsPolicy{}, err
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if normalized.DisableQUIC == nil {
-		previous, err := readApps(c.layout)
-		if err != nil {
-			return AppsPolicy{}, err
+	previous, err := readApps(c.layout)
+	if err != nil {
+		return AppsPolicy{}, err
+	}
+	if policy.Mode == "" {
+		if slices.Equal(policy.Apps, previous.Apps) {
+			normalized = previous
+		} else {
+			normalized.Blacklist = previous.Blacklist
+			if normalized.Mode == "all" {
+				normalized.Whitelist = previous.Whitelist
+			}
 		}
+	}
+	if policy.DisableQUIC == nil {
 		normalized.DisableQUIC = previous.DisableQUIC
+	} else {
+		normalized.DisableQUIC = policy.DisableQUIC
 	}
 	content, err := json.Marshal(normalized)
 	if err != nil || len(content) > MaxAppsBytes {
@@ -109,7 +173,7 @@ func (c *Controller) SetAppsPolicy(policy AppsPolicy) (AppsPolicy, error) {
 	if err := provider.WriteAtomic(c.layout.TrafficApps(), content, 0o600); err != nil {
 		return AppsPolicy{}, errors.New("无法保存抓包应用配置")
 	}
-	c.apps = set
+	c.applyApps(normalized)
 	return normalized, nil
 }
 
@@ -119,6 +183,16 @@ func CaptureQUICRule(ctx context.Context, layout paths.Layout) (jsontext.Value, 
 		return nil, err
 	}
 	return captureQUICRule(policy, func(user uint32, packages ...string) (map[uint32]bool, error) {
+		if policy.Mode == "blacklist" {
+			all, err := inbound.ListPackageUIDs(ctx, user)
+			uids := make(map[uint32]bool)
+			for _, pkg := range packages {
+				if uid, ok := all[pkg]; ok {
+					uids[uid] = true
+				}
+			}
+			return uids, err
+		}
 		return inbound.ResolveExclusivePackageUIDs(ctx, user, packages...)
 	})
 }
@@ -130,9 +204,13 @@ func captureQUICRule(policy AppsPolicy, resolve func(uint32, ...string) (map[uin
 	rule := map[string]any{
 		"inbound": "netproxy-in", "network": "udp", "port": 443, "action": "reject", "no_drop": true,
 	}
-	if len(policy.Apps) != 0 {
+	apps := policy.ActiveApps()
+	if policy.Mode == "" {
+		apps = policy.Apps
+	}
+	if len(apps) != 0 || policy.Mode == "whitelist" {
 		byUser := make(map[uint32][]string)
-		for _, value := range policy.Apps {
+		for _, value := range apps {
 			ref, err := inbound.ParsePackageRef(value)
 			if err != nil {
 				return nil, err
@@ -149,11 +227,21 @@ func captureQUICRule(policy AppsPolicy, resolve func(uint32, ...string) (map[uin
 				uids = append(uids, uid)
 			}
 		}
-		if len(uids) == 0 {
+		if len(uids) == 0 && policy.Mode != "blacklist" {
 			return nil, nil
 		}
 		slices.Sort(uids)
-		rule["user_id"] = uids
+		if policy.Mode == "blacklist" && len(uids) != 0 {
+			delete(rule, "action")
+			delete(rule, "no_drop")
+			return json.Marshal(map[string]any{
+				"type": "logical", "mode": "and", "action": "reject", "no_drop": true,
+				"rules": []map[string]any{rule, {"user_id": uids, "invert": true}},
+			}, json.Deterministic(true))
+		}
+		if len(uids) != 0 {
+			rule["user_id"] = uids
+		}
 	}
 	return json.Marshal(rule, json.Deterministic(true))
 }
@@ -161,14 +249,14 @@ func captureQUICRule(policy AppsPolicy, resolve func(uint32, ...string) (map[uin
 func (c *Controller) capturesApp(app *SourceApp) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if len(c.apps) == 0 {
+	if c.appMode == "" || c.appMode == "all" {
 		return true
 	}
-	if app == nil || app.Package == "" {
-		return false
+	selected := false
+	if app != nil && app.Package != "" {
+		_, selected = c.apps[(inbound.PackageRef{UserID: app.UserID, Package: app.Package}).String()]
 	}
-	_, ok := c.apps[(inbound.PackageRef{UserID: app.UserID, Package: app.Package}).String()]
-	return ok
+	return selected != (c.appMode == "blacklist")
 }
 
 type androidOwners struct {

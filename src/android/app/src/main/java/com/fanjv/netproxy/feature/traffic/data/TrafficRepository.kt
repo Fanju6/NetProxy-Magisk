@@ -14,6 +14,9 @@ import java.io.File
 internal data class CaptureStatus(val running: Boolean, val count: Int)
 
 @Serializable
+internal data class CapturePreview(val running: Boolean, val count: Int, val entries: List<CaptureRecord>)
+
+@Serializable
 internal data class CaptureBatch(
     val id: String,
     @SerialName("started_at") val startedAt: String,
@@ -63,7 +66,26 @@ internal data class CaptureSourceApp(
 )
 
 @Serializable
-internal data class CaptureApps(val apps: List<String>, @SerialName("disable_quic") val disableQuic: Boolean? = null)
+internal data class CaptureApps(
+    val apps: List<String> = emptyList(),
+    val mode: String? = null,
+    val blacklist: List<String> = emptyList(),
+    val whitelist: List<String> = apps,
+    @SerialName("disable_quic") val disableQuic: Boolean? = null,
+) {
+    val effectiveMode: String get() = mode ?: if (apps.isEmpty()) "all" else "whitelist"
+    val selected: List<String> get() = when (effectiveMode) {
+        "blacklist" -> blacklist
+        "whitelist" -> whitelist
+        else -> emptyList()
+    }
+
+    fun withSelection(selection: Set<String>): CaptureApps = when (effectiveMode) {
+        "blacklist" -> copy(blacklist = selection.sorted())
+        "whitelist" -> copy(whitelist = selection.sorted())
+        else -> this
+    }
+}
 
 @Serializable
 internal data class CaptureExit(
@@ -141,6 +163,9 @@ internal data class CapturedBody(
     val size: Long? = null,
     @SerialName("captured_size") val capturedSize: Int? = null,
     val decoded: Boolean = false,
+    val blob: Boolean = false,
+    @SerialName("content_range") val contentRange: String? = null,
+    val filename: String? = null,
 )
 
 @Serializable
@@ -171,6 +196,7 @@ internal class TrafficRepository(private val api: ModuleApiClient, private val c
         this(api, CapturePageCache(File(context.applicationContext.cacheDir, "traffic-pages"), api.json))
 
     suspend fun status(): CaptureStatus = api.read("/traffic/status")
+    suspend fun preview(): CapturePreview = api.read("/traffic/preview")
     suspend fun records(batch: String? = null): List<CaptureRecord> =
         api.read("/traffic/list", if (batch == null) emptyMap() else mapOf("batch" to batch))
     suspend fun page(batch: String? = null, before: String? = null, since: String? = null, oldest: String? = null): CapturePage {
@@ -195,13 +221,18 @@ internal class TrafficRepository(private val api: ModuleApiClient, private val c
         cache?.invalidate(id)
     }
     suspend fun detail(id: String): CaptureDetail = api.read("/traffic/detail", mapOf("id" to id))
+    suspend fun downloadBody(id: String, side: String, destination: File, size: Int) {
+        api.download("/traffic/body", mapOf("id" to id, "side" to side), destination)
+        require(destination.length() == size.toLong())
+    }
     suspend fun rules(): List<RewriteRule> = api.read<RewriteRules>("/traffic/rules").rules
     suspend fun policy(): MitmPolicy = api.read("/traffic/mitm")
     suspend fun pinned(): List<PinnedBypass> = api.read("/traffic/pinned")
     suspend fun clearPinned(): List<PinnedBypass> = api.json.decodeFromJsonElement(api.delete("/traffic/pinned").data)
     suspend fun apps(): CaptureApps = api.captureApps()
-    suspend fun saveApps(apps: List<String>, disableQuic: Boolean? = null): CaptureApps =
-        api.json.decodeFromJsonElement(api.saveCaptureApps(api.json.encodeToJsonElement(CaptureApps(apps, disableQuic)).jsonObject).data)
+    suspend fun saveApps(policy: CaptureApps): CaptureApps = api.json.decodeFromJsonElement(
+        api.saveCaptureApps(api.json.encodeToJsonElement(policy.copy(apps = emptyList(), mode = policy.effectiveMode)).jsonObject).data,
+    )
 
     suspend fun setCapture(enabled: Boolean): CaptureStatus =
         api.json.decodeFromJsonElement(api.post(if (enabled) "/traffic/start" else "/traffic/stop").data)

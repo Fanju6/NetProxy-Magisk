@@ -20,6 +20,19 @@ import org.junit.rules.TemporaryFolder
 
 class TrafficRepositoryTest {
     @get:Rule val cacheDir = TemporaryFolder()
+
+    @Test fun overlayPreviewUsesOneReadAndDecodesSessionTotal() = runBlocking {
+        val repository = TrafficRepository(ModuleApiClient(TestApiTransport { request ->
+            assertEquals("GET", request.method)
+            assertEquals("/traffic/preview", request.path)
+            apiSuccess("""{"running":true,"count":201,"entries":[{"time":"now","method":"GET","host":"example.test","outbound":"direct","status":200,"duration_ms":1}]}""")
+        }))
+        val preview = repository.preview()
+        assertTrue(preview.running)
+        assertEquals(201, preview.count)
+        assertEquals("example.test", preview.entries.single().host)
+    }
+
     @Test fun captureUsesModulePathsAndDecodesRecordMetadata() = runBlocking {
         val repository = TrafficRepository(ModuleApiClient(TestApiTransport { request ->
             when (request.method to request.path) {

@@ -37,33 +37,43 @@ type Batch struct {
 }
 
 type savedRecord struct {
-	name     string
-	id       string
-	size     int64
-	sequence uint64
+	name      string
+	id        string
+	size      int64
+	sequence  uint64
+	mediaSize int64
 }
 
 type savedBatch struct {
 	Batch
-	records  []savedRecord
-	sequence uint64
+	records   []savedRecord
+	sequence  uint64
+	mediaSize int64
 }
 
 type historyStore struct {
-	mu        sync.Mutex
-	layout    paths.Layout
-	batches   []*savedBatch
-	byteLimit int64
+	mu         sync.Mutex
+	layout     paths.Layout
+	batches    []*savedBatch
+	byteLimit  int64
+	mediaLimit int64
+	staged     int64
+	mediaSlots chan struct{}
+}
+
+type pendingRecord struct {
+	record            Record
+	request, response *mediaSpool
 }
 
 type historyWriter struct {
-	queue   chan Record
+	queue   chan pendingRecord
 	done    chan struct{}
 	dropped atomic.Bool
 }
 
 func openHistory(layout paths.Layout) *historyStore {
-	h := &historyStore{layout: layout, byteLimit: historyByteLimit}
+	h := &historyStore{layout: layout, byteLimit: historyByteLimit, mediaLimit: mediaBudget, mediaSlots: make(chan struct{}, 8)}
 	dirs, err := os.ReadDir(layout.TrafficHistory())
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		h.warn()
@@ -81,6 +91,7 @@ func openHistory(layout paths.Layout) *historyStore {
 		batch.Count, batch.Size = 0, 0
 		lastRecord := batch.StartedAt
 		files, _ := os.ReadDir(h.path(batch.ID))
+		blobs := make(map[string]bool)
 		for _, file := range files {
 			if strings.HasPrefix(file.Name(), ".netproxy-") && strings.HasSuffix(file.Name(), ".tmp") {
 				_ = os.Remove(h.path(batch.ID, file.Name()))
@@ -99,15 +110,28 @@ func openHistory(layout paths.Layout) *historyStore {
 				continue
 			}
 			saved := savedRecord{name: file.Name(), id: id, size: info.Size(), sequence: seq}
-			if _, ok := h.readRecord(batch, saved); !ok {
+			record, ok := h.readRecord(batch, saved)
+			if !ok {
 				_ = os.Remove(h.path(batch.ID, file.Name()))
 				continue
 			}
+			for _, side := range []string{"request", "response"} {
+				if body := bodyFor(record, side); body != nil && body.Blob {
+					blobs[mediaName(id, side)] = true
+					saved.mediaSize += int64(body.CapturedSize)
+				}
+			}
+			batch.mediaSize += saved.mediaSize
 			batch.sequence = max(batch.sequence, seq)
 			batch.records = append(batch.records, saved)
-			batch.Size += info.Size()
+			batch.Size += info.Size() + saved.mediaSize
 			if info.ModTime().After(lastRecord) {
 				lastRecord = info.ModTime()
+			}
+		}
+		for _, file := range files {
+			if strings.HasSuffix(file.Name(), ".blob") && !blobs[file.Name()] {
+				_ = os.Remove(h.path(batch.ID, file.Name()))
 			}
 		}
 		if batch.StoppedAt == nil {
@@ -118,6 +142,9 @@ func openHistory(layout paths.Layout) *historyStore {
 	}
 	slices.SortFunc(h.batches, func(a, b *savedBatch) int { return a.StartedAt.Compare(b.StartedAt) })
 	if err := h.prune(nil, 0, 0); err != nil {
+		h.warn()
+	}
+	if err := h.pruneMedia(nil, 0); err != nil {
 		h.warn()
 	}
 	return h
@@ -185,12 +212,12 @@ func (h *historyStore) finish(batch *savedBatch) {
 }
 
 func (h *historyStore) writer(batch *savedBatch) *historyWriter {
-	w := &historyWriter{queue: make(chan Record, 16), done: make(chan struct{})}
+	w := &historyWriter{queue: make(chan pendingRecord, 16), done: make(chan struct{})}
 	go func() {
 		defer close(w.done)
 		warned := false
 		for record := range w.queue {
-			if failed := h.append(batch, record) != nil; !warned && (failed || w.dropped.Load()) {
+			if failed := h.appendPending(batch, record) != nil; !warned && (failed || w.dropped.Load()) {
 				h.warn()
 				warned = true
 			}
@@ -208,6 +235,53 @@ func (w *historyWriter) stop() {
 }
 
 func (h *historyStore) append(batch *savedBatch, record Record) error {
+	return h.appendPending(batch, pendingRecord{record: record})
+}
+
+func (h *historyStore) appendPending(batch *savedBatch, pending pendingRecord) error {
+	record := pending.record
+	spools := [...]*mediaSpool{pending.request, pending.response}
+	for _, spool := range spools {
+		if spool != nil {
+			<-spool.done
+		}
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var mediaSize int64
+	var moved []string
+	committed := false
+	defer func() {
+		for _, spool := range spools {
+			if spool != nil {
+				spool.release()
+			}
+		}
+		if !committed {
+			for _, path := range moved {
+				_ = os.Remove(path)
+			}
+		}
+	}()
+	if record.hasMedia {
+		detail := *record.HTTP
+		record.HTTP = &detail
+	}
+	for i, side := range []string{"request", "response"} {
+		spool := spools[i]
+		if spool == nil || spool.size == 0 {
+			continue
+		}
+		path := h.path(batch.ID, mediaName(record.ID, side))
+		if err := os.Rename(spool.path, path); err != nil {
+			continue
+		}
+		moved = append(moved, path)
+		body := bodyFor(record, side)
+		body.Blob, body.CapturedSize = true, int(spool.size)
+		body.Truncated = body.incomplete || spool.size < body.Size
+		mediaSize += spool.size
+	}
 	data, err := json.Marshal(record)
 	if err != nil {
 		return err
@@ -216,12 +290,13 @@ func (h *historyStore) append(batch *savedBatch, record Record) error {
 	if size > historyRecordLimit || size > h.byteLimit {
 		return errors.New("capture record exceeds history limit")
 	}
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	if err := h.prune(batch, size, 1); err != nil {
 		return err
 	}
-	for batch.Count >= historyCountLimit || batch.Size+size > h.byteLimit {
+	if err := h.pruneMedia(batch, size); err != nil {
+		return err
+	}
+	for batch.Count >= historyCountLimit || batch.Size-batch.mediaSize+size > h.byteLimit {
 		if err := h.removeOldestRecord(batch); err != nil {
 			return err
 		}
@@ -236,9 +311,11 @@ func (h *historyStore) append(batch *savedBatch, record Record) error {
 	if err := provider.WriteAtomic(h.path(batch.ID, name), data, 0o600); err != nil {
 		return err
 	}
-	batch.records = append(batch.records, savedRecord{name, record.ID, size, batch.sequence})
+	batch.records = append(batch.records, savedRecord{name, record.ID, size, batch.sequence, mediaSize})
 	batch.Count++
-	batch.Size += size
+	batch.Size += size + mediaSize
+	batch.mediaSize += mediaSize
+	committed = true
 	return nil
 }
 
@@ -247,16 +324,22 @@ func (h *historyStore) removeOldestRecord(batch *savedBatch) error {
 	if err := os.Remove(h.path(batch.ID, first.name)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	if first.mediaSize != 0 {
+		for _, side := range []string{"request", "response"} {
+			_ = os.Remove(h.path(batch.ID, mediaName(first.id, side)))
+		}
+	}
 	batch.records = batch.records[1:]
 	batch.Count--
-	batch.Size -= first.size
+	batch.Size -= first.size + first.mediaSize
+	batch.mediaSize -= first.mediaSize
 	return nil
 }
 
 func (h *historyStore) prune(active *savedBatch, incoming int64, count int) error {
 	total := incoming
 	for _, batch := range h.batches {
-		total += batch.Size
+		total += batch.Size - batch.mediaSize
 		count += batch.Count
 	}
 	for i := 0; i < len(h.batches) && (len(h.batches) > historyBatchLimit || total > h.byteLimit || count > historyCountLimit); {
@@ -268,7 +351,7 @@ func (h *historyStore) prune(active *savedBatch, incoming int64, count int) erro
 		if err := os.RemoveAll(h.path(batch.ID)); err != nil {
 			return err
 		}
-		total -= batch.Size
+		total -= batch.Size - batch.mediaSize
 		count -= batch.Count
 		h.batches = slices.Delete(h.batches, i, i+1)
 	}
@@ -308,6 +391,16 @@ func (h *historyStore) entries(id string) ([]Entry, bool) {
 func (h *historyStore) readRecord(batch *savedBatch, file savedRecord) (Record, bool) {
 	var record Record
 	ok := readHistoryJSON(h.path(batch.ID, file.name), historyRecordLimit, &record)
+	if ok && record.ID == file.id {
+		for _, side := range []string{"request", "response"} {
+			if body := bodyFor(record, side); body != nil && body.Blob {
+				info, err := os.Lstat(h.path(batch.ID, mediaName(record.ID, side)))
+				if err != nil || !info.Mode().IsRegular() || info.Size() != int64(body.CapturedSize) || info.Size() <= 0 || info.Size() > MaxMediaBody {
+					body.Blob, body.CapturedSize, body.Truncated = false, 0, true
+				}
+			}
+		}
+	}
 	return record, ok && record.ID == file.id
 }
 

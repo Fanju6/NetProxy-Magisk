@@ -1,5 +1,8 @@
 package com.fanjv.netproxy.feature.traffic.presentation
 
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -41,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
@@ -50,9 +54,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.R
+import com.fanjv.netproxy.NetProxyApplication
 import com.fanjv.netproxy.core.api.ModuleApiException
 import com.fanjv.netproxy.core.ui.component.AdaptiveTopAppBar
 import com.fanjv.netproxy.core.ui.component.AppBarButton
+import com.fanjv.netproxy.core.ui.component.AppDialog
+import com.fanjv.netproxy.core.ui.component.AppDialogButton
+import com.fanjv.netproxy.core.ui.component.DialogActionRole
 import com.fanjv.netproxy.core.ui.component.BackIconButton
 import com.fanjv.netproxy.core.ui.component.BlurredBar
 import com.fanjv.netproxy.core.ui.component.CardItem
@@ -150,6 +158,7 @@ internal fun TrafficScreen(viewModel: TrafficViewModel) {
                         enabled = state.captureAppPolicy?.disableQuic != null && !state.busy,
                         onCheckedChange = viewModel::setCaptureDisableQuic, insideMargin = TrafficRowInsets,
                     )
+                    CaptureOverlayPreference(status?.running == true)
                     Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 10.dp),
                         horizontalArrangement = Arrangement.SpaceBetween) {
                         StatusBadge(status?.count?.let { stringResource(R.string.traffic_record_count, it) } ?: "—")
@@ -189,6 +198,51 @@ internal fun TrafficScreen(viewModel: TrafficViewModel) {
                     }
                 },
             ))
+        }
+    }
+}
+
+@Composable
+private fun CaptureOverlayPreference(capturing: Boolean) {
+    val context = LocalContext.current
+    val overlay = (context.applicationContext as NetProxyApplication).container.captureOverlay
+    var enabled by remember { mutableStateOf(overlay.enabled) }
+    var granted by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+    var explain by rememberSaveable { mutableStateOf(false) }
+    LifecycleResumeEffect(Unit) {
+        granted = Settings.canDrawOverlays(context)
+        onPauseOrDispose { }
+    }
+    LaunchedEffect(capturing, enabled, granted) {
+        if (capturing && enabled && !granted && overlay.claimPermissionHint()) explain = true
+    }
+    SwitchPreference(
+        title = stringResource(R.string.traffic_overlay),
+        summary = stringResource(R.string.traffic_overlay_summary),
+        checked = enabled,
+        onCheckedChange = {
+            overlay.enabled = it
+            enabled = it
+        },
+        insideMargin = TrafficRowInsets,
+    )
+    if (enabled && !granted) {
+        ArrowPreference(title = stringResource(R.string.traffic_overlay_permission),
+            onClick = { explain = true }, insideMargin = TrafficRowInsets)
+    }
+    AppDialog(
+        show = explain && enabled && !granted,
+        title = stringResource(R.string.traffic_overlay_permission),
+        summary = stringResource(R.string.traffic_overlay_explain),
+        onDismissRequest = { explain = false },
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AppDialogButton(stringResource(R.string.common_cancel), { explain = false }, Modifier.weight(1f))
+            AppDialogButton(stringResource(R.string.traffic_overlay_open_settings), {
+                explain = false
+                val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.fromParts("package", context.packageName, null))
+                runCatching { context.startActivity(intent) }
+            }, Modifier.weight(1f), role = DialogActionRole.Primary)
         }
     }
 }

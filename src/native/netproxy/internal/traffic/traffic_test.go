@@ -203,6 +203,11 @@ func TestCaptureRetainsNewestEntries(t *testing.T) {
 	if len(entries) != maxEntries || entries[0].Host != strconv.Itoa(maxEntries+6) || entries[maxEntries-1].Host != "7" {
 		t.Fatalf("unexpected ring length or ordering: %v", entries)
 	}
+	preview := c.Preview()
+	if !preview.Running || preview.Count != maxEntries+7 || len(preview.Entries) != 3 ||
+		preview.Entries[0].ID != entries[0].ID || preview.Entries[2].ID != entries[2].ID {
+		t.Fatalf("unexpected live preview: %+v", preview)
+	}
 }
 
 func bridgeFixture(layout paths.Layout) func(context.Context, string, string) (net.Conn, error) {

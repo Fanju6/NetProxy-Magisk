@@ -9,7 +9,7 @@ import { createPoller } from '../src/polling.ts'
 import { complete, replaceCompletion } from '../src/autocomplete.ts'
 import { parseCommandLine } from '../src/command.ts'
 import { formatCtlOutput } from '../src/format.ts'
-import { formatCaptureBody } from '../src/capture-detail.ts'
+import { captureHex, formatCaptureBody } from '../src/capture-detail.ts'
 import { mockCtl } from '../src/mock.ts'
 import { COMMANDS } from '../src/commands.ts'
 
@@ -131,6 +131,9 @@ test('抓包正文仅格式化有效 JSON，保留原始文本与截断内容', 
   assert.equal(formatCaptureBody(body, 'Application/Problem+JSON; charset=UTF-8'), '{\n  "order": "NP-2048"\n}')
   assert.equal(formatCaptureBody(body, 'text/plain'), body)
   assert.equal(formatCaptureBody('{broken', 'application/json'), '{broken')
+  assert.equal(formatCaptureBody('q=test+file&empty=', 'application/x-www-form-urlencoded'), 'q = test file\nempty = ')
+  assert.equal(formatCaptureBody('<p><b/></p>', 'text/html'), '<p>\n<b/>\n</p>')
+  assert.equal(captureHex('AH//'), '00 7f ff')
 })
 
 test('策略组选择结果未知时保留核心错误，不伪造确认', () => {

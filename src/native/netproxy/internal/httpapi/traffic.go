@@ -18,8 +18,12 @@ import (
 const trafficRoute = "/api/v1/traffic/"
 
 func (s *Server) registerTraffic() {
+	s.mux.HandleFunc("GET "+trafficRoute+"body", s.readTrafficBody)
 	s.trafficRoute("GET", "status", "抓包状态", func(context.Context) (any, error) {
 		return s.traffic.Status(), nil
+	})
+	s.trafficRoute("GET", "preview", "实时抓包预览", func(context.Context) (any, error) {
+		return s.traffic.Preview(), nil
 	})
 	for _, action := range []string{"start", "stop", "toggle"} {
 		s.route("POST "+trafficRoute+action, 60*time.Second, false, func(ctx context.Context, r *http.Request) (contract.Result, error) {
@@ -240,6 +244,25 @@ func (s *Server) registerTraffic() {
 	})
 }
 
+func (s *Server) readTrafficBody(w http.ResponseWriter, r *http.Request) {
+	query, err := resourceQuery(r, "id", "side")
+	id, side := query.Get("id"), query.Get("side")
+	if err != nil || !traffic.ValidRecordID(id) || side != "request" && side != "response" {
+		s.fail(w, r.Context(), invalid("抓包正文标识无效"))
+		return
+	}
+	file, ok := s.traffic.OpenBody(id, side)
+	if !ok {
+		s.fail(w, r.Context(), &contract.Error{Code: "traffic.body_not_found", Message: "抓包正文已清除或未保存", HTTPStatus: http.StatusNotFound})
+		return
+	}
+	defer file.Close()
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", `attachment; filename="capture.bin"`)
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(30 * time.Second))
+	http.ServeContent(w, r, "capture.bin", time.Time{}, file)
+}
+
 func captureBatchNotFound() error {
 	return &contract.Error{Code: "traffic.batch_not_found", Message: "抓包批次已删除或过期", HTTPStatus: http.StatusNotFound}
 }
@@ -267,7 +290,8 @@ func (s *Server) setTrafficApps(ctx context.Context, input traffic.AppsPolicy) (
 	if err != nil {
 		return policy, mitmAPIError("traffic.apps_failed", err)
 	}
-	if reload && (*previous.DisableQUIC != *policy.DisableQUIC || *policy.DisableQUIC && !slices.Equal(previous.Apps, policy.Apps)) {
+	if reload && (*previous.DisableQUIC != *policy.DisableQUIC || *policy.DisableQUIC &&
+		(previous.Mode != policy.Mode || !slices.Equal(previous.ActiveApps(), policy.ActiveApps()))) {
 		if _, err := moduleapp.ManageService(ctx, s.options, "reload"); err != nil {
 			message := "核心重载失败，已还原抓包应用配置"
 			if _, restoreErr := s.traffic.SetAppsPolicy(previous); restoreErr != nil {

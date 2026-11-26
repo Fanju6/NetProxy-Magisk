@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 
 internal data class TrafficContent<T>(val value: T? = null, val error: Throwable? = null) {
     fun refreshed(result: Result<T>): TrafficContent<T> =
@@ -68,10 +69,10 @@ internal data class TrafficState(
     val ruleDraft: RuleDraft? = null,
     val selectedRecord: RecordDetailState? = null,
     val fingerprint: String? = null,
-    val captureApps: List<String>? = null,
     val captureAppPolicy: CaptureApps? = null,
     val appCatalog: Map<String, AppInfoModel> = emptyMap(),
-    val appDraft: Set<String>? = null,
+    val appDraft: CaptureApps? = null,
+    val appDraftBase: CaptureApps? = null,
 ) {
     val busy: Boolean get() = loading || saving
 }
@@ -81,6 +82,9 @@ internal class TrafficViewModel(
     scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     private val packages: AppPackageRepository? = null,
 ) : ViewModel(scope) {
+    suspend fun downloadBody(id: String, side: String, destination: File, size: Int) =
+        repository.downloadBody(id, side, destination, size)
+
     private val _state = MutableStateFlow(TrafficState())
     val state = _state.asStateFlow()
     private var started = false
@@ -274,7 +278,7 @@ internal class TrafficViewModel(
     fun setCaptureDisableQuic(disabled: Boolean) = mutate {
         val current = state.value.captureAppPolicy ?: return@mutate
         if (repository.apps() != current) throw TrafficChangedException()
-        val saved = repository.saveApps(current.apps, disabled)
+        val saved = repository.saveApps(current.copy(disableQuic = disabled))
         _state.update { it.copy(captureAppPolicy = saved) }
     }
 
@@ -309,20 +313,26 @@ internal class TrafficViewModel(
     fun openAppPicker() = mutate {
         if (state.value.appDraft != null) return@mutate
         val policy = repository.apps()
-        val apps = policy.apps
         val catalog = readAppCatalog()
-        _state.update { it.copy(captureApps = apps, captureAppPolicy = policy, appCatalog = catalog, appDraft = apps.toSet()) }
+        _state.update { it.copy(captureAppPolicy = policy, appCatalog = catalog, appDraft = policy, appDraftBase = policy) }
     }
 
     fun editCaptureApps(apps: Set<String>?) {
-        if (!state.value.saving) _state.update { it.copy(appDraft = apps) }
+        if (!state.value.saving) _state.update {
+            if (apps == null) it.copy(appDraft = null, appDraftBase = null)
+            else it.copy(appDraft = it.appDraft?.withSelection(apps))
+        }
+    }
+
+    fun setCaptureAppMode(mode: String) {
+        if (!state.value.busy) _state.update { it.copy(appDraft = it.appDraft?.copy(mode = mode)) }
     }
 
     fun saveCaptureApps(onSaved: () -> Unit) = mutate {
         val draft = state.value.appDraft ?: return@mutate
-        if (repository.apps().apps != state.value.captureApps) throw TrafficChangedException()
-        val saved = repository.saveApps(draft.sorted())
-        _state.update { it.copy(captureApps = saved.apps, captureAppPolicy = saved, appDraft = null) }
+        if (repository.apps() != state.value.appDraftBase) throw TrafficChangedException()
+        val saved = repository.saveApps(draft)
+        _state.update { it.copy(captureAppPolicy = saved, appDraft = null, appDraftBase = null) }
         onSaved()
     }
 

@@ -95,9 +95,12 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
     val message = when (tab) { 1 -> detail?.request; 2 -> detail?.response; else -> null }
     val body = message?.body
     val json = body?.format == "text" && isJsonBody(body.contentType)
+    val formatted = remember(body, expanded) {
+        if (!expanded) null else body?.let { if (it.format == "base64") captureHex(it.data) else displayBody(it.data, it.contentType) }
+    }
     val chunks = remember(expanded, body, pretty) {
         if (!expanded || body == null || body.data.isEmpty()) emptyList()
-        else bodyChunks(if (pretty && json) displayBody(body.data, body.contentType) else body.data)
+        else bodyChunks(if (pretty) formatted ?: body.data else body.data)
     }
     val auditIndices = remember(detail, state.rules.value) {
         detail?.rewrites.orEmpty().map { state.rules.value?.indexOfCapture(it) }
@@ -197,8 +200,12 @@ internal fun TrafficInspectorScreen(id: String, viewModel: TrafficViewModel) {
                                 MessageHeaders(message) { name, value -> headerName = name; headerValue = value }
                             }
                             body?.let {
-                                item { BodyHeader(it, expanded, { expanded = !expanded }, json, pretty, { pretty = !pretty }) }
-                                bodyContent(chunks, json && pretty)
+                                if (it.format == "binary" || it.blob) {
+                                    item("media-$tab") { TrafficMedia(id, if (tab == 1) "request" else "response", it, viewModel) }
+                                } else {
+                                    item { BodyHeader(it, expanded, { expanded = !expanded }, formatted != it.data, pretty, { pretty = !pretty }) }
+                                    bodyContent(chunks, json && pretty)
+                                }
                             }
                         }
                         tab == 3 -> {
@@ -293,7 +300,7 @@ private fun MessageHeaders(message: CapturedMessage, onHeader: (String, String) 
 }
 
 @Composable
-private fun BodyHeader(body: CapturedBody, expanded: Boolean, toggle: () -> Unit, json: Boolean, pretty: Boolean, format: () -> Unit) {
+private fun BodyHeader(body: CapturedBody, expanded: Boolean, toggle: () -> Unit, formattable: Boolean, pretty: Boolean, format: () -> Unit) {
     val context = LocalContext.current
     val title = stringResource(R.string.traffic_body)
     val hasData = body.data.isNotEmpty()
@@ -323,7 +330,7 @@ private fun BodyHeader(body: CapturedBody, expanded: Boolean, toggle: () -> Unit
                 if (hasData) Icon(if (expanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
                     null, Modifier.size(18.dp), tint = MiuixTheme.colorScheme.onSurfaceVariantSummary)
             }
-            if (hasData && expanded && json) InspectAction(Icons.Rounded.Code,
+            if (hasData && expanded && formattable) InspectAction(Icons.Rounded.Code,
                 stringResource(if (pretty) R.string.traffic_show_raw else R.string.traffic_show_pretty), format)
             if (hasData) InspectAction(Icons.Rounded.ContentCopy, stringResource(R.string.traffic_copy_field, title)) {
                 copyCapture(context, title, body.data)
@@ -398,7 +405,7 @@ private fun RewriteAuditCard(match: RewriteMatch, status: Int, canEdit: Boolean,
 }
 
 @Composable
-private fun InspectCard(content: @Composable () -> Unit) {
+internal fun InspectCard(content: @Composable () -> Unit) {
     Column(Modifier.fillMaxWidth().background(MiuixTheme.colorScheme.surfaceContainer, RoundedCornerShape(14.dp))
         .padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) { content() }
 }

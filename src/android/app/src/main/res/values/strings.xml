@@ -766,8 +766,8 @@
     <string name="traffic_bytes">%1$d B</string>
     <string name="traffic_show_body">Expand body</string>
     <string name="traffic_hide_body">Collapse body</string>
-    <string name="traffic_show_raw">Show raw JSON</string>
-    <string name="traffic_show_pretty">Format JSON</string>
+    <string name="traffic_show_raw">Show raw body</string>
+    <string name="traffic_show_pretty">Format body</string>
     <string name="traffic_no_rewrites">No rewrite rules matched this session.</string>
     <string name="traffic_matched_rule">Matched rule %1$d</string>
     <string name="traffic_rule_shadowed">Earlier rule took priority</string>
@@ -787,7 +787,11 @@
     <string name="inbound_sniff_destination">Use sniffed domains for proxy connections</string>
     <string name="inbound_sniff_destination_hint">Connect to the detected domain instead of the app’s IP address. Direct traffic is unchanged.</string>
     <string name="traffic_capture_apps">Capture apps</string>
-    <string name="traffic_capture_apps_summary">Choose which apps to capture. No selection captures all apps.</string>
+    <string name="traffic_capture_apps_summary">Choose how apps are included in capture.</string>
+    <string name="traffic_capture_app_mode">Capture mode</string>
+    <string name="traffic_capture_app_all_summary">Capture all apps.</string>
+    <string name="traffic_capture_app_blacklist_summary">Capture all apps except those selected below.</string>
+    <string name="traffic_capture_app_whitelist_summary">Capture only the apps selected below. An empty list captures nothing.</string>
     <string name="traffic_app_user">Android user</string>
     <string name="inbound_ipv6">IPv6</string>
     <string name="inbound_ipv6_hint">Turn off to use IPv4 only for managed traffic.</string>
@@ -820,4 +824,21 @@
     <string name="traffic_user_ca_remove_prompt">This removes copies installed by NetProxy for Android users, not system trust or certificates you installed yourself. Turn decryption off first.</string>
     <string name="traffic_apps_select_all">Select all shown apps</string>
     <string name="traffic_apps_clear_selection">Clear selection</string>
+    <string name="traffic_overlay">Floating capture preview</string>
+    <string name="traffic_overlay_summary">Show recent capture records when you leave NetProxy.</string>
+    <string name="traffic_overlay_permission">Allow floating preview</string>
+    <string name="traffic_overlay_explain">NetProxy needs permission to appear over other apps to display a live capture preview. No preview is shown on the lock screen.</string>
+    <string name="traffic_overlay_open_settings">Open settings</string>
+    <string name="traffic_overlay_close">Close capture preview</string>
+    <string name="traffic_media_sizes">Retained: %1$d B · Original: %2$d B</string>
+    <string name="traffic_media_truncated">Truncated. Save and share contain only the retained bytes.</string>
+    <string name="traffic_media_unavailable">No media bytes were retained.</string>
+    <string name="traffic_media_load">Load retained body</string>
+    <string name="traffic_media_loading">Loading body…</string>
+    <string name="traffic_media_failed">Could not open or export the retained body.</string>
+    <string name="traffic_media_preview_unavailable">Preview unavailable for this body.</string>
+    <string name="traffic_media_save">Save file</string>
+    <string name="traffic_media_share">Share file</string>
+    <string name="traffic_media_play">Play</string>
+    <string name="traffic_media_pause">Pause</string>
 </resources>

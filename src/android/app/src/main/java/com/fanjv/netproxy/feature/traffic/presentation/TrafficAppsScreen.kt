@@ -2,6 +2,7 @@ package com.fanjv.netproxy.feature.traffic.presentation
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -31,6 +32,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fanjv.netproxy.R
 import com.fanjv.netproxy.core.ui.component.AppBarButton
+import com.fanjv.netproxy.core.ui.component.AppContentCard
+import com.fanjv.netproxy.core.ui.component.AppDropdown
 import com.fanjv.netproxy.core.ui.component.ContentStatus
 import com.fanjv.netproxy.core.ui.component.ManagerMenu
 import com.fanjv.netproxy.feature.apps.presentation.AppInfoModel
@@ -53,7 +56,10 @@ import top.yukonga.miuix.kmp.icon.glass.Search
 internal fun TrafficAppsScreen(viewModel: TrafficViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val navigator = LocalNavigator.current
-    val selected = state.appDraft
+    val draft = state.appDraft
+    val selected = draft?.selected?.toSet()
+    val modes = listOf("all", "blacklist", "whitelist")
+    val mode = draft?.effectiveMode ?: "all"
     var searching by rememberSaveable { mutableStateOf(false) }
     var showSystem by rememberSaveable { mutableStateOf(false) }
     val searchListState = rememberLazyListState()
@@ -69,7 +75,8 @@ internal fun TrafficAppsScreen(viewModel: TrafficViewModel) {
         }
     }
     BackHandler(enabled = !searching, onBack = leave)
-    val editable = !state.busy && selected != null
+    val ready = !state.busy && draft != null
+    val editable = ready && mode != "all"
     fun toggle(app: AppInfoModel) {
         if (!editable || selected == null) return
         viewModel.editCaptureApps(if (app.id in selected) selected - app.id else selected + app.id)
@@ -91,7 +98,7 @@ internal fun TrafficAppsScreen(viewModel: TrafficViewModel) {
                 AppBarButton(onClick = { searching = true }, enabled = editable) {
                     Icon(MiuixIcons.Glass.Search, stringResource(R.string.search))
                 }
-                AppBarButton(onClick = { viewModel.saveCaptureApps(navigator::pop) }, enabled = editable) {
+                AppBarButton(onClick = { viewModel.saveCaptureApps(navigator::pop) }, enabled = ready) {
                     Icon(Icons.Rounded.Check, stringResource(R.string.common_confirm))
                 }
                 if (editable) moreButton()
@@ -100,12 +107,32 @@ internal fun TrafficAppsScreen(viewModel: TrafficViewModel) {
                     ContentStatus(padding, state.failure?.let { trafficError(it, R.string.traffic_read_failed) }.orEmpty(),
                         loading = state.failure == null)
                 } else {
-                    LazyColumn(Modifier.fillMaxSize(), contentPadding = padding) {
-                        item("summary") {
-                            Text(stringResource(R.string.traffic_capture_apps_summary), Modifier.padding(16.dp))
+                    Column(Modifier.fillMaxSize().padding(padding)) {
+                        AppContentCard(Modifier.padding(horizontal = 12.dp)) {
+                            AppDropdown(
+                                title = stringResource(R.string.traffic_capture_app_mode),
+                                items = listOf(
+                                    stringResource(R.string.traffic_filter_all),
+                                    stringResource(R.string.app_proxy_mode_blacklist),
+                                    stringResource(R.string.app_proxy_mode_whitelist),
+                                ),
+                                selectedIndex = modes.indexOf(mode).coerceAtLeast(0),
+                                enabled = ready,
+                                onSelectedIndexChange = { viewModel.setCaptureAppMode(modes[it]) },
+                            )
                         }
-                        state.failure?.let { item("error") { TrafficErrorText(it) } }
-                        captureAppRows(groups, selected, editable, viewModel::loadAppIcon, ::toggle)
+                        LazyColumn(Modifier.fillMaxSize()) {
+                            item("summary") {
+                                val summary = when (mode) {
+                                    "blacklist" -> R.string.traffic_capture_app_blacklist_summary
+                                    "whitelist" -> R.string.traffic_capture_app_whitelist_summary
+                                    else -> R.string.traffic_capture_app_all_summary
+                                }
+                                Text(stringResource(summary), Modifier.padding(16.dp))
+                            }
+                            state.failure?.let { item("error") { TrafficErrorText(it) } }
+                            if (mode != "all") captureAppRows(groups, selected, editable, viewModel::loadAppIcon, ::toggle)
+                        }
                     }
                 }
             }
