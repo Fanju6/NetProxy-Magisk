@@ -533,6 +533,22 @@ class LocalHttpTransportTest {
         assertEquals("api.connection_failed", (runCatching { transport.image("/android/icons/test") }.exceptionOrNull() as ModuleApiException).resultCode)
     }
 
+    @Test fun captureDownloadAcceptsOctetStreamAndRejectsOverLimit() = runBlocking {
+        val destination = Files.createTempFile("transport-capture-", ".bin").toFile()
+        try {
+            server.enqueue(MockResponse.Builder().addHeader("Content-Type", "application/octet-stream").body("media").build())
+            transport.download("/traffic/body", mapOf("id" to "fixture", "side" to "response"), destination)
+            assertEquals("media", destination.readText())
+            assertEquals("response", recorded().url.queryParameter("side"))
+            server.enqueue(MockResponse.Builder().addHeader("Content-Type", "application/octet-stream")
+                .body("oversized").setHeader("Content-Length", "16777217").build())
+            assertTrue(runCatching { transport.download("/traffic/body", emptyMap(), destination) }.isFailure)
+            assertFalse(destination.exists())
+        } finally {
+            destination.delete()
+        }
+    }
+
     @Test fun downloadWritesBinaryBodyAndCancellationRemovesPartialFile() = runBlocking {
         val parent = File("build/tmp").apply { mkdirs() }.toPath()
         val destination = Files.createTempFile(parent, "transport-download-", ".gz").toFile()

@@ -14,6 +14,7 @@ import (
 	moduleapp "github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/module"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/service"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/traffic"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/worker"
 )
 
@@ -33,6 +34,10 @@ func runWorker(ctx context.Context, args []string) error {
 	singBox := flags.String("sing-box", "", "sing-box 二进制路径")
 	serviceAddress := flags.String("service-address", "127.0.0.1:9090", "Service API 地址")
 	serviceSecret := flags.String("service-secret", "singbox", "Service API 密钥")
+	var restoreTrust *bool
+	if action == "start" {
+		restoreTrust = flags.Bool("restore-system-trust", false, "按当前模块配置恢复系统 CA")
+	}
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -62,6 +67,7 @@ func runWorker(ctx context.Context, args []string) error {
 	options.ProgressDir = *progressDir
 	options.PIDFile = *pidFile
 	options.LogFile = *logFile
+	options.CrashLog = layout.WorkerCrashLog()
 	options.ModuleConfig = *moduleConfig
 	options.APIConfig = *apiConfig
 	if options.APIConfig == "" {
@@ -91,6 +97,9 @@ func runWorker(ctx context.Context, args []string) error {
 		}
 		return worker.RunProcess(ctx, options, logger)
 	case "start":
+		if *restoreTrust {
+			traffic.RestoreSystemTrust(ctx, layout, "hot-update")
+		}
 		status, err := worker.Start(ctx, options, os.Args[0])
 		if err != nil {
 			return err

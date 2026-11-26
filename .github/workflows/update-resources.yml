@@ -130,6 +130,7 @@ jobs:
             old_size="$(stat -c '%s' "$SING_BOX_TARGET")"
           fi
 
+          patch -d .sing-box-source -p1 < .github/patches/sing-box-netproxy-capture.patch
           make -C .sing-box-source build
           test -s .sing-box-source/sing-box
           file .sing-box-source/sing-box | grep -q 'ARM aarch64'

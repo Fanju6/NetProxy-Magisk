@@ -11,6 +11,7 @@ import (
 
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/apiconfig"
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/contract"
+	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/logfile"
 )
 
 type Request struct {
@@ -19,7 +20,10 @@ type Request struct {
 	Connection *apiconfig.Connection `json:"connection,omitempty"`
 }
 
-type Client struct{ DEX string }
+type Client struct {
+	DEX     string
+	LogPath string
+}
 
 func (client Client) Query(ctx context.Context, request Request) (jsontext.Value, error) {
 	content, err := json.Marshal(request, json.Deterministic(true))
@@ -37,7 +41,17 @@ func (client Client) Query(ctx context.Context, request Request) (jsontext.Value
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	return decodeResponse(output.Bytes(), runErr)
+	if output.overflowed {
+		return nil, &contract.Error{Code: "android.invalid_output", Message: "Android 平台没有返回有效数据"}
+	}
+	data, err := decodeResponse(output.Bytes(), runErr)
+	if exit, ok := errors.AsType[*exec.ExitError](runErr); err == nil && ok && client.LogPath != "" {
+		_ = logfile.AppendEntry(client.LogPath, logfile.Entry{
+			Level: "WARN", Component: "android-platform", Event: "helper.exit", Result: "recovered",
+			Message: "Android 平台辅助进程异常退出，已接收完整响应：" + exit.ProcessState.String(),
+		})
+	}
+	return data, err
 }
 
 func decodeResponse(output []byte, runErr error) (jsontext.Value, error) {
@@ -54,20 +68,26 @@ func decodeResponse(output []byte, runErr error) (jsontext.Value, error) {
 	if err := json.Unmarshal(output, &result, json.RejectUnknownMembers(true)); err != nil || result.Schema != 1 || result.Code == "" {
 		return nil, &contract.Error{Code: "android.invalid_output", Message: "Android 平台没有返回有效数据"}
 	}
-	if !result.OK || runErr != nil {
+	exit, exited := errors.AsType[*exec.ExitError](runErr)
+	if !result.OK || (runErr != nil && (!exited || exit.ProcessState == nil)) {
 		// 辅助程序不能把输入凭据或系统异常文本回传为界面错误。
 		return nil, &contract.Error{Code: "android.query_failed", Message: "无法读取 Android 平台信息"}
+	}
+	if runErr != nil && (!bytes.HasSuffix(output, []byte("\n")) || result.Data.Kind() != '{') {
+		return nil, &contract.Error{Code: "android.invalid_output", Message: "Android 平台没有返回有效数据"}
 	}
 	return result.Data, nil
 }
 
 type limitedBuffer struct {
 	bytes.Buffer
-	limit int
+	limit      int
+	overflowed bool
 }
 
 func (buffer *limitedBuffer) Write(value []byte) (int, error) {
 	if len(value) > buffer.limit-buffer.Len() {
+		buffer.overflowed = true
 		return 0, errors.New("平台响应超出大小限制")
 	}
 	return buffer.Buffer.Write(value)

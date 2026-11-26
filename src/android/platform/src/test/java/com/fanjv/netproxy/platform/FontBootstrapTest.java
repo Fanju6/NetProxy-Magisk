@@ -79,24 +79,24 @@ public final class FontBootstrapTest {
 
     @Test public void failedLoadDoesNotRegisterNullFont() throws Exception {
         Typeface.failLoad = true;
-        assertEquals(IllegalStateException.class, queryFailure().getClass());
+        assertEquals(NullPointerException.class, queryFailure().getClass());
         assertEquals(1, Typeface.loads);
         assertEquals(0, Typeface.registrations);
     }
 
-    @Test public void frameworkRejectsUnresolvedFontBeforeApplicationQuery() throws Exception {
+    @Test public void unresolvedFontDoesNotPreventApplicationQuery() throws Exception {
         Typeface.DEFAULT = new Typeface(0);
         Typeface.sSystemFontMap.put("sans-serif", Typeface.DEFAULT);
-        assertEquals(IllegalStateException.class, queryFailure().getClass());
+        assertEquals(NullPointerException.class, queryFailure().getClass());
         assertEquals(0, Typeface.loads);
         assertEquals(0, Typeface.registrations);
     }
 
-    @Test public void registrationFailureStopsBeforeApplicationQuery() throws Exception {
+    @Test public void registrationFailureDoesNotPreventApplicationQuery() throws Exception {
         Typeface.DEFAULT = new Typeface(7);
         Typeface.sSystemFontMap.put("sans-serif", Typeface.DEFAULT);
         Typeface.failRegistration = true;
-        assertEquals(IllegalStateException.class, queryFailure().getClass());
+        assertEquals(NullPointerException.class, queryFailure().getClass());
         assertEquals(0, Typeface.registeredDefault);
     }
 

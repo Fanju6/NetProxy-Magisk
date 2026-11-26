@@ -50,11 +50,13 @@ var configSections = []string{
 	"providers", "route", "services", "experimental",
 }
 
+var inboundSections = []string{"backend", "root_policy", "ipv6", "sniff_destination", "app", "ebpf", "tun"}
+
 func configSection(target string) string {
 	if section, found := strings.CutPrefix(target, "module/"); found && (section == "wifi" || section == "auto_start") {
 		return section
 	}
-	if section, found := strings.CutPrefix(target, "inbound/"); found && (section == "backend" || section == "root_policy" || section == "app" || section == "ebpf" || section == "tun") {
+	if section, found := strings.CutPrefix(target, "inbound/"); found && slices.Contains(inboundSections, section) {
 		return section
 	}
 	section, hasPrefix := strings.CutPrefix(target, "singbox/")
@@ -71,7 +73,7 @@ func ListConfigs(options Options) ([]ConfigDocument, error) {
 	}
 	result := make([]ConfigDocument, 0)
 	result = append(result, ConfigDocument{ID: "inbound", Filename: "inbound.json", Category: "inbound", Editable: true})
-	for _, section := range []string{"backend", "root_policy", "app", "ebpf", "tun"} {
+	for _, section := range inboundSections {
 		result = append(result, ConfigDocument{ID: "inbound/" + section, Filename: section, Category: "inbound", Editable: true, Section: section})
 	}
 	if _, err := os.Stat(paths.SingBoxConfig(options.SingBoxDir)); err == nil {
@@ -151,6 +153,8 @@ func sectionContent(object map[string]jsontext.Value, section string) ([]byte, e
 	fragment := make(map[string]jsontext.Value)
 	if value, exists := object[section]; exists {
 		fragment[section] = value
+	} else if section == "ipv6" || section == "sniff_destination" {
+		fragment[section] = jsontext.Value("true")
 	}
 	return json.Marshal(fragment, json.Deterministic(true), jsontext.WithIndent("  "))
 }
@@ -542,7 +546,7 @@ func validateConfig(ctx context.Context, options Options, target, candidate stri
 }
 
 func validateInboundTree(ctx context.Context, options Options, candidate string, content []byte, section string) error {
-	if section == "backend" || section == "root_policy" || section == "app" {
+	if section == "backend" || section == "root_policy" || section == "ipv6" || section == "sniff_destination" || section == "app" {
 		if _, err := inbound.Parse(content); err != nil {
 			return err
 		}
@@ -723,10 +727,13 @@ func ResolveConfig(options Options, target string) (string, error) {
 	switch target {
 	case "module", "module/wifi", "module/auto_start":
 		return options.ModuleConfig, nil
-	case "inbound", "inbound/backend", "inbound/root_policy", "inbound/app", "inbound/ebpf", "inbound/tun":
+	case "inbound":
 		return options.InboundConfig, nil
 	case "singbox/config.json":
 		return paths.SingBoxConfig(options.SingBoxDir), nil
+	}
+	if section, found := strings.CutPrefix(target, "inbound/"); found && slices.Contains(inboundSections, section) {
+		return options.InboundConfig, nil
 	}
 	if configSection(target) != "" {
 		return paths.SingBoxConfig(options.SingBoxDir), nil

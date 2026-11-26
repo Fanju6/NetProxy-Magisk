@@ -10,7 +10,7 @@ import (
 	"github.com/Fanju6/NetProxy-Magisk/src/native/netproxy/internal/paths"
 )
 
-func writeEffectiveConfig(ctx context.Context, singBoxDir, destination string, inbounds []jsontext.Value, providers []jsontext.Value) error {
+func writeEffectiveConfig(ctx context.Context, singBoxDir, destination string, inbounds []jsontext.Value, providers []jsontext.Value, captureSocket string, disableIPv6, sniffDestination bool, captureQUICRule jsontext.Value) error {
 	content, err := os.ReadFile(paths.SingBoxConfig(singBoxDir))
 	if err != nil {
 		return err
@@ -21,6 +21,52 @@ func writeEffectiveConfig(ctx context.Context, singBoxDir, destination string, i
 	}
 	if err := validateConfiguredCatalogProviders(document, providers); err != nil {
 		return err
+	}
+	if disableIPv6 {
+		if err := projectIPv4Only(document); err != nil {
+			return err
+		}
+	}
+	if captureSocket != "" || sniffDestination || document["route"] != nil {
+		var route map[string]jsontext.Value
+		if raw, ok := document["route"]; ok {
+			if err := json.Unmarshal(raw, &route); err != nil {
+				return err
+			}
+		}
+		if route == nil {
+			route = make(map[string]jsontext.Value)
+		}
+		if captureSocket != "" {
+			route["find_process"] = jsontext.Value("true")
+			route["netproxy_capture_socket"], err = json.Marshal(captureSocket)
+			if err != nil {
+				return err
+			}
+			if captureQUICRule != nil {
+				rules := []jsontext.Value{captureQUICRule}
+				if raw, ok := route["rules"]; ok {
+					var existing []jsontext.Value
+					if err := json.Unmarshal(raw, &existing); err != nil {
+						return err
+					}
+					rules = append(rules, existing...)
+				}
+				route["rules"], err = json.Marshal(rules)
+				if err != nil {
+					return err
+				}
+			}
+		}
+		if sniffDestination {
+			route["netproxy_sniff_destination"] = jsontext.Value("true")
+		} else {
+			delete(route, "netproxy_sniff_destination")
+		}
+		document["route"], err = json.Marshal(route, json.Deterministic(true))
+		if err != nil {
+			return err
+		}
 	}
 	for key, entries := range map[string][]jsontext.Value{
 		"inbounds": inbounds, "providers": providers,

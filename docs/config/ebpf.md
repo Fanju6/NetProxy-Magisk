@@ -76,7 +76,7 @@ NetProxy 将两条路径省略或留空的 `data_plane` 均解析为 `socket_ass
 - `respect_policy`：先应用该路径的筛选与绕过策略，再接管 DNS；这是本机默认值。
 - `off`：不由该路径接管 DNS。
 
-`ipv6: false` 仅绕过该路径的 IPv6，不关闭系统 IPv6。`bypass_rule_set` 默认引用 `geoip/cn`，只使用可提取的 IP CIDR；命中流量不会进入普通路由，`Proxy` 模式也不能覆盖提前绕过。
+本机 `ipv6: false` 时，受管入站对接管的 UID 立即拒绝新建 IPv6 TCP/UDP 连接和未连接 UDP 的 IPv6 发送。不关闭系统 IPv6，IPv4（包括 IPv4 映射地址）、回环和不受管的 UID 不受此限制。共享网络 `ipv6: false` 仍绕过该路径的 IPv6。`bypass_rule_set` 默认引用 `geoip/cn`，只使用可提取的 IP CIDR；命中流量不会进入普通路由，`Proxy` 模式也不能覆盖提前绕过。
 
 `bypass_port` 使用数字数组，例如 `[22, 443]`；`bypass_port_range` 使用字符串数组，例如 `["1000:2000"]`，不是逗号文本。
 
