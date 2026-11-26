@@ -30,6 +30,7 @@ type HARFilter struct {
 	Batch, ID, Host, Query, Method, TLS, App, Outbound string
 	StatusClass                                        int
 	Rewritten                                          bool
+	ResponseTypes                                      ResponseTypes
 }
 
 type harPair struct {
@@ -215,7 +216,7 @@ func (e *HARExport) Write(ctx context.Context, w io.Writer) error {
 	seen := make(map[string]bool, len(e.live))
 	first := true
 	write := func(record Record) error {
-		if !e.filter.matches(record.Entry) {
+		if !e.filter.matches(record.Entry) || e.filter.ResponseTypes != 0 && !e.filter.ResponseTypes.matches(responseBodyType(record)) {
 			return nil
 		}
 		if !first {
@@ -231,7 +232,7 @@ func (e *HARExport) Write(ctx context.Context, w io.Writer) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if e.filter.Host != "" && saved.host != e.filter.Host {
+		if e.filter.Host != "" && saved.host != e.filter.Host || !e.filter.ResponseTypes.matches(saved.responseType) {
 			continue
 		}
 		record, ok := e.controller.history.readRecord(batch, saved)

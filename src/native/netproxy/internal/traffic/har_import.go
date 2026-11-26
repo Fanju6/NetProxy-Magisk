@@ -80,7 +80,7 @@ func (c *Controller) ImportHAR(ctx context.Context, name string, input io.Reader
 		filename := fmt.Sprintf("%016x-%s.json", batch.sequence, record.ID)
 		mediaSize := int64(len(blobs["request"]) + len(blobs["response"]))
 		size := int64(len(recordJSON))
-		batch.records = append(batch.records, savedRecord{filename, record.ID, historyHost(record.Host), size, batch.sequence, mediaSize})
+		batch.records = append(batch.records, savedRecord{filename, record.ID, historyHost(record.Host), size, batch.sequence, mediaSize, responseBodyType(record)})
 		batch.Count++
 		batch.Size += size + mediaSize
 		batch.mediaSize += mediaSize

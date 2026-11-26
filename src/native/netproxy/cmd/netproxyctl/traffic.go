@@ -29,11 +29,12 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 	action := args[0]
 	removeBypass := (action == "pinned" || action == "alpn-bypasses") && len(args) > 1
 	archive := action == "export" || action == "import"
+	history := action == "page" || action == "response-types"
 	withArgument := action == "set-rules" || action == "set-mitm" || action == "set-apps" || action == "ca-export" ||
 		action == "detail" || action == "delete-batch" || action == "replay" || action == "resend" ||
 		action == "set-breakpoints" || action == "abort" || ((action == "list" || action == "paused") && len(args) > 1)
-	if !archive && !removeBypass && ((action == "page" && len(args) > 3) || (action == "resume" && (len(args) < 2 || len(args) > 3)) ||
-		(action != "page" && action != "resume" && ((withArgument && len(args) != 2) || (!withArgument && len(args) != 1)))) {
+	if !archive && !history && !removeBypass && ((action == "resume" && (len(args) < 2 || len(args) > 3)) ||
+		(action != "resume" && ((withArgument && len(args) != 2) || (!withArgument && len(args) != 1)))) {
 		return usage()
 	}
 	layout := paths.New(c.options.ModuleDir)
@@ -52,13 +53,13 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 		for i := 1; i < len(args); i += 2 {
 			flag, ok := strings.CutPrefix(args[i], "--")
 			switch flag {
-			case "batch", "id", "host", "query", "method", "status-class", "tls", "rewritten", "app", "outbound":
+			case "batch", "id", "host", "query", "method", "status-class", "tls", "rewritten", "app", "outbound", "response-types":
 			default:
 				ok = false
 			}
 			key := strings.ReplaceAll(flag, "-", "_")
 			if !ok || i+1 >= len(args) || query.Has(key) {
-				return usageError("用法: netproxyctl api traffic export [--batch ID | --id ID] [--host 域名] [--query 搜索] [--method 方法] [--status-class 1–5] [--tls decrypted|tunnel] [--rewritten true|false] [--app 应用] [--outbound 出站]")
+				return usageError("用法: netproxyctl api traffic export [--batch ID | --id ID] [--host 域名] [--query 搜索] [--method 方法] [--status-class 1–5] [--tls decrypted|tunnel] [--rewritten true|false] [--app 应用] [--outbound 出站] [--response-types json,html,…]")
 			}
 			query.Set(key, args[i+1])
 		}
@@ -99,20 +100,31 @@ func (c *cli) trafficAPI(ctx context.Context, args []string) error {
 			}
 			body = bytes.NewReader(content)
 		}
-	case "page":
+	case "page", "response-types":
 		method = http.MethodGet
 		query := url.Values{}
-		if len(args) > 1 {
-			if !traffic.ValidRecordID(args[1]) {
+		input := args[1:]
+		if len(input) != 0 && !strings.HasPrefix(input[0], "--") {
+			if !traffic.ValidRecordID(input[0]) {
 				return usageError("抓包批次 ID 无效")
 			}
-			query.Set("batch", args[1])
+			query.Set("batch", input[0])
+			input = input[1:]
 		}
-		if len(args) > 2 {
-			if cursor, err := strconv.ParseUint(args[2], 10, 64); err != nil || cursor == 0 {
+		if action == "page" && len(input) != 0 && !strings.HasPrefix(input[0], "--") {
+			if cursor, err := strconv.ParseUint(input[0], 10, 64); err != nil || cursor == 0 {
 				return usageError("抓包分页游标无效")
 			}
-			query.Set("before", args[2])
+			query.Set("before", input[0])
+			input = input[1:]
+		}
+		for i := 0; i < len(input); i += 2 {
+			flag := input[i]
+			key := strings.ReplaceAll(strings.TrimPrefix(flag, "--"), "-", "_")
+			if i+1 >= len(input) || query.Has(key) || (flag != "--host" && (flag != "--response-types" || action != "page")) {
+				return usage()
+			}
+			query.Set(key, input[i+1])
 		}
 		if len(query) != 0 {
 			action += "?" + query.Encode()

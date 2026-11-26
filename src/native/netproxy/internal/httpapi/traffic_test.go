@@ -333,6 +333,62 @@ func TestTrafficDomainQueries(t *testing.T) {
 	}
 }
 
+func TestTrafficResponseTypeFilters(t *testing.T) {
+	s := resourceFixture(t)
+	fixture := `{"log":{"version":"1.2","entries":[
+		{"startedDateTime":"2026-01-01T00:00:00Z","request":{"method":"GET","url":"http://example.test/json"},"response":{"status":200,"headers":[{"name":"Content-Type","value":"application/problem+json; charset=utf-8"}],"content":{"text":"{}","mimeType":"text/plain","size":2}}},
+		{"startedDateTime":"2026-01-01T00:00:01Z","request":{"method":"GET","url":"http://example.test/image"},"response":{"status":200,"content":{"text":"eA==","encoding":"base64","mimeType":"image/svg+xml","size":1}}},
+		{"startedDateTime":"2026-01-01T00:00:02Z","request":{"method":"GET","url":"http://example.test/no-body"},"response":{"status":204,"headers":[{"name":"Content-Type","value":"text/html"}]}},
+		{"startedDateTime":"2026-01-01T00:00:03Z","request":{"method":"GET","url":"http://other.test/html"},"response":{"status":200,"content":{"text":"<b>x</b>","mimeType":"text/html","size":8}}}
+	]}}`
+	var batch traffic.Batch
+	resourceAssertSuccess(t, s, http.MethodPost, trafficRoute+"import?name=mixed.har", fixture, "traffic.har_imported", &batch)
+	for _, reload := range []bool{false, true} {
+		if reload {
+			s.traffic = traffic.New(paths.New(s.options.ModuleDir))
+		}
+		var counts []traffic.CaptureResponseType
+		resourceAssertSuccess(t, s, http.MethodGet, trafficRoute+"response-types?batch="+batch.ID+"&host=example.test", "", "traffic.response_types", &counts)
+		want := map[string]int{"json": 1, "image": 1, "none": 1}
+		if len(counts) != 9 {
+			t.Fatalf("type counts: %+v", counts)
+		}
+		for _, count := range counts {
+			if count.Count != want[count.Type] {
+				t.Fatalf("type counts: %+v", counts)
+			}
+		}
+		url := trafficRoute + "page?batch=" + batch.ID + "&response_types=json,image,html&host=example.test&limit=1"
+		var head, older, incremental traffic.HistoryPage
+		resourceAssertSuccess(t, s, http.MethodGet, url, "", "traffic.page", &head)
+		if len(head.Entries) != 1 || head.Entries[0].Target != "/image" || head.Before == "" || head.Since != "4" {
+			t.Fatalf("filtered head: %+v", head)
+		}
+		resourceAssertSuccess(t, s, http.MethodGet, url+"&before="+head.Before, "", "traffic.page", &older)
+		if len(older.Entries) != 1 || older.Entries[0].Target != "/json" || older.Before != "" {
+			t.Fatalf("filtered older: %+v", older)
+		}
+		resourceAssertSuccess(t, s, http.MethodGet, url+"&since=1", "", "traffic.page", &incremental)
+		if len(incremental.Entries) != 1 || incremental.Entries[0].Target != "/image" || incremental.Since != head.Since {
+			t.Fatalf("filtered incremental: %+v", incremental)
+		}
+	}
+	w, _ := resourceRequest(t, s, http.MethodGet, trafficRoute+"page?response_types=json,unknown", "")
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("invalid response types accepted: %d", w.Code)
+	}
+	r := httptest.NewRequest(http.MethodGet, trafficRoute+"export?batch="+batch.ID+"&response_types=json,image,html&host=example.test", nil)
+	r.Host = s.config.Listen
+	r.Header.Set("Authorization", "Bearer "+s.config.Secret)
+	w = httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "example.test/json") ||
+		!strings.Contains(w.Body.String(), "example.test/image") || strings.Contains(w.Body.String(), "other.test/html") ||
+		strings.Contains(w.Body.String(), "example.test/no-body") {
+		t.Fatalf("filtered HAR: %d %s", w.Code, w.Body.String())
+	}
+}
+
 func TestTrafficBodyAuthenticationAndRanges(t *testing.T) {
 	s := resourceFixture(t)
 	id, batch := strings.Repeat("A", 26), strings.Repeat("B", 26)

@@ -1,4 +1,12 @@
 <resources>
+    <string name="traffic_response_type_filter">Response body type</string>
+    <string name="traffic_response_type_selected">Response body types: %1$d</string>
+    <string name="traffic_response_type_text">Text</string>
+    <string name="traffic_response_type_image">Image</string>
+    <string name="traffic_response_type_video">Video</string>
+    <string name="traffic_response_type_audio">Audio</string>
+    <string name="traffic_response_type_binary">Binary / other</string>
+    <string name="traffic_response_type_none">No body</string>
     <string name="traffic_workspace">Workspace</string>
     <string name="traffic_sessions_summary">Search and inspect captured requests</string>
     <string name="traffic_rules_summary">Manage request and response scripts</string>

@@ -18,13 +18,14 @@ export const COMMANDS = {
   api traffic toggle | start | stop        切换或启停全局透明抓包
   api traffic status | clear                查看状态或清空所有抓包批次
   api traffic batches | list [批次ID]        查看批次或批次记录（默认当前或最近批次）
-  api traffic page [批次ID [游标]]           分页读取已保存的记录
+  api traffic page [批次ID [游标]] [--response-types json,html,…] [--host 域名] 分页筛选已保存的记录
+  api traffic response-types [批次ID] [--host 域名] 统计批次内的响应体类型
   api traffic delete-batch <批次ID>          删除已停止的批次
   api traffic detail <ID>                   查看出口、重写记录、请求和响应详情
   api traffic resend <ID>                   按当前路由重发完整的抓包请求
   api traffic breakpoints                   查看交互断点配置
   api traffic set-breakpoints <文件>        保存断点规则和自动继续超时
-  api traffic export [--batch ID | --id ID] 导出 HAR（使用 Shell 重定向保存文件）
+  api traffic export [--batch ID | --id ID] [--response-types json,html,…] 导出 HAR（使用 Shell 重定向保存文件）
   api traffic import <文件>                导入只读 HAR 批次
   api traffic pinned remove <域名> <用户:包名> 删除单个证书固定跳过条目（alpn-bypasses 同理）
   api traffic paused [ID]                   列出待处理断点，或读取一个断点的编辑字段
@@ -221,8 +222,11 @@ const CONFIG_TARGETS = [
 ]
 
 export const VALUE_COMPLETIONS: Record<string, string[]> = {
-  'api traffic': ['status', 'toggle', 'start', 'stop', 'batches', 'list', 'page', 'delete-batch', 'detail', 'export', 'import', 'resend', 'replay', 'breakpoints', 'set-breakpoints', 'paused', 'resume', 'abort', 'clear', 'rules', 'set-rules', 'mitm', 'set-mitm', 'apps', 'set-apps', 'pinned', 'clear-pinned', 'alpn-bypasses', 'clear-alpn-bypasses', 'ca', 'ca-init', 'ca-export', 'ca-remove'],
+  'api traffic': ['status', 'toggle', 'start', 'stop', 'batches', 'list', 'page', 'delete-batch', 'detail', 'export', 'import', 'resend', 'replay', 'breakpoints', 'set-breakpoints', 'paused', 'resume', 'response-types', 'abort', 'clear', 'rules', 'set-rules', 'mitm', 'set-mitm', 'apps', 'set-apps', 'pinned', 'clear-pinned', 'alpn-bypasses', 'clear-alpn-bypasses', 'ca', 'ca-init', 'ca-export', 'ca-remove'],
   'api traffic pinned': ['remove'],
+  'api traffic page': ['--host', '--response-types'],
+  'api traffic response-types': ['--host'],
+  'api traffic export': ['--batch', '--id', '--host', '--query', '--method', '--status-class', '--tls', '--rewritten', '--app', '--outbound', '--response-types'],
   'api traffic alpn-bypasses': ['remove'],
   'app mode': ['blacklist', 'whitelist'],
   'ebpf status': ['configured', 'all', 'local', 'shared', '--raw'],

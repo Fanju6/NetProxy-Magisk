@@ -79,6 +79,7 @@ import com.fanjv.netproxy.feature.apps.presentation.AppInfoModel
 import com.fanjv.netproxy.feature.apps.presentation.AppIcon
 import com.fanjv.netproxy.feature.traffic.data.CaptureRecord
 import com.fanjv.netproxy.feature.traffic.data.TrafficChangedException
+import com.fanjv.netproxy.feature.traffic.data.responseTypeQuery
 import com.fanjv.netproxy.navigation.LocalNavigator
 import com.fanjv.netproxy.navigation.Route
 import kotlinx.coroutines.delay
@@ -294,6 +295,7 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
     var confirmClear by rememberSaveable { mutableStateOf(false) }
     var deleteBatch by rememberSaveable { mutableStateOf<String?>(null) }
     var showDomains by rememberSaveable { mutableStateOf(false) }
+    var showResponseTypes by rememberSaveable { mutableStateOf(false) }
     var grouping by rememberSaveable { mutableStateOf(SessionGrouping.None) }
     var collapsed by remember(grouping) { mutableStateOf(emptySet<String>()) }
     val records = state.records.value.orEmpty()
@@ -317,7 +319,7 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
         records.filter { it.matchesSession(query, method, statusClass, tls, rewrittenOnly, app, outbound) }
     }
     val groups = remember(visible, grouping) { visible.groupSessions(grouping) }
-    val listState = key(state.selectedBatch, state.selectedDomain) { rememberLazyListState() }
+    val listState = key(state.selectedBatch, state.selectedDomain, state.selectedResponseTypes) { rememberLazyListState() }
     val before = state.page?.before
     val running = state.status.value?.running == true
     LaunchedEffect(listState, before, visible.isNotEmpty(), state.busy, state.loadingOlder, state.olderError) {
@@ -358,6 +360,7 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
         batch = (state.selectedBatch ?: state.page?.batch)?.let { mapOf("batch" to it) }.orEmpty(),
         filters = buildMap {
             state.selectedDomain?.let { put("host", it) }
+            putAll(state.selectedResponseTypes.responseTypeQuery())
             query.trim().takeIf { it.isNotEmpty() }?.let { put("query", it) }
             method?.let { put("method", it) }
             statusClass?.let { put("status_class", it.toString()) }
@@ -385,6 +388,12 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
                     FilterChip("$domainLabel ▾", state.selectedDomain != null, Modifier.clickable(enabled = !state.busy) {
                         showDomains = true
                     })
+                    val typesSelected = state.selectedResponseTypes.isNotEmpty()
+                    val typeLabel = if (typesSelected) stringResource(R.string.traffic_response_type_selected, state.selectedResponseTypes.size)
+                        else stringResource(R.string.traffic_response_type_filter)
+                    FilterChip("$typeLabel ▾", typesSelected, Modifier.clickable(enabled = !state.busy) {
+                        showResponseTypes = true
+                    })
                     FilterDropdown(R.string.traffic_method, methods, method) { method = it }
                     FilterDropdown(R.string.traffic_http_status, (1..5).map { "${it}xx" }, statusClass?.let { "${it}xx" }) {
                         statusClass = it?.firstOrNull()?.digitToInt()
@@ -400,7 +409,8 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
                 val issue = state.records.error ?: state.failure
                 if (visible.isEmpty() && before == null) ContentStatus(PaddingValues(0.dp), when {
                     issue != null -> trafficError(issue, R.string.traffic_read_failed)
-                    records.isNotEmpty() || state.selectedDomain != null -> stringResource(R.string.traffic_no_matches)
+                    records.isNotEmpty() || state.selectedDomain != null || state.selectedResponseTypes.isNotEmpty() ->
+                        stringResource(R.string.traffic_no_matches)
                     else -> stringResource(R.string.traffic_empty)
                 }, loading = state.loading)
                 else LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
@@ -441,6 +451,8 @@ internal fun TrafficSessionsScreen(viewModel: TrafficViewModel) {
     }
     if (showDomains) CaptureDomainPicker(viewModel, state.page?.batch ?: state.selectedBatch, state.selectedDomain,
         allowAll = true, onDismiss = { showDomains = false }, choose = viewModel::selectDomain)
+    if (showResponseTypes) CaptureResponseTypePicker(viewModel, state.page?.batch ?: state.selectedBatch, state.selectedDomain,
+        state.selectedResponseTypes, onDismiss = { showResponseTypes = false }, choose = viewModel::selectResponseTypes)
     TrafficConfirmation(confirmClear, R.string.traffic_clear, R.string.traffic_clear_prompt,
         { confirmClear = false }, { confirmClear = false; viewModel.clear() })
     TrafficConfirmation(deleteBatch != null, R.string.traffic_delete_batch, R.string.traffic_delete_batch_prompt,

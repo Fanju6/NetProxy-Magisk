@@ -1,4 +1,12 @@
 <resources>
+    <string name="traffic_response_type_filter">Тип тела ответа</string>
+    <string name="traffic_response_type_selected">Типы тела ответа: %1$d</string>
+    <string name="traffic_response_type_text">Текст</string>
+    <string name="traffic_response_type_image">Изображение</string>
+    <string name="traffic_response_type_video">Видео</string>
+    <string name="traffic_response_type_audio">Аудио</string>
+    <string name="traffic_response_type_binary">Двоичные / прочие</string>
+    <string name="traffic_response_type_none">Без тела</string>
     <string name="traffic_workspace">Рабочая область</string>
     <string name="traffic_sessions_summary">Поиск и просмотр перехваченных запросов</string>
     <string name="traffic_rules_summary">Управление скриптами запросов и ответов</string>

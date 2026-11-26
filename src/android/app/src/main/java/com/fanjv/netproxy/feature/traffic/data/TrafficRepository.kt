@@ -42,6 +42,12 @@ internal data class CapturePage(
 internal data class CaptureDomain(val host: String, val count: Int)
 
 @Serializable
+internal data class CaptureResponseType(val type: String, val count: Int)
+
+internal fun Set<String>.responseTypeQuery(): Map<String, String> =
+    if (isEmpty()) emptyMap() else mapOf("response_types" to sorted().joinToString(","))
+
+@Serializable
 internal data class PinnedBypass(
     val host: String,
     @SerialName("user_id") val userId: Int,
@@ -293,8 +299,9 @@ internal class TrafficRepository(private val api: ModuleApiClient, private val c
     suspend fun records(batch: String? = null): List<CaptureRecord> =
         api.read("/traffic/list", if (batch == null) emptyMap() else mapOf("batch" to batch))
     suspend fun page(batch: String? = null, before: String? = null, since: String? = null, oldest: String? = null,
-        host: String? = null): CapturePage {
-        if (host == null && batch != null && before != null && oldest != null) {
+        host: String? = null, responseTypes: Set<String> = emptySet()): CapturePage {
+        val unfiltered = host == null && responseTypes.isEmpty()
+        if (unfiltered && batch != null && before != null && oldest != null) {
             cache?.read(batch, oldest, before)?.let { return it }
         }
         val page = api.read<CapturePage>("/traffic/page", buildMap {
@@ -302,14 +309,20 @@ internal class TrafficRepository(private val api: ModuleApiClient, private val c
             before?.let { put("before", it) }
             since?.let { put("since", it) }
             host?.let { put("host", it) }
+            putAll(responseTypes.responseTypeQuery())
         })
-        if (host == null && batch != null && before != null && page.batch == batch && page.oldest != null) {
+        if (unfiltered && batch != null && before != null && page.batch == batch && page.oldest != null) {
             cache?.write(batch, page.oldest, before, page)
         }
         return page
     }
     suspend fun domains(batch: String? = null): List<CaptureDomain> =
         api.read("/traffic/domains", if (batch == null) emptyMap() else mapOf("batch" to batch))
+    suspend fun responseTypes(batch: String?, host: String?): List<CaptureResponseType> =
+        api.read("/traffic/response-types", buildMap {
+            batch?.let { put("batch", it) }
+            host?.let { put("host", it) }
+        })
     suspend fun batches(): List<CaptureBatch> = api.read<List<CaptureBatch>>("/traffic/batches").also { batches ->
         cache?.retain(batches.mapTo(mutableSetOf()) { it.id })
     }

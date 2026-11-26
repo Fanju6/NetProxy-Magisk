@@ -69,12 +69,31 @@ func (s *Server) registerTraffic() {
 		}
 		return contract.Success("traffic.domains", "抓包域名统计", domains), nil
 	})
-	s.route("GET "+trafficRoute+"page", 10*time.Second, false, func(_ context.Context, r *http.Request) (contract.Result, error) {
-		query, err := resourceQuery(r, "batch", "limit", "before", "after", "since", "host")
+	s.route("GET "+trafficRoute+"response-types", 10*time.Second, false, func(_ context.Context, r *http.Request) (contract.Result, error) {
+		query, err := resourceQuery(r, "batch", "host")
 		if err != nil {
 			return contract.Result{}, err
 		}
-		request := traffic.PageRequest{Batch: query.Get("batch"), Host: query.Get("host"), Limit: 50}
+		id := query.Get("batch")
+		if query.Has("batch") && !traffic.ValidRecordID(id) {
+			return contract.Result{}, invalid("抓包批次 ID 无效")
+		}
+		types, ok := s.traffic.HistoryResponseTypes(id, query.Get("host"))
+		if !ok {
+			return contract.Result{}, captureBatchNotFound()
+		}
+		return contract.Success("traffic.response_types", "抓包响应体类型统计", types), nil
+	})
+	s.route("GET "+trafficRoute+"page", 10*time.Second, false, func(_ context.Context, r *http.Request) (contract.Result, error) {
+		query, err := resourceQuery(r, "batch", "limit", "before", "after", "since", "host", "response_types")
+		if err != nil {
+			return contract.Result{}, err
+		}
+		types, ok := traffic.ParseResponseTypes(query.Get("response_types"))
+		if !ok || query.Has("response_types") && types == 0 {
+			return contract.Result{}, invalid("响应体类型（response_types）无效")
+		}
+		request := traffic.PageRequest{Batch: query.Get("batch"), Host: query.Get("host"), Limit: 50, ResponseTypes: types}
 		if query.Has("batch") && !traffic.ValidRecordID(request.Batch) {
 			return contract.Result{}, invalid("抓包批次 ID 无效")
 		}

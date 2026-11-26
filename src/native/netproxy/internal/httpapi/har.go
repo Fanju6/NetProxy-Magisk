@@ -25,7 +25,7 @@ func (s *Server) exportHAR(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r.Context(), busy())
 		return
 	}
-	query, err := resourceQuery(r, "batch", "id", "host", "query", "method", "status_class", "tls", "rewritten", "app", "outbound")
+	query, err := resourceQuery(r, "batch", "id", "host", "query", "method", "status_class", "tls", "rewritten", "app", "outbound", "response_types")
 	if err != nil {
 		s.fail(w, r.Context(), err)
 		return
@@ -43,9 +43,14 @@ func (s *Server) exportHAR(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r.Context(), harAPIError(traffic.ErrHARFilter))
 		return
 	}
+	types, ok := traffic.ParseResponseTypes(query.Get("response_types"))
+	if !ok || query.Has("response_types") && types == 0 {
+		s.fail(w, r.Context(), harAPIError(traffic.ErrHARFilter))
+		return
+	}
 	export, err := s.traffic.PrepareHARExport(traffic.HARFilter{Batch: query.Get("batch"), ID: query.Get("id"),
 		Host: query.Get("host"), Query: query.Get("query"), Method: query.Get("method"), StatusClass: status,
-		TLS: query.Get("tls"), Rewritten: rewritten == "true", App: query.Get("app"), Outbound: query.Get("outbound")})
+		TLS: query.Get("tls"), Rewritten: rewritten == "true", App: query.Get("app"), Outbound: query.Get("outbound"), ResponseTypes: types})
 	if err != nil {
 		s.fail(w, r.Context(), harAPIError(err))
 		return

@@ -142,12 +142,14 @@ HTTP 保存必须提供读取时的 revision。发生 `config.conflict` 时重�
 | `GET /traffic/page?batch=…&limit=50&before=…` | 按新到旧读取指定批次（默认当前或最近批次）；每页 1–100 条。响应的 `before` 用于继续向前翻页；用 `since`（或 `after`）代替 `before` 读取更新，使用返回的 `since` 继续拉取；`oldest` 表示当前保留范围起点 |
 | `GET /traffic/page?host=example.org` | 分页时可额外按精确主机筛选（忽略大小写、端口和末尾的点）；分页和增量请求使用相同的 `host` |
 | `GET /traffic/domains?batch=…` | 返回指定批次完整保留历史中的主机名及记录数量（`host`、`count`）；默认当前或最近批次 |
+| `GET /traffic/page?response_types=json,image` | 按一个或多个响应体类型筛选（任意选中类型匹配）；可与 `host` 叠加，分页和增量请求保持相同筛选条件 |
+| `GET /traffic/response-types?batch=…&host=…` | 按指定批次完整保留历史统计类型和数量（`type`、`count`）；批次和主机可省略。类型为 `json`、`html`、`xml`、`text`、`image`、`video`、`audio`、`binary`、`none`。优先按响应 Content-Type 分类，缺失时使用已保存的媒体类型；无响应体和透传记录为 `none` |
 | `GET /traffic/apps`、`PUT /traffic/apps` | 读取或替换抓包范围：`{"mode":"whitelist","blacklist":[],"whitelist":["0:com.example.app"],"disable_quic":true}`。模式为 `all`、`blacklist` 或 `whitelist`；分别抓取所有应用、排除黑名单或只抓取白名单。`disable_quic` 默认开启，写入时省略则保留原值。旧 `apps` 格式的非空名单迁移为白名单、空名单迁移为全部。 |
 | `POST /traffic/toggle`、`start`、`stop`；`DELETE /traffic/list` | 切换全局抓包、显式启停或清空所有批次的记录 |
 | `GET/PUT /traffic/rules` | 读取或替换重写规则，正文为 `{"rules":[...]}`，新增和修改的规则需要 `domains`。可选 `name` 标题（去除首尾空白后最多 64 个字符）；单条规则可设 `"enabled":false`，省略时启用。见[规则格式](/guide/traffic-debugging) |
 | `GET/PUT /traffic/breakpoints` | 读取或替换 `{"timeout_seconds":60,"rules":[{"domains":["example.org"],"pattern":"/debug","phase":"both","enabled":true,"name":"调试"}]}`。超时范围为 1–120 秒，省略时 60 秒；阶段为 `request`、`response`、`both`。 |
 | `GET /traffic/paused` | 待处理断点摘要；带 `?id=…` 时返回单个断点的编辑字段，包括可编辑的文本正文（若可用）。 |
-| `GET /traffic/export` | 下载 HAR 1.2 原始 JSON（不使用结果 envelope）。可选 `batch` 或 `id`，以及 `host`、`query`、`method`、`status_class`（1–5）、`tls`（decrypted/tunnel）、`rewritten`、`app`、`outbound`。 |
+| `GET /traffic/export` | 下载 HAR 1.2 原始 JSON（不使用结果 envelope）。可选 `batch` 或 `id`，以及 `host`、`query`、`method`、`status_class`（1–5）、`tls`（decrypted/tunnel）、`rewritten`、`app`、`outbound`、`response_types`（与分页一致）。 |
 | `POST /traffic/import?name=文件名.har` | 正文为 HAR 1.2 JSON（`application/json`），最多 4 MiB / 2,000 条；成功返回新只读批次，包含 `name`、`imported`。无效文件不会发布部分批次。 |
 | `POST /traffic/resume?id=…`、`POST /traffic/abort?id=…` | 空请求或空对象原样继续；继续时可提交修改字段：请求的 `method/url/headers/body` 或响应的 `status/headers/body`。中止返回 502。已结束的断点返回 `traffic.breakpoint_gone`，无效修改返回 `traffic.breakpoint_edit_invalid`。流的 `http.breakpoints` 记录审计。 |
 | `GET/PUT /traffic/mitm` | 读取或替换 `{"enabled":false,"hosts":["*"],"bypass_hosts":[],"system_trust":false}`；启用后默认解密全部 HTTPS/WSS，排除名单优先。系统信任在开机、热更新或开启抓包时重新应用，关闭时尝试卸载 |

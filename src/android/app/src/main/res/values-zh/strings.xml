@@ -1,4 +1,12 @@
 <resources>
+    <string name="traffic_response_type_filter">响应体类型</string>
+    <string name="traffic_response_type_selected">响应体类型：%1$d 项</string>
+    <string name="traffic_response_type_text">文本</string>
+    <string name="traffic_response_type_image">图片</string>
+    <string name="traffic_response_type_video">视频</string>
+    <string name="traffic_response_type_audio">音频</string>
+    <string name="traffic_response_type_binary">二进制／其他</string>
+    <string name="traffic_response_type_none">无响应体</string>
     <string name="traffic_workspace">工作区</string>
     <string name="traffic_sessions_summary">搜索并检查抓包记录</string>
     <string name="traffic_rules_summary">管理请求与响应脚本</string>

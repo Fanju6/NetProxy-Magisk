@@ -1,4 +1,12 @@
 <resources>
+    <string name="traffic_response_type_filter">Tipo do corpo da resposta</string>
+    <string name="traffic_response_type_selected">Tipos do corpo da resposta: %1$d</string>
+    <string name="traffic_response_type_text">Texto</string>
+    <string name="traffic_response_type_image">Imagem</string>
+    <string name="traffic_response_type_video">Vídeo</string>
+    <string name="traffic_response_type_audio">Áudio</string>
+    <string name="traffic_response_type_binary">Binário / outros</string>
+    <string name="traffic_response_type_none">Sem corpo</string>
     <string name="traffic_workspace">Área de trabalho</string>
     <string name="traffic_sessions_summary">Pesquisar e inspecionar solicitações capturadas</string>
     <string name="traffic_rules_summary">Gerenciar scripts de solicitação e resposta</string>

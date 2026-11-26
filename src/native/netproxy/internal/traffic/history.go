@@ -40,12 +40,13 @@ type Batch struct {
 }
 
 type savedRecord struct {
-	name      string
-	id        string
-	host      string
-	size      int64
-	sequence  uint64
-	mediaSize int64
+	name         string
+	id           string
+	host         string
+	size         int64
+	sequence     uint64
+	mediaSize    int64
+	responseType int
 }
 
 type savedBatch struct {
@@ -120,6 +121,7 @@ func openHistory(layout paths.Layout) *historyStore {
 				continue
 			}
 			saved.host = historyHost(record.Host)
+			saved.responseType = responseBodyType(record)
 			for _, side := range []string{"request", "response"} {
 				if body := bodyFor(record, side); body != nil && body.Blob {
 					blobs[mediaName(id, side)] = true
@@ -316,7 +318,7 @@ func (h *historyStore) appendPending(batch *savedBatch, pending pendingRecord) e
 	if err := provider.WriteAtomic(h.path(batch.ID, name), data, 0o600); err != nil {
 		return err
 	}
-	batch.records = append(batch.records, savedRecord{name, record.ID, historyHost(record.Host), size, batch.sequence, mediaSize})
+	batch.records = append(batch.records, savedRecord{name, record.ID, historyHost(record.Host), size, batch.sequence, mediaSize, responseBodyType(record)})
 	batch.Count++
 	batch.Size += size + mediaSize
 	batch.mediaSize += mediaSize
@@ -442,6 +444,7 @@ type PageRequest struct {
 	Before, Since uint64
 	Incremental   bool
 	Limit         int
+	ResponseTypes ResponseTypes
 }
 
 func (c *Controller) HistoryPage(request PageRequest) (HistoryPage, bool) {
@@ -479,11 +482,12 @@ func (h *historyStore) page(request PageRequest) (HistoryPage, bool) {
 		limit := min(MaxHistoryPage, max(1, request.Limit))
 		page.Oldest = strconv.FormatUint(batch.records[0].sequence, 10)
 		records := batch.records
-		if request.Host != "" {
+		filtered := request.Host != "" || request.ResponseTypes != 0
+		if filtered {
 			host := historyHost(request.Host)
 			records = nil
 			for _, record := range batch.records {
-				if record.host == host {
+				if (host == "" || record.host == host) && request.ResponseTypes.matches(record.responseType) {
 					records = append(records, record)
 				}
 			}
@@ -504,7 +508,7 @@ func (h *historyStore) page(request PageRequest) (HistoryPage, bool) {
 				page.Before = strconv.FormatUint(records[low].sequence, 10)
 			}
 		}
-		if request.Host != "" && request.Before == 0 && high == len(records) {
+		if filtered && request.Before == 0 && high == len(records) {
 			page.Since = strconv.FormatUint(batch.records[len(batch.records)-1].sequence, 10)
 		} else if high > 0 {
 			page.Since = strconv.FormatUint(records[high-1].sequence, 10)

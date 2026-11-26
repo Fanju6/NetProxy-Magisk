@@ -149,6 +149,38 @@ class TrafficRepositoryTest {
         assertEquals(2, pages)
     }
 
+    @Test fun responseTypesUseBatchAndDomainAndFilteredPagesBypassUnfilteredCache() = runBlocking {
+        val batch = "A".repeat(26)
+        val cache = CapturePageCache(cacheDir.root, Json)
+        var pages = 0
+        val repository = TrafficRepository(ModuleApiClient(TestApiTransport { request ->
+            when (request.path) {
+                "/traffic/response-types" -> {
+                    assertEquals(mapOf("batch" to batch, "host" to "example.test"), request.query)
+                    apiSuccess("""[{"type":"image","count":2}]""")
+                }
+                "/traffic/page" -> {
+                    pages++
+                    val filters = when (pages) {
+                        2 -> mapOf("response_types" to "image,json")
+                        3 -> mapOf("response_types" to "image,json", "host" to "example.test")
+                        else -> emptyMap()
+                    }
+                    assertEquals(mapOf("batch" to batch, "before" to "3") + filters, request.query)
+                    apiSuccess("""{"entries":[],"batch":"$batch","oldest":"1"}""")
+                }
+                else -> error("Unexpected request ${request.path}")
+            }
+        }), cache)
+        assertEquals(2, repository.responseTypes(batch, "example.test").single().count)
+        repository.page(batch, before = "3", oldest = "1")
+        val selected = setOf("json", "image")
+        repository.page(batch, before = "3", oldest = "1", responseTypes = selected)
+        repository.page(batch, before = "3", oldest = "1", host = "example.test", responseTypes = selected)
+        repository.page(batch, before = "3", oldest = "1")
+        assertEquals(3, pages)
+    }
+
     @Test fun rewriteRulesDefaultToEnabledAndPersistExplicitDisable() = runBlocking {
         val rule = """{"pattern":"/inspect","phase":"request","script":"return {}","domains":["example.test"]}"""
         var stored = """{"rules":[$rule]}"""
