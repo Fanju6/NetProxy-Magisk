@@ -647,7 +647,7 @@
     <string name="routing_section_advanced">高级</string>
     <string name="routing_section_match">匹配条件</string>
     <string name="routing_section_action">处理方式</string>
-    <string name="routing_app_condition">应用</string>
+    <string name="routing_app_condition">安卓应用</string>
     <string name="routing_back_to_list">返回规则列表</string>
     <string name="routing_rule_changed">此规则已更改或不再可用。</string>
     <string name="routing_add">添加规则</string>
@@ -668,7 +668,13 @@
     <string name="routing_policy_group">策略组</string>
     <string name="routing_policy_choose">请选择策略组</string>
     <string name="routing_policy_no_groups">尚未配置策略组。</string>
-    <string name="routing_policy_order_unsupported">当前规则顺序无法在此调整，请改用原生路由 JSON。</string>
+    <string name="routing_position">插入位置</string>
+    <string name="routing_position_choose">请选择位置</string>
+    <string name="routing_position_before">第 %1$d 条之前</string>
+    <string name="routing_position_last">放在最后</string>
+    <string name="routing_position_shadowed">第 %1$d 条规则可能已覆盖此流量。</string>
+    <string name="routing_reload_position">重新加载并选择位置</string>
+    <string name="routing_private_ip">私有 IP</string>
     <string name="routing_values">每行一个匹配值</string>
     <string name="routing_domain_suffix">域名及子域名</string>
     <string name="routing_domain">完整域名</string>

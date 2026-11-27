@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
@@ -37,6 +39,12 @@ import com.fanjv.netproxy.core.ui.component.groupedCardSection
 import com.fanjv.netproxy.core.ui.component.dialogTextFieldColors
 import com.fanjv.netproxy.feature.routing.model.LocalRuleSet
 import com.fanjv.netproxy.feature.routing.model.RuleField
+import com.fanjv.netproxy.feature.routing.model.simpleRule
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.DropdownEntry
 import top.yukonga.miuix.kmp.basic.DropdownItem
@@ -48,8 +56,6 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-
-private val matchFields = listOf(RuleField.PackageName) + RuleField.entries.filterNot { it == RuleField.PackageName }
 
 @Composable
 internal fun RoutingRuleEditorSheet(
@@ -63,10 +69,17 @@ internal fun RoutingRuleEditorSheet(
     val identity = draft?.index?.let { RuleIdentity(draft.target, it) }
     val field = draft?.field
     val file = (draft?.target ?: requested?.target)?.let(state.files::getValue)
+    val reviewingPlacement = draft?.target == LocalRuleSet.Policy && draft.index == null && file?.requiresReload == true
+    val placementDocument = file?.document?.takeIf { draft != null && state.needsInsertion(draft) }
     val listState = rememberLazyListState()
     var pickingApps by rememberSaveable { mutableStateOf(false) }
+    var pickingPosition by rememberSaveable { mutableStateOf(false) }
     val reload = {
-        if (requested != null) viewModel.closeEditor() else viewModel.openEditor(null, null, discardDraft = true)
+        when {
+            reviewingPlacement -> viewModel.reloadPolicyDraft()
+            requested != null -> viewModel.closeEditor()
+            else -> viewModel.openEditor(null, null, discardDraft = true)
+        }
     }
     val rawEdit: (LocalRuleSet) -> Unit = { target ->
         viewModel.dismiss()
@@ -129,7 +142,10 @@ internal fun RoutingRuleEditorSheet(
                     return@LazyColumn
                 }
                 if (file != null && (file.error.isNotEmpty() || file.requiresReload)) {
-                    item("error") { RoutingError(file, state, reload, backToList = requested != null) }
+                    item("error") {
+                        RoutingError(file, state, reload, backToList = requested != null,
+                            reloadTitle = R.string.routing_reload_position.takeIf { reviewingPlacement })
+                    }
                 }
 
                 if (field != null) {
@@ -138,10 +154,10 @@ internal fun RoutingRuleEditorSheet(
                         add(CardItem("kind") {
                             AppDropdown(
                                 title = stringResource(R.string.routing_match),
-                                items = matchFields.map { stringResource(it.title()) },
-                                selectedIndex = matchFields.indexOf(field),
+                                items = RuleField.entries.map { stringResource(it.title()) },
+                                selectedIndex = field.ordinal,
                                 enabled = !state.isSaving,
-                                onSelectedIndexChange = { viewModel.updateDraft(matchFields[it], draft.text) },
+                                onSelectedIndexChange = { viewModel.updateDraft(RuleField.entries[it], draft.text) },
                             )
                         })
                         if (field == RuleField.PackageName) add(CardItem("choose_apps") {
@@ -186,12 +202,6 @@ internal fun RoutingRuleEditorSheet(
                         })
                         if (draft.target == LocalRuleSet.Policy) add(CardItem("group") {
                             when {
-                                file?.document?.policyStart == null -> ArrowPreference(
-                                    title = stringResource(R.string.routing_raw),
-                                    summary = stringResource(R.string.routing_policy_order_unsupported),
-                                    enabled = !state.isLoading && !state.isSaving,
-                                    onClick = { rawEdit(draft.target) },
-                                )
                                 state.policyTargets.isEmpty() -> BasicComponent(
                                     title = stringResource(R.string.routing_policy_group),
                                     summary = stringResource(R.string.routing_policy_no_groups),
@@ -207,6 +217,26 @@ internal fun RoutingRuleEditorSheet(
                                         onSelectedIndexChange = { state.policyTargets.getOrNull(it - 1)?.let(viewModel::selectPolicy) },
                                     )
                                 }
+                            }
+                        })
+                        if (placementDocument != null) add(CardItem("position") {
+                            val position = draft.insertion
+                            val anchor = position?.let(placementDocument.rules::getOrNull)
+                            ArrowPreference(
+                                title = stringResource(R.string.routing_position),
+                                summary = when {
+                                    position == null -> stringResource(R.string.routing_position_choose)
+                                    anchor == null -> stringResource(R.string.routing_position_last)
+                                    else -> "${stringResource(R.string.routing_position_before, position + 1)} · ${anchor.positionSummary()}"
+                                },
+                                enabled = enabled,
+                                onClick = { sheetFocus.clearFocus(); pickingPosition = true },
+                            )
+                            position?.let(placementDocument::earlierCatchAll)?.let { index ->
+                                Text(stringResource(R.string.routing_position_shadowed, index + 1),
+                                    Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                                    style = MiuixTheme.textStyles.footnote2,
+                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
                             }
                         })
                     })
@@ -228,6 +258,32 @@ internal fun RoutingRuleEditorSheet(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
                     enabled = editor.visible && state.deleting == null && state.canSave(draft),
                     role = DialogActionRole.Primary,
+                )
+            }
+        }
+    }
+
+    if (placementDocument != null && file != null) AppDialog(
+        show = pickingPosition,
+        title = stringResource(R.string.routing_position),
+        onDismissRequest = { pickingPosition = false },
+    ) {
+        val select: (Int) -> Unit = {
+            viewModel.selectInsertion(it, file.revision)
+            pickingPosition = false
+        }
+        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 460.dp), overscrollEffect = null) {
+            itemsIndexed(placementDocument.rules) { index, rule ->
+                BasicComponent(
+                    title = stringResource(R.string.routing_position_before, index + 1),
+                    summary = rule.positionSummary(),
+                    onClick = { select(index) },
+                )
+            }
+            item {
+                BasicComponent(
+                    title = stringResource(R.string.routing_position_last),
+                    onClick = { select(placementDocument.rules.size) },
                 )
             }
         }
@@ -262,5 +318,25 @@ internal fun RoutingRuleEditorSheet(
                     enabled = deleting?.target?.let(state::editable) == true, role = DialogActionRole.Destructive)
             }
         }
+    }
+}
+
+@Composable
+private fun JsonElement.positionSummary(): String {
+    val rule = this as? JsonObject ?: return stringResource(R.string.routing_advanced)
+    fun JsonElement?.labels(): String =
+        (if (this is JsonArray) this else listOfNotNull(this))
+            .mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.take(2).joinToString(", ").take(46)
+    val label = when {
+        rule["ip_is_private"] == JsonPrimitive(true) -> stringResource(R.string.routing_private_ip)
+        else -> JsonObject(rule - setOf("action", "outbound")).simpleRule()?.values?.first()?.take(46)
+            ?: rule["clash_mode"].labels().ifBlank { rule["rule_set"].labels() }
+    }
+    val action = rule["outbound"].labels().ifBlank { rule["action"].labels() }
+    return when {
+        label.isNotEmpty() && action.isNotEmpty() -> "$label → $action"
+        label.isNotEmpty() -> label
+        action.isNotEmpty() -> "${stringResource(R.string.routing_advanced)} · $action"
+        else -> stringResource(R.string.routing_advanced)
     }
 }

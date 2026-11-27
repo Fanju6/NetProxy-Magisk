@@ -10,6 +10,7 @@ import com.fanjv.netproxy.feature.routing.model.simpleRule
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
+import java.io.File
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -37,7 +38,7 @@ class LocalRuleSetTest {
         val document = LocalRuleDocument.parse(
             """{"route":{"rules":[{"ip_is_private":true,"outbound":"direct"}]}}""", nativeRoute = true,
         )
-        assertNull(document.policyStart)
+        assertNull(document.automaticPolicyInsertion)
         assertThrows(IllegalArgumentException::class.java) {
             document.replace(null, RuleField.Domain.policyRule("example.com", "AI"))
         }
@@ -45,7 +46,44 @@ class LocalRuleSetTest {
             """{"clash_mode":"Rule","action":"route","outbound":"Proxy"}""",
             """{"clash_mode":["Proxy","Direct"],"action":"route","outbound":"Proxy"}""",
         )
-        assertNull(LocalRuleDocument.parse(lateMode, nativeRoute = true).policyStart)
+        assertNull(LocalRuleDocument.parse(lateMode, nativeRoute = true).automaticPolicyInsertion)
+    }
+
+    @Test fun factoryOrderDoesNotDependOnTheDefaultAdList() {
+        val source = listOf(
+            File("../module/config/singbox/config.json"),
+            File("../../module/config/singbox/config.json"),
+            File("src/module/config/singbox/config.json"),
+        ).first(File::isFile).readText()
+        val original = LocalRuleDocument.parse(source, nativeRoute = true)
+        assertEquals(7, original.automaticPolicyInsertion)
+        val replacedAds = source.replace(
+            """["block", "Ads_AWAvenue", "geosite/category-ads-all"]""",
+            """["my-ad-rules", "block"]""",
+        )
+        assertEquals(7, LocalRuleDocument.parse(replacedAds, nativeRoute = true).automaticPolicyInsertion)
+        assertEquals(6, original.remove(6).automaticPolicyInsertion)
+        val userRule = RuleField.PackageName.policyRule("com.example.app", "Proxy")
+        val edited = original.replace(null, userRule)
+        assertEquals(userRule, edited.rules[7])
+        assertEquals(original, edited.remove(7))
+        assertEquals(8, edited.automaticPolicyInsertion)
+    }
+
+    @Test fun customRouteAcceptsExplicitPositionAndKeepsInsertedRuleEditable() {
+        val document = LocalRuleDocument.parse(
+            """{"route":{"final":"Proxy","rules":[{"ip_is_private":true,"outbound":"direct"},{"clash_mode":"Rule","outbound":"Proxy"}]}}""",
+            nativeRoute = true,
+        )
+        val rule = RuleField.Domain.policyRule("example.org", "Auto")
+        assertNull(document.automaticPolicyInsertion)
+        assertNull(document.earlierCatchAll(1))
+        assertEquals(1, document.earlierCatchAll(2))
+        val edited = document.replace(null, rule, insertion = 1)
+        assertEquals(listOf(document.rules[0], rule, document.rules[1]), edited.rules.toList())
+        assertEquals(listOf(1), edited.editableIndices)
+        assertEquals(document, edited.remove(1))
+        assertEquals(rule, document.replace(null, rule, insertion = 2).rules.last())
     }
 
     @Test fun simpleRulesAcceptScalarAndArrayWithoutFlatteningAdvancedConditions() {

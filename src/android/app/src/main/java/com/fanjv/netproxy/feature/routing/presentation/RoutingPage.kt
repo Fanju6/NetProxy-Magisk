@@ -89,13 +89,14 @@ internal fun RoutingError(
     state: RoutingRulesState,
     onReload: () -> Unit,
     backToList: Boolean = false,
+    reloadTitle: Int? = null,
 ) {
     val message = if (file.invalidDocument) stringResource(R.string.routing_invalid_document)
         else file.error.ifBlank { stringResource(R.string.routing_read_failed) }
     Text(message, Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
         color = MiuixTheme.colorScheme.error, style = MiuixTheme.textStyles.body2)
     if (file.requiresReload) ArrowPreference(
-        title = stringResource(when {
+        title = stringResource(reloadTitle ?: when {
             backToList -> R.string.routing_back_to_list
             state.draft != null || state.deleting != null -> R.string.routing_reload_draft
             else -> R.string.inbound_reload

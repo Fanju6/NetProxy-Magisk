@@ -617,7 +617,7 @@
     <string name="routing_section_advanced">Advanced</string>
     <string name="routing_section_match">Match condition</string>
     <string name="routing_section_action">Action</string>
-    <string name="routing_app_condition">App</string>
+    <string name="routing_app_condition">Android app</string>
     <string name="routing_back_to_list">Return to rules</string>
     <string name="routing_rule_changed">This rule changed or is no longer available.</string>
     <string name="routing_add">Add rule</string>
@@ -638,7 +638,13 @@
     <string name="routing_policy_group">Policy group</string>
     <string name="routing_policy_choose">Choose a group</string>
     <string name="routing_policy_no_groups">No policy groups configured.</string>
-    <string name="routing_policy_order_unsupported">The current rule order cannot be updated here. Edit the native route JSON instead.</string>
+    <string name="routing_position">Insert at</string>
+    <string name="routing_position_choose">Choose a position</string>
+    <string name="routing_position_before">Before rule %1$d</string>
+    <string name="routing_position_last">At the end</string>
+    <string name="routing_position_shadowed">Rule %1$d may already match this traffic.</string>
+    <string name="routing_reload_position">Reload and choose a position</string>
+    <string name="routing_private_ip">Private IP</string>
     <string name="routing_values">One value per line</string>
     <string name="routing_domain_suffix">Domain and subdomains</string>
     <string name="routing_domain">Exact domain</string>

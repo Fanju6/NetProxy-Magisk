@@ -617,7 +617,7 @@
     <string name="routing_section_advanced">Дополнительно</string>
     <string name="routing_section_match">Условие</string>
     <string name="routing_section_action">Действие</string>
-    <string name="routing_app_condition">Приложение</string>
+    <string name="routing_app_condition">Приложение Android</string>
     <string name="routing_back_to_list">К списку правил</string>
     <string name="routing_rule_changed">Правило изменилось или больше недоступно.</string>
     <string name="routing_add">Добавить правило</string>
@@ -638,7 +638,13 @@
     <string name="routing_policy_group">Группа политик</string>
     <string name="routing_policy_choose">Выберите группу</string>
     <string name="routing_policy_no_groups">Группы политик не настроены.</string>
-    <string name="routing_policy_order_unsupported">Порядок правил нельзя изменить здесь. Используйте редактор JSON маршрутизации.</string>
+    <string name="routing_position">Место вставки</string>
+    <string name="routing_position_choose">Выберите место</string>
+    <string name="routing_position_before">Перед правилом %1$d</string>
+    <string name="routing_position_last">В конец</string>
+    <string name="routing_position_shadowed">Правило %1$d уже может охватывать этот трафик.</string>
+    <string name="routing_reload_position">Обновить и выбрать место</string>
+    <string name="routing_private_ip">Частный IP</string>
     <string name="routing_values">Одно значение на строку</string>
     <string name="routing_domain_suffix">Домен и поддомены</string>
     <string name="routing_domain">Точный домен</string>

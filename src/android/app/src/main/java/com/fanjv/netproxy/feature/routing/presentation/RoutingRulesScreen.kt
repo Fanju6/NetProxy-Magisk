@@ -64,7 +64,7 @@ internal fun RoutingRulesScreen(onBack: () -> Unit, viewModel: RoutingRulesViewM
     val navigator = LocalNavigator.current
     val groups = remember(state.files) { state.groupedRules() }
     val hasAppRules = RuleSection.Apps in groups
-    val nativeOnly = state.files.getValue(LocalRuleSet.Policy).document?.let { it.policyStart == null } == true
+    val customOrder = state.files.getValue(LocalRuleSet.Policy).document?.let { it.automaticPolicyInsertion == null } == true
     val appNames by produceState(emptyMap<String, String>(), viewModel, hasAppRules) {
         value = if (hasAppRules) {
             try {
@@ -95,7 +95,7 @@ internal fun RoutingRulesScreen(onBack: () -> Unit, viewModel: RoutingRulesViewM
                 ContentStatus(PaddingValues(0.dp), "", loading = true, modifier = Modifier.fillParentMaxHeight())
             }
         }
-        if (state.isEmpty && !nativeOnly) item("empty") {
+        if (state.isEmpty && !customOrder) item("empty") {
             Column(
                 Modifier.fillParentMaxHeight().fillMaxWidth().padding(horizontal = 14.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -139,10 +139,10 @@ internal fun RoutingRulesScreen(onBack: () -> Unit, viewModel: RoutingRulesViewM
                     )
                 }
             }
-            val items = if (section == RuleSection.Advanced && nativeOnly) rows + CardItem("native") {
+            val items = if (section == RuleSection.Advanced && customOrder) rows + CardItem("native") {
                 ArrowPreference(
                     title = stringResource(R.string.routing_raw),
-                    summary = stringResource(R.string.routing_policy_order_unsupported),
+                    summary = stringResource(R.string.routing_advanced_hint),
                     onClick = { navigator.push(Route.JsonEdit(LocalRuleSet.Policy.target)) },
                 )
             } else rows

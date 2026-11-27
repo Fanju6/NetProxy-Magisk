@@ -617,7 +617,7 @@
     <string name="routing_section_advanced">Avançado</string>
     <string name="routing_section_match">Condição de correspondência</string>
     <string name="routing_section_action">Ação</string>
-    <string name="routing_app_condition">App</string>
+    <string name="routing_app_condition">App Android</string>
     <string name="routing_back_to_list">Voltar às regras</string>
     <string name="routing_rule_changed">Esta regra mudou ou não está mais disponível.</string>
     <string name="routing_add">Adicionar regra</string>
@@ -638,7 +638,13 @@
     <string name="routing_policy_group">Grupo de políticas</string>
     <string name="routing_policy_choose">Escolha um grupo</string>
     <string name="routing_policy_no_groups">Nenhum grupo de políticas configurado.</string>
-    <string name="routing_policy_order_unsupported">A ordem atual das regras não pode ser atualizada aqui. Edite o JSON nativo de rota.</string>
+    <string name="routing_position">Posição da regra</string>
+    <string name="routing_position_choose">Escolha uma posição</string>
+    <string name="routing_position_before">Antes da regra %1$d</string>
+    <string name="routing_position_last">No final</string>
+    <string name="routing_position_shadowed">A regra %1$d talvez já corresponda a este tráfego.</string>
+    <string name="routing_reload_position">Atualizar e escolher a posição</string>
+    <string name="routing_private_ip">IP privado</string>
     <string name="routing_values">Um valor por linha</string>
     <string name="routing_domain_suffix">Domínio e subdomínios</string>
     <string name="routing_domain">Domínio exato</string>

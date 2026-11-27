@@ -37,6 +37,8 @@ internal data class RuleDraft(
     val field: RuleField? = RuleField.DomainSuffix,
     val text: String = "",
     val policyTag: String? = null,
+    val insertion: Int? = null,
+    val reviewInsertion: Boolean = false,
 )
 
 internal data class RuleFileState(
@@ -65,11 +67,19 @@ internal data class RoutingRulesState(
     val canAdd: Boolean get() = LocalRuleSet.entries.any(::canAddTo)
 
     fun canAddTo(target: LocalRuleSet): Boolean = editable(target) && (target != LocalRuleSet.Policy ||
-        (policyTargets.isNotEmpty() && files.getValue(target).document?.policyStart != null))
+        policyTargets.isNotEmpty())
 
     fun canSave(draft: RuleDraft): Boolean = editable(draft.target) && (draft.target != LocalRuleSet.Policy ||
-        (draft.policyTag in policyTargets &&
-            (draft.index != null || files.getValue(draft.target).document?.policyStart != null)))
+        (draft.policyTag in policyTargets && (draft.index != null || policyInsertion(draft) != null)))
+
+    fun needsInsertion(draft: RuleDraft): Boolean = draft.target == LocalRuleSet.Policy && draft.index == null &&
+        (draft.reviewInsertion || files.getValue(draft.target).document?.automaticPolicyInsertion == null)
+
+    fun policyInsertion(draft: RuleDraft): Int? {
+        val document = files.getValue(LocalRuleSet.Policy).document ?: return null
+        return if (needsInsertion(draft)) draft.insertion?.takeIf { it in 0..document.rules.size }
+        else document.automaticPolicyInsertion
+    }
 
     fun showPageError(target: LocalRuleSet): Boolean = target != draft?.target && target != deleting?.target &&
         files.getValue(target).let { it.error.isNotEmpty() || it.requiresReload }
@@ -111,15 +121,45 @@ internal class RoutingRulesViewModel(
         val draft = current.draft ?: return
         if (draft.index != null || current.isLoading || current.isSaving) return
         mutableState.update {
-            it.copy(draft = draft.copy(target = target, policyTag = null))
+            it.copy(draft = draft.copy(target = target, policyTag = null, insertion = null, reviewInsertion = false))
         }
     }
 
     fun selectPolicy(tag: String) {
         val current = state.value
         val draft = current.draft ?: return
-        if (draft.target != LocalRuleSet.Policy || current.isSaving || tag !in current.policyTargets) return
+        if (draft.target != LocalRuleSet.Policy || current.isLoading || current.isSaving || tag !in current.policyTargets) return
         mutableState.update { it.copy(draft = draft.copy(policyTag = tag)) }
+    }
+
+    fun selectInsertion(position: Int, revision: String) {
+        val current = state.value
+        val draft = current.draft ?: return
+        val file = current.files.getValue(LocalRuleSet.Policy)
+        if (!current.editable(LocalRuleSet.Policy) || !current.needsInsertion(draft) ||
+            file.revision != revision || position !in 0..file.document!!.rules.size) return
+        mutableState.update { it.copy(draft = draft.copy(insertion = position)) }
+    }
+
+    fun reloadPolicyDraft() {
+        val current = state.value
+        val draft = current.draft ?: return
+        val target = LocalRuleSet.Policy
+        val file = current.files.getValue(target)
+        if (draft.target != target || draft.index != null || !file.requiresReload ||
+            current.isLoading || current.isSaving) return
+        mutableState.update {
+            it.copy(isLoading = true, draft = draft.copy(insertion = null, reviewInsertion = true))
+        }
+        viewModelScope.launch {
+            try {
+                val updated = readFile(target, file)
+                val targets = readPolicyTargets()
+                mutableState.update { it.copy(policyTargets = targets).withFile(target, updated) }
+            } finally {
+                mutableState.update { it.copy(isLoading = false) }
+            }
+        }
     }
 
     fun openEditor(identity: RuleIdentity?, revision: String?, discardDraft: Boolean = false) {
@@ -145,37 +185,41 @@ internal class RoutingRulesViewModel(
         viewModelScope.launch {
             try {
                 val files = LocalRuleSet.entries.associateWith { target ->
-                    try {
-                        val snapshot = repository.readSnapshot(target.target)
-                        val document = try {
-                            withContext(Dispatchers.Default) { LocalRuleDocument.parse(snapshot.content, target == LocalRuleSet.Policy) }
-                        } catch (error: Exception) {
-                            if (error is CancellationException) throw error
-                            null
-                        }
-                        RuleFileState(document, snapshot.revision, requiresReload = document == null, invalidDocument = document == null)
-                    } catch (error: Exception) {
-                        if (error is CancellationException) throw error
-                        current.files.getValue(target).copy(requiresReload = true, error = error.userMessage())
-                    }
+                    readFile(target, current.files.getValue(target))
                 }
-                val policyTargets = try {
-                    parsePolicySection(repository.read("singbox/outbounds"), "outbounds")
-                        .mapNotNull {
-                            val type = it.text("type")
-                            val tag = it.text("tag")
-                            tag.takeIf { it.isNotBlank() && type in editablePolicyTypes }
-                        }.distinct()
-                } catch (error: Exception) {
-                    if (error is CancellationException) throw error
-                    emptyList()
-                }
+                val policyTargets = readPolicyTargets()
                 mutableState.update { it.copy(files = files, policyTargets = policyTargets) }
             } finally {
                 mutableState.update { it.copy(isLoading = false) }
             }
             onLoaded()
         }
+    }
+
+    private suspend fun readFile(target: LocalRuleSet, fallback: RuleFileState): RuleFileState = try {
+        val snapshot = repository.readSnapshot(target.target)
+        val document = withContext(Dispatchers.Default) {
+            try {
+                LocalRuleDocument.parse(snapshot.content, target == LocalRuleSet.Policy)
+            } catch (error: IllegalArgumentException) {
+                null
+            } catch (error: IllegalStateException) {
+                null
+            }
+        }
+        RuleFileState(document, snapshot.revision, requiresReload = document == null, invalidDocument = document == null)
+    } catch (error: Exception) {
+        if (error is CancellationException) throw error
+        fallback.copy(requiresReload = true, error = error.userMessage())
+    }
+
+    private suspend fun readPolicyTargets(): List<String> = try {
+        parsePolicySection(repository.read("singbox/outbounds"), "outbounds").mapNotNull { outbound ->
+            outbound.text("tag").takeIf { it.isNotBlank() && outbound.text("type") in editablePolicyTypes }
+        }.distinct()
+    } catch (error: Exception) {
+        if (error is CancellationException) throw error
+        emptyList()
     }
 
     fun add() {
@@ -248,7 +292,8 @@ internal class RoutingRulesViewModel(
         }
         val rule = if (draft.target == LocalRuleSet.Policy) field.policyRule(draft.text, requireNotNull(draft.policyTag))
             else field.rule(draft.text)
-        apply(draft.target, current.files.getValue(draft.target).document!!.replace(draft.index, rule))
+        val insertion = if (draft.target == LocalRuleSet.Policy && draft.index == null) current.policyInsertion(draft) else null
+        apply(draft.target, current.files.getValue(draft.target).document!!.replace(draft.index, rule, insertion))
     }
 
     fun delete() {

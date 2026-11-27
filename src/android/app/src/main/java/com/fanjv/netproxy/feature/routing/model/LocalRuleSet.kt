@@ -87,35 +87,37 @@ internal data class LocalRuleDocument(val root: JsonObject, private val nativeRo
     private val section: JsonObject get() = if (nativeRoute) root.getValue("route") as JsonObject else root
     val rules: JsonArray get() = section["rules"] as? JsonArray ?: JsonArray(emptyList())
 
-    val policyStart: Int? get() {
+    val automaticPolicyInsertion: Int? get() {
         if (!nativeRoute) return null
-        if (rules.isEmpty()) return 0
-        // Keep the default mode, DNS and local shortcut/reject rules ahead of user group rules.
-        val anchor = rules.indexOfLast { rule ->
-            rule is JsonObject && rule["action"] == JsonPrimitive("reject") &&
-                (rule["rules"] as? JsonArray)?.any { child ->
-                    (child as? JsonObject)?.get("rule_set") == defaultRejectSets
-                } == true
-        }
-        if (anchor < 0) return if (rules.all { it.policyRule() != null }) 0 else null
-        val laterGuard = rules.drop(anchor + 1).any { rule ->
-            rule is JsonObject && (rule["action"] in protectedActions ||
-                hasProtectedValue(rule["clash_mode"], globalModes) ||
-                hasProtectedValue(rule["rule_set"], shortcutTags))
-        }
-        return (anchor + 1).takeUnless { laterGuard }
+        if (rules.all { it.policyRule() != null }) return rules.size
+        // 只为能识别出默认优先级布局的配置推断位置，不用广告资源名定位。
+        val prefix = rules.takeWhile(::priorityRule)
+        if (!globalModes.all { mode -> prefix.any { modeRoute(it as JsonObject, mode) } } ||
+            prefix.none { (it as JsonObject)["action"] == hijackDns }) return null
+        val rest = rules.drop(prefix.size)
+        if (rest.any(::priorityRule)) return null
+        val insertion = prefix.size + rest.takeWhile { it.policyRule() != null }.size
+        return insertion.takeIf { rules.getOrNull(it)?.let(::siteRule) != false }
     }
 
-    val editableIndices: List<Int> get() {
-        if (!nativeRoute) return rules.indices.toList()
-        val start = policyStart ?: return emptyList()
-        return rules.indices.drop(start).takeWhile { rules[it].policyRule() != null }
-    }
+    val editableIndices: List<Int> get() =
+        rules.indices.filter { !nativeRoute || rules[it].policyRule() != null }
 
-    fun replace(index: Int?, rule: JsonObject): LocalRuleDocument {
+    fun earlierCatchAll(insertion: Int): Int? =
+        rules.take(insertion).indexOfFirst { value ->
+            val rule = value as? JsonObject ?: return@indexOfFirst false
+            val action = (rule["action"] as? JsonPrimitive)?.content ?: "route"
+            val modes = rule["clash_mode"].values()
+            (rule["type"] == null || rule["type"] == JsonPrimitive("default")) &&
+                action in setOf("route", "reject") &&
+                rule.keys.all { it in setOf("type", "action", "outbound", "method", "no_drop", "clash_mode") } &&
+                (modes.isEmpty() || modes.any { it !in globalModes })
+        }.takeIf { it >= 0 }
+
+    fun replace(index: Int?, rule: JsonObject, insertion: Int? = null): LocalRuleDocument {
         val updated = rules.toMutableList()
         if (index == null) {
-            val position = if (nativeRoute) requireNotNull(policyStart) + editableIndices.size else updated.size
+            val position = if (nativeRoute) requireNotNull(insertion ?: automaticPolicyInsertion) else updated.size
             updated.add(position, rule)
         } else updated[index] = rule
         return withRules(updated)
@@ -131,13 +133,50 @@ internal data class LocalRuleDocument(val root: JsonObject, private val nativeRo
 
     companion object {
         private val json = Json { prettyPrint = true; prettyPrintIndent = "  " }
-        private val defaultRejectSets = JsonArray(listOf("block", "Ads_AWAvenue", "geosite/category-ads-all").map(::JsonPrimitive))
-        private val protectedActions = setOf(JsonPrimitive("sniff"), JsonPrimitive("hijack-dns"))
+        private val hijackDns = JsonPrimitive("hijack-dns")
+        private val protectedActions = setOf(JsonPrimitive("sniff"), hijackDns, JsonPrimitive("bypass"))
         private val globalModes = setOf(JsonPrimitive("Direct"), JsonPrimitive("Proxy"))
         private val shortcutTags = setOf(JsonPrimitive("proxy"), JsonPrimitive("direct"), JsonPrimitive("block"))
+        private val allowAdsMode = JsonPrimitive("RuleAllowAds")
 
-        private fun hasProtectedValue(value: JsonElement?, values: Set<JsonPrimitive>): Boolean =
-            if (value is JsonArray) value.any { it in values } else value in values
+        private fun modeRoute(rule: JsonObject, mode: JsonPrimitive): Boolean =
+            rule["clash_mode"] == mode &&
+                (rule["type"] == null || rule["type"] == JsonPrimitive("default")) &&
+                (rule["action"] == null || rule["action"] == JsonPrimitive("route")) &&
+                rule["outbound"] is JsonPrimitive &&
+                rule.keys.all { it in setOf("type", "action", "outbound", "clash_mode") }
+
+        private fun priorityRule(value: JsonElement): Boolean {
+            val rule = value as? JsonObject ?: return false
+            return rule["action"] in protectedActions ||
+                rule["clash_mode"].values().any { it in globalModes } ||
+                rule["rule_set"].values().any { it in shortcutTags } ||
+                (rule["action"] == JsonPrimitive("reject") && rule["mode"] == JsonPrimitive("and") &&
+                    (rule["rules"] as? JsonArray).orEmpty().any {
+                    val child = it as? JsonObject
+                    child?.get("rule_set").values().any { tag -> tag == JsonPrimitive("block") } ||
+                        (child?.get("clash_mode") == allowAdsMode && child["invert"] == JsonPrimitive(true))
+                    })
+        }
+
+        private fun siteRule(value: JsonElement): Boolean {
+            val rule = value as? JsonObject ?: return false
+            return rule.keys.all { it in setOf("type", "action", "outbound", "rule_set") } &&
+                (rule["type"] == null || rule["type"] == JsonPrimitive("default")) &&
+                (rule["action"] == null || rule["action"] == JsonPrimitive("route")) &&
+                rule["rule_set"].values().let { tags ->
+                    tags.isNotEmpty() && tags.all {
+                        val tag = (it as? JsonPrimitive)?.content.orEmpty()
+                        tag.startsWith("geosite/") || tag.startsWith("geoip/")
+                    }
+                }
+        }
+
+        private fun JsonElement?.values(): List<JsonElement> = when (this) {
+            null -> emptyList()
+            is JsonArray -> this
+            else -> listOf(this)
+        }
 
         fun parse(content: String, nativeRoute: Boolean = false): LocalRuleDocument {
             val root = json.parseToJsonElement(content) as? JsonObject ?: error("Invalid rule-set object")

@@ -429,6 +429,67 @@ class RoutingRulesViewModelTest {
         assertTrue(transport.calls.filter { it.method == "PUT" }.all { it.target == "singbox/route" })
     }
 
+    @Test fun newPolicyRuleRequiresAnExplicitPositionInCustomRoute() = runBlocking {
+        val target = LocalRuleSet.Policy.target
+        val original = """{"route":{"final":"Proxy","rules":[{"ip_is_private":true,"outbound":"direct"}]}}"""
+        val transport = Transport().apply { contents[target] = original }
+        val vm = model(this, transport)
+        vm.refresh()
+        assertTrue(vm.loaded().canAddTo(LocalRuleSet.Policy))
+        vm.add()
+        vm.selectTarget(LocalRuleSet.Policy)
+        vm.selectPolicy("AI")
+        vm.updateDraft(RuleField.Domain, "example.org")
+        vm.save()
+        assertFalse(transport.calls.any { it.mutation })
+        vm.selectInsertion(0, "stale-revision")
+        assertNull(vm.state.value.draft?.insertion)
+        vm.selectInsertion(2, transport.revision)
+        assertNull(vm.state.value.draft?.insertion)
+        vm.selectInsertion(0, transport.revision)
+        vm.save()
+        val document = vm.saved().file(LocalRuleSet.Policy).document!!
+        assertEquals("AI", document.rules[0].policyRule()?.first)
+        assertEquals(LocalRuleDocument.parse(original, true), document.remove(0))
+        assertEquals(listOf(RuleIdentity(LocalRuleSet.Policy, 0)), vm.state.value.rules.filter { it.target == LocalRuleSet.Policy })
+    }
+
+    @Test fun insertionConflictKeepsDraftAndRequiresFreshPositionEvenOnDefaultRoute() = runBlocking {
+        val target = LocalRuleSet.Policy.target
+        val transport = Transport().apply {
+            contents[target] = """{"route":{"rules":[{"ip_is_private":true,"outbound":"direct"}]}}"""
+        }
+        val vm = model(this, transport)
+        vm.refresh()
+        vm.loaded()
+        vm.add()
+        vm.selectTarget(LocalRuleSet.Policy)
+        vm.selectPolicy("AI")
+        vm.updateDraft(RuleField.PackageName, "com.example.app")
+        vm.selectInsertion(0, transport.revision)
+        transport.applyError = ModuleApiException("config.conflict", "changed")
+        transport.revisions[target] = "external-revision"
+        transport.contents[target] = defaultRoute
+        vm.save()
+        assertTrue(vm.saved().file(LocalRuleSet.Policy).requiresReload)
+        vm.reloadPolicyDraft()
+        val refreshed = vm.loaded()
+        val draft = refreshed.draft!!
+        assertEquals("com.example.app", draft.text)
+        assertEquals(RuleField.PackageName, draft.field)
+        assertEquals("AI", draft.policyTag)
+        assertTrue(refreshed.needsInsertion(draft))
+        assertNull(draft.insertion)
+        assertEquals("external-revision", refreshed.file(LocalRuleSet.Policy).revision)
+        vm.save()
+        assertEquals(1, transport.calls.count { it.mutation })
+        transport.applyError = null
+        vm.selectInsertion(5, "external-revision")
+        vm.save()
+        assertEquals("AI", vm.saved().file(LocalRuleSet.Policy).document!!.rules[5].policyRule()?.first)
+        assertEquals("external-revision", transport.calls.last().text("revision"))
+    }
+
     @Test fun conflictRetainsTargetDraftAndOriginalRevisionUntilExplicitReload() = runBlocking {
         val transport = Transport()
         val vm = model(this, transport)
