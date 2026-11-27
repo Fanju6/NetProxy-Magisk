@@ -41,8 +41,8 @@
       "ref": "sing",
       "sourcePath": "geo/geosite/category-ai-!cn.srs",
       "metadataPath": "geo/geosite/category-ai-!cn.json",
-      "currentCommit": "b1f288ee1427724687dc2c08d1d54a5fed2f2ee2",
-      "currentSha256": "9ad824651dd4c9e23a8c0b50e992b701a8f31bacbc668c83d6a1bf7ee5ebf910"
+      "currentCommit": "2f927fd185c9ab3791a0a918814dc44f8f6cba3e",
+      "currentSha256": "4eb7301e3731b08e87f54ea803c61520d846486fc29f7d2b576244cd946b0d8d"
     },
     {
       "name": "geosite/google",
@@ -52,8 +52,8 @@
       "ref": "sing",
       "sourcePath": "geo/geosite/google.srs",
       "metadataPath": "geo/geosite/google.json",
-      "currentCommit": "4f83910b104d340a485949cab5c606bf56fd8e00",
-      "currentSha256": "c4984283c71cab362637e030f46f37cdb4340e4ced1545e1ab6c4bcbb2c6fdb1"
+      "currentCommit": "2f927fd185c9ab3791a0a918814dc44f8f6cba3e",
+      "currentSha256": "ab93f066570c04d23b1449d08e7f9260d02e61fb746c2e842093402746d80351"
     },
     {
       "name": "geosite/geolocation-!cn",
@@ -63,8 +63,8 @@
       "ref": "sing",
       "sourcePath": "geo/geosite/geolocation-!cn.srs",
       "metadataPath": "geo/geosite/geolocation-!cn.json",
-      "currentCommit": "b1f288ee1427724687dc2c08d1d54a5fed2f2ee2",
-      "currentSha256": "da1145cbe344bd287dd528d3eabb432c5bf50d0129f5b8a7f1a8b2c16da87e7d"
+      "currentCommit": "2f927fd185c9ab3791a0a918814dc44f8f6cba3e",
+      "currentSha256": "ec525b31db3ef73817f52057cbbbc9902f1320bbf36bf855bc854e0d04d91758"
     },
     {
       "name": "geosite/cn",
@@ -85,8 +85,8 @@
       "ref": "sing",
       "sourcePath": "geo/geoip/cn.srs",
       "metadataPath": "geo/geoip/cn.json",
-      "currentCommit": "b1f288ee1427724687dc2c08d1d54a5fed2f2ee2",
-      "currentSha256": "ad50a548317f437035735ea9aa117ff5c54f51124d9565a14629c7c0a34db918"
+      "currentCommit": "2f927fd185c9ab3791a0a918814dc44f8f6cba3e",
+      "currentSha256": "1e376a84f9c85f8900838aa408d954009d21fd4822a0a43900931b79a0261be1"
     },
     {
       "name": "geoip/telegram",
@@ -170,7 +170,7 @@
     "path": "src/module/bin/sing-box",
     "repo": "reF1nd/sing-box",
     "tagPattern": "^v[0-9].*-reF1nd$",
-    "currentVersion": "v1.15.0-alpha.13-reF1nd-next.77c0dbbe",
+    "currentVersion": "v1.15.0-alpha.14-reF1nd",
     "buildTags": [
       "with_quic",
       "with_utls",
