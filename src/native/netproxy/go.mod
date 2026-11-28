@@ -8,15 +8,15 @@ require (
 	github.com/mdlayher/wifi v0.9.0
 	github.com/sagernet/bbolt v0.0.0-20261124060517-2ab7bd6d2bff
 	github.com/sagernet/netlink v0.0.0-20261125120807-b006b90aa077
-	github.com/sagernet/sing v0.9.7-0.20261125122036-9b11dbe28a7d
-	github.com/sagernet/sing-box v1.15.0-alpha.14-reF1nd
+	github.com/sagernet/sing v0.9.7-0.20261127131308-bbcd8ecc42a3
+	github.com/sagernet/sing-box v1.15.0-alpha.15-reF1nd
 	github.com/sagernet/sing-tun v0.9.7-0.20261126024559-1a13df1ac21f
 	golang.org/x/sys v0.50.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-replace github.com/sagernet/sing-box => github.com/reF1nd/sing-box v1.15.0-alpha.14-reF1nd
+replace github.com/sagernet/sing-box => github.com/reF1nd/sing-box v1.15.0-alpha.15-reF1nd
 
 require (
 	github.com/florianl/go-nfqueue/v2 v2.1.0 // indirect
